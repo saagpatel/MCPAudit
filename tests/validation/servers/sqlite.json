@@ -1,0 +1,112 @@
+{
+	"server_name": "server-sqlite",
+	"description": "@modelcontextprotocol/server-sqlite — SQLite database operations",
+	"tools": [
+		{
+			"name": "read_query",
+			"description": "Execute a SELECT query on the SQLite database.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"query": { "type": "string" }
+				},
+				"required": ["query"]
+			}
+		},
+		{
+			"name": "write_query",
+			"description": "Execute an INSERT, UPDATE, or DELETE query on the SQLite database.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"query": { "type": "string" }
+				},
+				"required": ["query"]
+			}
+		},
+		{
+			"name": "create_table",
+			"description": "Create a new table in the SQLite database.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"query": { "type": "string" }
+				},
+				"required": ["query"]
+			}
+		},
+		{
+			"name": "drop_table",
+			"description": "Drop an existing table from the SQLite database.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"table_name": { "type": "string" }
+				},
+				"required": ["table_name"]
+			}
+		},
+		{
+			"name": "list_tables",
+			"description": "List all tables in the SQLite database.",
+			"input_schema": {
+				"type": "object",
+				"properties": {}
+			}
+		},
+		{
+			"name": "describe_table",
+			"description": "Get the schema information for a specific table.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"table_name": { "type": "string" }
+				},
+				"required": ["table_name"]
+			}
+		},
+		{
+			"name": "append_insight",
+			"description": "Add a business insight to the memo resource.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"insight": { "type": "string" }
+				},
+				"required": ["insight"]
+			}
+		}
+	],
+	"expected_findings": [
+		{
+			"tool": "read_query",
+			"categories": ["file_read"],
+			"min_confidence": "medium"
+		},
+		{
+			"tool": "write_query",
+			"categories": ["file_write", "destructive"],
+			"min_confidence": "medium"
+		},
+		{
+			"tool": "create_table",
+			"categories": ["file_write"],
+			"min_confidence": "medium"
+		},
+		{
+			"tool": "drop_table",
+			"categories": ["file_write", "destructive"],
+			"min_confidence": "high"
+		},
+		{
+			"tool": "list_tables",
+			"categories": ["file_read"],
+			"min_confidence": "low"
+		},
+		{
+			"tool": "describe_table",
+			"categories": ["file_read"],
+			"min_confidence": "low"
+		}
+	]
+}

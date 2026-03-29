@@ -1,0 +1,148 @@
+{
+	"server_name": "server-filesystem",
+	"description": "@modelcontextprotocol/server-filesystem — local file operations",
+	"tools": [
+		{
+			"name": "read_file",
+			"description": "Read the complete contents of a file from the file system.",
+			"input_schema": {
+				"type": "object",
+				"properties": { "path": { "type": "string" } },
+				"required": ["path"]
+			}
+		},
+		{
+			"name": "read_multiple_files",
+			"description": "Read the contents of multiple files simultaneously.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"paths": { "type": "array", "items": { "type": "string" } }
+				},
+				"required": ["paths"]
+			}
+		},
+		{
+			"name": "write_file",
+			"description": "Create a new file or completely overwrite an existing file with new content.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"path": { "type": "string" },
+					"content": { "type": "string" }
+				},
+				"required": ["path", "content"]
+			}
+		},
+		{
+			"name": "edit_file",
+			"description": "Make line-based edits to a text file.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"path": { "type": "string" },
+					"edits": { "type": "array" }
+				},
+				"required": ["path", "edits"]
+			}
+		},
+		{
+			"name": "create_directory",
+			"description": "Create a new directory or ensure a directory exists.",
+			"input_schema": {
+				"type": "object",
+				"properties": { "path": { "type": "string" } },
+				"required": ["path"]
+			}
+		},
+		{
+			"name": "list_directory",
+			"description": "Get a detailed listing of all files and directories in a specified path.",
+			"input_schema": {
+				"type": "object",
+				"properties": { "path": { "type": "string" } },
+				"required": ["path"]
+			}
+		},
+		{
+			"name": "move_file",
+			"description": "Move or rename files and directories.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"source": { "type": "string" },
+					"destination": { "type": "string" }
+				},
+				"required": ["source", "destination"]
+			}
+		},
+		{
+			"name": "search_files",
+			"description": "Recursively search for files and directories matching a pattern.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"path": { "type": "string" },
+					"pattern": { "type": "string" }
+				},
+				"required": ["path", "pattern"]
+			}
+		},
+		{
+			"name": "get_file_info",
+			"description": "Retrieve detailed metadata about a file or directory.",
+			"input_schema": {
+				"type": "object",
+				"properties": { "path": { "type": "string" } },
+				"required": ["path"]
+			}
+		},
+		{
+			"name": "list_allowed_directories",
+			"description": "Returns the list of directories that this server is allowed to access.",
+			"input_schema": { "type": "object", "properties": {} }
+		}
+	],
+	"expected_findings": [
+		{
+			"tool": "read_file",
+			"categories": ["file_read"],
+			"min_confidence": "high"
+		},
+		{
+			"tool": "read_multiple_files",
+			"categories": ["file_read"],
+			"min_confidence": "medium"
+		},
+		{
+			"tool": "write_file",
+			"categories": ["file_write"],
+			"min_confidence": "high"
+		},
+		{
+			"tool": "edit_file",
+			"categories": ["file_write"],
+			"min_confidence": "high"
+		},
+		{
+			"tool": "list_directory",
+			"categories": ["file_read"],
+			"min_confidence": "high"
+		},
+		{
+			"tool": "search_files",
+			"categories": ["file_read"],
+			"min_confidence": "high"
+		},
+		{
+			"tool": "get_file_info",
+			"categories": ["file_read"],
+			"min_confidence": "medium"
+		},
+		{
+			"tool": "move_file",
+			"categories": ["file_write"],
+			"min_confidence": "medium"
+		}
+	]
+}

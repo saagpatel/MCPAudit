@@ -1,0 +1,24 @@
+{
+	"server_name": "server-postgres",
+	"description": "@modelcontextprotocol/server-postgres — PostgreSQL database operations",
+	"tools": [
+		{
+			"name": "query",
+			"description": "Run a read-only SQL query against the PostgreSQL database.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"sql": { "type": "string" }
+				},
+				"required": ["sql"]
+			}
+		}
+	],
+	"expected_findings": [
+		{
+			"tool": "query",
+			"categories": ["network"],
+			"min_confidence": "medium"
+		}
+	]
+}

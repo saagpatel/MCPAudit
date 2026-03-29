@@ -1,0 +1,31 @@
+{
+	"server_name": "server-sequential-thinking",
+	"description": "@modelcontextprotocol/server-sequential-thinking — dynamic problem-solving through structured thought sequences",
+	"tools": [
+		{
+			"name": "sequentialthinking",
+			"description": "A detailed tool for dynamic and reflective problem-solving through thoughts. This tool helps analyze problems, plan solutions, and think through complex issues step by step. It allows for revision of previous thinking and exploration of multiple approaches.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"thought": { "type": "string" },
+					"nextThoughtNeeded": { "type": "boolean" },
+					"thoughtNumber": { "type": "integer" },
+					"totalThoughts": { "type": "integer" },
+					"isRevision": { "type": "boolean" },
+					"revisesThought": { "type": "integer" },
+					"branchFromThought": { "type": "integer" },
+					"branchId": { "type": "string" },
+					"needsMoreThoughts": { "type": "boolean" }
+				},
+				"required": [
+					"thought",
+					"nextThoughtNeeded",
+					"thoughtNumber",
+					"totalThoughts"
+				]
+			}
+		}
+	],
+	"expected_findings": []
+}

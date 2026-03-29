@@ -1,0 +1,27 @@
+{
+	"server_name": "server-fetch",
+	"description": "@modelcontextprotocol/server-fetch — web content fetching and conversion",
+	"tools": [
+		{
+			"name": "fetch",
+			"description": "Fetches a URL from the internet and optionally extracts its contents as markdown.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"url": { "type": "string" },
+					"max_length": { "type": "integer" },
+					"start_index": { "type": "integer" },
+					"raw": { "type": "boolean" }
+				},
+				"required": ["url"]
+			}
+		}
+	],
+	"expected_findings": [
+		{
+			"tool": "fetch",
+			"categories": ["network"],
+			"min_confidence": "high"
+		}
+	]
+}

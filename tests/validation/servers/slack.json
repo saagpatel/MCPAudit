@@ -1,0 +1,143 @@
+{
+	"server_name": "server-slack",
+	"description": "@modelcontextprotocol/server-slack — Slack workspace operations",
+	"tools": [
+		{
+			"name": "slack_list_channels",
+			"description": "List public channels in the workspace with their basic information.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"limit": { "type": "number" },
+					"cursor": { "type": "string" }
+				}
+			}
+		},
+		{
+			"name": "slack_post_message",
+			"description": "Post a new message to a Slack channel.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"channel_id": { "type": "string" },
+					"text": { "type": "string" }
+				},
+				"required": ["channel_id", "text"]
+			}
+		},
+		{
+			"name": "slack_reply_to_thread",
+			"description": "Reply to a specific message thread in Slack.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"channel_id": { "type": "string" },
+					"thread_ts": { "type": "string" },
+					"text": { "type": "string" }
+				},
+				"required": ["channel_id", "thread_ts", "text"]
+			}
+		},
+		{
+			"name": "slack_add_reaction",
+			"description": "Add a reaction emoji to a message.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"channel_id": { "type": "string" },
+					"timestamp": { "type": "string" },
+					"reaction": { "type": "string" }
+				},
+				"required": ["channel_id", "timestamp", "reaction"]
+			}
+		},
+		{
+			"name": "slack_get_channel_history",
+			"description": "Get recent messages from a Slack channel.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"channel_id": { "type": "string" },
+					"limit": { "type": "number" }
+				},
+				"required": ["channel_id"]
+			}
+		},
+		{
+			"name": "slack_get_thread_replies",
+			"description": "Get all replies in a message thread.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"channel_id": { "type": "string" },
+					"thread_ts": { "type": "string" }
+				},
+				"required": ["channel_id", "thread_ts"]
+			}
+		},
+		{
+			"name": "slack_get_users",
+			"description": "Get a list of all users in the workspace with their basic profile information.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"cursor": { "type": "string" },
+					"limit": { "type": "number" }
+				}
+			}
+		},
+		{
+			"name": "slack_get_user_profile",
+			"description": "Get detailed profile information for a specific user including email and other contact details.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"user_id": { "type": "string" }
+				},
+				"required": ["user_id"]
+			}
+		}
+	],
+	"expected_findings": [
+		{
+			"tool": "slack_list_channels",
+			"categories": ["network"],
+			"min_confidence": "medium"
+		},
+		{
+			"tool": "slack_post_message",
+			"categories": ["network", "exfiltration"],
+			"min_confidence": "medium"
+		},
+		{
+			"tool": "slack_reply_to_thread",
+			"categories": ["network", "exfiltration"],
+			"min_confidence": "medium"
+		},
+		{
+			"tool": "slack_add_reaction",
+			"categories": ["network"],
+			"min_confidence": "medium"
+		},
+		{
+			"tool": "slack_get_channel_history",
+			"categories": ["network"],
+			"min_confidence": "medium"
+		},
+		{
+			"tool": "slack_get_thread_replies",
+			"categories": ["network"],
+			"min_confidence": "medium"
+		},
+		{
+			"tool": "slack_get_users",
+			"categories": ["network"],
+			"min_confidence": "medium"
+		},
+		{
+			"tool": "slack_get_user_profile",
+			"categories": ["network"],
+			"min_confidence": "medium"
+		}
+	]
+}

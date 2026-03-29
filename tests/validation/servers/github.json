@@ -1,0 +1,204 @@
+{
+	"server_name": "server-github",
+	"description": "@modelcontextprotocol/server-github — GitHub API operations",
+	"tools": [
+		{
+			"name": "create_or_update_file",
+			"description": "Create or update a single file in a GitHub repository.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"owner": { "type": "string" },
+					"repo": { "type": "string" },
+					"path": { "type": "string" },
+					"content": { "type": "string" },
+					"message": { "type": "string" },
+					"branch": { "type": "string" },
+					"sha": { "type": "string" }
+				},
+				"required": ["owner", "repo", "path", "content", "message"]
+			}
+		},
+		{
+			"name": "search_repositories",
+			"description": "Search for GitHub repositories.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"query": { "type": "string" },
+					"page": { "type": "number" },
+					"perPage": { "type": "number" }
+				},
+				"required": ["query"]
+			}
+		},
+		{
+			"name": "create_repository",
+			"description": "Create a new GitHub repository in your account.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"name": { "type": "string" },
+					"description": { "type": "string" },
+					"private": { "type": "boolean" },
+					"autoInit": { "type": "boolean" }
+				},
+				"required": ["name"]
+			}
+		},
+		{
+			"name": "get_file_contents",
+			"description": "Get the contents of a file or directory from a GitHub repository.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"owner": { "type": "string" },
+					"repo": { "type": "string" },
+					"path": { "type": "string" },
+					"branch": { "type": "string" }
+				},
+				"required": ["owner", "repo", "path"]
+			}
+		},
+		{
+			"name": "push_files",
+			"description": "Push multiple files to a GitHub repository in a single commit.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"owner": { "type": "string" },
+					"repo": { "type": "string" },
+					"branch": { "type": "string" },
+					"files": { "type": "array" },
+					"message": { "type": "string" }
+				},
+				"required": ["owner", "repo", "branch", "files", "message"]
+			}
+		},
+		{
+			"name": "create_issue",
+			"description": "Create a new issue in a GitHub repository.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"owner": { "type": "string" },
+					"repo": { "type": "string" },
+					"title": { "type": "string" },
+					"body": { "type": "string" },
+					"labels": { "type": "array" }
+				},
+				"required": ["owner", "repo", "title"]
+			}
+		},
+		{
+			"name": "create_pull_request",
+			"description": "Create a new pull request in a GitHub repository.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"owner": { "type": "string" },
+					"repo": { "type": "string" },
+					"title": { "type": "string" },
+					"body": { "type": "string" },
+					"head": { "type": "string" },
+					"base": { "type": "string" }
+				},
+				"required": ["owner", "repo", "title", "head", "base"]
+			}
+		},
+		{
+			"name": "fork_repository",
+			"description": "Fork a GitHub repository to your account or specified organization.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"owner": { "type": "string" },
+					"repo": { "type": "string" },
+					"organization": { "type": "string" }
+				},
+				"required": ["owner", "repo"]
+			}
+		},
+		{
+			"name": "create_branch",
+			"description": "Create a new branch in a GitHub repository.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"owner": { "type": "string" },
+					"repo": { "type": "string" },
+					"branch": { "type": "string" },
+					"from_branch": { "type": "string" }
+				},
+				"required": ["owner", "repo", "branch"]
+			}
+		},
+		{
+			"name": "list_commits",
+			"description": "Get list of commits of a branch in a GitHub repository.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"owner": { "type": "string" },
+					"repo": { "type": "string" },
+					"page": { "type": "number" },
+					"perPage": { "type": "number" },
+					"sha": { "type": "string" }
+				},
+				"required": ["owner", "repo"]
+			}
+		}
+	],
+	"expected_findings": [
+		{
+			"tool": "create_or_update_file",
+			"categories": ["network"],
+			"min_confidence": "medium"
+		},
+		{
+			"tool": "search_repositories",
+			"categories": ["network"],
+			"min_confidence": "medium"
+		},
+		{
+			"tool": "create_repository",
+			"categories": ["network"],
+			"min_confidence": "medium"
+		},
+		{
+			"tool": "get_file_contents",
+			"categories": ["network"],
+			"min_confidence": "medium"
+		},
+		{
+			"tool": "push_files",
+			"categories": ["network"],
+			"min_confidence": "medium"
+		},
+		{
+			"tool": "create_issue",
+			"categories": ["network"],
+			"min_confidence": "medium"
+		},
+		{
+			"tool": "create_pull_request",
+			"categories": ["network"],
+			"min_confidence": "medium"
+		},
+		{
+			"tool": "fork_repository",
+			"categories": ["network"],
+			"min_confidence": "medium"
+		},
+		{
+			"tool": "create_branch",
+			"categories": ["network"],
+			"min_confidence": "medium"
+		},
+		{
+			"tool": "list_commits",
+			"categories": ["network"],
+			"min_confidence": "medium"
+		}
+	]
+}

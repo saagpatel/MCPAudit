@@ -1,0 +1,43 @@
+{
+	"server_name": "server-brave-search",
+	"description": "@modelcontextprotocol/server-brave-search — web search via Brave Search API",
+	"tools": [
+		{
+			"name": "brave_web_search",
+			"description": "Performs a web search using the Brave Search API, ideal for general queries, news, articles, and online content.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"query": { "type": "string" },
+					"count": { "type": "number" },
+					"offset": { "type": "number" }
+				},
+				"required": ["query"]
+			}
+		},
+		{
+			"name": "brave_local_search",
+			"description": "Searches for local businesses and places using Brave's Local Search API.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"query": { "type": "string" },
+					"count": { "type": "number" }
+				},
+				"required": ["query"]
+			}
+		}
+	],
+	"expected_findings": [
+		{
+			"tool": "brave_web_search",
+			"categories": ["network"],
+			"min_confidence": "medium"
+		},
+		{
+			"tool": "brave_local_search",
+			"categories": ["network"],
+			"min_confidence": "medium"
+		}
+	]
+}

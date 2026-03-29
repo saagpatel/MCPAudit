@@ -31,8 +31,9 @@ PERMISSION_PATTERNS: dict[PermissionCategory, dict[str, list[str]]] = {
             "glob",
             "file_pattern",
             "working_directory",
+            "read",
         ],
-        "weak": ["open", "load", "import", "source", "inspect"],
+        "weak": ["open", "load", "import", "source", "inspect", "list", "describe", "query", "search"],
     },
     PermissionCategory.FILE_WRITE: {
         "strong": [
@@ -56,8 +57,13 @@ PERMISSION_PATTERNS: dict[PermissionCategory, dict[str, list[str]]] = {
             "destination",
             "overwrite",
             "upsert",
+            "commit",
+            "clone",
+            "drop",
+            "append",
+            "delete",
         ],
-        "weak": ["create", "update", "set", "put"],
+        "weak": ["create", "update", "set", "put", "add", "init", "stage"],
     },
     PermissionCategory.NETWORK: {
         "strong": [
@@ -134,6 +140,6 @@ PERMISSION_PATTERNS: dict[PermissionCategory, dict[str, list[str]]] = {
             "broadcast",
         ],
         "moderate": ["send", "post", "share", "export", "transmit"],
-        "weak": ["output", "emit", "forward", "relay"],
+        "weak": ["output", "emit", "forward", "relay", "reply", "notify"],
     },
 }

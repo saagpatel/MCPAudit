@@ -1,0 +1,192 @@
+{
+	"server_name": "server-memory",
+	"description": "@modelcontextprotocol/server-memory — persistent knowledge graph memory",
+	"tools": [
+		{
+			"name": "create_entities",
+			"description": "Create multiple new entities in the knowledge graph.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"entities": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"name": { "type": "string" },
+								"entityType": { "type": "string" },
+								"observations": {
+									"type": "array",
+									"items": { "type": "string" }
+								}
+							},
+							"required": ["name", "entityType", "observations"]
+						}
+					}
+				},
+				"required": ["entities"]
+			}
+		},
+		{
+			"name": "create_relations",
+			"description": "Create multiple new relations between entities in the knowledge graph.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"relations": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"from": { "type": "string" },
+								"to": { "type": "string" },
+								"relationType": { "type": "string" }
+							},
+							"required": ["from", "to", "relationType"]
+						}
+					}
+				},
+				"required": ["relations"]
+			}
+		},
+		{
+			"name": "add_observations",
+			"description": "Add new observations to existing entities in the knowledge graph.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"observations": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"entityName": { "type": "string" },
+								"contents": { "type": "array", "items": { "type": "string" } }
+							},
+							"required": ["entityName", "contents"]
+						}
+					}
+				},
+				"required": ["observations"]
+			}
+		},
+		{
+			"name": "delete_entities",
+			"description": "Delete multiple entities and their associated relations from the knowledge graph.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"entityNames": { "type": "array", "items": { "type": "string" } }
+				},
+				"required": ["entityNames"]
+			}
+		},
+		{
+			"name": "delete_observations",
+			"description": "Delete specific observations from entities in the knowledge graph.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"deletions": {
+						"type": "array",
+						"items": {
+							"type": "object",
+							"properties": {
+								"entityName": { "type": "string" },
+								"observations": {
+									"type": "array",
+									"items": { "type": "string" }
+								}
+							},
+							"required": ["entityName", "observations"]
+						}
+					}
+				},
+				"required": ["deletions"]
+			}
+		},
+		{
+			"name": "delete_relations",
+			"description": "Delete multiple relations from the knowledge graph.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"relations": { "type": "array" }
+				},
+				"required": ["relations"]
+			}
+		},
+		{
+			"name": "read_graph",
+			"description": "Read the entire knowledge graph.",
+			"input_schema": {
+				"type": "object",
+				"properties": {}
+			}
+		},
+		{
+			"name": "search_nodes",
+			"description": "Search for nodes in the knowledge graph based on a query.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"query": { "type": "string" }
+				},
+				"required": ["query"]
+			}
+		},
+		{
+			"name": "open_nodes",
+			"description": "Open specific nodes in the knowledge graph by their names.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"names": { "type": "array", "items": { "type": "string" } }
+				},
+				"required": ["names"]
+			}
+		}
+	],
+	"expected_findings": [
+		{
+			"tool": "create_entities",
+			"categories": ["file_write"],
+			"min_confidence": "medium"
+		},
+		{
+			"tool": "create_relations",
+			"categories": ["file_write"],
+			"min_confidence": "medium"
+		},
+		{
+			"tool": "add_observations",
+			"categories": ["file_write"],
+			"min_confidence": "medium"
+		},
+		{
+			"tool": "delete_entities",
+			"categories": ["file_write", "destructive"],
+			"min_confidence": "high"
+		},
+		{
+			"tool": "delete_observations",
+			"categories": ["file_write", "destructive"],
+			"min_confidence": "medium"
+		},
+		{
+			"tool": "delete_relations",
+			"categories": ["file_write", "destructive"],
+			"min_confidence": "medium"
+		},
+		{
+			"tool": "read_graph",
+			"categories": ["file_read"],
+			"min_confidence": "medium"
+		},
+		{
+			"tool": "search_nodes",
+			"categories": ["file_read"],
+			"min_confidence": "low"
+		}
+	]
+}

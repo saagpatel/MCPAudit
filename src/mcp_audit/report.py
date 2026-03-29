@@ -10,7 +10,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from mcp_audit.models import AuditReport, PermissionFinding, ServerAudit
+from mcp_audit.models import AuditReport, DriftStatus, InjectionSeverity, PermissionFinding, ServerAudit
 
 
 def _default_console() -> Console:
@@ -69,6 +69,9 @@ class ReportGenerator:
         if verbose:
             self._render_verbose(report)
 
+        self._render_injection_warnings(report)
+        self._render_drift_warnings(report)
+
     def _render_verbose(self, report: AuditReport) -> None:
         """Print per-tool permission breakdown for each server."""
         for audit in report.audits:
@@ -92,6 +95,73 @@ class ReportGenerator:
                 sub.add_row(tool.name, perm_str)
 
             self._console.print(sub)
+
+    def _render_injection_warnings(self, report: AuditReport) -> None:
+        """Print injection findings section if any were found."""
+        all_findings = [(a.server.name, f) for a in report.audits for f in a.injection_findings]
+        if not all_findings:
+            return
+
+        self._console.print()
+        self._console.rule("[bold red]Prompt Injection Warnings[/bold red]")
+        tbl = Table(show_lines=False)
+        tbl.add_column("Server", style="bold cyan", no_wrap=True)
+        tbl.add_column("Tool", style="cyan")
+        tbl.add_column("Severity")
+        tbl.add_column("Pattern")
+        tbl.add_column("Description", overflow="fold")
+
+        for server_name, f in all_findings:
+            sev_style = {
+                InjectionSeverity.HIGH: "bold red",
+                InjectionSeverity.MEDIUM: "yellow",
+                InjectionSeverity.LOW: "dim",
+            }.get(f.severity, "")
+            tbl.add_row(
+                server_name,
+                f.tool_name,
+                f"[{sev_style}]{f.severity.value}[/{sev_style}]",
+                f.pattern_name,
+                f.description,
+            )
+        self._console.print(tbl)
+
+    def _render_drift_warnings(self, report: AuditReport) -> None:
+        """Print tool schema drift warnings if any were found."""
+        all_drifts = [(a.server.name, d) for a in report.audits for d in a.drift_findings]
+        if not all_drifts:
+            return
+
+        self._console.print()
+        self._console.rule("[bold yellow]Tool Schema Drift[/bold yellow]")
+        tbl = Table(show_lines=False)
+        tbl.add_column("Server", style="bold cyan", no_wrap=True)
+        tbl.add_column("Tool", style="cyan")
+        tbl.add_column("Status")
+        tbl.add_column("Details", overflow="fold")
+
+        for server_name, d in all_drifts:
+            status_style = {
+                DriftStatus.CHANGED: "yellow",
+                DriftStatus.NEW: "green",
+                DriftStatus.REMOVED: "red",
+            }.get(d.status, "")
+            details = ""
+            if d.status == DriftStatus.CHANGED:
+                stored = d.stored_hash[:16] if d.stored_hash else "?"
+                current = d.current_hash[:16] if d.current_hash else "?"
+                details = f"{stored}… → {current}…"
+            elif d.status == DriftStatus.NEW:
+                details = "not previously pinned"
+            elif d.status == DriftStatus.REMOVED:
+                details = "tool no longer present"
+            tbl.add_row(
+                server_name,
+                d.tool_name,
+                f"[{status_style}]{d.status.value}[/{status_style}]",
+                details,
+            )
+        self._console.print(tbl)
 
     def render_json(self, report: AuditReport, path: Path) -> None:
         """Write full AuditReport as JSON to the given path."""

@@ -13,7 +13,7 @@ from mcp_audit.models import (
     RiskScore,
     ServerAudit,
 )
-from mcp_audit.sarif import _RULE_IDS, SarifGenerator
+from mcp_audit.sarif import _INJECTION_RULE_IDS, _RULE_IDS, SarifGenerator
 from tests.conftest import make_server_config
 
 
@@ -76,11 +76,11 @@ class TestSarifStructure:
         driver = sarif["runs"][0]["tool"]["driver"]
         assert driver["name"] == "mcp-audit"
 
-    def test_all_six_rules_present(self) -> None:
+    def test_all_rules_present(self) -> None:
         sarif = SarifGenerator().generate(_make_report([]))
         rules = sarif["runs"][0]["tool"]["driver"]["rules"]
         rule_ids = {r["id"] for r in rules}
-        expected = set(_RULE_IDS.values())
+        expected = set(_RULE_IDS.values()) | set(_INJECTION_RULE_IDS.values())
         assert rule_ids == expected
 
     def test_empty_report_has_empty_results(self) -> None:

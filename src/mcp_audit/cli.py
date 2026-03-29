@@ -119,6 +119,18 @@ def discover(client_filter: str | None, verbose: bool) -> None:
     metavar="PATH",
     help="Override config YAML (default: ~/.mcp-audit.yaml).",
 )
+@click.option(
+    "--inject-check", is_flag=True, default=False, help="Scan for prompt injection in tool descriptions."
+)  # noqa: E501
+@click.option(
+    "--pin-check", is_flag=True, default=False, help="Check for tool schema drift against stored pins."
+)  # noqa: E501
+@click.option(
+    "--llm-analysis",
+    is_flag=True,
+    default=False,
+    help="Augment analysis with LLM classification (requires ANTHROPIC_API_KEY).",
+)
 def scan(
     json_output: str | None,
     sarif_output: str | None,
@@ -128,6 +140,9 @@ def scan(
     verbose: bool,
     extra_config: str | None,
     override_config_path: str | None,
+    inject_check: bool,
+    pin_check: bool,
+    llm_analysis: bool,
 ) -> None:
     """Full audit: discover servers, connect, enumerate tools, score risk, report."""
     anyio.run(
@@ -140,6 +155,9 @@ def scan(
         verbose,
         extra_config,
         override_config_path,
+        inject_check,
+        pin_check,
+        llm_analysis,
     )
 
 
@@ -149,8 +167,13 @@ async def _run_scan_core(
     timeout: int,
     extra_config: str | None,
     override_applier: OverrideApplier,
+    inject_check: bool = False,
+    pin_check: bool = False,
+    llm_analysis: bool = False,
 ) -> AuditReport:
     """Core scan pipeline — discovers, connects, analyzes, scores. Returns AuditReport."""
+    import os
+
     start = time.monotonic()
 
     # 1. Discover servers
@@ -163,6 +186,37 @@ async def _run_scan_core(
     connector = ServerConnector(timeout=float(timeout))
     analyzer = PermissionAnalyzer()
     scorer = RiskScorer()
+
+    # Optional Phase 3 components
+    llm_analyzer = None
+    if llm_analysis:
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        if not api_key:
+            console.print(  # noqa: E501
+                "[yellow]--llm-analysis: ANTHROPIC_API_KEY not set, skipping LLM analysis.[/yellow]"
+            )
+        else:
+            try:
+                from mcp_audit.llm_analyzer import LLMAnalyzer
+
+                llm_analyzer = LLMAnalyzer(api_key=api_key)
+            except ImportError:
+                console.print(
+                    "[yellow]--llm-analysis: anthropic package not installed. "
+                    "Run: pip install 'mcp-audit[llm]'[/yellow]"
+                )
+
+    injection_detector = None
+    if inject_check:
+        from mcp_audit.injection import InjectionDetector
+
+        injection_detector = InjectionDetector()
+
+    pin_store = None
+    if pin_check:
+        from mcp_audit.pinning import PinStore
+
+        pin_store = PinStore()
 
     audits: list[ServerAudit] = [ServerAudit(server=s, connection_status="pending") for s in servers]
 
@@ -188,9 +242,23 @@ async def _run_scan_core(
             else:
                 raw_findings = list(audit.permissions)
 
+            # Optional LLM augmentation for low-confidence tools
+            if llm_analyzer is not None:
+                llm_findings = await llm_analyzer.analyze_server(audit.tools, raw_findings)
+                raw_findings = raw_findings + llm_findings
+
             # Apply user overrides between analysis and scoring
             audit.permissions = override_applier.apply(srv.name, raw_findings)
             audit.risk_score = scorer.score_server(audit.permissions)
+
+            # Optional injection detection
+            if injection_detector is not None:
+                audit.injection_findings = injection_detector.scan_server(audit.tools)
+
+            # Optional pin drift check
+            if pin_store is not None:
+                audit.drift_findings = pin_store.check_drift(srv.name, audit.tools)
+
             audits[idx] = audit
             progress.advance(task_id)
 
@@ -223,6 +291,9 @@ async def _run_scan(
     verbose: bool,
     extra_config: str | None,
     override_config_path: str | None,
+    inject_check: bool = False,
+    pin_check: bool = False,
+    llm_analysis: bool = False,
 ) -> None:
     """CLI scan entrypoint — calls _run_scan_core then renders output."""
     if not discover_all_configs(None) and not extra_config:
@@ -236,7 +307,16 @@ async def _run_scan(
     override_applier = OverrideApplier(load_override_config(cfg_path))
     client_list = _parse_clients(clients)
 
-    report = await _run_scan_core(skip_connect, client_list, timeout, extra_config, override_applier)
+    report = await _run_scan_core(
+        skip_connect,
+        client_list,
+        timeout,
+        extra_config,
+        override_applier,
+        inject_check=inject_check,
+        pin_check=pin_check,
+        llm_analysis=llm_analysis,
+    )
 
     if not report.audits:
         console.print("[yellow]No MCP servers found.[/yellow]")
@@ -290,7 +370,72 @@ def _truncate(s: str, max_len: int) -> str:
     return s if len(s) <= max_len else s[: max_len - 1] + "…"
 
 
-# Register watch subcommand
+# Register watch, monitor, serve, pin subcommands
+from mcp_audit.monitor import monitor_command  # noqa: E402
+from mcp_audit.server import serve_command  # noqa: E402
 from mcp_audit.watcher import watch_command  # noqa: E402
 
 main.add_command(watch_command)
+main.add_command(monitor_command)
+main.add_command(serve_command)
+
+
+# ---------------------------------------------------------------------------
+# pin subcommand
+# ---------------------------------------------------------------------------
+
+
+@main.command("pin")
+@click.option("--server", "server_name", default=None, help="Pin only this server by name.")
+@click.option("--clear", "clear_server", default=None, metavar="NAME", help="Remove pins for a server.")
+@click.option("--status", is_flag=True, default=False, help="Show pin coverage summary.")
+@click.option(
+    "--pin-file",
+    "pin_file",
+    default=None,
+    metavar="PATH",
+    help="Override default pin file location.",
+)
+def pin_command(
+    server_name: str | None,
+    clear_server: str | None,
+    status: bool,
+    pin_file: str | None,
+) -> None:
+    """Pin tool schemas for drift detection on subsequent scans."""
+    from mcp_audit.pinning import DEFAULT_PIN_PATH, PinStore
+
+    store = PinStore(path=Path(pin_file) if pin_file else DEFAULT_PIN_PATH)
+
+    if clear_server:
+        store.remove_server(clear_server)
+        console.print(f"[green]Removed pins for server '{clear_server}'.[/green]")
+        return
+
+    if status:
+        pinned = store.pinned_servers()
+        if not pinned:
+            console.print("[dim]No servers pinned.[/dim]")
+        else:
+            for name in pinned:
+                count = store.tool_count(name)
+                console.print(f"  [cyan]{name}[/cyan]: {count} tool(s) pinned")
+        return
+
+    # Pin servers
+    anyio.run(_run_pin, server_name, store)
+
+
+async def _run_pin(server_name: str | None, store: object) -> None:
+    from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
+    from mcp_audit.pinning import PinStore as PS
+
+    assert isinstance(store, PS)
+    override_applier = OverrideApplier(load_override_config(DEFAULT_OVERRIDE_PATH))
+    report = await _run_scan_core(True, None, 10, None, override_applier)
+
+    for audit in report.audits:
+        if server_name and audit.server.name != server_name:
+            continue
+        store.pin_server(audit.server.name, audit.tools)
+        console.print(f"[green]Pinned {len(audit.tools)} tool(s) for '{audit.server.name}'.[/green]")

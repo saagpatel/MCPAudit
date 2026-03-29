@@ -10,6 +10,8 @@ from typing import Any
 from mcp_audit.models import (
     AuditReport,
     Confidence,
+    InjectionFinding,
+    InjectionSeverity,
     PermissionCategory,
     PermissionFinding,
     ServerAudit,
@@ -39,7 +41,19 @@ _RULE_DESCRIPTIONS: dict[PermissionCategory, str] = {
 }
 
 # Confidence levels that trigger at least a "warning" in SARIF
-_HIGH_CONFIDENCE = {Confidence.DECLARED, Confidence.HIGH, Confidence.MANUAL}
+_HIGH_CONFIDENCE = {Confidence.DECLARED, Confidence.HIGH, Confidence.MANUAL, Confidence.LLM}
+
+# Injection-specific SARIF rule IDs
+_INJECTION_RULE_IDS: dict[InjectionSeverity, str] = {
+    InjectionSeverity.HIGH: "MCP007",
+    InjectionSeverity.MEDIUM: "MCP008",
+    InjectionSeverity.LOW: "MCP008",  # LOW → same rule as MEDIUM, different level
+}
+
+_INJECTION_RULE_DESCRIPTIONS = {
+    "MCP007": "High-severity prompt injection detected in tool description",
+    "MCP008": "Suspicious content detected in tool description",
+}
 
 
 class SarifGenerator:
@@ -71,8 +85,8 @@ class SarifGenerator:
         }
 
     def _make_rules(self) -> list[dict[str, Any]]:
-        """One driver rule per PermissionCategory."""
-        return [
+        """One driver rule per PermissionCategory plus injection rules MCP007/MCP008."""
+        perm_rules = [
             {
                 "id": rule_id,
                 "name": cat.value.replace("_", " ").title().replace(" ", ""),
@@ -82,13 +96,26 @@ class SarifGenerator:
             }
             for cat, rule_id in _RULE_IDS.items()
         ]
+        injection_rules = [
+            {
+                "id": rule_id,
+                "name": f"PromptInjection{rule_id}",
+                "shortDescription": {"text": desc},
+                "helpUri": "https://github.com/saagpatel/mcp-audit#readme",
+                "properties": {"category": "prompt_injection"},
+            }
+            for rule_id, desc in _INJECTION_RULE_DESCRIPTIONS.items()
+        ]
+        return perm_rules + injection_rules
 
     def _make_results(self, report: AuditReport) -> list[dict[str, Any]]:
-        """One result per (server, tool, category) triple."""
+        """One result per (server, tool, category) triple, plus injection findings."""
         results: list[dict[str, Any]] = []
         for audit in report.audits:
             for finding in audit.permissions:
                 results.append(self._make_result(finding, audit))
+            for inj in audit.injection_findings:
+                results.append(self._make_injection_result(inj, audit))
         return results
 
     def _finding_level(self, finding: PermissionFinding, audit: ServerAudit) -> str:
@@ -99,6 +126,30 @@ class SarifGenerator:
         if composite >= 3.0 or finding.confidence in _HIGH_CONFIDENCE:
             return "warning"
         return "note"
+
+    def _injection_level(self, finding: InjectionFinding) -> str:
+        if finding.severity == InjectionSeverity.HIGH:
+            return "error"
+        if finding.severity == InjectionSeverity.MEDIUM:
+            return "warning"
+        return "note"
+
+    def _make_injection_result(self, finding: InjectionFinding, audit: ServerAudit) -> dict[str, Any]:
+        """Build a SARIF result for a prompt injection finding."""
+        rule_id = _INJECTION_RULE_IDS[finding.severity]
+        level = self._injection_level(finding)
+        config_path = audit.server.config_path
+        uri = Path(config_path).as_uri() if config_path else "file:///unknown"
+        msg = (
+            f"Prompt injection pattern '{finding.pattern_name}' detected in tool "
+            f"'{finding.tool_name}' on server '{audit.server.name}': {finding.description}"
+        )
+        return {
+            "ruleId": rule_id,
+            "level": level,
+            "message": {"text": msg},
+            "locations": [{"physicalLocation": {"artifactLocation": {"uri": uri}}}],
+        }
 
     def _make_result(self, finding: PermissionFinding, audit: ServerAudit) -> dict[str, Any]:
         """Build a single SARIF result object."""

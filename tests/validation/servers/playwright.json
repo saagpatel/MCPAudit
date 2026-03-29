@@ -1,0 +1,149 @@
+{
+	"server_name": "server-playwright",
+	"description": "@modelcontextprotocol/server-playwright — browser automation via Playwright",
+	"tools": [
+		{
+			"name": "playwright_navigate",
+			"description": "Navigate to a URL in the browser.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"url": { "type": "string" },
+					"timeout": { "type": "number" },
+					"waitUntil": { "type": "string" }
+				},
+				"required": ["url"]
+			}
+		},
+		{
+			"name": "playwright_screenshot",
+			"description": "Take a screenshot of the current page or a specific element.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"name": { "type": "string" },
+					"selector": { "type": "string" },
+					"fullPage": { "type": "boolean" }
+				},
+				"required": ["name"]
+			}
+		},
+		{
+			"name": "playwright_click",
+			"description": "Click an element on the page.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"selector": { "type": "string" }
+				},
+				"required": ["selector"]
+			}
+		},
+		{
+			"name": "playwright_fill",
+			"description": "Fill out an input field.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"selector": { "type": "string" },
+					"value": { "type": "string" }
+				},
+				"required": ["selector", "value"]
+			}
+		},
+		{
+			"name": "playwright_evaluate",
+			"description": "Execute JavaScript in the browser console.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"script": { "type": "string" }
+				},
+				"required": ["script"]
+			}
+		},
+		{
+			"name": "playwright_get_visible_text",
+			"description": "Get the visible text content of the current page.",
+			"input_schema": {
+				"type": "object",
+				"properties": {}
+			}
+		},
+		{
+			"name": "playwright_get_visible_html",
+			"description": "Get the visible HTML content of the current page.",
+			"input_schema": {
+				"type": "object",
+				"properties": {}
+			}
+		},
+		{
+			"name": "playwright_go_back",
+			"description": "Go back to the previous page.",
+			"input_schema": {
+				"type": "object",
+				"properties": {}
+			}
+		},
+		{
+			"name": "playwright_go_forward",
+			"description": "Go forward to the next page.",
+			"input_schema": {
+				"type": "object",
+				"properties": {}
+			}
+		},
+		{
+			"name": "playwright_drag",
+			"description": "Drag an element to a target location.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"sourceSelector": { "type": "string" },
+					"targetSelector": { "type": "string" }
+				},
+				"required": ["sourceSelector", "targetSelector"]
+			}
+		},
+		{
+			"name": "playwright_select_option",
+			"description": "Select an element on the page using Select element.",
+			"input_schema": {
+				"type": "object",
+				"properties": {
+					"selector": { "type": "string" },
+					"value": { "type": "string" }
+				},
+				"required": ["selector", "value"]
+			}
+		}
+	],
+	"expected_findings": [
+		{
+			"tool": "playwright_navigate",
+			"categories": ["network"],
+			"min_confidence": "medium"
+		},
+		{
+			"tool": "playwright_evaluate",
+			"categories": ["shell_execution"],
+			"min_confidence": "medium"
+		},
+		{
+			"tool": "playwright_screenshot",
+			"categories": ["network"],
+			"min_confidence": "low"
+		},
+		{
+			"tool": "playwright_click",
+			"categories": ["network"],
+			"min_confidence": "low"
+		},
+		{
+			"tool": "playwright_fill",
+			"categories": ["network"],
+			"min_confidence": "low"
+		}
+	]
+}
