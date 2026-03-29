@@ -35,6 +35,19 @@ class Confidence(StrEnum):
     MEDIUM = "medium"  # Single strong or multiple moderate
     LOW = "low"  # Weak/inferred
     MANUAL = "manual"  # From user override config
+    LLM = "llm"  # Classified by LLM — treated like HIGH confidence
+
+
+class InjectionSeverity(StrEnum):
+    HIGH = "high"  # Clear instruction override attempt
+    MEDIUM = "medium"  # Suspicious framing or hidden text
+    LOW = "low"  # Weak signal (unusual Unicode, odd formatting)
+
+
+class DriftStatus(StrEnum):
+    NEW = "new"  # Tool in current scan but not in pins
+    CHANGED = "changed"  # Tool hash differs from stored pin
+    REMOVED = "removed"  # Tool in pins but missing from current scan
 
 
 class ServerConfig(BaseModel):
@@ -80,6 +93,27 @@ class PermissionFinding(BaseModel):
     tool_name: str
 
 
+class InjectionFinding(BaseModel):
+    """A prompt injection threat detected in a tool's description or name."""
+
+    tool_name: str
+    severity: InjectionSeverity
+    pattern_name: str  # e.g. "ignore_instructions"
+    matched_text: str  # excerpt (max 200 chars)
+    description: str  # human-readable explanation
+
+
+class DriftFinding(BaseModel):
+    """A change detected between pinned and current tool schema."""
+
+    server_name: str
+    tool_name: str
+    status: DriftStatus
+    stored_hash: str | None = None  # None for NEW
+    current_hash: str | None = None  # None for REMOVED
+    pinned_at: datetime | None = None
+
+
 class RiskScore(BaseModel):
     """Multi-dimensional risk score for a server."""
 
@@ -102,6 +136,8 @@ class ServerAudit(BaseModel):
     risk_score: RiskScore | None = None
     has_annotations: bool = False
     annotation_coverage: float = 0.0  # Percentage of tools with annotations
+    injection_findings: list[InjectionFinding] = Field(default_factory=list)
+    drift_findings: list[DriftFinding] = Field(default_factory=list)
 
 
 class AuditReport(BaseModel):
