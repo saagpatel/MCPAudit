@@ -16,6 +16,10 @@ mcp-audit discovers MCP server configurations across Claude Desktop, Claude Code
 - **Infers** permission categories: file read/write, network access, shell execution, destructive operations, data exfiltration
 - **Scores** each server on a 0–10 composite risk scale across five dimensions
 - **Renders** a color-coded terminal report or machine-readable JSON/SARIF output
+- **Detects** prompt injection attempts in tool descriptions (adversarial instruction-override patterns)
+- **Pins** tool schemas and flags drift when a server's tools change between scans
+- **Monitors** live tool call traffic by proxying MCP stdio communication
+- **Integrates** as an MCP server for use directly from Claude Desktop or Claude Code
 - **Supports** user override configs to manually classify findings
 
 ## Install
@@ -32,6 +36,9 @@ pip install mcp-audit
 
 # With watch mode support
 pip install 'mcp-audit[watch]'
+
+# With LLM-enhanced analysis (uses Claude API)
+pip install 'mcp-audit[llm]'
 ```
 
 ## Quick start
@@ -54,6 +61,24 @@ mcp-audit scan --verbose
 
 # Re-scan whenever config files change
 mcp-audit watch
+
+# Check tool descriptions for prompt injection patterns
+mcp-audit scan --inject-check
+
+# Snapshot tool schemas and check for drift on re-scan
+mcp-audit pin
+mcp-audit scan --pin-check
+
+# LLM-enhanced analysis (requires ANTHROPIC_API_KEY and mcp-audit[llm])
+ANTHROPIC_API_KEY=sk-... mcp-audit scan --llm-analysis
+
+# Proxy a live MCP server and log tool call traffic
+mcp-audit monitor <server-name>
+mcp-audit monitor <server-name> --log calls.jsonl
+
+# Expose mcp-audit as an MCP server for Claude Desktop / Claude Code
+mcp-audit serve
+mcp-audit serve --install   # auto-register in detected Claude config files
 ```
 
 Sample output:
@@ -79,6 +104,9 @@ Commands:
   discover    List all configured MCP servers without connecting
   scan        Full audit: connect, enumerate, score, report
   watch       Re-scan on config file changes (requires mcp-audit[watch])
+  pin         Snapshot tool schemas for drift detection
+  monitor     Proxy a live MCP server and log tool call traffic
+  serve       Expose mcp-audit as an MCP server on stdio
 
 scan options:
   --json PATH              Write JSON report to PATH
@@ -90,10 +118,24 @@ scan options:
   --verbose                Show per-tool permission breakdown
   --config PATH            Scan a specific config file
   --override-config PATH   Override config YAML (default: ~/.mcp-audit.yaml)
+  --inject-check           Scan tool descriptions for prompt injection patterns
+  --pin-check              Compare tool schemas against stored pins; report drift
+  --llm-analysis           Augment heuristics with Claude API (requires ANTHROPIC_API_KEY)
 
 watch options:
   Same as scan, plus:
   --sarif PATH             Write SARIF on each re-scan
+
+pin options:
+  --server NAME            Pin a specific server only (default: all)
+  --clear NAME             Remove stored pins for a server
+  --status                 Show pin coverage summary
+
+monitor options:
+  --log PATH               Write JSONL event log to PATH
+
+serve options:
+  --install                Auto-register in detected Claude config files
 ```
 
 ## Override config
@@ -153,7 +195,7 @@ Add to `.github/workflows/security.yml`:
     sarif_file: mcp-findings.sarif
 ```
 
-Each finding maps to a SARIF rule (MCP001–MCP006):
+Each finding maps to a SARIF rule (MCP001–MCP008):
 
 | Rule ID | Category | Description |
 |---------|----------|-------------|
@@ -163,8 +205,32 @@ Each finding maps to a SARIF rule (MCP001–MCP006):
 | MCP004 | shell_execution | Shell command execution |
 | MCP005 | destructive | Destructive operations |
 | MCP006 | exfiltration | Data exfiltration capability |
+| MCP007 | injection_high | HIGH-severity prompt injection pattern detected |
+| MCP008 | injection_medium_low | MEDIUM/LOW-severity prompt injection pattern detected |
 
 Results with composite score ≥ 7.0 are reported as `error`; ≥ 3.0 or high-confidence findings as `warning`; others as `note`.
+
+## Claude Desktop / Claude Code integration
+
+Run mcp-audit as an MCP server so you can audit servers directly from Claude:
+
+```bash
+# Auto-register in Claude Desktop and/or Claude Code config
+mcp-audit serve --install
+
+# Or add manually to claude_desktop_config.json / .claude.json:
+# "mcpServers": { "mcp-audit": { "command": "mcp-audit", "args": ["serve"] } }
+```
+
+Once registered, Claude can call these tools:
+
+| Tool | What it does |
+|------|-------------|
+| `scan_mcp_servers` | Full audit of all discovered servers |
+| `get_high_risk_servers` | Servers with composite score ≥ 7.0 |
+| `check_server` | Audit a single server by name |
+| `get_injection_findings` | All prompt injection findings across servers |
+| `list_discovered_servers` | Names and clients of all configured servers |
 
 ## Architecture
 
@@ -187,6 +253,11 @@ mcp_audit/
 ├── report.py           Terminal (Rich) + JSON output
 ├── sarif.py            SARIF 2.1.0 output generator
 ├── watcher.py          Watch mode (watchfiles)
+├── injection.py        Prompt injection detector (pattern scan)
+├── pinning.py          Tool schema pinning + drift detection
+├── llm_analyzer.py     Optional LLM classification via Claude API
+├── monitor.py          Runtime monitor (stdio proxy + JSON-RPC logger)
+├── server.py           MCP server integration (serve subcommand)
 └── rules/
     ├── patterns.py     Keyword pattern dictionary
     └── weights.py      Category weights + confidence multipliers
@@ -221,10 +292,10 @@ ReportGenerator (terminal + JSON) + SarifGenerator (SARIF)
 | SARIF output | ✓ | No | Yes |
 | User overrides | ✓ | No | No |
 | Watch mode | ✓ | No | No |
-| Prompt injection detection | No | Yes | Yes |
+| Prompt injection detection | ✓ | Yes | Yes |
 | Zero API keys required | ✓ | No | No |
 
-mcp-audit focuses on **permission capability analysis** — what a server *can* do to your system. It does not detect prompt injection or malicious content in tool responses (different threat model).
+mcp-audit focuses on **permission capability analysis** — what a server *can* do to your system. It also detects adversarial prompt injection in tool descriptions. It does not detect malicious content in tool *responses* at runtime (different threat model).
 
 ## Contributing
 
