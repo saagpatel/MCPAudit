@@ -1,0 +1,73 @@
+"""Permission inference keyword patterns."""
+
+from mcp_audit.models import PermissionCategory
+
+# Patterns organized by signal strength.
+# Matching logic: scan tool name, description, and param names/descriptions.
+# Tool name matches weighted 3x. Description matches weighted 2x. Param matches weighted 1x.
+
+PERMISSION_PATTERNS: dict[PermissionCategory, dict[str, list[str]]] = {
+    PermissionCategory.FILE_READ: {
+        "strong": [
+            "read_file", "get_file", "list_directory", "list_files",
+            "search_files", "read_resource", "file_content", "get_directory",
+            "tree", "find_files", "stat_file", "file_info",
+        ],
+        "moderate": [
+            "path", "filepath", "filename", "directory", "folder",
+            "glob", "file_pattern", "working_directory",
+        ],
+        "weak": ["open", "load", "import", "source", "inspect"],
+    },
+    PermissionCategory.FILE_WRITE: {
+        "strong": [
+            "write_file", "create_file", "save_file", "edit_file",
+            "modify_file", "append_file", "replace_in_file", "patch_file",
+            "move_file", "copy_file", "rename_file", "mkdir",
+        ],
+        "moderate": [
+            "write", "save", "output_path", "destination",
+            "overwrite", "upsert",
+        ],
+        "weak": ["create", "update", "set", "put"],
+    },
+    PermissionCategory.NETWORK: {
+        "strong": [
+            "fetch", "http_request", "curl", "wget", "api_call",
+            "web_search", "send_request", "download", "web_fetch",
+            "scrape", "crawl",
+        ],
+        "moderate": [
+            "url", "endpoint", "host", "port", "webhook",
+            "api_key", "base_url", "headers",
+        ],
+        "weak": ["remote", "external", "online", "cloud"],
+    },
+    PermissionCategory.SHELL_EXEC: {
+        "strong": [
+            "execute_command", "run_command", "shell", "bash",
+            "terminal", "exec", "subprocess", "system_command",
+            "run_script", "eval", "spawn_process",
+        ],
+        "moderate": ["command", "script", "process", "spawn", "cmd"],
+        "weak": ["run", "execute"],
+    },
+    PermissionCategory.DESTRUCTIVE: {
+        "strong": [
+            "delete_file", "remove_file", "drop_table", "destroy",
+            "purge", "truncate", "wipe", "uninstall", "rm",
+            "rmdir", "drop_database",
+        ],
+        "moderate": ["delete", "remove", "drop", "clear", "reset"],
+        "weak": ["clean", "flush", "prune"],
+    },
+    PermissionCategory.EXFILTRATION: {
+        "strong": [
+            "send_email", "post_message", "upload", "publish",
+            "push", "send_notification", "webhook", "send_slack",
+            "post_to", "tweet", "broadcast",
+        ],
+        "moderate": ["send", "post", "share", "export", "transmit"],
+        "weak": ["output", "emit", "forward", "relay"],
+    },
+}

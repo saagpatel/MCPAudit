@@ -1,13 +1,25 @@
 """Click CLI entrypoint for mcp-audit."""
 
-import logging
+from __future__ import annotations
 
+import logging
+import platform
+import socket
+import time
+from datetime import UTC, datetime
+from pathlib import Path
+
+import anyio
 import click
 from rich.console import Console
-from rich.table import Table
+from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
+from mcp_audit.analyzer import PermissionAnalyzer
+from mcp_audit.connector import ServerConnector
 from mcp_audit.discovery import discover_all_configs
-from mcp_audit.models import ClientType
+from mcp_audit.models import AuditReport, ClientType, ServerAudit, ServerConfig
+from mcp_audit.report import ReportGenerator
+from mcp_audit.scorer import RiskScorer
 
 console = Console()
 
@@ -44,6 +56,8 @@ def discover(client_filter: str | None, verbose: bool) -> None:
     if not servers:
         console.print("[yellow]No MCP servers found.[/yellow]")
         return
+
+    from rich.table import Table
 
     table = Table(title=f"Discovered MCP Servers ({len(servers)} total)", show_lines=True)
     table.add_column("Name", style="bold cyan", no_wrap=True)
@@ -103,7 +117,118 @@ def scan(
     extra_config: str | None,
 ) -> None:
     """Full audit: discover servers, connect, enumerate tools, score risk, report."""
-    console.print("[yellow]scan command coming in Phase 1.[/yellow]")
+    anyio.run(_run_scan, json_output, skip_connect, clients, timeout, verbose, extra_config)
+
+
+async def _run_scan(
+    json_output: str | None,
+    skip_connect: bool,
+    clients: str | None,
+    timeout: int,
+    verbose: bool,
+    extra_config: str | None,
+) -> None:
+    start = time.monotonic()
+
+    # 1. Discover servers
+    client_list = _parse_clients(clients)
+    servers = discover_all_configs(client_list)
+
+    if extra_config:
+        extra_servers = _parse_extra_config(Path(extra_config))
+        servers = servers + extra_servers
+
+    if not servers:
+        console.print("[yellow]No MCP servers found.[/yellow]")
+        return
+
+    # 2. Connect / analyze / score each server concurrently
+    connector = ServerConnector(timeout=float(timeout))
+    analyzer = PermissionAnalyzer()
+    scorer = RiskScorer()
+
+    audits: list[ServerAudit] = [
+        ServerAudit(server=s, connection_status="pending") for s in servers
+    ]
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        TimeElapsedColumn(),
+        console=console,
+        transient=True,
+    ) as progress:
+        task_id = progress.add_task(
+            f"Auditing {len(servers)} server(s)...", total=len(servers)
+        )
+
+        async def audit_one(idx: int, srv: ServerConfig) -> None:
+            if skip_connect:
+                audit = connector.skip_connect_audit(srv)
+            else:
+                audit = await connector.connect(srv)
+
+            if not skip_connect or not audit.permissions:
+                audit.permissions = analyzer.analyze_server(audit.tools)
+
+            audit.risk_score = scorer.score_server(audit.permissions)
+            audits[idx] = audit
+            progress.advance(task_id)
+
+        async with anyio.create_task_group() as tg:
+            for i, srv in enumerate(servers):
+                tg.start_soon(audit_one, i, srv)
+
+    # 3. Build top-level report
+    report = AuditReport(
+        scan_timestamp=datetime.now(UTC),
+        hostname=socket.gethostname(),
+        os_platform=platform.system(),
+        servers_discovered=len(servers),
+        servers_connected=sum(1 for a in audits if a.connection_status == "connected"),
+        servers_failed=sum(1 for a in audits if a.connection_status in ("failed", "timeout")),
+        total_tools=sum(len(a.tools) for a in audits),
+        high_risk_servers=sum(
+            1 for a in audits if a.risk_score is not None and a.risk_score.composite >= 7.0
+        ),
+        audits=audits,
+        scan_duration_seconds=time.monotonic() - start,
+    )
+
+    # 4. Render
+    gen = ReportGenerator(console=console)
+    gen.render_terminal(report, verbose=verbose)
+
+    if json_output:
+        gen.render_json(report, Path(json_output))
+
+
+def _parse_clients(clients_str: str | None) -> list[ClientType] | None:
+    if not clients_str:
+        return None
+    result: list[ClientType] = []
+    for part in clients_str.split(","):
+        part = part.strip()
+        try:
+            result.append(ClientType(part))
+        except ValueError:
+            valid = ", ".join(c.value for c in ClientType)
+            console.print(f"[red]Unknown client '{part}'. Valid values: {valid}[/red]")
+            raise SystemExit(1)
+    return result or None
+
+
+def _parse_extra_config(path: Path) -> list[ServerConfig]:
+    """Attempt to parse a standalone config file using Claude Code discoverer as fallback."""
+    if not path.exists():
+        console.print(f"[red]Config file not found: {path}[/red]")
+        return []
+    try:
+        from mcp_audit.discovery.claude_code import ClaudeCodeDiscoverer
+        return ClaudeCodeDiscoverer().parse(path)
+    except Exception as exc:
+        console.print(f"[red]Failed to parse {path}: {exc}[/red]")
+        return []
 
 
 def _truncate(s: str, max_len: int) -> str:
