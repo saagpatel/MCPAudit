@@ -1,0 +1,13 @@
+// Cursor MCP config — JSONC format with comments and trailing commas
+{
+  "mcpServers": {
+    // A shell execution server
+    "shell-runner": {
+      "command": "node",
+      "args": ["./mcp-shell/index.js"],
+      "env": {
+        "SHELL_ALLOWED_DIRS": "/tmp",
+      },
+    },
+  },
+}

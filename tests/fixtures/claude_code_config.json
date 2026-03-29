@@ -1,0 +1,41 @@
+{
+	"numStartups": 42,
+	"mcpServers": {
+		"filesystem": {
+			"type": "stdio",
+			"command": "npx",
+			"args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+			"env": {
+				"NODE_ENV": "production"
+			}
+		},
+		"github-http": {
+			"type": "http",
+			"url": "https://api.example.com/mcp",
+			"headers": {
+				"Authorization": "Bearer REDACTED",
+				"X-Custom-Header": "REDACTED"
+			}
+		}
+	},
+	"projects": {
+		"/Users/dev/my-project": {
+			"allowedTools": [],
+			"mcpServers": {
+				"project-db": {
+					"type": "stdio",
+					"command": "python",
+					"args": ["-m", "my_mcp_server"],
+					"env": {
+						"DATABASE_URL": "REDACTED",
+						"SECRET_KEY": "REDACTED"
+					}
+				}
+			}
+		},
+		"/Users/dev/another-project": {
+			"allowedTools": [],
+			"mcpServers": {}
+		}
+	}
+}
