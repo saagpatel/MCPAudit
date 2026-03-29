@@ -7,7 +7,7 @@ from mcp_audit.rules.patterns import PERMISSION_PATTERNS
 _STRENGTH_SCORES: dict[str, int] = {"strong": 3, "moderate": 2, "weak": 1}
 
 # Weighted score thresholds for confidence levels
-_HIGH_THRESHOLD = 6   # ≥2 strong name hits (3*weight=3 * 2 = 6)
+_HIGH_THRESHOLD = 6  # ≥2 strong name hits (3*weight=3 * 2 = 6)
 _MEDIUM_THRESHOLD = 2
 _LOW_THRESHOLD = 1
 
@@ -31,7 +31,8 @@ class PermissionAnalyzer:
         suppressed = self._suppressed_categories(tool.annotations)
 
         keyword_findings = [
-            f for f in self._keyword_findings(tool)
+            f
+            for f in self._keyword_findings(tool)
             if f.category not in annotation_categories and f.category not in suppressed
         ]
 
@@ -61,34 +62,40 @@ class PermissionAnalyzer:
 
         # readOnlyHint: None treated as false (no FILE_READ from annotation alone)
         if ann.read_only_hint is True:
-            findings.append(PermissionFinding(
-                category=PermissionCategory.FILE_READ,
-                confidence=Confidence.DECLARED,
-                evidence=["readOnlyHint=true"],
-                tool_name=tool.name,
-            ))
+            findings.append(
+                PermissionFinding(
+                    category=PermissionCategory.FILE_READ,
+                    confidence=Confidence.DECLARED,
+                    evidence=["readOnlyHint=true"],
+                    tool_name=tool.name,
+                )
+            )
 
         # destructiveHint: None treated as true
         if ann.destructive_hint is True or ann.destructive_hint is None:
             _d = ann.destructive_hint
             evidence = "destructiveHint=true" if _d is True else "destructiveHint=null (spec default: true)"
-            findings.append(PermissionFinding(
-                category=PermissionCategory.DESTRUCTIVE,
-                confidence=Confidence.DECLARED,
-                evidence=[evidence],
-                tool_name=tool.name,
-            ))
+            findings.append(
+                PermissionFinding(
+                    category=PermissionCategory.DESTRUCTIVE,
+                    confidence=Confidence.DECLARED,
+                    evidence=[evidence],
+                    tool_name=tool.name,
+                )
+            )
 
         # openWorldHint: None treated as true
         if ann.open_world_hint is True or ann.open_world_hint is None:
             _o = ann.open_world_hint
             evidence = "openWorldHint=true" if _o is True else "openWorldHint=null (spec default: true)"
-            findings.append(PermissionFinding(
-                category=PermissionCategory.NETWORK,
-                confidence=Confidence.DECLARED,
-                evidence=[evidence],
-                tool_name=tool.name,
-            ))
+            findings.append(
+                PermissionFinding(
+                    category=PermissionCategory.NETWORK,
+                    confidence=Confidence.DECLARED,
+                    evidence=[evidence],
+                    tool_name=tool.name,
+                )
+            )
 
         return findings
 
@@ -133,12 +140,14 @@ class PermissionAnalyzer:
             else:
                 confidence = Confidence.LOW
 
-            findings.append(PermissionFinding(
-                category=category,
-                confidence=confidence,
-                evidence=evidence_list,
-                tool_name=tool.name,
-            ))
+            findings.append(
+                PermissionFinding(
+                    category=category,
+                    confidence=confidence,
+                    evidence=evidence_list,
+                    tool_name=tool.name,
+                )
+            )
 
         return findings
 

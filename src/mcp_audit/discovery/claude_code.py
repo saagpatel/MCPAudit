@@ -107,9 +107,7 @@ class ClaudeCodeDiscoverer(ConfigDiscoverer):
                 if not isinstance(project_data, dict):
                     continue
                 project_servers = project_data.get("mcpServers")
-                results.extend(
-                    _extract_servers(project_servers, config_path, str(project_path))
-                )
+                results.extend(_extract_servers(project_servers, config_path, str(project_path)))
 
         logger.debug("Claude Code: found %d servers in %s", len(results), config_path)
         return results

@@ -1,0 +1,15 @@
+overrides:
+  - server: "test-server"
+    tool: "read_file"
+    permissions:
+      file_read: true
+      file_write: false
+    notes: "Manually verified read-only"
+  - server: "*"
+    tool: "safe_tool"
+    permissions:
+      shell_execution: false
+  - server: "test-server"
+    tool: "*"
+    permissions:
+      network: false

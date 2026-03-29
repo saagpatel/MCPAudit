@@ -86,9 +86,7 @@ class ReportGenerator:
             for tool in audit.tools:
                 tool_findings = findings_by_tool.get(tool.name, [])
                 if tool_findings:
-                    perm_str = ", ".join(
-                        f"{f.category.value}({f.confidence.value})" for f in tool_findings
-                    )
+                    perm_str = ", ".join(f"{f.category.value}({f.confidence.value})" for f in tool_findings)
                 else:
                     perm_str = "[dim]none[/dim]"
                 sub.add_row(tool.name, perm_str)

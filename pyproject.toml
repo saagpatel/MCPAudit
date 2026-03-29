@@ -3,10 +3,23 @@ name = "mcp-audit"
 version = "0.1.0"
 description = "MCP Permission Auditor — scan, enumerate, and risk-score all locally configured MCP servers"
 readme = "README.md"
+license = { text = "MIT" }
 authors = [
     { name = "saagpatel", email = "saagarpatel08@gmail.com" }
 ]
 requires-python = ">=3.11"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+]
 dependencies = [
     "click>=8.0",
     "rich>=13.0",
@@ -16,6 +29,14 @@ dependencies = [
     "pydantic>=2.0",
     "pyyaml>=6.0",
 ]
+
+[project.optional-dependencies]
+watch = ["watchfiles>=0.21"]
+
+[project.urls]
+Homepage = "https://github.com/saagpatel/mcp-audit"
+Repository = "https://github.com/saagpatel/mcp-audit"
+Issues = "https://github.com/saagpatel/mcp-audit/issues"
 
 [project.scripts]
 mcp-audit = "mcp_audit.cli:main"
@@ -45,4 +66,5 @@ dev = [
     "pytest>=9.0.2",
     "pytest-anyio>=0.0.0",
     "ruff>=0.15.8",
+    "types-pyyaml>=6.0",
 ]

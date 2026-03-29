@@ -197,9 +197,7 @@ class TestVSCodeDiscoverer:
 class TestWindsurfDiscoverer:
     def test_parses_windsurf_config(self, tmp_path: Path) -> None:
         config = tmp_path / "mcp_config.json"
-        config.write_text(
-            '{"mcpServers": {"ws-tool": {"command": "node", "args": ["server.js"]}}}'
-        )
+        config.write_text('{"mcpServers": {"ws-tool": {"command": "node", "args": ["server.js"]}}}')
         discoverer = WindsurfDiscoverer()
         servers = discoverer.parse(config)
 
@@ -219,18 +217,19 @@ class TestWindsurfDiscoverer:
 
 
 class TestDiscoverAllConfigs:
-    def test_client_filter_runs_only_matching_discoverer(
-        self, fixtures_dir: Path, tmp_path: Path
-    ) -> None:
+    def test_client_filter_runs_only_matching_discoverer(self, fixtures_dir: Path, tmp_path: Path) -> None:
         """Only ClaudeCodeDiscoverer should run when filtering to claude_code."""
-        with patch.object(
-            ClaudeCodeDiscoverer,
-            "config_paths",
-            return_value=[fixtures_dir / "claude_code_config.json"],
-        ), patch.object(
-            ClaudeDesktopDiscoverer,
-            "config_paths",
-            return_value=[tmp_path / "nonexistent.json"],
+        with (
+            patch.object(
+                ClaudeCodeDiscoverer,
+                "config_paths",
+                return_value=[fixtures_dir / "claude_code_config.json"],
+            ),
+            patch.object(
+                ClaudeDesktopDiscoverer,
+                "config_paths",
+                return_value=[tmp_path / "nonexistent.json"],
+            ),
         ):
             servers = discover_all_configs([ClientType.CLAUDE_CODE])
 

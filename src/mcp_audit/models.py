@@ -31,10 +31,10 @@ class PermissionCategory(StrEnum):
 
 class Confidence(StrEnum):
     DECLARED = "declared"  # From MCP tool annotations
-    HIGH = "high"          # Multiple strong keyword matches
-    MEDIUM = "medium"      # Single strong or multiple moderate
-    LOW = "low"            # Weak/inferred
-    MANUAL = "manual"      # From user override config
+    HIGH = "high"  # Multiple strong keyword matches
+    MEDIUM = "medium"  # Single strong or multiple moderate
+    LOW = "low"  # Weak/inferred
+    MANUAL = "manual"  # From user override config
 
 
 class ServerConfig(BaseModel):
@@ -46,9 +46,9 @@ class ServerConfig(BaseModel):
     project_path: str | None = None  # None = global scope, str = project-scoped
     command: str | None = None
     args: list[str] = Field(default_factory=list)
-    env_keys: list[str] = Field(default_factory=list)   # Key names only, NEVER values
+    env_keys: list[str] = Field(default_factory=list)  # Key names only, NEVER values
     transport: TransportType = TransportType.STDIO
-    url: str | None = None                               # For HTTP/SSE transport
+    url: str | None = None  # For HTTP/SSE transport
     headers_keys: list[str] = Field(default_factory=list)  # Header key names for HTTP, NEVER values
 
 
@@ -56,10 +56,10 @@ class ToolAnnotations(BaseModel):
     """MCP tool annotations (hints about behavior)."""
 
     title: str | None = None
-    read_only_hint: bool | None = None    # MCP default: false
+    read_only_hint: bool | None = None  # MCP default: false
     destructive_hint: bool | None = None  # MCP default: true
-    idempotent_hint: bool | None = None   # MCP default: false
-    open_world_hint: bool | None = None   # MCP default: true
+    idempotent_hint: bool | None = None  # MCP default: false
+    open_world_hint: bool | None = None  # MCP default: true
 
 
 class ToolInfo(BaseModel):

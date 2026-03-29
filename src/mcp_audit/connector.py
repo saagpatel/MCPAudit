@@ -32,10 +32,14 @@ KNOWN_SERVER_COMMANDS: dict[str, list[PermissionCategory]] = {
     "brave-search": [PermissionCategory.NETWORK],
     "server-brave-search": [PermissionCategory.NETWORK],
     "server-postgres": [
-        PermissionCategory.FILE_READ, PermissionCategory.FILE_WRITE, PermissionCategory.DESTRUCTIVE
+        PermissionCategory.FILE_READ,
+        PermissionCategory.FILE_WRITE,
+        PermissionCategory.DESTRUCTIVE,
     ],
     "server-sqlite": [
-        PermissionCategory.FILE_READ, PermissionCategory.FILE_WRITE, PermissionCategory.DESTRUCTIVE
+        PermissionCategory.FILE_READ,
+        PermissionCategory.FILE_WRITE,
+        PermissionCategory.DESTRUCTIVE,
     ],
     "server-puppeteer": [PermissionCategory.NETWORK, PermissionCategory.FILE_WRITE],
     "server-memory": [],
@@ -137,12 +141,14 @@ class ServerConnector:
             key_upper = key.upper()
             if any(sub in key_upper for sub in _CREDENTIAL_SUBSTRINGS):
                 if PermissionCategory.NETWORK not in {f.category for f in findings}:
-                    findings.append(PermissionFinding(
-                        category=PermissionCategory.NETWORK,
-                        confidence=Confidence.LOW,
-                        evidence=[f"env key {key!r} suggests remote API"],
-                        tool_name="(config)",
-                    ))
+                    findings.append(
+                        PermissionFinding(
+                            category=PermissionCategory.NETWORK,
+                            confidence=Confidence.LOW,
+                            evidence=[f"env key {key!r} suggests remote API"],
+                            tool_name="(config)",
+                        )
+                    )
                 break
 
         return ServerAudit(

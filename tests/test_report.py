@@ -36,9 +36,7 @@ def _base_report(audits: list[ServerAudit] | None = None) -> AuditReport:
         servers_connected=sum(1 for a in (audits or []) if a.connection_status == "connected"),
         servers_failed=0,
         total_tools=sum(len(a.tools) for a in (audits or [])),
-        high_risk_servers=sum(
-            1 for a in (audits or []) if a.risk_score and a.risk_score.composite >= 7.0
-        ),
+        high_risk_servers=sum(1 for a in (audits or []) if a.risk_score and a.risk_score.composite >= 7.0),
         audits=audits or [],
         scan_duration_seconds=1.23,
     )
@@ -52,14 +50,18 @@ def _make_audit(
 ) -> ServerAudit:
     config = make_server_config(name=name)
     tools = [make_tool(n) for n in (tool_names or [])]
-    permissions = [
-        PermissionFinding(
-            category=PermissionCategory.FILE_READ,
-            confidence=Confidence.HIGH,
-            evidence=["read_file"],
-            tool_name=tool_names[0] if tool_names else "test",
-        )
-    ] if tool_names else []
+    permissions = (
+        [
+            PermissionFinding(
+                category=PermissionCategory.FILE_READ,
+                confidence=Confidence.HIGH,
+                evidence=["read_file"],
+                tool_name=tool_names[0] if tool_names else "test",
+            )
+        ]
+        if tool_names
+        else []
+    )
     return ServerAudit(
         server=config,
         connection_status=status,
