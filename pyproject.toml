@@ -21,7 +21,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Application Frameworks",
 ]
 dependencies = [
-    "click>=8.0",
+    "click>=8.3.2",
     "rich>=13.0",
     "anyio>=4.0",
     "json5>=0.10",
