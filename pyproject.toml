@@ -67,5 +67,5 @@ dev = [
     "pytest>=9.0.2",
     "pytest-anyio>=0.0.0",
     "ruff>=0.15.8",
-    "types-pyyaml>=6.0",
+    "types-pyyaml>=6.0.12.20260408",
 ]
