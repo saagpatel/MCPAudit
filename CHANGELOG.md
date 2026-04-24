@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- README: corrected feature and CLI claims to match v0.3 code — permission
+  categories listed as the actual six (`file_read`, `file_write`, `network`,
+  `shell_execution`, `destructive`, `exfiltration`); risk-score description
+  replaced with the real per-category weighted-sum formula; drift workflow
+  documented via `mcp-audit pin` / `scan --pin-check` (replacing the
+  `baseline save`/`diff` shorthand); client list expanded to include VSCode
+  and Windsurf; scan filter flag corrected to `--clients`; pin storage path
+  corrected to `~/.mcp-audit-pins.yaml`; MCP SDK floor bumped to `1.27+`;
+  SARIF 2.1.0, `--inject-check`, `--llm-analysis`, and `mcp-audit[watch]`
+  extra added to the usage examples.
+
 ## [0.3.0] - 2025-01-01
 
 ### Added
