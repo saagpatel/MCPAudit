@@ -22,7 +22,7 @@ classifiers = [
 ]
 dependencies = [
     "click>=8.0",
-    "rich>=13.0",
+    "rich>=15.0.0",
     "anyio>=4.0",
     "json5>=0.10",
     "mcp>=1.0",
