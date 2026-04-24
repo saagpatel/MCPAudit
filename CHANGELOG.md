@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0a1] - 2026-04-24
+
+First public alpha. Version surfaced in all external launch materials (landing page, pitch deck, Product Hunt assets). Behaviour and public CLI surface are considered stable enough to audit real workstations; API surface may still shift before the `1.0.0` stable cut.
+
 ### Changed
 - README: corrected feature and CLI claims to match v0.3 code — permission
   categories listed as the actual six (`file_read`, `file_write`, `network`,
