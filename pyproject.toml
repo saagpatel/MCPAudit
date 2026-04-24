@@ -32,7 +32,7 @@ dependencies = [
 
 [project.optional-dependencies]
 watch = ["watchfiles>=1.1.1"]
-llm = ["anthropic>=0.40"]
+llm = ["anthropic>=0.97.0"]
 
 [project.urls]
 Homepage = "https://github.com/saagpatel/mcp-audit"
@@ -64,7 +64,7 @@ testpaths = ["tests"]
 [dependency-groups]
 dev = [
     "mypy>=1.19.1",
-    "pytest>=9.0.2",
+    "pytest>=9.0.3",
     "pytest-anyio>=0.0.0",
     "ruff>=0.15.8",
     "types-pyyaml>=6.0.12.20260408",
