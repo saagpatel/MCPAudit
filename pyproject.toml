@@ -31,7 +31,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-watch = ["watchfiles>=0.21"]
+watch = ["watchfiles>=1.1.1"]
 llm = ["anthropic>=0.40"]
 
 [project.urls]
