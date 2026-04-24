@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- Locked upgrade for four transitive dependencies flagged by Dependabot:
+  `cryptography` → 46.0.7 (buffer overflow on non-contiguous buffers,
+  GHSA-p423-j2cm-9vmq), `pytest` → 9.0.3 (vulnerable tmpdir handling,
+  GHSA-6w46-j5rx-g56g), `python-multipart` → 0.0.26 (DoS via large
+  multipart preamble/epilogue, GHSA-mj87-hwqh-73pj), and `pygments`
+  → 2.20.0 (ReDoS in GUID matching, GHSA-5239-wwwm-4pmq).
+
 ### Changed
 - README: corrected feature and CLI claims to match v0.3 code — permission
   categories listed as the actual six (`file_read`, `file_write`, `network`,

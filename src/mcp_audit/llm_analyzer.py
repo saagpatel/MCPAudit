@@ -62,7 +62,7 @@ class LLMAnalyzer:
 
     def __init__(self, api_key: str, model: str = _DEFAULT_MODEL) -> None:
         try:
-            import anthropic  # type: ignore[import-not-found]
+            import anthropic  # type: ignore[import-not-found, unused-ignore]
         except ImportError as exc:
             raise ImportError("anthropic package not installed. Run: pip install 'mcp-audit[llm]'") from exc
         self._client: Any = anthropic.Anthropic(api_key=api_key)
