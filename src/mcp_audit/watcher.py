@@ -69,7 +69,7 @@ async def _watch_loop(
     override_config_path: str | None,
 ) -> None:
     try:
-        from watchfiles import awatch  # type: ignore[import-not-found]
+        from watchfiles import awatch  # type: ignore[import-not-found, unused-ignore]
     except ImportError:
         _console.print("[red]watchfiles not installed. Run: pip install 'mcp-audit[watch]'[/red]")
         raise SystemExit(1)
