@@ -82,6 +82,10 @@ You can also use `make` if you prefer — see the [Makefile](Makefile) for all a
 
 6. **Open the PR** against `main`. Fill in the pull request template — especially the security implications section.
 
+## Automated Review
+
+PRs to MCPAudit run through Claude Code's [ultrareview](https://code.claude.com/docs/en/ultrareview) — a multi-agent code review that posts inline findings on the PR. Findings are advisory; reviewers (human) make the final merge decision. The review is non-blocking and typically completes in 5–10 minutes.
+
 ## Code style
 
 - Type hints on all public functions (mypy strict mode must pass)
