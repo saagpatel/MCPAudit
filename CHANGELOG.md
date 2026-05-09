@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `mcp-audit pin` now connects to MCP servers before writing schema pins, so
+  drift baselines contain real tool schemas instead of empty skip-connect scans.
+- The MCP server `get_injection_findings` tool now runs a connected scan with
+  injection checks enabled before returning findings.
+- Removed the case-conflicting duplicate pull request template from `.github/`.
+
+### Changed
+- Updated security and project notes to state the current scan trust boundary:
+  standard scans enumerate live MCP tool metadata, while `--skip-connect` is the
+  config-only mode.
+
 ### Security
 - Locked upgrade for four transitive dependencies flagged by Dependabot:
   `cryptography` → 46.0.7 (buffer overflow on non-contiguous buffers,
@@ -31,9 +43,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Watch mode (`--watch`) for continuous re-auditing via `watchfiles`
-- LLM-assisted risk narration via `anthropic` optional dependency (`--llm-explain`)
-- YAML output format support (`--format yaml`)
-- Schema drift detection across MCP server capability declarations
+- Optional LLM-assisted permission classification via `anthropic` optional dependency (`--llm-analysis`)
+- Schema drift detection across MCP server capability declarations through `mcp-audit pin` and `scan --pin-check`
+- SARIF 2.1.0 export support
 - Support for Python 3.13
 
 ### Changed
@@ -47,12 +59,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.0] - 2024-11-01
 
 ### Added
-- Prompt injection threat analysis across tool descriptions and resource URIs
-- Permission risk scoring with configurable severity thresholds (`--min-severity`)
+- Prompt injection threat analysis across tool names and descriptions
+- Permission risk scoring
 - Rich terminal output with color-coded risk levels
-- JSON output format (`--format json`) for CI pipeline integration
+- JSON output for CI pipeline integration
 - Support for Cursor, Windsurf, and VS Code MCP config locations
-- `--server` flag to audit a single named server in isolation
 
 ### Changed
 - Redesigned CLI using Click for composable subcommands

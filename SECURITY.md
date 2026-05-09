@@ -31,16 +31,18 @@ Understanding what MCPAudit does and does not do is important for evaluating its
 ### What MCPAudit does
 
 - Reads local MCP server configuration files (e.g., `claude_desktop_config.json`, Cursor/VS Code equivalents)
-- Statically analyzes server definitions: command paths, arguments, environment variables, declared tool schemas
-- Scores permission risk and flags potential prompt injection patterns in tool descriptions and resource URIs
-- Detects schema drift across capability declarations
-- **Does not make network calls to the audited MCP servers** — analysis is entirely local and static
+- During a standard `mcp-audit scan`, connects to configured MCP servers to enumerate declared tools and schemas
+- For stdio servers, starts the configured server command with timeout guards; for HTTP/SSE servers, opens a client connection to the configured URL
+- Scores permission risk and flags potential prompt injection patterns in tool names and descriptions
+- Detects schema drift across capability declarations with `mcp-audit pin` and `scan --pin-check`
+- Supports `--skip-connect` for config-only review when you do not want MCPAudit to spawn or connect to audited servers
 
 ### What MCPAudit does not do
 
-- MCPAudit does not execute, spawn, or connect to any MCP server during a standard audit run
+- MCPAudit does not call audited MCP tools; it only enumerates tool metadata
 - MCPAudit does not exfiltrate config data
-- MCPAudit does not modify MCP configs
+- MCPAudit does not modify MCP configs during scans
+- MCPAudit does not transmit data to a third-party API unless optional LLM analysis is explicitly requested
 - The `--watch` mode monitors local config file changes using `watchfiles` — it does not open any network ports
 
 ### Trust boundary
@@ -51,9 +53,9 @@ MCPAudit reads config files from your local filesystem. It trusts that the confi
 
 MCPAudit parses and displays content from MCP server configs, including tool descriptions that may be attacker-controlled. If a malicious MCP server is installed, its tool descriptions could contain content designed to manipulate AI assistants that consume MCPAudit's output. MCPAudit does not sanitize or escape tool description content before rendering it. Users should treat MCPAudit's output as untrusted data when piping it to AI systems.
 
-### LLM mode (`--llm-explain`)
+### LLM mode (`--llm-analysis`)
 
-When the optional `anthropic` dependency is installed and `--llm-explain` is used, MCPAudit sends tool descriptions and risk summaries to the Anthropic API. In this mode, content from audited MCP server configs is transmitted over the network to a third-party service. Do not use `--llm-explain` if your MCP configs contain sensitive information (API keys in args, internal hostnames, etc.).
+When the optional `anthropic` dependency is installed and `--llm-analysis` is used, MCPAudit sends selected tool names, descriptions, and parameter names to the Anthropic API for permission classification. In this mode, content from audited MCP server configs is transmitted over the network to a third-party service. Do not use `--llm-analysis` if your MCP configs contain sensitive information (API keys in args, internal hostnames, etc.).
 
 ---
 

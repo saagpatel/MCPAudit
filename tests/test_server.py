@@ -4,9 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
+from mcp_audit.models import AuditReport, InjectionFinding, InjectionSeverity, ServerAudit
 from mcp_audit.server import _MCP_AUDIT_SERVER_ENTRY, _build_mcp_server, _install_to_config
+from tests.conftest import make_server_config
 
 
 class TestInstallToConfig:
@@ -91,3 +96,57 @@ class TestBuildMcpServer:
     def test_server_has_correct_name(self) -> None:
         app = _build_mcp_server()
         assert app.name == "mcp-audit"
+
+
+@pytest.mark.anyio
+async def test_get_injection_findings_uses_connected_scan(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, object] = {}
+    finding = InjectionFinding(
+        tool_name="evil_tool",
+        severity=InjectionSeverity.HIGH,
+        pattern_name="ignore_instructions",
+        matched_text="ignore previous instructions",
+        description="Tool description attempts to override AI instructions",
+    )
+    audit = ServerAudit(
+        server=make_server_config(name="srv"),
+        connection_status="connected",
+        injection_findings=[finding],
+    )
+    report = AuditReport(
+        scan_timestamp=datetime.now(UTC),
+        hostname="test-host",
+        os_platform="test-os",
+        servers_discovered=1,
+        servers_connected=1,
+        servers_failed=0,
+        total_tools=0,
+        high_risk_servers=0,
+        audits=[audit],
+        scan_duration_seconds=0.01,
+    )
+
+    async def fake_run_scan_core(*args: object, **kwargs: object) -> AuditReport:
+        seen.update(kwargs)
+        return report
+
+    import mcp_audit.cli as cli
+
+    monkeypatch.setattr(cli, "_run_scan_core", fake_run_scan_core)
+
+    app = _build_mcp_server()
+    _content, metadata = await app.call_tool("get_injection_findings", {})
+    payload = json.loads(metadata["result"])
+
+    assert seen["skip_connect"] is False
+    assert seen["inject_check"] is True
+    assert payload == [
+        {
+            "server": "srv",
+            "tool": "evil_tool",
+            "severity": "high",
+            "pattern": "ignore_instructions",
+            "description": "Tool description attempts to override AI instructions",
+            "matched_text": "ignore previous instructions",
+        }
+    ]
