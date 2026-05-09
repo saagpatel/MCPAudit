@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   destructive shell patterns, and credential-like env key names.
 - Tool schema drift findings now include plain-language summaries, changed
   field hints, and suggested remediation in terminal and JSON reports.
+- `scan --policy` evaluates local YAML policy gates for severity thresholds,
+  denied permission categories, drift findings, and max server risk.
 
 ### Fixed
 - `mcp-audit pin` now connects to MCP servers before writing schema pins, so

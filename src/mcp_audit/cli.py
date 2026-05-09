@@ -120,6 +120,7 @@ def discover(client_filter: str | None, verbose: bool) -> None:
     metavar="PATH",
     help="Override config YAML (default: ~/.mcp-audit.yaml).",
 )
+@click.option("--policy", "policy_path", default=None, metavar="PATH", help="Local policy gate YAML.")
 @click.option(
     "--inject-check",
     is_flag=True,
@@ -144,6 +145,7 @@ def scan(
     verbose: bool,
     extra_config: str | None,
     override_config_path: str | None,
+    policy_path: str | None,
     inject_check: bool,
     pin_check: bool,
     llm_analysis: bool,
@@ -159,6 +161,7 @@ def scan(
         verbose,
         extra_config,
         override_config_path,
+        policy_path,
         inject_check,
         pin_check,
         llm_analysis,
@@ -295,6 +298,7 @@ async def _run_scan(
     verbose: bool,
     extra_config: str | None,
     override_config_path: str | None,
+    policy_path: str | None,
     inject_check: bool = False,
     pin_check: bool = False,
     llm_analysis: bool = False,
@@ -322,6 +326,16 @@ async def _run_scan(
         llm_analysis=llm_analysis,
     )
 
+    if policy_path:
+        from mcp_audit.policy import evaluate_policy, load_policy
+
+        try:
+            policy = load_policy(Path(policy_path))
+        except Exception as exc:
+            console.print(f"[red]Failed to load policy {policy_path}: {redact_text(str(exc))}[/red]")
+            raise SystemExit(1) from exc
+        report.policy_result = evaluate_policy(report, policy)
+
     if not report.audits:
         console.print("[yellow]No MCP servers found.[/yellow]")
         return
@@ -339,6 +353,9 @@ async def _run_scan(
 
         sarif_doc = SarifGenerator().generate(report)
         Path(sarif_output).write_text(_json.dumps(sarif_doc, indent=2))
+
+    if report.policy_result is not None and not report.policy_result.passed:
+        raise SystemExit(2)
 
 
 def _parse_clients(clients_str: str | None) -> list[ClientType] | None:

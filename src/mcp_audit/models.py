@@ -184,6 +184,23 @@ class RiskScore(BaseModel):
     exfiltration: float = Field(ge=0, le=10)
 
 
+class PolicyViolation(BaseModel):
+    """A local policy rule violation detected in an audit report."""
+
+    rule: str
+    message: str
+    server_name: str | None = None
+    tool_name: str | None = None
+    severity: str = "high"
+
+
+class PolicyResult(BaseModel):
+    """Result of evaluating an audit report against a local policy file."""
+
+    passed: bool
+    violations: list[PolicyViolation] = Field(default_factory=list)
+
+
 class ServerAudit(BaseModel):
     """Complete audit result for a single MCP server."""
 
@@ -212,3 +229,4 @@ class AuditReport(BaseModel):
     high_risk_servers: int  # composite >= 7.0
     audits: list[ServerAudit]
     scan_duration_seconds: float
+    policy_result: PolicyResult | None = None
