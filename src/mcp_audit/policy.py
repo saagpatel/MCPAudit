@@ -18,7 +18,11 @@ class PolicyConfig:
     """Parsed local policy gate configuration."""
 
     fail_on_severity: str | None = None
+    fail_on_permission_severity: str | None = None
+    fail_on_injection_severity: str | None = None
+    fail_on_capability_severity: str | None = None
     fail_on_drift: bool = False
+    required_pin_servers: list[str] = field(default_factory=list)
     denied_permissions: list[PermissionCategory] = field(default_factory=list)
     max_risk: float | None = None
     allow_servers: list[str] = field(default_factory=list)
@@ -31,6 +35,11 @@ class ServerPolicyConfig:
 
     denied_permissions: list[PermissionCategory] = field(default_factory=list)
     max_risk: float | None = None
+    fail_on_permission_severity: str | None = None
+    fail_on_injection_severity: str | None = None
+    fail_on_capability_severity: str | None = None
+    fail_on_drift: bool | None = None
+    require_pin: bool = False
 
 
 def load_policy(path: Path) -> PolicyConfig:
@@ -41,14 +50,14 @@ def load_policy(path: Path) -> PolicyConfig:
 
     fail_on = _mapping(raw.get("fail_on"), "fail_on")
     deny = _mapping(raw.get("deny"), "deny")
+    require = _mapping(raw.get("require"), "require")
+    pins = _mapping(require.get("pins"), "require.pins")
     server_rules = _server_rules(raw.get("servers"))
 
-    severity = fail_on.get("severity")
-    if severity is not None:
-        severity = str(severity).lower()
-        if severity not in _SEVERITY_RANK:
-            valid = ", ".join(_SEVERITY_RANK)
-            raise ValueError(f"Unknown policy severity '{severity}'. Valid values: {valid}.")
+    severity = _severity(fail_on.get("severity"), "fail_on.severity")
+    permission_severity = _severity(fail_on.get("permissions"), "fail_on.permissions")
+    injection_severity = _severity(fail_on.get("injection"), "fail_on.injection")
+    capability_severity = _severity(fail_on.get("capabilities"), "fail_on.capabilities")
 
     permissions = [_permission(value) for value in _sequence(deny.get("permissions"), "deny.permissions")]
 
@@ -60,7 +69,11 @@ def load_policy(path: Path) -> PolicyConfig:
 
     return PolicyConfig(
         fail_on_severity=severity,
+        fail_on_permission_severity=permission_severity,
+        fail_on_injection_severity=injection_severity,
+        fail_on_capability_severity=capability_severity,
         fail_on_drift=bool(fail_on.get("drift", False)),
+        required_pin_servers=[str(value) for value in _sequence(pins.get("servers"), "require.pins.servers")],
         denied_permissions=permissions,
         max_risk=max_risk,
         allow_servers=[str(value) for value in _sequence(raw.get("allow_servers"), "allow_servers")],
@@ -68,9 +81,20 @@ def load_policy(path: Path) -> PolicyConfig:
     )
 
 
-def evaluate_policy(report: AuditReport, policy: PolicyConfig) -> PolicyResult:
+def evaluate_policy(
+    report: AuditReport,
+    policy: PolicyConfig,
+    pin_store: object | None = None,
+) -> PolicyResult:
     """Evaluate a completed audit report against a local policy."""
     violations: list[PolicyViolation] = []
+    resolved_pin_store = pin_store
+    if (
+        policy.required_pin_servers or any(rule.require_pin for rule in policy.server_rules.values())
+    ) and resolved_pin_store is None:
+        from mcp_audit.pinning import PinStore
+
+        resolved_pin_store = PinStore()
 
     for audit in report.audits:
         server_name = audit.server.name
@@ -85,6 +109,19 @@ def evaluate_policy(report: AuditReport, policy: PolicyConfig) -> PolicyResult:
                     message=f"Server '{server_name}' is not listed in allow_servers.",
                 )
             )
+
+        require_pin = server_name in policy.required_pin_servers or server_rule.require_pin
+        if require_pin:
+            tool_count = _pin_tool_count(resolved_pin_store, server_name)
+            if tool_count == 0:
+                violations.append(
+                    PolicyViolation(
+                        rule="require.pins",
+                        server_name=server_name,
+                        severity="medium",
+                        message=f"Server '{server_name}' is required to have a pin baseline.",
+                    )
+                )
 
         max_risk = server_rule.max_risk if server_rule.max_risk is not None else policy.max_risk
         if max_risk is not None and audit.risk_score is not None:
@@ -101,13 +138,22 @@ def evaluate_policy(report: AuditReport, policy: PolicyConfig) -> PolicyResult:
                     )
                 )
 
-        if policy.fail_on_severity is not None:
-            threshold = _SEVERITY_RANK[policy.fail_on_severity]
+        permission_threshold = _effective_threshold(
+            server_rule.fail_on_permission_severity,
+            policy.fail_on_permission_severity,
+            policy.fail_on_severity,
+        )
+        if permission_threshold is not None:
+            threshold = _SEVERITY_RANK[permission_threshold]
             for permission_finding in audit.permissions:
                 if _SEVERITY_RANK[permission_finding.severity] >= threshold:
                     violations.append(
                         PolicyViolation(
-                            rule="fail_on.severity",
+                            rule=_threshold_rule(
+                                "permissions",
+                                policy.fail_on_severity,
+                                permission_threshold,
+                            ),
                             server_name=server_name,
                             tool_name=permission_finding.tool_name,
                             severity=permission_finding.severity,
@@ -118,13 +164,21 @@ def evaluate_policy(report: AuditReport, policy: PolicyConfig) -> PolicyResult:
                             ),
                         )
                     )
+
+        injection_threshold = _effective_threshold(
+            server_rule.fail_on_injection_severity,
+            policy.fail_on_injection_severity,
+            policy.fail_on_severity,
+        )
+        if injection_threshold is not None:
+            threshold = _SEVERITY_RANK[injection_threshold]
             for injection_finding in audit.injection_findings:
                 if _SEVERITY_RANK[injection_finding.severity.value] >= threshold:
                     violations.append(
                         PolicyViolation(
-                            rule="fail_on.severity",
+                            rule=_threshold_rule("injection", policy.fail_on_severity, injection_threshold),
                             server_name=server_name,
-                            tool_name=injection_finding.tool_name,
+                            tool_name=injection_finding.target_name or injection_finding.tool_name,
                             severity=injection_finding.severity.value,
                             message=(
                                 f"{injection_finding.rule_id} prompt-injection finding is "
@@ -132,11 +186,23 @@ def evaluate_policy(report: AuditReport, policy: PolicyConfig) -> PolicyResult:
                             ),
                         )
                     )
+
+        capability_threshold = _effective_threshold(
+            server_rule.fail_on_capability_severity,
+            policy.fail_on_capability_severity,
+            policy.fail_on_severity,
+        )
+        if capability_threshold is not None:
+            threshold = _SEVERITY_RANK[capability_threshold]
             for capability_finding in audit.capability_findings:
                 if _SEVERITY_RANK[capability_finding.severity] >= threshold:
                     violations.append(
                         PolicyViolation(
-                            rule="fail_on.severity",
+                            rule=_threshold_rule(
+                                "capabilities",
+                                policy.fail_on_severity,
+                                capability_threshold,
+                            ),
                             server_name=server_name,
                             tool_name=capability_finding.target_name,
                             severity=capability_finding.severity,
@@ -177,7 +243,10 @@ def evaluate_policy(report: AuditReport, policy: PolicyConfig) -> PolicyResult:
                     )
                 )
 
-        if policy.fail_on_drift:
+        fail_on_drift = (
+            server_rule.fail_on_drift if server_rule.fail_on_drift is not None else policy.fail_on_drift
+        )
+        if fail_on_drift:
             for drift_finding in audit.drift_findings:
                 violations.append(
                     PolicyViolation(
@@ -216,12 +285,40 @@ def _permission(value: Any) -> PermissionCategory:
         raise ValueError(f"Unknown permission category '{value}'. Valid values: {valid}.") from exc
 
 
+def _severity(value: Any, name: str) -> str | None:
+    if value is None:
+        return None
+    severity = str(value).lower()
+    if severity not in _SEVERITY_RANK:
+        valid = ", ".join(_SEVERITY_RANK)
+        raise ValueError(f"Unknown policy severity '{severity}'. Valid values: {valid}.")
+    return severity
+
+
+def _effective_threshold(*values: str | None) -> str | None:
+    return next((value for value in values if value is not None), None)
+
+
+def _threshold_rule(name: str, broad_threshold: str | None, effective_threshold: str) -> str:
+    return "fail_on.severity" if broad_threshold == effective_threshold else f"fail_on.{name}"
+
+
+def _pin_tool_count(pin_store: object | None, server_name: str) -> int:
+    if pin_store is None:
+        return 0
+    tool_count = getattr(pin_store, "tool_count", None)
+    if not callable(tool_count):
+        return 0
+    return int(tool_count(server_name))
+
+
 def _server_rules(value: Any) -> dict[str, ServerPolicyConfig]:
     raw_rules = _mapping(value, "servers")
     rules: dict[str, ServerPolicyConfig] = {}
     for server_name, rule_value in raw_rules.items():
         rule = _mapping(rule_value, f"servers.{server_name}")
         deny = _mapping(rule.get("deny"), f"servers.{server_name}.deny")
+        fail_on = _mapping(rule.get("fail_on"), f"servers.{server_name}.fail_on")
         max_risk = rule.get("max_risk")
         if max_risk is not None:
             max_risk = float(max_risk)
@@ -236,5 +333,16 @@ def _server_rules(value: Any) -> dict[str, ServerPolicyConfig]:
                 )
             ],
             max_risk=max_risk,
+            fail_on_permission_severity=_severity(
+                fail_on.get("permissions"), f"servers.{server_name}.fail_on.permissions"
+            ),
+            fail_on_injection_severity=_severity(
+                fail_on.get("injection"), f"servers.{server_name}.fail_on.injection"
+            ),
+            fail_on_capability_severity=_severity(
+                fail_on.get("capabilities"), f"servers.{server_name}.fail_on.capabilities"
+            ),
+            fail_on_drift=bool(fail_on["drift"]) if "drift" in fail_on else None,
+            require_pin=bool(rule.get("require_pin", False)),
         )
     return rules

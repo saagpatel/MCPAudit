@@ -211,3 +211,17 @@ class TestAnalyzeCapabilities:
         network = [f for f in findings if f.category == PermissionCategory.NETWORK]
         assert network
         assert network[0].target_type == "resource"
+        assert "resource host 'example.com'" in network[0].evidence
+
+    def test_templated_resource_uri_yields_network_review_signal(self) -> None:
+        resource = ResourceInfo(uri="mcp://dataset/{tenant}/records", name="templated-records")
+        findings = analyzer.analyze_capabilities([], [resource])
+        network = [f for f in findings if f.category == PermissionCategory.NETWORK]
+        assert network
+        assert "resource URI contains template variables" in network[0].evidence
+
+    def test_benign_prompt_and_resource_have_no_capability_findings(self) -> None:
+        prompt = PromptInfo(name="summarize", description="Summarize selected text.", arguments=["topic"])
+        resource = ResourceInfo(uri="memo://daily-note", name="daily note", description="Local memo text")
+        findings = analyzer.analyze_capabilities([prompt], [resource])
+        assert findings == []

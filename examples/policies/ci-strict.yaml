@@ -1,7 +1,14 @@
 # Strict CI gate for reviewed MCP server sets.
 fail_on:
-  severity: high
+  permissions: medium
+  injection: medium
+  capabilities: medium
   drift: true
+require:
+  pins:
+    servers:
+      - github
+      - filesystem-readonly
 deny:
   permissions:
     - shell_execution

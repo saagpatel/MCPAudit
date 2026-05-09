@@ -146,6 +146,7 @@ class PermissionFinding(BaseModel):
 
 
 class CapabilityTarget(StrEnum):
+    TOOL = "tool"
     PROMPT = "prompt"
     RESOURCE = "resource"
 
@@ -199,6 +200,8 @@ class InjectionFinding(BaseModel):
     """A prompt injection threat detected in a tool's description or name."""
 
     tool_name: str
+    target_type: CapabilityTarget = CapabilityTarget.TOOL
+    target_name: str | None = None
     severity: InjectionSeverity
     pattern_name: str  # e.g. "ignore_instructions"
     matched_text: str  # excerpt (max 200 chars)

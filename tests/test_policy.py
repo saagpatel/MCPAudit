@@ -16,6 +16,8 @@ from mcp_audit.models import (
     Confidence,
     DriftFinding,
     DriftStatus,
+    InjectionFinding,
+    InjectionSeverity,
     PermissionCategory,
     PermissionFinding,
     RiskScore,
@@ -23,6 +25,14 @@ from mcp_audit.models import (
 )
 from mcp_audit.policy import evaluate_policy, load_policy
 from tests.conftest import make_server_config, make_tool
+
+
+class _FakePinStore:
+    def __init__(self, counts: dict[str, int]) -> None:
+        self._counts = counts
+
+    def tool_count(self, server_name: str) -> int:
+        return self._counts.get(server_name, 0)
 
 
 def _audit_report(audit: ServerAudit) -> AuditReport:
@@ -131,6 +141,109 @@ fail_on:
     result = evaluate_policy(_audit_report(audit), load_policy(policy_path))
     assert not result.passed
     assert result.violations[0].rule == "fail_on.drift"
+
+
+def test_policy_fails_on_required_pin_coverage(tmp_path: Path) -> None:
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text(
+        """
+require:
+  pins:
+    servers:
+      - srv
+"""
+    )
+    result = evaluate_policy(
+        _audit_report(_audit_with_shell_finding()),
+        load_policy(policy_path),
+        pin_store=_FakePinStore({}),
+    )
+    assert not result.passed
+    assert result.violations[0].rule == "require.pins"
+
+
+def test_policy_passes_required_pin_coverage_when_pinned(tmp_path: Path) -> None:
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text(
+        """
+require:
+  pins:
+    servers:
+      - srv
+"""
+    )
+    result = evaluate_policy(
+        _audit_report(_audit_with_shell_finding()),
+        load_policy(policy_path),
+        pin_store=_FakePinStore({"srv": 2}),
+    )
+    assert result.passed
+
+
+def test_server_policy_can_require_pin_coverage(tmp_path: Path) -> None:
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text(
+        """
+servers:
+  srv:
+    require_pin: true
+"""
+    )
+    result = evaluate_policy(
+        _audit_report(_audit_with_shell_finding()),
+        load_policy(policy_path),
+        pin_store=_FakePinStore({}),
+    )
+    assert not result.passed
+    assert result.violations[0].rule == "require.pins"
+
+
+def test_policy_can_threshold_injection_separately(tmp_path: Path) -> None:
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text(
+        """
+fail_on:
+  injection: medium
+"""
+    )
+    audit = _audit_with_shell_finding()
+    audit.permissions = []
+    audit.injection_findings = [
+        InjectionFinding(
+            tool_name="prompt://review",
+            severity=InjectionSeverity.MEDIUM,
+            pattern_name="role_injection",
+            matched_text="assistant:",
+            description="fake role",
+        )
+    ]
+    result = evaluate_policy(_audit_report(audit), load_policy(policy_path))
+    assert not result.passed
+    assert result.violations[0].rule == "fail_on.injection"
+
+
+def test_policy_can_threshold_capabilities_separately(tmp_path: Path) -> None:
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text(
+        """
+fail_on:
+  capabilities: medium
+"""
+    )
+    audit = _audit_with_shell_finding()
+    audit.permissions = []
+    audit.capability_findings = [
+        CapabilityFinding(
+            target_type=CapabilityTarget.RESOURCE,
+            target_name="https://example.com/data.json",
+            category=PermissionCategory.NETWORK,
+            confidence=Confidence.HIGH,
+            evidence=["resource host 'example.com'"],
+        )
+    ]
+    result = evaluate_policy(_audit_report(audit), load_policy(policy_path))
+    assert not result.passed
+    assert result.violations[0].rule == "fail_on.capabilities"
 
 
 def test_policy_passes_when_no_rules_match(tmp_path: Path) -> None:

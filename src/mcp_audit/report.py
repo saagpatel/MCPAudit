@@ -120,7 +120,8 @@ class ReportGenerator:
         self._console.rule("[bold red]Prompt Injection Warnings[/bold red]")
         tbl = Table(show_lines=False)
         tbl.add_column("Server", style="bold cyan", no_wrap=True)
-        tbl.add_column("Tool", style="cyan")
+        tbl.add_column("Type", style="cyan")
+        tbl.add_column("Target", style="cyan")
         tbl.add_column("Severity")
         tbl.add_column("Pattern")
         tbl.add_column("Description", overflow="fold")
@@ -134,7 +135,8 @@ class ReportGenerator:
             }.get(f.severity, "")
             tbl.add_row(
                 server_name,
-                f.tool_name,
+                f.target_type.value,
+                f.target_name or f.tool_name,
                 f"[{sev_style}]{f.severity.value}[/{sev_style}]",
                 f.pattern_name,
                 f.description,

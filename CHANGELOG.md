@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0a6] - 2026-05-09
+
+### Added
+
+- Extended `--inject-check` to inspect prompt and resource text in addition to
+  tool names and descriptions.
+- Added target metadata to injection findings so JSON and SARIF identify
+  whether a finding came from a tool, prompt, or resource.
+- Added policy gates for required pin coverage, separate permission/injection/
+  capability thresholds, and per-server threshold overrides.
+- Added `mcp-audit pin --refresh <server> --json` for automation-friendly
+  refresh review output.
+- Added CI examples and additional output-contract fixtures for failed,
+  config-only, policy, and prompt/resource report shapes.
+
+### Changed
+
+- Improved resource capability classification with parsed URI scheme, host,
+  path, and template-variable signals.
+- Refreshed README, roadmap, SECURITY, output contract, and policy examples for
+  the richer prompt/resource and policy behavior.
+
 ## [1.0.0a5] - 2026-05-09
 
 ### Added
@@ -166,7 +188,8 @@ real workstations; API surface may still shift before the `1.0.0` stable cut.
 - Risk score output with pass/warn/fail thresholds
 - `mcp-audit` CLI entry point
 
-[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a5...HEAD
+[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a6...HEAD
+[1.0.0a6]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a5...v1.0.0a6
 [1.0.0a5]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a4...v1.0.0a5
 [1.0.0a4]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a3...v1.0.0a4
 [1.0.0a3]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a2...v1.0.0a3

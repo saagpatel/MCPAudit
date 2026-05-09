@@ -179,9 +179,11 @@ class SarifGenerator:
         level = self._injection_level(finding)
         config_path = audit.server.config_path
         uri = Path(config_path).as_uri() if config_path else "file:///unknown"
+        target_label = finding.target_type.value
         msg = (
-            f"Prompt injection pattern '{finding.pattern_name}' detected in tool "
-            f"'{finding.tool_name}' on server '{audit.server.name}': {finding.description}. "
+            f"Prompt injection pattern '{finding.pattern_name}' detected in {target_label} "
+            f"'{finding.target_name or finding.tool_name}' on server '{audit.server.name}': "
+            f"{finding.description}. "
             f"Suggested action: {finding.remediation}"
         )
         return {
@@ -190,10 +192,14 @@ class SarifGenerator:
             "message": {"text": msg},
             "locations": [{"physicalLocation": {"artifactLocation": {"uri": uri}}}],
             "partialFingerprints": {
-                "mcpAuditStableId": _stable_fingerprint(rule_id, audit.server.name, finding.tool_name)
+                "mcpAuditStableId": _stable_fingerprint(
+                    rule_id, audit.server.name, finding.target_name or finding.tool_name
+                )
             },
             "properties": {
                 "pattern": finding.pattern_name,
+                "target_type": finding.target_type.value,
+                "target_name": finding.target_name or finding.tool_name,
                 "severity": finding.severity.value,
                 "remediation": finding.remediation,
             },
