@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0a1] - 2026-05-09
+
+First public alpha. Behavior and public CLI surface are stable enough to audit
+real workstations; API surface may still shift before the `1.0.0` stable cut.
+
 ### Added
 - Permission and prompt-injection findings now carry stable rule metadata:
   rule IDs, severity, title, description, and suggested remediation in JSON,
@@ -45,12 +50,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   config-only mode.
 
 ### Security
-- Locked upgrade for four transitive dependencies flagged by Dependabot:
+- Locked dependency upgrades for the alpha release:
   `cryptography` → 46.0.7 (buffer overflow on non-contiguous buffers,
   GHSA-p423-j2cm-9vmq), `pytest` → 9.0.3 (vulnerable tmpdir handling,
   GHSA-6w46-j5rx-g56g), `python-multipart` → 0.0.26 (DoS via large
-  multipart preamble/epilogue, GHSA-mj87-hwqh-73pj), and `pygments`
-  → 2.20.0 (ReDoS in GUID matching, GHSA-5239-wwwm-4pmq).
+  multipart preamble/epilogue, GHSA-mj87-hwqh-73pj), `python-multipart`
+  → 0.0.27 (multipart header limits), and `pygments` → 2.20.0 (ReDoS in
+  GUID matching, GHSA-5239-wwwm-4pmq).
 
 ### Changed
 - README: corrected feature and CLI claims to match v0.3 code — permission
@@ -107,7 +113,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Risk score output with pass/warn/fail thresholds
 - `mcp-audit` CLI entry point
 
-[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a1...HEAD
+[1.0.0a1]: https://github.com/saagpatel/MCPAudit/compare/v0.3.0...v1.0.0a1
 [0.3.0]: https://github.com/saagpatel/MCPAudit/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/saagpatel/MCPAudit/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/saagpatel/MCPAudit/releases/tag/v0.1.0
