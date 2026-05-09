@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0a2] - 2026-05-09
+
+### Changed
+
+- Renamed the PyPI distribution to `mcp-permission-audit` after the
+  `mcp-audit` project name was found to be unavailable on PyPI.
+- Kept the installed CLI command as `mcp-audit` to preserve user workflows,
+  examples, MCP server config entries, and pin-file paths.
+
 ### Added
 - Prompt and resource inventory now produces permission findings for risky
   arguments, URI schemes, and metadata, with terminal, JSON, SARIF, and policy
@@ -122,7 +131,8 @@ real workstations; API surface may still shift before the `1.0.0` stable cut.
 - Risk score output with pass/warn/fail thresholds
 - `mcp-audit` CLI entry point
 
-[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a1...HEAD
+[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a2...HEAD
+[1.0.0a2]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a1...v1.0.0a2
 [1.0.0a1]: https://github.com/saagpatel/MCPAudit/compare/v0.3.0...v1.0.0a1
 [0.3.0]: https://github.com/saagpatel/MCPAudit/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/saagpatel/MCPAudit/compare/v0.1.0...v0.2.0

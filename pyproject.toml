@@ -1,6 +1,6 @@
 [project]
-name = "mcp-audit"
-version = "1.0.0a1"
+name = "mcp-permission-audit"
+version = "1.0.0a2"
 description = "MCP Permission Auditor — scan, enumerate, and risk-score all locally configured MCP servers"
 readme = "README.md"
 license = { text = "MIT" }
@@ -35,9 +35,9 @@ watch = ["watchfiles>=1.1.1"]
 llm = ["anthropic>=0.40"]
 
 [project.urls]
-Homepage = "https://github.com/saagpatel/mcp-audit"
-Repository = "https://github.com/saagpatel/mcp-audit"
-Issues = "https://github.com/saagpatel/mcp-audit/issues"
+Homepage = "https://github.com/saagpatel/MCPAudit"
+Repository = "https://github.com/saagpatel/MCPAudit"
+Issues = "https://github.com/saagpatel/MCPAudit/issues"
 
 [project.scripts]
 mcp-audit = "mcp_audit.cli:main"
@@ -45,6 +45,9 @@ mcp-audit = "mcp_audit.cli:main"
 [build-system]
 requires = ["uv_build>=0.11.2,<0.12.0"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "mcp_audit"
 
 [tool.mypy]
 strict = true

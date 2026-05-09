@@ -210,7 +210,7 @@ async def _run_scan_core(
             except ImportError:
                 console.print(
                     "[yellow]--llm-analysis: anthropic package not installed. "
-                    "Run: pip install 'mcp-audit[llm]'[/yellow]"
+                    "Run: pip install 'mcp-permission-audit[llm]'[/yellow]"
                 )
 
     injection_detector = None

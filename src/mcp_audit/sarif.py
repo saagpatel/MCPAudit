@@ -58,7 +58,7 @@ class SarifGenerator:
         """Return a SARIF 2.1.0 document as a dict. Caller is responsible for writing JSON."""
         report = AuditReport.model_validate(redact_data(report.model_dump(mode="json")))
         try:
-            tool_version = pkg_version("mcp-audit")
+            tool_version = pkg_version("mcp-permission-audit")
         except PackageNotFoundError:
             tool_version = "0.0.0"
 
@@ -71,7 +71,7 @@ class SarifGenerator:
                         "driver": {
                             "name": "mcp-audit",
                             "version": tool_version,
-                            "informationUri": "https://github.com/saagpatel/mcp-audit",
+                            "informationUri": "https://github.com/saagpatel/MCPAudit",
                             "rules": self._make_rules(),
                         }
                     },
@@ -89,7 +89,7 @@ class SarifGenerator:
                 "shortDescription": {"text": PERMISSION_FINDINGS[cat].title},
                 "fullDescription": {"text": _RULE_DESCRIPTIONS[cat]},
                 "help": {"text": PERMISSION_FINDINGS[cat].remediation},
-                "helpUri": "https://github.com/saagpatel/mcp-audit#readme",
+                "helpUri": "https://github.com/saagpatel/MCPAudit#readme",
                 "properties": {
                     "category": cat.value,
                     "severity": PERMISSION_FINDINGS[cat].severity,
@@ -104,7 +104,7 @@ class SarifGenerator:
                 "shortDescription": {"text": desc},
                 "fullDescription": {"text": desc},
                 "help": {"text": _injection_help(rule_id)},
-                "helpUri": "https://github.com/saagpatel/mcp-audit#readme",
+                "helpUri": "https://github.com/saagpatel/MCPAudit#readme",
                 "properties": {"category": "prompt_injection"},
             }
             for rule_id, desc in _INJECTION_RULE_DESCRIPTIONS.items()
@@ -118,7 +118,7 @@ class SarifGenerator:
                     "text": "A tool was added, removed, or changed compared with the pin baseline."
                 },
                 "help": {"text": "Review the drift finding before refreshing the pin baseline."},
-                "helpUri": "https://github.com/saagpatel/mcp-audit#readme",
+                "helpUri": "https://github.com/saagpatel/MCPAudit#readme",
                 "properties": {"category": "schema_drift", "severity": "medium"},
             },
             {
@@ -127,7 +127,7 @@ class SarifGenerator:
                 "shortDescription": {"text": "Policy gate violation"},
                 "fullDescription": {"text": "The completed scan failed a local policy rule."},
                 "help": {"text": "Review the policy violation and adjust the server or policy."},
-                "helpUri": "https://github.com/saagpatel/mcp-audit#readme",
+                "helpUri": "https://github.com/saagpatel/MCPAudit#readme",
                 "properties": {"category": "policy", "severity": "high"},
             },
         ]
