@@ -12,6 +12,8 @@ from rich.console import Console
 from mcp_audit.models import (
     AuditReport,
     Confidence,
+    DriftFinding,
+    DriftStatus,
     PermissionCategory,
     PermissionFinding,
     RiskScore,
@@ -160,6 +162,30 @@ class TestTerminalRender:
         result = gen.capture_terminal(_base_report([audit]))
         assert isinstance(result, str)
         assert "srv" in result
+
+    def test_drift_warnings_include_meaning_and_action(self) -> None:
+        con, buf = _make_console()
+        gen = ReportGenerator(console=con)
+        audit = _make_audit("srv", tool_names=["read_file"])
+        audit.drift_findings = [
+            DriftFinding(
+                server_name="srv",
+                tool_name="read_file",
+                status=DriftStatus.CHANGED,
+                stored_hash="sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                current_hash="sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                summary="Pinned tool metadata changed since the baseline.",
+                details=["description changed"],
+                remediation="Review the changed tool metadata before refreshing the pin baseline.",
+            )
+        ]
+        gen.render_terminal(_base_report([audit]))
+        output = buf.getvalue()
+        assert "Tool Schema Drift" in output
+        assert "Pinned tool metadata" in output
+        assert "changed since the" in output
+        assert "Review the changed" in output
+        assert "tool metadata before" in output
 
 
 class TestJsonRender:

@@ -148,7 +148,8 @@ class ReportGenerator:
         tbl.add_column("Server", style="bold cyan", no_wrap=True)
         tbl.add_column("Tool", style="cyan")
         tbl.add_column("Status")
-        tbl.add_column("Details", overflow="fold")
+        tbl.add_column("Meaning", overflow="fold")
+        tbl.add_column("Suggested Action", overflow="fold")
 
         for server_name, d in all_drifts:
             status_style = {
@@ -161,15 +162,19 @@ class ReportGenerator:
                 stored = d.stored_hash[:16] if d.stored_hash else "?"
                 current = d.current_hash[:16] if d.current_hash else "?"
                 details = f"{stored}… → {current}…"
+                if d.details:
+                    details = f"{details}; {', '.join(d.details)}"
             elif d.status == DriftStatus.NEW:
-                details = "not previously pinned"
+                details = ", ".join(d.details) or "not previously pinned"
             elif d.status == DriftStatus.REMOVED:
-                details = "tool no longer present"
+                details = ", ".join(d.details) or "tool no longer present"
+            meaning = d.summary or details
             tbl.add_row(
                 server_name,
                 d.tool_name,
                 f"[{status_style}]{d.status.value}[/{status_style}]",
-                details,
+                meaning,
+                d.remediation,
             )
         self._console.print(tbl)
 

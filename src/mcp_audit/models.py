@@ -168,6 +168,9 @@ class DriftFinding(BaseModel):
     stored_hash: str | None = None  # None for NEW
     current_hash: str | None = None  # None for REMOVED
     pinned_at: datetime | None = None
+    summary: str = ""
+    details: list[str] = Field(default_factory=list)
+    remediation: str = ""
 
 
 class RiskScore(BaseModel):
