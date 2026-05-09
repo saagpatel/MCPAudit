@@ -18,7 +18,7 @@ PyPI package: `mcp-permission-audit`. Installed command: `mcp-audit`.
 - **Report redaction** — terminal, JSON, and SARIF report paths share a redaction layer for likely credential values
 - **Prompt injection detection** — `scan --inject-check` scans tool, prompt, and resource text for instruction-override patterns, hidden directives, fake role turns, and adversarial phrasing; pattern-based, no LLM required
 - **Schema drift tracking** — `mcp-audit pin` connects to servers and snapshots current tool schemas; subsequent `scan --pin-check` flags added, removed, and changed tools with plain-language summaries, changed-field hints, suggested actions, and a dry-run refresh workflow for reviewed upgrades
-- **Multi-client support** — reads configs from Claude Desktop, Claude Code, Cursor, VSCode, and Windsurf — plus any custom path via `--config`
+- **Multi-client support** — reads configs from Claude Desktop, Claude Code, Cursor, VSCode, and Windsurf — plus custom paths via `--config`; use `--config-only` for isolated scans of one config file
 - **Structured output** — Rich terminal report plus JSON and SARIF 2.1.0 export for ingestion by GitHub Advanced Security and SARIF-aware SAST pipelines
 - **Documented output contract** — JSON, SARIF rule IDs, and policy exit codes are documented in `docs/OUTPUT-CONTRACT.md`
 - **Watch mode** — `mcp-audit watch` re-scans on config file changes via `watchfiles` (optional extra: install with `mcp-permission-audit[watch]`)
@@ -53,6 +53,9 @@ mcp-audit scan --skip-connect
 
 # Filter to specific clients (comma-separated)
 mcp-audit scan --clients claude_desktop,cursor
+
+# Scan only one explicit MCP config file
+mcp-audit scan --config ./mcp.json --config-only
 
 # Check tools, prompts, and resources for prompt-injection patterns
 mcp-audit scan --inject-check

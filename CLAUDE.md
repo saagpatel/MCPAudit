@@ -1,18 +1,18 @@
 # MCP Permission Auditor (mcp-audit)
 
 ## Overview
-A Python CLI tool that scans all locally configured MCP servers across Claude Desktop, Claude Code, Cursor, VS Code, and Windsurf — dynamically connects to each server, enumerates every tool with its annotations and input schema, infers permission capabilities (file access, network, shell execution, destructive writes, exfiltration), and produces a risk-scored audit report. Fully local, offline, zero API keys.
+A Python CLI tool that scans locally configured MCP servers across Claude Desktop, Claude Code, Cursor, VS Code, and Windsurf. It can run config-only without connecting, or run connected scans that enumerate tools, prompts, and resources with timeout-guarded MCP clients. It infers permission capabilities, detects prompt-injection patterns, checks pin drift, and emits terminal, JSON, and SARIF reports. Default behavior is local-first and deterministic; networked LLM analysis is available only when explicitly requested with `--llm-analysis`.
 
 ## Tech Stack
 - Python: 3.11+
 - CLI: click 8.x
-- Terminal UI: rich 13.x
+- Terminal UI: rich 15.x+
 - Async: anyio 4.x
 - MCP client: mcp (official Python SDK)
 - Validation: pydantic 2.x
 - JSONC parsing: json5 0.10.x
 - Config overrides: pyyaml 6.x
-- Testing: pytest 8.x + pytest-anyio
+- Testing: pytest 9.x + pytest-anyio
 - Build/package: uv, PyPI distribution via pipx/uvx
 
 ## Development Conventions
@@ -24,8 +24,8 @@ A Python CLI tool that scans all locally configured MCP servers across Claude De
 - Async by default for server connections; sync wrapper for CLI
 
 ## Current Phase
-**Active maintenance: v0.3 scanner truth and reliability**
-The codebase now includes discovery, live tool enumeration, permission scoring, prompt-injection checks, schema pinning/drift checks, SARIF/JSON output, watch mode, MCP server exposure, overrides, and optional LLM-assisted classification. Treat older roadmap phase labels as historical unless they match the current code.
+**Release-candidate readiness for 1.0.0**
+The codebase now includes discovery, config-only scans, connected tool/prompt/resource enumeration, permission scoring, prompt-injection checks, schema pinning/drift checks, SARIF/JSON output, watch mode, MCP server exposure, overrides, policy gates, and optional LLM-assisted classification. Treat older roadmap phase labels as historical unless they match the current code.
 
 ## Key Decisions
 | Decision | Choice | Why |
