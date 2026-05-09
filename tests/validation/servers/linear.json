@@ -1,0 +1,78 @@
+{
+  "server_name": "server-linear",
+  "description": "Linear MCP server — issue search, creation, comments, and status updates",
+  "tools": [
+    {
+      "name": "linear_search_issues",
+      "description": "Search Linear issues across teams.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string" },
+          "team_id": { "type": "string" }
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "linear_create_issue",
+      "description": "Create an issue in Linear.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "team_id": { "type": "string" },
+          "title": { "type": "string" },
+          "description": { "type": "string" }
+        },
+        "required": ["team_id", "title"]
+      }
+    },
+    {
+      "name": "linear_update_issue",
+      "description": "Update a Linear issue title, description, assignee, or state.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "issue_id": { "type": "string" },
+          "state_id": { "type": "string" },
+          "assignee_id": { "type": "string" }
+        },
+        "required": ["issue_id"]
+      }
+    },
+    {
+      "name": "linear_add_comment",
+      "description": "Add a comment to a Linear issue.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "issue_id": { "type": "string" },
+          "body": { "type": "string" }
+        },
+        "required": ["issue_id", "body"]
+      }
+    }
+  ],
+  "expected_findings": [
+    {
+      "tool": "linear_search_issues",
+      "categories": ["file_read", "network"],
+      "min_confidence": "medium"
+    },
+    {
+      "tool": "linear_create_issue",
+      "categories": ["file_write", "network"],
+      "min_confidence": "medium"
+    },
+    {
+      "tool": "linear_update_issue",
+      "categories": ["file_write", "network"],
+      "min_confidence": "medium"
+    },
+    {
+      "tool": "linear_add_comment",
+      "categories": ["file_write", "network"],
+      "min_confidence": "low"
+    }
+  ]
+}

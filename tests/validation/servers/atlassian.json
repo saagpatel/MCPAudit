@@ -1,0 +1,94 @@
+{
+  "server_name": "server-atlassian",
+  "description": "Atlassian MCP server — Jira and Confluence search, issue updates, and page publishing",
+  "tools": [
+    {
+      "name": "jira_search_issues",
+      "description": "Search Jira issues using JQL.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "jql": { "type": "string" },
+          "max_results": { "type": "integer" }
+        },
+        "required": ["jql"]
+      }
+    },
+    {
+      "name": "jira_create_issue",
+      "description": "Create a Jira issue.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project_key": { "type": "string" },
+          "summary": { "type": "string" },
+          "description": { "type": "string" }
+        },
+        "required": ["project_key", "summary"]
+      }
+    },
+    {
+      "name": "jira_update_issue",
+      "description": "Update fields on an existing Jira issue.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "issue_key": { "type": "string" },
+          "fields": { "type": "object" }
+        },
+        "required": ["issue_key", "fields"]
+      }
+    },
+    {
+      "name": "confluence_get_page",
+      "description": "Get a Confluence page and its body content.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "page_id": { "type": "string" }
+        },
+        "required": ["page_id"]
+      }
+    },
+    {
+      "name": "confluence_update_page",
+      "description": "Update a Confluence page body.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "page_id": { "type": "string" },
+          "title": { "type": "string" },
+          "body": { "type": "string" }
+        },
+        "required": ["page_id", "body"]
+      }
+    }
+  ],
+  "expected_findings": [
+    {
+      "tool": "jira_search_issues",
+      "categories": ["file_read", "network"],
+      "min_confidence": "medium"
+    },
+    {
+      "tool": "jira_create_issue",
+      "categories": ["file_write", "network"],
+      "min_confidence": "medium"
+    },
+    {
+      "tool": "jira_update_issue",
+      "categories": ["file_write", "network"],
+      "min_confidence": "medium"
+    },
+    {
+      "tool": "confluence_get_page",
+      "categories": ["network"],
+      "min_confidence": "high"
+    },
+    {
+      "tool": "confluence_update_page",
+      "categories": ["file_write", "network"],
+      "min_confidence": "medium"
+    }
+  ]
+}

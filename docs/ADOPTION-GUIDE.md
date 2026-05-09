@@ -43,9 +43,13 @@ mcp-audit scan \
 Exit code `2` means the scan completed and report artifacts were written, but
 the local policy failed.
 
+A complete JSON-plus-policy workflow example is available at
+`examples/ci/generic-json-policy.yml`.
+
 For stricter rollout, start from
 `examples/policies/reviewed-local-workstation.yaml` or
-`examples/policies/approved-servers-ci.yaml`.
+`examples/policies/approved-servers-ci.yaml`. For browser-automation-heavy
+MCP setups, start from `examples/policies/browser-automation-ci.yaml`.
 
 ## GitHub Code Scanning
 
@@ -62,6 +66,9 @@ Export SARIF and upload it with GitHub's SARIF action:
 
 Use `scan --skip-connect --sarif mcp-audit.sarif` for config-only CI where
 starting local MCP servers is not appropriate.
+
+A complete GitHub code-scanning workflow example is available at
+`examples/ci/github-code-scanning.yml`.
 
 ## Pin Baselines
 

@@ -136,7 +136,8 @@ scanning setup paths. See `examples/policies/` for starter policies. See
 `docs/PIN-MAINTENANCE.md` for reviewed pin refresh and stale server cleanup
 workflows. See `docs/PROMPT-RESOURCE-SCORING.md` and
 `docs/SCORING-MIGRATION.md` for the current prompt/resource scoring boundary
-and migration path.
+and migration path. See `docs/ROADMAP-1.1.md` for the next additive product
+depth lanes.
 
 ## License
 

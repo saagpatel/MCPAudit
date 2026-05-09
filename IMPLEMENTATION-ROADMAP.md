@@ -170,7 +170,8 @@ Before the next public release:
 - confirm GitHub Actions passes on the release branch;
 - publish release notes that distinguish config-only scans from connected scans.
 - follow `docs/RELEASE-CHECKLIST.md` for PyPI and clean-install smoke checks.
-- use `docs/STABLE-READINESS.md` for the `1.0.0` stable go/no-go bar.
+- use `docs/STABLE-READINESS.md` for the stable go/no-go bar.
+- use `docs/ROADMAP-1.1.md` for additive post-stable product depth.
 
 ## Verification Contract
 
