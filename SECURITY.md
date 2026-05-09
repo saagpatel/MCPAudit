@@ -42,8 +42,9 @@ Understanding what MCPAudit does and does not do is important for evaluating its
 - MCPAudit does not call audited MCP tools; it only enumerates tool metadata
 - MCPAudit does not exfiltrate config data
 - MCPAudit does not modify MCP configs during scans
+- `mcp-audit serve --install` is an explicit setup command that writes an MCPAudit server entry to detected Claude config files
 - MCPAudit does not transmit data to a third-party API unless optional LLM analysis is explicitly requested
-- The `--watch` mode monitors local config file changes using `watchfiles` — it does not open any network ports
+- The `watch` mode monitors local config file changes using `watchfiles`; each re-scan follows the selected scan mode, so use `watch --skip-connect` for config-only watching
 
 ### Trust boundary
 
@@ -51,7 +52,7 @@ MCPAudit reads config files from your local filesystem. It trusts that the confi
 
 ### Prompt injection in MCPAudit's own output
 
-MCPAudit parses and displays content from MCP server configs, including tool descriptions that may be attacker-controlled. If a malicious MCP server is installed, its tool descriptions could contain content designed to manipulate AI assistants that consume MCPAudit's output. MCPAudit does not sanitize or escape tool description content before rendering it. Users should treat MCPAudit's output as untrusted data when piping it to AI systems.
+MCPAudit parses and displays content from MCP server configs and MCP server metadata, including tool descriptions that may be attacker-controlled. If a malicious MCP server is installed, its tool descriptions could contain content designed to manipulate AI assistants that consume MCPAudit's output. MCPAudit does not sanitize or escape tool description content before rendering it. Users should treat MCPAudit's output as untrusted data when piping it to AI systems.
 
 ### LLM mode (`--llm-analysis`)
 

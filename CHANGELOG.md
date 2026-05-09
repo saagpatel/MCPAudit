@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed the case-conflicting duplicate pull request template from `.github/`.
 
 ### Changed
+- README, SECURITY, and CONTRIBUTING now make first-run and verification
+  expectations clearer: `discover` is the safest first command, `--skip-connect`
+  is the config-only scan mode, `pin` intentionally connects to servers, and the
+  canonical verifier is `uv run pytest`, `uv run ruff check`, `uv run mypy src`.
+- CI now runs on common maintenance branch prefixes, including `codex/**`.
 - Updated security and project notes to state the current scan trust boundary:
   standard scans enumerate live MCP tool metadata, while `--skip-connect` is the
   config-only mode.
