@@ -47,7 +47,8 @@ Current scan behavior:
 - Local policy gates through `scan --policy`, including global and per-server
   enforcement rules.
 - Adoption, pin maintenance, prompt/resource scoring boundary, beta readiness,
-  and security-review docs for beta users.
+  stable readiness, scoring migration, beta-feedback, and security-review docs
+  for beta users.
 - Watch, monitor, and MCP server entrypoints.
 - Optional LLM-assisted classification behind `--llm-analysis`.
 
@@ -105,6 +106,7 @@ Useful follow-ups:
 The current scoring decision is documented in `docs/PROMPT-RESOURCE-SCORING.md`:
 prompt/resource findings stay visible and policy-gatable, but do not affect the
 composite server score until a calibrated scoring model is proven.
+The recommended migration path is documented in `docs/SCORING-MIGRATION.md`.
 
 Current beta calibration covers risky prompt arguments, file resources, remote
 resource schemes, templated resources, and benign cases.
@@ -140,7 +142,8 @@ Done when users can maintain pins without inspecting YAML by hand.
 ### 4. Output Contract Hardening
 
 Reports now carry richer metadata, with a documented JSON/SARIF contract and a
-representative compatibility fixture. Useful follow-ups:
+representative compatibility fixture plus a golden output-contract snapshot.
+Useful follow-ups:
 
 - add more downstream consumer tests if external integrations start depending
   on the JSON shape.
@@ -155,6 +158,9 @@ The beta feedback issue template is present. Useful follow-ups:
 - promote recurring policy requests into examples or first-class gates;
 - keep SARIF/JSON compatibility notes current as downstream users adopt them.
 
+The workflow for converting feedback into fixtures is documented in
+`docs/BETA-FEEDBACK-TO-FIXTURES.md`.
+
 ### 6. Release Readiness
 
 Before the next public alpha/beta:
@@ -164,6 +170,7 @@ Before the next public alpha/beta:
 - confirm GitHub Actions passes on the release branch;
 - publish release notes that distinguish config-only scans from connected scans.
 - follow `docs/RELEASE-CHECKLIST.md` for PyPI and clean-install smoke checks.
+- use `docs/STABLE-READINESS.md` for the `1.0.0` stable go/no-go bar.
 
 ## Verification Contract
 

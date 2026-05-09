@@ -1,6 +1,6 @@
 # Beta Readiness
 
-MCPAudit is ready for the `1.0.0b2` beta candidate when the release verifier and
+MCPAudit is ready for the `1.0.0b3` beta candidate when the release verifier and
 clean-install smoke checks pass.
 
 ## Readiness Bar

@@ -1,0 +1,21 @@
+# Reviewed workstation gate after an initial local MCP server review.
+fail_on:
+  permissions: high
+  injection: medium
+  capabilities: high
+  drift: true
+deny:
+  permissions:
+    - shell_execution
+max_risk: 8
+servers:
+  filesystem-readonly:
+    require_pin: true
+    max_risk: 4
+    deny:
+      permissions:
+        - file_write
+        - destructive
+  github:
+    require_pin: true
+    max_risk: 6

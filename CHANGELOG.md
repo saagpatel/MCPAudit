@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0b3] - 2026-05-09
+
+### Added
+
+- Added stable-readiness documentation with the go/no-go bar for `1.0.0`.
+- Added a prompt/resource scoring migration proposal that keeps composite risk
+  stable while defining an additive `non_tool_risk` path.
+- Added beta-feedback-to-fixtures guidance so false positives, false negatives,
+  policy gaps, and output-shape issues become regression tests.
+- Added stricter reviewed-workstation and approved-server-only CI policy
+  examples.
+- Added golden output-contract snapshot coverage for representative JSON and
+  SARIF report shapes.
+
+### Changed
+
+- Refreshed README, roadmap, beta readiness, output contract, adoption, and
+  security-review docs for the stable-readiness lane.
+
 ## [1.0.0b2] - 2026-05-09
 
 ### Added
@@ -233,7 +252,8 @@ real workstations; API surface may still shift before the `1.0.0` stable cut.
 - Risk score output with pass/warn/fail thresholds
 - `mcp-audit` CLI entry point
 
-[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0b2...HEAD
+[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0b3...HEAD
+[1.0.0b3]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0b2...v1.0.0b3
 [1.0.0b2]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0b1...v1.0.0b2
 [1.0.0b1]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a6...v1.0.0b1
 [1.0.0a6]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a5...v1.0.0a6
