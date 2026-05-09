@@ -37,6 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   canonical verifier is `uv run pytest`, `uv run ruff check`, `uv run mypy src`.
 - Pin files now keep reviewable tool metadata snapshots next to the SHA256 hash
   so drift reports can identify description and input-schema changes.
+- IMPLEMENTATION-ROADMAP now reflects the current codebase, trust boundaries,
+  verification contract, and post-Phase-1 expansion priorities.
 - CI now runs on common maintenance branch prefixes, including `codex/**`.
 - Updated security and project notes to state the current scan trust boundary:
   standard scans enumerate live MCP tool metadata, while `--skip-connect` is the
