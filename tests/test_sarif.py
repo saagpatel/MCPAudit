@@ -153,3 +153,29 @@ class TestSarifResults:
         sarif = SarifGenerator().generate(_make_report([audit]))
         msg = sarif["runs"][0]["results"][0]["message"]["text"]
         assert "shell_execution" in msg
+
+    def test_result_includes_remediation_and_stable_fingerprint(self) -> None:
+        audit = _make_audit(findings=[_finding(PermissionCategory.SHELL_EXEC)])
+        sarif = SarifGenerator().generate(_make_report([audit]))
+        result = sarif["runs"][0]["results"][0]
+        assert result["ruleId"] == "MCP004"
+        assert "Suggested action:" in result["message"]["text"]
+        assert result["properties"]["remediation"]
+        assert result["partialFingerprints"]["mcpAuditStableId"]
+
+    def test_rules_include_full_metadata(self) -> None:
+        sarif = SarifGenerator().generate(_make_report([]))
+        rules = sarif["runs"][0]["tool"]["driver"]["rules"]
+        shell_rule = next(rule for rule in rules if rule["id"] == "MCP004")
+        assert shell_rule["shortDescription"]["text"] == "Shell execution capability"
+        assert shell_rule["fullDescription"]["text"]
+        assert shell_rule["help"]["text"]
+        assert shell_rule["properties"]["severity"] == "high"
+
+    def test_sarif_redacts_report_strings(self) -> None:
+        audit = _make_audit(findings=[_finding(tool="run_shell")])
+        audit.server.name = "server-with-token=abc123"
+        sarif = SarifGenerator().generate(_make_report([audit]))
+        result = sarif["runs"][0]["results"][0]
+        assert "abc123" not in result["message"]["text"]
+        assert "token=<redacted>" in result["message"]["text"]

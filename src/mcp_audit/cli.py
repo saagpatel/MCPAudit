@@ -19,6 +19,7 @@ from mcp_audit.connector import ServerConnector
 from mcp_audit.discovery import discover_all_configs
 from mcp_audit.models import AuditReport, ClientType, ServerAudit, ServerConfig
 from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
+from mcp_audit.redaction import redact_text
 from mcp_audit.report import ReportGenerator
 from mcp_audit.scorer import RiskScorer
 
@@ -365,7 +366,7 @@ def _parse_extra_config(path: Path) -> list[ServerConfig]:
 
         return ClaudeCodeDiscoverer().parse(path)
     except Exception as exc:
-        console.print(f"[red]Failed to parse {path}: {exc}[/red]")
+        console.print(f"[red]Failed to parse {path}: {redact_text(str(exc))}[/red]")
         return []
 
 

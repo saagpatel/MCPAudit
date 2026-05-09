@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 from pathlib import Path
 
 from rich.console import Console
@@ -11,6 +12,7 @@ from rich.table import Table
 from rich.text import Text
 
 from mcp_audit.models import AuditReport, DriftStatus, InjectionSeverity, PermissionFinding, ServerAudit
+from mcp_audit.redaction import redact_data, redact_text
 
 
 def _default_console() -> Console:
@@ -25,6 +27,7 @@ class ReportGenerator:
 
     def render_terminal(self, report: AuditReport, verbose: bool = False) -> None:
         """Print the full audit report to the console."""
+        report = _redacted_report(report)
         n_clients = len({a.server.client for a in report.audits})
 
         summary = (
@@ -53,7 +56,7 @@ class ReportGenerator:
             perms = self._top_permissions(audit)
             status_str = audit.connection_status
             if audit.connection_error:
-                status_str = f"{status_str}: {audit.connection_error[:40]}"
+                status_str = f"{status_str}: {redact_text(audit.connection_error)[:40]}"
 
             table.add_row(
                 audit.server.name,
@@ -81,6 +84,7 @@ class ReportGenerator:
             sub = Table(show_lines=False, show_header=True)
             sub.add_column("Tool", style="cyan")
             sub.add_column("Permissions", overflow="fold")
+            sub.add_column("Suggested Action", overflow="fold")
 
             findings_by_tool: dict[str, list[PermissionFinding]] = {}
             for f in audit.permissions:
@@ -89,10 +93,14 @@ class ReportGenerator:
             for tool in audit.tools:
                 tool_findings = findings_by_tool.get(tool.name, [])
                 if tool_findings:
-                    perm_str = ", ".join(f"{f.category.value}({f.confidence.value})" for f in tool_findings)
+                    perm_str = ", ".join(
+                        f"{f.rule_id} {f.category.value}({f.confidence.value})" for f in tool_findings
+                    )
+                    action_str = " ".join(f.remediation for f in tool_findings)
                 else:
                     perm_str = "[dim]none[/dim]"
-                sub.add_row(tool.name, perm_str)
+                    action_str = "[dim]none[/dim]"
+                sub.add_row(tool.name, perm_str, action_str)
 
             self._console.print(sub)
 
@@ -110,6 +118,7 @@ class ReportGenerator:
         tbl.add_column("Severity")
         tbl.add_column("Pattern")
         tbl.add_column("Description", overflow="fold")
+        tbl.add_column("Suggested Action", overflow="fold")
 
         for server_name, f in all_findings:
             sev_style = {
@@ -123,6 +132,7 @@ class ReportGenerator:
                 f"[{sev_style}]{f.severity.value}[/{sev_style}]",
                 f.pattern_name,
                 f.description,
+                f.remediation,
             )
         self._console.print(tbl)
 
@@ -165,7 +175,8 @@ class ReportGenerator:
 
     def render_json(self, report: AuditReport, path: Path) -> None:
         """Write full AuditReport as JSON to the given path."""
-        path.write_text(report.model_dump_json(indent=2))
+        redacted = redact_data(report.model_dump(mode="json"))
+        path.write_text(json.dumps(redacted, indent=2))
         self._console.print(f"[green]JSON report written to {path}[/green]")
 
     def _risk_text(self, audit: ServerAudit) -> Text:
@@ -206,3 +217,8 @@ class ReportGenerator:
         finally:
             self._console = orig
         return buf.getvalue()
+
+
+def _redacted_report(report: AuditReport) -> AuditReport:
+    data = redact_data(report.model_dump(mode="json"))
+    return AuditReport.model_validate(data)

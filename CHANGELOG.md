@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Permission and prompt-injection findings now carry stable rule metadata:
+  rule IDs, severity, title, description, and suggested remediation in JSON,
+  with richer SARIF rule metadata and stable fingerprints.
+- Added a shared redaction layer for terminal, JSON, SARIF, and connection
+  error output so likely credential values are masked consistently.
+- `scan --skip-connect` now performs deeper config-only risk inference for
+  declared HTTP/SSE endpoints, shell wrappers, package runners, remote URLs,
+  destructive shell patterns, and credential-like env key names.
+
 ### Fixed
 - `mcp-audit pin` now connects to MCP servers before writing schema pins, so
   drift baselines contain real tool schemas instead of empty skip-connect scans.

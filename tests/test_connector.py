@@ -2,16 +2,37 @@
 
 from __future__ import annotations
 
+import os
+import signal
 import sys
+import textwrap
+import time
 from pathlib import Path
 
 import pytest
 
 from mcp_audit.connector import ServerConnector
-from mcp_audit.models import ClientType, Confidence, PermissionCategory, ServerConfig
+from mcp_audit.models import ClientType, Confidence, PermissionCategory, ServerConfig, TransportType
 from tests.conftest import make_server_config
 
 MOCK_SERVER = str(Path(__file__).parent / "fixtures" / "mock_server.py")
+
+
+def _process_exists(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+def _wait_for_process_exit(pid: int, timeout: float = 3.0) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not _process_exists(pid):
+            return True
+        time.sleep(0.05)
+    return not _process_exists(pid)
 
 
 # ---------------------------------------------------------------------------
@@ -90,6 +111,8 @@ class TestSkipConnectAudit:
         audit = connector.skip_connect_audit(config)
         cats = {f.category for f in audit.permissions}
         assert PermissionCategory.NETWORK in cats
+        network = next(f for f in audit.permissions if f.category == PermissionCategory.NETWORK)
+        assert "env key" in " ".join(network.evidence)
 
     def test_env_key_with_api_key_implies_network(self) -> None:
         config = make_server_config(name="svc", env_keys=["OPENAI_API_KEY"])
@@ -114,6 +137,86 @@ class TestSkipConnectAudit:
         connector = ServerConnector()
         audit = connector.skip_connect_audit(config)
         assert all(f.confidence == Confidence.LOW for f in audit.permissions)
+
+    def test_http_transport_implies_network_without_connecting(self) -> None:
+        config = make_server_config(
+            name="remote",
+            transport=TransportType.HTTP,
+            url="https://example.com/mcp",
+        )
+        connector = ServerConnector()
+        audit = connector.skip_connect_audit(config)
+        network = next(f for f in audit.permissions if f.category == PermissionCategory.NETWORK)
+        assert "http transport" in " ".join(network.evidence)
+
+    def test_shell_wrapper_implies_shell_execution(self) -> None:
+        config = make_server_config(
+            name="shell",
+            command="bash",
+            args=["-c", "python server.py"],
+        )
+        connector = ServerConnector()
+        audit = connector.skip_connect_audit(config)
+        shell = next(f for f in audit.permissions if f.category == PermissionCategory.SHELL_EXEC)
+        assert "shell wrapper" in " ".join(shell.evidence)
+
+    def test_windows_shell_wrapper_path_implies_shell_execution(self) -> None:
+        config = make_server_config(
+            name="shell",
+            command="C:\\Windows\\System32\\cmd.exe",
+            args=["/c", "python server.py"],
+        )
+        connector = ServerConnector()
+        audit = connector.skip_connect_audit(config)
+        shell = next(f for f in audit.permissions if f.category == PermissionCategory.SHELL_EXEC)
+        assert "cmd.exe" in " ".join(shell.evidence)
+
+    def test_remote_url_in_args_implies_network(self) -> None:
+        config = make_server_config(
+            name="remote-arg",
+            command="node",
+            args=["server.js", "--endpoint", "https://example.com/mcp"],
+        )
+        connector = ServerConnector()
+        audit = connector.skip_connect_audit(config)
+        network = next(f for f in audit.permissions if f.category == PermissionCategory.NETWORK)
+        assert "remote URL" in " ".join(network.evidence)
+
+    def test_package_runner_implies_network(self) -> None:
+        config = make_server_config(
+            name="pkg",
+            command="npx",
+            args=["-y", "@example/server"],
+        )
+        connector = ServerConnector()
+        audit = connector.skip_connect_audit(config)
+        network = next(f for f in audit.permissions if f.category == PermissionCategory.NETWORK)
+        assert "package runner" in " ".join(network.evidence)
+
+    def test_destructive_shell_pattern_is_flagged(self) -> None:
+        config = make_server_config(
+            name="danger",
+            command="bash",
+            args=["-c", "rm " + "-rf /tmp/demo"],
+        )
+        connector = ServerConnector()
+        audit = connector.skip_connect_audit(config)
+        cats = {f.category for f in audit.permissions}
+        assert PermissionCategory.SHELL_EXEC in cats
+        assert PermissionCategory.DESTRUCTIVE in cats
+
+    def test_skip_connect_deduplicates_category_with_multiple_evidence(self) -> None:
+        config = make_server_config(
+            name="remote",
+            transport=TransportType.HTTP,
+            url="https://example.com/mcp",
+            env_keys=["API_KEY"],
+        )
+        connector = ServerConnector()
+        audit = connector.skip_connect_audit(config)
+        network_findings = [f for f in audit.permissions if f.category == PermissionCategory.NETWORK]
+        assert len(network_findings) == 1
+        assert len(network_findings[0].evidence) >= 2
 
 
 # ---------------------------------------------------------------------------
@@ -185,6 +288,62 @@ async def test_timeout_returns_timeout_status() -> None:
 
 
 @pytest.mark.anyio
+async def test_timeout_cleans_up_stdio_process(tmp_path: Path) -> None:
+    pid_file = tmp_path / "pid.txt"
+    terminated_file = tmp_path / "terminated.txt"
+    server_script = tmp_path / "slow_server.py"
+    server_script.write_text(
+        textwrap.dedent(
+            """
+            from __future__ import annotations
+
+            import os
+            import signal
+            import sys
+            import time
+            from pathlib import Path
+
+            pid_file = Path(sys.argv[1])
+            terminated_file = Path(sys.argv[2])
+            pid_file.write_text(str(os.getpid()))
+
+            def handle_stop(_signum: int, _frame: object) -> None:
+                terminated_file.write_text("terminated")
+                raise SystemExit(0)
+
+            signal.signal(signal.SIGTERM, handle_stop)
+            signal.signal(signal.SIGINT, handle_stop)
+
+            while True:
+                time.sleep(0.1)
+            """
+        )
+    )
+
+    config = ServerConfig(
+        name="slow",
+        client=ClientType.CLAUDE_CODE,
+        config_path="/tmp/test_config.json",
+        command=sys.executable,
+        args=[str(server_script), str(pid_file), str(terminated_file)],
+    )
+    connector = ServerConnector(timeout=0.2)
+
+    try:
+        audit = await connector.connect(config)
+        assert audit.connection_status == "timeout"
+
+        assert pid_file.exists()
+        pid = int(pid_file.read_text())
+        assert terminated_file.exists() or _wait_for_process_exit(pid)
+    finally:
+        if pid_file.exists():
+            pid = int(pid_file.read_text())
+            if _process_exists(pid):
+                os.kill(pid, signal.SIGKILL)
+
+
+@pytest.mark.anyio
 async def test_missing_command_returns_failed() -> None:
     config = ServerConfig(
         name="bad",
@@ -196,3 +355,39 @@ async def test_missing_command_returns_failed() -> None:
     audit = await connector.connect(config)
     assert audit.connection_status == "failed"
     assert audit.connection_error is not None
+
+
+@pytest.mark.anyio
+async def test_http_without_url_fails_cleanly() -> None:
+    config = ServerConfig(
+        name="bad-http",
+        client=ClientType.CLAUDE_CODE,
+        config_path="/tmp/test_config.json",
+        transport=TransportType.HTTP,
+        url=None,
+    )
+    connector = ServerConnector(timeout=5.0)
+
+    audit = await connector.connect(config)
+    assert audit.connection_status == "failed"
+    assert audit.connection_error is not None
+    assert "no URL" in audit.connection_error
+
+
+@pytest.mark.anyio
+async def test_connection_error_is_redacted(monkeypatch: pytest.MonkeyPatch) -> None:
+    config = ServerConfig(
+        name="bad",
+        client=ClientType.CLAUDE_CODE,
+        config_path="/tmp/test_config.json",
+        command="python",
+    )
+    connector = ServerConnector(timeout=5.0)
+
+    async def fail_connect(_config: ServerConfig) -> list[object]:
+        raise RuntimeError("failed with token=abc123")
+
+    monkeypatch.setattr(connector, "_connect_stdio", fail_connect)
+    audit = await connector.connect(config)
+    assert audit.connection_status == "failed"
+    assert audit.connection_error == "failed with token=<redacted>"

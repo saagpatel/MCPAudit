@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from hashlib import sha256
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as pkg_version
 from pathlib import Path
@@ -16,28 +17,20 @@ from mcp_audit.models import (
     PermissionFinding,
     ServerAudit,
 )
+from mcp_audit.redaction import redact_data
+from mcp_audit.taxonomy import INJECTION_FINDINGS, PERMISSION_FINDINGS
 
 _SARIF_SCHEMA = (
     "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json"
 )
 
-# Fixed rule IDs per PermissionCategory
+# Fixed rule IDs per PermissionCategory.
 _RULE_IDS: dict[PermissionCategory, str] = {
-    PermissionCategory.FILE_READ: "MCP001",
-    PermissionCategory.FILE_WRITE: "MCP002",
-    PermissionCategory.NETWORK: "MCP003",
-    PermissionCategory.SHELL_EXEC: "MCP004",
-    PermissionCategory.DESTRUCTIVE: "MCP005",
-    PermissionCategory.EXFILTRATION: "MCP006",
+    category: metadata.rule_id for category, metadata in PERMISSION_FINDINGS.items()
 }
 
 _RULE_DESCRIPTIONS: dict[PermissionCategory, str] = {
-    PermissionCategory.FILE_READ: "File system read access",
-    PermissionCategory.FILE_WRITE: "File system write access",
-    PermissionCategory.NETWORK: "External network access",
-    PermissionCategory.SHELL_EXEC: "Shell command execution",
-    PermissionCategory.DESTRUCTIVE: "Destructive operations",
-    PermissionCategory.EXFILTRATION: "Data exfiltration capability",
+    category: metadata.description for category, metadata in PERMISSION_FINDINGS.items()
 }
 
 # Confidence levels that trigger at least a "warning" in SARIF
@@ -45,14 +38,11 @@ _HIGH_CONFIDENCE = {Confidence.DECLARED, Confidence.HIGH, Confidence.MANUAL, Con
 
 # Injection-specific SARIF rule IDs
 _INJECTION_RULE_IDS: dict[InjectionSeverity, str] = {
-    InjectionSeverity.HIGH: "MCP007",
-    InjectionSeverity.MEDIUM: "MCP008",
-    InjectionSeverity.LOW: "MCP008",  # LOW → same rule as MEDIUM, different level
+    severity: metadata.rule_id for severity, metadata in INJECTION_FINDINGS.items()
 }
 
 _INJECTION_RULE_DESCRIPTIONS = {
-    "MCP007": "High-severity prompt injection detected in tool description",
-    "MCP008": "Suspicious content detected in tool description",
+    metadata.rule_id: metadata.description for metadata in INJECTION_FINDINGS.values()
 }
 
 
@@ -61,6 +51,7 @@ class SarifGenerator:
 
     def generate(self, report: AuditReport) -> dict[str, Any]:
         """Return a SARIF 2.1.0 document as a dict. Caller is responsible for writing JSON."""
+        report = AuditReport.model_validate(redact_data(report.model_dump(mode="json")))
         try:
             tool_version = pkg_version("mcp-audit")
         except PackageNotFoundError:
@@ -89,10 +80,15 @@ class SarifGenerator:
         perm_rules = [
             {
                 "id": rule_id,
-                "name": cat.value.replace("_", " ").title().replace(" ", ""),
-                "shortDescription": {"text": _RULE_DESCRIPTIONS[cat]},
+                "name": PERMISSION_FINDINGS[cat].title.replace(" ", ""),
+                "shortDescription": {"text": PERMISSION_FINDINGS[cat].title},
+                "fullDescription": {"text": _RULE_DESCRIPTIONS[cat]},
+                "help": {"text": PERMISSION_FINDINGS[cat].remediation},
                 "helpUri": "https://github.com/saagpatel/mcp-audit#readme",
-                "properties": {"category": cat.value},
+                "properties": {
+                    "category": cat.value,
+                    "severity": PERMISSION_FINDINGS[cat].severity,
+                },
             }
             for cat, rule_id in _RULE_IDS.items()
         ]
@@ -101,6 +97,8 @@ class SarifGenerator:
                 "id": rule_id,
                 "name": f"PromptInjection{rule_id}",
                 "shortDescription": {"text": desc},
+                "fullDescription": {"text": desc},
+                "help": {"text": _injection_help(rule_id)},
                 "helpUri": "https://github.com/saagpatel/mcp-audit#readme",
                 "properties": {"category": "prompt_injection"},
             }
@@ -142,18 +140,27 @@ class SarifGenerator:
         uri = Path(config_path).as_uri() if config_path else "file:///unknown"
         msg = (
             f"Prompt injection pattern '{finding.pattern_name}' detected in tool "
-            f"'{finding.tool_name}' on server '{audit.server.name}': {finding.description}"
+            f"'{finding.tool_name}' on server '{audit.server.name}': {finding.description}. "
+            f"Suggested action: {finding.remediation}"
         )
         return {
             "ruleId": rule_id,
             "level": level,
             "message": {"text": msg},
             "locations": [{"physicalLocation": {"artifactLocation": {"uri": uri}}}],
+            "partialFingerprints": {
+                "mcpAuditStableId": _stable_fingerprint(rule_id, audit.server.name, finding.tool_name)
+            },
+            "properties": {
+                "pattern": finding.pattern_name,
+                "severity": finding.severity.value,
+                "remediation": finding.remediation,
+            },
         }
 
     def _make_result(self, finding: PermissionFinding, audit: ServerAudit) -> dict[str, Any]:
         """Build a single SARIF result object."""
-        rule_id = _RULE_IDS[finding.category]
+        rule_id = finding.rule_id
         level = self._finding_level(finding, audit)
 
         config_path = audit.server.config_path
@@ -162,7 +169,7 @@ class SarifGenerator:
         msg = (
             f"Tool '{finding.tool_name}' on server '{audit.server.name}' "
             f"has {finding.category.value} capability "
-            f"(confidence: {finding.confidence.value})"
+            f"(confidence: {finding.confidence.value}). Suggested action: {finding.remediation}"
         )
 
         return {
@@ -170,4 +177,25 @@ class SarifGenerator:
             "level": level,
             "message": {"text": msg},
             "locations": [{"physicalLocation": {"artifactLocation": {"uri": uri}}}],
+            "partialFingerprints": {
+                "mcpAuditStableId": _stable_fingerprint(rule_id, audit.server.name, finding.tool_name)
+            },
+            "properties": {
+                "category": finding.category.value,
+                "confidence": finding.confidence.value,
+                "severity": finding.severity,
+                "remediation": finding.remediation,
+            },
         }
+
+
+def _stable_fingerprint(rule_id: str, server_name: str, tool_name: str) -> str:
+    payload = f"{rule_id}\0{server_name}\0{tool_name}".encode()
+    return sha256(payload).hexdigest()
+
+
+def _injection_help(rule_id: str) -> str:
+    remediations = {
+        metadata.remediation for metadata in INJECTION_FINDINGS.values() if metadata.rule_id == rule_id
+    }
+    return " ".join(sorted(remediations))
