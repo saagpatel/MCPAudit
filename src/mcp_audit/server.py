@@ -134,22 +134,20 @@ def _build_mcp_server() -> Any:
     async def get_injection_findings() -> str:
         """Return all prompt injection findings across all servers. Returns JSON list."""
         from mcp_audit.cli import _run_scan_core
-        from mcp_audit.injection import InjectionDetector
         from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
 
         override_applier = OverrideApplier(load_override_config(DEFAULT_OVERRIDE_PATH))
         report = await _run_scan_core(
-            skip_connect=True,
+            skip_connect=False,
             clients=None,
             timeout=10,
             extra_config=None,
             override_applier=override_applier,
+            inject_check=True,
         )
-        detector = InjectionDetector()
         all_findings = []
         for audit in report.audits:
-            findings = detector.scan_server(audit.tools)
-            for f in findings:
+            for f in audit.injection_findings:
                 all_findings.append(
                     {
                         "server": audit.server.name,

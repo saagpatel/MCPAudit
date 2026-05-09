@@ -432,10 +432,21 @@ async def _run_pin(server_name: str | None, store: object) -> None:
 
     assert isinstance(store, PS)
     override_applier = OverrideApplier(load_override_config(DEFAULT_OVERRIDE_PATH))
-    report = await _run_scan_core(True, None, 10, None, override_applier)
+    report = await _run_scan_core(False, None, 10, None, override_applier)
 
+    matched = False
     for audit in report.audits:
         if server_name and audit.server.name != server_name:
             continue
+        matched = True
+        if audit.connection_status != "connected":
+            console.print(
+                f"[yellow]Skipped '{audit.server.name}': connection {audit.connection_status}."
+                " Use scan --skip-connect for config-only review; pins require live tool schemas.[/yellow]"
+            )
+            continue
         store.pin_server(audit.server.name, audit.tools)
         console.print(f"[green]Pinned {len(audit.tools)} tool(s) for '{audit.server.name}'.[/green]")
+
+    if server_name and not matched:
+        console.print(f"[yellow]Server '{server_name}' not found.[/yellow]")
