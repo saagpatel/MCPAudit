@@ -50,11 +50,13 @@ class ReportGenerator:
         table.add_column("Prompts", justify="right")
         table.add_column("Resources", justify="right")
         table.add_column("Risk", justify="right")
+        table.add_column("Non-Tool", justify="right")
         table.add_column("Top Permissions", overflow="fold")
         table.add_column("Status", style="dim")
 
         for audit in report.audits:
             risk_text = self._risk_text(audit)
+            non_tool_risk_text = self._non_tool_risk_text(audit)
             perms = self._top_permissions(audit)
             status_str = audit.connection_status
             if audit.connection_error:
@@ -67,6 +69,7 @@ class ReportGenerator:
                 str(len(audit.prompts)),
                 str(len(audit.resources)),
                 risk_text,
+                non_tool_risk_text,
                 perms,
                 status_str,
             )
@@ -251,6 +254,14 @@ class ReportGenerator:
         if audit.risk_score is None:
             return Text("n/a", style="dim")
         score = audit.risk_score.composite
+        label = f"{score:.1f}"
+        style = self._risk_style(score)
+        return Text(label, style=style)
+
+    def _non_tool_risk_text(self, audit: ServerAudit) -> Text:
+        if audit.non_tool_risk is None:
+            return Text("n/a", style="dim")
+        score = audit.non_tool_risk.composite
         label = f"{score:.1f}"
         style = self._risk_style(score)
         return Text(label, style=style)

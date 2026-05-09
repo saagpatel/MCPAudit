@@ -278,6 +278,8 @@ async def _run_scan_core(
                     audit.tools, audit.prompts, audit.resources
                 )
 
+            audit.non_tool_risk = scorer.score_non_tool(audit.capability_findings, audit.injection_findings)
+
             # Optional pin drift check
             if pin_store is not None:
                 audit.drift_findings = pin_store.check_drift(srv.name, audit.tools)

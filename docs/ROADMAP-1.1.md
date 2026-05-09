@@ -15,16 +15,21 @@ The `1.1` line should add depth without changing existing scoring semantics.
 
 ### Additive Non-Tool Risk
 
-Introduce an optional `non_tool_risk` report field after calibration. This field
-can summarize prompt and resource risk without changing
+Status: shipped in `1.1.0`.
+
+Introduced an optional `non_tool_risk` report field after calibration. This
+field summarizes prompt and resource risk without changing
 `risk_score.composite`.
 
 Done when:
 
 - prompt/resource fixtures cover common server families;
-- JSON and SARIF compatibility snapshots include the additive field;
+- JSON compatibility snapshots include the additive field;
 - policy examples show how to gate on prompt/resource findings without relying
   on composite score changes.
+
+Follow-up calibration should continue collecting false-positive and
+false-negative examples before any policy default gates on `non_tool_risk`.
 
 ### Policy Packs
 

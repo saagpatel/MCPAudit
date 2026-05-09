@@ -12,7 +12,7 @@ PyPI package: `mcp-permission-audit`. Installed command: `mcp-audit`.
 
 - **Capability inventory** — catalogs server tools, prompts, and resources; tool, prompt, and resource capabilities are classified across six permission categories: `file_read`, `file_write`, `network`, `shell_execution`, `destructive`, `exfiltration`
 - **Config-only inference** — `scan --skip-connect` infers conservative risks from declared commands, transports, credential key names, package runners, and remote URLs
-- **Risk scoring** — composite 0–10 per server as a weighted sum of per-category max(weight × confidence), with a five-dimension breakdown (file access, network, shell, destructive, exfiltration); prompt/resource findings remain separately reportable and policy-gatable while scoring calibration continues
+- **Risk scoring** — composite 0–10 per server as a weighted sum of tool permission categories, with a five-dimension breakdown (file access, network, shell, destructive, exfiltration); prompt/resource findings also produce an additive `non_tool_risk` signal without changing `risk_score.composite`
 - **Stable finding metadata** — permission and prompt-injection findings include stable rule IDs, severity, evidence, and suggested remediation so reports are easier to triage
 - **Local policy gates** — `scan --policy policy.yaml` evaluates reports against local YAML rules and exits nonzero for CI enforcement
 - **Report redaction** — terminal, JSON, and SARIF report paths share a redaction layer for likely credential values
@@ -100,7 +100,7 @@ mcp-audit watch
 
 ## Architecture
 
-The scanner enumerates MCP client config files, connects to each configured server, and calls `tools/list`, `prompts/list`, and `resources/list` over the MCP protocol when those capabilities are available. Stdio servers are started as subprocesses via `anyio`; HTTP/SSE servers are contacted at their configured URL. Returned tool schemas, prompt arguments, and resource URIs flow into the permission classifier (schema walker + regex ruleset over six permission categories) and the optional injection detector (pattern ruleset for instruction-override, role-switch, and hidden-directive phrasing). The risk scorer composes a per-category weighted sum clamped to 0–10 from tool findings; prompt and resource findings are reported separately for review and policy gates, and do not currently change the composite tool risk score. Reports render via Rich; JSON and SARIF 2.1.0 export are first-class. The pin store serializes SHA256 schema hashes plus reviewable tool snapshots to `~/.mcp-audit-pins.yaml` for actionable drift detection on subsequent `--pin-check` scans. Use `mcp-audit pin --refresh <server>` to preview expected drift for one reviewed server, then rerun with `--apply` to replace that server's pins.
+The scanner enumerates MCP client config files, connects to each configured server, and calls `tools/list`, `prompts/list`, and `resources/list` over the MCP protocol when those capabilities are available. Stdio servers are started as subprocesses via `anyio`; HTTP/SSE servers are contacted at their configured URL. Returned tool schemas, prompt arguments, and resource URIs flow into the permission classifier (schema walker + regex ruleset over six permission categories) and the optional injection detector (pattern ruleset for instruction-override, role-switch, and hidden-directive phrasing). The risk scorer composes a per-category weighted sum clamped to 0–10 from tool findings, then separately reports additive `non_tool_risk` for prompt and resource capability or injection findings. `non_tool_risk` is for triage and output consumers; it does not change `risk_score.composite`. Reports render via Rich; JSON and SARIF 2.1.0 export are first-class. The pin store serializes SHA256 schema hashes plus reviewable tool snapshots to `~/.mcp-audit-pins.yaml` for actionable drift detection on subsequent `--pin-check` scans. Use `mcp-audit pin --refresh <server>` to preview expected drift for one reviewed server, then rerun with `--apply` to replace that server's pins.
 
 ### Local Policy Gates
 
@@ -136,8 +136,7 @@ scanning setup paths. See `examples/policies/` for starter policies. See
 `docs/PIN-MAINTENANCE.md` for reviewed pin refresh and stale server cleanup
 workflows. See `docs/PROMPT-RESOURCE-SCORING.md` and
 `docs/SCORING-MIGRATION.md` for the current prompt/resource scoring boundary
-and migration path. See `docs/ROADMAP-1.1.md` for the next additive product
-depth lanes.
+and migration path. See `docs/ROADMAP-1.1.md` for additive product depth lanes.
 
 ## License
 

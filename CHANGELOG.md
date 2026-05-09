@@ -7,8 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-05-09
+
 ### Added
 
+- Added additive `non_tool_risk` scoring for prompt and resource capability or
+  injection findings without changing `risk_score.composite`.
+- Added terminal and JSON coverage for the non-tool risk signal.
+- Added regression coverage for LLM confidence scoring, non-tool scoring, and
+  output-contract compatibility.
 - Added CI workflow examples for GitHub SARIF upload and JSON policy gates.
 - Added a browser-automation CI policy profile for reviewed Playwright and
   Puppeteer-style MCP servers.
@@ -18,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Bumped the package to `1.1.0` for the first stable minor feature release.
 - Refined stable output-contract wording for compatible `1.x` additive fields.
 - Linked feedback, adoption, and roadmap docs to the new stable-era examples.
 
@@ -289,7 +297,8 @@ real workstations; API surface may still shift before the `1.0.0` stable cut.
 - Risk score output with pass/warn/fail thresholds
 - `mcp-audit` CLI entry point
 
-[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0rc1...v1.0.0
 [1.0.0rc1]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0b3...v1.0.0rc1
 [1.0.0b3]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0b2...v1.0.0b3

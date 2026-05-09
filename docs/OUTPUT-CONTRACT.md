@@ -36,6 +36,12 @@ Each audit may include:
 - `injection_findings`
 - `drift_findings`
 - `risk_score`
+- `non_tool_risk`
+
+`risk_score.composite` is tool-centered. `non_tool_risk` is an additive
+prompt/resource triage signal and does not change `risk_score.composite`.
+`non_tool_risk` may be `null` when a scan finds no prompt/resource capability or
+injection findings.
 
 Finding targets:
 
