@@ -118,10 +118,14 @@ Done when policies can express common adoption rules without custom scripting.
 ### 3. Pin Baseline Review UX
 
 Drift findings now explain what changed, and `pin --status` now gives a
-reviewable baseline summary. The next layer is refresh workflow:
+reviewable baseline summary. `pin --refresh <server>` now provides a dry-run
+review for one server and requires `--apply` before replacing its pins.
 
-- a safer refresh flow for one reviewed server;
-- docs that explain how to rotate pins after expected upgrades.
+Useful follow-ups:
+
+- optional JSON output for refresh review results;
+- clearer stale-pin cleanup guidance for servers that were intentionally
+  removed.
 
 Done when users can maintain pins without inspecting YAML by hand.
 
