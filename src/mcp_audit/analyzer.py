@@ -1,5 +1,7 @@
 """Permission inference engine — keyword heuristics + MCP annotation analysis."""
 
+from urllib.parse import urlparse
+
 from mcp_audit.models import (
     CapabilityFinding,
     CapabilityTarget,
@@ -52,15 +54,21 @@ class PermissionAnalyzer:
         return self._capability_findings(CapabilityTarget.PROMPT, prompt.name, sources)
 
     def analyze_resource(self, resource: ResourceInfo) -> list[CapabilityFinding]:
+        parsed = urlparse(resource.uri)
+        scheme = parsed.scheme.lower()
+        host = parsed.hostname or ""
+        path = parsed.path or ""
         sources: list[tuple[str, int]] = [
             (resource.uri, 3),
+            (scheme, 2),
+            (host, 2),
+            (path, 2),
             (resource.name or "", 2),
             (resource.description or "", 2),
             (resource.mime_type or "", 1),
         ]
         findings = self._capability_findings(CapabilityTarget.RESOURCE, resource.uri, sources)
 
-        scheme = resource.uri.split(":", 1)[0].lower() if ":" in resource.uri else ""
         if scheme == "file" and not any(f.category == PermissionCategory.FILE_READ for f in findings):
             findings.append(
                 CapabilityFinding(
@@ -71,16 +79,38 @@ class PermissionAnalyzer:
                     evidence=["resource URI scheme 'file'"],
                 )
             )
-        if scheme in {"http", "https"} and not any(
-            f.category == PermissionCategory.NETWORK for f in findings
+        if scheme in {"http", "https"}:
+            evidence = [f"resource URI scheme '{scheme}'"]
+            if host:
+                evidence.append(f"resource host '{host}'")
+            existing_network = next(
+                (finding for finding in findings if finding.category == PermissionCategory.NETWORK),
+                None,
+            )
+            if existing_network is None:
+                findings.append(
+                    CapabilityFinding(
+                        target_type=CapabilityTarget.RESOURCE,
+                        target_name=resource.uri,
+                        category=PermissionCategory.NETWORK,
+                        confidence=Confidence.HIGH,
+                        evidence=evidence,
+                    )
+                )
+            else:
+                existing_network.evidence = [*existing_network.evidence, *evidence]
+        if (
+            "{" in resource.uri
+            and "}" in resource.uri
+            and not any(f.category == PermissionCategory.NETWORK for f in findings)
         ):
             findings.append(
                 CapabilityFinding(
                     target_type=CapabilityTarget.RESOURCE,
                     target_name=resource.uri,
                     category=PermissionCategory.NETWORK,
-                    confidence=Confidence.HIGH,
-                    evidence=[f"resource URI scheme '{scheme}'"],
+                    confidence=Confidence.MEDIUM,
+                    evidence=["resource URI contains template variables"],
                 )
             )
         return findings

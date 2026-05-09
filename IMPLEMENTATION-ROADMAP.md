@@ -34,6 +34,7 @@ Current scan behavior:
 - Tool inventory, annotation coverage, and permission classification.
 - Prompt and resource inventory for connected scans, including first-pass
   permission findings for prompt arguments and resource URI schemes.
+- Prompt and resource injection detection when `--inject-check` is enabled.
 - Stable finding metadata with rule IDs, severity, description, and remediation.
 - Prompt-injection detection with stable metadata and SARIF output.
 - Documented JSON/SARIF output contract with compatibility fixture coverage.
@@ -91,26 +92,21 @@ Core modules:
 
 ### 1. Prompt And Resource Risk Analysis
 
-First-pass prompt/resource permission findings are now present. Next work should
-deepen this into a fuller risk model:
+Prompt/resource permission findings and injection detection are now present.
+Useful follow-ups:
 
-- classify resource hostnames and resource templates;
-- detect prompt/resource injection text where descriptions or URIs can
-  influence an assistant;
 - decide whether selected prompt/resource findings should contribute to the
   server composite risk score.
+- add more real-world resource-template fixtures from popular MCP servers.
 
 Done when prompt/resource analysis has the same maturity as tool analysis.
 
 ### 2. Policy Gate Depth
 
 The policy gate supports severity thresholds, drift, denied permission
-categories, max risk, server allowlists, and per-server overrides. Useful
-follow-ups:
+categories, max risk, required pin coverage, server allowlists, separate
+finding thresholds, and per-server overrides. Useful follow-ups:
 
-- required pin coverage for selected servers;
-- separate thresholds for permission, injection, drift, prompt, and resource
-  findings;
 - richer sample policies for team-specific adoption.
 
 Done when policies can express common adoption rules without custom scripting.
@@ -123,7 +119,6 @@ review for one server and requires `--apply` before replacing its pins.
 
 Useful follow-ups:
 
-- optional JSON output for refresh review results;
 - clearer stale-pin cleanup guidance for servers that were intentionally
   removed.
 
@@ -134,9 +129,8 @@ Done when users can maintain pins without inspecting YAML by hand.
 Reports now carry richer metadata, with a documented JSON/SARIF contract and a
 representative compatibility fixture. Useful follow-ups:
 
-- add more fixtures for failed connections and config-only scans;
-- document deprecation rules for future report fields;
-- add consumer examples for GitHub code scanning and generic CI.
+- add more downstream consumer tests if external integrations start depending
+  on the JSON shape.
 
 Done when downstream CI users have copy-paste integration examples.
 

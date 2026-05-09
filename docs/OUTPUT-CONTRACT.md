@@ -3,6 +3,11 @@
 MCPAudit reports are designed for local review and CI ingestion. Keep this
 contract stable unless a release note calls out a breaking change.
 
+Before `1.0.0` stable, new fields may be added to JSON objects. Consumers
+should ignore unknown fields and should not fail when optional fields are
+present. Existing stable fields should only be removed or renamed with a
+release-note deprecation window.
+
 ## Exit Codes
 
 - `0`: scan completed and no configured policy gate failed.
@@ -32,6 +37,13 @@ Each audit may include:
 - `drift_findings`
 - `risk_score`
 
+Finding targets:
+
+- tool permission findings use `tool_name`
+- prompt/resource capability findings use `target_type` and `target_name`
+- injection findings include `tool_name` for compatibility and additive
+  `target_type` / `target_name` fields for tool, prompt, and resource targets
+
 ## SARIF Report
 
 SARIF output uses stable MCP rule IDs:
@@ -43,5 +55,28 @@ SARIF output uses stable MCP rule IDs:
 
 ## Compatibility Fixture
 
-`tests/fixtures/reports/sample_audit_report.json` is a representative report
-fixture. Tests validate that it still loads through the current Pydantic models.
+The report fixtures in `tests/fixtures/reports/` cover representative connected,
+failed, config-only, policy-failed, and prompt/resource-heavy reports. Tests
+validate that fixtures still load through the current Pydantic models and
+generate SARIF with the expected stable rules.
+
+## CI Examples
+
+Write SARIF for GitHub code scanning:
+
+```yaml
+- name: Audit MCP servers
+  run: mcp-audit scan --sarif mcp-audit.sarif
+- name: Upload SARIF
+  uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: mcp-audit.sarif
+```
+
+Use JSON plus a local policy gate:
+
+```bash
+mcp-audit scan --json mcp-audit.json --policy examples/policies/balanced-team-ci.yaml
+```
+
+Exit code `2` means reports were written but the policy gate failed.

@@ -1,0 +1,40 @@
+{
+  "scan_timestamp": "2026-05-09T11:00:00Z",
+  "hostname": "example-host",
+  "os_platform": "Darwin",
+  "servers_discovered": 1,
+  "servers_connected": 0,
+  "servers_failed": 1,
+  "total_tools": 0,
+  "high_risk_servers": 0,
+  "audits": [
+    {
+      "server": {
+        "name": "broken",
+        "client": "claude_code",
+        "config_path": "/tmp/mcp.json",
+        "project_path": null,
+        "command": "missing-command",
+        "args": [],
+        "env_keys": [],
+        "transport": "stdio",
+        "url": null,
+        "headers_keys": []
+      },
+      "connection_status": "failed",
+      "connection_error": "command not found",
+      "tools": [],
+      "prompts": [],
+      "resources": [],
+      "permissions": [],
+      "capability_findings": [],
+      "risk_score": null,
+      "has_annotations": false,
+      "annotation_coverage": 0.0,
+      "injection_findings": [],
+      "drift_findings": []
+    }
+  ],
+  "scan_duration_seconds": 0.1,
+  "policy_result": null
+}

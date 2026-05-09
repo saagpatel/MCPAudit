@@ -262,7 +262,9 @@ async def _run_scan_core(
 
             # Optional injection detection
             if injection_detector is not None:
-                audit.injection_findings = injection_detector.scan_server(audit.tools)
+                audit.injection_findings = injection_detector.scan_server(
+                    audit.tools, audit.prompts, audit.resources
+                )
 
             # Optional pin drift check
             if pin_store is not None:
@@ -448,8 +450,8 @@ def pin_command(
 
     store = PinStore(path=Path(pin_file) if pin_file else DEFAULT_PIN_PATH)
 
-    if json_status and not status:
-        raise click.ClickException("--json can only be used with --status.")
+    if json_status and not (status or refresh_server):
+        raise click.ClickException("--json can only be used with --status or --refresh.")
 
     selected_actions = sum(
         bool(action)
@@ -476,7 +478,7 @@ def pin_command(
         return
 
     if refresh_server:
-        anyio.run(_run_pin_refresh, refresh_server, store, apply_refresh)
+        anyio.run(_run_pin_refresh, refresh_server, store, apply_refresh, json_status)
         return
 
     # Pin servers
@@ -509,7 +511,12 @@ async def _run_pin(server_name: str | None, store: object) -> None:
         console.print(f"[yellow]Server '{server_name}' not found.[/yellow]")
 
 
-async def _run_pin_refresh(server_name: str, store: object, apply_refresh: bool) -> None:
+async def _run_pin_refresh(
+    server_name: str,
+    store: object,
+    apply_refresh: bool,
+    json_status: bool = False,
+) -> None:
     """Review drift for one server and optionally refresh its pin baseline."""
     from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
     from mcp_audit.pinning import PinStore as PS
@@ -520,11 +527,25 @@ async def _run_pin_refresh(server_name: str, store: object, apply_refresh: bool)
 
     matching_audits = [audit for audit in report.audits if audit.server.name == server_name]
     if not matching_audits:
+        if json_status:
+            click.echo(_pin_refresh_json(server_name, 0, [], applied=False, error="server not found"))
+            return
         console.print(f"[yellow]Server '{server_name}' not found.[/yellow]")
         return
 
     audit = matching_audits[0]
     if audit.connection_status != "connected":
+        if json_status:
+            click.echo(
+                _pin_refresh_json(
+                    audit.server.name,
+                    len(audit.tools),
+                    [],
+                    applied=False,
+                    error=f"connection {audit.connection_status}",
+                )
+            )
+            return
         console.print(
             f"[yellow]Skipped '{audit.server.name}': connection {audit.connection_status}."
             " Pin refresh requires live tool schemas.[/yellow]"
@@ -532,6 +553,12 @@ async def _run_pin_refresh(server_name: str, store: object, apply_refresh: bool)
         return
 
     findings = store.check_drift(audit.server.name, audit.tools)
+    if json_status:
+        if apply_refresh:
+            store.pin_server(audit.server.name, audit.tools)
+        click.echo(_pin_refresh_json(audit.server.name, len(audit.tools), findings, applied=apply_refresh))
+        return
+
     _render_pin_refresh_review(audit.server.name, len(audit.tools), findings)
 
     if not apply_refresh:
@@ -542,6 +569,39 @@ async def _run_pin_refresh(server_name: str, store: object, apply_refresh: bool)
 
     store.pin_server(audit.server.name, audit.tools)
     console.print(f"[green]Refreshed {len(audit.tools)} pin(s) for '{audit.server.name}'.[/green]")
+
+
+def _pin_refresh_json(
+    server_name: str,
+    tool_count: int,
+    drift_findings: list[DriftFinding],
+    *,
+    applied: bool,
+    error: str | None = None,
+) -> str:
+    import json
+
+    counts = {status.value: 0 for status in DriftStatus}
+    for finding in drift_findings:
+        counts[finding.status.value] += 1
+    payload = {
+        "server": server_name,
+        "current_tool_count": tool_count,
+        "applied": applied,
+        "error": error,
+        "drift_counts": counts,
+        "drift": [
+            {
+                "tool_name": finding.tool_name,
+                "status": finding.status.value,
+                "summary": finding.summary,
+                "details": finding.details,
+                "remediation": finding.remediation,
+            }
+            for finding in drift_findings
+        ],
+    }
+    return json.dumps(payload, indent=2, sort_keys=True)
 
 
 def _render_pin_refresh_review(

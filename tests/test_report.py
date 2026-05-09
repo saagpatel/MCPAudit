@@ -16,6 +16,8 @@ from mcp_audit.models import (
     Confidence,
     DriftFinding,
     DriftStatus,
+    InjectionFinding,
+    InjectionSeverity,
     PermissionCategory,
     PermissionFinding,
     RiskScore,
@@ -207,6 +209,27 @@ class TestTerminalRender:
         assert "Prompt And Resource Capability Findings" in output
         assert "file:///tmp" in output
         assert "file_read" in output
+
+    def test_injection_warnings_include_target_type_and_name(self) -> None:
+        con, buf = _make_console()
+        gen = ReportGenerator(console=con)
+        audit = _make_audit("srv")
+        audit.injection_findings = [
+            InjectionFinding(
+                tool_name="memo://review",
+                target_type=CapabilityTarget.RESOURCE,
+                target_name="memo://review",
+                severity=InjectionSeverity.MEDIUM,
+                pattern_name="role_injection",
+                matched_text="assistant:",
+                description="Resource injects fake role text.",
+            )
+        ]
+        gen.render_terminal(_base_report([audit]))
+        output = buf.getvalue()
+        assert "Prompt Injection Warnings" in output
+        assert "resource" in output
+        assert "memo" in output
 
 
 class TestJsonRender:

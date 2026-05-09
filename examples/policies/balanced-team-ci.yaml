@@ -1,0 +1,18 @@
+# Balanced CI gate for teams adopting MCPAudit incrementally.
+fail_on:
+  permissions: high
+  injection: medium
+  capabilities: high
+  drift: true
+require:
+  pins:
+    servers:
+      - github
+deny:
+  permissions:
+    - shell_execution
+max_risk: 8
+servers:
+  github:
+    require_pin: true
+    max_risk: 6

@@ -12,6 +12,8 @@ from mcp_audit.models import (
     Confidence,
     DriftFinding,
     DriftStatus,
+    InjectionFinding,
+    InjectionSeverity,
     PermissionCategory,
     PermissionFinding,
     PolicyResult,
@@ -128,6 +130,26 @@ class TestSarifResults:
         assert result["ruleId"] == "MCP001"
         assert result["properties"]["target_type"] == "resource"
         assert "file:///tmp/example.txt" in result["message"]["text"]
+
+    def test_injection_finding_emits_target_metadata(self) -> None:
+        audit = _make_audit()
+        audit.injection_findings = [
+            InjectionFinding(
+                tool_name="prompt://review",
+                target_type=CapabilityTarget.PROMPT,
+                target_name="review_prompt",
+                severity=InjectionSeverity.MEDIUM,
+                pattern_name="role_injection",
+                matched_text="assistant:",
+                description="Prompt injects fake role text.",
+            )
+        ]
+        sarif = SarifGenerator().generate(_make_report([audit]))
+        result = sarif["runs"][0]["results"][0]
+        assert result["ruleId"] == "MCP008"
+        assert result["properties"]["target_type"] == "prompt"
+        assert result["properties"]["target_name"] == "review_prompt"
+        assert "prompt 'review_prompt'" in result["message"]["text"]
 
     def test_drift_finding_emits_sarif_result(self) -> None:
         audit = _make_audit()

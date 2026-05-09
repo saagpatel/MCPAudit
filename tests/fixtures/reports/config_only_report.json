@@ -1,0 +1,58 @@
+{
+  "scan_timestamp": "2026-05-09T11:05:00Z",
+  "hostname": "example-host",
+  "os_platform": "Darwin",
+  "servers_discovered": 1,
+  "servers_connected": 0,
+  "servers_failed": 0,
+  "total_tools": 0,
+  "high_risk_servers": 0,
+  "audits": [
+    {
+      "server": {
+        "name": "remote-api",
+        "client": "cursor",
+        "config_path": "/tmp/mcp.json",
+        "project_path": null,
+        "command": null,
+        "args": [],
+        "env_keys": [],
+        "transport": "http",
+        "url": "https://api.example.com/mcp",
+        "headers_keys": [
+          "Authorization"
+        ]
+      },
+      "connection_status": "skipped",
+      "connection_error": null,
+      "tools": [],
+      "prompts": [],
+      "resources": [],
+      "permissions": [
+        {
+          "category": "network",
+          "confidence": "declared",
+          "evidence": [
+            "transport=http"
+          ],
+          "tool_name": "remote-api"
+        }
+      ],
+      "capability_findings": [],
+      "risk_score": {
+        "composite": 4.0,
+        "file_access": 0.0,
+        "network_access": 4.0,
+        "shell_execution": 0.0,
+        "destructive": 0.0,
+        "exfiltration": 0.0
+      },
+      "has_annotations": false,
+      "annotation_coverage": 0.0,
+      "injection_findings": [],
+      "drift_findings": []
+    }
+  ],
+  "scan_duration_seconds": 0.1,
+  "policy_result": null
+}

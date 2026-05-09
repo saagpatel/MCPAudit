@@ -1,11 +1,18 @@
-"""Prompt injection detection — scan tool descriptions for adversarial patterns."""
+"""Prompt injection detection — scan MCP capability text for adversarial patterns."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from mcp_audit.models import InjectionFinding, InjectionSeverity, ToolInfo
+from mcp_audit.models import (
+    CapabilityTarget,
+    InjectionFinding,
+    InjectionSeverity,
+    PromptInfo,
+    ResourceInfo,
+    ToolInfo,
+)
 
 # Unicode characters used for hidden directives
 _ZERO_WIDTH_CHARS = {"\u200b", "\u200c", "\u200d"}  # ZWSP, ZWNJ, ZWJ
@@ -192,13 +199,50 @@ _PATTERNS: list[_InjectionPattern] = [
 
 
 class InjectionDetector:
-    """Scans MCP tool names and descriptions for adversarial prompt injection patterns."""
+    """Scans MCP capability names and descriptions for adversarial prompt injection patterns."""
 
     def scan_tool(self, tool: ToolInfo) -> list[InjectionFinding]:
         """Return all injection findings for a single tool."""
         # Normalize name: replace underscores/hyphens with spaces for phrase matching
         normalized_name = tool.name.replace("_", " ").replace("-", " ")
         combined = f"{normalized_name} {tool.description or ''}"
+        return self._scan_text(CapabilityTarget.TOOL, tool.name, combined, tool.name)
+
+    def scan_prompt(self, prompt: PromptInfo) -> list[InjectionFinding]:
+        """Return all injection findings for a single prompt."""
+        combined = "\n".join(
+            part
+            for part in [
+                prompt.name.replace("_", " ").replace("-", " "),
+                prompt.description or "",
+                " ".join(prompt.arguments),
+            ]
+            if part
+        )
+        return self._scan_text(CapabilityTarget.PROMPT, prompt.name, combined, prompt.name)
+
+    def scan_resource(self, resource: ResourceInfo) -> list[InjectionFinding]:
+        """Return all injection findings for a single resource."""
+        combined = "\n".join(
+            part
+            for part in [
+                resource.uri,
+                resource.name or "",
+                resource.description or "",
+                resource.mime_type or "",
+            ]
+            if part
+        )
+        return self._scan_text(CapabilityTarget.RESOURCE, resource.uri, combined, resource.uri)
+
+    def _scan_text(
+        self,
+        target_type: CapabilityTarget,
+        target_name: str,
+        combined: str,
+        legacy_tool_name: str,
+    ) -> list[InjectionFinding]:
+        """Return all injection findings for one normalized capability text blob."""
         lower = combined.lower()
         findings: list[InjectionFinding] = []
         for pattern in _PATTERNS:
@@ -206,7 +250,9 @@ class InjectionDetector:
                 matched = pattern._extract(lower, combined)
                 findings.append(
                     InjectionFinding(
-                        tool_name=tool.name,
+                        tool_name=legacy_tool_name,
+                        target_type=target_type,
+                        target_name=target_name,
                         severity=pattern.severity,
                         pattern_name=pattern.name,
                         matched_text=matched,
@@ -215,9 +261,18 @@ class InjectionDetector:
                 )
         return findings
 
-    def scan_server(self, tools: list[ToolInfo]) -> list[InjectionFinding]:
-        """Return all injection findings across all tools on a server."""
+    def scan_server(
+        self,
+        tools: list[ToolInfo],
+        prompts: list[PromptInfo] | None = None,
+        resources: list[ResourceInfo] | None = None,
+    ) -> list[InjectionFinding]:
+        """Return all injection findings across all server capabilities."""
         findings: list[InjectionFinding] = []
         for tool in tools:
             findings.extend(self.scan_tool(tool))
+        for prompt in prompts or []:
+            findings.extend(self.scan_prompt(prompt))
+        for resource in resources or []:
+            findings.extend(self.scan_resource(resource))
         return findings

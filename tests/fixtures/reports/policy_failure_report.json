@@ -1,0 +1,76 @@
+{
+  "scan_timestamp": "2026-05-09T11:10:00Z",
+  "hostname": "example-host",
+  "os_platform": "Darwin",
+  "servers_discovered": 1,
+  "servers_connected": 1,
+  "servers_failed": 0,
+  "total_tools": 1,
+  "high_risk_servers": 1,
+  "audits": [
+    {
+      "server": {
+        "name": "shell",
+        "client": "claude_desktop",
+        "config_path": "/tmp/mcp.json",
+        "project_path": null,
+        "command": "python",
+        "args": [
+          "server.py"
+        ],
+        "env_keys": [],
+        "transport": "stdio",
+        "url": null,
+        "headers_keys": []
+      },
+      "connection_status": "connected",
+      "connection_error": null,
+      "tools": [
+        {
+          "name": "run_shell",
+          "description": "Run shell commands.",
+          "input_schema": null,
+          "annotations": null
+        }
+      ],
+      "prompts": [],
+      "resources": [],
+      "permissions": [
+        {
+          "category": "shell_execution",
+          "confidence": "high",
+          "evidence": [
+            "shell"
+          ],
+          "tool_name": "run_shell"
+        }
+      ],
+      "capability_findings": [],
+      "risk_score": {
+        "composite": 8.0,
+        "file_access": 0.0,
+        "network_access": 0.0,
+        "shell_execution": 8.0,
+        "destructive": 0.0,
+        "exfiltration": 0.0
+      },
+      "has_annotations": false,
+      "annotation_coverage": 0.0,
+      "injection_findings": [],
+      "drift_findings": []
+    }
+  ],
+  "scan_duration_seconds": 0.1,
+  "policy_result": {
+    "passed": false,
+    "violations": [
+      {
+        "rule": "deny.permissions",
+        "message": "shell_execution is denied by local policy.",
+        "server_name": "shell",
+        "tool_name": "run_shell",
+        "severity": "high"
+      }
+    ]
+  }
+}
