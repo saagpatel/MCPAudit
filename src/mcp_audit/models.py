@@ -84,6 +84,23 @@ class ToolInfo(BaseModel):
     annotations: ToolAnnotations | None = None
 
 
+class PromptInfo(BaseModel):
+    """A prompt exposed by an MCP server."""
+
+    name: str
+    description: str | None = None
+    arguments: list[str] = Field(default_factory=list)
+
+
+class ResourceInfo(BaseModel):
+    """A resource exposed by an MCP server."""
+
+    uri: str
+    name: str | None = None
+    description: str | None = None
+    mime_type: str | None = None
+
+
 class PermissionFinding(BaseModel):
     """A single permission inference for a tool."""
 
@@ -208,6 +225,8 @@ class ServerAudit(BaseModel):
     connection_status: str  # "connected", "failed", "timeout", "skipped"
     connection_error: str | None = None
     tools: list[ToolInfo] = Field(default_factory=list)
+    prompts: list[PromptInfo] = Field(default_factory=list)
+    resources: list[ResourceInfo] = Field(default_factory=list)
     permissions: list[PermissionFinding] = Field(default_factory=list)
     risk_score: RiskScore | None = None
     has_annotations: bool = False

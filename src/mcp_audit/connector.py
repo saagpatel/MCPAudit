@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import dataclass
 from pathlib import PurePath
+from typing import Any
 
 import anyio
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from mcp.types import Prompt as SdkPrompt
+from mcp.types import Resource as SdkResource
 from mcp.types import Tool as SdkTool
 from mcp.types import ToolAnnotations as SdkToolAnnotations
 
@@ -16,6 +20,8 @@ from mcp_audit.models import (
     Confidence,
     PermissionCategory,
     PermissionFinding,
+    PromptInfo,
+    ResourceInfo,
     ServerAudit,
     ServerConfig,
     ToolAnnotations,
@@ -57,6 +63,13 @@ _PACKAGE_RUNNERS = {"npx", "uvx", "pipx"}
 _DESTRUCTIVE_MARKERS = ("rm -rf", "remove-item -recurse", "del /s", "format ")
 
 
+@dataclass(frozen=True)
+class _ServerCapabilities:
+    tools: list[ToolInfo]
+    prompts: list[PromptInfo]
+    resources: list[ResourceInfo]
+
+
 class ServerConnector:
     """Connects to MCP servers and enumerates their tools."""
 
@@ -68,14 +81,14 @@ class ServerConnector:
         try:
             with anyio.move_on_after(self.timeout) as cancel_scope:
                 if config.transport == TransportType.STDIO:
-                    tools = await self._connect_stdio(config)
+                    capabilities = await self._connect_stdio(config)
                 elif config.transport in (TransportType.HTTP, TransportType.SSE):
                     if config.transport == TransportType.SSE:
                         logger.warning(
                             "Server %s uses deprecated SSE transport; attempting as StreamableHTTP",
                             config.name,
                         )
-                    tools = await self._connect_http(config)
+                    capabilities = await self._connect_http(config)
                 else:
                     return ServerAudit(
                         server=config,
@@ -87,8 +100,15 @@ class ServerConnector:
                 logger.debug("Timeout connecting to %s", config.name)
                 return ServerAudit(server=config, connection_status="timeout")
 
+            tools = capabilities.tools
             logger.debug("Connected to %s, found %d tools", config.name, len(tools))
-            audit = ServerAudit(server=config, connection_status="connected", tools=tools)
+            audit = ServerAudit(
+                server=config,
+                connection_status="connected",
+                tools=tools,
+                prompts=capabilities.prompts,
+                resources=capabilities.resources,
+            )
             audit.has_annotations = any(t.annotations is not None for t in tools)
             if tools:
                 annotated = sum(1 for t in tools if t.annotations is not None)
@@ -103,7 +123,7 @@ class ServerConnector:
                 connection_error=redact_text(str(exc)),
             )
 
-    async def _connect_stdio(self, config: ServerConfig) -> list[ToolInfo]:
+    async def _connect_stdio(self, config: ServerConfig) -> _ServerCapabilities:
         if not config.command:
             raise ValueError(f"Server {config.name} has no command for stdio transport")
 
@@ -115,10 +135,9 @@ class ServerConnector:
         async with stdio_client(params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                result = await session.list_tools()
-                return [self._convert_tool(t) for t in result.tools]
+                return await self._list_capabilities(session, config.name)
 
-    async def _connect_http(self, config: ServerConfig) -> list[ToolInfo]:
+    async def _connect_http(self, config: ServerConfig) -> _ServerCapabilities:
         if not config.url:
             raise ValueError(f"Server {config.name} has no URL for HTTP transport")
 
@@ -127,8 +146,30 @@ class ServerConnector:
         async with streamablehttp_client(config.url) as (read, write, _get_session_id):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                result = await session.list_tools()
-                return [self._convert_tool(t) for t in result.tools]
+                return await self._list_capabilities(session, config.name)
+
+    async def _list_capabilities(self, session: ClientSession, server_name: str) -> _ServerCapabilities:
+        tool_result = await session.list_tools()
+        prompts: list[PromptInfo] = []
+        resources: list[ResourceInfo] = []
+
+        try:
+            prompt_result = await session.list_prompts()
+            prompts = [self._convert_prompt(prompt) for prompt in prompt_result.prompts]
+        except Exception as exc:
+            logger.debug("Server %s prompt listing unavailable: %s", server_name, redact_text(str(exc)))
+
+        try:
+            resource_result = await session.list_resources()
+            resources = [self._convert_resource(resource) for resource in resource_result.resources]
+        except Exception as exc:
+            logger.debug("Server %s resource listing unavailable: %s", server_name, redact_text(str(exc)))
+
+        return _ServerCapabilities(
+            tools=[self._convert_tool(t) for t in tool_result.tools],
+            prompts=prompts,
+            resources=resources,
+        )
 
     def skip_connect_audit(self, config: ServerConfig) -> ServerAudit:
         """Return a ServerAudit with config-inferred permissions (no connection)."""
@@ -219,6 +260,29 @@ class ServerConnector:
             open_world_hint=sdk_ann.openWorldHint,
         )
 
+    @staticmethod
+    def _convert_prompt(sdk_prompt: SdkPrompt) -> PromptInfo:
+        arguments: list[str] = []
+        for argument in sdk_prompt.arguments or []:
+            name = getattr(argument, "name", None)
+            if name:
+                arguments.append(str(name))
+        return PromptInfo(
+            name=sdk_prompt.name,
+            description=sdk_prompt.description,
+            arguments=arguments,
+        )
+
+    @staticmethod
+    def _convert_resource(sdk_resource: SdkResource) -> ResourceInfo:
+        mime_type = _get_attr(sdk_resource, "mimeType", "mime_type")
+        return ResourceInfo(
+            uri=str(sdk_resource.uri),
+            name=sdk_resource.name,
+            description=sdk_resource.description,
+            mime_type=str(mime_type) if mime_type else None,
+        )
+
 
 def build_skip_connect_findings_for_category(
     categories: list[PermissionCategory],
@@ -244,3 +308,10 @@ def _command_name(command: str | None) -> str:
         return ""
     normalized = command.replace("\\", "/")
     return PurePath(normalized).name.lower()
+
+
+def _get_attr(obj: object, *names: str) -> Any:
+    for name in names:
+        if hasattr(obj, name):
+            return getattr(obj, name)
+    return None

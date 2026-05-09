@@ -86,6 +86,35 @@ class TestConvertTool:
         assert result.input_schema == schema
 
 
+class TestConvertCapabilities:
+    def test_converts_prompt_arguments(self) -> None:
+        from mcp.types import Prompt, PromptArgument
+
+        sdk_prompt = Prompt(
+            name="summarize_file",
+            description="Summarize a file.",
+            arguments=[PromptArgument(name="path", required=True)],
+        )
+        result = ServerConnector._convert_prompt(sdk_prompt)
+        assert result.name == "summarize_file"
+        assert result.description == "Summarize a file."
+        assert result.arguments == ["path"]
+
+    def test_converts_resource_metadata(self) -> None:
+        from mcp.types import Resource
+
+        sdk_resource = Resource(
+            uri="file:///tmp/example.txt",
+            name="example",
+            description="Example file.",
+            mimeType="text/plain",
+        )
+        result = ServerConnector._convert_resource(sdk_resource)
+        assert result.uri == "file:///tmp/example.txt"
+        assert result.name == "example"
+        assert result.mime_type == "text/plain"
+
+
 class TestSkipConnectAudit:
     def test_filesystem_command_infers_file_permissions(self) -> None:
         config = make_server_config(
@@ -239,6 +268,8 @@ async def test_connects_to_mock_stdio_server() -> None:
     assert len(audit.tools) == 3
     tool_names = {t.name for t in audit.tools}
     assert tool_names == {"read_file", "write_file", "execute_command"}
+    assert [prompt.name for prompt in audit.prompts] == ["summarize_file"]
+    assert [resource.name for resource in audit.resources] == ["example"]
 
 
 @pytest.mark.anyio
