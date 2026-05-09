@@ -12,6 +12,7 @@ from mcp_audit.models import (
     AuditReport,
     CapabilityFinding,
     Confidence,
+    DriftFinding,
     InjectionFinding,
     InjectionSeverity,
     PermissionCategory,
@@ -45,6 +46,9 @@ _INJECTION_RULE_IDS: dict[InjectionSeverity, str] = {
 _INJECTION_RULE_DESCRIPTIONS = {
     metadata.rule_id: metadata.description for metadata in INJECTION_FINDINGS.values()
 }
+
+_DRIFT_RULE_ID = "MCP009"
+_POLICY_RULE_ID = "MCP010"
 
 
 class SarifGenerator:
@@ -105,7 +109,29 @@ class SarifGenerator:
             }
             for rule_id, desc in _INJECTION_RULE_DESCRIPTIONS.items()
         ]
-        return perm_rules + injection_rules
+        contract_rules = [
+            {
+                "id": _DRIFT_RULE_ID,
+                "name": "ToolSchemaDrift",
+                "shortDescription": {"text": "Tool schema drift"},
+                "fullDescription": {
+                    "text": "A tool was added, removed, or changed compared with the pin baseline."
+                },
+                "help": {"text": "Review the drift finding before refreshing the pin baseline."},
+                "helpUri": "https://github.com/saagpatel/mcp-audit#readme",
+                "properties": {"category": "schema_drift", "severity": "medium"},
+            },
+            {
+                "id": _POLICY_RULE_ID,
+                "name": "PolicyGateViolation",
+                "shortDescription": {"text": "Policy gate violation"},
+                "fullDescription": {"text": "The completed scan failed a local policy rule."},
+                "help": {"text": "Review the policy violation and adjust the server or policy."},
+                "helpUri": "https://github.com/saagpatel/mcp-audit#readme",
+                "properties": {"category": "policy", "severity": "high"},
+            },
+        ]
+        return perm_rules + injection_rules + contract_rules
 
     def _make_results(self, report: AuditReport) -> list[dict[str, Any]]:
         """One result per (server, tool, category) triple, plus injection findings."""
@@ -117,6 +143,11 @@ class SarifGenerator:
                 results.append(self._make_capability_result(capability_finding, audit))
             for inj in audit.injection_findings:
                 results.append(self._make_injection_result(inj, audit))
+            for drift_finding in audit.drift_findings:
+                results.append(self._make_drift_result(drift_finding, audit))
+        if report.policy_result is not None:
+            for violation in report.policy_result.violations:
+                results.append(self._make_policy_result(violation))
         return results
 
     def _finding_level(self, finding: PermissionFinding, audit: ServerAudit) -> str:
@@ -226,6 +257,52 @@ class SarifGenerator:
             },
         }
 
+    def _make_drift_result(self, finding: DriftFinding, audit: ServerAudit) -> dict[str, Any]:
+        config_path = audit.server.config_path
+        uri = Path(config_path).as_uri() if config_path else "file:///unknown"
+        msg = (
+            f"Tool '{finding.tool_name}' on server '{audit.server.name}' has "
+            f"schema drift status '{finding.status.value}'. "
+            f"Suggested action: {finding.remediation or 'Review before refreshing pins.'}"
+        )
+        return {
+            "ruleId": _DRIFT_RULE_ID,
+            "level": "warning",
+            "message": {"text": msg},
+            "locations": [{"physicalLocation": {"artifactLocation": {"uri": uri}}}],
+            "partialFingerprints": {
+                "mcpAuditStableId": _stable_fingerprint(_DRIFT_RULE_ID, audit.server.name, finding.tool_name)
+            },
+            "properties": {
+                "status": finding.status.value,
+                "remediation": finding.remediation,
+            },
+        }
+
+    def _make_policy_result(self, violation: object) -> dict[str, Any]:
+        from mcp_audit.models import PolicyViolation
+
+        policy_violation = PolicyViolation.model_validate(violation)
+        target = policy_violation.tool_name or policy_violation.server_name or "policy"
+        msg = f"Policy rule '{policy_violation.rule}' failed: {policy_violation.message}"
+        return {
+            "ruleId": _POLICY_RULE_ID,
+            "level": _severity_level(policy_violation.severity),
+            "message": {"text": msg},
+            "locations": [{"physicalLocation": {"artifactLocation": {"uri": "file:///unknown"}}}],
+            "partialFingerprints": {
+                "mcpAuditStableId": _stable_fingerprint(
+                    _POLICY_RULE_ID, policy_violation.server_name or "policy", target
+                )
+            },
+            "properties": {
+                "rule": policy_violation.rule,
+                "server_name": policy_violation.server_name,
+                "tool_name": policy_violation.tool_name,
+                "severity": policy_violation.severity,
+            },
+        }
+
 
 def _stable_fingerprint(rule_id: str, server_name: str, tool_name: str) -> str:
     payload = f"{rule_id}\0{server_name}\0{tool_name}".encode()
@@ -237,3 +314,11 @@ def _injection_help(rule_id: str) -> str:
         metadata.remediation for metadata in INJECTION_FINDINGS.values() if metadata.rule_id == rule_id
     }
     return " ".join(sorted(remediations))
+
+
+def _severity_level(severity: str) -> str:
+    if severity == "high":
+        return "error"
+    if severity == "medium":
+        return "warning"
+    return "note"

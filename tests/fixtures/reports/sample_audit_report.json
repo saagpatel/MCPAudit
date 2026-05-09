@@ -1,0 +1,124 @@
+{
+  "scan_timestamp": "2026-05-09T09:00:00Z",
+  "hostname": "example-host",
+  "os_platform": "Darwin",
+  "servers_discovered": 1,
+  "servers_connected": 1,
+  "servers_failed": 0,
+  "total_tools": 1,
+  "high_risk_servers": 1,
+  "audits": [
+    {
+      "server": {
+        "name": "example",
+        "client": "claude_code",
+        "config_path": "/tmp/mcp.json",
+        "project_path": null,
+        "command": "python",
+        "args": [
+          "server.py"
+        ],
+        "env_keys": [
+          "EXAMPLE_TOKEN"
+        ],
+        "transport": "stdio",
+        "url": null,
+        "headers_keys": []
+      },
+      "connection_status": "connected",
+      "connection_error": null,
+      "tools": [
+        {
+          "name": "execute_command",
+          "description": "Run a command.",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string"
+              }
+            }
+          },
+          "annotations": null
+        }
+      ],
+      "prompts": [
+        {
+          "name": "summarize_file",
+          "description": "Summarize a file.",
+          "arguments": [
+            "path"
+          ]
+        }
+      ],
+      "resources": [
+        {
+          "uri": "file:///tmp/example.txt",
+          "name": "example",
+          "description": "Example file.",
+          "mime_type": "text/plain"
+        }
+      ],
+      "permissions": [
+        {
+          "category": "shell_execution",
+          "confidence": "high",
+          "evidence": [
+            "execute_command"
+          ],
+          "tool_name": "execute_command"
+        }
+      ],
+      "capability_findings": [
+        {
+          "target_type": "resource",
+          "target_name": "file:///tmp/example.txt",
+          "category": "file_read",
+          "confidence": "high",
+          "evidence": [
+            "resource URI scheme 'file'"
+          ]
+        }
+      ],
+      "risk_score": {
+        "composite": 8.0,
+        "file_access": 0.0,
+        "network_access": 0.0,
+        "shell_execution": 8.0,
+        "destructive": 0.0,
+        "exfiltration": 0.0
+      },
+      "has_annotations": false,
+      "annotation_coverage": 0.0,
+      "injection_findings": [],
+      "drift_findings": [
+        {
+          "server_name": "example",
+          "tool_name": "execute_command",
+          "status": "changed",
+          "stored_hash": "sha256:old",
+          "current_hash": "sha256:new",
+          "pinned_at": "2026-05-09T08:00:00Z",
+          "summary": "Pinned tool metadata changed since the baseline.",
+          "details": [
+            "input schema changed"
+          ],
+          "remediation": "Review the changed tool metadata before refreshing the pin baseline."
+        }
+      ]
+    }
+  ],
+  "scan_duration_seconds": 0.25,
+  "policy_result": {
+    "passed": false,
+    "violations": [
+      {
+        "rule": "max_risk",
+        "message": "Server risk score 8.0 meets or exceeds policy limit 7.0.",
+        "server_name": "example",
+        "tool_name": null,
+        "severity": "high"
+      }
+    ]
+  }
+}
