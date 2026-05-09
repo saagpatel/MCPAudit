@@ -108,6 +108,22 @@ def evaluate_policy(report: AuditReport, policy: PolicyConfig) -> PolicyResult:
                             ),
                         )
                     )
+            for capability_finding in audit.capability_findings:
+                if _SEVERITY_RANK[capability_finding.severity] >= threshold:
+                    violations.append(
+                        PolicyViolation(
+                            rule="fail_on.severity",
+                            server_name=server_name,
+                            tool_name=capability_finding.target_name,
+                            severity=capability_finding.severity,
+                            message=(
+                                f"{capability_finding.rule_id} "
+                                f"{capability_finding.target_type.value} "
+                                f"{capability_finding.category.value} finding is "
+                                f"{capability_finding.severity} severity."
+                            ),
+                        )
+                    )
 
         for permission_finding in audit.permissions:
             if permission_finding.category in policy.denied_permissions:
@@ -118,6 +134,20 @@ def evaluate_policy(report: AuditReport, policy: PolicyConfig) -> PolicyResult:
                         tool_name=permission_finding.tool_name,
                         severity=permission_finding.severity,
                         message=f"{permission_finding.category.value} is denied by local policy.",
+                    )
+                )
+        for capability_finding in audit.capability_findings:
+            if capability_finding.category in policy.denied_permissions:
+                violations.append(
+                    PolicyViolation(
+                        rule="deny.permissions",
+                        server_name=server_name,
+                        tool_name=capability_finding.target_name,
+                        severity=capability_finding.severity,
+                        message=(
+                            f"{capability_finding.target_type.value} "
+                            f"{capability_finding.category.value} is denied by local policy."
+                        ),
                     )
                 )
 

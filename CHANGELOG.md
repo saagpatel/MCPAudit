@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Prompt and resource inventory now produces permission findings for risky
+  arguments, URI schemes, and metadata, with terminal, JSON, SARIF, and policy
+  gate coverage.
+
 ## [1.0.0a1] - 2026-05-09
 
 First public alpha. Behavior and public CLI surface are stable enough to audit

@@ -11,6 +11,8 @@ from rich.console import Console
 
 from mcp_audit.models import (
     AuditReport,
+    CapabilityFinding,
+    CapabilityTarget,
     Confidence,
     DriftFinding,
     DriftStatus,
@@ -186,6 +188,25 @@ class TestTerminalRender:
         assert "changed since the" in output
         assert "Review the changed" in output
         assert "tool metadata before" in output
+
+    def test_capability_warnings_include_prompt_and_resource_findings(self) -> None:
+        con, buf = _make_console()
+        gen = ReportGenerator(console=con)
+        audit = _make_audit("srv")
+        audit.capability_findings = [
+            CapabilityFinding(
+                target_type=CapabilityTarget.RESOURCE,
+                target_name="file:///tmp/example.txt",
+                category=PermissionCategory.FILE_READ,
+                confidence=Confidence.HIGH,
+                evidence=["resource URI scheme 'file'"],
+            )
+        ]
+        gen.render_terminal(_base_report([audit]))
+        output = buf.getvalue()
+        assert "Prompt And Resource Capability Findings" in output
+        assert "file:///tmp" in output
+        assert "file_read" in output
 
 
 class TestJsonRender:

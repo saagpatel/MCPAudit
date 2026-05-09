@@ -32,7 +32,8 @@ Current scan behavior:
 - Guarded stdio/HTTP connection lifecycle with timeout cleanup.
 - Config-only risk inference for `scan --skip-connect`.
 - Tool inventory, annotation coverage, and permission classification.
-- Prompt and resource inventory for connected scans.
+- Prompt and resource inventory for connected scans, including first-pass
+  permission findings for prompt arguments and resource URI schemes.
 - Stable finding metadata with rule IDs, severity, description, and remediation.
 - Prompt-injection detection with stable metadata and SARIF output.
 - Tool schema pinning and drift checks with changed-field hints and suggested
@@ -86,17 +87,16 @@ Core modules:
 
 ### 1. Prompt And Resource Risk Analysis
 
-Prompt/resource inventory is now present, but risk scoring remains tool-based.
-Next work should classify:
+First-pass prompt/resource permission findings are now present. Next work should
+deepen this into a fuller risk model:
 
-- prompt arguments that request local paths, credentials, URLs, or shell input;
-- resource URI schemes and hostnames;
-- resource templates, if added later;
-- prompt/resource injection text where descriptions or URIs can influence an
-  assistant.
+- classify resource hostnames and resource templates;
+- detect prompt/resource injection text where descriptions or URIs can
+  influence an assistant;
+- decide whether selected prompt/resource findings should contribute to the
+  server composite risk score.
 
-Done when JSON, terminal, SARIF, and policy gates can reference prompt/resource
-findings with stable rule metadata.
+Done when prompt/resource analysis has the same maturity as tool analysis.
 
 ### 2. Policy Gate Depth
 

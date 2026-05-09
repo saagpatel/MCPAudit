@@ -145,6 +145,56 @@ class PermissionFinding(BaseModel):
         return permission_metadata(self.category).remediation
 
 
+class CapabilityTarget(StrEnum):
+    PROMPT = "prompt"
+    RESOURCE = "resource"
+
+
+class CapabilityFinding(BaseModel):
+    """A permission inference for a non-tool MCP capability."""
+
+    target_type: CapabilityTarget
+    target_name: str
+    category: PermissionCategory
+    confidence: Confidence
+    evidence: list[str]
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def rule_id(self) -> str:
+        from mcp_audit.taxonomy import permission_metadata
+
+        return permission_metadata(self.category).rule_id
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def title(self) -> str:
+        from mcp_audit.taxonomy import permission_metadata
+
+        return permission_metadata(self.category).title
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def severity(self) -> str:
+        from mcp_audit.taxonomy import permission_metadata
+
+        return permission_metadata(self.category).severity
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def description(self) -> str:
+        from mcp_audit.taxonomy import permission_metadata
+
+        return permission_metadata(self.category).description
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def remediation(self) -> str:
+        from mcp_audit.taxonomy import permission_metadata
+
+        return permission_metadata(self.category).remediation
+
+
 class InjectionFinding(BaseModel):
     """A prompt injection threat detected in a tool's description or name."""
 
@@ -228,6 +278,7 @@ class ServerAudit(BaseModel):
     prompts: list[PromptInfo] = Field(default_factory=list)
     resources: list[ResourceInfo] = Field(default_factory=list)
     permissions: list[PermissionFinding] = Field(default_factory=list)
+    capability_findings: list[CapabilityFinding] = Field(default_factory=list)
     risk_score: RiskScore | None = None
     has_annotations: bool = False
     annotation_coverage: float = 0.0  # Percentage of tools with annotations

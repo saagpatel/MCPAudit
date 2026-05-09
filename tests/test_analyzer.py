@@ -1,7 +1,14 @@
 """Unit tests for PermissionAnalyzer."""
 
 from mcp_audit.analyzer import PermissionAnalyzer
-from mcp_audit.models import Confidence, PermissionCategory, ToolAnnotations, ToolInfo
+from mcp_audit.models import (
+    Confidence,
+    PermissionCategory,
+    PromptInfo,
+    ResourceInfo,
+    ToolAnnotations,
+    ToolInfo,
+)
 from tests.conftest import make_tool
 
 analyzer = PermissionAnalyzer()
@@ -180,3 +187,27 @@ class TestAnalyzeServer:
         shell_findings = [f for f in findings if f.category == PermissionCategory.SHELL_EXEC]
         assert shell_findings
         assert shell_findings[0].evidence
+
+
+class TestAnalyzeCapabilities:
+    def test_prompt_argument_command_yields_shell_execution(self) -> None:
+        prompt = PromptInfo(name="run_template", description="Prepare a command", arguments=["command"])
+        findings = analyzer.analyze_capabilities([prompt], [])
+        shell = [f for f in findings if f.category == PermissionCategory.SHELL_EXEC]
+        assert shell
+        assert shell[0].target_type == "prompt"
+        assert shell[0].target_name == "run_template"
+
+    def test_file_resource_uri_yields_file_read(self) -> None:
+        resource = ResourceInfo(uri="file:///Users/example/secrets.txt", name="secrets")
+        findings = analyzer.analyze_capabilities([], [resource])
+        file_read = [f for f in findings if f.category == PermissionCategory.FILE_READ]
+        assert file_read
+        assert "resource URI scheme 'file'" in file_read[0].evidence
+
+    def test_https_resource_uri_yields_network(self) -> None:
+        resource = ResourceInfo(uri="https://example.com/data.json", name="remote-data")
+        findings = analyzer.analyze_capabilities([], [resource])
+        network = [f for f in findings if f.category == PermissionCategory.NETWORK]
+        assert network
+        assert network[0].target_type == "resource"

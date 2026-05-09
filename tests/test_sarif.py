@@ -7,6 +7,8 @@ from datetime import UTC, datetime
 
 from mcp_audit.models import (
     AuditReport,
+    CapabilityFinding,
+    CapabilityTarget,
     Confidence,
     PermissionCategory,
     PermissionFinding,
@@ -105,6 +107,23 @@ class TestSarifResults:
         audit = _make_audit(findings=findings)
         sarif = SarifGenerator().generate(_make_report([audit]))
         assert len(sarif["runs"][0]["results"]) == 3
+
+    def test_capability_finding_emits_sarif_result(self) -> None:
+        audit = _make_audit()
+        audit.capability_findings = [
+            CapabilityFinding(
+                target_type=CapabilityTarget.RESOURCE,
+                target_name="file:///tmp/example.txt",
+                category=PermissionCategory.FILE_READ,
+                confidence=Confidence.HIGH,
+                evidence=["resource URI scheme 'file'"],
+            )
+        ]
+        sarif = SarifGenerator().generate(_make_report([audit]))
+        result = sarif["runs"][0]["results"][0]
+        assert result["ruleId"] == "MCP001"
+        assert result["properties"]["target_type"] == "resource"
+        assert "file:///tmp/example.txt" in result["message"]["text"]
 
     def test_high_risk_level_is_error(self) -> None:
         audit = _make_audit(risk=8.0, findings=[_finding(PermissionCategory.SHELL_EXEC)])
