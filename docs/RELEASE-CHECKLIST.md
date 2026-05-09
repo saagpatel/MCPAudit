@@ -8,7 +8,7 @@ candidate, or stable release.
 ```bash
 uv run pytest
 uv run ruff check
-uv run mypy src
+uv run mypy .
 uv run ruff format --check
 git diff --check
 uv build --clear

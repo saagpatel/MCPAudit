@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-05-09
+
+### Changed
+
+- Promoted MCPAudit from release candidate to stable `1.0.0`.
+- Made whole-repo strict typing (`uv run mypy .`) the canonical type gate after
+  repairing test and fixture typing debt.
+- Refreshed release, roadmap, security, and readiness docs so stable public
+  claims match live CLI behavior and published package metadata.
+
 ## [1.0.0rc1] - 2026-05-09
 
 ### Changed
@@ -265,7 +275,8 @@ real workstations; API surface may still shift before the `1.0.0` stable cut.
 - Risk score output with pass/warn/fail thresholds
 - `mcp-audit` CLI entry point
 
-[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0rc1...HEAD
+[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0rc1...v1.0.0
 [1.0.0rc1]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0b3...v1.0.0rc1
 [1.0.0b3]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0b2...v1.0.0b3
 [1.0.0b2]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0b1...v1.0.0b2

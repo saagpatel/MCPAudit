@@ -1,6 +1,6 @@
 # Security Review Notes
 
-This beta security review focuses on MCPAudit's own trust boundaries and the
+This stable security review focuses on MCPAudit's own trust boundaries and the
 places where untrusted MCP metadata can affect reports.
 
 ## Reviewed Surfaces
@@ -25,11 +25,12 @@ places where untrusted MCP metadata can affect reports.
   `scan --skip-connect` for first review or untrusted configs.
 - Optional `--llm-analysis` sends selected metadata to a third-party API; do not
   use it for sensitive MCP configs.
-- Composite scoring is tool-centered for the beta. Prompt/resource findings are
-  reportable and policy-gatable, but score migration needs calibration first.
+- Composite scoring is tool-centered for stable `1.0.0`. Prompt/resource
+  findings are reportable and policy-gatable, but score migration needs
+  calibration first.
 
 ## Follow-Up Bar
 
-Before stable `1.0.0`, repeat this review after any change to config parsing,
+Repeat this review before future releases that change config parsing,
 connection lifecycle, redaction, scoring, SARIF generation, or LLM behavior.
-Track the broader stable gate in `docs/STABLE-READINESS.md`.
+Track the release gate in `docs/STABLE-READINESS.md`.

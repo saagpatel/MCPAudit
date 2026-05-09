@@ -1,8 +1,8 @@
 ---
-name: Beta feedback
-about: Share MCPAudit beta false positives, missing detections, or adoption friction
-title: "[beta] "
-labels: beta-feedback
+name: MCPAudit feedback
+about: Share MCPAudit false positives, missing detections, or adoption friction
+title: "[feedback] "
+labels: feedback
 assignees: ''
 ---
 

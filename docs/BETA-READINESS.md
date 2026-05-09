@@ -1,7 +1,7 @@
-# Beta Readiness
+# Beta And RC Readiness
 
-MCPAudit is ready for the `1.0.0rc1` release candidate when the release verifier and
-clean-install smoke checks pass.
+This document records the beta and release-candidate bar used before stable
+`1.0.0`.
 
 ## Readiness Bar
 
@@ -21,15 +21,15 @@ clean-install smoke checks pass.
   composite server score yet. See `docs/PROMPT-RESOURCE-SCORING.md`.
 - Pin maintenance remains explicit and server-scoped. See
   `docs/PIN-MAINTENANCE.md`.
-- The canonical type gate is `uv run mypy src`; whole-repo `uv run mypy .` still
-  includes test-only fixture and mock typing debt.
+- Whole-repo strict typing now passes and the canonical type gate is
+  `uv run mypy .`.
 
 ## Verification Checklist
 
 ```bash
 uv run pytest
 uv run ruff check
-uv run mypy src
+uv run mypy .
 uv run ruff format --check
 uv lock --check
 git diff --check

@@ -7,7 +7,7 @@ an additive non-tool score first.
 ## Recommended Path
 
 1. Keep `risk_score.composite` tool-centered through `1.0.0` stable.
-2. Add an optional additive field such as `non_tool_risk` in a future beta or
+2. Add an optional additive field such as `non_tool_risk` in a future minor or
    minor release.
 3. Calibrate `non_tool_risk` with validation fixtures before exposing it to
    policy defaults.

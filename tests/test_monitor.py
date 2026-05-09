@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import anyio
@@ -92,6 +93,10 @@ def _make_monitor() -> MCPProxyMonitor:
     return m
 
 
+def _log_mock(mon: MCPProxyMonitor) -> MagicMock:
+    return cast(MagicMock, mon._log)
+
+
 class TestIntercept:
     def test_records_tool_call_request_in_pending(self) -> None:
         mon = _make_monitor()
@@ -113,8 +118,9 @@ class TestIntercept:
             "id": 2,
         }
         mon._intercept(msg, "→ server")
-        assert mon._log.called
-        logged_entry: dict = mon._log.call_args[0][0]
+        log_mock = _log_mock(mon)
+        assert log_mock.called
+        logged_entry = cast(dict[str, Any], log_mock.call_args[0][0])
         # arg_keys present, but values never logged
         assert logged_entry["arg_keys"] == ["path", "encoding"]
         raw_str = json.dumps(logged_entry)
@@ -149,7 +155,7 @@ class TestIntercept:
         mon = _make_monitor()
         msg = {"method": "initialize", "params": {}, "id": 1}
         mon._intercept(msg, "→ server")
-        assert not mon._log.called
+        assert not _log_mock(mon).called
         assert mon._pending == {}
 
 

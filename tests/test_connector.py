@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 
 import pytest
+from pydantic import AnyUrl
 
 from mcp_audit.connector import ServerConnector
 from mcp_audit.models import ClientType, Confidence, PermissionCategory, ServerConfig, TransportType
@@ -104,7 +105,7 @@ class TestConvertCapabilities:
         from mcp.types import Resource
 
         sdk_resource = Resource(
-            uri="file:///tmp/example.txt",
+            uri=AnyUrl("file:///tmp/example.txt"),
             name="example",
             description="Example file.",
             mimeType="text/plain",
