@@ -47,6 +47,8 @@ class ReportGenerator:
         table.add_column("Server", style="bold cyan", no_wrap=True)
         table.add_column("Client", style="magenta")
         table.add_column("Tools", justify="right")
+        table.add_column("Prompts", justify="right")
+        table.add_column("Resources", justify="right")
         table.add_column("Risk", justify="right")
         table.add_column("Top Permissions", overflow="fold")
         table.add_column("Status", style="dim")
@@ -62,6 +64,8 @@ class ReportGenerator:
                 audit.server.name,
                 audit.server.client.value,
                 str(len(audit.tools)),
+                str(len(audit.prompts)),
+                str(len(audit.resources)),
                 risk_text,
                 perms,
                 status_str,

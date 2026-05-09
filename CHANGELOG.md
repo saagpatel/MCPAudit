@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   field hints, and suggested remediation in terminal and JSON reports.
 - `scan --policy` evaluates local YAML policy gates for severity thresholds,
   denied permission categories, drift findings, and max server risk.
+- Connected scans now inventory MCP prompts and resources in addition to tools,
+  with JSON and terminal counts for broader server capability coverage.
 
 ### Fixed
 - `mcp-audit pin` now connects to MCP servers before writing schema pins, so

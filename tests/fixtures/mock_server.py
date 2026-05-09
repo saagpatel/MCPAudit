@@ -10,7 +10,7 @@ import asyncio
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import Tool, ToolAnnotations
+from mcp.types import Prompt, PromptArgument, Resource, Tool, ToolAnnotations
 
 
 def make_server() -> Server:  # type: ignore[type-arg]
@@ -50,6 +50,27 @@ def make_server() -> Server:  # type: ignore[type-arg]
                     "required": ["command"],
                 },
             ),
+        ]
+
+    @app.list_prompts()  # type: ignore[misc]
+    async def list_prompts() -> list[Prompt]:
+        return [
+            Prompt(
+                name="summarize_file",
+                description="Summarize a file after it has been read.",
+                arguments=[PromptArgument(name="path", required=True)],
+            )
+        ]
+
+    @app.list_resources()  # type: ignore[misc]
+    async def list_resources() -> list[Resource]:
+        return [
+            Resource(
+                uri="file:///tmp/example.txt",
+                name="example",
+                description="Example file resource.",
+                mimeType="text/plain",
+            )
         ]
 
     return app
