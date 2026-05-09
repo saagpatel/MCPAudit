@@ -1,0 +1,61 @@
+{
+  "server_name": "server-aws-s3",
+  "description": "AWS S3 MCP server — object storage browsing, uploads, downloads, and deletes",
+  "tools": [
+    {
+      "name": "s3_download_file",
+      "description": "Download an object from an S3 bucket to a local output path.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "bucket": { "type": "string" },
+          "key": { "type": "string" },
+          "output_path": { "type": "string" }
+        },
+        "required": ["bucket", "key", "output_path"]
+      }
+    },
+    {
+      "name": "s3_upload_file",
+      "description": "Upload a local file to an S3 bucket.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "bucket": { "type": "string" },
+          "key": { "type": "string" },
+          "path": { "type": "string" }
+        },
+        "required": ["bucket", "key", "path"]
+      }
+    },
+    {
+      "name": "s3_delete_object",
+      "description": "Delete an object from an S3 bucket.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "bucket": { "type": "string" },
+          "key": { "type": "string" }
+        },
+        "required": ["bucket", "key"]
+      }
+    }
+  ],
+  "expected_findings": [
+    {
+      "tool": "s3_download_file",
+      "categories": ["network", "file_write"],
+      "min_confidence": "medium"
+    },
+    {
+      "tool": "s3_upload_file",
+      "categories": ["exfiltration"],
+      "min_confidence": "high"
+    },
+    {
+      "tool": "s3_delete_object",
+      "categories": ["destructive"],
+      "min_confidence": "high"
+    }
+  ]
+}

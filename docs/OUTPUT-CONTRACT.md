@@ -39,10 +39,19 @@ Each audit may include:
 
 Finding targets:
 
-- tool permission findings use `tool_name`
+- tool permission and drift findings use `tool_name` and additive
+  `target_type: "tool"` / `target_name` metadata
 - prompt/resource capability findings use `target_type` and `target_name`
 - injection findings include `tool_name` for compatibility and additive
   `target_type` / `target_name` fields for tool, prompt, and resource targets
+
+Compatibility rules:
+
+- additive fields are allowed before `1.0.0` stable;
+- existing stable fields require a release-note deprecation window before
+  removal or rename;
+- SARIF rule IDs must remain stable unless a breaking release explicitly
+  documents a migration.
 
 ## SARIF Report
 

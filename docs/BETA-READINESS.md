@@ -1,6 +1,6 @@
 # Beta Readiness
 
-MCPAudit is ready for the `1.0.0b1` beta candidate when the release verifier and
+MCPAudit is ready for the `1.0.0b2` beta candidate when the release verifier and
 clean-install smoke checks pass.
 
 ## Readiness Bar
@@ -10,6 +10,8 @@ clean-install smoke checks pass.
 - Connected scans, config-only scans, policy failures, and prompt/resource
   findings have output-contract fixtures.
 - Real-world server validation corpus runs in the test suite.
+- Adoption, security-review, pin-maintenance, and output-contract docs describe
+  current behavior without aspirational claims.
 - Known limitations are documented instead of implied away.
 - Clean `uvx` and `pip` installs can run `mcp-audit --version`.
 

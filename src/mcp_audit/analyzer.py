@@ -23,6 +23,24 @@ _HIGH_THRESHOLD = 6  # ≥2 strong name hits (3*weight=3 * 2 = 6)
 _MEDIUM_THRESHOLD = 2
 _LOW_THRESHOLD = 1
 
+_REMOTE_RESOURCE_SCHEMES = {
+    "az",
+    "azure",
+    "git",
+    "github",
+    "gs",
+    "http",
+    "https",
+    "mongodb",
+    "mysql",
+    "postgres",
+    "postgresql",
+    "redis",
+    "s3",
+    "ws",
+    "wss",
+}
+
 
 class PermissionAnalyzer:
     """Infers permission categories for MCP tools via annotations and keyword patterns."""
@@ -79,7 +97,7 @@ class PermissionAnalyzer:
                     evidence=["resource URI scheme 'file'"],
                 )
             )
-        if scheme in {"http", "https"}:
+        if scheme in _REMOTE_RESOURCE_SCHEMES:
             evidence = [f"resource URI scheme '{scheme}'"]
             if host:
                 evidence.append(f"resource host '{host}'")

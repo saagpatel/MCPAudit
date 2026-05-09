@@ -35,7 +35,7 @@ def test_version_option_reports_installed_distribution_version() -> None:
 
     assert result.exit_code == 0
     assert "mcp-audit, version " in result.output
-    assert "1.0.0b1" in result.output
+    assert "1.0.0b2" in result.output
 
 
 def test_run_pin_connects_before_pinning(monkeypatch: object, tmp_path: Path) -> None:
@@ -175,6 +175,23 @@ def test_pin_rejects_apply_without_refresh() -> None:
 
     assert result.exit_code == 1
     assert "--apply can only be used with --refresh" in result.output
+
+
+def test_pin_clear_removes_intentionally_removed_server(tmp_path: Path) -> None:
+    pin_file = tmp_path / "pins.yaml"
+    store = PinStore(path=pin_file)
+    store.pin_server("removed-server", [make_tool("read_file")])
+    store.pin_server("kept-server", [make_tool("write_file")])
+
+    result = CliRunner().invoke(
+        cli.main,
+        ["pin", "--clear", "removed-server", "--pin-file", str(pin_file)],
+    )
+
+    assert result.exit_code == 0
+    refreshed = PinStore(path=pin_file)
+    assert refreshed.tool_count("removed-server") == 0
+    assert refreshed.tool_count("kept-server") == 1
 
 
 def test_pin_status_reports_pin_coverage(tmp_path: Path) -> None:

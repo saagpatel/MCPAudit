@@ -213,12 +213,31 @@ class TestAnalyzeCapabilities:
         assert network[0].target_type == "resource"
         assert "resource host 'example.com'" in network[0].evidence
 
+    def test_cloud_resource_uri_yields_network(self) -> None:
+        resource = ResourceInfo(uri="s3://audit-bucket/{tenant}/events.json", name="tenant events")
+        findings = analyzer.analyze_capabilities([], [resource])
+        network = [f for f in findings if f.category == PermissionCategory.NETWORK]
+        assert network
+        assert network[0].confidence == Confidence.HIGH
+        assert "resource URI scheme 's3'" in network[0].evidence
+
     def test_templated_resource_uri_yields_network_review_signal(self) -> None:
         resource = ResourceInfo(uri="mcp://dataset/{tenant}/records", name="templated-records")
         findings = analyzer.analyze_capabilities([], [resource])
         network = [f for f in findings if f.category == PermissionCategory.NETWORK]
         assert network
         assert "resource URI contains template variables" in network[0].evidence
+
+    def test_prompt_endpoint_argument_yields_network(self) -> None:
+        prompt = PromptInfo(
+            name="call_remote_api",
+            description="Prepare an API request plan.",
+            arguments=["endpoint", "headers"],
+        )
+        findings = analyzer.analyze_capabilities([prompt], [])
+        network = [f for f in findings if f.category == PermissionCategory.NETWORK]
+        assert network
+        assert network[0].target_type == "prompt"
 
     def test_benign_prompt_and_resource_have_no_capability_findings(self) -> None:
         prompt = PromptInfo(name="summarize", description="Summarize selected text.", arguments=["topic"])

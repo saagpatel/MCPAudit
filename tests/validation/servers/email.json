@@ -1,0 +1,55 @@
+{
+  "server_name": "server-email",
+  "description": "Email MCP server — mailbox search, attachment download, and outbound messages",
+  "tools": [
+    {
+      "name": "search_messages",
+      "description": "Search mailbox messages by query.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string" }
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "download_attachment",
+      "description": "Download an attachment from a message.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "message_id": { "type": "string" },
+          "attachment_id": { "type": "string" },
+          "output_path": { "type": "string" }
+        },
+        "required": ["message_id", "attachment_id"]
+      }
+    },
+    {
+      "name": "send_email",
+      "description": "Send an email to recipients with a subject and body.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "to": { "type": "array", "items": { "type": "string" } },
+          "subject": { "type": "string" },
+          "body": { "type": "string" }
+        },
+        "required": ["to", "subject", "body"]
+      }
+    }
+  ],
+  "expected_findings": [
+    {
+      "tool": "download_attachment",
+      "categories": ["network", "file_write"],
+      "min_confidence": "medium"
+    },
+    {
+      "tool": "send_email",
+      "categories": ["exfiltration"],
+      "min_confidence": "high"
+    }
+  ]
+}

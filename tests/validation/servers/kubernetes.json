@@ -1,0 +1,54 @@
+{
+  "server_name": "server-kubernetes",
+  "description": "Kubernetes MCP server — cluster resource inspection and pod execution",
+  "tools": [
+    {
+      "name": "kubernetes_get_pods",
+      "description": "List pods in a namespace.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "namespace": { "type": "string" }
+        }
+      }
+    },
+    {
+      "name": "kubernetes_exec_in_pod",
+      "description": "Execute a command inside a running pod.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "namespace": { "type": "string" },
+          "pod": { "type": "string" },
+          "command": { "type": "string" }
+        },
+        "required": ["namespace", "pod", "command"]
+      }
+    },
+    {
+      "name": "kubernetes_delete_resource",
+      "description": "Delete a Kubernetes resource by kind and name.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "kind": { "type": "string" },
+          "name": { "type": "string" },
+          "namespace": { "type": "string" }
+        },
+        "required": ["kind", "name"]
+      }
+    }
+  ],
+  "expected_findings": [
+    {
+      "tool": "kubernetes_exec_in_pod",
+      "categories": ["shell_execution"],
+      "min_confidence": "high"
+    },
+    {
+      "tool": "kubernetes_delete_resource",
+      "categories": ["destructive"],
+      "min_confidence": "high"
+    }
+  ]
+}

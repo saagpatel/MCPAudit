@@ -159,6 +159,8 @@ class TestSarifResults:
         sarif = SarifGenerator().generate(_make_report([audit]))
         result = sarif["runs"][0]["results"][0]
         assert result["ruleId"] == "MCP009"
+        assert result["properties"]["target_type"] == "tool"
+        assert result["properties"]["target_name"] == "read_file"
         assert result["properties"]["status"] == "changed"
 
     def test_policy_violation_emits_sarif_result(self) -> None:
@@ -234,6 +236,8 @@ class TestSarifResults:
         result = sarif["runs"][0]["results"][0]
         assert result["ruleId"] == "MCP004"
         assert "Suggested action:" in result["message"]["text"]
+        assert result["properties"]["target_type"] == "tool"
+        assert result["properties"]["target_name"] == "tool1"
         assert result["properties"]["remediation"]
         assert result["partialFingerprints"]["mcpAuditStableId"]
 

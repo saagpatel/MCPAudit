@@ -1,0 +1,52 @@
+{
+  "server_name": "server-docker",
+  "description": "Docker MCP server — container lifecycle and command execution",
+  "tools": [
+    {
+      "name": "docker_list_containers",
+      "description": "List running and stopped containers.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "all": { "type": "boolean" }
+        }
+      }
+    },
+    {
+      "name": "docker_run_container",
+      "description": "Run a container image with an optional command.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "image": { "type": "string" },
+          "command": { "type": "string" },
+          "env": { "type": "object" }
+        },
+        "required": ["image"]
+      }
+    },
+    {
+      "name": "docker_remove_container",
+      "description": "Remove a container by id or name.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "container_id": { "type": "string" }
+        },
+        "required": ["container_id"]
+      }
+    }
+  ],
+  "expected_findings": [
+    {
+      "tool": "docker_run_container",
+      "categories": ["shell_execution"],
+      "min_confidence": "medium"
+    },
+    {
+      "tool": "docker_remove_container",
+      "categories": ["destructive"],
+      "min_confidence": "high"
+    }
+  ]
+}
