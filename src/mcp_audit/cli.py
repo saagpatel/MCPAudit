@@ -120,8 +120,11 @@ def discover(client_filter: str | None, verbose: bool) -> None:
     help="Override config YAML (default: ~/.mcp-audit.yaml).",
 )
 @click.option(
-    "--inject-check", is_flag=True, default=False, help="Scan for prompt injection in tool descriptions."
-)  # noqa: E501
+    "--inject-check",
+    is_flag=True,
+    default=False,
+    help="Scan for prompt injection in tool names/descriptions.",
+)
 @click.option(
     "--pin-check", is_flag=True, default=False, help="Check for tool schema drift against stored pins."
 )  # noqa: E501

@@ -77,7 +77,9 @@ You can also use `make` if you prefer — see the [Makefile](Makefile) for all a
 
 5. **Run the full check suite** before pushing:
    ```bash
-   make lint test
+   uv run pytest
+   uv run ruff check
+   uv run mypy src
    ```
 
 6. **Open the PR** against `main`. Fill in the pull request template — especially the security implications section.

@@ -37,4 +37,4 @@ clean:
 	find . -type f -name "*.pyc" -delete
 
 audit:
-	uv run mcp-audit
+	uv run mcp-audit scan
