@@ -50,6 +50,16 @@ def test_prompt_resource_fixture_generates_target_metadata() -> None:
     assert any(result["properties"].get("target_type") == "resource" for result in results)
 
 
+def test_prompt_resource_fixture_has_non_tool_risk_without_composite_change() -> None:
+    fixture = Path("tests/fixtures/reports/prompt_resource_report.json")
+    report = AuditReport.model_validate_json(fixture.read_text())
+    audit = report.audits[0]
+    assert audit.risk_score is not None
+    assert audit.risk_score.composite == 0.0
+    assert audit.non_tool_risk is not None
+    assert audit.non_tool_risk.composite > 0.0
+
+
 def test_tool_findings_dump_target_metadata() -> None:
     fixture = Path("tests/fixtures/reports/sample_audit_report.json")
     report = AuditReport.model_validate_json(fixture.read_text())

@@ -17,6 +17,7 @@ CONFIDENCE_MULTIPLIERS: dict[Confidence, float] = {
     Confidence.DECLARED: 1.0,  # From annotations — most reliable
     Confidence.MANUAL: 1.0,  # User explicitly classified
     Confidence.HIGH: 0.9,  # Multiple strong keyword matches
+    Confidence.LLM: 0.9,  # LLM-classified findings are treated like high confidence
     Confidence.MEDIUM: 0.6,  # Single strong or multiple moderate
     Confidence.LOW: 0.3,  # Weak/inferred
 }

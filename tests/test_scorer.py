@@ -1,6 +1,14 @@
 """Unit tests for RiskScorer."""
 
-from mcp_audit.models import Confidence, PermissionCategory, PermissionFinding
+from mcp_audit.models import (
+    CapabilityFinding,
+    CapabilityTarget,
+    Confidence,
+    InjectionFinding,
+    InjectionSeverity,
+    PermissionCategory,
+    PermissionFinding,
+)
 from mcp_audit.rules.weights import CATEGORY_WEIGHTS, CONFIDENCE_MULTIPLIERS
 from mcp_audit.scorer import RiskScorer
 
@@ -13,6 +21,35 @@ def finding(category: PermissionCategory, confidence: Confidence = Confidence.HI
         confidence=confidence,
         evidence=["test"],
         tool_name="test_tool",
+    )
+
+
+def capability(
+    category: PermissionCategory,
+    target_type: CapabilityTarget = CapabilityTarget.PROMPT,
+    confidence: Confidence = Confidence.HIGH,
+) -> CapabilityFinding:
+    return CapabilityFinding(
+        target_type=target_type,
+        target_name="review_code" if target_type == CapabilityTarget.PROMPT else "file:///tmp/data.txt",
+        category=category,
+        confidence=confidence,
+        evidence=["test"],
+    )
+
+
+def injection(
+    target_type: CapabilityTarget = CapabilityTarget.PROMPT,
+    severity: InjectionSeverity = InjectionSeverity.MEDIUM,
+) -> InjectionFinding:
+    return InjectionFinding(
+        tool_name="target",
+        target_type=target_type,
+        target_name="target",
+        severity=severity,
+        pattern_name="role_injection",
+        matched_text="assistant:",
+        description="Target injects fake conversation turns.",
     )
 
 
@@ -34,6 +71,17 @@ class TestDimScore:
         score = scorer._dim_score(findings, PermissionCategory.NETWORK)
         expected = CATEGORY_WEIGHTS[PermissionCategory.NETWORK] * CONFIDENCE_MULTIPLIERS[Confidence.HIGH]
         assert abs(score - expected) < 0.001
+
+    def test_llm_confidence_scores_like_high(self) -> None:
+        high_score = scorer._dim_score(
+            [finding(PermissionCategory.EXFILTRATION, Confidence.HIGH)],
+            PermissionCategory.EXFILTRATION,
+        )
+        llm_score = scorer._dim_score(
+            [finding(PermissionCategory.EXFILTRATION, Confidence.LLM)],
+            PermissionCategory.EXFILTRATION,
+        )
+        assert llm_score == high_score
 
 
 class TestScoreServer:
@@ -93,3 +141,38 @@ class TestScoreServer:
         ]
         score = scorer.score_server(findings)
         assert score.composite >= 7.0
+
+
+class TestScoreNonTool:
+    def test_no_non_tool_findings_returns_none(self) -> None:
+        assert scorer.score_non_tool([], []) is None
+
+    def test_scores_capability_and_injection_without_changing_server_score(self) -> None:
+        server_score = scorer.score_server([])
+        non_tool_score = scorer.score_non_tool(
+            [
+                capability(PermissionCategory.FILE_READ, CapabilityTarget.PROMPT, Confidence.MEDIUM),
+                capability(PermissionCategory.NETWORK, CapabilityTarget.RESOURCE, Confidence.HIGH),
+            ],
+            [injection(CapabilityTarget.PROMPT, InjectionSeverity.MEDIUM)],
+        )
+
+        assert server_score.composite == 0.0
+        assert non_tool_score is not None
+        assert abs(non_tool_score.capability_score - 1.95) < 0.001
+        assert non_tool_score.injection_score == 4.0
+        assert abs(non_tool_score.composite - 5.95) < 0.001
+        assert non_tool_score.prompt_findings == 2
+        assert non_tool_score.resource_findings == 1
+
+    def test_ignores_tool_injection_for_non_tool_score(self) -> None:
+        non_tool_score = scorer.score_non_tool([], [injection(CapabilityTarget.TOOL)])
+        assert non_tool_score is None
+
+    def test_counts_high_severity_findings(self) -> None:
+        non_tool_score = scorer.score_non_tool(
+            [capability(PermissionCategory.SHELL_EXEC, CapabilityTarget.PROMPT, Confidence.HIGH)],
+            [injection(CapabilityTarget.RESOURCE, InjectionSeverity.HIGH)],
+        )
+        assert non_tool_score is not None
+        assert non_tool_score.high_severity_findings == 2

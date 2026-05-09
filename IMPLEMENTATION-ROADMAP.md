@@ -96,16 +96,18 @@ Core modules:
 
 ### 1. Prompt And Resource Risk Analysis
 
-Prompt/resource permission findings and injection detection are now present.
+Prompt/resource permission findings, injection detection, and additive
+`non_tool_risk` scoring are now present.
 Useful follow-ups:
 
-- decide whether selected prompt/resource findings should contribute to the
-  server composite risk score.
 - add more real-world resource-template fixtures from popular MCP servers.
+- collect enough beta feedback to decide whether selected prompt/resource
+  findings should ever contribute to a future composite score.
 
 The current scoring decision is documented in `docs/PROMPT-RESOURCE-SCORING.md`:
-prompt/resource findings stay visible and policy-gatable, but do not affect the
-composite server score until a calibrated scoring model is proven.
+prompt/resource findings stay visible, policy-gatable, and summarized in
+`non_tool_risk`, but do not affect the composite server score until a calibrated
+scoring model is proven.
 The recommended migration path is documented in `docs/SCORING-MIGRATION.md`.
 
 Current calibration covers risky prompt arguments, file resources, remote

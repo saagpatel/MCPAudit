@@ -18,6 +18,7 @@ from mcp_audit.models import (
     DriftStatus,
     InjectionFinding,
     InjectionSeverity,
+    NonToolRisk,
     PermissionCategory,
     PermissionFinding,
     RiskScore,
@@ -100,6 +101,22 @@ class TestTerminalRender:
         gen.render_terminal(_base_report([audit]))
         output = buf.getvalue()
         assert "5.5" in output
+
+    def test_includes_non_tool_risk_score(self) -> None:
+        con, buf = _make_console()
+        gen = ReportGenerator(console=con)
+        audit = _make_audit("srv", risk=0.0)
+        audit.non_tool_risk = NonToolRisk(
+            composite=5.9,
+            capability_score=1.9,
+            injection_score=4.0,
+            prompt_findings=2,
+            resource_findings=1,
+            high_severity_findings=0,
+        )
+        gen.render_terminal(_base_report([audit]))
+        output = buf.getvalue()
+        assert "5.9" in output
 
     def test_summary_banner_shows_counts(self) -> None:
         con, buf = _make_console()
@@ -270,6 +287,25 @@ class TestJsonRender:
         assert finding["severity"] == "high"
         assert finding["title"] == "Shell execution capability"
         assert finding["remediation"]
+
+    def test_json_output_includes_non_tool_risk(self, tmp_path: Path) -> None:
+        con, _ = _make_console()
+        gen = ReportGenerator(console=con)
+        audit = _make_audit("srv")
+        audit.non_tool_risk = NonToolRisk(
+            composite=7.0,
+            capability_score=0.0,
+            injection_score=7.0,
+            prompt_findings=1,
+            resource_findings=0,
+            high_severity_findings=1,
+        )
+        report = _base_report([audit])
+        out = tmp_path / "report.json"
+        gen.render_json(report, out)
+        data = json.loads(out.read_text())
+        assert data["audits"][0]["non_tool_risk"]["composite"] == 7.0
+        assert data["audits"][0]["risk_score"]["composite"] == 2.0
 
     def test_json_output_redacts_report_strings(self, tmp_path: Path) -> None:
         con, _ = _make_console()

@@ -274,6 +274,18 @@ class RiskScore(BaseModel):
     exfiltration: float = Field(ge=0, le=10)
 
 
+class NonToolRisk(BaseModel):
+    """Additive prompt/resource risk indicator for non-tool MCP capabilities."""
+
+    composite: float = Field(ge=0, le=10)
+    capability_score: float = Field(ge=0, le=10)
+    injection_score: float = Field(ge=0, le=10)
+    prompt_findings: int = Field(ge=0)
+    resource_findings: int = Field(ge=0)
+    high_severity_findings: int = Field(ge=0)
+    note: str = "Additive prompt/resource risk indicator; does not affect risk_score.composite."
+
+
 class PolicyViolation(BaseModel):
     """A local policy rule violation detected in an audit report."""
 
@@ -303,6 +315,7 @@ class ServerAudit(BaseModel):
     permissions: list[PermissionFinding] = Field(default_factory=list)
     capability_findings: list[CapabilityFinding] = Field(default_factory=list)
     risk_score: RiskScore | None = None
+    non_tool_risk: NonToolRisk | None = None
     has_annotations: bool = False
     annotation_coverage: float = 0.0  # Percentage of tools with annotations
     injection_findings: list[InjectionFinding] = Field(default_factory=list)

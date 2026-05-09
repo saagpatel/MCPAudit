@@ -73,6 +73,15 @@
         "destructive": 0.0,
         "exfiltration": 0.0
       },
+      "non_tool_risk": {
+        "composite": 5.95,
+        "capability_score": 1.95,
+        "injection_score": 4.0,
+        "prompt_findings": 2,
+        "resource_findings": 1,
+        "high_severity_findings": 0,
+        "note": "Additive prompt/resource risk indicator; does not affect risk_score.composite."
+      },
       "has_annotations": false,
       "annotation_coverage": 0.0,
       "injection_findings": [

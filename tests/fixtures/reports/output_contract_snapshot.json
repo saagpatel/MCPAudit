@@ -1,5 +1,18 @@
 {
   "config_only_report.json": {
+    "top_level_keys": [
+      "audits",
+      "high_risk_servers",
+      "hostname",
+      "os_platform",
+      "policy_result",
+      "scan_duration_seconds",
+      "scan_timestamp",
+      "servers_connected",
+      "servers_discovered",
+      "servers_failed",
+      "total_tools"
+    ],
     "audit_count": 1,
     "audit_keys": [
       "annotation_coverage",
@@ -9,6 +22,7 @@
       "drift_findings",
       "has_annotations",
       "injection_findings",
+      "non_tool_risk",
       "permissions",
       "prompts",
       "resources",
@@ -16,64 +30,26 @@
       "server",
       "tools"
     ],
-    "capability_targets": [],
     "connection_statuses": [
       "skipped"
     ],
-    "drift_targets": [],
-    "injection_targets": [],
     "permission_targets": [
       [
         "tool",
         "remote-api"
       ]
     ],
+    "capability_targets": [],
+    "injection_targets": [],
+    "drift_targets": [],
     "sarif_rule_ids": [
       "MCP003"
     ],
     "sarif_target_types": [
       "tool"
-    ],
-    "top_level_keys": [
-      "audits",
-      "high_risk_servers",
-      "hostname",
-      "os_platform",
-      "policy_result",
-      "scan_duration_seconds",
-      "scan_timestamp",
-      "servers_connected",
-      "servers_discovered",
-      "servers_failed",
-      "total_tools"
     ]
   },
   "failed_connection_report.json": {
-    "audit_count": 1,
-    "audit_keys": [
-      "annotation_coverage",
-      "capability_findings",
-      "connection_error",
-      "connection_status",
-      "drift_findings",
-      "has_annotations",
-      "injection_findings",
-      "permissions",
-      "prompts",
-      "resources",
-      "risk_score",
-      "server",
-      "tools"
-    ],
-    "capability_targets": [],
-    "connection_statuses": [
-      "failed"
-    ],
-    "drift_targets": [],
-    "injection_targets": [],
-    "permission_targets": [],
-    "sarif_rule_ids": [],
-    "sarif_target_types": [],
     "top_level_keys": [
       "audits",
       "high_risk_servers",
@@ -86,9 +62,7 @@
       "servers_discovered",
       "servers_failed",
       "total_tools"
-    ]
-  },
-  "policy_failure_report.json": {
+    ],
     "audit_count": 1,
     "audit_keys": [
       "annotation_coverage",
@@ -98,6 +72,7 @@
       "drift_findings",
       "has_annotations",
       "injection_findings",
+      "non_tool_risk",
       "permissions",
       "prompts",
       "resources",
@@ -105,25 +80,68 @@
       "server",
       "tools"
     ],
+    "connection_statuses": [
+      "failed"
+    ],
+    "permission_targets": [],
     "capability_targets": [],
+    "injection_targets": [],
+    "drift_targets": [],
+    "sarif_rule_ids": [],
+    "sarif_target_types": []
+  },
+  "policy_failure_report.json": {
+    "top_level_keys": [
+      "audits",
+      "high_risk_servers",
+      "hostname",
+      "os_platform",
+      "policy_result",
+      "scan_duration_seconds",
+      "scan_timestamp",
+      "servers_connected",
+      "servers_discovered",
+      "servers_failed",
+      "total_tools"
+    ],
+    "audit_count": 1,
+    "audit_keys": [
+      "annotation_coverage",
+      "capability_findings",
+      "connection_error",
+      "connection_status",
+      "drift_findings",
+      "has_annotations",
+      "injection_findings",
+      "non_tool_risk",
+      "permissions",
+      "prompts",
+      "resources",
+      "risk_score",
+      "server",
+      "tools"
+    ],
     "connection_statuses": [
       "connected"
     ],
-    "drift_targets": [],
-    "injection_targets": [],
     "permission_targets": [
       [
         "tool",
         "run_shell"
       ]
     ],
+    "capability_targets": [],
+    "injection_targets": [],
+    "drift_targets": [],
     "sarif_rule_ids": [
       "MCP004",
       "MCP010"
     ],
     "sarif_target_types": [
       "tool"
-    ],
+    ]
+  },
+  "prompt_resource_report.json": {
     "top_level_keys": [
       "audits",
       "high_risk_servers",
@@ -136,9 +154,7 @@
       "servers_discovered",
       "servers_failed",
       "total_tools"
-    ]
-  },
-  "prompt_resource_report.json": {
+    ],
     "audit_count": 1,
     "audit_keys": [
       "annotation_coverage",
@@ -148,6 +164,7 @@
       "drift_findings",
       "has_annotations",
       "injection_findings",
+      "non_tool_risk",
       "permissions",
       "prompts",
       "resources",
@@ -155,6 +172,10 @@
       "server",
       "tools"
     ],
+    "connection_statuses": [
+      "connected"
+    ],
+    "permission_targets": [],
     "capability_targets": [
       [
         "prompt",
@@ -165,17 +186,13 @@
         "https://docs.example.com/{tenant}/index.json"
       ]
     ],
-    "connection_statuses": [
-      "connected"
-    ],
-    "drift_targets": [],
     "injection_targets": [
       [
         "prompt",
         "review_code"
       ]
     ],
-    "permission_targets": [],
+    "drift_targets": [],
     "sarif_rule_ids": [
       "MCP001",
       "MCP003",
@@ -184,7 +201,9 @@
     "sarif_target_types": [
       "prompt",
       "resource"
-    ],
+    ]
+  },
+  "sample_audit_report.json": {
     "top_level_keys": [
       "audits",
       "high_risk_servers",
@@ -197,9 +216,7 @@
       "servers_discovered",
       "servers_failed",
       "total_tools"
-    ]
-  },
-  "sample_audit_report.json": {
+    ],
     "audit_count": 1,
     "audit_keys": [
       "annotation_coverage",
@@ -209,6 +226,7 @@
       "drift_findings",
       "has_annotations",
       "injection_findings",
+      "non_tool_risk",
       "permissions",
       "prompts",
       "resources",
@@ -216,23 +234,23 @@
       "server",
       "tools"
     ],
+    "connection_statuses": [
+      "connected"
+    ],
+    "permission_targets": [
+      [
+        "tool",
+        "execute_command"
+      ]
+    ],
     "capability_targets": [
       [
         "resource",
         "file:///tmp/example.txt"
       ]
     ],
-    "connection_statuses": [
-      "connected"
-    ],
-    "drift_targets": [
-      [
-        "tool",
-        "execute_command"
-      ]
-    ],
     "injection_targets": [],
-    "permission_targets": [
+    "drift_targets": [
       [
         "tool",
         "execute_command"
@@ -247,19 +265,6 @@
     "sarif_target_types": [
       "resource",
       "tool"
-    ],
-    "top_level_keys": [
-      "audits",
-      "high_risk_servers",
-      "hostname",
-      "os_platform",
-      "policy_result",
-      "scan_duration_seconds",
-      "scan_timestamp",
-      "servers_connected",
-      "servers_discovered",
-      "servers_failed",
-      "total_tools"
     ]
   }
 }
