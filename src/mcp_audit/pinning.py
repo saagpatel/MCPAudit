@@ -54,6 +54,7 @@ class PinStore:
             tool_entries[tool.name] = {
                 "hash": self.compute_hash(tool),
                 "pinned_at": now,
+                "snapshot": self._tool_snapshot(tool),
             }
         self._data["pinned_at"] = now
         self._write()
@@ -79,6 +80,9 @@ class PinStore:
                         stored_hash=None,
                         current_hash=self.compute_hash(tool),
                         pinned_at=None,
+                        summary="Tool is present now but was not in the pin baseline.",
+                        details=self._new_tool_details(tool),
+                        remediation="Review the tool capability and run `mcp-audit pin` after approval.",
                     )
                 )
             else:
@@ -97,6 +101,11 @@ class PinStore:
                             stored_hash=stored_hash,
                             current_hash=current_hash,
                             pinned_at=pinned_at,
+                            summary="Pinned tool metadata changed since the baseline.",
+                            details=self._changed_tool_details(pin_entry, tool),
+                            remediation=(
+                                "Review the changed tool metadata before refreshing the pin baseline."
+                            ),
                         )
                     )
 
@@ -114,6 +123,9 @@ class PinStore:
                     stored_hash=stored_hash,
                     current_hash=None,
                     pinned_at=pinned_at,
+                    summary="Pinned tool is no longer exposed by the server.",
+                    details=["tool missing from current scan"],
+                    remediation="Confirm the removal is expected, then remove or refresh the stale pin.",
                 )
             )
 
@@ -155,3 +167,34 @@ class PinStore:
         tmp = self._path.with_suffix(".yaml.tmp")
         tmp.write_text(yaml.dump(self._data, default_flow_style=False, allow_unicode=True))
         tmp.rename(self._path)
+
+    def _tool_snapshot(self, tool: ToolInfo) -> dict[str, Any]:
+        """Return the reviewable tool fields stored alongside the pin hash."""
+        return {
+            "description": tool.description,
+            "input_schema": tool.input_schema,
+        }
+
+    def _new_tool_details(self, tool: ToolInfo) -> list[str]:
+        details = ["not previously pinned"]
+        if tool.description:
+            details.append("description present")
+        if tool.input_schema:
+            details.append("input schema present")
+        return details
+
+    def _changed_tool_details(self, pin_entry: dict[str, Any], tool: ToolInfo) -> list[str]:
+        previous = pin_entry.get("snapshot")
+        current = self._tool_snapshot(tool)
+
+        if not isinstance(previous, dict):
+            return ["pin hash changed; previous schema snapshot unavailable"]
+
+        details: list[str] = []
+        if previous.get("description") != current["description"]:
+            details.append("description changed")
+        if previous.get("input_schema") != current["input_schema"]:
+            details.append("input schema changed")
+        if not details:
+            details.append("tool metadata changed")
+        return details

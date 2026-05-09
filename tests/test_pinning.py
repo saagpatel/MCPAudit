@@ -92,6 +92,9 @@ class TestCheckDrift:
         assert len(findings) == 1
         assert findings[0].status == DriftStatus.CHANGED
         assert findings[0].tool_name == "read_file"
+        assert findings[0].summary
+        assert "description changed" in findings[0].details
+        assert "Review" in findings[0].remediation
 
     def test_returns_new_for_tool_not_in_pins(self, tmp_path: Path) -> None:
         store = _store(tmp_path)
@@ -101,6 +104,8 @@ class TestCheckDrift:
         new_findings = [f for f in findings if f.status == DriftStatus.NEW]
         assert len(new_findings) == 1
         assert new_findings[0].tool_name == "new_tool"
+        assert "not previously pinned" in new_findings[0].details
+        assert "mcp-audit pin" in new_findings[0].remediation
 
     def test_returns_removed_for_missing_tool(self, tmp_path: Path) -> None:
         store = _store(tmp_path)
@@ -110,6 +115,48 @@ class TestCheckDrift:
         removed = [f for f in findings if f.status == DriftStatus.REMOVED]
         assert len(removed) == 1
         assert removed[0].tool_name == "tool_b"
+        assert removed[0].summary
+        assert "tool missing from current scan" in removed[0].details
+        assert "refresh" in removed[0].remediation
+
+    def test_changed_finding_identifies_input_schema_changes(self, tmp_path: Path) -> None:
+        store = _store(tmp_path)
+        store.pin_server(
+            "srv",
+            [
+                make_tool(
+                    "read_file", input_schema={"type": "object", "properties": {"path": {"type": "string"}}}
+                )
+            ],
+        )
+        store2 = PinStore(path=tmp_path / "pins.yaml")
+        findings = store2.check_drift(
+            "srv",
+            [
+                make_tool(
+                    "read_file", input_schema={"type": "object", "properties": {"url": {"type": "string"}}}
+                )
+            ],
+        )
+        assert len(findings) == 1
+        assert "input schema changed" in findings[0].details
+
+    def test_changed_finding_handles_legacy_pins_without_snapshot(self, tmp_path: Path) -> None:
+        pin_file = tmp_path / "pins.yaml"
+        pin_file.write_text(
+            """
+servers:
+  srv:
+    tools:
+      read_file:
+        hash: sha256:old
+        pinned_at: '2026-01-01T00:00:00+00:00'
+"""
+        )
+        store = PinStore(path=pin_file)
+        findings = store.check_drift("srv", [make_tool("read_file", description="v2")])
+        assert len(findings) == 1
+        assert findings[0].details == ["pin hash changed; previous schema snapshot unavailable"]
 
     def test_missing_pin_file_returns_all_new(self, tmp_path: Path) -> None:
         store = _store(tmp_path)
@@ -148,6 +195,10 @@ class TestAtomicWrite:
         # Verify written file is valid YAML
         raw = yaml.safe_load(pin_file.read_text())
         assert "servers" in raw
+        assert raw["servers"]["srv"]["tools"]["tool"]["snapshot"] == {
+            "description": None,
+            "input_schema": None,
+        }
 
     def test_changed_finding_includes_pinned_at(self, tmp_path: Path) -> None:
         before = datetime.now(UTC)

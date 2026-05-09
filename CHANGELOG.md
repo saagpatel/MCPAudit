@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `scan --skip-connect` now performs deeper config-only risk inference for
   declared HTTP/SSE endpoints, shell wrappers, package runners, remote URLs,
   destructive shell patterns, and credential-like env key names.
+- Tool schema drift findings now include plain-language summaries, changed
+  field hints, and suggested remediation in terminal and JSON reports.
 
 ### Fixed
 - `mcp-audit pin` now connects to MCP servers before writing schema pins, so
@@ -29,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   expectations clearer: `discover` is the safest first command, `--skip-connect`
   is the config-only scan mode, `pin` intentionally connects to servers, and the
   canonical verifier is `uv run pytest`, `uv run ruff check`, `uv run mypy src`.
+- Pin files now keep reviewable tool metadata snapshots next to the SHA256 hash
+  so drift reports can identify description and input-schema changes.
 - CI now runs on common maintenance branch prefixes, including `codex/**`.
 - Updated security and project notes to state the current scan trust boundary:
   standard scans enumerate live MCP tool metadata, while `--skip-connect` is the
