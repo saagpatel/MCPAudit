@@ -11,6 +11,7 @@ from click.testing import CliRunner
 
 from mcp_audit import cli
 from mcp_audit.models import AuditReport, ServerAudit
+from mcp_audit.overrides import OverrideApplier, OverrideConfig
 from mcp_audit.pinning import PinStore
 from tests.conftest import make_server_config, make_tool
 
@@ -35,7 +36,37 @@ def test_version_option_reports_installed_distribution_version() -> None:
 
     assert result.exit_code == 0
     assert "mcp-audit, version " in result.output
-    assert "1.0.0b3" in result.output
+    assert "1.0.0rc1" in result.output
+
+
+def test_scan_config_only_requires_config() -> None:
+    result = CliRunner().invoke(cli.main, ["scan", "--config-only"])
+
+    assert result.exit_code != 0
+    assert "--config-only requires --config PATH" in result.output
+
+
+def test_run_scan_core_config_only_ignores_discovered_configs(monkeypatch: object) -> None:
+    discovered = make_server_config(name="discovered")
+    custom = make_server_config(name="custom")
+
+    monkeypatch.setattr(cli, "discover_all_configs", lambda clients: [discovered])
+    monkeypatch.setattr(cli, "_parse_extra_config", lambda path: [custom])
+
+    report = anyio.run(
+        cli._run_scan_core,
+        True,
+        None,
+        10,
+        "custom.json",
+        OverrideApplier(OverrideConfig()),
+        False,
+        False,
+        False,
+        True,
+    )
+
+    assert [audit.server.name for audit in report.audits] == ["custom"]
 
 
 def test_run_pin_connects_before_pinning(monkeypatch: object, tmp_path: Path) -> None:

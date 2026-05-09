@@ -1,7 +1,7 @@
 # Release Checklist
 
-Use this checklist before tagging a public MCPAudit alpha, beta, or stable
-release.
+Use this checklist before tagging a public MCPAudit alpha, beta, release
+candidate, or stable release.
 
 ## Local Verifier
 

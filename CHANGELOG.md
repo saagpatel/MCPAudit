@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0rc1] - 2026-05-09
+
+### Changed
+
+- Promoted the package to the first `1.0.0` release candidate.
+- Refreshed `CLAUDE.md`, SECURITY, beta readiness, stable readiness, and release
+  checklist docs against live CLI behavior and packaging metadata.
+- Added `scan --config-only` for isolated audits of a single explicit config
+  file without also scanning locally discovered MCP client configs.
+- Recorded the stable scoring decision: prompt/resource findings remain
+  reportable and policy-gatable, but outside `risk_score.composite` for
+  `1.0.0`.
+
 ## [1.0.0b3] - 2026-05-09
 
 ### Added
@@ -252,7 +265,8 @@ real workstations; API surface may still shift before the `1.0.0` stable cut.
 - Risk score output with pass/warn/fail thresholds
 - `mcp-audit` CLI entry point
 
-[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0b3...HEAD
+[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0rc1...HEAD
+[1.0.0rc1]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0b3...v1.0.0rc1
 [1.0.0b3]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0b2...v1.0.0b3
 [1.0.0b2]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0b1...v1.0.0b2
 [1.0.0b1]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a6...v1.0.0b1

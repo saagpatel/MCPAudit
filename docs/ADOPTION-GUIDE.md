@@ -19,6 +19,13 @@ When you are ready to inspect live MCP metadata, run a connected scan:
 mcp-audit scan --inject-check
 ```
 
+To audit one explicit config file without also scanning workstation-discovered
+configs, use `--config-only`:
+
+```bash
+mcp-audit scan --config ./mcp.json --config-only --inject-check
+```
+
 Review prompt/resource findings separately from the composite score. They are
 visible in reports and policy gates, but they do not yet change
 `risk_score.composite`.

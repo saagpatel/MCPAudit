@@ -30,10 +30,11 @@ Ready for stable consideration:
 - validation corpus covers common filesystem, network, shell, destructive,
   exfiltration, browser, cloud, database, and messaging server shapes.
 
-Still needs a release decision:
+Release-candidate decision:
 
-- whether prompt/resource findings stay outside `risk_score.composite` for
-  stable `1.0.0`, or ship behind a new additive `non_tool_risk` field first.
+- keep prompt/resource findings outside `risk_score.composite` for `1.0.0`;
+- consider an additive `non_tool_risk` field after stable if field feedback
+  shows enough calibrated signal.
 
 ## Go/No-Go Checklist
 

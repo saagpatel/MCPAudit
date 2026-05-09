@@ -115,6 +115,12 @@ def discover(client_filter: str | None, verbose: bool) -> None:
 @click.option("--verbose", is_flag=True, default=False, help="Show per-tool permission details.")
 @click.option("--config", "extra_config", default=None, metavar="PATH", help="Scan a specific config file.")
 @click.option(
+    "--config-only",
+    is_flag=True,
+    default=False,
+    help="Scan only --config PATH and ignore discovered MCP configs.",
+)
+@click.option(
     "--override-config",
     "override_config_path",
     default=None,
@@ -145,6 +151,7 @@ def scan(
     timeout: int,
     verbose: bool,
     extra_config: str | None,
+    config_only: bool,
     override_config_path: str | None,
     policy_path: str | None,
     inject_check: bool,
@@ -152,6 +159,9 @@ def scan(
     llm_analysis: bool,
 ) -> None:
     """Full audit: discover servers, connect, enumerate tools, score risk, report."""
+    if config_only and not extra_config:
+        raise click.ClickException("--config-only requires --config PATH.")
+
     anyio.run(
         _run_scan,
         json_output,
@@ -166,6 +176,7 @@ def scan(
         inject_check,
         pin_check,
         llm_analysis,
+        config_only,
     )
 
 
@@ -178,6 +189,7 @@ async def _run_scan_core(
     inject_check: bool = False,
     pin_check: bool = False,
     llm_analysis: bool = False,
+    config_only: bool = False,
 ) -> AuditReport:
     """Core scan pipeline — discovers, connects, analyzes, scores. Returns AuditReport."""
     import os
@@ -185,11 +197,11 @@ async def _run_scan_core(
     start = time.monotonic()
 
     # 1. Discover servers
-    servers = discover_all_configs(clients)
+    servers = [] if config_only else discover_all_configs(clients)
 
     if extra_config:
         extra_servers = _parse_extra_config(Path(extra_config))
-        servers = servers + extra_servers
+        servers = extra_servers if config_only else servers + extra_servers
 
     connector = ServerConnector(timeout=float(timeout))
     analyzer = PermissionAnalyzer()
@@ -306,9 +318,13 @@ async def _run_scan(
     inject_check: bool = False,
     pin_check: bool = False,
     llm_analysis: bool = False,
+    config_only: bool = False,
 ) -> None:
     """CLI scan entrypoint — calls _run_scan_core then renders output."""
-    if not discover_all_configs(None) and not extra_config:
+    if config_only and not extra_config:
+        raise click.ClickException("--config-only requires --config PATH.")
+
+    if not config_only and not discover_all_configs(None) and not extra_config:
         # Quick early check without building override applier
         servers = discover_all_configs(_parse_clients(clients))
         if not servers:
@@ -328,6 +344,7 @@ async def _run_scan(
         inject_check=inject_check,
         pin_check=pin_check,
         llm_analysis=llm_analysis,
+        config_only=config_only,
     )
 
     if policy_path:
