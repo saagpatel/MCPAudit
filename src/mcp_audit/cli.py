@@ -256,6 +256,7 @@ async def _run_scan_core(
 
             # Apply user overrides between analysis and scoring
             audit.permissions = override_applier.apply(srv.name, raw_findings)
+            audit.capability_findings = analyzer.analyze_capabilities(audit.prompts, audit.resources)
             audit.risk_score = scorer.score_server(audit.permissions)
 
             # Optional injection detection

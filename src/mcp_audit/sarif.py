@@ -10,6 +10,7 @@ from typing import Any
 
 from mcp_audit.models import (
     AuditReport,
+    CapabilityFinding,
     Confidence,
     InjectionFinding,
     InjectionSeverity,
@@ -110,8 +111,10 @@ class SarifGenerator:
         """One result per (server, tool, category) triple, plus injection findings."""
         results: list[dict[str, Any]] = []
         for audit in report.audits:
-            for finding in audit.permissions:
-                results.append(self._make_result(finding, audit))
+            for permission_finding in audit.permissions:
+                results.append(self._make_result(permission_finding, audit))
+            for capability_finding in audit.capability_findings:
+                results.append(self._make_capability_result(capability_finding, audit))
             for inj in audit.injection_findings:
                 results.append(self._make_injection_result(inj, audit))
         return results
@@ -129,6 +132,13 @@ class SarifGenerator:
         if finding.severity == InjectionSeverity.HIGH:
             return "error"
         if finding.severity == InjectionSeverity.MEDIUM:
+            return "warning"
+        return "note"
+
+    def _capability_level(self, finding: CapabilityFinding) -> str:
+        if finding.severity == "high":
+            return "error"
+        if finding.severity == "medium" or finding.confidence in _HIGH_CONFIDENCE:
             return "warning"
         return "note"
 
@@ -154,6 +164,34 @@ class SarifGenerator:
             "properties": {
                 "pattern": finding.pattern_name,
                 "severity": finding.severity.value,
+                "remediation": finding.remediation,
+            },
+        }
+
+    def _make_capability_result(self, finding: CapabilityFinding, audit: ServerAudit) -> dict[str, Any]:
+        """Build a SARIF result for a prompt or resource capability finding."""
+        rule_id = finding.rule_id
+        level = self._capability_level(finding)
+        config_path = audit.server.config_path
+        uri = Path(config_path).as_uri() if config_path else "file:///unknown"
+        msg = (
+            f"{finding.target_type.value.title()} '{finding.target_name}' on server "
+            f"'{audit.server.name}' has {finding.category.value} capability "
+            f"(confidence: {finding.confidence.value}). Suggested action: {finding.remediation}"
+        )
+        return {
+            "ruleId": rule_id,
+            "level": level,
+            "message": {"text": msg},
+            "locations": [{"physicalLocation": {"artifactLocation": {"uri": uri}}}],
+            "partialFingerprints": {
+                "mcpAuditStableId": _stable_fingerprint(rule_id, audit.server.name, finding.target_name)
+            },
+            "properties": {
+                "target_type": finding.target_type.value,
+                "category": finding.category.value,
+                "confidence": finding.confidence.value,
+                "severity": finding.severity,
                 "remediation": finding.remediation,
             },
         }

@@ -77,6 +77,7 @@ class ReportGenerator:
             self._render_verbose(report)
 
         self._render_injection_warnings(report)
+        self._render_capability_warnings(report)
         self._render_drift_warnings(report)
         self._render_policy_result(report)
 
@@ -180,6 +181,33 @@ class ReportGenerator:
                 f"[{status_style}]{d.status.value}[/{status_style}]",
                 meaning,
                 d.remediation,
+            )
+        self._console.print(tbl)
+
+    def _render_capability_warnings(self, report: AuditReport) -> None:
+        """Print non-tool capability findings if any were found."""
+        all_findings = [(a.server.name, f) for a in report.audits for f in a.capability_findings]
+        if not all_findings:
+            return
+
+        self._console.print()
+        self._console.rule("[bold yellow]Prompt And Resource Capability Findings[/bold yellow]")
+        tbl = Table(show_lines=False)
+        tbl.add_column("Server", style="bold cyan", no_wrap=True)
+        tbl.add_column("Type", style="cyan")
+        tbl.add_column("Name", overflow="fold")
+        tbl.add_column("Permission")
+        tbl.add_column("Severity")
+        tbl.add_column("Suggested Action", overflow="fold")
+
+        for server_name, finding in all_findings:
+            tbl.add_row(
+                server_name,
+                finding.target_type.value,
+                finding.target_name,
+                finding.category.value,
+                finding.severity,
+                finding.remediation,
             )
         self._console.print(tbl)
 

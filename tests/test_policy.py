@@ -11,6 +11,8 @@ import pytest
 from mcp_audit import cli
 from mcp_audit.models import (
     AuditReport,
+    CapabilityFinding,
+    CapabilityTarget,
     Confidence,
     DriftFinding,
     DriftStatus,
@@ -75,6 +77,30 @@ deny:
     assert not result.passed
     assert result.violations[0].rule == "deny.permissions"
     assert result.violations[0].tool_name == "run_shell"
+
+
+def test_policy_fails_on_denied_capability_permission(tmp_path: Path) -> None:
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text(
+        """
+deny:
+  permissions:
+    - network
+"""
+    )
+    audit = _audit_with_shell_finding()
+    audit.capability_findings = [
+        CapabilityFinding(
+            target_type=CapabilityTarget.RESOURCE,
+            target_name="https://example.com/data.json",
+            category=PermissionCategory.NETWORK,
+            confidence=Confidence.HIGH,
+            evidence=["resource URI scheme 'https'"],
+        )
+    ]
+    result = evaluate_policy(_audit_report(audit), load_policy(policy_path))
+    assert not result.passed
+    assert any(violation.tool_name == "https://example.com/data.json" for violation in result.violations)
 
 
 def test_policy_fails_on_high_severity_threshold(tmp_path: Path) -> None:

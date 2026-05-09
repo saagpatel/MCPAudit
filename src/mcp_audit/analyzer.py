@@ -1,6 +1,16 @@
 """Permission inference engine — keyword heuristics + MCP annotation analysis."""
 
-from mcp_audit.models import Confidence, PermissionCategory, PermissionFinding, ToolAnnotations, ToolInfo
+from mcp_audit.models import (
+    CapabilityFinding,
+    CapabilityTarget,
+    Confidence,
+    PermissionCategory,
+    PermissionFinding,
+    PromptInfo,
+    ResourceInfo,
+    ToolAnnotations,
+    ToolInfo,
+)
 from mcp_audit.rules.patterns import PERMISSION_PATTERNS
 
 # Keyword strength → score contribution per match (multiplied by source weight later)
@@ -20,6 +30,59 @@ class PermissionAnalyzer:
         findings: list[PermissionFinding] = []
         for tool in tools:
             findings.extend(self.analyze_tool(tool))
+        return findings
+
+    def analyze_capabilities(
+        self, prompts: list[PromptInfo], resources: list[ResourceInfo]
+    ) -> list[CapabilityFinding]:
+        """Return permission findings for non-tool MCP capabilities."""
+        findings: list[CapabilityFinding] = []
+        for prompt in prompts:
+            findings.extend(self.analyze_prompt(prompt))
+        for resource in resources:
+            findings.extend(self.analyze_resource(resource))
+        return findings
+
+    def analyze_prompt(self, prompt: PromptInfo) -> list[CapabilityFinding]:
+        sources: list[tuple[str, int]] = [
+            (prompt.name, 3),
+            (prompt.description or "", 2),
+            *[(argument, 1) for argument in prompt.arguments],
+        ]
+        return self._capability_findings(CapabilityTarget.PROMPT, prompt.name, sources)
+
+    def analyze_resource(self, resource: ResourceInfo) -> list[CapabilityFinding]:
+        sources: list[tuple[str, int]] = [
+            (resource.uri, 3),
+            (resource.name or "", 2),
+            (resource.description or "", 2),
+            (resource.mime_type or "", 1),
+        ]
+        findings = self._capability_findings(CapabilityTarget.RESOURCE, resource.uri, sources)
+
+        scheme = resource.uri.split(":", 1)[0].lower() if ":" in resource.uri else ""
+        if scheme == "file" and not any(f.category == PermissionCategory.FILE_READ for f in findings):
+            findings.append(
+                CapabilityFinding(
+                    target_type=CapabilityTarget.RESOURCE,
+                    target_name=resource.uri,
+                    category=PermissionCategory.FILE_READ,
+                    confidence=Confidence.HIGH,
+                    evidence=["resource URI scheme 'file'"],
+                )
+            )
+        if scheme in {"http", "https"} and not any(
+            f.category == PermissionCategory.NETWORK for f in findings
+        ):
+            findings.append(
+                CapabilityFinding(
+                    target_type=CapabilityTarget.RESOURCE,
+                    target_name=resource.uri,
+                    category=PermissionCategory.NETWORK,
+                    confidence=Confidence.HIGH,
+                    evidence=[f"resource URI scheme '{scheme}'"],
+                )
+            )
         return findings
 
     def analyze_tool(self, tool: ToolInfo) -> list[PermissionFinding]:
@@ -173,3 +236,34 @@ class PermissionAnalyzer:
             results[category] = (total_score, evidence)
 
         return results
+
+    def _capability_findings(
+        self,
+        target_type: CapabilityTarget,
+        target_name: str,
+        sources: list[tuple[str, int]],
+    ) -> list[CapabilityFinding]:
+        scores = self._score_keywords(sources)
+        findings: list[CapabilityFinding] = []
+
+        for category, (weighted_score, evidence_list) in scores.items():
+            if weighted_score < _LOW_THRESHOLD:
+                continue
+            if weighted_score >= _HIGH_THRESHOLD:
+                confidence = Confidence.HIGH
+            elif weighted_score >= _MEDIUM_THRESHOLD:
+                confidence = Confidence.MEDIUM
+            else:
+                confidence = Confidence.LOW
+
+            findings.append(
+                CapabilityFinding(
+                    target_type=target_type,
+                    target_name=target_name,
+                    category=category,
+                    confidence=confidence,
+                    evidence=evidence_list,
+                )
+            )
+
+        return findings
