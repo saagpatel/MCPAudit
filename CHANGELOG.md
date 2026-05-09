@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   gate coverage.
 - Policy gates now support server allowlists, per-server risk limits,
   per-server denied permissions, and starter policy examples.
+- SARIF output now includes tool schema drift and policy gate violations, backed
+  by a documented output contract and compatibility fixture.
 
 ## [1.0.0a1] - 2026-05-09
 

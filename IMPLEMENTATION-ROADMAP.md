@@ -36,6 +36,7 @@ Current scan behavior:
   permission findings for prompt arguments and resource URI schemes.
 - Stable finding metadata with rule IDs, severity, description, and remediation.
 - Prompt-injection detection with stable metadata and SARIF output.
+- Documented JSON/SARIF output contract with compatibility fixture coverage.
 - Tool schema pinning and drift checks with changed-field hints and suggested
   actions.
 - Shared redaction for terminal, JSON, SARIF, and connection-error output.
@@ -125,14 +126,14 @@ Done when users can maintain pins without inspecting YAML by hand.
 
 ### 4. Output Contract Hardening
 
-Reports now carry richer metadata. Before a broader release, add:
+Reports now carry richer metadata, with a documented JSON/SARIF contract and a
+representative compatibility fixture. Useful follow-ups:
 
-- compatibility tests for representative JSON reports;
-- SARIF coverage for drift and policy findings;
-- documented exit-code contract;
-- sample reports under fixtures or docs.
+- add more fixtures for failed connections and config-only scans;
+- document deprecation rules for future report fields;
+- add consumer examples for GitHub code scanning and generic CI.
 
-Done when downstream CI users can safely depend on report shape.
+Done when downstream CI users have copy-paste integration examples.
 
 ### 5. Release Readiness
 

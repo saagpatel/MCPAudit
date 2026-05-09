@@ -10,8 +10,12 @@ from mcp_audit.models import (
     CapabilityFinding,
     CapabilityTarget,
     Confidence,
+    DriftFinding,
+    DriftStatus,
     PermissionCategory,
     PermissionFinding,
+    PolicyResult,
+    PolicyViolation,
     RiskScore,
     ServerAudit,
 )
@@ -82,7 +86,7 @@ class TestSarifStructure:
         sarif = SarifGenerator().generate(_make_report([]))
         rules = sarif["runs"][0]["tool"]["driver"]["rules"]
         rule_ids = {r["id"] for r in rules}
-        expected = set(_RULE_IDS.values()) | set(_INJECTION_RULE_IDS.values())
+        expected = set(_RULE_IDS.values()) | set(_INJECTION_RULE_IDS.values()) | {"MCP009", "MCP010"}
         assert rule_ids == expected
 
     def test_empty_report_has_empty_results(self) -> None:
@@ -124,6 +128,35 @@ class TestSarifResults:
         assert result["ruleId"] == "MCP001"
         assert result["properties"]["target_type"] == "resource"
         assert "file:///tmp/example.txt" in result["message"]["text"]
+
+    def test_drift_finding_emits_sarif_result(self) -> None:
+        audit = _make_audit()
+        audit.drift_findings = [
+            DriftFinding(server_name="srv", tool_name="read_file", status=DriftStatus.CHANGED)
+        ]
+        sarif = SarifGenerator().generate(_make_report([audit]))
+        result = sarif["runs"][0]["results"][0]
+        assert result["ruleId"] == "MCP009"
+        assert result["properties"]["status"] == "changed"
+
+    def test_policy_violation_emits_sarif_result(self) -> None:
+        report = _make_report([])
+        report.policy_result = PolicyResult(
+            passed=False,
+            violations=[
+                PolicyViolation(
+                    rule="max_risk",
+                    server_name="srv",
+                    severity="high",
+                    message="Server risk score 8.0 meets or exceeds policy limit 7.0.",
+                )
+            ],
+        )
+        sarif = SarifGenerator().generate(report)
+        result = sarif["runs"][0]["results"][0]
+        assert result["ruleId"] == "MCP010"
+        assert result["level"] == "error"
+        assert result["properties"]["rule"] == "max_risk"
 
     def test_high_risk_level_is_error(self) -> None:
         audit = _make_audit(risk=8.0, findings=[_finding(PermissionCategory.SHELL_EXEC)])
