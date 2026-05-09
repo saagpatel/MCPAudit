@@ -126,7 +126,7 @@ def discover(client_filter: str | None, verbose: bool) -> None:
     "--inject-check",
     is_flag=True,
     default=False,
-    help="Scan for prompt injection in tool names/descriptions.",
+    help="Scan for prompt injection in tool, prompt, and resource text.",
 )
 @click.option(
     "--pin-check", is_flag=True, default=False, help="Check for tool schema drift against stored pins."
@@ -428,7 +428,13 @@ main.add_command(serve_command)
     default=False,
     help="Write a reviewed --refresh baseline.",
 )
-@click.option("--json", "json_status", is_flag=True, default=False, help="Emit pin status as JSON.")
+@click.option(
+    "--json",
+    "json_status",
+    is_flag=True,
+    default=False,
+    help="Emit pin status or refresh review as JSON.",
+)
 @click.option(
     "--pin-file",
     "pin_file",

@@ -33,7 +33,7 @@ Understanding what MCPAudit does and does not do is important for evaluating its
 - Reads local MCP server configuration files (e.g., `claude_desktop_config.json`, Cursor/VS Code equivalents)
 - During a standard `mcp-audit scan`, connects to configured MCP servers to enumerate declared tools and schemas
 - For stdio servers, starts the configured server command with timeout guards; for HTTP/SSE servers, opens a client connection to the configured URL
-- Scores permission risk and flags potential prompt injection patterns in tool names and descriptions
+- Scores permission risk and flags potential prompt injection patterns in tool, prompt, and resource text
 - Detects schema drift across capability declarations with `mcp-audit pin` and `scan --pin-check`
 - Supports `--skip-connect` for config-only review when you do not want MCPAudit to spawn or connect to audited servers
 
@@ -64,7 +64,7 @@ When the optional `anthropic` dependency is installed and `--llm-analysis` is us
 
 | Version | Supported |
 |---------|-----------|
-| 1.0.0 alpha (`1.0.0a6` and later) | Yes |
+| 1.0.0 beta (`1.0.0b1` and later) | Yes |
 | Earlier alpha/pre-release builds | Security fixes only |
 | < 0.3   | No |
 

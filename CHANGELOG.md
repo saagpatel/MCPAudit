@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0b1] - 2026-05-09
+
+### Added
+
+- Added beta readiness documentation with the release bar, current limitations,
+  and verifier checklist.
+- Added dedicated pin maintenance guidance for reviewed refreshes and
+  intentionally removed servers.
+- Added a prompt/resource scoring boundary note that documents why non-tool
+  findings are reportable and policy-gatable but do not yet affect composite
+  risk.
+- Added the real-world MCP server validation corpus to the pytest suite.
+
+### Changed
+
+- Bumped package metadata from alpha to beta.
+- Updated CLI help, README, roadmap, and SECURITY wording to match prompt and
+  resource injection analysis.
+
 ## [1.0.0a6] - 2026-05-09
 
 ### Added
@@ -188,7 +207,8 @@ real workstations; API surface may still shift before the `1.0.0` stable cut.
 - Risk score output with pass/warn/fail thresholds
 - `mcp-audit` CLI entry point
 
-[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a6...HEAD
+[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0b1...HEAD
+[1.0.0b1]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a6...v1.0.0b1
 [1.0.0a6]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a5...v1.0.0a6
 [1.0.0a5]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a4...v1.0.0a5
 [1.0.0a4]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a3...v1.0.0a4

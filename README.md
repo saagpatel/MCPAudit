@@ -54,7 +54,7 @@ mcp-audit scan --skip-connect
 # Filter to specific clients (comma-separated)
 mcp-audit scan --clients claude_desktop,cursor
 
-# Check tool names and descriptions for prompt-injection patterns
+# Check tools, prompts, and resources for prompt-injection patterns
 mcp-audit scan --inject-check
 
 # Pin current tool schemas, then detect drift on later scans.
@@ -127,7 +127,10 @@ servers:
         - shell_execution
 ```
 
-See `examples/policies/` for starter policies.
+See `examples/policies/` for starter policies. See `docs/PIN-MAINTENANCE.md`
+for reviewed pin refresh and stale server cleanup workflows. See
+`docs/PROMPT-RESOURCE-SCORING.md` for the current prompt/resource scoring
+boundary.
 
 ## License
 
