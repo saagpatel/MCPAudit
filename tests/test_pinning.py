@@ -75,6 +75,42 @@ class TestPinServer:
         assert store2.tool_count("server-b") == 1
 
 
+class TestStatus:
+    def test_status_summarizes_servers_and_pin_age(self, tmp_path: Path) -> None:
+        store = _store(tmp_path)
+        before = datetime.now(UTC)
+        store.pin_server("server-b", [make_tool("tool2")])
+        store.pin_server("server-a", [make_tool("tool1"), make_tool("tool3")])
+
+        statuses = PinStore(path=tmp_path / "pins.yaml").status()
+
+        assert [status.server_name for status in statuses] == ["server-a", "server-b"]
+        assert [status.tool_count for status in statuses] == [2, 1]
+        assert statuses[0].oldest_pinned_at is not None
+        assert statuses[0].newest_pinned_at is not None
+        assert statuses[0].oldest_pinned_at >= before
+
+    def test_status_handles_legacy_entries_without_pinned_at(self, tmp_path: Path) -> None:
+        pin_file = tmp_path / "pins.yaml"
+        pin_file.write_text(
+            """
+servers:
+  srv:
+    tools:
+      read_file:
+        hash: sha256:old
+"""
+        )
+
+        statuses = PinStore(path=pin_file).status()
+
+        assert len(statuses) == 1
+        assert statuses[0].server_name == "srv"
+        assert statuses[0].tool_count == 1
+        assert statuses[0].oldest_pinned_at is None
+        assert statuses[0].newest_pinned_at is None
+
+
 class TestCheckDrift:
     def test_returns_empty_for_matching_hashes(self, tmp_path: Path) -> None:
         store = _store(tmp_path)

@@ -64,9 +64,9 @@ When the optional `anthropic` dependency is installed and `--llm-analysis` is us
 
 | Version | Supported |
 |---------|-----------|
-| 0.3.x   | Yes       |
-| 0.2.x   | Security fixes only |
-| < 0.2   | No        |
+| 1.0.0 alpha (`1.0.0a4` and later) | Yes |
+| Earlier alpha/pre-release builds | Security fixes only |
+| < 0.3   | No |
 
 ---
 

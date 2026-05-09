@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -34,7 +35,7 @@ def test_version_option_reports_installed_distribution_version() -> None:
 
     assert result.exit_code == 0
     assert "mcp-audit, version " in result.output
-    assert "1.0.0a3" in result.output
+    assert "1.0.0a4" in result.output
 
 
 def test_run_pin_connects_before_pinning(monkeypatch: object, tmp_path: Path) -> None:
@@ -74,3 +75,34 @@ def test_run_pin_skips_failed_connections(monkeypatch: object, tmp_path: Path) -
     anyio.run(cli._run_pin, None, store)
 
     assert store.tool_count("srv") == 0
+
+
+def test_pin_status_reports_pin_coverage(tmp_path: Path) -> None:
+    pin_file = tmp_path / "pins.yaml"
+    store = PinStore(path=pin_file)
+    store.pin_server("srv", [make_tool("read_file"), make_tool("write_file")])
+
+    result = CliRunner().invoke(cli.main, ["pin", "--status", "--pin-file", str(pin_file)])
+
+    assert result.exit_code == 0
+    assert "Pin baseline:" in result.output
+    assert "1 server(s), 2 tool(s)" in result.output
+    assert "srv" in result.output
+
+
+def test_pin_status_json_reports_pin_coverage(tmp_path: Path) -> None:
+    pin_file = tmp_path / "pins.yaml"
+    store = PinStore(path=pin_file)
+    store.pin_server("srv", [make_tool("read_file")])
+
+    result = CliRunner().invoke(
+        cli.main,
+        ["pin", "--status", "--json", "--pin-file", str(pin_file)],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["pin_file"] == str(pin_file)
+    assert payload["server_count"] == 1
+    assert payload["total_tools"] == 1
+    assert payload["servers"][0]["name"] == "srv"

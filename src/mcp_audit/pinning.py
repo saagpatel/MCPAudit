@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -18,12 +19,27 @@ logger = logging.getLogger(__name__)
 DEFAULT_PIN_PATH = Path.home() / ".mcp-audit-pins.yaml"
 
 
+@dataclass(frozen=True)
+class ServerPinStatus:
+    """Review summary for one server in the pin baseline."""
+
+    server_name: str
+    tool_count: int
+    oldest_pinned_at: datetime | None
+    newest_pinned_at: datetime | None
+
+
 class PinStore:
     """Stores SHA256 hashes of MCP tool schemas and detects drift between scans."""
 
     def __init__(self, path: Path = DEFAULT_PIN_PATH) -> None:
         self._path = path
         self._data: dict[str, Any] = self._load()
+
+    @property
+    def path(self) -> Path:
+        """Return the backing pin file path."""
+        return self._path
 
     # ------------------------------------------------------------------
     # Public API
@@ -147,6 +163,34 @@ class PinStore:
         servers: dict[str, Any] = self._data.get("servers", {})
         return len(servers.get(server_name, {}).get("tools", {}))
 
+    def status(self) -> list[ServerPinStatus]:
+        """Return review summaries for all pinned servers."""
+        servers: dict[str, Any] = self._data.get("servers", {})
+        statuses: list[ServerPinStatus] = []
+        for server_name in sorted(servers):
+            server_entry = servers.get(server_name, {})
+            if not isinstance(server_entry, dict):
+                continue
+            tools = server_entry.get("tools", {})
+            if not isinstance(tools, dict):
+                continue
+            pinned_times = [
+                parsed
+                for entry in tools.values()
+                if isinstance(entry, dict)
+                for parsed in [self._parse_datetime(entry.get("pinned_at"))]
+                if parsed is not None
+            ]
+            statuses.append(
+                ServerPinStatus(
+                    server_name=server_name,
+                    tool_count=len(tools),
+                    oldest_pinned_at=min(pinned_times) if pinned_times else None,
+                    newest_pinned_at=max(pinned_times) if pinned_times else None,
+                )
+            )
+        return statuses
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -167,6 +211,14 @@ class PinStore:
         tmp = self._path.with_suffix(".yaml.tmp")
         tmp.write_text(yaml.dump(self._data, default_flow_style=False, allow_unicode=True))
         tmp.rename(self._path)
+
+    def _parse_datetime(self, value: object) -> datetime | None:
+        if not isinstance(value, str):
+            return None
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return None
 
     def _tool_snapshot(self, tool: ToolInfo) -> dict[str, Any]:
         """Return the reviewable tool fields stored alongside the pin hash."""
