@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import anyio
+from click.testing import CliRunner
 
 from mcp_audit import cli
 from mcp_audit.models import AuditReport, ServerAudit
@@ -26,6 +27,14 @@ def _report(audits: list[ServerAudit]) -> AuditReport:
         audits=audits,
         scan_duration_seconds=0.01,
     )
+
+
+def test_version_option_reports_installed_distribution_version() -> None:
+    result = CliRunner().invoke(cli.main, ["--version"])
+
+    assert result.exit_code == 0
+    assert "mcp-audit, version " in result.output
+    assert "1.0.0a3" in result.output
 
 
 def test_run_pin_connects_before_pinning(monkeypatch: object, tmp_path: Path) -> None:

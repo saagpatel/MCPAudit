@@ -28,6 +28,7 @@ console = Console()
 
 @click.group()
 @click.option("--debug", is_flag=True, default=False, help="Enable debug logging.")
+@click.version_option(package_name="mcp-permission-audit", prog_name="mcp-audit")
 def main(debug: bool) -> None:
     """MCP Permission Auditor — scan and risk-score locally configured MCP servers."""
     if debug:
