@@ -121,6 +121,20 @@ class TestTerminalRender:
         assert "read_file" in output
         assert "write_file" in output
 
+    def test_verbose_shows_rule_id_and_remediation(self) -> None:
+        con, buf = _make_console()
+        gen = ReportGenerator(console=con)
+        audit = _make_audit("srv", tool_names=["run_shell"])
+        audit.permissions[0].category = PermissionCategory.SHELL_EXEC
+        gen.render_terminal(_base_report([audit]), verbose=True)
+        output = buf.getvalue()
+        assert "MCP004" in output
+        assert "Suggested Action" in output
+        assert "reviewed" in output
+        assert "command" in output
+        assert "surface" in output
+        assert "source" in output
+
     def test_failed_server_shows_status(self) -> None:
         con, buf = _make_console()
         gen = ReportGenerator(console=con)
@@ -171,3 +185,29 @@ class TestJsonRender:
         assert reloaded.audits[0].server.name == "srv"
         assert reloaded.audits[0].risk_score is not None
         assert abs(reloaded.audits[0].risk_score.composite - 4.2) < 0.01
+
+    def test_json_output_includes_finding_metadata(self, tmp_path: Path) -> None:
+        con, _ = _make_console()
+        gen = ReportGenerator(console=con)
+        audit = _make_audit("srv", tool_names=["run_shell"])
+        audit.permissions[0].category = PermissionCategory.SHELL_EXEC
+        report = _base_report([audit])
+        out = tmp_path / "report.json"
+        gen.render_json(report, out)
+        data = json.loads(out.read_text())
+        finding = data["audits"][0]["permissions"][0]
+        assert finding["rule_id"] == "MCP004"
+        assert finding["severity"] == "high"
+        assert finding["title"] == "Shell execution capability"
+        assert finding["remediation"]
+
+    def test_json_output_redacts_report_strings(self, tmp_path: Path) -> None:
+        con, _ = _make_console()
+        gen = ReportGenerator(console=con)
+        audit = _make_audit("srv", status="failed")
+        audit.connection_error = "connection failed with token=abc123"
+        report = _base_report([audit])
+        out = tmp_path / "report.json"
+        gen.render_json(report, out)
+        data = json.loads(out.read_text())
+        assert data["audits"][0]["connection_error"] == "connection failed with token=<redacted>"

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import re
+from pathlib import PurePath
 
 import anyio
 from mcp import ClientSession, StdioServerParameters
@@ -20,6 +22,7 @@ from mcp_audit.models import (
     ToolInfo,
     TransportType,
 )
+from mcp_audit.redaction import redact_text
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +50,11 @@ KNOWN_SERVER_COMMANDS: dict[str, list[PermissionCategory]] = {
 
 # Env key name substrings that imply a remote API call
 _CREDENTIAL_SUBSTRINGS = ("TOKEN", "KEY", "SECRET", "API_KEY", "APIKEY", "PASSWORD", "CREDENTIAL")
+_REMOTE_URL = re.compile(r"https?://", re.IGNORECASE)
+_SHELL_WRAPPERS = {"bash", "sh", "zsh", "fish", "pwsh", "powershell", "cmd", "cmd.exe"}
+_NETWORK_COMMANDS = {"curl", "wget"}
+_PACKAGE_RUNNERS = {"npx", "uvx", "pipx"}
+_DESTRUCTIVE_MARKERS = ("rm -rf", "remove-item -recurse", "del /s", "format ")
 
 
 class ServerConnector:
@@ -88,11 +96,11 @@ class ServerConnector:
             return audit
 
         except Exception as exc:
-            logger.debug("Failed to connect to %s: %s", config.name, exc)
+            logger.debug("Failed to connect to %s: %s", config.name, redact_text(str(exc)))
             return ServerAudit(
                 server=config,
                 connection_status="failed",
-                connection_error=str(exc),
+                connection_error=redact_text(str(exc)),
             )
 
     async def _connect_stdio(self, config: ServerConfig) -> list[ToolInfo]:
@@ -124,32 +132,7 @@ class ServerConnector:
 
     def skip_connect_audit(self, config: ServerConfig) -> ServerAudit:
         """Return a ServerAudit with config-inferred permissions (no connection)."""
-        categories = self._infer_categories_from_config(config)
-
-        findings: list[PermissionFinding] = [
-            PermissionFinding(
-                category=cat,
-                confidence=Confidence.LOW,
-                evidence=["config-inferred (--skip-connect)"],
-                tool_name="(config)",
-            )
-            for cat in categories
-        ]
-
-        # Env key names suggesting credential usage → NETWORK
-        for key in config.env_keys:
-            key_upper = key.upper()
-            if any(sub in key_upper for sub in _CREDENTIAL_SUBSTRINGS):
-                if PermissionCategory.NETWORK not in {f.category for f in findings}:
-                    findings.append(
-                        PermissionFinding(
-                            category=PermissionCategory.NETWORK,
-                            confidence=Confidence.LOW,
-                            evidence=[f"env key {key!r} suggests remote API"],
-                            tool_name="(config)",
-                        )
-                    )
-                break
+        findings = self._infer_skip_connect_findings(config)
 
         return ServerAudit(
             server=config,
@@ -158,11 +141,59 @@ class ServerConnector:
         )
 
     def _infer_categories_from_config(self, config: ServerConfig) -> list[PermissionCategory]:
-        command_str = " ".join(filter(None, [config.command, *config.args, config.url or ""])).lower()
+        return [finding.category for finding in self._infer_skip_connect_findings(config)]
+
+    def _infer_skip_connect_findings(self, config: ServerConfig) -> list[PermissionFinding]:
+        findings: dict[PermissionCategory, PermissionFinding] = {}
+
+        def add(category: PermissionCategory, evidence: str) -> None:
+            existing = findings.get(category)
+            if existing is None:
+                findings[category] = PermissionFinding(
+                    category=category,
+                    confidence=Confidence.LOW,
+                    evidence=[evidence],
+                    tool_name="(config)",
+                )
+                return
+            if evidence not in existing.evidence:
+                existing.evidence.append(evidence)
+
+        command_line = _config_command_line(config)
+        command_lower = command_line.lower()
+        command_name = _command_name(config.command)
+
         for pattern, categories in KNOWN_SERVER_COMMANDS.items():
-            if pattern.lower() in command_str:
-                return list(categories)
-        return []
+            if pattern.lower() in command_lower:
+                for category in categories:
+                    add(category, f"known server pattern {pattern!r}")
+
+        if config.transport in (TransportType.HTTP, TransportType.SSE) or config.url:
+            add(PermissionCategory.NETWORK, f"{config.transport.value} transport declares remote endpoint")
+
+        if _REMOTE_URL.search(command_line):
+            add(PermissionCategory.NETWORK, "command or args contain remote URL")
+
+        if command_name in _SHELL_WRAPPERS:
+            add(PermissionCategory.SHELL_EXEC, f"shell wrapper command {command_name!r}")
+
+        if command_name in _NETWORK_COMMANDS:
+            add(PermissionCategory.NETWORK, f"network transfer command {command_name!r}")
+
+        if command_name in _PACKAGE_RUNNERS:
+            add(PermissionCategory.NETWORK, f"package runner command {command_name!r} may download code")
+
+        if any(marker in command_lower for marker in _DESTRUCTIVE_MARKERS):
+            add(PermissionCategory.DESTRUCTIVE, "command or args contain destructive shell pattern")
+
+        # Env key names suggesting credential usage → NETWORK
+        for key in config.env_keys:
+            key_upper = key.upper()
+            if any(sub in key_upper for sub in _CREDENTIAL_SUBSTRINGS):
+                add(PermissionCategory.NETWORK, f"env key {key!r} suggests remote API")
+                break
+
+        return list(findings.values())
 
     @staticmethod
     def _convert_tool(sdk_tool: SdkTool) -> ToolInfo:
@@ -202,3 +233,14 @@ def build_skip_connect_findings_for_category(
         )
         for cat in categories
     ]
+
+
+def _config_command_line(config: ServerConfig) -> str:
+    return " ".join(filter(None, [config.command, *config.args, config.url or ""]))
+
+
+def _command_name(command: str | None) -> str:
+    if not command:
+        return ""
+    normalized = command.replace("\\", "/")
+    return PurePath(normalized).name.lower()

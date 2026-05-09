@@ -3,7 +3,7 @@
 from datetime import datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 
 class TransportType(StrEnum):
@@ -92,6 +92,41 @@ class PermissionFinding(BaseModel):
     evidence: list[str]  # What triggered this finding (pattern matches, annotation values)
     tool_name: str
 
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def rule_id(self) -> str:
+        from mcp_audit.taxonomy import permission_metadata
+
+        return permission_metadata(self.category).rule_id
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def title(self) -> str:
+        from mcp_audit.taxonomy import permission_metadata
+
+        return permission_metadata(self.category).title
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def severity(self) -> str:
+        from mcp_audit.taxonomy import permission_metadata
+
+        return permission_metadata(self.category).severity
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def description(self) -> str:
+        from mcp_audit.taxonomy import permission_metadata
+
+        return permission_metadata(self.category).description
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def remediation(self) -> str:
+        from mcp_audit.taxonomy import permission_metadata
+
+        return permission_metadata(self.category).remediation
+
 
 class InjectionFinding(BaseModel):
     """A prompt injection threat detected in a tool's description or name."""
@@ -101,6 +136,27 @@ class InjectionFinding(BaseModel):
     pattern_name: str  # e.g. "ignore_instructions"
     matched_text: str  # excerpt (max 200 chars)
     description: str  # human-readable explanation
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def rule_id(self) -> str:
+        from mcp_audit.taxonomy import injection_metadata
+
+        return injection_metadata(self.severity).rule_id
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def title(self) -> str:
+        from mcp_audit.taxonomy import injection_metadata
+
+        return injection_metadata(self.severity).title
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def remediation(self) -> str:
+        from mcp_audit.taxonomy import injection_metadata
+
+        return injection_metadata(self.severity).remediation
 
 
 class DriftFinding(BaseModel):

@@ -8,8 +8,10 @@
 
 ## Features
 
-- **Permission enumeration** — catalogs every tool's capabilities across six permission categories: `file_read`, `file_write`, `network`, `shell_execution`, `destructive`, `exfiltration`
+- **Permission enumeration** — catalogs every tool's capabilities across six permission categories: `file_read`, `file_write`, `network`, `shell_execution`, `destructive`, `exfiltration`; config-only scans infer conservative risks from declared commands, transports, credential key names, package runners, and remote URLs
 - **Risk scoring** — composite 0–10 per server as a weighted sum of per-category max(weight × confidence), with a five-dimension breakdown (file access, network, shell, destructive, exfiltration)
+- **Stable finding metadata** — permission and prompt-injection findings include stable rule IDs, severity, evidence, and suggested remediation so reports are easier to triage
+- **Report redaction** — terminal, JSON, and SARIF report paths share a redaction layer for likely credential values
 - **Prompt injection detection** — `scan --inject-check` scans tool names and descriptions for instruction-override patterns, hidden directives, and adversarial phrasing; pattern-based, no LLM required
 - **Schema drift tracking** — `mcp-audit pin` connects to servers and snapshots current tool schemas; subsequent `scan --pin-check` flags added, removed, and changed tools via SHA256 hashing with field-level granularity
 - **Multi-client support** — reads configs from Claude Desktop, Claude Code, Cursor, VSCode, and Windsurf — plus any custom path via `--config`
