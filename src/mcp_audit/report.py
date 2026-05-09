@@ -74,6 +74,7 @@ class ReportGenerator:
 
         self._render_injection_warnings(report)
         self._render_drift_warnings(report)
+        self._render_policy_result(report)
 
     def _render_verbose(self, report: AuditReport) -> None:
         """Print per-tool permission breakdown for each server."""
@@ -183,6 +184,34 @@ class ReportGenerator:
         redacted = redact_data(report.model_dump(mode="json"))
         path.write_text(json.dumps(redacted, indent=2))
         self._console.print(f"[green]JSON report written to {path}[/green]")
+
+    def _render_policy_result(self, report: AuditReport) -> None:
+        """Print local policy gate result if a policy was evaluated."""
+        result = report.policy_result
+        if result is None:
+            return
+
+        self._console.print()
+        if result.passed:
+            self._console.print("[green]Policy Gate: passed[/green]")
+            return
+
+        self._console.rule("[bold red]Policy Gate Failed[/bold red]")
+        tbl = Table(show_lines=False)
+        tbl.add_column("Rule", style="bold red", no_wrap=True)
+        tbl.add_column("Server", style="cyan")
+        tbl.add_column("Tool", style="cyan")
+        tbl.add_column("Severity")
+        tbl.add_column("Message", overflow="fold")
+        for violation in result.violations:
+            tbl.add_row(
+                violation.rule,
+                violation.server_name or "n/a",
+                violation.tool_name or "n/a",
+                violation.severity,
+                violation.message,
+            )
+        self._console.print(tbl)
 
     def _risk_text(self, audit: ServerAudit) -> Text:
         if audit.risk_score is None:
