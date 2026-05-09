@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import anyio
+import pytest
 from click.testing import CliRunner
 
 from mcp_audit import cli
@@ -36,7 +37,7 @@ def test_version_option_reports_installed_distribution_version() -> None:
 
     assert result.exit_code == 0
     assert "mcp-audit, version " in result.output
-    assert "1.0.0rc1" in result.output
+    assert "1.0.0" in result.output
 
 
 def test_scan_config_only_requires_config() -> None:
@@ -46,7 +47,7 @@ def test_scan_config_only_requires_config() -> None:
     assert "--config-only requires --config PATH" in result.output
 
 
-def test_run_scan_core_config_only_ignores_discovered_configs(monkeypatch: object) -> None:
+def test_run_scan_core_config_only_ignores_discovered_configs(monkeypatch: pytest.MonkeyPatch) -> None:
     discovered = make_server_config(name="discovered")
     custom = make_server_config(name="custom")
 

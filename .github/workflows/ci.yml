@@ -31,7 +31,7 @@ jobs:
         run: uv run ruff format --check src/ tests/
 
       - name: Type check (mypy)
-        run: uv run mypy src/ --strict
+        run: uv run mypy .
 
       - name: Unit tests
         run: uv run pytest tests/ -v --ignore=tests/test_connector.py

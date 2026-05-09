@@ -1,6 +1,6 @@
-# Beta Feedback To Fixtures
+# Feedback To Fixtures
 
-Beta feedback should become regression coverage whenever it describes a
+User feedback should become regression coverage whenever it describes a
 repeatable false positive, false negative, output-shape problem, or policy gap.
 
 ## Intake Path
@@ -26,5 +26,5 @@ repeatable false positive, false negative, output-shape problem, or policy gap.
 
 ## Done Criteria
 
-A beta feedback item is closed when the new fixture fails before the fix, passes
-after the fix, and the changelog explains any user-visible behavior change.
+A feedback item is closed when the new fixture fails before the fix, passes after
+the fix, and the changelog explains any user-visible behavior change.

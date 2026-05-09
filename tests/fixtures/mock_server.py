@@ -11,12 +11,13 @@ import asyncio
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Prompt, PromptArgument, Resource, Tool, ToolAnnotations
+from pydantic import AnyUrl
 
 
-def make_server() -> Server:  # type: ignore[type-arg]
-    app: Server = Server("mock-audit-server")  # type: ignore[type-arg]
+def make_server() -> Server:
+    app = Server("mock-audit-server")
 
-    @app.list_tools()  # type: ignore[misc]
+    @app.list_tools()  # type: ignore[no-untyped-call, untyped-decorator]
     async def list_tools() -> list[Tool]:
         return [
             Tool(
@@ -52,7 +53,7 @@ def make_server() -> Server:  # type: ignore[type-arg]
             ),
         ]
 
-    @app.list_prompts()  # type: ignore[misc]
+    @app.list_prompts()  # type: ignore[no-untyped-call, untyped-decorator]
     async def list_prompts() -> list[Prompt]:
         return [
             Prompt(
@@ -62,11 +63,11 @@ def make_server() -> Server:  # type: ignore[type-arg]
             )
         ]
 
-    @app.list_resources()  # type: ignore[misc]
+    @app.list_resources()  # type: ignore[no-untyped-call, untyped-decorator]
     async def list_resources() -> list[Resource]:
         return [
             Resource(
-                uri="file:///tmp/example.txt",
+                uri=AnyUrl("file:///tmp/example.txt"),
                 name="example",
                 description="Example file resource.",
                 mimeType="text/plain",

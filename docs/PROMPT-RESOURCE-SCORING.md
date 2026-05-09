@@ -1,7 +1,7 @@
 # Prompt And Resource Scoring Boundary
 
 MCPAudit reports tool, prompt, and resource risk signals, but the composite
-server score is still tool-centered for the beta.
+server score remains tool-centered for stable `1.0.0`.
 
 ## Current Behavior
 
@@ -21,9 +21,9 @@ calibration. A prompt with a risky argument and a tool that can execute shell
 commands are related security signals, not necessarily equivalent scoring
 inputs.
 
-For the beta, MCPAudit keeps the stronger behavior contract: non-tool findings
-are reportable and policy-gatable, while composite score semantics remain
-stable.
+For stable `1.0.0`, MCPAudit keeps the stronger behavior contract: non-tool
+findings are reportable and policy-gatable, while composite score semantics
+remain stable.
 
 See `docs/SCORING-MIGRATION.md` for the recommended additive migration path.
 
@@ -38,8 +38,8 @@ Before prompt/resource findings affect the composite score, MCPAudit should add:
 
 ## Calibration Set
 
-The beta calibration set should cover at least these cases before any composite
-score migration:
+The calibration set should cover at least these cases before any composite score
+migration:
 
 | Target | Example signal | Expected behavior |
 |--------|----------------|-------------------|

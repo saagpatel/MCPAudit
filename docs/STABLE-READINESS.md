@@ -1,6 +1,6 @@
 # Stable Readiness
 
-This document tracks the remaining bar for a credible `1.0.0` stable release.
+This document records the release bar used for the `1.0.0` stable release.
 It is intentionally evidence-based: an item is ready only when the code, docs,
 tests, and install path agree.
 
@@ -21,14 +21,15 @@ tests, and install path agree.
 
 ## Current Status
 
-Ready for stable consideration:
+Ready for stable release:
 
 - package install and command naming are settled;
 - connected and config-only scan boundaries are documented;
 - JSON/SARIF rule IDs are documented and snapshot-tested;
-- beta feedback has a fixture-driven intake path;
+- user feedback has a fixture-driven intake path;
 - validation corpus covers common filesystem, network, shell, destructive,
   exfiltration, browser, cloud, database, and messaging server shapes.
+- whole-repo strict typing passes with `uv run mypy .`.
 
 Release-candidate decision:
 
@@ -43,7 +44,7 @@ Run before tagging stable:
 ```bash
 uv run pytest
 uv run ruff check
-uv run mypy src
+uv run mypy .
 uv run ruff format --check
 uv lock --check
 git diff --check

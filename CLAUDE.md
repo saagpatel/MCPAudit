@@ -24,7 +24,7 @@ A Python CLI tool that scans locally configured MCP servers across Claude Deskto
 - Async by default for server connections; sync wrapper for CLI
 
 ## Current Phase
-**Release-candidate readiness for 1.0.0**
+**Stable 1.0.0 maintenance**
 The codebase now includes discovery, config-only scans, connected tool/prompt/resource enumeration, permission scoring, prompt-injection checks, schema pinning/drift checks, SARIF/JSON output, watch mode, MCP server exposure, overrides, policy gates, and optional LLM-assisted classification. Treat older roadmap phase labels as historical unless they match the current code.
 
 ## Key Decisions

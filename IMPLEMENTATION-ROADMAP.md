@@ -46,9 +46,9 @@ Current scan behavior:
 - Shared redaction for terminal, JSON, SARIF, and connection-error output.
 - Local policy gates through `scan --policy`, including global and per-server
   enforcement rules.
-- Adoption, pin maintenance, prompt/resource scoring boundary, beta readiness,
-  stable readiness, scoring migration, beta-feedback, and security-review docs
-  for beta users.
+- Adoption, pin maintenance, prompt/resource scoring boundary, beta/RC
+  readiness, stable readiness, scoring migration, feedback-to-fixtures, and
+  security-review docs for stable users.
 - Watch, monitor, and MCP server entrypoints.
 - Optional LLM-assisted classification behind `--llm-analysis`.
 
@@ -108,7 +108,7 @@ prompt/resource findings stay visible and policy-gatable, but do not affect the
 composite server score until a calibrated scoring model is proven.
 The recommended migration path is documented in `docs/SCORING-MIGRATION.md`.
 
-Current beta calibration covers risky prompt arguments, file resources, remote
+Current calibration covers risky prompt arguments, file resources, remote
 resource schemes, templated resources, and benign cases.
 
 Done when prompt/resource analysis has the same maturity as tool analysis and a
@@ -150,20 +150,20 @@ Useful follow-ups:
 
 Done when downstream CI users have copy-paste integration examples.
 
-### 5. Beta Feedback Loop
+### 5. Feedback Loop
 
-The beta feedback issue template is present. Useful follow-ups:
+The feedback issue template is present. Useful follow-ups:
 
 - triage false-positive and false-negative reports into validation fixtures;
 - promote recurring policy requests into examples or first-class gates;
 - keep SARIF/JSON compatibility notes current as downstream users adopt them.
 
 The workflow for converting feedback into fixtures is documented in
-`docs/BETA-FEEDBACK-TO-FIXTURES.md`.
+`docs/FEEDBACK-TO-FIXTURES.md`.
 
 ### 6. Release Readiness
 
-Before the next public alpha/beta:
+Before the next public release:
 
 - recheck README, SECURITY, CHANGELOG, and this roadmap against live CLI help;
 - run the canonical verifier from `.codex/verify.commands`;
@@ -179,7 +179,7 @@ Routine verifier:
 ```bash
 uv run pytest
 uv run ruff check
-uv run mypy src
+uv run mypy .
 ```
 
 Additional closeout checks used for PR work:
@@ -189,5 +189,4 @@ uv run ruff format --check
 git diff --check
 ```
 
-Known boundary: strict `uv run mypy .` still includes test-only typing debt and
-is not the canonical green gate.
+Whole-repo strict typing is part of the canonical green gate.

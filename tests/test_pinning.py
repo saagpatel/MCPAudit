@@ -16,34 +16,33 @@ def _store(tmp_path: Path) -> PinStore:
     return PinStore(path=tmp_path / "pins.yaml")
 
 
+def _hash_store() -> PinStore:
+    store = PinStore.__new__(PinStore)
+    store._path = Path("/dev/null")
+    store._data = {}
+    return store
+
+
 class TestComputeHash:
     def test_deterministic_for_same_tool(self) -> None:
-        store = PinStore.__new__(PinStore)
-        store._path = Path("/dev/null")  # type: ignore[attr-defined]
-        store._data = {}  # type: ignore[attr-defined]
+        store = _hash_store()
         tool = make_tool("read_file", description="Read a file", input_schema={"type": "object"})
         assert store.compute_hash(tool) == store.compute_hash(tool)
 
     def test_differs_for_changed_description(self) -> None:
-        store = PinStore.__new__(PinStore)
-        store._path = Path("/dev/null")  # type: ignore[attr-defined]
-        store._data = {}  # type: ignore[attr-defined]
+        store = _hash_store()
         t1 = make_tool("read_file", description="Read a file")
         t2 = make_tool("read_file", description="Read a different file")
         assert store.compute_hash(t1) != store.compute_hash(t2)
 
     def test_differs_for_changed_schema(self) -> None:
-        store = PinStore.__new__(PinStore)
-        store._path = Path("/dev/null")  # type: ignore[attr-defined]
-        store._data = {}  # type: ignore[attr-defined]
+        store = _hash_store()
         t1 = make_tool("t", input_schema={"type": "object", "properties": {"path": {"type": "string"}}})
         t2 = make_tool("t", input_schema={"type": "object", "properties": {"url": {"type": "string"}}})
         assert store.compute_hash(t1) != store.compute_hash(t2)
 
     def test_hash_format_is_sha256_prefix(self) -> None:
-        store = PinStore.__new__(PinStore)
-        store._path = Path("/dev/null")  # type: ignore[attr-defined]
-        store._data = {}  # type: ignore[attr-defined]
+        store = _hash_store()
         h = store.compute_hash(make_tool("t"))
         assert h.startswith("sha256:")
         assert len(h) == len("sha256:") + 64

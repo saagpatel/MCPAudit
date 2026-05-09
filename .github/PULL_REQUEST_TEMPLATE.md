@@ -10,7 +10,7 @@
 
 ## Checklist
 
-- [ ] Canonical verifier passes (`uv run pytest`, `uv run ruff check`, `uv run mypy src`)
+- [ ] Canonical verifier passes (`uv run pytest`, `uv run ruff check`, `uv run mypy .`)
 - [ ] **Security implications considered** — does this change affect risk scoring, threat detection, config parsing, or output that feeds into AI systems? If yes, describe the implications below.
 - [ ] CHANGELOG.md updated under `[Unreleased]`
 - [ ] New or changed behavior is documented (README, docstrings, or both)
