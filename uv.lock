@@ -525,8 +525,8 @@ wheels = [
 ]
 
 [[package]]
-name = "mcp-audit"
-version = "1.0.0a1"
+name = "mcp-permission-audit"
+version = "1.0.0a2"
 source = { editable = "." }
 dependencies = [
     { name = "anyio" },

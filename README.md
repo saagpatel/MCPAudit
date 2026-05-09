@@ -6,6 +6,8 @@
 
 `mcp-audit` gives you x-ray vision into every MCP server configured on your system: what it can do, how risky it is, whether its descriptions are hiding adversarial instructions, and whether it's changed since you last looked. It is local-first, needs no API key by default, and makes networked LLM analysis opt-in.
 
+PyPI package: `mcp-permission-audit`. Installed command: `mcp-audit`.
+
 ## Features
 
 - **Capability inventory** — catalogs server tools, prompts, and resources; tool, prompt, and resource capabilities are classified across six permission categories: `file_read`, `file_write`, `network`, `shell_execution`, `destructive`, `exfiltration`
@@ -19,7 +21,7 @@
 - **Multi-client support** — reads configs from Claude Desktop, Claude Code, Cursor, VSCode, and Windsurf — plus any custom path via `--config`
 - **Structured output** — Rich terminal report plus JSON and SARIF 2.1.0 export for ingestion by GitHub Advanced Security and SARIF-aware SAST pipelines
 - **Documented output contract** — JSON, SARIF rule IDs, and policy exit codes are documented in `docs/OUTPUT-CONTRACT.md`
-- **Watch mode** — `mcp-audit watch` re-scans on config file changes via `watchfiles` (optional extra: install with `mcp-audit[watch]`)
+- **Watch mode** — `mcp-audit watch` re-scans on config file changes via `watchfiles` (optional extra: install with `mcp-permission-audit[watch]`)
 
 ## Quick Start
 
@@ -29,11 +31,11 @@
 
 ### Installation
 ```bash
-uvx mcp-audit discover
+uvx --from mcp-permission-audit mcp-audit discover
 # or install permanently:
-uv tool install mcp-audit
+uv tool install mcp-permission-audit
 # with watch mode support:
-uv tool install 'mcp-audit[watch]'
+uv tool install 'mcp-permission-audit[watch]'
 ```
 
 ### Usage
