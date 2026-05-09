@@ -39,6 +39,8 @@ Current scan behavior:
 - Documented JSON/SARIF output contract with compatibility fixture coverage.
 - Tool schema pinning and drift checks with changed-field hints and suggested
   actions.
+- Pin baseline status summaries through `pin --status`, including server
+  counts, tool counts, pin ages, and JSON output.
 - Shared redaction for terminal, JSON, SARIF, and connection-error output.
 - Local policy gates through `scan --policy`, including global and per-server
   enforcement rules.
@@ -115,10 +117,9 @@ Done when policies can express common adoption rules without custom scripting.
 
 ### 3. Pin Baseline Review UX
 
-Drift findings now explain what changed. The next layer is review workflow:
+Drift findings now explain what changed, and `pin --status` now gives a
+reviewable baseline summary. The next layer is refresh workflow:
 
-- `pin --status` should show age, server coverage, and last pin count;
-- optional JSON output for pin status;
 - a safer refresh flow for one reviewed server;
 - docs that explain how to rotate pins after expected upgrades.
 
@@ -139,11 +140,11 @@ Done when downstream CI users have copy-paste integration examples.
 
 Before the next public alpha/beta:
 
-- reconcile the open dependency bump PR;
 - recheck README, SECURITY, CHANGELOG, and this roadmap against live CLI help;
 - run the canonical verifier from `.codex/verify.commands`;
 - confirm GitHub Actions passes on the release branch;
 - publish release notes that distinguish config-only scans from connected scans.
+- follow `docs/RELEASE-CHECKLIST.md` for PyPI and clean-install smoke checks.
 
 ## Verification Contract
 

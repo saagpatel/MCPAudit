@@ -412,6 +412,7 @@ main.add_command(serve_command)
 @click.option("--server", "server_name", default=None, help="Pin only this server by name.")
 @click.option("--clear", "clear_server", default=None, metavar="NAME", help="Remove pins for a server.")
 @click.option("--status", is_flag=True, default=False, help="Show pin coverage summary.")
+@click.option("--json", "json_status", is_flag=True, default=False, help="Emit pin status as JSON.")
 @click.option(
     "--pin-file",
     "pin_file",
@@ -423,6 +424,7 @@ def pin_command(
     server_name: str | None,
     clear_server: str | None,
     status: bool,
+    json_status: bool,
     pin_file: str | None,
 ) -> None:
     """Pin tool schemas for drift detection on subsequent scans."""
@@ -430,19 +432,16 @@ def pin_command(
 
     store = PinStore(path=Path(pin_file) if pin_file else DEFAULT_PIN_PATH)
 
+    if json_status and not status:
+        raise click.ClickException("--json can only be used with --status.")
+
     if clear_server:
         store.remove_server(clear_server)
         console.print(f"[green]Removed pins for server '{clear_server}'.[/green]")
         return
 
     if status:
-        pinned = store.pinned_servers()
-        if not pinned:
-            console.print("[dim]No servers pinned.[/dim]")
-        else:
-            for name in pinned:
-                count = store.tool_count(name)
-                console.print(f"  [cyan]{name}[/cyan]: {count} tool(s) pinned")
+        _render_pin_status(store, json_status)
         return
 
     # Pin servers
@@ -473,3 +472,86 @@ async def _run_pin(server_name: str | None, store: object) -> None:
 
     if server_name and not matched:
         console.print(f"[yellow]Server '{server_name}' not found.[/yellow]")
+
+
+def _render_pin_status(store: object, json_status: bool) -> None:
+    from mcp_audit.pinning import PinStore as PS
+
+    assert isinstance(store, PS)
+    statuses = store.status()
+    total_tools = sum(status.tool_count for status in statuses)
+
+    if json_status:
+        import json
+
+        payload = {
+            "pin_file": str(store.path),
+            "server_count": len(statuses),
+            "total_tools": total_tools,
+            "servers": [
+                {
+                    "name": status.server_name,
+                    "tool_count": status.tool_count,
+                    "oldest_pinned_at": _datetime_or_none(status.oldest_pinned_at),
+                    "newest_pinned_at": _datetime_or_none(status.newest_pinned_at),
+                    "age": _pin_age(status.newest_pinned_at),
+                }
+                for status in statuses
+            ],
+        }
+        click.echo(json.dumps(payload, indent=2, sort_keys=True))
+        return
+
+    console.print(f"[bold]Pin baseline:[/bold] {len(statuses)} server(s), {total_tools} tool(s)")
+    console.print(f"[dim]Pin file: {store.path}[/dim]")
+
+    if not statuses:
+        console.print("[dim]No servers pinned.[/dim]")
+        return
+
+    from rich.table import Table
+
+    table = Table(show_header=True)
+    table.add_column("Server", style="cyan")
+    table.add_column("Tools", justify="right")
+    table.add_column("Oldest pin")
+    table.add_column("Last pin")
+    table.add_column("Age")
+
+    for status in statuses:
+        table.add_row(
+            status.server_name,
+            str(status.tool_count),
+            _datetime_or_unknown(status.oldest_pinned_at),
+            _datetime_or_unknown(status.newest_pinned_at),
+            _pin_age(status.newest_pinned_at),
+        )
+
+    console.print(table)
+
+
+def _datetime_or_none(value: datetime | None) -> str | None:
+    return value.isoformat() if value else None
+
+
+def _datetime_or_unknown(value: datetime | None) -> str:
+    return value.isoformat(timespec="seconds") if value else "unknown"
+
+
+def _pin_age(value: datetime | None) -> str:
+    if value is None:
+        return "unknown"
+    now = datetime.now(UTC)
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    seconds = max(0, int((now - value).total_seconds()))
+    if seconds < 60:
+        return "less than 1m"
+    minutes = seconds // 60
+    if minutes < 60:
+        return f"{minutes}m"
+    hours = minutes // 60
+    if hours < 48:
+        return f"{hours}h"
+    days = hours // 24
+    return f"{days}d"

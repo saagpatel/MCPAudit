@@ -40,6 +40,8 @@ uv tool install 'mcp-permission-audit[watch]'
 
 ### Usage
 ```bash
+mcp-audit --version
+
 # Discover configured MCP servers without connecting to them
 mcp-audit discover
 
@@ -58,6 +60,8 @@ mcp-audit scan --inject-check
 # Pin current tool schemas, then detect drift on later scans.
 # Pinning connects to servers so it can capture real tool schemas.
 mcp-audit pin
+mcp-audit pin --status
+mcp-audit pin --status --json
 mcp-audit scan --pin-check
 
 # Export JSON or SARIF 2.1.0

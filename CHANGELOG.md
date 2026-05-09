@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0a4] - 2026-05-09
+
+### Added
+
+- Expanded `mcp-audit pin --status` into a baseline review command with server
+  counts, total pinned tools, pin ages, and `--json` output.
+- Added a release checklist covering verifier, build, publish, and clean-install
+  smoke checks.
+
+### Changed
+
+- Refreshed README, SECURITY, and roadmap release notes for the published
+  `mcp-permission-audit` alpha.
+
 ## [1.0.0a3] - 2026-05-09
 
 ### Fixed
@@ -138,7 +152,8 @@ real workstations; API surface may still shift before the `1.0.0` stable cut.
 - Risk score output with pass/warn/fail thresholds
 - `mcp-audit` CLI entry point
 
-[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a3...HEAD
+[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a4...HEAD
+[1.0.0a4]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a3...v1.0.0a4
 [1.0.0a3]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a2...v1.0.0a3
 [1.0.0a2]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a1...v1.0.0a2
 [1.0.0a1]: https://github.com/saagpatel/MCPAudit/compare/v0.3.0...v1.0.0a1
