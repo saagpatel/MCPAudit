@@ -148,6 +148,50 @@ max_risk: 9
     assert result.violations == []
 
 
+def test_policy_fails_for_unlisted_server_when_allow_servers_set(tmp_path: Path) -> None:
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text(
+        """
+allow_servers:
+  - approved
+"""
+    )
+    result = evaluate_policy(_audit_report(_audit_with_shell_finding()), load_policy(policy_path))
+    assert not result.passed
+    assert result.violations[0].rule == "allow_servers"
+
+
+def test_server_policy_can_set_stricter_max_risk(tmp_path: Path) -> None:
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text(
+        """
+max_risk: 9
+servers:
+  srv:
+    max_risk: 7
+"""
+    )
+    result = evaluate_policy(_audit_report(_audit_with_shell_finding()), load_policy(policy_path))
+    assert not result.passed
+    assert result.violations[0].rule == "max_risk"
+
+
+def test_server_policy_can_deny_specific_permissions(tmp_path: Path) -> None:
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text(
+        """
+servers:
+  srv:
+    deny:
+      permissions:
+        - shell_execution
+"""
+    )
+    result = evaluate_policy(_audit_report(_audit_with_shell_finding()), load_policy(policy_path))
+    assert not result.passed
+    assert result.violations[0].rule == "deny.permissions"
+
+
 def test_scan_policy_writes_json_then_exits_two(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     policy_path = tmp_path / "policy.yaml"
     policy_path.write_text(

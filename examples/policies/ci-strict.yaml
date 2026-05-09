@@ -1,0 +1,18 @@
+# Strict CI gate for reviewed MCP server sets.
+fail_on:
+  severity: high
+  drift: true
+deny:
+  permissions:
+    - shell_execution
+    - destructive
+max_risk: 7
+allow_servers:
+  - github
+  - filesystem-readonly
+servers:
+  filesystem-readonly:
+    max_risk: 4
+    deny:
+      permissions:
+        - file_write

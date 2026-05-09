@@ -99,7 +99,17 @@ deny:
   permissions:
     - shell_execution
 max_risk: 7
+allow_servers:
+  - github
+servers:
+  github:
+    max_risk: 5
+    deny:
+      permissions:
+        - shell_execution
 ```
+
+See `examples/policies/` for starter policies.
 
 ## License
 
