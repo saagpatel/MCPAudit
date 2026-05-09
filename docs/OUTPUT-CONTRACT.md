@@ -3,10 +3,10 @@
 MCPAudit reports are designed for local review and CI ingestion. Keep this
 contract stable unless a release note calls out a breaking change.
 
-Before `1.0.0` stable, new fields may be added to JSON objects. Consumers
-should ignore unknown fields and should not fail when optional fields are
-present. Existing stable fields should only be removed or renamed with a
-release-note deprecation window.
+For stable `1.x`, compatible minor and patch releases may add optional JSON
+fields. Consumers should ignore unknown fields and should not fail when optional
+fields are present. Existing stable fields should only be removed or renamed
+with a release-note deprecation window and a breaking-version boundary.
 
 ## Exit Codes
 
@@ -47,9 +47,9 @@ Finding targets:
 
 Compatibility rules:
 
-- additive fields are allowed before `1.0.0` stable;
+- additive optional fields are allowed in compatible `1.x` releases;
 - existing stable fields require a release-note deprecation window before
-  removal or rename;
+  removal or rename in a breaking release;
 - SARIF rule IDs must remain stable unless a breaking release explicitly
   documents a migration.
 
@@ -90,3 +90,8 @@ mcp-audit scan --json mcp-audit.json --policy examples/policies/balanced-team-ci
 ```
 
 Exit code `2` means reports were written but the policy gate failed.
+
+Copy-paste workflow examples live in `examples/ci/`:
+
+- `github-code-scanning.yml`
+- `generic-json-policy.yml`

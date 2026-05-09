@@ -1,0 +1,27 @@
+name: MCPAudit Code Scanning
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  mcp-audit:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install MCPAudit
+        run: python -m pip install mcp-permission-audit
+
+      - name: Audit MCP servers
+        run: mcp-audit scan --skip-connect --sarif mcp-audit.sarif
+
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: mcp-audit.sarif

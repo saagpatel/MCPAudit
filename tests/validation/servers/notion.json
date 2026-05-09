@@ -1,0 +1,77 @@
+{
+  "server_name": "server-notion",
+  "description": "Notion MCP server — search, read, create, and update workspace content",
+  "tools": [
+    {
+      "name": "notion_search_pages",
+      "description": "Search pages and databases in a Notion workspace.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string" },
+          "page_size": { "type": "integer" }
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "notion_get_page",
+      "description": "Get page metadata and block content.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "page_id": { "type": "string" }
+        },
+        "required": ["page_id"]
+      }
+    },
+    {
+      "name": "notion_create_page",
+      "description": "Create a new Notion page with markdown content.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "parent_id": { "type": "string" },
+          "title": { "type": "string" },
+          "content": { "type": "string" }
+        },
+        "required": ["parent_id", "title"]
+      }
+    },
+    {
+      "name": "notion_update_page",
+      "description": "Update page properties or append content blocks.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "page_id": { "type": "string" },
+          "properties": { "type": "object" },
+          "content": { "type": "string" }
+        },
+        "required": ["page_id"]
+      }
+    }
+  ],
+  "expected_findings": [
+    {
+      "tool": "notion_search_pages",
+      "categories": ["file_read", "network"],
+      "min_confidence": "medium"
+    },
+    {
+      "tool": "notion_get_page",
+      "categories": ["network"],
+      "min_confidence": "high"
+    },
+    {
+      "tool": "notion_create_page",
+      "categories": ["file_write", "network"],
+      "min_confidence": "medium"
+    },
+    {
+      "tool": "notion_update_page",
+      "categories": ["file_write", "network"],
+      "min_confidence": "medium"
+    }
+  ]
+}

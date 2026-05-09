@@ -1,0 +1,27 @@
+# CI gate for reviewed browser-automation MCP servers.
+# Browser servers can navigate remote sites and may expose page content, so this
+# profile allows network access but still blocks shell execution and destructive
+# behavior.
+fail_on:
+  permissions: high
+  injection: medium
+  capabilities: medium
+  drift: true
+require:
+  pins:
+    servers:
+      - playwright
+allow_servers:
+  - playwright
+  - puppeteer
+deny:
+  permissions:
+    - shell_execution
+    - destructive
+max_risk: 8
+servers:
+  playwright:
+    require_pin: true
+    max_risk: 8
+  puppeteer:
+    max_risk: 8

@@ -1,0 +1,31 @@
+name: MCPAudit Policy Gate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  mcp-audit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install MCPAudit
+        run: python -m pip install mcp-permission-audit
+
+      - name: Audit MCP servers
+        run: |
+          mcp-audit scan \
+            --skip-connect \
+            --json mcp-audit.json \
+            --policy examples/policies/balanced-team-ci.yaml
+
+      - name: Upload JSON report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-audit-json
+          path: mcp-audit.json

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added CI workflow examples for GitHub SARIF upload and JSON policy gates.
+- Added a browser-automation CI policy profile for reviewed Playwright and
+  Puppeteer-style MCP servers.
+- Added Notion, Linear, and Atlassian validation fixtures to expand the
+  real-world server corpus.
+- Added a `1.1` roadmap for additive post-stable product depth.
+
+### Changed
+
+- Refined stable output-contract wording for compatible `1.x` additive fields.
+- Linked feedback, adoption, and roadmap docs to the new stable-era examples.
+
 ## [1.0.0] - 2026-05-09
 
 ### Changed

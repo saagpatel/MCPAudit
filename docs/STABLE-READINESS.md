@@ -1,6 +1,6 @@
 # Stable Readiness
 
-This document records the release bar used for the `1.0.0` stable release.
+This document records the release bar used for stable releases.
 It is intentionally evidence-based: an item is ready only when the code, docs,
 tests, and install path agree.
 
