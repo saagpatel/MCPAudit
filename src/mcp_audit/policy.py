@@ -21,6 +21,16 @@ class PolicyConfig:
     fail_on_drift: bool = False
     denied_permissions: list[PermissionCategory] = field(default_factory=list)
     max_risk: float | None = None
+    allow_servers: list[str] = field(default_factory=list)
+    server_rules: dict[str, ServerPolicyConfig] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ServerPolicyConfig:
+    """Policy overrides scoped to one server name."""
+
+    denied_permissions: list[PermissionCategory] = field(default_factory=list)
+    max_risk: float | None = None
 
 
 def load_policy(path: Path) -> PolicyConfig:
@@ -31,6 +41,7 @@ def load_policy(path: Path) -> PolicyConfig:
 
     fail_on = _mapping(raw.get("fail_on"), "fail_on")
     deny = _mapping(raw.get("deny"), "deny")
+    server_rules = _server_rules(raw.get("servers"))
 
     severity = fail_on.get("severity")
     if severity is not None:
@@ -52,6 +63,8 @@ def load_policy(path: Path) -> PolicyConfig:
         fail_on_drift=bool(fail_on.get("drift", False)),
         denied_permissions=permissions,
         max_risk=max_risk,
+        allow_servers=[str(value) for value in _sequence(raw.get("allow_servers"), "allow_servers")],
+        server_rules=server_rules,
     )
 
 
@@ -61,18 +74,29 @@ def evaluate_policy(report: AuditReport, policy: PolicyConfig) -> PolicyResult:
 
     for audit in report.audits:
         server_name = audit.server.name
+        server_rule = policy.server_rules.get(server_name, ServerPolicyConfig())
 
-        if policy.max_risk is not None and audit.risk_score is not None:
+        if policy.allow_servers and server_name not in policy.allow_servers:
+            violations.append(
+                PolicyViolation(
+                    rule="allow_servers",
+                    server_name=server_name,
+                    severity="medium",
+                    message=f"Server '{server_name}' is not listed in allow_servers.",
+                )
+            )
+
+        max_risk = server_rule.max_risk if server_rule.max_risk is not None else policy.max_risk
+        if max_risk is not None and audit.risk_score is not None:
             score = audit.risk_score.composite
-            if score >= policy.max_risk:
+            if score >= max_risk:
                 violations.append(
                     PolicyViolation(
                         rule="max_risk",
                         server_name=server_name,
                         severity="high",
                         message=(
-                            f"Server risk score {score:.1f} meets or exceeds policy limit "
-                            f"{policy.max_risk:.1f}."
+                            f"Server risk score {score:.1f} meets or exceeds policy limit {max_risk:.1f}."
                         ),
                     )
                 )
@@ -125,8 +149,10 @@ def evaluate_policy(report: AuditReport, policy: PolicyConfig) -> PolicyResult:
                         )
                     )
 
+        denied_permissions = [*policy.denied_permissions, *server_rule.denied_permissions]
+
         for permission_finding in audit.permissions:
-            if permission_finding.category in policy.denied_permissions:
+            if permission_finding.category in denied_permissions:
                 violations.append(
                     PolicyViolation(
                         rule="deny.permissions",
@@ -137,7 +163,7 @@ def evaluate_policy(report: AuditReport, policy: PolicyConfig) -> PolicyResult:
                     )
                 )
         for capability_finding in audit.capability_findings:
-            if capability_finding.category in policy.denied_permissions:
+            if capability_finding.category in denied_permissions:
                 violations.append(
                     PolicyViolation(
                         rule="deny.permissions",
@@ -188,3 +214,27 @@ def _permission(value: Any) -> PermissionCategory:
     except ValueError as exc:
         valid = ", ".join(category.value for category in PermissionCategory)
         raise ValueError(f"Unknown permission category '{value}'. Valid values: {valid}.") from exc
+
+
+def _server_rules(value: Any) -> dict[str, ServerPolicyConfig]:
+    raw_rules = _mapping(value, "servers")
+    rules: dict[str, ServerPolicyConfig] = {}
+    for server_name, rule_value in raw_rules.items():
+        rule = _mapping(rule_value, f"servers.{server_name}")
+        deny = _mapping(rule.get("deny"), f"servers.{server_name}.deny")
+        max_risk = rule.get("max_risk")
+        if max_risk is not None:
+            max_risk = float(max_risk)
+            if max_risk < 0 or max_risk > 10:
+                raise ValueError(f"servers.{server_name}.max_risk must be between 0 and 10.")
+        rules[str(server_name)] = ServerPolicyConfig(
+            denied_permissions=[
+                _permission(permission)
+                for permission in _sequence(
+                    deny.get("permissions"),
+                    f"servers.{server_name}.deny.permissions",
+                )
+            ],
+            max_risk=max_risk,
+        )
+    return rules

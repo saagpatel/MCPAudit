@@ -1,0 +1,7 @@
+# Local review gate for exploratory workstation audits.
+fail_on:
+  severity: high
+deny:
+  permissions:
+    - exfiltration
+max_risk: 9

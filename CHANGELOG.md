@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Prompt and resource inventory now produces permission findings for risky
   arguments, URI schemes, and metadata, with terminal, JSON, SARIF, and policy
   gate coverage.
+- Policy gates now support server allowlists, per-server risk limits,
+  per-server denied permissions, and starter policy examples.
 
 ## [1.0.0a1] - 2026-05-09
 

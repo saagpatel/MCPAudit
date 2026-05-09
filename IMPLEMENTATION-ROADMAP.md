@@ -39,7 +39,8 @@ Current scan behavior:
 - Tool schema pinning and drift checks with changed-field hints and suggested
   actions.
 - Shared redaction for terminal, JSON, SARIF, and connection-error output.
-- Local policy gates through `scan --policy`.
+- Local policy gates through `scan --policy`, including global and per-server
+  enforcement rules.
 - Watch, monitor, and MCP server entrypoints.
 - Optional LLM-assisted classification behind `--llm-analysis`.
 
@@ -100,14 +101,14 @@ Done when prompt/resource analysis has the same maturity as tool analysis.
 
 ### 2. Policy Gate Depth
 
-The first policy gate supports severity thresholds, drift, denied permission
-categories, and max risk. Useful follow-ups:
+The policy gate supports severity thresholds, drift, denied permission
+categories, max risk, server allowlists, and per-server overrides. Useful
+follow-ups:
 
-- per-server allowlists and deny lists;
 - required pin coverage for selected servers;
 - separate thresholds for permission, injection, drift, prompt, and resource
   findings;
-- sample policy files for personal, team, and CI use.
+- richer sample policies for team-specific adoption.
 
 Done when policies can express common adoption rules without custom scripting.
 
