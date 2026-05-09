@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0a3] - 2026-05-09
+
+### Fixed
+
+- Added the documented `mcp-audit --version` command and aligned package
+  version reporting with the renamed PyPI distribution.
+
 ## [1.0.0a2] - 2026-05-09
 
 ### Changed
@@ -131,7 +138,8 @@ real workstations; API surface may still shift before the `1.0.0` stable cut.
 - Risk score output with pass/warn/fail thresholds
 - `mcp-audit` CLI entry point
 
-[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a2...HEAD
+[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a3...HEAD
+[1.0.0a3]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a2...v1.0.0a3
 [1.0.0a2]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a1...v1.0.0a2
 [1.0.0a1]: https://github.com/saagpatel/MCPAudit/compare/v0.3.0...v1.0.0a1
 [0.3.0]: https://github.com/saagpatel/MCPAudit/compare/v0.2.0...v0.3.0

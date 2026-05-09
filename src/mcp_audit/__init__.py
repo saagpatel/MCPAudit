@@ -1,3 +1,8 @@
 """MCP Permission Auditor — scan and risk-score locally configured MCP servers."""
 
-__version__ = "0.1.0"
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("mcp-permission-audit")
+except PackageNotFoundError:
+    __version__ = "0.0.0"
