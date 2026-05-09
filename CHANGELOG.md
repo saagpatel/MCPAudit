@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0a5] - 2026-05-09
+
+### Added
+
+- Added `mcp-audit pin --refresh <server>` as a dry-run review for one server's
+  pin drift before rotating its baseline.
+- Added `mcp-audit pin --refresh <server> --apply` to refresh a reviewed
+  server baseline explicitly.
+
+### Changed
+
+- Updated pin workflow docs so expected MCP server upgrades can be reviewed
+  before any pin file writes happen.
+
 ## [1.0.0a4] - 2026-05-09
 
 ### Added
@@ -152,7 +166,8 @@ real workstations; API surface may still shift before the `1.0.0` stable cut.
 - Risk score output with pass/warn/fail thresholds
 - `mcp-audit` CLI entry point
 
-[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a4...HEAD
+[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a5...HEAD
+[1.0.0a5]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a4...v1.0.0a5
 [1.0.0a4]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a3...v1.0.0a4
 [1.0.0a3]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a2...v1.0.0a3
 [1.0.0a2]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a1...v1.0.0a2

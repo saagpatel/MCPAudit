@@ -35,7 +35,7 @@ def test_version_option_reports_installed_distribution_version() -> None:
 
     assert result.exit_code == 0
     assert "mcp-audit, version " in result.output
-    assert "1.0.0a4" in result.output
+    assert "1.0.0a5" in result.output
 
 
 def test_run_pin_connects_before_pinning(monkeypatch: object, tmp_path: Path) -> None:
@@ -75,6 +75,76 @@ def test_run_pin_skips_failed_connections(monkeypatch: object, tmp_path: Path) -
     anyio.run(cli._run_pin, None, store)
 
     assert store.tool_count("srv") == 0
+
+
+def test_run_pin_refresh_reviews_drift_without_writing(monkeypatch: object, tmp_path: Path) -> None:
+    store = PinStore(path=tmp_path / "pins.yaml")
+    store.pin_server("srv", [make_tool("read_file", description="v1")])
+    audit = ServerAudit(
+        server=make_server_config(name="srv"),
+        connection_status="connected",
+        tools=[make_tool("read_file", description="v2")],
+    )
+
+    async def fake_run_scan_core(*args: object, **kwargs: object) -> AuditReport:
+        return _report([audit])
+
+    monkeypatch.setattr(cli, "_run_scan_core", fake_run_scan_core)  # type: ignore[attr-defined]
+
+    anyio.run(cli._run_pin_refresh, "srv", store, False)
+
+    findings = PinStore(path=tmp_path / "pins.yaml").check_drift("srv", audit.tools)
+    assert len(findings) == 1
+    assert findings[0].tool_name == "read_file"
+
+
+def test_run_pin_refresh_applies_reviewed_baseline(monkeypatch: object, tmp_path: Path) -> None:
+    store = PinStore(path=tmp_path / "pins.yaml")
+    store.pin_server("srv", [make_tool("read_file", description="v1")])
+    audit = ServerAudit(
+        server=make_server_config(name="srv"),
+        connection_status="connected",
+        tools=[make_tool("read_file", description="v2")],
+    )
+
+    async def fake_run_scan_core(*args: object, **kwargs: object) -> AuditReport:
+        return _report([audit])
+
+    monkeypatch.setattr(cli, "_run_scan_core", fake_run_scan_core)  # type: ignore[attr-defined]
+
+    anyio.run(cli._run_pin_refresh, "srv", store, True)
+
+    findings = PinStore(path=tmp_path / "pins.yaml").check_drift("srv", audit.tools)
+    assert findings == []
+
+
+def test_pin_refresh_requires_apply_to_write(monkeypatch: object, tmp_path: Path) -> None:
+    pin_file = tmp_path / "pins.yaml"
+    store = PinStore(path=pin_file)
+    store.pin_server("srv", [make_tool("read_file", description="v1")])
+    audit = ServerAudit(
+        server=make_server_config(name="srv"),
+        connection_status="connected",
+        tools=[make_tool("read_file", description="v2")],
+    )
+
+    async def fake_run_scan_core(*args: object, **kwargs: object) -> AuditReport:
+        return _report([audit])
+
+    monkeypatch.setattr(cli, "_run_scan_core", fake_run_scan_core)  # type: ignore[attr-defined]
+
+    result = CliRunner().invoke(cli.main, ["pin", "--refresh", "srv", "--pin-file", str(pin_file)])
+
+    assert result.exit_code == 0
+    assert "Review complete; no pins were changed" in result.output
+    assert PinStore(path=pin_file).check_drift("srv", audit.tools)
+
+
+def test_pin_rejects_apply_without_refresh() -> None:
+    result = CliRunner().invoke(cli.main, ["pin", "--apply"])
+
+    assert result.exit_code == 1
+    assert "--apply can only be used with --refresh" in result.output
 
 
 def test_pin_status_reports_pin_coverage(tmp_path: Path) -> None:

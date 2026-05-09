@@ -33,7 +33,7 @@ install.
 
 ```bash
 tmp="$(mktemp -d)"
-UV_CACHE_DIR="$tmp" uvx --from mcp-permission-audit mcp-audit --version
+UV_CACHE_DIR="$tmp" uvx --prerelease allow --from mcp-permission-audit mcp-audit --version
 rm -r "$tmp"
 ```
 

@@ -17,7 +17,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from mcp_audit.analyzer import PermissionAnalyzer
 from mcp_audit.connector import ServerConnector
 from mcp_audit.discovery import discover_all_configs
-from mcp_audit.models import AuditReport, ClientType, ServerAudit, ServerConfig
+from mcp_audit.models import AuditReport, ClientType, DriftFinding, DriftStatus, ServerAudit, ServerConfig
 from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
 from mcp_audit.redaction import redact_text
 from mcp_audit.report import ReportGenerator
@@ -412,6 +412,20 @@ main.add_command(serve_command)
 @click.option("--server", "server_name", default=None, help="Pin only this server by name.")
 @click.option("--clear", "clear_server", default=None, metavar="NAME", help="Remove pins for a server.")
 @click.option("--status", is_flag=True, default=False, help="Show pin coverage summary.")
+@click.option(
+    "--refresh",
+    "refresh_server",
+    default=None,
+    metavar="NAME",
+    help="Review pin drift for one server before refreshing its baseline.",
+)
+@click.option(
+    "--apply",
+    "apply_refresh",
+    is_flag=True,
+    default=False,
+    help="Write a reviewed --refresh baseline.",
+)
 @click.option("--json", "json_status", is_flag=True, default=False, help="Emit pin status as JSON.")
 @click.option(
     "--pin-file",
@@ -424,6 +438,8 @@ def pin_command(
     server_name: str | None,
     clear_server: str | None,
     status: bool,
+    refresh_server: str | None,
+    apply_refresh: bool,
     json_status: bool,
     pin_file: str | None,
 ) -> None:
@@ -435,6 +451,21 @@ def pin_command(
     if json_status and not status:
         raise click.ClickException("--json can only be used with --status.")
 
+    selected_actions = sum(
+        bool(action)
+        for action in (
+            server_name,
+            clear_server,
+            status,
+            refresh_server,
+        )
+    )
+    if selected_actions > 1:
+        raise click.ClickException("--server, --clear, --status, and --refresh are mutually exclusive.")
+
+    if apply_refresh and not refresh_server:
+        raise click.ClickException("--apply can only be used with --refresh.")
+
     if clear_server:
         store.remove_server(clear_server)
         console.print(f"[green]Removed pins for server '{clear_server}'.[/green]")
@@ -442,6 +473,10 @@ def pin_command(
 
     if status:
         _render_pin_status(store, json_status)
+        return
+
+    if refresh_server:
+        anyio.run(_run_pin_refresh, refresh_server, store, apply_refresh)
         return
 
     # Pin servers
@@ -472,6 +507,80 @@ async def _run_pin(server_name: str | None, store: object) -> None:
 
     if server_name and not matched:
         console.print(f"[yellow]Server '{server_name}' not found.[/yellow]")
+
+
+async def _run_pin_refresh(server_name: str, store: object, apply_refresh: bool) -> None:
+    """Review drift for one server and optionally refresh its pin baseline."""
+    from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
+    from mcp_audit.pinning import PinStore as PS
+
+    assert isinstance(store, PS)
+    override_applier = OverrideApplier(load_override_config(DEFAULT_OVERRIDE_PATH))
+    report = await _run_scan_core(False, None, 10, None, override_applier)
+
+    matching_audits = [audit for audit in report.audits if audit.server.name == server_name]
+    if not matching_audits:
+        console.print(f"[yellow]Server '{server_name}' not found.[/yellow]")
+        return
+
+    audit = matching_audits[0]
+    if audit.connection_status != "connected":
+        console.print(
+            f"[yellow]Skipped '{audit.server.name}': connection {audit.connection_status}."
+            " Pin refresh requires live tool schemas.[/yellow]"
+        )
+        return
+
+    findings = store.check_drift(audit.server.name, audit.tools)
+    _render_pin_refresh_review(audit.server.name, len(audit.tools), findings)
+
+    if not apply_refresh:
+        console.print(
+            "[yellow]Review complete; no pins were changed. Rerun with --apply to refresh.[/yellow]"
+        )
+        return
+
+    store.pin_server(audit.server.name, audit.tools)
+    console.print(f"[green]Refreshed {len(audit.tools)} pin(s) for '{audit.server.name}'.[/green]")
+
+
+def _render_pin_refresh_review(
+    server_name: str,
+    tool_count: int,
+    drift_findings: list[DriftFinding],
+) -> None:
+    from rich.table import Table
+
+    counts = {status: 0 for status in DriftStatus}
+    for finding in drift_findings:
+        counts[finding.status] += 1
+
+    console.print(f"[bold]Pin refresh review:[/bold] {server_name} ({tool_count} current tool(s))")
+    if not drift_findings:
+        console.print("[green]No drift found. Current tools already match the pin baseline.[/green]")
+        return
+
+    console.print(
+        "[yellow]"
+        f"{counts[DriftStatus.NEW]} new, "
+        f"{counts[DriftStatus.CHANGED]} changed, "
+        f"{counts[DriftStatus.REMOVED]} removed"
+        "[/yellow]"
+    )
+
+    table = Table(show_header=True)
+    table.add_column("Status", style="yellow")
+    table.add_column("Tool", style="cyan")
+    table.add_column("Review note")
+
+    for finding in drift_findings:
+        table.add_row(
+            finding.status.value,
+            finding.tool_name,
+            finding.summary or ", ".join(finding.details) or "Review before refreshing.",
+        )
+
+    console.print(table)
 
 
 def _render_pin_status(store: object, json_status: bool) -> None:
