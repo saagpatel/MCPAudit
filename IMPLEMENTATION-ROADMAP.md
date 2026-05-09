@@ -21,7 +21,7 @@ Current scan behavior:
    conservative risk from local config declarations only.
 4. Classify tool permissions across `file_read`, `file_write`, `network`,
    `shell_execution`, `destructive`, and `exfiltration`.
-5. Optionally run prompt-injection checks over tool names and descriptions.
+5. Optionally run prompt-injection checks over tool, prompt, and resource text.
 6. Optionally compare current tool schemas against the pin baseline.
 7. Optionally evaluate a local YAML policy gate and exit `2` after reports are
    written when the gate fails.
@@ -99,7 +99,12 @@ Useful follow-ups:
   server composite risk score.
 - add more real-world resource-template fixtures from popular MCP servers.
 
-Done when prompt/resource analysis has the same maturity as tool analysis.
+The current scoring decision is documented in `docs/PROMPT-RESOURCE-SCORING.md`:
+prompt/resource findings stay visible and policy-gatable, but do not affect the
+composite server score until a calibrated scoring model is proven.
+
+Done when prompt/resource analysis has the same maturity as tool analysis and a
+tested scoring migration is ready.
 
 ### 2. Policy Gate Depth
 
@@ -119,8 +124,10 @@ review for one server and requires `--apply` before replacing its pins.
 
 Useful follow-ups:
 
-- clearer stale-pin cleanup guidance for servers that were intentionally
-  removed.
+- bulk stale-pin cleanup, if users need it after the explicit server-scoped
+  workflows settle.
+
+The supported maintenance path is documented in `docs/PIN-MAINTENANCE.md`.
 
 Done when users can maintain pins without inspecting YAML by hand.
 

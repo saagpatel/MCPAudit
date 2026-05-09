@@ -1,0 +1,38 @@
+# Pin Maintenance
+
+MCPAudit pins are explicit, server-scoped review records. Scans never modify MCP
+client config files, and pin maintenance should stay just as deliberate.
+
+## Reviewed Server Upgrades
+
+When a server changed intentionally, preview the drift first:
+
+```bash
+mcp-audit pin --refresh github
+```
+
+For automation or CI review, use JSON:
+
+```bash
+mcp-audit pin --refresh github --json
+```
+
+Refresh is dry-run by default. After reviewing the changed, added, and removed
+tool rows, replace only that server's baseline:
+
+```bash
+mcp-audit pin --refresh github --apply
+```
+
+## Intentionally Removed Servers
+
+When a server was removed from your MCP configuration on purpose, clear only its
+stored pins:
+
+```bash
+mcp-audit pin --clear github
+```
+
+Prefer `--clear` for removed servers and `--refresh` for changed servers. MCPAudit
+does not currently do bulk stale cleanup because deleting multiple baselines at
+once can hide accidental config loss.
