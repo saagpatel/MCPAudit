@@ -155,6 +155,19 @@ class TestCheckDrift:
         assert "tool missing from current scan" in removed[0].details
         assert "refresh" in removed[0].remediation
 
+    def test_renamed_tool_reports_removed_and_new(self, tmp_path: Path) -> None:
+        store = _store(tmp_path)
+        store.pin_server("srv", [make_tool("read_file")])
+        store2 = PinStore(path=tmp_path / "pins.yaml")
+
+        findings = store2.check_drift("srv", [make_tool("read_file_v2")])
+
+        statuses = {(finding.tool_name, finding.status) for finding in findings}
+        assert statuses == {
+            ("read_file", DriftStatus.REMOVED),
+            ("read_file_v2", DriftStatus.NEW),
+        }
+
     def test_changed_finding_identifies_input_schema_changes(self, tmp_path: Path) -> None:
         store = _store(tmp_path)
         store.pin_server(

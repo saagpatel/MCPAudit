@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0b2] - 2026-05-09
+
+### Added
+
+- Added an adoption guide with local review, team CI, GitHub code scanning, and
+  pin-baseline workflows.
+- Added beta security review notes covering config discovery, connected scan
+  boundaries, redaction, AI-output handling, and LLM-mode risks.
+- Added a beta feedback issue template for false positives, missing detections,
+  SARIF/JSON feedback, policy requests, and pinning workflow friction.
+- Expanded the real-world validation corpus with AWS S3, Docker, email, Google
+  Drive, and Kubernetes server shapes.
+- Added prompt/resource calibration tests for remote resource schemes and risky
+  prompt arguments.
+- Added pin lifecycle regression tests for intentionally cleared servers and
+  renamed tools.
+
+### Changed
+
+- Added tool target metadata to JSON/SARIF permission and drift findings for
+  consistency with prompt/resource findings.
+- Classified common remote resource URI schemes such as `s3://`,
+  `postgres://`, `github://`, and `ws://` as network capabilities.
+- Clarified output-contract compatibility rules and the prompt/resource scoring
+  calibration bar.
+
 ## [1.0.0b1] - 2026-05-09
 
 ### Added
@@ -207,7 +233,8 @@ real workstations; API surface may still shift before the `1.0.0` stable cut.
 - Risk score output with pass/warn/fail thresholds
 - `mcp-audit` CLI entry point
 
-[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0b1...HEAD
+[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0b2...HEAD
+[1.0.0b2]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0b1...v1.0.0b2
 [1.0.0b1]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a6...v1.0.0b1
 [1.0.0a6]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a5...v1.0.0a6
 [1.0.0a5]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0a4...v1.0.0a5

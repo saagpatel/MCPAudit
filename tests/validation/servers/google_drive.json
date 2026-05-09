@@ -1,0 +1,58 @@
+{
+  "server_name": "server-google-drive",
+  "description": "Google Drive MCP server — cloud file search, reads, writes, and uploads",
+  "tools": [
+    {
+      "name": "drive_get_file",
+      "description": "Get file metadata and content from Google Drive.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "file_id": { "type": "string" }
+        },
+        "required": ["file_id"]
+      }
+    },
+    {
+      "name": "drive_create_file",
+      "description": "Create a new file in Google Drive.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "content": { "type": "string" }
+        },
+        "required": ["name", "content"]
+      }
+    },
+    {
+      "name": "drive_upload_file",
+      "description": "Upload a local file to Google Drive.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" },
+          "folder_id": { "type": "string" }
+        },
+        "required": ["path"]
+      }
+    }
+  ],
+  "expected_findings": [
+    {
+      "tool": "drive_get_file",
+      "categories": ["file_read"],
+      "min_confidence": "high"
+    },
+    {
+      "tool": "drive_create_file",
+      "categories": ["file_write"],
+      "min_confidence": "medium"
+    },
+    {
+      "tool": "drive_upload_file",
+      "categories": ["exfiltration"],
+      "min_confidence": "high"
+    }
+  ]
+}

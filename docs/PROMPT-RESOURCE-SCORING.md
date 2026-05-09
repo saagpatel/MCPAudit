@@ -33,3 +33,20 @@ Before prompt/resource findings affect the composite score, MCPAudit should add:
 - documented weighting rules for tool, prompt, and resource targets;
 - compatibility fixtures showing before/after report shapes;
 - a migration note for CI users who gate on `risk_score.composite`.
+
+## Calibration Set
+
+The beta calibration set should cover at least these cases before any composite
+score migration:
+
+| Target | Example signal | Expected behavior |
+|--------|----------------|-------------------|
+| Prompt argument | `command`, `script`, `endpoint`, `headers` | Emit capability findings and allow policy gates. |
+| Prompt description | role-switch or instruction-override text | Emit injection findings when `--inject-check` is enabled. |
+| File resource | `file:///...` | Emit `file_read` capability findings. |
+| Remote resource | `https://`, `s3://`, `postgres://`, `github://` | Emit `network` capability findings. |
+| Templated resource | URI variables such as `{tenant}` | Emit a review signal even when the scheme is custom. |
+| Benign prompt/resource | local memo or summarization-only prompt | Emit no capability finding. |
+
+Current tests cover these calibration rows without changing
+`risk_score.composite`.

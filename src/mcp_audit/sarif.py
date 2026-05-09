@@ -256,6 +256,8 @@ class SarifGenerator:
                 "mcpAuditStableId": _stable_fingerprint(rule_id, audit.server.name, finding.tool_name)
             },
             "properties": {
+                "target_type": "tool",
+                "target_name": finding.tool_name,
                 "category": finding.category.value,
                 "confidence": finding.confidence.value,
                 "severity": finding.severity,
@@ -280,6 +282,8 @@ class SarifGenerator:
                 "mcpAuditStableId": _stable_fingerprint(_DRIFT_RULE_ID, audit.server.name, finding.tool_name)
             },
             "properties": {
+                "target_type": "tool",
+                "target_name": finding.tool_name,
                 "status": finding.status.value,
                 "remediation": finding.remediation,
             },

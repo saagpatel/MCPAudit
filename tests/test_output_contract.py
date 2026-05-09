@@ -46,3 +46,15 @@ def test_prompt_resource_fixture_generates_target_metadata() -> None:
     results = sarif["runs"][0]["results"]
     assert any(result["properties"].get("target_type") == "prompt" for result in results)
     assert any(result["properties"].get("target_type") == "resource" for result in results)
+
+
+def test_tool_findings_dump_target_metadata() -> None:
+    fixture = Path("tests/fixtures/reports/sample_audit_report.json")
+    report = AuditReport.model_validate_json(fixture.read_text())
+    dumped = report.model_dump(mode="json")
+    first_permission = dumped["audits"][0]["permissions"][0]
+    first_drift = dumped["audits"][0]["drift_findings"][0]
+    assert first_permission["target_type"] == "tool"
+    assert first_permission["target_name"] == first_permission["tool_name"]
+    assert first_drift["target_type"] == "tool"
+    assert first_drift["target_name"] == first_drift["tool_name"]

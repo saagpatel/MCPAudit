@@ -101,6 +101,12 @@ class ResourceInfo(BaseModel):
     mime_type: str | None = None
 
 
+class CapabilityTarget(StrEnum):
+    TOOL = "tool"
+    PROMPT = "prompt"
+    RESOURCE = "resource"
+
+
 class PermissionFinding(BaseModel):
     """A single permission inference for a tool."""
 
@@ -108,6 +114,16 @@ class PermissionFinding(BaseModel):
     confidence: Confidence
     evidence: list[str]  # What triggered this finding (pattern matches, annotation values)
     tool_name: str
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def target_type(self) -> str:
+        return CapabilityTarget.TOOL.value
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def target_name(self) -> str:
+        return self.tool_name
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -143,12 +159,6 @@ class PermissionFinding(BaseModel):
         from mcp_audit.taxonomy import permission_metadata
 
         return permission_metadata(self.category).remediation
-
-
-class CapabilityTarget(StrEnum):
-    TOOL = "tool"
-    PROMPT = "prompt"
-    RESOURCE = "resource"
 
 
 class CapabilityFinding(BaseModel):
@@ -241,6 +251,16 @@ class DriftFinding(BaseModel):
     summary: str = ""
     details: list[str] = Field(default_factory=list)
     remediation: str = ""
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def target_type(self) -> str:
+        return CapabilityTarget.TOOL.value
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def target_name(self) -> str:
+        return self.tool_name
 
 
 class RiskScore(BaseModel):

@@ -37,6 +37,7 @@ Current scan behavior:
 - Prompt and resource injection detection when `--inject-check` is enabled.
 - Stable finding metadata with rule IDs, severity, description, and remediation.
 - Prompt-injection detection with stable metadata and SARIF output.
+- Consistent tool, prompt, and resource target metadata in JSON/SARIF findings.
 - Documented JSON/SARIF output contract with compatibility fixture coverage.
 - Tool schema pinning and drift checks with changed-field hints and suggested
   actions.
@@ -45,6 +46,8 @@ Current scan behavior:
 - Shared redaction for terminal, JSON, SARIF, and connection-error output.
 - Local policy gates through `scan --policy`, including global and per-server
   enforcement rules.
+- Adoption, pin maintenance, prompt/resource scoring boundary, beta readiness,
+  and security-review docs for beta users.
 - Watch, monitor, and MCP server entrypoints.
 - Optional LLM-assisted classification behind `--llm-analysis`.
 
@@ -103,6 +106,9 @@ The current scoring decision is documented in `docs/PROMPT-RESOURCE-SCORING.md`:
 prompt/resource findings stay visible and policy-gatable, but do not affect the
 composite server score until a calibrated scoring model is proven.
 
+Current beta calibration covers risky prompt arguments, file resources, remote
+resource schemes, templated resources, and benign cases.
+
 Done when prompt/resource analysis has the same maturity as tool analysis and a
 tested scoring migration is ready.
 
@@ -141,7 +147,15 @@ representative compatibility fixture. Useful follow-ups:
 
 Done when downstream CI users have copy-paste integration examples.
 
-### 5. Release Readiness
+### 5. Beta Feedback Loop
+
+The beta feedback issue template is present. Useful follow-ups:
+
+- triage false-positive and false-negative reports into validation fixtures;
+- promote recurring policy requests into examples or first-class gates;
+- keep SARIF/JSON compatibility notes current as downstream users adopt them.
+
+### 6. Release Readiness
 
 Before the next public alpha/beta:
 
