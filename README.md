@@ -129,9 +129,11 @@ servers:
 
 See `docs/ADOPTION-GUIDE.md` for local review, team CI, and GitHub code
 scanning setup paths. See `examples/policies/` for starter policies. See
+`docs/STABLE-READINESS.md` for the stable-release bar. See
 `docs/PIN-MAINTENANCE.md` for reviewed pin refresh and stale server cleanup
-workflows. See `docs/PROMPT-RESOURCE-SCORING.md` for the current
-prompt/resource scoring boundary.
+workflows. See `docs/PROMPT-RESOURCE-SCORING.md` and
+`docs/SCORING-MIGRATION.md` for the current prompt/resource scoring boundary
+and migration path.
 
 ## License
 

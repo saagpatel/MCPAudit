@@ -25,6 +25,8 @@ For the beta, MCPAudit keeps the stronger behavior contract: non-tool findings
 are reportable and policy-gatable, while composite score semantics remain
 stable.
 
+See `docs/SCORING-MIGRATION.md` for the recommended additive migration path.
+
 ## Future Design Bar
 
 Before prompt/resource findings affect the composite score, MCPAudit should add:

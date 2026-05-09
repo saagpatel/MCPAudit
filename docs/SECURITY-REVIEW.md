@@ -32,3 +32,4 @@ places where untrusted MCP metadata can affect reports.
 
 Before stable `1.0.0`, repeat this review after any change to config parsing,
 connection lifecycle, redaction, scoring, SARIF generation, or LLM behavior.
+Track the broader stable gate in `docs/STABLE-READINESS.md`.

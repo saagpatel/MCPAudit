@@ -26,6 +26,8 @@ from mcp_audit.models import (
 from mcp_audit.policy import evaluate_policy, load_policy
 from tests.conftest import make_server_config, make_tool
 
+EXAMPLE_POLICIES = sorted(Path("examples/policies").glob("*.yaml"))
+
 
 class _FakePinStore:
     def __init__(self, counts: dict[str, int]) -> None:
@@ -33,6 +35,12 @@ class _FakePinStore:
 
     def tool_count(self, server_name: str) -> int:
         return self._counts.get(server_name, 0)
+
+
+def test_example_policies_load() -> None:
+    assert EXAMPLE_POLICIES
+    for policy_path in EXAMPLE_POLICIES:
+        load_policy(policy_path)
 
 
 def _audit_report(audit: ServerAudit) -> AuditReport:

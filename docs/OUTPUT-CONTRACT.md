@@ -66,8 +66,9 @@ SARIF output uses stable MCP rule IDs:
 
 The report fixtures in `tests/fixtures/reports/` cover representative connected,
 failed, config-only, policy-failed, and prompt/resource-heavy reports. Tests
-validate that fixtures still load through the current Pydantic models and
-generate SARIF with the expected stable rules.
+validate that fixtures still load through the current Pydantic models, generate
+SARIF with the expected stable rules, and match the golden output-contract
+snapshot in `tests/fixtures/reports/output_contract_snapshot.json`.
 
 ## CI Examples
 

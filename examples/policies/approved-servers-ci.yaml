@@ -1,0 +1,27 @@
+# CI gate for repositories that allow only reviewed MCP servers.
+fail_on:
+  permissions: medium
+  injection: medium
+  capabilities: medium
+  drift: true
+require:
+  pins:
+    servers:
+      - github
+      - filesystem-readonly
+allow_servers:
+  - github
+  - filesystem-readonly
+  - fetch-readonly
+deny:
+  permissions:
+    - shell_execution
+    - destructive
+    - exfiltration
+max_risk: 6
+servers:
+  fetch-readonly:
+    max_risk: 5
+    deny:
+      permissions:
+        - file_write
