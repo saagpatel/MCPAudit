@@ -40,7 +40,11 @@ Add more policy profiles for common adoption shapes:
 - reviewed local developer workstation;
 - AI-assistant-heavy browser automation environments.
 
-Done when each policy loads in tests and has a documented intended audience.
+Status: current policy profiles load in tests and now have a documented
+intended audience in `examples/policies/README.md`.
+
+Done when future team-specific policy requests can be added as small examples
+without changing the policy engine.
 
 ### Pin Maintenance UX
 
@@ -54,8 +58,12 @@ baselines.
 
 Add tests and examples for consumers that parse MCPAudit JSON/SARIF artifacts.
 
-Done when example CI files parse cleanly and output-contract fixtures cover the
-fields used by those examples.
+Status: JSON consumers now have a generated schema at
+`examples/schemas/audit-report.schema.json`, and tests compare it to the live
+report model.
+
+Done when example CI files parse cleanly, output-contract fixtures cover the
+fields used by those examples, and consumers have stable schema guidance.
 
 ## Non-Goals
 

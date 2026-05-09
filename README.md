@@ -131,7 +131,9 @@ servers:
 ```
 
 See `docs/ADOPTION-GUIDE.md` for local review, team CI, and GitHub code
-scanning setup paths. See `examples/policies/` for starter policies. See
+scanning setup paths. See `docs/1.1-ADOPTION.md` for `non_tool_risk` parsing
+examples and policy selection notes. See `examples/policies/` for starter
+policies. See
 `docs/STABLE-READINESS.md` for the stable-release bar. See
 `docs/PIN-MAINTENANCE.md` for reviewed pin refresh and stale server cleanup
 workflows. See `docs/PROMPT-RESOURCE-SCORING.md` and

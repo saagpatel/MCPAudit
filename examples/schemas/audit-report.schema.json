@@ -1,0 +1,905 @@
+{
+  "$defs": {
+    "CapabilityFinding": {
+      "description": "A permission inference for a non-tool MCP capability.",
+      "properties": {
+        "category": {
+          "$ref": "#/$defs/PermissionCategory"
+        },
+        "confidence": {
+          "$ref": "#/$defs/Confidence"
+        },
+        "evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "target_name": {
+          "title": "Target Name",
+          "type": "string"
+        },
+        "target_type": {
+          "$ref": "#/$defs/CapabilityTarget"
+        }
+      },
+      "required": [
+        "target_type",
+        "target_name",
+        "category",
+        "confidence",
+        "evidence"
+      ],
+      "title": "CapabilityFinding",
+      "type": "object"
+    },
+    "CapabilityTarget": {
+      "enum": [
+        "tool",
+        "prompt",
+        "resource"
+      ],
+      "title": "CapabilityTarget",
+      "type": "string"
+    },
+    "ClientType": {
+      "enum": [
+        "claude_desktop",
+        "claude_code",
+        "cursor",
+        "vscode",
+        "windsurf"
+      ],
+      "title": "ClientType",
+      "type": "string"
+    },
+    "Confidence": {
+      "enum": [
+        "declared",
+        "high",
+        "medium",
+        "low",
+        "manual",
+        "llm"
+      ],
+      "title": "Confidence",
+      "type": "string"
+    },
+    "DriftFinding": {
+      "description": "A change detected between pinned and current tool schema.",
+      "properties": {
+        "current_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Current Hash"
+        },
+        "details": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Details",
+          "type": "array"
+        },
+        "pinned_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pinned At"
+        },
+        "remediation": {
+          "default": "",
+          "title": "Remediation",
+          "type": "string"
+        },
+        "server_name": {
+          "title": "Server Name",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/DriftStatus"
+        },
+        "stored_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stored Hash"
+        },
+        "summary": {
+          "default": "",
+          "title": "Summary",
+          "type": "string"
+        },
+        "tool_name": {
+          "title": "Tool Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "server_name",
+        "tool_name",
+        "status"
+      ],
+      "title": "DriftFinding",
+      "type": "object"
+    },
+    "DriftStatus": {
+      "enum": [
+        "new",
+        "changed",
+        "removed"
+      ],
+      "title": "DriftStatus",
+      "type": "string"
+    },
+    "InjectionFinding": {
+      "description": "A prompt injection threat detected in a tool's description or name.",
+      "properties": {
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "matched_text": {
+          "title": "Matched Text",
+          "type": "string"
+        },
+        "pattern_name": {
+          "title": "Pattern Name",
+          "type": "string"
+        },
+        "severity": {
+          "$ref": "#/$defs/InjectionSeverity"
+        },
+        "target_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Name"
+        },
+        "target_type": {
+          "$ref": "#/$defs/CapabilityTarget",
+          "default": "tool"
+        },
+        "tool_name": {
+          "title": "Tool Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool_name",
+        "severity",
+        "pattern_name",
+        "matched_text",
+        "description"
+      ],
+      "title": "InjectionFinding",
+      "type": "object"
+    },
+    "InjectionSeverity": {
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ],
+      "title": "InjectionSeverity",
+      "type": "string"
+    },
+    "NonToolRisk": {
+      "description": "Additive prompt/resource risk indicator for non-tool MCP capabilities.",
+      "properties": {
+        "capability_score": {
+          "maximum": 10,
+          "minimum": 0,
+          "title": "Capability Score",
+          "type": "number"
+        },
+        "composite": {
+          "maximum": 10,
+          "minimum": 0,
+          "title": "Composite",
+          "type": "number"
+        },
+        "high_severity_findings": {
+          "minimum": 0,
+          "title": "High Severity Findings",
+          "type": "integer"
+        },
+        "injection_score": {
+          "maximum": 10,
+          "minimum": 0,
+          "title": "Injection Score",
+          "type": "number"
+        },
+        "note": {
+          "default": "Additive prompt/resource risk indicator; does not affect risk_score.composite.",
+          "title": "Note",
+          "type": "string"
+        },
+        "prompt_findings": {
+          "minimum": 0,
+          "title": "Prompt Findings",
+          "type": "integer"
+        },
+        "resource_findings": {
+          "minimum": 0,
+          "title": "Resource Findings",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "composite",
+        "capability_score",
+        "injection_score",
+        "prompt_findings",
+        "resource_findings",
+        "high_severity_findings"
+      ],
+      "title": "NonToolRisk",
+      "type": "object"
+    },
+    "PermissionCategory": {
+      "enum": [
+        "file_read",
+        "file_write",
+        "network",
+        "shell_execution",
+        "destructive",
+        "exfiltration"
+      ],
+      "title": "PermissionCategory",
+      "type": "string"
+    },
+    "PermissionFinding": {
+      "description": "A single permission inference for a tool.",
+      "properties": {
+        "category": {
+          "$ref": "#/$defs/PermissionCategory"
+        },
+        "confidence": {
+          "$ref": "#/$defs/Confidence"
+        },
+        "evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "tool_name": {
+          "title": "Tool Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "category",
+        "confidence",
+        "evidence",
+        "tool_name"
+      ],
+      "title": "PermissionFinding",
+      "type": "object"
+    },
+    "PolicyResult": {
+      "description": "Result of evaluating an audit report against a local policy file.",
+      "properties": {
+        "passed": {
+          "title": "Passed",
+          "type": "boolean"
+        },
+        "violations": {
+          "items": {
+            "$ref": "#/$defs/PolicyViolation"
+          },
+          "title": "Violations",
+          "type": "array"
+        }
+      },
+      "required": [
+        "passed"
+      ],
+      "title": "PolicyResult",
+      "type": "object"
+    },
+    "PolicyViolation": {
+      "description": "A local policy rule violation detected in an audit report.",
+      "properties": {
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "rule": {
+          "title": "Rule",
+          "type": "string"
+        },
+        "server_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Server Name"
+        },
+        "severity": {
+          "default": "high",
+          "title": "Severity",
+          "type": "string"
+        },
+        "tool_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tool Name"
+        }
+      },
+      "required": [
+        "rule",
+        "message"
+      ],
+      "title": "PolicyViolation",
+      "type": "object"
+    },
+    "PromptInfo": {
+      "description": "A prompt exposed by an MCP server.",
+      "properties": {
+        "arguments": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Arguments",
+          "type": "array"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "PromptInfo",
+      "type": "object"
+    },
+    "ResourceInfo": {
+      "description": "A resource exposed by an MCP server.",
+      "properties": {
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "mime_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mime Type"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "uri": {
+          "title": "Uri",
+          "type": "string"
+        }
+      },
+      "required": [
+        "uri"
+      ],
+      "title": "ResourceInfo",
+      "type": "object"
+    },
+    "RiskScore": {
+      "description": "Multi-dimensional risk score for a server.",
+      "properties": {
+        "composite": {
+          "maximum": 10,
+          "minimum": 0,
+          "title": "Composite",
+          "type": "number"
+        },
+        "destructive": {
+          "maximum": 10,
+          "minimum": 0,
+          "title": "Destructive",
+          "type": "number"
+        },
+        "exfiltration": {
+          "maximum": 10,
+          "minimum": 0,
+          "title": "Exfiltration",
+          "type": "number"
+        },
+        "file_access": {
+          "maximum": 10,
+          "minimum": 0,
+          "title": "File Access",
+          "type": "number"
+        },
+        "network_access": {
+          "maximum": 10,
+          "minimum": 0,
+          "title": "Network Access",
+          "type": "number"
+        },
+        "shell_execution": {
+          "maximum": 10,
+          "minimum": 0,
+          "title": "Shell Execution",
+          "type": "number"
+        }
+      },
+      "required": [
+        "composite",
+        "file_access",
+        "network_access",
+        "shell_execution",
+        "destructive",
+        "exfiltration"
+      ],
+      "title": "RiskScore",
+      "type": "object"
+    },
+    "ServerAudit": {
+      "description": "Complete audit result for a single MCP server.",
+      "properties": {
+        "annotation_coverage": {
+          "default": 0.0,
+          "title": "Annotation Coverage",
+          "type": "number"
+        },
+        "capability_findings": {
+          "items": {
+            "$ref": "#/$defs/CapabilityFinding"
+          },
+          "title": "Capability Findings",
+          "type": "array"
+        },
+        "connection_error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Connection Error"
+        },
+        "connection_status": {
+          "title": "Connection Status",
+          "type": "string"
+        },
+        "drift_findings": {
+          "items": {
+            "$ref": "#/$defs/DriftFinding"
+          },
+          "title": "Drift Findings",
+          "type": "array"
+        },
+        "has_annotations": {
+          "default": false,
+          "title": "Has Annotations",
+          "type": "boolean"
+        },
+        "injection_findings": {
+          "items": {
+            "$ref": "#/$defs/InjectionFinding"
+          },
+          "title": "Injection Findings",
+          "type": "array"
+        },
+        "non_tool_risk": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonToolRisk"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "permissions": {
+          "items": {
+            "$ref": "#/$defs/PermissionFinding"
+          },
+          "title": "Permissions",
+          "type": "array"
+        },
+        "prompts": {
+          "items": {
+            "$ref": "#/$defs/PromptInfo"
+          },
+          "title": "Prompts",
+          "type": "array"
+        },
+        "resources": {
+          "items": {
+            "$ref": "#/$defs/ResourceInfo"
+          },
+          "title": "Resources",
+          "type": "array"
+        },
+        "risk_score": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RiskScore"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "server": {
+          "$ref": "#/$defs/ServerConfig"
+        },
+        "tools": {
+          "items": {
+            "$ref": "#/$defs/ToolInfo"
+          },
+          "title": "Tools",
+          "type": "array"
+        }
+      },
+      "required": [
+        "server",
+        "connection_status"
+      ],
+      "title": "ServerAudit",
+      "type": "object"
+    },
+    "ServerConfig": {
+      "description": "Represents a single MCP server entry from a client config file.",
+      "properties": {
+        "args": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Args",
+          "type": "array"
+        },
+        "client": {
+          "$ref": "#/$defs/ClientType"
+        },
+        "command": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Command"
+        },
+        "config_path": {
+          "title": "Config Path",
+          "type": "string"
+        },
+        "env_keys": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Env Keys",
+          "type": "array"
+        },
+        "headers_keys": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Headers Keys",
+          "type": "array"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "project_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Path"
+        },
+        "transport": {
+          "$ref": "#/$defs/TransportType",
+          "default": "stdio"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url"
+        }
+      },
+      "required": [
+        "name",
+        "client",
+        "config_path"
+      ],
+      "title": "ServerConfig",
+      "type": "object"
+    },
+    "ToolAnnotations": {
+      "description": "MCP tool annotations (hints about behavior).",
+      "properties": {
+        "destructive_hint": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Destructive Hint"
+        },
+        "idempotent_hint": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Idempotent Hint"
+        },
+        "open_world_hint": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Open World Hint"
+        },
+        "read_only_hint": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Read Only Hint"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        }
+      },
+      "title": "ToolAnnotations",
+      "type": "object"
+    },
+    "ToolInfo": {
+      "description": "A single tool exposed by an MCP server.",
+      "properties": {
+        "annotations": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ToolAnnotations"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "input_schema": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Input Schema"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "ToolInfo",
+      "type": "object"
+    },
+    "TransportType": {
+      "enum": [
+        "stdio",
+        "http",
+        "sse"
+      ],
+      "title": "TransportType",
+      "type": "string"
+    }
+  },
+  "description": "Top-level audit report containing all server audits.",
+  "properties": {
+    "audits": {
+      "items": {
+        "$ref": "#/$defs/ServerAudit"
+      },
+      "title": "Audits",
+      "type": "array"
+    },
+    "high_risk_servers": {
+      "title": "High Risk Servers",
+      "type": "integer"
+    },
+    "hostname": {
+      "title": "Hostname",
+      "type": "string"
+    },
+    "os_platform": {
+      "title": "Os Platform",
+      "type": "string"
+    },
+    "policy_result": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PolicyResult"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "scan_duration_seconds": {
+      "title": "Scan Duration Seconds",
+      "type": "number"
+    },
+    "scan_timestamp": {
+      "format": "date-time",
+      "title": "Scan Timestamp",
+      "type": "string"
+    },
+    "servers_connected": {
+      "title": "Servers Connected",
+      "type": "integer"
+    },
+    "servers_discovered": {
+      "title": "Servers Discovered",
+      "type": "integer"
+    },
+    "servers_failed": {
+      "title": "Servers Failed",
+      "type": "integer"
+    },
+    "total_tools": {
+      "title": "Total Tools",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "scan_timestamp",
+    "hostname",
+    "os_platform",
+    "servers_discovered",
+    "servers_connected",
+    "servers_failed",
+    "total_tools",
+    "high_risk_servers",
+    "audits",
+    "scan_duration_seconds"
+  ],
+  "title": "AuditReport",
+  "type": "object"
+}

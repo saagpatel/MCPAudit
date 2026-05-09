@@ -27,8 +27,8 @@ mcp-audit scan --config ./mcp.json --config-only --inject-check
 ```
 
 Review prompt/resource findings separately from the composite score. They are
-visible in reports and policy gates, but they do not yet change
-`risk_score.composite`.
+visible in reports and policy gates. In `1.1`, they also feed the additive
+`non_tool_risk` field, but they do not change `risk_score.composite`.
 
 ## Team CI Policy Gate
 
@@ -50,6 +50,8 @@ For stricter rollout, start from
 `examples/policies/reviewed-local-workstation.yaml` or
 `examples/policies/approved-servers-ci.yaml`. For browser-automation-heavy
 MCP setups, start from `examples/policies/browser-automation-ci.yaml`.
+The policy pack guide in `examples/policies/README.md` explains the intended
+audience for each profile.
 
 ## GitHub Code Scanning
 
@@ -83,3 +85,19 @@ mcp-audit pin --refresh github --apply
 
 Use `mcp-audit pin --clear <server>` only when the server was intentionally
 removed from MCP client configuration.
+
+## Output Consumers
+
+For JSON consumers, treat `risk_score.composite` as the stable tool-centered
+score and `non_tool_risk` as optional prompt/resource triage metadata:
+
+```bash
+jq '.audits[] | {
+  server: .server.name,
+  tool_risk: .risk_score.composite,
+  non_tool_risk: (.non_tool_risk.composite // 0)
+}' mcp-audit.json
+```
+
+See `docs/1.1-ADOPTION.md` for more copy-paste parsing examples and
+`examples/schemas/audit-report.schema.json` for the generated JSON Schema.

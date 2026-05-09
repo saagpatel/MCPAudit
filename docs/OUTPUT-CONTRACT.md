@@ -43,6 +43,10 @@ prompt/resource triage signal and does not change `risk_score.composite`.
 `non_tool_risk` may be `null` when a scan finds no prompt/resource capability or
 injection findings.
 
+The generated JSON Schema for the current model is checked in at
+`examples/schemas/audit-report.schema.json` and is tested against the live
+Pydantic model.
+
 Finding targets:
 
 - tool permission and drift findings use `tool_name` and additive
