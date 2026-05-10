@@ -24,6 +24,10 @@ tool rows, replace only that server's baseline:
 mcp-audit pin --refresh github --apply
 ```
 
+Pins are keyed by server name. If a name appears in multiple discovered MCP
+configs, `pin` and `pin --refresh` skip that name instead of choosing one
+silently. Rename duplicate MCP server entries before refreshing the baseline.
+
 ## Intentionally Removed Servers
 
 When a server was removed from your MCP configuration on purpose, clear only its
