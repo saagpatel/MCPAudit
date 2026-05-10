@@ -44,6 +44,8 @@ Candidate follow-ups:
 
 - organization-specific policy profiles only when repeated user patterns justify
   them.
+- track dashboard consumer needs in
+  <https://github.com/saagpatel/MCPAudit/issues/59>.
 
 ## 3. Pin Maintenance UX
 
@@ -52,6 +54,8 @@ Status: hold writes explicit.
 Keep `pin --stale` read-only and keep cleanup server-scoped through
 `pin --clear <server>`. Bulk stale cleanup remains intentionally out of scope
 until users show a repeated need for it.
+
+Tracking issue: <https://github.com/saagpatel/MCPAudit/issues/60>.
 
 ## 4. Prompt And Resource Scoring
 
@@ -65,6 +69,9 @@ Shipped after `1.4.0`:
 
 - GitHub issue, PostgreSQL analytics, and Slack thread fixtures for
   prompt/resource calibration.
+
+Tracking issue before any composite scoring change:
+<https://github.com/saagpatel/MCPAudit/issues/61>.
 
 ## Verification Bar
 
