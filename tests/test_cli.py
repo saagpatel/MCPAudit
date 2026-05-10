@@ -125,6 +125,26 @@ def test_run_scan_core_config_only_ignores_discovered_configs(monkeypatch: pytes
     assert [audit.server.name for audit in report.audits] == ["custom"]
 
 
+def test_run_scan_core_reports_structured_config_health(monkeypatch: pytest.MonkeyPatch) -> None:
+    first_server = make_server_config(name="srv")
+    second_server = first_server.model_copy(update={"config_path": "/tmp/other_config.json"})
+
+    monkeypatch.setattr(cli, "discover_all_configs", lambda clients: [first_server, second_server])
+
+    report = anyio.run(
+        cli._run_scan_core,
+        True,
+        None,
+        10,
+        None,
+        OverrideApplier(OverrideConfig()),
+    )
+
+    assert [finding.finding_type for finding in report.config_health_findings] == ["duplicate_server_name"]
+    assert report.config_health_findings[0].server_name == "srv"
+    assert report.config_health_findings[0].severity == "medium"
+
+
 def test_scan_reports_duplicate_server_names(monkeypatch: pytest.MonkeyPatch) -> None:
     first_server = make_server_config(name="srv")
     second_server = first_server.model_copy(update={"config_path": "/tmp/other_config.json"})

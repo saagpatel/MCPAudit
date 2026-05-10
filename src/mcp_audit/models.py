@@ -50,6 +50,12 @@ class DriftStatus(StrEnum):
     REMOVED = "removed"  # Tool in pins but missing from current scan
 
 
+class ConfigHealthSeverity(StrEnum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
 class ServerConfig(BaseModel):
     """Represents a single MCP server entry from a client config file."""
 
@@ -303,6 +309,17 @@ class PolicyResult(BaseModel):
     violations: list[PolicyViolation] = Field(default_factory=list)
 
 
+class ConfigHealthFinding(BaseModel):
+    """A configuration health warning found before connecting to an MCP server."""
+
+    finding_type: str
+    severity: ConfigHealthSeverity
+    server_name: str | None = None
+    summary: str
+    details: list[str] = Field(default_factory=list)
+    remediation: str
+
+
 class ServerAudit(BaseModel):
     """Complete audit result for a single MCP server."""
 
@@ -335,4 +352,5 @@ class AuditReport(BaseModel):
     high_risk_servers: int  # composite >= 7.0
     audits: list[ServerAudit]
     scan_duration_seconds: float
+    config_health_findings: list[ConfigHealthFinding] = Field(default_factory=list)
     policy_result: PolicyResult | None = None

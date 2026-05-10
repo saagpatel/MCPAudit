@@ -18,6 +18,7 @@ CONSUMER_EXAMPLES = sorted(Path("examples/consumers").glob("parse*"))
 MAINTENANCE_EXAMPLES = sorted(Path("examples/maintenance").glob("*.sh"))
 POLICY_EXAMPLES = sorted(Path("examples/policies").glob("*.yaml"))
 PROMPT_RESOURCE_REPORT = Path("tests/fixtures/reports/prompt_resource_report.json")
+CONFIG_ONLY_REPORT = Path("tests/fixtures/reports/config_only_report.json")
 SCHEMA_PATH = Path("examples/schemas/audit-report.schema.json")
 
 
@@ -81,6 +82,19 @@ def test_python_consumer_example_parses_prompt_resource_report() -> None:
     ]
 
 
+def test_python_consumer_example_parses_config_health() -> None:
+    result = subprocess.run(
+        [sys.executable, "examples/consumers/parse_report.py", str(CONFIG_ONLY_REPORT)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    rows = json.loads(result.stdout)
+    assert rows[0]["server"] == "remote-api"
+    assert rows[0]["config_health_findings"] == 1
+    assert rows[0]["config_health_types"] == ["remote_endpoint"]
+
+
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 def test_node_consumer_example_parses_prompt_resource_report() -> None:
     result = subprocess.run(
@@ -93,6 +107,20 @@ def test_node_consumer_example_parses_prompt_resource_report() -> None:
     assert rows[0]["server"] == "knowledge"
     assert rows[0]["non_tool_risk"] > 0.0
     assert any(target["target_type"] == "resource" for target in rows[0]["non_tool_targets"])
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_node_consumer_example_parses_config_health() -> None:
+    result = subprocess.run(
+        ["node", "examples/consumers/parse-report.mjs", str(CONFIG_ONLY_REPORT)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    rows = json.loads(result.stdout)
+    assert rows[0]["server"] == "remote-api"
+    assert rows[0]["config_health_findings"] == 1
+    assert rows[0]["config_health_types"] == ["remote_endpoint"]
 
 
 def test_consumer_examples_are_documented() -> None:

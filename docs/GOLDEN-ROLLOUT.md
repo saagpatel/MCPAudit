@@ -21,6 +21,8 @@ Resolve config-health warnings before creating pins. Duplicate names make a
 reviewed pin baseline ambiguous because pins are keyed by server name. Missing
 stdio commands, deprecated SSE transports, shell-wrapper launches, remote
 endpoints, and credential-heavy configs deserve review before connected scans.
+JSON reports include the same signal in `config_health_findings` for CI or
+inventory consumers.
 
 ## 2. Run A Connected Review
 

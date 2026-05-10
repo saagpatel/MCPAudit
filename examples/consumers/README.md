@@ -8,6 +8,7 @@ The examples:
 - tolerate unknown fields;
 - treat `risk_score.composite` as the stable tool-centered score;
 - treat `non_tool_risk` as optional additive prompt/resource metadata;
+- treat `config_health_findings` as optional additive config metadata;
 - route findings by `target_type` and `target_name`.
 
 Run them against any JSON report:
