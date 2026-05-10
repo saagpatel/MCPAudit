@@ -52,6 +52,10 @@ without changing the policy engine.
 Keep pin writes explicit and server-scoped, but consider a dry-run stale-baseline
 report for users with many reviewed servers.
 
+Status: `mcp-audit pin --stale` now reports pinned servers that are no longer
+present in discovered MCP client configs without connecting, writing, or
+deleting pins.
+
 Done when stale cleanup remains review-first and cannot silently delete multiple
 baselines.
 

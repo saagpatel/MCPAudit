@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-05-10
+
 ### Added
 
 - Added `1.1` adoption notes with JSON parsing examples for `non_tool_risk`.
@@ -15,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added Python and Node JSON consumer examples for compact report summaries.
 - Added non-tool calibration cases for prompt/resource capability and injection
   signals.
+- Added `mcp-audit pin --stale` for read-only review of pinned servers that are
+  no longer present in discovered MCP configs.
 
 ## [1.1.0] - 2026-05-09
 
@@ -306,7 +310,8 @@ real workstations; API surface may still shift before the `1.0.0` stable cut.
 - Risk score output with pass/warn/fail thresholds
 - `mcp-audit` CLI entry point
 
-[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/saagpatel/MCPAudit/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0rc1...v1.0.0
 [1.0.0rc1]: https://github.com/saagpatel/MCPAudit/compare/v1.0.0b3...v1.0.0rc1

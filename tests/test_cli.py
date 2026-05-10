@@ -37,7 +37,7 @@ def test_version_option_reports_installed_distribution_version() -> None:
 
     assert result.exit_code == 0
     assert "mcp-audit, version " in result.output
-    assert "1.1.0" in result.output
+    assert "1.1.1" in result.output
 
 
 def test_scan_config_only_requires_config() -> None:
@@ -255,3 +255,42 @@ def test_pin_status_json_reports_pin_coverage(tmp_path: Path) -> None:
     assert payload["server_count"] == 1
     assert payload["total_tools"] == 1
     assert payload["servers"][0]["name"] == "srv"
+
+
+def test_pin_stale_reports_removed_server_without_writing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    pin_file = tmp_path / "pins.yaml"
+    store = PinStore(path=pin_file)
+    store.pin_server("configured", [make_tool("read_file")])
+    store.pin_server("removed", [make_tool("write_file")])
+    monkeypatch.setattr(cli, "discover_all_configs", lambda clients: [make_server_config(name="configured")])
+
+    result = CliRunner().invoke(cli.main, ["pin", "--stale", "--pin-file", str(pin_file)])
+
+    assert result.exit_code == 0
+    assert "Stale pin baselines:" in result.output
+    assert "removed" in result.output
+    assert "Review only; no pins were changed" in result.output
+    refreshed = PinStore(path=pin_file)
+    assert refreshed.tool_count("removed") == 1
+
+
+def test_pin_stale_json_reports_removed_server_without_writing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    pin_file = tmp_path / "pins.yaml"
+    store = PinStore(path=pin_file)
+    store.pin_server("configured", [make_tool("read_file")])
+    store.pin_server("removed", [make_tool("write_file")])
+    monkeypatch.setattr(cli, "discover_all_configs", lambda clients: [make_server_config(name="configured")])
+
+    result = CliRunner().invoke(cli.main, ["pin", "--stale", "--json", "--pin-file", str(pin_file)])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["stale_server_count"] == 1
+    assert payload["stale_servers"][0]["name"] == "removed"
+    assert "pin --clear" in payload["stale_servers"][0]["remediation"]
+    refreshed = PinStore(path=pin_file)
+    assert refreshed.tool_count("removed") == 1
