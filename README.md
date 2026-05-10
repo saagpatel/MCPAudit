@@ -147,7 +147,7 @@ and migration path. See `examples/ci/pin-stale-review.yml` and
 `examples/maintenance/stale-pin-review.sh` for routine stale pin review flows.
 See `docs/FEEDBACK-TO-FIXTURES.md` for turning false positives, missing
 detections, output issues, and pin lifecycle feedback into safe regression
-fixtures. See `docs/ROADMAP-NEXT.md` for the current post-`1.4.1` roadmap.
+fixtures. See `docs/ROADMAP-NEXT.md` for the current post-`1.4.2` roadmap.
 
 ## License
 
