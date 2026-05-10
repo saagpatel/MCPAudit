@@ -47,6 +47,19 @@ def test_scan_config_only_requires_config() -> None:
     assert "--config-only requires --config PATH" in result.output
 
 
+def test_discover_reports_duplicate_server_names(monkeypatch: pytest.MonkeyPatch) -> None:
+    first_server = make_server_config(name="srv")
+    second_server = first_server.model_copy(update={"config_path": "/tmp/other_config.json"})
+    monkeypatch.setattr(cli, "discover_all_configs", lambda clients: [first_server, second_server])
+
+    result = CliRunner().invoke(cli.main, ["discover"])
+
+    assert result.exit_code == 0
+    assert "Duplicate MCP server names found" in result.output
+    assert "'srv' appears 2 times" in result.output
+    assert "Pins are keyed by server name" in result.output
+
+
 def test_run_scan_core_config_only_ignores_discovered_configs(monkeypatch: pytest.MonkeyPatch) -> None:
     discovered = make_server_config(name="discovered")
     custom = make_server_config(name="custom")
@@ -68,6 +81,27 @@ def test_run_scan_core_config_only_ignores_discovered_configs(monkeypatch: pytes
     )
 
     assert [audit.server.name for audit in report.audits] == ["custom"]
+
+
+def test_scan_reports_duplicate_server_names(monkeypatch: pytest.MonkeyPatch) -> None:
+    first_server = make_server_config(name="srv")
+    second_server = first_server.model_copy(update={"config_path": "/tmp/other_config.json"})
+    audits = [
+        ServerAudit(server=first_server, connection_status="skipped"),
+        ServerAudit(server=second_server, connection_status="skipped"),
+    ]
+    monkeypatch.setattr(cli, "discover_all_configs", lambda clients: [first_server, second_server])
+
+    async def fake_run_scan_core(*args: object, **kwargs: object) -> AuditReport:
+        return _report(audits)
+
+    monkeypatch.setattr(cli, "_run_scan_core", fake_run_scan_core)
+
+    result = CliRunner().invoke(cli.main, ["scan", "--skip-connect"])
+
+    assert result.exit_code == 0
+    assert "Duplicate MCP server names found" in result.output
+    assert "'srv' appears 2 times" in result.output
 
 
 def test_run_pin_connects_before_pinning(monkeypatch: object, tmp_path: Path) -> None:

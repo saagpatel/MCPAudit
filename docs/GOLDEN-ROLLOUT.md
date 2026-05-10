@@ -17,6 +17,9 @@ Review discovered server names, commands, transports, package runners, remote
 URLs, and credential key names. This pass is safe for exploratory review because
 it does not connect to servers.
 
+Resolve duplicate server-name warnings before creating pins. Pins are keyed by
+server name, so duplicate names make a reviewed baseline ambiguous.
+
 ## 2. Run A Connected Review
 
 After the configured servers look expected, inspect live MCP metadata:

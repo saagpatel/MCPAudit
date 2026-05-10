@@ -103,6 +103,7 @@ def discover(client_filter: str | None, verbose: bool) -> None:
         )
 
     console.print(table)
+    _render_duplicate_server_name_warning(servers)
 
 
 @main.command()
@@ -364,6 +365,8 @@ async def _run_scan(
         console.print("[yellow]No MCP servers found.[/yellow]")
         return
 
+    _render_duplicate_server_name_warning([audit.server for audit in report.audits])
+
     gen = ReportGenerator(console=console)
     gen.render_terminal(report, verbose=verbose)
 
@@ -413,6 +416,24 @@ def _parse_extra_config(path: Path) -> list[ServerConfig]:
 
 def _truncate(s: str, max_len: int) -> str:
     return s if len(s) <= max_len else s[: max_len - 1] + "…"
+
+
+def _duplicate_server_config_counts(servers: list[ServerConfig]) -> dict[str, int]:
+    counts = Counter(server.name for server in servers)
+    return {name: count for name, count in counts.items() if count > 1}
+
+
+def _render_duplicate_server_name_warning(servers: list[ServerConfig]) -> None:
+    duplicate_counts = _duplicate_server_config_counts(servers)
+    if not duplicate_counts:
+        return
+
+    console.print("[yellow]Duplicate MCP server names found.[/yellow]")
+    for name, count in sorted(duplicate_counts.items()):
+        console.print(
+            f"[yellow]- '{name}' appears {count} times. Pins are keyed by server name; "
+            "rename duplicate MCP server entries before pinning.[/yellow]"
+        )
 
 
 # Register watch, monitor, serve, pin subcommands
@@ -627,8 +648,7 @@ async def _run_pin_refresh(
 
 
 def _duplicate_server_names(audits: list[ServerAudit]) -> set[str]:
-    counts = Counter(audit.server.name for audit in audits)
-    return {name for name, count in counts.items() if count > 1}
+    return set(_duplicate_server_config_counts([audit.server for audit in audits]))
 
 
 def _ambiguous_pin_message(server_name: str) -> str:
