@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added duplicate server-name warnings to `discover` and `scan` so ambiguous
+  pin baselines are visible before pin maintenance.
+
 ## [1.1.3] - 2026-05-10
 
 ### Added
