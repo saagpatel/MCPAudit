@@ -1,14 +1,16 @@
 # MCPAudit Beta Readiness Evidence
 
-MCPAudit `1.5.3` is a beta-readiness intake polish release. It does not change
-scanner behavior or output schema. It adds evidence that current reports remain
-compatible with older JSON shapes, records config-only findings from real local
-MCP setup shapes, verifies checked-in JSON consumers against redacted
-field-report fixtures, and documents how to collect external redacted field
-reports safely.
+MCPAudit `1.5.4` is a beta-readiness coordination polish release. It does not
+change scanner behavior or output schema. It adds evidence that current reports
+remain compatible with older JSON shapes, records config-only findings from real
+local MCP setup shapes, verifies checked-in JSON consumers against redacted
+field-report fixtures, documents how to collect external redacted field reports
+safely, and tracks the remaining external evidence issues.
 
 Tracked milestone: <https://github.com/saagpatel/MCPAudit/milestone/2>
 Field-report milestone: <https://github.com/saagpatel/MCPAudit/milestone/3>
+External field-evidence milestone:
+<https://github.com/saagpatel/MCPAudit/milestone/4>
 
 ## Local Evidence Pass
 
@@ -75,3 +77,15 @@ Reason: this pass improves the external intake path for beta evidence, but it
 still does not include external redacted reports. Keep the beta label blocked
 until at least two external reports confirm the current JSON/SARIF contract and
 consumer examples.
+
+The open external evidence issues are:
+
+- <https://github.com/saagpatel/MCPAudit/issues/83>
+- <https://github.com/saagpatel/MCPAudit/issues/84>
+- <https://github.com/saagpatel/MCPAudit/issues/85>
+
+Ship `1.5.4` as polish instead of `1.6.0`.
+
+Reason: this pass makes the external evidence blocker visible and trackable in
+GitHub and public docs, but it still does not include the external reports
+needed for beta.

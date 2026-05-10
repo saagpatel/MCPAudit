@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.4] - 2026-05-10
+
+### Added
+
+- Added the external field-evidence milestone and issue links to beta-readiness,
+  field-report, roadmap, feedback, and README docs.
+- Added tests that keep the external field-evidence milestone and issue links
+  visible in public docs.
+
+### Changed
+
+- Refreshed release metadata for the `1.5.4` coordination polish lane.
+
 ## [1.5.3] - 2026-05-10
 
 ### Added
@@ -471,7 +484,8 @@ real workstations; API surface may still shift before the `1.0.0` stable cut.
 - Risk score output with pass/warn/fail thresholds
 - `mcp-audit` CLI entry point
 
-[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.5.3...HEAD
+[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.5.4...HEAD
+[1.5.4]: https://github.com/saagpatel/MCPAudit/compare/v1.5.3...v1.5.4
 [1.5.3]: https://github.com/saagpatel/MCPAudit/compare/v1.5.2...v1.5.3
 [1.5.2]: https://github.com/saagpatel/MCPAudit/compare/v1.5.1...v1.5.2
 [1.5.1]: https://github.com/saagpatel/MCPAudit/compare/v1.5.0...v1.5.1
