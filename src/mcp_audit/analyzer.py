@@ -117,6 +117,7 @@ class PermissionAnalyzer:
                 )
             else:
                 existing_network.evidence = [*existing_network.evidence, *evidence]
+                existing_network.confidence = Confidence.HIGH
         if (
             "{" in resource.uri
             and "}" in resource.uri

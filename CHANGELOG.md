@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `1.1` adoption notes with JSON parsing examples for `non_tool_risk`.
 - Added a generated JSON Schema artifact for output consumers.
 - Added policy-pack guidance that maps example policies to adoption scenarios.
+- Added Python and Node JSON consumer examples for compact report summaries.
+- Added non-tool calibration cases for prompt/resource capability and injection
+  signals.
 
 ## [1.1.0] - 2026-05-09
 

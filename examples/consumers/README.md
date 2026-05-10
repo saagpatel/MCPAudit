@@ -1,0 +1,22 @@
+# Output Consumer Examples
+
+These examples show how downstream tools can parse MCPAudit JSON reports without
+depending on every field staying fixed forever.
+
+The examples:
+
+- tolerate unknown fields;
+- treat `risk_score.composite` as the stable tool-centered score;
+- treat `non_tool_risk` as optional additive prompt/resource metadata;
+- route findings by `target_type` and `target_name`.
+
+Run them against any JSON report:
+
+```bash
+mcp-audit scan --inject-check --json mcp-audit.json
+python examples/consumers/parse_report.py mcp-audit.json
+node examples/consumers/parse-report.mjs mcp-audit.json
+```
+
+Both scripts print a compact JSON summary that is safe to feed into a CI step or
+dashboard.
