@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Added CI and workstation examples for read-only stale pin review.
+- Added fixture-ready feedback guidance so public reports can become safer,
+  smaller regression tests.
 
 ## [1.1.1] - 2026-05-10
 

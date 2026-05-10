@@ -16,6 +16,17 @@ assignees: ''
 - [ ] Documentation or adoption friction
 - [ ] Other
 
+## Reproduction mode
+
+- [ ] `scan --skip-connect`
+- [ ] connected `scan`
+- [ ] `scan --inject-check`
+- [ ] `scan --pin-check`
+- [ ] `scan --policy`
+- [ ] `pin --status`, `pin --refresh`, or `pin --stale`
+- [ ] JSON or SARIF consumer parsing
+- [ ] Not sure
+
 ## MCPAudit version
 
 ```bash
@@ -35,7 +46,34 @@ mcp-audit ...
 Describe the expected finding, output shape, policy behavior, or documentation
 path.
 
-## Redacted context
+## Expected regression assertion
+
+If this became a test fixture, what should the test prove?
+
+- [ ] A finding should be present
+- [ ] A finding should not be present
+- [ ] Severity, category, rule ID, or target metadata should change
+- [ ] JSON/SARIF output shape should stay compatible
+- [ ] Policy pass/fail behavior should change
+- [ ] Pin drift or stale-pin behavior should change
+
+## Minimal redacted fixture
 
 Paste redacted MCP config, tool metadata, prompt/resource metadata, or
-report snippets. Do not include API keys, tokens, private URLs, or secret paths.
+report snippets. Smaller examples are easier to turn into regression tests.
+
+Do not include:
+
+- API keys, tokens, passwords, cookies, or credential values
+- private file paths or usernames
+- internal hostnames, private URLs, customer names, or workspace names
+- proprietary prompt, resource, tool, or schema text that cannot be public
+
+## Fixture permission
+
+- [ ] I am comfortable with a redacted version of this example becoming a public
+      fixture.
+- [ ] This report may need private triage first.
+
+If this involves a security-sensitive false negative, use private disclosure in
+`SECURITY.md` instead of a public issue.
