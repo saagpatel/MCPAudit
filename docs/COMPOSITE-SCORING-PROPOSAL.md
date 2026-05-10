@@ -56,7 +56,26 @@ The public non-tool calibration set now covers:
 - calendar sharing prompts and resources;
 - container registry publish prompts and resources;
 - vault rotation prompt-injection and remote report resources;
+- issue-tracker release ticket prompts and resources;
+- browser automation prompts and session resources;
+- resource metadata that carries injection text without permission-category
+  findings;
 - benign memory and glossary cases.
+
+## 1.5 Evidence Decision
+
+The expanded fixture set supports the current boundary:
+
+- `non_tool_risk` is useful for ranking prompt/resource triage separately from
+  tool action risk;
+- resource-only injection can be severe even when no permission-category
+  finding is present;
+- benign local memo/glossary resources remain quiet;
+- the evidence still does not prove that prompt/resource findings should change
+  `risk_score.composite`.
+
+For `1.5.0`, ship the fixture and documentation hardening only. Keep any future
+`combined_risk` additive and separate from `risk_score.composite`.
 
 ## Bar Before Implementation
 

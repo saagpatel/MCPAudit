@@ -1,13 +1,14 @@
 # MCPAudit Next Roadmap
 
-MCPAudit `1.4.3` is published with structured config-health findings, policy
+MCPAudit `1.5.0` is prepared with structured config-health findings, policy
 gates, prompt/resource non-tool risk reporting, reviewed stale pin cleanup,
-dashboard-consumer improvements, and copy-pasteable adoption examples. The next
-line should keep collecting real-world evidence before changing scoring
-semantics.
+dashboard-consumer improvements, copy-pasteable adoption examples, adoption
+smoke coverage, redacted config-health fixtures, and expanded prompt/resource
+scoring evidence. The next line should collect external reports before changing
+scoring semantics.
 
-Tracked `1.5` evidence-intake work lives in `docs/1.5-EVIDENCE-INTAKE.md` and
-the GitHub milestone at <https://github.com/saagpatel/MCPAudit/milestone/1>.
+Tracked `1.5` evidence-intake work lives in `docs/1.5-EVIDENCE-INTAKE.md`,
+with the release decision in `docs/1.5-RELEASE-DECISION.md`.
 
 ## 1. Config Health Depth
 
@@ -16,7 +17,7 @@ Status: in progress.
 Add fixture-backed diagnostics only when they can be detected from local MCP
 configuration without connecting to servers or reading credential values.
 
-Shipped through `1.4.3`:
+Shipped through `1.5.0`:
 
 - missing local command paths for stdio servers;
 - server names that conflict across global and project scopes;
@@ -24,6 +25,8 @@ Shipped through `1.4.3`:
 - conflicting server definitions when the same server name points at different
   commands or URLs;
 - clearer remediation for intentional project-local shadowing.
+- redacted fixture coverage for local shadowing, remote credential headers, and
+  shell-wrapped remote URL arguments.
 
 Candidate follow-ups:
 
@@ -40,7 +43,7 @@ Keep examples copy-pasteable and conservative. Examples should start with
 `--skip-connect` when the goal is config-health review, then graduate to
 connected scans only after the server set is understood.
 
-Shipped through `1.4.3`:
+Shipped through `1.5.0`:
 
 - GitHub Actions config-health policy gate example;
 - Python and Node JSON consumers that summarize config-health findings by
@@ -50,6 +53,7 @@ Shipped through `1.4.3`:
   non-tool risk, policy, and failed-connection signals.
 - dashboard summary fields for status counts, max risk, policy failures, and
   attention rows.
+- smoke coverage for docs, CI examples, policy artifacts, and milestone links.
 
 Candidate follow-ups:
 
@@ -78,7 +82,7 @@ Prompt/resource findings stay visible, policy-gatable, and summarized through
 `non_tool_risk`. Do not merge them into `risk_score.composite` until more
 real-world fixtures prove a stable scoring model.
 
-Shipped through `1.4.3`:
+Shipped through `1.5.0`:
 
 - GitHub issue, PostgreSQL analytics, and Slack thread fixtures for
   prompt/resource calibration.
@@ -86,6 +90,8 @@ Shipped through `1.4.3`:
   benign glossary case.
 - documented combined-score proposal that keeps `risk_score.composite`
   unchanged.
+- issue tracker, browser automation, and resource-only injection evidence.
+- release decision to ship `1.5.0` as adoption hardening instead of beta.
 
 Completed fixture/proposal issue:
 <https://github.com/saagpatel/MCPAudit/issues/61>.
