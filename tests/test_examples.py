@@ -100,3 +100,16 @@ def test_consumer_examples_are_documented() -> None:
     assert CONSUMER_EXAMPLES
     for example_path in CONSUMER_EXAMPLES:
         assert example_path.name in readme
+
+
+def test_golden_rollout_doc_is_linked_and_staged() -> None:
+    rollout = Path("docs/GOLDEN-ROLLOUT.md").read_text()
+    readme = Path("README.md").read_text()
+    adoption = Path("docs/ADOPTION-GUIDE.md").read_text()
+
+    assert "mcp-audit scan --skip-connect" in rollout
+    assert "mcp-audit scan --inject-check" in rollout
+    assert "mcp-audit pin" in rollout
+    assert "--policy examples/policies/balanced-team-ci.yaml" in rollout
+    assert "docs/GOLDEN-ROLLOUT.md" in readme
+    assert "docs/GOLDEN-ROLLOUT.md" in adoption

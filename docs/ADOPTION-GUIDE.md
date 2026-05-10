@@ -4,6 +4,9 @@ Use MCPAudit in the smallest mode that answers your current question. Start
 with config-only review, then move to connected scans and policy gates after you
 are comfortable with the configured MCP servers.
 
+For a complete staged path from first inventory through CI gating, see
+`docs/GOLDEN-ROLLOUT.md`.
+
 ## Local Personal Audit
 
 Start without spawning or contacting servers:
