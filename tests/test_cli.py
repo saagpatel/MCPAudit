@@ -37,7 +37,7 @@ def test_version_option_reports_installed_distribution_version() -> None:
 
     assert result.exit_code == 0
     assert "mcp-audit, version " in result.output
-    assert "1.4.0" in result.output
+    assert "1.4.1" in result.output
 
 
 def test_scan_config_only_requires_config() -> None:

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-05-10
+
 ### Added
 
 - Added GitHub, PostgreSQL, and Slack-style prompt/resource calibration cases
@@ -380,7 +382,8 @@ real workstations; API surface may still shift before the `1.0.0` stable cut.
 - Risk score output with pass/warn/fail thresholds
 - `mcp-audit` CLI entry point
 
-[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/saagpatel/MCPAudit/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/saagpatel/MCPAudit/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/saagpatel/MCPAudit/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/saagpatel/MCPAudit/compare/v1.1.4...v1.2.0
