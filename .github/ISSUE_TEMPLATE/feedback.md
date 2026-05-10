@@ -14,6 +14,9 @@ assignees: ''
 - [ ] SARIF or JSON output issue
 - [ ] Pinning or drift workflow issue
 - [ ] Documentation or adoption friction
+- [ ] Prompt/resource scoring fixture
+- [ ] Dashboard JSON consumer friction
+- [ ] Bulk stale-pin cleanup request
 - [ ] Other
 
 ## Reproduction mode
@@ -25,6 +28,7 @@ assignees: ''
 - [ ] `scan --policy`
 - [ ] `pin --status`, `pin --refresh`, or `pin --stale`
 - [ ] JSON or SARIF consumer parsing
+- [ ] Dashboard or CI status-page integration
 - [ ] Not sure
 
 ## MCPAudit version
@@ -56,6 +60,8 @@ If this became a test fixture, what should the test prove?
 - [ ] JSON/SARIF output shape should stay compatible
 - [ ] Policy pass/fail behavior should change
 - [ ] Pin drift or stale-pin behavior should change
+- [ ] Prompt/resource `non_tool_risk` behavior should change
+- [ ] Dashboard summary behavior should change
 
 ## Minimal redacted fixture
 

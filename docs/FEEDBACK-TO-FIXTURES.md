@@ -35,6 +35,48 @@ report should include:
 - Documentation confusion: adoption, pin maintenance, security review, or
   output contract docs.
 
+## Active Follow-Up Lanes
+
+Use these lanes to decide whether feedback is ready for implementation or
+should remain in observation.
+
+### Prompt And Resource Scoring
+
+Tracking issue: <https://github.com/saagpatel/MCPAudit/issues/61>
+
+Before changing `risk_score.composite`, collect prompt/resource fixtures from
+multiple server families. A useful fixture includes:
+
+- prompt and resource names, descriptions, argument names, and URI templates;
+- expected `non_tool_risk` categories and severities;
+- at least one benign prompt/resource example that should not add risk;
+- a short rationale for why composite scoring would help users triage the case.
+
+### Dashboard JSON Consumers
+
+Tracking issue: <https://github.com/saagpatel/MCPAudit/issues/59>
+
+Before adding new JSON fields or CLI flags for dashboards, collect examples from
+real consumers. A useful report includes:
+
+- the dashboard or CI system consuming the JSON;
+- the fields that were hard to use, missing, or too unstable;
+- a redacted input report and the desired dashboard summary;
+- whether the current `examples/consumers/dashboard_summary.py` output was
+  sufficient.
+
+### Stale Pin Cleanup
+
+Tracking issue: <https://github.com/saagpatel/MCPAudit/issues/60>
+
+Bulk stale-pin cleanup should stay out of scope until users show that
+server-scoped cleanup is too slow. A useful report includes:
+
+- the number of stale pinned servers and how often they occur;
+- why `pin --stale` plus `pin --clear <server>` is too cumbersome;
+- the dry-run output a bulk command should show before writing;
+- confirmation that explicit `--apply` behavior would be acceptable.
+
 ## Redaction Rules
 
 Never ask users to paste credential values. Keep only env var key names when

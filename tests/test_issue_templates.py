@@ -15,7 +15,9 @@ def test_feedback_template_collects_fixture_ready_context() -> None:
     assert "`scan --pin-check`" in text
     assert "`scan --policy`" in text
     assert "JSON or SARIF consumer parsing" in text
+    assert "Dashboard or CI status-page integration" in text
     assert "## Expected regression assertion" in text
+    assert "Prompt/resource `non_tool_risk` behavior should change" in text
     assert "## Minimal redacted fixture" in text
     assert "## Fixture permission" in text
 
@@ -38,4 +40,8 @@ def test_feedback_docs_explain_public_fixture_intake() -> None:
     assert "The public feedback issue template mirrors this intake path." in doc
     assert "the expected regression assertion" in doc
     assert "Security-sensitive false negatives" in doc
+    assert "Active Follow-Up Lanes" in doc
+    assert "https://github.com/saagpatel/MCPAudit/issues/59" in doc
+    assert "https://github.com/saagpatel/MCPAudit/issues/60" in doc
+    assert "https://github.com/saagpatel/MCPAudit/issues/61" in doc
     assert "docs/FEEDBACK-TO-FIXTURES.md" in readme
