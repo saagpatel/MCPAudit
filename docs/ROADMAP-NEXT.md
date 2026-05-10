@@ -14,13 +14,13 @@ configuration without connecting to servers or reading credential values.
 Shipped after `1.3.0`:
 
 - missing local command paths for stdio servers;
-- server names that conflict across global and project scopes.
+- server names that conflict across global and project scopes;
+- package-runner source review for commands such as `npx`, `uvx`, and `docker`;
+- conflicting server definitions when the same server name points at different
+  commands or URLs.
 
 Candidate follow-ups:
 
-- package-runner source review for commands such as `npx`, `uvx`, and `docker`;
-- conflicting client definitions when two clients point the same server name at
-  meaningfully different commands or URLs;
 - clearer remediation text for intentionally shadowed project-local servers.
 
 ## 2. Adoption Examples

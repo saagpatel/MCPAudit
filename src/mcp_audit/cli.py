@@ -40,6 +40,8 @@ console = Console()
 _CREDENTIAL_HEAVY_THRESHOLD = 3
 _REMOTE_URL = re.compile(r"https?://", re.IGNORECASE)
 _SHELL_WRAPPERS = {"bash", "sh", "zsh", "fish", "pwsh", "powershell", "cmd", "cmd.exe"}
+_PACKAGE_RUNNERS = {"npx", "uvx", "docker"}
+_DOCKER_SUBCOMMANDS = {"container", "image", "pull", "run"}
 
 
 @click.group()
@@ -451,6 +453,15 @@ def _conflicting_scope_server_names(servers: list[ServerConfig]) -> dict[str, li
     }
 
 
+def _conflicting_definition_server_names(servers: list[ServerConfig]) -> dict[str, list[str]]:
+    definitions_by_name: dict[str, set[str]] = {}
+    for server in servers:
+        definitions_by_name.setdefault(server.name, set()).add(_server_definition_summary(server))
+    return {
+        name: sorted(definitions) for name, definitions in definitions_by_name.items() if len(definitions) > 1
+    }
+
+
 def _render_config_health_warnings(servers: list[ServerConfig]) -> None:
     findings = _config_health_findings(servers)
     if not findings:
@@ -493,6 +504,24 @@ def _config_health_findings(servers: list[ServerConfig]) -> list[ConfigHealthFin
                 remediation=(
                     "Rename one server entry or remove the unintended duplicate so reviews and pins "
                     "refer to the intended scope."
+                ),
+            )
+        )
+
+    for name, definitions in sorted(_conflicting_definition_server_names(servers).items()):
+        findings.append(
+            ConfigHealthFinding(
+                finding_type="conflicting_server_definition",
+                severity=ConfigHealthSeverity.MEDIUM,
+                server_name=name,
+                summary=(
+                    f"'{name}' has multiple command or URL definitions across discovered configs; "
+                    "review which one should be trusted."
+                ),
+                details=definitions,
+                remediation=(
+                    "Align duplicate server definitions or rename entries so each reviewed server name "
+                    "maps to one intended command or URL."
                 ),
             )
         )
@@ -565,6 +594,24 @@ def _config_health_findings(servers: list[ServerConfig]) -> list[ConfigHealthFin
                     remediation="Review the URL and package source before connecting to the server.",
                 )
             )
+        package_runner_source = _package_runner_source(server)
+        if package_runner_source is not None:
+            findings.append(
+                ConfigHealthFinding(
+                    finding_type="package_runner_source_review",
+                    severity=ConfigHealthSeverity.MEDIUM,
+                    server_name=server.name,
+                    summary=(
+                        f"'{server.name}' launches through package runner '{_command_name(server.command)}'; "
+                        "review the package or image source before connecting."
+                    ),
+                    details=[f"Source: {redact_text(package_runner_source)}"],
+                    remediation=(
+                        "Pin package versions or container digests where possible and review the source "
+                        "before running connected scans."
+                    ),
+                )
+            )
         command_name = _command_name(server.command)
         if command_name in _SHELL_WRAPPERS:
             findings.append(
@@ -610,6 +657,62 @@ def _missing_local_binary(server: ServerConfig) -> bool:
     if "/" in command or "\\" in command:
         return not Path(command).expanduser().exists()
     return False
+
+
+def _package_runner_source(server: ServerConfig) -> str | None:
+    command_name = _command_name(server.command)
+    if command_name not in _PACKAGE_RUNNERS:
+        return None
+    if command_name == "docker":
+        return _docker_image_source(server.args)
+    return _first_package_source_arg(server.args)
+
+
+def _first_package_source_arg(args: list[str]) -> str | None:
+    skip_next = False
+    for arg in args:
+        if skip_next:
+            return arg
+        if arg in {"--package", "--from", "-p"}:
+            skip_next = True
+            continue
+        if arg.startswith("-"):
+            continue
+        return arg
+    return None
+
+
+def _docker_image_source(args: list[str]) -> str | None:
+    if not args:
+        return None
+    index = 0
+    if args[0] in _DOCKER_SUBCOMMANDS:
+        index = 1
+    if len(args) > 1 and args[0] == "container" and args[1] == "run":
+        index = 2
+    while index < len(args):
+        arg = args[index]
+        if arg in {"--env", "-e", "--name", "--network", "--platform", "--volume", "-v", "--workdir", "-w"}:
+            index += 2
+            continue
+        if arg.startswith("--") and "=" not in arg:
+            index += 1
+            continue
+        if arg.startswith("-") and "=" not in arg:
+            index += 1
+            continue
+        return arg
+    return None
+
+
+def _server_definition_summary(server: ServerConfig) -> str:
+    if server.url:
+        return f"{server.transport.value} url={redact_text(server.url)}"
+    command = server.command or "missing-command"
+    source = _package_runner_source(server)
+    if source is not None:
+        return f"{server.transport.value} command={_command_name(command)} source={redact_text(source)}"
+    return f"{server.transport.value} command={_command_name(command)}"
 
 
 def _command_name(command: str | None) -> str:

@@ -75,6 +75,16 @@ def test_discover_reports_config_health_warnings(monkeypatch: pytest.MonkeyPatch
         command="node",
         args=["https://example.com/bootstrap.js"],
     )
+    package_runner_server = make_server_config(
+        name="package-runner",
+        command="npx",
+        args=["-y", "@modelcontextprotocol/server-filesystem"],
+    )
+    docker_runner_server = make_server_config(
+        name="docker-runner",
+        command="docker",
+        args=["run", "--rm", "ghcr.io/example/mcp-server:latest"],
+    )
     credential_server = make_server_config(
         name="credential-heavy",
         env_keys=["TOKEN", "SECRET"],
@@ -88,6 +98,8 @@ def test_discover_reports_config_health_warnings(monkeypatch: pytest.MonkeyPatch
             sse_server,
             shell_server,
             remote_arg_server,
+            package_runner_server,
+            docker_runner_server,
             credential_server,
         ],
     )
@@ -102,6 +114,8 @@ def test_discover_reports_config_health_warnings(monkeypatch: pytest.MonkeyPatch
     assert "'legacy-sse' declares a remote endpoint" in result.output
     assert "'shell-server' launches through shell wrapper 'bash'" in result.output
     assert "'remote-arg' command or args include a remote URL" in result.output
+    assert "'package-runner' launches through package runner 'npx'" in result.output
+    assert "'docker-runner' launches through package runner 'docker'" in result.output
     assert "'credential-heavy' references 3 credential key names" in result.output
 
 
@@ -120,6 +134,27 @@ def test_discover_reports_global_project_scope_conflicts(monkeypatch: pytest.Mon
     assert result.exit_code == 0
     assert "'github' appears 2 times" in result.output
     assert "'github' is configured in both global and project scopes" in result.output
+
+
+def test_discover_reports_conflicting_server_definitions(monkeypatch: pytest.MonkeyPatch) -> None:
+    npx_server = make_server_config(
+        name="search",
+        command="npx",
+        args=["-y", "@example/search-server"],
+    )
+    uvx_server = make_server_config(
+        name="search",
+        command="uvx",
+        args=["--from", "example-search-mcp", "search-mcp"],
+    ).model_copy(update={"config_path": "/tmp/other_config.json"})
+    monkeypatch.setattr(cli, "discover_all_configs", lambda clients: [npx_server, uvx_server])
+
+    result = CliRunner().invoke(cli.main, ["discover"])
+
+    assert result.exit_code == 0
+    assert "'search' has multiple command or URL definitions" in result.output
+    assert "'search' launches through package runner 'npx'" in result.output
+    assert "'search' launches through package runner 'uvx'" in result.output
 
 
 def test_run_scan_core_config_only_ignores_discovered_configs(monkeypatch: pytest.MonkeyPatch) -> None:
