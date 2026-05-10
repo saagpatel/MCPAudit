@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.5] - 2026-05-10
+
+### Added
+
+- Added an external field-report request packet with copy-paste contributor
+  instructions, redaction guidance, and maintainer triage steps.
+- Added tests that keep the request packet linked from public docs and aligned
+  with the external evidence issues.
+
+### Changed
+
+- Refreshed field-report, roadmap, beta-readiness, feedback, README, and release
+  metadata for the `1.5.5` outreach polish lane.
+
 ## [1.5.4] - 2026-05-10
 
 ### Added
@@ -484,7 +498,8 @@ real workstations; API surface may still shift before the `1.0.0` stable cut.
 - Risk score output with pass/warn/fail thresholds
 - `mcp-audit` CLI entry point
 
-[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.5.4...HEAD
+[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.5.5...HEAD
+[1.5.5]: https://github.com/saagpatel/MCPAudit/compare/v1.5.4...v1.5.5
 [1.5.4]: https://github.com/saagpatel/MCPAudit/compare/v1.5.3...v1.5.4
 [1.5.3]: https://github.com/saagpatel/MCPAudit/compare/v1.5.2...v1.5.3
 [1.5.2]: https://github.com/saagpatel/MCPAudit/compare/v1.5.1...v1.5.2

@@ -6,6 +6,7 @@ FEEDBACK_TEMPLATE = Path(".github/ISSUE_TEMPLATE/feedback.md")
 FIELD_REPORT_TEMPLATE = Path(".github/ISSUE_TEMPLATE/field_report.md")
 FEEDBACK_DOC = Path("docs/FEEDBACK-TO-FIXTURES.md")
 FIELD_REPORT_DOC = Path("docs/FIELD-REPORTS.md")
+FIELD_REPORT_REQUEST_DOC = Path("docs/EXTERNAL-FIELD-REPORT-REQUEST.md")
 
 
 def test_feedback_template_collects_fixture_ready_context() -> None:
@@ -82,6 +83,7 @@ def test_field_report_docs_track_external_intake_and_beta_bar() -> None:
     beta = Path("docs/BETA-READINESS.md").read_text()
     beta_evidence = Path("docs/BETA-READINESS-EVIDENCE.md").read_text()
     feedback = FEEDBACK_DOC.read_text()
+    request = FIELD_REPORT_REQUEST_DOC.read_text()
     roadmap = Path("docs/ROADMAP-NEXT.md").read_text()
     readme = Path("README.md").read_text()
 
@@ -94,14 +96,36 @@ def test_field_report_docs_track_external_intake_and_beta_bar() -> None:
     assert "https://github.com/saagpatel/MCPAudit/milestone/4" in beta
     assert "https://github.com/saagpatel/MCPAudit/milestone/4" in beta_evidence
     assert "https://github.com/saagpatel/MCPAudit/milestone/4" in feedback
+    assert "https://github.com/saagpatel/MCPAudit/milestone/4" in request
     assert "https://github.com/saagpatel/MCPAudit/milestone/4" in roadmap
     assert "https://github.com/saagpatel/MCPAudit/milestone/4" in readme
+    assert "docs/EXTERNAL-FIELD-REPORT-REQUEST.md" in doc
+    assert "docs/EXTERNAL-FIELD-REPORT-REQUEST.md" in beta
+    assert "docs/EXTERNAL-FIELD-REPORT-REQUEST.md" in beta_evidence
+    assert "docs/EXTERNAL-FIELD-REPORT-REQUEST.md" in feedback
+    assert "docs/EXTERNAL-FIELD-REPORT-REQUEST.md" in roadmap
+    assert "docs/EXTERNAL-FIELD-REPORT-REQUEST.md" in readme
     for issue_number in ("83", "84", "85"):
         issue_url = f"https://github.com/saagpatel/MCPAudit/issues/{issue_number}"
         assert issue_url in doc
         assert issue_url in beta
         assert issue_url in beta_evidence
         assert issue_url in feedback
+        assert issue_url in request
         assert issue_url in roadmap
-    assert "Ship `1.5.4` as polish instead of `1.6.0` or beta." in beta
+    assert "Ship `1.5.5` as polish instead of `1.6.0` or beta." in beta
     assert "dedicated public field-report issue template" in roadmap
+
+
+def test_external_field_report_request_is_safe_and_actionable() -> None:
+    text = FIELD_REPORT_REQUEST_DOC.read_text()
+
+    assert "mcp-audit scan --skip-connect --json mcp-audit-field-report.json" in text
+    assert "does not spawn MCP servers or contact remote endpoints" in text
+    assert "issues/new?template=field_report.md" in text
+    assert "Do not include" in text
+    assert "API keys, tokens, passwords" in text
+    assert "internal hostnames" in text
+    assert "Maintainer Triage" in text
+    assert "Confirm it was produced with `scan --skip-connect`" in text
+    assert "Do not change `risk_score.composite` from these reports alone" in text
