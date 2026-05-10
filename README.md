@@ -157,7 +157,8 @@ release risk without replacing external reports. See
 evidence-led `1.5` planning track. See `docs/BETA-READINESS-EVIDENCE.md` for
 the beta-readiness evidence and release decision. External beta-evidence reports
 are tracked in <https://github.com/saagpatel/MCPAudit/milestone/4>. See
-`docs/EXTERNAL-FIELD-REPORT-REQUEST.md` for the copy-paste contributor request.
+`docs/EXTERNAL-FIELD-REPORT-REQUEST.md` for the copy-paste contributor request,
+and `docs/EXTERNAL-OUTREACH-MESSAGES.md` for direct outreach messages.
 
 ## License
 

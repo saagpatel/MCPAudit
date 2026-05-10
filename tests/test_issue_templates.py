@@ -7,6 +7,7 @@ FIELD_REPORT_TEMPLATE = Path(".github/ISSUE_TEMPLATE/field_report.md")
 FEEDBACK_DOC = Path("docs/FEEDBACK-TO-FIXTURES.md")
 FIELD_REPORT_DOC = Path("docs/FIELD-REPORTS.md")
 FIELD_REPORT_REQUEST_DOC = Path("docs/EXTERNAL-FIELD-REPORT-REQUEST.md")
+FIELD_REPORT_OUTREACH_DOC = Path("docs/EXTERNAL-OUTREACH-MESSAGES.md")
 SOLO_EVIDENCE_DOC = Path("docs/SOLO-EVIDENCE.md")
 
 
@@ -130,6 +131,26 @@ def test_external_field_report_request_is_safe_and_actionable() -> None:
     assert "Maintainer Triage" in text
     assert "Confirm it was produced with `scan --skip-connect`" in text
     assert "Do not change `risk_score.composite` from these reports alone" in text
+
+
+def test_external_outreach_messages_are_safe_and_actionable() -> None:
+    text = FIELD_REPORT_OUTREACH_DOC.read_text()
+    readme = Path("README.md").read_text()
+    field_reports = FIELD_REPORT_DOC.read_text()
+    request = FIELD_REPORT_REQUEST_DOC.read_text()
+
+    assert "Direct Ask For First Tester" in text
+    assert "Direct Ask For Second Tester" in text
+    assert "Public Post" in text
+    assert "scan --skip-connect" in text
+    assert "should not spawn MCP servers or contact remote endpoints" in text
+    assert "meaningfully different setup or consumer path" in text
+    assert "credentials, private paths" in text
+    for issue_number in ("83", "84", "85"):
+        assert f"https://github.com/saagpatel/MCPAudit/issues/{issue_number}" in text
+    assert "docs/EXTERNAL-OUTREACH-MESSAGES.md" in readme
+    assert "docs/EXTERNAL-OUTREACH-MESSAGES.md" in field_reports
+    assert "docs/EXTERNAL-OUTREACH-MESSAGES.md" in request
 
 
 def test_solo_evidence_is_documented_without_weakening_external_gate() -> None:

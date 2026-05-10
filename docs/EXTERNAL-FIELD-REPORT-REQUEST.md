@@ -15,6 +15,8 @@ Tracking:
 - fixture conversion and beta decision:
   <https://github.com/saagpatel/MCPAudit/issues/85>
 
+Maintainer outreach copy lives in `docs/EXTERNAL-OUTREACH-MESSAGES.md`.
+
 ## Copy-Paste Request
 
 Please help MCPAudit validate its beta readiness by running one config-only
