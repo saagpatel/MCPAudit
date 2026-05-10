@@ -1,8 +1,8 @@
 # Beta And RC Readiness
 
 This document records the beta and release-candidate bar used for current
-`1.x` releases. MCPAudit `1.5.1` is a beta-readiness polish release, not a beta
-cut.
+`1.x` releases. MCPAudit `1.5.3` is a beta-readiness intake polish release, not
+a beta cut.
 
 ## Readiness Bar
 
@@ -28,14 +28,17 @@ cut.
   `uv run mypy .`.
 - Output-contract upgrade compatibility is fixture-tested for older report
   shapes and additive future fields. See `docs/OUTPUT-CONTRACT.md`.
+- Field-report intake is documented and has a dedicated public issue template.
+  See `docs/FIELD-REPORTS.md`.
 
 ## Current Decision
 
-Ship `1.5.1` as polish instead of `1.6.0` or beta.
+Ship `1.5.3` as polish instead of `1.6.0` or beta.
 
-The current evidence strengthens compatibility confidence, but it is still
-mostly local and fixture-based. Move to beta only after external redacted reports
-show that downstream consumers can safely rely on the current JSON/SARIF shapes.
+The current evidence strengthens compatibility confidence and makes external
+field-report intake easier, but it is still mostly local and fixture-based. Move
+to beta only after external redacted reports show that downstream consumers can
+safely rely on the current JSON/SARIF shapes.
 
 ## Verification Checklist
 

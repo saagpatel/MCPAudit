@@ -25,6 +25,12 @@ report should include:
 - confirmation that the redacted example can become a public fixture, or a note
   that private triage is needed first.
 
+The dedicated field-report issue template narrows this process for beta
+readiness. It asks for config-only output produced with
+`mcp-audit scan --skip-connect --json mcp-audit-field-report.json`, plus the
+setup shape and downstream consumer context needed to turn safe external reports
+into fixtures.
+
 ## Fixture Targets
 
 - Permission false positives or negatives: `tests/validation/servers/*.json`.
@@ -77,6 +83,25 @@ models a mixed status page input with config-health, non-tool risk, policy, and
 failed-connection signals.
 `examples/consumers/dashboard_summary.py` now emits status counts, max risk
 scores, policy failure count, and attention rows for status pages.
+
+### External Field Reports
+
+Current tracking doc: `docs/FIELD-REPORTS.md`
+
+Before using a beta label, collect at least two external redacted reports that
+exercise current JSON/SARIF output with real downstream consumers or real MCP
+client setup shapes. A useful report includes:
+
+- config-only MCPAudit output and version;
+- client names and approximate server counts;
+- config-health finding types and status counts;
+- whether Python, Node, dashboard, SARIF, or CI consumers parsed the report;
+- permission to turn the redacted shape into a public fixture.
+
+Turn accepted reports into the smallest fixture that preserves the observed
+shape. Keep connected-scan metadata, proprietary prompt/resource text, and
+security-sensitive false negatives out of public issues unless private
+disclosure has already cleared them.
 
 ### Stale Pin Cleanup
 

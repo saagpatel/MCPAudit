@@ -3,7 +3,9 @@
 from pathlib import Path
 
 FEEDBACK_TEMPLATE = Path(".github/ISSUE_TEMPLATE/feedback.md")
+FIELD_REPORT_TEMPLATE = Path(".github/ISSUE_TEMPLATE/field_report.md")
 FEEDBACK_DOC = Path("docs/FEEDBACK-TO-FIXTURES.md")
+FIELD_REPORT_DOC = Path("docs/FIELD-REPORTS.md")
 
 
 def test_feedback_template_collects_fixture_ready_context() -> None:
@@ -18,6 +20,7 @@ def test_feedback_template_collects_fixture_ready_context() -> None:
     assert "Dashboard or CI status-page integration" in text
     assert "## Expected regression assertion" in text
     assert "Prompt/resource `non_tool_risk` behavior should change" in text
+    assert "External redacted field report" in text
     assert "## Minimal redacted fixture" in text
     assert "## Fixture permission" in text
 
@@ -44,4 +47,45 @@ def test_feedback_docs_explain_public_fixture_intake() -> None:
     assert "https://github.com/saagpatel/MCPAudit/issues/59" in doc
     assert "https://github.com/saagpatel/MCPAudit/issues/60" in doc
     assert "https://github.com/saagpatel/MCPAudit/issues/61" in doc
+    assert "External Field Reports" in doc
+    assert "docs/FIELD-REPORTS.md" in doc
     assert "docs/FEEDBACK-TO-FIXTURES.md" in readme
+
+
+def test_field_report_template_collects_config_only_external_evidence() -> None:
+    text = FIELD_REPORT_TEMPLATE.read_text()
+
+    assert "Redacted field report" in text
+    assert "mcp-audit scan --skip-connect --json mcp-audit-field-report.json" in text
+    assert "MCPAudit version" in text
+    assert "Approximate server count" in text
+    assert "JSON/SARIF consumer compatibility check" in text
+    assert "Dashboard or CI ingestion check" in text
+    assert "## Expected fixture value" in text
+    assert "Beta-readiness evidence only" in text
+
+
+def test_field_report_template_preserves_safety_boundary() -> None:
+    text = FIELD_REPORT_TEMPLATE.read_text()
+
+    assert "avoids spawning MCP servers" in text
+    assert "contacting remote endpoints" in text
+    assert "Do not include" in text
+    assert "API keys, tokens, passwords" in text
+    assert "internal hostnames" in text
+    assert "private disclosure" in text
+    assert "SECURITY.md" in text
+
+
+def test_field_report_docs_track_external_intake_and_beta_bar() -> None:
+    doc = FIELD_REPORT_DOC.read_text()
+    beta = Path("docs/BETA-READINESS.md").read_text()
+    roadmap = Path("docs/ROADMAP-NEXT.md").read_text()
+
+    assert "## External Intake Path" in doc
+    assert "mcp-audit scan --skip-connect --json mcp-audit-field-report.json" in doc
+    assert ".github/ISSUE_TEMPLATE/field_report.md" in doc
+    assert "## Fixture Acceptance Bar" in doc
+    assert "at least two external redacted reports" in doc
+    assert "Ship `1.5.3` as polish instead of `1.6.0` or beta." in beta
+    assert "dedicated public field-report issue template" in roadmap
