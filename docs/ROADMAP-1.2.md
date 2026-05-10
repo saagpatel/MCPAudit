@@ -14,7 +14,7 @@ consume in CI and inventory systems without changing tool risk scoring.
 
 ### Structured Config Health
 
-Status: in progress.
+Status: shipped in `1.2.0`.
 
 `discover` and `scan` already show terminal config-health warnings. The next
 step is additive JSON output through top-level `config_health_findings`, so
@@ -29,10 +29,14 @@ Done when:
 - docs explain that config-health findings do not affect composite risk;
 - release notes call out the additive output field.
 
+## Post-1.2 Follow-Ups
+
+- Optional policy gates for config-health findings shipped after `1.2.0` as
+  an explicit opt-in gate. Existing broad `fail_on.severity` policies do not
+  include config-health findings by default.
+
 ## Candidate Follow-Ups
 
-- Optional policy gates for config-health findings after users validate the
-  signal.
 - Consumer examples that summarize config-health findings.
 - Additional config diagnostics for missing local binaries and conflicting
   project/global scopes, if fixture-backed examples justify them.

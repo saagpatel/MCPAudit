@@ -2,6 +2,7 @@
 fail_on:
   severity: high
   injection: medium
+  config_health: high
 deny:
   permissions:
     - exfiltration

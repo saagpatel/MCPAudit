@@ -114,6 +114,7 @@ fail_on:
   severity: high
   injection: medium
   capabilities: medium
+  config_health: medium
   drift: true
 require:
   pins:
