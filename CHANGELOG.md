@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added config-health diagnostics for missing local stdio command paths and
+  server names that conflict across global and project scopes.
+- Added a GitHub Actions example for `fail_on.config_health` and expanded JSON
+  consumer examples with config-health severity summaries.
+- Added `docs/ROADMAP-NEXT.md` for the post-`1.3.0` roadmap.
+
 ## [1.3.0] - 2026-05-10
 
 ### Added

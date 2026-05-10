@@ -48,7 +48,8 @@ injection findings.
 diagnostics. Findings include `finding_type`, `severity`, optional
 `server_name`, `summary`, `details`, and `remediation`. Current finding types
 include duplicate server names, missing stdio commands, deprecated SSE
-transports, shell-wrapper launches, remote endpoints, remote URL arguments, and
+transports, shell-wrapper launches, remote endpoints, remote URL arguments,
+missing local command paths, project/global server-name conflicts, and
 credential-heavy configs. These findings do not affect `risk_score.composite`.
 Policies may opt in to failing on this signal with `fail_on.config_health`; the
 default broad `fail_on.severity` shortcut does not include config-health

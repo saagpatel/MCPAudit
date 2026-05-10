@@ -21,6 +21,10 @@ def summarize(report: dict[str, Any]) -> list[dict[str, Any]]:
         config_health_findings = config_health_by_server.get(server_name, [])
         risk_score = audit.get("risk_score") or {}
         non_tool_risk = audit.get("non_tool_risk") or {}
+        config_health_by_severity: dict[str, int] = {}
+        for finding in config_health_findings:
+            severity = str(finding.get("severity", "unknown"))
+            config_health_by_severity[severity] = config_health_by_severity.get(severity, 0) + 1
         non_tool_targets = [
             {
                 "target_type": finding.get("target_type"),
@@ -41,6 +45,7 @@ def summarize(report: dict[str, Any]) -> list[dict[str, Any]]:
                 "tool_risk": risk_score.get("composite", 0),
                 "non_tool_risk": non_tool_risk.get("composite", 0),
                 "config_health_findings": len(config_health_findings),
+                "config_health_by_severity": config_health_by_severity,
                 "config_health_types": [finding.get("finding_type") for finding in config_health_findings],
                 "permission_findings": len(audit.get("permissions", [])),
                 "capability_findings": len(audit.get("capability_findings", [])),

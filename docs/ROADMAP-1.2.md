@@ -3,6 +3,9 @@
 MCPAudit `1.2` focuses on adoption depth: make configuration health easier to
 consume in CI and inventory systems without changing tool risk scoring.
 
+This is a historical roadmap for the `1.2` line. The current forward roadmap is
+`docs/ROADMAP-NEXT.md`.
+
 ## Goals
 
 - Keep `risk_score.composite` stable.
@@ -40,6 +43,8 @@ Done when:
 - Consumer examples that summarize config-health findings.
 - Additional config diagnostics for missing local binaries and conflicting
   project/global scopes, if fixture-backed examples justify them.
+
+These follow-ups moved into the post-`1.3.0` roadmap and implementation track.
 
 ## Non-Goals
 

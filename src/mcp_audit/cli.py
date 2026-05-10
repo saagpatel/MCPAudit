@@ -439,6 +439,18 @@ def _duplicate_server_config_counts(servers: list[ServerConfig]) -> dict[str, in
     return {name: count for name, count in counts.items() if count > 1}
 
 
+def _conflicting_scope_server_names(servers: list[ServerConfig]) -> dict[str, list[str]]:
+    scopes_by_name: dict[str, set[str]] = {}
+    for server in servers:
+        scope = "global" if server.project_path is None else f"project:{server.project_path}"
+        scopes_by_name.setdefault(server.name, set()).add(scope)
+    return {
+        name: sorted(scopes)
+        for name, scopes in scopes_by_name.items()
+        if "global" in scopes and any(scope.startswith("project:") for scope in scopes)
+    }
+
+
 def _render_config_health_warnings(servers: list[ServerConfig]) -> None:
     findings = _config_health_findings(servers)
     if not findings:
@@ -467,6 +479,24 @@ def _config_health_findings(servers: list[ServerConfig]) -> list[ConfigHealthFin
             )
         )
 
+    for name, scopes in sorted(_conflicting_scope_server_names(servers).items()):
+        findings.append(
+            ConfigHealthFinding(
+                finding_type="conflicting_scope_server_name",
+                severity=ConfigHealthSeverity.MEDIUM,
+                server_name=name,
+                summary=(
+                    f"'{name}' is configured in both global and project scopes; "
+                    "review which entry should be authoritative before pinning."
+                ),
+                details=scopes,
+                remediation=(
+                    "Rename one server entry or remove the unintended duplicate so reviews and pins "
+                    "refer to the intended scope."
+                ),
+            )
+        )
+
     for server in servers:
         if server.transport == TransportType.STDIO and not server.command:
             findings.append(
@@ -477,6 +507,22 @@ def _config_health_findings(servers: list[ServerConfig]) -> list[ConfigHealthFin
                     summary=f"'{server.name}' uses stdio but has no command; connected scans will fail.",
                     details=["stdio transport requires a configured command."],
                     remediation="Add a command for the server or remove the incomplete config entry.",
+                )
+            )
+        if _missing_local_binary(server):
+            findings.append(
+                ConfigHealthFinding(
+                    finding_type="missing_local_binary",
+                    severity=ConfigHealthSeverity.HIGH,
+                    server_name=server.name,
+                    summary=(
+                        f"'{server.name}' command path does not exist locally; connected scans will fail."
+                    ),
+                    details=[f"Configured command: {server.command}"],
+                    remediation=(
+                        "Install the referenced local binary, correct the command path, or remove the stale "
+                        "server entry."
+                    ),
                 )
             )
         if server.transport == TransportType.SSE:
@@ -555,6 +601,15 @@ def _config_health_findings(servers: list[ServerConfig]) -> list[ConfigHealthFin
 
 def _config_command_line(server: ServerConfig) -> str:
     return " ".join(part for part in [server.command, *server.args] if part)
+
+
+def _missing_local_binary(server: ServerConfig) -> bool:
+    if server.transport != TransportType.STDIO or not server.command:
+        return False
+    command = server.command.strip()
+    if "/" in command or "\\" in command:
+        return not Path(command).expanduser().exists()
+    return False
 
 
 def _command_name(command: str | None) -> str:
