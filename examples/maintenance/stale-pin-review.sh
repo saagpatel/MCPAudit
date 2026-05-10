@@ -7,6 +7,7 @@ mkdir -p "$out_dir"
 mcp-audit discover > "$out_dir/discovered-servers.txt"
 mcp-audit pin --status --json > "$out_dir/pin-status.json"
 mcp-audit pin --stale --json > "$out_dir/stale-pins.json"
+mcp-audit pin --clear-stale --json > "$out_dir/clear-stale-preview.json"
 
 cat <<'MSG'
 MCPAudit stale pin review written.
@@ -15,6 +16,11 @@ Review stale-pins.json first. If a listed server was intentionally removed,
 clear only that server:
 
   mcp-audit pin --clear <server>
+
+If every stale server in clear-stale-preview.json was intentionally removed,
+apply the reviewed bulk cleanup:
+
+  mcp-audit pin --clear-stale --apply
 
 No pins were changed by this script.
 MSG

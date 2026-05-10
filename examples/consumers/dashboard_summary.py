@@ -16,15 +16,18 @@ def summarize(report: dict[str, Any]) -> dict[str, Any]:
         config_health_by_server.setdefault(finding.get("server_name"), []).append(finding)
 
     servers: list[dict[str, Any]] = []
+    status_counts: dict[str, int] = {}
     for audit in report.get("audits", []):
         server_name = audit.get("server", {}).get("name")
         config_findings = config_health_by_server.get(server_name, [])
         risk_score = audit.get("risk_score") or {}
         non_tool_risk = audit.get("non_tool_risk") or {}
+        status = audit.get("connection_status") or "unknown"
+        status_counts[status] = status_counts.get(status, 0) + 1
         servers.append(
             {
                 "server": server_name,
-                "status": audit.get("connection_status"),
+                "status": status,
                 "tool_risk": risk_score.get("composite", 0),
                 "non_tool_risk": non_tool_risk.get("composite", 0),
                 "config_health": _count_by(config_findings, "severity"),
@@ -32,11 +35,18 @@ def summarize(report: dict[str, Any]) -> dict[str, Any]:
             }
         )
 
+    policy_result = report.get("policy_result") or {}
+    policy_violations = policy_result.get("violations", [])
     return {
         "servers_discovered": report.get("servers_discovered", 0),
         "servers_failed": report.get("servers_failed", 0),
-        "policy_passed": (report.get("policy_result") or {}).get("passed"),
+        "status_counts": status_counts,
+        "policy_passed": policy_result.get("passed"),
+        "policy_failure_count": len(policy_violations),
+        "max_tool_risk": max((server["tool_risk"] for server in servers), default=0),
+        "max_non_tool_risk": max((server["non_tool_risk"] for server in servers), default=0),
         "config_health": _count_by(report.get("config_health_findings", []), "severity"),
+        "attention": _attention_rows(servers),
         "servers": servers,
     }
 
@@ -54,6 +64,32 @@ def _count_by(findings: list[dict[str, Any]], field: str) -> dict[str, int]:
         key = str(finding.get(field, "unknown"))
         counts[key] = counts.get(key, 0) + 1
     return counts
+
+
+def _attention_rows(servers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for server in servers:
+        reasons: list[str] = []
+        if server["status"] not in {"connected", "skipped"}:
+            reasons.append(f"connection:{server['status']}")
+        if server["policy_failures"]:
+            reasons.append("policy")
+        if server["config_health"]:
+            reasons.append("config_health")
+        if server["tool_risk"] >= 7:
+            reasons.append("tool_risk")
+        if server["non_tool_risk"] >= 5:
+            reasons.append("non_tool_risk")
+        if reasons:
+            rows.append(
+                {
+                    "server": server["server"],
+                    "reasons": reasons,
+                    "tool_risk": server["tool_risk"],
+                    "non_tool_risk": server["non_tool_risk"],
+                }
+            )
+    return rows
 
 
 def main(argv: list[str]) -> int:

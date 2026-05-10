@@ -741,6 +741,13 @@ main.add_command(serve_command)
 @main.command("pin")
 @click.option("--server", "server_name", default=None, help="Pin only this server by name.")
 @click.option("--clear", "clear_server", default=None, metavar="NAME", help="Remove pins for a server.")
+@click.option(
+    "--clear-stale",
+    "clear_stale",
+    is_flag=True,
+    default=False,
+    help="Review and optionally remove all stale server pin baselines.",
+)
 @click.option("--status", is_flag=True, default=False, help="Show pin coverage summary.")
 @click.option(
     "--stale",
@@ -761,7 +768,7 @@ main.add_command(serve_command)
     "apply_refresh",
     is_flag=True,
     default=False,
-    help="Write a reviewed --refresh baseline.",
+    help="Write a reviewed --refresh baseline or --clear-stale cleanup.",
 )
 @click.option(
     "--json",
@@ -780,6 +787,7 @@ main.add_command(serve_command)
 def pin_command(
     server_name: str | None,
     clear_server: str | None,
+    clear_stale: bool,
     status: bool,
     stale: bool,
     refresh_server: str | None,
@@ -792,14 +800,17 @@ def pin_command(
 
     store = PinStore(path=Path(pin_file) if pin_file else DEFAULT_PIN_PATH)
 
-    if json_status and not (status or stale or refresh_server):
-        raise click.ClickException("--json can only be used with --status, --stale, or --refresh.")
+    if json_status and not (status or stale or clear_stale or refresh_server):
+        raise click.ClickException(
+            "--json can only be used with --status, --stale, --clear-stale, or --refresh."
+        )
 
     selected_actions = sum(
         bool(action)
         for action in (
             server_name,
             clear_server,
+            clear_stale,
             status,
             stale,
             refresh_server,
@@ -807,11 +818,11 @@ def pin_command(
     )
     if selected_actions > 1:
         raise click.ClickException(
-            "--server, --clear, --status, --stale, and --refresh are mutually exclusive."
+            "--server, --clear, --clear-stale, --status, --stale, and --refresh are mutually exclusive."
         )
 
-    if apply_refresh and not refresh_server:
-        raise click.ClickException("--apply can only be used with --refresh.")
+    if apply_refresh and not (refresh_server or clear_stale):
+        raise click.ClickException("--apply can only be used with --refresh or --clear-stale.")
 
     if clear_server:
         store.remove_server(clear_server)
@@ -824,6 +835,10 @@ def pin_command(
 
     if stale:
         _render_pin_stale(store, json_status)
+        return
+
+    if clear_stale:
+        _render_pin_clear_stale(store, json_status, apply_refresh)
         return
 
     if refresh_server:
@@ -1132,6 +1147,78 @@ def _render_pin_stale(store: object, json_status: bool) -> None:
 
     console.print(table)
     console.print("[yellow]Review only; no pins were changed.[/yellow]")
+
+
+def _render_pin_clear_stale(store: object, json_status: bool, apply_clear: bool) -> None:
+    from mcp_audit.pinning import PinStore as PS
+
+    assert isinstance(store, PS)
+    discovered = discover_all_configs(None)
+    discovered_names = {server.name for server in discovered}
+    stale = store.stale_baselines(discovered_names)
+    removed_names = [status.server_name for status in stale] if apply_clear else []
+
+    if apply_clear:
+        for server_name in removed_names:
+            store.remove_server(server_name)
+
+    if json_status:
+        import json
+
+        payload = {
+            "pin_file": str(store.path),
+            "discovered_server_count": len(discovered_names),
+            "pinned_server_count": len(store.status()) + len(removed_names),
+            "stale_server_count": len(stale),
+            "applied": apply_clear,
+            "removed_server_count": len(removed_names),
+            "removed_servers": removed_names,
+            "stale_servers": [
+                {
+                    "name": status.server_name,
+                    "tool_count": status.tool_count,
+                    "oldest_pinned_at": _datetime_or_none(status.oldest_pinned_at),
+                    "newest_pinned_at": _datetime_or_none(status.newest_pinned_at),
+                    "age": _pin_age(status.newest_pinned_at),
+                    "reason": status.reason,
+                    "remediation": status.remediation,
+                }
+                for status in stale
+            ],
+        }
+        click.echo(json.dumps(payload, indent=2, sort_keys=True))
+        return
+
+    console.print(f"[bold]Stale pin cleanup review:[/bold] {len(stale)} server(s) not found")
+    console.print(f"[dim]Pin file: {store.path}[/dim]")
+
+    if not stale:
+        console.print("[green]No stale server baselines found.[/green]")
+        return
+
+    from rich.table import Table
+
+    table = Table(show_header=True)
+    table.add_column("Server", style="cyan")
+    table.add_column("Tools", justify="right")
+    table.add_column("Last pin")
+    table.add_column("Age")
+
+    for status in stale:
+        table.add_row(
+            status.server_name,
+            str(status.tool_count),
+            _datetime_or_unknown(status.newest_pinned_at),
+            _pin_age(status.newest_pinned_at),
+        )
+
+    console.print(table)
+
+    if not apply_clear:
+        console.print("[yellow]Review complete; no pins were changed. Rerun with --apply to clear.[/yellow]")
+        return
+
+    console.print(f"[green]Removed {len(removed_names)} stale server baseline(s).[/green]")
 
 
 def _datetime_or_none(value: datetime | None) -> str | None:

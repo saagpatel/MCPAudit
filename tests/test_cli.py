@@ -424,7 +424,7 @@ def test_pin_rejects_apply_without_refresh() -> None:
     result = CliRunner().invoke(cli.main, ["pin", "--apply"])
 
     assert result.exit_code == 1
-    assert "--apply can only be used with --refresh" in result.output
+    assert "--apply can only be used with --refresh or --clear-stale" in result.output
 
 
 def test_pin_clear_removes_intentionally_removed_server(tmp_path: Path) -> None:
@@ -512,3 +512,53 @@ def test_pin_stale_json_reports_removed_server_without_writing(
     assert "pin --clear" in payload["stale_servers"][0]["remediation"]
     refreshed = PinStore(path=pin_file)
     assert refreshed.tool_count("removed") == 1
+
+
+def test_pin_clear_stale_reviews_removed_servers_without_writing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    pin_file = tmp_path / "pins.yaml"
+    store = PinStore(path=pin_file)
+    store.pin_server("configured", [make_tool("read_file")])
+    store.pin_server("removed-a", [make_tool("write_file")])
+    store.pin_server("removed-b", [make_tool("delete_file")])
+    monkeypatch.setattr(cli, "discover_all_configs", lambda clients: [make_server_config(name="configured")])
+
+    result = CliRunner().invoke(cli.main, ["pin", "--clear-stale", "--pin-file", str(pin_file)])
+
+    assert result.exit_code == 0
+    assert "Stale pin cleanup review:" in result.output
+    assert "removed-a" in result.output
+    assert "removed-b" in result.output
+    assert "no pins were changed" in result.output
+    refreshed = PinStore(path=pin_file)
+    assert refreshed.tool_count("configured") == 1
+    assert refreshed.tool_count("removed-a") == 1
+    assert refreshed.tool_count("removed-b") == 1
+
+
+def test_pin_clear_stale_json_applies_reviewed_cleanup(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    pin_file = tmp_path / "pins.yaml"
+    store = PinStore(path=pin_file)
+    store.pin_server("configured", [make_tool("read_file")])
+    store.pin_server("removed-a", [make_tool("write_file")])
+    store.pin_server("removed-b", [make_tool("delete_file")])
+    monkeypatch.setattr(cli, "discover_all_configs", lambda clients: [make_server_config(name="configured")])
+
+    result = CliRunner().invoke(
+        cli.main,
+        ["pin", "--clear-stale", "--json", "--apply", "--pin-file", str(pin_file)],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["applied"] is True
+    assert payload["stale_server_count"] == 2
+    assert payload["removed_server_count"] == 2
+    assert payload["removed_servers"] == ["removed-a", "removed-b"]
+    refreshed = PinStore(path=pin_file)
+    assert refreshed.tool_count("configured") == 1
+    assert refreshed.tool_count("removed-a") == 0
+    assert refreshed.tool_count("removed-b") == 0

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added `mcp-audit pin --clear-stale` for dry-run bulk stale pin cleanup, with
+  `--apply` required before removing baselines.
+- Added a documented combined-score proposal for future prompt/resource scoring
+  migration without changing `risk_score.composite`.
+
+### Changed
+
+- Expanded the dashboard JSON consumer summary with status counts, max risk
+  values, policy failure count, and attention rows.
+
 ## [1.4.2] - 2026-05-10
 
 ### Added

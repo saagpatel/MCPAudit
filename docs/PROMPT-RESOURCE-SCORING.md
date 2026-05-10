@@ -29,6 +29,8 @@ are reportable, policy-gatable, and summarized in `non_tool_risk`, while
 composite score semantics remain stable.
 
 See `docs/SCORING-MIGRATION.md` for the migration path.
+See `docs/COMPOSITE-SCORING-PROPOSAL.md` for a documented future combined-score
+proposal that keeps current `risk_score.composite` semantics unchanged.
 
 ## Future Design Bar
 
@@ -36,6 +38,7 @@ Before prompt/resource findings affect the composite score, MCPAudit should add:
 
 - documented weighting rules for tool, prompt, and resource targets;
 - a migration note for CI users who gate on `risk_score.composite`.
+- output-contract fixtures for any additive combined score field.
 
 ## Calibration Set
 
