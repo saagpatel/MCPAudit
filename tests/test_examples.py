@@ -242,11 +242,16 @@ def test_evidence_intake_doc_tracks_next_milestone() -> None:
     roadmap = Path("docs/ROADMAP-NEXT.md").read_text()
     intake = Path("docs/1.5-EVIDENCE-INTAKE.md").read_text()
     decision = Path("docs/1.5-RELEASE-DECISION.md").read_text()
+    beta_evidence = Path("docs/BETA-READINESS-EVIDENCE.md").read_text()
 
     assert "docs/1.5-EVIDENCE-INTAKE.md" in readme
+    assert "docs/BETA-READINESS-EVIDENCE.md" in readme
     assert "docs/1.5-EVIDENCE-INTAKE.md" in roadmap
     assert "docs/1.5-RELEASE-DECISION.md" in roadmap
+    assert "docs/BETA-READINESS-EVIDENCE.md" in roadmap
     assert "https://github.com/saagpatel/MCPAudit/milestone/1" in intake
+    assert "https://github.com/saagpatel/MCPAudit/milestone/2" in beta_evidence
     assert "ship `1.5.0` as adoption hardening, not beta" in decision
+    assert "Ship `1.5.1` as polish instead of `1.6.0`" in beta_evidence
     for issue_number in ("66", "67", "68", "69"):
         assert f"https://github.com/saagpatel/MCPAudit/issues/{issue_number}" in intake

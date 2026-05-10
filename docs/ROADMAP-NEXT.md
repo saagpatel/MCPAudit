@@ -1,14 +1,15 @@
 # MCPAudit Next Roadmap
 
-MCPAudit `1.5.0` is prepared with structured config-health findings, policy
+MCPAudit `1.5.1` is prepared with structured config-health findings, policy
 gates, prompt/resource non-tool risk reporting, reviewed stale pin cleanup,
 dashboard-consumer improvements, copy-pasteable adoption examples, adoption
 smoke coverage, redacted config-health fixtures, and expanded prompt/resource
-scoring evidence. The next line should collect external reports before changing
-scoring semantics.
+scoring evidence. It also adds output-contract upgrade compatibility coverage.
+The next line should collect external reports before changing scoring semantics.
 
 Tracked `1.5` evidence-intake work lives in `docs/1.5-EVIDENCE-INTAKE.md`,
 with the release decision in `docs/1.5-RELEASE-DECISION.md`.
+Beta-readiness evidence lives in `docs/BETA-READINESS-EVIDENCE.md`.
 
 ## 1. Config Health Depth
 
@@ -95,6 +96,22 @@ Shipped through `1.5.0`:
 
 Completed fixture/proposal issue:
 <https://github.com/saagpatel/MCPAudit/issues/61>.
+
+## 5. Beta Readiness
+
+Status: polish shipped in `1.5.1`.
+
+Shipped through `1.5.1`:
+
+- output-contract upgrade compatibility tests for older report shapes;
+- tolerance test for future additive report fields;
+- config-only evidence notes from real local MCP setup shapes;
+- release decision to ship `1.5.1` polish rather than `1.6.0` beta prep.
+
+Candidate follow-ups:
+
+- collect at least two external redacted reports before using a beta label;
+- turn any external output-consumer friction into compatibility fixtures.
 
 ## Verification Bar
 

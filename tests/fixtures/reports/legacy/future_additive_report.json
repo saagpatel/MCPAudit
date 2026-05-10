@@ -1,0 +1,65 @@
+{
+  "scan_timestamp": "2026-05-01T09:10:00Z",
+  "hostname": "future-host",
+  "os_platform": "Darwin",
+  "servers_discovered": 1,
+  "servers_connected": 1,
+  "servers_failed": 0,
+  "total_tools": 1,
+  "high_risk_servers": 0,
+  "future_report_field": {
+    "ignored_by_current_model": true
+  },
+  "audits": [
+    {
+      "server": {
+        "name": "future-docs",
+        "client": "claude_code",
+        "config_path": "/tmp/future-mcp.json",
+        "command": "python",
+        "args": ["server.py"],
+        "env_keys": [],
+        "future_server_field": "ignored"
+      },
+      "connection_status": "connected",
+      "connection_error": null,
+      "tools": [
+        {
+          "name": "search_docs",
+          "description": "Search documentation.",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string"
+              }
+            }
+          },
+          "annotations": null,
+          "future_tool_field": "ignored"
+        }
+      ],
+      "permissions": [
+        {
+          "category": "network",
+          "confidence": "high",
+          "evidence": ["search"],
+          "tool_name": "search_docs",
+          "future_finding_field": "ignored"
+        }
+      ],
+      "risk_score": {
+        "composite": 2.0,
+        "file_access": 0.0,
+        "network_access": 2.0,
+        "shell_execution": 0.0,
+        "destructive": 0.0,
+        "exfiltration": 0.0
+      },
+      "has_annotations": false,
+      "annotation_coverage": 0.0,
+      "future_audit_field": "ignored"
+    }
+  ],
+  "scan_duration_seconds": 0.2
+}

@@ -1,7 +1,8 @@
 # Beta And RC Readiness
 
-This document records the beta and release-candidate bar used before stable
-`1.0.0`.
+This document records the beta and release-candidate bar used for current
+`1.x` releases. MCPAudit `1.5.1` is a beta-readiness polish release, not a beta
+cut.
 
 ## Readiness Bar
 
@@ -14,6 +15,8 @@ This document records the beta and release-candidate bar used before stable
   current behavior without aspirational claims.
 - Known limitations are documented instead of implied away.
 - Clean `uvx` and `pip` installs can run `mcp-audit --version`.
+- At least two external redacted reports confirm the current output contract is
+  stable for downstream consumers before a beta label is used.
 
 ## Current Limitations
 
@@ -23,6 +26,16 @@ This document records the beta and release-candidate bar used before stable
   `docs/PIN-MAINTENANCE.md`.
 - Whole-repo strict typing now passes and the canonical type gate is
   `uv run mypy .`.
+- Output-contract upgrade compatibility is fixture-tested for older report
+  shapes and additive future fields. See `docs/OUTPUT-CONTRACT.md`.
+
+## Current Decision
+
+Ship `1.5.1` as polish instead of `1.6.0` or beta.
+
+The current evidence strengthens compatibility confidence, but it is still
+mostly local and fixture-based. Move to beta only after external redacted reports
+show that downstream consumers can safely rely on the current JSON/SARIF shapes.
 
 ## Verification Checklist
 

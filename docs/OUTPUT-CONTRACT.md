@@ -93,6 +93,11 @@ validate that fixtures still load through the current Pydantic models, generate
 SARIF with the expected stable rules, and match the golden output-contract
 snapshot in `tests/fixtures/reports/output_contract_snapshot.json`.
 
+Upgrade compatibility fixtures in `tests/fixtures/reports/legacy/` cover older
+report shapes that predate additive prompt/resource and config-health fields.
+They also verify that future additive fields are ignored by the current model,
+matching the `1.x` compatibility rule for tolerant downstream consumers.
+
 ## CI Examples
 
 Write SARIF for GitHub code scanning:

@@ -1,0 +1,30 @@
+{
+  "scan_timestamp": "2026-05-01T09:05:00Z",
+  "hostname": "legacy-host",
+  "os_platform": "Darwin",
+  "servers_discovered": 1,
+  "servers_connected": 0,
+  "servers_failed": 1,
+  "total_tools": 0,
+  "high_risk_servers": 0,
+  "audits": [
+    {
+      "server": {
+        "name": "missing-server",
+        "client": "claude_code",
+        "config_path": "/tmp/legacy-mcp.json",
+        "command": "missing-command",
+        "args": [],
+        "env_keys": []
+      },
+      "connection_status": "failed",
+      "connection_error": "command not found",
+      "tools": [],
+      "permissions": [],
+      "risk_score": null,
+      "has_annotations": false,
+      "annotation_coverage": 0.0
+    }
+  ],
+  "scan_duration_seconds": 0.1
+}

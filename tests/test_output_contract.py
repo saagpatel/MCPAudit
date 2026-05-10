@@ -16,6 +16,7 @@ FIXTURES = [
     Path("tests/fixtures/reports/policy_failure_report.json"),
     Path("tests/fixtures/reports/prompt_resource_report.json"),
 ]
+LEGACY_FIXTURES = sorted(Path("tests/fixtures/reports/legacy").glob("*.json"))
 
 
 def test_sample_json_report_matches_current_model() -> None:
@@ -88,6 +89,31 @@ def test_output_contract_golden_snapshot() -> None:
     }
     expected = json.loads(Path("tests/fixtures/reports/output_contract_snapshot.json").read_text())
     assert snapshot == expected
+
+
+def test_legacy_reports_load_through_current_model() -> None:
+    assert LEGACY_FIXTURES
+    for fixture in LEGACY_FIXTURES:
+        report = AuditReport.model_validate_json(fixture.read_text())
+        dumped = report.model_dump(mode="json")
+        assert report.scan_timestamp
+        assert "config_health_findings" in dumped
+        assert "policy_result" in dumped
+        for audit in report.audits:
+            assert isinstance(audit.capability_findings, list)
+            assert isinstance(audit.injection_findings, list)
+            assert isinstance(audit.drift_findings, list)
+
+
+def test_future_additive_report_fields_are_ignored() -> None:
+    fixture = Path("tests/fixtures/reports/legacy/future_additive_report.json")
+    report = AuditReport.model_validate_json(fixture.read_text())
+    dumped = report.model_dump(mode="json")
+
+    assert "future_report_field" not in dumped
+    assert "future_audit_field" not in dumped["audits"][0]
+    assert "future_server_field" not in dumped["audits"][0]["server"]
+    assert "future_finding_field" not in dumped["audits"][0]["permissions"][0]
 
 
 def _fixture_signature(fixture: Path) -> dict[str, Any]:
