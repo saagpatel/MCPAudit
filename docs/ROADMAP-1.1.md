@@ -28,7 +28,8 @@ Done when:
 - policy examples show how to gate on prompt/resource findings without relying
   on composite score changes.
 
-Follow-up calibration should continue collecting false-positive and
+Follow-up calibration now has dedicated prompt/resource cases in
+`tests/validation/non_tool_cases.json`. Continue collecting false-positive and
 false-negative examples before any policy default gates on `non_tool_risk`.
 
 ### Policy Packs
@@ -59,8 +60,8 @@ baselines.
 Add tests and examples for consumers that parse MCPAudit JSON/SARIF artifacts.
 
 Status: JSON consumers now have a generated schema at
-`examples/schemas/audit-report.schema.json`, and tests compare it to the live
-report model.
+`examples/schemas/audit-report.schema.json`, runnable Python and Node examples
+in `examples/consumers/`, and tests compare the schema to the live report model.
 
 Done when example CI files parse cleanly, output-contract fixtures cover the
 fields used by those examples, and consumers have stable schema guidance.
