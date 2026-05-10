@@ -4,6 +4,9 @@ MCPAudit needs two external redacted field reports before any beta label is
 used. This request is safe by default: it asks for config-only output, so
 MCPAudit does not spawn MCP servers or contact remote endpoints.
 
+Solo validation lives in `docs/SOLO-EVIDENCE.md`. It is useful for local
+confidence, but it does not close the external evidence requirement.
+
 Tracking:
 
 - milestone: <https://github.com/saagpatel/MCPAudit/milestone/4>

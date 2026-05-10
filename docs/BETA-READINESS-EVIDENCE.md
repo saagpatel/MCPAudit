@@ -8,6 +8,10 @@ field-report fixtures, documents how to collect external redacted field reports
 safely, tracks the remaining external evidence issues, and includes a
 copy-paste request packet for contributors.
 
+Solo multi-environment checks are tracked in `docs/SOLO-EVIDENCE.md`. They can
+reduce install and documentation risk, but they do not replace the two external
+redacted reports required before beta.
+
 Tracked milestone: <https://github.com/saagpatel/MCPAudit/milestone/2>
 Field-report milestone: <https://github.com/saagpatel/MCPAudit/milestone/3>
 External field-evidence milestone:

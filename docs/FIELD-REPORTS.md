@@ -32,6 +32,11 @@ External evidence issues:
 Contributor request packet:
 `docs/EXTERNAL-FIELD-REPORT-REQUEST.md`.
 
+Solo validation is tracked separately in `docs/SOLO-EVIDENCE.md`. It can
+exercise published-package installs, clean virtual environments, and config-only
+report parsing, but it does not replace the two external redacted reports
+required for beta.
+
 ## Evidence Captured
 
 The current field-report fixtures cover:

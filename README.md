@@ -150,6 +150,8 @@ See `docs/FEEDBACK-TO-FIXTURES.md` for turning false positives, missing
 detections, output issues, and pin lifecycle feedback into safe regression
 fixtures. See `docs/FIELD-REPORTS.md` for the redacted field-report evidence
 path, public field-report issue template, and consumer-contract coverage. See
+`docs/SOLO-EVIDENCE.md` for solo multi-environment evidence that can reduce
+release risk without replacing external reports. See
 `docs/ROADMAP-NEXT.md` for the current post-`1.5.5` roadmap. See
 `docs/1.5-EVIDENCE-INTAKE.md` for the current
 evidence-led `1.5` planning track. See `docs/BETA-READINESS-EVIDENCE.md` for

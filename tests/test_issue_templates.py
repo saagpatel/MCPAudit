@@ -7,6 +7,7 @@ FIELD_REPORT_TEMPLATE = Path(".github/ISSUE_TEMPLATE/field_report.md")
 FEEDBACK_DOC = Path("docs/FEEDBACK-TO-FIXTURES.md")
 FIELD_REPORT_DOC = Path("docs/FIELD-REPORTS.md")
 FIELD_REPORT_REQUEST_DOC = Path("docs/EXTERNAL-FIELD-REPORT-REQUEST.md")
+SOLO_EVIDENCE_DOC = Path("docs/SOLO-EVIDENCE.md")
 
 
 def test_feedback_template_collects_fixture_ready_context() -> None:
@@ -129,3 +130,22 @@ def test_external_field_report_request_is_safe_and_actionable() -> None:
     assert "Maintainer Triage" in text
     assert "Confirm it was produced with `scan --skip-connect`" in text
     assert "Do not change `risk_score.composite` from these reports alone" in text
+
+
+def test_solo_evidence_is_documented_without_weakening_external_gate() -> None:
+    text = SOLO_EVIDENCE_DOC.read_text()
+    readme = Path("README.md").read_text()
+    field_reports = FIELD_REPORT_DOC.read_text()
+    beta_evidence = Path("docs/BETA-READINESS-EVIDENCE.md").read_text()
+    request = FIELD_REPORT_REQUEST_DOC.read_text()
+
+    assert "scan --skip-connect" in text
+    assert "not external evidence" in text
+    assert "does not close issues #83, #84, or #85" in text
+    assert "Do not upload private local MCP configuration to CI" in text
+    assert "credential values, private paths" in text
+    assert "2026-05-10 Solo Config-Only Pass" in text
+    assert "docs/SOLO-EVIDENCE.md" in readme
+    assert "docs/SOLO-EVIDENCE.md" in field_reports
+    assert "docs/SOLO-EVIDENCE.md" in beta_evidence
+    assert "docs/SOLO-EVIDENCE.md" in request
