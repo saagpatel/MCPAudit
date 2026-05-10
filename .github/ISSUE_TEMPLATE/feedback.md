@@ -16,6 +16,7 @@ assignees: ''
 - [ ] Documentation or adoption friction
 - [ ] Prompt/resource scoring fixture
 - [ ] Dashboard JSON consumer friction
+- [ ] External redacted field report
 - [ ] Bulk stale-pin cleanup request
 - [ ] Other
 
@@ -29,6 +30,7 @@ assignees: ''
 - [ ] `pin --status`, `pin --refresh`, or `pin --stale`
 - [ ] JSON or SARIF consumer parsing
 - [ ] Dashboard or CI status-page integration
+- [ ] Config-only field report for beta readiness
 - [ ] Not sure
 
 ## MCPAudit version

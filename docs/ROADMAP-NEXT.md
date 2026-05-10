@@ -1,13 +1,14 @@
 # MCPAudit Next Roadmap
 
-MCPAudit `1.5.2` is prepared with structured config-health findings, policy
+MCPAudit `1.5.3` is prepared with structured config-health findings, policy
 gates, prompt/resource non-tool risk reporting, reviewed stale pin cleanup,
 dashboard-consumer improvements, copy-pasteable adoption examples, adoption
 smoke coverage, redacted config-health fixtures, and expanded prompt/resource
 scoring evidence. It also adds output-contract upgrade compatibility coverage,
 field-report fixtures, and consumer-contract tests across the checked-in Python,
-Node, and dashboard examples. The next line should collect external reports
-before changing scoring semantics.
+Node, and dashboard examples. The field-report intake path now has a dedicated
+public issue template. The next line should collect external reports before
+changing scoring semantics.
 
 Tracked `1.5` evidence-intake work lives in `docs/1.5-EVIDENCE-INTAKE.md`,
 with the release decision in `docs/1.5-RELEASE-DECISION.md`.
@@ -102,7 +103,7 @@ Completed fixture/proposal issue:
 
 ## 5. Beta Readiness
 
-Status: polish shipped in `1.5.2`.
+Status: polish shipped in `1.5.3`.
 
 Shipped through `1.5.1`:
 
@@ -119,6 +120,15 @@ Shipped through `1.5.2`:
   dashboard summary examples against compatibility and field-report fixtures;
 - field-report evidence docs that track the current milestone, GitHub issues,
   and release decision to ship `1.5.2` polish rather than `1.6.0` beta prep.
+
+Shipped through `1.5.3`:
+
+- dedicated public field-report issue template for config-only external
+  evidence;
+- expanded field-report intake docs, fixture acceptance bar, and beta-readiness
+  decision notes;
+- tests that keep the public template and docs aligned with the external
+  redacted-report blocker.
 
 Candidate follow-ups:
 
