@@ -6,6 +6,9 @@ dashboard-consumer improvements, and copy-pasteable adoption examples. The next
 line should keep collecting real-world evidence before changing scoring
 semantics.
 
+Tracked `1.5` evidence-intake work lives in `docs/1.5-EVIDENCE-INTAKE.md` and
+the GitHub milestone at <https://github.com/saagpatel/MCPAudit/milestone/1>.
+
 ## 1. Config Health Depth
 
 Status: in progress.
@@ -26,6 +29,8 @@ Candidate follow-ups:
 
 - add new config-health diagnostics only when real feedback provides a small
   redacted fixture.
+- keep synthetic redacted config-health fixtures close to the current scanner
+  behavior so new diagnostics can be compared against known setup patterns.
 
 ## 2. Adoption Examples
 
@@ -52,6 +57,8 @@ Candidate follow-ups:
   them.
 - organization-specific dashboard profiles only when repeated user patterns
   justify them.
+- keep smoke tests on docs and examples so copy-paste adoption paths stay
+  installable and report-producing.
 
 ## 3. Pin Maintenance UX
 
