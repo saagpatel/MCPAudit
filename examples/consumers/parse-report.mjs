@@ -2,7 +2,15 @@
 import { readFileSync } from "node:fs";
 
 function summarize(report) {
+  const configHealthByServer = new Map();
+  for (const finding of report.config_health_findings ?? []) {
+    const serverName = finding.server_name ?? null;
+    configHealthByServer.set(serverName, [...(configHealthByServer.get(serverName) ?? []), finding]);
+  }
+
   return (report.audits ?? []).map((audit) => {
+    const serverName = audit.server?.name ?? null;
+    const configHealthFindings = configHealthByServer.get(serverName) ?? [];
     const riskScore = audit.risk_score ?? {};
     const nonToolRisk = audit.non_tool_risk ?? {};
     const nonToolTargets = [
@@ -16,10 +24,12 @@ function summarize(report) {
         kind: finding.kind,
       }));
     return {
-      server: audit.server?.name ?? null,
+      server: serverName,
       status: audit.connection_status ?? null,
       tool_risk: riskScore.composite ?? 0,
       non_tool_risk: nonToolRisk.composite ?? 0,
+      config_health_findings: configHealthFindings.length,
+      config_health_types: configHealthFindings.map((finding) => finding.finding_type),
       permission_findings: (audit.permissions ?? []).length,
       capability_findings: (audit.capability_findings ?? []).length,
       injection_findings: (audit.injection_findings ?? []).length,

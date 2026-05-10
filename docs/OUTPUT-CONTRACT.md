@@ -26,6 +26,7 @@ unknown fields as additive. Important stable top-level fields:
 - `total_tools`
 - `high_risk_servers`
 - `audits`
+- `config_health_findings`
 - `policy_result`
 
 Each audit may include:
@@ -42,6 +43,13 @@ Each audit may include:
 prompt/resource triage signal and does not change `risk_score.composite`.
 `non_tool_risk` may be `null` when a scan finds no prompt/resource capability or
 injection findings.
+
+`config_health_findings` is an additive top-level list for pre-connection config
+diagnostics. Findings include `finding_type`, `severity`, optional
+`server_name`, `summary`, `details`, and `remediation`. Current finding types
+include duplicate server names, missing stdio commands, deprecated SSE
+transports, shell-wrapper launches, remote endpoints, remote URL arguments, and
+credential-heavy configs. These findings do not affect `risk_score.composite`.
 
 The generated JSON Schema for the current model is checked in at
 `examples/schemas/audit-report.schema.json` and is tested against the live

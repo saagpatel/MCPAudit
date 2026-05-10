@@ -2,6 +2,7 @@
   "config_only_report.json": {
     "top_level_keys": [
       "audits",
+      "config_health_findings",
       "high_risk_servers",
       "hostname",
       "os_platform",
@@ -52,6 +53,7 @@
   "failed_connection_report.json": {
     "top_level_keys": [
       "audits",
+      "config_health_findings",
       "high_risk_servers",
       "hostname",
       "os_platform",
@@ -93,6 +95,7 @@
   "policy_failure_report.json": {
     "top_level_keys": [
       "audits",
+      "config_health_findings",
       "high_risk_servers",
       "hostname",
       "os_platform",
@@ -144,6 +147,7 @@
   "prompt_resource_report.json": {
     "top_level_keys": [
       "audits",
+      "config_health_findings",
       "high_risk_servers",
       "hostname",
       "os_platform",
@@ -206,6 +210,7 @@
   "sample_audit_report.json": {
     "top_level_keys": [
       "audits",
+      "config_health_findings",
       "high_risk_servers",
       "hostname",
       "os_platform",

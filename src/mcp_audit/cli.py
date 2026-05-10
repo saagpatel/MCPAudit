@@ -22,6 +22,8 @@ from mcp_audit.discovery import discover_all_configs
 from mcp_audit.models import (
     AuditReport,
     ClientType,
+    ConfigHealthFinding,
+    ConfigHealthSeverity,
     DriftFinding,
     DriftStatus,
     ServerAudit,
@@ -319,6 +321,7 @@ async def _run_scan_core(
         ),
         audits=audits,
         scan_duration_seconds=time.monotonic() - start,
+        config_health_findings=_config_health_findings(servers),
     )
 
 
@@ -437,53 +440,117 @@ def _duplicate_server_config_counts(servers: list[ServerConfig]) -> dict[str, in
 
 
 def _render_config_health_warnings(servers: list[ServerConfig]) -> None:
-    warnings = _config_health_warnings(servers)
-    if not warnings:
+    findings = _config_health_findings(servers)
+    if not findings:
         return
 
     console.print("[yellow]Config health warnings found.[/yellow]")
-    for warning in warnings:
-        console.print(f"[yellow]- {warning}[/yellow]")
+    for finding in findings:
+        console.print(f"[yellow]- {finding.summary}[/yellow]")
 
 
-def _config_health_warnings(servers: list[ServerConfig]) -> list[str]:
-    warnings: list[str] = []
+def _config_health_findings(servers: list[ServerConfig]) -> list[ConfigHealthFinding]:
+    findings: list[ConfigHealthFinding] = []
 
     for name, count in sorted(_duplicate_server_config_counts(servers).items()):
-        warnings.append(
-            f"'{name}' appears {count} times; pins are keyed by server name, so rename duplicate "
-            "MCP server entries before pinning."
+        findings.append(
+            ConfigHealthFinding(
+                finding_type="duplicate_server_name",
+                severity=ConfigHealthSeverity.MEDIUM,
+                server_name=name,
+                summary=(
+                    f"'{name}' appears {count} times; pins are keyed by server name, so rename "
+                    "duplicate MCP server entries before pinning."
+                ),
+                details=[f"{count} discovered configs share the same server name."],
+                remediation="Rename duplicate MCP server entries before creating or refreshing pins.",
+            )
         )
 
     for server in servers:
         if server.transport == TransportType.STDIO and not server.command:
-            warnings.append(f"'{server.name}' uses stdio but has no command; connected scans will fail.")
+            findings.append(
+                ConfigHealthFinding(
+                    finding_type="missing_stdio_command",
+                    severity=ConfigHealthSeverity.HIGH,
+                    server_name=server.name,
+                    summary=f"'{server.name}' uses stdio but has no command; connected scans will fail.",
+                    details=["stdio transport requires a configured command."],
+                    remediation="Add a command for the server or remove the incomplete config entry.",
+                )
+            )
         if server.transport == TransportType.SSE:
-            warnings.append(
-                f"'{server.name}' uses deprecated SSE transport; prefer Streamable HTTP if supported."
+            findings.append(
+                ConfigHealthFinding(
+                    finding_type="deprecated_sse_transport",
+                    severity=ConfigHealthSeverity.LOW,
+                    server_name=server.name,
+                    summary=(
+                        f"'{server.name}' uses deprecated SSE transport; prefer Streamable HTTP if supported."
+                    ),
+                    details=["SSE is a legacy MCP transport."],
+                    remediation="Move the server to Streamable HTTP when the server supports it.",
+                )
             )
         if server.transport in (TransportType.HTTP, TransportType.SSE) or server.url:
-            warnings.append(
-                f"'{server.name}' declares a remote endpoint; connected scans may contact the network."
+            findings.append(
+                ConfigHealthFinding(
+                    finding_type="remote_endpoint",
+                    severity=ConfigHealthSeverity.MEDIUM,
+                    server_name=server.name,
+                    summary=(
+                        f"'{server.name}' declares a remote endpoint; connected scans may contact "
+                        "the network."
+                    ),
+                    details=["HTTP or SSE MCP transports contact the configured URL during scans."],
+                    remediation="Review the remote endpoint before running connected scans.",
+                )
             )
         if _REMOTE_URL.search(_config_command_line(server)):
-            warnings.append(
-                f"'{server.name}' command or args include a remote URL; review the outbound target."
+            findings.append(
+                ConfigHealthFinding(
+                    finding_type="remote_url_argument",
+                    severity=ConfigHealthSeverity.MEDIUM,
+                    server_name=server.name,
+                    summary=(
+                        f"'{server.name}' command or args include a remote URL; review the outbound target."
+                    ),
+                    details=["The configured command line contains an HTTP or HTTPS URL."],
+                    remediation="Review the URL and package source before connecting to the server.",
+                )
             )
         command_name = _command_name(server.command)
         if command_name in _SHELL_WRAPPERS:
-            warnings.append(
-                f"'{server.name}' launches through shell wrapper '{command_name}'; "
-                "review args before connecting."
+            findings.append(
+                ConfigHealthFinding(
+                    finding_type="shell_wrapper_launch",
+                    severity=ConfigHealthSeverity.MEDIUM,
+                    server_name=server.name,
+                    summary=(
+                        f"'{server.name}' launches through shell wrapper '{command_name}'; "
+                        "review args before connecting."
+                    ),
+                    details=["Shell wrappers can hide compound commands in arguments."],
+                    remediation="Review the shell arguments before running connected scans.",
+                )
             )
         credential_count = len(server.env_keys) + len(server.headers_keys)
         if credential_count >= _CREDENTIAL_HEAVY_THRESHOLD:
-            warnings.append(
-                f"'{server.name}' references {credential_count} credential key names; "
-                "review their access scope."
+            findings.append(
+                ConfigHealthFinding(
+                    finding_type="credential_heavy_config",
+                    severity=ConfigHealthSeverity.MEDIUM,
+                    server_name=server.name,
+                    summary=(
+                        f"'{server.name}' references {credential_count} credential key names; "
+                        "review their access scope."
+                    ),
+                    details=["Only credential key names are reported; credential values are not stored."],
+                    remediation="Confirm the referenced credentials are scoped to the server's purpose.",
+                )
             )
 
-    return warnings
+    return findings
 
 
 def _config_command_line(server: ServerConfig) -> str:

@@ -54,5 +54,17 @@
     }
   ],
   "scan_duration_seconds": 0.1,
+  "config_health_findings": [
+    {
+      "finding_type": "remote_endpoint",
+      "severity": "medium",
+      "server_name": "remote-api",
+      "summary": "'remote-api' declares a remote endpoint; connected scans may contact the network.",
+      "details": [
+        "HTTP or SSE MCP transports contact the configured URL during scans."
+      ],
+      "remediation": "Review the remote endpoint before running connected scans."
+    }
+  ],
   "policy_result": null
 }

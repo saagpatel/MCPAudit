@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added structured `config_health_findings` to JSON reports for duplicate server
+  names, missing stdio commands, deprecated SSE transports, shell-wrapper
+  launches, remote endpoints, remote URL arguments, and credential-heavy
+  configs.
+
 ## [1.1.4] - 2026-05-10
 
 ### Added

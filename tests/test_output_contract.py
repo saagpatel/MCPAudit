@@ -72,6 +72,16 @@ def test_tool_findings_dump_target_metadata() -> None:
     assert first_drift["target_name"] == first_drift["tool_name"]
 
 
+def test_config_only_fixture_includes_structured_config_health() -> None:
+    fixture = Path("tests/fixtures/reports/config_only_report.json")
+    report = AuditReport.model_validate_json(fixture.read_text())
+    dumped = report.model_dump(mode="json")
+    finding = dumped["config_health_findings"][0]
+    assert finding["finding_type"] == "remote_endpoint"
+    assert finding["server_name"] == "remote-api"
+    assert finding["severity"] == "medium"
+
+
 def test_output_contract_golden_snapshot() -> None:
     snapshot = {
         fixture.name: _fixture_signature(fixture) for fixture in sorted(FIXTURES, key=lambda path: path.name)

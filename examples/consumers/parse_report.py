@@ -12,7 +12,13 @@ from typing import Any
 def summarize(report: dict[str, Any]) -> list[dict[str, Any]]:
     """Return one summary row per audited server."""
     rows: list[dict[str, Any]] = []
+    config_health_by_server: dict[str | None, list[dict[str, Any]]] = {}
+    for finding in report.get("config_health_findings", []):
+        config_health_by_server.setdefault(finding.get("server_name"), []).append(finding)
+
     for audit in report.get("audits", []):
+        server_name = audit.get("server", {}).get("name")
+        config_health_findings = config_health_by_server.get(server_name, [])
         risk_score = audit.get("risk_score") or {}
         non_tool_risk = audit.get("non_tool_risk") or {}
         non_tool_targets = [
@@ -30,10 +36,12 @@ def summarize(report: dict[str, Any]) -> list[dict[str, Any]]:
         ]
         rows.append(
             {
-                "server": audit.get("server", {}).get("name"),
+                "server": server_name,
                 "status": audit.get("connection_status"),
                 "tool_risk": risk_score.get("composite", 0),
                 "non_tool_risk": non_tool_risk.get("composite", 0),
+                "config_health_findings": len(config_health_findings),
+                "config_health_types": [finding.get("finding_type") for finding in config_health_findings],
                 "permission_findings": len(audit.get("permissions", [])),
                 "capability_findings": len(audit.get("capability_findings", [])),
                 "injection_findings": len(audit.get("injection_findings", [])),
