@@ -1,11 +1,13 @@
 # MCPAudit Field Reports
 
-MCPAudit `1.5.3` has a field-report lane for redacted setup evidence,
+MCPAudit `1.5.4` has a field-report lane for redacted setup evidence,
 consumer-contract hardening, and external beta-readiness intake. This lane
 remains config-only by default: collect shape and output evidence without
 spawning MCP servers, contacting remote endpoints, or storing credential values.
 
 Tracked milestone: <https://github.com/saagpatel/MCPAudit/milestone/3>
+External evidence milestone:
+<https://github.com/saagpatel/MCPAudit/milestone/4>
 
 Tracked issues:
 
@@ -17,6 +19,15 @@ Tracked issues:
   <https://github.com/saagpatel/MCPAudit/issues/79>;
 - release decision:
   <https://github.com/saagpatel/MCPAudit/issues/80>.
+
+External evidence issues:
+
+- first external redacted field report:
+  <https://github.com/saagpatel/MCPAudit/issues/83>;
+- second external redacted field report:
+  <https://github.com/saagpatel/MCPAudit/issues/84>;
+- fixture conversion and beta decision:
+  <https://github.com/saagpatel/MCPAudit/issues/85>.
 
 ## Evidence Captured
 
@@ -72,6 +83,9 @@ A field report is ready to become a fixture when it answers:
 Do not use a beta label until at least two external redacted reports confirm the
 current output contract is stable for downstream consumers.
 
+Use the external evidence milestone to keep this visible:
+<https://github.com/saagpatel/MCPAudit/milestone/4>.
+
 ## Consumer Contract
 
 The example consumers are now tested against the same compatibility set:
@@ -101,3 +115,9 @@ Ship `1.5.3` as polish instead of `1.6.0`.
 Reason: this pass improves public field-report intake and beta-readiness
 tracking, but it still does not include external redacted reports or change the
 scanner/output contract.
+
+Ship `1.5.4` as polish instead of `1.6.0`.
+
+Reason: this pass creates the external evidence milestone and keeps its three
+tracking issues visible from the public docs, but it still does not include the
+external redacted reports needed for beta.

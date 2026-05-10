@@ -1,6 +1,6 @@
 # MCPAudit Next Roadmap
 
-MCPAudit `1.5.3` is prepared with structured config-health findings, policy
+MCPAudit `1.5.4` is prepared with structured config-health findings, policy
 gates, prompt/resource non-tool risk reporting, reviewed stale pin cleanup,
 dashboard-consumer improvements, copy-pasteable adoption examples, adoption
 smoke coverage, redacted config-health fixtures, and expanded prompt/resource
@@ -14,6 +14,8 @@ Tracked `1.5` evidence-intake work lives in `docs/1.5-EVIDENCE-INTAKE.md`,
 with the release decision in `docs/1.5-RELEASE-DECISION.md`.
 Beta-readiness evidence lives in `docs/BETA-READINESS-EVIDENCE.md`.
 Field-report evidence lives in `docs/FIELD-REPORTS.md`.
+External beta-evidence tracking lives in
+<https://github.com/saagpatel/MCPAudit/milestone/4>.
 
 ## 1. Config Health Depth
 
@@ -103,7 +105,7 @@ Completed fixture/proposal issue:
 
 ## 5. Beta Readiness
 
-Status: polish shipped in `1.5.3`.
+Status: polish shipped in `1.5.4`.
 
 Shipped through `1.5.1`:
 
@@ -130,10 +132,21 @@ Shipped through `1.5.3`:
 - tests that keep the public template and docs aligned with the external
   redacted-report blocker.
 
+Shipped through `1.5.4`:
+
+- external field-evidence milestone and tracking issues for the two required
+  reports plus fixture conversion and beta decision;
+- docs and tests that keep that milestone visible until the external evidence
+  blocker is resolved.
+
 Candidate follow-ups:
 
-- collect at least two external redacted reports before using a beta label;
-- turn any external output-consumer friction into compatibility fixtures.
+- collect the first external redacted report:
+  <https://github.com/saagpatel/MCPAudit/issues/83>;
+- collect the second external redacted report:
+  <https://github.com/saagpatel/MCPAudit/issues/84>;
+- turn accepted external report friction into fixtures and make the beta
+  decision: <https://github.com/saagpatel/MCPAudit/issues/85>.
 
 ## Verification Bar
 

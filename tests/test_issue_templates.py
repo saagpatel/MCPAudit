@@ -80,12 +80,28 @@ def test_field_report_template_preserves_safety_boundary() -> None:
 def test_field_report_docs_track_external_intake_and_beta_bar() -> None:
     doc = FIELD_REPORT_DOC.read_text()
     beta = Path("docs/BETA-READINESS.md").read_text()
+    beta_evidence = Path("docs/BETA-READINESS-EVIDENCE.md").read_text()
+    feedback = FEEDBACK_DOC.read_text()
     roadmap = Path("docs/ROADMAP-NEXT.md").read_text()
+    readme = Path("README.md").read_text()
 
     assert "## External Intake Path" in doc
     assert "mcp-audit scan --skip-connect --json mcp-audit-field-report.json" in doc
     assert ".github/ISSUE_TEMPLATE/field_report.md" in doc
     assert "## Fixture Acceptance Bar" in doc
     assert "at least two external redacted reports" in doc
-    assert "Ship `1.5.3` as polish instead of `1.6.0` or beta." in beta
+    assert "https://github.com/saagpatel/MCPAudit/milestone/4" in doc
+    assert "https://github.com/saagpatel/MCPAudit/milestone/4" in beta
+    assert "https://github.com/saagpatel/MCPAudit/milestone/4" in beta_evidence
+    assert "https://github.com/saagpatel/MCPAudit/milestone/4" in feedback
+    assert "https://github.com/saagpatel/MCPAudit/milestone/4" in roadmap
+    assert "https://github.com/saagpatel/MCPAudit/milestone/4" in readme
+    for issue_number in ("83", "84", "85"):
+        issue_url = f"https://github.com/saagpatel/MCPAudit/issues/{issue_number}"
+        assert issue_url in doc
+        assert issue_url in beta
+        assert issue_url in beta_evidence
+        assert issue_url in feedback
+        assert issue_url in roadmap
+    assert "Ship `1.5.4` as polish instead of `1.6.0` or beta." in beta
     assert "dedicated public field-report issue template" in roadmap

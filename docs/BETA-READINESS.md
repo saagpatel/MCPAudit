@@ -1,7 +1,7 @@
 # Beta And RC Readiness
 
 This document records the beta and release-candidate bar used for current
-`1.x` releases. MCPAudit `1.5.3` is a beta-readiness intake polish release, not
+`1.x` releases. MCPAudit `1.5.4` is a beta-readiness coordination polish release, not
 a beta cut.
 
 ## Readiness Bar
@@ -17,6 +17,7 @@ a beta cut.
 - Clean `uvx` and `pip` installs can run `mcp-audit --version`.
 - At least two external redacted reports confirm the current output contract is
   stable for downstream consumers before a beta label is used.
+  Tracked in <https://github.com/saagpatel/MCPAudit/milestone/4>.
 
 ## Current Limitations
 
@@ -33,12 +34,19 @@ a beta cut.
 
 ## Current Decision
 
-Ship `1.5.3` as polish instead of `1.6.0` or beta.
+Ship `1.5.4` as polish instead of `1.6.0` or beta.
 
 The current evidence strengthens compatibility confidence and makes external
-field-report intake easier, but it is still mostly local and fixture-based. Move
-to beta only after external redacted reports show that downstream consumers can
-safely rely on the current JSON/SARIF shapes.
+field-report intake trackable, but it is still mostly local and fixture-based.
+Move to beta only after external redacted reports show that downstream consumers
+can safely rely on the current JSON/SARIF shapes.
+
+Open beta-evidence tracker:
+
+- first external report: <https://github.com/saagpatel/MCPAudit/issues/83>
+- second external report: <https://github.com/saagpatel/MCPAudit/issues/84>
+- fixture conversion and beta decision:
+  <https://github.com/saagpatel/MCPAudit/issues/85>
 
 ## Verification Checklist
 

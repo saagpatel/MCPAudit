@@ -150,10 +150,11 @@ See `docs/FEEDBACK-TO-FIXTURES.md` for turning false positives, missing
 detections, output issues, and pin lifecycle feedback into safe regression
 fixtures. See `docs/FIELD-REPORTS.md` for the redacted field-report evidence
 path, public field-report issue template, and consumer-contract coverage. See
-`docs/ROADMAP-NEXT.md` for the current post-`1.5.3` roadmap. See
+`docs/ROADMAP-NEXT.md` for the current post-`1.5.4` roadmap. See
 `docs/1.5-EVIDENCE-INTAKE.md` for the current
 evidence-led `1.5` planning track. See `docs/BETA-READINESS-EVIDENCE.md` for
-the beta-readiness evidence and release decision.
+the beta-readiness evidence and release decision. External beta-evidence reports
+are tracked in <https://github.com/saagpatel/MCPAudit/milestone/4>.
 
 ## License
 
