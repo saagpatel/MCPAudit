@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added CI and workstation examples for read-only stale pin review.
+
 ## [1.1.1] - 2026-05-10
 
 ### Added

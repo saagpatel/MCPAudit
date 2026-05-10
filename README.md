@@ -140,7 +140,9 @@ JSON consumer examples. See `examples/policies/` for starter policies. See
 `docs/PIN-MAINTENANCE.md` for reviewed pin refresh and stale server cleanup
 workflows. See `docs/PROMPT-RESOURCE-SCORING.md` and
 `docs/SCORING-MIGRATION.md` for the current prompt/resource scoring boundary
-and migration path. See `docs/ROADMAP-1.1.md` for additive product depth lanes.
+and migration path. See `examples/ci/pin-stale-review.yml` and
+`examples/maintenance/stale-pin-review.sh` for routine stale pin review flows.
+See `docs/ROADMAP-1.1.md` for additive product depth lanes.
 
 ## License
 
