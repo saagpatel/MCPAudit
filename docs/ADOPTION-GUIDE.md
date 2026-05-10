@@ -32,6 +32,9 @@ mcp-audit scan --config ./mcp.json --config-only --inject-check
 Review prompt/resource findings separately from the composite score. They are
 visible in reports and policy gates. In `1.1`, they also feed the additive
 `non_tool_risk` field, but they do not change `risk_score.composite`.
+Review config-health findings before turning on policy gates for remote
+endpoints, shell-wrapper launches, deprecated transports, or duplicated server
+names.
 
 ## Team CI Policy Gate
 
@@ -45,6 +48,17 @@ mcp-audit scan \
 
 Exit code `2` means the scan completed and report artifacts were written, but
 the local policy failed.
+
+Use `fail_on.config_health` when CI should fail on config setup findings:
+
+```yaml
+fail_on:
+  config_health: medium
+servers:
+  github:
+    fail_on:
+      config_health: high
+```
 
 A complete JSON-plus-policy workflow example is available at
 `examples/ci/generic-json-policy.yml`.

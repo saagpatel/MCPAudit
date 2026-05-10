@@ -50,6 +50,9 @@ diagnostics. Findings include `finding_type`, `severity`, optional
 include duplicate server names, missing stdio commands, deprecated SSE
 transports, shell-wrapper launches, remote endpoints, remote URL arguments, and
 credential-heavy configs. These findings do not affect `risk_score.composite`.
+Policies may opt in to failing on this signal with `fail_on.config_health`; the
+default broad `fail_on.severity` shortcut does not include config-health
+findings, so existing policy files keep their previous behavior.
 
 The generated JSON Schema for the current model is checked in at
 `examples/schemas/audit-report.schema.json` and is tested against the live

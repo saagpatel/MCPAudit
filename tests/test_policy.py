@@ -14,6 +14,8 @@ from mcp_audit.models import (
     CapabilityFinding,
     CapabilityTarget,
     Confidence,
+    ConfigHealthFinding,
+    ConfigHealthSeverity,
     DriftFinding,
     DriftStatus,
     InjectionFinding,
@@ -252,6 +254,83 @@ fail_on:
     result = evaluate_policy(_audit_report(audit), load_policy(policy_path))
     assert not result.passed
     assert result.violations[0].rule == "fail_on.capabilities"
+
+
+def test_policy_can_threshold_config_health_separately(tmp_path: Path) -> None:
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text(
+        """
+fail_on:
+  config_health: medium
+"""
+    )
+    report = _audit_report(_audit_with_shell_finding())
+    report.config_health_findings = [
+        ConfigHealthFinding(
+            finding_type="remote_endpoint",
+            severity=ConfigHealthSeverity.MEDIUM,
+            server_name="srv",
+            summary="Server uses a remote MCP endpoint.",
+            details=["https://api.example.com/mcp"],
+            remediation="Review remote endpoint trust before CI approval.",
+        )
+    ]
+    result = evaluate_policy(report, load_policy(policy_path))
+    assert not result.passed
+    assert result.violations[0].rule == "fail_on.config_health"
+    assert result.violations[0].server_name == "srv"
+    assert result.violations[0].severity == "medium"
+    assert "remote_endpoint" in result.violations[0].message
+
+
+def test_policy_does_not_apply_broad_severity_to_config_health(tmp_path: Path) -> None:
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text(
+        """
+fail_on:
+  severity: medium
+"""
+    )
+    audit = _audit_with_shell_finding()
+    audit.permissions = []
+    report = _audit_report(audit)
+    report.config_health_findings = [
+        ConfigHealthFinding(
+            finding_type="shell_wrapper",
+            severity=ConfigHealthSeverity.HIGH,
+            server_name="srv",
+            summary="Server command launches through a shell wrapper.",
+            remediation="Review the wrapper and call the underlying command directly when possible.",
+        )
+    ]
+    result = evaluate_policy(report, load_policy(policy_path))
+    assert result.passed
+
+
+def test_server_policy_can_threshold_config_health(tmp_path: Path) -> None:
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text(
+        """
+servers:
+  srv:
+    fail_on:
+      config_health: low
+"""
+    )
+    report = _audit_report(_audit_with_shell_finding())
+    report.config_health_findings = [
+        ConfigHealthFinding(
+            finding_type="credential_env_surface",
+            severity=ConfigHealthSeverity.LOW,
+            server_name="srv",
+            summary="Server references credential-like environment variable names.",
+            remediation="Confirm only environment variable names are stored in config.",
+        )
+    ]
+    result = evaluate_policy(report, load_policy(policy_path))
+    assert not result.passed
+    assert result.violations[0].rule == "fail_on.config_health"
+    assert result.violations[0].severity == "low"
 
 
 def test_policy_passes_when_no_rules_match(tmp_path: Path) -> None:

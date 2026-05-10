@@ -8,7 +8,13 @@ from typing import Any
 
 import yaml
 
-from mcp_audit.models import AuditReport, PermissionCategory, PolicyResult, PolicyViolation
+from mcp_audit.models import (
+    AuditReport,
+    ConfigHealthFinding,
+    PermissionCategory,
+    PolicyResult,
+    PolicyViolation,
+)
 
 _SEVERITY_RANK = {"low": 1, "medium": 2, "high": 3}
 
@@ -21,6 +27,7 @@ class PolicyConfig:
     fail_on_permission_severity: str | None = None
     fail_on_injection_severity: str | None = None
     fail_on_capability_severity: str | None = None
+    fail_on_config_health_severity: str | None = None
     fail_on_drift: bool = False
     required_pin_servers: list[str] = field(default_factory=list)
     denied_permissions: list[PermissionCategory] = field(default_factory=list)
@@ -38,6 +45,7 @@ class ServerPolicyConfig:
     fail_on_permission_severity: str | None = None
     fail_on_injection_severity: str | None = None
     fail_on_capability_severity: str | None = None
+    fail_on_config_health_severity: str | None = None
     fail_on_drift: bool | None = None
     require_pin: bool = False
 
@@ -58,6 +66,7 @@ def load_policy(path: Path) -> PolicyConfig:
     permission_severity = _severity(fail_on.get("permissions"), "fail_on.permissions")
     injection_severity = _severity(fail_on.get("injection"), "fail_on.injection")
     capability_severity = _severity(fail_on.get("capabilities"), "fail_on.capabilities")
+    config_health_severity = _severity(fail_on.get("config_health"), "fail_on.config_health")
 
     permissions = [_permission(value) for value in _sequence(deny.get("permissions"), "deny.permissions")]
 
@@ -72,6 +81,7 @@ def load_policy(path: Path) -> PolicyConfig:
         fail_on_permission_severity=permission_severity,
         fail_on_injection_severity=injection_severity,
         fail_on_capability_severity=capability_severity,
+        fail_on_config_health_severity=config_health_severity,
         fail_on_drift=bool(fail_on.get("drift", False)),
         required_pin_servers=[str(value) for value in _sequence(pins.get("servers"), "require.pins.servers")],
         denied_permissions=permissions,
@@ -258,6 +268,8 @@ def evaluate_policy(
                     )
                 )
 
+    violations.extend(_config_health_violations(report.config_health_findings, policy))
+
     return PolicyResult(passed=not violations, violations=violations)
 
 
@@ -312,6 +324,39 @@ def _pin_tool_count(pin_store: object | None, server_name: str) -> int:
     return int(tool_count(server_name))
 
 
+def _config_health_violations(
+    findings: list[ConfigHealthFinding],
+    policy: PolicyConfig,
+) -> list[PolicyViolation]:
+    violations: list[PolicyViolation] = []
+    for finding in findings:
+        server_rule = (
+            policy.server_rules.get(finding.server_name, ServerPolicyConfig())
+            if finding.server_name is not None
+            else ServerPolicyConfig()
+        )
+        threshold_name = _effective_threshold(
+            server_rule.fail_on_config_health_severity,
+            policy.fail_on_config_health_severity,
+        )
+        if threshold_name is None:
+            continue
+        if _SEVERITY_RANK[finding.severity.value] < _SEVERITY_RANK[threshold_name]:
+            continue
+        violations.append(
+            PolicyViolation(
+                rule="fail_on.config_health",
+                server_name=finding.server_name,
+                severity=finding.severity.value,
+                message=(
+                    f"Config health finding '{finding.finding_type}' is "
+                    f"{finding.severity.value} severity: {finding.summary}"
+                ),
+            )
+        )
+    return violations
+
+
 def _server_rules(value: Any) -> dict[str, ServerPolicyConfig]:
     raw_rules = _mapping(value, "servers")
     rules: dict[str, ServerPolicyConfig] = {}
@@ -341,6 +386,9 @@ def _server_rules(value: Any) -> dict[str, ServerPolicyConfig]:
             ),
             fail_on_capability_severity=_severity(
                 fail_on.get("capabilities"), f"servers.{server_name}.fail_on.capabilities"
+            ),
+            fail_on_config_health_severity=_severity(
+                fail_on.get("config_health"), f"servers.{server_name}.fail_on.config_health"
             ),
             fail_on_drift=bool(fail_on["drift"]) if "drift" in fail_on else None,
             require_pin=bool(rule.get("require_pin", False)),
