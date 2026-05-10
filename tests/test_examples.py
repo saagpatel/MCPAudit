@@ -14,11 +14,16 @@ import yaml
 from mcp_audit.models import AuditReport
 
 CI_EXAMPLES = sorted(Path("examples/ci").glob("*.yml"))
-CONSUMER_EXAMPLES = sorted(Path("examples/consumers").glob("parse*"))
+CONSUMER_EXAMPLES = sorted(
+    path
+    for path in Path("examples/consumers").iterdir()
+    if path.name in {"dashboard_summary.py", "parse-report.mjs", "parse_report.py"}
+)
 MAINTENANCE_EXAMPLES = sorted(Path("examples/maintenance").glob("*.sh"))
 POLICY_EXAMPLES = sorted(Path("examples/policies").glob("*.yaml"))
 PROMPT_RESOURCE_REPORT = Path("tests/fixtures/reports/prompt_resource_report.json")
 CONFIG_ONLY_REPORT = Path("tests/fixtures/reports/config_only_report.json")
+DASHBOARD_STATUS_REPORT = Path("tests/fixtures/reports/dashboard_status_report.json")
 SCHEMA_PATH = Path("examples/schemas/audit-report.schema.json")
 
 
@@ -108,6 +113,29 @@ def test_dashboard_consumer_example_parses_config_health() -> None:
     assert summary["config_health"] == {"medium": 1}
     assert summary["servers"][0]["server"] == "remote-api"
     assert summary["servers"][0]["config_health"] == {"medium": 1}
+
+
+def test_dashboard_consumer_example_parses_status_report() -> None:
+    AuditReport.model_validate_json(DASHBOARD_STATUS_REPORT.read_text())
+    result = subprocess.run(
+        [sys.executable, "examples/consumers/dashboard_summary.py", str(DASHBOARD_STATUS_REPORT)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    summary = json.loads(result.stdout)
+    servers = {server["server"]: server for server in summary["servers"]}
+
+    assert summary["servers_discovered"] == 3
+    assert summary["servers_failed"] == 1
+    assert summary["policy_passed"] is False
+    assert summary["config_health"] == {"medium": 1}
+    assert servers["remote-api"]["config_health"] == {"medium": 1}
+    assert servers["knowledge"]["non_tool_risk"] == 5.95
+    assert servers["knowledge"]["policy_failures"] == 1
+    assert servers["shell"]["status"] == "failed"
+    assert servers["shell"]["tool_risk"] == 8.0
+    assert servers["shell"]["policy_failures"] == 1
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")

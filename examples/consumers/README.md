@@ -21,5 +21,12 @@ python examples/consumers/dashboard_summary.py mcp-audit.json
 node examples/consumers/parse-report.mjs mcp-audit.json
 ```
 
+You can also try the dashboard example against the checked-in status-page style
+fixture:
+
+```bash
+python examples/consumers/dashboard_summary.py tests/fixtures/reports/dashboard_status_report.json
+```
+
 The parsing scripts print compact JSON summaries that are safe to feed into a CI
 step or dashboard.

@@ -52,6 +52,11 @@ multiple server families. A useful fixture includes:
 - at least one benign prompt/resource example that should not add risk;
 - a short rationale for why composite scoring would help users triage the case.
 
+Current public calibration coverage includes documentation, filesystem, GitHub,
+PostgreSQL, Slack, calendar, container registry, and vault-style examples, plus
+benign memory and glossary cases. Keep adding fixtures here before changing
+composite scoring.
+
 ### Dashboard JSON Consumers
 
 Tracking issue: <https://github.com/saagpatel/MCPAudit/issues/59>
@@ -64,6 +69,10 @@ real consumers. A useful report includes:
 - a redacted input report and the desired dashboard summary;
 - whether the current `examples/consumers/dashboard_summary.py` output was
   sufficient.
+
+The checked-in `tests/fixtures/reports/dashboard_status_report.json` fixture
+models a mixed status page input with config-health, non-tool risk, policy, and
+failed-connection signals.
 
 ### Stale Pin Cleanup
 
