@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-05-10
+
+### Added
+
+- Added adoption smoke coverage for docs, CI examples, report artifacts, and
+  `1.5` milestone tracking.
+- Added redacted config-health fixtures for local shadowing, remote credential
+  headers, and shell-wrapped remote arguments.
+- Added prompt/resource scoring validation cases for issue tracker, browser
+  automation, and resource-injection metadata.
+- Added a `1.5` release decision note documenting why this line ships as
+  adoption hardening instead of beta.
+
+### Changed
+
+- Updated the composite scoring proposal with the latest fixture evidence while
+  keeping `risk_score.composite` unchanged.
+
 ## [1.4.3] - 2026-05-10
 
 ### Added
@@ -409,7 +427,8 @@ real workstations; API surface may still shift before the `1.0.0` stable cut.
 - Risk score output with pass/warn/fail thresholds
 - `mcp-audit` CLI entry point
 
-[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.4.3...HEAD
+[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/saagpatel/MCPAudit/compare/v1.4.3...v1.5.0
 [1.4.3]: https://github.com/saagpatel/MCPAudit/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/saagpatel/MCPAudit/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/saagpatel/MCPAudit/compare/v1.4.0...v1.4.1
