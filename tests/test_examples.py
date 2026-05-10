@@ -14,6 +14,12 @@ import yaml
 from mcp_audit.models import AuditReport
 
 CI_EXAMPLES = sorted(Path("examples/ci").glob("*.yml"))
+DOCS_REFERENCING_ADOPTION_EXAMPLES = [
+    Path("README.md"),
+    Path("docs/ADOPTION-GUIDE.md"),
+    Path("docs/GOLDEN-ROLLOUT.md"),
+    Path("docs/PIN-MAINTENANCE.md"),
+]
 CONSUMER_EXAMPLES = sorted(
     path
     for path in Path("examples/consumers").iterdir()
@@ -40,6 +46,38 @@ def test_ci_examples_install_published_package() -> None:
         text = example_path.read_text()
         assert "mcp-permission-audit" in text
         assert "mcp-audit scan" in text
+
+
+def test_ci_examples_default_to_config_only_adoption() -> None:
+    for example_path in CI_EXAMPLES:
+        text = example_path.read_text()
+        assert "--skip-connect" in text
+
+
+def test_ci_examples_keep_reports_when_gates_fail() -> None:
+    for example_path in CI_EXAMPLES:
+        parsed = yaml.safe_load(example_path.read_text())
+        steps = parsed["jobs"][next(iter(parsed["jobs"]))]["steps"]
+        step_text = json.dumps(steps)
+        assert "upload-artifact" in step_text or "upload-sarif" in step_text
+
+        if "--policy" in step_text:
+            assert "always()" in step_text
+
+
+def test_adoption_docs_reference_current_examples() -> None:
+    combined_docs = "\n".join(path.read_text() for path in DOCS_REFERENCING_ADOPTION_EXAMPLES)
+    required_paths = [
+        "examples/ci/config-health-policy.yml",
+        "examples/ci/generic-json-policy.yml",
+        "examples/ci/github-code-scanning.yml",
+        "examples/ci/pin-stale-review.yml",
+        "examples/consumers/",
+        "examples/policies/",
+    ]
+
+    for required_path in required_paths:
+        assert required_path in combined_docs
 
 
 def test_stale_pin_review_examples_are_read_only() -> None:
@@ -197,3 +235,15 @@ def test_golden_rollout_doc_is_linked_and_staged() -> None:
     assert "--policy examples/policies/balanced-team-ci.yaml" in rollout
     assert "docs/GOLDEN-ROLLOUT.md" in readme
     assert "docs/GOLDEN-ROLLOUT.md" in adoption
+
+
+def test_evidence_intake_doc_tracks_next_milestone() -> None:
+    readme = Path("README.md").read_text()
+    roadmap = Path("docs/ROADMAP-NEXT.md").read_text()
+    intake = Path("docs/1.5-EVIDENCE-INTAKE.md").read_text()
+
+    assert "docs/1.5-EVIDENCE-INTAKE.md" in readme
+    assert "docs/1.5-EVIDENCE-INTAKE.md" in roadmap
+    assert "https://github.com/saagpatel/MCPAudit/milestone/1" in intake
+    for issue_number in ("66", "67", "68", "69"):
+        assert f"https://github.com/saagpatel/MCPAudit/issues/{issue_number}" in intake

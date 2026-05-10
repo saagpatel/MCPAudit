@@ -1,0 +1,26 @@
+{
+  "mcpServers": {
+    "github": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github@1.2.3"],
+      "env": {
+        "GITHUB_TOKEN": "ghp_redacted_global"
+      }
+    }
+  },
+  "projects": {
+    "/Users/example/workspace": {
+      "mcpServers": {
+        "github": {
+          "type": "stdio",
+          "command": "uvx",
+          "args": ["mcp-github-reviewer==0.4.0"],
+          "env": {
+            "GITHUB_TOKEN": "ghp_redacted_project"
+          }
+        }
+      }
+    }
+  }
+}

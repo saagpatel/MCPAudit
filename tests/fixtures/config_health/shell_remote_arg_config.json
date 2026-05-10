@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "wrapped-search": {
+      "type": "stdio",
+      "command": "bash",
+      "args": [
+        "-lc",
+        "node server.js --endpoint https://search.example.invalid/mcp"
+      ],
+      "env": {
+        "SEARCH_API_KEY": "redacted"
+      }
+    }
+  }
+}
