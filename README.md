@@ -143,7 +143,8 @@ rollout path. See `docs/STABLE-READINESS.md` for the stable-release bar. See
 `docs/PIN-MAINTENANCE.md` for reviewed pin refresh and stale server cleanup
 workflows. See `docs/PROMPT-RESOURCE-SCORING.md` and
 `docs/SCORING-MIGRATION.md` for the current prompt/resource scoring boundary
-and migration path. See `examples/ci/pin-stale-review.yml` and
+and migration path. See `docs/COMPOSITE-SCORING-PROPOSAL.md` for the future
+combined-score proposal. See `examples/ci/pin-stale-review.yml` and
 `examples/maintenance/stale-pin-review.sh` for routine stale pin review flows.
 See `docs/FEEDBACK-TO-FIXTURES.md` for turning false positives, missing
 detections, output issues, and pin lifecycle feedback into safe regression

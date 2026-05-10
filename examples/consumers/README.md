@@ -28,5 +28,7 @@ fixture:
 python examples/consumers/dashboard_summary.py tests/fixtures/reports/dashboard_status_report.json
 ```
 
-The parsing scripts print compact JSON summaries that are safe to feed into a CI
-step or dashboard.
+The dashboard summary includes status counts, max tool and non-tool risk,
+policy failure count, config-health counts, and an `attention` list for servers
+that need review. The parsing scripts print compact JSON summaries that are
+safe to feed into a CI step or dashboard.

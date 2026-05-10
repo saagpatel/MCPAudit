@@ -47,7 +47,9 @@ def test_stale_pin_review_examples_are_read_only() -> None:
     script_text = Path("examples/maintenance/stale-pin-review.sh").read_text()
     assert "mcp-audit pin --stale --json" in ci_text
     assert "mcp-audit pin --stale --json" in script_text
-    assert "mcp-audit pin --clear" not in ci_text
+    assert "mcp-audit pin --clear-stale --json" in ci_text
+    assert "mcp-audit pin --clear-stale --apply" not in ci_text
+    assert "mcp-audit pin --clear-stale --json" in script_text
     assert "mcp-audit pin --clear <server>" in script_text
 
 
@@ -110,7 +112,12 @@ def test_dashboard_consumer_example_parses_config_health() -> None:
     )
     summary = json.loads(result.stdout)
     assert summary["servers_discovered"] == 1
+    assert summary["status_counts"] == {"skipped": 1}
+    assert summary["policy_failure_count"] == 0
+    assert summary["max_tool_risk"] == 4.0
     assert summary["config_health"] == {"medium": 1}
+    assert summary["attention"][0]["server"] == "remote-api"
+    assert summary["attention"][0]["reasons"] == ["config_health"]
     assert summary["servers"][0]["server"] == "remote-api"
     assert summary["servers"][0]["config_health"] == {"medium": 1}
 
@@ -128,8 +135,13 @@ def test_dashboard_consumer_example_parses_status_report() -> None:
 
     assert summary["servers_discovered"] == 3
     assert summary["servers_failed"] == 1
+    assert summary["status_counts"] == {"skipped": 1, "connected": 1, "failed": 1}
     assert summary["policy_passed"] is False
+    assert summary["policy_failure_count"] == 2
+    assert summary["max_tool_risk"] == 8.0
+    assert summary["max_non_tool_risk"] == 5.95
     assert summary["config_health"] == {"medium": 1}
+    assert {row["server"] for row in summary["attention"]} == {"remote-api", "knowledge", "shell"}
     assert servers["remote-api"]["config_health"] == {"medium": 1}
     assert servers["knowledge"]["non_tool_risk"] == 5.95
     assert servers["knowledge"]["policy_failures"] == 1

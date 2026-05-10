@@ -21,6 +21,9 @@ jobs:
       - name: Review stale pin baselines
         run: mcp-audit pin --stale --json > mcp-audit-stale-pins.json
 
+      - name: Preview stale pin cleanup
+        run: mcp-audit pin --clear-stale --json > mcp-audit-clear-stale-preview.json
+
       - name: Upload review artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -29,3 +32,4 @@ jobs:
           path: |
             mcp-audit-config-review.json
             mcp-audit-stale-pins.json
+            mcp-audit-clear-stale-preview.json

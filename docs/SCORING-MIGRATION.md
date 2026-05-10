@@ -14,6 +14,10 @@ an additive non-tool score first.
 4. After at least one release window, decide whether to fold selected non-tool
    signals into a new composite score.
 
+`docs/COMPOSITE-SCORING-PROPOSAL.md` records the current proposal: add a future
+`combined_risk` field if evidence justifies it, while preserving
+`risk_score.composite` through the compatible `1.x` line.
+
 ## Proposed Non-Tool Dimensions
 
 | Dimension | Sources | Notes |

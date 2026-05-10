@@ -42,7 +42,7 @@ should remain in observation.
 
 ### Prompt And Resource Scoring
 
-Tracking issue: <https://github.com/saagpatel/MCPAudit/issues/61>
+Completed issue: <https://github.com/saagpatel/MCPAudit/issues/61>
 
 Before changing `risk_score.composite`, collect prompt/resource fixtures from
 multiple server families. A useful fixture includes:
@@ -56,10 +56,12 @@ Current public calibration coverage includes documentation, filesystem, GitHub,
 PostgreSQL, Slack, calendar, container registry, and vault-style examples, plus
 benign memory and glossary cases. Keep adding fixtures here before changing
 composite scoring.
+`docs/COMPOSITE-SCORING-PROPOSAL.md` documents the future combined-score
+proposal without changing current `risk_score.composite` behavior.
 
 ### Dashboard JSON Consumers
 
-Tracking issue: <https://github.com/saagpatel/MCPAudit/issues/59>
+Completed issue: <https://github.com/saagpatel/MCPAudit/issues/59>
 
 Before adding new JSON fields or CLI flags for dashboards, collect examples from
 real consumers. A useful report includes:
@@ -73,13 +75,16 @@ real consumers. A useful report includes:
 The checked-in `tests/fixtures/reports/dashboard_status_report.json` fixture
 models a mixed status page input with config-health, non-tool risk, policy, and
 failed-connection signals.
+`examples/consumers/dashboard_summary.py` now emits status counts, max risk
+scores, policy failure count, and attention rows for status pages.
 
 ### Stale Pin Cleanup
 
-Tracking issue: <https://github.com/saagpatel/MCPAudit/issues/60>
+Completed issue: <https://github.com/saagpatel/MCPAudit/issues/60>
 
-Bulk stale-pin cleanup should stay out of scope until users show that
-server-scoped cleanup is too slow. A useful report includes:
+Bulk stale-pin cleanup is available through `pin --clear-stale`. It is dry-run
+by default and requires `--apply` before writing. Future cleanup feedback should
+include:
 
 - the number of stale pinned servers and how often they occur;
 - why `pin --stale` plus `pin --clear <server>` is too cumbersome;

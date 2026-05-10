@@ -47,13 +47,25 @@ discovered MCP client config names without connecting to servers and without
 deleting anything. Use it to find likely removed servers, then clear one
 reviewed server at a time with `pin --clear <server>`.
 
-Prefer `--clear` for removed servers and `--refresh` for changed servers. MCPAudit
-does not currently do bulk stale cleanup because deleting multiple baselines at
-once can hide accidental config loss.
+When a review shows that all stale baselines are intentionally removed, preview
+the bulk cleanup first:
 
-Keep this explicit workflow unless repeated feedback shows bulk cleanup is
-needed. A future bulk command should still preview all removals and require a
-separate apply step.
+```bash
+mcp-audit pin --clear-stale
+mcp-audit pin --clear-stale --json
+```
+
+`pin --clear-stale` is dry-run by default. It prints the same stale server set
+that would be removed and keeps the pin file unchanged. After reviewing every
+server in the list, apply the cleanup explicitly:
+
+```bash
+mcp-audit pin --clear-stale --apply
+```
+
+Prefer `--clear` for removed servers and `--refresh` for changed servers. MCPAudit
+keeps bulk stale cleanup dry-run by default because deleting multiple baselines
+at once can hide accidental config loss.
 
 ## Routine Review
 
@@ -64,7 +76,8 @@ bash examples/maintenance/stale-pin-review.sh
 ```
 
 It writes discovered server names, pin status, and stale pin JSON into a local
-review folder. It does not change pins.
+review folder. It also writes a dry-run bulk cleanup preview. It does not change
+pins.
 
 For GitHub Actions, start from `examples/ci/pin-stale-review.yml`. The workflow
 runs `scan --skip-connect` and `pin --stale --json`, then uploads both review
