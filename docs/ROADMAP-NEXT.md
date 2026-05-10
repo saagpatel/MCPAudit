@@ -1,10 +1,10 @@
 # MCPAudit Next Roadmap
 
-MCPAudit `1.4.2` is published with structured config-health findings, policy
-gates, prompt/resource non-tool risk reporting, pin maintenance helpers, and
-copy-pasteable adoption examples. The unreleased next line adds reviewed stale
-pin cleanup and dashboard-consumer improvements while continuing to collect
-real-world evidence before changing scoring semantics.
+MCPAudit `1.4.3` is published with structured config-health findings, policy
+gates, prompt/resource non-tool risk reporting, reviewed stale pin cleanup,
+dashboard-consumer improvements, and copy-pasteable adoption examples. The next
+line should keep collecting real-world evidence before changing scoring
+semantics.
 
 ## 1. Config Health Depth
 
@@ -13,7 +13,7 @@ Status: in progress.
 Add fixture-backed diagnostics only when they can be detected from local MCP
 configuration without connecting to servers or reading credential values.
 
-Shipped through `1.4.2`:
+Shipped through `1.4.3`:
 
 - missing local command paths for stdio servers;
 - server names that conflict across global and project scopes;
@@ -35,7 +35,7 @@ Keep examples copy-pasteable and conservative. Examples should start with
 `--skip-connect` when the goal is config-health review, then graduate to
 connected scans only after the server set is understood.
 
-Prepared for the next release:
+Shipped through `1.4.3`:
 
 - GitHub Actions config-health policy gate example;
 - Python and Node JSON consumers that summarize config-health findings by
@@ -71,7 +71,7 @@ Prompt/resource findings stay visible, policy-gatable, and summarized through
 `non_tool_risk`. Do not merge them into `risk_score.composite` until more
 real-world fixtures prove a stable scoring model.
 
-Prepared for the next release:
+Shipped through `1.4.3`:
 
 - GitHub issue, PostgreSQL analytics, and Slack thread fixtures for
   prompt/resource calibration.
