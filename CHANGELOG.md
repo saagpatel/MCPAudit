@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added calendar, container registry, and vault-style prompt/resource
+  calibration cases plus an additional benign glossary case.
+- Added a dashboard status-page style report fixture for JSON consumer examples.
+
+### Changed
+
+- Updated roadmap and feedback guidance to reflect the current `1.4.1` project
+  state and the fixture evidence still needed before scoring changes.
+
 ## [1.4.1] - 2026-05-10
 
 ### Added
