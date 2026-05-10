@@ -109,6 +109,25 @@ servers:
         assert statuses[0].oldest_pinned_at is None
         assert statuses[0].newest_pinned_at is None
 
+    def test_stale_baselines_reports_pins_missing_from_discovered_configs(self, tmp_path: Path) -> None:
+        store = _store(tmp_path)
+        store.pin_server("configured", [make_tool("read_file")])
+        store.pin_server("removed", [make_tool("write_file"), make_tool("delete_file")])
+
+        stale = PinStore(path=tmp_path / "pins.yaml").stale_baselines({"configured"})
+
+        assert [status.server_name for status in stale] == ["removed"]
+        assert stale[0].tool_count == 2
+        assert "pin --clear" in stale[0].remediation
+
+    def test_stale_baselines_empty_when_all_pinned_servers_are_discovered(self, tmp_path: Path) -> None:
+        store = _store(tmp_path)
+        store.pin_server("configured", [make_tool("read_file")])
+
+        stale = PinStore(path=tmp_path / "pins.yaml").stale_baselines({"configured"})
+
+        assert stale == []
+
 
 class TestCheckDrift:
     def test_returns_empty_for_matching_hashes(self, tmp_path: Path) -> None:

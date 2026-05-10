@@ -29,6 +29,14 @@ class ServerPinStatus:
     newest_pinned_at: datetime | None
 
 
+@dataclass(frozen=True)
+class StalePinStatus(ServerPinStatus):
+    """Review summary for a pinned server that is not currently configured."""
+
+    reason: str = "server not found in discovered MCP client configs"
+    remediation: str = "If intentionally removed, run `mcp-audit pin --clear <server>`."
+
+
 class PinStore:
     """Stores SHA256 hashes of MCP tool schemas and detects drift between scans."""
 
@@ -190,6 +198,22 @@ class PinStore:
                 )
             )
         return statuses
+
+    def stale_baselines(self, discovered_server_names: set[str]) -> list[StalePinStatus]:
+        """Return pinned servers that are not present in discovered MCP client configs."""
+        stale: list[StalePinStatus] = []
+        for status in self.status():
+            if status.server_name in discovered_server_names:
+                continue
+            stale.append(
+                StalePinStatus(
+                    server_name=status.server_name,
+                    tool_count=status.tool_count,
+                    oldest_pinned_at=status.oldest_pinned_at,
+                    newest_pinned_at=status.newest_pinned_at,
+                )
+            )
+        return stale
 
     # ------------------------------------------------------------------
     # Internal helpers

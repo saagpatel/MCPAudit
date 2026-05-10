@@ -30,8 +30,15 @@ When a server was removed from your MCP configuration on purpose, clear only its
 stored pins:
 
 ```bash
+mcp-audit pin --stale
+mcp-audit pin --stale --json
 mcp-audit pin --clear github
 ```
+
+`pin --stale` is read-only. It compares stored pin baselines to currently
+discovered MCP client config names without connecting to servers and without
+deleting anything. Use it to find likely removed servers, then clear one
+reviewed server at a time with `pin --clear <server>`.
 
 Prefer `--clear` for removed servers and `--refresh` for changed servers. MCPAudit
 does not currently do bulk stale cleanup because deleting multiple baselines at

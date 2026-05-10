@@ -434,6 +434,13 @@ main.add_command(serve_command)
 @click.option("--clear", "clear_server", default=None, metavar="NAME", help="Remove pins for a server.")
 @click.option("--status", is_flag=True, default=False, help="Show pin coverage summary.")
 @click.option(
+    "--stale",
+    "stale",
+    is_flag=True,
+    default=False,
+    help="Show pinned servers no longer found in MCP client configs.",
+)
+@click.option(
     "--refresh",
     "refresh_server",
     default=None,
@@ -465,6 +472,7 @@ def pin_command(
     server_name: str | None,
     clear_server: str | None,
     status: bool,
+    stale: bool,
     refresh_server: str | None,
     apply_refresh: bool,
     json_status: bool,
@@ -475,8 +483,8 @@ def pin_command(
 
     store = PinStore(path=Path(pin_file) if pin_file else DEFAULT_PIN_PATH)
 
-    if json_status and not (status or refresh_server):
-        raise click.ClickException("--json can only be used with --status or --refresh.")
+    if json_status and not (status or stale or refresh_server):
+        raise click.ClickException("--json can only be used with --status, --stale, or --refresh.")
 
     selected_actions = sum(
         bool(action)
@@ -484,11 +492,14 @@ def pin_command(
             server_name,
             clear_server,
             status,
+            stale,
             refresh_server,
         )
     )
     if selected_actions > 1:
-        raise click.ClickException("--server, --clear, --status, and --refresh are mutually exclusive.")
+        raise click.ClickException(
+            "--server, --clear, --status, --stale, and --refresh are mutually exclusive."
+        )
 
     if apply_refresh and not refresh_server:
         raise click.ClickException("--apply can only be used with --refresh.")
@@ -500,6 +511,10 @@ def pin_command(
 
     if status:
         _render_pin_status(store, json_status)
+        return
+
+    if stale:
+        _render_pin_stale(store, json_status)
         return
 
     if refresh_server:
@@ -722,6 +737,67 @@ def _render_pin_status(store: object, json_status: bool) -> None:
         )
 
     console.print(table)
+
+
+def _render_pin_stale(store: object, json_status: bool) -> None:
+    from mcp_audit.pinning import PinStore as PS
+
+    assert isinstance(store, PS)
+    discovered = discover_all_configs(None)
+    discovered_names = {server.name for server in discovered}
+    stale = store.stale_baselines(discovered_names)
+
+    if json_status:
+        import json
+
+        payload = {
+            "pin_file": str(store.path),
+            "discovered_server_count": len(discovered_names),
+            "pinned_server_count": len(store.status()),
+            "stale_server_count": len(stale),
+            "stale_servers": [
+                {
+                    "name": status.server_name,
+                    "tool_count": status.tool_count,
+                    "oldest_pinned_at": _datetime_or_none(status.oldest_pinned_at),
+                    "newest_pinned_at": _datetime_or_none(status.newest_pinned_at),
+                    "age": _pin_age(status.newest_pinned_at),
+                    "reason": status.reason,
+                    "remediation": status.remediation,
+                }
+                for status in stale
+            ],
+        }
+        click.echo(json.dumps(payload, indent=2, sort_keys=True))
+        return
+
+    console.print(f"[bold]Stale pin baselines:[/bold] {len(stale)} server(s) not found in current configs")
+    console.print(f"[dim]Pin file: {store.path}[/dim]")
+
+    if not stale:
+        console.print("[green]No stale server baselines found.[/green]")
+        return
+
+    from rich.table import Table
+
+    table = Table(show_header=True)
+    table.add_column("Server", style="cyan")
+    table.add_column("Tools", justify="right")
+    table.add_column("Last pin")
+    table.add_column("Age")
+    table.add_column("Suggested action")
+
+    for status in stale:
+        table.add_row(
+            status.server_name,
+            str(status.tool_count),
+            _datetime_or_unknown(status.newest_pinned_at),
+            _pin_age(status.newest_pinned_at),
+            status.remediation,
+        )
+
+    console.print(table)
+    console.print("[yellow]Review only; no pins were changed.[/yellow]")
 
 
 def _datetime_or_none(value: datetime | None) -> str | None:
