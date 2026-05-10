@@ -48,6 +48,10 @@ Prefer `--clear` for removed servers and `--refresh` for changed servers. MCPAud
 does not currently do bulk stale cleanup because deleting multiple baselines at
 once can hide accidental config loss.
 
+Keep this explicit workflow unless repeated feedback shows bulk cleanup is
+needed. A future bulk command should still preview all removals and require a
+separate apply step.
+
 ## Routine Review
 
 For a local workstation review, use the checked-in helper:

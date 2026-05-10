@@ -92,6 +92,7 @@ def test_python_consumer_example_parses_config_health() -> None:
     rows = json.loads(result.stdout)
     assert rows[0]["server"] == "remote-api"
     assert rows[0]["config_health_findings"] == 1
+    assert rows[0]["config_health_by_severity"] == {"medium": 1}
     assert rows[0]["config_health_types"] == ["remote_endpoint"]
 
 
@@ -120,6 +121,7 @@ def test_node_consumer_example_parses_config_health() -> None:
     rows = json.loads(result.stdout)
     assert rows[0]["server"] == "remote-api"
     assert rows[0]["config_health_findings"] == 1
+    assert rows[0]["config_health_by_severity"] == {"medium": 1}
     assert rows[0]["config_health_types"] == ["remote_endpoint"]
 
 

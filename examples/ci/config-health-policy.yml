@@ -1,0 +1,38 @@
+name: MCPAudit Config Health Gate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  config-health:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install MCPAudit
+        run: python -m pip install mcp-permission-audit
+
+      - name: Write config-health policy
+        run: |
+          cat > mcp-audit-policy.yaml <<'YAML'
+          fail_on:
+            config_health: medium
+          YAML
+
+      - name: Audit MCP config without connecting
+        run: |
+          mcp-audit scan \
+            --skip-connect \
+            --json mcp-audit.json \
+            --policy mcp-audit-policy.yaml
+
+      - name: Upload JSON report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-audit-config-health-json
+          path: mcp-audit.json

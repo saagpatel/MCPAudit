@@ -62,6 +62,7 @@ def test_discover_reports_duplicate_server_names(monkeypatch: pytest.MonkeyPatch
 
 def test_discover_reports_config_health_warnings(monkeypatch: pytest.MonkeyPatch) -> None:
     missing_command = make_server_config(name="missing-command", command=None)
+    missing_binary = make_server_config(name="missing-binary", command="/definitely/missing/mcp-server")
     sse_server = make_server_config(
         name="legacy-sse",
         command=None,
@@ -83,6 +84,7 @@ def test_discover_reports_config_health_warnings(monkeypatch: pytest.MonkeyPatch
         "discover_all_configs",
         lambda clients: [
             missing_command,
+            missing_binary,
             sse_server,
             shell_server,
             remote_arg_server,
@@ -95,11 +97,29 @@ def test_discover_reports_config_health_warnings(monkeypatch: pytest.MonkeyPatch
     assert result.exit_code == 0
     assert "Config health warnings found" in result.output
     assert "'missing-command' uses stdio but has no command" in result.output
+    assert "'missing-binary' command path does not exist locally" in result.output
     assert "'legacy-sse' uses deprecated SSE transport" in result.output
     assert "'legacy-sse' declares a remote endpoint" in result.output
     assert "'shell-server' launches through shell wrapper 'bash'" in result.output
     assert "'remote-arg' command or args include a remote URL" in result.output
     assert "'credential-heavy' references 3 credential key names" in result.output
+
+
+def test_discover_reports_global_project_scope_conflicts(monkeypatch: pytest.MonkeyPatch) -> None:
+    global_server = make_server_config(name="github")
+    project_server = global_server.model_copy(
+        update={
+            "config_path": "/repo/.mcp.json",
+            "project_path": "/repo",
+        }
+    )
+    monkeypatch.setattr(cli, "discover_all_configs", lambda clients: [global_server, project_server])
+
+    result = CliRunner().invoke(cli.main, ["discover"])
+
+    assert result.exit_code == 0
+    assert "'github' appears 2 times" in result.output
+    assert "'github' is configured in both global and project scopes" in result.output
 
 
 def test_run_scan_core_config_only_ignores_discovered_configs(monkeypatch: pytest.MonkeyPatch) -> None:

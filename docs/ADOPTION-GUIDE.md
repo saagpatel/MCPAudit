@@ -33,8 +33,8 @@ Review prompt/resource findings separately from the composite score. They are
 visible in reports and policy gates. In `1.1`, they also feed the additive
 `non_tool_risk` field, but they do not change `risk_score.composite`.
 Review config-health findings before turning on policy gates for remote
-endpoints, shell-wrapper launches, deprecated transports, or duplicated server
-names.
+endpoints, shell-wrapper launches, deprecated transports, missing command paths,
+project/global name conflicts, or duplicated server names.
 
 ## Team CI Policy Gate
 
@@ -62,6 +62,9 @@ servers:
 
 A complete JSON-plus-policy workflow example is available at
 `examples/ci/generic-json-policy.yml`.
+
+For a config-only gate focused on setup health, start from
+`examples/ci/config-health-policy.yml`.
 
 For stricter rollout, start from
 `examples/policies/reviewed-local-workstation.yaml` or

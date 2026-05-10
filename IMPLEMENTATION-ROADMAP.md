@@ -29,6 +29,10 @@ Current scan behavior:
 ## Implemented Capabilities
 
 - Config discovery and parsing for the supported MCP clients.
+- Config-health diagnostics for duplicate names, missing stdio commands,
+  missing local command paths, project/global scope conflicts, deprecated SSE
+  transports, shell-wrapper launches, remote endpoints, remote URL arguments,
+  and credential-heavy configs.
 - Guarded stdio/HTTP connection lifecycle with timeout cleanup.
 - Config-only risk inference for `scan --skip-connect`.
 - Tool inventory, annotation coverage, and permission classification.
@@ -122,7 +126,8 @@ The policy gate supports severity thresholds, drift, denied permission
 categories, max risk, required pin coverage, server allowlists, separate
 finding thresholds, and per-server overrides. Useful follow-ups:
 
-- richer sample policies for team-specific adoption.
+- richer sample policies for team-specific adoption when repeated user patterns
+  justify them.
 
 Done when policies can express common adoption rules without custom scripting.
 
@@ -174,6 +179,7 @@ Before the next public release:
 - follow `docs/RELEASE-CHECKLIST.md` for PyPI and clean-install smoke checks.
 - use `docs/STABLE-READINESS.md` for the stable go/no-go bar.
 - use `docs/ROADMAP-1.1.md` for additive post-stable product depth.
+- use `docs/ROADMAP-NEXT.md` for the current post-`1.3.0` roadmap.
 
 ## Verification Contract
 

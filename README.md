@@ -12,7 +12,7 @@ PyPI package: `mcp-permission-audit`. Installed command: `mcp-audit`.
 
 - **Capability inventory** — catalogs server tools, prompts, and resources; tool, prompt, and resource capabilities are classified across six permission categories: `file_read`, `file_write`, `network`, `shell_execution`, `destructive`, `exfiltration`
 - **Config-only inference** — `scan --skip-connect` infers conservative risks from declared commands, transports, credential key names, package runners, and remote URLs
-- **Config health diagnostics** — `discover` and `scan` flag duplicate server names, missing stdio commands, deprecated SSE transports, shell-wrapper launches, remote endpoints, and credential-heavy configs before users pin or connect; JSON reports include additive `config_health_findings`
+- **Config health diagnostics** — `discover` and `scan` flag duplicate server names, missing stdio commands, missing local command paths, project/global scope conflicts, deprecated SSE transports, shell-wrapper launches, remote endpoints, and credential-heavy configs before users pin or connect; JSON reports include additive `config_health_findings`
 - **Risk scoring** — composite 0–10 per server as a weighted sum of tool permission categories, with a five-dimension breakdown (file access, network, shell, destructive, exfiltration); prompt/resource findings also produce an additive `non_tool_risk` signal without changing `risk_score.composite`
 - **Stable finding metadata** — permission and prompt-injection findings include stable rule IDs, severity, evidence, and suggested remediation so reports are easier to triage
 - **Local policy gates** — `scan --policy policy.yaml` evaluates reports against local YAML rules and exits nonzero for CI enforcement
@@ -147,7 +147,7 @@ and migration path. See `examples/ci/pin-stale-review.yml` and
 `examples/maintenance/stale-pin-review.sh` for routine stale pin review flows.
 See `docs/FEEDBACK-TO-FIXTURES.md` for turning false positives, missing
 detections, output issues, and pin lifecycle feedback into safe regression
-fixtures. See `docs/ROADMAP-1.2.md` for the current adoption-depth roadmap.
+fixtures. See `docs/ROADMAP-NEXT.md` for the current post-`1.3.0` roadmap.
 
 ## License
 
