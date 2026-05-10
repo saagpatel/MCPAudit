@@ -9,8 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Added duplicate server-name warnings to `discover` and `scan` so ambiguous
-  pin baselines are visible before pin maintenance.
+- Added config-health warnings to `discover` and `scan` so duplicate names,
+  missing stdio commands, deprecated SSE transports, shell-wrapper launches,
+  remote endpoints, and credential-heavy configs are visible before pinning or
+  connected scans.
 
 ## [1.1.3] - 2026-05-10
 

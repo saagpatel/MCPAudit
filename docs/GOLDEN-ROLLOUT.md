@@ -17,8 +17,10 @@ Review discovered server names, commands, transports, package runners, remote
 URLs, and credential key names. This pass is safe for exploratory review because
 it does not connect to servers.
 
-Resolve duplicate server-name warnings before creating pins. Pins are keyed by
-server name, so duplicate names make a reviewed baseline ambiguous.
+Resolve config-health warnings before creating pins. Duplicate names make a
+reviewed pin baseline ambiguous because pins are keyed by server name. Missing
+stdio commands, deprecated SSE transports, shell-wrapper launches, remote
+endpoints, and credential-heavy configs deserve review before connected scans.
 
 ## 2. Run A Connected Review
 

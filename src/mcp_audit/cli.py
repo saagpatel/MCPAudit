@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import platform
+import re
 import socket
 import time
 from collections import Counter
@@ -18,13 +19,25 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from mcp_audit.analyzer import PermissionAnalyzer
 from mcp_audit.connector import ServerConnector
 from mcp_audit.discovery import discover_all_configs
-from mcp_audit.models import AuditReport, ClientType, DriftFinding, DriftStatus, ServerAudit, ServerConfig
+from mcp_audit.models import (
+    AuditReport,
+    ClientType,
+    DriftFinding,
+    DriftStatus,
+    ServerAudit,
+    ServerConfig,
+    TransportType,
+)
 from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
 from mcp_audit.redaction import redact_text
 from mcp_audit.report import ReportGenerator
 from mcp_audit.scorer import RiskScorer
 
 console = Console()
+
+_CREDENTIAL_HEAVY_THRESHOLD = 3
+_REMOTE_URL = re.compile(r"https?://", re.IGNORECASE)
+_SHELL_WRAPPERS = {"bash", "sh", "zsh", "fish", "pwsh", "powershell", "cmd", "cmd.exe"}
 
 
 @click.group()
@@ -103,7 +116,7 @@ def discover(client_filter: str | None, verbose: bool) -> None:
         )
 
     console.print(table)
-    _render_duplicate_server_name_warning(servers)
+    _render_config_health_warnings(servers)
 
 
 @main.command()
@@ -365,7 +378,7 @@ async def _run_scan(
         console.print("[yellow]No MCP servers found.[/yellow]")
         return
 
-    _render_duplicate_server_name_warning([audit.server for audit in report.audits])
+    _render_config_health_warnings([audit.server for audit in report.audits])
 
     gen = ReportGenerator(console=console)
     gen.render_terminal(report, verbose=verbose)
@@ -423,17 +436,65 @@ def _duplicate_server_config_counts(servers: list[ServerConfig]) -> dict[str, in
     return {name: count for name, count in counts.items() if count > 1}
 
 
-def _render_duplicate_server_name_warning(servers: list[ServerConfig]) -> None:
-    duplicate_counts = _duplicate_server_config_counts(servers)
-    if not duplicate_counts:
+def _render_config_health_warnings(servers: list[ServerConfig]) -> None:
+    warnings = _config_health_warnings(servers)
+    if not warnings:
         return
 
-    console.print("[yellow]Duplicate MCP server names found.[/yellow]")
-    for name, count in sorted(duplicate_counts.items()):
-        console.print(
-            f"[yellow]- '{name}' appears {count} times. Pins are keyed by server name; "
-            "rename duplicate MCP server entries before pinning.[/yellow]"
+    console.print("[yellow]Config health warnings found.[/yellow]")
+    for warning in warnings:
+        console.print(f"[yellow]- {warning}[/yellow]")
+
+
+def _config_health_warnings(servers: list[ServerConfig]) -> list[str]:
+    warnings: list[str] = []
+
+    for name, count in sorted(_duplicate_server_config_counts(servers).items()):
+        warnings.append(
+            f"'{name}' appears {count} times; pins are keyed by server name, so rename duplicate "
+            "MCP server entries before pinning."
         )
+
+    for server in servers:
+        if server.transport == TransportType.STDIO and not server.command:
+            warnings.append(f"'{server.name}' uses stdio but has no command; connected scans will fail.")
+        if server.transport == TransportType.SSE:
+            warnings.append(
+                f"'{server.name}' uses deprecated SSE transport; prefer Streamable HTTP if supported."
+            )
+        if server.transport in (TransportType.HTTP, TransportType.SSE) or server.url:
+            warnings.append(
+                f"'{server.name}' declares a remote endpoint; connected scans may contact the network."
+            )
+        if _REMOTE_URL.search(_config_command_line(server)):
+            warnings.append(
+                f"'{server.name}' command or args include a remote URL; review the outbound target."
+            )
+        command_name = _command_name(server.command)
+        if command_name in _SHELL_WRAPPERS:
+            warnings.append(
+                f"'{server.name}' launches through shell wrapper '{command_name}'; "
+                "review args before connecting."
+            )
+        credential_count = len(server.env_keys) + len(server.headers_keys)
+        if credential_count >= _CREDENTIAL_HEAVY_THRESHOLD:
+            warnings.append(
+                f"'{server.name}' references {credential_count} credential key names; "
+                "review their access scope."
+            )
+
+    return warnings
+
+
+def _config_command_line(server: ServerConfig) -> str:
+    return " ".join(part for part in [server.command, *server.args] if part)
+
+
+def _command_name(command: str | None) -> str:
+    if not command:
+        return ""
+    normalized = command.replace("\\", "/").rstrip("/")
+    return normalized.rsplit("/", 1)[-1].lower()
 
 
 # Register watch, monitor, serve, pin subcommands
