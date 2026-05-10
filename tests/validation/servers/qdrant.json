@@ -1,0 +1,64 @@
+{
+  "server_name": "server-qdrant",
+  "description": "Qdrant MCP server — semantic search and vector database operations",
+  "tools": [
+    {
+      "name": "qdrant_store",
+      "description": "Upsert text, metadata, and embeddings into a remote Qdrant collection.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "collection_name": { "type": "string" },
+          "id": { "type": "string" },
+          "text": { "type": "string" },
+          "metadata": { "type": "object" },
+          "embedding": { "type": "array", "items": { "type": "number" } }
+        },
+        "required": ["collection_name", "text"]
+      }
+    },
+    {
+      "name": "qdrant_find",
+      "description": "Search a remote Qdrant collection for semantically similar documents.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "collection_name": { "type": "string" },
+          "query": { "type": "string" },
+          "limit": { "type": "integer" },
+          "filter": { "type": "object" }
+        },
+        "required": ["collection_name", "query"]
+      }
+    },
+    {
+      "name": "qdrant_delete",
+      "description": "Delete points or clear records from a remote Qdrant collection.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "collection_name": { "type": "string" },
+          "ids": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["collection_name", "ids"]
+      }
+    }
+  ],
+  "expected_findings": [
+    {
+      "tool": "qdrant_store",
+      "categories": ["file_write", "network"],
+      "min_confidence": "medium"
+    },
+    {
+      "tool": "qdrant_find",
+      "categories": ["file_read", "network"],
+      "min_confidence": "medium"
+    },
+    {
+      "tool": "qdrant_delete",
+      "categories": ["file_write", "network", "destructive"],
+      "min_confidence": "medium"
+    }
+  ]
+}

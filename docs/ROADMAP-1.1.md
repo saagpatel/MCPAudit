@@ -31,6 +31,8 @@ Done when:
 Follow-up calibration now has dedicated prompt/resource cases in
 `tests/validation/non_tool_cases.json`. Continue collecting false-positive and
 false-negative examples before any policy default gates on `non_tool_risk`.
+The validation corpus also includes a Qdrant-style vector database fixture to
+keep semantic-search storage and lookup signals calibrated.
 
 ### Policy Packs
 
@@ -46,6 +48,10 @@ intended audience in `examples/policies/README.md`.
 
 Done when future team-specific policy requests can be added as small examples
 without changing the policy engine.
+
+The staged adoption path is documented in `docs/GOLDEN-ROLLOUT.md` so teams can
+move from config-only review to connected scans, pins, and policy gates without
+changing scanner defaults.
 
 ### Pin Maintenance UX
 

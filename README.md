@@ -136,7 +136,8 @@ See `docs/ADOPTION-GUIDE.md` for local review, team CI, and GitHub code
 scanning setup paths. See `docs/1.1-ADOPTION.md` for `non_tool_risk` parsing
 examples and policy selection notes, and `examples/consumers/` for runnable
 JSON consumer examples. See `examples/policies/` for starter policies. See
-`docs/STABLE-READINESS.md` for the stable-release bar. See
+`docs/GOLDEN-ROLLOUT.md` for the recommended config-only to policy-gated
+rollout path. See `docs/STABLE-READINESS.md` for the stable-release bar. See
 `docs/PIN-MAINTENANCE.md` for reviewed pin refresh and stale server cleanup
 workflows. See `docs/PROMPT-RESOURCE-SCORING.md` and
 `docs/SCORING-MIGRATION.md` for the current prompt/resource scoring boundary
