@@ -11,7 +11,7 @@ import pytest
 from click.testing import CliRunner
 
 from mcp_audit import cli
-from mcp_audit.models import AuditReport, ServerAudit
+from mcp_audit.models import AuditReport, ServerAudit, TransportType
 from mcp_audit.overrides import OverrideApplier, OverrideConfig
 from mcp_audit.pinning import PinStore
 from tests.conftest import make_server_config, make_tool
@@ -55,9 +55,51 @@ def test_discover_reports_duplicate_server_names(monkeypatch: pytest.MonkeyPatch
     result = CliRunner().invoke(cli.main, ["discover"])
 
     assert result.exit_code == 0
-    assert "Duplicate MCP server names found" in result.output
+    assert "Config health warnings found" in result.output
     assert "'srv' appears 2 times" in result.output
-    assert "Pins are keyed by server name" in result.output
+    assert "pins are keyed by server name" in result.output
+
+
+def test_discover_reports_config_health_warnings(monkeypatch: pytest.MonkeyPatch) -> None:
+    missing_command = make_server_config(name="missing-command", command=None)
+    sse_server = make_server_config(
+        name="legacy-sse",
+        command=None,
+        transport=TransportType.SSE,
+        url="https://example.com/sse",
+    )
+    shell_server = make_server_config(name="shell-server", command="bash", args=["-lc", "echo hi"])
+    remote_arg_server = make_server_config(
+        name="remote-arg",
+        command="node",
+        args=["https://example.com/bootstrap.js"],
+    )
+    credential_server = make_server_config(
+        name="credential-heavy",
+        env_keys=["TOKEN", "SECRET"],
+    ).model_copy(update={"headers_keys": ["Authorization"]})
+    monkeypatch.setattr(
+        cli,
+        "discover_all_configs",
+        lambda clients: [
+            missing_command,
+            sse_server,
+            shell_server,
+            remote_arg_server,
+            credential_server,
+        ],
+    )
+
+    result = CliRunner().invoke(cli.main, ["discover"])
+
+    assert result.exit_code == 0
+    assert "Config health warnings found" in result.output
+    assert "'missing-command' uses stdio but has no command" in result.output
+    assert "'legacy-sse' uses deprecated SSE transport" in result.output
+    assert "'legacy-sse' declares a remote endpoint" in result.output
+    assert "'shell-server' launches through shell wrapper 'bash'" in result.output
+    assert "'remote-arg' command or args include a remote URL" in result.output
+    assert "'credential-heavy' references 3 credential key names" in result.output
 
 
 def test_run_scan_core_config_only_ignores_discovered_configs(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -100,7 +142,7 @@ def test_scan_reports_duplicate_server_names(monkeypatch: pytest.MonkeyPatch) ->
     result = CliRunner().invoke(cli.main, ["scan", "--skip-connect"])
 
     assert result.exit_code == 0
-    assert "Duplicate MCP server names found" in result.output
+    assert "Config health warnings found" in result.output
     assert "'srv' appears 2 times" in result.output
 
 
