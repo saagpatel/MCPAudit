@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added GitHub, PostgreSQL, and Slack-style prompt/resource calibration cases
+  for `non_tool_risk` fixture depth.
+- Added a dashboard-oriented JSON consumer example for CI summaries.
+
+### Changed
+
+- Clarified remediation guidance for intentional project-local server shadowing
+  before pinning.
+
 ## [1.4.0] - 2026-05-10
 
 ### Added

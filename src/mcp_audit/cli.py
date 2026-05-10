@@ -502,8 +502,9 @@ def _config_health_findings(servers: list[ServerConfig]) -> list[ConfigHealthFin
                 ),
                 details=scopes,
                 remediation=(
-                    "Rename one server entry or remove the unintended duplicate so reviews and pins "
-                    "refer to the intended scope."
+                    "If project-local shadowing is intentional, give the project server a unique reviewed "
+                    "name before pinning. Otherwise remove the unintended duplicate so reviews and pins "
+                    "refer to one authoritative scope."
                 ),
             )
         )
