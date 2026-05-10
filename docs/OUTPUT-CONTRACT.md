@@ -98,6 +98,12 @@ report shapes that predate additive prompt/resource and config-health fields.
 They also verify that future additive fields are ignored by the current model,
 matching the `1.x` compatibility rule for tolerant downstream consumers.
 
+Redacted field-report fixtures in `tests/fixtures/reports/field/` cover mixed,
+single-client, and quiet config-only setup shapes from real-world review paths.
+The Python parser, Node parser, and dashboard summary examples are contract
+tested against compatibility and field-report fixtures so output-consumer
+friction can be turned into small regressions before the beta label.
+
 ## CI Examples
 
 Write SARIF for GitHub code scanning:

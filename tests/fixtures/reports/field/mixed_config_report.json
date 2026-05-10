@@ -1,0 +1,171 @@
+{
+  "scan_timestamp": "2026-05-10T09:20:00Z",
+  "hostname": "field-host",
+  "os_platform": "Darwin",
+  "servers_discovered": 4,
+  "servers_connected": 0,
+  "servers_failed": 0,
+  "total_tools": 0,
+  "high_risk_servers": 0,
+  "audits": [
+    {
+      "server": {
+        "name": "bridge-db",
+        "client": "claude_code",
+        "config_path": "/redacted/global.json",
+        "project_path": null,
+        "command": "uv",
+        "args": ["run", "bridge-db"],
+        "env_keys": [],
+        "transport": "stdio",
+        "url": null,
+        "headers_keys": []
+      },
+      "connection_status": "skipped",
+      "connection_error": null,
+      "tools": [],
+      "prompts": [],
+      "resources": [],
+      "permissions": [],
+      "capability_findings": [],
+      "risk_score": null,
+      "non_tool_risk": null,
+      "has_annotations": false,
+      "annotation_coverage": 0.0,
+      "injection_findings": [],
+      "drift_findings": []
+    },
+    {
+      "server": {
+        "name": "bridge-db",
+        "client": "claude_code",
+        "config_path": "/redacted/project.json",
+        "project_path": "/redacted/project",
+        "command": "uv",
+        "args": ["run", "bridge-db"],
+        "env_keys": [],
+        "transport": "stdio",
+        "url": null,
+        "headers_keys": []
+      },
+      "connection_status": "skipped",
+      "connection_error": null,
+      "tools": [],
+      "prompts": [],
+      "resources": [],
+      "permissions": [],
+      "capability_findings": [],
+      "risk_score": null,
+      "non_tool_risk": null,
+      "has_annotations": false,
+      "annotation_coverage": 0.0,
+      "injection_findings": [],
+      "drift_findings": []
+    },
+    {
+      "server": {
+        "name": "remote-api",
+        "client": "claude_code",
+        "config_path": "/redacted/global.json",
+        "project_path": null,
+        "command": null,
+        "args": [],
+        "env_keys": [],
+        "transport": "http",
+        "url": "https://mcp.example.invalid",
+        "headers_keys": []
+      },
+      "connection_status": "skipped",
+      "connection_error": null,
+      "tools": [],
+      "prompts": [],
+      "resources": [],
+      "permissions": [],
+      "capability_findings": [],
+      "risk_score": {
+        "composite": 4.0,
+        "file_access": 0.0,
+        "network_access": 4.0,
+        "shell_execution": 0.0,
+        "destructive": 0.0,
+        "exfiltration": 0.0
+      },
+      "non_tool_risk": null,
+      "has_annotations": false,
+      "annotation_coverage": 0.0,
+      "injection_findings": [],
+      "drift_findings": []
+    },
+    {
+      "server": {
+        "name": "image-tool",
+        "client": "claude_code",
+        "config_path": "/redacted/global.json",
+        "project_path": null,
+        "command": "npx",
+        "args": ["-y", "@example/mcp-image"],
+        "env_keys": ["IMAGE_API_KEY", "IMAGE_WORKSPACE", "IMAGE_SECRET"],
+        "transport": "stdio",
+        "url": null,
+        "headers_keys": []
+      },
+      "connection_status": "skipped",
+      "connection_error": null,
+      "tools": [],
+      "prompts": [],
+      "resources": [],
+      "permissions": [],
+      "capability_findings": [],
+      "risk_score": null,
+      "non_tool_risk": null,
+      "has_annotations": false,
+      "annotation_coverage": 0.0,
+      "injection_findings": [],
+      "drift_findings": []
+    }
+  ],
+  "scan_duration_seconds": 0.2,
+  "config_health_findings": [
+    {
+      "finding_type": "duplicate_server_name",
+      "severity": "medium",
+      "server_name": "bridge-db",
+      "summary": "'bridge-db' appears 2 times; pins are keyed by server name.",
+      "details": ["2 discovered configs share the same server name."],
+      "remediation": "Rename duplicate MCP server entries before creating or refreshing pins."
+    },
+    {
+      "finding_type": "conflicting_scope_server_name",
+      "severity": "medium",
+      "server_name": "bridge-db",
+      "summary": "'bridge-db' is configured in both global and project scopes.",
+      "details": ["global", "project:/redacted/project"],
+      "remediation": "Review which server entry should be authoritative before pinning."
+    },
+    {
+      "finding_type": "remote_endpoint",
+      "severity": "medium",
+      "server_name": "remote-api",
+      "summary": "'remote-api' declares a remote endpoint.",
+      "details": ["HTTP or SSE MCP transports contact the configured URL during scans."],
+      "remediation": "Review the remote endpoint before running connected scans."
+    },
+    {
+      "finding_type": "package_runner_source_review",
+      "severity": "medium",
+      "server_name": "image-tool",
+      "summary": "'image-tool' launches through package runner 'npx'.",
+      "details": ["Source: @example/mcp-image"],
+      "remediation": "Pin package versions where possible and review the source before connecting."
+    },
+    {
+      "finding_type": "credential_heavy_config",
+      "severity": "medium",
+      "server_name": "image-tool",
+      "summary": "'image-tool' references 3 credential key names.",
+      "details": ["Only credential key names are reported; credential values are not stored."],
+      "remediation": "Confirm the referenced credentials are scoped to the server's purpose."
+    }
+  ],
+  "policy_result": null
+}

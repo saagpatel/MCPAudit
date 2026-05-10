@@ -1,0 +1,42 @@
+{
+  "scan_timestamp": "2026-05-10T09:30:00Z",
+  "hostname": "field-host",
+  "os_platform": "Darwin",
+  "servers_discovered": 1,
+  "servers_connected": 0,
+  "servers_failed": 0,
+  "total_tools": 0,
+  "high_risk_servers": 0,
+  "audits": [
+    {
+      "server": {
+        "name": "local-notes",
+        "client": "claude_desktop",
+        "config_path": "/redacted/desktop.json",
+        "project_path": null,
+        "command": "/usr/local/bin/local-notes-mcp",
+        "args": [],
+        "env_keys": [],
+        "transport": "stdio",
+        "url": null,
+        "headers_keys": []
+      },
+      "connection_status": "skipped",
+      "connection_error": null,
+      "tools": [],
+      "prompts": [],
+      "resources": [],
+      "permissions": [],
+      "capability_findings": [],
+      "risk_score": null,
+      "non_tool_risk": null,
+      "has_annotations": false,
+      "annotation_coverage": 0.0,
+      "injection_findings": [],
+      "drift_findings": []
+    }
+  ],
+  "scan_duration_seconds": 0.05,
+  "config_health_findings": [],
+  "policy_result": null
+}

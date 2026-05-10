@@ -1,15 +1,18 @@
 # MCPAudit Next Roadmap
 
-MCPAudit `1.5.1` is prepared with structured config-health findings, policy
+MCPAudit `1.5.2` is prepared with structured config-health findings, policy
 gates, prompt/resource non-tool risk reporting, reviewed stale pin cleanup,
 dashboard-consumer improvements, copy-pasteable adoption examples, adoption
 smoke coverage, redacted config-health fixtures, and expanded prompt/resource
-scoring evidence. It also adds output-contract upgrade compatibility coverage.
-The next line should collect external reports before changing scoring semantics.
+scoring evidence. It also adds output-contract upgrade compatibility coverage,
+field-report fixtures, and consumer-contract tests across the checked-in Python,
+Node, and dashboard examples. The next line should collect external reports
+before changing scoring semantics.
 
 Tracked `1.5` evidence-intake work lives in `docs/1.5-EVIDENCE-INTAKE.md`,
 with the release decision in `docs/1.5-RELEASE-DECISION.md`.
 Beta-readiness evidence lives in `docs/BETA-READINESS-EVIDENCE.md`.
+Field-report evidence lives in `docs/FIELD-REPORTS.md`.
 
 ## 1. Config Health Depth
 
@@ -99,7 +102,7 @@ Completed fixture/proposal issue:
 
 ## 5. Beta Readiness
 
-Status: polish shipped in `1.5.1`.
+Status: polish shipped in `1.5.2`.
 
 Shipped through `1.5.1`:
 
@@ -107,6 +110,15 @@ Shipped through `1.5.1`:
 - tolerance test for future additive report fields;
 - config-only evidence notes from real local MCP setup shapes;
 - release decision to ship `1.5.1` polish rather than `1.6.0` beta prep.
+
+Shipped through `1.5.2`:
+
+- redacted field-report fixtures for mixed, single-client, and quiet
+  config-only setup shapes;
+- consumer-contract coverage that runs the Python parser, Node parser, and
+  dashboard summary examples against compatibility and field-report fixtures;
+- field-report evidence docs that track the current milestone, GitHub issues,
+  and release decision to ship `1.5.2` polish rather than `1.6.0` beta prep.
 
 Candidate follow-ups:
 

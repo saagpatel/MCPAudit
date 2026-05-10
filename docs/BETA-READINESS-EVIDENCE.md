@@ -1,11 +1,13 @@
 # MCPAudit Beta Readiness Evidence
 
-MCPAudit `1.5.1` is a beta-readiness polish release. It does not change scanner
+MCPAudit `1.5.2` is a beta-readiness polish release. It does not change scanner
 behavior or output schema. It adds evidence that current reports remain
-compatible with older JSON shapes and records config-only findings from real
-local MCP setup shapes.
+compatible with older JSON shapes, records config-only findings from real local
+MCP setup shapes, and verifies checked-in JSON consumers against redacted
+field-report fixtures.
 
 Tracked milestone: <https://github.com/saagpatel/MCPAudit/milestone/2>
+Field-report milestone: <https://github.com/saagpatel/MCPAudit/milestone/3>
 
 ## Local Evidence Pass
 
@@ -30,6 +32,10 @@ These signals are already covered by existing config-health behavior and
 fixtures, so `1.5.1` adds compatibility and documentation hardening rather than
 new diagnostics.
 
+The `1.5.2` field-report pass keeps the same scanner boundary and adds redacted
+fixtures for mixed, single-client, and quiet config-only setup shapes. Details
+live in `docs/FIELD-REPORTS.md`.
+
 ## Output Contract Evidence
 
 Upgrade compatibility now covers:
@@ -37,6 +43,8 @@ Upgrade compatibility now covers:
 - older tool-only reports without prompt/resource additive fields;
 - older failed-connection reports without top-level config-health fields;
 - future additive fields at the report, audit, server, and finding levels.
+- redacted field-report shapes parsed by the Python, Node, and dashboard
+  consumer examples.
 
 The compatibility decision remains:
 
@@ -52,3 +60,10 @@ Ship `1.5.1` as polish instead of `1.6.0`.
 Reason: this pass strengthens compatibility evidence and docs, but it does not
 add new user-facing scanner behavior. Reserve `1.6.0` for a future beta-prep
 feature or output-contract expansion backed by external redacted reports.
+
+Ship `1.5.2` as polish instead of `1.6.0`.
+
+Reason: this pass strengthens downstream consumer confidence and captures the
+current field-report workflow, but it still does not add scanner behavior or a
+new output schema. Keep the beta label blocked on external redacted reports or a
+reviewed output-contract expansion.
