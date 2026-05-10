@@ -86,6 +86,10 @@ mcp-audit pin --refresh github --apply
 Use `mcp-audit pin --clear <server>` only when the server was intentionally
 removed from MCP client configuration.
 
+Run `mcp-audit pin --stale` during routine maintenance to find pin baselines for
+servers that are no longer present in discovered MCP configs. See
+`docs/PIN-MAINTENANCE.md` for the local helper script and scheduled CI example.
+
 ## Output Consumers
 
 For JSON consumers, treat `risk_score.composite` as the stable tool-centered

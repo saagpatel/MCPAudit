@@ -43,3 +43,19 @@ reviewed server at a time with `pin --clear <server>`.
 Prefer `--clear` for removed servers and `--refresh` for changed servers. MCPAudit
 does not currently do bulk stale cleanup because deleting multiple baselines at
 once can hide accidental config loss.
+
+## Routine Review
+
+For a local workstation review, use the checked-in helper:
+
+```bash
+bash examples/maintenance/stale-pin-review.sh
+```
+
+It writes discovered server names, pin status, and stale pin JSON into a local
+review folder. It does not change pins.
+
+For GitHub Actions, start from `examples/ci/pin-stale-review.yml`. The workflow
+runs `scan --skip-connect` and `pin --stale --json`, then uploads both review
+artifacts. Treat the stale report as a prompt for manual review; clear only
+servers that were intentionally removed.

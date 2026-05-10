@@ -1,0 +1,31 @@
+name: MCPAudit Stale Pin Review
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 14 * * 1"
+
+jobs:
+  stale-pins:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install MCPAudit
+        run: python -m pip install mcp-permission-audit
+
+      - name: Review configured MCP servers
+        run: mcp-audit scan --skip-connect --json mcp-audit-config-review.json
+
+      - name: Review stale pin baselines
+        run: mcp-audit pin --stale --json > mcp-audit-stale-pins.json
+
+      - name: Upload review artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-audit-pin-maintenance
+          path: |
+            mcp-audit-config-review.json
+            mcp-audit-stale-pins.json

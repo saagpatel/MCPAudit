@@ -15,6 +15,7 @@ from mcp_audit.models import AuditReport
 
 CI_EXAMPLES = sorted(Path("examples/ci").glob("*.yml"))
 CONSUMER_EXAMPLES = sorted(Path("examples/consumers").glob("parse*"))
+MAINTENANCE_EXAMPLES = sorted(Path("examples/maintenance").glob("*.sh"))
 POLICY_EXAMPLES = sorted(Path("examples/policies").glob("*.yaml"))
 PROMPT_RESOURCE_REPORT = Path("tests/fixtures/reports/prompt_resource_report.json")
 SCHEMA_PATH = Path("examples/schemas/audit-report.schema.json")
@@ -33,6 +34,21 @@ def test_ci_examples_install_published_package() -> None:
         text = example_path.read_text()
         assert "mcp-permission-audit" in text
         assert "mcp-audit scan" in text
+
+
+def test_stale_pin_review_examples_are_read_only() -> None:
+    ci_text = Path("examples/ci/pin-stale-review.yml").read_text()
+    script_text = Path("examples/maintenance/stale-pin-review.sh").read_text()
+    assert "mcp-audit pin --stale --json" in ci_text
+    assert "mcp-audit pin --stale --json" in script_text
+    assert "mcp-audit pin --clear" not in ci_text
+    assert "mcp-audit pin --clear <server>" in script_text
+
+
+def test_maintenance_shell_examples_parse() -> None:
+    assert MAINTENANCE_EXAMPLES
+    for example_path in MAINTENANCE_EXAMPLES:
+        subprocess.run(["bash", "-n", str(example_path)], check=True)
 
 
 def test_policy_pack_readme_mentions_each_policy() -> None:
