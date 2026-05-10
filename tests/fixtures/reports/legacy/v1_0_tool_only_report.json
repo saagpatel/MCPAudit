@@ -1,0 +1,58 @@
+{
+  "scan_timestamp": "2026-05-01T09:00:00Z",
+  "hostname": "legacy-host",
+  "os_platform": "Darwin",
+  "servers_discovered": 1,
+  "servers_connected": 1,
+  "servers_failed": 0,
+  "total_tools": 1,
+  "high_risk_servers": 1,
+  "audits": [
+    {
+      "server": {
+        "name": "legacy-shell",
+        "client": "claude_code",
+        "config_path": "/tmp/legacy-mcp.json",
+        "command": "python",
+        "args": ["server.py"],
+        "env_keys": ["LEGACY_TOKEN"]
+      },
+      "connection_status": "connected",
+      "connection_error": null,
+      "tools": [
+        {
+          "name": "execute_command",
+          "description": "Run a command.",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string"
+              }
+            }
+          },
+          "annotations": null
+        }
+      ],
+      "permissions": [
+        {
+          "category": "shell_execution",
+          "confidence": "high",
+          "evidence": ["execute_command"],
+          "tool_name": "execute_command"
+        }
+      ],
+      "risk_score": {
+        "composite": 8.0,
+        "file_access": 0.0,
+        "network_access": 0.0,
+        "shell_execution": 8.0,
+        "destructive": 0.0,
+        "exfiltration": 0.0
+      },
+      "has_annotations": false,
+      "annotation_coverage": 0.0
+    }
+  ],
+  "scan_duration_seconds": 0.2
+}

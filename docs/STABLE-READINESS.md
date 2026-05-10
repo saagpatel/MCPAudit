@@ -26,6 +26,7 @@ Ready for stable release:
 - package install and command naming are settled;
 - connected and config-only scan boundaries are documented;
 - JSON/SARIF rule IDs are documented and snapshot-tested;
+- older report shapes and additive future fields have compatibility fixtures;
 - user feedback has a fixture-driven intake path;
 - validation corpus covers common filesystem, network, shell, destructive,
   exfiltration, browser, cloud, database, and messaging server shapes.
@@ -34,8 +35,9 @@ Ready for stable release:
 Release-candidate decision:
 
 - keep prompt/resource findings outside `risk_score.composite` for `1.0.0`;
-- consider an additive `non_tool_risk` field after stable if field feedback
-  shows enough calibrated signal.
+- keep `non_tool_risk` additive for `1.x`;
+- do not move to beta until external redacted reports confirm output-contract
+  stability for downstream consumers.
 
 ## Go/No-Go Checklist
 
