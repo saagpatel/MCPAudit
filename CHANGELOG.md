@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.2] - 2026-05-10
+
+### Added
+
+- Added consumer-contract tests that exercise Python, Node, and dashboard
+  examples against compatibility and field-report fixtures.
+- Added redacted field-report fixtures for mixed, single-client, and quiet
+  config-only setup shapes.
+- Added field-report evidence docs and release decision notes.
+
+### Changed
+
+- Refreshed roadmap and beta-readiness evidence docs for the `1.5.2` polish
+  lane.
+
 ## [1.5.1] - 2026-05-10
 
 ### Added
@@ -441,7 +456,8 @@ real workstations; API surface may still shift before the `1.0.0` stable cut.
 - Risk score output with pass/warn/fail thresholds
 - `mcp-audit` CLI entry point
 
-[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.5.1...HEAD
+[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.5.2...HEAD
+[1.5.2]: https://github.com/saagpatel/MCPAudit/compare/v1.5.1...v1.5.2
 [1.5.1]: https://github.com/saagpatel/MCPAudit/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/saagpatel/MCPAudit/compare/v1.4.3...v1.5.0
 [1.4.3]: https://github.com/saagpatel/MCPAudit/compare/v1.4.2...v1.4.3

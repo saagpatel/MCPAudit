@@ -17,6 +17,7 @@ FIXTURES = [
     Path("tests/fixtures/reports/prompt_resource_report.json"),
 ]
 LEGACY_FIXTURES = sorted(Path("tests/fixtures/reports/legacy").glob("*.json"))
+FIELD_REPORT_FIXTURES = sorted(Path("tests/fixtures/reports/field").glob("*.json"))
 
 
 def test_sample_json_report_matches_current_model() -> None:
@@ -103,6 +104,18 @@ def test_legacy_reports_load_through_current_model() -> None:
             assert isinstance(audit.capability_findings, list)
             assert isinstance(audit.injection_findings, list)
             assert isinstance(audit.drift_findings, list)
+
+
+def test_field_report_fixtures_load_through_current_model() -> None:
+    assert FIELD_REPORT_FIXTURES
+    for fixture in FIELD_REPORT_FIXTURES:
+        report = AuditReport.model_validate_json(fixture.read_text())
+        dumped = report.model_dump(mode="json")
+        assert report.servers_discovered == len(report.audits)
+        assert "config_health_findings" in dumped
+        assert all("server" in audit for audit in dumped["audits"])
+        assert "Bearer " not in fixture.read_text()
+        assert "sk-" not in fixture.read_text()
 
 
 def test_future_additive_report_fields_are_ignored() -> None:

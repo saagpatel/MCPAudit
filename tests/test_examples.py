@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -30,6 +31,15 @@ POLICY_EXAMPLES = sorted(Path("examples/policies").glob("*.yaml"))
 PROMPT_RESOURCE_REPORT = Path("tests/fixtures/reports/prompt_resource_report.json")
 CONFIG_ONLY_REPORT = Path("tests/fixtures/reports/config_only_report.json")
 DASHBOARD_STATUS_REPORT = Path("tests/fixtures/reports/dashboard_status_report.json")
+FIELD_REPORTS = sorted(Path("tests/fixtures/reports/field").glob("*.json"))
+LEGACY_REPORTS = sorted(Path("tests/fixtures/reports/legacy").glob("*.json"))
+CONSUMER_CONTRACT_REPORTS = [
+    CONFIG_ONLY_REPORT,
+    DASHBOARD_STATUS_REPORT,
+    PROMPT_RESOURCE_REPORT,
+    *FIELD_REPORTS,
+    *LEGACY_REPORTS,
+]
 SCHEMA_PATH = Path("examples/schemas/audit-report.schema.json")
 
 
@@ -217,6 +227,28 @@ def test_node_consumer_example_parses_config_health() -> None:
     assert rows[0]["config_health_types"] == ["remote_endpoint"]
 
 
+def test_consumer_contract_reports_parse_with_python_and_dashboard_examples() -> None:
+    assert FIELD_REPORTS
+    for report_path in CONSUMER_CONTRACT_REPORTS:
+        report = AuditReport.model_validate_json(report_path.read_text())
+        rows = _run_python_consumer(report_path)
+        dashboard = _run_dashboard_consumer(report_path)
+
+        assert len(rows) == len(report.audits)
+        assert dashboard["servers_discovered"] == report.servers_discovered
+        assert sum(dashboard["status_counts"].values()) == len(report.audits)
+        assert all("tool_risk" in row for row in rows)
+        assert all("non_tool_risk" in row for row in rows)
+        assert all("config_health_findings" in row for row in rows)
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_node_consumer_contract_matches_python_consumer() -> None:
+    assert FIELD_REPORTS
+    for report_path in CONSUMER_CONTRACT_REPORTS:
+        assert _run_node_consumer(report_path) == _run_python_consumer(report_path)
+
+
 def test_consumer_examples_are_documented() -> None:
     readme = Path("examples/consumers/README.md").read_text()
     assert CONSUMER_EXAMPLES
@@ -243,15 +275,58 @@ def test_evidence_intake_doc_tracks_next_milestone() -> None:
     intake = Path("docs/1.5-EVIDENCE-INTAKE.md").read_text()
     decision = Path("docs/1.5-RELEASE-DECISION.md").read_text()
     beta_evidence = Path("docs/BETA-READINESS-EVIDENCE.md").read_text()
+    field_reports = Path("docs/FIELD-REPORTS.md").read_text()
 
     assert "docs/1.5-EVIDENCE-INTAKE.md" in readme
     assert "docs/BETA-READINESS-EVIDENCE.md" in readme
+    assert "docs/FIELD-REPORTS.md" in readme
     assert "docs/1.5-EVIDENCE-INTAKE.md" in roadmap
     assert "docs/1.5-RELEASE-DECISION.md" in roadmap
     assert "docs/BETA-READINESS-EVIDENCE.md" in roadmap
+    assert "docs/FIELD-REPORTS.md" in roadmap
     assert "https://github.com/saagpatel/MCPAudit/milestone/1" in intake
     assert "https://github.com/saagpatel/MCPAudit/milestone/2" in beta_evidence
+    assert "https://github.com/saagpatel/MCPAudit/milestone/3" in field_reports
     assert "ship `1.5.0` as adoption hardening, not beta" in decision
     assert "Ship `1.5.1` as polish instead of `1.6.0`" in beta_evidence
+    assert "Ship `1.5.2` as polish instead of `1.6.0`" in field_reports
     for issue_number in ("66", "67", "68", "69"):
         assert f"https://github.com/saagpatel/MCPAudit/issues/{issue_number}" in intake
+    for issue_number in ("77", "78", "79", "80"):
+        assert f"https://github.com/saagpatel/MCPAudit/issues/{issue_number}" in field_reports
+
+
+def _run_python_consumer(report_path: Path) -> list[dict[str, Any]]:
+    result = subprocess.run(
+        [sys.executable, "examples/consumers/parse_report.py", str(report_path)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    parsed = json.loads(result.stdout)
+    assert isinstance(parsed, list)
+    return parsed
+
+
+def _run_node_consumer(report_path: Path) -> list[dict[str, Any]]:
+    result = subprocess.run(
+        ["node", "examples/consumers/parse-report.mjs", str(report_path)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    parsed = json.loads(result.stdout)
+    assert isinstance(parsed, list)
+    return parsed
+
+
+def _run_dashboard_consumer(report_path: Path) -> dict[str, Any]:
+    result = subprocess.run(
+        [sys.executable, "examples/consumers/dashboard_summary.py", str(report_path)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    parsed = json.loads(result.stdout)
+    assert isinstance(parsed, dict)
+    return parsed
