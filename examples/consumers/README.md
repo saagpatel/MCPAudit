@@ -17,8 +17,9 @@ Run them against any JSON report:
 ```bash
 mcp-audit scan --inject-check --json mcp-audit.json
 python examples/consumers/parse_report.py mcp-audit.json
+python examples/consumers/dashboard_summary.py mcp-audit.json
 node examples/consumers/parse-report.mjs mcp-audit.json
 ```
 
-Both scripts print a compact JSON summary that is safe to feed into a CI step or
-dashboard.
+The parsing scripts print compact JSON summaries that are safe to feed into a CI
+step or dashboard.

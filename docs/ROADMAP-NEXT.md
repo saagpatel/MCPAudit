@@ -17,11 +17,13 @@ Shipped after `1.3.0`:
 - server names that conflict across global and project scopes;
 - package-runner source review for commands such as `npx`, `uvx`, and `docker`;
 - conflicting server definitions when the same server name points at different
-  commands or URLs.
+  commands or URLs;
+- clearer remediation for intentional project-local shadowing.
 
 Candidate follow-ups:
 
-- clearer remediation text for intentionally shadowed project-local servers.
+- add new config-health diagnostics only when real feedback provides a small
+  redacted fixture.
 
 ## 2. Adoption Examples
 
@@ -35,11 +37,11 @@ Shipped after `1.3.0`:
 
 - GitHub Actions config-health policy gate example;
 - Python and Node JSON consumers that summarize config-health findings by
-  severity per server.
+  severity per server;
+- dashboard-oriented JSON consumer summary for CI status pages.
 
 Candidate follow-ups:
 
-- dashboard-oriented JSON examples once downstream consumers appear;
 - organization-specific policy profiles only when repeated user patterns justify
   them.
 
@@ -58,6 +60,11 @@ Status: observe before changing scoring.
 Prompt/resource findings stay visible, policy-gatable, and summarized through
 `non_tool_risk`. Do not merge them into `risk_score.composite` until more
 real-world fixtures prove a stable scoring model.
+
+Shipped after `1.4.0`:
+
+- GitHub issue, PostgreSQL analytics, and Slack thread fixtures for
+  prompt/resource calibration.
 
 ## Verification Bar
 

@@ -63,6 +63,9 @@ step.
 Pins are keyed by server name. If the same server name appears in more than one
 discovered MCP config, rename the duplicate entries before pinning or refreshing
 that baseline.
+If a project-local server intentionally shadows a global server, give the
+project-local entry its own reviewed name before pinning so future drift checks
+refer to the intended scope.
 
 ## 4. Add A Policy Gate
 

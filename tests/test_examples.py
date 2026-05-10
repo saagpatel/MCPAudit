@@ -96,6 +96,20 @@ def test_python_consumer_example_parses_config_health() -> None:
     assert rows[0]["config_health_types"] == ["remote_endpoint"]
 
 
+def test_dashboard_consumer_example_parses_config_health() -> None:
+    result = subprocess.run(
+        [sys.executable, "examples/consumers/dashboard_summary.py", str(CONFIG_ONLY_REPORT)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    summary = json.loads(result.stdout)
+    assert summary["servers_discovered"] == 1
+    assert summary["config_health"] == {"medium": 1}
+    assert summary["servers"][0]["server"] == "remote-api"
+    assert summary["servers"][0]["config_health"] == {"medium": 1}
+
+
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
 def test_node_consumer_example_parses_prompt_resource_report() -> None:
     result = subprocess.run(
