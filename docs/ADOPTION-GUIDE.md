@@ -34,7 +34,8 @@ visible in reports and policy gates. In `1.1`, they also feed the additive
 `non_tool_risk` field, but they do not change `risk_score.composite`.
 Review config-health findings before turning on policy gates for remote
 endpoints, shell-wrapper launches, deprecated transports, missing command paths,
-project/global name conflicts, or duplicated server names.
+project/global name conflicts, conflicting command or URL definitions,
+package-runner launches, or duplicated server names.
 
 ## Team CI Policy Gate
 

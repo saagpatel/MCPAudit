@@ -20,8 +20,9 @@ it does not connect to servers.
 Resolve config-health warnings before creating pins. Duplicate names make a
 reviewed pin baseline ambiguous because pins are keyed by server name. Missing
 stdio commands, missing local command paths, project/global scope conflicts,
-deprecated SSE transports, shell-wrapper launches, remote endpoints, and
-credential-heavy configs deserve review before connected scans.
+conflicting command or URL definitions, package-runner launches, deprecated SSE
+transports, shell-wrapper launches, remote endpoints, and credential-heavy
+configs deserve review before connected scans.
 JSON reports include the same signal in `config_health_findings` for CI or
 inventory consumers.
 

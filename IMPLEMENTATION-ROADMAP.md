@@ -32,7 +32,8 @@ Current scan behavior:
 - Config-health diagnostics for duplicate names, missing stdio commands,
   missing local command paths, project/global scope conflicts, deprecated SSE
   transports, shell-wrapper launches, remote endpoints, remote URL arguments,
-  and credential-heavy configs.
+  package-runner launches, conflicting server definitions, and credential-heavy
+  configs.
 - Guarded stdio/HTTP connection lifecycle with timeout cleanup.
 - Config-only risk inference for `scan --skip-connect`.
 - Tool inventory, annotation coverage, and permission classification.
