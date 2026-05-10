@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.4] - 2026-05-10
+
 ### Added
 
 - Added config-health warnings to `discover` and `scan` so duplicate names,
@@ -339,7 +341,8 @@ real workstations; API surface may still shift before the `1.0.0` stable cut.
 - Risk score output with pass/warn/fail thresholds
 - `mcp-audit` CLI entry point
 
-[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.1.3...HEAD
+[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.1.4...HEAD
+[1.1.4]: https://github.com/saagpatel/MCPAudit/compare/v1.1.3...v1.1.4
 [1.1.3]: https://github.com/saagpatel/MCPAudit/compare/v1.1.2...v1.1.3
 [1.1.2]: https://github.com/saagpatel/MCPAudit/compare/v1.1.1...v1.1.2
 [1.1.1]: https://github.com/saagpatel/MCPAudit/compare/v1.1.0...v1.1.1
