@@ -1,6 +1,6 @@
 # MCPAudit Field Reports
 
-MCPAudit `1.5.4` has a field-report lane for redacted setup evidence,
+MCPAudit `1.5.5` has a field-report lane for redacted setup evidence,
 consumer-contract hardening, and external beta-readiness intake. This lane
 remains config-only by default: collect shape and output evidence without
 spawning MCP servers, contacting remote endpoints, or storing credential values.
@@ -28,6 +28,9 @@ External evidence issues:
   <https://github.com/saagpatel/MCPAudit/issues/84>;
 - fixture conversion and beta decision:
   <https://github.com/saagpatel/MCPAudit/issues/85>.
+
+Contributor request packet:
+`docs/EXTERNAL-FIELD-REPORT-REQUEST.md`.
 
 ## Evidence Captured
 
@@ -68,6 +71,8 @@ private disclosure in `SECURITY.md` instead of a public issue.
 
 The dedicated GitHub template for this path is
 `.github/ISSUE_TEMPLATE/field_report.md`.
+The copy-paste request for contributors lives in
+`docs/EXTERNAL-FIELD-REPORT-REQUEST.md`.
 
 ## Fixture Acceptance Bar
 
@@ -121,3 +126,9 @@ Ship `1.5.4` as polish instead of `1.6.0`.
 Reason: this pass creates the external evidence milestone and keeps its three
 tracking issues visible from the public docs, but it still does not include the
 external redacted reports needed for beta.
+
+Ship `1.5.5` as polish instead of `1.6.0`.
+
+Reason: this pass adds the contributor request packet and maintainer triage
+checklist, but it still does not include the external redacted reports needed
+for beta.

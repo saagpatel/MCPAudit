@@ -1,6 +1,6 @@
 # MCPAudit Next Roadmap
 
-MCPAudit `1.5.4` is prepared with structured config-health findings, policy
+MCPAudit `1.5.5` is prepared with structured config-health findings, policy
 gates, prompt/resource non-tool risk reporting, reviewed stale pin cleanup,
 dashboard-consumer improvements, copy-pasteable adoption examples, adoption
 smoke coverage, redacted config-health fixtures, and expanded prompt/resource
@@ -16,6 +16,8 @@ Beta-readiness evidence lives in `docs/BETA-READINESS-EVIDENCE.md`.
 Field-report evidence lives in `docs/FIELD-REPORTS.md`.
 External beta-evidence tracking lives in
 <https://github.com/saagpatel/MCPAudit/milestone/4>.
+The contributor request packet lives in
+`docs/EXTERNAL-FIELD-REPORT-REQUEST.md`.
 
 ## 1. Config Health Depth
 
@@ -105,7 +107,7 @@ Completed fixture/proposal issue:
 
 ## 5. Beta Readiness
 
-Status: polish shipped in `1.5.4`.
+Status: polish shipped in `1.5.5`.
 
 Shipped through `1.5.1`:
 
@@ -138,6 +140,13 @@ Shipped through `1.5.4`:
   reports plus fixture conversion and beta decision;
 - docs and tests that keep that milestone visible until the external evidence
   blocker is resolved.
+
+Shipped through `1.5.5`:
+
+- copy-paste external field-report request packet for contributors;
+- maintainer triage checklist for turning external reports into fixtures or a
+  no-code beta decision;
+- issue comments that point #83, #84, and #85 at the request packet.
 
 Candidate follow-ups:
 

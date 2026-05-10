@@ -88,6 +88,7 @@ scores, policy failure count, and attention rows for status pages.
 
 Current tracking doc: `docs/FIELD-REPORTS.md`
 Tracking milestone: <https://github.com/saagpatel/MCPAudit/milestone/4>
+Contributor request packet: `docs/EXTERNAL-FIELD-REPORT-REQUEST.md`
 
 Before using a beta label, collect at least two external redacted reports that
 exercise current JSON/SARIF output with real downstream consumers or real MCP
@@ -110,6 +111,10 @@ Open tracking issues:
 - second external report: <https://github.com/saagpatel/MCPAudit/issues/84>
 - fixture conversion and beta decision:
   <https://github.com/saagpatel/MCPAudit/issues/85>
+
+Use `docs/EXTERNAL-FIELD-REPORT-REQUEST.md` when asking external users to
+submit reports. It contains the copy-paste request, redaction checklist, and
+maintainer triage checklist.
 
 ### Stale Pin Cleanup
 
