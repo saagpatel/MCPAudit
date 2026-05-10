@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added a Qdrant-style vector database validation fixture for semantic-search
   storage and lookup calibration.
 
+### Fixed
+
+- Prevented ambiguous pin and pin refresh writes when multiple discovered MCP
+  configs share the same server name.
+
 ## [1.1.2] - 2026-05-10
 
 ### Added

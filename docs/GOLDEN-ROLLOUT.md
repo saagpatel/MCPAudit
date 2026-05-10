@@ -51,6 +51,10 @@ mcp-audit pin --clear github
 read-only and should be treated as a review prompt, not an automatic cleanup
 step.
 
+Pins are keyed by server name. If the same server name appears in more than one
+discovered MCP config, rename the duplicate entries before pinning or refreshing
+that baseline.
+
 ## 4. Add A Policy Gate
 
 Start with the policy that matches the trust level of the environment:

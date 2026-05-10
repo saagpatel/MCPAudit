@@ -109,6 +109,33 @@ def test_run_pin_skips_failed_connections(monkeypatch: object, tmp_path: Path) -
     assert store.tool_count("srv") == 0
 
 
+def test_run_pin_skips_duplicate_server_names_without_writing(monkeypatch: object, tmp_path: Path) -> None:
+    store = PinStore(path=tmp_path / "pins.yaml")
+    first_server = make_server_config(name="srv")
+    second_server = first_server.model_copy(update={"config_path": "/tmp/other_config.json"})
+    audits = [
+        ServerAudit(
+            server=first_server,
+            connection_status="connected",
+            tools=[make_tool("read_file")],
+        ),
+        ServerAudit(
+            server=second_server,
+            connection_status="connected",
+            tools=[make_tool("write_file")],
+        ),
+    ]
+
+    async def fake_run_scan_core(*args: object, **kwargs: object) -> AuditReport:
+        return _report(audits)
+
+    monkeypatch.setattr(cli, "_run_scan_core", fake_run_scan_core)  # type: ignore[attr-defined]
+
+    anyio.run(cli._run_pin, None, store)
+
+    assert store.tool_count("srv") == 0
+
+
 def test_run_pin_refresh_reviews_drift_without_writing(monkeypatch: object, tmp_path: Path) -> None:
     store = PinStore(path=tmp_path / "pins.yaml")
     store.pin_server("srv", [make_tool("read_file", description="v1")])
@@ -200,6 +227,46 @@ def test_pin_refresh_json_reports_drift_without_writing(monkeypatch: object, tmp
     assert payload["drift_counts"]["changed"] == 1
     assert payload["drift"][0]["tool_name"] == "read_file"
     assert PinStore(path=pin_file).check_drift("srv", audit.tools)
+
+
+def test_pin_refresh_json_reports_duplicate_server_name_without_writing(
+    monkeypatch: object, tmp_path: Path
+) -> None:
+    pin_file = tmp_path / "pins.yaml"
+    store = PinStore(path=pin_file)
+    store.pin_server("srv", [make_tool("read_file", description="v1")])
+    first_server = make_server_config(name="srv")
+    second_server = first_server.model_copy(update={"config_path": "/tmp/other_config.json"})
+    audits = [
+        ServerAudit(
+            server=first_server,
+            connection_status="connected",
+            tools=[make_tool("read_file", description="v2")],
+        ),
+        ServerAudit(
+            server=second_server,
+            connection_status="connected",
+            tools=[make_tool("write_file")],
+        ),
+    ]
+
+    async def fake_run_scan_core(*args: object, **kwargs: object) -> AuditReport:
+        return _report(audits)
+
+    monkeypatch.setattr(cli, "_run_scan_core", fake_run_scan_core)  # type: ignore[attr-defined]
+
+    result = CliRunner().invoke(
+        cli.main,
+        ["pin", "--refresh", "srv", "--json", "--apply", "--pin-file", str(pin_file)],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["server"] == "srv"
+    assert payload["current_tool_count"] == 0
+    assert payload["applied"] is False
+    assert "multiple discovered MCP configs" in payload["error"]
+    assert PinStore(path=pin_file).check_drift("srv", [make_tool("read_file", description="v2")])
 
 
 def test_pin_rejects_apply_without_refresh() -> None:

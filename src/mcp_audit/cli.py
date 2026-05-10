@@ -6,6 +6,7 @@ import logging
 import platform
 import socket
 import time
+from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -532,12 +533,19 @@ async def _run_pin(server_name: str | None, store: object) -> None:
     assert isinstance(store, PS)
     override_applier = OverrideApplier(load_override_config(DEFAULT_OVERRIDE_PATH))
     report = await _run_scan_core(False, None, 10, None, override_applier)
+    duplicate_names = _duplicate_server_names(report.audits)
 
     matched = False
+    skipped_ambiguous: set[str] = set()
     for audit in report.audits:
         if server_name and audit.server.name != server_name:
             continue
         matched = True
+        if audit.server.name in duplicate_names:
+            if audit.server.name not in skipped_ambiguous:
+                console.print(f"[yellow]{_ambiguous_pin_message(audit.server.name)}[/yellow]")
+                skipped_ambiguous.add(audit.server.name)
+            continue
         if audit.connection_status != "connected":
             console.print(
                 f"[yellow]Skipped '{audit.server.name}': connection {audit.connection_status}."
@@ -571,6 +579,13 @@ async def _run_pin_refresh(
             click.echo(_pin_refresh_json(server_name, 0, [], applied=False, error="server not found"))
             return
         console.print(f"[yellow]Server '{server_name}' not found.[/yellow]")
+        return
+    if len(matching_audits) > 1:
+        error = _ambiguous_pin_message(server_name)
+        if json_status:
+            click.echo(_pin_refresh_json(server_name, 0, [], applied=False, error=error))
+            return
+        console.print(f"[yellow]{error}[/yellow]")
         return
 
     audit = matching_audits[0]
@@ -609,6 +624,18 @@ async def _run_pin_refresh(
 
     store.pin_server(audit.server.name, audit.tools)
     console.print(f"[green]Refreshed {len(audit.tools)} pin(s) for '{audit.server.name}'.[/green]")
+
+
+def _duplicate_server_names(audits: list[ServerAudit]) -> set[str]:
+    counts = Counter(audit.server.name for audit in audits)
+    return {name for name, count in counts.items() if count > 1}
+
+
+def _ambiguous_pin_message(server_name: str) -> str:
+    return (
+        f"Skipped '{server_name}': server name appears in multiple discovered MCP configs. "
+        "Pins are keyed by server name, so rename duplicate MCP server entries before pinning."
+    )
 
 
 def _pin_refresh_json(
