@@ -51,3 +51,43 @@ MCPAudit is a local MCP permission auditor. Keep it read-only, deterministic, an
 - Relevant tests or checks were run, or the exact reason they were not run is stated.
 - Security, output-contract, or operating docs are updated when behavior changes.
 - Assumptions, risks, and next steps are summarized before closeout.
+
+<!-- portfolio-context:start -->
+# Portfolio Context
+
+## What This Project Is
+
+MCPAudit is a local-first permission and risk auditor for MCP server configurations across tools such as Claude Desktop, Claude Code, Cursor, VS Code, and Windsurf. It inventories configured servers, classifies tool/prompt/resource risk, detects prompt-injection patterns, checks schema drift, and exports human and machine-readable reports without mutating MCP configs.
+
+## Current State
+
+The project is in stable maintenance. Discovery, config-only scans, connected enumeration, permission scoring, prompt/resource scoring boundaries, pinning/drift checks, policy gates, JSON/SARIF output, watch mode, MCP server exposure, and optional LLM classification are all present. Treat old roadmap phase labels as historical unless the current code agrees.
+
+## Stack
+
+- Python 3.11+
+- Click CLI and Rich terminal output
+- Official MCP Python SDK with anyio
+- Pydantic, PyYAML, json5, watchfiles
+- pytest, ruff, mypy
+- uv packaging and PyPI distribution
+
+## How To Run
+
+- Use `.codex/verify.commands` for routine verification.
+- Current core checks are `uv run pytest`, `uv run ruff check`, and `uv run mypy src`.
+- Use `mcp-audit discover` and `mcp-audit scan --skip-connect` for local config review without connecting to servers.
+
+## Known Risks
+
+- Never store, log, or transmit credential values; report environment variable key names only.
+- Do not modify MCP client config files during scans.
+- Keep optional LLM analysis opt-in only.
+- Keep subprocess and server handling guarded by timeouts and cleanup.
+- Do not call whole-repo mypy green while test-only typing debt remains.
+
+## Next Recommended Move
+
+Maintain the stable scanner and output contracts. For behavior changes, add focused fixtures or sample-scan assertions and update security/output docs when semantics change.
+
+<!-- portfolio-context:end -->
