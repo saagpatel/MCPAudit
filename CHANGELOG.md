@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.0] - 2026-05-31
+
+### Added
+
+- Added an opt-in SSRF host allowlist (`scan --ssrf-allowlist host1,host2`). When
+  supplied, it suppresses SSRF findings whose **fixed, non-templated** target host
+  is allowlisted (subdomains included) — e.g. a resource `https://api.trusted.com/{id}`.
+  Findings with a caller-controlled target (templated host, or a tool URL/host
+  param) are **never** suppressed, since the allowlist cannot constrain them. The
+  default (no allowlist) is a no-op; this is user-driven ground truth and does not
+  change the scorer or any default severity. The number suppressed is reported.
+
+### Changed
+
+- `scan --provenance-check` / `--integrity-check` now emit a per-server warning
+  when a scanned server is pinned but its baseline predates launch-config /
+  artifact-hash capture (previously those servers were silently skipped). The
+  message names the servers and points to `mcp-audit pin` to re-capture.
+
 ## [1.10.0] - 2026-05-31
 
 ### Added

@@ -71,6 +71,9 @@ mcp-audit scan --inject-check
 # Flag SSRF-prone tools/resources (caller-controlled server-side fetch targets)
 mcp-audit scan --ssrf-check
 
+# Suppress SSRF findings whose fixed target host is trusted (caller-controlled targets are never suppressed)
+mcp-audit scan --ssrf-check --ssrf-allowlist api.github.com,internal.svc
+
 # Detect lethal-trifecta / toxic-flow attack surface (per-server and fleet-level)
 mcp-audit scan --trifecta-check
 

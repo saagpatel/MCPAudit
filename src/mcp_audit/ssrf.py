@@ -218,3 +218,68 @@ class SsrfDetector:
         for resource in resources or []:
             findings.extend(self.scan_resource(resource))
         return findings
+
+
+def parse_host_allowlist(raw: str | None) -> set[str]:
+    """Parse a comma-separated host allowlist into a normalised lowercase set.
+
+    Entries are hostnames (no scheme/port). Empty/whitespace entries are dropped.
+    Returns an empty set for None/empty input (meaning: no allowlist, no effect).
+    """
+    if not raw:
+        return set()
+    return {h.strip().lower() for h in raw.split(",") if h.strip()}
+
+
+def _finding_fixed_host(finding: SsrfFinding) -> str | None:
+    """Extract a fixed (non-templated) target host from an SSRF finding, or None.
+
+    Only resource findings whose ``target_name`` is a URI with a concrete host
+    authority yield a host. Tool findings (caller-controlled URL/host params) and
+    findings whose host authority is itself templated (``{host}``) yield None — a
+    caller-steerable target is never allowlistable, so it can never be suppressed.
+    """
+    name = finding.target_name
+    if "://" not in name:
+        return None
+    try:
+        parsed = urlparse(name)
+    except ValueError:
+        return None
+    netloc = parsed.netloc.rsplit("@", 1)[-1]  # drop any userinfo
+    if not netloc or "{" in netloc:
+        return None  # templated / caller-controlled host — not allowlistable
+    host = netloc
+    if host.startswith("[") and "]" in host:  # IPv6 literal [::1]:port
+        host = host[1 : host.index("]")]
+    elif ":" in host:  # strip :port
+        host = host.rsplit(":", 1)[0]
+    return host.lower() or None
+
+
+def host_in_allowlist(host: str, allowlist: set[str]) -> bool:
+    """True if ``host`` exactly matches an allowlist entry or is a subdomain of one."""
+    host = host.lower()
+    return any(host == entry or host.endswith("." + entry) for entry in allowlist)
+
+
+def filter_allowlisted_ssrf(
+    findings: list[SsrfFinding], allowlist: set[str]
+) -> tuple[list[SsrfFinding], int]:
+    """Suppress SSRF findings whose fixed target host is in the allowlist.
+
+    Returns ``(kept_findings, suppressed_count)``. A finding is suppressed only
+    when it has a concrete, non-templated target host that is allowlisted; findings
+    with caller-controlled targets are always kept. An empty allowlist is a no-op.
+    """
+    if not allowlist:
+        return list(findings), 0
+    kept: list[SsrfFinding] = []
+    suppressed = 0
+    for finding in findings:
+        host = _finding_fixed_host(finding)
+        if host is not None and host_in_allowlist(host, allowlist):
+            suppressed += 1
+        else:
+            kept.append(finding)
+    return kept, suppressed

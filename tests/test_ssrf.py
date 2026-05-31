@@ -5,10 +5,70 @@ from __future__ import annotations
 from mcp_audit.models import (
     CapabilityTarget,
     ResourceInfo,
+    SsrfFinding,
     SsrfSeverity,
     ToolInfo,
 )
-from mcp_audit.ssrf import SsrfDetector
+from mcp_audit.ssrf import (
+    SsrfDetector,
+    filter_allowlisted_ssrf,
+    host_in_allowlist,
+    parse_host_allowlist,
+)
+
+
+def _ssrf(target_name: str, target_type: CapabilityTarget = CapabilityTarget.RESOURCE) -> SsrfFinding:
+    return SsrfFinding(
+        target_type=target_type,
+        target_name=target_name,
+        severity=SsrfSeverity.HIGH,
+        pattern_name="test",
+        evidence=["e"],
+        description="d",
+    )
+
+
+class TestSsrfAllowlist:
+    def test_parse_allowlist_normalises(self) -> None:
+        assert parse_host_allowlist(" API.Github.com, , internal.svc ") == {
+            "api.github.com",
+            "internal.svc",
+        }
+        assert parse_host_allowlist(None) == set()
+
+    def test_host_match_exact_and_subdomain(self) -> None:
+        allow = {"example.com"}
+        assert host_in_allowlist("example.com", allow)
+        assert host_in_allowlist("api.example.com", allow)
+        assert not host_in_allowlist("notexample.com", allow)
+        assert not host_in_allowlist("example.com.evil.com", allow)
+
+    def test_empty_allowlist_is_noop(self) -> None:
+        findings = [_ssrf("https://api.trusted.com/{id}")]
+        kept, dropped = filter_allowlisted_ssrf(findings, set())
+        assert kept == findings and dropped == 0
+
+    def test_suppresses_fixed_host_resource(self) -> None:
+        findings = [_ssrf("https://api.trusted.com/{id}")]
+        kept, dropped = filter_allowlisted_ssrf(findings, {"trusted.com"})
+        assert kept == [] and dropped == 1
+
+    def test_never_suppresses_caller_controlled_host(self) -> None:
+        # Templated host authority is caller-controlled — never allowlistable.
+        findings = [_ssrf("https://{host}/path")]
+        kept, dropped = filter_allowlisted_ssrf(findings, {"trusted.com"})
+        assert kept == findings and dropped == 0
+
+    def test_never_suppresses_tool_param_finding(self) -> None:
+        # Tool findings carry a tool name, not a URI — no fixed host to allowlist.
+        findings = [_ssrf("fetch_url", target_type=CapabilityTarget.TOOL)]
+        kept, dropped = filter_allowlisted_ssrf(findings, {"trusted.com"})
+        assert kept == findings and dropped == 0
+
+    def test_non_allowlisted_host_is_kept(self) -> None:
+        findings = [_ssrf("https://evil.com/{id}")]
+        kept, dropped = filter_allowlisted_ssrf(findings, {"trusted.com"})
+        assert kept == findings and dropped == 0
 
 
 def _tool(name: str, description: str, properties: dict[str, object]) -> ToolInfo:

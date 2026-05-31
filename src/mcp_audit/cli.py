@@ -167,6 +167,12 @@ def discover(client_filter: str | None, verbose: bool) -> None:
     help="Flag SSRF-prone tools/resources (caller-controlled fetch targets).",
 )
 @click.option(
+    "--ssrf-allowlist",
+    default=None,
+    metavar="HOSTS",
+    help="Comma-separated trusted hosts; suppress SSRF findings whose fixed target host is allowlisted (subdomains included). Never suppresses caller-controlled targets.",  # noqa: E501
+)
+@click.option(
     "--pin-check", is_flag=True, default=False, help="Check for tool schema drift against stored pins."
 )  # noqa: E501
 @click.option(
@@ -219,6 +225,7 @@ def scan(
     policy_path: str | None,
     inject_check: bool,
     ssrf_check: bool,
+    ssrf_allowlist: str | None,
     pin_check: bool,
     trifecta_check: bool,
     shadow_check: bool,
@@ -245,6 +252,7 @@ def scan(
         policy_path,
         inject_check,
         ssrf_check,
+        ssrf_allowlist,
         pin_check,
         trifecta_check,
         shadow_check,
@@ -264,6 +272,7 @@ async def _run_scan_core(
     override_applier: OverrideApplier,
     inject_check: bool = False,
     ssrf_check: bool = False,
+    ssrf_allowlist: str | None = None,
     pin_check: bool = False,
     trifecta_check: bool = False,
     shadow_check: bool = False,
@@ -315,10 +324,13 @@ async def _run_scan_core(
         injection_detector = InjectionDetector()
 
     ssrf_detector = None
+    ssrf_allow: set[str] = set()
+    ssrf_suppressed = 0
     if ssrf_check:
-        from mcp_audit.ssrf import SsrfDetector
+        from mcp_audit.ssrf import SsrfDetector, parse_host_allowlist
 
         ssrf_detector = SsrfDetector()
+        ssrf_allow = parse_host_allowlist(ssrf_allowlist)
 
     trifecta_analyzer = None
     if trifecta_check:
@@ -399,7 +411,7 @@ async def _run_scan_core(
                     audit.tools, audit.prompts, audit.resources
                 )
 
-            # Optional SSRF detection
+            # Optional SSRF detection (allowlist filtering happens in a post-loop pass)
             if ssrf_detector is not None:
                 audit.ssrf_findings = ssrf_detector.scan_server(audit.tools, audit.resources)
 
@@ -461,6 +473,43 @@ async def _run_scan_core(
             "Run `mcp-audit pin` first to capture launch-artifact hashes to compare against.[/yellow]"
         )
 
+    # Per-server staleness: a server IS pinned but its baseline predates the
+    # provenance/integrity snapshot, so it is silently skipped. Surface it so the
+    # user knows the check ran but found nothing to compare for those servers.
+    if pin_store is not None and (provenance_check or integrity_check):
+        pinned = set(pin_store.pinned_servers())
+        scanned_pinned = [audit.server.name for audit in audits if audit.server.name in pinned]
+        if provenance_check:
+            stale = sorted(n for n in scanned_pinned if pin_store.baseline_config(n) is None)
+            if stale:
+                console.print(
+                    f"[yellow]--provenance-check: {len(stale)} pinned server(s) predate "
+                    f"launch-config snapshots and were skipped: {', '.join(stale)}. "
+                    "Re-pin with `mcp-audit pin` to enable provenance comparison.[/yellow]"
+                )
+        if integrity_check:
+            stale = sorted(n for n in scanned_pinned if pin_store.baseline_artifacts(n) is None)
+            if stale:
+                console.print(
+                    f"[yellow]--integrity-check: {len(stale)} pinned server(s) predate "
+                    f"artifact-hash capture and were skipped: {', '.join(stale)}. "
+                    "Re-pin with `mcp-audit pin` to enable integrity comparison.[/yellow]"
+                )
+
+    # SSRF allowlist suppression — post-loop pass over all audits (outer scope, so
+    # the suppressed counter accumulates cleanly).
+    if ssrf_allow:
+        from mcp_audit.ssrf import filter_allowlisted_ssrf
+
+        for audit in audits:
+            audit.ssrf_findings, dropped = filter_allowlisted_ssrf(audit.ssrf_findings, ssrf_allow)
+            ssrf_suppressed += dropped
+    if ssrf_suppressed:
+        console.print(
+            f"[dim]--ssrf-allowlist: suppressed {ssrf_suppressed} SSRF finding(s) "
+            "with an allowlisted fixed target host.[/dim]"
+        )
+
     # Fleet-level trifecta pass — runs once after all servers are audited
     fleet_trifecta: list[TrifectaFinding] = []
     if trifecta_analyzer is not None:
@@ -504,6 +553,7 @@ async def _run_scan(
     policy_path: str | None,
     inject_check: bool = False,
     ssrf_check: bool = False,
+    ssrf_allowlist: str | None = None,
     pin_check: bool = False,
     trifecta_check: bool = False,
     shadow_check: bool = False,
@@ -529,6 +579,7 @@ async def _run_scan(
         override_applier,
         inject_check=inject_check,
         ssrf_check=ssrf_check,
+        ssrf_allowlist=ssrf_allowlist,
         pin_check=pin_check,
         trifecta_check=trifecta_check,
         shadow_check=shadow_check,
