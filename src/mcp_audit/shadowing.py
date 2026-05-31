@@ -98,51 +98,6 @@ def _is_ascii(name: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Taxonomy metadata (mirrors the pattern used in taxonomy.py)
-# ---------------------------------------------------------------------------
-
-_KIND_META: dict[ShadowingKind, dict[str, str]] = {
-    ShadowingKind.EXACT: {
-        "title": "Exact tool-name collision",
-        "description": (
-            "Two or more MCP servers expose a tool with the identical name.  An AI agent "
-            "routing by tool name could be tricked into calling the wrong (possibly malicious) "
-            "server.  The first-configured server is presumed legitimate; later ones are suspect."
-        ),
-        "remediation": (
-            "Ensure each server namespaces its tools uniquely (e.g. github_search, slack_search). "
-            "Remove or rename the duplicate tool on the secondary server."
-        ),
-    },
-    ShadowingKind.NORMALIZED: {
-        "title": "Normalised tool-name collision",
-        "description": (
-            "Two or more MCP servers expose tools whose names are identical after case-folding "
-            "and separator removal (e.g. read_file vs readFile vs read-file).  An AI agent "
-            "may route ambiguously between them."
-        ),
-        "remediation": (
-            "Adopt a consistent namespace prefix for each server's tools so normalised forms "
-            "remain distinct (e.g. fs_read_file vs db_read_file)."
-        ),
-    },
-    ShadowingKind.HOMOGLYPH: {
-        "title": "Homoglyph tool-name collision",
-        "description": (
-            "A tool name on one server contains non-ASCII confusable characters whose ASCII "
-            "skeleton matches a tool name on another server (e.g. Cyrillic 'е' mimicking 'e'). "
-            "This is a deliberate spoofing signal — the malicious server shadows the legitimate "
-            "one by registering a visually identical but byte-distinct tool name."
-        ),
-        "remediation": (
-            "Remove the server with the non-ASCII tool name unless it is explicitly trusted. "
-            "Report the finding to the server author if the homoglyph appears accidental."
-        ),
-    },
-}
-
-
-# ---------------------------------------------------------------------------
 # Main analyzer
 # ---------------------------------------------------------------------------
 
@@ -170,7 +125,6 @@ class ShadowingAnalyzer:
                 server_tools.append((audit.server.name, [t.name for t in audit.tools]))
 
         findings: list[ShadowingFinding] = []
-        exact_canonical: set[str] = set()  # canonical names already reported exact
 
         # ---- Tier 1: EXACT ------------------------------------------------
         # Map raw tool name → list of (server_name, tool_name) pairs (in order)
@@ -185,7 +139,6 @@ class ShadowingAnalyzer:
             if len(servers_seen) < 2:
                 continue
             canonical = raw_name
-            exact_canonical.add(_normalise(canonical))
             findings.append(
                 ShadowingFinding(
                     kind=ShadowingKind.EXACT,
@@ -204,10 +157,16 @@ class ShadowingAnalyzer:
                 norm_index[_normalise(tool)].append((server_name, tool))
 
         for norm_form, collisions in norm_index.items():
-            if norm_form in exact_canonical:
-                continue  # already reported as EXACT — skip
+            if not norm_form:
+                continue  # ignore degenerate all-separator names (e.g. '___')
             servers_seen = {srv for srv, _ in collisions}
             if len(servers_seen) < 2:
+                continue
+            # Skip pure-exact groups (every name byte-identical) — the EXACT tier
+            # already covers those. Emit only when there is genuine case/separator
+            # variation, and include the FULL group so every shadower stays visible
+            # even when a byte-identical subset already fired an EXACT finding.
+            if len({tool for _, tool in collisions}) < 2:
                 continue
             # Canonical name = first raw name encountered (first-configured server wins)
             canonical = collisions[0][1]
@@ -236,6 +195,8 @@ class ShadowingAnalyzer:
             already_reported.update(f.collisions)
 
         for skel_form, collisions in skel_index.items():
+            if not skel_form:
+                continue  # ignore empty/degenerate skeletons
             servers_seen = {srv for srv, _ in collisions}
             if len(servers_seen) < 2:
                 continue
@@ -273,7 +234,9 @@ class ShadowingAnalyzer:
         canonical: str,
         collisions: list[tuple[str, str]],
     ) -> str:
-        base = _KIND_META[kind]["description"]
+        from mcp_audit.taxonomy import shadowing_metadata
+
+        base = shadowing_metadata(kind).description
         first_server = collisions[0][0]
         later = [f"'{srv}'/'{tool}'" for srv, tool in collisions[1:]]
         later_str = ", ".join(later)

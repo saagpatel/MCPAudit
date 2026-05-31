@@ -201,18 +201,32 @@ class TestNormalized:
         assert len(findings) == 1
         assert findings[0].kind == ShadowingKind.EXACT
 
-    def test_normalized_not_reported_when_exact_already_covers_canonical(self) -> None:
-        # "delete" exact + "Delete" on third server — the normalised form "delete" is
-        # already reported under EXACT so NORMALIZED should NOT be added.
+    def test_pure_exact_group_does_not_also_report_normalized(self) -> None:
+        # Two byte-identical names: EXACT fires; NORMALIZED must NOT duplicate it
+        # (no case/separator variation to surface).
+        audits = [
+            _audit("srv-a", ["delete"]),
+            _audit("srv-b", ["delete"]),
+        ]
+        findings = _analyzer.analyze_fleet(audits)
+        assert len(findings) == 1
+        assert findings[0].kind == ShadowingKind.EXACT
+
+    def test_mixed_exact_and_cased_variant_keeps_third_server_visible(self) -> None:
+        # "delete" exact on a+b, plus "Delete" on a third server. EXACT covers a+b;
+        # the cased variant on srv-c is a real shadower that must NOT be dropped —
+        # a NORMALIZED finding fires for the full group so srv-c stays visible.
         audits = [
             _audit("srv-a", ["delete"]),
             _audit("srv-b", ["delete"]),  # exact match
-            _audit("srv-c", ["Delete"]),  # normalises to same
+            _audit("srv-c", ["Delete"]),  # normalises to same — must surface
         ]
         findings = _analyzer.analyze_fleet(audits)
-        # Only one finding — the exact one covering all three
-        assert len(findings) == 1
-        assert findings[0].kind == ShadowingKind.EXACT
+        kinds = {f.kind for f in findings}
+        assert ShadowingKind.EXACT in kinds
+        assert ShadowingKind.NORMALIZED in kinds
+        servers_seen = {srv for f in findings for srv, _ in f.collisions}
+        assert "srv-c" in servers_seen  # the regression this guards against
 
 
 # ---------------------------------------------------------------------------

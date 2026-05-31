@@ -151,6 +151,14 @@ JSON.
 - **Homoglyph (MCP017)** is a deliberate spoofing indicator.  An accidental
   non-ASCII character in a tool name is rare; if it appears in the same slot as
   an ASCII name on another server, treat it as suspicious.
+- **Cross-client scope.** The check compares tool names across the entire
+  configured fleet, including servers registered in *different* MCP clients
+  (Claude Desktop, Cursor, VS Code, …).  Because an agent only loads one
+  client's servers at a time, a collision between servers in two different
+  clients is not a live misrouting risk — review the `collisions` entries and
+  dismiss cross-client pairs that never share a single agent's toolset.  (A
+  server configured in two clients under the *same* name does not fire, since
+  the collision set then has only one distinct server.)
 
 ## Example
 

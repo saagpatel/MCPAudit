@@ -462,12 +462,9 @@ class ShadowingFinding(BaseModel):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def rule_id(self) -> str:
-        _KIND_TO_RULE = {
-            ShadowingKind.EXACT: "MCP015",
-            ShadowingKind.NORMALIZED: "MCP016",
-            ShadowingKind.HOMOGLYPH: "MCP017",
-        }
-        return _KIND_TO_RULE[self.kind]
+        from mcp_audit.taxonomy import shadowing_metadata
+
+        return shadowing_metadata(self.kind).rule_id
 
     @computed_field  # type: ignore[prop-decorator]
     @property
