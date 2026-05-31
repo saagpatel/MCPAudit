@@ -2,10 +2,9 @@
 
 Detects when MCP servers hold the canonical agent-exfiltration attack surface:
   Leg 1 — sensitive data access      → PermissionCategory.FILE_READ
-  Leg 2 — untrusted-content exposure → PermissionCategory.NETWORK
-  Leg 3 — exfiltration/action        → PermissionCategory.EXFILTRATION
-                                        | PermissionCategory.SHELL_EXEC
-                                        | PermissionCategory.FILE_WRITE
+  Leg 2 — untrusted-content exposure → SSRF-flagged or fetch-verb tool/resource
+                                        (genuine ingestion, NOT bare NETWORK reach)
+  Leg 3 — exfiltration               → PermissionCategory.EXFILTRATION
 
 Two tiers of findings:
 
