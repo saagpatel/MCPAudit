@@ -11,6 +11,7 @@ not a universal security baseline.
 | `approved-servers-ci.yaml` | Reviewed server allowlists | Allows only named servers and requires selected pin baselines. |
 | `ci-strict.yaml` | Strict reviewed CI | Fails on medium-or-higher findings, drift, and denied destructive behavior. |
 | `browser-automation-ci.yaml` | Browser automation MCP servers | Allows expected browser network behavior while blocking shell/destructive behavior. |
+| `ssrf-aware-ci.yaml` | Teams gating SSRF-prone servers | Adds an opt-in `fail_on.ssrf` gate (global high, per-server medium) on top of the usual permission/injection bars. Requires `--ssrf-check`. |
 
 ## Selection Guide
 
@@ -28,6 +29,14 @@ mcp-audit scan --inject-check --pin-check --json mcp-audit.json --policy example
 
 Use `approved-servers-ci.yaml` or `ci-strict.yaml` after the allowed server set
 and pin baselines are reviewed.
+
+Use `ssrf-aware-ci.yaml` when you want to fail CI on SSRF-prone servers — tools
+or resources whose interface lets a caller steer a server-side request target.
+Run the scan with `--ssrf-check` so SSRF findings are produced:
+
+```bash
+mcp-audit scan --ssrf-check --json mcp-audit.json --policy examples/policies/ssrf-aware-ci.yaml
+```
 
 ## Scoring And Config-Health Note
 

@@ -43,16 +43,21 @@ At most one finding is emitted per tool, at the highest applicable severity:
 
 ### Resources (from the resource URI)
 
-A remote-scheme URI (`http`, `https`, `ws`, `wss`) that contains an RFC-6570-style
-template variable (`{...}`) is flagged:
+A remote-scheme URI that contains an RFC-6570-style template variable (`{...}`) is
+flagged. Remote schemes cover web and websocket (`http`, `https`, `ws`, `wss`),
+git (`git`, `github`), cloud storage (`s3`, `gs`, `az`, `azure`), and databases
+(`mongodb`, `mysql`, `postgres`, `postgresql`, `redis`) — a caller-templated
+database, cache, or bucket host can point the server at an internal or
+attacker-controlled endpoint just as a templated web host can:
 
 | Severity | Pattern | Condition |
 |----------|---------|-----------|
 | high | `remote_uri_host_template` | the template variable sits in the host authority (`https://{host}/...`) |
 | low | `remote_uri_path_template` | the template variable is path-only on a fixed remote host (`https://api.example.com/{path}`) |
 
-Fixed remote URIs, local schemes (`file:`), and template variables on local
-schemes are not flagged.
+Fixed remote URIs, local schemes (`file:`), out-of-scope schemes (e.g. `ftp:`),
+and template variables confined to userinfo (e.g. a templated credential on a
+fixed host) are not flagged.
 
 ## What it deliberately does not flag
 

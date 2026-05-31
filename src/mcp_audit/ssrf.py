@@ -19,8 +19,28 @@ from mcp_audit.models import (
     ToolInfo,
 )
 
-# Schemes where a caller-controlled host means the server reaches out over the network.
-_REMOTE_SCHEMES = {"http", "https", "ws", "wss"}
+# Schemes where a caller-controlled host means the server reaches out over the
+# network — i.e. a templated host is a genuine SSRF target. Kept aligned with
+# analyzer._REMOTE_RESOURCE_SCHEMES so a templated DB/cache/bucket/git host (which
+# can point the server at an internal or attacker-controlled endpoint just as a
+# URL can) is flagged, not just web/websocket URIs.
+_REMOTE_SCHEMES = {
+    "az",
+    "azure",
+    "git",
+    "github",
+    "gs",
+    "http",
+    "https",
+    "mongodb",
+    "mysql",
+    "postgres",
+    "postgresql",
+    "redis",
+    "s3",
+    "ws",
+    "wss",
+}
 
 # Param-name tokens that denote a URL/endpoint the server is expected to fetch.
 _URL_TOKENS = {"url", "uri", "endpoint", "webhook", "callback", "href"}

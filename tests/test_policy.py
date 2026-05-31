@@ -24,6 +24,8 @@ from mcp_audit.models import (
     PermissionFinding,
     RiskScore,
     ServerAudit,
+    SsrfFinding,
+    SsrfSeverity,
 )
 from mcp_audit.policy import evaluate_policy, load_policy
 from tests.conftest import make_server_config, make_tool
@@ -230,6 +232,56 @@ fail_on:
     result = evaluate_policy(_audit_report(audit), load_policy(policy_path))
     assert not result.passed
     assert result.violations[0].rule == "fail_on.injection"
+
+
+def _audit_with_ssrf_finding(severity: SsrfSeverity = SsrfSeverity.HIGH) -> ServerAudit:
+    audit = _audit_with_shell_finding()
+    audit.permissions = []
+    audit.ssrf_findings = [
+        SsrfFinding(
+            target_name="fetch_url",
+            severity=severity,
+            pattern_name="url_param_with_fetch_verb",
+            evidence=["URL-shaped parameter 'url'"],
+            description="SSRF-prone fetch capability.",
+        )
+    ]
+    return audit
+
+
+def test_policy_can_threshold_ssrf_separately(tmp_path: Path) -> None:
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text(
+        """
+fail_on:
+  ssrf: high
+"""
+    )
+    result = evaluate_policy(_audit_report(_audit_with_ssrf_finding()), load_policy(policy_path))
+    assert not result.passed
+    assert result.violations[0].rule == "fail_on.ssrf"
+
+
+def test_broad_severity_does_not_gate_ssrf(tmp_path: Path) -> None:
+    # SSRF is opt-in: the broad fail_on.severity shortcut must not gate it.
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text(
+        """
+fail_on:
+  severity: low
+"""
+    )
+    result = evaluate_policy(_audit_report(_audit_with_ssrf_finding()), load_policy(policy_path))
+    assert not any(v.rule == "fail_on.ssrf" for v in result.violations)
+
+
+def test_ssrf_aware_example_policy_gates_high_ssrf(tmp_path: Path) -> None:
+    result = evaluate_policy(
+        _audit_report(_audit_with_ssrf_finding()),
+        load_policy(Path("examples/policies/ssrf-aware-ci.yaml")),
+    )
+    assert not result.passed
+    assert any(v.rule == "fail_on.ssrf" for v in result.violations)
 
 
 def test_policy_can_threshold_capabilities_separately(tmp_path: Path) -> None:
