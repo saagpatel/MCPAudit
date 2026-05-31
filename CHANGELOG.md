@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added a single-file HTML report output (`scan --html PATH`) alongside the
+  existing terminal/JSON/SARIF formats. The report is self-contained (inline CSS,
+  no JavaScript, no external resources) so it renders offline and can be shared
+  as-is. It surfaces every finding type (permissions, prompt-injection, SSRF,
+  trifecta, escalation, drift, fleet shadowing, config health, policy result).
+  Built from a redacted report copy, and every dynamic value is HTML-escaped so
+  an attacker-influenceable tool description can never turn the report into an
+  XSS vector.
 - Added optional capability-escalation ("rug pull") detection (`scan --escalation-check`)
   that compares each tool against its operator-blessed pin baseline and flags
   security-significant escalations over time. Two rule kinds:
