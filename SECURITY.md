@@ -64,10 +64,10 @@ When the optional `anthropic` dependency is installed and `--llm-analysis` is us
 
 | Version | Supported |
 |---------|-----------|
-| 1.0.x | Yes |
-| 1.0.0 beta/RC pre-releases | Security fixes only |
-| Earlier alpha pre-release builds | No |
-| < 0.3   | No |
+| 1.8.x | Yes |
+| 1.1.x – 1.7.x | Security fixes only |
+| 1.0.x and earlier | No |
+| Pre-release builds (alpha/beta/RC) | No |
 
 ---
 
