@@ -58,10 +58,14 @@ multiple server families. A useful fixture includes:
 - at least one benign prompt/resource example that should not add risk;
 - a short rationale for why composite scoring would help users triage the case.
 
-Current public calibration coverage includes documentation, filesystem, GitHub,
-PostgreSQL, Slack, calendar, container registry, and vault-style examples, plus
-benign memory and glossary cases. Keep adding fixtures here before changing
-composite scoring.
+Current public calibration coverage spans documentation, filesystem, GitHub,
+PostgreSQL, Slack, calendar, container registry, vault, Jira, browser-session,
+feature-flag, support-macro, and newsletter server families, plus benign memory
+and glossary cases and a resource-only injection catalog. Across these the
+corpus exercises every permission category and all seven injection patterns
+(`ignore_instructions`, `system_override`, `prompt_leak`, `hidden_directive`,
+`unicode_direction`, `role_injection`, `credential_harvest`) on prompt and
+resource targets. Keep adding fixtures here before changing composite scoring.
 `docs/COMPOSITE-SCORING-PROPOSAL.md` documents the future combined-score
 proposal without changing current `risk_score.composite` behavior.
 
