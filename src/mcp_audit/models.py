@@ -44,6 +44,12 @@ class InjectionSeverity(StrEnum):
     LOW = "low"  # Weak signal (unusual Unicode, odd formatting)
 
 
+class SsrfSeverity(StrEnum):
+    HIGH = "high"  # Caller-controlled URL param on a server-side fetch tool
+    MEDIUM = "medium"  # URL-shaped input, or remote resource with host template var
+    LOW = "low"  # Weak signal (host/address param, path-only template var)
+
+
 class DriftStatus(StrEnum):
     NEW = "new"  # Tool in current scan but not in pins
     CHANGED = "changed"  # Tool hash differs from stored pin
@@ -245,6 +251,43 @@ class InjectionFinding(BaseModel):
         return injection_metadata(self.severity).remediation
 
 
+class SsrfFinding(BaseModel):
+    """A server-side request forgery (SSRF) capability detected in a tool or resource.
+
+    Flags interfaces where the server may perform a fetch to a caller-influenceable
+    network target (URL/host/endpoint). Static, schema-derived signal only — no
+    request is ever made and no credential value is read.
+    """
+
+    target_type: CapabilityTarget = CapabilityTarget.TOOL
+    target_name: str
+    severity: SsrfSeverity
+    pattern_name: str  # e.g. "url_param_with_fetch_verb"
+    evidence: list[str]  # param names, fetch verbs, or URI scheme/template signals
+    description: str  # human-readable explanation
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def rule_id(self) -> str:
+        from mcp_audit.taxonomy import ssrf_metadata
+
+        return ssrf_metadata(self.severity).rule_id
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def title(self) -> str:
+        from mcp_audit.taxonomy import ssrf_metadata
+
+        return ssrf_metadata(self.severity).title
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def remediation(self) -> str:
+        from mcp_audit.taxonomy import ssrf_metadata
+
+        return ssrf_metadata(self.severity).remediation
+
+
 class DriftFinding(BaseModel):
     """A change detected between pinned and current tool schema."""
 
@@ -336,6 +379,7 @@ class ServerAudit(BaseModel):
     has_annotations: bool = False
     annotation_coverage: float = 0.0  # Percentage of tools with annotations
     injection_findings: list[InjectionFinding] = Field(default_factory=list)
+    ssrf_findings: list[SsrfFinding] = Field(default_factory=list)
     drift_findings: list[DriftFinding] = Field(default_factory=list)
 
 

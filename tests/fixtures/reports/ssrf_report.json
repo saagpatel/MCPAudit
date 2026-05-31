@@ -1,0 +1,121 @@
+{
+  "scan_timestamp": "2026-05-04T12:00:00Z",
+  "hostname": "test-host",
+  "os_platform": "Test",
+  "servers_discovered": 1,
+  "servers_connected": 1,
+  "servers_failed": 0,
+  "total_tools": 2,
+  "high_risk_servers": 0,
+  "audits": [
+    {
+      "server": {
+        "name": "webproxy",
+        "client": "claude_desktop",
+        "config_path": "/test/config.json",
+        "project_path": null,
+        "command": null,
+        "args": [],
+        "env_keys": [],
+        "transport": "stdio",
+        "url": null,
+        "headers_keys": []
+      },
+      "connection_status": "connected",
+      "connection_error": null,
+      "tools": [
+        {
+          "name": "fetch_url",
+          "description": "Fetch the contents of a URL and return the body.",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string"
+              }
+            }
+          },
+          "annotations": null
+        },
+        {
+          "name": "register_webhook",
+          "description": "Register a webhook endpoint for later callbacks.",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "callback_url": {
+                "type": "string"
+              }
+            }
+          },
+          "annotations": null
+        }
+      ],
+      "prompts": [],
+      "resources": [],
+      "permissions": [
+        {
+          "category": "network",
+          "confidence": "high",
+          "evidence": [
+            "fetch"
+          ],
+          "tool_name": "fetch_url",
+          "target_type": "tool",
+          "target_name": "fetch_url",
+          "rule_id": "MCP003",
+          "title": "Network access capability",
+          "severity": "medium",
+          "description": "Tool metadata or config hints indicate the server may contact external services.",
+          "remediation": "Check the server source and destination service before exposing private workspace data."
+        }
+      ],
+      "capability_findings": [],
+      "risk_score": {
+        "composite": 4.0,
+        "file_access": 0.0,
+        "network_access": 4.0,
+        "shell_execution": 0.0,
+        "destructive": 0.0,
+        "exfiltration": 0.0
+      },
+      "non_tool_risk": null,
+      "has_annotations": false,
+      "annotation_coverage": 0.0,
+      "injection_findings": [],
+      "ssrf_findings": [
+        {
+          "target_type": "tool",
+          "target_name": "fetch_url",
+          "severity": "high",
+          "pattern_name": "url_param_with_fetch_verb",
+          "evidence": [
+            "URL-shaped parameter 'url'",
+            "server-side fetch verb in tool name or description"
+          ],
+          "description": "A tool accepts a caller-controllable URL or host and appears to fetch it server-side, which can reach internal services or cloud metadata endpoints.",
+          "rule_id": "MCP011",
+          "title": "Server-side request forgery (SSRF) capability",
+          "remediation": "Confirm the server validates and allowlists outbound targets and blocks link-local, loopback, and metadata addresses before enabling it for untrusted input."
+        },
+        {
+          "target_type": "tool",
+          "target_name": "register_webhook",
+          "severity": "medium",
+          "pattern_name": "url_param",
+          "evidence": [
+            "URL-shaped parameter 'callback_url'"
+          ],
+          "description": "A tool or resource exposes a URL-shaped input or a caller-templated remote host, which may let a caller steer where the server connects.",
+          "rule_id": "MCP012",
+          "title": "Possible SSRF-prone request capability",
+          "remediation": "Review how the server resolves and fetches this target; restrict it to known, trusted destinations before exposing private workspace data."
+        }
+      ],
+      "drift_findings": []
+    }
+  ],
+  "scan_duration_seconds": 0.1,
+  "config_health_findings": [],
+  "policy_result": null
+}

@@ -29,6 +29,7 @@
       "resources",
       "risk_score",
       "server",
+      "ssrf_findings",
       "tools"
     ],
     "connection_statuses": [
@@ -43,6 +44,7 @@
     "capability_targets": [],
     "injection_targets": [],
     "drift_targets": [],
+    "ssrf_targets": [],
     "sarif_rule_ids": [
       "MCP003"
     ],
@@ -80,6 +82,7 @@
       "resources",
       "risk_score",
       "server",
+      "ssrf_findings",
       "tools"
     ],
     "connection_statuses": [
@@ -89,6 +92,7 @@
     "capability_targets": [],
     "injection_targets": [],
     "drift_targets": [],
+    "ssrf_targets": [],
     "sarif_rule_ids": [],
     "sarif_target_types": []
   },
@@ -122,6 +126,7 @@
       "resources",
       "risk_score",
       "server",
+      "ssrf_findings",
       "tools"
     ],
     "connection_statuses": [
@@ -136,6 +141,7 @@
     "capability_targets": [],
     "injection_targets": [],
     "drift_targets": [],
+    "ssrf_targets": [],
     "sarif_rule_ids": [
       "MCP004",
       "MCP010"
@@ -174,6 +180,7 @@
       "resources",
       "risk_score",
       "server",
+      "ssrf_findings",
       "tools"
     ],
     "connection_statuses": [
@@ -197,6 +204,7 @@
       ]
     ],
     "drift_targets": [],
+    "ssrf_targets": [],
     "sarif_rule_ids": [
       "MCP001",
       "MCP003",
@@ -237,6 +245,7 @@
       "resources",
       "risk_score",
       "server",
+      "ssrf_findings",
       "tools"
     ],
     "connection_statuses": [
@@ -261,6 +270,7 @@
         "execute_command"
       ]
     ],
+    "ssrf_targets": [],
     "sarif_rule_ids": [
       "MCP001",
       "MCP004",
@@ -269,6 +279,70 @@
     ],
     "sarif_target_types": [
       "resource",
+      "tool"
+    ]
+  },
+  "ssrf_report.json": {
+    "top_level_keys": [
+      "audits",
+      "config_health_findings",
+      "high_risk_servers",
+      "hostname",
+      "os_platform",
+      "policy_result",
+      "scan_duration_seconds",
+      "scan_timestamp",
+      "servers_connected",
+      "servers_discovered",
+      "servers_failed",
+      "total_tools"
+    ],
+    "audit_count": 1,
+    "audit_keys": [
+      "annotation_coverage",
+      "capability_findings",
+      "connection_error",
+      "connection_status",
+      "drift_findings",
+      "has_annotations",
+      "injection_findings",
+      "non_tool_risk",
+      "permissions",
+      "prompts",
+      "resources",
+      "risk_score",
+      "server",
+      "ssrf_findings",
+      "tools"
+    ],
+    "connection_statuses": [
+      "connected"
+    ],
+    "permission_targets": [
+      [
+        "tool",
+        "fetch_url"
+      ]
+    ],
+    "capability_targets": [],
+    "injection_targets": [],
+    "drift_targets": [],
+    "ssrf_targets": [
+      [
+        "tool",
+        "fetch_url"
+      ],
+      [
+        "tool",
+        "register_webhook"
+      ]
+    ],
+    "sarif_rule_ids": [
+      "MCP003",
+      "MCP011",
+      "MCP012"
+    ],
+    "sarif_target_types": [
       "tool"
     ]
   }

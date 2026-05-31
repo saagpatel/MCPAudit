@@ -37,7 +37,7 @@ def test_version_option_reports_installed_distribution_version() -> None:
 
     assert result.exit_code == 0
     assert "mcp-audit, version " in result.output
-    assert "1.5.5" in result.output
+    assert "1.6.0" in result.output
 
 
 def test_scan_config_only_requires_config() -> None:
@@ -166,15 +166,16 @@ def test_run_scan_core_config_only_ignores_discovered_configs(monkeypatch: pytes
 
     report = anyio.run(
         cli._run_scan_core,
-        True,
-        None,
-        10,
-        "custom.json",
+        True,  # skip_connect
+        None,  # clients
+        10,  # timeout
+        "custom.json",  # extra_config
         OverrideApplier(OverrideConfig()),
-        False,
-        False,
-        False,
-        True,
+        False,  # inject_check
+        False,  # ssrf_check
+        False,  # pin_check
+        False,  # llm_analysis
+        True,  # config_only
     )
 
     assert [audit.server.name for audit in report.audits] == ["custom"]

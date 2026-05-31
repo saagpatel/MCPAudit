@@ -161,6 +161,37 @@ def _build_mcp_server() -> Any:
         return json.dumps(all_findings, indent=2)
 
     @app.tool()  # type: ignore[untyped-decorator]
+    async def get_ssrf_findings() -> str:
+        """Return all SSRF findings across all servers. Returns JSON list."""
+        from mcp_audit.cli import _run_scan_core
+        from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
+
+        override_applier = OverrideApplier(load_override_config(DEFAULT_OVERRIDE_PATH))
+        report = await _run_scan_core(
+            skip_connect=False,
+            clients=None,
+            timeout=10,
+            extra_config=None,
+            override_applier=override_applier,
+            ssrf_check=True,
+        )
+        all_findings = []
+        for audit in report.audits:
+            for f in audit.ssrf_findings:
+                all_findings.append(
+                    {
+                        "server": audit.server.name,
+                        "target": f.target_name,
+                        "target_type": f.target_type.value,
+                        "severity": f.severity.value,
+                        "pattern": f.pattern_name,
+                        "description": f.description,
+                        "evidence": f.evidence,
+                    }
+                )
+        return json.dumps(all_findings, indent=2)
+
+    @app.tool()  # type: ignore[untyped-decorator]
     def list_discovered_servers() -> str:
         """Return names and clients of all discovered MCP servers. Returns JSON list."""
         servers = discover_all_configs(None)

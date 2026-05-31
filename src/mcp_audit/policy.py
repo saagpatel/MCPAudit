@@ -26,6 +26,7 @@ class PolicyConfig:
     fail_on_severity: str | None = None
     fail_on_permission_severity: str | None = None
     fail_on_injection_severity: str | None = None
+    fail_on_ssrf_severity: str | None = None
     fail_on_capability_severity: str | None = None
     fail_on_config_health_severity: str | None = None
     fail_on_drift: bool = False
@@ -44,6 +45,7 @@ class ServerPolicyConfig:
     max_risk: float | None = None
     fail_on_permission_severity: str | None = None
     fail_on_injection_severity: str | None = None
+    fail_on_ssrf_severity: str | None = None
     fail_on_capability_severity: str | None = None
     fail_on_config_health_severity: str | None = None
     fail_on_drift: bool | None = None
@@ -65,6 +67,7 @@ def load_policy(path: Path) -> PolicyConfig:
     severity = _severity(fail_on.get("severity"), "fail_on.severity")
     permission_severity = _severity(fail_on.get("permissions"), "fail_on.permissions")
     injection_severity = _severity(fail_on.get("injection"), "fail_on.injection")
+    ssrf_severity = _severity(fail_on.get("ssrf"), "fail_on.ssrf")
     capability_severity = _severity(fail_on.get("capabilities"), "fail_on.capabilities")
     config_health_severity = _severity(fail_on.get("config_health"), "fail_on.config_health")
 
@@ -80,6 +83,7 @@ def load_policy(path: Path) -> PolicyConfig:
         fail_on_severity=severity,
         fail_on_permission_severity=permission_severity,
         fail_on_injection_severity=injection_severity,
+        fail_on_ssrf_severity=ssrf_severity,
         fail_on_capability_severity=capability_severity,
         fail_on_config_health_severity=config_health_severity,
         fail_on_drift=bool(fail_on.get("drift", False)),
@@ -193,6 +197,27 @@ def evaluate_policy(
                             message=(
                                 f"{injection_finding.rule_id} prompt-injection finding is "
                                 f"{injection_finding.severity.value} severity."
+                            ),
+                        )
+                    )
+
+        ssrf_threshold = _effective_threshold(
+            server_rule.fail_on_ssrf_severity,
+            policy.fail_on_ssrf_severity,
+        )
+        if ssrf_threshold is not None:
+            threshold = _SEVERITY_RANK[ssrf_threshold]
+            for ssrf_finding in audit.ssrf_findings:
+                if _SEVERITY_RANK[ssrf_finding.severity.value] >= threshold:
+                    violations.append(
+                        PolicyViolation(
+                            rule="fail_on.ssrf",
+                            server_name=server_name,
+                            tool_name=ssrf_finding.target_name,
+                            severity=ssrf_finding.severity.value,
+                            message=(
+                                f"{ssrf_finding.rule_id} SSRF finding is "
+                                f"{ssrf_finding.severity.value} severity."
                             ),
                         )
                     )
@@ -384,6 +409,7 @@ def _server_rules(value: Any) -> dict[str, ServerPolicyConfig]:
             fail_on_injection_severity=_severity(
                 fail_on.get("injection"), f"servers.{server_name}.fail_on.injection"
             ),
+            fail_on_ssrf_severity=_severity(fail_on.get("ssrf"), f"servers.{server_name}.fail_on.ssrf"),
             fail_on_capability_severity=_severity(
                 fail_on.get("capabilities"), f"servers.{server_name}.fail_on.capabilities"
             ),

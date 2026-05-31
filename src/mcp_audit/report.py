@@ -11,7 +11,14 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from mcp_audit.models import AuditReport, DriftStatus, InjectionSeverity, PermissionFinding, ServerAudit
+from mcp_audit.models import (
+    AuditReport,
+    DriftStatus,
+    InjectionSeverity,
+    PermissionFinding,
+    ServerAudit,
+    SsrfSeverity,
+)
 from mcp_audit.redaction import redact_data, redact_text
 
 
@@ -80,6 +87,7 @@ class ReportGenerator:
             self._render_verbose(report)
 
         self._render_injection_warnings(report)
+        self._render_ssrf_warnings(report)
         self._render_capability_warnings(report)
         self._render_drift_warnings(report)
         self._render_policy_result(report)
@@ -143,6 +151,40 @@ class ReportGenerator:
                 f"[{sev_style}]{f.severity.value}[/{sev_style}]",
                 f.pattern_name,
                 f.description,
+                f.remediation,
+            )
+        self._console.print(tbl)
+
+    def _render_ssrf_warnings(self, report: AuditReport) -> None:
+        """Print SSRF findings section if any were found."""
+        all_findings = [(a.server.name, f) for a in report.audits for f in a.ssrf_findings]
+        if not all_findings:
+            return
+
+        self._console.print()
+        self._console.rule("[bold red]SSRF Warnings[/bold red]")
+        tbl = Table(show_lines=False)
+        tbl.add_column("Server", style="bold cyan", no_wrap=True)
+        tbl.add_column("Type", style="cyan")
+        tbl.add_column("Target", style="cyan")
+        tbl.add_column("Severity")
+        tbl.add_column("Pattern")
+        tbl.add_column("Evidence", overflow="fold")
+        tbl.add_column("Suggested Action", overflow="fold")
+
+        for server_name, f in all_findings:
+            sev_style = {
+                SsrfSeverity.HIGH: "bold red",
+                SsrfSeverity.MEDIUM: "yellow",
+                SsrfSeverity.LOW: "dim",
+            }.get(f.severity, "")
+            tbl.add_row(
+                server_name,
+                f.target_type.value,
+                f.target_name,
+                f"[{sev_style}]{f.severity.value}[/{sev_style}]",
+                f.pattern_name,
+                "; ".join(f.evidence),
                 f.remediation,
             )
         self._console.print(tbl)
