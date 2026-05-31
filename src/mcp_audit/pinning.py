@@ -12,7 +12,7 @@ from typing import Any
 
 import yaml
 
-from mcp_audit.models import DriftFinding, DriftStatus, ToolInfo
+from mcp_audit.models import DriftFinding, DriftStatus, ServerConfig, ToolInfo
 
 logger = logging.getLogger(__name__)
 
@@ -67,8 +67,18 @@ class PinStore:
         digest = hashlib.sha256(payload.encode()).hexdigest()
         return f"sha256:{digest}"
 
-    def pin_server(self, server_name: str, tools: list[ToolInfo]) -> None:
-        """Upsert pin entries for all tools on a server. Writes atomically."""
+    def pin_server(
+        self,
+        server_name: str,
+        tools: list[ToolInfo],
+        server_config: ServerConfig | None = None,
+    ) -> None:
+        """Upsert pin entries for all tools on a server. Writes atomically.
+
+        When ``server_config`` is provided, its launch fields (command, args, url,
+        transport, and env/header KEY NAMES — never values) are snapshotted so the
+        provenance detector can compare them on later scans.
+        """
         now = datetime.now(UTC).isoformat()
         if "servers" not in self._data:
             self._data["servers"] = {}
@@ -80,6 +90,8 @@ class PinStore:
                 "pinned_at": now,
                 "snapshot": self._tool_snapshot(tool),
             }
+        if server_config is not None:
+            server_entry["config_snapshot"] = self._config_snapshot(server_config)
         self._data["pinned_at"] = now
         self._write()
 
@@ -193,6 +205,17 @@ class PinStore:
             )
         return tools
 
+    def baseline_config(self, server_name: str) -> dict[str, Any] | None:
+        """Return the pinned launch-config snapshot for a server, or None.
+
+        None when the server is unpinned OR was pinned before config snapshots
+        existed (older baselines) — callers must treat None as "no provenance
+        comparison possible" and skip silently.
+        """
+        servers: dict[str, Any] = self._data.get("servers", {})
+        snapshot = servers.get(server_name, {}).get("config_snapshot")
+        return snapshot if isinstance(snapshot, dict) else None
+
     def status(self) -> list[ServerPinStatus]:
         """Return review summaries for all pinned servers."""
         servers: dict[str, Any] = self._data.get("servers", {})
@@ -271,6 +294,21 @@ class PinStore:
         return {
             "description": tool.description,
             "input_schema": tool.input_schema,
+        }
+
+    def _config_snapshot(self, server_config: ServerConfig) -> dict[str, Any]:
+        """Return the launch-config fields stored for provenance comparison.
+
+        Credential surface is recorded by KEY NAME only (env_keys / headers_keys);
+        no value is ever read or stored. Key lists are sorted for stable diffing.
+        """
+        return {
+            "command": server_config.command,
+            "args": list(server_config.args),
+            "url": server_config.url,
+            "transport": server_config.transport.value,
+            "env_keys": sorted(server_config.env_keys),
+            "headers_keys": sorted(server_config.headers_keys),
         }
 
     def _new_tool_details(self, tool: ToolInfo) -> list[str]:

@@ -1,0 +1,75 @@
+{
+	"scan_timestamp": "2026-05-31T12:00:00Z",
+	"hostname": "test-host",
+	"os_platform": "Test",
+	"servers_discovered": 1,
+	"servers_connected": 1,
+	"servers_failed": 0,
+	"total_tools": 1,
+	"high_risk_servers": 0,
+	"audits": [
+		{
+			"server": {
+				"name": "repointed-server",
+				"client": "claude_desktop",
+				"config_path": "/test/config.json",
+				"project_path": null,
+				"command": "npx",
+				"args": ["evil-pkg@latest", "--no-sandbox"],
+				"env_keys": ["API_KEY", "AWS_SECRET_ACCESS_KEY"],
+				"transport": "stdio",
+				"url": null,
+				"headers_keys": []
+			},
+			"connection_status": "connected",
+			"connection_error": null,
+			"tools": [
+				{
+					"name": "do_thing",
+					"description": "Does a thing.",
+					"input_schema": null,
+					"annotations": null
+				}
+			],
+			"prompts": [],
+			"resources": [],
+			"permissions": [],
+			"capability_findings": [],
+			"risk_score": {
+				"composite": 0.0,
+				"file_access": 0.0,
+				"network_access": 0.0,
+				"shell_execution": 0.0,
+				"destructive": 0.0,
+				"exfiltration": 0.0
+			},
+			"non_tool_risk": null,
+			"has_annotations": false,
+			"annotation_coverage": 0.0,
+			"injection_findings": [],
+			"ssrf_findings": [],
+			"drift_findings": [],
+			"trifecta_findings": [],
+			"escalation_findings": [],
+			"provenance_findings": [
+				{
+					"kind": "args",
+					"severity": "high",
+					"server_name": "repointed-server",
+					"summary": "Launch arguments for 'repointed-server' changed since pin: [good-pkg@1.2.3] → [evil-pkg@latest --no-sandbox]. Dangerous flag(s) gained: --no-sandbox.",
+					"baseline": "good-pkg@1.2.3",
+					"current": "evil-pkg@latest --no-sandbox",
+					"gained_flags": ["--no-sandbox"],
+					"rule_id": "MCP021",
+					"title": "Launch arguments changed since pin baseline",
+					"remediation": "Review the argument diff. Re-pin to an explicit, trusted package version rather than a floating tag."
+				}
+			]
+		}
+	],
+	"scan_duration_seconds": 0.1,
+	"config_health_findings": [],
+	"policy_result": null,
+	"fleet_trifecta_findings": [],
+	"shadowing_findings": []
+}

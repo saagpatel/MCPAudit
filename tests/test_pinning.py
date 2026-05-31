@@ -7,7 +7,7 @@ from pathlib import Path
 
 import yaml
 
-from mcp_audit.models import DriftStatus
+from mcp_audit.models import ClientType, DriftStatus, ServerConfig, TransportType
 from mcp_audit.pinning import PinStore
 from tests.conftest import make_tool
 
@@ -276,3 +276,53 @@ class TestAtomicWrite:
         assert len(findings) == 1
         assert findings[0].pinned_at is not None
         assert findings[0].pinned_at >= before
+
+
+def _config(**kw: object) -> ServerConfig:
+    base: dict[str, object] = dict(
+        name="srv",
+        client=ClientType.CLAUDE_CODE,
+        config_path="/tmp/config.json",
+        transport=TransportType.STDIO,
+    )
+    base.update(kw)
+    return ServerConfig(**base)  # type: ignore[arg-type]
+
+
+class TestConfigSnapshot:
+    def test_pin_server_stores_config_snapshot_when_given(self, tmp_path: Path) -> None:
+        store = _store(tmp_path)
+        cfg = _config(command="npx", args=["pkg@1.2.3"], env_keys=["API_KEY"])
+        store.pin_server("srv", [make_tool("t")], cfg)
+        snap = store.baseline_config("srv")
+        assert snap is not None
+        assert snap["command"] == "npx"
+        assert snap["args"] == ["pkg@1.2.3"]
+        assert snap["transport"] == "stdio"
+        assert snap["env_keys"] == ["API_KEY"]
+
+    def test_baseline_config_none_when_no_snapshot(self, tmp_path: Path) -> None:
+        # Pinned without a server_config (older-style / tools-only pin) → no snapshot.
+        store = _store(tmp_path)
+        store.pin_server("srv", [make_tool("t")])
+        assert store.baseline_config("srv") is None
+
+    def test_baseline_config_none_for_unknown_server(self, tmp_path: Path) -> None:
+        assert _store(tmp_path).baseline_config("nope") is None
+
+    def test_config_snapshot_persists_across_reload(self, tmp_path: Path) -> None:
+        store = _store(tmp_path)
+        store.pin_server("srv", [make_tool("t")], _config(command="uvx", args=["x"]))
+        reloaded = PinStore(path=tmp_path / "pins.yaml")
+        snap = reloaded.baseline_config("srv")
+        assert snap is not None
+        assert snap["command"] == "uvx"
+
+    def test_config_snapshot_records_header_key_names_only(self, tmp_path: Path) -> None:
+        store = _store(tmp_path)
+        cfg = _config(transport=TransportType.HTTP, url="https://x", headers_keys=["Authorization"])
+        store.pin_server("srv", [make_tool("t")], cfg)
+        snap = store.baseline_config("srv")
+        assert snap is not None
+        assert snap["headers_keys"] == ["Authorization"]
+        assert snap["url"] == "https://x"

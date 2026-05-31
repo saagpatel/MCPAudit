@@ -1,0 +1,23 @@
+# CI gate for teams that want to block supply-chain / launch-config drift
+# ("provenance" changes) against a committed pin baseline.
+#
+# Run with:
+#   mcp-audit pin                         # once, to capture the approved baseline
+#   mcp-audit scan --provenance-check --json mcp-audit.json --policy provenance-aware-ci.yaml
+#
+# Provenance gating is opt-in: the broad fail_on.severity shortcut does NOT cover
+# it, so it must be requested explicitly via fail_on.provenance. Pair with
+# --provenance-check on the scan command (which implies a pin comparison). A pin
+# baseline that includes a launch-config snapshot must exist first — run
+# `mcp-audit pin`; baselines pinned before this feature are skipped until re-pinned.
+#
+# MCP020 (command):     command/binary or transport changed (HIGH).
+# MCP021 (args):        launch arguments changed — version float, package swap, or a
+#                       new flag (MEDIUM; HIGH if a known-dangerous flag was gained).
+# MCP022 (url):         HTTP endpoint/URL changed (HIGH).
+# MCP023 (credentials): declared env/header KEY-NAME set changed (MEDIUM).
+#
+# See docs/PROVENANCE-DETECTION.md for full details.
+
+fail_on:
+  provenance: true

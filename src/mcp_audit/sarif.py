@@ -20,6 +20,9 @@ from mcp_audit.models import (
     InjectionSeverity,
     PermissionCategory,
     PermissionFinding,
+    ProvenanceFinding,
+    ProvenanceKind,
+    ProvenanceSeverity,
     ServerAudit,
     ShadowingFinding,
     ShadowingKind,
@@ -34,6 +37,7 @@ from mcp_audit.taxonomy import (
     ESCALATION_FINDINGS,
     INJECTION_FINDINGS,
     PERMISSION_FINDINGS,
+    PROVENANCE_FINDINGS,
     SHADOWING_FINDINGS,
     SSRF_FINDINGS,
     TRIFECTA_FINDINGS,
@@ -99,6 +103,15 @@ _ESCALATION_RULE_IDS: dict[EscalationKind, str] = {
 
 _ESCALATION_RULE_DESCRIPTIONS = {
     metadata.rule_id: metadata.description for metadata in ESCALATION_FINDINGS.values()
+}
+
+# Provenance-specific SARIF rule IDs (keyed by kind: MCP020 command, 021 args, 022 url, 023 credentials)
+_PROVENANCE_RULE_IDS: dict[ProvenanceKind, str] = {
+    kind: metadata.rule_id for kind, metadata in PROVENANCE_FINDINGS.items()
+}
+
+_PROVENANCE_RULE_DESCRIPTIONS = {
+    metadata.rule_id: metadata.description for metadata in PROVENANCE_FINDINGS.values()
 }
 
 
@@ -230,6 +243,18 @@ class SarifGenerator:
             }
             for rule_id, desc in _ESCALATION_RULE_DESCRIPTIONS.items()
         ]
+        provenance_rules = [
+            {
+                "id": rule_id,
+                "name": f"Provenance{rule_id}",
+                "shortDescription": {"text": desc},
+                "fullDescription": {"text": desc},
+                "help": {"text": _provenance_help(rule_id)},
+                "helpUri": "https://github.com/saagpatel/MCPAudit#readme",
+                "properties": {"category": "provenance"},
+            }
+            for rule_id, desc in _PROVENANCE_RULE_DESCRIPTIONS.items()
+        ]
         return (
             perm_rules
             + injection_rules
@@ -237,6 +262,7 @@ class SarifGenerator:
             + trifecta_rules
             + shadowing_rules
             + escalation_rules
+            + provenance_rules
             + contract_rules
         )
 
@@ -256,6 +282,8 @@ class SarifGenerator:
                 results.append(self._make_trifecta_result(trifecta, audit))
             for escalation in audit.escalation_findings:
                 results.append(self._make_escalation_result(escalation, audit))
+            for provenance in audit.provenance_findings:
+                results.append(self._make_provenance_result(provenance, audit))
             for drift_finding in audit.drift_findings:
                 results.append(self._make_drift_result(drift_finding, audit))
         for fleet_trifecta in report.fleet_trifecta_findings:
@@ -302,6 +330,11 @@ class SarifGenerator:
 
     def _escalation_level(self, finding: EscalationFinding) -> str:
         if finding.severity == EscalationSeverity.HIGH:
+            return "error"
+        return "warning"
+
+    def _provenance_level(self, finding: ProvenanceFinding) -> str:
+        if finding.severity == ProvenanceSeverity.HIGH:
             return "error"
         return "warning"
 
@@ -561,6 +594,31 @@ class SarifGenerator:
             },
         }
 
+    def _make_provenance_result(self, finding: ProvenanceFinding, audit: ServerAudit) -> dict[str, Any]:
+        """Build a SARIF result for a per-server provenance finding (MCP020-023)."""
+        rule_id = _PROVENANCE_RULE_IDS[finding.kind]
+        level = self._provenance_level(finding)
+        config_path = audit.server.config_path
+        uri = Path(config_path).as_uri() if config_path else "file:///unknown"
+        msg = f"{finding.summary} Suggested action: {finding.remediation}"
+        return {
+            "ruleId": rule_id,
+            "level": level,
+            "message": {"text": msg},
+            "locations": [{"physicalLocation": {"artifactLocation": {"uri": uri}}}],
+            "partialFingerprints": {
+                "mcpAuditStableId": _stable_fingerprint(rule_id, audit.server.name, finding.kind.value)
+            },
+            "properties": {
+                "kind": finding.kind.value,
+                "severity": finding.severity.value,
+                "baseline": finding.baseline,
+                "current": finding.current,
+                "gained_flags": finding.gained_flags,
+                "remediation": finding.remediation,
+            },
+        }
+
     def _make_drift_result(self, finding: DriftFinding, audit: ServerAudit) -> dict[str, Any]:
         config_path = audit.server.config_path
         uri = Path(config_path).as_uri() if config_path else "file:///unknown"
@@ -646,6 +704,13 @@ def _shadowing_help(rule_id: str) -> str:
 def _escalation_help(rule_id: str) -> str:
     remediations = {
         metadata.remediation for metadata in ESCALATION_FINDINGS.values() if metadata.rule_id == rule_id
+    }
+    return " ".join(sorted(remediations))
+
+
+def _provenance_help(rule_id: str) -> str:
+    remediations = {
+        metadata.remediation for metadata in PROVENANCE_FINDINGS.values() if metadata.rule_id == rule_id
     }
     return " ".join(sorted(remediations))
 

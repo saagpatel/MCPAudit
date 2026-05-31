@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added optional launch-config / provenance drift detection (`scan --provenance-check`)
+  that compares a server's launch configuration against its pin baseline and flags
+  supply-chain changes the tool-schema check cannot see — a server can keep identical
+  tool schemas while repointing `npx pkg@1.2.3` to `@latest`, swapping its binary,
+  gaining `--no-sandbox`, or changing its HTTP endpoint. Four rule kinds:
+  - **MCP020 (command)** — command/binary or transport changed (HIGH).
+  - **MCP021 (args)** — launch arguments changed (version float, package swap, new flag);
+    MEDIUM, or HIGH if a known-dangerous flag (`--no-sandbox`, `--dangerously-*`, …) was gained.
+  - **MCP022 (url)** — HTTP endpoint/URL changed (HIGH).
+  - **MCP023 (credentials)** — declared env/header KEY-NAME set changed (MEDIUM).
+  The pin baseline now snapshots the launch config (command, args, url, transport, and
+  env/header **key names only — never values**). `--provenance-check` implies a pin
+  comparison; baselines pinned before this release are skipped until re-pinned. Findings
+  are a pure delta, so an unchanged launch config produces nothing. Added
+  `fail_on.provenance` policy gate, SARIF rules MCP020–MCP023 (category `provenance`),
+  a terminal report section, a `get_provenance_findings` MCP server tool, and
+  `docs/PROVENANCE-DETECTION.md` + `examples/policies/provenance-aware-ci.yaml`.
 - Added a single-file HTML report output (`scan --html PATH`) alongside the
   existing terminal/JSON/SARIF formats. The report is self-contained (inline CSS,
   no JavaScript, no external resources) so it renders offline and can be shared

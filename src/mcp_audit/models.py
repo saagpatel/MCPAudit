@@ -77,6 +77,18 @@ class EscalationSeverity(StrEnum):
     MEDIUM = "medium"  # Gained file_write/network
 
 
+class ProvenanceKind(StrEnum):
+    COMMAND = "command"  # Launch command/binary or transport changed
+    ARGS = "args"  # Launch arguments changed (version float, package swap, new flag)
+    URL = "url"  # HTTP endpoint/URL changed
+    CREDENTIALS = "credentials"  # Declared env/header key-name set changed
+
+
+class ProvenanceSeverity(StrEnum):
+    HIGH = "high"  # Command/transport or URL change, or a dangerous flag gained
+    MEDIUM = "medium"  # Benign arg drift or credential-key-set change
+
+
 class DriftStatus(StrEnum):
     NEW = "new"  # Tool in current scan but not in pins
     CHANGED = "changed"  # Tool hash differs from stored pin
@@ -404,6 +416,60 @@ class EscalationFinding(BaseModel):
         return escalation_metadata(self.kind).remediation
 
 
+class ProvenanceFinding(BaseModel):
+    """A launch-config / provenance change detected against the pin baseline.
+
+    Fires when a server's LAUNCH configuration changed since it was pinned — a
+    supply-chain signal independent of the tool schemas:
+      COMMAND      — the command/binary or transport changed (HIGH).
+      ARGS         — the launch arguments changed: version float, package swap,
+                     or a new flag.  MEDIUM, or HIGH if a known-dangerous flag was
+                     gained.
+      URL          — the HTTP endpoint/URL changed (HIGH).
+      CREDENTIALS  — the declared env/header KEY-NAME set changed (MEDIUM).
+
+    Pure delta vs the pinned config snapshot — an unchanged launch config produces
+    nothing.  Credential surface is compared by KEY NAME only; values are never
+    captured, stored, or displayed.  Requires a pin baseline that includes a
+    config snapshot (``--provenance-check`` implies a pin comparison; baselines
+    pinned before this feature are skipped until re-pinned).
+    """
+
+    kind: ProvenanceKind
+    severity: ProvenanceSeverity
+    server_name: str
+    summary: str  # one-line human description of what changed
+    baseline: str  # prior value (command line / url / joined args / joined key names)
+    current: str  # current value
+    gained_flags: list[str] = Field(default_factory=list)  # dangerous flags newly present (ARGS)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def description(self) -> str:
+        return self.summary
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def rule_id(self) -> str:
+        from mcp_audit.taxonomy import provenance_metadata
+
+        return provenance_metadata(self.kind).rule_id
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def title(self) -> str:
+        from mcp_audit.taxonomy import provenance_metadata
+
+        return provenance_metadata(self.kind).title
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def remediation(self) -> str:
+        from mcp_audit.taxonomy import provenance_metadata
+
+        return provenance_metadata(self.kind).remediation
+
+
 class DriftFinding(BaseModel):
     """A change detected between pinned and current tool schema."""
 
@@ -499,6 +565,7 @@ class ServerAudit(BaseModel):
     drift_findings: list[DriftFinding] = Field(default_factory=list)
     trifecta_findings: list[TrifectaFinding] = Field(default_factory=list)
     escalation_findings: list[EscalationFinding] = Field(default_factory=list)
+    provenance_findings: list[ProvenanceFinding] = Field(default_factory=list)
 
 
 class ShadowingFinding(BaseModel):

@@ -24,6 +24,7 @@ from mcp_audit.models import (
 from mcp_audit.sarif import (
     _ESCALATION_RULE_IDS,
     _INJECTION_RULE_IDS,
+    _PROVENANCE_RULE_IDS,
     _RULE_IDS,
     _SHADOWING_RULE_IDS,
     _SSRF_RULE_IDS,
@@ -103,6 +104,7 @@ class TestSarifStructure:
             | set(_TRIFECTA_RULE_IDS.values())
             | set(_SHADOWING_RULE_IDS.values())
             | set(_ESCALATION_RULE_IDS.values())
+            | set(_PROVENANCE_RULE_IDS.values())
             | {"MCP009", "MCP010"}
         )
         assert rule_ids == expected

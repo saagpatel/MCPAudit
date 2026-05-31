@@ -8,6 +8,7 @@ from mcp_audit.models import (
     EscalationKind,
     InjectionSeverity,
     PermissionCategory,
+    ProvenanceKind,
     ShadowingKind,
     SsrfSeverity,
     TrifectaSeverity,
@@ -298,3 +299,75 @@ ESCALATION_FINDINGS: dict[EscalationKind, FindingMetadata] = {
 def escalation_metadata(kind: EscalationKind) -> FindingMetadata:
     """Return stable metadata for a capability-escalation kind."""
     return ESCALATION_FINDINGS[kind]
+
+
+PROVENANCE_FINDINGS: dict[ProvenanceKind, FindingMetadata] = {
+    ProvenanceKind.COMMAND: FindingMetadata(
+        rule_id="MCP020",
+        title="Launch command/transport changed since pin baseline",
+        severity="high",
+        description=(
+            "The server's launch command/binary or transport changed since it was pinned. The "
+            "command is the supply-chain trust anchor — swapping the executable (or switching "
+            "transport, e.g. stdio→http) can redirect the agent to an entirely different program "
+            "while the tool schemas stay identical. This is a classic rug-pull vector."
+        ),
+        remediation=(
+            "Confirm the new command/transport is intended and from a trusted source before "
+            "refreshing the pin. If unexpected, disable the server and inspect the config file that "
+            "defines it. Run `mcp-audit pin --refresh <server>` only after review."
+        ),
+    ),
+    ProvenanceKind.ARGS: FindingMetadata(
+        rule_id="MCP021",
+        title="Launch arguments changed since pin baseline",
+        severity="medium",
+        description=(
+            "The server's launch arguments changed since it was pinned — a pinned package version "
+            "floating to a different version or `@latest`, a swapped package name (possible "
+            "typosquat), or a newly added flag. HIGH when a known-dangerous flag "
+            "(e.g. --no-sandbox, --dangerously-*, --allow-all) was gained; MEDIUM otherwise."
+        ),
+        remediation=(
+            "Review the argument diff. Re-pin to an explicit, trusted package version rather than a "
+            "floating tag. Reject any newly added permission-broadening flag unless it is "
+            "deliberate. Refresh the pin only after the change is understood."
+        ),
+    ),
+    ProvenanceKind.URL: FindingMetadata(
+        rule_id="MCP022",
+        title="HTTP endpoint/URL changed since pin baseline",
+        severity="high",
+        description=(
+            "The server's HTTP endpoint/URL changed since it was pinned. A changed host or path can "
+            "silently repoint the agent at an attacker-controlled endpoint that proxies or replaces "
+            "the legitimate service while presenting the same tool schemas."
+        ),
+        remediation=(
+            "Verify the new endpoint is the legitimate service over TLS and was changed "
+            "intentionally. Treat an unexpected host change as a compromise until proven otherwise. "
+            "Refresh the pin only after confirming the endpoint."
+        ),
+    ),
+    ProvenanceKind.CREDENTIALS: FindingMetadata(
+        rule_id="MCP023",
+        title="Declared credential key-name set changed since pin baseline",
+        severity="medium",
+        description=(
+            "The set of declared environment-variable / header KEY NAMES the server is wired to "
+            "read changed since it was pinned (only key names are ever inspected — values are never "
+            "captured). A server newly demanding a credential key it did not previously reference "
+            "may be attempting to harvest secrets it was not originally trusted with."
+        ),
+        remediation=(
+            "Confirm any newly demanded credential key is required and appropriate for this server. "
+            "Investigate keys that map to unrelated services. Refresh the pin only after the new "
+            "credential surface is reviewed."
+        ),
+    ),
+}
+
+
+def provenance_metadata(kind: ProvenanceKind) -> FindingMetadata:
+    """Return stable metadata for a provenance / launch-config change kind."""
+    return PROVENANCE_FINDINGS[kind]

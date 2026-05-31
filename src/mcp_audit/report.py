@@ -18,6 +18,7 @@ from mcp_audit.models import (
     EscalationSeverity,
     InjectionSeverity,
     PermissionFinding,
+    ProvenanceSeverity,
     ServerAudit,
     ShadowingSeverity,
     SsrfSeverity,
@@ -95,6 +96,7 @@ class ReportGenerator:
         self._render_trifecta_warnings(report)
         self._render_shadowing_warnings(report)
         self._render_escalation_warnings(report)
+        self._render_provenance_warnings(report)
         self._render_capability_warnings(report)
         self._render_drift_warnings(report)
         self._render_policy_result(report)
@@ -307,6 +309,35 @@ class ReportGenerator:
                 f"[{sev_style}]{f.severity.value}[/{sev_style}]",
                 gained,
                 f.remediation,
+            )
+        self._console.print(tbl)
+
+    def _render_provenance_warnings(self, report: AuditReport) -> None:
+        """Print launch-config / provenance drift findings vs the pin baseline if any."""
+        findings = [(a.server.name, f) for a in report.audits for f in a.provenance_findings]
+        if not findings:
+            return
+
+        self._console.print()
+        self._console.rule("[bold red]Provenance / Launch-Config Drift (vs pin baseline)[/bold red]")
+        tbl = Table(show_lines=True)
+        tbl.add_column("Rule ID", style="bold red", no_wrap=True)
+        tbl.add_column("Server", style="bold cyan", no_wrap=True)
+        tbl.add_column("Kind")
+        tbl.add_column("Severity")
+        tbl.add_column("Change", overflow="fold")
+
+        for server_name, f in findings:
+            sev_style = {
+                ProvenanceSeverity.HIGH: "bold red",
+                ProvenanceSeverity.MEDIUM: "yellow",
+            }.get(f.severity, "")
+            tbl.add_row(
+                f.rule_id,
+                server_name,
+                f.kind.value,
+                f"[{sev_style}]{f.severity.value}[/{sev_style}]",
+                f.summary,
             )
         self._console.print(tbl)
 

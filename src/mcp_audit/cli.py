@@ -186,6 +186,12 @@ def discover(client_filter: str | None, verbose: bool) -> None:
     help="Detect capability/description-injection escalation vs the pin baseline (implies pin comparison).",  # noqa: E501
 )
 @click.option(
+    "--provenance-check",
+    is_flag=True,
+    default=False,
+    help="Detect launch-config / provenance drift (command, args, URL, credential keys) vs the pin baseline.",  # noqa: E501
+)
+@click.option(
     "--llm-analysis",
     is_flag=True,
     default=False,
@@ -209,6 +215,7 @@ def scan(
     trifecta_check: bool,
     shadow_check: bool,
     escalation_check: bool,
+    provenance_check: bool,
     llm_analysis: bool,
 ) -> None:
     """Full audit: discover servers, connect, enumerate tools, score risk, report."""
@@ -233,6 +240,7 @@ def scan(
         trifecta_check,
         shadow_check,
         escalation_check,
+        provenance_check,
         llm_analysis,
         config_only,
     )
@@ -250,6 +258,7 @@ async def _run_scan_core(
     trifecta_check: bool = False,
     shadow_check: bool = False,
     escalation_check: bool = False,
+    provenance_check: bool = False,
     llm_analysis: bool = False,
     config_only: bool = False,
 ) -> AuditReport:
@@ -318,10 +327,17 @@ async def _run_scan_core(
 
         escalation_analyzer = EscalationAnalyzer()
 
-    # --escalation-check implies a pin comparison, so a pin store is needed even
-    # when --pin-check was not passed. Drift output stays gated on pin_check.
+    provenance_analyzer = None
+    if provenance_check:
+        from mcp_audit.provenance import ProvenanceAnalyzer
+
+        provenance_analyzer = ProvenanceAnalyzer()
+
+    # --escalation-check and --provenance-check both imply a pin comparison, so a
+    # pin store is needed even when --pin-check was not passed. Drift output stays
+    # gated on pin_check.
     pin_store = None
-    if pin_check or escalation_check:
+    if pin_check or escalation_check or provenance_check:
         from mcp_audit.pinning import PinStore
 
         pin_store = PinStore()
@@ -388,6 +404,12 @@ async def _run_scan_core(
                         srv.name, baseline, audit.tools
                     )
 
+            # Optional provenance / launch-config drift check vs the pin baseline
+            if provenance_analyzer is not None and pin_store is not None:
+                baseline_config = pin_store.baseline_config(srv.name)
+                if baseline_config:
+                    audit.provenance_findings = provenance_analyzer.analyze_server(srv, baseline_config)
+
             audits[idx] = audit
             progress.advance(task_id)
 
@@ -400,6 +422,13 @@ async def _run_scan_core(
         console.print(
             "[yellow]--escalation-check: no pin baseline found. "
             "Run `mcp-audit pin` first to capture a baseline to compare against.[/yellow]"
+        )
+
+    # Provenance needs a config snapshot in the baseline; warn if nothing is pinned.
+    if provenance_check and pin_store is not None and not pin_store.pinned_servers():
+        console.print(
+            "[yellow]--provenance-check: no pin baseline found. "
+            "Run `mcp-audit pin` first to capture a launch-config baseline to compare against.[/yellow]"
         )
 
     # Fleet-level trifecta pass — runs once after all servers are audited
@@ -449,6 +478,7 @@ async def _run_scan(
     trifecta_check: bool = False,
     shadow_check: bool = False,
     escalation_check: bool = False,
+    provenance_check: bool = False,
     llm_analysis: bool = False,
     config_only: bool = False,
 ) -> None:
@@ -479,6 +509,7 @@ async def _run_scan(
         trifecta_check=trifecta_check,
         shadow_check=shadow_check,
         escalation_check=escalation_check,
+        provenance_check=provenance_check,
         llm_analysis=llm_analysis,
         config_only=config_only,
     )
@@ -994,7 +1025,7 @@ async def _run_pin(server_name: str | None, store: object) -> None:
                 " Use scan --skip-connect for config-only review; pins require live tool schemas.[/yellow]"
             )
             continue
-        store.pin_server(audit.server.name, audit.tools)
+        store.pin_server(audit.server.name, audit.tools, audit.server)
         console.print(f"[green]Pinned {len(audit.tools)} tool(s) for '{audit.server.name}'.[/green]")
 
     if server_name and not matched:
@@ -1052,7 +1083,7 @@ async def _run_pin_refresh(
     findings = store.check_drift(audit.server.name, audit.tools)
     if json_status:
         if apply_refresh:
-            store.pin_server(audit.server.name, audit.tools)
+            store.pin_server(audit.server.name, audit.tools, audit.server)
         click.echo(_pin_refresh_json(audit.server.name, len(audit.tools), findings, applied=apply_refresh))
         return
 
@@ -1064,7 +1095,7 @@ async def _run_pin_refresh(
         )
         return
 
-    store.pin_server(audit.server.name, audit.tools)
+    store.pin_server(audit.server.name, audit.tools, audit.server)
     console.print(f"[green]Refreshed {len(audit.tools)} pin(s) for '{audit.server.name}'.[/green]")
 
 

@@ -525,6 +525,68 @@
       "title": "PromptInfo",
       "type": "object"
     },
+    "ProvenanceFinding": {
+      "description": "A launch-config / provenance change detected against the pin baseline.\n\nFires when a server's LAUNCH configuration changed since it was pinned \u2014 a\nsupply-chain signal independent of the tool schemas:\n  COMMAND      \u2014 the command/binary or transport changed (HIGH).\n  ARGS         \u2014 the launch arguments changed: version float, package swap,\n                 or a new flag.  MEDIUM, or HIGH if a known-dangerous flag was\n                 gained.\n  URL          \u2014 the HTTP endpoint/URL changed (HIGH).\n  CREDENTIALS  \u2014 the declared env/header KEY-NAME set changed (MEDIUM).\n\nPure delta vs the pinned config snapshot \u2014 an unchanged launch config produces\nnothing.  Credential surface is compared by KEY NAME only; values are never\ncaptured, stored, or displayed.  Requires a pin baseline that includes a\nconfig snapshot (``--provenance-check`` implies a pin comparison; baselines\npinned before this feature are skipped until re-pinned).",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/ProvenanceKind"
+        },
+        "severity": {
+          "$ref": "#/$defs/ProvenanceSeverity"
+        },
+        "server_name": {
+          "title": "Server Name",
+          "type": "string"
+        },
+        "summary": {
+          "title": "Summary",
+          "type": "string"
+        },
+        "baseline": {
+          "title": "Baseline",
+          "type": "string"
+        },
+        "current": {
+          "title": "Current",
+          "type": "string"
+        },
+        "gained_flags": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Gained Flags",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "severity",
+        "server_name",
+        "summary",
+        "baseline",
+        "current"
+      ],
+      "title": "ProvenanceFinding",
+      "type": "object"
+    },
+    "ProvenanceKind": {
+      "enum": [
+        "command",
+        "args",
+        "url",
+        "credentials"
+      ],
+      "title": "ProvenanceKind",
+      "type": "string"
+    },
+    "ProvenanceSeverity": {
+      "enum": [
+        "high",
+        "medium"
+      ],
+      "title": "ProvenanceSeverity",
+      "type": "string"
+    },
     "ResourceInfo": {
       "description": "A resource exposed by an MCP server.",
       "properties": {
@@ -748,6 +810,13 @@
             "$ref": "#/$defs/EscalationFinding"
           },
           "title": "Escalation Findings",
+          "type": "array"
+        },
+        "provenance_findings": {
+          "items": {
+            "$ref": "#/$defs/ProvenanceFinding"
+          },
+          "title": "Provenance Findings",
           "type": "array"
         }
       },
