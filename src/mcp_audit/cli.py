@@ -26,6 +26,8 @@ from mcp_audit.models import (
     ConfigHealthSeverity,
     DriftFinding,
     DriftStatus,
+    EscalationFinding,
+    ProvenanceFinding,
     ServerAudit,
     ServerConfig,
     ShadowingFinding,
@@ -192,6 +194,12 @@ def discover(client_filter: str | None, verbose: bool) -> None:
     help="Detect launch-config / provenance drift (command, args, URL, credential keys) vs the pin baseline.",  # noqa: E501
 )
 @click.option(
+    "--integrity-check",
+    is_flag=True,
+    default=False,
+    help="Detect on-disk launch-artifact (binary/script) hash drift vs the pin baseline.",
+)
+@click.option(
     "--llm-analysis",
     is_flag=True,
     default=False,
@@ -216,6 +224,7 @@ def scan(
     shadow_check: bool,
     escalation_check: bool,
     provenance_check: bool,
+    integrity_check: bool,
     llm_analysis: bool,
 ) -> None:
     """Full audit: discover servers, connect, enumerate tools, score risk, report."""
@@ -241,6 +250,7 @@ def scan(
         shadow_check,
         escalation_check,
         provenance_check,
+        integrity_check,
         llm_analysis,
         config_only,
     )
@@ -259,6 +269,7 @@ async def _run_scan_core(
     shadow_check: bool = False,
     escalation_check: bool = False,
     provenance_check: bool = False,
+    integrity_check: bool = False,
     llm_analysis: bool = False,
     config_only: bool = False,
 ) -> AuditReport:
@@ -333,11 +344,17 @@ async def _run_scan_core(
 
         provenance_analyzer = ProvenanceAnalyzer()
 
-    # --escalation-check and --provenance-check both imply a pin comparison, so a
-    # pin store is needed even when --pin-check was not passed. Drift output stays
-    # gated on pin_check.
+    integrity_analyzer = None
+    if integrity_check:
+        from mcp_audit.integrity import IntegrityAnalyzer
+
+        integrity_analyzer = IntegrityAnalyzer()
+
+    # --escalation-check, --provenance-check, and --integrity-check all imply a pin
+    # comparison, so a pin store is needed even when --pin-check was not passed.
+    # Drift output stays gated on pin_check.
     pin_store = None
-    if pin_check or escalation_check or provenance_check:
+    if pin_check or escalation_check or provenance_check or integrity_check:
         from mcp_audit.pinning import PinStore
 
         pin_store = PinStore()
@@ -410,6 +427,12 @@ async def _run_scan_core(
                 if baseline_config:
                     audit.provenance_findings = provenance_analyzer.analyze_server(srv, baseline_config)
 
+            # Optional launch-artifact integrity (on-disk hash) check vs the pin baseline
+            if integrity_analyzer is not None and pin_store is not None:
+                baseline_artifacts = pin_store.baseline_artifacts(srv.name)
+                if baseline_artifacts:
+                    audit.integrity_findings = integrity_analyzer.analyze_server(srv.name, baseline_artifacts)
+
             audits[idx] = audit
             progress.advance(task_id)
 
@@ -429,6 +452,13 @@ async def _run_scan_core(
         console.print(
             "[yellow]--provenance-check: no pin baseline found. "
             "Run `mcp-audit pin` first to capture a launch-config baseline to compare against.[/yellow]"
+        )
+
+    # Integrity needs artifact hashes in the baseline; warn if nothing is pinned.
+    if integrity_check and pin_store is not None and not pin_store.pinned_servers():
+        console.print(
+            "[yellow]--integrity-check: no pin baseline found. "
+            "Run `mcp-audit pin` first to capture launch-artifact hashes to compare against.[/yellow]"
         )
 
     # Fleet-level trifecta pass — runs once after all servers are audited
@@ -479,6 +509,7 @@ async def _run_scan(
     shadow_check: bool = False,
     escalation_check: bool = False,
     provenance_check: bool = False,
+    integrity_check: bool = False,
     llm_analysis: bool = False,
     config_only: bool = False,
 ) -> None:
@@ -503,6 +534,7 @@ async def _run_scan(
         shadow_check=shadow_check,
         escalation_check=escalation_check,
         provenance_check=provenance_check,
+        integrity_check=integrity_check,
         llm_analysis=llm_analysis,
         config_only=config_only,
     )
@@ -1076,13 +1108,25 @@ async def _run_pin_refresh(
         return
 
     findings = store.check_drift(audit.server.name, audit.tools)
+    escalation_findings, provenance_findings = _refresh_security_deltas(store, audit)
     if json_status:
         if apply_refresh:
             store.pin_server(audit.server.name, audit.tools, audit.server)
-        click.echo(_pin_refresh_json(audit.server.name, len(audit.tools), findings, applied=apply_refresh))
+        click.echo(
+            _pin_refresh_json(
+                audit.server.name,
+                len(audit.tools),
+                findings,
+                escalation_findings,
+                provenance_findings,
+                applied=apply_refresh,
+            )
+        )
         return
 
-    _render_pin_refresh_review(audit.server.name, len(audit.tools), findings)
+    _render_pin_refresh_review(
+        audit.server.name, len(audit.tools), findings, escalation_findings, provenance_findings
+    )
 
     if not apply_refresh:
         console.print(
@@ -1092,6 +1136,38 @@ async def _run_pin_refresh(
 
     store.pin_server(audit.server.name, audit.tools, audit.server)
     console.print(f"[green]Refreshed {len(audit.tools)} pin(s) for '{audit.server.name}'.[/green]")
+
+
+def _refresh_security_deltas(
+    store: object,
+    audit: ServerAudit,
+) -> tuple[list[EscalationFinding], list[ProvenanceFinding]]:
+    """Compute capability-escalation and provenance deltas vs the pin baseline.
+
+    Surfaced unconditionally in the refresh preview so security-significant
+    changes (a tool that gained a dangerous capability, a swapped launch
+    command, a new credential key) are reviewed before --apply blesses the new
+    baseline. Returns empty lists when no baseline exists yet.
+    """
+    from mcp_audit.escalation import EscalationAnalyzer
+    from mcp_audit.pinning import PinStore as PS
+    from mcp_audit.provenance import ProvenanceAnalyzer
+
+    assert isinstance(store, PS)
+    escalation_findings: list[EscalationFinding] = []
+    provenance_findings: list[ProvenanceFinding] = []
+
+    baseline_tools = store.baseline_tools(audit.server.name)
+    if baseline_tools:
+        escalation_findings = EscalationAnalyzer().analyze_server(
+            audit.server.name, baseline_tools, audit.tools
+        )
+
+    baseline_config = store.baseline_config(audit.server.name)
+    if baseline_config:
+        provenance_findings = ProvenanceAnalyzer().analyze_server(audit.server, baseline_config)
+
+    return escalation_findings, provenance_findings
 
 
 def _duplicate_server_names(audits: list[ServerAudit]) -> set[str]:
@@ -1109,12 +1185,16 @@ def _pin_refresh_json(
     server_name: str,
     tool_count: int,
     drift_findings: list[DriftFinding],
+    escalation_findings: list[EscalationFinding] | None = None,
+    provenance_findings: list[ProvenanceFinding] | None = None,
     *,
     applied: bool,
     error: str | None = None,
 ) -> str:
     import json
 
+    escalation_findings = escalation_findings or []
+    provenance_findings = provenance_findings or []
     counts = {status.value: 0 for status in DriftStatus}
     for finding in drift_findings:
         counts[finding.status.value] += 1
@@ -1134,6 +1214,27 @@ def _pin_refresh_json(
             }
             for finding in drift_findings
         ],
+        "escalation": [
+            {
+                "rule_id": finding.rule_id,
+                "kind": finding.kind.value,
+                "severity": finding.severity.value,
+                "tool_name": finding.tool_name,
+                "title": finding.title,
+                "description": finding.description,
+            }
+            for finding in escalation_findings
+        ],
+        "provenance": [
+            {
+                "rule_id": finding.rule_id,
+                "kind": finding.kind.value,
+                "severity": finding.severity.value,
+                "title": finding.title,
+                "summary": finding.summary,
+            }
+            for finding in provenance_findings
+        ],
     }
     return json.dumps(payload, indent=2, sort_keys=True)
 
@@ -1142,38 +1243,76 @@ def _render_pin_refresh_review(
     server_name: str,
     tool_count: int,
     drift_findings: list[DriftFinding],
+    escalation_findings: list[EscalationFinding] | None = None,
+    provenance_findings: list[ProvenanceFinding] | None = None,
 ) -> None:
     from rich.table import Table
 
+    escalation_findings = escalation_findings or []
+    provenance_findings = provenance_findings or []
     counts = {status: 0 for status in DriftStatus}
     for finding in drift_findings:
         counts[finding.status] += 1
 
     console.print(f"[bold]Pin refresh review:[/bold] {server_name} ({tool_count} current tool(s))")
-    if not drift_findings:
+    if not (drift_findings or escalation_findings or provenance_findings):
         console.print("[green]No drift found. Current tools already match the pin baseline.[/green]")
         return
 
-    console.print(
-        "[yellow]"
-        f"{counts[DriftStatus.NEW]} new, "
-        f"{counts[DriftStatus.CHANGED]} changed, "
-        f"{counts[DriftStatus.REMOVED]} removed"
-        "[/yellow]"
-    )
-
-    table = Table(show_header=True)
-    table.add_column("Status", style="yellow")
-    table.add_column("Tool", style="cyan")
-    table.add_column("Review note")
-
-    for finding in drift_findings:
-        table.add_row(
-            finding.status.value,
-            finding.tool_name,
-            finding.summary or ", ".join(finding.details) or "Review before refreshing.",
+    if drift_findings:
+        console.print(
+            "[yellow]"
+            f"{counts[DriftStatus.NEW]} new, "
+            f"{counts[DriftStatus.CHANGED]} changed, "
+            f"{counts[DriftStatus.REMOVED]} removed"
+            "[/yellow]"
         )
 
+        table = Table(show_header=True)
+        table.add_column("Status", style="yellow")
+        table.add_column("Tool", style="cyan")
+        table.add_column("Review note")
+
+        for finding in drift_findings:
+            table.add_row(
+                finding.status.value,
+                finding.tool_name,
+                finding.summary or ", ".join(finding.details) or "Review before refreshing.",
+            )
+
+        console.print(table)
+
+    _render_refresh_security_section(
+        "Capability escalation",
+        [(f.rule_id, f.severity.value, f.tool_name, f.title) for f in escalation_findings],
+    )
+    _render_refresh_security_section(
+        "Launch-config / provenance drift",
+        [(f.rule_id, f.severity.value, f.server_name, f.summary) for f in provenance_findings],
+    )
+
+
+def _render_refresh_security_section(
+    heading: str,
+    rows: list[tuple[str, str, str, str]],
+) -> None:
+    """Render an escalation/provenance delta table in the refresh preview.
+
+    These are shown unconditionally (no --escalation-check / --provenance-check
+    needed) so a rug-pull or launch swap can't slip through a baseline refresh.
+    """
+    if not rows:
+        return
+    from rich.table import Table
+
+    console.print(f"[bold red]{heading}[/bold red] — review before refreshing the baseline:")
+    table = Table(show_header=True)
+    table.add_column("Rule", style="magenta")
+    table.add_column("Severity", style="red")
+    table.add_column("Target", style="cyan")
+    table.add_column("What changed")
+    for rule_id, severity, target, detail in rows:
+        table.add_row(rule_id, severity, target, detail)
     console.print(table)
 
 

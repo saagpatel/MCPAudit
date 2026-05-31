@@ -216,6 +216,21 @@ class PinStore:
         snapshot = servers.get(server_name, {}).get("config_snapshot")
         return snapshot if isinstance(snapshot, dict) else None
 
+    def baseline_artifacts(self, server_name: str) -> dict[str, str] | None:
+        """Return the pinned launch-artifact ``{path: sha256}`` map, or None.
+
+        None when the server is unpinned, has no config snapshot, or was pinned
+        before artifact hashes were captured (older baselines) — callers treat
+        None as "no integrity comparison possible" and skip silently.
+        """
+        snapshot = self.baseline_config(server_name)
+        if snapshot is None:
+            return None
+        hashes = snapshot.get("artifact_hashes")
+        if not isinstance(hashes, dict):
+            return None
+        return {str(path): str(digest) for path, digest in hashes.items()}
+
     def status(self) -> list[ServerPinStatus]:
         """Return review summaries for all pinned servers."""
         servers: dict[str, Any] = self._data.get("servers", {})
@@ -301,7 +316,12 @@ class PinStore:
 
         Credential surface is recorded by KEY NAME only (env_keys / headers_keys);
         no value is ever read or stored. Key lists are sorted for stable diffing.
+        Also captures SHA-256 hashes of the resolved on-disk launch artifacts
+        (command binary + local script args) for the integrity detector — hashes
+        only, never file contents.
         """
+        from mcp_audit.integrity import resolve_artifact_hashes
+
         return {
             "command": server_config.command,
             "args": list(server_config.args),
@@ -309,6 +329,7 @@ class PinStore:
             "transport": server_config.transport.value,
             "env_keys": sorted(server_config.env_keys),
             "headers_keys": sorted(server_config.headers_keys),
+            "artifact_hashes": resolve_artifact_hashes(server_config),
         }
 
     def _new_tool_details(self, tool: ToolInfo) -> list[str]:

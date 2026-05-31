@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0] - 2026-05-31
+
+### Added
+
+- Added optional launch-artifact integrity detection (`scan --integrity-check`).
+  It hashes the on-disk artifact a server launches — the resolved command binary
+  and any local script passed as an argument — and flags drift vs the pin
+  baseline: `MCP024` (HIGH) when the SHA-256 changed, MEDIUM when the pinned file
+  is gone from its path. The launch command string can stay byte-identical while
+  the file it points at is swapped underneath you, so this catches a supply-chain
+  substitution that the schema and provenance (config-string) checks cannot see.
+  Offline and deterministic — only local bytes are hashed (capped at 64 MiB per
+  file); nothing is fetched. The pin baseline now snapshots artifact hashes;
+  `--integrity-check` implies a pin comparison and baselines pinned before this
+  release are skipped until re-pinned. Package-runner launches (`npx`/`uvx`) hash
+  the runner binary, not the remote package — registry-artifact verification is a
+  separate, network-gated follow-up. Added `fail_on.integrity` policy gate, SARIF
+  rule MCP024 (category `integrity`), a terminal report section, a
+  `get_integrity_findings` MCP server tool, and `docs/INTEGRITY-DETECTION.md` +
+  `examples/policies/integrity-aware-ci.yaml`.
+- `pin --refresh <server>` now surfaces capability-escalation (`MCP018`/`MCP019`)
+  and launch-config/provenance (`MCP020`–`MCP023`) deltas vs the pin baseline in
+  the same review, alongside schema drift — shown **unconditionally** (no
+  `--escalation-check` / `--provenance-check` needed), since a refresh is the
+  review-before-bless moment where a rug-pull or launch swap must not slip
+  through. Both the terminal review and `--json` output gain `escalation` and
+  `provenance` sections.
+
 ## [1.9.0] - 2026-05-31
 
 ### Added

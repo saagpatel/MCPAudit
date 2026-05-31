@@ -34,6 +34,7 @@ class PolicyConfig:
     fail_on_shadowing: bool = False
     fail_on_escalation: bool = False
     fail_on_provenance: bool = False
+    fail_on_integrity: bool = False
     required_pin_servers: list[str] = field(default_factory=list)
     denied_permissions: list[PermissionCategory] = field(default_factory=list)
     max_risk: float | None = None
@@ -78,6 +79,7 @@ def load_policy(path: Path) -> PolicyConfig:
     shadowing = bool(fail_on.get("shadowing", False))
     escalation = bool(fail_on.get("escalation", False))
     provenance = bool(fail_on.get("provenance", False))
+    integrity = bool(fail_on.get("integrity", False))
 
     permissions = [_permission(value) for value in _sequence(deny.get("permissions"), "deny.permissions")]
 
@@ -99,6 +101,7 @@ def load_policy(path: Path) -> PolicyConfig:
         fail_on_shadowing=shadowing,
         fail_on_escalation=escalation,
         fail_on_provenance=provenance,
+        fail_on_integrity=integrity,
         required_pin_servers=[str(value) for value in _sequence(pins.get("servers"), "require.pins.servers")],
         denied_permissions=permissions,
         max_risk=max_risk,
@@ -347,6 +350,21 @@ def evaluate_policy(
                             f"{provenance_finding.rule_id} provenance finding "
                             f"({provenance_finding.kind.value}) on server '{server_name}' is "
                             f"{provenance_finding.severity.value} severity."
+                        ),
+                    )
+                )
+
+        if policy.fail_on_integrity:
+            for integrity_finding in audit.integrity_findings:
+                violations.append(
+                    PolicyViolation(
+                        rule="fail_on.integrity",
+                        server_name=server_name,
+                        severity=integrity_finding.severity.value,
+                        message=(
+                            f"{integrity_finding.rule_id} integrity finding "
+                            f"({integrity_finding.kind.value}) on server '{server_name}' is "
+                            f"{integrity_finding.severity.value} severity."
                         ),
                     )
                 )

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from mcp_audit.models import (
     EscalationKind,
     InjectionSeverity,
+    IntegrityKind,
     PermissionCategory,
     ProvenanceKind,
     ShadowingKind,
@@ -371,3 +372,34 @@ PROVENANCE_FINDINGS: dict[ProvenanceKind, FindingMetadata] = {
 def provenance_metadata(kind: ProvenanceKind) -> FindingMetadata:
     """Return stable metadata for a provenance / launch-config change kind."""
     return PROVENANCE_FINDINGS[kind]
+
+
+INTEGRITY_FINDINGS: dict[IntegrityKind, FindingMetadata] = {
+    IntegrityKind.ARTIFACT_DRIFT: FindingMetadata(
+        rule_id="MCP024",
+        # Rule-level metadata severity is the dominant case (changed bytes); the
+        # authoritative per-finding severity lives on IntegrityFinding.severity
+        # (HIGH on byte change, MEDIUM when the pinned file is missing).
+        title="Launch artifact bytes changed since pin baseline",
+        severity="high",
+        description=(
+            "The on-disk artifact this server launches — the resolved command binary, or a local "
+            "script passed as an argument — has a different SHA-256 than when it was pinned, or is "
+            "no longer present at its path. The launch command string can stay byte-identical while "
+            "the file it points at is swapped underneath you, so this catches a supply-chain "
+            "substitution that the schema and provenance (config-string) checks cannot see. HIGH "
+            "when the bytes changed; MEDIUM when the pinned file is missing (often a relocation)."
+        ),
+        remediation=(
+            "Confirm the artifact was updated intentionally and from a trusted source (a legitimate "
+            "package upgrade or rebuild). Treat an unexpected change as a potential compromise: "
+            "disable the server and inspect the file before use. Refresh the pin with "
+            "`mcp-audit pin --refresh <server>` only after the new artifact is reviewed."
+        ),
+    ),
+}
+
+
+def integrity_metadata(kind: IntegrityKind) -> FindingMetadata:
+    """Return stable metadata for a launch-artifact integrity change kind."""
+    return INTEGRITY_FINDINGS[kind]
