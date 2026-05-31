@@ -19,11 +19,13 @@ PyPI package: `mcp-permission-audit`. Installed command: `mcp-audit`.
 - **Report redaction** — terminal, JSON, and SARIF report paths share a redaction layer for likely credential values
 - **Prompt injection detection** — `scan --inject-check` scans tool, prompt, and resource text for instruction-override patterns, hidden directives, fake role turns, and adversarial phrasing; pattern-based, no LLM required
 - **SSRF detection** — `scan --ssrf-check` flags tools and resources whose interface lets a caller steer a server-side request target (URL/host params paired with fetch verbs, caller-templated remote resource hosts); static and schema-derived, never issues a request or reads a credential value
-- **Lethal trifecta detection** — `scan --trifecta-check` detects the canonical agent-exfiltration attack surface: per-server (HIGH, `MCP013`) when a single server covers all three legs (file_read + network + exfiltration/shell/write), and fleet-level advisory (MEDIUM, `MCP014`) when the trifecta assembles only across servers; re-uses inferred permissions, never issues requests or reads credentials
+- **Lethal trifecta detection** — `scan --trifecta-check` detects the canonical agent-exfiltration attack surface: per-server (HIGH, `MCP013`) when a single server covers all three legs (file_read + untrusted-content ingestion + exfiltration), and fleet-level advisory (MEDIUM, `MCP014`) when the trifecta assembles only across servers; re-uses inferred permissions, never issues requests or reads credentials
 - **Tool-name shadowing detection** — `scan --shadow-check` flags cross-server tool-name collisions that could trick an AI agent into routing a call to the wrong server: exact matches (HIGH, `MCP015`), case/separator-normalised collisions (MEDIUM, `MCP016`), and homoglyph spoofing via non-ASCII confusable codepoints (HIGH, `MCP017`); offline, deterministic, no new dependencies
 - **Schema drift tracking** — `mcp-audit pin` connects to servers and snapshots current tool schemas; subsequent `scan --pin-check` flags added, removed, and changed tools with plain-language summaries, changed-field hints, suggested actions, and a dry-run refresh workflow for reviewed upgrades
+- **Capability-escalation ("rug pull") detection** — `scan --escalation-check` compares each tool against its pin baseline and flags security-significant escalations over time: a tool that gained a dangerous capability (`MCP018` — HIGH for exfiltration/shell/destructive, MEDIUM for file_write/network) or whose description gained prompt-injection patterns (`MCP019`, HIGH); pure delta vs the approved baseline, so near-zero false positives. See `docs/ESCALATION-DETECTION.md`
+- **Provenance / launch-config drift detection** — `scan --provenance-check` compares a server's launch configuration against its pin baseline to catch supply-chain changes the schema check can't see: command/transport swap (`MCP020`, HIGH), argument/version drift with dangerous-flag escalation (`MCP021`, MED/HIGH), HTTP endpoint change (`MCP022`, HIGH), and credential **key-name** set changes (`MCP023`, MEDIUM — key names only, never values). See `docs/PROVENANCE-DETECTION.md`
 - **Multi-client support** — reads configs from Claude Desktop, Claude Code, Cursor, VSCode, and Windsurf — plus custom paths via `--config`; use `--config-only` for isolated scans of one config file
-- **Structured output** — Rich terminal report plus JSON and SARIF 2.1.0 export for ingestion by GitHub Advanced Security and SARIF-aware SAST pipelines
+- **Structured output** — Rich terminal report plus JSON and SARIF 2.1.0 export for ingestion by GitHub Advanced Security and SARIF-aware SAST pipelines, and a self-contained shareable HTML report via `scan --html report.html` (inline CSS, no JavaScript, redacted and fully HTML-escaped)
 - **Documented output contract** — JSON, SARIF rule IDs, and policy exit codes are documented in `docs/OUTPUT-CONTRACT.md`
 - **Watch mode** — `mcp-audit watch` re-scans on config file changes via `watchfiles` (optional extra: install with `mcp-permission-audit[watch]`)
 
@@ -87,8 +89,16 @@ mcp-audit pin --refresh github
 mcp-audit pin --refresh github --json
 mcp-audit pin --refresh github --apply
 
-# Export JSON or SARIF 2.1.0
+# Detect capability escalation ("rug pull") vs the pin baseline (implies a pin comparison).
+# A tool that gained a dangerous capability, or a description that gained injection patterns.
+mcp-audit scan --escalation-check
+
+# Detect launch-config / provenance drift vs the pin baseline (command, args, URL, credential keys).
+mcp-audit scan --provenance-check
+
+# Export JSON or SARIF 2.1.0, or a single-file shareable HTML report
 mcp-audit scan --json audit.json --sarif audit.sarif
+mcp-audit scan --html audit.html
 
 # Fail CI on local policy violations
 mcp-audit scan --policy policy.yaml
