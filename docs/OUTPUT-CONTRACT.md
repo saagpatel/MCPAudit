@@ -116,6 +116,10 @@ SARIF output uses stable MCP rule IDs:
 - `MCP011`-`MCP012`: SSRF findings
 - `MCP013`: per-server lethal trifecta (HIGH)
 - `MCP014`: fleet-level lethal trifecta advisory (MEDIUM)
+- `MCP015`-`MCP017`: cross-server tool-name shadowing (exact / normalised / homoglyph)
+- `MCP018`-`MCP019`: capability-escalation ("rug pull") vs pin baseline (capability gain / description-injection gain)
+- `MCP020`-`MCP023`: launch-config / provenance drift vs pin baseline (command / args / url / credential key-names)
+- `MCP024`: launch-artifact integrity drift vs pin baseline (on-disk binary/script hash change)
 
 ## Compatibility Fixture
 
