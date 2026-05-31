@@ -1,6 +1,7 @@
 # MCPAudit Next Roadmap
 
-MCPAudit `1.5.5` is prepared with structured config-health findings, policy
+MCPAudit `1.6.0` adds optional SSRF detection (`scan --ssrf-check`) on top of
+structured config-health findings, policy
 gates, prompt/resource non-tool risk reporting, reviewed stale pin cleanup,
 dashboard-consumer improvements, copy-pasteable adoption examples, adoption
 smoke coverage, redacted config-health fixtures, and expanded prompt/resource
@@ -156,6 +157,26 @@ Candidate follow-ups:
   <https://github.com/saagpatel/MCPAudit/issues/84>;
 - turn accepted external report friction into fixtures and make the beta
   decision: <https://github.com/saagpatel/MCPAudit/issues/85>.
+
+## 6. SSRF Detection
+
+Status: shipped in `1.6.0`.
+
+`scan --ssrf-check` flags tools and resources whose interface lets a caller steer
+a server-side request target (URL/host parameters paired with fetch verbs;
+caller-templated remote resource hosts). Static and schema-derived: no request is
+issued and no credential value is read. Findings are additive (`ssrf_findings`),
+opt-in, carry stable SARIF rule IDs `MCP011`/`MCP012`, and gate only through the
+dedicated `fail_on.ssrf` policy key. Calibrated against the real-world validation
+corpus: flags `fetch`, `git_clone`, and headless-browser `navigate` tools while
+leaving plain network and search tools unflagged. See `docs/SSRF-DETECTION.md`.
+
+Candidate follow-ups:
+
+- extend resource SSRF coverage to additional remote schemes only when a redacted
+  real-world fixture justifies it;
+- consider an allowlist-aware downgrade once field reports show benign internal
+  fetch tools producing noise.
 
 ## Verification Bar
 

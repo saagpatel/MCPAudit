@@ -660,6 +660,13 @@
           "title": "Injection Findings",
           "type": "array"
         },
+        "ssrf_findings": {
+          "items": {
+            "$ref": "#/$defs/SsrfFinding"
+          },
+          "title": "Ssrf Findings",
+          "type": "array"
+        },
         "drift_findings": {
           "items": {
             "$ref": "#/$defs/DriftFinding"
@@ -758,6 +765,55 @@
       ],
       "title": "ServerConfig",
       "type": "object"
+    },
+    "SsrfFinding": {
+      "description": "A server-side request forgery (SSRF) capability detected in a tool or resource.\n\nFlags interfaces where the server may perform a fetch to a caller-influenceable\nnetwork target (URL/host/endpoint). Static, schema-derived signal only \u2014 no\nrequest is ever made and no credential value is read.",
+      "properties": {
+        "target_type": {
+          "$ref": "#/$defs/CapabilityTarget",
+          "default": "tool"
+        },
+        "target_name": {
+          "title": "Target Name",
+          "type": "string"
+        },
+        "severity": {
+          "$ref": "#/$defs/SsrfSeverity"
+        },
+        "pattern_name": {
+          "title": "Pattern Name",
+          "type": "string"
+        },
+        "evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_name",
+        "severity",
+        "pattern_name",
+        "evidence",
+        "description"
+      ],
+      "title": "SsrfFinding",
+      "type": "object"
+    },
+    "SsrfSeverity": {
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ],
+      "title": "SsrfSeverity",
+      "type": "string"
     },
     "ToolAnnotations": {
       "description": "MCP tool annotations (hints about behavior).",

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from mcp_audit.models import InjectionSeverity, PermissionCategory
+from mcp_audit.models import InjectionSeverity, PermissionCategory, SsrfSeverity
 
 
 @dataclass(frozen=True)
@@ -97,6 +97,46 @@ INJECTION_FINDINGS: dict[InjectionSeverity, FindingMetadata] = {
 }
 
 
+SSRF_FINDINGS: dict[SsrfSeverity, FindingMetadata] = {
+    SsrfSeverity.HIGH: FindingMetadata(
+        rule_id="MCP011",
+        title="Server-side request forgery (SSRF) capability",
+        severity="high",
+        description=(
+            "A tool accepts a caller-controllable URL or host and appears to fetch it "
+            "server-side, which can reach internal services or cloud metadata endpoints."
+        ),
+        remediation=(
+            "Confirm the server validates and allowlists outbound targets and blocks "
+            "link-local, loopback, and metadata addresses before enabling it for untrusted input."
+        ),
+    ),
+    SsrfSeverity.MEDIUM: FindingMetadata(
+        rule_id="MCP012",
+        title="Possible SSRF-prone request capability",
+        severity="medium",
+        description=(
+            "A tool or resource exposes a URL-shaped input or a caller-templated remote host, "
+            "which may let a caller steer where the server connects."
+        ),
+        remediation=(
+            "Review how the server resolves and fetches this target; restrict it to known, "
+            "trusted destinations before exposing private workspace data."
+        ),
+    ),
+    SsrfSeverity.LOW: FindingMetadata(
+        rule_id="MCP012",
+        title="Possible SSRF-prone request capability",
+        severity="low",
+        description=(
+            "A tool or resource exposes a weak SSRF signal such as a host/address input or a "
+            "path-only templated remote URI that may still deserve review."
+        ),
+        remediation="Confirm the destination is expected and not caller-controllable for this server.",
+    ),
+}
+
+
 def permission_metadata(category: PermissionCategory) -> FindingMetadata:
     """Return stable metadata for a permission category."""
     return PERMISSION_FINDINGS[category]
@@ -105,3 +145,8 @@ def permission_metadata(category: PermissionCategory) -> FindingMetadata:
 def injection_metadata(severity: InjectionSeverity) -> FindingMetadata:
     """Return stable metadata for an injection severity."""
     return INJECTION_FINDINGS[severity]
+
+
+def ssrf_metadata(severity: SsrfSeverity) -> FindingMetadata:
+    """Return stable metadata for an SSRF severity."""
+    return SSRF_FINDINGS[severity]

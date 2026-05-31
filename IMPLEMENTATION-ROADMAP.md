@@ -8,8 +8,9 @@ it exists in the codebase and has test coverage.
 
 MCPAudit is a local-first MCP permission auditor. It discovers configured MCP
 servers, optionally connects to them, inventories capabilities, classifies tool
-permission risk, detects prompt-injection patterns, checks tool schema drift,
-and emits terminal, JSON, and SARIF reports.
+permission risk, detects prompt-injection patterns, flags SSRF-prone fetch
+interfaces, checks tool schema drift, and emits terminal, JSON, and SARIF
+reports.
 
 Current scan behavior:
 
@@ -22,8 +23,10 @@ Current scan behavior:
 4. Classify tool permissions across `file_read`, `file_write`, `network`,
    `shell_execution`, `destructive`, and `exfiltration`.
 5. Optionally run prompt-injection checks over tool, prompt, and resource text.
-6. Optionally compare current tool schemas against the pin baseline.
-7. Optionally evaluate a local YAML policy gate and exit `2` after reports are
+6. Optionally run SSRF checks (`--ssrf-check`) over tool schemas and resource
+   URIs for caller-controllable server-side fetch targets.
+7. Optionally compare current tool schemas against the pin baseline.
+8. Optionally evaluate a local YAML policy gate and exit `2` after reports are
    written when the gate fails.
 
 ## Implemented Capabilities
@@ -42,6 +45,10 @@ Current scan behavior:
 - Prompt and resource injection detection when `--inject-check` is enabled.
 - Stable finding metadata with rule IDs, severity, description, and remediation.
 - Prompt-injection detection with stable metadata and SARIF output.
+- SSRF detection (`--ssrf-check`) over tool schemas and resource URIs, with
+  stable rule IDs `MCP011`/`MCP012`, additive `ssrf_findings`, an SSRF terminal
+  section, a `get_ssrf_findings` MCP tool, and an opt-in `fail_on.ssrf` policy
+  gate.
 - Consistent tool, prompt, and resource target metadata in JSON/SARIF findings.
 - Documented JSON/SARIF output contract with compatibility fixture coverage.
 - Tool schema pinning and drift checks with changed-field hints and suggested
@@ -66,9 +73,11 @@ flowchart LR
     C --> D["Permission Analyzer"]
     D --> E["Risk Scorer"]
     C --> F["Injection Detector"]
+    C --> S["SSRF Detector"]
     C --> G["Pin Drift Checker"]
     E --> H["Policy Gate"]
     F --> H
+    S --> H
     G --> H
     H --> I["Reports: Terminal, JSON, SARIF"]
 ```

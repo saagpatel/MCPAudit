@@ -18,9 +18,11 @@ from mcp_audit.models import (
     PermissionCategory,
     PermissionFinding,
     ServerAudit,
+    SsrfFinding,
+    SsrfSeverity,
 )
 from mcp_audit.redaction import redact_data
-from mcp_audit.taxonomy import INJECTION_FINDINGS, PERMISSION_FINDINGS
+from mcp_audit.taxonomy import INJECTION_FINDINGS, PERMISSION_FINDINGS, SSRF_FINDINGS
 
 _SARIF_SCHEMA = (
     "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json"
@@ -46,6 +48,13 @@ _INJECTION_RULE_IDS: dict[InjectionSeverity, str] = {
 _INJECTION_RULE_DESCRIPTIONS = {
     metadata.rule_id: metadata.description for metadata in INJECTION_FINDINGS.values()
 }
+
+# SSRF-specific SARIF rule IDs
+_SSRF_RULE_IDS: dict[SsrfSeverity, str] = {
+    severity: metadata.rule_id for severity, metadata in SSRF_FINDINGS.items()
+}
+
+_SSRF_RULE_DESCRIPTIONS = {metadata.rule_id: metadata.description for metadata in SSRF_FINDINGS.values()}
 
 _DRIFT_RULE_ID = "MCP009"
 _POLICY_RULE_ID = "MCP010"
@@ -109,6 +118,18 @@ class SarifGenerator:
             }
             for rule_id, desc in _INJECTION_RULE_DESCRIPTIONS.items()
         ]
+        ssrf_rules = [
+            {
+                "id": rule_id,
+                "name": f"Ssrf{rule_id}",
+                "shortDescription": {"text": desc},
+                "fullDescription": {"text": desc},
+                "help": {"text": _ssrf_help(rule_id)},
+                "helpUri": "https://github.com/saagpatel/MCPAudit#readme",
+                "properties": {"category": "ssrf"},
+            }
+            for rule_id, desc in _SSRF_RULE_DESCRIPTIONS.items()
+        ]
         contract_rules = [
             {
                 "id": _DRIFT_RULE_ID,
@@ -131,7 +152,7 @@ class SarifGenerator:
                 "properties": {"category": "policy", "severity": "high"},
             },
         ]
-        return perm_rules + injection_rules + contract_rules
+        return perm_rules + injection_rules + ssrf_rules + contract_rules
 
     def _make_results(self, report: AuditReport) -> list[dict[str, Any]]:
         """One result per (server, tool, category) triple, plus injection findings."""
@@ -143,6 +164,8 @@ class SarifGenerator:
                 results.append(self._make_capability_result(capability_finding, audit))
             for inj in audit.injection_findings:
                 results.append(self._make_injection_result(inj, audit))
+            for ssrf in audit.ssrf_findings:
+                results.append(self._make_ssrf_result(ssrf, audit))
             for drift_finding in audit.drift_findings:
                 results.append(self._make_drift_result(drift_finding, audit))
         if report.policy_result is not None:
@@ -163,6 +186,13 @@ class SarifGenerator:
         if finding.severity == InjectionSeverity.HIGH:
             return "error"
         if finding.severity == InjectionSeverity.MEDIUM:
+            return "warning"
+        return "note"
+
+    def _ssrf_level(self, finding: SsrfFinding) -> str:
+        if finding.severity == SsrfSeverity.HIGH:
+            return "error"
+        if finding.severity == SsrfSeverity.MEDIUM:
             return "warning"
         return "note"
 
@@ -265,6 +295,36 @@ class SarifGenerator:
             },
         }
 
+    def _make_ssrf_result(self, finding: SsrfFinding, audit: ServerAudit) -> dict[str, Any]:
+        """Build a SARIF result for an SSRF finding."""
+        rule_id = _SSRF_RULE_IDS[finding.severity]
+        level = self._ssrf_level(finding)
+        config_path = audit.server.config_path
+        uri = Path(config_path).as_uri() if config_path else "file:///unknown"
+        target_label = finding.target_type.value
+        msg = (
+            f"SSRF pattern '{finding.pattern_name}' detected in {target_label} "
+            f"'{finding.target_name}' on server '{audit.server.name}': "
+            f"{finding.description}. Suggested action: {finding.remediation}"
+        )
+        return {
+            "ruleId": rule_id,
+            "level": level,
+            "message": {"text": msg},
+            "locations": [{"physicalLocation": {"artifactLocation": {"uri": uri}}}],
+            "partialFingerprints": {
+                "mcpAuditStableId": _stable_fingerprint(rule_id, audit.server.name, finding.target_name)
+            },
+            "properties": {
+                "pattern": finding.pattern_name,
+                "target_type": finding.target_type.value,
+                "target_name": finding.target_name,
+                "severity": finding.severity.value,
+                "evidence": finding.evidence,
+                "remediation": finding.remediation,
+            },
+        }
+
     def _make_drift_result(self, finding: DriftFinding, audit: ServerAudit) -> dict[str, Any]:
         config_path = audit.server.config_path
         uri = Path(config_path).as_uri() if config_path else "file:///unknown"
@@ -322,6 +382,13 @@ def _stable_fingerprint(rule_id: str, server_name: str, tool_name: str) -> str:
 def _injection_help(rule_id: str) -> str:
     remediations = {
         metadata.remediation for metadata in INJECTION_FINDINGS.values() if metadata.rule_id == rule_id
+    }
+    return " ".join(sorted(remediations))
+
+
+def _ssrf_help(rule_id: str) -> str:
+    remediations = {
+        metadata.remediation for metadata in SSRF_FINDINGS.values() if metadata.rule_id == rule_id
     }
     return " ".join(sorted(remediations))
 

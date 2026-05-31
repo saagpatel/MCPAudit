@@ -15,6 +15,7 @@ FIXTURES = [
     Path("tests/fixtures/reports/config_only_report.json"),
     Path("tests/fixtures/reports/policy_failure_report.json"),
     Path("tests/fixtures/reports/prompt_resource_report.json"),
+    Path("tests/fixtures/reports/ssrf_report.json"),
 ]
 LEGACY_FIXTURES = sorted(Path("tests/fixtures/reports/legacy").glob("*.json"))
 FIELD_REPORT_FIXTURES = sorted(Path("tests/fixtures/reports/field").glob("*.json"))
@@ -142,6 +143,7 @@ def _fixture_signature(fixture: Path) -> dict[str, Any]:
         "capability_targets": _target_pairs(dumped, "capability_findings"),
         "injection_targets": _target_pairs(dumped, "injection_findings"),
         "drift_targets": _target_pairs(dumped, "drift_findings"),
+        "ssrf_targets": _target_pairs(dumped, "ssrf_findings"),
         "sarif_rule_ids": sorted({result["ruleId"] for result in sarif["runs"][0]["results"]}),
         "sarif_target_types": sorted(
             {

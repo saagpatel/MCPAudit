@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-05-30
+
+### Added
+
+- Added optional SSRF detection (`scan --ssrf-check`) that flags MCP tools and
+  resources whose interface lets a caller steer a server-side request target —
+  URL/host parameters paired with fetch verbs, and caller-templated remote
+  resource hosts. The check is static and schema-derived: it never issues a
+  network request and never reads a credential value.
+- Added stable SARIF rule IDs `MCP011` (high) and `MCP012` (medium/low), an
+  additive `ssrf_findings` list on each `ServerAudit`, an SSRF terminal section,
+  a `get_ssrf_findings` MCP server tool, an SSRF report fixture, integration
+  coverage, and `docs/SSRF-DETECTION.md`.
+- Added a dedicated `fail_on.ssrf` policy gate (opt-in; not covered by the broad
+  `fail_on.severity` shortcut, so existing policy files keep their behavior).
+
 ## [1.5.5] - 2026-05-10
 
 ### Added

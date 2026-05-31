@@ -154,6 +154,12 @@ def discover(client_filter: str | None, verbose: bool) -> None:
     help="Scan for prompt injection in tool, prompt, and resource text.",
 )
 @click.option(
+    "--ssrf-check",
+    is_flag=True,
+    default=False,
+    help="Flag SSRF-prone tools/resources (caller-controlled fetch targets).",
+)
+@click.option(
     "--pin-check", is_flag=True, default=False, help="Check for tool schema drift against stored pins."
 )  # noqa: E501
 @click.option(
@@ -174,6 +180,7 @@ def scan(
     override_config_path: str | None,
     policy_path: str | None,
     inject_check: bool,
+    ssrf_check: bool,
     pin_check: bool,
     llm_analysis: bool,
 ) -> None:
@@ -193,6 +200,7 @@ def scan(
         override_config_path,
         policy_path,
         inject_check,
+        ssrf_check,
         pin_check,
         llm_analysis,
         config_only,
@@ -206,6 +214,7 @@ async def _run_scan_core(
     extra_config: str | None,
     override_applier: OverrideApplier,
     inject_check: bool = False,
+    ssrf_check: bool = False,
     pin_check: bool = False,
     llm_analysis: bool = False,
     config_only: bool = False,
@@ -250,6 +259,12 @@ async def _run_scan_core(
         from mcp_audit.injection import InjectionDetector
 
         injection_detector = InjectionDetector()
+
+    ssrf_detector = None
+    if ssrf_check:
+        from mcp_audit.ssrf import SsrfDetector
+
+        ssrf_detector = SsrfDetector()
 
     pin_store = None
     if pin_check:
@@ -297,6 +312,10 @@ async def _run_scan_core(
                     audit.tools, audit.prompts, audit.resources
                 )
 
+            # Optional SSRF detection
+            if ssrf_detector is not None:
+                audit.ssrf_findings = ssrf_detector.scan_server(audit.tools, audit.resources)
+
             audit.non_tool_risk = scorer.score_non_tool(audit.capability_findings, audit.injection_findings)
 
             # Optional pin drift check
@@ -338,6 +357,7 @@ async def _run_scan(
     override_config_path: str | None,
     policy_path: str | None,
     inject_check: bool = False,
+    ssrf_check: bool = False,
     pin_check: bool = False,
     llm_analysis: bool = False,
     config_only: bool = False,
@@ -364,6 +384,7 @@ async def _run_scan(
         extra_config,
         override_applier,
         inject_check=inject_check,
+        ssrf_check=ssrf_check,
         pin_check=pin_check,
         llm_analysis=llm_analysis,
         config_only=config_only,

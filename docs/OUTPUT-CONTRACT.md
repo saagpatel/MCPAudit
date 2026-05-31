@@ -35,6 +35,7 @@ Each audit may include:
 - `permissions`
 - `capability_findings`
 - `injection_findings`
+- `ssrf_findings`
 - `drift_findings`
 - `risk_score`
 - `non_tool_risk`
@@ -43,6 +44,15 @@ Each audit may include:
 prompt/resource triage signal and does not change `risk_score.composite`.
 `non_tool_risk` may be `null` when a scan finds no prompt/resource capability or
 injection findings.
+
+`ssrf_findings` is an additive per-audit list populated only with `scan
+--ssrf-check`. It flags tools and resources whose interface lets a caller steer a
+server-side request target (URL/host parameters paired with fetch verbs, or
+caller-templated remote resource hosts). It is static and schema-derived — no
+request is issued and no credential value is read — and does not affect
+`risk_score.composite`. Policies may opt in with `fail_on.ssrf`; the broad
+`fail_on.severity` shortcut does not gate SSRF, so existing policy files keep
+their previous behavior.
 
 `config_health_findings` is an additive top-level list for pre-connection config
 diagnostics. Findings include `finding_type`, `severity`, optional
@@ -67,6 +77,7 @@ Finding targets:
 - prompt/resource capability findings use `target_type` and `target_name`
 - injection findings include `tool_name` for compatibility and additive
   `target_type` / `target_name` fields for tool, prompt, and resource targets
+- SSRF findings use `target_type` and `target_name` for tool and resource targets
 
 Compatibility rules:
 
@@ -84,11 +95,12 @@ SARIF output uses stable MCP rule IDs:
 - `MCP007`-`MCP008`: prompt-injection findings
 - `MCP009`: tool schema drift
 - `MCP010`: policy gate violation
+- `MCP011`-`MCP012`: SSRF findings
 
 ## Compatibility Fixture
 
 The report fixtures in `tests/fixtures/reports/` cover representative connected,
-failed, config-only, policy-failed, and prompt/resource-heavy reports. Tests
+failed, config-only, policy-failed, prompt/resource-heavy, and SSRF reports. Tests
 validate that fixtures still load through the current Pydantic models, generate
 SARIF with the expected stable rules, and match the golden output-contract
 snapshot in `tests/fixtures/reports/output_contract_snapshot.json`.
