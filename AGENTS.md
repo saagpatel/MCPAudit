@@ -3,9 +3,9 @@
 ## Communication Contract
 
 - Follow `/Users/d/.codex/policies/communication/BigPictureReportingV1.md` for all user-facing updates.
-- Use exact section labels from `BigPictureReportingV1.md` for default status/progress updates.
-- Keep default updates beginner-friendly, big-picture, and low-noise.
-- Keep technical details in internal artifacts unless explicitly requested by the user.
+- Use exact section labels from `BigPictureReportingV1.md` for formal delivery, blocker, waiting, risk, decision, or explicit status/report requests.
+- Keep ordinary in-flight updates conversational, warm, PM-readable, operator-grade, and low-noise.
+- Keep technical details in internal artifacts unless explicitly requested by the user or required by failure, risk, or verification.
 
 ## Project Goal
 
