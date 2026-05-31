@@ -40,6 +40,29 @@ def test_version_option_reports_installed_distribution_version() -> None:
     assert "1.9.0" in result.output
 
 
+def test_scan_writes_report_files_when_no_servers_discovered(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Regression: an empty scan must still write requested report files so CI
+    # consumers (e.g. SARIF upload) always have an artifact to ingest.
+    monkeypatch.setattr(cli, "discover_all_configs", lambda *a, **k: [])
+    sarif_path = tmp_path / "out.sarif"
+    json_path = tmp_path / "out.json"
+
+    result = CliRunner().invoke(
+        cli.main,
+        ["scan", "--skip-connect", "--sarif", str(sarif_path), "--json", str(json_path)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "No MCP servers found." in result.output
+    assert sarif_path.exists()
+    sarif_doc = json.loads(sarif_path.read_text())
+    assert sarif_doc["version"] == "2.1.0"
+    assert sarif_doc["runs"][0]["results"] == []
+    assert json_path.exists()
+
+
 def test_scan_config_only_requires_config() -> None:
     result = CliRunner().invoke(cli.main, ["scan", "--config-only"])
 

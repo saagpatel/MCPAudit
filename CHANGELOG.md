@@ -29,6 +29,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added a `Self Audit` workflow that dogfoods the composite action (`uses: ./`) on
   every push, exercising the published install -> scan -> SARIF -> upload contract.
 
+### Fixed
+
+- `scan` now writes requested `--json` / `--sarif` / `--html` report files even
+  when no MCP servers are discovered (previously it returned early and wrote
+  nothing). CI consumers such as SARIF upload always receive a valid artifact.
+
 ## [1.8.0] - 2026-05-31
 
 ### Added
