@@ -130,6 +130,9 @@ def discover(client_filter: str | None, verbose: bool) -> None:
 @click.option(
     "--sarif", "sarif_output", default=None, metavar="PATH", help="Write SARIF 2.1.0 report to PATH."
 )  # noqa: E501
+@click.option(
+    "--html", "html_output", default=None, metavar="PATH", help="Write a self-contained HTML report to PATH."
+)  # noqa: E501
 @click.option("--skip-connect", is_flag=True, default=False, help="Skip server connections, config only.")
 @click.option("--clients", default=None, help="Comma-separated list of clients to scan.")
 @click.option("--timeout", default=10, show_default=True, help="Connection timeout in seconds.")
@@ -191,6 +194,7 @@ def discover(client_filter: str | None, verbose: bool) -> None:
 def scan(
     json_output: str | None,
     sarif_output: str | None,
+    html_output: str | None,
     skip_connect: bool,
     clients: str | None,
     timeout: int,
@@ -215,6 +219,7 @@ def scan(
         _run_scan,
         json_output,
         sarif_output,
+        html_output,
         skip_connect,
         clients,
         timeout,
@@ -430,6 +435,7 @@ async def _run_scan_core(
 async def _run_scan(
     json_output: str | None,
     sarif_output: str | None,
+    html_output: str | None,
     skip_connect: bool,
     clients: str | None,
     timeout: int,
@@ -506,6 +512,11 @@ async def _run_scan(
 
         sarif_doc = SarifGenerator().generate(report)
         Path(sarif_output).write_text(_json.dumps(sarif_doc, indent=2))
+
+    if html_output:
+        from mcp_audit.htmlreport import HtmlReportGenerator
+
+        Path(html_output).write_text(HtmlReportGenerator().generate(report))
 
     if report.policy_result is not None and not report.policy_result.passed:
         raise SystemExit(2)

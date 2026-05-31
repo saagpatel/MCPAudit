@@ -467,13 +467,14 @@ deny:
         anyio.run(
             cli._run_scan,
             str(json_path),
-            None,
-            True,
-            None,
-            10,
-            False,
-            None,
-            None,
+            None,  # sarif_output
+            None,  # html_output
+            True,  # skip_connect
+            None,  # clients
+            10,  # timeout
+            False,  # verbose
+            None,  # extra_config
+            None,  # override_config_path
             str(policy_path),
         )
 
