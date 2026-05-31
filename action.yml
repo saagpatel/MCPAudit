@@ -136,8 +136,24 @@ runs:
         # Do not fail here — let the upload step run first, then gate below.
         exit 0
 
-    - name: Upload SARIF to code scanning
+    - name: Check for SARIF artifact
+      id: sarif-check
       if: ${{ always() && inputs.upload-sarif == 'true' && inputs.sarif != '' }}
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        SARIF: ${{ inputs.sarif }}
+      run: |
+        set -uo pipefail
+        if [ -f "${SARIF}" ]; then
+          echo "exists=true" >> "${GITHUB_OUTPUT}"
+        else
+          echo "exists=false" >> "${GITHUB_OUTPUT}"
+          echo "::warning title=MCPAudit::SARIF file '${SARIF}' was not produced; skipping upload."
+        fi
+
+    - name: Upload SARIF to code scanning
+      if: ${{ always() && steps.sarif-check.outputs.exists == 'true' }}
       uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: ${{ steps.scan.outputs.sarif-file }}
