@@ -31,6 +31,7 @@ class PolicyConfig:
     fail_on_config_health_severity: str | None = None
     fail_on_drift: bool = False
     fail_on_trifecta: bool = False
+    fail_on_shadowing: bool = False
     required_pin_servers: list[str] = field(default_factory=list)
     denied_permissions: list[PermissionCategory] = field(default_factory=list)
     max_risk: float | None = None
@@ -72,6 +73,7 @@ def load_policy(path: Path) -> PolicyConfig:
     capability_severity = _severity(fail_on.get("capabilities"), "fail_on.capabilities")
     config_health_severity = _severity(fail_on.get("config_health"), "fail_on.config_health")
     trifecta = bool(fail_on.get("trifecta", False))
+    shadowing = bool(fail_on.get("shadowing", False))
 
     permissions = [_permission(value) for value in _sequence(deny.get("permissions"), "deny.permissions")]
 
@@ -90,6 +92,7 @@ def load_policy(path: Path) -> PolicyConfig:
         fail_on_config_health_severity=config_health_severity,
         fail_on_drift=bool(fail_on.get("drift", False)),
         fail_on_trifecta=trifecta,
+        fail_on_shadowing=shadowing,
         required_pin_servers=[str(value) for value in _sequence(pins.get("servers"), "require.pins.servers")],
         denied_permissions=permissions,
         max_risk=max_risk,
@@ -321,6 +324,22 @@ def evaluate_policy(
                     message=(
                         f"{fleet_finding.rule_id} fleet-level lethal-trifecta finding is "
                         f"{fleet_finding.severity.value} severity (advisory)."
+                    ),
+                )
+            )
+
+    # Fleet-level shadowing gate
+    if policy.fail_on_shadowing:
+        for shadowing_finding in report.shadowing_findings:
+            violations.append(
+                PolicyViolation(
+                    rule="fail_on.shadowing",
+                    server_name=None,
+                    severity=shadowing_finding.severity.value,
+                    message=(
+                        f"{shadowing_finding.rule_id} tool-name shadowing finding "
+                        f"({shadowing_finding.kind.value}) for '{shadowing_finding.name}' is "
+                        f"{shadowing_finding.severity.value} severity."
                     ),
                 )
             )

@@ -18,13 +18,22 @@ from mcp_audit.models import (
     PermissionCategory,
     PermissionFinding,
     ServerAudit,
+    ShadowingFinding,
+    ShadowingKind,
+    ShadowingSeverity,
     SsrfFinding,
     SsrfSeverity,
     TrifectaFinding,
     TrifectaSeverity,
 )
 from mcp_audit.redaction import redact_data
-from mcp_audit.taxonomy import INJECTION_FINDINGS, PERMISSION_FINDINGS, SSRF_FINDINGS, TRIFECTA_FINDINGS
+from mcp_audit.taxonomy import (
+    INJECTION_FINDINGS,
+    PERMISSION_FINDINGS,
+    SHADOWING_FINDINGS,
+    SSRF_FINDINGS,
+    TRIFECTA_FINDINGS,
+)
 
 _SARIF_SCHEMA = (
     "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json"
@@ -69,6 +78,15 @@ _TRIFECTA_RULE_DESCRIPTIONS = {
 
 _DRIFT_RULE_ID = "MCP009"
 _POLICY_RULE_ID = "MCP010"
+
+# Shadowing-specific SARIF rule IDs
+_SHADOWING_RULE_IDS: dict[ShadowingKind, str] = {
+    kind: metadata.rule_id for kind, metadata in SHADOWING_FINDINGS.items()
+}
+
+_SHADOWING_RULE_DESCRIPTIONS = {
+    metadata.rule_id: metadata.description for metadata in SHADOWING_FINDINGS.values()
+}
 
 
 class SarifGenerator:
@@ -175,7 +193,19 @@ class SarifGenerator:
             }
             for rule_id, desc in _TRIFECTA_RULE_DESCRIPTIONS.items()
         ]
-        return perm_rules + injection_rules + ssrf_rules + trifecta_rules + contract_rules
+        shadowing_rules = [
+            {
+                "id": rule_id,
+                "name": f"Shadowing{rule_id}",
+                "shortDescription": {"text": desc},
+                "fullDescription": {"text": desc},
+                "help": {"text": _shadowing_help(rule_id)},
+                "helpUri": "https://github.com/saagpatel/MCPAudit#readme",
+                "properties": {"category": "tool_shadowing"},
+            }
+            for rule_id, desc in _SHADOWING_RULE_DESCRIPTIONS.items()
+        ]
+        return perm_rules + injection_rules + ssrf_rules + trifecta_rules + shadowing_rules + contract_rules
 
     def _make_results(self, report: AuditReport) -> list[dict[str, Any]]:
         """One result per (server, tool, category) triple, plus injection findings."""
@@ -195,6 +225,8 @@ class SarifGenerator:
                 results.append(self._make_drift_result(drift_finding, audit))
         for fleet_trifecta in report.fleet_trifecta_findings:
             results.append(self._make_fleet_trifecta_result(fleet_trifecta))
+        for shadowing in report.shadowing_findings:
+            results.append(self._make_shadowing_result(shadowing))
         if report.policy_result is not None:
             for violation in report.policy_result.violations:
                 results.append(self._make_policy_result(violation))
@@ -225,6 +257,11 @@ class SarifGenerator:
 
     def _trifecta_level(self, finding: TrifectaFinding) -> str:
         if finding.severity == TrifectaSeverity.HIGH:
+            return "error"
+        return "warning"
+
+    def _shadowing_level(self, finding: ShadowingFinding) -> str:
+        if finding.severity == ShadowingSeverity.HIGH:
             return "error"
         return "warning"
 
@@ -425,6 +462,31 @@ class SarifGenerator:
             },
         }
 
+    def _make_shadowing_result(self, finding: ShadowingFinding) -> dict[str, Any]:
+        """Build a SARIF result for a fleet-level shadowing finding (MCP015/016/017)."""
+        rule_id = _SHADOWING_RULE_IDS[finding.kind]
+        level = self._shadowing_level(finding)
+        pairs = "; ".join(f"{srv}/{tool}" for srv, tool in finding.collisions)
+        msg = (
+            f"Tool-name shadowing ({finding.kind.value}) detected for '{finding.name}': "
+            f"servers=[{pairs}]. "
+            f"Suggested action: {finding.remediation}"
+        )
+        return {
+            "ruleId": rule_id,
+            "level": level,
+            "message": {"text": msg},
+            "locations": [{"physicalLocation": {"artifactLocation": {"uri": "file:///unknown"}}}],
+            "partialFingerprints": {"mcpAuditStableId": _stable_fingerprint(rule_id, "fleet", finding.name)},
+            "properties": {
+                "kind": finding.kind.value,
+                "severity": finding.severity.value,
+                "canonical_name": finding.name,
+                "collisions": finding.collisions,
+                "remediation": finding.remediation,
+            },
+        }
+
     def _make_drift_result(self, finding: DriftFinding, audit: ServerAudit) -> dict[str, Any]:
         config_path = audit.server.config_path
         uri = Path(config_path).as_uri() if config_path else "file:///unknown"
@@ -496,6 +558,13 @@ def _ssrf_help(rule_id: str) -> str:
 def _trifecta_help(rule_id: str) -> str:
     remediations = {
         metadata.remediation for metadata in TRIFECTA_FINDINGS.values() if metadata.rule_id == rule_id
+    }
+    return " ".join(sorted(remediations))
+
+
+def _shadowing_help(rule_id: str) -> str:
+    remediations = {
+        metadata.remediation for metadata in SHADOWING_FINDINGS.values() if metadata.rule_id == rule_id
     }
     return " ".join(sorted(remediations))
 

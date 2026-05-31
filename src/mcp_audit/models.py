@@ -55,6 +55,18 @@ class TrifectaSeverity(StrEnum):
     MEDIUM = "medium"  # Fleet-level: trifecta formed only by combining servers (advisory)
 
 
+class ShadowingKind(StrEnum):
+    EXACT = "exact"  # Identical tool name on ≥2 servers
+    NORMALIZED = "normalized"  # Same after case-fold + separator strip
+    HOMOGLYPH = "homoglyph"  # Non-ASCII confusable maps to same ASCII skeleton
+
+
+class ShadowingSeverity(StrEnum):
+    HIGH = "high"  # Exact or homoglyph collision
+    MEDIUM = "medium"  # Normalised-only collision
+    LOW = "low"  # Reserved for future use
+
+
 class DriftStatus(StrEnum):
     NEW = "new"  # Tool in current scan but not in pins
     CHANGED = "changed"  # Tool hash differs from stored pin
@@ -432,6 +444,43 @@ class ServerAudit(BaseModel):
     trifecta_findings: list[TrifectaFinding] = Field(default_factory=list)
 
 
+class ShadowingFinding(BaseModel):
+    """A cross-server tool-name shadowing finding.
+
+    Fires when ≥2 servers expose tools with colliding or confusable names,
+    potentially allowing an AI agent to be tricked into routing a call to the
+    wrong (possibly malicious) server.  Fleet-level only — tool names are
+    unique within a single server by the MCP spec.
+    """
+
+    kind: ShadowingKind
+    severity: ShadowingSeverity
+    name: str  # canonical / colliding tool name
+    collisions: list[tuple[str, str]]  # (server_name, tool_name) pairs
+    description: str
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def rule_id(self) -> str:
+        from mcp_audit.taxonomy import shadowing_metadata
+
+        return shadowing_metadata(self.kind).rule_id
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def title(self) -> str:
+        from mcp_audit.taxonomy import shadowing_metadata
+
+        return shadowing_metadata(self.kind).title
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def remediation(self) -> str:
+        from mcp_audit.taxonomy import shadowing_metadata
+
+        return shadowing_metadata(self.kind).remediation
+
+
 class AuditReport(BaseModel):
     """Top-level audit report containing all server audits."""
 
@@ -448,3 +497,4 @@ class AuditReport(BaseModel):
     config_health_findings: list[ConfigHealthFinding] = Field(default_factory=list)
     policy_result: PolicyResult | None = None
     fleet_trifecta_findings: list[TrifectaFinding] = Field(default_factory=list)
+    shadowing_findings: list[ShadowingFinding] = Field(default_factory=list)

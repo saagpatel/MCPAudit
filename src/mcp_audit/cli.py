@@ -28,6 +28,7 @@ from mcp_audit.models import (
     DriftStatus,
     ServerAudit,
     ServerConfig,
+    ShadowingFinding,
     TransportType,
     TrifectaFinding,
 )
@@ -170,6 +171,12 @@ def discover(client_filter: str | None, verbose: bool) -> None:
     help="Detect lethal-trifecta (toxic-flow) attack surface: per-server and fleet-level.",
 )
 @click.option(
+    "--shadow-check",
+    is_flag=True,
+    default=False,
+    help="Detect cross-server tool-name shadowing (exact, normalised, homoglyph collisions).",
+)
+@click.option(
     "--llm-analysis",
     is_flag=True,
     default=False,
@@ -190,6 +197,7 @@ def scan(
     ssrf_check: bool,
     pin_check: bool,
     trifecta_check: bool,
+    shadow_check: bool,
     llm_analysis: bool,
 ) -> None:
     """Full audit: discover servers, connect, enumerate tools, score risk, report."""
@@ -211,6 +219,7 @@ def scan(
         ssrf_check,
         pin_check,
         trifecta_check,
+        shadow_check,
         llm_analysis,
         config_only,
     )
@@ -226,6 +235,7 @@ async def _run_scan_core(
     ssrf_check: bool = False,
     pin_check: bool = False,
     trifecta_check: bool = False,
+    shadow_check: bool = False,
     llm_analysis: bool = False,
     config_only: bool = False,
 ) -> AuditReport:
@@ -281,6 +291,12 @@ async def _run_scan_core(
         from mcp_audit.trifecta import TrifectaAnalyzer
 
         trifecta_analyzer = TrifectaAnalyzer()
+
+    shadowing_analyzer = None
+    if shadow_check:
+        from mcp_audit.shadowing import ShadowingAnalyzer
+
+        shadowing_analyzer = ShadowingAnalyzer()
 
     pin_store = None
     if pin_check:
@@ -354,6 +370,11 @@ async def _run_scan_core(
     if trifecta_analyzer is not None:
         fleet_trifecta = trifecta_analyzer.analyze_fleet(audits)
 
+    # Fleet-level shadowing pass — runs once after all servers are audited
+    shadowing: list[ShadowingFinding] = []
+    if shadowing_analyzer is not None:
+        shadowing = shadowing_analyzer.analyze_fleet(audits)
+
     report = AuditReport(
         scan_timestamp=datetime.now(UTC),
         hostname=socket.gethostname(),
@@ -369,6 +390,7 @@ async def _run_scan_core(
         scan_duration_seconds=time.monotonic() - start,
         config_health_findings=_config_health_findings(servers),
         fleet_trifecta_findings=fleet_trifecta,
+        shadowing_findings=shadowing,
     )
     return report
 
@@ -387,6 +409,7 @@ async def _run_scan(
     ssrf_check: bool = False,
     pin_check: bool = False,
     trifecta_check: bool = False,
+    shadow_check: bool = False,
     llm_analysis: bool = False,
     config_only: bool = False,
 ) -> None:
@@ -415,6 +438,7 @@ async def _run_scan(
         ssrf_check=ssrf_check,
         pin_check=pin_check,
         trifecta_check=trifecta_check,
+        shadow_check=shadow_check,
         llm_analysis=llm_analysis,
         config_only=config_only,
     )

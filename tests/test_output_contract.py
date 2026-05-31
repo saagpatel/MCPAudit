@@ -17,6 +17,7 @@ FIXTURES = [
     Path("tests/fixtures/reports/prompt_resource_report.json"),
     Path("tests/fixtures/reports/ssrf_report.json"),
     Path("tests/fixtures/reports/trifecta_report.json"),
+    Path("tests/fixtures/reports/shadowing_report.json"),
 ]
 LEGACY_FIXTURES = sorted(Path("tests/fixtures/reports/legacy").glob("*.json"))
 FIELD_REPORT_FIXTURES = sorted(Path("tests/fixtures/reports/field").glob("*.json"))
@@ -99,6 +100,18 @@ def test_trifecta_fixture_loads_and_generates_mcp013() -> None:
     assert "fleet_trifecta_findings" in dumped
 
 
+def test_shadowing_fixture_loads_and_generates_mcp015() -> None:
+    fixture = Path("tests/fixtures/reports/shadowing_report.json")
+    report = AuditReport.model_validate_json(fixture.read_text())
+    assert report.shadowing_findings
+    assert report.shadowing_findings[0].kind.value == "exact"
+    sarif = SarifGenerator().generate(report)
+    rule_ids = {r["ruleId"] for r in sarif["runs"][0]["results"]}
+    assert "MCP015" in rule_ids
+    dumped = report.model_dump(mode="json")
+    assert "shadowing_findings" in dumped
+
+
 def test_output_contract_golden_snapshot() -> None:
     snapshot = {
         fixture.name: _fixture_signature(fixture) for fixture in sorted(FIXTURES, key=lambda path: path.name)
@@ -160,6 +173,7 @@ def _fixture_signature(fixture: Path) -> dict[str, Any]:
         "ssrf_targets": _target_pairs(dumped, "ssrf_findings"),
         "trifecta_findings_count": sum(len(audit.get("trifecta_findings", [])) for audit in dumped["audits"]),
         "fleet_trifecta_findings_count": len(dumped.get("fleet_trifecta_findings", [])),
+        "shadowing_findings_count": len(dumped.get("shadowing_findings", [])),
         "sarif_rule_ids": sorted({result["ruleId"] for result in sarif["runs"][0]["results"]}),
         "sarif_target_types": sorted(
             {

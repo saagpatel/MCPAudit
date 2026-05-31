@@ -44,6 +44,7 @@ Each audit may include:
 The report top level also includes:
 
 - `fleet_trifecta_findings`
+- `shadowing_findings`
 
 `risk_score.composite` is tool-centered. `non_tool_risk` is an additive
 prompt/resource triage signal and does not change `risk_score.composite`.
@@ -88,6 +89,13 @@ Finding targets:
   pairs), `rule_id`, `title`, and `remediation`; per-server findings live on
   `ServerAudit.trifecta_findings`, fleet findings on
   `AuditReport.fleet_trifecta_findings`
+- shadowing findings use `kind` (exact|normalized|homoglyph), `severity`, `name`
+  (canonical/colliding tool name), `collisions` (list of `[server_name, tool_name]`
+  pairs ordered with the first-configured/presumed-legitimate server first),
+  `description`, `rule_id`, `title`, and `remediation`; all findings live on
+  `AuditReport.shadowing_findings` (fleet-level only — collisions are inherently
+  cross-server); populated only with `--shadow-check`; does not affect
+  `risk_score.composite`; policies may opt in with `fail_on.shadowing`
 
 Compatibility rules:
 

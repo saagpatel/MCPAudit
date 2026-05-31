@@ -30,6 +30,13 @@ MCPAudit is a local-first MCP permission auditor (Python CLI, `mcp-permission-au
 - Bulk `git branch -D` of codex/* by the agent: blocked by the force-delete guardrail hook; operator runs it via `! git branch -D ...` (verified-safe, all 41 are squash remnants).
 </rejected>
 
+<pending_release>
+## ⚠️ Pending release — do not forget
+- main is at **1.7.0** (pyproject bumped, PR #99 merged) but **NOT tagged/published to PyPI**. Latest on PyPI is still 1.6.0.
+- To release when ready: push a `v1.7.0` tag / publish a GitHub release → publish.yml fires OIDC trusted-publish to PyPI. CHANGELOG already has the [1.7.0] - 2026-05-31 section.
+- Operator chose to hold the PyPI publish and batch it with future work.
+</pending_release>
+
 <current_state>
 ## Current state
 - main @ commit 9cf4ce9 (PR #98 squashed), 0 ahead/0 behind origin. Working tree clean (only this continuity doc untracked).

@@ -773,6 +773,69 @@
       "title": "ServerConfig",
       "type": "object"
     },
+    "ShadowingFinding": {
+      "description": "A cross-server tool-name shadowing finding.\n\nFires when \u22652 servers expose tools with colliding or confusable names,\npotentially allowing an AI agent to be tricked into routing a call to the\nwrong (possibly malicious) server.  Fleet-level only \u2014 tool names are\nunique within a single server by the MCP spec.",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/ShadowingKind"
+        },
+        "severity": {
+          "$ref": "#/$defs/ShadowingSeverity"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "collisions": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Collisions",
+          "type": "array"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "severity",
+        "name",
+        "collisions",
+        "description"
+      ],
+      "title": "ShadowingFinding",
+      "type": "object"
+    },
+    "ShadowingKind": {
+      "enum": [
+        "exact",
+        "normalized",
+        "homoglyph"
+      ],
+      "title": "ShadowingKind",
+      "type": "string"
+    },
+    "ShadowingSeverity": {
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ],
+      "title": "ShadowingSeverity",
+      "type": "string"
+    },
     "SsrfFinding": {
       "description": "A server-side request forgery (SSRF) capability detected in a tool or resource.\n\nFlags interfaces where the server may perform a fetch to a caller-influenceable\nnetwork target (URL/host/endpoint). Static, schema-derived signal only \u2014 no\nrequest is ever made and no credential value is read.",
       "properties": {
@@ -1103,6 +1166,13 @@
         "$ref": "#/$defs/TrifectaFinding"
       },
       "title": "Fleet Trifecta Findings",
+      "type": "array"
+    },
+    "shadowing_findings": {
+      "items": {
+        "$ref": "#/$defs/ShadowingFinding"
+      },
+      "title": "Shadowing Findings",
       "type": "array"
     }
   },

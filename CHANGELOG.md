@@ -36,6 +36,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   behavior). See `examples/policies/trifecta-aware-ci.yaml`.
 - This is a minor version bump candidate (`1.7.0`) — all changes are additive and
   backward-compatible.
+- Added optional cross-server tool-name shadowing detection (`scan --shadow-check`)
+  that flags when two or more configured MCP servers expose tools with colliding or
+  confusable names — a vector for tricking an AI agent into routing a call to the
+  wrong (possibly malicious) server. Three tiers: exact-name collision (HIGH,
+  `MCP015`), normalised collision after case-fold and separator strip (MEDIUM,
+  `MCP016`), and homoglyph collision where non-ASCII confusable codepoints spoof an
+  ASCII tool name (HIGH, `MCP017`). The detector is fleet-level only (tool names are
+  unique within a single server by the MCP spec), offline, and deterministic — no
+  network requests, no new runtime dependencies, no credential-value reads.
+- In a 21-server real-world corpus there are zero exact or normalised collisions
+  (legit servers namespace their tools), so exact-match HIGH is safe with near-zero
+  false positives. Fuzzy edit-distance matching is intentionally excluded.
+- Added `AuditReport.shadowing_findings` (top-level list, populated only with
+  `--shadow-check`; defaults to empty so all existing consumers are unaffected),
+  stable SARIF rule IDs MCP015/016/017, a shadowing terminal section, a
+  `get_shadowing_findings` MCP server tool, a shadowing report fixture, unit and
+  integration test coverage, and `docs/SHADOWING-DETECTION.md`.
+- Added a dedicated `fail_on.shadowing` policy gate (opt-in; not covered by the
+  broad `fail_on.severity` shortcut). See `examples/policies/shadowing-aware-ci.yaml`.
 
 ## [1.6.0] - 2026-05-30
 

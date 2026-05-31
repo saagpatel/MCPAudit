@@ -1,0 +1,18 @@
+# CI gate for teams that want to block tool-name shadowing across MCP servers.
+#
+# Run with:
+#   mcp-audit scan --shadow-check --json mcp-audit.json --policy shadowing-aware-ci.yaml
+#
+# Shadowing gating is opt-in: the broad fail_on.severity shortcut does NOT cover
+# it, so it must be requested explicitly via fail_on.shadowing. Pair with
+# --shadow-check on the scan command or no shadowing_findings are produced to
+# gate on.
+#
+# Exact findings (MCP015, HIGH): two servers expose the identical tool name.
+# Normalised findings (MCP016, MEDIUM): names collide after case/separator folding.
+# Homoglyph findings (MCP017, HIGH): non-ASCII confusable codepoints spoof a tool name.
+#
+# See docs/SHADOWING-DETECTION.md for full details.
+
+fail_on:
+  shadowing: true
