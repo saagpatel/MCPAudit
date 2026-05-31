@@ -5,7 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.7.0] - 2026-05-31
+
+### Added
+
+- Added optional lethal-trifecta / toxic-flow detection (`scan --trifecta-check`)
+  that identifies when MCP servers cover the canonical agent-exfiltration attack
+  surface with three calibrated legs: (1) sensitive data access (`file_read`
+  permission), (2) untrusted-content ingestion (SSRF-detector-flagged tool/resource
+  OR a tool name/description carrying a fetch verb — NOT the broad `network`
+  category, which fires on ~86% of servers and is non-discriminating), and (3)
+  exfiltration capability (`exfiltration` permission only — `shell_execution` and
+  `file_write` alone do not enable exfiltration and are excluded). The check is
+  static and inference-derived: it re-uses findings already computed by the scanner
+  and never issues network requests or reads credential values.
+- Two finding tiers: per-server (HIGH, `MCP013`) when a single server covers all
+  three legs, and fleet-level advisory (MEDIUM, `MCP014`) when the trifecta is
+  only assembled by combining multiple servers. Fleet findings are non-redundant:
+  suppressed whenever any per-server finding fires.
+- Added `ServerAudit.trifecta_findings` (per-server, list) and
+  `AuditReport.fleet_trifecta_findings` (fleet-level, top-level list) to the JSON
+  output. Both fields default to empty and are only populated with
+  `--trifecta-check`.
+- Added stable SARIF rule IDs `MCP013` (per-server HIGH) and `MCP014` (fleet
+  advisory MEDIUM), a trifecta terminal section, a `get_trifecta_findings` MCP
+  server tool, a trifecta report fixture, unit and integration test coverage, and
+  `docs/TRIFECTA-DETECTION.md`.
+- Added a dedicated `fail_on.trifecta` policy gate (opt-in; not covered by the
+  broad `fail_on.severity` shortcut, so existing policy files keep their previous
+  behavior). See `examples/policies/trifecta-aware-ci.yaml`.
+- This is a minor version bump candidate (`1.7.0`) — all changes are additive and
+  backward-compatible.
 
 ## [1.6.0] - 2026-05-30
 

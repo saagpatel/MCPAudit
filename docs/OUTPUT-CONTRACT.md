@@ -36,9 +36,14 @@ Each audit may include:
 - `capability_findings`
 - `injection_findings`
 - `ssrf_findings`
+- `trifecta_findings`
 - `drift_findings`
 - `risk_score`
 - `non_tool_risk`
+
+The report top level also includes:
+
+- `fleet_trifecta_findings`
 
 `risk_score.composite` is tool-centered. `non_tool_risk` is an additive
 prompt/resource triage signal and does not change `risk_score.composite`.
@@ -78,6 +83,11 @@ Finding targets:
 - injection findings include `tool_name` for compatibility and additive
   `target_type` / `target_name` fields for tool, prompt, and resource targets
 - SSRF findings use `target_type` and `target_name` for tool and resource targets
+- trifecta findings use `severity`, `is_fleet`, `leg1_contributors`,
+  `leg2_contributors`, `leg3_contributors` (lists of `[server_name, tool_name]`
+  pairs), `rule_id`, `title`, and `remediation`; per-server findings live on
+  `ServerAudit.trifecta_findings`, fleet findings on
+  `AuditReport.fleet_trifecta_findings`
 
 Compatibility rules:
 
@@ -96,11 +106,13 @@ SARIF output uses stable MCP rule IDs:
 - `MCP009`: tool schema drift
 - `MCP010`: policy gate violation
 - `MCP011`-`MCP012`: SSRF findings
+- `MCP013`: per-server lethal trifecta (HIGH)
+- `MCP014`: fleet-level lethal trifecta advisory (MEDIUM)
 
 ## Compatibility Fixture
 
 The report fixtures in `tests/fixtures/reports/` cover representative connected,
-failed, config-only, policy-failed, prompt/resource-heavy, and SSRF reports. Tests
+failed, config-only, policy-failed, prompt/resource-heavy, SSRF, and trifecta reports. Tests
 validate that fixtures still load through the current Pydantic models, generate
 SARIF with the expected stable rules, and match the golden output-contract
 snapshot in `tests/fixtures/reports/output_contract_snapshot.json`.

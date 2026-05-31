@@ -18,6 +18,7 @@ from mcp_audit.models import (
     PermissionFinding,
     ServerAudit,
     SsrfSeverity,
+    TrifectaSeverity,
 )
 from mcp_audit.redaction import redact_data, redact_text
 
@@ -88,6 +89,7 @@ class ReportGenerator:
 
         self._render_injection_warnings(report)
         self._render_ssrf_warnings(report)
+        self._render_trifecta_warnings(report)
         self._render_capability_warnings(report)
         self._render_drift_warnings(report)
         self._render_policy_result(report)
@@ -188,6 +190,49 @@ class ReportGenerator:
                 f.remediation,
             )
         self._console.print(tbl)
+
+    def _render_trifecta_warnings(self, report: AuditReport) -> None:
+        """Print lethal-trifecta findings (per-server and fleet-level) if any were found."""
+        per_server = [(a.server.name, f) for a in report.audits for f in a.trifecta_findings]
+        fleet = list(report.fleet_trifecta_findings)
+        if not per_server and not fleet:
+            return
+
+        self._console.print()
+        self._console.rule("[bold red]Lethal Trifecta / Toxic Flow[/bold red]")
+
+        if per_server:
+            tbl = Table(show_lines=True, title="Per-Server Trifecta (HIGH)")
+            tbl.add_column("Server", style="bold cyan", no_wrap=True)
+            tbl.add_column("Leg 1 (file_read)", overflow="fold")
+            tbl.add_column("Leg 2 (untrusted ingestion)", overflow="fold")
+            tbl.add_column("Leg 3 (exfiltration)", overflow="fold")
+            tbl.add_column("Suggested Action", overflow="fold")
+            for server_name, f in per_server:
+                tbl.add_row(
+                    server_name,
+                    "; ".join(f"{s}/{t}" for s, t in f.leg1_contributors),
+                    "; ".join(f"{s}/{t}" for s, t in f.leg2_contributors),
+                    "; ".join(f"{s}/{t}" for s, t in f.leg3_contributors),
+                    f.remediation,
+                )
+            self._console.print(tbl)
+
+        if fleet:
+            tbl2 = Table(show_lines=True, title="Fleet-Level Trifecta (MEDIUM — advisory)")
+            tbl2.add_column("Leg 1 (file_read)", overflow="fold")
+            tbl2.add_column("Leg 2 (untrusted ingestion)", overflow="fold")
+            tbl2.add_column("Leg 3 (exfiltration)", overflow="fold")
+            tbl2.add_column("Suggested Action", overflow="fold")
+            for f in fleet:
+                sev_style = "bold red" if f.severity == TrifectaSeverity.HIGH else "yellow"
+                tbl2.add_row(
+                    "; ".join(f"{s}/{t}" for s, t in f.leg1_contributors),
+                    "; ".join(f"{s}/{t}" for s, t in f.leg2_contributors),
+                    "; ".join(f"{s}/{t}" for s, t in f.leg3_contributors),
+                    f"[{sev_style}]{f.remediation}[/{sev_style}]",
+                )
+            self._console.print(tbl2)
 
     def _render_drift_warnings(self, report: AuditReport) -> None:
         """Print tool schema drift warnings if any were found."""

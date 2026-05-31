@@ -29,6 +29,7 @@ from mcp_audit.models import (
     ServerAudit,
     ServerConfig,
     TransportType,
+    TrifectaFinding,
 )
 from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
 from mcp_audit.redaction import redact_text
@@ -163,6 +164,12 @@ def discover(client_filter: str | None, verbose: bool) -> None:
     "--pin-check", is_flag=True, default=False, help="Check for tool schema drift against stored pins."
 )  # noqa: E501
 @click.option(
+    "--trifecta-check",
+    is_flag=True,
+    default=False,
+    help="Detect lethal-trifecta (toxic-flow) attack surface: per-server and fleet-level.",
+)
+@click.option(
     "--llm-analysis",
     is_flag=True,
     default=False,
@@ -182,6 +189,7 @@ def scan(
     inject_check: bool,
     ssrf_check: bool,
     pin_check: bool,
+    trifecta_check: bool,
     llm_analysis: bool,
 ) -> None:
     """Full audit: discover servers, connect, enumerate tools, score risk, report."""
@@ -202,6 +210,7 @@ def scan(
         inject_check,
         ssrf_check,
         pin_check,
+        trifecta_check,
         llm_analysis,
         config_only,
     )
@@ -216,6 +225,7 @@ async def _run_scan_core(
     inject_check: bool = False,
     ssrf_check: bool = False,
     pin_check: bool = False,
+    trifecta_check: bool = False,
     llm_analysis: bool = False,
     config_only: bool = False,
 ) -> AuditReport:
@@ -265,6 +275,12 @@ async def _run_scan_core(
         from mcp_audit.ssrf import SsrfDetector
 
         ssrf_detector = SsrfDetector()
+
+    trifecta_analyzer = None
+    if trifecta_check:
+        from mcp_audit.trifecta import TrifectaAnalyzer
+
+        trifecta_analyzer = TrifectaAnalyzer()
 
     pin_store = None
     if pin_check:
@@ -322,6 +338,10 @@ async def _run_scan_core(
             if pin_store is not None:
                 audit.drift_findings = pin_store.check_drift(srv.name, audit.tools)
 
+            # Optional trifecta per-server detection
+            if trifecta_analyzer is not None:
+                audit.trifecta_findings = trifecta_analyzer.analyze_server(audit)
+
             audits[idx] = audit
             progress.advance(task_id)
 
@@ -329,7 +349,12 @@ async def _run_scan_core(
             for i, srv in enumerate(servers):
                 tg.start_soon(audit_one, i, srv)
 
-    return AuditReport(
+    # Fleet-level trifecta pass — runs once after all servers are audited
+    fleet_trifecta: list[TrifectaFinding] = []
+    if trifecta_analyzer is not None:
+        fleet_trifecta = trifecta_analyzer.analyze_fleet(audits)
+
+    report = AuditReport(
         scan_timestamp=datetime.now(UTC),
         hostname=socket.gethostname(),
         os_platform=platform.system(),
@@ -343,7 +368,9 @@ async def _run_scan_core(
         audits=audits,
         scan_duration_seconds=time.monotonic() - start,
         config_health_findings=_config_health_findings(servers),
+        fleet_trifecta_findings=fleet_trifecta,
     )
+    return report
 
 
 async def _run_scan(
@@ -359,6 +386,7 @@ async def _run_scan(
     inject_check: bool = False,
     ssrf_check: bool = False,
     pin_check: bool = False,
+    trifecta_check: bool = False,
     llm_analysis: bool = False,
     config_only: bool = False,
 ) -> None:
@@ -386,6 +414,7 @@ async def _run_scan(
         inject_check=inject_check,
         ssrf_check=ssrf_check,
         pin_check=pin_check,
+        trifecta_check=trifecta_check,
         llm_analysis=llm_analysis,
         config_only=config_only,
     )

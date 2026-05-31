@@ -19,6 +19,7 @@ PyPI package: `mcp-permission-audit`. Installed command: `mcp-audit`.
 - **Report redaction** — terminal, JSON, and SARIF report paths share a redaction layer for likely credential values
 - **Prompt injection detection** — `scan --inject-check` scans tool, prompt, and resource text for instruction-override patterns, hidden directives, fake role turns, and adversarial phrasing; pattern-based, no LLM required
 - **SSRF detection** — `scan --ssrf-check` flags tools and resources whose interface lets a caller steer a server-side request target (URL/host params paired with fetch verbs, caller-templated remote resource hosts); static and schema-derived, never issues a request or reads a credential value
+- **Lethal trifecta detection** — `scan --trifecta-check` detects the canonical agent-exfiltration attack surface: per-server (HIGH, `MCP013`) when a single server covers all three legs (file_read + network + exfiltration/shell/write), and fleet-level advisory (MEDIUM, `MCP014`) when the trifecta assembles only across servers; re-uses inferred permissions, never issues requests or reads credentials
 - **Schema drift tracking** — `mcp-audit pin` connects to servers and snapshots current tool schemas; subsequent `scan --pin-check` flags added, removed, and changed tools with plain-language summaries, changed-field hints, suggested actions, and a dry-run refresh workflow for reviewed upgrades
 - **Multi-client support** — reads configs from Claude Desktop, Claude Code, Cursor, VSCode, and Windsurf — plus custom paths via `--config`; use `--config-only` for isolated scans of one config file
 - **Structured output** — Rich terminal report plus JSON and SARIF 2.1.0 export for ingestion by GitHub Advanced Security and SARIF-aware SAST pipelines
@@ -64,6 +65,9 @@ mcp-audit scan --inject-check
 
 # Flag SSRF-prone tools/resources (caller-controlled server-side fetch targets)
 mcp-audit scan --ssrf-check
+
+# Detect lethal-trifecta / toxic-flow attack surface (per-server and fleet-level)
+mcp-audit scan --trifecta-check
 
 # Pin current tool schemas, then detect drift on later scans.
 # Pinning connects to servers so it can capture real tool schemas.

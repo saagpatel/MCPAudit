@@ -3,6 +3,7 @@
     "top_level_keys": [
       "audits",
       "config_health_findings",
+      "fleet_trifecta_findings",
       "high_risk_servers",
       "hostname",
       "os_platform",
@@ -30,7 +31,8 @@
       "risk_score",
       "server",
       "ssrf_findings",
-      "tools"
+      "tools",
+      "trifecta_findings"
     ],
     "connection_statuses": [
       "skipped"
@@ -45,6 +47,8 @@
     "injection_targets": [],
     "drift_targets": [],
     "ssrf_targets": [],
+    "trifecta_findings_count": 0,
+    "fleet_trifecta_findings_count": 0,
     "sarif_rule_ids": [
       "MCP003"
     ],
@@ -56,6 +60,7 @@
     "top_level_keys": [
       "audits",
       "config_health_findings",
+      "fleet_trifecta_findings",
       "high_risk_servers",
       "hostname",
       "os_platform",
@@ -83,7 +88,8 @@
       "risk_score",
       "server",
       "ssrf_findings",
-      "tools"
+      "tools",
+      "trifecta_findings"
     ],
     "connection_statuses": [
       "failed"
@@ -93,6 +99,8 @@
     "injection_targets": [],
     "drift_targets": [],
     "ssrf_targets": [],
+    "trifecta_findings_count": 0,
+    "fleet_trifecta_findings_count": 0,
     "sarif_rule_ids": [],
     "sarif_target_types": []
   },
@@ -100,6 +108,7 @@
     "top_level_keys": [
       "audits",
       "config_health_findings",
+      "fleet_trifecta_findings",
       "high_risk_servers",
       "hostname",
       "os_platform",
@@ -127,7 +136,8 @@
       "risk_score",
       "server",
       "ssrf_findings",
-      "tools"
+      "tools",
+      "trifecta_findings"
     ],
     "connection_statuses": [
       "connected"
@@ -142,6 +152,8 @@
     "injection_targets": [],
     "drift_targets": [],
     "ssrf_targets": [],
+    "trifecta_findings_count": 0,
+    "fleet_trifecta_findings_count": 0,
     "sarif_rule_ids": [
       "MCP004",
       "MCP010"
@@ -154,6 +166,7 @@
     "top_level_keys": [
       "audits",
       "config_health_findings",
+      "fleet_trifecta_findings",
       "high_risk_servers",
       "hostname",
       "os_platform",
@@ -181,7 +194,8 @@
       "risk_score",
       "server",
       "ssrf_findings",
-      "tools"
+      "tools",
+      "trifecta_findings"
     ],
     "connection_statuses": [
       "connected"
@@ -205,6 +219,8 @@
     ],
     "drift_targets": [],
     "ssrf_targets": [],
+    "trifecta_findings_count": 0,
+    "fleet_trifecta_findings_count": 0,
     "sarif_rule_ids": [
       "MCP001",
       "MCP003",
@@ -219,6 +235,7 @@
     "top_level_keys": [
       "audits",
       "config_health_findings",
+      "fleet_trifecta_findings",
       "high_risk_servers",
       "hostname",
       "os_platform",
@@ -246,7 +263,8 @@
       "risk_score",
       "server",
       "ssrf_findings",
-      "tools"
+      "tools",
+      "trifecta_findings"
     ],
     "connection_statuses": [
       "connected"
@@ -271,6 +289,8 @@
       ]
     ],
     "ssrf_targets": [],
+    "trifecta_findings_count": 0,
+    "fleet_trifecta_findings_count": 0,
     "sarif_rule_ids": [
       "MCP001",
       "MCP004",
@@ -286,6 +306,7 @@
     "top_level_keys": [
       "audits",
       "config_health_findings",
+      "fleet_trifecta_findings",
       "high_risk_servers",
       "hostname",
       "os_platform",
@@ -313,7 +334,8 @@
       "risk_score",
       "server",
       "ssrf_findings",
-      "tools"
+      "tools",
+      "trifecta_findings"
     ],
     "connection_statuses": [
       "connected"
@@ -337,12 +359,78 @@
         "register_webhook"
       ]
     ],
+    "trifecta_findings_count": 0,
+    "fleet_trifecta_findings_count": 0,
     "sarif_rule_ids": [
       "MCP003",
       "MCP011",
       "MCP012"
     ],
     "sarif_target_types": [
+      "tool"
+    ]
+  },
+  "trifecta_report.json": {
+    "top_level_keys": [
+      "audits",
+      "config_health_findings",
+      "fleet_trifecta_findings",
+      "high_risk_servers",
+      "hostname",
+      "os_platform",
+      "policy_result",
+      "scan_duration_seconds",
+      "scan_timestamp",
+      "servers_connected",
+      "servers_discovered",
+      "servers_failed",
+      "total_tools"
+    ],
+    "audit_count": 1,
+    "audit_keys": [
+      "annotation_coverage",
+      "capability_findings",
+      "connection_error",
+      "connection_status",
+      "drift_findings",
+      "has_annotations",
+      "injection_findings",
+      "non_tool_risk",
+      "permissions",
+      "prompts",
+      "resources",
+      "risk_score",
+      "server",
+      "ssrf_findings",
+      "tools",
+      "trifecta_findings"
+    ],
+    "connection_statuses": [
+      "connected"
+    ],
+    "permission_targets": [
+      [
+        "tool",
+        "read_sensitive_files"
+      ],
+      [
+        "tool",
+        "send_webhook"
+      ]
+    ],
+    "capability_targets": [],
+    "injection_targets": [],
+    "drift_targets": [],
+    "ssrf_targets": [],
+    "trifecta_findings_count": 1,
+    "fleet_trifecta_findings_count": 0,
+    "sarif_rule_ids": [
+      "MCP001",
+      "MCP006",
+      "MCP013"
+    ],
+    "sarif_target_types": [
+      "server",
       "tool"
     ]
   }

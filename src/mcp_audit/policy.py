@@ -30,6 +30,7 @@ class PolicyConfig:
     fail_on_capability_severity: str | None = None
     fail_on_config_health_severity: str | None = None
     fail_on_drift: bool = False
+    fail_on_trifecta: bool = False
     required_pin_servers: list[str] = field(default_factory=list)
     denied_permissions: list[PermissionCategory] = field(default_factory=list)
     max_risk: float | None = None
@@ -70,6 +71,7 @@ def load_policy(path: Path) -> PolicyConfig:
     ssrf_severity = _severity(fail_on.get("ssrf"), "fail_on.ssrf")
     capability_severity = _severity(fail_on.get("capabilities"), "fail_on.capabilities")
     config_health_severity = _severity(fail_on.get("config_health"), "fail_on.config_health")
+    trifecta = bool(fail_on.get("trifecta", False))
 
     permissions = [_permission(value) for value in _sequence(deny.get("permissions"), "deny.permissions")]
 
@@ -87,6 +89,7 @@ def load_policy(path: Path) -> PolicyConfig:
         fail_on_capability_severity=capability_severity,
         fail_on_config_health_severity=config_health_severity,
         fail_on_drift=bool(fail_on.get("drift", False)),
+        fail_on_trifecta=trifecta,
         required_pin_servers=[str(value) for value in _sequence(pins.get("servers"), "require.pins.servers")],
         denied_permissions=permissions,
         max_risk=max_risk,
@@ -292,6 +295,35 @@ def evaluate_policy(
                         message=f"Tool schema drift detected: {drift_finding.status.value}.",
                     )
                 )
+
+        if policy.fail_on_trifecta:
+            for trifecta_finding in audit.trifecta_findings:
+                violations.append(
+                    PolicyViolation(
+                        rule="fail_on.trifecta",
+                        server_name=server_name,
+                        severity=trifecta_finding.severity.value,
+                        message=(
+                            f"{trifecta_finding.rule_id} lethal-trifecta finding is "
+                            f"{trifecta_finding.severity.value} severity on server '{server_name}'."
+                        ),
+                    )
+                )
+
+    # Fleet-level trifecta gate
+    if policy.fail_on_trifecta:
+        for fleet_finding in report.fleet_trifecta_findings:
+            violations.append(
+                PolicyViolation(
+                    rule="fail_on.trifecta",
+                    server_name=None,
+                    severity=fleet_finding.severity.value,
+                    message=(
+                        f"{fleet_finding.rule_id} fleet-level lethal-trifecta finding is "
+                        f"{fleet_finding.severity.value} severity (advisory)."
+                    ),
+                )
+            )
 
     violations.extend(_config_health_violations(report.config_health_findings, policy))
 
