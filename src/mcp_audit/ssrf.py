@@ -32,34 +32,43 @@ _URL_FORMATS = {"uri", "url", "iri", "uri-reference", "uri-template"}
 _HOST_TOKENS = {"host", "hostname", "domain", "ip", "proxy", "upstream"}
 
 # Verb roots (prefix match on word tokens) that signal a server-side fetch.
+# Deliberately excludes weak/ambiguous roots like "http" and "request": they
+# appear in most network tool descriptions and would inflate nearly every
+# URL-param finding to HIGH. "webhook"/"callback" are URL tokens, not verbs.
 _FETCH_VERB_ROOTS = (
     "fetch",
-    "http",
     "curl",
     "wget",
     "download",
     "proxy",
     "crawl",
     "scrape",
-    "webhook",
-    "callback",
     "ping",
     "probe",
     "resolve",
-    "request",
     "retriev",
     "visit",
 )
 
 _WORD_RE = re.compile(r"[a-z0-9]+")
+# camelCase / acronym boundaries, so "callbackUrl" and "targetURL" tokenize as
+# {callback, url} / {target, url} instead of one merged token. MCP tool schemas
+# are predominantly camelCase, so without this every camelCase URL param is missed.
+_CAMEL_BOUNDARY = re.compile(r"([a-z0-9])([A-Z])")
+_ACRONYM_BOUNDARY = re.compile(r"([A-Z]+)([A-Z][a-z])")
+
+
+def _word_tokens(text: str) -> list[str]:
+    spaced = _ACRONYM_BOUNDARY.sub(r"\1_\2", _CAMEL_BOUNDARY.sub(r"\1_\2", text))
+    return _WORD_RE.findall(spaced.lower())
 
 
 def _tokens(text: str) -> list[str]:
-    return _WORD_RE.findall(text.lower())
+    return _word_tokens(text)
 
 
 def _key_tokens(key: str) -> set[str]:
-    return set(_WORD_RE.findall(key.lower().replace("-", "_")))
+    return set(_word_tokens(key))
 
 
 def _is_url_param(key: str, prop: object) -> bool:
@@ -134,25 +143,35 @@ class SsrfDetector:
     def scan_resource(self, resource: ResourceInfo) -> list[SsrfFinding]:
         """Return an SSRF finding for a remote resource URI with a caller-templated target."""
         uri = resource.uri
-        parsed = urlparse(uri)
+        try:
+            parsed = urlparse(uri)
+        except ValueError:
+            # Malformed authority (e.g. bracketed non-IP host) — skip, never crash the scan.
+            return []
         if parsed.scheme.lower() not in _REMOTE_SCHEMES:
             return []
         if "{" not in uri or "}" not in uri:
             return []
 
-        host_templated = "{" in parsed.netloc
-        if host_templated:
+        # Strip any userinfo before checking the host authority, so a templated
+        # credential (user:{password}@fixed-host) is not mistaken for a templated host.
+        host_authority = parsed.netloc.rsplit("@", 1)[-1]
+        if "{" in host_authority:
             severity, pattern = SsrfSeverity.HIGH, "remote_uri_host_template"
             evidence = [
                 f"remote scheme '{parsed.scheme.lower()}'",
                 f"caller-templated host authority '{parsed.netloc}'",
             ]
-        else:
+        elif "{" in parsed.path or "{" in parsed.query:
             severity, pattern = SsrfSeverity.LOW, "remote_uri_path_template"
             evidence = [
                 f"remote scheme '{parsed.scheme.lower()}'",
                 "caller-templated path on a fixed remote host",
             ]
+        else:
+            # Template variable is only in userinfo (e.g. a credential) — the
+            # request destination is fixed, so this is not an SSRF signal.
+            return []
 
         from mcp_audit.taxonomy import ssrf_metadata
 

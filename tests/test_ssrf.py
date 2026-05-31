@@ -163,3 +163,84 @@ def test_high_finding_exposes_stable_taxonomy_metadata() -> None:
     assert "SSRF" in finding.title
     assert finding.remediation
     assert finding.description
+
+
+# --- camelCase parameter tokenization (regression: TS/JS schemas are camelCase) ---
+
+
+def test_camelcase_url_param_is_detected() -> None:
+    detector = SsrfDetector()
+    tool = _tool("store", "Store a record.", {"callbackUrl": {"type": "string"}})
+    findings = detector.scan_tool(tool)
+    assert len(findings) == 1
+    assert findings[0].severity is SsrfSeverity.MEDIUM
+    assert findings[0].pattern_name == "url_param"
+
+
+def test_acronym_url_param_is_detected() -> None:
+    detector = SsrfDetector()
+    tool = _tool("store", "Store a record.", {"targetURL": {"type": "string"}})
+    findings = detector.scan_tool(tool)
+    assert len(findings) == 1
+    assert findings[0].severity is SsrfSeverity.MEDIUM
+
+
+def test_camelcase_url_param_with_fetch_verb_is_high() -> None:
+    detector = SsrfDetector()
+    tool = _tool("fetchResource", "Fetch a resource.", {"sourceUri": {"type": "string"}})
+    findings = detector.scan_tool(tool)
+    assert len(findings) == 1
+    assert findings[0].severity is SsrfSeverity.HIGH
+
+
+# --- verb precision (regression: common 'http'/'request' words must not inflate) ---
+
+
+def test_http_in_name_does_not_inflate_to_high() -> None:
+    # A tool that merely reports an HTTP status is not a server-side fetcher.
+    detector = SsrfDetector()
+    tool = _tool("get_http_status", "Return the HTTP status code.", {"url": {"type": "string"}})
+    findings = detector.scan_tool(tool)
+    assert len(findings) == 1
+    assert findings[0].severity is SsrfSeverity.MEDIUM
+
+
+def test_request_id_word_does_not_inflate_to_high() -> None:
+    detector = SsrfDetector()
+    tool = _tool("request_id_lookup", "Look up a request id.", {"endpoint": {"type": "string"}})
+    findings = detector.scan_tool(tool)
+    assert len(findings) == 1
+    assert findings[0].severity is SsrfSeverity.MEDIUM
+
+
+# --- resource URI precision (regression: userinfo template != host template) ---
+
+
+def test_resource_templated_credential_on_fixed_host_has_no_finding() -> None:
+    detector = SsrfDetector()
+    uri = "https://user:{token}@fixed.example.com/path"
+    assert detector.scan_resource(ResourceInfo(uri=uri)) == []
+
+
+def test_resource_query_template_is_low() -> None:
+    detector = SsrfDetector()
+    findings = detector.scan_resource(ResourceInfo(uri="https://api.example.com/data?id={id}"))
+    assert len(findings) == 1
+    assert findings[0].severity is SsrfSeverity.LOW
+    assert findings[0].pattern_name == "remote_uri_path_template"
+
+
+def test_resource_userinfo_with_host_template_is_still_high() -> None:
+    detector = SsrfDetector()
+    findings = detector.scan_resource(ResourceInfo(uri="https://user@{host}/x"))
+    assert len(findings) == 1
+    assert findings[0].severity is SsrfSeverity.HIGH
+
+
+# --- robustness (regression: malformed authority must not crash the scan) ---
+
+
+def test_resource_malformed_bracketed_authority_does_not_crash() -> None:
+    detector = SsrfDetector()
+    # Bracketed non-IP host raises ValueError in urlparse on Python 3.14+.
+    assert detector.scan_resource(ResourceInfo(uri="https://[{host}]/x")) == []
