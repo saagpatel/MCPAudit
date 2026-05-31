@@ -37,7 +37,7 @@ def test_version_option_reports_installed_distribution_version() -> None:
 
     assert result.exit_code == 0
     assert "mcp-audit, version " in result.output
-    assert "1.10.0" in result.output
+    assert "1.11.0" in result.output
 
 
 def test_scan_writes_report_files_when_no_servers_discovered(
@@ -203,6 +203,7 @@ def test_run_scan_core_config_only_ignores_discovered_configs(monkeypatch: pytes
         False,  # escalation_check
         False,  # provenance_check
         False,  # integrity_check
+        False,  # verify_artifacts
         False,  # llm_analysis
         True,  # config_only
     )

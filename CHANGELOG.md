@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added opt-in, network-gated registry package verification (`scan --verify-artifacts`,
+  rule `MCP025`). For package-runner launches (`npx pkg@x` / `uvx pkg`) the meaningful
+  artifact is the remote package, not the on-disk runner; this compares the
+  **registry-published hash** (npm `dist.integrity`, PyPI per-file sha256s) for the
+  exact pinned `package@version` against the hash captured at pin time. A changed
+  published hash for a fixed version is HIGH (republish-in-place / tampering — a
+  registry must never serve different bytes for the same version); an unverifiable
+  fetch is MEDIUM. Network is contacted **only** under `--verify-artifacts` (on both
+  `pin` to capture the baseline and `scan` to compare); a version *float* is deferred
+  to provenance (MCP021). Covers npm + PyPI. Added `fail_on.package_verify` policy
+  gate, SARIF rule MCP025, terminal + HTML report sections, a `get_package_verify_findings`
+  MCP server tool, and `docs/PACKAGE-VERIFICATION.md` + `examples/policies/package-verify-ci.yaml`.
 - Added an opt-in SSRF host allowlist (`scan --ssrf-allowlist host1,host2`). When
   supplied, it suppresses SSRF findings whose **fixed, non-templated** target host
   is allowlisted (subdomains included) — e.g. a resource `https://api.trusted.com/{id}`.

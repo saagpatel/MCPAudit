@@ -10,6 +10,10 @@ import time
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from mcp_audit.pkgverify import PackageVerifier
 
 import anyio
 import click
@@ -206,6 +210,12 @@ def discover(client_filter: str | None, verbose: bool) -> None:
     help="Detect on-disk launch-artifact (binary/script) hash drift vs the pin baseline.",
 )
 @click.option(
+    "--verify-artifacts",
+    is_flag=True,
+    default=False,
+    help="Network: verify npm/PyPI package@version registry hashes vs the pin baseline (opt-in, requires `pin --verify-artifacts`).",  # noqa: E501
+)
+@click.option(
     "--llm-analysis",
     is_flag=True,
     default=False,
@@ -232,6 +242,7 @@ def scan(
     escalation_check: bool,
     provenance_check: bool,
     integrity_check: bool,
+    verify_artifacts: bool,
     llm_analysis: bool,
 ) -> None:
     """Full audit: discover servers, connect, enumerate tools, score risk, report."""
@@ -259,6 +270,7 @@ def scan(
         escalation_check,
         provenance_check,
         integrity_check,
+        verify_artifacts,
         llm_analysis,
         config_only,
     )
@@ -279,6 +291,7 @@ async def _run_scan_core(
     escalation_check: bool = False,
     provenance_check: bool = False,
     integrity_check: bool = False,
+    verify_artifacts: bool = False,
     llm_analysis: bool = False,
     config_only: bool = False,
 ) -> AuditReport:
@@ -331,6 +344,8 @@ async def _run_scan_core(
 
         ssrf_detector = SsrfDetector()
         ssrf_allow = parse_host_allowlist(ssrf_allowlist)
+    elif ssrf_allowlist:
+        console.print("[yellow]--ssrf-allowlist has no effect without --ssrf-check.[/yellow]")
 
     trifecta_analyzer = None
     if trifecta_check:
@@ -362,11 +377,17 @@ async def _run_scan_core(
 
         integrity_analyzer = IntegrityAnalyzer()
 
-    # --escalation-check, --provenance-check, and --integrity-check all imply a pin
+    package_verifier = None
+    if verify_artifacts:
+        from mcp_audit.pkgverify import PackageVerifier
+
+        package_verifier = PackageVerifier()
+
+    # --escalation/provenance/integrity-check and --verify-artifacts all imply a pin
     # comparison, so a pin store is needed even when --pin-check was not passed.
     # Drift output stays gated on pin_check.
     pin_store = None
-    if pin_check or escalation_check or provenance_check or integrity_check:
+    if pin_check or escalation_check or provenance_check or integrity_check or verify_artifacts:
         from mcp_audit.pinning import PinStore
 
         pin_store = PinStore()
@@ -445,6 +466,16 @@ async def _run_scan_core(
                 if baseline_artifacts:
                     audit.integrity_findings = integrity_analyzer.analyze_server(srv.name, baseline_artifacts)
 
+            # Optional registry package verification (network) vs the pin baseline.
+            # Runs in a worker thread so the synchronous registry I/O never blocks
+            # the anyio event loop.
+            if package_verifier is not None and pin_store is not None:
+                baseline_pkgs = pin_store.baseline_package_hashes(srv.name)
+                if baseline_pkgs:
+                    audit.package_verify_findings = await anyio.to_thread.run_sync(
+                        package_verifier.analyze_server, srv.name, srv, baseline_pkgs
+                    )
+
             audits[idx] = audit
             progress.advance(task_id)
 
@@ -473,10 +504,17 @@ async def _run_scan_core(
             "Run `mcp-audit pin` first to capture launch-artifact hashes to compare against.[/yellow]"
         )
 
+    # Package verification needs registry hashes captured with --verify-artifacts.
+    if verify_artifacts and pin_store is not None and not pin_store.pinned_servers():
+        console.print(
+            "[yellow]--verify-artifacts: no pin baseline found. "
+            "Run `mcp-audit pin --verify-artifacts` first to capture registry package hashes.[/yellow]"
+        )
+
     # Per-server staleness: a server IS pinned but its baseline predates the
     # provenance/integrity snapshot, so it is silently skipped. Surface it so the
     # user knows the check ran but found nothing to compare for those servers.
-    if pin_store is not None and (provenance_check or integrity_check):
+    if pin_store is not None and (provenance_check or integrity_check or verify_artifacts):
         pinned = set(pin_store.pinned_servers())
         scanned_pinned = [audit.server.name for audit in audits if audit.server.name in pinned]
         if provenance_check:
@@ -494,6 +532,14 @@ async def _run_scan_core(
                     f"[yellow]--integrity-check: {len(stale)} pinned server(s) predate "
                     f"artifact-hash capture and were skipped: {', '.join(stale)}. "
                     "Re-pin with `mcp-audit pin` to enable integrity comparison.[/yellow]"
+                )
+        if verify_artifacts:
+            stale = sorted(n for n in scanned_pinned if pin_store.baseline_package_hashes(n) is None)
+            if stale:
+                console.print(
+                    f"[yellow]--verify-artifacts: {len(stale)} pinned server(s) lack captured "
+                    f"registry hashes and were skipped: {', '.join(stale)}. "
+                    "Re-pin with `mcp-audit pin --verify-artifacts` to enable verification.[/yellow]"
                 )
 
     # SSRF allowlist suppression — post-loop pass over all audits (outer scope, so
@@ -560,6 +606,7 @@ async def _run_scan(
     escalation_check: bool = False,
     provenance_check: bool = False,
     integrity_check: bool = False,
+    verify_artifacts: bool = False,
     llm_analysis: bool = False,
     config_only: bool = False,
 ) -> None:
@@ -586,6 +633,7 @@ async def _run_scan(
         escalation_check=escalation_check,
         provenance_check=provenance_check,
         integrity_check=integrity_check,
+        verify_artifacts=verify_artifacts,
         llm_analysis=llm_analysis,
         config_only=config_only,
     )
@@ -1012,6 +1060,12 @@ main.add_command(serve_command)
     metavar="PATH",
     help="Override default pin file location.",
 )
+@click.option(
+    "--verify-artifacts",
+    is_flag=True,
+    default=False,
+    help="Network: also capture npm/PyPI registry package hashes into the baseline (for scan --verify-artifacts).",  # noqa: E501
+)
 def pin_command(
     server_name: str | None,
     clear_server: str | None,
@@ -1022,6 +1076,7 @@ def pin_command(
     apply_refresh: bool,
     json_status: bool,
     pin_file: str | None,
+    verify_artifacts: bool,
 ) -> None:
     """Pin tool schemas for drift detection on subsequent scans."""
     from mcp_audit.pinning import DEFAULT_PIN_PATH, PinStore
@@ -1070,14 +1125,14 @@ def pin_command(
         return
 
     if refresh_server:
-        anyio.run(_run_pin_refresh, refresh_server, store, apply_refresh, json_status)
+        anyio.run(_run_pin_refresh, refresh_server, store, apply_refresh, json_status, verify_artifacts)
         return
 
     # Pin servers
-    anyio.run(_run_pin, server_name, store)
+    anyio.run(_run_pin, server_name, store, verify_artifacts)
 
 
-async def _run_pin(server_name: str | None, store: object) -> None:
+async def _run_pin(server_name: str | None, store: object, verify_artifacts: bool = False) -> None:
     from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
     from mcp_audit.pinning import PinStore as PS
 
@@ -1085,6 +1140,7 @@ async def _run_pin(server_name: str | None, store: object) -> None:
     override_applier = OverrideApplier(load_override_config(DEFAULT_OVERRIDE_PATH))
     report = await _run_scan_core(False, None, 10, None, override_applier)
     duplicate_names = _duplicate_server_names(report.audits)
+    verifier = _make_package_verifier(verify_artifacts)
 
     matched = False
     skipped_ambiguous: set[str] = set()
@@ -1103,11 +1159,22 @@ async def _run_pin(server_name: str | None, store: object) -> None:
                 " Use scan --skip-connect for config-only review; pins require live tool schemas.[/yellow]"
             )
             continue
-        store.pin_server(audit.server.name, audit.tools, audit.server)
-        console.print(f"[green]Pinned {len(audit.tools)} tool(s) for '{audit.server.name}'.[/green]")
+        pkg_hashes = await anyio.to_thread.run_sync(verifier.capture, audit.server) if verifier else None
+        store.pin_server(audit.server.name, audit.tools, audit.server, pkg_hashes or None)
+        suffix = f" (+{len(pkg_hashes)} registry hash(es))" if pkg_hashes else ""
+        console.print(f"[green]Pinned {len(audit.tools)} tool(s) for '{audit.server.name}'{suffix}.[/green]")
 
     if server_name and not matched:
         console.print(f"[yellow]Server '{server_name}' not found.[/yellow]")
+
+
+def _make_package_verifier(verify_artifacts: bool) -> PackageVerifier | None:
+    """Build a PackageVerifier when --verify-artifacts is set, else None."""
+    if not verify_artifacts:
+        return None
+    from mcp_audit.pkgverify import PackageVerifier
+
+    return PackageVerifier()
 
 
 async def _run_pin_refresh(
@@ -1115,12 +1182,14 @@ async def _run_pin_refresh(
     store: object,
     apply_refresh: bool,
     json_status: bool = False,
+    verify_artifacts: bool = False,
 ) -> None:
     """Review drift for one server and optionally refresh its pin baseline."""
     from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
     from mcp_audit.pinning import PinStore as PS
 
     assert isinstance(store, PS)
+    verifier = _make_package_verifier(verify_artifacts)
     override_applier = OverrideApplier(load_override_config(DEFAULT_OVERRIDE_PATH))
     report = await _run_scan_core(False, None, 10, None, override_applier)
 
@@ -1160,9 +1229,16 @@ async def _run_pin_refresh(
 
     findings = store.check_drift(audit.server.name, audit.tools)
     escalation_findings, provenance_findings = _refresh_security_deltas(store, audit)
+    # Capture registry hashes only when we will actually re-pin (network call,
+    # offloaded to a thread so it doesn't block the event loop).
+    refresh_pkgs = (
+        await anyio.to_thread.run_sync(verifier.capture, audit.server)
+        if (verifier and apply_refresh)
+        else None
+    )
     if json_status:
         if apply_refresh:
-            store.pin_server(audit.server.name, audit.tools, audit.server)
+            store.pin_server(audit.server.name, audit.tools, audit.server, refresh_pkgs or None)
         click.echo(
             _pin_refresh_json(
                 audit.server.name,
@@ -1185,7 +1261,7 @@ async def _run_pin_refresh(
         )
         return
 
-    store.pin_server(audit.server.name, audit.tools, audit.server)
+    store.pin_server(audit.server.name, audit.tools, audit.server, refresh_pkgs or None)
     console.print(f"[green]Refreshed {len(audit.tools)} pin(s) for '{audit.server.name}'.[/green]")
 
 

@@ -1,0 +1,23 @@
+# CI gate for teams that want to block registry package-hash tampering against a
+# committed pin baseline. NETWORK: contacts npm/PyPI.
+#
+# Run with:
+#   mcp-audit pin --verify-artifacts     # once, to capture approved registry hashes
+#   mcp-audit scan --verify-artifacts --json mcp-audit.json --policy package-verify-ci.yaml
+#
+# Package-verification gating is opt-in: the broad fail_on.severity shortcut does
+# NOT cover it, so it must be requested explicitly via fail_on.package_verify. Pair
+# with --verify-artifacts on the scan command (which implies a pin comparison and
+# contacts the registry). A baseline captured with `pin --verify-artifacts` must
+# exist first; servers pinned without it are skipped.
+#
+# MCP025 (registry_drift): the registry-published hash for a pinned package@version
+#                          changed (HIGH — republish/tampering), or could not be
+#                          verified (MEDIUM — registry unreachable / version gone).
+#
+# A version float (different version than pinned) is provenance's job (MCP021).
+#
+# See docs/PACKAGE-VERIFICATION.md for full details.
+
+fail_on:
+  package_verify: true

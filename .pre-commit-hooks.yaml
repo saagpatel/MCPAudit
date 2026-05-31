@@ -3,7 +3,7 @@
 #
 #   repos:
 #     - repo: https://github.com/saagpatel/MCPAudit
-#       rev: v1.10.0
+#       rev: v1.11.0
 #       hooks:
 #         - id: mcp-audit
 #

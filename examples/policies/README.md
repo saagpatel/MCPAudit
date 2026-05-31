@@ -17,6 +17,7 @@ not a universal security baseline.
 | `escalation-aware-ci.yaml` | Teams gating capability rug-pulls vs a pin baseline | Adds an opt-in `fail_on.escalation` gate for capability gains (MCP018) and description-injection gains (MCP019) since the approved pin. Requires `--escalation-check` and an existing `mcp-audit pin` baseline. |
 | `provenance-aware-ci.yaml` | Teams gating supply-chain / launch-config drift | Adds an opt-in `fail_on.provenance` gate for command/transport (MCP020), args/version + dangerous-flag (MCP021), URL/endpoint (MCP022), and credential-key-set (MCP023) changes vs the pin baseline. Requires `--provenance-check` and an existing `mcp-audit pin` baseline. |
 | `integrity-aware-ci.yaml` | Teams gating on-disk launch-artifact substitution | Adds an opt-in `fail_on.integrity` gate for launch-artifact hash drift (MCP024 — HIGH on byte change, MEDIUM when the pinned file is gone) vs the pin baseline. Requires `--integrity-check` and an existing `mcp-audit pin` baseline. |
+| `package-verify-ci.yaml` | Teams gating registry package tampering (network) | Adds an opt-in `fail_on.package_verify` gate for registry-published hash drift (MCP025 — HIGH on republish/tampering, MEDIUM when unverifiable) of pinned `package@version`. Requires `--verify-artifacts` and a baseline captured with `mcp-audit pin --verify-artifacts`. |
 
 ## Selection Guide
 
@@ -86,6 +87,17 @@ it runs is swapped. Capture a baseline once with `mcp-audit pin`, then run with
 ```bash
 mcp-audit pin
 mcp-audit scan --integrity-check --json mcp-audit.json --policy examples/policies/integrity-aware-ci.yaml
+```
+
+Use `package-verify-ci.yaml` to fail CI when the registry-published hash for a
+pinned `package@version` (npm/PyPI) changes — a republish-in-place / upstream
+tampering signal the on-disk check can't see for `npx`/`uvx` launches. This
+contacts the registry. Capture a baseline once with `mcp-audit pin
+--verify-artifacts`, then run with `--verify-artifacts`:
+
+```bash
+mcp-audit pin --verify-artifacts
+mcp-audit scan --verify-artifacts --json mcp-audit.json --policy examples/policies/package-verify-ci.yaml
 ```
 
 ## Scoring And Config-Health Note
