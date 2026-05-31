@@ -32,6 +32,7 @@ class PolicyConfig:
     fail_on_drift: bool = False
     fail_on_trifecta: bool = False
     fail_on_shadowing: bool = False
+    fail_on_escalation: bool = False
     required_pin_servers: list[str] = field(default_factory=list)
     denied_permissions: list[PermissionCategory] = field(default_factory=list)
     max_risk: float | None = None
@@ -74,6 +75,7 @@ def load_policy(path: Path) -> PolicyConfig:
     config_health_severity = _severity(fail_on.get("config_health"), "fail_on.config_health")
     trifecta = bool(fail_on.get("trifecta", False))
     shadowing = bool(fail_on.get("shadowing", False))
+    escalation = bool(fail_on.get("escalation", False))
 
     permissions = [_permission(value) for value in _sequence(deny.get("permissions"), "deny.permissions")]
 
@@ -93,6 +95,7 @@ def load_policy(path: Path) -> PolicyConfig:
         fail_on_drift=bool(fail_on.get("drift", False)),
         fail_on_trifecta=trifecta,
         fail_on_shadowing=shadowing,
+        fail_on_escalation=escalation,
         required_pin_servers=[str(value) for value in _sequence(pins.get("servers"), "require.pins.servers")],
         denied_permissions=permissions,
         max_risk=max_risk,
@@ -309,6 +312,23 @@ def evaluate_policy(
                         message=(
                             f"{trifecta_finding.rule_id} lethal-trifecta finding is "
                             f"{trifecta_finding.severity.value} severity on server '{server_name}'."
+                        ),
+                    )
+                )
+
+        if policy.fail_on_escalation:
+            for escalation_finding in audit.escalation_findings:
+                violations.append(
+                    PolicyViolation(
+                        rule="fail_on.escalation",
+                        server_name=server_name,
+                        tool_name=escalation_finding.tool_name,
+                        severity=escalation_finding.severity.value,
+                        message=(
+                            f"{escalation_finding.rule_id} capability-escalation finding "
+                            f"({escalation_finding.kind.value}) on tool "
+                            f"'{escalation_finding.tool_name}' of server '{server_name}' is "
+                            f"{escalation_finding.severity.value} severity."
                         ),
                     )
                 )

@@ -266,6 +266,41 @@ def _build_mcp_server() -> Any:
         return json.dumps(all_findings, indent=2)
 
     @app.tool()  # type: ignore[untyped-decorator]
+    async def get_escalation_findings() -> str:
+        """Return capability-escalation findings vs the pin baseline. Returns JSON list.
+
+        Requires a pin baseline (run `mcp-audit pin` first); without pins the list is empty.
+        """
+        from mcp_audit.cli import _run_scan_core
+        from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
+
+        override_applier = OverrideApplier(load_override_config(DEFAULT_OVERRIDE_PATH))
+        report = await _run_scan_core(
+            skip_connect=False,
+            clients=None,
+            timeout=10,
+            extra_config=None,
+            override_applier=override_applier,
+            escalation_check=True,
+        )
+        all_findings = []
+        for audit in report.audits:
+            for f in audit.escalation_findings:
+                all_findings.append(
+                    {
+                        "server": audit.server.name,
+                        "tool_name": f.tool_name,
+                        "kind": f.kind.value,
+                        "severity": f.severity.value,
+                        "rule_id": f.rule_id,
+                        "gained_categories": [c.value for c in f.gained_categories],
+                        "gained_patterns": f.gained_patterns,
+                        "description": f.description,
+                    }
+                )
+        return json.dumps(all_findings, indent=2)
+
+    @app.tool()  # type: ignore[untyped-decorator]
     def list_discovered_servers() -> str:
         """Return names and clients of all discovered MCP servers. Returns JSON list."""
         servers = discover_all_configs(None)

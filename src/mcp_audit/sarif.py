@@ -13,6 +13,9 @@ from mcp_audit.models import (
     CapabilityFinding,
     Confidence,
     DriftFinding,
+    EscalationFinding,
+    EscalationKind,
+    EscalationSeverity,
     InjectionFinding,
     InjectionSeverity,
     PermissionCategory,
@@ -28,6 +31,7 @@ from mcp_audit.models import (
 )
 from mcp_audit.redaction import redact_data
 from mcp_audit.taxonomy import (
+    ESCALATION_FINDINGS,
     INJECTION_FINDINGS,
     PERMISSION_FINDINGS,
     SHADOWING_FINDINGS,
@@ -86,6 +90,15 @@ _SHADOWING_RULE_IDS: dict[ShadowingKind, str] = {
 
 _SHADOWING_RULE_DESCRIPTIONS = {
     metadata.rule_id: metadata.description for metadata in SHADOWING_FINDINGS.values()
+}
+
+# Escalation-specific SARIF rule IDs (keyed by kind: MCP018 capability, MCP019 description-injection)
+_ESCALATION_RULE_IDS: dict[EscalationKind, str] = {
+    kind: metadata.rule_id for kind, metadata in ESCALATION_FINDINGS.items()
+}
+
+_ESCALATION_RULE_DESCRIPTIONS = {
+    metadata.rule_id: metadata.description for metadata in ESCALATION_FINDINGS.values()
 }
 
 
@@ -205,7 +218,27 @@ class SarifGenerator:
             }
             for rule_id, desc in _SHADOWING_RULE_DESCRIPTIONS.items()
         ]
-        return perm_rules + injection_rules + ssrf_rules + trifecta_rules + shadowing_rules + contract_rules
+        escalation_rules = [
+            {
+                "id": rule_id,
+                "name": f"Escalation{rule_id}",
+                "shortDescription": {"text": desc},
+                "fullDescription": {"text": desc},
+                "help": {"text": _escalation_help(rule_id)},
+                "helpUri": "https://github.com/saagpatel/MCPAudit#readme",
+                "properties": {"category": "capability_escalation"},
+            }
+            for rule_id, desc in _ESCALATION_RULE_DESCRIPTIONS.items()
+        ]
+        return (
+            perm_rules
+            + injection_rules
+            + ssrf_rules
+            + trifecta_rules
+            + shadowing_rules
+            + escalation_rules
+            + contract_rules
+        )
 
     def _make_results(self, report: AuditReport) -> list[dict[str, Any]]:
         """One result per (server, tool, category) triple, plus injection findings."""
@@ -221,6 +254,8 @@ class SarifGenerator:
                 results.append(self._make_ssrf_result(ssrf, audit))
             for trifecta in audit.trifecta_findings:
                 results.append(self._make_trifecta_result(trifecta, audit))
+            for escalation in audit.escalation_findings:
+                results.append(self._make_escalation_result(escalation, audit))
             for drift_finding in audit.drift_findings:
                 results.append(self._make_drift_result(drift_finding, audit))
         for fleet_trifecta in report.fleet_trifecta_findings:
@@ -262,6 +297,11 @@ class SarifGenerator:
 
     def _shadowing_level(self, finding: ShadowingFinding) -> str:
         if finding.severity == ShadowingSeverity.HIGH:
+            return "error"
+        return "warning"
+
+    def _escalation_level(self, finding: EscalationFinding) -> str:
+        if finding.severity == EscalationSeverity.HIGH:
             return "error"
         return "warning"
 
@@ -487,6 +527,40 @@ class SarifGenerator:
             },
         }
 
+    def _make_escalation_result(self, finding: EscalationFinding, audit: ServerAudit) -> dict[str, Any]:
+        """Build a SARIF result for a per-server capability-escalation finding (MCP018/MCP019)."""
+        rule_id = _ESCALATION_RULE_IDS[finding.kind]
+        level = self._escalation_level(finding)
+        config_path = audit.server.config_path
+        uri = Path(config_path).as_uri() if config_path else "file:///unknown"
+        gained = (
+            ", ".join(c.value for c in finding.gained_categories)
+            if finding.kind == EscalationKind.CAPABILITY
+            else ", ".join(finding.gained_patterns)
+        )
+        msg = (
+            f"Capability escalation ({finding.kind.value}) on tool '{finding.tool_name}' of server "
+            f"'{audit.server.name}' vs pin baseline: gained [{gained}]. "
+            f"Suggested action: {finding.remediation}"
+        )
+        return {
+            "ruleId": rule_id,
+            "level": level,
+            "message": {"text": msg},
+            "locations": [{"physicalLocation": {"artifactLocation": {"uri": uri}}}],
+            "partialFingerprints": {
+                "mcpAuditStableId": _stable_fingerprint(rule_id, audit.server.name, finding.tool_name)
+            },
+            "properties": {
+                "kind": finding.kind.value,
+                "severity": finding.severity.value,
+                "tool_name": finding.tool_name,
+                "gained_categories": [c.value for c in finding.gained_categories],
+                "gained_patterns": finding.gained_patterns,
+                "remediation": finding.remediation,
+            },
+        }
+
     def _make_drift_result(self, finding: DriftFinding, audit: ServerAudit) -> dict[str, Any]:
         config_path = audit.server.config_path
         uri = Path(config_path).as_uri() if config_path else "file:///unknown"
@@ -565,6 +639,13 @@ def _trifecta_help(rule_id: str) -> str:
 def _shadowing_help(rule_id: str) -> str:
     remediations = {
         metadata.remediation for metadata in SHADOWING_FINDINGS.values() if metadata.rule_id == rule_id
+    }
+    return " ".join(sorted(remediations))
+
+
+def _escalation_help(rule_id: str) -> str:
+    remediations = {
+        metadata.remediation for metadata in ESCALATION_FINDINGS.values() if metadata.rule_id == rule_id
     }
     return " ".join(sorted(remediations))
 

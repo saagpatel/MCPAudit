@@ -37,7 +37,7 @@ def test_version_option_reports_installed_distribution_version() -> None:
 
     assert result.exit_code == 0
     assert "mcp-audit, version " in result.output
-    assert "1.7.0" in result.output
+    assert "1.8.0" in result.output
 
 
 def test_scan_config_only_requires_config() -> None:
@@ -176,6 +176,7 @@ def test_run_scan_core_config_only_ignores_discovered_configs(monkeypatch: pytes
         False,  # pin_check
         False,  # trifecta_check
         False,  # shadow_check
+        False,  # escalation_check
         False,  # llm_analysis
         True,  # config_only
     )

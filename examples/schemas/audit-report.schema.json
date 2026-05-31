@@ -208,6 +208,68 @@
       "title": "DriftStatus",
       "type": "string"
     },
+    "EscalationFinding": {
+      "description": "A capability-escalation / rug-pull finding detected against the pin baseline.\n\nFires only when a tool DIFFERS from its operator-blessed pin baseline in a\nsecurity-significant way:\n  CAPABILITY            \u2014 the tool gained a dangerous permission category it\n                          did not hold when pinned (e.g. read-only \u2192 file_write,\n                          exfiltration, shell_execution, destructive).\n  DESCRIPTION_INJECTION \u2014 the tool's description gained prompt-injection\n                          pattern(s) absent from the pinned baseline.\n\nPurely a delta against the pin store: a tool matching its baseline produces no\nfinding, so the false-positive rate is near-zero by construction.  Requires a\npin baseline (``--escalation-check`` implies pin comparison).",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/EscalationKind"
+        },
+        "severity": {
+          "$ref": "#/$defs/EscalationSeverity"
+        },
+        "server_name": {
+          "title": "Server Name",
+          "type": "string"
+        },
+        "tool_name": {
+          "title": "Tool Name",
+          "type": "string"
+        },
+        "gained_categories": {
+          "items": {
+            "$ref": "#/$defs/PermissionCategory"
+          },
+          "title": "Gained Categories",
+          "type": "array"
+        },
+        "gained_patterns": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Gained Patterns",
+          "type": "array"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "severity",
+        "server_name",
+        "tool_name",
+        "description"
+      ],
+      "title": "EscalationFinding",
+      "type": "object"
+    },
+    "EscalationKind": {
+      "enum": [
+        "capability",
+        "description_injection"
+      ],
+      "title": "EscalationKind",
+      "type": "string"
+    },
+    "EscalationSeverity": {
+      "enum": [
+        "high",
+        "medium"
+      ],
+      "title": "EscalationSeverity",
+      "type": "string"
+    },
     "InjectionFinding": {
       "description": "A prompt injection threat detected in a tool's description or name.",
       "properties": {
@@ -679,6 +741,13 @@
             "$ref": "#/$defs/TrifectaFinding"
           },
           "title": "Trifecta Findings",
+          "type": "array"
+        },
+        "escalation_findings": {
+          "items": {
+            "$ref": "#/$defs/EscalationFinding"
+          },
+          "title": "Escalation Findings",
           "type": "array"
         }
       },

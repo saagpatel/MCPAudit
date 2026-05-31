@@ -14,6 +14,7 @@ not a universal security baseline.
 | `ssrf-aware-ci.yaml` | Teams gating SSRF-prone servers | Adds an opt-in `fail_on.ssrf` gate (global high, per-server medium) on top of the usual permission/injection bars. Requires `--ssrf-check`. |
 | `trifecta-aware-ci.yaml` | Teams gating lethal-trifecta servers | Adds an opt-in `fail_on.trifecta` gate for per-server (HIGH/MCP013) and fleet-level advisory (MEDIUM/MCP014) findings. Requires `--trifecta-check`. |
 | `shadowing-aware-ci.yaml` | Teams gating tool-name shadowing | Adds an opt-in `fail_on.shadowing` gate for exact (MCP015), normalised (MCP016), and homoglyph (MCP017) cross-server tool-name collisions. Requires `--shadow-check`. |
+| `escalation-aware-ci.yaml` | Teams gating capability rug-pulls vs a pin baseline | Adds an opt-in `fail_on.escalation` gate for capability gains (MCP018) and description-injection gains (MCP019) since the approved pin. Requires `--escalation-check` and an existing `mcp-audit pin` baseline. |
 
 ## Selection Guide
 
@@ -53,6 +54,15 @@ Run with `--shadow-check`:
 
 ```bash
 mcp-audit scan --shadow-check --json mcp-audit.json --policy examples/policies/shadowing-aware-ci.yaml
+```
+
+Use `escalation-aware-ci.yaml` to fail CI when a previously-pinned tool gains a
+dangerous capability or its description gains injection patterns (a "rug pull").
+Capture a baseline once with `mcp-audit pin`, then run with `--escalation-check`:
+
+```bash
+mcp-audit pin
+mcp-audit scan --escalation-check --json mcp-audit.json --policy examples/policies/escalation-aware-ci.yaml
 ```
 
 ## Scoring And Config-Health Note

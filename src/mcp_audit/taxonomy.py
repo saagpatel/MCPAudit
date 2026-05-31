@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from mcp_audit.models import (
+    EscalationKind,
     InjectionSeverity,
     PermissionCategory,
     ShadowingKind,
@@ -253,3 +254,47 @@ SHADOWING_FINDINGS: dict[ShadowingKind, FindingMetadata] = {
 def shadowing_metadata(kind: ShadowingKind) -> FindingMetadata:
     """Return stable metadata for a shadowing kind."""
     return SHADOWING_FINDINGS[kind]
+
+
+ESCALATION_FINDINGS: dict[EscalationKind, FindingMetadata] = {
+    EscalationKind.CAPABILITY: FindingMetadata(
+        rule_id="MCP018",
+        title="Capability escalation since pin baseline",
+        severity="high",
+        description=(
+            "A pinned tool has GAINED a dangerous permission category it did not hold when "
+            "the operator approved its baseline (e.g. a read-only tool that now infers "
+            "file_write, exfiltration, shell_execution, or destructive capability). This is the "
+            "MCP supply-chain 'rug pull': a previously-trusted server ships an update that "
+            "quietly broadens its capability surface. Severity is HIGH when the gained category "
+            "is exfiltration/shell_execution/destructive, MEDIUM for file_write/network."
+        ),
+        remediation=(
+            "Do NOT refresh the pin until you have reviewed why this tool's capability surface "
+            "grew. Inspect the changed tool metadata, confirm the new capability is intended and "
+            "from a trusted source, and only then run `mcp-audit pin --refresh <server>`. If the "
+            "change is unexpected, disable the server and report it to the author."
+        ),
+    ),
+    EscalationKind.DESCRIPTION_INJECTION: FindingMetadata(
+        rule_id="MCP019",
+        title="Tool description gained injection patterns since pin baseline",
+        severity="high",
+        description=(
+            "A pinned tool's description has GAINED prompt-injection pattern(s) that were absent "
+            "from the operator-approved baseline (e.g. 'ignore previous instructions', hidden "
+            "directives, or system-prompt override framing). A benign tool description mutating "
+            "to carry agent-targeting instructions is a strong rug-pull / compromise signal."
+        ),
+        remediation=(
+            "Treat the server as untrusted until reviewed. Read the full updated description, "
+            "compare it against the pinned baseline, and confirm the injected text with the "
+            "server author. Do not refresh the pin while the injection pattern is present."
+        ),
+    ),
+}
+
+
+def escalation_metadata(kind: EscalationKind) -> FindingMetadata:
+    """Return stable metadata for a capability-escalation kind."""
+    return ESCALATION_FINDINGS[kind]

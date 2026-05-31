@@ -1,0 +1,23 @@
+# CI gate for teams that want to block capability escalation ("rug pulls")
+# against a committed pin baseline.
+#
+# Run with:
+#   mcp-audit pin                       # once, to capture the approved baseline
+#   mcp-audit scan --escalation-check --json mcp-audit.json --policy escalation-aware-ci.yaml
+#
+# Escalation gating is opt-in: the broad fail_on.severity shortcut does NOT cover
+# it, so it must be requested explicitly via fail_on.escalation. Pair with
+# --escalation-check on the scan command (which implies a pin comparison) or no
+# escalation_findings are produced to gate on. A pin baseline must exist first
+# (run `mcp-audit pin`); without it the check has nothing to compare against.
+#
+# MCP018 (capability):           a pinned tool gained a dangerous permission category
+#                                (HIGH for exfiltration/shell_execution/destructive,
+#                                 MEDIUM for file_write/network).
+# MCP019 (description-injection): a pinned tool's description gained prompt-injection
+#                                patterns absent from the baseline (HIGH).
+#
+# See docs/ESCALATION-DETECTION.md for full details.
+
+fail_on:
+  escalation: true
