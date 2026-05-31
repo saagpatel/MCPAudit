@@ -72,6 +72,7 @@ class PinStore:
         server_name: str,
         tools: list[ToolInfo],
         server_config: ServerConfig | None = None,
+        package_hashes: dict[str, str] | None = None,
     ) -> None:
         """Upsert pin entries for all tools on a server. Writes atomically.
 
@@ -91,7 +92,19 @@ class PinStore:
                 "snapshot": self._tool_snapshot(tool),
             }
         if server_config is not None:
-            server_entry["config_snapshot"] = self._config_snapshot(server_config)
+            snapshot = self._config_snapshot(server_config)
+            if package_hashes:
+                # Registry-published package hashes (npm/PyPI) captured under
+                # --verify-artifacts; values are hashes only, never package bytes.
+                snapshot["package_hashes"] = dict(package_hashes)
+            else:
+                # Preserve a previously-captured registry baseline when this pin
+                # call did not supply one (e.g. a schema-only `pin --refresh`), so
+                # it isn't silently wiped by an unrelated refresh.
+                prior = server_entry.get("config_snapshot")
+                if isinstance(prior, dict) and isinstance(prior.get("package_hashes"), dict):
+                    snapshot["package_hashes"] = prior["package_hashes"]
+            server_entry["config_snapshot"] = snapshot
         self._data["pinned_at"] = now
         self._write()
 
@@ -230,6 +243,20 @@ class PinStore:
         if not isinstance(hashes, dict):
             return None
         return {str(path): str(digest) for path, digest in hashes.items()}
+
+    def baseline_package_hashes(self, server_name: str) -> dict[str, str] | None:
+        """Return the pinned registry package ``{ref_key: hash}`` map, or None.
+
+        None when unpinned, no config snapshot, or pinned without
+        ``--verify-artifacts`` (no package hashes captured) — callers skip silently.
+        """
+        snapshot = self.baseline_config(server_name)
+        if snapshot is None:
+            return None
+        hashes = snapshot.get("package_hashes")
+        if not isinstance(hashes, dict):
+            return None
+        return {str(key): str(digest) for key, digest in hashes.items()}
 
     def status(self) -> list[ServerPinStatus]:
         """Return review summaries for all pinned servers."""

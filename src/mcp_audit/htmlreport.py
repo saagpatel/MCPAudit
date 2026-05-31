@@ -145,6 +145,7 @@ class HtmlReportGenerator:
         body.append(self._escalation_table(audit))
         body.append(self._provenance_table(audit))
         body.append(self._integrity_table(audit))
+        body.append(self._package_verify_table(audit))
         body.append(self._drift_table(audit))
         return f'<div class="server">{"".join(body)}</div>'
 
@@ -257,6 +258,22 @@ class HtmlReportGenerator:
         return self._table(
             "Launch-artifact integrity (vs pin baseline)",
             ["Severity", "Rule", "Artifact", "Change"],
+            rows,
+        )
+
+    def _package_verify_table(self, audit: ServerAudit) -> str:
+        rows = [
+            self._row(
+                self._sev_badge(f.severity.value),
+                self._esc(f.rule_id),
+                self._esc(f"{f.ecosystem}:{f.package}@{f.version}"),
+                self._esc(f.summary),
+            )
+            for f in audit.package_verify_findings
+        ]
+        return self._table(
+            "Registry package verification (vs pin baseline)",
+            ["Severity", "Rule", "Package", "Change"],
             rows,
         )
 

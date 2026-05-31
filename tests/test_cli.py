@@ -37,7 +37,7 @@ def test_version_option_reports_installed_distribution_version() -> None:
 
     assert result.exit_code == 0
     assert "mcp-audit, version " in result.output
-    assert "1.10.0" in result.output
+    assert "1.11.0" in result.output
 
 
 def test_scan_writes_report_files_when_no_servers_discovered(
@@ -196,12 +196,14 @@ def test_run_scan_core_config_only_ignores_discovered_configs(monkeypatch: pytes
         OverrideApplier(OverrideConfig()),
         False,  # inject_check
         False,  # ssrf_check
+        None,  # ssrf_allowlist
         False,  # pin_check
         False,  # trifecta_check
         False,  # shadow_check
         False,  # escalation_check
         False,  # provenance_check
         False,  # integrity_check
+        False,  # verify_artifacts
         False,  # llm_analysis
         True,  # config_only
     )
@@ -447,6 +449,24 @@ def test_pin_refresh_json_reports_duplicate_server_name_without_writing(
     assert payload["applied"] is False
     assert "multiple discovered MCP configs" in payload["error"]
     assert PinStore(path=pin_file).check_drift("srv", [make_tool("read_file", description="v2")])
+
+
+def test_provenance_check_warns_on_stale_pinned_server(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A server pinned before launch-config snapshots existed must produce a
+    # per-server "predate ... re-pin" warning rather than silently no-op.
+    from mcp_audit import pinning
+
+    pin_file = tmp_path / "pins.yaml"
+    PinStore(path=pin_file).pin_server("legacy", [make_tool("t")])  # 2-arg: no config_snapshot
+    monkeypatch.setattr(pinning, "PinStore", lambda *a, **k: PinStore(path=pin_file))
+    monkeypatch.setattr(cli, "discover_all_configs", lambda *a, **k: [make_server_config(name="legacy")])
+
+    result = CliRunner().invoke(cli.main, ["scan", "--skip-connect", "--provenance-check"])
+
+    assert result.exit_code == 0, result.output
+    assert "predate launch-config snapshots" in result.output
 
 
 def test_scan_integrity_check_flag_runs(monkeypatch: pytest.MonkeyPatch) -> None:

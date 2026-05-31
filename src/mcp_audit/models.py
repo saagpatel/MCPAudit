@@ -98,6 +98,15 @@ class IntegritySeverity(StrEnum):
     MEDIUM = "medium"  # Pinned artifact is no longer present at its path
 
 
+class PackageVerifyKind(StrEnum):
+    REGISTRY_DRIFT = "registry_drift"  # Registry-published hash for a pinned package@version changed
+
+
+class PackageVerifySeverity(StrEnum):
+    HIGH = "high"  # Published hash changed (republish-in-place / tampering)
+    MEDIUM = "medium"  # Could not verify (registry unreachable / package absent)
+
+
 class DriftStatus(StrEnum):
     NEW = "new"  # Tool in current scan but not in pins
     CHANGED = "changed"  # Tool hash differs from stored pin
@@ -533,6 +542,61 @@ class IntegrityFinding(BaseModel):
         return integrity_metadata(self.kind).remediation
 
 
+class PackageVerifyFinding(BaseModel):
+    """A registry-published package hash change detected against the pin baseline.
+
+    The on-disk integrity check (MCP024) hashes local bytes; for package-runner
+    launches (``npx pkg@x`` / ``uvx pkg``) the meaningful artifact is the remote
+    package, not the runner binary. This finding compares the registry-published
+    hash for a pinned ``package@version`` against the hash captured at pin time:
+
+      REGISTRY_DRIFT — the registry's published hash for the exact pinned version
+                       changed (HIGH, a republish-in-place / tampering signal), or
+                       it could not be re-fetched to verify (MEDIUM).
+
+    Network-gated: only populated under ``--verify-artifacts`` (opt-in), and the
+    baseline hash is captured only when pinning with ``--verify-artifacts``. A
+    version *float* (different version than pinned) is provenance's job (MCP021),
+    not this check, which keys by exact ``package@version``.
+    """
+
+    kind: PackageVerifyKind
+    severity: PackageVerifySeverity
+    server_name: str
+    ecosystem: str  # "npm" | "pypi"
+    package: str
+    version: str
+    baseline_hash: str
+    current_hash: str | None  # None when re-fetch failed (MEDIUM)
+    summary: str
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def description(self) -> str:
+        return self.summary
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def rule_id(self) -> str:
+        from mcp_audit.taxonomy import package_verify_metadata
+
+        return package_verify_metadata(self.kind).rule_id
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def title(self) -> str:
+        from mcp_audit.taxonomy import package_verify_metadata
+
+        return package_verify_metadata(self.kind).title
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def remediation(self) -> str:
+        from mcp_audit.taxonomy import package_verify_metadata
+
+        return package_verify_metadata(self.kind).remediation
+
+
 class DriftFinding(BaseModel):
     """A change detected between pinned and current tool schema."""
 
@@ -630,6 +694,7 @@ class ServerAudit(BaseModel):
     escalation_findings: list[EscalationFinding] = Field(default_factory=list)
     provenance_findings: list[ProvenanceFinding] = Field(default_factory=list)
     integrity_findings: list[IntegrityFinding] = Field(default_factory=list)
+    package_verify_findings: list[PackageVerifyFinding] = Field(default_factory=list)
 
 
 class ShadowingFinding(BaseModel):

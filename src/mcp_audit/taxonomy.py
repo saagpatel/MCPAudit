@@ -8,6 +8,7 @@ from mcp_audit.models import (
     EscalationKind,
     InjectionSeverity,
     IntegrityKind,
+    PackageVerifyKind,
     PermissionCategory,
     ProvenanceKind,
     ShadowingKind,
@@ -403,3 +404,32 @@ INTEGRITY_FINDINGS: dict[IntegrityKind, FindingMetadata] = {
 def integrity_metadata(kind: IntegrityKind) -> FindingMetadata:
     """Return stable metadata for a launch-artifact integrity change kind."""
     return INTEGRITY_FINDINGS[kind]
+
+
+PACKAGE_VERIFY_FINDINGS: dict[PackageVerifyKind, FindingMetadata] = {
+    PackageVerifyKind.REGISTRY_DRIFT: FindingMetadata(
+        rule_id="MCP025",
+        # Per-finding severity is authoritative (HIGH on hash change, MEDIUM when
+        # the registry could not be re-fetched to verify).
+        title="Registry-published package hash changed since pin baseline",
+        severity="high",
+        description=(
+            "The registry-published hash for a pinned package@version (npm or PyPI) differs from "
+            "the hash captured when it was pinned — a republish-in-place / tampering signal that the "
+            "on-disk and config-string checks cannot see, since for npx/uvx launches the meaningful "
+            "artifact is the remote package, not the runner binary. MEDIUM when the package could not "
+            "be re-fetched (registry unreachable or version withdrawn) and so could not be verified."
+        ),
+        remediation=(
+            "Treat a changed published hash for a fixed version as a strong supply-chain compromise "
+            "signal: a registry should never serve different bytes for the same version. Pin an "
+            "explicit version, verify the maintainer/release, and refresh the pin with "
+            "`mcp-audit pin --verify-artifacts` only after confirming the change is legitimate."
+        ),
+    ),
+}
+
+
+def package_verify_metadata(kind: PackageVerifyKind) -> FindingMetadata:
+    """Return stable metadata for a registry package-verification change kind."""
+    return PACKAGE_VERIFY_FINDINGS[kind]

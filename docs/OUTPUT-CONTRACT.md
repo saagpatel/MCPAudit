@@ -120,6 +120,7 @@ SARIF output uses stable MCP rule IDs:
 - `MCP018`-`MCP019`: capability-escalation ("rug pull") vs pin baseline (capability gain / description-injection gain)
 - `MCP020`-`MCP023`: launch-config / provenance drift vs pin baseline (command / args / url / credential key-names)
 - `MCP024`: launch-artifact integrity drift vs pin baseline (on-disk binary/script hash change)
+- `MCP025`: registry package-verification drift vs pin baseline (npm/PyPI published hash change; network, opt-in)
 
 ## Compatibility Fixture
 

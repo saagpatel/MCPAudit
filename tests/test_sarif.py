@@ -25,6 +25,7 @@ from mcp_audit.sarif import (
     _ESCALATION_RULE_IDS,
     _INJECTION_RULE_IDS,
     _INTEGRITY_RULE_IDS,
+    _PACKAGE_VERIFY_RULE_IDS,
     _PROVENANCE_RULE_IDS,
     _RULE_IDS,
     _SHADOWING_RULE_IDS,
@@ -107,6 +108,7 @@ class TestSarifStructure:
             | set(_ESCALATION_RULE_IDS.values())
             | set(_PROVENANCE_RULE_IDS.values())
             | set(_INTEGRITY_RULE_IDS.values())
+            | set(_PACKAGE_VERIFY_RULE_IDS.values())
             | {"MCP009", "MCP010"}
         )
         assert rule_ids == expected
@@ -192,6 +194,30 @@ class TestSarifResults:
         assert result["level"] == "error"
         assert result["properties"]["artifact_path"] == "/usr/local/bin/mcp-server"
         assert result["properties"]["baseline_hash"] == "a" * 64
+
+    def test_package_verify_finding_emits_sarif_result(self) -> None:
+        from mcp_audit.models import PackageVerifyFinding, PackageVerifyKind, PackageVerifySeverity
+
+        audit = _make_audit()
+        audit.package_verify_findings = [
+            PackageVerifyFinding(
+                kind=PackageVerifyKind.REGISTRY_DRIFT,
+                severity=PackageVerifySeverity.HIGH,
+                server_name="srv",
+                ecosystem="npm",
+                package="server-fs",
+                version="1.2.3",
+                baseline_hash="sha512-OLD",
+                current_hash="sha512-NEW",
+                summary="Registry hash changed.",
+            )
+        ]
+        sarif = SarifGenerator().generate(_make_report([audit]))
+        result = sarif["runs"][0]["results"][0]
+        assert result["ruleId"] == "MCP025"
+        assert result["level"] == "error"
+        assert result["properties"]["package"] == "server-fs"
+        assert result["properties"]["ecosystem"] == "npm"
 
     def test_drift_finding_emits_sarif_result(self) -> None:
         audit = _make_audit()

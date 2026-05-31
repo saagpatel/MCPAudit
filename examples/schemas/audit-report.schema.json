@@ -445,6 +445,80 @@
       "title": "NonToolRisk",
       "type": "object"
     },
+    "PackageVerifyFinding": {
+      "description": "A registry-published package hash change detected against the pin baseline.\n\nThe on-disk integrity check (MCP024) hashes local bytes; for package-runner\nlaunches (``npx pkg@x`` / ``uvx pkg``) the meaningful artifact is the remote\npackage, not the runner binary. This finding compares the registry-published\nhash for a pinned ``package@version`` against the hash captured at pin time:\n\n  REGISTRY_DRIFT \u2014 the registry's published hash for the exact pinned version\n                   changed (HIGH, a republish-in-place / tampering signal), or\n                   it could not be re-fetched to verify (MEDIUM).\n\nNetwork-gated: only populated under ``--verify-artifacts`` (opt-in), and the\nbaseline hash is captured only when pinning with ``--verify-artifacts``. A\nversion *float* (different version than pinned) is provenance's job (MCP021),\nnot this check, which keys by exact ``package@version``.",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/PackageVerifyKind"
+        },
+        "severity": {
+          "$ref": "#/$defs/PackageVerifySeverity"
+        },
+        "server_name": {
+          "title": "Server Name",
+          "type": "string"
+        },
+        "ecosystem": {
+          "title": "Ecosystem",
+          "type": "string"
+        },
+        "package": {
+          "title": "Package",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        },
+        "baseline_hash": {
+          "title": "Baseline Hash",
+          "type": "string"
+        },
+        "current_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Current Hash"
+        },
+        "summary": {
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "severity",
+        "server_name",
+        "ecosystem",
+        "package",
+        "version",
+        "baseline_hash",
+        "current_hash",
+        "summary"
+      ],
+      "title": "PackageVerifyFinding",
+      "type": "object"
+    },
+    "PackageVerifyKind": {
+      "enum": [
+        "registry_drift"
+      ],
+      "title": "PackageVerifyKind",
+      "type": "string"
+    },
+    "PackageVerifySeverity": {
+      "enum": [
+        "high",
+        "medium"
+      ],
+      "title": "PackageVerifySeverity",
+      "type": "string"
+    },
     "PermissionCategory": {
       "enum": [
         "file_read",
@@ -888,6 +962,13 @@
             "$ref": "#/$defs/IntegrityFinding"
           },
           "title": "Integrity Findings",
+          "type": "array"
+        },
+        "package_verify_findings": {
+          "items": {
+            "$ref": "#/$defs/PackageVerifyFinding"
+          },
+          "title": "Package Verify Findings",
           "type": "array"
         }
       },

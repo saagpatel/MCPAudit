@@ -307,6 +307,26 @@ class TestConfigSnapshot:
         store.pin_server("srv", [make_tool("t")])
         assert store.baseline_config("srv") is None
 
+    def test_package_hashes_captured_and_accessible(self, tmp_path: Path) -> None:
+        store = _store(tmp_path)
+        cfg = _config(command="npx", args=["pkg@1.2.3"])
+        store.pin_server("srv", [make_tool("t")], cfg, {"npm:pkg:1.2.3": "sha512-X"})
+        assert store.baseline_package_hashes("srv") == {"npm:pkg:1.2.3": "sha512-X"}
+
+    def test_refresh_without_package_hashes_preserves_existing(self, tmp_path: Path) -> None:
+        # A schema-only re-pin (no package_hashes) must NOT wipe a previously
+        # captured registry baseline.
+        store = _store(tmp_path)
+        cfg = _config(command="npx", args=["pkg@1.2.3"])
+        store.pin_server("srv", [make_tool("t")], cfg, {"npm:pkg:1.2.3": "sha512-X"})
+        store.pin_server("srv", [make_tool("t", description="v2")], cfg)  # refresh, no pkg hashes
+        assert store.baseline_package_hashes("srv") == {"npm:pkg:1.2.3": "sha512-X"}
+
+    def test_baseline_package_hashes_none_without_capture(self, tmp_path: Path) -> None:
+        store = _store(tmp_path)
+        store.pin_server("srv", [make_tool("t")], _config(command="npx", args=["pkg@1.2.3"]))
+        assert store.baseline_package_hashes("srv") is None
+
     def test_baseline_config_none_for_unknown_server(self, tmp_path: Path) -> None:
         assert _store(tmp_path).baseline_config("nope") is None
 
