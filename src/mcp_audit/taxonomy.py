@@ -144,8 +144,8 @@ TRIFECTA_FINDINGS: dict[TrifectaSeverity, FindingMetadata] = {
         severity="high",
         description=(
             "A single MCP server covers all three exfiltration legs: sensitive data access "
-            "(file_read), untrusted-content exposure (network), and an outbound action capability "
-            "(exfiltration, shell_execution, or file_write). This is the canonical agent-exfiltration "
+            "(file_read), untrusted-content ingestion (SSRF-flagged or fetch-verb tool/resource), and "
+            "an outbound exfiltration capability (exfiltration). This is the canonical agent-exfiltration "
             "attack surface — a malicious or compromised tool description could instruct an AI agent "
             "to read sensitive files, fetch attacker-controlled content, and transmit the data out."
         ),
@@ -162,8 +162,8 @@ TRIFECTA_FINDINGS: dict[TrifectaSeverity, FindingMetadata] = {
         severity="medium",
         description=(
             "Across the audited fleet, all three exfiltration legs are covered: sensitive data access "
-            "(file_read), untrusted-content exposure (network), and an outbound action capability "
-            "(exfiltration, shell_execution, or file_write) — but no single server holds all three "
+            "(file_read), untrusted-content ingestion (SSRF-flagged or fetch-verb tool/resource), and "
+            "an outbound exfiltration capability (exfiltration) — but no single server holds all three "
             "simultaneously. In a compromised multi-server agent session the legs could combine "
             "across server boundaries to achieve the same exfiltration outcome."
         ),

@@ -369,8 +369,8 @@ class SarifGenerator:
         msg = (
             f"Lethal trifecta detected on server '{audit.server.name}': "
             f"leg1(file_read)=[{leg1}] "
-            f"leg2(network)=[{leg2}] "
-            f"leg3(exfil/shell/write)=[{leg3}]. "
+            f"leg2(untrusted_ingestion)=[{leg2}] "
+            f"leg3(exfiltration)=[{leg3}]. "
             f"Suggested action: {finding.remediation}"
         )
         return {
@@ -403,8 +403,8 @@ class SarifGenerator:
         msg = (
             f"Fleet-level lethal trifecta (advisory): "
             f"leg1(file_read)=[{leg1}] "
-            f"leg2(network)=[{leg2}] "
-            f"leg3(exfil/shell/write)=[{leg3}]. "
+            f"leg2(untrusted_ingestion)=[{leg2}] "
+            f"leg3(exfiltration)=[{leg3}]. "
             f"Suggested action: {finding.remediation}"
         )
         return {

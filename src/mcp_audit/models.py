@@ -298,8 +298,8 @@ class TrifectaFinding(BaseModel):
 
     Fires when a server (or fleet) covers all three exfiltration legs:
       Leg 1 — sensitive data access  (FILE_READ)
-      Leg 2 — untrusted-content exposure  (NETWORK)
-      Leg 3 — exfiltration/action  (EXFILTRATION | SHELL_EXEC | FILE_WRITE)
+      Leg 2 — untrusted-content ingestion  (SSRF-flagged or fetch-verb tool/resource)
+      Leg 3 — exfiltration  (EXFILTRATION)
 
     Per-server findings are HIGH; fleet-level advisory findings are MEDIUM.
     Static, permission-inference-derived only — no new inference is performed.

@@ -205,8 +205,8 @@ class ReportGenerator:
             tbl = Table(show_lines=True, title="Per-Server Trifecta (HIGH)")
             tbl.add_column("Server", style="bold cyan", no_wrap=True)
             tbl.add_column("Leg 1 (file_read)", overflow="fold")
-            tbl.add_column("Leg 2 (network)", overflow="fold")
-            tbl.add_column("Leg 3 (exfil/shell/write)", overflow="fold")
+            tbl.add_column("Leg 2 (untrusted ingestion)", overflow="fold")
+            tbl.add_column("Leg 3 (exfiltration)", overflow="fold")
             tbl.add_column("Suggested Action", overflow="fold")
             for server_name, f in per_server:
                 tbl.add_row(
@@ -221,8 +221,8 @@ class ReportGenerator:
         if fleet:
             tbl2 = Table(show_lines=True, title="Fleet-Level Trifecta (MEDIUM — advisory)")
             tbl2.add_column("Leg 1 (file_read)", overflow="fold")
-            tbl2.add_column("Leg 2 (network)", overflow="fold")
-            tbl2.add_column("Leg 3 (exfil/shell/write)", overflow="fold")
+            tbl2.add_column("Leg 2 (untrusted ingestion)", overflow="fold")
+            tbl2.add_column("Leg 3 (exfiltration)", overflow="fold")
             tbl2.add_column("Suggested Action", overflow="fold")
             for f in fleet:
                 sev_style = "bold red" if f.severity == TrifectaSeverity.HIGH else "yellow"
