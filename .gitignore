@@ -12,3 +12,6 @@ wheels/
 # Virtual environments
 .venv
 CLAUDE.md.bak
+
+# Session/handoff artifacts (never repo content)
+chat-continuity-*.md
