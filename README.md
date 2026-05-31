@@ -24,9 +24,10 @@ PyPI package: `mcp-permission-audit`. Installed command: `mcp-audit`.
 - **Schema drift tracking** — `mcp-audit pin` connects to servers and snapshots current tool schemas; subsequent `scan --pin-check` flags added, removed, and changed tools with plain-language summaries, changed-field hints, suggested actions, and a dry-run refresh workflow for reviewed upgrades. `pin --refresh <server>` additionally surfaces capability-escalation (`MCP018`/`MCP019`) and launch-config/provenance (`MCP020`–`MCP023`) deltas in the same preview — unconditionally, so a rug-pull or launch swap can't slip through a baseline refresh
 - **Capability-escalation ("rug pull") detection** — `scan --escalation-check` compares each tool against its pin baseline and flags security-significant escalations over time: a tool that gained a dangerous capability (`MCP018` — HIGH for exfiltration/shell/destructive, MEDIUM for file_write/network) or whose description gained prompt-injection patterns (`MCP019`, HIGH); pure delta vs the approved baseline, so near-zero false positives. See `docs/ESCALATION-DETECTION.md`
 - **Provenance / launch-config drift detection** — `scan --provenance-check` compares a server's launch configuration against its pin baseline to catch supply-chain changes the schema check can't see: command/transport swap (`MCP020`, HIGH), argument/version drift with dangerous-flag escalation (`MCP021`, MED/HIGH), HTTP endpoint change (`MCP022`, HIGH), and credential **key-name** set changes (`MCP023`, MEDIUM — key names only, never values). See `docs/PROVENANCE-DETECTION.md`
+- **Launch-artifact integrity detection** — `scan --integrity-check` hashes the on-disk artifact a server launches (the resolved command binary + local script args) and flags drift vs the pin baseline (`MCP024` — HIGH when the SHA-256 changed, MEDIUM when the file is gone). The command string can stay byte-identical while the file it runs is swapped underneath you; this catches that. Offline and deterministic — only local bytes are hashed, nothing is fetched. Package-runner (`npx`/`uvx`) launches hash the runner, not the remote package (registry verification is a network-gated follow-up). See `docs/INTEGRITY-DETECTION.md`
 - **Multi-client support** — reads configs from Claude Desktop, Claude Code, Cursor, VSCode, and Windsurf — plus custom paths via `--config`; use `--config-only` for isolated scans of one config file
 - **Structured output** — Rich terminal report plus JSON and SARIF 2.1.0 export for ingestion by GitHub Advanced Security and SARIF-aware SAST pipelines, and a self-contained shareable HTML report via `scan --html report.html` (inline CSS, no JavaScript, redacted and fully HTML-escaped)
-- **Drop-in CI distribution** — a composite GitHub Action (`uses: saagpatel/MCPAudit@v1.9.0`) runs the scan, writes SARIF, and uploads it to code scanning in one step (config-only by default; optional policy gate exits `2`); a `pre-commit` hook (`id: mcp-audit`) audits repo-local `.mcp.json` / `.vscode/mcp.json` on commit. See `docs/ADOPTION-GUIDE.md`
+- **Drop-in CI distribution** — a composite GitHub Action (`uses: saagpatel/MCPAudit@v1.10.0`) runs the scan, writes SARIF, and uploads it to code scanning in one step (config-only by default; optional policy gate exits `2`); a `pre-commit` hook (`id: mcp-audit`) audits repo-local `.mcp.json` / `.vscode/mcp.json` on commit. See `docs/ADOPTION-GUIDE.md`
 - **Documented output contract** — JSON, SARIF rule IDs, and policy exit codes are documented in `docs/OUTPUT-CONTRACT.md`
 - **Watch mode** — `mcp-audit watch` re-scans on config file changes via `watchfiles` (optional extra: install with `mcp-permission-audit[watch]`)
 
@@ -96,6 +97,9 @@ mcp-audit scan --escalation-check
 
 # Detect launch-config / provenance drift vs the pin baseline (command, args, URL, credential keys).
 mcp-audit scan --provenance-check
+
+# Detect on-disk launch-artifact (binary/script) hash drift vs the pin baseline.
+mcp-audit scan --integrity-check
 
 # Export JSON or SARIF 2.1.0, or a single-file shareable HTML report
 mcp-audit scan --json audit.json --sarif audit.sarif

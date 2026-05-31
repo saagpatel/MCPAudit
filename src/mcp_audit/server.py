@@ -337,6 +337,44 @@ def _build_mcp_server() -> Any:
         return json.dumps(all_findings, indent=2)
 
     @app.tool()  # type: ignore[untyped-decorator]
+    async def get_integrity_findings() -> str:
+        """Return launch-artifact integrity (on-disk hash) drift vs the pin baseline. Returns JSON list.
+
+        Requires a pin baseline that captured artifact hashes (run `mcp-audit pin` first); without
+        one the list is empty. Offline — only on-disk bytes are hashed.
+        """
+        from mcp_audit.cli import _run_scan_core
+        from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
+
+        override_applier = OverrideApplier(load_override_config(DEFAULT_OVERRIDE_PATH))
+        # Integrity is purely offline (re-hashing on-disk artifacts vs the pin
+        # store), so skip spawning/connecting to servers entirely.
+        report = await _run_scan_core(
+            skip_connect=True,
+            clients=None,
+            timeout=10,
+            extra_config=None,
+            override_applier=override_applier,
+            integrity_check=True,
+        )
+        all_findings = []
+        for audit in report.audits:
+            for f in audit.integrity_findings:
+                all_findings.append(
+                    {
+                        "server": audit.server.name,
+                        "kind": f.kind.value,
+                        "severity": f.severity.value,
+                        "rule_id": f.rule_id,
+                        "artifact_path": f.artifact_path,
+                        "baseline_hash": f.baseline_hash,
+                        "current_hash": f.current_hash,
+                        "description": f.description,
+                    }
+                )
+        return json.dumps(all_findings, indent=2)
+
+    @app.tool()  # type: ignore[untyped-decorator]
     def list_discovered_servers() -> str:
         """Return names and clients of all discovered MCP servers. Returns JSON list."""
         servers = discover_all_configs(None)

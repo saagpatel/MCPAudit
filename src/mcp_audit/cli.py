@@ -194,6 +194,12 @@ def discover(client_filter: str | None, verbose: bool) -> None:
     help="Detect launch-config / provenance drift (command, args, URL, credential keys) vs the pin baseline.",  # noqa: E501
 )
 @click.option(
+    "--integrity-check",
+    is_flag=True,
+    default=False,
+    help="Detect on-disk launch-artifact (binary/script) hash drift vs the pin baseline.",
+)
+@click.option(
     "--llm-analysis",
     is_flag=True,
     default=False,
@@ -218,6 +224,7 @@ def scan(
     shadow_check: bool,
     escalation_check: bool,
     provenance_check: bool,
+    integrity_check: bool,
     llm_analysis: bool,
 ) -> None:
     """Full audit: discover servers, connect, enumerate tools, score risk, report."""
@@ -243,6 +250,7 @@ def scan(
         shadow_check,
         escalation_check,
         provenance_check,
+        integrity_check,
         llm_analysis,
         config_only,
     )
@@ -261,6 +269,7 @@ async def _run_scan_core(
     shadow_check: bool = False,
     escalation_check: bool = False,
     provenance_check: bool = False,
+    integrity_check: bool = False,
     llm_analysis: bool = False,
     config_only: bool = False,
 ) -> AuditReport:
@@ -335,11 +344,17 @@ async def _run_scan_core(
 
         provenance_analyzer = ProvenanceAnalyzer()
 
-    # --escalation-check and --provenance-check both imply a pin comparison, so a
-    # pin store is needed even when --pin-check was not passed. Drift output stays
-    # gated on pin_check.
+    integrity_analyzer = None
+    if integrity_check:
+        from mcp_audit.integrity import IntegrityAnalyzer
+
+        integrity_analyzer = IntegrityAnalyzer()
+
+    # --escalation-check, --provenance-check, and --integrity-check all imply a pin
+    # comparison, so a pin store is needed even when --pin-check was not passed.
+    # Drift output stays gated on pin_check.
     pin_store = None
-    if pin_check or escalation_check or provenance_check:
+    if pin_check or escalation_check or provenance_check or integrity_check:
         from mcp_audit.pinning import PinStore
 
         pin_store = PinStore()
@@ -412,6 +427,12 @@ async def _run_scan_core(
                 if baseline_config:
                     audit.provenance_findings = provenance_analyzer.analyze_server(srv, baseline_config)
 
+            # Optional launch-artifact integrity (on-disk hash) check vs the pin baseline
+            if integrity_analyzer is not None and pin_store is not None:
+                baseline_artifacts = pin_store.baseline_artifacts(srv.name)
+                if baseline_artifacts:
+                    audit.integrity_findings = integrity_analyzer.analyze_server(srv.name, baseline_artifacts)
+
             audits[idx] = audit
             progress.advance(task_id)
 
@@ -431,6 +452,13 @@ async def _run_scan_core(
         console.print(
             "[yellow]--provenance-check: no pin baseline found. "
             "Run `mcp-audit pin` first to capture a launch-config baseline to compare against.[/yellow]"
+        )
+
+    # Integrity needs artifact hashes in the baseline; warn if nothing is pinned.
+    if integrity_check and pin_store is not None and not pin_store.pinned_servers():
+        console.print(
+            "[yellow]--integrity-check: no pin baseline found. "
+            "Run `mcp-audit pin` first to capture launch-artifact hashes to compare against.[/yellow]"
         )
 
     # Fleet-level trifecta pass — runs once after all servers are audited
@@ -481,6 +509,7 @@ async def _run_scan(
     shadow_check: bool = False,
     escalation_check: bool = False,
     provenance_check: bool = False,
+    integrity_check: bool = False,
     llm_analysis: bool = False,
     config_only: bool = False,
 ) -> None:
@@ -505,6 +534,7 @@ async def _run_scan(
         shadow_check=shadow_check,
         escalation_check=escalation_check,
         provenance_check=provenance_check,
+        integrity_check=integrity_check,
         llm_analysis=llm_analysis,
         config_only=config_only,
     )

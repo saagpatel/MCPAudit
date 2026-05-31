@@ -16,6 +16,7 @@ not a universal security baseline.
 | `shadowing-aware-ci.yaml` | Teams gating tool-name shadowing | Adds an opt-in `fail_on.shadowing` gate for exact (MCP015), normalised (MCP016), and homoglyph (MCP017) cross-server tool-name collisions. Requires `--shadow-check`. |
 | `escalation-aware-ci.yaml` | Teams gating capability rug-pulls vs a pin baseline | Adds an opt-in `fail_on.escalation` gate for capability gains (MCP018) and description-injection gains (MCP019) since the approved pin. Requires `--escalation-check` and an existing `mcp-audit pin` baseline. |
 | `provenance-aware-ci.yaml` | Teams gating supply-chain / launch-config drift | Adds an opt-in `fail_on.provenance` gate for command/transport (MCP020), args/version + dangerous-flag (MCP021), URL/endpoint (MCP022), and credential-key-set (MCP023) changes vs the pin baseline. Requires `--provenance-check` and an existing `mcp-audit pin` baseline. |
+| `integrity-aware-ci.yaml` | Teams gating on-disk launch-artifact substitution | Adds an opt-in `fail_on.integrity` gate for launch-artifact hash drift (MCP024 — HIGH on byte change, MEDIUM when the pinned file is gone) vs the pin baseline. Requires `--integrity-check` and an existing `mcp-audit pin` baseline. |
 
 ## Selection Guide
 
@@ -74,6 +75,17 @@ a baseline once with `mcp-audit pin`, then run with `--provenance-check`:
 ```bash
 mcp-audit pin
 mcp-audit scan --provenance-check --json mcp-audit.json --policy examples/policies/provenance-aware-ci.yaml
+```
+
+Use `integrity-aware-ci.yaml` to fail CI when the on-disk artifact a server
+launches (its resolved command binary or a local script arg) has different bytes
+than the pinned baseline — the command string can stay identical while the file
+it runs is swapped. Capture a baseline once with `mcp-audit pin`, then run with
+`--integrity-check`:
+
+```bash
+mcp-audit pin
+mcp-audit scan --integrity-check --json mcp-audit.json --policy examples/policies/integrity-aware-ci.yaml
 ```
 
 ## Scoring And Config-Health Note

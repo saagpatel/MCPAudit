@@ -89,6 +89,15 @@ class ProvenanceSeverity(StrEnum):
     MEDIUM = "medium"  # Benign arg drift or credential-key-set change
 
 
+class IntegrityKind(StrEnum):
+    ARTIFACT_DRIFT = "artifact_drift"  # On-disk launch artifact bytes changed/vanished since pin
+
+
+class IntegritySeverity(StrEnum):
+    HIGH = "high"  # Pinned artifact's bytes changed (content differs)
+    MEDIUM = "medium"  # Pinned artifact is no longer present at its path
+
+
 class DriftStatus(StrEnum):
     NEW = "new"  # Tool in current scan but not in pins
     CHANGED = "changed"  # Tool hash differs from stored pin
@@ -470,6 +479,60 @@ class ProvenanceFinding(BaseModel):
         return provenance_metadata(self.kind).remediation
 
 
+class IntegrityFinding(BaseModel):
+    """A launch-artifact integrity change detected against the pin baseline.
+
+    Fires when the on-disk artifact that a server launches (the resolved command
+    binary, or a local script passed as an argument) has different bytes than
+    when it was pinned — a supply-chain signal the schema and provenance checks
+    cannot see, because the command string can stay byte-identical while the file
+    it points at is swapped underneath you.
+
+    ARTIFACT_DRIFT covers two cases: the file's SHA-256 changed (HIGH), or the
+    pinned file is gone from its path (MEDIUM — often a relocation, but worth a
+    look). Offline and deterministic: only on-disk bytes are hashed; nothing is
+    fetched. Requires a pin baseline that captured artifact hashes
+    (``--integrity-check`` implies a pin comparison; baselines pinned before this
+    feature are skipped until re-pinned). Package-runner launches (``npx``/``uvx``)
+    hash the runner binary, not the remote package — registry-artifact
+    verification is a separate, network-gated follow-up.
+    """
+
+    kind: IntegrityKind
+    severity: IntegritySeverity
+    server_name: str
+    artifact_path: str  # absolute on-disk path that was pinned
+    baseline_hash: str  # SHA-256 captured at pin time
+    current_hash: str | None  # current SHA-256, or None if the file is gone
+    summary: str  # one-line human description of what changed
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def description(self) -> str:
+        return self.summary
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def rule_id(self) -> str:
+        from mcp_audit.taxonomy import integrity_metadata
+
+        return integrity_metadata(self.kind).rule_id
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def title(self) -> str:
+        from mcp_audit.taxonomy import integrity_metadata
+
+        return integrity_metadata(self.kind).title
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def remediation(self) -> str:
+        from mcp_audit.taxonomy import integrity_metadata
+
+        return integrity_metadata(self.kind).remediation
+
+
 class DriftFinding(BaseModel):
     """A change detected between pinned and current tool schema."""
 
@@ -566,6 +629,7 @@ class ServerAudit(BaseModel):
     trifecta_findings: list[TrifectaFinding] = Field(default_factory=list)
     escalation_findings: list[EscalationFinding] = Field(default_factory=list)
     provenance_findings: list[ProvenanceFinding] = Field(default_factory=list)
+    integrity_findings: list[IntegrityFinding] = Field(default_factory=list)
 
 
 class ShadowingFinding(BaseModel):

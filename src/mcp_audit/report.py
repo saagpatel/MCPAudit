@@ -17,6 +17,7 @@ from mcp_audit.models import (
     EscalationKind,
     EscalationSeverity,
     InjectionSeverity,
+    IntegritySeverity,
     PermissionFinding,
     ProvenanceSeverity,
     ServerAudit,
@@ -97,6 +98,7 @@ class ReportGenerator:
         self._render_shadowing_warnings(report)
         self._render_escalation_warnings(report)
         self._render_provenance_warnings(report)
+        self._render_integrity_warnings(report)
         self._render_capability_warnings(report)
         self._render_drift_warnings(report)
         self._render_policy_result(report)
@@ -337,6 +339,35 @@ class ReportGenerator:
                 server_name,
                 f.kind.value,
                 f"[{sev_style}]{f.severity.value}[/{sev_style}]",
+                f.summary,
+            )
+        self._console.print(tbl)
+
+    def _render_integrity_warnings(self, report: AuditReport) -> None:
+        """Print launch-artifact integrity (on-disk hash) drift vs the pin baseline if any."""
+        findings = [(a.server.name, f) for a in report.audits for f in a.integrity_findings]
+        if not findings:
+            return
+
+        self._console.print()
+        self._console.rule("[bold red]Launch-Artifact Integrity (vs pin baseline)[/bold red]")
+        tbl = Table(show_lines=True)
+        tbl.add_column("Rule ID", style="bold red", no_wrap=True)
+        tbl.add_column("Server", style="bold cyan", no_wrap=True)
+        tbl.add_column("Severity")
+        tbl.add_column("Artifact", overflow="fold")
+        tbl.add_column("Change", overflow="fold")
+
+        for server_name, f in findings:
+            sev_style = {
+                IntegritySeverity.HIGH: "bold red",
+                IntegritySeverity.MEDIUM: "yellow",
+            }.get(f.severity, "")
+            tbl.add_row(
+                f.rule_id,
+                server_name,
+                f"[{sev_style}]{f.severity.value}[/{sev_style}]",
+                f.artifact_path,
                 f.summary,
             )
         self._console.print(tbl)

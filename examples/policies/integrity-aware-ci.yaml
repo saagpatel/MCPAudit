@@ -1,0 +1,24 @@
+# CI gate for teams that want to block on-disk launch-artifact substitution
+# against a committed pin baseline.
+#
+# Run with:
+#   mcp-audit pin                        # once, to capture the approved baseline (incl. artifact hashes)
+#   mcp-audit scan --integrity-check --json mcp-audit.json --policy integrity-aware-ci.yaml
+#
+# Integrity gating is opt-in: the broad fail_on.severity shortcut does NOT cover
+# it, so it must be requested explicitly via fail_on.integrity. Pair with
+# --integrity-check on the scan command (which implies a pin comparison). A pin
+# baseline that captured artifact hashes must exist first — run `mcp-audit pin`;
+# baselines pinned before this feature are skipped until re-pinned.
+#
+# MCP024 (artifact_drift): the SHA-256 of a pinned on-disk launch artifact (the
+#                          resolved command binary or a local script arg) changed
+#                          (HIGH), or the pinned file is gone from its path (MEDIUM).
+#
+# Offline and deterministic — only local bytes are hashed, nothing is fetched.
+# Package-runner launches (npx/uvx) hash the runner, not the remote package.
+#
+# See docs/INTEGRITY-DETECTION.md for full details.
+
+fail_on:
+  integrity: true

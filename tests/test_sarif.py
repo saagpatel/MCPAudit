@@ -24,6 +24,7 @@ from mcp_audit.models import (
 from mcp_audit.sarif import (
     _ESCALATION_RULE_IDS,
     _INJECTION_RULE_IDS,
+    _INTEGRITY_RULE_IDS,
     _PROVENANCE_RULE_IDS,
     _RULE_IDS,
     _SHADOWING_RULE_IDS,
@@ -105,6 +106,7 @@ class TestSarifStructure:
             | set(_SHADOWING_RULE_IDS.values())
             | set(_ESCALATION_RULE_IDS.values())
             | set(_PROVENANCE_RULE_IDS.values())
+            | set(_INTEGRITY_RULE_IDS.values())
             | {"MCP009", "MCP010"}
         )
         assert rule_ids == expected
@@ -168,6 +170,28 @@ class TestSarifResults:
         assert result["properties"]["target_type"] == "prompt"
         assert result["properties"]["target_name"] == "review_prompt"
         assert "prompt 'review_prompt'" in result["message"]["text"]
+
+    def test_integrity_finding_emits_sarif_result(self) -> None:
+        from mcp_audit.models import IntegrityFinding, IntegrityKind, IntegritySeverity
+
+        audit = _make_audit()
+        audit.integrity_findings = [
+            IntegrityFinding(
+                kind=IntegrityKind.ARTIFACT_DRIFT,
+                severity=IntegritySeverity.HIGH,
+                server_name="srv",
+                artifact_path="/usr/local/bin/mcp-server",
+                baseline_hash="a" * 64,
+                current_hash="b" * 64,
+                summary="Launch artifact changed.",
+            )
+        ]
+        sarif = SarifGenerator().generate(_make_report([audit]))
+        result = sarif["runs"][0]["results"][0]
+        assert result["ruleId"] == "MCP024"
+        assert result["level"] == "error"
+        assert result["properties"]["artifact_path"] == "/usr/local/bin/mcp-server"
+        assert result["properties"]["baseline_hash"] == "a" * 64
 
     def test_drift_finding_emits_sarif_result(self) -> None:
         audit = _make_audit()

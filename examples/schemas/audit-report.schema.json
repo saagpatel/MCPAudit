@@ -328,6 +328,70 @@
       "title": "InjectionSeverity",
       "type": "string"
     },
+    "IntegrityFinding": {
+      "description": "A launch-artifact integrity change detected against the pin baseline.\n\nFires when the on-disk artifact that a server launches (the resolved command\nbinary, or a local script passed as an argument) has different bytes than\nwhen it was pinned \u2014 a supply-chain signal the schema and provenance checks\ncannot see, because the command string can stay byte-identical while the file\nit points at is swapped underneath you.\n\nARTIFACT_DRIFT covers two cases: the file's SHA-256 changed (HIGH), or the\npinned file is gone from its path (MEDIUM \u2014 often a relocation, but worth a\nlook). Offline and deterministic: only on-disk bytes are hashed; nothing is\nfetched. Requires a pin baseline that captured artifact hashes\n(``--integrity-check`` implies a pin comparison; baselines pinned before this\nfeature are skipped until re-pinned). Package-runner launches (``npx``/``uvx``)\nhash the runner binary, not the remote package \u2014 registry-artifact\nverification is a separate, network-gated follow-up.",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/IntegrityKind"
+        },
+        "severity": {
+          "$ref": "#/$defs/IntegritySeverity"
+        },
+        "server_name": {
+          "title": "Server Name",
+          "type": "string"
+        },
+        "artifact_path": {
+          "title": "Artifact Path",
+          "type": "string"
+        },
+        "baseline_hash": {
+          "title": "Baseline Hash",
+          "type": "string"
+        },
+        "current_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Current Hash"
+        },
+        "summary": {
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "severity",
+        "server_name",
+        "artifact_path",
+        "baseline_hash",
+        "current_hash",
+        "summary"
+      ],
+      "title": "IntegrityFinding",
+      "type": "object"
+    },
+    "IntegrityKind": {
+      "enum": [
+        "artifact_drift"
+      ],
+      "title": "IntegrityKind",
+      "type": "string"
+    },
+    "IntegritySeverity": {
+      "enum": [
+        "high",
+        "medium"
+      ],
+      "title": "IntegritySeverity",
+      "type": "string"
+    },
     "NonToolRisk": {
       "description": "Additive prompt/resource risk indicator for non-tool MCP capabilities.",
       "properties": {
@@ -817,6 +881,13 @@
             "$ref": "#/$defs/ProvenanceFinding"
           },
           "title": "Provenance Findings",
+          "type": "array"
+        },
+        "integrity_findings": {
+          "items": {
+            "$ref": "#/$defs/IntegrityFinding"
+          },
+          "title": "Integrity Findings",
           "type": "array"
         }
       },

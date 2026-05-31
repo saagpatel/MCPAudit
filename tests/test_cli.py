@@ -201,6 +201,7 @@ def test_run_scan_core_config_only_ignores_discovered_configs(monkeypatch: pytes
         False,  # shadow_check
         False,  # escalation_check
         False,  # provenance_check
+        False,  # integrity_check
         False,  # llm_analysis
         True,  # config_only
     )
@@ -446,6 +447,15 @@ def test_pin_refresh_json_reports_duplicate_server_name_without_writing(
     assert payload["applied"] is False
     assert "multiple discovered MCP configs" in payload["error"]
     assert PinStore(path=pin_file).check_drift("srv", [make_tool("read_file", description="v2")])
+
+
+def test_scan_integrity_check_flag_runs(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Flag-level smoke: --integrity-check threads through click -> _run_scan ->
+    # _run_scan_core (instantiating the analyzer + pin store) without error.
+    monkeypatch.setattr(cli, "discover_all_configs", lambda *a, **k: [])
+    result = CliRunner().invoke(cli.main, ["scan", "--integrity-check", "--skip-connect"])
+    assert result.exit_code == 0, result.output
+    assert "No MCP servers found." in result.output
 
 
 def test_pin_refresh_surfaces_escalation_delta(monkeypatch: object, tmp_path: Path) -> None:
