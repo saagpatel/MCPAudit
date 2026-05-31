@@ -50,6 +50,11 @@ class SsrfSeverity(StrEnum):
     LOW = "low"  # Weak signal (host/address param, path-only template var)
 
 
+class TrifectaSeverity(StrEnum):
+    HIGH = "high"  # Single server holds all three legs (lethal trifecta)
+    MEDIUM = "medium"  # Fleet-level: trifecta formed only by combining servers (advisory)
+
+
 class DriftStatus(StrEnum):
     NEW = "new"  # Tool in current scan but not in pins
     CHANGED = "changed"  # Tool hash differs from stored pin
@@ -288,6 +293,49 @@ class SsrfFinding(BaseModel):
         return ssrf_metadata(self.severity).remediation
 
 
+class TrifectaFinding(BaseModel):
+    """A lethal-trifecta / toxic-flow finding.
+
+    Fires when a server (or fleet) covers all three exfiltration legs:
+      Leg 1 — sensitive data access  (FILE_READ)
+      Leg 2 — untrusted-content exposure  (NETWORK)
+      Leg 3 — exfiltration/action  (EXFILTRATION | SHELL_EXEC | FILE_WRITE)
+
+    Per-server findings are HIGH; fleet-level advisory findings are MEDIUM.
+    Static, permission-inference-derived only — no new inference is performed.
+    """
+
+    severity: TrifectaSeverity
+    # Leg contributors: maps leg label to list of (server_name, tool_name) pairs
+    # For per-server findings server_name is the same for all legs.
+    leg1_contributors: list[tuple[str, str]]  # (server_name, tool_name)
+    leg2_contributors: list[tuple[str, str]]  # (server_name, tool_name)
+    leg3_contributors: list[tuple[str, str]]  # (server_name, tool_name)
+    description: str
+    is_fleet: bool = False  # True for fleet-level advisory finding
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def rule_id(self) -> str:
+        from mcp_audit.taxonomy import trifecta_metadata
+
+        return trifecta_metadata(self.severity).rule_id
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def title(self) -> str:
+        from mcp_audit.taxonomy import trifecta_metadata
+
+        return trifecta_metadata(self.severity).title
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def remediation(self) -> str:
+        from mcp_audit.taxonomy import trifecta_metadata
+
+        return trifecta_metadata(self.severity).remediation
+
+
 class DriftFinding(BaseModel):
     """A change detected between pinned and current tool schema."""
 
@@ -381,6 +429,7 @@ class ServerAudit(BaseModel):
     injection_findings: list[InjectionFinding] = Field(default_factory=list)
     ssrf_findings: list[SsrfFinding] = Field(default_factory=list)
     drift_findings: list[DriftFinding] = Field(default_factory=list)
+    trifecta_findings: list[TrifectaFinding] = Field(default_factory=list)
 
 
 class AuditReport(BaseModel):
@@ -398,3 +447,4 @@ class AuditReport(BaseModel):
     scan_duration_seconds: float
     config_health_findings: list[ConfigHealthFinding] = Field(default_factory=list)
     policy_result: PolicyResult | None = None
+    fleet_trifecta_findings: list[TrifectaFinding] = Field(default_factory=list)

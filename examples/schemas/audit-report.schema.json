@@ -673,6 +673,13 @@
           },
           "title": "Drift Findings",
           "type": "array"
+        },
+        "trifecta_findings": {
+          "items": {
+            "$ref": "#/$defs/TrifectaFinding"
+          },
+          "title": "Trifecta Findings",
+          "type": "array"
         }
       },
       "required": [
@@ -940,6 +947,91 @@
       ],
       "title": "TransportType",
       "type": "string"
+    },
+    "TrifectaFinding": {
+      "description": "A lethal-trifecta / toxic-flow finding.\n\nFires when a server (or fleet) covers all three exfiltration legs:\n  Leg 1 \u2014 sensitive data access  (FILE_READ)\n  Leg 2 \u2014 untrusted-content exposure  (NETWORK)\n  Leg 3 \u2014 exfiltration/action  (EXFILTRATION | SHELL_EXEC | FILE_WRITE)\n\nPer-server findings are HIGH; fleet-level advisory findings are MEDIUM.\nStatic, permission-inference-derived only \u2014 no new inference is performed.",
+      "properties": {
+        "severity": {
+          "$ref": "#/$defs/TrifectaSeverity"
+        },
+        "leg1_contributors": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Leg1 Contributors",
+          "type": "array"
+        },
+        "leg2_contributors": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Leg2 Contributors",
+          "type": "array"
+        },
+        "leg3_contributors": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Leg3 Contributors",
+          "type": "array"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "is_fleet": {
+          "default": false,
+          "title": "Is Fleet",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "severity",
+        "leg1_contributors",
+        "leg2_contributors",
+        "leg3_contributors",
+        "description"
+      ],
+      "title": "TrifectaFinding",
+      "type": "object"
+    },
+    "TrifectaSeverity": {
+      "enum": [
+        "high",
+        "medium"
+      ],
+      "title": "TrifectaSeverity",
+      "type": "string"
     }
   },
   "description": "Top-level audit report containing all server audits.",
@@ -1005,6 +1097,13 @@
         }
       ],
       "default": null
+    },
+    "fleet_trifecta_findings": {
+      "items": {
+        "$ref": "#/$defs/TrifectaFinding"
+      },
+      "title": "Fleet Trifecta Findings",
+      "type": "array"
     }
   },
   "required": [

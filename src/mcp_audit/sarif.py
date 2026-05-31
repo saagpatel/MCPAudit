@@ -20,9 +20,11 @@ from mcp_audit.models import (
     ServerAudit,
     SsrfFinding,
     SsrfSeverity,
+    TrifectaFinding,
+    TrifectaSeverity,
 )
 from mcp_audit.redaction import redact_data
-from mcp_audit.taxonomy import INJECTION_FINDINGS, PERMISSION_FINDINGS, SSRF_FINDINGS
+from mcp_audit.taxonomy import INJECTION_FINDINGS, PERMISSION_FINDINGS, SSRF_FINDINGS, TRIFECTA_FINDINGS
 
 _SARIF_SCHEMA = (
     "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json"
@@ -55,6 +57,15 @@ _SSRF_RULE_IDS: dict[SsrfSeverity, str] = {
 }
 
 _SSRF_RULE_DESCRIPTIONS = {metadata.rule_id: metadata.description for metadata in SSRF_FINDINGS.values()}
+
+# Trifecta-specific SARIF rule IDs
+_TRIFECTA_RULE_IDS: dict[TrifectaSeverity, str] = {
+    severity: metadata.rule_id for severity, metadata in TRIFECTA_FINDINGS.items()
+}
+
+_TRIFECTA_RULE_DESCRIPTIONS = {
+    metadata.rule_id: metadata.description for metadata in TRIFECTA_FINDINGS.values()
+}
 
 _DRIFT_RULE_ID = "MCP009"
 _POLICY_RULE_ID = "MCP010"
@@ -152,7 +163,19 @@ class SarifGenerator:
                 "properties": {"category": "policy", "severity": "high"},
             },
         ]
-        return perm_rules + injection_rules + ssrf_rules + contract_rules
+        trifecta_rules = [
+            {
+                "id": rule_id,
+                "name": f"Trifecta{rule_id}",
+                "shortDescription": {"text": desc},
+                "fullDescription": {"text": desc},
+                "help": {"text": _trifecta_help(rule_id)},
+                "helpUri": "https://github.com/saagpatel/MCPAudit#readme",
+                "properties": {"category": "trifecta"},
+            }
+            for rule_id, desc in _TRIFECTA_RULE_DESCRIPTIONS.items()
+        ]
+        return perm_rules + injection_rules + ssrf_rules + trifecta_rules + contract_rules
 
     def _make_results(self, report: AuditReport) -> list[dict[str, Any]]:
         """One result per (server, tool, category) triple, plus injection findings."""
@@ -166,8 +189,12 @@ class SarifGenerator:
                 results.append(self._make_injection_result(inj, audit))
             for ssrf in audit.ssrf_findings:
                 results.append(self._make_ssrf_result(ssrf, audit))
+            for trifecta in audit.trifecta_findings:
+                results.append(self._make_trifecta_result(trifecta, audit))
             for drift_finding in audit.drift_findings:
                 results.append(self._make_drift_result(drift_finding, audit))
+        for fleet_trifecta in report.fleet_trifecta_findings:
+            results.append(self._make_fleet_trifecta_result(fleet_trifecta))
         if report.policy_result is not None:
             for violation in report.policy_result.violations:
                 results.append(self._make_policy_result(violation))
@@ -195,6 +222,11 @@ class SarifGenerator:
         if finding.severity == SsrfSeverity.MEDIUM:
             return "warning"
         return "note"
+
+    def _trifecta_level(self, finding: TrifectaFinding) -> str:
+        if finding.severity == TrifectaSeverity.HIGH:
+            return "error"
+        return "warning"
 
     def _capability_level(self, finding: CapabilityFinding) -> str:
         if finding.severity == "high":
@@ -325,6 +357,74 @@ class SarifGenerator:
             },
         }
 
+    def _make_trifecta_result(self, finding: TrifectaFinding, audit: ServerAudit) -> dict[str, Any]:
+        """Build a SARIF result for a per-server trifecta finding (MCP013)."""
+        rule_id = _TRIFECTA_RULE_IDS[finding.severity]
+        level = self._trifecta_level(finding)
+        config_path = audit.server.config_path
+        uri = Path(config_path).as_uri() if config_path else "file:///unknown"
+        leg1 = "; ".join(f"{s}/{t}" for s, t in finding.leg1_contributors)
+        leg2 = "; ".join(f"{s}/{t}" for s, t in finding.leg2_contributors)
+        leg3 = "; ".join(f"{s}/{t}" for s, t in finding.leg3_contributors)
+        msg = (
+            f"Lethal trifecta detected on server '{audit.server.name}': "
+            f"leg1(file_read)=[{leg1}] "
+            f"leg2(network)=[{leg2}] "
+            f"leg3(exfil/shell/write)=[{leg3}]. "
+            f"Suggested action: {finding.remediation}"
+        )
+        return {
+            "ruleId": rule_id,
+            "level": level,
+            "message": {"text": msg},
+            "locations": [{"physicalLocation": {"artifactLocation": {"uri": uri}}}],
+            "partialFingerprints": {
+                "mcpAuditStableId": _stable_fingerprint(rule_id, audit.server.name, "trifecta")
+            },
+            "properties": {
+                "target_type": "server",
+                "target_name": audit.server.name,
+                "severity": finding.severity.value,
+                "is_fleet": False,
+                "leg1_contributors": finding.leg1_contributors,
+                "leg2_contributors": finding.leg2_contributors,
+                "leg3_contributors": finding.leg3_contributors,
+                "remediation": finding.remediation,
+            },
+        }
+
+    def _make_fleet_trifecta_result(self, finding: TrifectaFinding) -> dict[str, Any]:
+        """Build a SARIF result for a fleet-level trifecta advisory finding (MCP014)."""
+        rule_id = _TRIFECTA_RULE_IDS[finding.severity]
+        level = self._trifecta_level(finding)
+        leg1 = "; ".join(f"{s}/{t}" for s, t in finding.leg1_contributors)
+        leg2 = "; ".join(f"{s}/{t}" for s, t in finding.leg2_contributors)
+        leg3 = "; ".join(f"{s}/{t}" for s, t in finding.leg3_contributors)
+        msg = (
+            f"Fleet-level lethal trifecta (advisory): "
+            f"leg1(file_read)=[{leg1}] "
+            f"leg2(network)=[{leg2}] "
+            f"leg3(exfil/shell/write)=[{leg3}]. "
+            f"Suggested action: {finding.remediation}"
+        )
+        return {
+            "ruleId": rule_id,
+            "level": level,
+            "message": {"text": msg},
+            "locations": [{"physicalLocation": {"artifactLocation": {"uri": "file:///unknown"}}}],
+            "partialFingerprints": {"mcpAuditStableId": _stable_fingerprint(rule_id, "fleet", "trifecta")},
+            "properties": {
+                "target_type": "fleet",
+                "target_name": "fleet",
+                "severity": finding.severity.value,
+                "is_fleet": True,
+                "leg1_contributors": finding.leg1_contributors,
+                "leg2_contributors": finding.leg2_contributors,
+                "leg3_contributors": finding.leg3_contributors,
+                "remediation": finding.remediation,
+            },
+        }
+
     def _make_drift_result(self, finding: DriftFinding, audit: ServerAudit) -> dict[str, Any]:
         config_path = audit.server.config_path
         uri = Path(config_path).as_uri() if config_path else "file:///unknown"
@@ -389,6 +489,13 @@ def _injection_help(rule_id: str) -> str:
 def _ssrf_help(rule_id: str) -> str:
     remediations = {
         metadata.remediation for metadata in SSRF_FINDINGS.values() if metadata.rule_id == rule_id
+    }
+    return " ".join(sorted(remediations))
+
+
+def _trifecta_help(rule_id: str) -> str:
+    remediations = {
+        metadata.remediation for metadata in TRIFECTA_FINDINGS.values() if metadata.rule_id == rule_id
     }
     return " ".join(sorted(remediations))
 

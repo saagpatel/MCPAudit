@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from mcp_audit.models import InjectionSeverity, PermissionCategory, SsrfSeverity
+from mcp_audit.models import InjectionSeverity, PermissionCategory, SsrfSeverity, TrifectaSeverity
 
 
 @dataclass(frozen=True)
@@ -137,6 +137,46 @@ SSRF_FINDINGS: dict[SsrfSeverity, FindingMetadata] = {
 }
 
 
+TRIFECTA_FINDINGS: dict[TrifectaSeverity, FindingMetadata] = {
+    TrifectaSeverity.HIGH: FindingMetadata(
+        rule_id="MCP013",
+        title="Lethal trifecta: single-server toxic flow",
+        severity="high",
+        description=(
+            "A single MCP server covers all three exfiltration legs: sensitive data access "
+            "(file_read), untrusted-content exposure (network), and an outbound action capability "
+            "(exfiltration, shell_execution, or file_write). This is the canonical agent-exfiltration "
+            "attack surface — a malicious or compromised tool description could instruct an AI agent "
+            "to read sensitive files, fetch attacker-controlled content, and transmit the data out."
+        ),
+        remediation=(
+            "Audit this server's tools individually. Consider whether all three capability legs are "
+            "strictly necessary. If any leg is optional, disable it or move it to a separate, "
+            "isolated server. Apply a strict allowlist for outbound destinations and validate all "
+            "file-read paths. Never expose this server to untrusted prompts or tool outputs."
+        ),
+    ),
+    TrifectaSeverity.MEDIUM: FindingMetadata(
+        rule_id="MCP014",
+        title="Lethal trifecta: fleet-level toxic flow (advisory)",
+        severity="medium",
+        description=(
+            "Across the audited fleet, all three exfiltration legs are covered: sensitive data access "
+            "(file_read), untrusted-content exposure (network), and an outbound action capability "
+            "(exfiltration, shell_execution, or file_write) — but no single server holds all three "
+            "simultaneously. In a compromised multi-server agent session the legs could combine "
+            "across server boundaries to achieve the same exfiltration outcome."
+        ),
+        remediation=(
+            "Review which servers are active together in agent sessions. If the full trifecta can "
+            "assemble across servers within the same session, apply per-server access controls or "
+            "reduce the permission surface. Consider isolating high-privilege servers to separate "
+            "agent contexts."
+        ),
+    ),
+}
+
+
 def permission_metadata(category: PermissionCategory) -> FindingMetadata:
     """Return stable metadata for a permission category."""
     return PERMISSION_FINDINGS[category]
@@ -150,3 +190,8 @@ def injection_metadata(severity: InjectionSeverity) -> FindingMetadata:
 def ssrf_metadata(severity: SsrfSeverity) -> FindingMetadata:
     """Return stable metadata for an SSRF severity."""
     return SSRF_FINDINGS[severity]
+
+
+def trifecta_metadata(severity: TrifectaSeverity) -> FindingMetadata:
+    """Return stable metadata for a trifecta severity."""
+    return TRIFECTA_FINDINGS[severity]

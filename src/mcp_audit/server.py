@@ -192,6 +192,51 @@ def _build_mcp_server() -> Any:
         return json.dumps(all_findings, indent=2)
 
     @app.tool()  # type: ignore[untyped-decorator]
+    async def get_trifecta_findings() -> str:
+        """Return all lethal-trifecta findings (per-server and fleet-level). Returns JSON list."""
+        from mcp_audit.cli import _run_scan_core
+        from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
+
+        override_applier = OverrideApplier(load_override_config(DEFAULT_OVERRIDE_PATH))
+        report = await _run_scan_core(
+            skip_connect=False,
+            clients=None,
+            timeout=10,
+            extra_config=None,
+            override_applier=override_applier,
+            trifecta_check=True,
+        )
+        all_findings = []
+        for audit in report.audits:
+            for f in audit.trifecta_findings:
+                all_findings.append(
+                    {
+                        "scope": "server",
+                        "server": audit.server.name,
+                        "severity": f.severity.value,
+                        "rule_id": f.rule_id,
+                        "leg1_contributors": f.leg1_contributors,
+                        "leg2_contributors": f.leg2_contributors,
+                        "leg3_contributors": f.leg3_contributors,
+                        "description": f.description,
+                    }
+                )
+        for f in report.fleet_trifecta_findings:
+            all_findings.append(
+                {
+                    "scope": "fleet",
+                    "server": "",
+                    "severity": f.severity.value,
+                    "rule_id": f.rule_id,
+                    "leg1_contributors": f.leg1_contributors,
+                    "leg2_contributors": f.leg2_contributors,
+                    "leg3_contributors": f.leg3_contributors,
+                    "description": f.description,
+                }
+            )
+        return json.dumps(all_findings, indent=2)
+
+    @app.tool()  # type: ignore[untyped-decorator]
     def list_discovered_servers() -> str:
         """Return names and clients of all discovered MCP servers. Returns JSON list."""
         servers = discover_all_configs(None)

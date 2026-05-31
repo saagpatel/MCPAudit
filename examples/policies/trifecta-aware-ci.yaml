@@ -1,0 +1,19 @@
+# CI gate for teams that want to block lethal-trifecta MCP servers.
+#
+# Run with:
+#   mcp-audit scan --trifecta-check --json mcp-audit.json --policy trifecta-aware-ci.yaml
+#
+# Trifecta gating is opt-in: the broad fail_on.severity shortcut does NOT cover
+# it, so it must be requested explicitly via fail_on.trifecta. Pair with
+# --trifecta-check on the scan command or no trifecta_findings are produced to
+# gate on.
+#
+# Per-server findings (MCP013, HIGH): a single server covers all three legs
+#   (file_read + network + exfiltration/shell_execution/file_write).
+# Fleet findings (MCP014, MEDIUM): the full trifecta assembles only across
+#   multiple servers — advisory, but still flagged here.
+#
+# See docs/TRIFECTA-DETECTION.md for full details.
+
+fail_on:
+  trifecta: true

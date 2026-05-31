@@ -174,6 +174,7 @@ def test_run_scan_core_config_only_ignores_discovered_configs(monkeypatch: pytes
         False,  # inject_check
         False,  # ssrf_check
         False,  # pin_check
+        False,  # trifecta_check
         False,  # llm_analysis
         True,  # config_only
     )

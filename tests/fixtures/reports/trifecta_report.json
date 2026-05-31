@@ -1,0 +1,128 @@
+{
+  "scan_timestamp": "2026-05-31T12:00:00Z",
+  "hostname": "test-host",
+  "os_platform": "Test",
+  "servers_discovered": 1,
+  "servers_connected": 1,
+  "servers_failed": 0,
+  "total_tools": 3,
+  "high_risk_servers": 1,
+  "audits": [
+    {
+      "server": {
+        "name": "file-network-exfil-srv",
+        "client": "claude_desktop",
+        "config_path": "/test/config.json",
+        "project_path": null,
+        "command": "test-server",
+        "args": [],
+        "env_keys": [],
+        "transport": "stdio",
+        "url": null,
+        "headers_keys": []
+      },
+      "connection_status": "connected",
+      "connection_error": null,
+      "tools": [],
+      "prompts": [],
+      "resources": [],
+      "permissions": [
+        {
+          "category": "file_read",
+          "confidence": "high",
+          "evidence": [
+            "read_file",
+            "path"
+          ],
+          "tool_name": "read_sensitive_files",
+          "target_type": "tool",
+          "target_name": "read_sensitive_files",
+          "rule_id": "MCP001",
+          "title": "File read capability",
+          "severity": "low",
+          "description": "Tool metadata indicates the server may read local files or file-like inputs.",
+          "remediation": "Review the configured paths and only keep this server enabled for trusted projects."
+        },
+        {
+          "category": "network",
+          "confidence": "high",
+          "evidence": [
+            "fetch",
+            "url"
+          ],
+          "tool_name": "fetch_url",
+          "target_type": "tool",
+          "target_name": "fetch_url",
+          "rule_id": "MCP003",
+          "title": "Network access capability",
+          "severity": "medium",
+          "description": "Tool metadata or config hints indicate the server may contact external services.",
+          "remediation": "Check the server source and destination service before exposing private workspace data."
+        },
+        {
+          "category": "exfiltration",
+          "confidence": "high",
+          "evidence": [
+            "send",
+            "webhook"
+          ],
+          "tool_name": "send_webhook",
+          "target_type": "tool",
+          "target_name": "send_webhook",
+          "rule_id": "MCP006",
+          "title": "Data exfiltration capability",
+          "severity": "high",
+          "description": "Tool metadata indicates the server may combine local data access with outbound transfer.",
+          "remediation": "Treat this as sensitive: verify the server owner, destination, and data handling path."
+        }
+      ],
+      "capability_findings": [],
+      "risk_score": {
+        "composite": 9.0,
+        "file_access": 8.0,
+        "network_access": 7.0,
+        "shell_execution": 0.0,
+        "destructive": 0.0,
+        "exfiltration": 9.0
+      },
+      "non_tool_risk": null,
+      "has_annotations": false,
+      "annotation_coverage": 0.0,
+      "injection_findings": [],
+      "ssrf_findings": [],
+      "drift_findings": [],
+      "trifecta_findings": [
+        {
+          "severity": "high",
+          "leg1_contributors": [
+            [
+              "file-network-exfil-srv",
+              "read_sensitive_files"
+            ]
+          ],
+          "leg2_contributors": [
+            [
+              "file-network-exfil-srv",
+              "fetch_url"
+            ]
+          ],
+          "leg3_contributors": [
+            [
+              "file-network-exfil-srv",
+              "send_webhook"
+            ]
+          ],
+          "description": "A single MCP server covers all three exfiltration legs: sensitive data access (file_read), untrusted-content exposure (network), and an outbound action capability (exfiltration, shell_execution, or file_write). This is the canonical agent-exfiltration attack surface — a malicious or compromised tool description could instruct an AI agent to read sensitive files, fetch attacker-controlled content, and transmit the data out.",
+          "is_fleet": false,
+          "rule_id": "MCP013",
+          "title": "Lethal trifecta: single-server toxic flow",
+          "remediation": "Audit this server's tools individually. Consider whether all three capability legs are strictly necessary. If any leg is optional, disable it or move it to a separate, isolated server. Apply a strict allowlist for outbound destinations and validate all file-read paths. Never expose this server to untrusted prompts or tool outputs."
+        }
+      ]
+    }
+  ],
+  "scan_duration_seconds": 0.1,
+  "config_health_findings": [],
+  "policy_result": null,
+  "fleet_trifecta_findings": []
+}
