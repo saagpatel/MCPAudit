@@ -1,7 +1,10 @@
 """Unit tests for config discoverers."""
 
+import json
 from pathlib import Path
 from unittest.mock import patch
+
+import pytest
 
 from mcp_audit.discovery import discover_all_configs
 from mcp_audit.discovery.claude_code import ClaudeCodeDiscoverer
@@ -87,6 +90,27 @@ class TestClaudeCodeDiscoverer:
         servers = discoverer.parse(config)
         # 2 global + 1 project-scoped
         assert len(servers) == 3
+
+    def test_config_paths_includes_repo_local_mcp_json(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        paths = ClaudeCodeDiscoverer().config_paths()
+        assert tmp_path / ".mcp.json" in paths
+
+    def test_parses_repo_local_mcp_json(self, tmp_path: Path) -> None:
+        # Claude Code's project-shared `.mcp.json` is a top-level mcpServers map.
+        config = tmp_path / ".mcp.json"
+        config.write_text(
+            json.dumps({"mcpServers": {"repo-fs": {"command": "npx", "args": ["-y", "srv", "."]}}}),
+            encoding="utf-8",
+        )
+        servers = ClaudeCodeDiscoverer().parse(config)
+        assert {s.name for s in servers} == {"repo-fs"}
+        repo_fs = servers[0]
+        assert repo_fs.client == ClientType.CLAUDE_CODE
+        assert repo_fs.command == "npx"
+        assert repo_fs.project_path is None
 
 
 # ---------------------------------------------------------------------------

@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2026-05-31
+
+### Added
+
+- Added a composite **GitHub Action** (`action.yml` at the repo root, usable as
+  `uses: saagpatel/MCPAudit@v1.9.0`) so CI adoption is a single step instead of a
+  hand-assembled install + scan + upload workflow. It runs config-only by default
+  (`skip-connect: "true"`), writes SARIF, and uploads it to GitHub code scanning
+  when `upload-sarif` is `true`. A failing `policy` exits `2` *after* the report is
+  written and SARIF is uploaded, so the gate is enforced without losing artifacts.
+  Inputs (`version`, `args`, `skip-connect`, `clients`, `config`, `policy`, `sarif`,
+  `json`, `upload-sarif`, `working-directory`) are passed to the command via
+  environment variables — never interpolated into the shell — so crafted input
+  values cannot inject commands. Outputs: `sarif-file`, `json-file`, `exit-code`.
+- Added a **pre-commit hook** (`.pre-commit-hooks.yaml`, `id: mcp-audit`) that audits
+  repo-local MCP configs on commit, config-only (never spawns or connects). It
+  triggers when a repo-root `.mcp.json` or a `.vscode/mcp.json` changes.
+- Claude Code discovery now also reads a repo-root `.mcp.json` (Claude Code's
+  project-shared config, top-level `mcpServers`) relative to the current working
+  directory, so repo-local servers are audited in CI and pre-commit runs. Absent
+  files are skipped, so this is a no-op outside a repo that commits `.mcp.json`.
+- Added a `Self Audit` workflow that dogfoods the composite action (`uses: ./`) on
+  every push, exercising the published install -> scan -> SARIF -> upload contract.
+
+### Fixed
+
+- `scan` now writes requested `--json` / `--sarif` / `--html` report files even
+  when no MCP servers are discovered (previously it returned early and wrote
+  nothing). CI consumers such as SARIF upload always receive a valid artifact.
+
 ## [1.8.0] - 2026-05-31
 
 ### Added

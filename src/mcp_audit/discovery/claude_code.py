@@ -81,7 +81,11 @@ class ClaudeCodeDiscoverer(ConfigDiscoverer):
     """Discovers MCP servers from Claude Code's ~/.claude.json config."""
 
     def config_paths(self) -> list[Path]:
-        return [Path.home() / ".claude.json"]
+        # ~/.claude.json holds global + per-project servers; a repo-root
+        # .mcp.json is Claude Code's project-shared config (top-level
+        # mcpServers), discovered relative to the current working directory so
+        # repo-local configs are audited in CI and pre-commit runs.
+        return [Path.home() / ".claude.json", Path.cwd() / ".mcp.json"]
 
     def parse(self, path: Path) -> list[ServerConfig]:
         config_path = str(path)

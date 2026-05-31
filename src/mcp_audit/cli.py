@@ -486,13 +486,6 @@ async def _run_scan(
     if config_only and not extra_config:
         raise click.ClickException("--config-only requires --config PATH.")
 
-    if not config_only and not discover_all_configs(None) and not extra_config:
-        # Quick early check without building override applier
-        servers = discover_all_configs(_parse_clients(clients))
-        if not servers:
-            console.print("[yellow]No MCP servers found.[/yellow]")
-            return
-
     cfg_path = Path(override_config_path) if override_config_path else DEFAULT_OVERRIDE_PATH
     override_applier = OverrideApplier(load_override_config(cfg_path))
     client_list = _parse_clients(clients)
@@ -524,14 +517,16 @@ async def _run_scan(
             raise SystemExit(1) from exc
         report.policy_result = evaluate_policy(report, policy)
 
-    if not report.audits:
-        console.print("[yellow]No MCP servers found.[/yellow]")
-        return
-
-    _render_config_health_warnings([audit.server for audit in report.audits])
-
     gen = ReportGenerator(console=console)
-    gen.render_terminal(report, verbose=verbose)
+
+    if report.audits:
+        _render_config_health_warnings([audit.server for audit in report.audits])
+        gen.render_terminal(report, verbose=verbose)
+    else:
+        # No servers discovered. Fall through so any requested report files are
+        # still written — CI consumers (e.g. SARIF upload) always need an
+        # artifact to ingest, even when the scan is empty.
+        console.print("[yellow]No MCP servers found.[/yellow]")
 
     if json_output:
         gen.render_json(report, Path(json_output))

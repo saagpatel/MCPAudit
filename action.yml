@@ -1,0 +1,178 @@
+name: MCPAudit
+description: >-
+  Audit locally configured MCP servers for permission, prompt-injection, SSRF,
+  lethal-trifecta, shadowing, escalation, and provenance risk. Emits SARIF/JSON
+  and can fail the build on a local policy gate.
+author: saagpatel
+branding:
+  icon: shield
+  color: purple
+
+inputs:
+  version:
+    description: >-
+      Exact mcp-permission-audit version to install (e.g. "1.9.0"). Defaults to
+      the latest published release.
+    required: false
+    default: ""
+  args:
+    description: >-
+      Extra arguments appended verbatim to `mcp-audit scan` (e.g.
+      "--inject-check --ssrf-check --trifecta-check").
+    required: false
+    default: ""
+  skip-connect:
+    description: >-
+      Run config-only without spawning or connecting to servers. Strongly
+      recommended in CI. Set to "false" only for trusted, network-isolated runs.
+    required: false
+    default: "true"
+  clients:
+    description: Comma-separated client filter (e.g. "claude_code,cursor").
+    required: false
+    default: ""
+  config:
+    description: >-
+      Audit a single explicit MCP config file (implies --config-only). Leave
+      empty to audit all discovered configs.
+    required: false
+    default: ""
+  policy:
+    description: >-
+      Path to a local policy YAML. A failing policy makes this action exit 2
+      (after reports are written and SARIF is uploaded).
+    required: false
+    default: ""
+  sarif:
+    description: >-
+      SARIF 2.1.0 output path. Set to "" to disable SARIF output.
+    required: false
+    default: "mcp-audit.sarif"
+  json:
+    description: JSON report output path. Empty disables JSON output.
+    required: false
+    default: ""
+  upload-sarif:
+    description: >-
+      Upload the SARIF file to GitHub code scanning (requires
+      `security-events: write`). Ignored when `sarif` is empty.
+    required: false
+    default: "true"
+  working-directory:
+    description: Directory to run the scan from (repo-local configs are discovered relative to it).
+    required: false
+    default: "."
+
+outputs:
+  sarif-file:
+    description: Path to the written SARIF report (empty if SARIF was disabled).
+    value: ${{ steps.scan.outputs.sarif-file }}
+  json-file:
+    description: Path to the written JSON report (empty if JSON was disabled).
+    value: ${{ steps.scan.outputs.json-file }}
+  exit-code:
+    description: The mcp-audit exit code (0 clean, 2 policy gate failed).
+    value: ${{ steps.scan.outputs.exit-code }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.x"
+
+    - name: Install MCPAudit
+      shell: bash
+      env:
+        MCP_AUDIT_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        if [ -n "${MCP_AUDIT_VERSION}" ]; then
+          python -m pip install --upgrade "mcp-permission-audit==${MCP_AUDIT_VERSION}"
+        else
+          python -m pip install --upgrade mcp-permission-audit
+        fi
+
+    - name: Audit MCP servers
+      id: scan
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        # Inputs are passed via env (never interpolated into the script) so
+        # crafted input values cannot inject shell commands.
+        SKIP_CONNECT: ${{ inputs.skip-connect }}
+        CLIENTS: ${{ inputs.clients }}
+        CONFIG: ${{ inputs.config }}
+        POLICY: ${{ inputs.policy }}
+        SARIF: ${{ inputs.sarif }}
+        JSON: ${{ inputs.json }}
+        EXTRA_ARGS: ${{ inputs.args }}
+      run: |
+        set -uo pipefail
+        scan_args=()
+        [ "${SKIP_CONNECT}" = "true" ] && scan_args+=(--skip-connect)
+        [ -n "${CLIENTS}" ] && scan_args+=(--clients "${CLIENTS}")
+        [ -n "${CONFIG}" ] && scan_args+=(--config "${CONFIG}" --config-only)
+        [ -n "${SARIF}" ] && scan_args+=(--sarif "${SARIF}")
+        [ -n "${JSON}" ] && scan_args+=(--json "${JSON}")
+        [ -n "${POLICY}" ] && scan_args+=(--policy "${POLICY}")
+        # `args` is trusted workflow-author input (the documented way to pass
+        # extra scan flags); intentional word-split so "--a --b" -> two argv.
+        # shellcheck disable=SC2206
+        extra=( ${EXTRA_ARGS} )
+
+        # Faithful, shell-reproducible echo of the actual argv.
+        printf '+ mcp-audit scan'; printf ' %q' "${scan_args[@]}" "${extra[@]}"; printf '\n'
+        mcp-audit scan "${scan_args[@]}" "${extra[@]}"
+        code=$?
+
+        {
+          echo "exit-code=${code}"
+          echo "sarif-file=${SARIF}"
+          echo "json-file=${JSON}"
+        } >> "${GITHUB_OUTPUT}"
+
+        # Do not fail here — let the upload step run first, then gate below.
+        exit 0
+
+    - name: Check for SARIF artifact
+      id: sarif-check
+      if: ${{ always() && inputs.upload-sarif == 'true' && inputs.sarif != '' }}
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        SARIF: ${{ inputs.sarif }}
+      run: |
+        set -uo pipefail
+        if [ -f "${SARIF}" ]; then
+          echo "exists=true" >> "${GITHUB_OUTPUT}"
+        else
+          echo "exists=false" >> "${GITHUB_OUTPUT}"
+          echo "::warning title=MCPAudit::SARIF file '${SARIF}' was not produced; skipping upload."
+        fi
+
+    - name: Upload SARIF to code scanning
+      if: ${{ always() && steps.sarif-check.outputs.exists == 'true' }}
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: ${{ steps.scan.outputs.sarif-file }}
+
+    - name: Enforce scan result
+      if: ${{ always() }}
+      shell: bash
+      env:
+        CODE: ${{ steps.scan.outputs.exit-code }}
+      run: |
+        set -uo pipefail
+        # Fail closed: a missing exit code means the scan step never recorded
+        # its result (e.g. GITHUB_OUTPUT write failed), so do not green the gate.
+        if [ -z "${CODE}" ]; then
+          echo "::error title=MCPAudit::mcp-audit recorded no exit code; failing closed."
+          exit 1
+        fi
+        if [ "${CODE}" != "0" ]; then
+          echo "::error title=MCPAudit::mcp-audit exited ${CODE} (policy gate failed or scan error)."
+          exit "${CODE}"
+        fi
+        echo "MCPAudit scan passed (exit 0)."

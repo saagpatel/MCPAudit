@@ -1,0 +1,22 @@
+# pre-commit hook definitions for MCPAudit.
+# Usage in a consuming repo's .pre-commit-config.yaml:
+#
+#   repos:
+#     - repo: https://github.com/saagpatel/MCPAudit
+#       rev: v1.9.0
+#       hooks:
+#         - id: mcp-audit
+#
+# The hook triggers when a repo-local MCP config changes and audits it
+# config-only (never spawns or connects to servers). Discovery is relative to
+# the repo root, so it covers Claude Code's `.mcp.json` and VS Code's
+# `.vscode/mcp.json`.
+- id: mcp-audit
+  name: Audit MCP server configs
+  description: >-
+    Scan repo-local MCP server configuration files for permission,
+    prompt-injection, and config-health risks. Config-only; never connects.
+  entry: mcp-audit scan --skip-connect --inject-check
+  language: python
+  files: (^|/)(\.mcp\.json|\.vscode/mcp\.json)$
+  pass_filenames: false
