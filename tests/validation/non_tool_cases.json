@@ -51,7 +51,8 @@
 				"pattern_name": "role_injection"
 			}
 		],
-		"expect_non_tool_risk": true
+		"expect_non_tool_risk": true,
+		"expected_non_tool_risk": 8.95
 	},
 	{
 		"server_name": "local-file-resource",
@@ -92,7 +93,8 @@
 			}
 		],
 		"expected_injections": [],
-		"expect_non_tool_risk": true
+		"expect_non_tool_risk": true,
+		"expected_non_tool_risk": 5.55
 	},
 	{
 		"server_name": "github-workspace",
@@ -134,7 +136,8 @@
 				"pattern_name": "credential_harvest"
 			}
 		],
-		"expect_non_tool_risk": true
+		"expect_non_tool_risk": true,
+		"expected_non_tool_risk": 3.25
 	},
 	{
 		"server_name": "postgres-analytics",
@@ -175,7 +178,8 @@
 			}
 		],
 		"expected_injections": [],
-		"expect_non_tool_risk": true
+		"expect_non_tool_risk": true,
+		"expected_non_tool_risk": 7.2
 	},
 	{
 		"server_name": "slack-thread-export",
@@ -216,7 +220,8 @@
 			}
 		],
 		"expected_injections": [],
-		"expect_non_tool_risk": true
+		"expect_non_tool_risk": true,
+		"expected_non_tool_risk": 5.4
 	},
 	{
 		"server_name": "calendar-scheduler",
@@ -262,7 +267,8 @@
 			}
 		],
 		"expected_injections": [],
-		"expect_non_tool_risk": true
+		"expect_non_tool_risk": true,
+		"expected_non_tool_risk": 3.6
 	},
 	{
 		"server_name": "container-registry",
@@ -303,7 +309,8 @@
 			}
 		],
 		"expected_injections": [],
-		"expect_non_tool_risk": true
+		"expect_non_tool_risk": true,
+		"expected_non_tool_risk": 3.6
 	},
 	{
 		"server_name": "vault-rotation",
@@ -357,7 +364,8 @@
 				"pattern_name": "prompt_leak"
 			}
 		],
-		"expect_non_tool_risk": true
+		"expect_non_tool_risk": true,
+		"expected_non_tool_risk": 8.95
 	},
 	{
 		"server_name": "benign-glossary",
@@ -449,8 +457,7 @@
 		],
 		"expected_injections": [],
 		"expect_non_tool_risk": true,
-		"expected_non_tool_risk_min": 4.5,
-		"expected_non_tool_risk_max": 6.0
+		"expected_non_tool_risk": 4.8
 	},
 	{
 		"server_name": "browser-session",
@@ -492,8 +499,7 @@
 		],
 		"expected_injections": [],
 		"expect_non_tool_risk": true,
-		"expected_non_tool_risk_min": 3.5,
-		"expected_non_tool_risk_max": 5.0
+		"expected_non_tool_risk": 4.05
 	},
 	{
 		"server_name": "resource-injection-catalog",
@@ -535,8 +541,7 @@
 			}
 		],
 		"expect_non_tool_risk": true,
-		"expected_non_tool_risk_min": 7.0,
-		"expected_non_tool_risk_max": 7.0
+		"expected_non_tool_risk": 7.0
 	},
 	{
 		"server_name": "feature-flag-admin",
@@ -572,7 +577,8 @@
 				"pattern_name": "system_override"
 			}
 		],
-		"expect_non_tool_risk": true
+		"expect_non_tool_risk": true,
+		"expected_non_tool_risk": 9.55
 	},
 	{
 		"server_name": "support-macro-library",
@@ -601,7 +607,8 @@
 				"pattern_name": "hidden_directive"
 			}
 		],
-		"expect_non_tool_risk": true
+		"expect_non_tool_risk": true,
+		"expected_non_tool_risk": 7.0
 	},
 	{
 		"server_name": "newsletter-composer",
@@ -637,6 +644,7 @@
 				"pattern_name": "unicode_direction"
 			}
 		],
-		"expect_non_tool_risk": true
+		"expect_non_tool_risk": true,
+		"expected_non_tool_risk": 5.95
 	}
 ]
