@@ -33,6 +33,7 @@ class PolicyConfig:
     fail_on_trifecta: bool = False
     fail_on_shadowing: bool = False
     fail_on_escalation: bool = False
+    fail_on_provenance: bool = False
     required_pin_servers: list[str] = field(default_factory=list)
     denied_permissions: list[PermissionCategory] = field(default_factory=list)
     max_risk: float | None = None
@@ -76,6 +77,7 @@ def load_policy(path: Path) -> PolicyConfig:
     trifecta = bool(fail_on.get("trifecta", False))
     shadowing = bool(fail_on.get("shadowing", False))
     escalation = bool(fail_on.get("escalation", False))
+    provenance = bool(fail_on.get("provenance", False))
 
     permissions = [_permission(value) for value in _sequence(deny.get("permissions"), "deny.permissions")]
 
@@ -96,6 +98,7 @@ def load_policy(path: Path) -> PolicyConfig:
         fail_on_trifecta=trifecta,
         fail_on_shadowing=shadowing,
         fail_on_escalation=escalation,
+        fail_on_provenance=provenance,
         required_pin_servers=[str(value) for value in _sequence(pins.get("servers"), "require.pins.servers")],
         denied_permissions=permissions,
         max_risk=max_risk,
@@ -329,6 +332,21 @@ def evaluate_policy(
                             f"({escalation_finding.kind.value}) on tool "
                             f"'{escalation_finding.tool_name}' of server '{server_name}' is "
                             f"{escalation_finding.severity.value} severity."
+                        ),
+                    )
+                )
+
+        if policy.fail_on_provenance:
+            for provenance_finding in audit.provenance_findings:
+                violations.append(
+                    PolicyViolation(
+                        rule="fail_on.provenance",
+                        server_name=server_name,
+                        severity=provenance_finding.severity.value,
+                        message=(
+                            f"{provenance_finding.rule_id} provenance finding "
+                            f"({provenance_finding.kind.value}) on server '{server_name}' is "
+                            f"{provenance_finding.severity.value} severity."
                         ),
                     )
                 )

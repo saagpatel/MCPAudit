@@ -301,6 +301,42 @@ def _build_mcp_server() -> Any:
         return json.dumps(all_findings, indent=2)
 
     @app.tool()  # type: ignore[untyped-decorator]
+    async def get_provenance_findings() -> str:
+        """Return launch-config / provenance drift findings vs the pin baseline. Returns JSON list.
+
+        Requires a pin baseline with a config snapshot (run `mcp-audit pin` first); without one
+        the list is empty.
+        """
+        from mcp_audit.cli import _run_scan_core
+        from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
+
+        override_applier = OverrideApplier(load_override_config(DEFAULT_OVERRIDE_PATH))
+        report = await _run_scan_core(
+            skip_connect=False,
+            clients=None,
+            timeout=10,
+            extra_config=None,
+            override_applier=override_applier,
+            provenance_check=True,
+        )
+        all_findings = []
+        for audit in report.audits:
+            for f in audit.provenance_findings:
+                all_findings.append(
+                    {
+                        "server": audit.server.name,
+                        "kind": f.kind.value,
+                        "severity": f.severity.value,
+                        "rule_id": f.rule_id,
+                        "baseline": f.baseline,
+                        "current": f.current,
+                        "gained_flags": f.gained_flags,
+                        "description": f.description,
+                    }
+                )
+        return json.dumps(all_findings, indent=2)
+
+    @app.tool()  # type: ignore[untyped-decorator]
     def list_discovered_servers() -> str:
         """Return names and clients of all discovered MCP servers. Returns JSON list."""
         servers = discover_all_configs(None)
