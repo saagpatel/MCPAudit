@@ -1,0 +1,36 @@
+name: Self Audit
+
+# Dogfoods the composite action in this repo (`uses: ./`) so the published
+# action contract is exercised on every push: install -> scan -> SARIF ->
+# upload to code scanning.
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: self-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  self-audit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Audit MCP servers (local action)
+        uses: ./
+        with:
+          args: --inject-check --ssrf-check --trifecta-check --shadow-check
+          sarif: mcp-audit.sarif
+          upload-sarif: "true"

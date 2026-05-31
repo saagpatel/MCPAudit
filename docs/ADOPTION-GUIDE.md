@@ -93,6 +93,49 @@ starting local MCP servers is not appropriate.
 A complete GitHub code-scanning workflow example is available at
 `examples/ci/github-code-scanning.yml`.
 
+## GitHub Action (one-line)
+
+For the turnkey path, use the composite action published from this repo
+instead of hand-assembling install + scan + upload steps:
+
+```yaml
+permissions:
+  contents: read
+  security-events: write
+steps:
+  - uses: actions/checkout@v6
+  - uses: saagpatel/MCPAudit@v1.9.0
+    with:
+      args: --inject-check --ssrf-check --trifecta-check
+      # sarif defaults to mcp-audit.sarif and uploads to code scanning
+      # policy: examples/policies/balanced-team-ci.yaml  # gate the build (exit 2)
+```
+
+The action runs config-only by default (`skip-connect: "true"`), writes SARIF,
+and uploads it to GitHub code scanning when `upload-sarif` is `true` (the
+default). A failing `policy` makes the action exit `2` after the report is
+written and uploaded, so the gate is enforced without losing the report.
+Inputs are passed to the underlying command through environment variables, not
+interpolated into the shell, so crafted input values cannot inject commands.
+
+Available inputs: `version`, `args`, `skip-connect`, `clients`, `config`,
+`policy`, `sarif`, `json`, `upload-sarif`, `working-directory`. Outputs:
+`sarif-file`, `json-file`, `exit-code`.
+
+## Pre-commit Hook
+
+Audit repo-local MCP configs on every commit. The hook is config-only (it never
+spawns or connects to servers) and triggers when a repo-root `.mcp.json` or a
+`.vscode/mcp.json` changes:
+
+```yaml
+repos:
+  - repo: https://github.com/saagpatel/MCPAudit
+    rev: v1.9.0
+    hooks:
+      - id: mcp-audit
+```
+
 ## Pin Baselines
 
 Use pins after a server set is reviewed:
