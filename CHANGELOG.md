@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0] - 2026-05-31
+
+### Added
+
+- `pin --refresh <server>` now surfaces capability-escalation (`MCP018`/`MCP019`)
+  and launch-config/provenance (`MCP020`–`MCP023`) deltas vs the pin baseline in
+  the same review, alongside schema drift — shown **unconditionally** (no
+  `--escalation-check` / `--provenance-check` needed), since a refresh is the
+  review-before-bless moment where a rug-pull or launch swap must not slip
+  through. Both the terminal review and `--json` output gain `escalation` and
+  `provenance` sections.
+
 ## [1.9.0] - 2026-05-31
 
 ### Added
