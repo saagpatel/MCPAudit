@@ -40,13 +40,11 @@ def test_non_tool_calibration_cases() -> None:
         if case["expect_non_tool_risk"]:
             assert non_tool_risk is not None, f"{case['server_name']} expected non_tool_risk"
             assert non_tool_risk.composite > 0.0
-            if "expected_non_tool_risk_min" in case:
-                assert non_tool_risk.composite >= case["expected_non_tool_risk_min"], (
-                    f"{case['server_name']} non_tool_risk below expected range"
-                )
-            if "expected_non_tool_risk_max" in case:
-                assert non_tool_risk.composite <= case["expected_non_tool_risk_max"], (
-                    f"{case['server_name']} non_tool_risk above expected range"
+            if "expected_non_tool_risk" in case:
+                actual = round(non_tool_risk.composite, 2)
+                assert actual == case["expected_non_tool_risk"], (
+                    f"{case['server_name']} non_tool_risk composite {actual} "
+                    f"drifted from anchored {case['expected_non_tool_risk']}"
                 )
         else:
             assert non_tool_risk is None, f"{case['server_name']} expected no non_tool_risk"
