@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   coverage, and `docs/SSRF-DETECTION.md`.
 - Added a dedicated `fail_on.ssrf` policy gate (opt-in; not covered by the broad
   `fail_on.severity` shortcut, so existing policy files keep their behavior).
+- Extended SSRF resource detection to non-web remote schemes (git, s3, gs, az,
+  azure, mongodb, mysql, postgres, redis), aligned with the resource permission
+  analyzer, so a caller-templated database/cache/bucket/git host is flagged like
+  a templated web host. Added the `ssrf-aware-ci.yaml` example policy.
 
 ## [1.5.5] - 2026-05-10
 

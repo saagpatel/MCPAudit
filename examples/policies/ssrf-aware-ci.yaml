@@ -1,0 +1,22 @@
+# CI gate for teams that want to block SSRF-prone MCP servers.
+# Run with: mcp-audit scan --ssrf-check --json mcp-audit.json --policy this.yaml
+#
+# SSRF gating is opt-in: the broad fail_on.severity shortcut does NOT cover it,
+# so it must be requested explicitly via fail_on.ssrf. Pair with --ssrf-check on
+# the scan command or no ssrf_findings are produced to gate on.
+fail_on:
+  permissions: high
+  injection: medium
+  ssrf: high
+  config_health: medium
+  drift: true
+deny:
+  permissions:
+    - shell_execution
+max_risk: 8
+servers:
+  # A server whose whole job is fetching caller-supplied URLs can be held to a
+  # stricter SSRF bar than the global default.
+  webproxy:
+    fail_on:
+      ssrf: medium
