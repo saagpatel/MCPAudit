@@ -13,6 +13,7 @@
       "servers_connected",
       "servers_discovered",
       "servers_failed",
+      "shadowing_findings",
       "total_tools"
     ],
     "audit_count": 1,
@@ -49,6 +50,7 @@
     "ssrf_targets": [],
     "trifecta_findings_count": 0,
     "fleet_trifecta_findings_count": 0,
+    "shadowing_findings_count": 0,
     "sarif_rule_ids": [
       "MCP003"
     ],
@@ -70,6 +72,7 @@
       "servers_connected",
       "servers_discovered",
       "servers_failed",
+      "shadowing_findings",
       "total_tools"
     ],
     "audit_count": 1,
@@ -101,6 +104,7 @@
     "ssrf_targets": [],
     "trifecta_findings_count": 0,
     "fleet_trifecta_findings_count": 0,
+    "shadowing_findings_count": 0,
     "sarif_rule_ids": [],
     "sarif_target_types": []
   },
@@ -118,6 +122,7 @@
       "servers_connected",
       "servers_discovered",
       "servers_failed",
+      "shadowing_findings",
       "total_tools"
     ],
     "audit_count": 1,
@@ -154,6 +159,7 @@
     "ssrf_targets": [],
     "trifecta_findings_count": 0,
     "fleet_trifecta_findings_count": 0,
+    "shadowing_findings_count": 0,
     "sarif_rule_ids": [
       "MCP004",
       "MCP010"
@@ -176,6 +182,7 @@
       "servers_connected",
       "servers_discovered",
       "servers_failed",
+      "shadowing_findings",
       "total_tools"
     ],
     "audit_count": 1,
@@ -221,6 +228,7 @@
     "ssrf_targets": [],
     "trifecta_findings_count": 0,
     "fleet_trifecta_findings_count": 0,
+    "shadowing_findings_count": 0,
     "sarif_rule_ids": [
       "MCP001",
       "MCP003",
@@ -245,6 +253,7 @@
       "servers_connected",
       "servers_discovered",
       "servers_failed",
+      "shadowing_findings",
       "total_tools"
     ],
     "audit_count": 1,
@@ -291,6 +300,7 @@
     "ssrf_targets": [],
     "trifecta_findings_count": 0,
     "fleet_trifecta_findings_count": 0,
+    "shadowing_findings_count": 0,
     "sarif_rule_ids": [
       "MCP001",
       "MCP004",
@@ -301,6 +311,59 @@
       "resource",
       "tool"
     ]
+  },
+  "shadowing_report.json": {
+    "top_level_keys": [
+      "audits",
+      "config_health_findings",
+      "fleet_trifecta_findings",
+      "high_risk_servers",
+      "hostname",
+      "os_platform",
+      "policy_result",
+      "scan_duration_seconds",
+      "scan_timestamp",
+      "servers_connected",
+      "servers_discovered",
+      "servers_failed",
+      "shadowing_findings",
+      "total_tools"
+    ],
+    "audit_count": 2,
+    "audit_keys": [
+      "annotation_coverage",
+      "capability_findings",
+      "connection_error",
+      "connection_status",
+      "drift_findings",
+      "has_annotations",
+      "injection_findings",
+      "non_tool_risk",
+      "permissions",
+      "prompts",
+      "resources",
+      "risk_score",
+      "server",
+      "ssrf_findings",
+      "tools",
+      "trifecta_findings"
+    ],
+    "connection_statuses": [
+      "connected",
+      "connected"
+    ],
+    "permission_targets": [],
+    "capability_targets": [],
+    "injection_targets": [],
+    "drift_targets": [],
+    "ssrf_targets": [],
+    "trifecta_findings_count": 0,
+    "fleet_trifecta_findings_count": 0,
+    "shadowing_findings_count": 1,
+    "sarif_rule_ids": [
+      "MCP015"
+    ],
+    "sarif_target_types": []
   },
   "ssrf_report.json": {
     "top_level_keys": [
@@ -316,6 +379,7 @@
       "servers_connected",
       "servers_discovered",
       "servers_failed",
+      "shadowing_findings",
       "total_tools"
     ],
     "audit_count": 1,
@@ -361,6 +425,7 @@
     ],
     "trifecta_findings_count": 0,
     "fleet_trifecta_findings_count": 0,
+    "shadowing_findings_count": 0,
     "sarif_rule_ids": [
       "MCP003",
       "MCP011",
@@ -384,6 +449,7 @@
       "servers_connected",
       "servers_discovered",
       "servers_failed",
+      "shadowing_findings",
       "total_tools"
     ],
     "audit_count": 1,
@@ -424,6 +490,7 @@
     "ssrf_targets": [],
     "trifecta_findings_count": 1,
     "fleet_trifecta_findings_count": 0,
+    "shadowing_findings_count": 0,
     "sarif_rule_ids": [
       "MCP001",
       "MCP006",

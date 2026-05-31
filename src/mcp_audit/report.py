@@ -17,6 +17,7 @@ from mcp_audit.models import (
     InjectionSeverity,
     PermissionFinding,
     ServerAudit,
+    ShadowingSeverity,
     SsrfSeverity,
     TrifectaSeverity,
 )
@@ -90,6 +91,7 @@ class ReportGenerator:
         self._render_injection_warnings(report)
         self._render_ssrf_warnings(report)
         self._render_trifecta_warnings(report)
+        self._render_shadowing_warnings(report)
         self._render_capability_warnings(report)
         self._render_drift_warnings(report)
         self._render_policy_result(report)
@@ -233,6 +235,39 @@ class ReportGenerator:
                     f"[{sev_style}]{f.remediation}[/{sev_style}]",
                 )
             self._console.print(tbl2)
+
+    def _render_shadowing_warnings(self, report: AuditReport) -> None:
+        """Print cross-server tool-name shadowing findings if any were found."""
+        findings = list(report.shadowing_findings)
+        if not findings:
+            return
+
+        self._console.print()
+        self._console.rule("[bold red]Tool-Name Shadowing[/bold red]")
+        tbl = Table(show_lines=True)
+        tbl.add_column("Rule ID", style="bold red", no_wrap=True)
+        tbl.add_column("Kind", style="cyan")
+        tbl.add_column("Severity")
+        tbl.add_column("Canonical Name", style="bold")
+        tbl.add_column("Colliding Servers / Tools", overflow="fold")
+        tbl.add_column("Suggested Action", overflow="fold")
+
+        for f in findings:
+            sev_style = {
+                ShadowingSeverity.HIGH: "bold red",
+                ShadowingSeverity.MEDIUM: "yellow",
+                ShadowingSeverity.LOW: "dim",
+            }.get(f.severity, "")
+            pairs = "; ".join(f"{srv}/{tool}" for srv, tool in f.collisions)
+            tbl.add_row(
+                f.rule_id,
+                f.kind.value,
+                f"[{sev_style}]{f.severity.value}[/{sev_style}]",
+                f.name,
+                pairs,
+                f.remediation,
+            )
+        self._console.print(tbl)
 
     def _render_drift_warnings(self, report: AuditReport) -> None:
         """Print tool schema drift warnings if any were found."""

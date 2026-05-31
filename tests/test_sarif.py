@@ -21,7 +21,14 @@ from mcp_audit.models import (
     RiskScore,
     ServerAudit,
 )
-from mcp_audit.sarif import _INJECTION_RULE_IDS, _RULE_IDS, _SSRF_RULE_IDS, _TRIFECTA_RULE_IDS, SarifGenerator
+from mcp_audit.sarif import (
+    _INJECTION_RULE_IDS,
+    _RULE_IDS,
+    _SHADOWING_RULE_IDS,
+    _SSRF_RULE_IDS,
+    _TRIFECTA_RULE_IDS,
+    SarifGenerator,
+)
 from tests.conftest import make_server_config
 
 
@@ -93,6 +100,7 @@ class TestSarifStructure:
             | set(_INJECTION_RULE_IDS.values())
             | set(_SSRF_RULE_IDS.values())
             | set(_TRIFECTA_RULE_IDS.values())
+            | set(_SHADOWING_RULE_IDS.values())
             | {"MCP009", "MCP010"}
         )
         assert rule_ids == expected

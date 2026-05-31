@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from mcp_audit.models import InjectionSeverity, PermissionCategory, SsrfSeverity, TrifectaSeverity
+from mcp_audit.models import (
+    InjectionSeverity,
+    PermissionCategory,
+    ShadowingKind,
+    SsrfSeverity,
+    TrifectaSeverity,
+)
 
 
 @dataclass(frozen=True)
@@ -195,3 +201,55 @@ def ssrf_metadata(severity: SsrfSeverity) -> FindingMetadata:
 def trifecta_metadata(severity: TrifectaSeverity) -> FindingMetadata:
     """Return stable metadata for a trifecta severity."""
     return TRIFECTA_FINDINGS[severity]
+
+
+SHADOWING_FINDINGS: dict[ShadowingKind, FindingMetadata] = {
+    ShadowingKind.EXACT: FindingMetadata(
+        rule_id="MCP015",
+        title="Exact tool-name collision across servers",
+        severity="high",
+        description=(
+            "Two or more MCP servers expose a tool with the identical name.  An AI agent "
+            "routing by tool name could be tricked into calling the wrong (possibly malicious) "
+            "server.  The first-configured server is presumed legitimate; later ones are suspect."
+        ),
+        remediation=(
+            "Ensure each server namespaces its tools uniquely (e.g. github_search, slack_search). "
+            "Remove or rename the duplicate tool on the secondary server."
+        ),
+    ),
+    ShadowingKind.NORMALIZED: FindingMetadata(
+        rule_id="MCP016",
+        title="Normalised tool-name collision across servers",
+        severity="medium",
+        description=(
+            "Two or more MCP servers expose tools whose names are identical after case-folding "
+            "and separator removal (e.g. read_file vs readFile vs read-file).  An AI agent "
+            "may route ambiguously between them."
+        ),
+        remediation=(
+            "Adopt a consistent namespace prefix for each server's tools so normalised forms "
+            "remain distinct (e.g. fs_read_file vs db_read_file)."
+        ),
+    ),
+    ShadowingKind.HOMOGLYPH: FindingMetadata(
+        rule_id="MCP017",
+        title="Homoglyph tool-name collision across servers",
+        severity="high",
+        description=(
+            "A tool name on one server contains non-ASCII confusable characters whose ASCII "
+            "skeleton matches a tool name on another server (e.g. Cyrillic 'е' mimicking 'e'). "
+            "This is a deliberate spoofing signal — the malicious server shadows the legitimate "
+            "one by registering a visually identical but byte-distinct tool name."
+        ),
+        remediation=(
+            "Remove the server with the non-ASCII tool name unless it is explicitly trusted. "
+            "Report the finding to the server author if the homoglyph appears accidental."
+        ),
+    ),
+}
+
+
+def shadowing_metadata(kind: ShadowingKind) -> FindingMetadata:
+    """Return stable metadata for a shadowing kind."""
+    return SHADOWING_FINDINGS[kind]

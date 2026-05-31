@@ -13,6 +13,7 @@ not a universal security baseline.
 | `browser-automation-ci.yaml` | Browser automation MCP servers | Allows expected browser network behavior while blocking shell/destructive behavior. |
 | `ssrf-aware-ci.yaml` | Teams gating SSRF-prone servers | Adds an opt-in `fail_on.ssrf` gate (global high, per-server medium) on top of the usual permission/injection bars. Requires `--ssrf-check`. |
 | `trifecta-aware-ci.yaml` | Teams gating lethal-trifecta servers | Adds an opt-in `fail_on.trifecta` gate for per-server (HIGH/MCP013) and fleet-level advisory (MEDIUM/MCP014) findings. Requires `--trifecta-check`. |
+| `shadowing-aware-ci.yaml` | Teams gating tool-name shadowing | Adds an opt-in `fail_on.shadowing` gate for exact (MCP015), normalised (MCP016), and homoglyph (MCP017) cross-server tool-name collisions. Requires `--shadow-check`. |
 
 ## Selection Guide
 
@@ -44,6 +45,14 @@ that assemble the lethal-trifecta attack surface. Run with `--trifecta-check`:
 
 ```bash
 mcp-audit scan --trifecta-check --json mcp-audit.json --policy examples/policies/trifecta-aware-ci.yaml
+```
+
+Use `shadowing-aware-ci.yaml` when you want to fail CI if any two servers
+expose colliding tool names (exact, case/separator-normalised, or homoglyph).
+Run with `--shadow-check`:
+
+```bash
+mcp-audit scan --shadow-check --json mcp-audit.json --policy examples/policies/shadowing-aware-ci.yaml
 ```
 
 ## Scoring And Config-Health Note

@@ -237,6 +237,35 @@ def _build_mcp_server() -> Any:
         return json.dumps(all_findings, indent=2)
 
     @app.tool()  # type: ignore[untyped-decorator]
+    async def get_shadowing_findings() -> str:
+        """Return all cross-server tool-name shadowing findings. Returns JSON list."""
+        from mcp_audit.cli import _run_scan_core
+        from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
+
+        override_applier = OverrideApplier(load_override_config(DEFAULT_OVERRIDE_PATH))
+        report = await _run_scan_core(
+            skip_connect=False,
+            clients=None,
+            timeout=10,
+            extra_config=None,
+            override_applier=override_applier,
+            shadow_check=True,
+        )
+        all_findings = []
+        for f in report.shadowing_findings:
+            all_findings.append(
+                {
+                    "kind": f.kind.value,
+                    "severity": f.severity.value,
+                    "rule_id": f.rule_id,
+                    "canonical_name": f.name,
+                    "collisions": f.collisions,
+                    "description": f.description,
+                }
+            )
+        return json.dumps(all_findings, indent=2)
+
+    @app.tool()  # type: ignore[untyped-decorator]
     def list_discovered_servers() -> str:
         """Return names and clients of all discovered MCP servers. Returns JSON list."""
         servers = discover_all_configs(None)
