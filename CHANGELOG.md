@@ -11,11 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added optional lethal-trifecta / toxic-flow detection (`scan --trifecta-check`)
   that identifies when MCP servers cover the canonical agent-exfiltration attack
-  surface: sensitive data access (`file_read`), untrusted-content exposure
-  (`network`), and an outbound action capability (`exfiltration`, `shell_execution`,
-  or `file_write`). The check is static and permission-inference-derived: it
-  re-uses findings already computed by the scanner and never issues network
-  requests or reads credential values.
+  surface with three calibrated legs: (1) sensitive data access (`file_read`
+  permission), (2) untrusted-content ingestion (SSRF-detector-flagged tool/resource
+  OR a tool name/description carrying a fetch verb — NOT the broad `network`
+  category, which fires on ~86% of servers and is non-discriminating), and (3)
+  exfiltration capability (`exfiltration` permission only — `shell_execution` and
+  `file_write` alone do not enable exfiltration and are excluded). The check is
+  static and inference-derived: it re-uses findings already computed by the scanner
+  and never issues network requests or reads credential values.
 - Two finding tiers: per-server (HIGH, `MCP013`) when a single server covers all
   three legs, and fleet-level advisory (MEDIUM, `MCP014`) when the trifecta is
   only assembled by combining multiple servers. Fleet findings are non-redundant:

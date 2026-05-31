@@ -23,7 +23,26 @@
       },
       "connection_status": "connected",
       "connection_error": null,
-      "tools": [],
+      "tools": [
+        {
+          "name": "read_sensitive_files",
+          "description": "Reads local files.",
+          "input_schema": null,
+          "annotations": null
+        },
+        {
+          "name": "fetch_remote_content",
+          "description": "Fetches a remote document from a URL.",
+          "input_schema": null,
+          "annotations": null
+        },
+        {
+          "name": "send_webhook",
+          "description": "Posts data to an external webhook.",
+          "input_schema": null,
+          "annotations": null
+        }
+      ],
       "prompts": [],
       "resources": [],
       "permissions": [
@@ -42,22 +61,6 @@
           "severity": "low",
           "description": "Tool metadata indicates the server may read local files or file-like inputs.",
           "remediation": "Review the configured paths and only keep this server enabled for trusted projects."
-        },
-        {
-          "category": "network",
-          "confidence": "high",
-          "evidence": [
-            "fetch",
-            "url"
-          ],
-          "tool_name": "fetch_url",
-          "target_type": "tool",
-          "target_name": "fetch_url",
-          "rule_id": "MCP003",
-          "title": "Network access capability",
-          "severity": "medium",
-          "description": "Tool metadata or config hints indicate the server may contact external services.",
-          "remediation": "Check the server source and destination service before exposing private workspace data."
         },
         {
           "category": "exfiltration",
@@ -103,7 +106,7 @@
           "leg2_contributors": [
             [
               "file-network-exfil-srv",
-              "fetch_url"
+              "fetch_remote_content"
             ]
           ],
           "leg3_contributors": [

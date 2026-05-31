@@ -28,21 +28,25 @@ from mcp_audit.models import (
     TrifectaFinding,
     TrifectaSeverity,
 )
+from mcp_audit.ssrf import SsrfDetector, _has_fetch_verb
 from mcp_audit.taxonomy import trifecta_metadata
 
 # ---------------------------------------------------------------------------
-# Leg category sets
+# Leg definitions
 # ---------------------------------------------------------------------------
+#
+# Leg 1 and Leg 3 are derived from inferred permission categories. Leg 2 is
+# NOT a category — "exposure to untrusted content" means the server actively
+# *ingests* external content it does not control. Plain NETWORK capability is
+# near-universal across MCP servers and is therefore useless as a signal (it
+# fires on ~86% of real servers and never lets the fleet-level pass trigger).
+# Instead, Leg 2 reuses the SSRF detector's caller-controlled-fetch signal plus
+# fetch-verb tool names — the same notion of "this tool pulls in remote content".
 
 _LEG1_CATEGORIES: frozenset[PermissionCategory] = frozenset({PermissionCategory.FILE_READ})
-_LEG2_CATEGORIES: frozenset[PermissionCategory] = frozenset({PermissionCategory.NETWORK})
-_LEG3_CATEGORIES: frozenset[PermissionCategory] = frozenset(
-    {
-        PermissionCategory.EXFILTRATION,
-        PermissionCategory.SHELL_EXEC,
-        PermissionCategory.FILE_WRITE,
-    }
-)
+_LEG3_CATEGORIES: frozenset[PermissionCategory] = frozenset({PermissionCategory.EXFILTRATION})
+
+_ssrf_detector = SsrfDetector()
 
 
 def _categories_for_audit(audit: ServerAudit) -> set[PermissionCategory]:
@@ -53,6 +57,30 @@ def _categories_for_audit(audit: ServerAudit) -> set[PermissionCategory]:
     for cf in audit.capability_findings:
         cats.add(cf.category)
     return cats
+
+
+def _ingestion_contributors(audit: ServerAudit) -> list[tuple[str, str]]:
+    """Return (server_name, target) pairs for tools/resources that ingest untrusted content.
+
+    A target qualifies if the SSRF detector flags it (caller-controlled remote
+    fetch) or its tool name/description carries a fetch verb. This is Leg 2 of
+    the trifecta — genuine untrusted-content ingestion, not mere NETWORK reach.
+    """
+    server_name = audit.server.name
+    seen: set[str] = set()
+    result: list[tuple[str, str]] = []
+
+    for finding in _ssrf_detector.scan_server(audit.tools, audit.resources):
+        if finding.target_name not in seen:
+            seen.add(finding.target_name)
+            result.append((server_name, finding.target_name))
+
+    for tool in audit.tools:
+        if tool.name not in seen and _has_fetch_verb(tool.name, tool.description):
+            seen.add(tool.name)
+            result.append((server_name, tool.name))
+
+    return result
 
 
 def _tools_for_category(
@@ -86,17 +114,12 @@ class TrifectaAnalyzer:
         One finding per server (severity HIGH). Records which tool(s) satisfy
         each leg so the operator can reason about the attack surface.
         """
-        cats = _categories_for_audit(audit)
-        has_leg1 = bool(cats & _LEG1_CATEGORIES)
-        has_leg2 = bool(cats & _LEG2_CATEGORIES)
-        has_leg3 = bool(cats & _LEG3_CATEGORIES)
-
-        if not (has_leg1 and has_leg2 and has_leg3):
-            return []
-
         leg1 = _tools_for_category(audit, _LEG1_CATEGORIES)
-        leg2 = _tools_for_category(audit, _LEG2_CATEGORIES)
+        leg2 = _ingestion_contributors(audit)
         leg3 = _tools_for_category(audit, _LEG3_CATEGORIES)
+
+        if not (leg1 and leg2 and leg3):
+            return []
 
         meta = trifecta_metadata(TrifectaSeverity.HIGH)
         return [
@@ -140,9 +163,10 @@ class TrifectaAnalyzer:
             if cats & _LEG1_CATEGORIES:
                 fleet_has_leg1 = True
                 leg1_contributors.extend(_tools_for_category(audit, _LEG1_CATEGORIES))
-            if cats & _LEG2_CATEGORIES:
+            ingestion = _ingestion_contributors(audit)
+            if ingestion:
                 fleet_has_leg2 = True
-                leg2_contributors.extend(_tools_for_category(audit, _LEG2_CATEGORIES))
+                leg2_contributors.extend(ingestion)
             if cats & _LEG3_CATEGORIES:
                 fleet_has_leg3 = True
                 leg3_contributors.extend(_tools_for_category(audit, _LEG3_CATEGORIES))

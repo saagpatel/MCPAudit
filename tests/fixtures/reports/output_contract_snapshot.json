@@ -411,10 +411,6 @@
     "permission_targets": [
       [
         "tool",
-        "fetch_url"
-      ],
-      [
-        "tool",
         "read_sensitive_files"
       ],
       [
@@ -430,7 +426,6 @@
     "fleet_trifecta_findings_count": 0,
     "sarif_rule_ids": [
       "MCP001",
-      "MCP003",
       "MCP006",
       "MCP013"
     ],
