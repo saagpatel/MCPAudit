@@ -20,6 +20,7 @@ import json
 
 from mcp_audit.escalation import EscalationAnalyzer
 from mcp_audit.models import (
+    EscalationFinding,
     EscalationKind,
     EscalationSeverity,
     PermissionCategory,
@@ -33,7 +34,7 @@ def _tool(name: str, description: str) -> ToolInfo:
     return ToolInfo(name=name, description=description)
 
 
-def _run(name: str, base_desc: str, cur_desc: str) -> list:
+def _run(name: str, base_desc: str, cur_desc: str) -> list[EscalationFinding]:
     return _analyzer.analyze_server(
         "srv",
         [_tool(name, base_desc)],
