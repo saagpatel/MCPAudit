@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-05-31
+
+### Added
+
+- Added optional capability-escalation ("rug pull") detection (`scan --escalation-check`)
+  that compares each tool against its operator-blessed pin baseline and flags
+  security-significant escalations over time. Two rule kinds:
+  - **MCP018 (capability)** — a pinned tool GAINED a dangerous permission category it
+    did not hold when pinned. HIGH when the gained category is
+    `exfiltration`/`shell_execution`/`destructive`; MEDIUM for `file_write`/`network`.
+  - **MCP019 (description-injection)** — a pinned tool's description GAINED
+    prompt-injection pattern(s) absent from the baseline.
+- `--escalation-check` implies a pin comparison: it reuses the pin store as the
+  baseline (run `mcp-audit pin` first). Findings are a pure delta against the
+  baseline — a tool matching its pin produces nothing, so the false-positive rate
+  is near-zero by construction. The check reuses the existing permission and
+  injection analyzers; no new inference is performed and no network request is made.
+- Added `fail_on.escalation` policy gate, SARIF rules MCP018/MCP019
+  (category `capability_escalation`), a terminal "Capability Escalation" report
+  section, and a `get_escalation_findings` MCP server tool.
+- Drift output stays gated on `--pin-check`; `--escalation-check` alone emits only
+  escalation findings.
+- New docs: `docs/ESCALATION-DETECTION.md` and
+  `examples/policies/escalation-aware-ci.yaml`.
+
 ## [1.7.0] - 2026-05-31
 
 ### Added

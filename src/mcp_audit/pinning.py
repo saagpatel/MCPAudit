@@ -171,6 +171,28 @@ class PinStore:
         servers: dict[str, Any] = self._data.get("servers", {})
         return len(servers.get(server_name, {}).get("tools", {}))
 
+    def baseline_tools(self, server_name: str) -> list[ToolInfo]:
+        """Reconstruct pinned tools as ``ToolInfo`` from stored snapshots.
+
+        Returns the description + input_schema captured at pin time so callers can
+        re-derive the baseline capability/injection surface (used by the
+        escalation detector). Annotations are not snapshotted, so reconstructed
+        tools carry ``annotations=None``. Empty list if the server is not pinned.
+        """
+        servers: dict[str, Any] = self._data.get("servers", {})
+        pinned_tools: dict[str, Any] = servers.get(server_name, {}).get("tools", {})
+        tools: list[ToolInfo] = []
+        for name, entry in pinned_tools.items():
+            snapshot: dict[str, Any] = entry.get("snapshot", {})
+            tools.append(
+                ToolInfo(
+                    name=name,
+                    description=snapshot.get("description"),
+                    input_schema=snapshot.get("input_schema"),
+                )
+            )
+        return tools
+
     def status(self) -> list[ServerPinStatus]:
         """Return review summaries for all pinned servers."""
         servers: dict[str, Any] = self._data.get("servers", {})

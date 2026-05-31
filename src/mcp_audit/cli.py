@@ -177,6 +177,12 @@ def discover(client_filter: str | None, verbose: bool) -> None:
     help="Detect cross-server tool-name shadowing (exact, normalised, homoglyph collisions).",
 )
 @click.option(
+    "--escalation-check",
+    is_flag=True,
+    default=False,
+    help="Detect capability/description-injection escalation vs the pin baseline (implies pin comparison).",  # noqa: E501
+)
+@click.option(
     "--llm-analysis",
     is_flag=True,
     default=False,
@@ -198,6 +204,7 @@ def scan(
     pin_check: bool,
     trifecta_check: bool,
     shadow_check: bool,
+    escalation_check: bool,
     llm_analysis: bool,
 ) -> None:
     """Full audit: discover servers, connect, enumerate tools, score risk, report."""
@@ -220,6 +227,7 @@ def scan(
         pin_check,
         trifecta_check,
         shadow_check,
+        escalation_check,
         llm_analysis,
         config_only,
     )
@@ -236,6 +244,7 @@ async def _run_scan_core(
     pin_check: bool = False,
     trifecta_check: bool = False,
     shadow_check: bool = False,
+    escalation_check: bool = False,
     llm_analysis: bool = False,
     config_only: bool = False,
 ) -> AuditReport:
@@ -298,8 +307,16 @@ async def _run_scan_core(
 
         shadowing_analyzer = ShadowingAnalyzer()
 
+    escalation_analyzer = None
+    if escalation_check:
+        from mcp_audit.escalation import EscalationAnalyzer
+
+        escalation_analyzer = EscalationAnalyzer()
+
+    # --escalation-check implies a pin comparison, so a pin store is needed even
+    # when --pin-check was not passed. Drift output stays gated on pin_check.
     pin_store = None
-    if pin_check:
+    if pin_check or escalation_check:
         from mcp_audit.pinning import PinStore
 
         pin_store = PinStore()
@@ -350,13 +367,21 @@ async def _run_scan_core(
 
             audit.non_tool_risk = scorer.score_non_tool(audit.capability_findings, audit.injection_findings)
 
-            # Optional pin drift check
-            if pin_store is not None:
+            # Optional pin drift check (gated on --pin-check, not mere store presence)
+            if pin_store is not None and pin_check:
                 audit.drift_findings = pin_store.check_drift(srv.name, audit.tools)
 
             # Optional trifecta per-server detection
             if trifecta_analyzer is not None:
                 audit.trifecta_findings = trifecta_analyzer.analyze_server(audit)
+
+            # Optional capability-escalation check vs the pin baseline
+            if escalation_analyzer is not None and pin_store is not None:
+                baseline = pin_store.baseline_tools(srv.name)
+                if baseline:
+                    audit.escalation_findings = escalation_analyzer.analyze_server(
+                        srv.name, baseline, audit.tools
+                    )
 
             audits[idx] = audit
             progress.advance(task_id)
@@ -364,6 +389,13 @@ async def _run_scan_core(
         async with anyio.create_task_group() as tg:
             for i, srv in enumerate(servers):
                 tg.start_soon(audit_one, i, srv)
+
+    # Escalation needs a baseline; warn if asked for but nothing is pinned.
+    if escalation_check and pin_store is not None and not pin_store.pinned_servers():
+        console.print(
+            "[yellow]--escalation-check: no pin baseline found. "
+            "Run `mcp-audit pin` first to capture a baseline to compare against.[/yellow]"
+        )
 
     # Fleet-level trifecta pass — runs once after all servers are audited
     fleet_trifecta: list[TrifectaFinding] = []
@@ -410,6 +442,7 @@ async def _run_scan(
     pin_check: bool = False,
     trifecta_check: bool = False,
     shadow_check: bool = False,
+    escalation_check: bool = False,
     llm_analysis: bool = False,
     config_only: bool = False,
 ) -> None:
@@ -439,6 +472,7 @@ async def _run_scan(
         pin_check=pin_check,
         trifecta_check=trifecta_check,
         shadow_check=shadow_check,
+        escalation_check=escalation_check,
         llm_analysis=llm_analysis,
         config_only=config_only,
     )

@@ -18,6 +18,7 @@ FIXTURES = [
     Path("tests/fixtures/reports/ssrf_report.json"),
     Path("tests/fixtures/reports/trifecta_report.json"),
     Path("tests/fixtures/reports/shadowing_report.json"),
+    Path("tests/fixtures/reports/escalation_report.json"),
 ]
 LEGACY_FIXTURES = sorted(Path("tests/fixtures/reports/legacy").glob("*.json"))
 FIELD_REPORT_FIXTURES = sorted(Path("tests/fixtures/reports/field").glob("*.json"))
@@ -110,6 +111,21 @@ def test_shadowing_fixture_loads_and_generates_mcp015() -> None:
     assert "MCP015" in rule_ids
     dumped = report.model_dump(mode="json")
     assert "shadowing_findings" in dumped
+
+
+def test_escalation_fixture_loads_and_generates_mcp018() -> None:
+    fixture = Path("tests/fixtures/reports/escalation_report.json")
+    report = AuditReport.model_validate_json(fixture.read_text())
+    assert report.audits[0].escalation_findings
+    finding = report.audits[0].escalation_findings[0]
+    assert finding.kind.value == "capability"
+    assert finding.severity.value == "high"
+    assert finding.rule_id == "MCP018"
+    sarif = SarifGenerator().generate(report)
+    rule_ids = {r["ruleId"] for r in sarif["runs"][0]["results"]}
+    assert "MCP018" in rule_ids
+    dumped = report.model_dump(mode="json")
+    assert "escalation_findings" in dumped["audits"][0]
 
 
 def test_output_contract_golden_snapshot() -> None:

@@ -14,6 +14,8 @@ from rich.text import Text
 from mcp_audit.models import (
     AuditReport,
     DriftStatus,
+    EscalationKind,
+    EscalationSeverity,
     InjectionSeverity,
     PermissionFinding,
     ServerAudit,
@@ -92,6 +94,7 @@ class ReportGenerator:
         self._render_ssrf_warnings(report)
         self._render_trifecta_warnings(report)
         self._render_shadowing_warnings(report)
+        self._render_escalation_warnings(report)
         self._render_capability_warnings(report)
         self._render_drift_warnings(report)
         self._render_policy_result(report)
@@ -265,6 +268,44 @@ class ReportGenerator:
                 f"[{sev_style}]{f.severity.value}[/{sev_style}]",
                 f.name,
                 pairs,
+                f.remediation,
+            )
+        self._console.print(tbl)
+
+    def _render_escalation_warnings(self, report: AuditReport) -> None:
+        """Print capability-escalation (rug-pull) findings vs the pin baseline if any were found."""
+        findings = [(a.server.name, f) for a in report.audits for f in a.escalation_findings]
+        if not findings:
+            return
+
+        self._console.print()
+        self._console.rule("[bold red]Capability Escalation (vs pin baseline)[/bold red]")
+        tbl = Table(show_lines=True)
+        tbl.add_column("Rule ID", style="bold red", no_wrap=True)
+        tbl.add_column("Server", style="bold cyan", no_wrap=True)
+        tbl.add_column("Tool", style="cyan")
+        tbl.add_column("Kind")
+        tbl.add_column("Severity")
+        tbl.add_column("Gained", overflow="fold")
+        tbl.add_column("Suggested Action", overflow="fold")
+
+        for server_name, f in findings:
+            sev_style = {
+                EscalationSeverity.HIGH: "bold red",
+                EscalationSeverity.MEDIUM: "yellow",
+            }.get(f.severity, "")
+            gained = (
+                ", ".join(c.value for c in f.gained_categories)
+                if f.kind == EscalationKind.CAPABILITY
+                else ", ".join(f.gained_patterns)
+            )
+            tbl.add_row(
+                f.rule_id,
+                server_name,
+                f.tool_name,
+                f.kind.value,
+                f"[{sev_style}]{f.severity.value}[/{sev_style}]",
+                gained,
                 f.remediation,
             )
         self._console.print(tbl)

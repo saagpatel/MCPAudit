@@ -67,6 +67,16 @@ class ShadowingSeverity(StrEnum):
     LOW = "low"  # Reserved for future use
 
 
+class EscalationKind(StrEnum):
+    CAPABILITY = "capability"  # Tool gained a dangerous permission category vs its pin baseline
+    DESCRIPTION_INJECTION = "description_injection"  # Description gained injection pattern(s)
+
+
+class EscalationSeverity(StrEnum):
+    HIGH = "high"  # Gained exfiltration/shell/destructive, or description gained injection
+    MEDIUM = "medium"  # Gained file_write/network
+
+
 class DriftStatus(StrEnum):
     NEW = "new"  # Tool in current scan but not in pins
     CHANGED = "changed"  # Tool hash differs from stored pin
@@ -348,6 +358,52 @@ class TrifectaFinding(BaseModel):
         return trifecta_metadata(self.severity).remediation
 
 
+class EscalationFinding(BaseModel):
+    """A capability-escalation / rug-pull finding detected against the pin baseline.
+
+    Fires only when a tool DIFFERS from its operator-blessed pin baseline in a
+    security-significant way:
+      CAPABILITY            — the tool gained a dangerous permission category it
+                              did not hold when pinned (e.g. read-only → file_write,
+                              exfiltration, shell_execution, destructive).
+      DESCRIPTION_INJECTION — the tool's description gained prompt-injection
+                              pattern(s) absent from the pinned baseline.
+
+    Purely a delta against the pin store: a tool matching its baseline produces no
+    finding, so the false-positive rate is near-zero by construction.  Requires a
+    pin baseline (``--escalation-check`` implies pin comparison).
+    """
+
+    kind: EscalationKind
+    severity: EscalationSeverity
+    server_name: str
+    tool_name: str
+    gained_categories: list[PermissionCategory] = Field(default_factory=list)
+    gained_patterns: list[str] = Field(default_factory=list)  # injection pattern names
+    description: str
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def rule_id(self) -> str:
+        from mcp_audit.taxonomy import escalation_metadata
+
+        return escalation_metadata(self.kind).rule_id
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def title(self) -> str:
+        from mcp_audit.taxonomy import escalation_metadata
+
+        return escalation_metadata(self.kind).title
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def remediation(self) -> str:
+        from mcp_audit.taxonomy import escalation_metadata
+
+        return escalation_metadata(self.kind).remediation
+
+
 class DriftFinding(BaseModel):
     """A change detected between pinned and current tool schema."""
 
@@ -442,6 +498,7 @@ class ServerAudit(BaseModel):
     ssrf_findings: list[SsrfFinding] = Field(default_factory=list)
     drift_findings: list[DriftFinding] = Field(default_factory=list)
     trifecta_findings: list[TrifectaFinding] = Field(default_factory=list)
+    escalation_findings: list[EscalationFinding] = Field(default_factory=list)
 
 
 class ShadowingFinding(BaseModel):
