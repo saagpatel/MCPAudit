@@ -107,6 +107,20 @@ class PackageVerifySeverity(StrEnum):
     MEDIUM = "medium"  # Could not verify (registry unreachable / package absent)
 
 
+class ArtifactVerifyKind(StrEnum):
+    # Served bytes' hash differs from the registry's own published hash for the version
+    PUBLISHED_MISMATCH = "published_mismatch"
+    # Served bytes' hash differs from the byte-hash captured at pin time
+    BASELINE_MISMATCH = "baseline_mismatch"
+    # Could not download/hash the artifact (unreachable, too large, host not allowlisted)
+    UNVERIFIED = "unverified"
+
+
+class ArtifactVerifySeverity(StrEnum):
+    HIGH = "high"  # Bytes don't match the published hash, or differ from the pinned bytes
+    MEDIUM = "medium"  # Could not download/hash to verify
+
+
 class DriftStatus(StrEnum):
     NEW = "new"  # Tool in current scan but not in pins
     CHANGED = "changed"  # Tool hash differs from stored pin
@@ -597,6 +611,60 @@ class PackageVerifyFinding(BaseModel):
         return package_verify_metadata(self.kind).remediation
 
 
+class ArtifactVerifyFinding(BaseModel):
+    """A byte-level artifact verification result against the pin baseline (MCP026).
+
+    MCP025 compares the registry's *published* hash across time; this check
+    downloads the actual bytes the registry serves, hashes them, and compares
+    against both the registry's published hash (``PUBLISHED_MISMATCH``) and the
+    byte-hash captured at pin time (``BASELINE_MISMATCH``). It catches a CDN /
+    mirror serving bytes inconsistent with its own metadata — which a
+    metadata-to-metadata compare cannot see — and a republish-in-place proven at
+    the byte level. ``UNVERIFIED`` (MEDIUM) when the bytes could not be fetched
+    or hashed (unreachable, size cap exceeded, download host not allowlisted).
+
+    Network-gated: only populated under ``--download-artifacts`` (opt-in), with
+    the byte-hash baseline captured only when pinning with that flag. Keys by
+    exact ``package@version``; a version float stays provenance's job (MCP021).
+    """
+
+    kind: ArtifactVerifyKind
+    severity: ArtifactVerifySeverity
+    server_name: str
+    ecosystem: str  # "npm" | "pypi"
+    package: str
+    version: str
+    baseline_hash: str
+    current_hash: str | None  # sha256 we computed now; None when the fetch failed
+    summary: str
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def description(self) -> str:
+        return self.summary
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def rule_id(self) -> str:
+        from mcp_audit.taxonomy import artifact_verify_metadata
+
+        return artifact_verify_metadata(self.kind).rule_id
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def title(self) -> str:
+        from mcp_audit.taxonomy import artifact_verify_metadata
+
+        return artifact_verify_metadata(self.kind).title
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def remediation(self) -> str:
+        from mcp_audit.taxonomy import artifact_verify_metadata
+
+        return artifact_verify_metadata(self.kind).remediation
+
+
 class DriftFinding(BaseModel):
     """A change detected between pinned and current tool schema."""
 
@@ -695,6 +763,7 @@ class ServerAudit(BaseModel):
     provenance_findings: list[ProvenanceFinding] = Field(default_factory=list)
     integrity_findings: list[IntegrityFinding] = Field(default_factory=list)
     package_verify_findings: list[PackageVerifyFinding] = Field(default_factory=list)
+    artifact_verify_findings: list[ArtifactVerifyFinding] = Field(default_factory=list)
 
 
 class ShadowingFinding(BaseModel):

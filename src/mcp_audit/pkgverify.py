@@ -11,24 +11,44 @@ server's launch config and compares the *registry-published* hash for the exact
                             bytes for the same version), or could not be
                             re-fetched to verify (MEDIUM).
 
+This module also hosts the deeper byte-level check (``ArtifactVerifier`` /
+``--download-artifacts``), which downloads the actual bytes the registry serves,
+hashes them, and compares against both the registry's own published hash and a
+byte-hash captured at pin time:
+
+  MCP026 (ARTIFACT_TAMPER) — served bytes don't match the registry's published
+                             hash (PUBLISHED_MISMATCH, HIGH) or differ from the
+                             pinned bytes (BASELINE_MISMATCH, HIGH); UNVERIFIED
+                             (MEDIUM) when the bytes can't be fetched/hashed.
+
 Network-gated: the registry is contacted ONLY when the operator passes
-``--verify-artifacts`` (to scan, and to ``pin`` to capture the baseline). A
-version *float* (different version than pinned) is provenance's job (MCP021), not
-this check — it keys by exact ``package@version``. The fetch function is injectable
-so the offline test suite never touches the network.
+``--verify-artifacts`` / ``--download-artifacts`` (to scan, and to ``pin`` to
+capture the baseline). A version *float* (different version than pinned) is
+provenance's job (MCP021), not these checks — they key by exact
+``package@version``. The fetch functions are injectable so the offline test suite
+never touches the network. Artifact downloads stream through bounded hashers
+(size + file-count caps), never to disk, and only to an allowlist of registry/CDN
+hosts (re-validated on every redirect hop) as an SSRF guard.
 """
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import http.client
 import json
 import logging
 import urllib.error
 import urllib.request
 from collections.abc import Callable
-from dataclasses import dataclass
-from urllib.parse import quote
+from dataclasses import dataclass, field
+from typing import IO
+from urllib.parse import quote, urlsplit
 
 from mcp_audit.models import (
+    ArtifactVerifyFinding,
+    ArtifactVerifyKind,
+    ArtifactVerifySeverity,
     PackageVerifyFinding,
     PackageVerifyKind,
     PackageVerifySeverity,
@@ -39,6 +59,22 @@ logger = logging.getLogger(__name__)
 
 _TIMEOUT = 10
 _USER_AGENT = "mcp-audit (+https://github.com/saagpatel/MCPAudit)"
+
+# Byte-level download (MCP026) tunables. Downloads are heavier than metadata
+# fetches, so they get a longer timeout and a hard size cap to bound memory and
+# refuse a malicious/oversized artifact instead of streaming it forever.
+_DOWNLOAD_TIMEOUT = 30
+_MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
+_CHUNK = 1 << 16
+# A package@version with more distribution files than this is treated as unverifiable
+# rather than downloaded, bounding total transfer against a metadata response that lists
+# many large files (download-amplification DoS). Real releases stay well under this.
+_MAX_ARTIFACT_FILES = 24
+
+# Hosts a resolved artifact download may target. The download URL comes from
+# registry *metadata*, so a poisoned metadata response could otherwise redirect
+# the fetch at an internal address (SSRF). Restrict to known registry/CDN hosts.
+_ALLOWED_DOWNLOAD_HOSTS = frozenset({"registry.npmjs.org", "files.pythonhosted.org", "pypi.org"})
 
 # Runner commands by ecosystem. The package spec is parsed from the args.
 _NPM_RUNNERS = {"npx", "npm"}
@@ -185,6 +221,99 @@ class RegistryClient:
             return self._pypi_hash(ref.name, ref.version)
         return None
 
+    def _npm_artifact(self, name: str, version: str) -> ArtifactResult | None:
+        url = f"https://registry.npmjs.org/{quote(name, safe='@/')}/{quote(version, safe='')}"
+        data = self._get_json(url)
+        dist = data.get("dist") if data else None
+        if not isinstance(dist, dict):
+            return None
+        tarball = dist.get("tarball")
+        if not isinstance(tarball, str):
+            return None
+        # sha256 is our stable baseline; the SRI algos (256/384/512) verify the
+        # registry's own integrity claim, sha1 covers the legacy `shasum` field.
+        digests = _download_digests(tarball, ("sha256", "sha384", "sha512", "sha1"))
+        if digests is None:
+            return None
+        consistent = self._npm_consistent(dist, digests)
+        if consistent is None:
+            return None  # no integrity/shasum we can verify against — nothing to compare
+        return ArtifactResult(computed_sha256=digests["sha256"], published_consistent=consistent)
+
+    @staticmethod
+    def _npm_consistent(dist: dict[str, object], digests: dict[str, str]) -> bool | None:
+        """Whether the downloaded bytes match npm's published integrity/shasum, or None.
+
+        ``dist.integrity`` is an SRI string (``<algo>-<base64>`` tokens, possibly
+        multiple, whitespace-separated). Compare against whichever algorithm the
+        registry actually published rather than assuming sha512: decode each token and
+        compare raw digest bytes. Returns None (unverifiable) when integrity is present
+        but uses only algorithms we did not compute — never a false mismatch.
+        """
+        integrity = dist.get("integrity")
+        if isinstance(integrity, str) and integrity:
+            checkable = False
+            for token in integrity.split():
+                algo, _, b64 = token.partition("-")
+                hex_digest = digests.get(algo)
+                if not hex_digest or not b64:
+                    continue  # algorithm we didn't compute, or malformed token
+                try:
+                    published_raw = base64.b64decode(b64, validate=True)
+                except ValueError:
+                    continue
+                checkable = True
+                if published_raw == bytes.fromhex(hex_digest):
+                    return True
+            return False if checkable else None
+        shasum = dist.get("shasum")
+        if isinstance(shasum, str) and shasum:
+            return digests["sha1"] == shasum.lower()
+        return None
+
+    def _pypi_artifact(self, name: str, version: str) -> ArtifactResult | None:
+        url = f"https://pypi.org/pypi/{quote(name, safe='')}/{quote(version, safe='')}/json"
+        data = self._get_json(url)
+        urls = data.get("urls") if data else None
+        if not isinstance(urls, list):
+            return None
+        files = [
+            u
+            for u in urls
+            if isinstance(u, dict)
+            and isinstance(u.get("url"), str)
+            and isinstance(u.get("digests"), dict)
+            and u["digests"].get("sha256")
+        ]
+        if not files:
+            return None
+        if len(files) > _MAX_ARTIFACT_FILES:
+            # Bound total transfer against metadata listing an implausible file count.
+            logger.debug("PyPI %s==%s lists %d files (> cap); skipping", name, version, len(files))
+            return None
+        computed: list[str] = []
+        consistent = True
+        for u in files:
+            digests = _download_digests(str(u["url"]), ("sha256",))
+            if digests is None:
+                return None  # any distribution file unfetchable -> ref is unverifiable
+            computed.append(digests["sha256"])
+            if digests["sha256"] != str(u["digests"]["sha256"]).lower():
+                consistent = False
+        # Combine all distribution-file hashes so any file change is detected; sorted
+        # so the composite is stable regardless of registry ordering (mirrors _pypi_hash).
+        return ArtifactResult(computed_sha256=",".join(sorted(computed)), published_consistent=consistent)
+
+    def fetch_artifact(self, ref: PackageRef) -> ArtifactResult | None:
+        """Download + hash the bytes for an exact package@version, or None on failure."""
+        if ref.version is None:
+            return None
+        if ref.ecosystem == "npm":
+            return self._npm_artifact(ref.name, ref.version)
+        if ref.ecosystem == "pypi":
+            return self._pypi_artifact(ref.name, ref.version)
+        return None
+
 
 # A fetch callable: PackageRef -> published hash string (or None). Injectable.
 FetchHash = Callable[[PackageRef], str | None]
@@ -263,6 +392,248 @@ class PackageVerifier:
                             f"Registry-published hash for {ref.ecosystem} package "
                             f"'{ref.name}@{ref.version}' changed since pin — a registry must never "
                             "serve different bytes for the same version (republish/tampering)."
+                        ),
+                    )
+                )
+        return findings
+
+
+# --- Byte-level artifact verification (MCP026, --download-artifacts) ---------
+
+
+def is_allowed_artifact_url(url: str) -> bool:
+    """True only for an HTTPS URL whose host is a known registry/CDN host.
+
+    The download URL is taken from registry metadata; gating it here stops a
+    poisoned metadata response from pointing the downloader at an internal or
+    attacker-controlled host.
+    """
+    try:
+        parsed = urlsplit(url)
+    except ValueError:
+        return False
+    return parsed.scheme == "https" and parsed.hostname in _ALLOWED_DOWNLOAD_HOSTS
+
+
+def _stream_digests(
+    fileobj: IO[bytes], algos: tuple[str, ...], cap: int
+) -> tuple[dict[str, str] | None, bool]:
+    """Stream ``fileobj`` through one hasher per algo, never holding the whole file.
+
+    Returns ``(hex_digests, True)`` on success, or ``(None, False)`` once more than
+    ``cap`` bytes have been read (oversized/unbounded artifact — refuse it).
+    """
+    hashers = {a: hashlib.new(a) for a in algos}
+    total = 0
+    while True:
+        chunk = fileobj.read(_CHUNK)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > cap:
+            return None, False
+        for h in hashers.values():
+            h.update(chunk)
+    return {a: h.hexdigest() for a, h in hashers.items()}, True
+
+
+def stream_sha256(fileobj: IO[bytes], cap: int) -> tuple[str | None, bool]:
+    """Stream ``fileobj`` and return ``(sha256_hex, True)``, or ``(None, False)`` if capped."""
+    digests, ok = _stream_digests(fileobj, ("sha256",), cap)
+    if not ok or digests is None:
+        return None, False
+    return digests["sha256"], True
+
+
+@dataclass(frozen=True)
+class ArtifactResult:
+    """Outcome of downloading and hashing a package@version's bytes.
+
+    ``computed_sha256`` is our own stable byte-hash (the pin baseline); for PyPI
+    it is the sorted-composite of per-file sha256, mirroring ``_pypi_hash``.
+    ``published_consistent`` is whether the served bytes matched the registry's
+    *own* published hash for that version.
+    """
+
+    computed_sha256: str
+    published_consistent: bool
+
+
+@dataclass(frozen=True)
+class ArtifactCapture:
+    """Result of a pin-time capture pass: storable hashes plus operator warnings."""
+
+    hashes: dict[str, str] = field(default_factory=dict)
+    warnings: list[str] = field(default_factory=list)
+
+
+# A download-and-hash callable: PackageRef -> ArtifactResult (or None when the
+# bytes could not be fetched/hashed). Injectable so tests never touch the network.
+FetchArtifact = Callable[[PackageRef], "ArtifactResult | None"]
+
+
+class _AllowlistRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Reject a redirect whose target host is not allowlisted, before it is followed.
+
+    urllib follows 3xx automatically, so validating only the final URL would still let
+    an allowlisted URL launder a request through an internal host (e.g. a metadata/CDN
+    response that 302s to 169.254.169.254). Re-validating each hop here stops the
+    connection to a disallowed host from ever being made (SSRF guard).
+    """
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: IO[bytes],
+        code: int,
+        msg: str,
+        headers: http.client.HTTPMessage,
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        if not is_allowed_artifact_url(newurl):
+            raise urllib.error.HTTPError(
+                newurl, code, "redirect to non-allowlisted host blocked", headers, fp
+            )
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_ARTIFACT_OPENER = urllib.request.build_opener(_AllowlistRedirectHandler)
+
+
+def _download_digests(url: str, algos: tuple[str, ...]) -> dict[str, str] | None:
+    """Download an allowlisted HTTPS artifact and return its hex digests, or None.
+
+    None on any failure: non-allowlisted host (initial, any redirect hop, or final),
+    network error, truncated response, or the size cap being exceeded. Bytes are
+    streamed, never written to disk and never held whole in memory.
+    """
+    if not is_allowed_artifact_url(url):
+        return None
+    req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
+    try:
+        with _ARTIFACT_OPENER.open(req, timeout=_DOWNLOAD_TIMEOUT) as resp:  # noqa: S310 (https + host allowlisted)
+            if not is_allowed_artifact_url(resp.geturl()):
+                logger.debug("Artifact final URL left allowlist: %s -> %s", url, resp.geturl())
+                return None
+            digests, ok = _stream_digests(resp, algos, _MAX_ARTIFACT_BYTES)
+            return digests if ok else None
+    except (urllib.error.URLError, http.client.HTTPException, TimeoutError, ValueError, OSError):
+        logger.debug("Artifact download failed: %s", url)
+        return None
+
+
+class ArtifactVerifier:
+    """Downloads pinned package artifacts, hashes the bytes, and compares them.
+
+    Two checks beyond MCP025's metadata compare: the served bytes must match the
+    registry's *own* published hash (``PUBLISHED_MISMATCH``) and the byte-hash
+    captured at pin time (``BASELINE_MISMATCH``). The download function is
+    injectable so the offline test suite never touches the network.
+    """
+
+    def __init__(self, fetch: FetchArtifact | None = None) -> None:
+        self._fetch: FetchArtifact = fetch or RegistryClient().fetch_artifact
+
+    def capture(self, server_config: ServerConfig) -> ArtifactCapture:
+        """Pin-time: download + hash the server's pinned artifacts for a byte baseline.
+
+        Stores a sha256 only for bytes that matched the registry's published hash;
+        bytes that did not are refused (never baseline poisoned bytes) and surfaced
+        as a warning, as are artifacts that could not be downloaded.
+        """
+        capture = ArtifactCapture()
+        for ref in resolve_package_refs(server_config):
+            if ref.version is None:
+                continue
+            label = f"{ref.name}@{ref.version}"
+            result = self._fetch(ref)
+            if result is None:
+                capture.warnings.append(
+                    f"Could not download {ref.ecosystem} artifact '{label}' to capture a byte-hash "
+                    "baseline — registry unreachable, version withdrawn, artifact too large, or "
+                    "download host not allowlisted."
+                )
+            elif not result.published_consistent:
+                capture.warnings.append(
+                    f"Refused to baseline {ref.ecosystem} artifact '{label}': served bytes did not "
+                    "match the registry-published hash (possible tampering). Investigate before pinning."
+                )
+            else:
+                capture.hashes[ref.key()] = result.computed_sha256
+        return capture
+
+    def analyze_server(
+        self,
+        server_name: str,
+        server_config: ServerConfig,
+        baseline_hashes: dict[str, str] | None,
+    ) -> list[ArtifactVerifyFinding]:
+        """Download + hash current bytes and compare against the pinned byte baseline."""
+        if not baseline_hashes:
+            return []
+
+        refs_by_key = {r.key(): r for r in resolve_package_refs(server_config) if r.version}
+        findings: list[ArtifactVerifyFinding] = []
+        for key, baseline_hash in sorted(baseline_hashes.items()):
+            ref = refs_by_key.get(key)
+            if ref is None:
+                # Version floated or package removed since pin — provenance (MCP021)
+                # owns that signal; this check verifies only the exact pinned version.
+                continue
+            assert ref.version is not None  # keyed refs always carry a version
+            result = self._fetch(ref)
+            if result is None:
+                findings.append(
+                    ArtifactVerifyFinding(
+                        kind=ArtifactVerifyKind.UNVERIFIED,
+                        severity=ArtifactVerifySeverity.MEDIUM,
+                        server_name=server_name,
+                        ecosystem=ref.ecosystem,
+                        package=ref.name,
+                        version=ref.version,
+                        baseline_hash=baseline_hash,
+                        current_hash=None,
+                        summary=(
+                            f"Could not download/hash {ref.ecosystem} artifact "
+                            f"'{ref.name}@{ref.version}' for '{server_name}' — registry unreachable, "
+                            "version withdrawn, artifact too large, or download host not allowlisted."
+                        ),
+                    )
+                )
+            elif not result.published_consistent:
+                findings.append(
+                    ArtifactVerifyFinding(
+                        kind=ArtifactVerifyKind.PUBLISHED_MISMATCH,
+                        severity=ArtifactVerifySeverity.HIGH,
+                        server_name=server_name,
+                        ecosystem=ref.ecosystem,
+                        package=ref.name,
+                        version=ref.version,
+                        baseline_hash=baseline_hash,
+                        current_hash=result.computed_sha256,
+                        summary=(
+                            f"Downloaded bytes for {ref.ecosystem} artifact "
+                            f"'{ref.name}@{ref.version}' do not match the registry-published hash — "
+                            "a CDN/mirror/man-in-the-middle is serving bytes inconsistent with the "
+                            "registry's own integrity metadata."
+                        ),
+                    )
+                )
+            elif result.computed_sha256 != baseline_hash:
+                findings.append(
+                    ArtifactVerifyFinding(
+                        kind=ArtifactVerifyKind.BASELINE_MISMATCH,
+                        severity=ArtifactVerifySeverity.HIGH,
+                        server_name=server_name,
+                        ecosystem=ref.ecosystem,
+                        package=ref.name,
+                        version=ref.version,
+                        baseline_hash=baseline_hash,
+                        current_hash=result.computed_sha256,
+                        summary=(
+                            f"Downloaded bytes for {ref.ecosystem} artifact "
+                            f"'{ref.name}@{ref.version}' changed since pin — a registry must never "
+                            "serve different bytes for the same fixed version (republish/tampering)."
                         ),
                     )
                 )

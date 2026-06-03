@@ -1,5 +1,81 @@
 {
   "$defs": {
+    "ArtifactVerifyFinding": {
+      "description": "A byte-level artifact verification result against the pin baseline (MCP026).\n\nMCP025 compares the registry's *published* hash across time; this check\ndownloads the actual bytes the registry serves, hashes them, and compares\nagainst both the registry's published hash (``PUBLISHED_MISMATCH``) and the\nbyte-hash captured at pin time (``BASELINE_MISMATCH``). It catches a CDN /\nmirror serving bytes inconsistent with its own metadata \u2014 which a\nmetadata-to-metadata compare cannot see \u2014 and a republish-in-place proven at\nthe byte level. ``UNVERIFIED`` (MEDIUM) when the bytes could not be fetched\nor hashed (unreachable, size cap exceeded, download host not allowlisted).\n\nNetwork-gated: only populated under ``--download-artifacts`` (opt-in), with\nthe byte-hash baseline captured only when pinning with that flag. Keys by\nexact ``package@version``; a version float stays provenance's job (MCP021).",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/ArtifactVerifyKind"
+        },
+        "severity": {
+          "$ref": "#/$defs/ArtifactVerifySeverity"
+        },
+        "server_name": {
+          "title": "Server Name",
+          "type": "string"
+        },
+        "ecosystem": {
+          "title": "Ecosystem",
+          "type": "string"
+        },
+        "package": {
+          "title": "Package",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        },
+        "baseline_hash": {
+          "title": "Baseline Hash",
+          "type": "string"
+        },
+        "current_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Current Hash"
+        },
+        "summary": {
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "severity",
+        "server_name",
+        "ecosystem",
+        "package",
+        "version",
+        "baseline_hash",
+        "current_hash",
+        "summary"
+      ],
+      "title": "ArtifactVerifyFinding",
+      "type": "object"
+    },
+    "ArtifactVerifyKind": {
+      "enum": [
+        "published_mismatch",
+        "baseline_mismatch",
+        "unverified"
+      ],
+      "title": "ArtifactVerifyKind",
+      "type": "string"
+    },
+    "ArtifactVerifySeverity": {
+      "enum": [
+        "high",
+        "medium"
+      ],
+      "title": "ArtifactVerifySeverity",
+      "type": "string"
+    },
     "CapabilityFinding": {
       "description": "A permission inference for a non-tool MCP capability.",
       "properties": {
@@ -969,6 +1045,13 @@
             "$ref": "#/$defs/PackageVerifyFinding"
           },
           "title": "Package Verify Findings",
+          "type": "array"
+        },
+        "artifact_verify_findings": {
+          "items": {
+            "$ref": "#/$defs/ArtifactVerifyFinding"
+          },
+          "title": "Artifact Verify Findings",
           "type": "array"
         }
       },

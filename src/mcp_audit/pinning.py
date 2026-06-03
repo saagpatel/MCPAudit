@@ -73,6 +73,7 @@ class PinStore:
         tools: list[ToolInfo],
         server_config: ServerConfig | None = None,
         package_hashes: dict[str, str] | None = None,
+        artifact_hashes: dict[str, str] | None = None,
     ) -> None:
         """Upsert pin entries for all tools on a server. Writes atomically.
 
@@ -93,17 +94,27 @@ class PinStore:
             }
         if server_config is not None:
             snapshot = self._config_snapshot(server_config)
+            prior = server_entry.get("config_snapshot")
+            prior_snapshot = prior if isinstance(prior, dict) else {}
             if package_hashes:
                 # Registry-published package hashes (npm/PyPI) captured under
                 # --verify-artifacts; values are hashes only, never package bytes.
                 snapshot["package_hashes"] = dict(package_hashes)
-            else:
+            elif isinstance(prior_snapshot.get("package_hashes"), dict):
                 # Preserve a previously-captured registry baseline when this pin
                 # call did not supply one (e.g. a schema-only `pin --refresh`), so
                 # it isn't silently wiped by an unrelated refresh.
-                prior = server_entry.get("config_snapshot")
-                if isinstance(prior, dict) and isinstance(prior.get("package_hashes"), dict):
-                    snapshot["package_hashes"] = prior["package_hashes"]
+                snapshot["package_hashes"] = prior_snapshot["package_hashes"]
+            if artifact_hashes:
+                # Byte-level registry artifact hashes (sha256 over the served npm/PyPI
+                # bytes) captured under --download-artifacts; hashes only, never bytes.
+                # NOTE: stored under "registry_artifact_hashes" — distinct from
+                # "artifact_hashes", which _config_snapshot already owns for the MCP024
+                # on-disk launch-artifact baseline ({path: sha256}). The two namespaces
+                # must never share a key.
+                snapshot["registry_artifact_hashes"] = dict(artifact_hashes)
+            elif isinstance(prior_snapshot.get("registry_artifact_hashes"), dict):
+                snapshot["registry_artifact_hashes"] = prior_snapshot["registry_artifact_hashes"]
             server_entry["config_snapshot"] = snapshot
         self._data["pinned_at"] = now
         self._write()
@@ -254,6 +265,23 @@ class PinStore:
         if snapshot is None:
             return None
         hashes = snapshot.get("package_hashes")
+        if not isinstance(hashes, dict):
+            return None
+        return {str(key): str(digest) for key, digest in hashes.items()}
+
+    def baseline_artifact_hashes(self, server_name: str) -> dict[str, str] | None:
+        """Return the pinned byte-level registry artifact ``{ref_key: sha256}`` map, or None.
+
+        None when unpinned, no config snapshot, or pinned without
+        ``--download-artifacts`` (no artifact byte-hashes captured) — callers skip
+        silently. Read from ``registry_artifact_hashes``, which is kept distinct from
+        ``artifact_hashes`` (the MCP024 on-disk launch-artifact baseline, keyed by
+        filesystem path) and ``package_hashes`` (the MCP025 registry-metadata baseline).
+        """
+        snapshot = self.baseline_config(server_name)
+        if snapshot is None:
+            return None
+        hashes = snapshot.get("registry_artifact_hashes")
         if not isinstance(hashes, dict):
             return None
         return {str(key): str(digest) for key, digest in hashes.items()}

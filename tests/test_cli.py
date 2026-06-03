@@ -204,6 +204,7 @@ def test_run_scan_core_config_only_ignores_discovered_configs(monkeypatch: pytes
         False,  # provenance_check
         False,  # integrity_check
         False,  # verify_artifacts
+        False,  # download_artifacts
         False,  # llm_analysis
         True,  # config_only
     )
