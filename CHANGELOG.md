@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.0] - 2026-06-02
+
+### Added
+
+- Added opt-in, network-gated **byte-level artifact verification** (`scan --download-artifacts`,
+  rule `MCP026`). Where `MCP025` compares the registry's *published* hash, this downloads the
+  actual bytes the registry serves, hashes them, and checks them against both the registry's
+  own published hash and a byte-hash captured at pin time:
+  - `PUBLISHED_MISMATCH` (HIGH) — served bytes do not match the registry's own published hash:
+    a CDN, mirror, or man-in-the-middle serving content inconsistent with the registry's
+    integrity metadata (a content-level signal `MCP025` cannot see).
+  - `BASELINE_MISMATCH` (HIGH) — a file pinned at baseline now serves different bytes or has
+    vanished (republish-in-place / tampering, proven at the byte level). Verification is
+    per distribution file, so a *newly added* file on a frozen version (e.g. a late wheel
+    upload) is reported as an advisory **MEDIUM** rather than a false HIGH — and is never
+    silently ignored.
+  - `UNVERIFIED` (MEDIUM) — bytes could not be downloaded or hashed (unreachable, withdrawn,
+    over the size/file-count cap, or a download host not on the registry/CDN allowlist).
+
+  Pin-time capture verifies bytes against the published hash *before* baselining and refuses
+  (with a warning, surfaced in `pin --refresh --json` as `artifact_warnings`) to baseline bytes
+  that disagree — never trusting poisoned bytes. Downloads stream through bounded hashers
+  (64 MiB/file, 24-file cap), never to disk, and only to an allowlist of registry/CDN hosts
+  re-validated on every redirect hop (SSRF guard). npm consistency is verified against whichever
+  SRI algorithm the registry actually published (sha256/384/512). Network is contacted **only**
+  under `--download-artifacts` (on both `pin` to capture the baseline and `scan` to compare).
+  Added `fail_on.artifact_verify` policy gate, SARIF rule `MCP026`, terminal + HTML report
+  sections, and a `get_artifact_verify_findings` MCP server tool.
+
+### Changed
+
+- When both `--verify-artifacts` and `--download-artifacts` run, a package's registry metadata
+  JSON (which carries both the published hash and the artifact download URL) is now fetched once
+  per scan via a shared, lock-guarded client cache instead of once per check.
+
 ## [1.11.0] - 2026-05-31
 
 ### Added
