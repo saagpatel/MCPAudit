@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from mcp_audit.pkgverify import ArtifactVerifier, PackageVerifier
+    from mcp_audit.pkgverify import ArtifactCapture, ArtifactVerifier, PackageVerifier
 
 import anyio
 import click
@@ -386,17 +386,20 @@ async def _run_scan_core(
 
         integrity_analyzer = IntegrityAnalyzer()
 
+    # One RegistryClient shared by both verifiers so a package's registry JSON (which
+    # carries both the published hash and the artifact download URL) is fetched once per
+    # scan when --verify-artifacts and --download-artifacts run together. Fresh per scan,
+    # so the per-instance cache never serves stale metadata across scans.
     package_verifier = None
-    if verify_artifacts:
-        from mcp_audit.pkgverify import PackageVerifier
-
-        package_verifier = PackageVerifier()
-
     artifact_verifier = None
-    if download_artifacts:
-        from mcp_audit.pkgverify import ArtifactVerifier
+    if verify_artifacts or download_artifacts:
+        from mcp_audit.pkgverify import ArtifactVerifier, PackageVerifier, RegistryClient
 
-        artifact_verifier = ArtifactVerifier()
+        registry_client = RegistryClient()
+        if verify_artifacts:
+            package_verifier = PackageVerifier(fetch=registry_client.fetch_hash)
+        if download_artifacts:
+            artifact_verifier = ArtifactVerifier(fetch=registry_client.fetch_artifact)
 
     # --escalation/provenance/integrity-check, --verify-artifacts and
     # --download-artifacts all imply a pin comparison, so a pin store is needed even
@@ -1210,8 +1213,7 @@ async def _run_pin(
     override_applier = OverrideApplier(load_override_config(DEFAULT_OVERRIDE_PATH))
     report = await _run_scan_core(False, None, 10, None, override_applier)
     duplicate_names = _duplicate_server_names(report.audits)
-    verifier = _make_package_verifier(verify_artifacts)
-    artifact_verifier = _make_artifact_verifier(download_artifacts)
+    verifier, artifact_verifier = _make_registry_verifiers(verify_artifacts, download_artifacts)
 
     matched = False
     skipped_ambiguous: set[str] = set()
@@ -1231,7 +1233,10 @@ async def _run_pin(
             )
             continue
         pkg_hashes = await anyio.to_thread.run_sync(verifier.capture, audit.server) if verifier else None
-        art_hashes = await _capture_artifact_hashes(artifact_verifier, audit.server)
+        art_capture = await _capture_artifacts(artifact_verifier, audit.server)
+        for warning in art_capture.warnings:
+            console.print(f"[yellow]{warning}[/yellow]")
+        art_hashes = art_capture.hashes
         store.pin_server(
             audit.server.name,
             audit.tools,
@@ -1250,40 +1255,40 @@ async def _run_pin(
         console.print(f"[yellow]Server '{server_name}' not found.[/yellow]")
 
 
-def _make_package_verifier(verify_artifacts: bool) -> PackageVerifier | None:
-    """Build a PackageVerifier when --verify-artifacts is set, else None."""
-    if not verify_artifacts:
-        return None
-    from mcp_audit.pkgverify import PackageVerifier
+def _make_registry_verifiers(
+    verify_artifacts: bool, download_artifacts: bool
+) -> tuple[PackageVerifier | None, ArtifactVerifier | None]:
+    """Build the MCP025/MCP026 verifiers sharing one RegistryClient (per-scan cache).
 
-    return PackageVerifier()
-
-
-def _make_artifact_verifier(download_artifacts: bool) -> ArtifactVerifier | None:
-    """Build an ArtifactVerifier when --download-artifacts is set, else None."""
-    if not download_artifacts:
-        return None
-    from mcp_audit.pkgverify import ArtifactVerifier
-
-    return ArtifactVerifier()
-
-
-async def _capture_artifact_hashes(
-    verifier: ArtifactVerifier | None, server_config: ServerConfig
-) -> dict[str, str]:
-    """Download + hash a server's pinned artifacts; print any capture warnings.
-
-    Returns the storable ``{ref_key: sha256}`` map (empty when no verifier or
-    nothing verified). The download runs off the event loop. Warnings surface
-    refused (tamper-suspected) or unverifiable artifacts so they are never
-    silently baselined.
+    Sharing the client means a package's registry JSON — which carries both the
+    published hash and the artifact download URL — is fetched once when both checks run.
     """
+    if not (verify_artifacts or download_artifacts):
+        return None, None
+    from mcp_audit.pkgverify import ArtifactVerifier, PackageVerifier, RegistryClient
+
+    client = RegistryClient()
+    package_verifier = PackageVerifier(fetch=client.fetch_hash) if verify_artifacts else None
+    artifact_verifier = ArtifactVerifier(fetch=client.fetch_artifact) if download_artifacts else None
+    return package_verifier, artifact_verifier
+
+
+async def _capture_artifacts(
+    verifier: ArtifactVerifier | None, server_config: ServerConfig
+) -> ArtifactCapture:
+    """Download + hash a server's pinned artifacts off the event loop.
+
+    Returns the full capture (storable ``{ref_key: sha256}`` hashes plus any
+    warnings for refused tamper-suspected / unverifiable artifacts). The caller
+    decides how to surface warnings — console for humans, the JSON payload for
+    ``--json`` — so the structured-output path never loses the signal or corrupts
+    its stream with console writes. Empty capture when no verifier.
+    """
+    from mcp_audit.pkgverify import ArtifactCapture
+
     if verifier is None:
-        return {}
-    capture = await anyio.to_thread.run_sync(verifier.capture, server_config)
-    for warning in capture.warnings:
-        console.print(f"[yellow]{warning}[/yellow]")
-    return capture.hashes
+        return ArtifactCapture()
+    return await anyio.to_thread.run_sync(verifier.capture, server_config)
 
 
 async def _run_pin_refresh(
@@ -1297,10 +1302,10 @@ async def _run_pin_refresh(
     """Review drift for one server and optionally refresh its pin baseline."""
     from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
     from mcp_audit.pinning import PinStore as PS
+    from mcp_audit.pkgverify import ArtifactCapture
 
     assert isinstance(store, PS)
-    verifier = _make_package_verifier(verify_artifacts)
-    artifact_verifier = _make_artifact_verifier(download_artifacts)
+    verifier, artifact_verifier = _make_registry_verifiers(verify_artifacts, download_artifacts)
     override_applier = OverrideApplier(load_override_config(DEFAULT_OVERRIDE_PATH))
     report = await _run_scan_core(False, None, 10, None, override_applier)
 
@@ -1347,9 +1352,10 @@ async def _run_pin_refresh(
         if (verifier and apply_refresh)
         else None
     )
-    refresh_artifacts = (
-        await _capture_artifact_hashes(artifact_verifier, audit.server) if apply_refresh else {}
+    art_capture = (
+        await _capture_artifacts(artifact_verifier, audit.server) if apply_refresh else ArtifactCapture()
     )
+    refresh_artifacts = art_capture.hashes
     if json_status:
         if apply_refresh:
             store.pin_server(
@@ -1367,9 +1373,13 @@ async def _run_pin_refresh(
                 escalation_findings,
                 provenance_findings,
                 applied=apply_refresh,
+                artifact_warnings=art_capture.warnings,
             )
         )
         return
+
+    for warning in art_capture.warnings:
+        console.print(f"[yellow]{warning}[/yellow]")
 
     _render_pin_refresh_review(
         audit.server.name, len(audit.tools), findings, escalation_findings, provenance_findings
@@ -1443,11 +1453,13 @@ def _pin_refresh_json(
     *,
     applied: bool,
     error: str | None = None,
+    artifact_warnings: list[str] | None = None,
 ) -> str:
     import json
 
     escalation_findings = escalation_findings or []
     provenance_findings = provenance_findings or []
+    artifact_warnings = artifact_warnings or []
     counts = {status.value: 0 for status in DriftStatus}
     for finding in drift_findings:
         counts[finding.status.value] += 1
@@ -1488,6 +1500,7 @@ def _pin_refresh_json(
             }
             for finding in provenance_findings
         ],
+        "artifact_warnings": artifact_warnings,
     }
     return json.dumps(payload, indent=2, sort_keys=True)
 
