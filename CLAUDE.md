@@ -47,8 +47,8 @@ A Python CLI tool that scans locally configured MCP servers across Claude Deskto
 
 ## Current State
 
-**Stable 1.8.0 maintenance**
-The codebase now includes discovery, config-only scans, connected tool/prompt/resource enumeration, permission scoring, prompt-injection checks, SSRF detection, fleet-aware lethal-trifecta and cross-server tool-name shadowing detection, over-time capability-escalation and launch-config/provenance drift detection (vs pin baselines), schema pinning/drift checks, terminal/JSON/SARIF/HTML output, watch mode, MCP server exposure, overrides, policy gates, and optional LLM-assisted classification. Treat older roadmap phase labels as historical unless they match the current code.
+**Stable 1.12.0 maintenance**
+The codebase now includes discovery, config-only scans, connected tool/prompt/resource enumeration, permission scoring, prompt-injection checks, SSRF detection, fleet-aware lethal-trifecta and cross-server tool-name shadowing detection, over-time capability-escalation and launch-config/provenance drift detection (vs pin baselines), launch-artifact integrity detection (on-disk hash drift), registry package verification (npm/PyPI published-hash check), byte-level artifact verification (downloaded bytes vs registry and baseline), schema pinning/drift checks, terminal/JSON/SARIF/HTML output, watch mode, MCP server exposure, overrides, policy gates, and optional LLM-assisted classification. Treat older roadmap phase labels as historical unless they match the current code.
 
 ## Stack
 
@@ -86,6 +86,33 @@ mcp-audit scan --config ./mcp.json --config-only
 # Check tools, prompts, and resources for prompt-injection patterns
 mcp-audit scan --inject-check
 
+# Flag SSRF-prone tools/resources (caller-controlled server-side fetch targets)
+mcp-audit scan --ssrf-check
+mcp-audit scan --ssrf-check --ssrf-allowlist api.github.com,internal.svc
+
+# Detect lethal-trifecta / toxic-flow attack surface (per-server and fleet-level)
+mcp-audit scan --trifecta-check
+
+# Detect cross-server tool-name shadowing (exact, normalised, homoglyph collisions)
+mcp-audit scan --shadow-check
+
+# Detect capability escalation ("rug pull") vs the pin baseline
+mcp-audit scan --escalation-check
+
+# Detect launch-config / provenance drift vs the pin baseline
+mcp-audit scan --provenance-check
+
+# Detect on-disk launch-artifact (binary/script) hash drift vs the pin baseline
+mcp-audit scan --integrity-check
+
+# Verify npm/PyPI package@version registry hashes vs the pin baseline (opt-in, network)
+mcp-audit pin --verify-artifacts
+mcp-audit scan --verify-artifacts
+
+# Download the artifact bytes and verify their hash vs published + baseline (opt-in, network)
+mcp-audit pin --download-artifacts
+mcp-audit scan --download-artifacts
+
 # Pin current tool schemas, then detect drift on later scans.
 # Pinning connects to servers so it can capture real tool schemas.
 mcp-audit pin
@@ -100,8 +127,9 @@ mcp-audit pin --refresh github
 mcp-audit pin --refresh github --json
 mcp-audit pin --refresh github --apply
 
-# Export JSON or SARIF 2.1.0
+# Export JSON, SARIF 2.1.0, or a self-contained HTML report
 mcp-audit scan --json audit.json --sarif audit.sarif
+mcp-audit scan --html audit.html
 
 # Fail CI on local policy violations
 mcp-audit scan --policy policy.yaml
