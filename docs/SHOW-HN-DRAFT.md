@@ -16,7 +16,7 @@ punishes it. Lead with results, state limitations plainly, end with the ask.
 **Title** (≤ 80 chars, plain "Show HN:" format):
 
 ```
-Show HN: MCPAudit – offline security auditor for your configured MCP servers
+Show HN: I scanned the most popular MCP servers – here's what they can access
 ```
 
 **URL to submit:**
@@ -41,6 +41,22 @@ names, never values. A connected scan (opt-in) spawns the servers to read
 their real tool schemas; networked package verification and LLM analysis are
 both separate opt-in flags.
 
+The ask, up front: before I put a "beta" label on this I want two external,
+redacted, config-only field reports from setups that aren't mine. If you run
+MCP servers, this is ~2 minutes and stays entirely on the safe path:
+
+    python3 -m pip install --upgrade mcp-permission-audit
+    mcp-audit --version
+    mcp-audit scan --skip-connect --json mcp-audit-field-report.json
+
+That command is config-only — no servers spawned, no network. Then open a
+redacted report (the template prompts you for the safe fields):
+https://github.com/saagpatel/MCPAudit/issues/new?template=field_report.md
+Please strip credential values, private paths, internal hostnames, private
+URLs, and proprietary prompt/tool/schema text — full checklist in the request
+packet:
+https://github.com/saagpatel/MCPAudit/blob/main/docs/EXTERNAL-FIELD-REPORT-REQUEST.md
+
 What it checks: inferred permission/capability scope per server, prompt-
 injection patterns in tool/prompt/resource text, SSRF-shaped tools (caller-
 controllable server-side fetch), cross-server tool-name shadowing, the
@@ -51,10 +67,10 @@ them in memory (never to disk, never executed), and checks them against the
 registry's published hash and a pin-time baseline. Output is rich terminal,
 JSON, SARIF 2.1.0, or self-contained HTML.
 
-To make sure the verification path actually works on real software, I ran it
-against a set of popular public servers — the official npm ones
-(server-filesystem, -everything, -memory, -sequential-thinking, -github) and
-PyPI ones (mcp-server-git, -fetch, -time). Results:
+To show the verification path works on real software, I ran it against a set
+of popular public servers — the official npm ones (server-filesystem,
+-everything, -memory, -sequential-thinking, -github) and PyPI ones
+(mcp-server-git, -fetch, -time). What it found:
 
 - Byte verification: 7/7 packages had a retrievable published hash, 7/7
   downloaded and hashed, 7/7 matched. PyPI multi-file releases (sdist + wheel)
@@ -72,25 +88,9 @@ PyPI ones (mcp-server-git, -fetch, -time). Results:
 Full writeup with the numbers:
 https://github.com/saagpatel/MCPAudit/blob/main/docs/FIELD-SCAN-POPULAR-SERVERS.md
 
-The honest gap: that scan is solo evidence. Before I put a "beta" label on
-this I want two external, redacted, config-only field reports from setups that
-aren't mine. If you run MCP servers, this is a couple of minutes:
-
-    python3 -m pip install --upgrade mcp-permission-audit
-    mcp-audit --version
-    mcp-audit scan --skip-connect --json mcp-audit-field-report.json
-
-That command is config-only — it won't spawn servers or hit the network. Then
-open a redacted report (the template prompts you for the safe fields):
-https://github.com/saagpatel/MCPAudit/issues/new?template=field_report.md
-
-Please strip credential values, private paths, internal hostnames, private
-URLs, and any proprietary prompt/tool/schema text — there's a redaction
-checklist in the request packet:
-https://github.com/saagpatel/MCPAudit/blob/main/docs/EXTERNAL-FIELD-REPORT-REQUEST.md
-
-Happy to answer anything about the heuristics, the threat model, or why it's
-deliberately offline-first.
+That scan is solo evidence — it does not by itself make this beta-ready; the
+two external reports above are what close that gap. Happy to answer anything
+about the heuristics, the threat model, or why it's deliberately offline-first.
 ```
 
 ---
