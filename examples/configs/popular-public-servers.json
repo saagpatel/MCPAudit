@@ -1,0 +1,51 @@
+{
+	"_comment": "Publishable sample config of popular PUBLIC open-source MCP servers, used for config-only field-scan evidence (see docs/SOLO-EVIDENCE.md). Contains only public package names, an example.com placeholder remote, and credential KEY NAMES (never values). Versions pinned to the releases current at 2026-06-02. Safe to run: `mcp-audit scan --config examples/configs/popular-public-servers.json --config-only`.",
+	"mcpServers": {
+		"filesystem": {
+			"command": "npx",
+			"args": [
+				"-y",
+				"@modelcontextprotocol/server-filesystem@2026.1.14",
+				"/tmp/workspace"
+			]
+		},
+		"everything": {
+			"command": "npx",
+			"args": ["-y", "@modelcontextprotocol/server-everything@2026.1.26"]
+		},
+		"memory": {
+			"command": "npx",
+			"args": ["-y", "@modelcontextprotocol/server-memory@2026.1.26"]
+		},
+		"sequential-thinking": {
+			"command": "npx",
+			"args": [
+				"-y",
+				"@modelcontextprotocol/server-sequential-thinking@2025.12.18"
+			]
+		},
+		"git": {
+			"command": "uvx",
+			"args": ["mcp-server-git==2026.1.14"]
+		},
+		"fetch": {
+			"command": "uvx",
+			"args": ["mcp-server-fetch==2025.4.7"]
+		},
+		"time": {
+			"command": "uvx",
+			"args": ["mcp-server-time==2026.1.26"]
+		},
+		"github": {
+			"command": "npx",
+			"args": ["-y", "@modelcontextprotocol/server-github"],
+			"env": {
+				"GITHUB_PERSONAL_ACCESS_TOKEN": ""
+			}
+		},
+		"remote-example": {
+			"type": "http",
+			"url": "https://mcp.example.com/mcp"
+		}
+	}
+}
