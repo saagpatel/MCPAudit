@@ -40,8 +40,7 @@ MCPAudit is a local MCP permission auditor. Keep it read-only, deterministic, an
 - Current canonical verifier:
   - `uv run pytest`
   - `uv run ruff check`
-  - `uv run mypy src`
-- Current known follow-up: strict `uv run mypy .` still reports test-only typing debt in fixtures and mocks. Do not call the whole-repo mypy gate green until that backlog is intentionally repaired.
+  - `uv run mypy .`
 - For behavior changes, add a focused sample scan or fixture assertion when it improves confidence.
 - If a command is missing, unclear, or unsafe to run, stop and report the blocker instead of guessing.
 
@@ -61,7 +60,7 @@ MCPAudit is a local-first permission and risk auditor for MCP server configurati
 
 ## Current State
 
-The project is in stable maintenance. Discovery, config-only scans, connected enumeration, permission scoring, prompt/resource scoring boundaries, pinning/drift checks, policy gates, JSON/SARIF output, watch mode, MCP server exposure, and optional LLM classification are all present. Treat old roadmap phase labels as historical unless the current code agrees.
+The project is in stable maintenance (1.12.0). Discovery, config-only scans, connected enumeration, permission scoring, prompt/resource scoring boundaries, SSRF detection, lethal-trifecta and shadowing detection, capability-escalation and provenance drift detection, launch-artifact integrity detection, registry package verification (npm/PyPI), byte-level artifact verification, pinning/drift checks, policy gates, JSON/SARIF/HTML output, watch mode, MCP server exposure, and optional LLM classification are all present. Treat old roadmap phase labels as historical unless the current code agrees.
 
 ## Stack
 
