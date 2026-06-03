@@ -9,6 +9,9 @@ from pathlib import Path
 from typing import Any
 
 from mcp_audit.models import (
+    ArtifactVerifyFinding,
+    ArtifactVerifyKind,
+    ArtifactVerifySeverity,
     AuditReport,
     CapabilityFinding,
     Confidence,
@@ -40,6 +43,7 @@ from mcp_audit.models import (
 )
 from mcp_audit.redaction import redact_data
 from mcp_audit.taxonomy import (
+    ARTIFACT_VERIFY_FINDINGS,
     ESCALATION_FINDINGS,
     INJECTION_FINDINGS,
     INTEGRITY_FINDINGS,
@@ -138,6 +142,19 @@ _PACKAGE_VERIFY_RULE_IDS: dict[PackageVerifyKind, str] = {
 
 _PACKAGE_VERIFY_RULE_DESCRIPTIONS = {
     metadata.rule_id: metadata.description for metadata in PACKAGE_VERIFY_FINDINGS.values()
+}
+
+# Byte-level artifact-verification SARIF rule IDs (all kinds map to MCP026).
+_ARTIFACT_VERIFY_RULE_IDS: dict[ArtifactVerifyKind, str] = {
+    kind: metadata.rule_id for kind, metadata in ARTIFACT_VERIFY_FINDINGS.items()
+}
+
+# MCP026 covers three kinds; combine their descriptions for the single SARIF rule.
+_ARTIFACT_VERIFY_RULE_DESCRIPTIONS = {
+    rule_id: " ".join(
+        sorted({m.description for m in ARTIFACT_VERIFY_FINDINGS.values() if m.rule_id == rule_id})
+    )
+    for rule_id in {m.rule_id for m in ARTIFACT_VERIFY_FINDINGS.values()}
 }
 
 
@@ -305,6 +322,18 @@ class SarifGenerator:
             }
             for rule_id, desc in _PACKAGE_VERIFY_RULE_DESCRIPTIONS.items()
         ]
+        artifact_verify_rules = [
+            {
+                "id": rule_id,
+                "name": f"ArtifactVerify{rule_id}",
+                "shortDescription": {"text": desc},
+                "fullDescription": {"text": desc},
+                "help": {"text": _artifact_verify_help(rule_id)},
+                "helpUri": "https://github.com/saagpatel/MCPAudit#readme",
+                "properties": {"category": "artifact_verify"},
+            }
+            for rule_id, desc in _ARTIFACT_VERIFY_RULE_DESCRIPTIONS.items()
+        ]
         return (
             perm_rules
             + injection_rules
@@ -315,6 +344,7 @@ class SarifGenerator:
             + provenance_rules
             + integrity_rules
             + package_verify_rules
+            + artifact_verify_rules
             + contract_rules
         )
 
@@ -340,6 +370,8 @@ class SarifGenerator:
                 results.append(self._make_integrity_result(integrity, audit))
             for package_verify in audit.package_verify_findings:
                 results.append(self._make_package_verify_result(package_verify, audit))
+            for artifact_verify in audit.artifact_verify_findings:
+                results.append(self._make_artifact_verify_result(artifact_verify, audit))
             for drift_finding in audit.drift_findings:
                 results.append(self._make_drift_result(drift_finding, audit))
         for fleet_trifecta in report.fleet_trifecta_findings:
@@ -401,6 +433,11 @@ class SarifGenerator:
 
     def _package_verify_level(self, finding: PackageVerifyFinding) -> str:
         if finding.severity == PackageVerifySeverity.HIGH:
+            return "error"
+        return "warning"
+
+    def _artifact_verify_level(self, finding: ArtifactVerifyFinding) -> str:
+        if finding.severity == ArtifactVerifySeverity.HIGH:
             return "error"
         return "warning"
 
@@ -741,6 +778,39 @@ class SarifGenerator:
             },
         }
 
+    def _make_artifact_verify_result(
+        self, finding: ArtifactVerifyFinding, audit: ServerAudit
+    ) -> dict[str, Any]:
+        """Build a SARIF result for a byte-level artifact-verification finding (MCP026)."""
+        rule_id = _ARTIFACT_VERIFY_RULE_IDS[finding.kind]
+        level = self._artifact_verify_level(finding)
+        config_path = audit.server.config_path
+        uri = Path(config_path).as_uri() if config_path else "file:///unknown"
+        msg = f"{finding.summary} Suggested action: {finding.remediation}"
+        return {
+            "ruleId": rule_id,
+            "level": level,
+            "message": {"text": msg},
+            "locations": [{"physicalLocation": {"artifactLocation": {"uri": uri}}}],
+            "partialFingerprints": {
+                "mcpAuditStableId": _stable_fingerprint(
+                    rule_id,
+                    audit.server.name,
+                    f"{finding.kind.value}:{finding.ecosystem}:{finding.package}:{finding.version}",
+                )
+            },
+            "properties": {
+                "kind": finding.kind.value,
+                "severity": finding.severity.value,
+                "ecosystem": finding.ecosystem,
+                "package": finding.package,
+                "version": finding.version,
+                "baseline_hash": finding.baseline_hash,
+                "current_hash": finding.current_hash,
+                "remediation": finding.remediation,
+            },
+        }
+
     def _make_drift_result(self, finding: DriftFinding, audit: ServerAudit) -> dict[str, Any]:
         config_path = audit.server.config_path
         uri = Path(config_path).as_uri() if config_path else "file:///unknown"
@@ -847,6 +917,13 @@ def _integrity_help(rule_id: str) -> str:
 def _package_verify_help(rule_id: str) -> str:
     remediations = {
         metadata.remediation for metadata in PACKAGE_VERIFY_FINDINGS.values() if metadata.rule_id == rule_id
+    }
+    return " ".join(sorted(remediations))
+
+
+def _artifact_verify_help(rule_id: str) -> str:
+    remediations = {
+        metadata.remediation for metadata in ARTIFACT_VERIFY_FINDINGS.values() if metadata.rule_id == rule_id
     }
     return " ".join(sorted(remediations))
 

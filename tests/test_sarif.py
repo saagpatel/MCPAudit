@@ -22,6 +22,7 @@ from mcp_audit.models import (
     ServerAudit,
 )
 from mcp_audit.sarif import (
+    _ARTIFACT_VERIFY_RULE_IDS,
     _ESCALATION_RULE_IDS,
     _INJECTION_RULE_IDS,
     _INTEGRITY_RULE_IDS,
@@ -109,6 +110,7 @@ class TestSarifStructure:
             | set(_PROVENANCE_RULE_IDS.values())
             | set(_INTEGRITY_RULE_IDS.values())
             | set(_PACKAGE_VERIFY_RULE_IDS.values())
+            | set(_ARTIFACT_VERIFY_RULE_IDS.values())
             | {"MCP009", "MCP010"}
         )
         assert rule_ids == expected

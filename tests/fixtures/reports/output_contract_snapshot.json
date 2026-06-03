@@ -19,6 +19,7 @@
     "audit_count": 1,
     "audit_keys": [
       "annotation_coverage",
+      "artifact_verify_findings",
       "capability_findings",
       "connection_error",
       "connection_status",
@@ -82,6 +83,7 @@
     "audit_count": 1,
     "audit_keys": [
       "annotation_coverage",
+      "artifact_verify_findings",
       "capability_findings",
       "connection_error",
       "connection_status",
@@ -138,6 +140,7 @@
     "audit_count": 1,
     "audit_keys": [
       "annotation_coverage",
+      "artifact_verify_findings",
       "capability_findings",
       "connection_error",
       "connection_status",
@@ -192,6 +195,7 @@
     "audit_count": 1,
     "audit_keys": [
       "annotation_coverage",
+      "artifact_verify_findings",
       "capability_findings",
       "connection_error",
       "connection_status",
@@ -256,6 +260,7 @@
     "audit_count": 1,
     "audit_keys": [
       "annotation_coverage",
+      "artifact_verify_findings",
       "capability_findings",
       "connection_error",
       "connection_status",
@@ -331,6 +336,7 @@
     "audit_count": 1,
     "audit_keys": [
       "annotation_coverage",
+      "artifact_verify_findings",
       "capability_findings",
       "connection_error",
       "connection_status",
@@ -387,6 +393,7 @@
     "audit_count": 1,
     "audit_keys": [
       "annotation_coverage",
+      "artifact_verify_findings",
       "capability_findings",
       "connection_error",
       "connection_status",
@@ -464,6 +471,7 @@
     "audit_count": 2,
     "audit_keys": [
       "annotation_coverage",
+      "artifact_verify_findings",
       "capability_findings",
       "connection_error",
       "connection_status",
@@ -521,6 +529,7 @@
     "audit_count": 1,
     "audit_keys": [
       "annotation_coverage",
+      "artifact_verify_findings",
       "capability_findings",
       "connection_error",
       "connection_status",
@@ -595,6 +604,7 @@
     "audit_count": 1,
     "audit_keys": [
       "annotation_coverage",
+      "artifact_verify_findings",
       "capability_findings",
       "connection_error",
       "connection_status",

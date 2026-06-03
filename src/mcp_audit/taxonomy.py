@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from mcp_audit.models import (
+    ArtifactVerifyKind,
     EscalationKind,
     InjectionSeverity,
     IntegrityKind,
@@ -433,3 +434,67 @@ PACKAGE_VERIFY_FINDINGS: dict[PackageVerifyKind, FindingMetadata] = {
 def package_verify_metadata(kind: PackageVerifyKind) -> FindingMetadata:
     """Return stable metadata for a registry package-verification change kind."""
     return PACKAGE_VERIFY_FINDINGS[kind]
+
+
+ARTIFACT_VERIFY_FINDINGS: dict[ArtifactVerifyKind, FindingMetadata] = {
+    ArtifactVerifyKind.PUBLISHED_MISMATCH: FindingMetadata(
+        rule_id="MCP026",
+        title="Downloaded artifact bytes do not match the registry-published hash",
+        severity="high",
+        description=(
+            "Under --download-artifacts the actual bytes the registry served for a pinned "
+            "package@version (npm or PyPI) were downloaded and hashed, and the hash did not match "
+            "the registry's own published hash for that version. This is a content-level signal a "
+            "metadata-to-metadata compare (MCP025) cannot see: a CDN, mirror, or man-in-the-middle "
+            "is serving bytes inconsistent with the registry's published integrity. The same "
+            "consistency check also runs at pin time, where inconsistent bytes are refused from the "
+            "baseline (with a warning) rather than silently trusted; this finding is its scan-time "
+            "form, raised when a version that was consistent at pin later begins serving divergent bytes."
+        ),
+        remediation=(
+            "Treat served bytes that disagree with the registry's published hash as a strong "
+            "supply-chain compromise signal. Do not install from the affected source. Re-fetch over a "
+            "trusted network/mirror, verify the maintainer release, and only refresh the pin with "
+            "`mcp-audit pin --download-artifacts` once consistent bytes are confirmed."
+        ),
+    ),
+    ArtifactVerifyKind.BASELINE_MISMATCH: FindingMetadata(
+        rule_id="MCP026",
+        title="Downloaded artifact bytes changed since the pin baseline",
+        severity="high",
+        description=(
+            "The bytes the registry served for a pinned package@version hash to a different value "
+            "than the byte-hash captured when it was pinned with --download-artifacts. A registry must "
+            "never serve different bytes for the same fixed version; this is a republish-in-place "
+            "proven at the byte level, which a published-hash compare can be fooled on if the registry "
+            "updates its metadata to match the tampered bytes."
+        ),
+        remediation=(
+            "Investigate the version as a republish/tampering event before trusting it. Confirm the "
+            "change is a legitimate maintainer action, then refresh the pin with "
+            "`mcp-audit pin --download-artifacts`; otherwise pin a known-good version and report it."
+        ),
+    ),
+    ArtifactVerifyKind.UNVERIFIED: FindingMetadata(
+        rule_id="MCP026",
+        title="Artifact bytes could not be downloaded or hashed to verify",
+        severity="medium",
+        description=(
+            "Under --download-artifacts the bytes for a pinned package@version could not be retrieved "
+            "or hashed — the registry/CDN was unreachable, the version was withdrawn, the artifact "
+            "exceeded the download size cap, or the resolved download host was not on the registry-CDN "
+            "allowlist (an SSRF guard against poisoned metadata redirecting the download)."
+        ),
+        remediation=(
+            "Re-run when the registry is reachable. A persistent failure for a previously verifiable "
+            "version warrants investigation (withdrawn release, redirected download host). The pinned "
+            "byte-hash baseline is retained so verification resumes automatically once bytes are "
+            "fetchable again."
+        ),
+    ),
+}
+
+
+def artifact_verify_metadata(kind: ArtifactVerifyKind) -> FindingMetadata:
+    """Return stable metadata for a byte-level artifact-verification kind."""
+    return ARTIFACT_VERIFY_FINDINGS[kind]

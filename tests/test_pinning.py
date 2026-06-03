@@ -346,3 +346,41 @@ class TestConfigSnapshot:
         assert snap is not None
         assert snap["headers_keys"] == ["Authorization"]
         assert snap["url"] == "https://x"
+
+
+class TestArtifactHashNamespaces:
+    """Regression: MCP026 registry byte-hashes must not collide with the MCP024
+    on-disk launch-artifact baseline, which already owns the 'artifact_hashes' key."""
+
+    def test_registry_hashes_do_not_clobber_launch_integrity_baseline(self, tmp_path: Path) -> None:
+        # A local script arg makes _config_snapshot populate the MCP024 baseline
+        # ('artifact_hashes', keyed by filesystem path).
+        script = tmp_path / "server.py"
+        script.write_text("print('hi')\n")
+        cfg = _config(command="uvx", args=[str(script)])
+        store = _store(tmp_path)
+
+        store.pin_server(
+            "srv",
+            [make_tool("t")],
+            cfg,
+            artifact_hashes={"pypi:thing:1.0.0": "deadbeef"},
+        )
+
+        # MCP024 launch-artifact baseline is intact and still keyed by path.
+        launch = store.baseline_artifacts("srv")
+        assert launch is not None
+        assert str(script.resolve()) in launch
+        assert "pypi:thing:1.0.0" not in launch
+
+        # MCP026 registry byte-hashes live in their own namespace, keyed by ref.
+        registry = store.baseline_artifact_hashes("srv")
+        assert registry == {"pypi:thing:1.0.0": "deadbeef"}
+
+    def test_registry_hashes_preserved_on_schema_only_refresh(self, tmp_path: Path) -> None:
+        cfg = _config(command="uvx", args=["x"])
+        store = _store(tmp_path)
+        store.pin_server("srv", [make_tool("t")], cfg, artifact_hashes={"pypi:x:2.0.0": "abc"})
+        # A later schema-only refresh (no artifact_hashes) must not wipe the baseline.
+        store.pin_server("srv", [make_tool("t")], cfg)
+        assert store.baseline_artifact_hashes("srv") == {"pypi:x:2.0.0": "abc"}
