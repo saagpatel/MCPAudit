@@ -1,52 +1,48 @@
 # HANDOFF — MCPAudit
 
-**Status:** Complete + one open release gap. main is at **v1.7.0**; **PyPI is still at 1.6.0**.
-**Branch:** main (0 ahead / 0 behind origin) · **pyproject version:** 1.7.0 · **HEAD:** 6606fe9 (PR #99)
+**Status:** Complete. All work merged + released. Working tree clean.
+**Branch:** `main` @ `6875f88` (0 ahead / 0 behind origin). No stale branches.
+**Latest on PyPI:** `1.11.0` (verified on simple index).
 
-## ⚠️ Top next-session action — release gap
-- main + `pyproject.toml` are at **1.7.0** (PR #99 trifecta merged), but **no `v1.7.0` git tag
-  exists** and the latest GitHub release / PyPI version is **1.6.0**. The tag-triggered
-  `publish.yml` never fired for 1.7.0.
-- To ship 1.7.0: confirm CHANGELOG has a 1.7.0 entry, then **publish a `v1.7.0` GitHub release**
-  (or push the `v1.7.0` tag) → `publish.yml` OIDC publishes to PyPI.
-- **Verify the publish via the PyPI *simple* index** (`pypi.org/simple/mcp-permission-audit/`) +
-  the `publish.yml` per-step status — the JSON endpoint cache-lags. Log SHIPPED only after.
+## Completed this session
+- **1.9.0** — drop-in adoption: composite GitHub Action (`uses: saagpatel/MCPAudit@v1.11.0`),
+  pre-commit hook (`.pre-commit-hooks.yaml`), repo-local `.mcp.json` discovery, self-audit
+  dogfood. Fixed: empty scan now writes `--json`/`--sarif`/`--html` artifacts. (#107)
+- **1.10.0** — unified `pin --refresh` (surfaces escalation + provenance deltas) +
+  launch-artifact integrity `--integrity-check` / MCP024 (on-disk binary/script hash). (#108)
+- **1.11.0** — registry package verification `--verify-artifacts` / MCP025 (network-gated
+  npm/PyPI published-hash check), opt-in `--ssrf-allowlist`, per-server pin-staleness warnings. (#110)
+- **Docs** — OUTPUT-CONTRACT rule-ID registry brought current through MCP025. (#109)
 
-## Completed
-- **This conversation:** merged Dependabot #94 (idna 3.15); built + released **v1.6.0 opt-in SSRF
-  detection** (`--ssrf-check`, MCP011/MCP012; PRs #96, #97); verified **1.6.0 live on PyPI**.
-  `/code-review` caught a critical camelCase tokenization false-negative pre-merge.
-- **Parallel sessions (not this conversation), already merged to main:**
-  - **PR #98** — full injection-pattern calibration coverage + exact `non_tool_risk` composite anchors
-    (test-only: docs/FEEDBACK-TO-FIXTURES.md, tests/test_non_tool_calibration.py, non_tool_cases.json).
-  - **PR #99** — **fleet-aware lethal-trifecta detection** (`--trifecta-check`, rules MCP013/MCP014),
-    version bumped to **1.7.0**. New: src/mcp_audit/trifecta.py, tests/test_trifecta*.py,
-    examples/policies/trifecta-aware-ci.yaml, docs/TRIFECTA-DETECTION.md.
+## In Progress / Blocked
+- Nothing in progress. All PRs merged + tagged + released; working tree clean.
+- BLOCKED (roadmap-gated, do NOT build without external field reports #83/#84/#85):
+  composite-scoring (fold `non_tool_risk` into `risk_score.composite`) + default SSRF
+  severity downgrade. Operator chose opt-in `--ssrf-allowlist` instead (shipped 1.11.0).
 
-## In Progress / Next Steps
-1. **Ship v1.7.0** (see release-gap block above) — highest priority; the work is merged but unreleased.
-2. Roadmap-gated lanes (need external field reports #83/#84 → #85): allowlist-aware SSRF downgrade;
-   fold non_tool_risk into composite scoring (docs/COMPOSITE-SCORING-PROPOSAL.md).
-3. Always-actionable: grow calibration corpus (new schemes/families only with a redacted fixture).
-4. New analyzer/detector module → run `/code-review` BEFORE committing.
-
-## Blocked
-- #83/#84 (external redacted field reports) — blocked on external humans, not code.
+## Next Steps
+- Next detection frontier: extend `--verify-artifacts` to **download-and-hash the resolved
+  artifact** (truest verification) vs today's registry-published-hash compare.
+- Otherwise maintenance: keep scanner + output contracts stable; gate behavior changes
+  behind fixtures/sample-scan assertions.
 
 ## Key Decisions
-- SSRF + trifecta detection are additive + opt-in (`--ssrf-check` / `--trifecta-check`); dedicated
-  opt-in policy gates, NOT under the broad `fail_on.severity` shortcut.
-- Release = publish `vX.Y.Z` GitHub release / push tag → `publish.yml` OIDC → PyPI. No manual `uv publish`.
-- Feature branches + squash-merge only; never commit to main.
+- All detectors additive + opt-in; **never** touch `risk_score.composite`.
+- `--verify-artifacts` is the only networked path besides `--llm-analysis`; offline-first by default.
+- Registry verification keys by exact `package@version`; a version *float* is provenance's job (MCP021).
+- SSRF allowlist suppresses only FIXED non-templated hosts — never caller-controlled targets.
 
-## Verify bar (all green on main right now)
-`uv run pytest` (**397**) · `ruff check` · `ruff format --check` · `mypy .` · `uv lock --check`
-· `git diff --check` · `python tests/validation/validate_patterns.py` (118/118) · `uv build`
+## Key Files (session)
+- New: `src/mcp_audit/{integrity,pkgverify}.py`, `action.yml`, `.pre-commit-hooks.yaml`,
+  `.github/workflows/self-audit.yml`, `docs/{INTEGRITY,PACKAGE}-*.md`,
+  `tests/test_{integrity,pkgverify,distribution}.py`.
+- **Additive-detector wiring checklist** (touch all, then regen):
+  `models.py` + `taxonomy.py` + `<detector>.py` + `cli.py` + `sarif.py` + `report.py` +
+  `policy.py` + `server.py` + `htmlreport.py` + `pinning.py` → regen
+  `output_contract_snapshot.json` + `audit-report.schema.json`.
 
-## Files Changed (this session's SSRF work; #98/#99 landed separately)
-src/mcp_audit/{ssrf,cli,models,policy,report,sarif,server,taxonomy}.py · tests/test_ssrf*.py ·
-examples/policies/{ssrf-aware-ci.yaml,README.md} · docs/{SSRF-DETECTION,OUTPUT-CONTRACT,ROADMAP-NEXT}.md
-· README · CHANGELOG · pyproject
-
-## Uncommitted (untracked, disposable)
-- `HANDOFF.md` (this file) · `chat-continuity-mcpaudit-1.6.0-ssrf-2026-05-31.md`
+## Verify bar
+`uv run pytest` (540) ; `uv run mypy .` (whole tree — CI checks tests/) ; `uv run ruff check .` ;
+`ruff format --check src/ tests/` ; `uv run python tests/validation/validate_patterns.py` ;
+`uv lock --check` ; `uv build`. Release: tag `vX.Y.Z` → publish.yml OIDC → PyPI; verify simple
+index BEFORE logging SHIPPED.
