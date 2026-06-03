@@ -108,6 +108,33 @@ class TestNpmConsistency:
         assert _npm_consistent("sha3-512-" + "f" * 86, digests) is None
 
 
+class TestRegistryJsonCache:
+    def test_get_json_fetches_each_url_once(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        calls: list[str] = []
+
+        class _Resp:
+            def __enter__(self) -> _Resp:
+                return self
+
+            def __exit__(self, *a: object) -> None:
+                return None
+
+            def read(self) -> bytes:
+                return b'{"ok": 1}'
+
+        def fake_urlopen(req: urllib.request.Request, timeout: float) -> _Resp:
+            calls.append(req.full_url)
+            return _Resp()
+
+        # pkgverify calls urllib.request.urlopen; patch the shared module object.
+        monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+        client = RegistryClient()
+        first = client._get_json("https://pypi.org/pypi/x/1.0.0/json")
+        second = client._get_json("https://pypi.org/pypi/x/1.0.0/json")
+        assert first == second == {"ok": 1}
+        assert calls == ["https://pypi.org/pypi/x/1.0.0/json"]  # second call served from cache
+
+
 class TestRedirectAllowlist:
     def test_redirect_to_disallowed_host_raises(self) -> None:
         # A redirect hop to a non-allowlisted host must be rejected before it is
@@ -164,6 +191,10 @@ class TestStreamSha256:
         assert digest is None
 
 
+def _res(files: dict[str, str], consistent: bool = True) -> ArtifactResult:
+    return ArtifactResult(files=files, published_consistent=consistent)
+
+
 class TestArtifactVerifier:
     def _verifier(self, table: dict[str, ArtifactResult | None]) -> ArtifactVerifier:
         def fake_fetch(ref: PackageRef) -> ArtifactResult | None:
@@ -172,18 +203,18 @@ class TestArtifactVerifier:
         return ArtifactVerifier(fetch=fake_fetch)
 
     # --- capture -----------------------------------------------------------
-    def test_capture_stores_sha256_for_consistent_bytes(self) -> None:
+    def test_capture_stores_serialized_files_for_consistent_bytes(self) -> None:
         cfg = _cfg("npx", ["pkg@1.0.0"])
-        v = self._verifier({"npm:pkg:1.0.0": ArtifactResult("sha256hex", True)})
+        v = self._verifier({"npm:pkg:1.0.0": _res({"pkg-1.0.0.tgz": "sha256hex"})})
         cap = v.capture(cfg)
-        assert cap.hashes == {"npm:pkg:1.0.0": "sha256hex"}
+        assert cap.hashes == {"npm:pkg:1.0.0": "pkg-1.0.0.tgz=sha256hex"}
         assert cap.warnings == []
 
     def test_capture_refuses_inconsistent_bytes_and_warns(self) -> None:
         # Bytes the registry served did not match its own published hash: never
         # baseline poisoned bytes; surface a warning instead.
         cfg = _cfg("npx", ["pkg@1.0.0"])
-        v = self._verifier({"npm:pkg:1.0.0": ArtifactResult("sha256hex", False)})
+        v = self._verifier({"npm:pkg:1.0.0": _res({"pkg.tgz": "sha256hex"}, consistent=False)})
         cap = v.capture(cfg)
         assert cap.hashes == {}
         assert len(cap.warnings) == 1
@@ -198,7 +229,7 @@ class TestArtifactVerifier:
 
     def test_capture_skips_unversioned(self) -> None:
         cfg = _cfg("npx", ["pkg"])
-        v = self._verifier({"npm:pkg:None": ArtifactResult("x", True)})
+        v = self._verifier({"npm:pkg:None": _res({"x.tgz": "x"})})
         assert v.capture(cfg).hashes == {}
 
     # --- analyze_server ----------------------------------------------------
@@ -209,13 +240,13 @@ class TestArtifactVerifier:
 
     def test_stable_bytes_no_findings(self) -> None:
         cfg = _cfg("npx", ["pkg@1.0.0"])
-        v = self._verifier({"npm:pkg:1.0.0": ArtifactResult("SAME", True)})
-        assert v.analyze_server("srv", cfg, {"npm:pkg:1.0.0": "SAME"}) == []
+        v = self._verifier({"npm:pkg:1.0.0": _res({"pkg.tgz": "SAME"})})
+        assert v.analyze_server("srv", cfg, {"npm:pkg:1.0.0": "pkg.tgz=SAME"}) == []
 
     def test_published_mismatch_is_high(self) -> None:
         cfg = _cfg("npx", ["pkg@1.0.0"])
-        v = self._verifier({"npm:pkg:1.0.0": ArtifactResult("WHATEVER", False)})
-        findings = v.analyze_server("srv", cfg, {"npm:pkg:1.0.0": "PINNED"})
+        v = self._verifier({"npm:pkg:1.0.0": _res({"pkg.tgz": "WHATEVER"}, consistent=False)})
+        findings = v.analyze_server("srv", cfg, {"npm:pkg:1.0.0": "pkg.tgz=PINNED"})
         assert len(findings) == 1
         f = findings[0]
         assert f.kind == ArtifactVerifyKind.PUBLISHED_MISMATCH
@@ -223,21 +254,55 @@ class TestArtifactVerifier:
         assert f.rule_id == "MCP026"
         assert f.package == "pkg" and f.version == "1.0.0"
 
-    def test_baseline_mismatch_is_high(self) -> None:
+    def test_changed_pinned_file_is_high_baseline_mismatch(self) -> None:
         cfg = _cfg("npx", ["pkg@1.0.0"])
-        v = self._verifier({"npm:pkg:1.0.0": ArtifactResult("NEWBYTES", True)})
-        findings = v.analyze_server("srv", cfg, {"npm:pkg:1.0.0": "PINNED"})
+        v = self._verifier({"npm:pkg:1.0.0": _res({"pkg.tgz": "NEWBYTES"})})
+        findings = v.analyze_server("srv", cfg, {"npm:pkg:1.0.0": "pkg.tgz=PINNED"})
         assert len(findings) == 1
         f = findings[0]
         assert f.kind == ArtifactVerifyKind.BASELINE_MISMATCH
         assert f.severity == ArtifactVerifySeverity.HIGH
-        assert f.current_hash == "NEWBYTES"
-        assert f.baseline_hash == "PINNED"
+        assert f.current_hash == "pkg.tgz=NEWBYTES"
+        assert f.baseline_hash == "pkg.tgz=PINNED"
+
+    def test_removed_pinned_file_is_high_baseline_mismatch(self) -> None:
+        cfg = _cfg("uvx", ["pkg==1.0.0"])
+        v = self._verifier({"pypi:pkg:1.0.0": _res({"pkg.tar.gz": "h_sdist"})})
+        baseline = {"pypi:pkg:1.0.0": "pkg-1.0-py3.whl=h_wheel;pkg.tar.gz=h_sdist"}
+        findings = v.analyze_server("srv", cfg, baseline)
+        assert len(findings) == 1
+        assert findings[0].kind == ArtifactVerifyKind.BASELINE_MISMATCH
+        assert findings[0].severity == ArtifactVerifySeverity.HIGH
+
+    def test_added_distribution_file_is_medium_advisory(self) -> None:
+        # A late wheel upload to an already-pinned version: no pinned file changed
+        # bytes, so this is an advisory (MEDIUM), never a HIGH tamper alarm — but it
+        # is NOT silently ignored, so a malicious added wheel still surfaces.
+        cfg = _cfg("uvx", ["pkg==1.0.0"])
+        v = self._verifier(
+            {"pypi:pkg:1.0.0": _res({"pkg.tar.gz": "h_sdist", "pkg.whl": "h_wheel", "pkg-arm.whl": "h_new"})}
+        )
+        baseline = {"pypi:pkg:1.0.0": "pkg.tar.gz=h_sdist;pkg.whl=h_wheel"}
+        findings = v.analyze_server("srv", cfg, baseline)
+        assert len(findings) == 1
+        assert findings[0].kind == ArtifactVerifyKind.BASELINE_MISMATCH
+        assert findings[0].severity == ArtifactVerifySeverity.MEDIUM
+        assert "pkg-arm.whl" in findings[0].summary
+
+    def test_changed_file_with_added_file_is_high_not_medium(self) -> None:
+        # Drop-and-re-add evasion: a pinned file's bytes change AND a new file appears.
+        # The changed pinned file must win → HIGH, not downgraded to the added-file MEDIUM.
+        cfg = _cfg("uvx", ["pkg==1.0.0"])
+        v = self._verifier({"pypi:pkg:1.0.0": _res({"pkg.whl": "h_wheelNEW", "old-bytes.whl": "h_wheel"})})
+        baseline = {"pypi:pkg:1.0.0": "pkg.whl=h_wheel"}
+        findings = v.analyze_server("srv", cfg, baseline)
+        assert len(findings) == 1
+        assert findings[0].severity == ArtifactVerifySeverity.HIGH
 
     def test_unverifiable_is_medium(self) -> None:
         cfg = _cfg("npx", ["pkg@1.0.0"])
         v = self._verifier({"npm:pkg:1.0.0": None})
-        findings = v.analyze_server("srv", cfg, {"npm:pkg:1.0.0": "PINNED"})
+        findings = v.analyze_server("srv", cfg, {"npm:pkg:1.0.0": "pkg.tgz=PINNED"})
         assert len(findings) == 1
         assert findings[0].kind == ArtifactVerifyKind.UNVERIFIED
         assert findings[0].severity == ArtifactVerifySeverity.MEDIUM
@@ -246,20 +311,20 @@ class TestArtifactVerifier:
     def test_published_mismatch_takes_precedence_over_baseline(self) -> None:
         # Inconsistent-right-now is the headline even if bytes also differ from pin.
         cfg = _cfg("npx", ["pkg@1.0.0"])
-        v = self._verifier({"npm:pkg:1.0.0": ArtifactResult("NEWBYTES", False)})
-        findings = v.analyze_server("srv", cfg, {"npm:pkg:1.0.0": "PINNED"})
+        v = self._verifier({"npm:pkg:1.0.0": _res({"pkg.tgz": "NEWBYTES"}, consistent=False)})
+        findings = v.analyze_server("srv", cfg, {"npm:pkg:1.0.0": "pkg.tgz=PINNED"})
         assert len(findings) == 1
         assert findings[0].kind == ArtifactVerifyKind.PUBLISHED_MISMATCH
 
     def test_version_float_is_deferred_to_provenance(self) -> None:
         cfg = _cfg("npx", ["pkg@2.0.0"])
-        v = self._verifier({"npm:pkg:2.0.0": ArtifactResult("X", True)})
-        assert v.analyze_server("srv", cfg, {"npm:pkg:1.0.0": "PINNED"}) == []
+        v = self._verifier({"npm:pkg:2.0.0": _res({"pkg.tgz": "X"})})
+        assert v.analyze_server("srv", cfg, {"npm:pkg:1.0.0": "pkg.tgz=PINNED"}) == []
 
     def test_serialises_to_json(self) -> None:
         cfg = _cfg("npx", ["pkg@1.0.0"])
-        v = self._verifier({"npm:pkg:1.0.0": ArtifactResult("NEWBYTES", True)})
-        finding = v.analyze_server("srv", cfg, {"npm:pkg:1.0.0": "PINNED"})[0]
+        v = self._verifier({"npm:pkg:1.0.0": _res({"pkg.tgz": "NEWBYTES"})})
+        finding = v.analyze_server("srv", cfg, {"npm:pkg:1.0.0": "pkg.tgz=PINNED"})[0]
         data: dict[str, Any] = json.loads(finding.model_dump_json())
         assert data["rule_id"] == "MCP026"
         assert data["ecosystem"] == "npm"

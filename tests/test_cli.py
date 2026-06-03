@@ -412,6 +412,46 @@ def test_pin_refresh_json_reports_drift_without_writing(monkeypatch: object, tmp
     assert PinStore(path=pin_file).check_drift("srv", audit.tools)
 
 
+def test_pin_refresh_json_surfaces_artifact_capture_warnings(monkeypatch: object, tmp_path: Path) -> None:
+    # A refused (tamper-suspected) artifact must reach the --json payload, not just
+    # the console — otherwise automation driving --json never sees the signal.
+    from mcp_audit.pkgverify import ArtifactResult, ArtifactVerifier
+
+    pin_file = tmp_path / "pins.yaml"
+    PinStore(path=pin_file).pin_server("srv", [make_tool("read_file", description="v1")])
+    audit = ServerAudit(
+        server=make_server_config(name="srv", command="uvx", args=["pkg==1.0.0"]),
+        connection_status="connected",
+        tools=[make_tool("read_file", description="v1")],
+    )
+
+    async def fake_run_scan_core(*args: object, **kwargs: object) -> AuditReport:
+        return _report([audit])
+
+    monkeypatch.setattr(cli, "_run_scan_core", fake_run_scan_core)  # type: ignore[attr-defined]
+
+    # Inject a verifier whose served bytes fail the published-hash check → refused + warned.
+    inconsistent = ArtifactVerifier(
+        fetch=lambda ref: ArtifactResult(files={"pkg.whl": "deadbeef"}, published_consistent=False)
+    )
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        cli,
+        "_make_registry_verifiers",
+        lambda verify_artifacts, download_artifacts: (None, inconsistent),
+    )
+
+    result = CliRunner().invoke(
+        cli.main,
+        ["pin", "--refresh", "srv", "--json", "--apply", "--download-artifacts", "--pin-file", str(pin_file)],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["applied"] is True
+    assert len(payload["artifact_warnings"]) == 1
+    assert "pkg@1.0.0" in payload["artifact_warnings"][0]
+
+
 def test_pin_refresh_json_reports_duplicate_server_name_without_writing(
     monkeypatch: object, tmp_path: Path
 ) -> None:

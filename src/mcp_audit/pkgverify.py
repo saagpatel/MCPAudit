@@ -17,9 +17,13 @@ hashes them, and compares against both the registry's own published hash and a
 byte-hash captured at pin time:
 
   MCP026 (ARTIFACT_TAMPER) — served bytes don't match the registry's published
-                             hash (PUBLISHED_MISMATCH, HIGH) or differ from the
-                             pinned bytes (BASELINE_MISMATCH, HIGH); UNVERIFIED
-                             (MEDIUM) when the bytes can't be fetched/hashed.
+                             hash (PUBLISHED_MISMATCH, HIGH); a file pinned at
+                             baseline now serves different bytes or is gone
+                             (BASELINE_MISMATCH, HIGH) while a newly-added file on
+                             the frozen version is an advisory (BASELINE_MISMATCH,
+                             MEDIUM); UNVERIFIED (MEDIUM) when bytes can't be
+                             fetched/hashed. Per-distribution-file, so a late wheel
+                             upload isn't mistaken for tampering.
 
 Network-gated: the registry is contacted ONLY when the operator passes
 ``--verify-artifacts`` / ``--download-artifacts`` (to scan, and to ``pin`` to
@@ -38,9 +42,10 @@ import hashlib
 import http.client
 import json
 import logging
+import threading
 import urllib.error
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import IO
 from urllib.parse import quote, urlsplit
@@ -173,18 +178,59 @@ def resolve_package_refs(server_config: ServerConfig) -> list[PackageRef]:
     return []
 
 
+def _iter_pinned_refs(
+    server_config: ServerConfig, baseline_hashes: dict[str, str]
+) -> Iterator[tuple[PackageRef, str]]:
+    """Yield ``(ref, baseline_hash)`` for each baseline entry whose exact pinned ref
+    still resolves from the current launch config, in deterministic sorted-key order.
+
+    Shared by the MCP025 (metadata) and MCP026 (byte-level) verifiers. A baseline key
+    whose ref no longer resolves (version floated / package removed) is skipped — that
+    is provenance's signal (MCP021), not a verification finding here. Yielded refs
+    always carry a version.
+    """
+    refs_by_key = {r.key(): r for r in resolve_package_refs(server_config) if r.version}
+    for key, baseline_hash in sorted(baseline_hashes.items()):
+        ref = refs_by_key.get(key)
+        if ref is not None:
+            yield ref, baseline_hash
+
+
 class RegistryClient:
-    """Fetches registry-published hashes for npm / PyPI packages over HTTPS."""
+    """Fetches registry-published hashes for npm / PyPI packages over HTTPS.
+
+    Holds a per-instance cache of fetched metadata JSON keyed by URL. Sharing one
+    client between the MCP025 metadata verifier and the MCP026 byte verifier means a
+    package's registry JSON (which carries both the published hash and the artifact
+    download URL) is fetched once per scan instead of once per check. The cache lives
+    only as long as the client, so a fresh client per scan keeps results current.
+    """
+
+    def __init__(self) -> None:
+        self._json_cache: dict[str, dict[str, object]] = {}
+        # analyze_server runs per-server under anyio.to_thread concurrently, all sharing
+        # this client; guard the cache so concurrent workers can't race on the dict.
+        self._cache_lock = threading.Lock()
 
     def _get_json(self, url: str) -> dict[str, object] | None:
+        with self._cache_lock:
+            cached = self._json_cache.get(url)
+        if cached is not None:
+            return cached
         req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
         try:
             with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:  # noqa: S310 (https only)
                 data = json.loads(resp.read().decode("utf-8"))
-                return data if isinstance(data, dict) else None
+                result = data if isinstance(data, dict) else None
         except (urllib.error.URLError, TimeoutError, ValueError, OSError):
             logger.debug("Registry fetch failed: %s", url)
-            return None
+            result = None
+        # Cache successes only — a transient failure must not become sticky and get
+        # served to the other check (verify/download) for the rest of the scan.
+        if result is not None:
+            with self._cache_lock:
+                self._json_cache.setdefault(url, result)
+        return result
 
     def _npm_hash(self, name: str, version: str) -> str | None:
         # Keep '@' and '/' literal for scoped names (@scope/name); fully encode the
@@ -238,7 +284,8 @@ class RegistryClient:
         consistent = self._npm_consistent(dist, digests)
         if consistent is None:
             return None  # no integrity/shasum we can verify against — nothing to compare
-        return ArtifactResult(computed_sha256=digests["sha256"], published_consistent=consistent)
+        filename = tarball.rsplit("/", 1)[-1] or "tarball"
+        return ArtifactResult(files={filename: digests["sha256"]}, published_consistent=consistent)
 
     @staticmethod
     def _npm_consistent(dist: dict[str, object], digests: dict[str, str]) -> bool | None:
@@ -291,18 +338,20 @@ class RegistryClient:
             # Bound total transfer against metadata listing an implausible file count.
             logger.debug("PyPI %s==%s lists %d files (> cap); skipping", name, version, len(files))
             return None
-        computed: list[str] = []
+        computed: dict[str, str] = {}
         consistent = True
         for u in files:
-            digests = _download_digests(str(u["url"]), ("sha256",))
+            file_url = str(u["url"])
+            digests = _download_digests(file_url, ("sha256",))
             if digests is None:
                 return None  # any distribution file unfetchable -> ref is unverifiable
-            computed.append(digests["sha256"])
+            filename = str(u.get("filename") or file_url.rsplit("/", 1)[-1])
+            computed[filename] = digests["sha256"]
             if digests["sha256"] != str(u["digests"]["sha256"]).lower():
                 consistent = False
-        # Combine all distribution-file hashes so any file change is detected; sorted
-        # so the composite is stable regardless of registry ordering (mirrors _pypi_hash).
-        return ArtifactResult(computed_sha256=",".join(sorted(computed)), published_consistent=consistent)
+        # Keyed by filename so the baseline compare can tell a changed pinned file
+        # (tamper) from a newly-added one (a late wheel upload — advisory, not tamper).
+        return ArtifactResult(files=computed, published_consistent=consistent)
 
     def fetch_artifact(self, ref: PackageRef) -> ArtifactResult | None:
         """Download + hash the bytes for an exact package@version, or None on failure."""
@@ -350,14 +399,8 @@ class PackageVerifier:
         if not baseline_hashes:
             return []
 
-        refs_by_key = {r.key(): r for r in resolve_package_refs(server_config) if r.version}
         findings: list[PackageVerifyFinding] = []
-        for key, baseline_hash in sorted(baseline_hashes.items()):
-            ref = refs_by_key.get(key)
-            if ref is None:
-                # Version floated or package removed since pin — provenance (MCP021)
-                # owns that signal; this check only verifies the exact pinned version.
-                continue
+        for ref, baseline_hash in _iter_pinned_refs(server_config, baseline_hashes):
             assert ref.version is not None  # keyed refs always carry a version
             current = self._fetch(ref)
             if current is None:
@@ -449,14 +492,32 @@ def stream_sha256(fileobj: IO[bytes], cap: int) -> tuple[str | None, bool]:
 class ArtifactResult:
     """Outcome of downloading and hashing a package@version's bytes.
 
-    ``computed_sha256`` is our own stable byte-hash (the pin baseline); for PyPI
-    it is the sorted-composite of per-file sha256, mirroring ``_pypi_hash``.
-    ``published_consistent`` is whether the served bytes matched the registry's
-    *own* published hash for that version.
+    ``files`` maps each distribution filename to the sha256 we computed over its
+    served bytes — one entry for npm's single tarball, N for PyPI's wheels/sdist.
+    Keying by filename (rather than a flat composite) lets the baseline compare
+    distinguish a *changed* pinned file (tamper, HIGH) from a *newly added* one (a
+    legitimately late-uploaded wheel, advisory) — a flat set can't tell them apart
+    and could be evaded by a drop-and-re-add. ``published_consistent`` is whether
+    every served file matched the registry's own published hash for that version.
     """
 
-    computed_sha256: str
+    files: dict[str, str]
     published_consistent: bool
+
+
+def _serialize_files(files: dict[str, str]) -> str:
+    """Canonical ``name=sha256;name=sha256`` form (sorted) for storing a byte baseline."""
+    return ";".join(f"{name}={digest}" for name, digest in sorted(files.items()))
+
+
+def _parse_files(serialized: str) -> dict[str, str]:
+    """Parse a ``_serialize_files`` baseline string back into ``{filename: sha256}``."""
+    parsed: dict[str, str] = {}
+    for part in serialized.split(";"):
+        name, sep, digest = part.partition("=")
+        if sep and name:
+            parsed[name] = digest
+    return parsed
 
 
 @dataclass(frozen=True)
@@ -559,7 +620,7 @@ class ArtifactVerifier:
                     "match the registry-published hash (possible tampering). Investigate before pinning."
                 )
             else:
-                capture.hashes[ref.key()] = result.computed_sha256
+                capture.hashes[ref.key()] = _serialize_files(result.files)
         return capture
 
     def analyze_server(
@@ -572,14 +633,8 @@ class ArtifactVerifier:
         if not baseline_hashes:
             return []
 
-        refs_by_key = {r.key(): r for r in resolve_package_refs(server_config) if r.version}
         findings: list[ArtifactVerifyFinding] = []
-        for key, baseline_hash in sorted(baseline_hashes.items()):
-            ref = refs_by_key.get(key)
-            if ref is None:
-                # Version floated or package removed since pin — provenance (MCP021)
-                # owns that signal; this check verifies only the exact pinned version.
-                continue
+        for ref, baseline_hash in _iter_pinned_refs(server_config, baseline_hashes):
             assert ref.version is not None  # keyed refs always carry a version
             result = self._fetch(ref)
             if result is None:
@@ -610,7 +665,7 @@ class ArtifactVerifier:
                         package=ref.name,
                         version=ref.version,
                         baseline_hash=baseline_hash,
-                        current_hash=result.computed_sha256,
+                        current_hash=_serialize_files(result.files),
                         summary=(
                             f"Downloaded bytes for {ref.ecosystem} artifact "
                             f"'{ref.name}@{ref.version}' do not match the registry-published hash — "
@@ -619,22 +674,56 @@ class ArtifactVerifier:
                         ),
                     )
                 )
-            elif result.computed_sha256 != baseline_hash:
-                findings.append(
-                    ArtifactVerifyFinding(
-                        kind=ArtifactVerifyKind.BASELINE_MISMATCH,
-                        severity=ArtifactVerifySeverity.HIGH,
-                        server_name=server_name,
-                        ecosystem=ref.ecosystem,
-                        package=ref.name,
-                        version=ref.version,
-                        baseline_hash=baseline_hash,
-                        current_hash=result.computed_sha256,
-                        summary=(
-                            f"Downloaded bytes for {ref.ecosystem} artifact "
-                            f"'{ref.name}@{ref.version}' changed since pin — a registry must never "
-                            "serve different bytes for the same fixed version (republish/tampering)."
-                        ),
-                    )
+            else:
+                baseline_files = _parse_files(baseline_hash)
+                current_files = result.files
+                changed = sorted(
+                    fn for fn, h in baseline_files.items() if fn in current_files and current_files[fn] != h
                 )
+                removed = sorted(fn for fn in baseline_files if fn not in current_files)
+                added = sorted(fn for fn in current_files if fn not in baseline_files)
+                current_serial = _serialize_files(current_files)
+                if changed or removed:
+                    # A file pinned at baseline now serves different bytes, or is gone:
+                    # republish-in-place / tampering. HIGH.
+                    detail = ", ".join(changed + [f"{fn} (removed)" for fn in removed])
+                    findings.append(
+                        ArtifactVerifyFinding(
+                            kind=ArtifactVerifyKind.BASELINE_MISMATCH,
+                            severity=ArtifactVerifySeverity.HIGH,
+                            server_name=server_name,
+                            ecosystem=ref.ecosystem,
+                            package=ref.name,
+                            version=ref.version,
+                            baseline_hash=baseline_hash,
+                            current_hash=current_serial,
+                            summary=(
+                                f"A file pinned at baseline for {ref.ecosystem} artifact "
+                                f"'{ref.name}@{ref.version}' no longer serves the same bytes "
+                                f"({detail}) — republish-in-place / tampering; a registry must never "
+                                "serve different bytes for the same fixed version."
+                            ),
+                        )
+                    )
+                elif added:
+                    # New distribution file(s) on an already-pinned version. Legitimate
+                    # late wheel uploads happen, but a new artifact on a frozen version is
+                    # still worth a look — advisory MEDIUM, not a HIGH tamper alarm.
+                    findings.append(
+                        ArtifactVerifyFinding(
+                            kind=ArtifactVerifyKind.BASELINE_MISMATCH,
+                            severity=ArtifactVerifySeverity.MEDIUM,
+                            server_name=server_name,
+                            ecosystem=ref.ecosystem,
+                            package=ref.name,
+                            version=ref.version,
+                            baseline_hash=baseline_hash,
+                            current_hash=current_serial,
+                            summary=(
+                                f"New distribution file(s) appeared on pinned {ref.ecosystem} version "
+                                f"'{ref.name}@{ref.version}' since baseline ({', '.join(added)}) — no "
+                                "pinned file changed bytes; verify the addition is expected and re-pin."
+                            ),
+                        )
+                    )
         return findings

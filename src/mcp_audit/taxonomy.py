@@ -463,11 +463,13 @@ ARTIFACT_VERIFY_FINDINGS: dict[ArtifactVerifyKind, FindingMetadata] = {
         title="Downloaded artifact bytes changed since the pin baseline",
         severity="high",
         description=(
-            "The bytes the registry served for a pinned package@version hash to a different value "
-            "than the byte-hash captured when it was pinned with --download-artifacts. A registry must "
-            "never serve different bytes for the same fixed version; this is a republish-in-place "
+            "The bytes the registry served for a pinned package@version differ, per distribution file, "
+            "from the byte-hashes captured when it was pinned with --download-artifacts. HIGH when a "
+            "file present at pin time now serves different bytes or has vanished — republish-in-place "
             "proven at the byte level, which a published-hash compare can be fooled on if the registry "
-            "updates its metadata to match the tampered bytes."
+            "updates its metadata to match the tampered bytes. MEDIUM (advisory) when no pinned file "
+            "changed but a NEW distribution file appeared on the frozen version (e.g. a late wheel "
+            "upload) — legitimate but still worth confirming, and not silently ignored."
         ),
         remediation=(
             "Investigate the version as a republish/tampering event before trusting it. Confirm the "
