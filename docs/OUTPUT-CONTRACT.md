@@ -121,6 +121,7 @@ SARIF output uses stable MCP rule IDs:
 - `MCP020`-`MCP023`: launch-config / provenance drift vs pin baseline (command / args / url / credential key-names)
 - `MCP024`: launch-artifact integrity drift vs pin baseline (on-disk binary/script hash change)
 - `MCP025`: registry package-verification drift vs pin baseline (npm/PyPI published hash change; network, opt-in)
+- `MCP026`: byte-level artifact verification vs pin baseline (downloaded bytes don't match the registry-published hash, or a pinned file changed/added since baseline; network, opt-in)
 
 ## Compatibility Fixture
 
