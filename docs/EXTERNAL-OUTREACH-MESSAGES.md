@@ -23,7 +23,7 @@ It should not spawn MCP servers or contact remote endpoints:
 
 python3 -m pip install --upgrade mcp-permission-audit
 mcp-audit --version
-mcp-audit scan --skip-connect --json mcp-audit-field-report.json
+mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
 
 Then open a redacted field-report issue:
 https://github.com/saagpatel/MCPAudit/issues/new?template=field_report.md
@@ -47,7 +47,7 @@ The request is config-only, so it should not spawn MCP servers or contact remote
 
 python3 -m pip install --upgrade mcp-permission-audit
 mcp-audit --version
-mcp-audit scan --skip-connect --json mcp-audit-field-report.json
+mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
 
 Then open a redacted field-report issue:
 https://github.com/saagpatel/MCPAudit/issues/new?template=field_report.md
@@ -69,7 +69,7 @@ If you use MCP servers with Claude Desktop, Claude Code, Cursor, VSCode, Windsur
 
 python3 -m pip install --upgrade mcp-permission-audit
 mcp-audit --version
-mcp-audit scan --skip-connect --json mcp-audit-field-report.json
+mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
 
 Then open a redacted field-report issue:
 https://github.com/saagpatel/MCPAudit/issues/new?template=field_report.md
