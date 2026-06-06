@@ -24,7 +24,7 @@ from mcp_audit.models import (
     RiskScore,
     ServerAudit,
 )
-from mcp_audit.report import ReportGenerator
+from mcp_audit.report import ReportGenerator, scrub_report_identifiers
 from tests.conftest import make_server_config, make_tool
 
 
@@ -317,3 +317,58 @@ class TestJsonRender:
         gen.render_json(report, out)
         data = json.loads(out.read_text())
         assert data["audits"][0]["connection_error"] == "connection failed with token=<redacted>"
+
+
+def test_scrub_report_identifiers_removes_host_and_username() -> None:
+    cfg = make_server_config(name="srv").model_copy(
+        update={
+            "config_path": "/Users/alice/.claude.json",
+            "command": "/Users/alice/.local/bin/srv",
+        }
+    )
+    report = _base_report([ServerAudit(server=cfg, connection_status="skipped")])
+    report.hostname = "secret-host.local"
+    scrubbed = scrub_report_identifiers(report)
+    assert scrubbed.hostname == "<redacted-host>"
+    assert scrubbed.audits[0].server.config_path == "/Users/<redacted>/.claude.json"
+    # username scrubbed; the name embedded in the binary basename is aliased (v2)
+    assert scrubbed.audits[0].server.command == "/Users/<redacted>/.local/bin/server-01"
+    assert scrubbed.audits[0].server.name == "server-01"
+    # original report must be left untouched (scrub returns a copy)
+    assert report.hostname == "secret-host.local"
+    assert report.audits[0].server.config_path == "/Users/alice/.claude.json"
+    assert report.audits[0].server.name == "srv"
+
+
+def test_scrub_report_identifiers_preserves_counts_and_platform() -> None:
+    report = _base_report([_make_audit("srv")])
+    scrubbed = scrub_report_identifiers(report)
+    assert scrubbed.os_platform == report.os_platform
+    assert scrubbed.servers_discovered == report.servers_discovered
+    assert scrubbed.high_risk_servers == report.high_risk_servers
+
+
+def test_render_json_from_scrubbed_report_is_clean(tmp_path: Path) -> None:
+    con, _ = _make_console()
+    gen = ReportGenerator(console=con)
+    cfg = make_server_config(name="srv").model_copy(update={"config_path": "/Users/alice/.claude.json"})
+    report = _base_report([ServerAudit(server=cfg, connection_status="skipped")])
+    report.hostname = "secret-host.local"
+    out = tmp_path / "redacted.json"
+    gen.render_json(scrub_report_identifiers(report), out)
+    text = out.read_text()
+    assert "secret-host.local" not in text
+    assert "alice" not in text
+    assert "<redacted-host>" in text
+    assert "/Users/<redacted>/.claude.json" in text
+
+
+def test_scrub_report_identifiers_aliases_server_names() -> None:
+    cfg = make_server_config(name="personal-ops").model_copy(
+        update={"command": "/Users/alice/.claude/bin/personal-ops-mcp"}
+    )
+    report = _base_report([ServerAudit(server=cfg, connection_status="skipped")])
+    scrubbed = scrub_report_identifiers(report)
+    assert scrubbed.audits[0].server.name == "server-01"
+    assert scrubbed.audits[0].server.command == "/Users/<redacted>/.claude/bin/server-01-mcp"
+    assert "personal-ops" not in scrubbed.model_dump_json()

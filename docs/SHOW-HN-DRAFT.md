@@ -228,6 +228,12 @@ Repo: <https://github.com/saagpatel/MCPAudit>
   `SECURITY.md` private-disclosure path instead of a public issue.
 - **Don't claim beta.** Solo + this scan do not close #83/#84; only two
   accepted external reports do. Keep that line honest in replies.
+- **Ship `--redact` first.** A release including `scan --redact` (auto-scrubs
+  hostname, home-path usernames, and server names from `--json`/`--sarif`/`--html`) is the
+  friction-killer for contributors. It landed on `main` but is unreleased — before
+  posting, cut a release, then append `--redact` to the field-report command here
+  and in `EXTERNAL-OUTREACH-MESSAGES.md` / `EXTERNAL-FIELD-REPORT-REQUEST.md`. Don't
+  reference it in the copy-paste ask until it's on the published package.
 - **Shorter channels** (Reddit r/LocalLLaMA, Mastodon, X, Discord): use the
   "Public Post" block already in `EXTERNAL-OUTREACH-MESSAGES.md` rather than
   trimming this one — it's pre-redacted and pre-approved.
