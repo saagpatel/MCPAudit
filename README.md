@@ -128,6 +128,26 @@ mcp-audit scan --llm-analysis
 mcp-audit watch
 ```
 
+## Help validate the beta (2 minutes)
+
+mcp-audit needs **two external, redacted, config-only field reports** before it
+takes a beta label. If you run MCP servers, contributing one stays fully
+offline — no servers spawned, no network:
+
+```bash
+python3 -m pip install --upgrade mcp-permission-audit
+mcp-audit --version
+mcp-audit scan --skip-connect --json mcp-audit-field-report.json
+```
+
+Then open a [redacted field report](https://github.com/saagpatel/MCPAudit/issues/new?template=field_report.md)
+— the template walks you through the safe fields. Please redact credential
+values, private paths, internal hostnames, private URLs, and proprietary
+prompt/tool/schema text; [`docs/EXTERNAL-FIELD-REPORT-REQUEST.md`](docs/EXTERNAL-FIELD-REPORT-REQUEST.md)
+has the full checklist. For a reference of what the scanner reports on real
+software, see the solo field scan in
+[`docs/FIELD-SCAN-POPULAR-SERVERS.md`](docs/FIELD-SCAN-POPULAR-SERVERS.md).
+
 ## Tech Stack
 
 | Layer | Technology |

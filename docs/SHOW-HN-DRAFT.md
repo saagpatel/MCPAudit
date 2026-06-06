@@ -16,7 +16,7 @@ punishes it. Lead with results, state limitations plainly, end with the ask.
 **Title** (≤ 80 chars, plain "Show HN:" format):
 
 ```
-Show HN: I scanned the most popular MCP servers – here's what they can access
+Show HN: MCPAudit – do you actually know what your MCP servers can access?
 ```
 
 **URL to submit:**
