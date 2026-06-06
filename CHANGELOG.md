@@ -14,8 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`/Users/<name>`, `/home/<name>`, `C:\Users\<name>`) from `--json`, `--sarif`, and `--html`
   output, so a config-only field report is safe to share publicly. Path *shape* is preserved
   (only the identifying segment is replaced); terminal output keeps real values for local
-  readability. Server names and other free-text specifics are intentionally not aliased in this
-  pass — the field-report redaction checklist remains the backstop.
+  readability. Server names are replaced with stable per-report aliases (`server-01`, …)
+  everywhere they appear — structured fields, free-text summaries, and command basenames; the
+  field-report redaction checklist remains the backstop for any residual free-text specifics.
 
 ## [1.12.0] - 2026-06-02
 

@@ -229,7 +229,7 @@ Repo: <https://github.com/saagpatel/MCPAudit>
 - **Don't claim beta.** Solo + this scan do not close #83/#84; only two
   accepted external reports do. Keep that line honest in replies.
 - **Ship `--redact` first.** A release including `scan --redact` (auto-scrubs
-  hostname + home-path usernames from `--json`/`--sarif`/`--html`) is the
+  hostname, home-path usernames, and server names from `--json`/`--sarif`/`--html`) is the
   friction-killer for contributors. It landed on `main` but is unreleased — before
   posting, cut a release, then append `--redact` to the field-report command here
   and in `EXTERNAL-OUTREACH-MESSAGES.md` / `EXTERNAL-FIELD-REPORT-REQUEST.md`. Don't

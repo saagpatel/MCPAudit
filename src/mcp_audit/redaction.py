@@ -38,28 +38,67 @@ def redact_data(value: Any) -> Any:
     return value
 
 
-def _scrub_identifier_text(value: str, hostname: str | None) -> str:
-    """Scrub the machine hostname and home-directory usernames from one string."""
+def _compile_alias_pattern(name_aliases: dict[str, str]) -> re.Pattern[str] | None:
+    """Build a single word-boundary alternation over the server names to alias.
+
+    Longest names first so a name that is a prefix of another (``git`` vs
+    ``github-mcp``) can't shadow the longer match. A single ``re.sub`` pass with
+    this pattern means inserted aliases are never re-scanned.
+    """
+    names = [n for n in name_aliases if n]
+    if not names:
+        return None
+    ordered = sorted(set(names), key=len, reverse=True)
+    return re.compile(r"\b(" + "|".join(re.escape(n) for n in ordered) + r")\b")
+
+
+def _scrub_identifier_text(
+    value: str,
+    hostname: str | None,
+    name_aliases: dict[str, str] | None = None,
+    alias_pattern: re.Pattern[str] | None = None,
+) -> str:
+    """Scrub hostname, home-directory usernames, and server names from one string."""
     if hostname and hostname in value:
         value = value.replace(hostname, _HOST_PLACEHOLDER)
     value = _UNIX_HOME.sub(r"\1<redacted>", value)
-    return _WIN_HOME.sub(r"\1<redacted>", value)
+    value = _WIN_HOME.sub(r"\1<redacted>", value)
+    if alias_pattern is not None and name_aliases is not None:
+        aliases = name_aliases
+        value = alias_pattern.sub(lambda m: aliases[m.group(0)], value)
+    return value
 
 
-def redact_identifiers(value: Any, hostname: str | None = None) -> Any:
-    """Recursively scrub host/username identifiers from JSON-like data.
+def redact_identifiers(
+    value: Any, hostname: str | None = None, name_aliases: dict[str, str] | None = None
+) -> Any:
+    """Recursively scrub host/username/server-name identifiers from JSON-like data.
 
-    Field-report ("--redact") mode: removes the machine hostname and the
-    username segment of home-directory paths (/Users/<name>, /home/<name>,
-    C:\\Users\\<name>) so a config-only report is safe to share publicly.
-    Credential values are handled separately by ``redact_data``; this pass is
-    additive and opt-in. Path *shape* is preserved — only the identifying
-    segment is replaced.
+    Field-report ("--redact") mode: removes the machine hostname, the username
+    segment of home-directory paths (/Users/<name>, /home/<name>,
+    C:\\Users\\<name>), and — when ``name_aliases`` is given — replaces each
+    server name with a stable alias (``server-01``, …) everywhere it appears:
+    structured fields, free-text summaries, and command basenames. So a
+    config-only report is safe to share publicly. Credential values are handled
+    separately by ``redact_data``; this pass is additive and opt-in. Path
+    *shape* is preserved — only the identifying segment is replaced.
     """
+    alias_pattern = _compile_alias_pattern(name_aliases) if name_aliases else None
+    return _walk_identifiers(value, hostname, name_aliases, alias_pattern)
+
+
+def _walk_identifiers(
+    value: Any,
+    hostname: str | None,
+    name_aliases: dict[str, str] | None,
+    alias_pattern: re.Pattern[str] | None,
+) -> Any:
     if isinstance(value, str):
-        return _scrub_identifier_text(value, hostname)
+        return _scrub_identifier_text(value, hostname, name_aliases, alias_pattern)
     if isinstance(value, list):
-        return [redact_identifiers(item, hostname) for item in value]
+        return [_walk_identifiers(item, hostname, name_aliases, alias_pattern) for item in value]
     if isinstance(value, dict):
-        return {key: redact_identifiers(item, hostname) for key, item in value.items()}
+        return {
+            key: _walk_identifiers(item, hostname, name_aliases, alias_pattern) for key, item in value.items()
+        }
     return value

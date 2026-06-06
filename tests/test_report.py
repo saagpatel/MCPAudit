@@ -331,10 +331,13 @@ def test_scrub_report_identifiers_removes_host_and_username() -> None:
     scrubbed = scrub_report_identifiers(report)
     assert scrubbed.hostname == "<redacted-host>"
     assert scrubbed.audits[0].server.config_path == "/Users/<redacted>/.claude.json"
-    assert scrubbed.audits[0].server.command == "/Users/<redacted>/.local/bin/srv"
+    # username scrubbed; the name embedded in the binary basename is aliased (v2)
+    assert scrubbed.audits[0].server.command == "/Users/<redacted>/.local/bin/server-01"
+    assert scrubbed.audits[0].server.name == "server-01"
     # original report must be left untouched (scrub returns a copy)
     assert report.hostname == "secret-host.local"
     assert report.audits[0].server.config_path == "/Users/alice/.claude.json"
+    assert report.audits[0].server.name == "srv"
 
 
 def test_scrub_report_identifiers_preserves_counts_and_platform() -> None:
@@ -358,3 +361,14 @@ def test_render_json_from_scrubbed_report_is_clean(tmp_path: Path) -> None:
     assert "alice" not in text
     assert "<redacted-host>" in text
     assert "/Users/<redacted>/.claude.json" in text
+
+
+def test_scrub_report_identifiers_aliases_server_names() -> None:
+    cfg = make_server_config(name="personal-ops").model_copy(
+        update={"command": "/Users/alice/.claude/bin/personal-ops-mcp"}
+    )
+    report = _base_report([ServerAudit(server=cfg, connection_status="skipped")])
+    scrubbed = scrub_report_identifiers(report)
+    assert scrubbed.audits[0].server.name == "server-01"
+    assert scrubbed.audits[0].server.command == "/Users/<redacted>/.claude/bin/server-01-mcp"
+    assert "personal-ops" not in scrubbed.model_dump_json()

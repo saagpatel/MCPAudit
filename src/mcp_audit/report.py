@@ -590,13 +590,31 @@ def _redacted_report(report: AuditReport) -> AuditReport:
     return AuditReport.model_validate(data)
 
 
+def _server_name_aliases(report: AuditReport) -> dict[str, str]:
+    """Map each distinct server name to a stable per-report alias (server-01, …)."""
+    names: set[str] = set()
+    for audit in report.audits:
+        if audit.server.name:
+            names.add(audit.server.name)
+    for finding in report.config_health_findings:
+        if finding.server_name:
+            names.add(finding.server_name)
+    return {name: f"server-{index:02d}" for index, name in enumerate(sorted(names), start=1)}
+
+
 def scrub_report_identifiers(report: AuditReport) -> AuditReport:
-    """Return a copy of the report with host/username identifiers scrubbed.
+    """Return a copy of the report with host/username/server-name identifiers scrubbed.
 
     Field-report ("--redact") mode: strips the machine hostname and home-path
-    usernames so a config-only report is safe to share publicly. Returns a new
-    report; the original is left untouched. Credential-value redaction is
-    applied separately by each renderer and is unaffected.
+    usernames, and replaces each server name with a stable alias (``server-01``,
+    …) everywhere it appears — structured fields, free-text summaries, and
+    command basenames — so a config-only report is safe to share publicly.
+    Returns a new report; the original is left untouched. Credential-value
+    redaction is applied separately by each renderer and is unaffected.
     """
-    data = redact_identifiers(report.model_dump(mode="json"), hostname=report.hostname)
+    data = redact_identifiers(
+        report.model_dump(mode="json"),
+        hostname=report.hostname,
+        name_aliases=_server_name_aliases(report),
+    )
     return AuditReport.model_validate(data)

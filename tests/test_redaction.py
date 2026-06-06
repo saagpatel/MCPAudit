@@ -65,3 +65,29 @@ def test_redact_identifiers_recurses_lists_and_dicts() -> None:
     data = {"audits": [{"server": {"config_path": "/Users/dave/x.json"}}]}
     out = redact_identifiers(data, hostname=None)
     assert out["audits"][0]["server"]["config_path"] == "/Users/<redacted>/x.json"
+
+
+def test_redact_identifiers_aliases_server_names() -> None:
+    data = {
+        "name": "personal-ops",
+        "summary": "'personal-ops' appears 2 times",
+        "command": "/Users/alice/.claude/bin/personal-ops-mcp",
+    }
+    out = redact_identifiers(data, hostname=None, name_aliases={"personal-ops": "server-01"})
+    assert out["name"] == "server-01"
+    assert out["summary"] == "'server-01' appears 2 times"
+    assert out["command"] == "/Users/<redacted>/.claude/bin/server-01-mcp"
+    assert "personal-ops" not in str(out)
+
+
+def test_redact_identifiers_alias_prefers_longest_name() -> None:
+    aliases = {"git": "server-01", "github-mcp": "server-02"}
+    out = redact_identifiers({"a": "git", "b": "github-mcp"}, name_aliases=aliases)
+    assert out["a"] == "server-01"
+    assert out["b"] == "server-02"
+
+
+def test_redact_identifiers_alias_respects_word_boundaries() -> None:
+    # a server literally named "git" must not corrupt the unrelated word "github"
+    out = redact_identifiers({"t": "see github docs"}, name_aliases={"git": "server-01"})
+    assert out["t"] == "see github docs"
