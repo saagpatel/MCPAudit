@@ -47,7 +47,7 @@ MCP servers, this is ~2 minutes and stays entirely on the safe path:
 
     python3 -m pip install --upgrade mcp-permission-audit
     mcp-audit --version
-    mcp-audit scan --skip-connect --json mcp-audit-field-report.json
+    mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
 
 That command is config-only — no servers spawned, no network. Then open a
 redacted report (the template prompts you for the safe fields):
@@ -189,7 +189,7 @@ entirely on the safe path:
 ```bash
 python3 -m pip install --upgrade mcp-permission-audit
 mcp-audit --version
-mcp-audit scan --skip-connect --json mcp-audit-field-report.json
+mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
 ```
 
 `--skip-connect` is config-only — it won't spawn servers or touch the network.
@@ -228,12 +228,10 @@ Repo: <https://github.com/saagpatel/MCPAudit>
   `SECURITY.md` private-disclosure path instead of a public issue.
 - **Don't claim beta.** Solo + this scan do not close #83/#84; only two
   accepted external reports do. Keep that line honest in replies.
-- **Ship `--redact` first.** A release including `scan --redact` (auto-scrubs
-  hostname, home-path usernames, and server names from `--json`/`--sarif`/`--html`) is the
-  friction-killer for contributors. It landed on `main` but is unreleased — before
-  posting, cut a release, then append `--redact` to the field-report command here
-  and in `EXTERNAL-OUTREACH-MESSAGES.md` / `EXTERNAL-FIELD-REPORT-REQUEST.md`. Don't
-  reference it in the copy-paste ask until it's on the published package.
+- **`--redact` is live (1.13.0).** The field-report command above includes
+  `--redact`, which auto-scrubs hostname, home-path usernames, and server names
+  from the output — the friction-killer for contributors. The redaction
+  checklist stays the backstop for any proprietary prompt/tool/schema text.
 - **Shorter channels** (Reddit r/LocalLLaMA, Mastodon, X, Discord): use the
   "Public Post" block already in `EXTERNAL-OUTREACH-MESSAGES.md` rather than
   trimming this one — it's pre-redacted and pre-approved.

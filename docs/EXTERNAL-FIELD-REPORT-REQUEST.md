@@ -25,10 +25,11 @@ field report from your MCP setup.
 ```bash
 python3 -m pip install --upgrade mcp-permission-audit
 mcp-audit --version
-mcp-audit scan --skip-connect --json mcp-audit-field-report.json
+mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
 ```
 
-Then open a redacted field-report issue:
+`--redact` auto-scrubs the machine hostname, home-path usernames, and server
+names from the output. Then open a redacted field-report issue:
 <https://github.com/saagpatel/MCPAudit/issues/new?template=field_report.md>
 
 Please include:
