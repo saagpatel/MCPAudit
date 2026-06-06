@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Added opt-in **field-report redaction** (`scan --redact`). On top of the always-on
+  credential-value redaction, it scrubs the machine hostname and home-directory usernames
+  (`/Users/<name>`, `/home/<name>`, `C:\Users\<name>`) from `--json`, `--sarif`, and `--html`
+  output, so a config-only field report is safe to share publicly. Path *shape* is preserved
+  (only the identifying segment is replaced); terminal output keeps real values for local
+  readability. Server names and other free-text specifics are intentionally not aliased in this
+  pass — the field-report redaction checklist remains the backstop.
+
 ## [1.12.0] - 2026-06-02
 
 ### Added

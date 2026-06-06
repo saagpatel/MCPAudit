@@ -27,7 +27,7 @@ from mcp_audit.models import (
     SsrfSeverity,
     TrifectaSeverity,
 )
-from mcp_audit.redaction import redact_data, redact_text
+from mcp_audit.redaction import redact_data, redact_identifiers, redact_text
 
 
 def _default_console() -> Console:
@@ -587,4 +587,16 @@ class ReportGenerator:
 
 def _redacted_report(report: AuditReport) -> AuditReport:
     data = redact_data(report.model_dump(mode="json"))
+    return AuditReport.model_validate(data)
+
+
+def scrub_report_identifiers(report: AuditReport) -> AuditReport:
+    """Return a copy of the report with host/username identifiers scrubbed.
+
+    Field-report ("--redact") mode: strips the machine hostname and home-path
+    usernames so a config-only report is safe to share publicly. Returns a new
+    report; the original is left untouched. Credential-value redaction is
+    applied separately by each renderer and is unaffected.
+    """
+    data = redact_identifiers(report.model_dump(mode="json"), hostname=report.hostname)
     return AuditReport.model_validate(data)

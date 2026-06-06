@@ -40,7 +40,7 @@ from mcp_audit.models import (
 )
 from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
 from mcp_audit.redaction import redact_text
-from mcp_audit.report import ReportGenerator
+from mcp_audit.report import ReportGenerator, scrub_report_identifiers
 from mcp_audit.scorer import RiskScorer
 
 console = Console()
@@ -227,6 +227,12 @@ def discover(client_filter: str | None, verbose: bool) -> None:
     default=False,
     help="Augment analysis with LLM classification (requires ANTHROPIC_API_KEY).",
 )
+@click.option(
+    "--redact",
+    is_flag=True,
+    default=False,
+    help="Field-report mode: scrub hostname and home-path usernames from --json/--sarif/--html output (opt-in).",  # noqa: E501
+)
 def scan(
     json_output: str | None,
     sarif_output: str | None,
@@ -251,6 +257,7 @@ def scan(
     verify_artifacts: bool,
     download_artifacts: bool,
     llm_analysis: bool,
+    redact: bool,
 ) -> None:
     """Full audit: discover servers, connect, enumerate tools, score risk, report."""
     if config_only and not extra_config:
@@ -281,6 +288,7 @@ def scan(
         download_artifacts,
         llm_analysis,
         config_only,
+        redact,
     )
 
 
@@ -661,6 +669,7 @@ async def _run_scan(
     download_artifacts: bool = False,
     llm_analysis: bool = False,
     config_only: bool = False,
+    redact: bool = False,
 ) -> None:
     """CLI scan entrypoint — calls _run_scan_core then renders output."""
     if config_only and not extra_config:
@@ -712,21 +721,25 @@ async def _run_scan(
         # artifact to ingest, even when the scan is empty.
         console.print("[yellow]No MCP servers found.[/yellow]")
 
+    # Field-report mode scrubs host/username identifiers from shared artifacts.
+    # Terminal output keeps real values for local readability.
+    out_report = scrub_report_identifiers(report) if redact else report
+
     if json_output:
-        gen.render_json(report, Path(json_output))
+        gen.render_json(out_report, Path(json_output))
 
     if sarif_output:
         import json as _json
 
         from mcp_audit.sarif import SarifGenerator
 
-        sarif_doc = SarifGenerator().generate(report)
+        sarif_doc = SarifGenerator().generate(out_report)
         Path(sarif_output).write_text(_json.dumps(sarif_doc, indent=2))
 
     if html_output:
         from mcp_audit.htmlreport import HtmlReportGenerator
 
-        Path(html_output).write_text(HtmlReportGenerator().generate(report))
+        Path(html_output).write_text(HtmlReportGenerator().generate(out_report))
 
     if report.policy_result is not None and not report.policy_result.passed:
         raise SystemExit(2)

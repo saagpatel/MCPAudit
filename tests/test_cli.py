@@ -726,3 +726,47 @@ def test_pin_clear_stale_json_applies_reviewed_cleanup(
     assert refreshed.tool_count("configured") == 1
     assert refreshed.tool_count("removed-a") == 0
     assert refreshed.tool_count("removed-b") == 0
+
+
+def test_scan_redact_flag_scrubs_json(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    cfg = make_server_config(name="srv").model_copy(
+        update={
+            "config_path": "/Users/alice/.claude.json",
+            "command": "/Users/alice/.local/bin/srv",
+        }
+    )
+    audit = ServerAudit(server=cfg, connection_status="skipped")
+
+    async def fake_run_scan_core(*args: object, **kwargs: object) -> AuditReport:
+        report = _report([audit])
+        report.hostname = "secret-host.local"
+        return report
+
+    monkeypatch.setattr(cli, "_run_scan_core", fake_run_scan_core)
+    out = tmp_path / "report.json"
+    result = CliRunner().invoke(cli.main, ["scan", "--skip-connect", "--json", str(out), "--redact"])
+
+    assert result.exit_code == 0
+    text = out.read_text()
+    assert "secret-host.local" not in text
+    assert "alice" not in text
+    assert "<redacted-host>" in text
+    assert "/Users/<redacted>/.claude.json" in text
+
+
+def test_scan_without_redact_keeps_identifiers(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    cfg = make_server_config(name="srv").model_copy(update={"config_path": "/Users/alice/.claude.json"})
+    audit = ServerAudit(server=cfg, connection_status="skipped")
+
+    async def fake_run_scan_core(*args: object, **kwargs: object) -> AuditReport:
+        report = _report([audit])
+        report.hostname = "secret-host.local"
+        return report
+
+    monkeypatch.setattr(cli, "_run_scan_core", fake_run_scan_core)
+    out = tmp_path / "report.json"
+    result = CliRunner().invoke(cli.main, ["scan", "--skip-connect", "--json", str(out)])
+
+    assert result.exit_code == 0
+    # opt-in: without --redact, identifiers remain (credential redaction still applies)
+    assert "/Users/alice/.claude.json" in out.read_text()

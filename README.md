@@ -16,7 +16,7 @@ PyPI package: `mcp-permission-audit`. Installed command: `mcp-audit`.
 - **Risk scoring** — composite 0–10 per server as a weighted sum of tool permission categories, with a five-dimension breakdown (file access, network, shell, destructive, exfiltration); prompt/resource findings also produce an additive `non_tool_risk` signal without changing `risk_score.composite`
 - **Stable finding metadata** — permission and prompt-injection findings include stable rule IDs, severity, evidence, and suggested remediation so reports are easier to triage
 - **Local policy gates** — `scan --policy policy.yaml` evaluates reports against local YAML rules and exits nonzero for CI enforcement
-- **Report redaction** — terminal, JSON, and SARIF report paths share a redaction layer for likely credential values
+- **Report redaction** — terminal, JSON, SARIF, and HTML report paths share a redaction layer for likely credential values; `scan --redact` adds an opt-in field-report pass that also scrubs the machine hostname and home-path usernames (`/Users/<name>`, `/home/<name>`, `C:\Users\<name>`) from `--json`/`--sarif`/`--html` output so a config-only report is safe to share (server names are not aliased — keep the field-report checklist as the backstop)
 - **Prompt injection detection** — `scan --inject-check` scans tool, prompt, and resource text for instruction-override patterns, hidden directives, fake role turns, and adversarial phrasing; pattern-based, no LLM required
 - **SSRF detection** — `scan --ssrf-check` flags tools and resources whose interface lets a caller steer a server-side request target (URL/host params paired with fetch verbs, caller-templated remote resource hosts); static and schema-derived, never issues a request or reads a credential value
 - **Lethal trifecta detection** — `scan --trifecta-check` detects the canonical agent-exfiltration attack surface: per-server (HIGH, `MCP013`) when a single server covers all three legs (file_read + untrusted-content ingestion + exfiltration), and fleet-level advisory (MEDIUM, `MCP014`) when the trifecta assembles only across servers; re-uses inferred permissions, never issues requests or reads credentials
@@ -117,6 +117,9 @@ mcp-audit scan --download-artifacts     # download + verify on later scans
 # Export JSON or SARIF 2.1.0, or a single-file shareable HTML report
 mcp-audit scan --json audit.json --sarif audit.sarif
 mcp-audit scan --html audit.html
+
+# Field-report mode: scrub hostname + home-path usernames from file output (opt-in)
+mcp-audit scan --skip-connect --json field-report.json --redact
 
 # Fail CI on local policy violations
 mcp-audit scan --policy policy.yaml
