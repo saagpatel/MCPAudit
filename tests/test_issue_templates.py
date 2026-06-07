@@ -83,4 +83,3 @@ def test_field_report_template_preserves_safety_boundary() -> None:
     assert "internal hostnames" in text
     assert "private disclosure" in text
     assert "SECURITY.md" in text
-
