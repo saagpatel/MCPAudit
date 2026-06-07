@@ -39,7 +39,7 @@ https://github.com/saagpatel/MCPAudit
 Use this title:
 
 ```text
-Show HN: mcp-audit - see what your MCP servers can actually touch
+Show HN: mcp-audit – see what your MCP servers can actually touch
 ```
 
 Paste the first comment from `launch-posts.md` within about 60 seconds of
