@@ -4,7 +4,9 @@ Purpose: recruit two external, redacted, config-only field reports
 ([#83](https://github.com/saagpatel/MCPAudit/issues/83) /
 [#84](https://github.com/saagpatel/MCPAudit/issues/84)) by leading with the
 solo field scan in
-[`docs/FIELD-SCAN-POPULAR-SERVERS.md`](FIELD-SCAN-POPULAR-SERVERS.md).
+[`docs/FIELD-SCAN-POPULAR-SERVERS.md`](FIELD-SCAN-POPULAR-SERVERS.md) and the
+generator-to-auditor trust packet in
+[`docs/MCP-TRUST-PACKET.md`](MCP-TRUST-PACKET.md).
 
 Tone target: honest, technical, builder-to-builder. No marketing voice — HN
 punishes it. Lead with results, state limitations plainly, end with the ask.
@@ -87,6 +89,12 @@ of popular public servers — the official npm ones (server-filesystem,
 
 Full writeup with the numbers:
 https://github.com/saagpatel/MCPAudit/blob/main/docs/FIELD-SCAN-POPULAR-SERVERS.md
+
+I also wrote down the end-to-end trust packet I use to keep the story honest:
+mcpforge can scaffold or generate a server, MCPAudit audits the trust boundary,
+and local bridge-db receipts stay local rather than becoming a public product
+claim:
+https://github.com/saagpatel/MCPAudit/blob/main/docs/MCP-TRUST-PACKET.md
 
 That scan is solo evidence — it does not by itself make this beta-ready; the
 two external reports above are what close that gap. Happy to answer anything
@@ -210,6 +218,9 @@ a test that keeps working on everyone's.
 
 Repo: <https://github.com/saagpatel/MCPAudit>
 
+End-to-end trust packet:
+<https://github.com/saagpatel/MCPAudit/blob/main/docs/MCP-TRUST-PACKET.md>
+
 ---
 
 ## C. Posting notes
@@ -235,3 +246,6 @@ Repo: <https://github.com/saagpatel/MCPAudit>
 - **Shorter channels** (Reddit r/LocalLLaMA, Mastodon, X, Discord): use the
   "Public Post" block already in `EXTERNAL-OUTREACH-MESSAGES.md` rather than
   trimming this one — it's pre-redacted and pre-approved.
+- **When people ask "why mcpforge too?"** Link
+  `docs/MCP-TRUST-PACKET.md`. Keep MCPAudit as the wedge; mcpforge is the
+  reproducible generator/demo source, and bridge-db is local dogfood receipts.

@@ -8,6 +8,7 @@ FEEDBACK_DOC = Path("docs/FEEDBACK-TO-FIXTURES.md")
 FIELD_REPORT_DOC = Path("docs/FIELD-REPORTS.md")
 FIELD_REPORT_REQUEST_DOC = Path("docs/EXTERNAL-FIELD-REPORT-REQUEST.md")
 FIELD_REPORT_OUTREACH_DOC = Path("docs/EXTERNAL-OUTREACH-MESSAGES.md")
+MCP_TRUST_PACKET_DOC = Path("docs/MCP-TRUST-PACKET.md")
 SOLO_EVIDENCE_DOC = Path("docs/SOLO-EVIDENCE.md")
 FIELD_REPORT_COMMAND = (
     "mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact"
@@ -144,6 +145,7 @@ def test_external_outreach_messages_are_safe_and_actionable() -> None:
     readme = Path("README.md").read_text()
     field_reports = FIELD_REPORT_DOC.read_text()
     request = FIELD_REPORT_REQUEST_DOC.read_text()
+    trust_packet = MCP_TRUST_PACKET_DOC.read_text()
 
     assert "Direct Ask For First Tester" in text
     assert "Direct Ask For Second Tester" in text
@@ -161,6 +163,10 @@ def test_external_outreach_messages_are_safe_and_actionable() -> None:
     assert "docs/EXTERNAL-OUTREACH-MESSAGES.md" in readme
     assert "docs/EXTERNAL-OUTREACH-MESSAGES.md" in field_reports
     assert "docs/EXTERNAL-OUTREACH-MESSAGES.md" in request
+    assert "docs/MCP-TRUST-PACKET.md" in text
+    assert "MCPAudit is the trust wedge" in text
+    assert "mcpforge" in trust_packet
+    assert "bridge-db" in trust_packet
 
 
 def test_solo_evidence_is_documented_without_weakening_external_gate() -> None:

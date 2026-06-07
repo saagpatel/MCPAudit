@@ -150,6 +150,8 @@ values and any proprietary prompt/tool/schema text; [`docs/EXTERNAL-FIELD-REPORT
 has the full checklist. For a reference of what the scanner reports on real
 software, see the solo field scan in
 [`docs/FIELD-SCAN-POPULAR-SERVERS.md`](docs/FIELD-SCAN-POPULAR-SERVERS.md).
+For an end-to-end generator-to-auditor demo packet, see
+[`docs/MCP-TRUST-PACKET.md`](docs/MCP-TRUST-PACKET.md).
 
 ## Tech Stack
 
@@ -213,6 +215,8 @@ See `docs/FEEDBACK-TO-FIXTURES.md` for turning false positives, missing
 detections, output issues, and pin lifecycle feedback into safe regression
 fixtures. See `docs/FIELD-REPORTS.md` for the redacted field-report evidence
 path, public field-report issue template, and consumer-contract coverage. See
+`docs/MCP-TRUST-PACKET.md` for the public MCP ecosystem demo path that pairs
+mcpforge scaffolding with MCPAudit review output. See
 `docs/SOLO-EVIDENCE.md` for solo multi-environment evidence that can reduce
 release risk without replacing external reports. See
 `docs/ROADMAP-NEXT.md` for the current post-`1.5.5` roadmap. See

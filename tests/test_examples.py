@@ -41,6 +41,7 @@ CONSUMER_CONTRACT_REPORTS = [
     *LEGACY_REPORTS,
 ]
 SCHEMA_PATH = Path("examples/schemas/audit-report.schema.json")
+MCP_TRUST_PACKET = Path("docs/MCP-TRUST-PACKET.md")
 
 
 def test_ci_examples_are_valid_yaml() -> None:
@@ -88,6 +89,22 @@ def test_adoption_docs_reference_current_examples() -> None:
 
     for required_path in required_paths:
         assert required_path in combined_docs
+
+
+def test_mcp_trust_packet_is_discoverable_and_safe() -> None:
+    readme = Path("README.md").read_text()
+    packet = MCP_TRUST_PACKET.read_text()
+
+    assert "docs/MCP-TRUST-PACKET.md" in readme
+    assert "uvx --from fastmcp-builder==0.3.0 mcpforge init" in packet
+    assert "uvx --from mcp-permission-audit==1.13.1 mcp-audit scan" in packet
+    assert "It has been smoke-checked" in packet
+    assert "--config-only" in packet
+    assert "--skip-connect" in packet
+    assert "--redact" in packet
+    assert "`remote_endpoint` config-health finding" in packet
+    assert "Do not include:" in packet
+    assert "bridge-db` only as local operating-state infrastructure" in packet
 
 
 def test_stale_pin_review_examples_are_read_only() -> None:

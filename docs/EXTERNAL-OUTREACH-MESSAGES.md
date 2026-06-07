@@ -6,6 +6,7 @@ before MCPAudit uses a beta label. These asks intentionally use
 endpoints.
 
 Primary request packet: `docs/EXTERNAL-FIELD-REPORT-REQUEST.md`.
+Generator-to-auditor proof packet: `docs/MCP-TRUST-PACKET.md`.
 
 Tracking:
 
@@ -32,6 +33,9 @@ Please redact credentials, private paths, internal hostnames, private URLs, cust
 
 Request packet:
 https://github.com/saagpatel/MCPAudit/blob/main/docs/EXTERNAL-FIELD-REPORT-REQUEST.md
+
+If you want to see the generator-to-auditor demo path this report helps validate:
+https://github.com/saagpatel/MCPAudit/blob/main/docs/MCP-TRUST-PACKET.md
 ```
 
 ## Direct Ask For Second Tester
@@ -58,6 +62,9 @@ Please redact credentials, private paths, internal hostnames, private URLs, cust
 
 Request packet:
 https://github.com/saagpatel/MCPAudit/blob/main/docs/EXTERNAL-FIELD-REPORT-REQUEST.md
+
+Generator-to-auditor proof packet:
+https://github.com/saagpatel/MCPAudit/blob/main/docs/MCP-TRUST-PACKET.md
 ```
 
 ## Public Post
@@ -80,6 +87,9 @@ Please redact credentials, private paths, internal hostnames, private URLs, cust
 
 Details:
 https://github.com/saagpatel/MCPAudit/blob/main/docs/EXTERNAL-FIELD-REPORT-REQUEST.md
+
+Proof packet:
+https://github.com/saagpatel/MCPAudit/blob/main/docs/MCP-TRUST-PACKET.md
 ```
 
 ## Follow-Up After A Report Lands
@@ -102,3 +112,8 @@ When a report arrives, use `docs/EXTERNAL-FIELD-REPORT-REQUEST.md#maintainer-tri
 Keep #85 open until two accepted external reports have been handled. Solo
 evidence in `docs/SOLO-EVIDENCE.md` can support confidence, but it does not
 replace #83 or #84.
+
+Use `docs/MCP-TRUST-PACKET.md` when someone asks why MCPAudit, mcpforge, and
+local MCP dogfooding belong in the same story. Keep the reply crisp:
+MCPAudit is the trust wedge, mcpforge makes the demo concrete, and bridge-db is
+local operating-state infrastructure rather than a public product claim.
