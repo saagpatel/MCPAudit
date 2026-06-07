@@ -69,6 +69,7 @@ def test_field_report_template_collects_config_only_external_evidence() -> None:
     assert "Approximate server count" in text
     assert "JSON/SARIF consumer compatibility check" in text
     assert "Dashboard or CI ingestion check" in text
+    assert "docs/FIELD-REPORTS.md#minimal-public-example" in text
     assert "## Expected fixture value" in text
     assert "Beta-readiness evidence only" in text
 
@@ -97,6 +98,12 @@ def test_field_report_docs_track_external_intake_and_beta_bar() -> None:
     assert "## External Intake Path" in doc
     assert FIELD_REPORT_COMMAND in doc
     assert "`--redact` scrubs hostname" in doc
+    assert "## Minimal Public Example" in doc
+    assert "This is an example shape only, not an accepted external field report." in doc
+    assert "server-01" in doc
+    assert "package_runner_source_review" in doc
+    assert "remote_endpoint" in doc
+    assert "Fixture permission: yes" in doc
     assert ".github/ISSUE_TEMPLATE/field_report.md" in doc
     assert "## Fixture Acceptance Bar" in doc
     assert "at least two external redacted reports" in doc

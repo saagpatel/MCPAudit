@@ -86,6 +86,51 @@ The dedicated GitHub template for this path is
 The copy-paste request for contributors lives in
 `docs/EXTERNAL-FIELD-REPORT-REQUEST.md`.
 
+## Minimal Public Example
+
+This is an example shape only, not an accepted external field report. It shows
+the level of detail that is useful in a public issue after the report has been
+generated with `--redact` and manually reviewed.
+
+```text
+MCPAudit version: mcp-audit, version 1.13.1
+Operating system: macOS / Darwin
+MCP clients included: Claude Desktop and Cursor
+Approximate server count: 3
+Status counts: 3 skipped
+Config-health finding types: remote_endpoint, package_runner_source_review
+Consumer check: dashboard parser loaded the JSON report successfully
+Fixture permission: yes, a redacted shape may become a public fixture
+```
+
+Small redacted JSON snippets should preserve structure without exposing local
+names, paths, hosts, URLs, credentials, or proprietary prompt/schema text:
+
+```json
+{
+  "servers_discovered": 3,
+  "servers_connected": 0,
+  "servers_failed": 0,
+  "audits": [
+    {
+      "server": {"name": "server-01", "client": "claude_desktop"},
+      "connection_status": "skipped"
+    }
+  ],
+  "config_health_findings": [
+    {
+      "server_name": "server-01",
+      "finding_type": "package_runner_source_review",
+      "severity": "medium"
+    }
+  ]
+}
+```
+
+If the smallest useful snippet still needs private paths, internal hostnames,
+private URLs, customer/workspace names, or proprietary tool/prompt/schema text,
+do not post it publicly. Use private triage first.
+
 ## Fixture Acceptance Bar
 
 A field report is ready to become a fixture when it answers:

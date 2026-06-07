@@ -47,7 +47,8 @@ proprietary prompt/resource text, or security-sensitive false negatives.
 
 Paste a small redacted summary of the result. Useful signals include status
 counts, config-health finding types, policy failures, and JSON/SARIF consumer
-friction.
+friction. See `docs/FIELD-REPORTS.md#minimal-public-example` for a safe example
+shape.
 
 ## Minimal redacted report snippet
 
