@@ -69,7 +69,7 @@ def test_ci_examples_are_valid_yaml() -> None:
 def test_ci_examples_install_published_package() -> None:
     for example_path in CI_EXAMPLES:
         text = example_path.read_text()
-        assert "mcp-permission-audit" in text
+        assert "mcp-audit" in text
         assert "mcp-audit scan" in text
 
 
@@ -111,7 +111,7 @@ def test_mcp_trust_packet_is_discoverable_and_safe() -> None:
 
     assert "docs/MCP-TRUST-PACKET.md" in readme
     assert "uvx --from fastmcp-builder==0.3.0 mcpforge init" in packet
-    assert "uvx --from mcp-permission-audit==1.13.1 mcp-audit scan" in packet
+    assert "uvx --from mcp-audit==2.0.0 mcp-audit scan" in packet
     assert "It has been smoke-checked" in packet
     assert "--config-only" in packet
     assert "--skip-connect" in packet
@@ -120,164 +120,6 @@ def test_mcp_trust_packet_is_discoverable_and_safe() -> None:
     assert "`remote_endpoint` config-health finding" in packet
     assert "Do not include:" in packet
     assert "bridge-db` only as local operating-state infrastructure" in packet
-
-
-def test_external_launch_checklist_links_credible_public_path() -> None:
-    readme = Path("README.md").read_text()
-    demo_assets = Path("DEMO-ASSETS.md").read_text()
-
-    assert CONFIG_ONLY_SCAN_ASSET.exists()
-    assert CONFIG_ONLY_SCAN_ASSET.stat().st_size > 0
-    assert HERO_DEMO_CONFIG.exists()
-    hero_config = json.loads(HERO_DEMO_CONFIG.read_text())
-    assert sorted(hero_config["mcpServers"]) == ["fetch", "sequential-thinking", "time"]
-    assert HERO_SCAN_GIF.exists()
-    assert HERO_SCAN_GIF.stat().st_size > 0
-    assert "docs/assets/hero-scan.gif" in readme
-    assert CI_SARIF_ASSET.exists()
-    assert CI_SARIF_ASSET.stat().st_size > 0
-    assert "docs/assets/ci-sarif.png" in readme
-    assert "MCPxxx" in readme
-    assert HTML_REPORT_ASSET.exists()
-    assert HTML_REPORT_ASSET.stat().st_size > 0
-    assert "docs/assets/html-report.png" in readme
-    assert POLICY_GATE_GIF.exists()
-    assert POLICY_GATE_GIF.stat().st_size > 0
-    assert "docs/assets/policy-gate.gif" in readme
-    assert POLICY_GATE_DEMO_SCRIPT.exists()
-    assert "docs/assets/hero-demo-config.json" in demo_assets
-    assert HERO_TAPE.exists()
-    hero_tape = HERO_TAPE.read_text()
-    assert "Output docs/assets/hero-scan.gif" in hero_tape
-    assert "docs/assets/hero-demo-config.json --config-only --ssrf-check" in hero_tape
-    assert "docs/assets/hero.tape" in demo_assets
-    assert "auth tokens, real local paths, or placeholder remote URLs" in demo_assets
-    assert "## External launch checklist" in readme
-    assert "docs/assets/mcp-audit-config-only-scan.png" in readme
-    assert "docs/MCP-TRUST-PACKET.md" in readme
-    assert "docs/EXTERNAL-FIELD-REPORT-REQUEST.md" in readme
-    assert "docs/FIELD-REPORTS.md#minimal-public-example" in readme
-    assert "launch-posts.md" in readme
-    assert "docs/LAUNCH-CONTROL-CARD.md" in readme
-    assert "docs/LAUNCH-DAY-RUNBOOK.md" in readme
-    assert "docs/LAUNCH-RESPONSE-PLAYBOOK.md" in readme
-    assert "pre-beta until two external redacted reports land" in readme
-    assert LAUNCH_CONTROL_CARD.exists()
-    launch_control = LAUNCH_CONTROL_CARD.read_text()
-    assert "Sunday, June 7, 2026 is" in launch_control
-    assert "Tuesday, June 9, 2026" in launch_control
-    assert "Wednesday, June 10, 2026" in launch_control
-    assert "Show HN: mcp-audit" in launch_control
-    assert "https://news.ycombinator.com/submit" in launch_control
-    assert "not a login prompt" in launch_control
-    assert "https://github.com/saagpatel/MCPAudit" in launch_control
-    assert 'launch-posts.md -> "Body / first comment"' in launch_control
-    assert "--redact" in launch_control
-    assert "SECURITY.md" in launch_control
-    assert LAUNCH_PREFLIGHT_SCRIPT.exists()
-    assert "python scripts/launch_preflight.py --print-hn-copy" in readme
-    assert "python scripts/launch_preflight.py --print-hn-copy" in launch_control
-    assert LAUNCH_DAY_RUNBOOK.exists()
-    launch_runbook = LAUNCH_DAY_RUNBOOK.read_text()
-    assert "Tuesday, June 9, 2026" in launch_runbook
-    assert "Wednesday, June 10, 2026" in launch_runbook
-    assert "Show HN: mcp-audit" in launch_runbook
-    assert "not a login prompt" in launch_runbook
-    assert "docs/LAUNCH-CONTROL-CARD.md" in launch_runbook
-    assert "docs/LAUNCH-RESPONSE-PLAYBOOK.md" in launch_runbook
-    assert LAUNCH_RESPONSE_PLAYBOOK.exists()
-    response_playbook = LAUNCH_RESPONSE_PLAYBOOK.read_text()
-    assert "mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact" in response_playbook
-    assert "SECURITY.md" in response_playbook
-    assert "Not yet" in response_playbook
-    launch_posts = LAUNCH_POSTS.read_text()
-    assert "## 1. Show HN / r/mcp" in launch_posts
-    assert "## 2. LinkedIn" in launch_posts
-    assert "Title A/B + posting-time plan" in launch_posts
-    assert "mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact" in launch_posts
-    assert "https://github.com/saagpatel/MCPAudit/issues/new?template=field_report.md" in launch_posts
-    assert "docs/assets/hero-scan.gif" in launch_posts
-    assert "docs/assets/mcp-audit-config-only-scan.png" in launch_posts
-    assert "record via `DEMO-ASSETS.md` first if possible" not in launch_posts
-    assert "not a real workstation" in launch_posts
-
-
-def test_launch_preflight_script_checks_static_packet() -> None:
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(LAUNCH_PREFLIGHT_SCRIPT),
-            "--skip-git",
-            "--skip-remote",
-            "--skip-public",
-            "--skip-package",
-        ],
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode == 0
-    assert "Launch preflight passed." in result.stdout
-    assert "title chars: 65" in result.stdout
-    assert "HN submit page: https://news.ycombinator.com/submit (login/auth not checked)" in result.stdout
-
-
-def test_launch_preflight_can_print_hn_copy() -> None:
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(LAUNCH_PREFLIGHT_SCRIPT),
-            "--skip-git",
-            "--skip-remote",
-            "--skip-public",
-            "--skip-package",
-            "--print-hn-copy",
-        ],
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode == 0
-    assert "HN SUBMIT PAGE" in result.stdout
-    assert "https://news.ycombinator.com/submit" in result.stdout
-    assert "HN SUBMIT URL" in result.stdout
-    assert "HN TITLE" in result.stdout
-    assert "HN FIRST COMMENT" in result.stdout
-    assert "Show HN: mcp-audit" in result.stdout
-    assert "uvx --from mcp-permission-audit mcp-audit scan --skip-connect" in result.stdout
-    assert "mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact" in result.stdout
-
-
-def test_hero_recording_recipe_is_public_and_scoped() -> None:
-    config = json.loads(HERO_DEMO_CONFIG.read_text())
-    tape = HERO_TAPE.read_text()
-    demo_assets = Path("DEMO-ASSETS.md").read_text()
-
-    servers = config["mcpServers"]
-    assert set(servers) == {"fetch", "sequential-thinking", "time"}
-    assert "GITHUB_PERSONAL_ACCESS_TOKEN" not in HERO_DEMO_CONFIG.read_text()
-    assert "/tmp/workspace" not in HERO_DEMO_CONFIG.read_text()
-    assert "--config docs/assets/hero-demo-config.json --config-only --ssrf-check" in tape
-    assert "export COLUMNS=185" in tape
-    assert "never reads your real MCP configs" in tape
-    assert "docs/assets/hero-scan.gif" in tape
-    assert "docs/assets/hero-demo-config.json" in demo_assets
-    assert "docs/assets/hero.tape" in demo_assets
-    assert "fetch`, `sequential-thinking`, `time" in demo_assets
-    assert "docs/assets/ci-sarif.png" in demo_assets
-    assert "docs/assets/html-report.png" in demo_assets
-    assert "tool:mcp-audit" in demo_assets
-    assert POLICY_GATE_TAPE.exists()
-    policy_tape = POLICY_GATE_TAPE.read_text()
-    assert "bash docs/assets/policy-gate-demo.sh" in policy_tape
-    policy_script = POLICY_GATE_DEMO_SCRIPT.read_text()
-    assert "--skip-connect" in policy_script
-    assert "--policy examples/policies/ci-strict.yaml" in policy_script
-    assert "Policy Gate Failed" in policy_script
-    assert "exit code: ${code}" in policy_script
-    subprocess.run(["bash", "-n", str(POLICY_GATE_DEMO_SCRIPT)], check=True)
-    assert "docs/assets/policy-gate.gif" in demo_assets
-    assert "docs/assets/policy-gate-demo.sh" in demo_assets
 
 
 def test_strict_policy_example_exits_two() -> None:

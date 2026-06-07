@@ -1,7 +1,7 @@
 # mcp-audit
 
-[![PyPI](https://img.shields.io/pypi/v/mcp-permission-audit?style=flat-square&logo=pypi&logoColor=white&label=PyPI)](https://pypi.org/project/mcp-permission-audit/)
-[![Python](https://img.shields.io/pypi/pyversions/mcp-permission-audit?style=flat-square&logo=python&logoColor=white)](https://pypi.org/project/mcp-permission-audit/)
+[![PyPI](https://img.shields.io/pypi/v/mcp-audit?style=flat-square&logo=pypi&logoColor=white&label=PyPI)](https://pypi.org/project/mcp-audit/)
+[![Python](https://img.shields.io/pypi/pyversions/mcp-audit?style=flat-square&logo=python&logoColor=white)](https://pypi.org/project/mcp-audit/)
 [![CI](https://img.shields.io/github/actions/workflow/status/saagpatel/MCPAudit/ci.yml?style=flat-square&logo=githubactions&logoColor=white&label=CI)](https://github.com/saagpatel/MCPAudit/actions/workflows/ci.yml)
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/saagpatel/MCPAudit/codeql.yml?style=flat-square&logo=github&label=CodeQL)](https://github.com/saagpatel/MCPAudit/actions/workflows/codeql.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
@@ -17,7 +17,7 @@ Read-only by default: it never edits a config and reports env-var **key names on
 No install required — [`uv`](https://docs.astral.sh/uv/) runs it in a throwaway environment. This reads the MCP configs already on your machine, connects to each configured server to read its real tool schemas, and flags SSRF-shaped tools:
 
 ```bash
-uvx --from mcp-permission-audit mcp-audit scan --ssrf-check
+uvx mcp-audit scan --ssrf-check
 ```
 
 It stays read-only the whole time — it never edits a config and reports env-var **key names only**, never values. Sample output:
@@ -60,7 +60,7 @@ Zero-touch preview against the bundled public fixture:
 Install it permanently once you're hooked:
 
 ```bash
-uv tool install mcp-permission-audit      # adds the `mcp-audit` command to your PATH
+uv tool install mcp-audit                 # adds the `mcp-audit` command to your PATH
 mcp-audit scan                            # connected scan of every configured client
 ```
 
@@ -82,7 +82,7 @@ Self-contained HTML report preview from a redacted config-only scan:
 
 ![mcp-audit self-contained HTML report](docs/assets/html-report.png)
 
-PyPI package: [`mcp-permission-audit`](https://pypi.org/project/mcp-permission-audit/) · installed command: `mcp-audit` · full flag and detector reference below.
+PyPI package: [`mcp-audit`](https://pypi.org/project/mcp-audit/) · installed command: `mcp-audit` · full flag and detector reference below.
 
 ---
 
@@ -122,7 +122,7 @@ Use this path when sharing MCPAudit outside the repo:
 - **Structured output** — Rich terminal report plus JSON and SARIF 2.1.0 export for ingestion by GitHub Advanced Security and SARIF-aware SAST pipelines, and a self-contained shareable HTML report via `scan --html report.html` (inline CSS, no JavaScript, redacted and fully HTML-escaped)
 - **Drop-in CI distribution** — a composite GitHub Action (`uses: saagpatel/MCPAudit@v1.13.1`) runs the scan, writes SARIF, and uploads it to code scanning in one step (config-only by default; optional policy gate exits `2`); a `pre-commit` hook (`id: mcp-audit`) audits repo-local `.mcp.json` / `.vscode/mcp.json` on commit. See `docs/ADOPTION-GUIDE.md`
 - **Documented output contract** — JSON, SARIF rule IDs, and policy exit codes are documented in `docs/OUTPUT-CONTRACT.md`
-- **Watch mode** — `mcp-audit watch` re-scans on config file changes via `watchfiles` (optional extra: install with `mcp-permission-audit[watch]`)
+- **Watch mode** — `mcp-audit watch` re-scans on config file changes via `watchfiles` (optional extra: install with `mcp-audit[watch]`)
 
 ## Quick Start
 
@@ -132,11 +132,11 @@ Use this path when sharing MCPAudit outside the repo:
 
 ### Installation
 ```bash
-uvx --from mcp-permission-audit mcp-audit discover
+uvx mcp-audit discover
 # or install permanently:
-uv tool install mcp-permission-audit
+uv tool install mcp-audit
 # with watch mode support:
-uv tool install 'mcp-permission-audit[watch]'
+uv tool install 'mcp-audit[watch]'
 ```
 
 ### Usage
@@ -229,7 +229,7 @@ takes a beta label. If you run MCP servers, contributing one stays fully
 offline — no servers spawned, no network:
 
 ```bash
-python3 -m pip install --upgrade mcp-permission-audit
+python3 -m pip install --upgrade mcp-audit
 mcp-audit --version
 mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
 ```

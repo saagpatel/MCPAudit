@@ -54,7 +54,7 @@ _DOCKER_SUBCOMMANDS = {"container", "image", "pull", "run"}
 
 @click.group()
 @click.option("--debug", is_flag=True, default=False, help="Enable debug logging.")
-@click.version_option(package_name="mcp-permission-audit", prog_name="mcp-audit")
+@click.version_option(package_name="mcp-audit", prog_name="mcp-audit")
 def main(debug: bool) -> None:
     """MCP Permission Auditor — scan and risk-score locally configured MCP servers."""
     if debug:
@@ -344,7 +344,7 @@ async def _run_scan_core(
             except ImportError:
                 console.print(
                     "[yellow]--llm-analysis: anthropic package not installed. "
-                    "Run: pip install 'mcp-permission-audit[llm]'[/yellow]"
+                    "Run: pip install 'mcp-audit[llm]'[/yellow]"
                 )
 
     injection_detector = None

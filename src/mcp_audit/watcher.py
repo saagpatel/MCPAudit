@@ -44,7 +44,7 @@ def watch_command(
     extra_config: str | None,
     override_config_path: str | None,
 ) -> None:
-    """Watch MCP config files and re-scan on changes. Requires mcp-permission-audit[watch]."""
+    """Watch MCP config files and re-scan on changes. Requires mcp-audit[watch]."""
     anyio.run(
         _watch_loop,
         json_output,
@@ -71,7 +71,7 @@ async def _watch_loop(
     try:
         from watchfiles import awatch  # type: ignore[import-not-found, unused-ignore]
     except ImportError:
-        _console.print("[red]watchfiles not installed. Run: pip install 'mcp-permission-audit[watch]'[/red]")
+        _console.print("[red]watchfiles not installed. Run: pip install 'mcp-audit[watch]'[/red]")
         raise SystemExit(1)
 
     from mcp_audit.cli import _parse_clients, _run_scan_core

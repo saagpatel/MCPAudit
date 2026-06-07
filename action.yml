@@ -11,7 +11,7 @@ branding:
 inputs:
   version:
     description: >-
-      Exact mcp-permission-audit version to install (e.g. "1.9.0"). Defaults to
+      Exact mcp-audit version to install (e.g. "2.0.0"). Defaults to
       the latest published release.
     required: false
     default: ""
@@ -89,9 +89,9 @@ runs:
       run: |
         set -euo pipefail
         if [ -n "${MCP_AUDIT_VERSION}" ]; then
-          python -m pip install --upgrade "mcp-permission-audit==${MCP_AUDIT_VERSION}"
+          python -m pip install --upgrade "mcp-audit==${MCP_AUDIT_VERSION}"
         else
-          python -m pip install --upgrade mcp-permission-audit
+          python -m pip install --upgrade mcp-audit
         fi
 
     - name: Audit MCP servers

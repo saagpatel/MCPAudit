@@ -131,7 +131,7 @@ spawns or connects to servers) and triggers when a repo-root `.mcp.json` or a
 ```yaml
 repos:
   - repo: https://github.com/saagpatel/MCPAudit
-    rev: v1.13.1
+    rev: v2.0.0
     hooks:
       - id: mcp-audit
 ```

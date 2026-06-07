@@ -41,7 +41,7 @@ commands, generated server files, MCPAudit reports, and issue/fixture links.
 
 This demo uses the no-LLM scaffold path so anyone can reproduce it without API keys.
 It has been smoke-checked with `fastmcp-builder==0.3.0` and
-`mcp-permission-audit==1.13.1`.
+`mcp-audit==2.0.0`.
 
 ```bash
 tmpdir="$(mktemp -d)"
@@ -54,7 +54,7 @@ uvx --from fastmcp-builder==0.3.0 mcpforge validate \
   "$tmpdir/trust-packet-demo" \
   --json
 
-uvx --from mcp-permission-audit==1.13.1 mcp-audit scan \
+uvx --from mcp-audit==2.0.0 mcp-audit scan \
   --config "$tmpdir/trust-packet-demo/config.json" \
   --config-only \
   --skip-connect \
@@ -85,7 +85,7 @@ the generated HTTP config as a remote endpoint during a config-only scan:
 uvx --from fastmcp-builder==0.3.0 mcpforge init trust-packet-http \
   --output "$tmpdir/trust-packet-http"
 
-uvx --from mcp-permission-audit==1.13.1 mcp-audit scan \
+uvx --from mcp-audit==2.0.0 mcp-audit scan \
   --config "$tmpdir/trust-packet-http/config.json" \
   --config-only \
   --skip-connect \
@@ -113,7 +113,7 @@ uvx --from fastmcp-builder==0.3.0 mcpforge generate \
 
 uvx --from fastmcp-builder==0.3.0 mcpforge validate "$tmpdir/csv-summary-server" --json
 
-uvx --from mcp-permission-audit==1.13.1 mcp-audit scan \
+uvx --from mcp-audit==2.0.0 mcp-audit scan \
   --config "$tmpdir/csv-summary-server/config.json" \
   --config-only \
   --skip-connect \
@@ -148,7 +148,7 @@ Do not include:
 The external credibility step remains MCPAudit field evidence:
 
 ```bash
-python3 -m pip install --upgrade mcp-permission-audit
+python3 -m pip install --upgrade mcp-audit
 mcp-audit --version
 mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
 ```
