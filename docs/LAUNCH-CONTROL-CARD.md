@@ -14,7 +14,7 @@ Primary windows:
 - Tuesday, June 9, 2026, 8:00-9:30am ET
 - Wednesday, June 10, 2026, 8:00-9:30am ET
 
-Today, Sunday, June 7, 2026, is **not** the planned Hacker News launch window.
+Sunday, June 7, 2026 is **not** the planned Hacker News launch window.
 
 ## Submit Fields
 
@@ -36,6 +36,12 @@ First comment source:
 launch-posts.md -> "Body / first comment"
 ```
 
+Field-report command that must appear in the first comment:
+
+```bash
+mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
+```
+
 ## Open Before Submit
 
 - Hacker News submit page, logged in and able to comment.
@@ -52,6 +58,7 @@ launch-posts.md -> "Body / first comment"
 
 - `main` matches `origin/main`.
 - CI, Self Audit, and CodeQL are green on the current `main` head.
+- `python scripts/launch_preflight.py` passes.
 - README visuals render:
   - `docs/assets/hero-scan.gif`
   - `docs/assets/mcp-audit-config-only-scan.png`

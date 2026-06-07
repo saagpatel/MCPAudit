@@ -26,6 +26,8 @@
 - **Launch control card added** — `docs/LAUNCH-CONTROL-CARD.md` is the single-screen
   operator card for HN submit fields, open tabs, final go checks, first 5 minutes,
   and explicit do-not-do guardrails.
+- **Launch preflight added** — `scripts/launch_preflight.py` checks launch docs,
+  assets, local git alignment, and current-head GitHub CI/Self Audit/CodeQL status.
 - **Hero/proof assets landed** — README now includes the connected public-fixture GIF
   `docs/assets/hero-scan.gif`, zero-touch preview
   `docs/assets/mcp-audit-config-only-scan.png`, and SARIF/code-scanning proof
@@ -92,7 +94,7 @@
   `docs/assets/hero-demo-config.json`, `docs/assets/hero.tape`,
   `docs/assets/hero-scan.gif`, `docs/assets/ci-sarif.png`,
   `docs/assets/html-report.png`,
-  `src/mcp_audit/sarif.py`, and `tests/test_sarif.py`.
+  `scripts/launch_preflight.py`, `src/mcp_audit/sarif.py`, and `tests/test_sarif.py`.
 
 ## Gotcha
 - `scan --config-only` means "only this config file" — it does NOT skip connection. Add

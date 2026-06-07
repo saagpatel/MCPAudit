@@ -28,6 +28,7 @@ CONSUMER_EXAMPLES = sorted(
 )
 MAINTENANCE_EXAMPLES = sorted(Path("examples/maintenance").glob("*.sh"))
 POLICY_EXAMPLES = sorted(Path("examples/policies").glob("*.yaml"))
+LAUNCH_PREFLIGHT_SCRIPT = Path("scripts/launch_preflight.py")
 PROMPT_RESOURCE_REPORT = Path("tests/fixtures/reports/prompt_resource_report.json")
 CONFIG_ONLY_REPORT = Path("tests/fixtures/reports/config_only_report.json")
 DASHBOARD_STATUS_REPORT = Path("tests/fixtures/reports/dashboard_status_report.json")
@@ -163,7 +164,7 @@ def test_external_launch_checklist_links_credible_public_path() -> None:
     assert "pre-beta until two external redacted reports land" in readme
     assert LAUNCH_CONTROL_CARD.exists()
     launch_control = LAUNCH_CONTROL_CARD.read_text()
-    assert "Sunday, June 7, 2026" in launch_control
+    assert "Sunday, June 7, 2026 is" in launch_control
     assert "Tuesday, June 9, 2026" in launch_control
     assert "Wednesday, June 10, 2026" in launch_control
     assert "Show HN: mcp-audit" in launch_control
@@ -171,6 +172,9 @@ def test_external_launch_checklist_links_credible_public_path() -> None:
     assert 'launch-posts.md -> "Body / first comment"' in launch_control
     assert "--redact" in launch_control
     assert "SECURITY.md" in launch_control
+    assert LAUNCH_PREFLIGHT_SCRIPT.exists()
+    assert "python scripts/launch_preflight.py" in readme
+    assert "python scripts/launch_preflight.py" in launch_control
     assert LAUNCH_DAY_RUNBOOK.exists()
     launch_runbook = LAUNCH_DAY_RUNBOOK.read_text()
     assert "Tuesday, June 9, 2026" in launch_runbook
@@ -193,6 +197,23 @@ def test_external_launch_checklist_links_credible_public_path() -> None:
     assert "docs/assets/mcp-audit-config-only-scan.png" in launch_posts
     assert "record via `DEMO-ASSETS.md` first if possible" not in launch_posts
     assert "not a real workstation" in launch_posts
+
+
+def test_launch_preflight_script_checks_static_packet() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(LAUNCH_PREFLIGHT_SCRIPT),
+            "--skip-git",
+            "--skip-remote",
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "Launch preflight passed." in result.stdout
+    assert "title chars: 65" in result.stdout
 
 
 def test_hero_recording_recipe_is_public_and_scoped() -> None:
