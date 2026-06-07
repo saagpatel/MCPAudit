@@ -102,6 +102,7 @@ def test_mcp_trust_packet_is_discoverable_and_safe() -> None:
     assert "--config-only" in packet
     assert "--skip-connect" in packet
     assert "--redact" in packet
+    assert "docs/FIELD-REPORTS.md#minimal-public-example" in packet
     assert "`remote_endpoint` config-health finding" in packet
     assert "Do not include:" in packet
     assert "bridge-db` only as local operating-state infrastructure" in packet

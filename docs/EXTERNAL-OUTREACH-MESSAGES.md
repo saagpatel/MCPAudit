@@ -7,6 +7,7 @@ endpoints.
 
 Primary request packet: `docs/EXTERNAL-FIELD-REPORT-REQUEST.md`.
 Generator-to-auditor proof packet: `docs/MCP-TRUST-PACKET.md`.
+Safe example shape: `docs/FIELD-REPORTS.md#minimal-public-example`.
 
 Tracking:
 
@@ -33,6 +34,9 @@ Please redact credentials, private paths, internal hostnames, private URLs, cust
 
 Request packet:
 https://github.com/saagpatel/MCPAudit/blob/main/docs/EXTERNAL-FIELD-REPORT-REQUEST.md
+
+Safe example shape:
+https://github.com/saagpatel/MCPAudit/blob/main/docs/FIELD-REPORTS.md#minimal-public-example
 
 If you want to see the generator-to-auditor demo path this report helps validate:
 https://github.com/saagpatel/MCPAudit/blob/main/docs/MCP-TRUST-PACKET.md
@@ -63,6 +67,9 @@ Please redact credentials, private paths, internal hostnames, private URLs, cust
 Request packet:
 https://github.com/saagpatel/MCPAudit/blob/main/docs/EXTERNAL-FIELD-REPORT-REQUEST.md
 
+Safe example shape:
+https://github.com/saagpatel/MCPAudit/blob/main/docs/FIELD-REPORTS.md#minimal-public-example
+
 Generator-to-auditor proof packet:
 https://github.com/saagpatel/MCPAudit/blob/main/docs/MCP-TRUST-PACKET.md
 ```
@@ -88,6 +95,9 @@ Please redact credentials, private paths, internal hostnames, private URLs, cust
 Details:
 https://github.com/saagpatel/MCPAudit/blob/main/docs/EXTERNAL-FIELD-REPORT-REQUEST.md
 
+Safe example shape:
+https://github.com/saagpatel/MCPAudit/blob/main/docs/FIELD-REPORTS.md#minimal-public-example
+
 Proof packet:
 https://github.com/saagpatel/MCPAudit/blob/main/docs/MCP-TRUST-PACKET.md
 ```
@@ -109,6 +119,8 @@ If anything looks sensitive, we will move it out of public issue triage and use 
 ## Maintainer Handling
 
 When a report arrives, use `docs/EXTERNAL-FIELD-REPORT-REQUEST.md#maintainer-triage`.
+Compare public snippets against `docs/FIELD-REPORTS.md#minimal-public-example`
+when checking whether the report is small, redacted, and fixture-shaped.
 Keep #85 open until two accepted external reports have been handled. Solo
 evidence in `docs/SOLO-EVIDENCE.md` can support confidence, but it does not
 replace #83 or #84.

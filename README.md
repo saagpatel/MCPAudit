@@ -147,7 +147,9 @@ mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
 names for you. Then open a [redacted field report](https://github.com/saagpatel/MCPAudit/issues/new?template=field_report.md)
 — the template walks you through the safe fields. Please still redact credential
 values and any proprietary prompt/tool/schema text; [`docs/EXTERNAL-FIELD-REPORT-REQUEST.md`](docs/EXTERNAL-FIELD-REPORT-REQUEST.md)
-has the full checklist. For a reference of what the scanner reports on real
+has the full checklist, and
+[`docs/FIELD-REPORTS.md#minimal-public-example`](docs/FIELD-REPORTS.md#minimal-public-example)
+shows a safe example shape. For a reference of what the scanner reports on real
 software, see the solo field scan in
 [`docs/FIELD-SCAN-POPULAR-SERVERS.md`](docs/FIELD-SCAN-POPULAR-SERVERS.md).
 For an end-to-end generator-to-auditor demo packet, see
@@ -214,7 +216,8 @@ combined-score proposal. See `examples/ci/pin-stale-review.yml` and
 See `docs/FEEDBACK-TO-FIXTURES.md` for turning false positives, missing
 detections, output issues, and pin lifecycle feedback into safe regression
 fixtures. See `docs/FIELD-REPORTS.md` for the redacted field-report evidence
-path, public field-report issue template, and consumer-contract coverage. See
+path, minimal public example shape, public field-report issue template, and
+consumer-contract coverage. See
 `docs/MCP-TRUST-PACKET.md` for the public MCP ecosystem demo path that pairs
 mcpforge scaffolding with MCPAudit review output. See
 `docs/SOLO-EVIDENCE.md` for solo multi-environment evidence that can reduce

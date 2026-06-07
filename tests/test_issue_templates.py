@@ -143,6 +143,7 @@ def test_external_field_report_request_is_safe_and_actionable() -> None:
     assert "API keys, tokens, passwords" in text
     assert "internal hostnames" in text
     assert "Maintainer Triage" in text
+    assert "docs/FIELD-REPORTS.md#minimal-public-example" in text
     assert "Confirm it was produced with `scan --skip-connect`" in text
     assert "Do not change `risk_score.composite` from these reports alone" in text
 
@@ -170,6 +171,10 @@ def test_external_outreach_messages_are_safe_and_actionable() -> None:
     assert "docs/EXTERNAL-OUTREACH-MESSAGES.md" in readme
     assert "docs/EXTERNAL-OUTREACH-MESSAGES.md" in field_reports
     assert "docs/EXTERNAL-OUTREACH-MESSAGES.md" in request
+    assert "docs/FIELD-REPORTS.md#minimal-public-example" in text
+    assert "docs/FIELD-REPORTS.md#minimal-public-example" in readme
+    assert "docs/FIELD-REPORTS.md#minimal-public-example" in request
+    assert "docs/FIELD-REPORTS.md#minimal-public-example" in trust_packet
     assert "docs/MCP-TRUST-PACKET.md" in text
     assert "MCPAudit is the trust wedge" in text
     assert "mcpforge" in trust_packet

@@ -16,6 +16,7 @@ Tracking:
   <https://github.com/saagpatel/MCPAudit/issues/85>
 
 Maintainer outreach copy lives in `docs/EXTERNAL-OUTREACH-MESSAGES.md`.
+Safe example shape: `docs/FIELD-REPORTS.md#minimal-public-example`.
 
 ## Copy-Paste Request
 
@@ -31,6 +32,9 @@ mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
 `--redact` auto-scrubs the machine hostname, home-path usernames, and server
 names from the output. Then open a redacted field-report issue:
 <https://github.com/saagpatel/MCPAudit/issues/new?template=field_report.md>
+
+If you want a model for what to paste publicly, use the safe example shape:
+<https://github.com/saagpatel/MCPAudit/blob/main/docs/FIELD-REPORTS.md#minimal-public-example>
 
 Please include:
 
