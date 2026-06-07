@@ -30,6 +30,9 @@
 - **Policy-gate launch asset landed** — README and `DEMO-ASSETS.md` now include the
   strict policy-gate GIF path, with a scoped VHS tape/helper and regression coverage
   proving the public fixture exits `2` under `examples/policies/ci-strict.yaml`.
+- **HTML report launch asset landed** — README and `DEMO-ASSETS.md` now include
+  `docs/assets/html-report.png`, a redacted static preview of the self-contained
+  HTML report path.
 - **SARIF relative config paths fixed** — SARIF output now handles relative config paths cleanly,
   with regression coverage.
 - **1.12.0 field-scan evidence remains current historical evidence** — popular public
@@ -84,6 +87,7 @@
   `docs/assets/mcp-audit-config-only-scan.png`,
   `docs/assets/hero-demo-config.json`, `docs/assets/hero.tape`,
   `docs/assets/hero-scan.gif`, `docs/assets/ci-sarif.png`,
+  `docs/assets/html-report.png`,
   `src/mcp_audit/sarif.py`, and `tests/test_sarif.py`.
 
 ## Gotcha

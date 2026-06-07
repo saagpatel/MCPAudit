@@ -23,6 +23,8 @@ Before posting, confirm:
   - `docs/assets/hero-scan.gif`
   - `docs/assets/mcp-audit-config-only-scan.png`
   - `docs/assets/ci-sarif.png`
+  - `docs/assets/policy-gate.gif`
+  - `docs/assets/html-report.png`
 - launch copy still avoids a beta claim;
 - the field-report command includes `--redact`;
 - the maintainer can submit and immediately comment from the chosen Hacker News

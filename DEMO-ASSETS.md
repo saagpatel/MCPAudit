@@ -102,6 +102,8 @@ renders the README but not animated GIFs reliably, so a static fallback helps).
 Produced:
 - `docs/assets/mcp-audit-config-only-scan.png` — static zero-touch preview generated
   from the bundled public config with `--config-only --skip-connect`.
+- `docs/assets/html-report.png` — static preview of a redacted self-contained HTML
+  report generated from config-only output.
 - `docs/assets/hero-demo-config.json` — curated public connected-scan fixture for a
   hero GIF; it avoids workstation configs, auth-token servers, and real-path arguments.
 - `docs/assets/hero.tape` — `vhs` script that records `docs/assets/hero-scan.gif`

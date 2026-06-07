@@ -46,6 +46,7 @@ LAUNCH_POSTS = Path("launch-posts.md")
 CONFIG_ONLY_SCAN_ASSET = Path("docs/assets/mcp-audit-config-only-scan.png")
 HERO_SCAN_GIF = Path("docs/assets/hero-scan.gif")
 CI_SARIF_ASSET = Path("docs/assets/ci-sarif.png")
+HTML_REPORT_ASSET = Path("docs/assets/html-report.png")
 POLICY_GATE_GIF = Path("docs/assets/policy-gate.gif")
 POLICY_GATE_TAPE = Path("docs/assets/policy-gate.tape")
 POLICY_GATE_DEMO_SCRIPT = Path("docs/assets/policy-gate-demo.sh")
@@ -135,6 +136,9 @@ def test_external_launch_checklist_links_credible_public_path() -> None:
     assert CI_SARIF_ASSET.stat().st_size > 0
     assert "docs/assets/ci-sarif.png" in readme
     assert "MCPxxx" in readme
+    assert HTML_REPORT_ASSET.exists()
+    assert HTML_REPORT_ASSET.stat().st_size > 0
+    assert "docs/assets/html-report.png" in readme
     assert POLICY_GATE_GIF.exists()
     assert POLICY_GATE_GIF.stat().st_size > 0
     assert "docs/assets/policy-gate.gif" in readme
@@ -193,6 +197,7 @@ def test_hero_recording_recipe_is_public_and_scoped() -> None:
     assert "docs/assets/hero.tape" in demo_assets
     assert "fetch`, `sequential-thinking`, `time" in demo_assets
     assert "docs/assets/ci-sarif.png" in demo_assets
+    assert "docs/assets/html-report.png" in demo_assets
     assert "tool:mcp-audit" in demo_assets
     assert POLICY_GATE_TAPE.exists()
     policy_tape = POLICY_GATE_TAPE.read_text()
