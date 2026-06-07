@@ -30,8 +30,9 @@ Before posting, confirm:
   - `docs/assets/html-report.png`
 - launch copy still avoids a beta claim;
 - the field-report command includes `--redact`;
-- the maintainer can submit and immediately comment from the chosen Hacker News
-  account.
+- the Hacker News submit page shows the submit form, not a login prompt, for the
+  chosen account;
+- the maintainer can immediately comment from the chosen Hacker News account.
 
 ## Hacker News
 

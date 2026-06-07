@@ -169,6 +169,7 @@ def test_external_launch_checklist_links_credible_public_path() -> None:
     assert "Wednesday, June 10, 2026" in launch_control
     assert "Show HN: mcp-audit" in launch_control
     assert "https://news.ycombinator.com/submit" in launch_control
+    assert "not a login prompt" in launch_control
     assert "https://github.com/saagpatel/MCPAudit" in launch_control
     assert 'launch-posts.md -> "Body / first comment"' in launch_control
     assert "--redact" in launch_control
@@ -181,6 +182,7 @@ def test_external_launch_checklist_links_credible_public_path() -> None:
     assert "Tuesday, June 9, 2026" in launch_runbook
     assert "Wednesday, June 10, 2026" in launch_runbook
     assert "Show HN: mcp-audit" in launch_runbook
+    assert "not a login prompt" in launch_runbook
     assert "docs/LAUNCH-CONTROL-CARD.md" in launch_runbook
     assert "docs/LAUNCH-RESPONSE-PLAYBOOK.md" in launch_runbook
     assert LAUNCH_RESPONSE_PLAYBOOK.exists()
