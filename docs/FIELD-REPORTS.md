@@ -1,6 +1,6 @@
 # MCPAudit Field Reports
 
-MCPAudit `1.13.0` has a field-report lane for redacted setup evidence,
+MCPAudit `1.13.1` has a field-report lane for redacted setup evidence,
 consumer-contract hardening, and external beta-readiness intake. This lane
 remains config-only by default: collect shape and output evidence without
 spawning MCP servers, contacting remote endpoints, or storing credential values.

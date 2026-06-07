@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.1] - 2026-06-07
+
+### Changed
+
+- Refreshed the published package metadata/docs so PyPI shows the canonical
+  external field-report command with `--redact`:
+  `mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact`.
+  No scanner behavior or output contract changes.
+
 ## [1.13.0] - 2026-06-06
 
 ### Added
