@@ -20,7 +20,7 @@ Launch-day operator checklist: [`docs/LAUNCH-DAY-RUNBOOK.md`](docs/LAUNCH-DAY-RU
 **Title** (≤ 80 chars):
 
 ```
-Show HN: mcp-audit – see what your MCP servers can actually touch
+Show HN: mcp-audit – see what your MCP servers can read, run, and reach
 ```
 
 For **r/mcp**, use the same body with this title instead:
@@ -34,28 +34,28 @@ I built an offline auditor for MCP servers — permissions, injection, supply-ch
 **Body / first comment:**
 
 ```text
-If you run Claude Desktop, Claude Code, Cursor, VS Code, or Windsurf, you probably
-have a handful of MCP servers wired into your config right now. Each one is a process
-that can read your files, reach the network, or run shell on your behalf — and most
-are launched from a remote npx/uvx package that can change underneath you between one
-session and the next. I wanted a fast, boring answer to two questions:
+Every MCP server you've wired into Claude Desktop, Cursor, or VS Code is a
+process that can read your files, reach the network, or run shell on your
+behalf — and most are launched from a remote npx/uvx package that can change
+underneath you between sessions. I wanted a fast, boring answer to two
+questions:
 
   1. What can the servers in my config actually DO?
   2. Did the packages behind them change since I last looked?
 
-So I built mcp-audit. It's a Python CLI that reads the MCP configs already on your
-machine and reports on them. The safe first-run path is deliberately offline and
-read-only: it never edits a config, it reports env-var KEY NAMES only (never values),
-and with --skip-connect it doesn't spawn or contact anything — it reasons purely from
-the config. Dropping --skip-connect gives you a connected scan that reads real tool
-schemas; networked package verification and LLM analysis are separate opt-in flags.
+So I built mcp-audit. It's a Python CLI that reads the MCP configs already on
+your machine and reports on them. The default path is deliberately offline and
+read-only: it never edits a config, it reports env-var KEY NAMES only (never
+values), and with --skip-connect it spawns nothing and contacts nothing — it
+reasons purely from the config. Dropping --skip-connect connects to read real
+tool schemas; networked package verification and LLM analysis are separate
+opt-in flags. You pick your blast radius.
 
 Zero-install, config-only, in one line:
 
     uvx --from mcp-permission-audit mcp-audit scan --skip-connect
 
-What it checks, with config-only coverage where possible and explicit connected modes
-where schemas or live metadata are required:
+What it checks:
   - Permission/capability inference per server (file read/write, network, shell,
     destructive, exfiltration) — so you know what to sandbox.
   - Prompt-injection patterns in tool / prompt / resource text.
@@ -107,8 +107,8 @@ checklist. The safe public example shape is
 docs/FIELD-REPORTS.md#minimal-public-example.
 
 Repo: https://github.com/saagpatel/MCPAudit
-Field scan writeup: docs/FIELD-SCAN-POPULAR-SERVERS.md
-Safe example shape: docs/FIELD-REPORTS.md#minimal-public-example
+Field-scan writeup: https://github.com/saagpatel/MCPAudit/blob/main/docs/FIELD-SCAN-POPULAR-SERVERS.md
+Safe example shape: https://github.com/saagpatel/MCPAudit/blob/main/docs/FIELD-REPORTS.md#minimal-public-example
 
 Happy to answer anything about the heuristics, the threat model, or why it's
 deliberately offline-first.
