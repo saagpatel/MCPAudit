@@ -1,8 +1,8 @@
 # HANDOFF — MCPAudit
 
-**Status:** Preparing v1.13.1 package-metadata refresh so PyPI shows the safe field-report ask.
-**Branch:** `main` @ `e3f7df7` before local release edits. No stale branches.
-**Latest on PyPI:** `1.13.0` before this refresh (1.13.1 not yet published).
+**Status:** v1.13.1 package-metadata refresh released and live.
+**Branch:** `main` @ `a21f7fd` / tag `v1.13.1` before this handoff update. No stale branches.
+**Latest on PyPI:** `1.13.1` (verified live: JSON API + simple index + refreshed `uvx` install).
 
 ## Completed this session
 - **1.13.0 shipped** — `scan --redact` field-report mode:
@@ -12,6 +12,8 @@
   draft now include `--redact` in the canonical field-report command. (#122)
 - **1.13.1 release prep** — patch release intended to refresh PyPI package metadata/README
   so the public package page also shows the `--redact` field-report command.
+- **1.13.1 released** — tag `v1.13.1` triggered publish.yml OIDC; PyPI now serves the
+  corrected README/long description with the `--redact` field-report command.
 - **1.12.0 field-scan evidence remains current historical evidence** — popular public
   server sample config + solo evidence show MCP025/MCP026 package verification worked
   against real npm/PyPI packages; it still does not replace external reports. (#117)
@@ -25,12 +27,10 @@
 - Keep `risk_score.composite` unchanged unless repeatable external fixture evidence justifies it.
 
 ## In Progress / Blocked
-- Current local refresh updates the handoff, field-report template/docs, current-state notes,
-  and doc tests so the share packet consistently points contributors at `--redact`.
+- No release blocker. There are local uncommitted trust-packet docs edits in this checkout
+  (`README.md`, `docs/MCP-TRUST-PACKET.md`) that are separate from the v1.13.1 release.
 
 ## Next Steps
-- Publish/tag v1.13.1, then verify PyPI JSON/simple index and rendered README show
-  the `--redact` field-report command.
 - Recruit two external reporters via `docs/EXTERNAL-FIELD-REPORT-REQUEST.md` / Show HN draft,
   then triage #83/#84/#85.
 
@@ -42,6 +42,12 @@
 - `uv build --clear` passed.
 - Built wheel metadata is `Version: 1.13.1` and includes the `--redact` field-report command.
 - Built sdist includes `version = "1.13.1"` and the `--redact` field-report command.
+- GitHub publish workflow for `v1.13.1` passed.
+- PyPI JSON reports latest `1.13.1` with two files.
+- PyPI simple index lists the `1.13.1` wheel and sdist.
+- PyPI long description contains `mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact`.
+- `uvx --refresh-package mcp-permission-audit --from mcp-permission-audit==1.13.1 mcp-audit --version`
+  reports `mcp-audit, version 1.13.1`.
 - `git diff --check` passed.
 
 ## Files Changed
