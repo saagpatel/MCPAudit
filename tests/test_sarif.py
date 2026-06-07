@@ -282,6 +282,20 @@ class TestSarifResults:
         uri = sarif["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
         assert uri.startswith("file://")
 
+    def test_relative_config_path_location_becomes_file_uri(self) -> None:
+        audit = _make_audit(findings=[_finding()])
+        audit = audit.model_copy(
+            update={
+                "server": audit.server.model_copy(
+                    update={"config_path": "examples/configs/popular-public-servers.json"}
+                )
+            }
+        )
+        sarif = SarifGenerator().generate(_make_report([audit]))
+        uri = sarif["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
+        assert uri.startswith("file://")
+        assert uri.endswith("/examples/configs/popular-public-servers.json")
+
     def test_message_contains_server_name(self) -> None:
         audit = _make_audit(name="my-server", findings=[_finding()])
         sarif = SarifGenerator().generate(_make_report([audit]))
