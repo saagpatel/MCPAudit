@@ -158,6 +158,15 @@ _ARTIFACT_VERIFY_RULE_DESCRIPTIONS = {
 }
 
 
+def _artifact_uri(config_path: str | None) -> str:
+    if not config_path:
+        return "file:///unknown"
+    path = Path(config_path)
+    if not path.is_absolute():
+        path = path.resolve()
+    return path.as_uri()
+
+
 class SarifGenerator:
     """Converts an AuditReport into a SARIF 2.1.0 document."""
 
@@ -453,7 +462,7 @@ class SarifGenerator:
         rule_id = _INJECTION_RULE_IDS[finding.severity]
         level = self._injection_level(finding)
         config_path = audit.server.config_path
-        uri = Path(config_path).as_uri() if config_path else "file:///unknown"
+        uri = _artifact_uri(config_path)
         target_label = finding.target_type.value
         msg = (
             f"Prompt injection pattern '{finding.pattern_name}' detected in {target_label} "
@@ -485,7 +494,7 @@ class SarifGenerator:
         rule_id = finding.rule_id
         level = self._capability_level(finding)
         config_path = audit.server.config_path
-        uri = Path(config_path).as_uri() if config_path else "file:///unknown"
+        uri = _artifact_uri(config_path)
         msg = (
             f"{finding.target_type.value.title()} '{finding.target_name}' on server "
             f"'{audit.server.name}' has {finding.category.value} capability "
@@ -514,7 +523,7 @@ class SarifGenerator:
         level = self._finding_level(finding, audit)
 
         config_path = audit.server.config_path
-        uri = Path(config_path).as_uri() if config_path else "file:///unknown"
+        uri = _artifact_uri(config_path)
 
         msg = (
             f"Tool '{finding.tool_name}' on server '{audit.server.name}' "
@@ -545,7 +554,7 @@ class SarifGenerator:
         rule_id = _SSRF_RULE_IDS[finding.severity]
         level = self._ssrf_level(finding)
         config_path = audit.server.config_path
-        uri = Path(config_path).as_uri() if config_path else "file:///unknown"
+        uri = _artifact_uri(config_path)
         target_label = finding.target_type.value
         msg = (
             f"SSRF pattern '{finding.pattern_name}' detected in {target_label} "
@@ -575,7 +584,7 @@ class SarifGenerator:
         rule_id = _TRIFECTA_RULE_IDS[finding.severity]
         level = self._trifecta_level(finding)
         config_path = audit.server.config_path
-        uri = Path(config_path).as_uri() if config_path else "file:///unknown"
+        uri = _artifact_uri(config_path)
         leg1 = "; ".join(f"{s}/{t}" for s, t in finding.leg1_contributors)
         leg2 = "; ".join(f"{s}/{t}" for s, t in finding.leg2_contributors)
         leg3 = "; ".join(f"{s}/{t}" for s, t in finding.leg3_contributors)
@@ -668,7 +677,7 @@ class SarifGenerator:
         rule_id = _ESCALATION_RULE_IDS[finding.kind]
         level = self._escalation_level(finding)
         config_path = audit.server.config_path
-        uri = Path(config_path).as_uri() if config_path else "file:///unknown"
+        uri = _artifact_uri(config_path)
         gained = (
             ", ".join(c.value for c in finding.gained_categories)
             if finding.kind == EscalationKind.CAPABILITY
@@ -702,7 +711,7 @@ class SarifGenerator:
         rule_id = _PROVENANCE_RULE_IDS[finding.kind]
         level = self._provenance_level(finding)
         config_path = audit.server.config_path
-        uri = Path(config_path).as_uri() if config_path else "file:///unknown"
+        uri = _artifact_uri(config_path)
         msg = f"{finding.summary} Suggested action: {finding.remediation}"
         return {
             "ruleId": rule_id,
@@ -727,7 +736,7 @@ class SarifGenerator:
         rule_id = _INTEGRITY_RULE_IDS[finding.kind]
         level = self._integrity_level(finding)
         config_path = audit.server.config_path
-        uri = Path(config_path).as_uri() if config_path else "file:///unknown"
+        uri = _artifact_uri(config_path)
         msg = f"{finding.summary} Suggested action: {finding.remediation}"
         return {
             "ruleId": rule_id,
@@ -754,7 +763,7 @@ class SarifGenerator:
         rule_id = _PACKAGE_VERIFY_RULE_IDS[finding.kind]
         level = self._package_verify_level(finding)
         config_path = audit.server.config_path
-        uri = Path(config_path).as_uri() if config_path else "file:///unknown"
+        uri = _artifact_uri(config_path)
         msg = f"{finding.summary} Suggested action: {finding.remediation}"
         return {
             "ruleId": rule_id,
@@ -785,7 +794,7 @@ class SarifGenerator:
         rule_id = _ARTIFACT_VERIFY_RULE_IDS[finding.kind]
         level = self._artifact_verify_level(finding)
         config_path = audit.server.config_path
-        uri = Path(config_path).as_uri() if config_path else "file:///unknown"
+        uri = _artifact_uri(config_path)
         msg = f"{finding.summary} Suggested action: {finding.remediation}"
         return {
             "ruleId": rule_id,
@@ -813,7 +822,7 @@ class SarifGenerator:
 
     def _make_drift_result(self, finding: DriftFinding, audit: ServerAudit) -> dict[str, Any]:
         config_path = audit.server.config_path
-        uri = Path(config_path).as_uri() if config_path else "file:///unknown"
+        uri = _artifact_uri(config_path)
         msg = (
             f"Tool '{finding.tool_name}' on server '{audit.server.name}' has "
             f"schema drift status '{finding.status.value}'. "
