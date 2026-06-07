@@ -1,7 +1,7 @@
 # HANDOFF — MCPAudit
 
-**Status:** v1.13.1 package-metadata refresh released and live.
-**Branch:** `main` @ `a21f7fd` / tag `v1.13.1` before this handoff update. No stale branches.
+**Status:** v1.13.1 is live; launch/share-safe packet is merged on `main`.
+**Branch:** `main` @ `b0ea35c` after the launch-packet and preview-asset refresh. Tag `v1.13.1` remains the latest release tag.
 **Latest on PyPI:** `1.13.1` (verified live: JSON API + simple index + refreshed `uvx` install).
 
 ## Completed this session
@@ -14,6 +14,12 @@
   so the public package page also shows the `--redact` field-report command.
 - **1.13.1 released** — tag `v1.13.1` triggered publish.yml OIDC; PyPI now serves the
   corrected README/long description with the `--redact` field-report command.
+- **Launch/share-safe packet merged** — README now leads with badges, the "Audit what your AI
+  agents can actually touch" hook, a 60-second start, a zero-touch public-fixture preview image,
+  and safe field-report guidance. Launch posts, Show HN draft, demo asset plan, and issue-template
+  regression coverage are aligned around `--redact`.
+- **SARIF relative config paths fixed** — SARIF output now handles relative config paths cleanly,
+  with regression coverage.
 - **1.12.0 field-scan evidence remains current historical evidence** — popular public
   server sample config + solo evidence show MCP025/MCP026 package verification worked
   against real npm/PyPI packages; it still does not replace external reports. (#117)
@@ -27,15 +33,16 @@
 - Keep `risk_score.composite` unchanged unless repeatable external fixture evidence justifies it.
 
 ## In Progress / Blocked
-- No release blocker. There are local uncommitted trust-packet docs edits in this checkout
-  (`README.md`, `docs/MCP-TRUST-PACKET.md`) that are separate from the v1.13.1 release.
+- No release blocker. `main` is clean and remote checks are green.
+- External beta evidence is still the gating item: issues #83/#84/#85 need two accepted external
+  redacted, config-only field reports.
 
 ## Next Steps
 - Recruit two external reporters via `docs/EXTERNAL-FIELD-REPORT-REQUEST.md` / Show HN draft,
   then triage #83/#84/#85.
 
 ## Verification
-- `uv run pytest` passed (586 tests).
+- `uv run pytest` passed (588 tests).
 - `uv run ruff check` passed.
 - `uv run mypy .` passed.
 - `uv lock --check` passed.
@@ -48,6 +55,10 @@
 - PyPI long description contains `mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact`.
 - `uvx --refresh-package mcp-permission-audit --from mcp-permission-audit==1.13.1 mcp-audit --version`
   reports `mcp-audit, version 1.13.1`.
+- GitHub `main` checks are green for CI, Self Audit, and CodeQL after the launch-packet merge.
+- Share-safe packet smoke pass confirmed README, launch posts, Show HN draft, external outreach,
+  field-report docs, trust packet, demo asset plan, and local preview image keep the public
+  field-report path on `--skip-connect --json ... --redact`.
 - `git diff --check` passed.
 
 ## Files Changed
@@ -55,6 +66,10 @@
   `HANDOFF.md`, `.github/ISSUE_TEMPLATE/field_report.md`, `docs/FIELD-REPORTS.md`,
   `docs/FEEDBACK-TO-FIXTURES.md`, `AGENTS.md`, `CLAUDE.md`, `.pre-commit-hooks.yaml`,
   and `tests/test_issue_templates.py`.
+- Launch/share-safe packet files:
+  `README.md`, `launch-posts.md`, `DEMO-ASSETS.md`, `docs/SHOW-HN-DRAFT.md`,
+  `docs/assets/mcp-audit-config-only-scan.png`, `src/mcp_audit/sarif.py`, and
+  `tests/test_sarif.py`.
 
 ## Gotcha
 - `scan --config-only` means "only this config file" — it does NOT skip connection. Add
