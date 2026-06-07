@@ -1,12 +1,70 @@
 # mcp-audit
 
-[![Python](https://img.shields.io/badge/Python-3776ab?style=flat-square&logo=python)](#) [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](#) [![Claude Review](https://img.shields.io/badge/Claude_Review-enabled-7F5AF0?style=flat-square)](https://code.claude.com/docs/en/code-review)
+[![PyPI](https://img.shields.io/pypi/v/mcp-permission-audit?style=flat-square&logo=pypi&logoColor=white&label=PyPI)](https://pypi.org/project/mcp-permission-audit/)
+[![Python](https://img.shields.io/pypi/pyversions/mcp-permission-audit?style=flat-square&logo=python&logoColor=white)](https://pypi.org/project/mcp-permission-audit/)
+[![CI](https://img.shields.io/github/actions/workflow/status/saagpatel/MCPAudit/ci.yml?style=flat-square&logo=githubactions&logoColor=white&label=CI)](https://github.com/saagpatel/MCPAudit/actions/workflows/ci.yml)
+[![CodeQL](https://img.shields.io/github/actions/workflow/status/saagpatel/MCPAudit/codeql.yml?style=flat-square&logo=github&label=CodeQL)](https://github.com/saagpatel/MCPAudit/actions/workflows/codeql.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 
-> You're giving AI direct access to your computer. Do you actually know what you've installed?
+> ### Audit what your AI agents can actually touch.
 
-`mcp-audit` gives you x-ray vision into every MCP server configured on your system: what it can do, how risky it is, whether its descriptions are hiding adversarial instructions, and whether it's changed since you last looked. It is local-first, needs no API key by default, and makes networked LLM analysis opt-in.
+Every MCP server wired into your editor is a process that can read your files, reach the network, or run shell commands on your behalf — frequently launched from a remote `npx`/`uvx` package that can change underneath you. **`mcp-audit`** reads the MCP configs already on your machine and tells you what each server *can do*, how risky it is, whether its tool descriptions hide adversarial instructions, and whether anything changed since you last looked.
 
-PyPI package: `mcp-permission-audit`. Installed command: `mcp-audit`.
+Read-only by default: it never edits a config and reports env-var **key names only** (never values). Use `--skip-connect` for a zero-touch config-only pass that does not spawn MCP servers or contact remote endpoints; connected scans, package verification, downloads, and LLM analysis make their extra reach explicit in the command.
+
+## ⚡ 60-second start
+
+No install required — [`uv`](https://docs.astral.sh/uv/) runs it in a throwaway environment. This reads the MCP configs already on your machine, connects to each configured server to read its real tool schemas, and flags SSRF-shaped tools:
+
+```bash
+uvx --from mcp-permission-audit mcp-audit scan --ssrf-check
+```
+
+It stays read-only the whole time — it never edits a config and reports env-var **key names only**, never values. Sample output:
+
+```text
+╭───────────────────── mcp-audit scan ─────────────────────╮
+│ Scanned 5 servers across 2 clients. 1 high-risk.         │
+│ 0 failed to connect. (2.4s)                              │
+╰──────────────────────────────────────────────────────────╯
+┏━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┓
+┃ Server     ┃ Client         ┃ Tools ┃ Prompts ┃ Resources ┃ Risk ┃ Non-Tool ┃ Top Permissions            ┃ Status    ┃
+┡━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━┩
+│ github     │ claude_desktop │    26 │       0 │         0 │  9.4 │ n/a      │ file_write, network, exfil │ connected │
+│ filesystem │ claude_desktop │    12 │       0 │         0 │  6.8 │ n/a      │ file_write, file_read      │ connected │
+│ memory     │ cursor         │     9 │       0 │         0 │  5.3 │ n/a      │ file_write                 │ connected │
+│ fetch      │ cursor         │     1 │       0 │         0 │  3.5 │ n/a      │ network                    │ connected │
+│ time       │ claude_desktop │     2 │       0 │         0 │  1.5 │ n/a      │ none                       │ connected │
+└────────────┴────────────────┴───────┴─────────┴───────────┴──────┴──────────┴────────────────────────────┴───────────┘
+
+──────────────────────────────── SSRF Warnings ────────────────────────────────
+┏━━━━━━━━┳━━━━━━┳━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Server ┃ Type ┃ Target  ┃ Severity ┃ Pattern         ┃ Evidence          ┃ Suggested Action     ┃
+┡━━━━━━━━╇━━━━━━╇━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━┩
+│ fetch  │ tool │ fetch   │ medium   │ url param +     │ url: string       │ Restrict to a host   │
+│        │      │         │          │ fetch verb      │ (caller-supplied) │ allowlist; never     │
+│        │      │         │          │ (MCP011)        │                   │ proxy caller URLs    │
+└────────┴──────┴─────────┴──────────┴─────────────────┴───────────────────┴──────────────────────┘
+```
+
+> *Sample output with illustrative public server names. Higher risk = a broader surface to sandbox, **not** "malicious." Want a zero-touch pass first? Add `--skip-connect` to reason purely from your config — no servers spawned, no network calls. Stack `--trifecta-check` or `--shadow-check` alongside `--ssrf-check` to hunt more attack surfaces, and `--json` / `--sarif` / `--html` to pipe results into CI or a dashboard.*
+
+Install it permanently once you're hooked:
+
+```bash
+uv tool install mcp-permission-audit      # adds the `mcp-audit` command to your PATH
+mcp-audit scan                            # connected scan of every configured client
+```
+
+**Drop it into CI in one step** — the composite GitHub Action runs the scan and writes SARIF straight to GitHub code scanning:
+
+```yaml
+- uses: saagpatel/MCPAudit@v1.13.1        # config-only by default; optional policy gate exits 2
+```
+
+PyPI package: [`mcp-permission-audit`](https://pypi.org/project/mcp-permission-audit/) · installed command: `mcp-audit` · full flag and detector reference below.
+
+---
 
 ## Features
 

@@ -59,6 +59,9 @@ URLs, and proprietary prompt/tool/schema text — full checklist in the request
 packet:
 https://github.com/saagpatel/MCPAudit/blob/main/docs/EXTERNAL-FIELD-REPORT-REQUEST.md
 
+Safe example shape:
+https://github.com/saagpatel/MCPAudit/blob/main/docs/FIELD-REPORTS.md#minimal-public-example
+
 What it checks: inferred permission/capability scope per server, prompt-
 injection patterns in tool/prompt/resource text, SSRF-shaped tools (caller-
 controllable server-side fetch), cross-server tool-name shadowing, the
@@ -212,6 +215,10 @@ The full redaction checklist and what to include is in the request packet:
 
 <https://github.com/saagpatel/MCPAudit/blob/main/docs/EXTERNAL-FIELD-REPORT-REQUEST.md>
 
+Use the safe example shape when deciding what is small enough to paste publicly:
+
+<https://github.com/saagpatel/MCPAudit/blob/main/docs/FIELD-REPORTS.md#minimal-public-example>
+
 A report can become a small public regression fixture (with your permission),
 which is the most useful thing of all: it turns "it worked on my machine" into
 a test that keeps working on everyone's.
@@ -239,7 +246,7 @@ End-to-end trust packet:
   `SECURITY.md` private-disclosure path instead of a public issue.
 - **Don't claim beta.** Solo + this scan do not close #83/#84; only two
   accepted external reports do. Keep that line honest in replies.
-- **`--redact` is live (1.13.0).** The field-report command above includes
+- **`--redact` is live (1.13.1).** The field-report command above includes
   `--redact`, which auto-scrubs hostname, home-path usernames, and server names
   from the output — the friction-killer for contributors. The redaction
   checklist stays the backstop for any proprietary prompt/tool/schema text.
