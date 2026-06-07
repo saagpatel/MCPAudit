@@ -92,9 +92,19 @@ servers — the official npm ones (server-filesystem, -everything, -memory,
 Honest caveat: that's all SOLO evidence — my machine, my configs. It proves the
 paths work end-to-end, but before I put a "beta" label on this I'm collecting two
 external, redacted, config-only field reports from setups that aren't mine. If you
-run MCP servers and want to contribute one, it's ~2 minutes on the safe path and the
-README + docs/EXTERNAL-FIELD-REPORT-REQUEST.md walk you through redaction. The safe
-public example shape is docs/FIELD-REPORTS.md#minimal-public-example.
+run MCP servers and want to contribute one, it's ~2 minutes on the safe path:
+
+    mcp-audit --version
+    mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
+
+Then open a redacted field-report issue:
+https://github.com/saagpatel/MCPAudit/issues/new?template=field_report.md
+
+Please review before posting: no credential values, private paths, internal
+hostnames, private URLs, customer/workspace names, or proprietary prompt/tool/schema
+text. The README + docs/EXTERNAL-FIELD-REPORT-REQUEST.md walk through the redaction
+checklist. The safe public example shape is
+docs/FIELD-REPORTS.md#minimal-public-example.
 
 Repo: https://github.com/saagpatel/MCPAudit
 Field scan writeup: docs/FIELD-SCAN-POPULAR-SERVERS.md

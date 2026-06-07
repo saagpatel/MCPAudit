@@ -187,6 +187,8 @@ def test_external_launch_checklist_links_credible_public_path() -> None:
     assert "## 1. Show HN / r/mcp" in launch_posts
     assert "## 2. LinkedIn" in launch_posts
     assert "Title A/B + posting-time plan" in launch_posts
+    assert "mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact" in launch_posts
+    assert "https://github.com/saagpatel/MCPAudit/issues/new?template=field_report.md" in launch_posts
     assert "docs/assets/hero-scan.gif" in launch_posts
     assert "docs/assets/mcp-audit-config-only-scan.png" in launch_posts
     assert "record via `DEMO-ASSETS.md` first if possible" not in launch_posts
