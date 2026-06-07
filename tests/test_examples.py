@@ -42,6 +42,8 @@ CONSUMER_CONTRACT_REPORTS = [
 ]
 SCHEMA_PATH = Path("examples/schemas/audit-report.schema.json")
 MCP_TRUST_PACKET = Path("docs/MCP-TRUST-PACKET.md")
+LAUNCH_POSTS = Path("launch-posts.md")
+CONFIG_ONLY_SCAN_ASSET = Path("docs/assets/mcp-audit-config-only-scan.png")
 
 
 def test_ci_examples_are_valid_yaml() -> None:
@@ -106,6 +108,24 @@ def test_mcp_trust_packet_is_discoverable_and_safe() -> None:
     assert "`remote_endpoint` config-health finding" in packet
     assert "Do not include:" in packet
     assert "bridge-db` only as local operating-state infrastructure" in packet
+
+
+def test_external_launch_checklist_links_credible_public_path() -> None:
+    readme = Path("README.md").read_text()
+
+    assert CONFIG_ONLY_SCAN_ASSET.exists()
+    assert CONFIG_ONLY_SCAN_ASSET.stat().st_size > 0
+    assert "## External launch checklist" in readme
+    assert "docs/assets/mcp-audit-config-only-scan.png" in readme
+    assert "docs/MCP-TRUST-PACKET.md" in readme
+    assert "docs/EXTERNAL-FIELD-REPORT-REQUEST.md" in readme
+    assert "docs/FIELD-REPORTS.md#minimal-public-example" in readme
+    assert "launch-posts.md" in readme
+    assert "pre-beta until two external redacted reports land" in readme
+    launch_posts = LAUNCH_POSTS.read_text()
+    assert "## 1. Show HN / r/mcp" in launch_posts
+    assert "## 2. LinkedIn" in launch_posts
+    assert "Title A/B + posting-time plan" in launch_posts
 
 
 def test_stale_pin_review_examples_are_read_only() -> None:

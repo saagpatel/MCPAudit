@@ -70,6 +70,15 @@ PyPI package: [`mcp-permission-audit`](https://pypi.org/project/mcp-permission-a
 
 ---
 
+## External launch checklist
+
+Use this path when sharing MCPAudit outside the repo:
+
+1. Lead with the safe visual above: it is generated from the bundled public fixture with `--config-only --skip-connect`, so it demonstrates the no-spawn/no-network review path.
+2. Link the trust story: [`docs/MCP-TRUST-PACKET.md`](docs/MCP-TRUST-PACKET.md) explains how MCPAudit, mcpforge, and local MCP dogfooding relate without overstating any one project.
+3. Recruit evidence, not hype: [`docs/EXTERNAL-FIELD-REPORT-REQUEST.md`](docs/EXTERNAL-FIELD-REPORT-REQUEST.md) is the canonical two-minute field-report ask, and [`docs/FIELD-REPORTS.md#minimal-public-example`](docs/FIELD-REPORTS.md#minimal-public-example) shows what is safe to paste publicly.
+4. Post from the prepared copy: [`launch-posts.md`](launch-posts.md) has the Show HN / r/mcp / LinkedIn drafts, title variants, and timing plan. Keep the line honest: this is pre-beta until two external redacted reports land.
+
 ## Features
 
 - **Capability inventory** — catalogs server tools, prompts, and resources; tool, prompt, and resource capabilities are classified across six permission categories: `file_read`, `file_write`, `network`, `shell_execution`, `destructive`, `exfiltration`
