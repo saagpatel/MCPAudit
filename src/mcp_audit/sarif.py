@@ -174,7 +174,7 @@ class SarifGenerator:
         """Return a SARIF 2.1.0 document as a dict. Caller is responsible for writing JSON."""
         report = AuditReport.model_validate(redact_data(report.model_dump(mode="json")))
         try:
-            tool_version = pkg_version("mcp-audit")
+            tool_version = pkg_version("mcp-audits")
         except PackageNotFoundError:
             tool_version = "0.0.0"
 

@@ -525,7 +525,7 @@ wheels = [
 ]
 
 [[package]]
-name = "mcp-audit"
+name = "mcp-audits"
 version = "2.0.0"
 source = { editable = "." }
 dependencies = [

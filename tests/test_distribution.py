@@ -44,7 +44,7 @@ class TestCompositeAction:
 
     def test_installs_published_package_and_runs_scan(self) -> None:
         text = ACTION_PATH.read_text(encoding="utf-8")
-        assert "mcp-audit" in text
+        assert "mcp-audits" in text
         assert "mcp-audit scan" in text
 
     def test_defaults_to_config_only(self) -> None:

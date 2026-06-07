@@ -69,7 +69,7 @@ def test_ci_examples_are_valid_yaml() -> None:
 def test_ci_examples_install_published_package() -> None:
     for example_path in CI_EXAMPLES:
         text = example_path.read_text()
-        assert "mcp-audit" in text
+        assert "mcp-audits" in text
         assert "mcp-audit scan" in text
 
 
@@ -111,7 +111,7 @@ def test_mcp_trust_packet_is_discoverable_and_safe() -> None:
 
     assert "docs/MCP-TRUST-PACKET.md" in readme
     assert "uvx --from fastmcp-builder==0.3.0 mcpforge init" in packet
-    assert "uvx --from mcp-audit==2.0.0 mcp-audit scan" in packet
+    assert "uvx --from mcp-audits==2.0.0 mcp-audit scan" in packet
     assert "It has been smoke-checked" in packet
     assert "--config-only" in packet
     assert "--skip-connect" in packet

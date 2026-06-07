@@ -9,11 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Distribution rename:** PyPI package is now `mcp-audit` (was `mcp-permission-audit`).
+- **Distribution rename:** PyPI package is now `mcp-audits` (was `mcp-permission-audit`).
   The CLI command (`mcp-audit`), import package (`mcp_audit`), and all behavior are
   unchanged. Existing installs of `mcp-permission-audit` continue to work; future
-  releases will only publish to `mcp-audit`. Update your install path:
-  `uv tool install mcp-audit` / `pip install mcp-audit`.
+  releases will only publish to `mcp-audits`. Update your install path:
+  `uv tool install mcp-audits` / `pip install mcp-audits`.
 
 ## [1.13.1] - 2026-06-07
 

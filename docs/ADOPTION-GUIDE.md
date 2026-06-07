@@ -12,8 +12,8 @@ For a complete staged path from first inventory through CI gating, see
 Start without spawning or contacting servers:
 
 ```bash
-uvx --from mcp-permission-audit mcp-audit discover
-uvx --from mcp-permission-audit mcp-audit scan --skip-connect
+uvx --from mcp-audits mcp-audit discover
+uvx --from mcp-audits mcp-audit scan --skip-connect
 ```
 
 When you are ready to inspect live MCP metadata, run a connected scan:
@@ -104,7 +104,7 @@ permissions:
   security-events: write
 steps:
   - uses: actions/checkout@v6
-  - uses: saagpatel/MCPAudit@v1.13.1
+  - uses: saagpatel/MCPAudit@v2.0.0
     with:
       args: --inject-check --ssrf-check --trifecta-check
       # sarif defaults to mcp-audit.sarif and uploads to code scanning

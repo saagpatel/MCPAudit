@@ -3,6 +3,6 @@
 from importlib.metadata import PackageNotFoundError, version
 
 try:
-    __version__ = version("mcp-audit")
+    __version__ = version("mcp-audits")
 except PackageNotFoundError:
     __version__ = "0.0.0"
