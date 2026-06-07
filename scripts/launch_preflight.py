@@ -8,6 +8,8 @@ import json
 import shutil
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 REPO = "saagpatel/MCPAudit"
@@ -16,6 +18,17 @@ TITLE = "Show HN: mcp-audit \u2013 see what your MCP servers can actually touch"
 REPO_URL = "https://github.com/saagpatel/MCPAudit"
 FIELD_REPORT_COMMAND = "mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact"
 FIELD_REPORT_ISSUE = "https://github.com/saagpatel/MCPAudit/issues/new?template=field_report.md"
+PUBLIC_URLS = {
+    "GitHub README": "https://github.com/saagpatel/MCPAudit#readme",
+    "field-report issue template": FIELD_REPORT_ISSUE,
+    "hero GIF": "https://raw.githubusercontent.com/saagpatel/MCPAudit/main/docs/assets/hero-scan.gif",
+    "config-only preview": (
+        "https://raw.githubusercontent.com/saagpatel/MCPAudit/main/docs/assets/mcp-audit-config-only-scan.png"
+    ),
+    "SARIF proof": "https://raw.githubusercontent.com/saagpatel/MCPAudit/main/docs/assets/ci-sarif.png",
+    "policy gate GIF": "https://raw.githubusercontent.com/saagpatel/MCPAudit/main/docs/assets/policy-gate.gif",
+    "HTML report preview": "https://raw.githubusercontent.com/saagpatel/MCPAudit/main/docs/assets/html-report.png",
+}
 
 REQUIRED_TEXT = {
     Path("docs/LAUNCH-CONTROL-CARD.md"): [
@@ -54,6 +67,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Verify MCPAudit launch packet readiness.")
     parser.add_argument("--skip-git", action="store_true", help="Skip local git cleanliness checks.")
     parser.add_argument("--skip-remote", action="store_true", help="Skip GitHub Actions status checks.")
+    parser.add_argument("--skip-public", action="store_true", help="Skip public GitHub URL checks.")
     args = parser.parse_args()
 
     failures: list[str] = []
@@ -64,6 +78,8 @@ def main() -> int:
         _check_git(failures)
     if not args.skip_remote:
         _check_remote(failures)
+    if not args.skip_public:
+        _check_public_urls(failures)
 
     if failures:
         print("Launch preflight failed:")
@@ -75,6 +91,8 @@ def main() -> int:
     print(f"- title chars: {len(TITLE)}")
     print(f"- repo URL: {REPO_URL}")
     print(f"- field report command: {FIELD_REPORT_COMMAND}")
+    if not args.skip_public:
+        print(f"- public URLs checked: {len(PUBLIC_URLS)}")
     return 0
 
 
@@ -168,6 +186,27 @@ def _check_remote(failures: list[str]) -> None:
         run = seen[workflow]
         if run.get("status") != "completed" or run.get("conclusion") != "success":
             failures.append(f"{workflow} is {run.get('status')}/{run.get('conclusion')} on current head.")
+
+
+def _check_public_urls(failures: list[str]) -> None:
+    for label, url in PUBLIC_URLS.items():
+        request = urllib.request.Request(url, headers={"User-Agent": "MCPAudit-launch-preflight/1.0"})
+        try:
+            with urllib.request.urlopen(request, timeout=15) as response:
+                status = response.status
+                response.read(1)
+        except urllib.error.HTTPError as exc:
+            failures.append(f"{label} returned HTTP {exc.code}: {url}")
+            continue
+        except urllib.error.URLError as exc:
+            failures.append(f"{label} could not be reached: {exc.reason}")
+            continue
+        except TimeoutError:
+            failures.append(f"{label} timed out: {url}")
+            continue
+
+        if status >= 400:
+            failures.append(f"{label} returned HTTP {status}: {url}")
 
 
 def _run(args: list[str]) -> subprocess.CompletedProcess[str]:

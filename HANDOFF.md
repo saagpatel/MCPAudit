@@ -27,7 +27,8 @@
   operator card for HN submit fields, open tabs, final go checks, first 5 minutes,
   and explicit do-not-do guardrails.
 - **Launch preflight added** — `scripts/launch_preflight.py` checks launch docs,
-  assets, local git alignment, and current-head GitHub CI/Self Audit/CodeQL status.
+  assets, local git alignment, current-head GitHub CI/Self Audit/CodeQL status, and
+  public README / asset URLs.
 - **Hero/proof assets landed** — README now includes the connected public-fixture GIF
   `docs/assets/hero-scan.gif`, zero-touch preview
   `docs/assets/mcp-audit-config-only-scan.png`, and SARIF/code-scanning proof

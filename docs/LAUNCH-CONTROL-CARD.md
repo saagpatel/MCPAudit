@@ -58,7 +58,8 @@ mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
 
 - `main` matches `origin/main`.
 - CI, Self Audit, and CodeQL are green on the current `main` head.
-- `python scripts/launch_preflight.py` passes.
+- `python scripts/launch_preflight.py` passes, including public README / asset
+  URL checks.
 - README visuals render:
   - `docs/assets/hero-scan.gif`
   - `docs/assets/mcp-audit-config-only-scan.png`
