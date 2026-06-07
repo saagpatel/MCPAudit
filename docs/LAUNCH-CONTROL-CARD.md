@@ -72,11 +72,12 @@ mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
 
 ## First 5 Minutes
 
-1. Submit the repo URL and title.
-2. Paste the `launch-posts.md` first comment within about 60 seconds.
-3. Confirm the first comment's command blocks rendered correctly.
-4. Keep the response playbook open.
-5. Reply first to safety/redaction questions and field-report contributors.
+1. Run `python scripts/launch_preflight.py --print-hn-copy`.
+2. Submit the printed repo URL and title.
+3. Paste the printed first comment within about 60 seconds.
+4. Confirm the first comment's command blocks rendered correctly.
+5. Keep the response playbook open.
+6. Reply first to safety/redaction questions and field-report contributors.
 
 ## Do Not Do
 

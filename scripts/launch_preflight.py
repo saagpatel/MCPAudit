@@ -76,11 +76,13 @@ def main() -> int:
     parser.add_argument("--skip-remote", action="store_true", help="Skip GitHub Actions status checks.")
     parser.add_argument("--skip-public", action="store_true", help="Skip public GitHub URL checks.")
     parser.add_argument("--skip-package", action="store_true", help="Skip PyPI and uvx package checks.")
+    parser.add_argument("--print-hn-copy", action="store_true", help="Print the exact HN submit fields.")
     args = parser.parse_args()
 
     failures: list[str] = []
     _check_docs(failures)
     _check_assets(failures)
+    hn_comment = _check_hn_copy(failures)
 
     if not args.skip_git:
         _check_git(failures)
@@ -106,6 +108,8 @@ def main() -> int:
         print(f"- public URLs checked: {len(PUBLIC_URLS)}")
     if package_version is not None:
         print(f"- PyPI package version: {package_version}")
+    if args.print_hn_copy and hn_comment is not None:
+        _print_hn_copy(hn_comment)
     return 0
 
 
@@ -136,6 +140,65 @@ def _check_assets(failures: list[str]) -> None:
             continue
         if path.stat().st_size == 0:
             failures.append(f"empty launch asset: {path}")
+
+
+def _check_hn_copy(failures: list[str]) -> str | None:
+    try:
+        comment = _extract_first_comment(Path("launch-posts.md"))
+    except ValueError as exc:
+        failures.append(str(exc))
+        return None
+
+    required = [
+        REPO_URL,
+        FIELD_REPORT_COMMAND,
+        FIELD_REPORT_ISSUE,
+        "Happy to answer anything about the heuristics",
+    ]
+    for snippet in required:
+        if snippet not in comment:
+            failures.append(f"Show HN first comment is missing expected text: {snippet}")
+
+    if " is beta" in comment.lower():
+        failures.append("Show HN first comment appears to contain an affirmative beta claim.")
+
+    return comment
+
+
+def _extract_first_comment(path: Path) -> str:
+    text = path.read_text()
+    marker = "**Body / first comment:**"
+    marker_index = text.find(marker)
+    if marker_index == -1:
+        raise ValueError(f"{path} is missing the Show HN first-comment marker.")
+
+    block_start = text.find("```text", marker_index)
+    if block_start == -1:
+        raise ValueError(f"{path} is missing the Show HN first-comment text block.")
+    content_start = text.find("\n", block_start)
+    if content_start == -1:
+        raise ValueError(f"{path} has a malformed Show HN first-comment text block.")
+
+    block_end = text.find("```", content_start + 1)
+    if block_end == -1:
+        raise ValueError(f"{path} has an unterminated Show HN first-comment text block.")
+
+    comment = text[content_start + 1 : block_end].strip()
+    if not comment:
+        raise ValueError(f"{path} has an empty Show HN first-comment text block.")
+    return comment
+
+
+def _print_hn_copy(comment: str) -> None:
+    print()
+    print("HN SUBMIT URL")
+    print(REPO_URL)
+    print()
+    print("HN TITLE")
+    print(TITLE)
+    print()
+    print("HN FIRST COMMENT")
+    print(comment)
 
 
 def _check_git(failures: list[str]) -> None:

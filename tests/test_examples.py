@@ -173,8 +173,8 @@ def test_external_launch_checklist_links_credible_public_path() -> None:
     assert "--redact" in launch_control
     assert "SECURITY.md" in launch_control
     assert LAUNCH_PREFLIGHT_SCRIPT.exists()
-    assert "python scripts/launch_preflight.py" in readme
-    assert "python scripts/launch_preflight.py" in launch_control
+    assert "python scripts/launch_preflight.py --print-hn-copy" in readme
+    assert "python scripts/launch_preflight.py --print-hn-copy" in launch_control
     assert LAUNCH_DAY_RUNBOOK.exists()
     launch_runbook = LAUNCH_DAY_RUNBOOK.read_text()
     assert "Tuesday, June 9, 2026" in launch_runbook
@@ -216,6 +216,30 @@ def test_launch_preflight_script_checks_static_packet() -> None:
     assert result.returncode == 0
     assert "Launch preflight passed." in result.stdout
     assert "title chars: 65" in result.stdout
+
+
+def test_launch_preflight_can_print_hn_copy() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(LAUNCH_PREFLIGHT_SCRIPT),
+            "--skip-git",
+            "--skip-remote",
+            "--skip-public",
+            "--skip-package",
+            "--print-hn-copy",
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "HN SUBMIT URL" in result.stdout
+    assert "HN TITLE" in result.stdout
+    assert "HN FIRST COMMENT" in result.stdout
+    assert "Show HN: mcp-audit" in result.stdout
+    assert "uvx --from mcp-permission-audit mcp-audit scan --skip-connect" in result.stdout
+    assert "mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact" in result.stdout
 
 
 def test_hero_recording_recipe_is_public_and_scoped() -> None:
