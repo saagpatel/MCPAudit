@@ -11,6 +11,8 @@ there first, then re-sync these. The numbers cited below come from the solo fiel
 [`docs/FIELD-SCAN-POPULAR-SERVERS.md`](docs/FIELD-SCAN-POPULAR-SERVERS.md) — keep them
 honest (solo evidence, not a beta claim).
 
+Launch-day operator checklist: [`docs/LAUNCH-DAY-RUNBOOK.md`](docs/LAUNCH-DAY-RUNBOOK.md).
+
 ---
 
 ## 1. Show HN / r/mcp

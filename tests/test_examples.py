@@ -46,6 +46,9 @@ LAUNCH_POSTS = Path("launch-posts.md")
 CONFIG_ONLY_SCAN_ASSET = Path("docs/assets/mcp-audit-config-only-scan.png")
 HERO_SCAN_GIF = Path("docs/assets/hero-scan.gif")
 CI_SARIF_ASSET = Path("docs/assets/ci-sarif.png")
+POLICY_GATE_GIF = Path("docs/assets/policy-gate.gif")
+POLICY_GATE_TAPE = Path("docs/assets/policy-gate.tape")
+POLICY_GATE_DEMO_SCRIPT = Path("docs/assets/policy-gate-demo.sh")
 HERO_DEMO_CONFIG = Path("docs/assets/hero-demo-config.json")
 HERO_TAPE = Path("docs/assets/hero.tape")
 
@@ -130,6 +133,10 @@ def test_external_launch_checklist_links_credible_public_path() -> None:
     assert CI_SARIF_ASSET.stat().st_size > 0
     assert "docs/assets/ci-sarif.png" in readme
     assert "MCPxxx" in readme
+    assert POLICY_GATE_GIF.exists()
+    assert POLICY_GATE_GIF.stat().st_size > 0
+    assert "docs/assets/policy-gate.gif" in readme
+    assert POLICY_GATE_DEMO_SCRIPT.exists()
     assert "docs/assets/hero-demo-config.json" in demo_assets
     assert HERO_TAPE.exists()
     hero_tape = HERO_TAPE.read_text()
@@ -172,6 +179,39 @@ def test_hero_recording_recipe_is_public_and_scoped() -> None:
     assert "fetch`, `sequential-thinking`, `time" in demo_assets
     assert "docs/assets/ci-sarif.png" in demo_assets
     assert "tool:mcp-audit" in demo_assets
+    assert POLICY_GATE_TAPE.exists()
+    policy_tape = POLICY_GATE_TAPE.read_text()
+    assert "bash docs/assets/policy-gate-demo.sh" in policy_tape
+    policy_script = POLICY_GATE_DEMO_SCRIPT.read_text()
+    assert "--skip-connect" in policy_script
+    assert "--policy examples/policies/ci-strict.yaml" in policy_script
+    assert "Policy Gate Failed" in policy_script
+    assert "exit code: ${code}" in policy_script
+    subprocess.run(["bash", "-n", str(POLICY_GATE_DEMO_SCRIPT)], check=True)
+    assert "docs/assets/policy-gate.gif" in demo_assets
+    assert "docs/assets/policy-gate-demo.sh" in demo_assets
+
+
+def test_strict_policy_example_exits_two() -> None:
+    command = shutil.which("mcp-audit")
+    assert command is not None
+    result = subprocess.run(
+        [
+            command,
+            "scan",
+            "--config",
+            "examples/configs/popular-public-servers.json",
+            "--config-only",
+            "--skip-connect",
+            "--policy",
+            "examples/policies/ci-strict.yaml",
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert "Policy Gate Failed" in result.stdout
 
 
 def test_stale_pin_review_examples_are_read_only() -> None:

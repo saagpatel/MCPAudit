@@ -74,6 +74,10 @@ SARIF proof from the public fixture scan:
 
 ![mcp-audit SARIF findings in GitHub code scanning](docs/assets/ci-sarif.png)
 
+Policy gate demo from the same zero-touch public fixture:
+
+![mcp-audit policy gate exits 2](docs/assets/policy-gate.gif)
+
 PyPI package: [`mcp-permission-audit`](https://pypi.org/project/mcp-permission-audit/) · installed command: `mcp-audit` · full flag and detector reference below.
 
 ---
@@ -85,9 +89,10 @@ Use this path when sharing MCPAudit outside the repo:
 1. Lead with the zero-touch preview image when safety is the point: it is generated from the bundled public fixture with `--config-only --skip-connect`, so it demonstrates the no-spawn/no-network review path.
 2. Use the connected GIF when the audience needs the real tool-schema story: it is recorded from `docs/assets/hero-demo-config.json`, a curated public fixture that may spawn only the listed no-auth sample servers.
 3. Use the SARIF/code-scanning proof when the audience is security or platform engineering: it shows `mcp-audit` findings uploaded as GitHub code-scanning alerts with stable `MCPxxx` rule IDs.
-4. Link the trust story: [`docs/MCP-TRUST-PACKET.md`](docs/MCP-TRUST-PACKET.md) explains how MCPAudit, mcpforge, and local MCP dogfooding relate without overstating any one project.
-5. Recruit evidence, not hype: [`docs/EXTERNAL-FIELD-REPORT-REQUEST.md`](docs/EXTERNAL-FIELD-REPORT-REQUEST.md) is the canonical two-minute field-report ask, and [`docs/FIELD-REPORTS.md#minimal-public-example`](docs/FIELD-REPORTS.md#minimal-public-example) shows what is safe to paste publicly.
-6. Post from the prepared copy: [`launch-posts.md`](launch-posts.md) has the Show HN / r/mcp / LinkedIn drafts, title variants, and timing plan. Keep the line honest: this is pre-beta until two external redacted reports land.
+4. Use the policy-gate GIF when the audience needs enforcement: it shows the same public fixture failing `examples/policies/ci-strict.yaml` with exit code `2`.
+5. Link the trust story: [`docs/MCP-TRUST-PACKET.md`](docs/MCP-TRUST-PACKET.md) explains how MCPAudit, mcpforge, and local MCP dogfooding relate without overstating any one project.
+6. Recruit evidence, not hype: [`docs/EXTERNAL-FIELD-REPORT-REQUEST.md`](docs/EXTERNAL-FIELD-REPORT-REQUEST.md) is the canonical two-minute field-report ask, and [`docs/FIELD-REPORTS.md#minimal-public-example`](docs/FIELD-REPORTS.md#minimal-public-example) shows what is safe to paste publicly.
+7. Post from the prepared copy: [`launch-posts.md`](launch-posts.md) has the Show HN / r/mcp / LinkedIn drafts, title variants, and timing plan; [`docs/LAUNCH-DAY-RUNBOOK.md`](docs/LAUNCH-DAY-RUNBOOK.md) has the go/no-go checklist and response routing. Keep the line honest: this is pre-beta until two external redacted reports land.
 
 ## Features
 

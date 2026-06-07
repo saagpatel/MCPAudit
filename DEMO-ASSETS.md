@@ -69,6 +69,8 @@ mcp-audit scan --config examples/configs/popular-public-servers.json --config-on
 - `mcp-audit scan --config examples/configs/popular-public-servers.json --config-only --skip-connect --policy examples/policies/ci-strict.yaml`
 - Show the terminal output + the non-zero exit (`echo $?` → `2`). Demonstrates the
   enforcement path in a few seconds.
+- Recording scripts: `docs/assets/policy-gate.tape` and
+  `docs/assets/policy-gate-demo.sh`.
 
 ## Priority 3 — flagship detector spotlights (r/mcp + docs)
 
@@ -108,6 +110,13 @@ Produced:
   against the curated public fixture.
 - `docs/assets/ci-sarif.png` — GitHub code-scanning proof image generated from live
   code-scanning API data after uploading SARIF from the public fixture scan.
+- `docs/assets/policy-gate.tape` — `vhs` script that records the strict policy gate
+  failing against the zero-touch public fixture.
+- `docs/assets/policy-gate-demo.sh` — helper used by the tape to print the exact
+  `mcp-audit scan ... --policy ...` command, excerpt the policy-failure table, and
+  preserve the real exit code.
+- `docs/assets/policy-gate.gif` — policy-gate demo showing `Policy Gate Failed` and
+  the real exit code `2`.
 
 ---
 

@@ -1,7 +1,7 @@
 # HANDOFF — MCPAudit
 
-**Status:** v1.13.1 is live; launch/share-safe packet is merged on `main`.
-**Branch:** `main` @ `b0ea35c` after the launch-packet and preview-asset refresh. Tag `v1.13.1` remains the latest release tag.
+**Status:** v1.13.1 is live; launch/share-safe packet is merged on `main`; launch-day runbook is ready.
+**Branch:** `main` after the launch-packet, preview-asset, connected hero GIF, SARIF proof, policy-gate demo, and launch-day runbook refresh. Tag `v1.13.1` remains the latest release tag.
 **Latest on PyPI:** `1.13.1` (verified live: JSON API + simple index + refreshed `uvx` install).
 
 ## Completed this session
@@ -18,6 +18,16 @@
   agents can actually touch" hook, a 60-second start, a zero-touch public-fixture preview image,
   and safe field-report guidance. Launch posts, Show HN draft, demo asset plan, and issue-template
   regression coverage are aligned around `--redact`.
+- **Launch-day runbook added** — `docs/LAUNCH-DAY-RUNBOOK.md` captures the exact HN URL/title,
+  Tuesday/Wednesday launch window, first-comment timing, response routing, and field-report
+  acceptance checks.
+- **Hero/proof assets landed** — README now includes the connected public-fixture GIF
+  `docs/assets/hero-scan.gif`, zero-touch preview
+  `docs/assets/mcp-audit-config-only-scan.png`, and SARIF/code-scanning proof
+  `docs/assets/ci-sarif.png`.
+- **Policy-gate launch asset landed** — README and `DEMO-ASSETS.md` now include the
+  strict policy-gate GIF path, with a scoped VHS tape/helper and regression coverage
+  proving the public fixture exits `2` under `examples/policies/ci-strict.yaml`.
 - **SARIF relative config paths fixed** — SARIF output now handles relative config paths cleanly,
   with regression coverage.
 - **1.12.0 field-scan evidence remains current historical evidence** — popular public
@@ -42,7 +52,7 @@
   then triage #83/#84/#85.
 
 ## Verification
-- `uv run pytest` passed (588 tests).
+- `uv run pytest` passed (591 tests).
 - `uv run ruff check` passed.
 - `uv run mypy .` passed.
 - `uv lock --check` passed.
@@ -55,7 +65,7 @@
 - PyPI long description contains `mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact`.
 - `uvx --refresh-package mcp-permission-audit --from mcp-permission-audit==1.13.1 mcp-audit --version`
   reports `mcp-audit, version 1.13.1`.
-- GitHub `main` checks are green for CI, Self Audit, and CodeQL after the launch-packet merge.
+- GitHub `main` checks are green for CI, Self Audit, and CodeQL on `a60a06c`.
 - Share-safe packet smoke pass confirmed README, launch posts, Show HN draft, external outreach,
   field-report docs, trust packet, demo asset plan, and local preview image keep the public
   field-report path on `--skip-connect --json ... --redact`.
@@ -68,8 +78,10 @@
   and `tests/test_issue_templates.py`.
 - Launch/share-safe packet files:
   `README.md`, `launch-posts.md`, `DEMO-ASSETS.md`, `docs/SHOW-HN-DRAFT.md`,
-  `docs/assets/mcp-audit-config-only-scan.png`, `src/mcp_audit/sarif.py`, and
-  `tests/test_sarif.py`.
+  `docs/LAUNCH-DAY-RUNBOOK.md`, `docs/assets/mcp-audit-config-only-scan.png`,
+  `docs/assets/hero-demo-config.json`, `docs/assets/hero.tape`,
+  `docs/assets/hero-scan.gif`, `docs/assets/ci-sarif.png`,
+  `src/mcp_audit/sarif.py`, and `tests/test_sarif.py`.
 
 ## Gotcha
 - `scan --config-only` means "only this config file" — it does NOT skip connection. Add
