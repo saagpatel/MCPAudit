@@ -21,6 +21,8 @@
 - **Launch-day runbook added** — `docs/LAUNCH-DAY-RUNBOOK.md` captures the exact HN URL/title,
   Tuesday/Wednesday launch window, first-comment timing, response routing, and field-report
   acceptance checks.
+- **Launch response playbook added** — `docs/LAUNCH-RESPONSE-PLAYBOOK.md` captures live reply
+  snippets, first-4-hour triage order, hostile-thread posture, and first-day evidence capture.
 - **Hero/proof assets landed** — README now includes the connected public-fixture GIF
   `docs/assets/hero-scan.gif`, zero-touch preview
   `docs/assets/mcp-audit-config-only-scan.png`, and SARIF/code-scanning proof
@@ -78,7 +80,8 @@
   and `tests/test_issue_templates.py`.
 - Launch/share-safe packet files:
   `README.md`, `launch-posts.md`, `DEMO-ASSETS.md`, `docs/SHOW-HN-DRAFT.md`,
-  `docs/LAUNCH-DAY-RUNBOOK.md`, `docs/assets/mcp-audit-config-only-scan.png`,
+  `docs/LAUNCH-DAY-RUNBOOK.md`, `docs/LAUNCH-RESPONSE-PLAYBOOK.md`,
+  `docs/assets/mcp-audit-config-only-scan.png`,
   `docs/assets/hero-demo-config.json`, `docs/assets/hero.tape`,
   `docs/assets/hero-scan.gif`, `docs/assets/ci-sarif.png`,
   `src/mcp_audit/sarif.py`, and `tests/test_sarif.py`.

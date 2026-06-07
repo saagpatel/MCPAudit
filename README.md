@@ -92,7 +92,7 @@ Use this path when sharing MCPAudit outside the repo:
 4. Use the policy-gate GIF when the audience needs enforcement: it shows the same public fixture failing `examples/policies/ci-strict.yaml` with exit code `2`.
 5. Link the trust story: [`docs/MCP-TRUST-PACKET.md`](docs/MCP-TRUST-PACKET.md) explains how MCPAudit, mcpforge, and local MCP dogfooding relate without overstating any one project.
 6. Recruit evidence, not hype: [`docs/EXTERNAL-FIELD-REPORT-REQUEST.md`](docs/EXTERNAL-FIELD-REPORT-REQUEST.md) is the canonical two-minute field-report ask, and [`docs/FIELD-REPORTS.md#minimal-public-example`](docs/FIELD-REPORTS.md#minimal-public-example) shows what is safe to paste publicly.
-7. Post from the prepared copy: [`launch-posts.md`](launch-posts.md) has the Show HN / r/mcp / LinkedIn drafts, title variants, and timing plan; [`docs/LAUNCH-DAY-RUNBOOK.md`](docs/LAUNCH-DAY-RUNBOOK.md) has the go/no-go checklist and response routing. Keep the line honest: this is pre-beta until two external redacted reports land.
+7. Post from the prepared copy: [`launch-posts.md`](launch-posts.md) has the Show HN / r/mcp / LinkedIn drafts, title variants, and timing plan; [`docs/LAUNCH-DAY-RUNBOOK.md`](docs/LAUNCH-DAY-RUNBOOK.md) has the go/no-go checklist and response routing; [`docs/LAUNCH-RESPONSE-PLAYBOOK.md`](docs/LAUNCH-RESPONSE-PLAYBOOK.md) has live reply snippets. Keep the line honest: this is pre-beta until two external redacted reports land.
 
 ## Features
 

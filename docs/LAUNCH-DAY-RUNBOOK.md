@@ -69,6 +69,9 @@ Use `launch-posts.md` for the r/mcp and LinkedIn drafts. Use
 `docs/EXTERNAL-OUTREACH-MESSAGES.md` for shorter public posts rather than
 trimming the Show HN comment by hand.
 
+Use `docs/LAUNCH-RESPONSE-PLAYBOOK.md` for live reply snippets and first-day
+triage.
+
 ## Field-Report Routing
 
 The beta gate is two accepted external, redacted, config-only field reports.

@@ -49,6 +49,8 @@ CI_SARIF_ASSET = Path("docs/assets/ci-sarif.png")
 POLICY_GATE_GIF = Path("docs/assets/policy-gate.gif")
 POLICY_GATE_TAPE = Path("docs/assets/policy-gate.tape")
 POLICY_GATE_DEMO_SCRIPT = Path("docs/assets/policy-gate-demo.sh")
+LAUNCH_DAY_RUNBOOK = Path("docs/LAUNCH-DAY-RUNBOOK.md")
+LAUNCH_RESPONSE_PLAYBOOK = Path("docs/LAUNCH-RESPONSE-PLAYBOOK.md")
 HERO_DEMO_CONFIG = Path("docs/assets/hero-demo-config.json")
 HERO_TAPE = Path("docs/assets/hero.tape")
 
@@ -150,7 +152,20 @@ def test_external_launch_checklist_links_credible_public_path() -> None:
     assert "docs/EXTERNAL-FIELD-REPORT-REQUEST.md" in readme
     assert "docs/FIELD-REPORTS.md#minimal-public-example" in readme
     assert "launch-posts.md" in readme
+    assert "docs/LAUNCH-DAY-RUNBOOK.md" in readme
+    assert "docs/LAUNCH-RESPONSE-PLAYBOOK.md" in readme
     assert "pre-beta until two external redacted reports land" in readme
+    assert LAUNCH_DAY_RUNBOOK.exists()
+    launch_runbook = LAUNCH_DAY_RUNBOOK.read_text()
+    assert "Tuesday, June 9, 2026" in launch_runbook
+    assert "Wednesday, June 10, 2026" in launch_runbook
+    assert "Show HN: mcp-audit" in launch_runbook
+    assert "docs/LAUNCH-RESPONSE-PLAYBOOK.md" in launch_runbook
+    assert LAUNCH_RESPONSE_PLAYBOOK.exists()
+    response_playbook = LAUNCH_RESPONSE_PLAYBOOK.read_text()
+    assert "mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact" in response_playbook
+    assert "SECURITY.md" in response_playbook
+    assert "Not yet" in response_playbook
     launch_posts = LAUNCH_POSTS.read_text()
     assert "## 1. Show HN / r/mcp" in launch_posts
     assert "## 2. LinkedIn" in launch_posts
