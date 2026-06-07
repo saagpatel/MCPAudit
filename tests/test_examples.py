@@ -44,6 +44,7 @@ SCHEMA_PATH = Path("examples/schemas/audit-report.schema.json")
 MCP_TRUST_PACKET = Path("docs/MCP-TRUST-PACKET.md")
 LAUNCH_POSTS = Path("launch-posts.md")
 CONFIG_ONLY_SCAN_ASSET = Path("docs/assets/mcp-audit-config-only-scan.png")
+HERO_SCAN_GIF = Path("docs/assets/hero-scan.gif")
 HERO_DEMO_CONFIG = Path("docs/assets/hero-demo-config.json")
 HERO_TAPE = Path("docs/assets/hero.tape")
 
@@ -120,14 +121,10 @@ def test_external_launch_checklist_links_credible_public_path() -> None:
     assert CONFIG_ONLY_SCAN_ASSET.stat().st_size > 0
     assert HERO_DEMO_CONFIG.exists()
     hero_config = json.loads(HERO_DEMO_CONFIG.read_text())
-    assert sorted(hero_config["mcpServers"]) == [
-        "everything",
-        "fetch",
-        "git",
-        "memory",
-        "sequential-thinking",
-        "time",
-    ]
+    assert sorted(hero_config["mcpServers"]) == ["fetch", "sequential-thinking", "time"]
+    assert HERO_SCAN_GIF.exists()
+    assert HERO_SCAN_GIF.stat().st_size > 0
+    assert "docs/assets/hero-scan.gif" in readme
     assert "docs/assets/hero-demo-config.json" in demo_assets
     assert HERO_TAPE.exists()
     hero_tape = HERO_TAPE.read_text()
@@ -154,14 +151,16 @@ def test_hero_recording_recipe_is_public_and_scoped() -> None:
     demo_assets = Path("DEMO-ASSETS.md").read_text()
 
     servers = config["mcpServers"]
-    assert set(servers) == {"everything", "fetch", "git", "memory", "sequential-thinking", "time"}
+    assert set(servers) == {"fetch", "sequential-thinking", "time"}
     assert "GITHUB_PERSONAL_ACCESS_TOKEN" not in HERO_DEMO_CONFIG.read_text()
     assert "/tmp/workspace" not in HERO_DEMO_CONFIG.read_text()
     assert "--config docs/assets/hero-demo-config.json --config-only --ssrf-check" in tape
+    assert "export COLUMNS=185" in tape
     assert "never reads your real MCP configs" in tape
     assert "docs/assets/hero-scan.gif" in tape
     assert "docs/assets/hero-demo-config.json" in demo_assets
     assert "docs/assets/hero.tape" in demo_assets
+    assert "fetch`, `sequential-thinking`, `time" in demo_assets
 
 
 def test_stale_pin_review_examples_are_read_only() -> None:

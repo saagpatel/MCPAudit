@@ -49,6 +49,10 @@ It stays read-only the whole time — it never edits a config and reports env-va
 
 > *Sample output with illustrative public server names. Higher risk = a broader surface to sandbox, **not** "malicious." Want a zero-touch pass first? Add `--skip-connect` to reason purely from your config — no servers spawned, no network calls. Stack `--trifecta-check` or `--shadow-check` alongside `--ssrf-check` to hunt more attack surfaces, and `--json` / `--sarif` / `--html` to pipe results into CI or a dashboard.*
 
+Connected public-fixture demo (`fetch`, `sequential-thinking`, `time`; no auth tokens or workstation configs):
+
+![mcp-audit connected SSRF scan demo](docs/assets/hero-scan.gif)
+
 Zero-touch preview against the bundled public fixture:
 
 ![mcp-audit config-only scan preview](docs/assets/mcp-audit-config-only-scan.png)
@@ -74,10 +78,11 @@ PyPI package: [`mcp-permission-audit`](https://pypi.org/project/mcp-permission-a
 
 Use this path when sharing MCPAudit outside the repo:
 
-1. Lead with the safe visual above: it is generated from the bundled public fixture with `--config-only --skip-connect`, so it demonstrates the no-spawn/no-network review path.
-2. Link the trust story: [`docs/MCP-TRUST-PACKET.md`](docs/MCP-TRUST-PACKET.md) explains how MCPAudit, mcpforge, and local MCP dogfooding relate without overstating any one project.
-3. Recruit evidence, not hype: [`docs/EXTERNAL-FIELD-REPORT-REQUEST.md`](docs/EXTERNAL-FIELD-REPORT-REQUEST.md) is the canonical two-minute field-report ask, and [`docs/FIELD-REPORTS.md#minimal-public-example`](docs/FIELD-REPORTS.md#minimal-public-example) shows what is safe to paste publicly.
-4. Post from the prepared copy: [`launch-posts.md`](launch-posts.md) has the Show HN / r/mcp / LinkedIn drafts, title variants, and timing plan. Keep the line honest: this is pre-beta until two external redacted reports land.
+1. Lead with the zero-touch preview image when safety is the point: it is generated from the bundled public fixture with `--config-only --skip-connect`, so it demonstrates the no-spawn/no-network review path.
+2. Use the connected GIF when the audience needs the real tool-schema story: it is recorded from `docs/assets/hero-demo-config.json`, a curated public fixture that may spawn only the listed no-auth sample servers.
+3. Link the trust story: [`docs/MCP-TRUST-PACKET.md`](docs/MCP-TRUST-PACKET.md) explains how MCPAudit, mcpforge, and local MCP dogfooding relate without overstating any one project.
+4. Recruit evidence, not hype: [`docs/EXTERNAL-FIELD-REPORT-REQUEST.md`](docs/EXTERNAL-FIELD-REPORT-REQUEST.md) is the canonical two-minute field-report ask, and [`docs/FIELD-REPORTS.md#minimal-public-example`](docs/FIELD-REPORTS.md#minimal-public-example) shows what is safe to paste publicly.
+5. Post from the prepared copy: [`launch-posts.md`](launch-posts.md) has the Show HN / r/mcp / LinkedIn drafts, title variants, and timing plan. Keep the line honest: this is pre-beta until two external redacted reports land.
 
 ## Features
 

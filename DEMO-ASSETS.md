@@ -33,15 +33,17 @@ mcp-audit scan --config examples/configs/popular-public-servers.json --config-on
 
 ## Priority 1 — the hero GIF (README top + LinkedIn)
 
-**`hero-scan.gif`** — the 60-second "what can my servers touch" moment. Matches the
-README hero sample.
-- Show typing: `uvx --from mcp-permission-audit mcp-audit scan --config docs/assets/hero-demo-config.json --config-only --ssrf-check`
+**`hero-scan.gif`** — the 60-second "what can my servers touch" moment.
+- Show typing: `mcp-audit scan --config docs/assets/hero-demo-config.json --config-only --ssrf-check`
 - Recording script: `docs/assets/hero.tape`.
 - `--config ... --config-only` scopes the scan to **only** the bundled public config, so
   your real configs never appear. Leaving off `--skip-connect` makes this a connected
   demo: MCPAudit may start the curated public sample package commands to enumerate tool
   schemas (that's what fills the table and the SSRF section). The hero config intentionally
-  omits sample entries that need auth tokens, real local paths, or placeholder remote URLs.
+  uses a compact no-auth subset (`fetch`, `sequential-thinking`, `time`) and omits sample
+  entries that need auth tokens, real local paths, or placeholder remote URLs.
+  The recording redirects server startup stderr off-camera so package-runner noise does not
+  obscure the real MCPAudit report.
   Review the captured output before publishing even though the input fixture is public.
 - Capture the summary panel + the per-server risk table rendering (the colored Risk
   column is the payoff — red high-risk, yellow mid, green low) + the SSRF Warnings block.
@@ -93,13 +95,12 @@ renders the README but not animated GIFs reliably, so a static fallback helps).
 Produced:
 - `docs/assets/mcp-audit-config-only-scan.png` — static zero-touch preview generated
   from the bundled public config with `--config-only --skip-connect`.
-
-Prepared:
 - `docs/assets/hero-demo-config.json` — curated public connected-scan fixture for a
-  future hero GIF; it avoids workstation configs, auth-token servers, and real-path
-  arguments.
+  hero GIF; it avoids workstation configs, auth-token servers, and real-path arguments.
 - `docs/assets/hero.tape` — `vhs` script that records `docs/assets/hero-scan.gif`
-  from the curated fixture once `vhs` and its local dependencies are installed.
+  from the curated fixture.
+- `docs/assets/hero-scan.gif` — connected scan GIF recorded from `docs/assets/hero.tape`
+  against the curated public fixture.
 
 ---
 
