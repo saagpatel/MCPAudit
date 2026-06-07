@@ -97,7 +97,7 @@ Use this path when sharing MCPAudit outside the repo:
 5. Use the HTML report screenshot when the audience needs a shareable artifact preview: it shows `scan --html` output from a redacted config-only report.
 6. Link the trust story: [`docs/MCP-TRUST-PACKET.md`](docs/MCP-TRUST-PACKET.md) explains how MCPAudit, mcpforge, and local MCP dogfooding relate without overstating any one project.
 7. Recruit evidence, not hype: [`docs/EXTERNAL-FIELD-REPORT-REQUEST.md`](docs/EXTERNAL-FIELD-REPORT-REQUEST.md) is the canonical two-minute field-report ask, and [`docs/FIELD-REPORTS.md#minimal-public-example`](docs/FIELD-REPORTS.md#minimal-public-example) shows what is safe to paste publicly.
-8. Post from the prepared copy: [`launch-posts.md`](launch-posts.md) has the Show HN / r/mcp / LinkedIn drafts, title variants, and timing plan; [`docs/LAUNCH-DAY-RUNBOOK.md`](docs/LAUNCH-DAY-RUNBOOK.md) has the go/no-go checklist and response routing; [`docs/LAUNCH-RESPONSE-PLAYBOOK.md`](docs/LAUNCH-RESPONSE-PLAYBOOK.md) has live reply snippets. Keep the line honest: this is pre-beta until two external redacted reports land.
+8. Post from the prepared copy: [`docs/LAUNCH-CONTROL-CARD.md`](docs/LAUNCH-CONTROL-CARD.md) is the single-screen launch cockpit; [`launch-posts.md`](launch-posts.md) has the Show HN / r/mcp / LinkedIn drafts, title variants, and timing plan; [`docs/LAUNCH-DAY-RUNBOOK.md`](docs/LAUNCH-DAY-RUNBOOK.md) has the go/no-go checklist and response routing; [`docs/LAUNCH-RESPONSE-PLAYBOOK.md`](docs/LAUNCH-RESPONSE-PLAYBOOK.md) has live reply snippets. Keep the line honest: this is pre-beta until two external redacted reports land.
 
 ## Features
 

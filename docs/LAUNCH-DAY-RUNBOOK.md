@@ -3,6 +3,9 @@
 Use this on the day MCPAudit is posted publicly. It keeps the launch packet
 share-safe, pre-beta, and aligned with the current evidence bar.
 
+For the single-screen operator view, keep `docs/LAUNCH-CONTROL-CARD.md` open
+during the launch window.
+
 ## Go / No-Go
 
 Current status: **go for launch execution, not beta**.

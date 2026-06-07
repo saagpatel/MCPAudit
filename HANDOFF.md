@@ -23,6 +23,9 @@
   acceptance checks.
 - **Launch response playbook added** — `docs/LAUNCH-RESPONSE-PLAYBOOK.md` captures live reply
   snippets, first-4-hour triage order, hostile-thread posture, and first-day evidence capture.
+- **Launch control card added** — `docs/LAUNCH-CONTROL-CARD.md` is the single-screen
+  operator card for HN submit fields, open tabs, final go checks, first 5 minutes,
+  and explicit do-not-do guardrails.
 - **Hero/proof assets landed** — README now includes the connected public-fixture GIF
   `docs/assets/hero-scan.gif`, zero-touch preview
   `docs/assets/mcp-audit-config-only-scan.png`, and SARIF/code-scanning proof
@@ -83,7 +86,8 @@
   and `tests/test_issue_templates.py`.
 - Launch/share-safe packet files:
   `README.md`, `launch-posts.md`, `DEMO-ASSETS.md`, `docs/SHOW-HN-DRAFT.md`,
-  `docs/LAUNCH-DAY-RUNBOOK.md`, `docs/LAUNCH-RESPONSE-PLAYBOOK.md`,
+  `docs/LAUNCH-CONTROL-CARD.md`, `docs/LAUNCH-DAY-RUNBOOK.md`,
+  `docs/LAUNCH-RESPONSE-PLAYBOOK.md`,
   `docs/assets/mcp-audit-config-only-scan.png`,
   `docs/assets/hero-demo-config.json`, `docs/assets/hero.tape`,
   `docs/assets/hero-scan.gif`, `docs/assets/ci-sarif.png`,

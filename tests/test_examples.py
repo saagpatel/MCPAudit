@@ -50,6 +50,7 @@ HTML_REPORT_ASSET = Path("docs/assets/html-report.png")
 POLICY_GATE_GIF = Path("docs/assets/policy-gate.gif")
 POLICY_GATE_TAPE = Path("docs/assets/policy-gate.tape")
 POLICY_GATE_DEMO_SCRIPT = Path("docs/assets/policy-gate-demo.sh")
+LAUNCH_CONTROL_CARD = Path("docs/LAUNCH-CONTROL-CARD.md")
 LAUNCH_DAY_RUNBOOK = Path("docs/LAUNCH-DAY-RUNBOOK.md")
 LAUNCH_RESPONSE_PLAYBOOK = Path("docs/LAUNCH-RESPONSE-PLAYBOOK.md")
 HERO_DEMO_CONFIG = Path("docs/assets/hero-demo-config.json")
@@ -156,14 +157,26 @@ def test_external_launch_checklist_links_credible_public_path() -> None:
     assert "docs/EXTERNAL-FIELD-REPORT-REQUEST.md" in readme
     assert "docs/FIELD-REPORTS.md#minimal-public-example" in readme
     assert "launch-posts.md" in readme
+    assert "docs/LAUNCH-CONTROL-CARD.md" in readme
     assert "docs/LAUNCH-DAY-RUNBOOK.md" in readme
     assert "docs/LAUNCH-RESPONSE-PLAYBOOK.md" in readme
     assert "pre-beta until two external redacted reports land" in readme
+    assert LAUNCH_CONTROL_CARD.exists()
+    launch_control = LAUNCH_CONTROL_CARD.read_text()
+    assert "Sunday, June 7, 2026" in launch_control
+    assert "Tuesday, June 9, 2026" in launch_control
+    assert "Wednesday, June 10, 2026" in launch_control
+    assert "Show HN: mcp-audit" in launch_control
+    assert "https://github.com/saagpatel/MCPAudit" in launch_control
+    assert 'launch-posts.md -> "Body / first comment"' in launch_control
+    assert "--redact" in launch_control
+    assert "SECURITY.md" in launch_control
     assert LAUNCH_DAY_RUNBOOK.exists()
     launch_runbook = LAUNCH_DAY_RUNBOOK.read_text()
     assert "Tuesday, June 9, 2026" in launch_runbook
     assert "Wednesday, June 10, 2026" in launch_runbook
     assert "Show HN: mcp-audit" in launch_runbook
+    assert "docs/LAUNCH-CONTROL-CARD.md" in launch_runbook
     assert "docs/LAUNCH-RESPONSE-PLAYBOOK.md" in launch_runbook
     assert LAUNCH_RESPONSE_PLAYBOOK.exists()
     response_playbook = LAUNCH_RESPONSE_PLAYBOOK.read_text()
