@@ -44,7 +44,8 @@ mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
 
 ## Open Before Submit
 
-- Hacker News submit page, logged in and able to comment.
+- Hacker News submit page, logged in and able to comment:
+  `https://news.ycombinator.com/submit`
 - GitHub repo README:
   `https://github.com/saagpatel/MCPAudit#readme`
 - Field-report issue template:

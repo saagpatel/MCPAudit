@@ -168,6 +168,7 @@ def test_external_launch_checklist_links_credible_public_path() -> None:
     assert "Tuesday, June 9, 2026" in launch_control
     assert "Wednesday, June 10, 2026" in launch_control
     assert "Show HN: mcp-audit" in launch_control
+    assert "https://news.ycombinator.com/submit" in launch_control
     assert "https://github.com/saagpatel/MCPAudit" in launch_control
     assert 'launch-posts.md -> "Body / first comment"' in launch_control
     assert "--redact" in launch_control
@@ -216,6 +217,7 @@ def test_launch_preflight_script_checks_static_packet() -> None:
     assert result.returncode == 0
     assert "Launch preflight passed." in result.stdout
     assert "title chars: 65" in result.stdout
+    assert "HN submit page: https://news.ycombinator.com/submit (login/auth not checked)" in result.stdout
 
 
 def test_launch_preflight_can_print_hn_copy() -> None:
@@ -234,6 +236,8 @@ def test_launch_preflight_can_print_hn_copy() -> None:
     )
 
     assert result.returncode == 0
+    assert "HN SUBMIT PAGE" in result.stdout
+    assert "https://news.ycombinator.com/submit" in result.stdout
     assert "HN SUBMIT URL" in result.stdout
     assert "HN TITLE" in result.stdout
     assert "HN FIRST COMMENT" in result.stdout

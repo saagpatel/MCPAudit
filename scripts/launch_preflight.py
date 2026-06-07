@@ -19,6 +19,7 @@ COMMAND_NAME = "mcp-audit"
 EXPECTED_WORKFLOWS = {"CI", "Self Audit", "CodeQL"}
 TITLE = "Show HN: mcp-audit \u2013 see what your MCP servers can actually touch"
 REPO_URL = "https://github.com/saagpatel/MCPAudit"
+HN_SUBMIT_PAGE_URL = "https://news.ycombinator.com/submit"
 FIELD_REPORT_COMMAND = "mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact"
 FIELD_REPORT_ISSUE = "https://github.com/saagpatel/MCPAudit/issues/new?template=field_report.md"
 PYPI_JSON_URL = f"https://pypi.org/pypi/{PACKAGE_NAME}/json"
@@ -41,6 +42,7 @@ REQUIRED_TEXT = {
     Path("docs/LAUNCH-CONTROL-CARD.md"): [
         "Tuesday, June 9, 2026",
         "Wednesday, June 10, 2026",
+        HN_SUBMIT_PAGE_URL,
         REPO_URL,
         TITLE,
         FIELD_REPORT_COMMAND,
@@ -102,6 +104,7 @@ def main() -> int:
 
     print("Launch preflight passed.")
     print(f"- title chars: {len(TITLE)}")
+    print(f"- HN submit page: {HN_SUBMIT_PAGE_URL} (login/auth not checked)")
     print(f"- repo URL: {REPO_URL}")
     print(f"- field report command: {FIELD_REPORT_COMMAND}")
     if not args.skip_public:
@@ -190,6 +193,9 @@ def _extract_first_comment(path: Path) -> str:
 
 
 def _print_hn_copy(comment: str) -> None:
+    print()
+    print("HN SUBMIT PAGE")
+    print(HN_SUBMIT_PAGE_URL)
     print()
     print("HN SUBMIT URL")
     print(REPO_URL)

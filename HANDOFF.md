@@ -30,7 +30,7 @@
   assets, local git alignment, current-head GitHub CI/Self Audit/CodeQL status, and
   public README / asset URLs plus PyPI / `uvx` package availability. Use
   `python scripts/launch_preflight.py --print-hn-copy` on launch morning to print
-  the exact HN URL, title, and first comment after checks pass.
+  the HN submit page, exact HN URL field, title, and first comment after checks pass.
 - **Hero/proof assets landed** — README now includes the connected public-fixture GIF
   `docs/assets/hero-scan.gif`, zero-touch preview
   `docs/assets/mcp-audit-config-only-scan.png`, and SARIF/code-scanning proof
@@ -65,7 +65,7 @@
   then triage #83/#84/#85.
 
 ## Verification
-- `uv run pytest` passed (591 tests).
+- `uv run pytest` passed (593 tests).
 - `uv run ruff check` passed.
 - `uv run mypy .` passed.
 - `uv lock --check` passed.
@@ -78,6 +78,9 @@
 - PyPI long description contains `mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact`.
 - `uvx --refresh-package mcp-permission-audit --from mcp-permission-audit==1.13.1 mcp-audit --version`
   reports `mcp-audit, version 1.13.1`.
+- `python scripts/launch_preflight.py --skip-git --print-hn-copy` passed, including
+  current-head GitHub Actions checks, 8 public README / asset URL checks, PyPI JSON/simple
+  checks, refreshed `uvx` package smoke, and printed the HN submit page plus URL/title/comment.
 - GitHub `main` checks are green for CI, Self Audit, and CodeQL on `a60a06c`.
 - Share-safe packet smoke pass confirmed README, launch posts, Show HN draft, external outreach,
   field-report docs, trust packet, demo asset plan, and local preview image keep the public
