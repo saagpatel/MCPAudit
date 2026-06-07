@@ -35,11 +35,13 @@ mcp-audit scan --config examples/configs/popular-public-servers.json --config-on
 
 **`hero-scan.gif`** — the 60-second "what can my servers touch" moment. Matches the
 README hero sample.
-- Show typing: `uvx --from mcp-permission-audit mcp-audit scan --config examples/configs/popular-public-servers.json --config-only --ssrf-check`
+- Show typing: `uvx --from mcp-permission-audit mcp-audit scan --config docs/assets/hero-demo-config.json --config-only --ssrf-check`
+- Recording script: `docs/assets/hero.tape`.
 - `--config ... --config-only` scopes the scan to **only** the bundled public config, so
   your real configs never appear. Leaving off `--skip-connect` makes this a connected
-  demo: MCPAudit may start the public sample package commands and contact configured
-  endpoints to enumerate tool schemas (that's what fills the table and the SSRF section).
+  demo: MCPAudit may start the curated public sample package commands to enumerate tool
+  schemas (that's what fills the table and the SSRF section). The hero config intentionally
+  omits sample entries that need auth tokens, real local paths, or placeholder remote URLs.
   Review the captured output before publishing even though the input fixture is public.
 - Capture the summary panel + the per-server risk table rendering (the colored Risk
   column is the payoff — red high-risk, yellow mid, green low) + the SSRF Warnings block.
@@ -92,12 +94,20 @@ Produced:
 - `docs/assets/mcp-audit-config-only-scan.png` — static zero-touch preview generated
   from the bundled public config with `--config-only --skip-connect`.
 
+Prepared:
+- `docs/assets/hero-demo-config.json` — curated public connected-scan fixture for a
+  future hero GIF; it avoids workstation configs, auth-token servers, and real-path
+  arguments.
+- `docs/assets/hero.tape` — `vhs` script that records `docs/assets/hero-scan.gif`
+  from the curated fixture once `vhs` and its local dependencies are installed.
+
 ---
 
 ## Notes for whoever records these
 
-- Keep the bundled `examples/configs/popular-public-servers.json` as the single demo
-  fixture across all assets so the story is consistent and reproducible.
+- Keep `examples/configs/popular-public-servers.json` as the zero-touch/static demo fixture.
+  Use `docs/assets/hero-demo-config.json` only for the connected hero GIF, where the curated
+  subset avoids auth-token, local-path, and placeholder-remote setup noise.
 - If a detector needs a finding that the public config doesn't naturally produce
   (e.g. shadowing), add a tiny **synthetic** config under a scratch path with
   placeholder server names — never a real one — and note that it's illustrative.

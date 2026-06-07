@@ -44,6 +44,8 @@ SCHEMA_PATH = Path("examples/schemas/audit-report.schema.json")
 MCP_TRUST_PACKET = Path("docs/MCP-TRUST-PACKET.md")
 LAUNCH_POSTS = Path("launch-posts.md")
 CONFIG_ONLY_SCAN_ASSET = Path("docs/assets/mcp-audit-config-only-scan.png")
+HERO_DEMO_CONFIG = Path("docs/assets/hero-demo-config.json")
+HERO_TAPE = Path("docs/assets/hero.tape")
 
 
 def test_ci_examples_are_valid_yaml() -> None:
@@ -112,9 +114,27 @@ def test_mcp_trust_packet_is_discoverable_and_safe() -> None:
 
 def test_external_launch_checklist_links_credible_public_path() -> None:
     readme = Path("README.md").read_text()
+    demo_assets = Path("DEMO-ASSETS.md").read_text()
 
     assert CONFIG_ONLY_SCAN_ASSET.exists()
     assert CONFIG_ONLY_SCAN_ASSET.stat().st_size > 0
+    assert HERO_DEMO_CONFIG.exists()
+    hero_config = json.loads(HERO_DEMO_CONFIG.read_text())
+    assert sorted(hero_config["mcpServers"]) == [
+        "everything",
+        "fetch",
+        "git",
+        "memory",
+        "sequential-thinking",
+        "time",
+    ]
+    assert "docs/assets/hero-demo-config.json" in demo_assets
+    assert HERO_TAPE.exists()
+    hero_tape = HERO_TAPE.read_text()
+    assert "Output docs/assets/hero-scan.gif" in hero_tape
+    assert "docs/assets/hero-demo-config.json --config-only --ssrf-check" in hero_tape
+    assert "docs/assets/hero.tape" in demo_assets
+    assert "auth tokens, real local paths, or placeholder remote URLs" in demo_assets
     assert "## External launch checklist" in readme
     assert "docs/assets/mcp-audit-config-only-scan.png" in readme
     assert "docs/MCP-TRUST-PACKET.md" in readme
@@ -126,6 +146,22 @@ def test_external_launch_checklist_links_credible_public_path() -> None:
     assert "## 1. Show HN / r/mcp" in launch_posts
     assert "## 2. LinkedIn" in launch_posts
     assert "Title A/B + posting-time plan" in launch_posts
+
+
+def test_hero_recording_recipe_is_public_and_scoped() -> None:
+    config = json.loads(HERO_DEMO_CONFIG.read_text())
+    tape = HERO_TAPE.read_text()
+    demo_assets = Path("DEMO-ASSETS.md").read_text()
+
+    servers = config["mcpServers"]
+    assert set(servers) == {"everything", "fetch", "git", "memory", "sequential-thinking", "time"}
+    assert "GITHUB_PERSONAL_ACCESS_TOKEN" not in HERO_DEMO_CONFIG.read_text()
+    assert "/tmp/workspace" not in HERO_DEMO_CONFIG.read_text()
+    assert "--config docs/assets/hero-demo-config.json --config-only --ssrf-check" in tape
+    assert "never reads your real MCP configs" in tape
+    assert "docs/assets/hero-scan.gif" in tape
+    assert "docs/assets/hero-demo-config.json" in demo_assets
+    assert "docs/assets/hero.tape" in demo_assets
 
 
 def test_stale_pin_review_examples_are_read_only() -> None:

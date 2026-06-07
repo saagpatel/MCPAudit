@@ -1,0 +1,32 @@
+{
+	"_comment": "Curated subset of examples/configs/popular-public-servers.json for the hero GIF. Only PUBLIC servers that launch standalone with no auth token and no real-path argument, so a CONNECTED scan stays clean and reproducible (no 'failed to connect' rows, no setup). Safe to run - it scans ONLY this file and never reads your real MCP configs: `mcp-audit scan --config docs/assets/hero-demo-config.json --config-only --ssrf-check`. Versions track examples/configs/popular-public-servers.json (pinned 2026-06-02); bump them together.",
+	"mcpServers": {
+		"everything": {
+			"command": "npx",
+			"args": ["-y", "@modelcontextprotocol/server-everything@2026.1.26"]
+		},
+		"fetch": {
+			"command": "uvx",
+			"args": ["mcp-server-fetch==2025.4.7"]
+		},
+		"git": {
+			"command": "uvx",
+			"args": ["mcp-server-git==2026.1.14"]
+		},
+		"memory": {
+			"command": "npx",
+			"args": ["-y", "@modelcontextprotocol/server-memory@2026.1.26"]
+		},
+		"sequential-thinking": {
+			"command": "npx",
+			"args": [
+				"-y",
+				"@modelcontextprotocol/server-sequential-thinking@2025.12.18"
+			]
+		},
+		"time": {
+			"command": "uvx",
+			"args": ["mcp-server-time==2026.1.26"]
+		}
+	}
+}
