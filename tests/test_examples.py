@@ -207,6 +207,7 @@ def test_launch_preflight_script_checks_static_packet() -> None:
             "--skip-git",
             "--skip-remote",
             "--skip-public",
+            "--skip-package",
         ],
         capture_output=True,
         text=True,

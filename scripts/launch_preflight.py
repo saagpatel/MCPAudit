@@ -8,18 +8,25 @@ import json
 import shutil
 import subprocess
 import sys
+import tomllib
 import urllib.error
 import urllib.request
 from pathlib import Path
 
 REPO = "saagpatel/MCPAudit"
+PACKAGE_NAME = "mcp-permission-audit"
+COMMAND_NAME = "mcp-audit"
 EXPECTED_WORKFLOWS = {"CI", "Self Audit", "CodeQL"}
 TITLE = "Show HN: mcp-audit \u2013 see what your MCP servers can actually touch"
 REPO_URL = "https://github.com/saagpatel/MCPAudit"
 FIELD_REPORT_COMMAND = "mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact"
 FIELD_REPORT_ISSUE = "https://github.com/saagpatel/MCPAudit/issues/new?template=field_report.md"
+PYPI_JSON_URL = f"https://pypi.org/pypi/{PACKAGE_NAME}/json"
+PYPI_PROJECT_URL = f"https://pypi.org/project/{PACKAGE_NAME}/"
+PYPI_SIMPLE_URL = f"https://pypi.org/simple/{PACKAGE_NAME}/"
 PUBLIC_URLS = {
     "GitHub README": "https://github.com/saagpatel/MCPAudit#readme",
+    "PyPI project": PYPI_PROJECT_URL,
     "field-report issue template": FIELD_REPORT_ISSUE,
     "hero GIF": "https://raw.githubusercontent.com/saagpatel/MCPAudit/main/docs/assets/hero-scan.gif",
     "config-only preview": (
@@ -68,6 +75,7 @@ def main() -> int:
     parser.add_argument("--skip-git", action="store_true", help="Skip local git cleanliness checks.")
     parser.add_argument("--skip-remote", action="store_true", help="Skip GitHub Actions status checks.")
     parser.add_argument("--skip-public", action="store_true", help="Skip public GitHub URL checks.")
+    parser.add_argument("--skip-package", action="store_true", help="Skip PyPI and uvx package checks.")
     args = parser.parse_args()
 
     failures: list[str] = []
@@ -80,6 +88,9 @@ def main() -> int:
         _check_remote(failures)
     if not args.skip_public:
         _check_public_urls(failures)
+    package_version: str | None = None
+    if not args.skip_package:
+        package_version = _check_package(failures)
 
     if failures:
         print("Launch preflight failed:")
@@ -93,6 +104,8 @@ def main() -> int:
     print(f"- field report command: {FIELD_REPORT_COMMAND}")
     if not args.skip_public:
         print(f"- public URLs checked: {len(PUBLIC_URLS)}")
+    if package_version is not None:
+        print(f"- PyPI package version: {package_version}")
     return 0
 
 
@@ -207,6 +220,127 @@ def _check_public_urls(failures: list[str]) -> None:
 
         if status >= 400:
             failures.append(f"{label} returned HTTP {status}: {url}")
+
+
+def _check_package(failures: list[str]) -> str | None:
+    expected_version = _project_version(failures)
+    if expected_version is None:
+        return None
+
+    pypi_json = _fetch_json(PYPI_JSON_URL, failures, "PyPI JSON")
+    if isinstance(pypi_json, dict):
+        latest_version = _nested_string(pypi_json, "info", "version")
+        if latest_version != expected_version:
+            failures.append(f"PyPI latest is {latest_version!r}; expected {expected_version!r}.")
+
+        releases = pypi_json.get("releases")
+        if not isinstance(releases, dict) or expected_version not in releases:
+            failures.append(f"PyPI JSON is missing release files for {expected_version}.")
+        elif not releases[expected_version]:
+            failures.append(f"PyPI JSON release {expected_version} has no files.")
+
+        description = _nested_string(pypi_json, "info", "description") or ""
+        if FIELD_REPORT_COMMAND not in description:
+            failures.append("PyPI long description is missing the redacted field-report command.")
+
+    simple = _fetch_text(PYPI_SIMPLE_URL, failures, "PyPI simple index")
+    if simple is not None:
+        normalized_file_prefix = PACKAGE_NAME.replace("-", "_")
+        if f"{normalized_file_prefix}-{expected_version}" not in simple:
+            failures.append(f"PyPI simple index is missing {normalized_file_prefix}-{expected_version}.")
+
+    _check_uvx(expected_version, failures)
+    return expected_version
+
+
+def _project_version(failures: list[str]) -> str | None:
+    pyproject = Path("pyproject.toml")
+    try:
+        parsed = tomllib.loads(pyproject.read_text())
+    except OSError as exc:
+        failures.append(f"could not read {pyproject}: {exc}")
+        return None
+    except tomllib.TOMLDecodeError as exc:
+        failures.append(f"could not parse {pyproject}: {exc}")
+        return None
+
+    project = parsed.get("project")
+    if not isinstance(project, dict):
+        failures.append("pyproject.toml is missing [project].")
+        return None
+
+    version = project.get("version")
+    if not isinstance(version, str):
+        failures.append("pyproject.toml is missing project.version.")
+        return None
+    return version
+
+
+def _check_uvx(expected_version: str, failures: list[str]) -> None:
+    if shutil.which("uvx") is None:
+        failures.append("uvx is not available for package smoke check.")
+        return
+
+    result = _run(
+        [
+            "uvx",
+            "--refresh-package",
+            PACKAGE_NAME,
+            "--from",
+            f"{PACKAGE_NAME}=={expected_version}",
+            COMMAND_NAME,
+            "--version",
+        ]
+    )
+    if result.returncode != 0:
+        failures.append(f"uvx package smoke failed: {result.stderr.strip() or result.stdout.strip()}")
+        return
+
+    expected_output = f"{COMMAND_NAME}, version {expected_version}"
+    if expected_output not in result.stdout:
+        failures.append(f"uvx reported {result.stdout.strip()!r}; expected {expected_output!r}.")
+
+
+def _fetch_json(url: str, failures: list[str], label: str) -> object | None:
+    text = _fetch_text(url, failures, label)
+    if text is None:
+        return None
+    try:
+        parsed: object = json.loads(text)
+        return parsed
+    except json.JSONDecodeError as exc:
+        failures.append(f"{label} did not return valid JSON: {exc}")
+        return None
+
+
+def _fetch_text(url: str, failures: list[str], label: str) -> str | None:
+    request = urllib.request.Request(url, headers={"User-Agent": "MCPAudit-launch-preflight/1.0"})
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            if response.status >= 400:
+                failures.append(f"{label} returned HTTP {response.status}: {url}")
+                return None
+            raw = response.read()
+            if not isinstance(raw, bytes):
+                failures.append(f"{label} returned non-bytes response data: {url}")
+                return None
+            return raw.decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:
+        failures.append(f"{label} returned HTTP {exc.code}: {url}")
+    except urllib.error.URLError as exc:
+        failures.append(f"{label} could not be reached: {exc.reason}")
+    except TimeoutError:
+        failures.append(f"{label} timed out: {url}")
+    return None
+
+
+def _nested_string(value: object, *keys: str) -> str | None:
+    current = value
+    for key in keys:
+        if not isinstance(current, dict):
+            return None
+        current = current.get(key)
+    return current if isinstance(current, str) else None
 
 
 def _run(args: list[str]) -> subprocess.CompletedProcess[str]:

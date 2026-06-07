@@ -28,7 +28,7 @@
   and explicit do-not-do guardrails.
 - **Launch preflight added** — `scripts/launch_preflight.py` checks launch docs,
   assets, local git alignment, current-head GitHub CI/Self Audit/CodeQL status, and
-  public README / asset URLs.
+  public README / asset URLs plus PyPI / `uvx` package availability.
 - **Hero/proof assets landed** — README now includes the connected public-fixture GIF
   `docs/assets/hero-scan.gif`, zero-touch preview
   `docs/assets/mcp-audit-config-only-scan.png`, and SARIF/code-scanning proof
