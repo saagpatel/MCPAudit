@@ -11,9 +11,7 @@ FIELD_REPORT_OUTREACH_DOC = Path("docs/EXTERNAL-OUTREACH-MESSAGES.md")
 SHOW_HN_DRAFT_DOC = Path("docs/SHOW-HN-DRAFT.md")
 MCP_TRUST_PACKET_DOC = Path("docs/MCP-TRUST-PACKET.md")
 SOLO_EVIDENCE_DOC = Path("docs/SOLO-EVIDENCE.md")
-FIELD_REPORT_COMMAND = (
-    "mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact"
-)
+FIELD_REPORT_COMMAND = "mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact"
 
 
 def test_feedback_template_collects_fixture_ready_context() -> None:
