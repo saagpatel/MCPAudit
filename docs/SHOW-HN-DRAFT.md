@@ -27,6 +27,11 @@ Show HN: MCPAudit – do you actually know what your MCP servers can access?
 https://github.com/saagpatel/MCPAudit
 ```
 
+**Visual:** the repo README already embeds the connected public-fixture GIF at
+`docs/assets/hero-scan.gif`, plus the zero-touch config-only preview at
+`docs/assets/mcp-audit-config-only-scan.png`. Submit the repo URL and let the
+landing page carry the visuals; keep the first comment text-only.
+
 **First comment** (HN convention: author posts context as the first comment):
 
 ```text
@@ -233,7 +238,8 @@ End-to-end trust packet:
 ## C. Posting notes
 
 - **Submit the repo as the URL**, not a blog link — Show HN favors the thing
-  itself. Drop the first comment immediately after submitting.
+  itself. The README now carries the connected `docs/assets/hero-scan.gif` demo
+  and zero-touch preview image. Drop the first comment immediately after submitting.
 - **Time it** for a US-morning weekday (≈ 8–10am ET) for the best front-page
   window; avoid Fri/weekend.
 - **Reuse, don't fork, the ask.** The install + report command and redaction

@@ -105,6 +105,10 @@ deliberately offline-first.
 **Posting notes:**
 - Submit the **repo** as the URL (Show HN favors the thing itself); drop the body as the
   first comment immediately after.
+- The README now has both visuals ready: the connected `docs/assets/hero-scan.gif`
+  for the real tool-schema / SSRF story, and the zero-touch
+  `docs/assets/mcp-audit-config-only-scan.png` preview for the no-spawn/no-network
+  safety story. Let the repo landing page carry the image; keep the first comment text-only.
 - Time it for a US-morning weekday (~8–10am ET); avoid Fri/weekend.
 - Stay in the thread. Answer heuristic/threat-model questions plainly; route security-
   sensitive false-negative reports to the `SECURITY.md` private-disclosure path, not a
@@ -165,8 +169,10 @@ Safe field-report example: https://github.com/saagpatel/MCPAudit/blob/main/docs/
 **Posting notes:**
 - LinkedIn favors a strong first line above the "…see more" fold — the opening hook is
   written for that.
-- Pair with a short demo GIF (see `DEMO-ASSETS.md`) recorded against a **synthetic
-  sandbox config**, never a real workstation.
+- Pair with the connected hero GIF already in the README:
+  `docs/assets/hero-scan.gif`. It is recorded from the curated public
+  `docs/assets/hero-demo-config.json` fixture (`fetch`, `sequential-thinking`, `time`),
+  not a real workstation.
 - Keep the "early / honest / pre-beta" line in — it builds more trust with this audience
   than a polished pitch, and it matches the project's actual posture.
 
@@ -215,9 +221,8 @@ and you'll have a full business day for the post to mature.
 - **Be present for 3–4 hours after posting.** Reply to every substantive question fast;
   early engagement velocity is most of the ranking signal.
 - **Pre-flight checklist:** account can comment immediately (enough karma), first
-  comment is copy-paste ready, README hero looks sharp (✓ done), and the demo GIF is
-  embedded in the README (record via `DEMO-ASSETS.md` first if possible — a visible GIF
-  lifts Show HN conversion noticeably).
+  comment is copy-paste ready, README hero looks sharp (✓ done), and the connected demo
+  GIF is embedded in the README at `docs/assets/hero-scan.gif` (✓ done).
 - **If it doesn't catch in ~2 hours:** HN has a moderator "second-chance" pool — you can
   email `hn@ycombinator.com` with a one-line context note, or do **one** clean repost
   after a cooling-off period using title **C** (the supply-chain angle). One repost max;

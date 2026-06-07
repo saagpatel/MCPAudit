@@ -177,6 +177,8 @@ def test_external_outreach_messages_are_safe_and_actionable() -> None:
     assert "docs/FIELD-REPORTS.md#minimal-public-example" in show_hn
     assert "docs/FIELD-REPORTS.md#minimal-public-example" in trust_packet
     assert "`--redact` is live (1.13.1)." in show_hn
+    assert "docs/assets/hero-scan.gif" in show_hn
+    assert "docs/assets/mcp-audit-config-only-scan.png" in show_hn
     assert "docs/MCP-TRUST-PACKET.md" in text
     assert "MCPAudit is the trust wedge" in text
     assert "mcpforge" in trust_packet

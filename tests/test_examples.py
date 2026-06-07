@@ -143,6 +143,10 @@ def test_external_launch_checklist_links_credible_public_path() -> None:
     assert "## 1. Show HN / r/mcp" in launch_posts
     assert "## 2. LinkedIn" in launch_posts
     assert "Title A/B + posting-time plan" in launch_posts
+    assert "docs/assets/hero-scan.gif" in launch_posts
+    assert "docs/assets/mcp-audit-config-only-scan.png" in launch_posts
+    assert "record via `DEMO-ASSETS.md` first if possible" not in launch_posts
+    assert "not a real workstation" in launch_posts
 
 
 def test_hero_recording_recipe_is_public_and_scoped() -> None:
