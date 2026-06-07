@@ -59,6 +59,11 @@ mcp-audit scan --config examples/configs/popular-public-servers.json --config-on
   documented Action, and screenshot the **Security → Code scanning** alerts view showing
   `MCPxxx` rule IDs.
 - Reinforces "gate MCP configs like dependencies." Pairs with the LinkedIn post.
+- Produced asset note: `docs/assets/ci-sarif.png` is API-backed because the automated
+  browser was not authenticated for the GitHub Security tab. It was generated after a
+  real GitHub code-scanning SARIF upload for `tool:mcp-audit` on `main`, with 12 open
+  alerts on `examples/configs/popular-public-servers.json` and visible `MCP001`–`MCP003`
+  rule IDs.
 
 **`policy-gate.gif`** — a CI policy gate failing on purpose.
 - `mcp-audit scan --config examples/configs/popular-public-servers.json --config-only --skip-connect --policy examples/policies/ci-strict.yaml`
@@ -101,6 +106,8 @@ Produced:
   from the curated fixture.
 - `docs/assets/hero-scan.gif` — connected scan GIF recorded from `docs/assets/hero.tape`
   against the curated public fixture.
+- `docs/assets/ci-sarif.png` — GitHub code-scanning proof image generated from live
+  code-scanning API data after uploading SARIF from the public fixture scan.
 
 ---
 

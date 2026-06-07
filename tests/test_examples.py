@@ -45,6 +45,7 @@ MCP_TRUST_PACKET = Path("docs/MCP-TRUST-PACKET.md")
 LAUNCH_POSTS = Path("launch-posts.md")
 CONFIG_ONLY_SCAN_ASSET = Path("docs/assets/mcp-audit-config-only-scan.png")
 HERO_SCAN_GIF = Path("docs/assets/hero-scan.gif")
+CI_SARIF_ASSET = Path("docs/assets/ci-sarif.png")
 HERO_DEMO_CONFIG = Path("docs/assets/hero-demo-config.json")
 HERO_TAPE = Path("docs/assets/hero.tape")
 
@@ -125,6 +126,10 @@ def test_external_launch_checklist_links_credible_public_path() -> None:
     assert HERO_SCAN_GIF.exists()
     assert HERO_SCAN_GIF.stat().st_size > 0
     assert "docs/assets/hero-scan.gif" in readme
+    assert CI_SARIF_ASSET.exists()
+    assert CI_SARIF_ASSET.stat().st_size > 0
+    assert "docs/assets/ci-sarif.png" in readme
+    assert "MCPxxx" in readme
     assert "docs/assets/hero-demo-config.json" in demo_assets
     assert HERO_TAPE.exists()
     hero_tape = HERO_TAPE.read_text()
@@ -165,6 +170,8 @@ def test_hero_recording_recipe_is_public_and_scoped() -> None:
     assert "docs/assets/hero-demo-config.json" in demo_assets
     assert "docs/assets/hero.tape" in demo_assets
     assert "fetch`, `sequential-thinking`, `time" in demo_assets
+    assert "docs/assets/ci-sarif.png" in demo_assets
+    assert "tool:mcp-audit" in demo_assets
 
 
 def test_stale_pin_review_examples_are_read_only() -> None:
