@@ -49,6 +49,10 @@ It stays read-only the whole time — it never edits a config and reports env-va
 
 > *Sample output with illustrative public server names. Higher risk = a broader surface to sandbox, **not** "malicious." Want a zero-touch pass first? Add `--skip-connect` to reason purely from your config — no servers spawned, no network calls. Stack `--trifecta-check` or `--shadow-check` alongside `--ssrf-check` to hunt more attack surfaces, and `--json` / `--sarif` / `--html` to pipe results into CI or a dashboard.*
 
+Zero-touch preview against the bundled public fixture:
+
+![mcp-audit config-only scan preview](docs/assets/mcp-audit-config-only-scan.png)
+
 Install it permanently once you're hooked:
 
 ```bash

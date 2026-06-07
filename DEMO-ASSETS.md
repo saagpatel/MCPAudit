@@ -88,6 +88,10 @@ embeds; the report is already redaction-aware.
 **`terminal-static.png`** — a clean still of the risk table for the PyPI page (PyPI
 renders the README but not animated GIFs reliably, so a static fallback helps).
 
+Produced:
+- `docs/assets/mcp-audit-config-only-scan.png` — static zero-touch preview generated
+  from the bundled public config with `--config-only --skip-connect`.
+
 ---
 
 ## Notes for whoever records these
