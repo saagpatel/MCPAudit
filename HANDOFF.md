@@ -81,7 +81,8 @@
 - `python scripts/launch_preflight.py --skip-git --print-hn-copy` passed, including
   current-head GitHub Actions checks, 8 public README / asset URL checks, PyPI JSON/simple
   checks, refreshed `uvx` package smoke, and printed the HN submit page plus URL/title/comment.
-- GitHub `main` checks are green for CI, Self Audit, and CodeQL on `a60a06c`.
+- GitHub `main` checks are green for CI, Self Audit, and CodeQL on the latest
+  published `main` head.
 - Share-safe packet smoke pass confirmed README, launch posts, Show HN draft, external outreach,
   field-report docs, trust packet, demo asset plan, and local preview image keep the public
   field-report path on `--skip-connect --json ... --redact`.
