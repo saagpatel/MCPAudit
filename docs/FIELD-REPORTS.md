@@ -1,9 +1,11 @@
 # MCPAudit Field Reports
 
-MCPAudit `1.5.5` has a field-report lane for redacted setup evidence,
+MCPAudit `1.13.0` has a field-report lane for redacted setup evidence,
 consumer-contract hardening, and external beta-readiness intake. This lane
 remains config-only by default: collect shape and output evidence without
 spawning MCP servers, contacting remote endpoints, or storing credential values.
+Use `--redact` for public reports so hostname, home-path usernames, and server
+names are scrubbed from shared artifacts.
 
 Tracked milestone: <https://github.com/saagpatel/MCPAudit/milestone/3>
 External evidence milestone:
@@ -57,11 +59,14 @@ External field reports should start with config-only output:
 
 ```bash
 mcp-audit --version
-mcp-audit scan --skip-connect --json mcp-audit-field-report.json
+mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
 ```
 
 This mode avoids spawning stdio servers and avoids contacting remote HTTP/SSE
-endpoints. A useful report includes:
+endpoints. `--redact` scrubs hostname, home-path usernames, and server names
+from JSON/SARIF/HTML artifacts; contributors still need to review for credential
+values, internal hostnames, private URLs, and proprietary prompt/tool/schema
+text before posting publicly. A useful report includes:
 
 - MCPAudit version, operating system, client names, and approximate server
   count;

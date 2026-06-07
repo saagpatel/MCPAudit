@@ -27,9 +27,9 @@ report should include:
 
 The dedicated field-report issue template narrows this process for beta
 readiness. It asks for config-only output produced with
-`mcp-audit scan --skip-connect --json mcp-audit-field-report.json`, plus the
-setup shape and downstream consumer context needed to turn safe external reports
-into fixtures.
+`mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact`,
+plus the setup shape and downstream consumer context needed to turn safe
+external reports into fixtures.
 
 ## Fixture Targets
 

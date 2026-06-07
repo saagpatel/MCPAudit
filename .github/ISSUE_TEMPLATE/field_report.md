@@ -22,8 +22,13 @@ This avoids spawning MCP servers and avoids contacting remote endpoints.
 
 ```bash
 mcp-audit --version
-mcp-audit scan --skip-connect --json mcp-audit-field-report.json
+mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
 ```
+
+`--redact` scrubs hostname, home-path usernames, and server names from the
+shared report. Still review the output before posting: credential values,
+internal hostnames, private URLs, and proprietary prompt/tool/schema text do
+not belong in public issues.
 
 If you need to share connected scan output, use private disclosure in
 `SECURITY.md` first when the report includes sensitive server metadata,

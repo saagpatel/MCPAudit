@@ -1,48 +1,52 @@
 # HANDOFF — MCPAudit
 
-**Status:** Complete. All work merged + released. Working tree clean.
-**Branch:** `main` @ `6875f88` (0 ahead / 0 behind origin). No stale branches.
-**Latest on PyPI:** `1.11.0` (verified on simple index).
+**Status:** v1.13.0 is released and live. Current local work is a release-packet/docs refresh.
+**Branch:** `main` @ `7945cf4` (in sync with origin before local docs edits). No stale branches.
+**Latest on PyPI:** `1.13.0` (verified live: JSON API + simple index; wheel + sdist present).
 
 ## Completed this session
-- **1.9.0** — drop-in adoption: composite GitHub Action (`uses: saagpatel/MCPAudit@v1.11.0`),
-  pre-commit hook (`.pre-commit-hooks.yaml`), repo-local `.mcp.json` discovery, self-audit
-  dogfood. Fixed: empty scan now writes `--json`/`--sarif`/`--html` artifacts. (#107)
-- **1.10.0** — unified `pin --refresh` (surfaces escalation + provenance deltas) +
-  launch-artifact integrity `--integrity-check` / MCP024 (on-disk binary/script hash). (#108)
-- **1.11.0** — registry package verification `--verify-artifacts` / MCP025 (network-gated
-  npm/PyPI published-hash check), opt-in `--ssrf-allowlist`, per-server pin-staleness warnings. (#110)
-- **Docs** — OUTPUT-CONTRACT rule-ID registry brought current through MCP025. (#109)
-
-## In Progress / Blocked
-- Nothing in progress. All PRs merged + tagged + released; working tree clean.
-- BLOCKED (roadmap-gated, do NOT build without external field reports #83/#84/#85):
-  composite-scoring (fold `non_tool_risk` into `risk_score.composite`) + default SSRF
-  severity downgrade. Operator chose opt-in `--ssrf-allowlist` instead (shipped 1.11.0).
-
-## Next Steps
-- Next detection frontier: extend `--verify-artifacts` to **download-and-hash the resolved
-  artifact** (truest verification) vs today's registry-published-hash compare.
-- Otherwise maintenance: keep scanner + output contracts stable; gate behavior changes
-  behind fixtures/sample-scan assertions.
+- **1.13.0 shipped** — `scan --redact` field-report mode:
+  scrubs hostname, home-path usernames, and server names from `--json`/`--sarif`/`--html`
+  artifacts so config-only reports are safer to share publicly. (#121)
+- **1.13.0 docs follow-up** — README, external request packet, outreach copy, and Show HN
+  draft now include `--redact` in the canonical field-report command. (#122)
+- **1.12.0 field-scan evidence remains current historical evidence** — popular public
+  server sample config + solo evidence show MCP025/MCP026 package verification worked
+  against real npm/PyPI packages; it still does not replace external reports. (#117)
 
 ## Key Decisions
-- All detectors additive + opt-in; **never** touch `risk_score.composite`.
-- `--verify-artifacts` is the only networked path besides `--llm-analysis`; offline-first by default.
-- Registry verification keys by exact `package@version`; a version *float* is provenance's job (MCP021).
-- SSRF allowlist suppresses only FIXED non-templated hosts — never caller-controlled targets.
+- `--redact` is opt-in and only affects file artifacts; terminal output keeps local values
+  readable for the operator.
+- Field-report docs should lead with `scan --skip-connect --json mcp-audit-field-report.json --redact`.
+  The checklist stays the backstop for credential values and proprietary prompt/tool/schema text.
+- Do not claim beta: issues #83/#84/#85 still require two accepted external redacted reports.
+- Keep `risk_score.composite` unchanged unless repeatable external fixture evidence justifies it.
 
-## Key Files (session)
-- New: `src/mcp_audit/{integrity,pkgverify}.py`, `action.yml`, `.pre-commit-hooks.yaml`,
-  `.github/workflows/self-audit.yml`, `docs/{INTEGRITY,PACKAGE}-*.md`,
-  `tests/test_{integrity,pkgverify,distribution}.py`.
-- **Additive-detector wiring checklist** (touch all, then regen):
-  `models.py` + `taxonomy.py` + `<detector>.py` + `cli.py` + `sarif.py` + `report.py` +
-  `policy.py` + `server.py` + `htmlreport.py` + `pinning.py` → regen
-  `output_contract_snapshot.json` + `audit-report.schema.json`.
+## In Progress / Blocked
+- Current local refresh updates the handoff, field-report template/docs, current-state notes,
+  and doc tests so the share packet consistently points contributors at `--redact`.
 
-## Verify bar
-`uv run pytest` (540) ; `uv run mypy .` (whole tree — CI checks tests/) ; `uv run ruff check .` ;
-`ruff format --check src/ tests/` ; `uv run python tests/validation/validate_patterns.py` ;
-`uv lock --check` ; `uv build`. Release: tag `vX.Y.Z` → publish.yml OIDC → PyPI; verify simple
-index BEFORE logging SHIPPED.
+## Next Steps
+- If publishing a share packet externally, note that PyPI 1.13.0's rendered README was built
+  from the tag before #122; GitHub `main` has the safer `--redact` ask.
+- Recruit two external reporters via `docs/EXTERNAL-FIELD-REPORT-REQUEST.md` / Show HN draft,
+  then triage #83/#84/#85.
+
+## Verification
+- `uv run pytest tests/test_issue_templates.py` passed.
+- `uv run pytest` passed (586 tests).
+- `uv run ruff check` passed.
+- `uv run mypy .` passed.
+- `git diff --check` passed.
+
+## Files Changed
+- Release-packet refresh expected files:
+  `HANDOFF.md`, `.github/ISSUE_TEMPLATE/field_report.md`, `docs/FIELD-REPORTS.md`,
+  `docs/FEEDBACK-TO-FIXTURES.md`, `AGENTS.md`, `CLAUDE.md`, `.pre-commit-hooks.yaml`,
+  and `tests/test_issue_templates.py`.
+
+## Gotcha
+- `scan --config-only` means "only this config file" — it does NOT skip connection. Add
+  `--skip-connect` to avoid spawning servers.
+- PyPI package version is live at `1.13.0`, but PyPI's long description may lag the post-tag
+  README docs fix until the next publish/metadata refresh path.

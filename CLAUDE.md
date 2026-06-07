@@ -47,8 +47,8 @@ A Python CLI tool that scans locally configured MCP servers across Claude Deskto
 
 ## Current State
 
-**Stable 1.12.0 maintenance**
-The codebase now includes discovery, config-only scans, connected tool/prompt/resource enumeration, permission scoring, prompt-injection checks, SSRF detection, fleet-aware lethal-trifecta and cross-server tool-name shadowing detection, over-time capability-escalation and launch-config/provenance drift detection (vs pin baselines), launch-artifact integrity detection (on-disk hash drift), registry package verification (npm/PyPI published-hash check), byte-level artifact verification (downloaded bytes vs registry and baseline), schema pinning/drift checks, terminal/JSON/SARIF/HTML output, watch mode, MCP server exposure, overrides, policy gates, and optional LLM-assisted classification. Treat older roadmap phase labels as historical unless they match the current code.
+**Stable 1.13.0 maintenance**
+The codebase now includes discovery, config-only scans, connected tool/prompt/resource enumeration, permission scoring, prompt-injection checks, SSRF detection, fleet-aware lethal-trifecta and cross-server tool-name shadowing detection, over-time capability-escalation and launch-config/provenance drift detection (vs pin baselines), launch-artifact integrity detection (on-disk hash drift), registry package verification (npm/PyPI published-hash check), byte-level artifact verification (downloaded bytes vs registry and baseline), field-report redaction, schema pinning/drift checks, terminal/JSON/SARIF/HTML output, watch mode, MCP server exposure, overrides, policy gates, and optional LLM-assisted classification. Treat older roadmap phase labels as historical unless they match the current code.
 
 ## Stack
 

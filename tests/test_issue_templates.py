@@ -9,6 +9,9 @@ FIELD_REPORT_DOC = Path("docs/FIELD-REPORTS.md")
 FIELD_REPORT_REQUEST_DOC = Path("docs/EXTERNAL-FIELD-REPORT-REQUEST.md")
 FIELD_REPORT_OUTREACH_DOC = Path("docs/EXTERNAL-OUTREACH-MESSAGES.md")
 SOLO_EVIDENCE_DOC = Path("docs/SOLO-EVIDENCE.md")
+FIELD_REPORT_COMMAND = (
+    "mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact"
+)
 
 
 def test_feedback_template_collects_fixture_ready_context() -> None:
@@ -59,7 +62,8 @@ def test_field_report_template_collects_config_only_external_evidence() -> None:
     text = FIELD_REPORT_TEMPLATE.read_text()
 
     assert "Redacted field report" in text
-    assert "mcp-audit scan --skip-connect --json mcp-audit-field-report.json" in text
+    assert FIELD_REPORT_COMMAND in text
+    assert "`--redact` scrubs hostname" in text
     assert "MCPAudit version" in text
     assert "Approximate server count" in text
     assert "JSON/SARIF consumer compatibility check" in text
@@ -90,7 +94,8 @@ def test_field_report_docs_track_external_intake_and_beta_bar() -> None:
     readme = Path("README.md").read_text()
 
     assert "## External Intake Path" in doc
-    assert "mcp-audit scan --skip-connect --json mcp-audit-field-report.json" in doc
+    assert FIELD_REPORT_COMMAND in doc
+    assert "`--redact` scrubs hostname" in doc
     assert ".github/ISSUE_TEMPLATE/field_report.md" in doc
     assert "## Fixture Acceptance Bar" in doc
     assert "at least two external redacted reports" in doc
@@ -122,7 +127,8 @@ def test_field_report_docs_track_external_intake_and_beta_bar() -> None:
 def test_external_field_report_request_is_safe_and_actionable() -> None:
     text = FIELD_REPORT_REQUEST_DOC.read_text()
 
-    assert "mcp-audit scan --skip-connect --json mcp-audit-field-report.json" in text
+    assert FIELD_REPORT_COMMAND in text
+    assert "`--redact` auto-scrubs" in text
     assert "does not spawn MCP servers or contact remote endpoints" in text
     assert "issues/new?template=field_report.md" in text
     assert "Do not include" in text
@@ -143,6 +149,10 @@ def test_external_outreach_messages_are_safe_and_actionable() -> None:
     assert "Direct Ask For Second Tester" in text
     assert "Public Post" in text
     assert "scan --skip-connect" in text
+    assert FIELD_REPORT_COMMAND in text
+    assert FIELD_REPORT_COMMAND in readme
+    assert FIELD_REPORT_COMMAND in field_reports
+    assert FIELD_REPORT_COMMAND in request
     assert "should not spawn MCP servers or contact remote endpoints" in text
     assert "meaningfully different setup or consumer path" in text
     assert "credentials, private paths" in text
