@@ -69,7 +69,7 @@ A connected scan (add `--pin` to establish a baseline, then `--pin-check` on sub
 
 ```shell
 # Install
-uv tool install mcp-permission-audit
+uv tool install mcp-audits
 
 # Run the same scan
 mcp-audit scan \

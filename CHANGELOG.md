@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-06-07
+
+### Changed
+
+- **Distribution rename:** PyPI package is now `mcp-audits` (was `mcp-permission-audit`).
+  The CLI command (`mcp-audit`), import package (`mcp_audit`), and all behavior are
+  unchanged. Existing installs of `mcp-permission-audit` continue to work; future
+  releases will only publish to `mcp-audits`. Update your install path:
+  `uv tool install mcp-audits` / `pip install mcp-audits`.
+
 ## [1.13.1] - 2026-06-07
 
 ### Changed

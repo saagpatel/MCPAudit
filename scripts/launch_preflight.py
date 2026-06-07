@@ -14,7 +14,7 @@ import urllib.request
 from pathlib import Path
 
 REPO = "saagpatel/MCPAudit"
-PACKAGE_NAME = "mcp-permission-audit"
+PACKAGE_NAME = "mcp-audits"
 COMMAND_NAME = "mcp-audit"
 EXPECTED_WORKFLOWS = {"CI", "Self Audit", "CodeQL"}
 TITLE = "Show HN: mcp-audit \u2013 see what your MCP servers can actually touch"

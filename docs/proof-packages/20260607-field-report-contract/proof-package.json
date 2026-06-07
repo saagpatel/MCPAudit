@@ -1,0 +1,120 @@
+{
+  "schema_version": "proof-package.v1",
+  "package_id": "20260607-mcpaudit-field-report-contract",
+  "subject": {
+    "repo": "MCPAudit",
+    "lane": "field-report-intake",
+    "claim": "MCPAudit has a redacted config-only field-report contract with schema-backed consumer fixtures."
+  },
+  "producer": {
+    "repo": "MCPAudit",
+    "mode": "read-only",
+    "commands": [
+      "mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact"
+    ]
+  },
+  "source_state": {
+    "generated_at": "2026-06-07T00:00:00Z",
+    "git_branch": "main",
+    "git_status": "clean",
+    "freshness_window_hours": 168
+  },
+  "claims": [
+    {
+      "id": "output-contract-documented",
+      "statement": "The JSON report output contract documents stable top-level fields and additive 1.x compatibility rules.",
+      "status": "passed",
+      "evidence": [
+        "output-contract"
+      ]
+    },
+    {
+      "id": "field-report-safety-boundary",
+      "statement": "Field-report intake is config-only by default and tells contributors to use redaction before sharing public evidence.",
+      "status": "passed",
+      "evidence": [
+        "field-reports-doc",
+        "field-report-template"
+      ]
+    },
+    {
+      "id": "redacted-field-fixture",
+      "statement": "A redacted mixed field-report fixture exists and preserves status counts plus config-health finding structure.",
+      "status": "passed",
+      "evidence": [
+        "mixed-field-fixture"
+      ]
+    },
+    {
+      "id": "schema-backed-consumer-contract",
+      "statement": "The checked-in audit-report schema and consumer examples provide a machine-readable contract for downstream ingestion.",
+      "status": "passed",
+      "evidence": [
+        "json-schema",
+        "consumer-readme"
+      ]
+    }
+  ],
+  "verification": {
+    "overall": "passed",
+    "checks": [
+      {
+        "name": "docs and fixture surfaces inspected",
+        "status": "passed"
+      }
+    ],
+    "missing_receipts": [],
+    "known_gaps": [
+      "This package proves the field-report contract shape, not that two new external redacted reports have arrived."
+    ]
+  },
+  "safety": {
+    "redaction": "required-for-public-field-reports",
+    "secrets_checked": true,
+    "live_write_performed": false
+  },
+  "artifacts": [
+    {
+      "id": "output-contract",
+      "kind": "repo-doc",
+      "path": "../../OUTPUT-CONTRACT.md",
+      "description": "Stable MCPAudit output contract.",
+      "required": true
+    },
+    {
+      "id": "field-reports-doc",
+      "kind": "repo-doc",
+      "path": "../../FIELD-REPORTS.md",
+      "description": "Field-report intake and safety boundary.",
+      "required": true
+    },
+    {
+      "id": "field-report-template",
+      "kind": "issue-template",
+      "path": "../../../.github/ISSUE_TEMPLATE/field_report.md",
+      "description": "Public redacted field-report GitHub issue template.",
+      "required": true
+    },
+    {
+      "id": "mixed-field-fixture",
+      "kind": "json-fixture",
+      "path": "../../../tests/fixtures/reports/field/mixed_config_report.json",
+      "description": "Redacted mixed config-only field-report fixture.",
+      "required": true
+    },
+    {
+      "id": "json-schema",
+      "kind": "json-schema",
+      "path": "../../../examples/schemas/audit-report.schema.json",
+      "description": "Generated report schema checked against the live model.",
+      "required": true
+    },
+    {
+      "id": "consumer-readme",
+      "kind": "repo-doc",
+      "path": "../../../examples/consumers/README.md",
+      "description": "Consumer examples for parsed report summaries.",
+      "required": true
+    }
+  ]
+}
