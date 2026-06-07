@@ -36,12 +36,12 @@ in my config actually do, and did the packages they launch change under me?"
 So I wrote MCPAudit.
 
 It's a Python CLI that reads the MCP server configs already on your machine
-and reports on them. The default path is offline and read-only: it never
+and reports on them. The safe first-run path is offline and read-only: it never
 modifies a config file, and with --skip-connect it doesn't spawn or connect to
 anything — it reasons purely from the config. It only reports env-var key
-names, never values. A connected scan (opt-in) spawns the servers to read
-their real tool schemas; networked package verification and LLM analysis are
-both separate opt-in flags.
+names, never values. Dropping --skip-connect runs a connected scan that spawns
+servers to read their real tool schemas; networked package verification and
+LLM analysis are both separate opt-in flags.
 
 The ask, up front: before I put a "beta" label on this I want two external,
 redacted, config-only field reports from setups that aren't mine. If you run
@@ -123,10 +123,10 @@ I wanted a fast, boring answer to two questions:
 2. Did the packages behind them change under me since I last looked?
 
 So I built **MCPAudit** — a Python CLI that reads the MCP configs already on
-your machine and tells you. It's deliberately offline-first and read-only by
-default: it never edits a config, it reports env-var *key names* and never
-their values, and its baseline mode (`--skip-connect`) doesn't spawn or
-contact anything at all.
+your machine and tells you. It's deliberately offline-first and read-only on
+the safe first-run path: it never edits a config, it reports env-var *key
+names* and never their values, and its baseline mode (`--skip-connect`) doesn't
+spawn or contact anything at all.
 
 #### What it checks
 

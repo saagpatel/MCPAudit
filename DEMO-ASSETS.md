@@ -9,20 +9,22 @@ output yourself before publishing.
 A live scan of your real machine can expose your installed MCP servers, file paths,
 credential key names, and infra. **Do not record against your real config.** Record
 every asset below against the repo's bundled public config so the demo is reproducible
-and leaks nothing:
+and does not expose your workstation configs:
 
 ```bash
-# Safe, public, in-repo target — no real workstation data
+# Safe, public, in-repo target; no real workstation configs, no servers spawned
 mcp-audit scan --config examples/configs/popular-public-servers.json --config-only --skip-connect
 ```
 
 - Use `--config examples/configs/popular-public-servers.json --config-only` for every
-  shot so only the public sample servers appear.
+  shot so workstation-discovered configs never appear. Add `--skip-connect` unless the
+  shot is explicitly a reviewed connected-scan demo.
 - Before publishing any frame, scrub for: home paths (`/Users/...`, `/home/...`,
   `C:\Users\...`), hostnames, real server names, tokens/keys, and your shell prompt
   (set a neutral prompt like `PS1='$ '` or use a clean recording profile).
 - For any connected/network shots, prefer `--redact` on file output and review the
-  artifact before it leaves your machine.
+  artifact before it leaves your machine. Connected scans may start package-runner
+  commands from the sample config and contact configured HTTP endpoints.
 - Suggested tools: [`asciinema`](https://asciinema.org/) + [`agg`](https://github.com/asciinema/agg)
   for crisp terminal GIFs (selectable text, small files), or `vhs` for scripted,
   repeatable captures. Target a readable terminal width (~100 cols) and font size.
@@ -35,9 +37,10 @@ mcp-audit scan --config examples/configs/popular-public-servers.json --config-on
 README hero sample.
 - Show typing: `uvx --from mcp-permission-audit mcp-audit scan --config examples/configs/popular-public-servers.json --config-only --ssrf-check`
 - `--config ... --config-only` scopes the scan to **only** the bundled public config, so
-  your real configs never appear. Dropping `--skip-connect` lets it connect to those
-  public sample servers and enumerate real tool schemas (that's what fills the table and
-  the SSRF section). Still leaks nothing about your machine — the servers are public.
+  your real configs never appear. Leaving off `--skip-connect` makes this a connected
+  demo: MCPAudit may start the public sample package commands and contact configured
+  endpoints to enumerate tool schemas (that's what fills the table and the SSRF section).
+  Review the captured output before publishing even though the input fixture is public.
 - Capture the summary panel + the per-server risk table rendering (the colored Risk
   column is the payoff — red high-risk, yellow mid, green low) + the SSRF Warnings block.
 - ~8–12 seconds. Loop-friendly. This is the single most important asset.
@@ -48,20 +51,21 @@ README hero sample.
 ## Priority 2 — the SARIF / CI story (security-team audience)
 
 **`ci-sarif.png`** (or short GIF) — `mcp-audit` findings inside GitHub code scanning.
-- Run the scan with `--sarif mcp-audit.sarif` against the public config, upload via the
+- Run the scan with `--skip-connect --sarif mcp-audit.sarif` against the public config, upload via the
   documented Action, and screenshot the **Security → Code scanning** alerts view showing
   `MCPxxx` rule IDs.
 - Reinforces "gate MCP configs like dependencies." Pairs with the LinkedIn post.
 
 **`policy-gate.gif`** — a CI policy gate failing on purpose.
-- `mcp-audit scan --config examples/configs/popular-public-servers.json --config-only --policy examples/policies/ci-strict.yaml`
+- `mcp-audit scan --config examples/configs/popular-public-servers.json --config-only --skip-connect --policy examples/policies/ci-strict.yaml`
 - Show the terminal output + the non-zero exit (`echo $?` → `2`). Demonstrates the
   enforcement path in a few seconds.
 
 ## Priority 3 — flagship detector spotlights (r/mcp + docs)
 
 **`ssrf-check.gif`** — `--ssrf-check` flagging a caller-controllable fetch tool.
-- Add `--ssrf-check` to the base command; capture the **SSRF Warnings** section.
+- Use a reviewed connected scan with `--ssrf-check`; capture the **SSRF Warnings**
+  section. Keep this separate from the zero-touch config-only recording path.
 
 **`trifecta-check.gif`** — `--trifecta-check` lighting up the lethal-trifecta / toxic-flow
 surface (per-server HIGH and/or fleet-level advisory).

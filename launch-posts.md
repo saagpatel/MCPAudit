@@ -42,17 +42,18 @@ session and the next. I wanted a fast, boring answer to two questions:
   2. Did the packages behind them change since I last looked?
 
 So I built mcp-audit. It's a Python CLI that reads the MCP configs already on your
-machine and reports on them. The default path is deliberately offline and read-only:
-it never edits a config, it reports env-var KEY NAMES only (never values), and with
---skip-connect it doesn't spawn or contact anything — it reasons purely from the
-config. Connecting to read real tool schemas, networked package verification, and LLM
-analysis are each separate opt-in flags.
+machine and reports on them. The safe first-run path is deliberately offline and
+read-only: it never edits a config, it reports env-var KEY NAMES only (never values),
+and with --skip-connect it doesn't spawn or contact anything — it reasons purely from
+the config. Dropping --skip-connect gives you a connected scan that reads real tool
+schemas; networked package verification and LLM analysis are separate opt-in flags.
 
 Zero-install, config-only, in one line:
 
     uvx --from mcp-permission-audit mcp-audit scan --skip-connect
 
-What it checks, all offline and deterministic unless noted:
+What it checks, with config-only coverage where possible and explicit connected modes
+where schemas or live metadata are required:
   - Permission/capability inference per server (file read/write, network, shell,
     destructive, exfiltration) — so you know what to sandbox.
   - Prompt-injection patterns in tool / prompt / resource text.
@@ -134,7 +135,7 @@ whether the packages behind it changed since they were last approved.
 What makes it safe to run on a real workstation:
  → Read-only by default. It never edits a config. It reports environment-variable
    KEY NAMES only — never their values.
- → A zero-touch config-only mode (--skip-connect) that doesn't spawn a server or
+ → A safe first-run config-only mode (--skip-connect) that doesn't spawn a server or
    touch the network at all. Connected scans, package verification, downloads, and
    LLM analysis make their extra reach explicit in the command.
 
@@ -168,3 +169,70 @@ Safe field-report example: https://github.com/saagpatel/MCPAudit/blob/main/docs/
   sandbox config**, never a real workstation.
 - Keep the "early / honest / pre-beta" line in — it builds more trust with this audience
   than a polished pitch, and it matches the project's actual posture.
+
+---
+
+## 3. Title A/B + posting-time plan
+
+The title is the entire top of the funnel, and HN's ranking is velocity-sensitive —
+the first hour of upvotes-per-time decides whether you hit the front page. Pick one
+title, lead with it, and hold the others as a documented second-chance fallback.
+
+### Show HN title variants (HN caps titles at 80 chars; must start with `Show HN:`)
+
+| # | Title | Chars | Angle |
+|---|-------|-------|-------|
+| **A** ⭐ | `Show HN: mcp-audit – see what your MCP servers can read, run, and reach` | 71 | Plain + concrete. "read, run, reach" maps to file/shell/network. HN-safe, no hype. |
+| **B** | `Show HN: Do you actually know what your MCP servers can access?` | 63 | Curiosity gap; mirrors the README hook. Higher CTR, slightly riskier (HN can read rhetorical titles as clickbait). |
+| C | `Show HN: Does your editor still run the MCP code you approved?` | 61 | Supply-chain / rug-pull angle. Best as a second-wave repost title if A/B stalls. |
+| D | `Show HN: An offline auditor for the MCP servers in your editor` | 62 | Plainest, lowest-curiosity, maximally HN-safe fallback. |
+
+**Recommendation:** lead with **A** (concrete, factual, names the tool — the form HN
+rewards). Hold **B** as the A/B alternate if you get a second-chance window. **C** is
+the title to use for a single legitimate repost later, since it sells a *different*
+story (drift/supply-chain) and won't read as spamming the same post.
+
+> Don't change the title mid-thread. "A/B" here means *across attempts*, not live —
+> HN doesn't allow meaningful title edits after votes land.
+
+### r/mcp title variants (no prefix; niche, friendly, technical is fine)
+
+- ⭐ `I built an offline auditor for MCP servers — permissions, injection, supply-chain drift`
+- `mcp-audit: see what every MCP server in your editor can actually do (offline, MIT)`
+- `I pointed an auditor at the most popular public MCP servers — here's what it found` (results-led; link `docs/FIELD-SCAN-POPULAR-SERVERS.md` in the body)
+
+### Posting-time plan (front-page window)
+
+HN ranking rewards fast early velocity, so post when the most of your audience is awake
+and you'll have a full business day for the post to mature.
+
+- **Primary slot:** **Tuesday or Wednesday, 8:00–9:30am ET.** Catches US-East morning +
+  US-West early risers + Europe afternoon, and leaves all day to climb.
+- **Avoid:** Monday (crowded `/newest` queue, inbox-clearing), Friday afternoon →
+  weekend (low traffic), and the **12–2pm ET** lunch lull.
+- **Submit the repo URL** (not a blog link), then paste the prepared first comment
+  within ~60 seconds — the body is what converts a click into an upvote.
+- **Be present for 3–4 hours after posting.** Reply to every substantive question fast;
+  early engagement velocity is most of the ranking signal.
+- **Pre-flight checklist:** account can comment immediately (enough karma), first
+  comment is copy-paste ready, README hero looks sharp (✓ done), and the demo GIF is
+  embedded in the README (record via `DEMO-ASSETS.md` first if possible — a visible GIF
+  lifts Show HN conversion noticeably).
+- **If it doesn't catch in ~2 hours:** HN has a moderator "second-chance" pool — you can
+  email `hn@ycombinator.com` with a one-line context note, or do **one** clean repost
+  after a cooling-off period using title **C** (the supply-chain angle). One repost max;
+  more reads as spam.
+
+### Channel stagger (don't split your own attention)
+
+You can only be in one thread at a time, and every channel needs live replies. Stagger
+across the week instead of firing all three at once:
+
+| Day | Channel | Title |
+|-----|---------|-------|
+| Tue/Wed AM | Hacker News | Show HN **A** |
+| Thu (9am–12pm ET) | r/mcp (+ r/LocalLLaMA) | r/mcp ⭐ variant |
+| Tue–Thu, your AM | LinkedIn | LinkedIn draft (§2) |
+
+Keep the cross-channel ask identical (install + `--skip-connect` one-liner) so every
+surface points at the same safe path; only the framing changes per audience.
