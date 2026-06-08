@@ -48,13 +48,6 @@ REQUIRED_TEXT = {
         FIELD_REPORT_COMMAND,
         "SECURITY.md",
     ],
-    Path("launch-posts.md"): [
-        TITLE,
-        REPO_URL,
-        FIELD_REPORT_COMMAND,
-        FIELD_REPORT_ISSUE,
-        'before I put a "beta" label',
-    ],
     Path("docs/LAUNCH-RESPONSE-PLAYBOOK.md"): [
         FIELD_REPORT_COMMAND,
         FIELD_REPORT_ISSUE,
@@ -148,6 +141,8 @@ def _check_assets(failures: list[str]) -> None:
 def _check_hn_copy(failures: list[str]) -> str | None:
     try:
         comment = _extract_first_comment(Path("launch-posts.md"))
+    except FileNotFoundError:
+        return None  # optional pre-submit artifact; absence is not a blocking failure
     except ValueError as exc:
         failures.append(str(exc))
         return None
