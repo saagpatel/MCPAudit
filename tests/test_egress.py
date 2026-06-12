@@ -6,7 +6,7 @@ import socket
 
 import pytest
 
-from mcp_audit.egress import EgressDetector
+from mcp_audit.egress import EgressDetector, _is_credential_token_set
 from mcp_audit.models import (
     CapabilityTarget,
     ClientType,
@@ -17,7 +17,7 @@ from mcp_audit.models import (
     ServerConfig,
     ToolInfo,
 )
-from mcp_audit.ssrf import SsrfDetector
+from mcp_audit.ssrf import SsrfDetector, _key_tokens
 from mcp_audit.taxonomy import egress_metadata
 
 
@@ -209,6 +209,36 @@ def test_non_credential_param_does_not_trigger_residual() -> None:
         resources=[ResourceInfo(uri="https://docs.internal.example/data")],
     )
     assert EgressDetector(allowlist={"internal.example"}).scan_server(audit) == []
+
+
+@pytest.mark.parametrize(
+    "param",
+    ["api_key", "apiKey", "accessKey", "secret_key", "authToken", "bearer", "credential", "apikey", "auth"],
+)
+def test_credential_param_names_are_detected(param: str) -> None:
+    assert _is_credential_token_set(_key_tokens(param))
+
+
+@pytest.mark.parametrize(
+    "param",
+    ["primary_key", "sort_key", "cache_key", "foreign_key", "registry_key", "partition_key", "query", "url"],
+)
+def test_identifier_key_params_are_not_credentials(param: str) -> None:
+    # A bare 'key' token is a credential only with a credential qualifier — '*_key' identifier
+    # params must not over-promote the trusted-destination residual from LOW to MEDIUM.
+    assert not _is_credential_token_set(_key_tokens(param))
+
+
+def test_identifier_key_param_keeps_residual_low() -> None:
+    # End-to-end: a 'primary_key' param on a multi-tenant allowlisted host stays LOW, not MEDIUM.
+    audit = _audit(
+        tools=[_tool("lookup", "Look up a row.", {"primary_key": {"type": "string"}})],
+        resources=[ResourceInfo(uri="https://api.anthropic.com/data")],
+    )
+    findings = EgressDetector(allowlist={"anthropic.com"}).scan_server(audit)
+    assert len(findings) == 1
+    assert findings[0].kind is EgressKind.TRUSTED_DESTINATION_RESIDUAL
+    assert findings[0].severity is EgressSeverity.LOW  # not elevated: primary_key is not a credential
 
 
 def test_userinfo_templated_resource_is_credential_bearing() -> None:

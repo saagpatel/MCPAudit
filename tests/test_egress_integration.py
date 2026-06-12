@@ -184,3 +184,65 @@ class TestPerServerAllowlistWiring:
         assert EgressKind.DESTINATION_OUTSIDE_ALLOWLIST not in kinds["trusted"]
         # The same host on a server without the per-server rule is still flagged.
         assert EgressKind.DESTINATION_OUTSIDE_ALLOWLIST in kinds["other"]
+
+
+class TestEgressSsrfSubstrate:
+    """``--egress-check`` runs SSRF as substrate; its findings must not leak unasked.
+
+    Regression guard: when SSRF was not explicitly requested it feeds egress only, so its
+    findings are dropped after consumption — they never surface in output or trip
+    fail_on.ssrf. Passing --ssrf-check restores them.
+    """
+
+    @staticmethod
+    def _caller_controlled_audit(name: str) -> ServerAudit:
+        return ServerAudit(
+            server=ServerConfig(name=name, client=ClientType.CLAUDE_DESKTOP, config_path="/test/config.json"),
+            connection_status="connected",
+            tools=[
+                ToolInfo(
+                    name="fetch_url",
+                    description="Fetch the contents of a URL.",
+                    input_schema={"type": "object", "properties": {"url": {"type": "string"}}},
+                )
+            ],
+        )
+
+    def _run(self, monkeypatch: pytest.MonkeyPatch, *, ssrf_check: bool) -> ServerAudit:
+        servers = [ServerConfig(name="s", client=ClientType.CLAUDE_DESKTOP, config_path="/test/config.json")]
+        monkeypatch.setattr(cli, "discover_all_configs", lambda clients: servers)
+        audit_for = self._caller_controlled_audit
+
+        class FakeConnector:
+            def __init__(self, timeout: float) -> None: ...
+
+            async def connect(self, srv: ServerConfig) -> ServerAudit:
+                return audit_for(srv.name)
+
+        monkeypatch.setattr(cli, "ServerConnector", FakeConnector)
+
+        report = anyio.run(
+            functools.partial(
+                cli._run_scan_core,
+                False,  # skip_connect
+                None,  # clients
+                10,  # timeout
+                None,  # extra_config
+                OverrideApplier(OverrideConfig()),
+                ssrf_check=ssrf_check,
+                egress_check=True,
+            )
+        )
+        return report.audits[0]
+
+    def test_substrate_ssrf_findings_not_surfaced(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        audit = self._run(monkeypatch, ssrf_check=False)
+        # SSRF ran (egress derived an unbounded finding from it) but its findings are dropped.
+        assert audit.ssrf_findings == []
+        assert any(f.kind is EgressKind.UNBOUNDED_EGRESS for f in audit.egress_findings)
+
+    def test_explicit_ssrf_check_surfaces_findings(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        audit = self._run(monkeypatch, ssrf_check=True)
+        # Asked-for SSRF is retained alongside egress.
+        assert audit.ssrf_findings
+        assert any(f.kind is EgressKind.UNBOUNDED_EGRESS for f in audit.egress_findings)

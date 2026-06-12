@@ -69,21 +69,43 @@ MULTI_TENANT_API_HOSTS: set[str] = {
     "ngrok.io",
 }
 
-# Param-name *tokens* that denote a caller-controllable credential. Matched against the
-# tokenized param name (camelCase/snake-aware, via ``ssrf._key_tokens``) so the match is
-# exact-token, never substring: ``api_key``/``apiKey`` tokenize to include ``key`` and
-# match; ``query`` tokenizes to ``{query}`` and does not. The multi-word ``api_key`` entry
-# is kept for parity with the spec though ``key`` already covers it post-tokenization.
+# Param-name *tokens* that on their own denote a caller-controllable credential. Matched
+# against the tokenized param name (camelCase/snake-aware, via ``ssrf._key_tokens``) so the
+# match is exact-token, never substring: ``authToken`` → {``auth``, ``token``} matches;
+# ``query`` → {``query``} does not.
 _CREDENTIAL_PARAM_TOKENS: set[str] = {
     "auth",
     "token",
-    "key",
     "apikey",
-    "api_key",
     "secret",
     "bearer",
     "credential",
 }
+
+# ``key`` alone is ambiguous: ``api_key``/``accessKey`` are credentials, but ``primary_key``/
+# ``sort_key``/``cache_key`` are identifiers. A ``key`` token counts as a credential only when
+# one of these qualifiers tokenizes alongside it, so identifier params are not misread as
+# credentials (which would over-promote the trusted-destination residual LOW → MEDIUM).
+_CREDENTIAL_KEY_QUALIFIERS: set[str] = {
+    "api",
+    "access",
+    "secret",
+    "private",
+    "auth",
+    "signing",
+    "encryption",
+}
+
+
+def _is_credential_token_set(tokens: set[str]) -> bool:
+    """True if a tokenized param name denotes a caller-controllable credential.
+
+    A standalone credential token matches directly; a bare ``key`` token matches only with a
+    credential qualifier (``api_key`` yes, ``primary_key`` no).
+    """
+    if tokens & _CREDENTIAL_PARAM_TOKENS:
+        return True
+    return "key" in tokens and bool(tokens & _CREDENTIAL_KEY_QUALIFIERS)
 
 
 def _is_remote_uri(uri: str) -> bool:
@@ -206,7 +228,7 @@ class EgressDetector:
             if not isinstance(props, dict):
                 continue
             for key in props:
-                if _key_tokens(str(key)) & _CREDENTIAL_PARAM_TOKENS:
+                if _is_credential_token_set(_key_tokens(str(key))):
                     return True
         return any(
             _uri_templates_userinfo(resource.uri)
