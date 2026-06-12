@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from mcp_audit.models import (
     ArtifactVerifyKind,
+    EgressKind,
     EscalationKind,
     InjectionSeverity,
     IntegrityKind,
@@ -148,6 +149,56 @@ SSRF_FINDINGS: dict[SsrfSeverity, FindingMetadata] = {
 }
 
 
+EGRESS_FINDINGS: dict[EgressKind, FindingMetadata] = {
+    EgressKind.DESTINATION_OUTSIDE_ALLOWLIST: FindingMetadata(
+        rule_id="MCP040",
+        title="Outbound destination outside the allowlist",
+        severity="medium",
+        description=(
+            "A tool or resource sends data to a fixed network destination that is not on the "
+            "configured egress allowlist. Even a non-caller-controlled destination is a data-egress "
+            "path: the server can transmit workspace data to a host you have not explicitly trusted."
+        ),
+        remediation=(
+            "Confirm the destination is expected. If it is trusted, add it to the egress allowlist "
+            "(--egress-allowlist); otherwise disable the capability or isolate the server so it "
+            "cannot reach unreviewed destinations with private workspace data."
+        ),
+    ),
+    EgressKind.UNBOUNDED_EGRESS: FindingMetadata(
+        rule_id="MCP041",
+        title="Unbounded outbound destination (caller-controlled)",
+        severity="high",
+        description=(
+            "A tool or resource lets the caller steer the outbound destination (a URL/host parameter "
+            "or a templated host authority). The egress target is not allowlistable because it is "
+            "chosen at call time, so data can be sent to an arbitrary, attacker-influenceable host."
+        ),
+        remediation=(
+            "Treat this as the highest-priority egress risk: restrict the server to a fixed, "
+            "validated set of destinations, reject caller-supplied hosts, and never expose it to "
+            "untrusted prompts or tool outputs that could choose the destination."
+        ),
+    ),
+    EgressKind.TRUSTED_DESTINATION_RESIDUAL: FindingMetadata(
+        rule_id="MCP042",
+        title="Trusted destination with residual egress risk",
+        severity="medium",
+        description=(
+            "An allowlisted destination still carries residual egress risk because it is a "
+            "multi-tenant data-bearing API or the tool can attach caller-controlled credentials. "
+            "A trusted host is not automatically a safe destination — data sent there may land in a "
+            "different tenant or be redirected by an attacker-supplied credential (the Cowork lesson)."
+        ),
+        remediation=(
+            "Verify the tenant/account boundary on this destination and confirm credentials are not "
+            "caller-controllable. Scope the allowlist to a specific account/path where possible, and "
+            "review what workspace data is permitted to flow to this multi-tenant endpoint."
+        ),
+    ),
+}
+
+
 TRIFECTA_FINDINGS: dict[TrifectaSeverity, FindingMetadata] = {
     TrifectaSeverity.HIGH: FindingMetadata(
         rule_id="MCP013",
@@ -201,6 +252,11 @@ def injection_metadata(severity: InjectionSeverity) -> FindingMetadata:
 def ssrf_metadata(severity: SsrfSeverity) -> FindingMetadata:
     """Return stable metadata for an SSRF severity."""
     return SSRF_FINDINGS[severity]
+
+
+def egress_metadata(kind: EgressKind) -> FindingMetadata:
+    """Return stable metadata for an egress finding kind."""
+    return EGRESS_FINDINGS[kind]
 
 
 def trifecta_metadata(severity: TrifectaSeverity) -> FindingMetadata:

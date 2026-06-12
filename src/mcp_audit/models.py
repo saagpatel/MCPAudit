@@ -50,6 +50,18 @@ class SsrfSeverity(StrEnum):
     LOW = "low"  # Weak signal (host/address param, path-only template var)
 
 
+class EgressKind(StrEnum):
+    DESTINATION_OUTSIDE_ALLOWLIST = "destination_outside_allowlist"  # Fixed host not on the allowlist
+    UNBOUNDED_EGRESS = "unbounded_egress"  # Caller-controlled target; not allowlistable
+    TRUSTED_DESTINATION_RESIDUAL = "trusted_destination_residual"  # D1 — Cowork class
+
+
+class EgressSeverity(StrEnum):
+    HIGH = "high"  # Unbounded, caller-steerable outbound destination
+    MEDIUM = "medium"  # Fixed destination outside the allowlist
+    LOW = "low"  # Trusted-destination residual (advisory)
+
+
 class TrifectaSeverity(StrEnum):
     HIGH = "high"  # Single server holds all three legs (lethal trifecta)
     MEDIUM = "medium"  # Fleet-level: trifecta formed only by combining servers (advisory)
@@ -357,6 +369,56 @@ class SsrfFinding(BaseModel):
         from mcp_audit.taxonomy import ssrf_metadata
 
         return ssrf_metadata(self.severity).remediation
+
+
+class EgressFinding(BaseModel):
+    """An outbound-destination finding: where an MCP server may send data.
+
+    Where SSRF asks "can a caller steer where the server connects?", egress asks
+    "is the destination one we trust?". It flags fixed destinations outside a
+    caller-supplied allowlist, caller-controlled (unbounded) destinations, and a
+    trusted-destination residual for multi-tenant or credential-bearing hosts.
+
+    Static, schema/URI-derived signal only — no request is ever made and no
+    credential value is read; credential signals are param-name / userinfo-template
+    only. Metadata is keyed by ``kind`` (the residual kind spans LOW and MEDIUM, so
+    severity is not 1:1 with kind); the finding's own ``severity`` is authoritative.
+    """
+
+    target_type: CapabilityTarget = CapabilityTarget.TOOL
+    target_name: str
+    severity: EgressSeverity
+    kind: EgressKind
+    destination_host: str | None = None  # None when caller-controlled / unbounded
+    evidence: list[str]  # hosts, allowlist state, or credential/multi-tenant signals
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def rule_id(self) -> str:
+        from mcp_audit.taxonomy import egress_metadata
+
+        return egress_metadata(self.kind).rule_id
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def title(self) -> str:
+        from mcp_audit.taxonomy import egress_metadata
+
+        return egress_metadata(self.kind).title
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def description(self) -> str:
+        from mcp_audit.taxonomy import egress_metadata
+
+        return egress_metadata(self.kind).description
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def remediation(self) -> str:
+        from mcp_audit.taxonomy import egress_metadata
+
+        return egress_metadata(self.kind).remediation
 
 
 class TrifectaFinding(BaseModel):
@@ -757,6 +819,7 @@ class ServerAudit(BaseModel):
     annotation_coverage: float = 0.0  # Percentage of tools with annotations
     injection_findings: list[InjectionFinding] = Field(default_factory=list)
     ssrf_findings: list[SsrfFinding] = Field(default_factory=list)
+    egress_findings: list[EgressFinding] = Field(default_factory=list)
     drift_findings: list[DriftFinding] = Field(default_factory=list)
     trifecta_findings: list[TrifectaFinding] = Field(default_factory=list)
     escalation_findings: list[EscalationFinding] = Field(default_factory=list)

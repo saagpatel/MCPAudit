@@ -284,6 +284,70 @@
       "title": "DriftStatus",
       "type": "string"
     },
+    "EgressFinding": {
+      "description": "An outbound-destination finding: where an MCP server may send data.\n\nWhere SSRF asks \"can a caller steer where the server connects?\", egress asks\n\"is the destination one we trust?\". It flags fixed destinations outside a\ncaller-supplied allowlist, caller-controlled (unbounded) destinations, and a\ntrusted-destination residual for multi-tenant or credential-bearing hosts.\n\nStatic, schema/URI-derived signal only \u2014 no request is ever made and no\ncredential value is read; credential signals are param-name / userinfo-template\nonly. Metadata is keyed by ``kind`` (the residual kind spans LOW and MEDIUM, so\nseverity is not 1:1 with kind); the finding's own ``severity`` is authoritative.",
+      "properties": {
+        "target_type": {
+          "$ref": "#/$defs/CapabilityTarget",
+          "default": "tool"
+        },
+        "target_name": {
+          "title": "Target Name",
+          "type": "string"
+        },
+        "severity": {
+          "$ref": "#/$defs/EgressSeverity"
+        },
+        "kind": {
+          "$ref": "#/$defs/EgressKind"
+        },
+        "destination_host": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Destination Host"
+        },
+        "evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence",
+          "type": "array"
+        }
+      },
+      "required": [
+        "target_name",
+        "severity",
+        "kind",
+        "evidence"
+      ],
+      "title": "EgressFinding",
+      "type": "object"
+    },
+    "EgressKind": {
+      "enum": [
+        "destination_outside_allowlist",
+        "unbounded_egress",
+        "trusted_destination_residual"
+      ],
+      "title": "EgressKind",
+      "type": "string"
+    },
+    "EgressSeverity": {
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ],
+      "title": "EgressSeverity",
+      "type": "string"
+    },
     "EscalationFinding": {
       "description": "A capability-escalation / rug-pull finding detected against the pin baseline.\n\nFires only when a tool DIFFERS from its operator-blessed pin baseline in a\nsecurity-significant way:\n  CAPABILITY            \u2014 the tool gained a dangerous permission category it\n                          did not hold when pinned (e.g. read-only \u2192 file_write,\n                          exfiltration, shell_execution, destructive).\n  DESCRIPTION_INJECTION \u2014 the tool's description gained prompt-injection\n                          pattern(s) absent from the pinned baseline.\n\nPurely a delta against the pin store: a tool matching its baseline produces no\nfinding, so the false-positive rate is near-zero by construction.  Requires a\npin baseline (``--escalation-check`` implies pin comparison).",
       "properties": {
@@ -1003,6 +1067,13 @@
             "$ref": "#/$defs/SsrfFinding"
           },
           "title": "Ssrf Findings",
+          "type": "array"
+        },
+        "egress_findings": {
+          "items": {
+            "$ref": "#/$defs/EgressFinding"
+          },
+          "title": "Egress Findings",
           "type": "array"
         },
         "drift_findings": {

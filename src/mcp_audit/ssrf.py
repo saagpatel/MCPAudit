@@ -231,19 +231,22 @@ def parse_host_allowlist(raw: str | None) -> set[str]:
     return {h.strip().lower() for h in raw.split(",") if h.strip()}
 
 
-def _finding_fixed_host(finding: SsrfFinding) -> str | None:
-    """Extract a fixed (non-templated) target host from an SSRF finding, or None.
+def fixed_host_from_uri(uri: str) -> str | None:
+    """Extract a fixed (non-templated) host from a URI string, or None.
 
-    Only resource findings whose ``target_name`` is a URI with a concrete host
-    authority yield a host. Tool findings (caller-controlled URL/host params) and
-    findings whose host authority is itself templated (``{host}``) yield None — a
-    caller-steerable target is never allowlistable, so it can never be suppressed.
+    Returns None for a non-URI string (no ``://`` scheme separator), a malformed
+    authority, or a caller-templated host authority (``{host}``) — a caller-steerable
+    target is never allowlistable. Any userinfo is stripped before the host is read,
+    and a trailing ``:port`` (or an IPv6 literal's brackets) is removed. The returned
+    host is lowercased.
+
+    Shared host-truth for both SSRF allowlisting and egress destination analysis, so
+    the two detectors never disagree about what host a target resolves to.
     """
-    name = finding.target_name
-    if "://" not in name:
+    if "://" not in uri:
         return None
     try:
-        parsed = urlparse(name)
+        parsed = urlparse(uri)
     except ValueError:
         return None
     netloc = parsed.netloc.rsplit("@", 1)[-1]  # drop any userinfo
@@ -255,6 +258,17 @@ def _finding_fixed_host(finding: SsrfFinding) -> str | None:
     elif ":" in host:  # strip :port
         host = host.rsplit(":", 1)[0]
     return host.lower() or None
+
+
+def _finding_fixed_host(finding: SsrfFinding) -> str | None:
+    """Extract a fixed (non-templated) target host from an SSRF finding, or None.
+
+    Only resource findings whose ``target_name`` is a URI with a concrete host
+    authority yield a host. Tool findings (caller-controlled URL/host params) and
+    findings whose host authority is itself templated (``{host}``) yield None — a
+    caller-steerable target is never allowlistable, so it can never be suppressed.
+    """
+    return fixed_host_from_uri(finding.target_name)
 
 
 def host_in_allowlist(host: str, allowlist: set[str]) -> bool:
