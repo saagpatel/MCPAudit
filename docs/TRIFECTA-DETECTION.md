@@ -151,3 +151,36 @@ policy files keep their previous behavior unchanged.
 # Detect lethal-trifecta attack surface, write JSON + SARIF, gate in CI
 mcp-audit scan --trifecta-check --json audit.json --sarif audit.sarif --policy policy.yaml
 ```
+
+## Rule of Two Posture
+
+Every fired trifecta finding (per-server and fleet) carries an advisory
+`rule_of_two` posture, after Meta's October 2025 *Rule of Two* framing: an agent
+should hold at most two of {untrusted input, sensitive data access, external
+communication}. Dropping any **one** leg breaks the trifecta — so the posture
+names which leg to drop and how.
+
+The posture is purely advisory: it **never changes when the trifecta fires**, only
+enriches the finding. It is computed by a deterministic, pure heuristic (no I/O):
+
+1. **Prefer dropping Leg 3 (exfiltration)** whenever Leg 3 has at least one
+   contributing tool. Removing the outbound channel breaks the trifecta with the
+   least loss of read/ingest utility, and it is enforceable today via the egress
+   detector — the Leg 3 action reads *"restrict outbound destinations via
+   `--egress-check` allowlist, or remove tool(s) …"*.
+2. **Otherwise drop the leg with the fewest contributing tools** (tie-break: lower
+   leg number) — fewest tools removed = least functionality lost.
+
+The posture records:
+
+| Field | Meaning |
+|-------|---------|
+| `legs_present` | the legs (subset of `[1, 2, 3]`) that have contributing tools |
+| `recommended_drop` | the single leg to remove (`1` \| `2` \| `3`) |
+| `action` | the concrete remediation for the recommended drop, naming the affected tool(s) |
+| `affected_tools` | the deduplicated tool names tied to the dropped leg |
+| `alternatives` | `(leg, action)` for the other present legs, so the operator can pick a different trade-off |
+
+It renders as a compact line in the terminal report (a **Rule of Two** column on
+the trifecta tables), in the HTML report, and in SARIF (appended to the result
+message plus a structured `rule_of_two` property carrying the recommendation).

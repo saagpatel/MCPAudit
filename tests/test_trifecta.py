@@ -23,7 +23,7 @@ from mcp_audit.models import (
     TransportType,
     TrifectaSeverity,
 )
-from mcp_audit.trifecta import TrifectaAnalyzer
+from mcp_audit.trifecta import TrifectaAnalyzer, _compute_rule_of_two
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -382,3 +382,74 @@ class TestBenignFleet:
 
     def test_empty_fleet_no_finding(self) -> None:
         assert analyzer.analyze_fleet([]) == []
+
+
+# ---------------------------------------------------------------------------
+# Rule of Two posture (D2)
+# ---------------------------------------------------------------------------
+
+
+class TestRuleOfTwoPosture:
+    def test_fired_per_server_finding_carries_posture(self) -> None:
+        audit = _audit(
+            "srv",
+            [PermissionCategory.FILE_READ, PermissionCategory.EXFILTRATION],
+            ingests=True,
+        )
+        posture = analyzer.analyze_server(audit)[0].rule_of_two
+        assert posture is not None
+        assert posture.legs_present == [1, 2, 3]
+        assert posture.recommended_drop == 3  # Leg 3 present -> prefer dropping it
+        assert posture.affected_tools  # >= 1 tool
+        assert len(posture.alternatives) == 2
+        assert {leg for leg, _ in posture.alternatives} == {1, 2}
+        assert "--egress-check" in posture.action
+
+    def test_two_leg_server_yields_no_finding_and_no_posture(self) -> None:
+        # FILE_READ + EXFILTRATION but no ingestion (Leg 2 absent) -> no finding at all.
+        audit = _audit(
+            "srv",
+            [PermissionCategory.FILE_READ, PermissionCategory.EXFILTRATION],
+            ingests=False,
+        )
+        assert analyzer.analyze_server(audit) == []
+
+    def test_fleet_finding_carries_posture(self) -> None:
+        leg1 = _audit("reader", [PermissionCategory.FILE_READ])
+        leg2 = _audit("fetcher", [], ingests=True)
+        leg3 = _audit("sender", [PermissionCategory.EXFILTRATION])
+        findings = analyzer.analyze_fleet([leg1, leg2, leg3])
+        assert len(findings) == 1
+        posture = findings[0].rule_of_two
+        assert posture is not None
+        assert posture.legs_present == [1, 2, 3]
+        assert posture.recommended_drop == 3
+
+    def test_fewest_tools_branch_when_leg3_empty(self) -> None:
+        # Direct unit of the heuristic: Leg 3 empty forces the fewest-tools branch.
+        posture = _compute_rule_of_two(
+            [("s", "read_a"), ("s", "read_b")],  # leg1: 2 tools
+            [("s", "fetch_c")],  # leg2: 1 tool (fewest)
+            [],  # leg3: empty
+        )
+        assert posture.recommended_drop == 2
+        assert posture.affected_tools == ["fetch_c"]
+        assert posture.legs_present == [1, 2]
+        assert {leg for leg, _ in posture.alternatives} == {1}
+
+    def test_tie_break_prefers_lower_leg_number(self) -> None:
+        posture = _compute_rule_of_two(
+            [("s", "read_a")],  # leg1: 1 tool
+            [("s", "fetch_b")],  # leg2: 1 tool (tie)
+            [],  # leg3: empty
+        )
+        assert posture.recommended_drop == 1  # tie -> lower leg number
+
+    def test_affected_tools_are_deduplicated(self) -> None:
+        posture = _compute_rule_of_two(
+            [("s", "read")],
+            [("s", "fetch")],
+            [("a", "send"), ("b", "send")],  # same tool name on two servers
+        )
+        assert posture.recommended_drop == 3
+        assert posture.affected_tools == ["send"]  # deduped, order preserved

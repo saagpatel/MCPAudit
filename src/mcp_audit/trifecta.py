@@ -23,12 +23,13 @@ from __future__ import annotations
 
 from mcp_audit.models import (
     PermissionCategory,
+    RuleOfTwoPosture,
     ServerAudit,
     TrifectaFinding,
     TrifectaSeverity,
 )
 from mcp_audit.ssrf import SsrfDetector, _has_fetch_verb
-from mcp_audit.taxonomy import trifecta_metadata
+from mcp_audit.taxonomy import rule_of_two_action, trifecta_metadata
 
 # ---------------------------------------------------------------------------
 # Leg definitions
@@ -100,6 +101,55 @@ def _tools_for_category(
     return result
 
 
+def _leg_tools(contributors: list[tuple[str, str]]) -> list[str]:
+    """Deduplicate a leg's contributor tool names, preserving first-seen order."""
+    seen: set[str] = set()
+    tools: list[str] = []
+    for _server, tool in contributors:
+        if tool not in seen:
+            seen.add(tool)
+            tools.append(tool)
+    return tools
+
+
+def _compute_rule_of_two(
+    leg1: list[tuple[str, str]],
+    leg2: list[tuple[str, str]],
+    leg3: list[tuple[str, str]],
+) -> RuleOfTwoPosture:
+    """Compute the advisory Rule-of-Two posture for a fired trifecta.
+
+    Deterministic and pure (no I/O). Prefers dropping Leg 3 (exfiltration) when it has
+    any contributing tool — removing the outbound channel breaks the trifecta with the
+    least loss of read/ingest utility and is enforceable today via ``--egress-check``.
+    Otherwise drops the leg with the fewest contributing tools (tie-break: lower leg
+    number). The other present legs are returned as alternatives.
+    """
+    tools_by_leg = {1: _leg_tools(leg1), 2: _leg_tools(leg2), 3: _leg_tools(leg3)}
+    present = [leg for leg in (1, 2, 3) if tools_by_leg[leg]]
+
+    if tools_by_leg[3]:
+        recommended_drop = 3
+    elif present:
+        recommended_drop = min(present, key=lambda leg: (len(tools_by_leg[leg]), leg))
+    else:  # defensive — never reached at a real fire site (all legs are non-empty)
+        recommended_drop = 3
+
+    affected_tools = tools_by_leg[recommended_drop]
+    alternatives = [
+        (leg, rule_of_two_action(leg, tools_by_leg[leg]))
+        for leg in (1, 2, 3)
+        if leg != recommended_drop and tools_by_leg[leg]
+    ]
+    return RuleOfTwoPosture(
+        legs_present=present,
+        recommended_drop=recommended_drop,
+        action=rule_of_two_action(recommended_drop, affected_tools),
+        affected_tools=affected_tools,
+        alternatives=alternatives,
+    )
+
+
 class TrifectaAnalyzer:
     """Detects lethal-trifecta findings at per-server and fleet level."""
 
@@ -129,6 +179,7 @@ class TrifectaAnalyzer:
                 leg3_contributors=leg3,
                 description=meta.description,
                 is_fleet=False,
+                rule_of_two=_compute_rule_of_two(leg1, leg2, leg3),
             )
         ]
 
@@ -182,5 +233,6 @@ class TrifectaAnalyzer:
                 leg3_contributors=leg3_contributors,
                 description=meta.description,
                 is_fleet=True,
+                rule_of_two=_compute_rule_of_two(leg1_contributors, leg2_contributors, leg3_contributors),
             )
         ]

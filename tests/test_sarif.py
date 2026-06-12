@@ -23,6 +23,7 @@ from mcp_audit.models import (
 )
 from mcp_audit.sarif import (
     _ARTIFACT_VERIFY_RULE_IDS,
+    _EGRESS_RULE_IDS,
     _ESCALATION_RULE_IDS,
     _INJECTION_RULE_IDS,
     _INTEGRITY_RULE_IDS,
@@ -104,6 +105,7 @@ class TestSarifStructure:
             set(_RULE_IDS.values())
             | set(_INJECTION_RULE_IDS.values())
             | set(_SSRF_RULE_IDS.values())
+            | set(_EGRESS_RULE_IDS.values())
             | set(_TRIFECTA_RULE_IDS.values())
             | set(_SHADOWING_RULE_IDS.values())
             | set(_ESCALATION_RULE_IDS.values())

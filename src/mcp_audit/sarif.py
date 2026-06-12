@@ -16,6 +16,9 @@ from mcp_audit.models import (
     CapabilityFinding,
     Confidence,
     DriftFinding,
+    EgressFinding,
+    EgressKind,
+    EgressSeverity,
     EscalationFinding,
     EscalationKind,
     EscalationSeverity,
@@ -44,6 +47,7 @@ from mcp_audit.models import (
 from mcp_audit.redaction import redact_data
 from mcp_audit.taxonomy import (
     ARTIFACT_VERIFY_FINDINGS,
+    EGRESS_FINDINGS,
     ESCALATION_FINDINGS,
     INJECTION_FINDINGS,
     INTEGRITY_FINDINGS,
@@ -53,6 +57,7 @@ from mcp_audit.taxonomy import (
     SHADOWING_FINDINGS,
     SSRF_FINDINGS,
     TRIFECTA_FINDINGS,
+    format_rule_of_two,
 )
 
 _SARIF_SCHEMA = (
@@ -86,6 +91,13 @@ _SSRF_RULE_IDS: dict[SsrfSeverity, str] = {
 }
 
 _SSRF_RULE_DESCRIPTIONS = {metadata.rule_id: metadata.description for metadata in SSRF_FINDINGS.values()}
+
+# Egress-specific SARIF rule IDs (keyed by kind: MCP040 outside-allowlist, 041 unbounded, 042 residual)
+_EGRESS_RULE_IDS: dict[EgressKind, str] = {
+    kind: metadata.rule_id for kind, metadata in EGRESS_FINDINGS.items()
+}
+
+_EGRESS_RULE_DESCRIPTIONS = {metadata.rule_id: metadata.description for metadata in EGRESS_FINDINGS.values()}
 
 # Trifecta-specific SARIF rule IDs
 _TRIFECTA_RULE_IDS: dict[TrifectaSeverity, str] = {
@@ -237,6 +249,18 @@ class SarifGenerator:
             }
             for rule_id, desc in _SSRF_RULE_DESCRIPTIONS.items()
         ]
+        egress_rules = [
+            {
+                "id": rule_id,
+                "name": f"Egress{rule_id}",
+                "shortDescription": {"text": desc},
+                "fullDescription": {"text": desc},
+                "help": {"text": _egress_help(rule_id)},
+                "helpUri": "https://github.com/saagpatel/MCPAudit#readme",
+                "properties": {"category": "egress"},
+            }
+            for rule_id, desc in _EGRESS_RULE_DESCRIPTIONS.items()
+        ]
         contract_rules = [
             {
                 "id": _DRIFT_RULE_ID,
@@ -347,6 +371,7 @@ class SarifGenerator:
             perm_rules
             + injection_rules
             + ssrf_rules
+            + egress_rules
             + trifecta_rules
             + shadowing_rules
             + escalation_rules
@@ -369,6 +394,8 @@ class SarifGenerator:
                 results.append(self._make_injection_result(inj, audit))
             for ssrf in audit.ssrf_findings:
                 results.append(self._make_ssrf_result(ssrf, audit))
+            for egress in audit.egress_findings:
+                results.append(self._make_egress_result(egress, audit))
             for trifecta in audit.trifecta_findings:
                 results.append(self._make_trifecta_result(trifecta, audit))
             for escalation in audit.escalation_findings:
@@ -412,6 +439,13 @@ class SarifGenerator:
         if finding.severity == SsrfSeverity.HIGH:
             return "error"
         if finding.severity == SsrfSeverity.MEDIUM:
+            return "warning"
+        return "note"
+
+    def _egress_level(self, finding: EgressFinding) -> str:
+        if finding.severity == EgressSeverity.HIGH:
+            return "error"
+        if finding.severity == EgressSeverity.MEDIUM:
             return "warning"
         return "note"
 
@@ -579,6 +613,39 @@ class SarifGenerator:
             },
         }
 
+    def _make_egress_result(self, finding: EgressFinding, audit: ServerAudit) -> dict[str, Any]:
+        """Build a SARIF result for an egress (outbound-destination) finding."""
+        rule_id = _EGRESS_RULE_IDS[finding.kind]
+        level = self._egress_level(finding)
+        config_path = audit.server.config_path
+        uri = _artifact_uri(config_path)
+        target_label = finding.target_type.value
+        destination = finding.destination_host or "caller-controlled"
+        msg = (
+            f"Egress finding '{finding.kind.value}' detected in {target_label} "
+            f"'{finding.target_name}' on server '{audit.server.name}' "
+            f"(destination: {destination}): {finding.description}. "
+            f"Suggested action: {finding.remediation}"
+        )
+        return {
+            "ruleId": rule_id,
+            "level": level,
+            "message": {"text": msg},
+            "locations": [{"physicalLocation": {"artifactLocation": {"uri": uri}}}],
+            "partialFingerprints": {
+                "mcpAuditStableId": _stable_fingerprint(rule_id, audit.server.name, finding.target_name)
+            },
+            "properties": {
+                "kind": finding.kind.value,
+                "target_type": finding.target_type.value,
+                "target_name": finding.target_name,
+                "destination_host": finding.destination_host,
+                "severity": finding.severity.value,
+                "evidence": finding.evidence,
+                "remediation": finding.remediation,
+            },
+        }
+
     def _make_trifecta_result(self, finding: TrifectaFinding, audit: ServerAudit) -> dict[str, Any]:
         """Build a SARIF result for a per-server trifecta finding (MCP013)."""
         rule_id = _TRIFECTA_RULE_IDS[finding.severity]
@@ -595,6 +662,8 @@ class SarifGenerator:
             f"leg3(exfiltration)=[{leg3}]. "
             f"Suggested action: {finding.remediation}"
         )
+        if finding.rule_of_two is not None:
+            msg += f" {format_rule_of_two(finding.rule_of_two)}."
         return {
             "ruleId": rule_id,
             "level": level,
@@ -612,6 +681,7 @@ class SarifGenerator:
                 "leg2_contributors": finding.leg2_contributors,
                 "leg3_contributors": finding.leg3_contributors,
                 "remediation": finding.remediation,
+                "rule_of_two": finding.rule_of_two.model_dump() if finding.rule_of_two else None,
             },
         }
 
@@ -629,6 +699,8 @@ class SarifGenerator:
             f"leg3(exfiltration)=[{leg3}]. "
             f"Suggested action: {finding.remediation}"
         )
+        if finding.rule_of_two is not None:
+            msg += f" {format_rule_of_two(finding.rule_of_two)}."
         return {
             "ruleId": rule_id,
             "level": level,
@@ -644,6 +716,7 @@ class SarifGenerator:
                 "leg2_contributors": finding.leg2_contributors,
                 "leg3_contributors": finding.leg3_contributors,
                 "remediation": finding.remediation,
+                "rule_of_two": finding.rule_of_two.model_dump() if finding.rule_of_two else None,
             },
         }
 
@@ -884,6 +957,13 @@ def _injection_help(rule_id: str) -> str:
 def _ssrf_help(rule_id: str) -> str:
     remediations = {
         metadata.remediation for metadata in SSRF_FINDINGS.values() if metadata.rule_id == rule_id
+    }
+    return " ".join(sorted(remediations))
+
+
+def _egress_help(rule_id: str) -> str:
+    remediations = {
+        metadata.remediation for metadata in EGRESS_FINDINGS.values() if metadata.rule_id == rule_id
     }
     return " ".join(sorted(remediations))
 

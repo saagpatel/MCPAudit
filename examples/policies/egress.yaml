@@ -1,0 +1,28 @@
+# CI gate for teams that want to control *where* MCP servers may send data.
+# Run with: mcp-audit scan --egress-check --json mcp-audit.json --policy this.yaml
+#
+# Egress gating is opt-in: the broad fail_on.severity shortcut does NOT cover it,
+# so it must be requested explicitly via fail_on.egress. Pair with --egress-check on
+# the scan command or no egress_findings are produced to gate on.
+#
+# egress_allowlist + multi_tenant_hosts configure the detector (consumed by the scan
+# command); the gate itself reads fail_on.egress. A trusted host is not automatically
+# a safe destination — an allowlisted multi-tenant API still raises a LOW/MEDIUM
+# residual (the Cowork lesson).
+fail_on:
+  egress: medium
+# Destinations these servers are explicitly trusted to reach (host names, no scheme).
+egress_allowlist:
+  - api.anthropic.com
+  - internal.corp.example
+# Extra multi-tenant, data-bearing hosts beyond the curated default set.
+multi_tenant_hosts:
+  - storage.partner.example
+servers:
+  # A server that must never reach an unreviewed destination can be held to the
+  # strictest egress bar.
+  exfil-prone:
+    fail_on:
+      egress: low
+    egress_allowlist:
+      - logs.internal.corp.example

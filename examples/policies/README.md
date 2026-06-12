@@ -12,6 +12,7 @@ not a universal security baseline.
 | `ci-strict.yaml` | Strict reviewed CI | Fails on medium-or-higher findings, drift, and denied destructive behavior. |
 | `browser-automation-ci.yaml` | Browser automation MCP servers | Allows expected browser network behavior while blocking shell/destructive behavior. |
 | `ssrf-aware-ci.yaml` | Teams gating SSRF-prone servers | Adds an opt-in `fail_on.ssrf` gate (global high, per-server medium) on top of the usual permission/injection bars. Requires `--ssrf-check`. |
+| `egress.yaml` | Teams controlling *where* servers send data | Adds an opt-in `fail_on.egress` gate for destinations outside the allowlist (MCP040), unbounded caller-controlled targets (MCP041), and the trusted-destination residual (MCP042 — the Cowork lesson). Configures the detector via `egress_allowlist` / `multi_tenant_hosts`. Requires `--egress-check`. |
 | `trifecta-aware-ci.yaml` | Teams gating lethal-trifecta servers | Adds an opt-in `fail_on.trifecta` gate for per-server (HIGH/MCP013) and fleet-level advisory (MEDIUM/MCP014) findings. Requires `--trifecta-check`. |
 | `shadowing-aware-ci.yaml` | Teams gating tool-name shadowing | Adds an opt-in `fail_on.shadowing` gate for exact (MCP015), normalised (MCP016), and homoglyph (MCP017) cross-server tool-name collisions. Requires `--shadow-check`. |
 | `escalation-aware-ci.yaml` | Teams gating capability rug-pulls vs a pin baseline | Adds an opt-in `fail_on.escalation` gate for capability gains (MCP018) and description-injection gains (MCP019) since the approved pin. Requires `--escalation-check` and an existing `mcp-audit pin` baseline. |
@@ -42,6 +43,14 @@ Run the scan with `--ssrf-check` so SSRF findings are produced:
 
 ```bash
 mcp-audit scan --ssrf-check --json mcp-audit.json --policy examples/policies/ssrf-aware-ci.yaml
+```
+
+Use `egress.yaml` when you want to fail CI on *where* servers can send data —
+destinations outside your allowlist, unbounded caller-controlled targets, and the
+trusted-but-multi-tenant residual:
+
+```bash
+mcp-audit scan --egress-check --json mcp-audit.json --policy examples/policies/egress.yaml
 ```
 
 Use `trifecta-aware-ci.yaml` when you want to fail CI on servers (or fleets)

@@ -110,6 +110,7 @@ Use this path when sharing MCPAudit outside the repo:
 - **Report redaction** — terminal, JSON, SARIF, and HTML report paths share a redaction layer for likely credential values; `scan --redact` adds an opt-in field-report pass that also scrubs the machine hostname and home-path usernames (`/Users/<name>`, `/home/<name>`, `C:\Users\<name>`) from `--json`/`--sarif`/`--html` output, and replaces server names with stable aliases (`server-01`, …) everywhere they appear — structured fields, free-text summaries, and command basenames — so a config-only report is safe to share (the field-report checklist stays the backstop for any residual free-text specifics)
 - **Prompt injection detection** — `scan --inject-check` scans tool, prompt, and resource text for instruction-override patterns, hidden directives, fake role turns, and adversarial phrasing; pattern-based, no LLM required
 - **SSRF detection** — `scan --ssrf-check` flags tools and resources whose interface lets a caller steer a server-side request target (URL/host params paired with fetch verbs, caller-templated remote resource hosts); static and schema-derived, never issues a request or reads a credential value
+- **Egress detection** — `scan --egress-check` audits *where* a server may send data: destinations outside `--egress-allowlist` (`MCP040`, MED), unbounded caller-controlled targets (`MCP041`, HIGH), and the trusted-destination residual for allowlisted-but-multi-tenant or credential-bearing hosts (`MCP042`, LOW/MED — the Cowork lesson). Static and schema/URI-derived; gated via `fail_on.egress`. See `docs/EGRESS-DETECTION.md`
 - **Lethal trifecta detection** — `scan --trifecta-check` detects the canonical agent-exfiltration attack surface: per-server (HIGH, `MCP013`) when a single server covers all three legs (file_read + untrusted-content ingestion + exfiltration), and fleet-level advisory (MEDIUM, `MCP014`) when the trifecta assembles only across servers; re-uses inferred permissions, never issues requests or reads credentials
 - **Tool-name shadowing detection** — `scan --shadow-check` flags cross-server tool-name collisions that could trick an AI agent into routing a call to the wrong server: exact matches (HIGH, `MCP015`), case/separator-normalised collisions (MEDIUM, `MCP016`), and homoglyph spoofing via non-ASCII confusable codepoints (HIGH, `MCP017`); offline, deterministic, no new dependencies
 - **Schema drift tracking** — `mcp-audit pin` connects to servers and snapshots current tool schemas; subsequent `scan --pin-check` flags added, removed, and changed tools with plain-language summaries, changed-field hints, suggested actions, and a dry-run refresh workflow for reviewed upgrades. `pin --refresh <server>` additionally surfaces capability-escalation (`MCP018`/`MCP019`) and launch-config/provenance (`MCP020`–`MCP023`) deltas in the same preview — unconditionally, so a rug-pull or launch swap can't slip through a baseline refresh
@@ -166,6 +167,9 @@ mcp-audit scan --ssrf-check
 
 # Suppress SSRF findings whose fixed target host is trusted (caller-controlled targets are never suppressed)
 mcp-audit scan --ssrf-check --ssrf-allowlist api.github.com,internal.svc
+
+# Audit outbound destinations; hosts outside the allowlist are flagged, trusted multi-tenant hosts raise a residual
+mcp-audit scan --egress-check --egress-allowlist api.anthropic.com,internal.corp.example
 
 # Detect lethal-trifecta / toxic-flow attack surface (per-server and fleet-level)
 mcp-audit scan --trifecta-check

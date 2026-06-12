@@ -18,6 +18,9 @@ from mcp_audit.models import (
     ConfigHealthSeverity,
     DriftFinding,
     DriftStatus,
+    EgressFinding,
+    EgressKind,
+    EgressSeverity,
     InjectionFinding,
     InjectionSeverity,
     PermissionCategory,
@@ -282,6 +285,193 @@ def test_ssrf_aware_example_policy_gates_high_ssrf(tmp_path: Path) -> None:
     )
     assert not result.passed
     assert any(v.rule == "fail_on.ssrf" for v in result.violations)
+
+
+def _audit_with_egress_finding(
+    severity: EgressSeverity = EgressSeverity.MEDIUM,
+    kind: EgressKind = EgressKind.DESTINATION_OUTSIDE_ALLOWLIST,
+) -> ServerAudit:
+    audit = _audit_with_shell_finding()
+    audit.permissions = []
+    audit.egress_findings = [
+        EgressFinding(
+            target_type=CapabilityTarget.RESOURCE,
+            target_name="https://evil.example/x",
+            severity=severity,
+            kind=kind,
+            destination_host="evil.example",
+            evidence=["fixed destination host 'evil.example'"],
+        )
+    ]
+    return audit
+
+
+def test_policy_can_threshold_egress_separately(tmp_path: Path) -> None:
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text(
+        """
+fail_on:
+  egress: medium
+"""
+    )
+    result = evaluate_policy(_audit_report(_audit_with_egress_finding()), load_policy(policy_path))
+    assert not result.passed
+    assert result.violations[0].rule == "fail_on.egress"
+
+
+def test_broad_severity_does_not_gate_egress(tmp_path: Path) -> None:
+    # Egress is opt-in: the broad fail_on.severity shortcut must not gate it.
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text(
+        """
+fail_on:
+  severity: low
+"""
+    )
+    result = evaluate_policy(_audit_report(_audit_with_egress_finding()), load_policy(policy_path))
+    assert not any(v.rule == "fail_on.egress" for v in result.violations)
+
+
+def test_egress_below_threshold_does_not_gate(tmp_path: Path) -> None:
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text(
+        """
+fail_on:
+  egress: high
+"""
+    )
+    # A MEDIUM egress finding is below the HIGH gate, so it must not fail the build.
+    result = evaluate_policy(_audit_report(_audit_with_egress_finding()), load_policy(policy_path))
+    assert result.passed
+
+
+def test_keyless_policy_does_not_gate_egress(tmp_path: Path) -> None:
+    # Backward compat: a policy without any egress keys still parses and never gates egress.
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text(
+        """
+fail_on:
+  permissions: high
+"""
+    )
+    policy = load_policy(policy_path)
+    assert policy.fail_on_egress_severity is None
+    assert policy.egress_allowlist == []
+    assert policy.multi_tenant_hosts == []
+    result = evaluate_policy(_audit_report(_audit_with_egress_finding()), policy)
+    assert not any(v.rule == "fail_on.egress" for v in result.violations)
+
+
+def test_policy_parses_egress_config_keys(tmp_path: Path) -> None:
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text(
+        """
+fail_on:
+  egress: medium
+egress_allowlist:
+  - api.anthropic.com
+multi_tenant_hosts:
+  - storage.partner.example
+servers:
+  srv:
+    fail_on:
+      egress: low
+    egress_allowlist:
+      - logs.internal.example
+"""
+    )
+    policy = load_policy(policy_path)
+    assert policy.fail_on_egress_severity == "medium"
+    assert policy.egress_allowlist == ["api.anthropic.com"]
+    assert policy.multi_tenant_hosts == ["storage.partner.example"]
+    assert policy.server_rules["srv"].fail_on_egress_severity == "low"
+    assert policy.server_rules["srv"].egress_allowlist == ["logs.internal.example"]
+
+
+def test_scan_threads_per_server_egress_allowlist_from_policy(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``_run_scan`` derives the per-server egress allowlist map from ``policy.server_rules``
+    and threads it into ``_run_scan_core``. Regression guard for the map-building half of
+    the wiring; the apply half (map → detector) is covered in test_egress_integration."""
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text(
+        """
+egress_allowlist:
+  - api.anthropic.com
+servers:
+  trusted:
+    egress_allowlist:
+      - logs.internal.example
+  no_egress_rule:
+    fail_on:
+      egress: low
+"""
+    )
+    captured: dict[str, object] = {}
+
+    async def fake_run_scan_core(*args: object, **kwargs: object) -> AuditReport:
+        captured.update(kwargs)
+        return AuditReport(
+            scan_timestamp=datetime.now(UTC),
+            hostname="h",
+            os_platform="t",
+            servers_discovered=0,
+            servers_connected=0,
+            servers_failed=0,
+            total_tools=0,
+            high_risk_servers=0,
+            audits=[],
+            scan_duration_seconds=0.0,
+        )
+
+    monkeypatch.setattr(cli, "_run_scan_core", fake_run_scan_core)
+    monkeypatch.setattr(cli, "discover_all_configs", lambda clients: [])
+
+    anyio.run(
+        cli._run_scan,
+        None,  # json_output
+        None,  # sarif_output
+        None,  # html_output
+        True,  # skip_connect
+        None,  # clients
+        10,  # timeout
+        False,  # verbose
+        None,  # extra_config
+        None,  # override_config_path
+        str(policy_path),  # policy_path
+    )
+
+    # Only servers with a non-empty per-server egress_allowlist appear in the map.
+    assert captured["egress_server_allowlists"] == {"trusted": ["logs.internal.example"]}
+
+
+def test_per_server_egress_threshold_override(tmp_path: Path) -> None:
+    # Global gate is HIGH, but the per-server override lowers it to LOW for 'srv'.
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text(
+        """
+fail_on:
+  egress: high
+servers:
+  srv:
+    fail_on:
+      egress: low
+"""
+    )
+    audit = _audit_with_egress_finding(EgressSeverity.LOW, EgressKind.TRUSTED_DESTINATION_RESIDUAL)
+    result = evaluate_policy(_audit_report(audit), load_policy(policy_path))
+    assert not result.passed
+    assert any(v.rule == "fail_on.egress" for v in result.violations)
+
+
+def test_egress_example_policy_gates_medium_egress() -> None:
+    result = evaluate_policy(
+        _audit_report(_audit_with_egress_finding()),
+        load_policy(Path("examples/policies/egress.yaml")),
+    )
+    assert not result.passed
+    assert any(v.rule == "fail_on.egress" for v in result.violations)
 
 
 def test_policy_can_threshold_capabilities_separately(tmp_path: Path) -> None:

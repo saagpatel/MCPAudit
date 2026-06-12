@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import io
 from datetime import UTC, datetime
 
+from rich.console import Console
+
+from mcp_audit.htmlreport import HtmlReportGenerator
 from mcp_audit.models import (
     AuditReport,
     ClientType,
@@ -20,6 +24,7 @@ from mcp_audit.models import (
 from mcp_audit.policy import PolicyConfig, evaluate_policy
 from mcp_audit.report import ReportGenerator
 from mcp_audit.sarif import SarifGenerator
+from mcp_audit.trifecta import _compute_rule_of_two
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -64,13 +69,17 @@ def _trifecta_finding(
     from mcp_audit.taxonomy import trifecta_metadata
 
     meta = trifecta_metadata(severity)
+    leg1 = [(server_name, "read_tool")]
+    leg2 = [(server_name, "fetch_tool")]
+    leg3 = [(server_name, "send_tool")]
     return TrifectaFinding(
         severity=severity,
-        leg1_contributors=[(server_name, "read_tool")],
-        leg2_contributors=[(server_name, "fetch_tool")],
-        leg3_contributors=[(server_name, "send_tool")],
+        leg1_contributors=leg1,
+        leg2_contributors=leg2,
+        leg3_contributors=leg3,
         description=meta.description,
         is_fleet=is_fleet,
+        rule_of_two=_compute_rule_of_two(leg1, leg2, leg3),
     )
 
 
@@ -271,3 +280,40 @@ class TestDefaultRunEmitsNothing:
         data = report.model_dump(mode="json")
         assert data["fleet_trifecta_findings"] == []
         assert data["audits"][0]["trifecta_findings"] == []
+
+
+# ---------------------------------------------------------------------------
+# Rule of Two posture rendering (D2 Phase 1)
+# ---------------------------------------------------------------------------
+
+
+class TestRuleOfTwoRendering:
+    def test_sarif_result_carries_posture(self) -> None:
+        report = _report([_audit_with_trifecta("srv")])
+        sarif = SarifGenerator().generate(report)
+        result = next(r for r in sarif["runs"][0]["results"] if r["ruleId"] == "MCP013")
+        assert "Rule of Two" in result["message"]["text"]
+        posture = result["properties"]["rule_of_two"]
+        assert posture["recommended_drop"] == 3
+        assert posture["affected_tools"] == ["send_tool"]
+        assert len(posture["alternatives"]) == 2
+
+    def test_terminal_report_shows_posture(self) -> None:
+        buf = io.StringIO()
+        console = Console(file=buf, force_terminal=True, width=200, highlight=False)
+        ReportGenerator(console=console).render_terminal(_report([_audit_with_trifecta("srv")]))
+        out = buf.getvalue()
+        assert "Rule of Two" in out
+        assert "--egress-check" in out  # Leg 3 action text
+
+    def test_html_report_shows_posture(self) -> None:
+        html = HtmlReportGenerator().generate(_report([_audit_with_trifecta("srv")]))
+        assert "Rule of Two" in html
+
+    def test_fleet_finding_posture_renders_in_sarif(self) -> None:
+        fleet = [_trifecta_finding(TrifectaSeverity.MEDIUM, is_fleet=True)]
+        report = _report([_audit_no_trifecta()], fleet=fleet)
+        sarif = SarifGenerator().generate(report)
+        result = next(r for r in sarif["runs"][0]["results"] if r["ruleId"] == "MCP014")
+        assert result["properties"]["rule_of_two"] is not None
+        assert "Rule of Two" in result["message"]["text"]
