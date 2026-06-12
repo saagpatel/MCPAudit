@@ -27,6 +27,7 @@ class PolicyConfig:
     fail_on_permission_severity: str | None = None
     fail_on_injection_severity: str | None = None
     fail_on_ssrf_severity: str | None = None
+    fail_on_egress_severity: str | None = None
     fail_on_capability_severity: str | None = None
     fail_on_config_health_severity: str | None = None
     fail_on_drift: bool = False
@@ -41,6 +42,10 @@ class PolicyConfig:
     denied_permissions: list[PermissionCategory] = field(default_factory=list)
     max_risk: float | None = None
     allow_servers: list[str] = field(default_factory=list)
+    # Egress detector configuration consumed by the CLI to build the detector; the gate
+    # itself only reads fail_on_egress_severity. Findings already encode allowlist state.
+    egress_allowlist: list[str] = field(default_factory=list)
+    multi_tenant_hosts: list[str] = field(default_factory=list)
     server_rules: dict[str, ServerPolicyConfig] = field(default_factory=dict)
 
 
@@ -53,10 +58,12 @@ class ServerPolicyConfig:
     fail_on_permission_severity: str | None = None
     fail_on_injection_severity: str | None = None
     fail_on_ssrf_severity: str | None = None
+    fail_on_egress_severity: str | None = None
     fail_on_capability_severity: str | None = None
     fail_on_config_health_severity: str | None = None
     fail_on_drift: bool | None = None
     require_pin: bool = False
+    egress_allowlist: list[str] = field(default_factory=list)
 
 
 def load_policy(path: Path) -> PolicyConfig:
@@ -75,6 +82,7 @@ def load_policy(path: Path) -> PolicyConfig:
     permission_severity = _severity(fail_on.get("permissions"), "fail_on.permissions")
     injection_severity = _severity(fail_on.get("injection"), "fail_on.injection")
     ssrf_severity = _severity(fail_on.get("ssrf"), "fail_on.ssrf")
+    egress_severity = _severity(fail_on.get("egress"), "fail_on.egress")
     capability_severity = _severity(fail_on.get("capabilities"), "fail_on.capabilities")
     config_health_severity = _severity(fail_on.get("config_health"), "fail_on.config_health")
     trifecta = bool(fail_on.get("trifecta", False))
@@ -98,6 +106,7 @@ def load_policy(path: Path) -> PolicyConfig:
         fail_on_permission_severity=permission_severity,
         fail_on_injection_severity=injection_severity,
         fail_on_ssrf_severity=ssrf_severity,
+        fail_on_egress_severity=egress_severity,
         fail_on_capability_severity=capability_severity,
         fail_on_config_health_severity=config_health_severity,
         fail_on_drift=bool(fail_on.get("drift", False)),
@@ -112,6 +121,10 @@ def load_policy(path: Path) -> PolicyConfig:
         denied_permissions=permissions,
         max_risk=max_risk,
         allow_servers=[str(value) for value in _sequence(raw.get("allow_servers"), "allow_servers")],
+        egress_allowlist=[str(value) for value in _sequence(raw.get("egress_allowlist"), "egress_allowlist")],
+        multi_tenant_hosts=[
+            str(value) for value in _sequence(raw.get("multi_tenant_hosts"), "multi_tenant_hosts")
+        ],
         server_rules=server_rules,
     )
 
@@ -239,6 +252,30 @@ def evaluate_policy(
                             message=(
                                 f"{ssrf_finding.rule_id} SSRF finding is "
                                 f"{ssrf_finding.severity.value} severity."
+                            ),
+                        )
+                    )
+
+        # Egress gate is opt-in like SSRF: the broad fail_on.severity shortcut does NOT
+        # cover it, so it must be requested explicitly via fail_on.egress.
+        egress_threshold = _effective_threshold(
+            server_rule.fail_on_egress_severity,
+            policy.fail_on_egress_severity,
+        )
+        if egress_threshold is not None:
+            threshold = _SEVERITY_RANK[egress_threshold]
+            for egress_finding in audit.egress_findings:
+                if _SEVERITY_RANK[egress_finding.severity.value] >= threshold:
+                    violations.append(
+                        PolicyViolation(
+                            rule="fail_on.egress",
+                            server_name=server_name,
+                            tool_name=egress_finding.target_name,
+                            severity=egress_finding.severity.value,
+                            message=(
+                                f"{egress_finding.rule_id} egress finding "
+                                f"({egress_finding.kind.value}) is "
+                                f"{egress_finding.severity.value} severity."
                             ),
                         )
                     )
@@ -554,6 +591,7 @@ def _server_rules(value: Any) -> dict[str, ServerPolicyConfig]:
                 fail_on.get("injection"), f"servers.{server_name}.fail_on.injection"
             ),
             fail_on_ssrf_severity=_severity(fail_on.get("ssrf"), f"servers.{server_name}.fail_on.ssrf"),
+            fail_on_egress_severity=_severity(fail_on.get("egress"), f"servers.{server_name}.fail_on.egress"),
             fail_on_capability_severity=_severity(
                 fail_on.get("capabilities"), f"servers.{server_name}.fail_on.capabilities"
             ),
@@ -562,5 +600,11 @@ def _server_rules(value: Any) -> dict[str, ServerPolicyConfig]:
             ),
             fail_on_drift=bool(fail_on["drift"]) if "drift" in fail_on else None,
             require_pin=bool(rule.get("require_pin", False)),
+            egress_allowlist=[
+                str(value)
+                for value in _sequence(
+                    rule.get("egress_allowlist"), f"servers.{server_name}.egress_allowlist"
+                )
+            ],
         )
     return rules
