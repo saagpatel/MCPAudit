@@ -126,13 +126,19 @@ class EgressDetector:
         # The curated default is always active; an operator-supplied set extends it.
         self.multi_tenant_hosts = MULTI_TENANT_API_HOSTS | (multi_tenant_hosts or set())
 
-    def scan_server(self, audit: ServerAudit) -> list[EgressFinding]:
+    def scan_server(self, audit: ServerAudit, extra_allowlist: set[str] | None = None) -> list[EgressFinding]:
         """Return all egress findings for a server.
 
         Reads ``audit.ssrf_findings`` (caller-controlled targets + path-templated fixed
         hosts) and ``audit.resources`` (fixed remote hosts that never fire SSRF). SSRF
         must have run first; the audit pipeline guarantees this under ``--egress-check``.
+
+        ``extra_allowlist`` adds per-server trusted destinations (from a policy file's
+        ``servers.<name>.egress_allowlist``) on top of the global allowlist, for this
+        server only — union semantics, mirroring how per-server ``denied_permissions``
+        merge. ``multi_tenant_hosts`` has no per-server override.
         """
+        allowlist = self.allowlist | extra_allowlist if extra_allowlist else self.allowlist
         findings: list[EgressFinding] = []
         seen_fixed: set[tuple[str, str]] = set()  # (target_name, host) — dedup fixed destinations
         # Server-level signal: can this server attach a caller-controlled credential to an
@@ -158,7 +164,13 @@ class EgressDetector:
                 )
             else:
                 self._emit_fixed(
-                    ssrf.target_type, ssrf.target_name, host, credential_bearing, seen_fixed, findings
+                    ssrf.target_type,
+                    ssrf.target_name,
+                    host,
+                    credential_bearing,
+                    allowlist,
+                    seen_fixed,
+                    findings,
                 )
 
         # 2. Fixed remote destinations the SSRF pass cannot see (a concrete external host
@@ -173,6 +185,7 @@ class EgressDetector:
                     resource.uri,
                     host,
                     credential_bearing,
+                    allowlist,
                     seen_fixed,
                     findings,
                 )
@@ -207,12 +220,14 @@ class EgressDetector:
         target_name: str,
         host: str,
         credential_bearing: bool,
+        allowlist: set[str],
         seen_fixed: set[tuple[str, str]],
         findings: list[EgressFinding],
     ) -> None:
-        """Record a fixed destination once; classify it against the allowlist.
+        """Record a fixed destination once; classify it against ``allowlist``.
 
-        Outside the allowlist → MEDIUM ``DESTINATION_OUTSIDE_ALLOWLIST``. Inside it →
+        ``allowlist`` is the effective set for this server (global ∪ any per-server
+        extras). Outside it → MEDIUM ``DESTINATION_OUTSIDE_ALLOWLIST``. Inside it →
         either nothing (genuinely trusted) or a downgraded ``TRUSTED_DESTINATION_RESIDUAL``
         when the host is multi-tenant or the server is credential-bearing.
         """
@@ -221,7 +236,7 @@ class EgressDetector:
             return
         seen_fixed.add(key)
 
-        if not host_in_allowlist(host, self.allowlist):
+        if not host_in_allowlist(host, allowlist):
             findings.append(
                 EgressFinding(
                     target_type=target_type,

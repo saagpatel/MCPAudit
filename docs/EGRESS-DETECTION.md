@@ -86,7 +86,9 @@ mcp-audit scan --egress-check --egress-allowlist data.partner.example --multi-te
 ```
 
 A policy file can also supply `egress_allowlist` and `multi_tenant_hosts`; these merge
-with the CLI flags to configure the detector.
+with the CLI flags to configure the detector. A per-server
+`servers.<name>.egress_allowlist` adds extra trusted destinations for that server only,
+unioned with the global allowlist (mirroring per-server `deny.permissions`).
 
 ## Policy gating
 

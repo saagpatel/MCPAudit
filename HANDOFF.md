@@ -25,6 +25,7 @@ complementing SSRF's "can a caller steer the destination?".
 - Empty allowlist trusts nothing → every fixed external destination flagged (operator-confirmed).
 - `--egress-check` includes SSRF analysis (egress consumes the caller-controlled signal); SSRF Warnings section appears alongside Egress.
 - Policy `egress_allowlist`/`multi_tenant_hosts` merge with CLI flags via `_merge_host_args` (policy loaded up front in `_run_scan`).
+- Per-server `servers.<name>.egress_allowlist` is unioned with the global allowlist for that server only (via `EgressDetector.scan_server(audit, extra_allowlist=...)`), mirroring per-server `denied_permissions` merge semantics.
 
 ## Deliverable 2 — Rule of Two Posture (D2): ✅ COMPLETE
 
@@ -49,5 +50,5 @@ Posture on every fired finding; names legs present, 1 recommended_drop, ≥1 aff
 ## Not done / follow-ups
 - Branch `feat/egress-detector` not merged to main, not pushed (per contract — push only when asked).
 - Deferred (explicitly out of Phase scope): fleet-spanning concentration refinement for the
-  posture (roadmap architecture note; Phase 0 task 3 used the simpler heuristic); policy
-  `egress_allowlist` is consumed by the detector via CLI merge, fully wired.
+  posture (roadmap architecture note; Phase 0 task 3 used the simpler heuristic). Global and
+  per-server policy `egress_allowlist` are both consumed by the detector and fully wired.

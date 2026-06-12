@@ -7,11 +7,15 @@ findings flow through every renderer and the fail_on.egress policy gate.
 
 from __future__ import annotations
 
+import functools
 import io
 from datetime import UTC, datetime
 
+import anyio
+import pytest
 from rich.console import Console
 
+from mcp_audit import cli
 from mcp_audit.egress import EgressDetector
 from mcp_audit.htmlreport import HtmlReportGenerator
 from mcp_audit.models import (
@@ -23,6 +27,7 @@ from mcp_audit.models import (
     ServerConfig,
     ToolInfo,
 )
+from mcp_audit.overrides import OverrideApplier, OverrideConfig
 from mcp_audit.policy import PolicyConfig, evaluate_policy
 from mcp_audit.report import ReportGenerator
 from mcp_audit.sarif import SarifGenerator
@@ -125,3 +130,57 @@ class TestPolicyGate:
     def test_no_egress_gate_passes(self) -> None:
         result = evaluate_policy(_report(_audit()), PolicyConfig())
         assert not any(v.rule == "fail_on.egress" for v in result.violations)
+
+
+class TestPerServerAllowlistWiring:
+    """The per-server ``servers.<name>.egress_allowlist`` must reach the detector.
+
+    Regression guard for the bug where the field was parsed (and shipped in
+    examples/policies/egress.yaml) but never applied: the detector only ever saw the
+    global allowlist, so a per-server trusted host was still flagged for that server.
+    """
+
+    @staticmethod
+    def _fixed_host_audit(name: str) -> ServerAudit:
+        return ServerAudit(
+            server=ServerConfig(name=name, client=ClientType.CLAUDE_DESKTOP, config_path="/test/config.json"),
+            connection_status="connected",
+            resources=[ResourceInfo(uri="https://logs.internal.example/data")],
+        )
+
+    def test_per_server_allowlist_reaches_detector(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """``trusted`` allowlists the host per-server (no finding); ``other`` does not (flagged)."""
+        servers = [
+            ServerConfig(name=n, client=ClientType.CLAUDE_DESKTOP, config_path="/test/config.json")
+            for n in ("trusted", "other")
+        ]
+        monkeypatch.setattr(cli, "discover_all_configs", lambda clients: servers)
+
+        audit_for = self._fixed_host_audit
+
+        class FakeConnector:
+            def __init__(self, timeout: float) -> None: ...
+
+            async def connect(self, srv: ServerConfig) -> ServerAudit:
+                return audit_for(srv.name)
+
+        monkeypatch.setattr(cli, "ServerConnector", FakeConnector)
+
+        report = anyio.run(
+            functools.partial(
+                cli._run_scan_core,
+                False,  # skip_connect
+                None,  # clients
+                10,  # timeout
+                None,  # extra_config
+                OverrideApplier(OverrideConfig()),
+                egress_check=True,
+                egress_server_allowlists={"trusted": ["logs.internal.example"]},
+            )
+        )
+
+        kinds = {a.server.name: {f.kind for f in a.egress_findings} for a in report.audits}
+        # Per-server allowlist trusts the host → genuinely trusted, no finding at all.
+        assert EgressKind.DESTINATION_OUTSIDE_ALLOWLIST not in kinds["trusted"]
+        # The same host on a server without the per-server rule is still flagged.
+        assert EgressKind.DESTINATION_OUTSIDE_ALLOWLIST in kinds["other"]

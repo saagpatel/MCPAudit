@@ -388,6 +388,64 @@ servers:
     assert policy.server_rules["srv"].egress_allowlist == ["logs.internal.example"]
 
 
+def test_scan_threads_per_server_egress_allowlist_from_policy(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``_run_scan`` derives the per-server egress allowlist map from ``policy.server_rules``
+    and threads it into ``_run_scan_core``. Regression guard for the map-building half of
+    the wiring; the apply half (map → detector) is covered in test_egress_integration."""
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text(
+        """
+egress_allowlist:
+  - api.anthropic.com
+servers:
+  trusted:
+    egress_allowlist:
+      - logs.internal.example
+  no_egress_rule:
+    fail_on:
+      egress: low
+"""
+    )
+    captured: dict[str, object] = {}
+
+    async def fake_run_scan_core(*args: object, **kwargs: object) -> AuditReport:
+        captured.update(kwargs)
+        return AuditReport(
+            scan_timestamp=datetime.now(UTC),
+            hostname="h",
+            os_platform="t",
+            servers_discovered=0,
+            servers_connected=0,
+            servers_failed=0,
+            total_tools=0,
+            high_risk_servers=0,
+            audits=[],
+            scan_duration_seconds=0.0,
+        )
+
+    monkeypatch.setattr(cli, "_run_scan_core", fake_run_scan_core)
+    monkeypatch.setattr(cli, "discover_all_configs", lambda clients: [])
+
+    anyio.run(
+        cli._run_scan,
+        None,  # json_output
+        None,  # sarif_output
+        None,  # html_output
+        True,  # skip_connect
+        None,  # clients
+        10,  # timeout
+        False,  # verbose
+        None,  # extra_config
+        None,  # override_config_path
+        str(policy_path),  # policy_path
+    )
+
+    # Only servers with a non-empty per-server egress_allowlist appear in the map.
+    assert captured["egress_server_allowlists"] == {"trusted": ["logs.internal.example"]}
+
+
 def test_per_server_egress_threshold_override(tmp_path: Path) -> None:
     # Global gate is HIGH, but the per-server override lowers it to LOW for 'srv'.
     policy_path = tmp_path / "policy.yaml"

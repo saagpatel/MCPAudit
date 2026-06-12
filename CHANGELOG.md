@@ -25,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   schema/URI-derived; reuses the SSRF host primitives; never issues a request or reads a
   credential value. Gated in policy via the dedicated `fail_on.egress` key, with
   `egress_allowlist` / `multi_tenant_hosts` policy config that merges with the CLI flags.
+  A per-server `servers.<name>.egress_allowlist` unions extra trusted destinations onto the
+  global allowlist for that server only (mirroring per-server `denied_permissions`).
   Renders in the terminal, HTML, and SARIF reports. See `docs/EGRESS-DETECTION.md` and
   `examples/policies/egress.yaml`.
 

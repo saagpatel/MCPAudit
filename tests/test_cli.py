@@ -200,6 +200,7 @@ def test_run_scan_core_config_only_ignores_discovered_configs(monkeypatch: pytes
         False,  # egress_check
         None,  # egress_allowlist
         None,  # multi_tenant_hosts
+        None,  # egress_server_allowlists
         False,  # pin_check
         False,  # trifecta_check
         False,  # shadow_check

@@ -328,6 +328,7 @@ async def _run_scan_core(
     egress_check: bool = False,
     egress_allowlist: str | None = None,
     multi_tenant_hosts: str | None = None,
+    egress_server_allowlists: dict[str, list[str]] | None = None,
     pin_check: bool = False,
     trifecta_check: bool = False,
     shadow_check: bool = False,
@@ -392,6 +393,7 @@ async def _run_scan_core(
         console.print("[yellow]--ssrf-allowlist has no effect without --ssrf-check.[/yellow]")
 
     egress_detector = None
+    egress_server_allow: dict[str, set[str]] = {}
     if egress_check:
         from mcp_audit.egress import EgressDetector
         from mcp_audit.ssrf import SsrfDetector, parse_host_allowlist
@@ -400,6 +402,13 @@ async def _run_scan_core(
             parse_host_allowlist(egress_allowlist),
             parse_host_allowlist(multi_tenant_hosts),
         )
+        # Per-server allowlists (policy ``servers.<name>.egress_allowlist``) are normalised
+        # once here and unioned with the global allowlist per server inside the scan loop.
+        egress_server_allow = {
+            name: parse_host_allowlist(",".join(hosts))
+            for name, hosts in (egress_server_allowlists or {}).items()
+            if hosts
+        }
         # Egress consumes the SSRF caller-controlled signal; ensure SSRF runs to feed it.
         if ssrf_detector is None:
             ssrf_detector = SsrfDetector()
@@ -518,7 +527,7 @@ async def _run_scan_core(
 
             # Optional egress detection (consumes the SSRF findings just computed + resource URIs)
             if egress_detector is not None:
-                audit.egress_findings = egress_detector.scan_server(audit)
+                audit.egress_findings = egress_detector.scan_server(audit, egress_server_allow.get(srv.name))
 
             audit.non_tool_risk = scorer.score_non_tool(audit.capability_findings, audit.injection_findings)
 
@@ -757,6 +766,15 @@ async def _run_scan(
         egress_check=egress_check,
         egress_allowlist=_merge_host_args(egress_allowlist, policy.egress_allowlist if policy else []),
         multi_tenant_hosts=_merge_host_args(multi_tenant_hosts, policy.multi_tenant_hosts if policy else []),
+        egress_server_allowlists=(
+            {
+                name: rule.egress_allowlist
+                for name, rule in policy.server_rules.items()
+                if rule.egress_allowlist
+            }
+            if policy
+            else None
+        ),
         pin_check=pin_check,
         trifecta_check=trifecta_check,
         shadow_check=shadow_check,
