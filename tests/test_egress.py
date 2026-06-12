@@ -213,7 +213,27 @@ def test_non_credential_param_does_not_trigger_residual() -> None:
 
 @pytest.mark.parametrize(
     "param",
-    ["api_key", "apiKey", "accessKey", "secret_key", "authToken", "bearer", "credential", "apikey", "auth"],
+    [
+        "api_key",
+        "apiKey",
+        "accessKey",
+        "secret_key",
+        "authToken",
+        "bearer",
+        "credential",
+        "apikey",
+        "auth",
+        # '*_key' credentials whose qualifier is not a generic credential word — the denylist
+        # (not allowlist) design must still catch these, or it would under-detect credentials.
+        "ssh_key",
+        "deploy_key",
+        "hmac_key",
+        "consumer_key",
+        "client_key",
+        "app_key",
+        "signing_key",
+        "private_key",
+    ],
 )
 def test_credential_param_names_are_detected(param: str) -> None:
     assert _is_credential_token_set(_key_tokens(param))
@@ -221,11 +241,25 @@ def test_credential_param_names_are_detected(param: str) -> None:
 
 @pytest.mark.parametrize(
     "param",
-    ["primary_key", "sort_key", "cache_key", "foreign_key", "registry_key", "partition_key", "query", "url"],
+    [
+        "primary_key",
+        "sort_key",
+        "cache_key",
+        "foreign_key",
+        "partition_key",
+        "composite_key",
+        "row_key",
+        "group_key",
+        "lookup_key",
+        "hash_key",
+        "shard_key",
+        "query",
+        "url",
+    ],
 )
 def test_identifier_key_params_are_not_credentials(param: str) -> None:
-    # A bare 'key' token is a credential only with a credential qualifier — '*_key' identifier
-    # params must not over-promote the trusted-destination residual from LOW to MEDIUM.
+    # A bare 'key' token is a credential UNLESS a known identifier qualifier sits beside it —
+    # '*_key' DB/cache identifiers must not over-promote the residual from LOW to MEDIUM.
     assert not _is_credential_token_set(_key_tokens(param))
 
 

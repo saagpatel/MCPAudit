@@ -410,9 +410,9 @@ async def _run_scan_core(
             if hosts
         }
         # Egress consumes the SSRF caller-controlled signal; ensure SSRF runs to feed it.
-        # When SSRF was not explicitly requested it runs as an internal substrate only —
-        # its findings are dropped after egress consumes them (see the scan loop) so they
-        # never surface in output or trip the fail_on.ssrf gate unasked.
+        # When SSRF was not explicitly requested it runs as an internal substrate only — its
+        # findings are dropped post-loop (see "SSRF substrate suppression") so they never
+        # surface in output or trip the fail_on.ssrf gate unasked.
         if ssrf_detector is None:
             ssrf_detector = SsrfDetector()
             console.print(
@@ -532,10 +532,6 @@ async def _run_scan_core(
             # Optional egress detection (consumes the SSRF findings just computed + resource URIs)
             if egress_detector is not None:
                 audit.egress_findings = egress_detector.scan_server(audit, egress_server_allow.get(srv.name))
-                # If SSRF ran only as egress substrate (no --ssrf-check), discard its findings
-                # now that egress has consumed them — they must not surface in output or gating.
-                if not ssrf_check:
-                    audit.ssrf_findings = []
 
             audit.non_tool_risk = scorer.score_non_tool(audit.capability_findings, audit.injection_findings)
 
@@ -668,6 +664,13 @@ async def _run_scan_core(
                     f"artifact byte-hashes and were skipped: {', '.join(stale)}. "
                     "Re-pin with `mcp-audit pin --download-artifacts` to enable verification.[/yellow]"
                 )
+
+    # SSRF substrate suppression — when egress ran SSRF only to map its destinations and
+    # --ssrf-check was not requested, egress has already consumed the findings, so drop them
+    # here (post-loop, beside the allowlist pass) rather than surface them in output or gating.
+    if egress_check and not ssrf_check:
+        for audit in audits:
+            audit.ssrf_findings = []
 
     # SSRF allowlist suppression — post-loop pass over all audits (outer scope, so
     # the suppressed counter accumulates cleanly).

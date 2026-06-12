@@ -82,30 +82,43 @@ _CREDENTIAL_PARAM_TOKENS: set[str] = {
     "credential",
 }
 
-# ``key`` alone is ambiguous: ``api_key``/``accessKey`` are credentials, but ``primary_key``/
-# ``sort_key``/``cache_key`` are identifiers. A ``key`` token counts as a credential only when
-# one of these qualifiers tokenizes alongside it, so identifier params are not misread as
-# credentials (which would over-promote the trusted-destination residual LOW → MEDIUM).
-_CREDENTIAL_KEY_QUALIFIERS: set[str] = {
-    "api",
-    "access",
-    "secret",
-    "private",
-    "auth",
-    "signing",
-    "encryption",
+# ``key`` alone is ambiguous: ``api_key``/``access_key``/``ssh_key`` name credentials, but
+# ``primary_key``/``sort_key``/``cache_key`` name row/cache identifiers. A ``key`` token counts
+# as a credential *unless* one of these identifier qualifiers tokenizes alongside it. A denylist
+# (not an allowlist of credential qualifiers) keeps this recall-biased: a novel ``*_key``
+# credential is caught, and only the handful of well-known DB/cache identifier keys are excluded —
+# the right bias for a security tool, where a missed credential is worse than an extra LOW→MEDIUM.
+_IDENTIFIER_KEY_QUALIFIERS: set[str] = {
+    "primary",
+    "foreign",
+    "sort",
+    "cache",
+    "partition",
+    "composite",
+    "surrogate",
+    "natural",
+    "shard",
+    "range",
+    "hash",
+    "row",
+    "group",
+    "lookup",
+    "idempotency",
+    "dedup",
+    "unique",
 }
 
 
 def _is_credential_token_set(tokens: set[str]) -> bool:
     """True if a tokenized param name denotes a caller-controllable credential.
 
-    A standalone credential token matches directly; a bare ``key`` token matches only with a
-    credential qualifier (``api_key`` yes, ``primary_key`` no).
+    A standalone credential token matches directly. A bare ``key`` token matches unless it is a
+    known identifier key (``api_key``/``ssh_key`` yes, ``primary_key``/``sort_key`` no), so
+    identifier params do not over-promote the trusted-destination residual from LOW to MEDIUM.
     """
     if tokens & _CREDENTIAL_PARAM_TOKENS:
         return True
-    return "key" in tokens and bool(tokens & _CREDENTIAL_KEY_QUALIFIERS)
+    return "key" in tokens and not (tokens & _IDENTIFIER_KEY_QUALIFIERS)
 
 
 def _is_remote_uri(uri: str) -> bool:
