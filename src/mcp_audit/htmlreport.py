@@ -19,6 +19,7 @@ from typing import Any
 
 from mcp_audit.models import AuditReport, ServerAudit
 from mcp_audit.redaction import redact_data
+from mcp_audit.taxonomy import format_rule_of_two
 
 _SEVERITY_CLASS = {
     "high": "sev-high",
@@ -219,12 +220,13 @@ class HtmlReportGenerator:
                 self._esc(self._pairs(f.leg1_contributors)),
                 self._esc(self._pairs(f.leg2_contributors)),
                 self._esc(self._pairs(f.leg3_contributors)),
+                self._esc(format_rule_of_two(f.rule_of_two) if f.rule_of_two else ""),
             )
             for f in audit.trifecta_findings
         ]
         return self._table(
             "Lethal trifecta",
-            ["Severity", "Rule", "Leg 1 (read)", "Leg 2 (ingest)", "Leg 3 (exfil)"],
+            ["Severity", "Rule", "Leg 1 (read)", "Leg 2 (ingest)", "Leg 3 (exfil)", "Rule of Two"],
             rows,
         )
 

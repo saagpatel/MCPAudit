@@ -13,6 +13,7 @@ from mcp_audit.models import (
     PackageVerifyKind,
     PermissionCategory,
     ProvenanceKind,
+    RuleOfTwoPosture,
     ShadowingKind,
     SsrfSeverity,
     TrifectaSeverity,
@@ -288,6 +289,19 @@ def rule_of_two_action(leg: int, tools: list[str]) -> str:
     quoted = ", ".join(f"'{tool}'" for tool in tools)
     targets = f"{label} {quoted}" if tools else "the affected tool(s)"
     return _RULE_OF_TWO_LEG_ACTIONS[leg].format(targets=targets)
+
+
+def format_rule_of_two(posture: RuleOfTwoPosture) -> str:
+    """Render a posture as one compact line, shared by the text/HTML/SARIF renderers."""
+    legs = ", ".join(str(n) for n in posture.legs_present)
+    line = (
+        f"Rule of Two — legs present: {legs}; recommended: drop Leg "
+        f"{posture.recommended_drop}: {posture.action}"
+    )
+    alternatives = "; ".join(f"Leg {leg}: {action}" for leg, action in posture.alternatives)
+    if alternatives:
+        line += f"; alternatives: {alternatives}"
+    return line
 
 
 SHADOWING_FINDINGS: dict[ShadowingKind, FindingMetadata] = {

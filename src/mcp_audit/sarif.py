@@ -57,6 +57,7 @@ from mcp_audit.taxonomy import (
     SHADOWING_FINDINGS,
     SSRF_FINDINGS,
     TRIFECTA_FINDINGS,
+    format_rule_of_two,
 )
 
 _SARIF_SCHEMA = (
@@ -661,6 +662,8 @@ class SarifGenerator:
             f"leg3(exfiltration)=[{leg3}]. "
             f"Suggested action: {finding.remediation}"
         )
+        if finding.rule_of_two is not None:
+            msg += f" {format_rule_of_two(finding.rule_of_two)}."
         return {
             "ruleId": rule_id,
             "level": level,
@@ -678,6 +681,7 @@ class SarifGenerator:
                 "leg2_contributors": finding.leg2_contributors,
                 "leg3_contributors": finding.leg3_contributors,
                 "remediation": finding.remediation,
+                "rule_of_two": finding.rule_of_two.model_dump() if finding.rule_of_two else None,
             },
         }
 
@@ -695,6 +699,8 @@ class SarifGenerator:
             f"leg3(exfiltration)=[{leg3}]. "
             f"Suggested action: {finding.remediation}"
         )
+        if finding.rule_of_two is not None:
+            msg += f" {format_rule_of_two(finding.rule_of_two)}."
         return {
             "ruleId": rule_id,
             "level": level,
@@ -710,6 +716,7 @@ class SarifGenerator:
                 "leg2_contributors": finding.leg2_contributors,
                 "leg3_contributors": finding.leg3_contributors,
                 "remediation": finding.remediation,
+                "rule_of_two": finding.rule_of_two.model_dump() if finding.rule_of_two else None,
             },
         }
 

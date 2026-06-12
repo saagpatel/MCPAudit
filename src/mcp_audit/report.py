@@ -29,6 +29,7 @@ from mcp_audit.models import (
     TrifectaSeverity,
 )
 from mcp_audit.redaction import redact_data, redact_identifiers, redact_text
+from mcp_audit.taxonomy import format_rule_of_two
 
 
 def _default_console() -> Console:
@@ -258,14 +259,14 @@ class ReportGenerator:
             tbl.add_column("Leg 1 (file_read)", overflow="fold")
             tbl.add_column("Leg 2 (untrusted ingestion)", overflow="fold")
             tbl.add_column("Leg 3 (exfiltration)", overflow="fold")
-            tbl.add_column("Suggested Action", overflow="fold")
+            tbl.add_column("Rule of Two", overflow="fold")
             for server_name, f in per_server:
                 tbl.add_row(
                     server_name,
                     "; ".join(f"{s}/{t}" for s, t in f.leg1_contributors),
                     "; ".join(f"{s}/{t}" for s, t in f.leg2_contributors),
                     "; ".join(f"{s}/{t}" for s, t in f.leg3_contributors),
-                    f.remediation,
+                    format_rule_of_two(f.rule_of_two) if f.rule_of_two else f.remediation,
                 )
             self._console.print(tbl)
 
@@ -274,14 +275,15 @@ class ReportGenerator:
             tbl2.add_column("Leg 1 (file_read)", overflow="fold")
             tbl2.add_column("Leg 2 (untrusted ingestion)", overflow="fold")
             tbl2.add_column("Leg 3 (exfiltration)", overflow="fold")
-            tbl2.add_column("Suggested Action", overflow="fold")
+            tbl2.add_column("Rule of Two", overflow="fold")
             for f in fleet:
                 sev_style = "bold red" if f.severity == TrifectaSeverity.HIGH else "yellow"
+                posture = format_rule_of_two(f.rule_of_two) if f.rule_of_two else f.remediation
                 tbl2.add_row(
                     "; ".join(f"{s}/{t}" for s, t in f.leg1_contributors),
                     "; ".join(f"{s}/{t}" for s, t in f.leg2_contributors),
                     "; ".join(f"{s}/{t}" for s, t in f.leg3_contributors),
-                    f"[{sev_style}]{f.remediation}[/{sev_style}]",
+                    f"[{sev_style}]{posture}[/{sev_style}]",
                 )
             self._console.print(tbl2)
 

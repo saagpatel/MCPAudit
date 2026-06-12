@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Rule of Two posture** on lethal-trifecta findings — every fired trifecta finding
+  (per-server `MCP013` and fleet `MCP014`) now carries an advisory `rule_of_two` posture
+  after Meta's Oct 2025 framework: which single leg to drop to break the trifecta, the
+  concrete remediation, and the two alternatives. Deterministic heuristic — prefer
+  dropping Leg 3 (exfiltration, enforceable via `--egress-check`) when present, else the
+  fewest-tools leg. Purely advisory: it never changes *when* the trifecta fires. Renders
+  in the terminal, HTML, and SARIF reports. See `docs/TRIFECTA-DETECTION.md`.
 - **Egress detection** (`scan --egress-check`, opt-in) — audits *where* an MCP server may
   send data, complementing SSRF's "can a caller steer the destination?". Flags fixed
   destinations outside `--egress-allowlist` (`MCP040`, MEDIUM), unbounded caller-controlled
