@@ -76,9 +76,9 @@ def test_fixed_host_outside_allowlist_is_medium() -> None:
 
 
 def test_fixed_host_inside_allowlist_is_clean() -> None:
-    # Subdomain match: api.anthropic.com is covered by allowlisting anthropic.com.
-    audit = _audit(resources=[ResourceInfo(uri="https://api.anthropic.com/data")])
-    assert EgressDetector(allowlist={"anthropic.com"}).scan_server(audit) == []
+    # A plain (non-multi-tenant) allowlisted host with no credential signal is clean.
+    audit = _audit(resources=[ResourceInfo(uri="https://docs.internal.example/data")])
+    assert EgressDetector(allowlist={"internal.example"}).scan_server(audit) == []
 
 
 def test_empty_allowlist_flags_every_fixed_destination() -> None:
@@ -160,13 +160,112 @@ def test_egress_metadata_present_for_all_kinds() -> None:
         assert meta.rule_id.startswith("MCP04")
 
 
-def test_multi_tenant_hosts_arg_is_accepted_and_dormant_in_phase0() -> None:
-    # Phase 1 consumes multi_tenant_hosts; in Phase 0 it must not change behavior.
+# --- Phase 1: trusted-destination residual (the Cowork lesson) -------------
+
+
+def test_allowlisted_multi_tenant_host_is_low_residual() -> None:
+    # api.anthropic.com is in the curated MULTI_TENANT_API_HOSTS default; allowlisting it
+    # does not make it automatically safe — it stays a LOW advisory residual.
     audit = _audit(resources=[ResourceInfo(uri="https://api.anthropic.com/data")])
-    with_mt = EgressDetector(
-        allowlist={"anthropic.com"}, multi_tenant_hosts={"api.anthropic.com"}
+    findings = EgressDetector(allowlist={"anthropic.com"}).scan_server(audit)
+    assert len(findings) == 1
+    f = findings[0]
+    assert f.kind is EgressKind.TRUSTED_DESTINATION_RESIDUAL
+    assert f.severity is EgressSeverity.LOW
+    assert f.destination_host == "api.anthropic.com"
+    assert f.rule_id == "MCP042"
+
+
+def test_cowork_credential_plus_trusted_host_is_medium_residual() -> None:
+    # The Cowork pattern: an allowlisted multi-tenant API + a tool that takes an api_key.
+    audit = _audit(
+        tools=[_tool("send", "Send a message.", {"api_key": {"type": "string"}})],
+        resources=[ResourceInfo(uri="https://api.anthropic.com/data")],
+    )
+    findings = EgressDetector(allowlist={"anthropic.com"}).scan_server(audit)
+    assert len(findings) == 1
+    f = findings[0]
+    assert f.kind is EgressKind.TRUSTED_DESTINATION_RESIDUAL
+    assert f.severity is EgressSeverity.MEDIUM  # credential vector elevates LOW -> MEDIUM
+
+
+def test_credential_param_elevates_plain_trusted_host_to_residual() -> None:
+    # Even a non-multi-tenant allowlisted host gets a residual when the server is
+    # credential-bearing — the credential could redirect data off the trusted path.
+    audit = _audit(
+        tools=[_tool("call", "Call an API.", {"accessToken": {"type": "string"}})],
+        resources=[ResourceInfo(uri="https://docs.internal.example/data")],
+    )
+    findings = EgressDetector(allowlist={"internal.example"}).scan_server(audit)
+    assert len(findings) == 1
+    assert findings[0].kind is EgressKind.TRUSTED_DESTINATION_RESIDUAL
+    assert findings[0].severity is EgressSeverity.MEDIUM
+
+
+def test_non_credential_param_does_not_trigger_residual() -> None:
+    # Exact-token match, not substring: 'query' is not a credential token.
+    audit = _audit(
+        tools=[_tool("search", "Search docs.", {"query": {"type": "string"}})],
+        resources=[ResourceInfo(uri="https://docs.internal.example/data")],
+    )
+    assert EgressDetector(allowlist={"internal.example"}).scan_server(audit) == []
+
+
+def test_userinfo_templated_resource_is_credential_bearing() -> None:
+    # A resource URI that templates its userinfo attaches a caller-supplied credential to a
+    # fixed (allowlisted) host — credential-bearing, so a MEDIUM residual.
+    audit = _audit(resources=[ResourceInfo(uri="https://user:{token}@docs.internal.example/x")])
+    findings = EgressDetector(allowlist={"internal.example"}).scan_server(audit)
+    assert len(findings) == 1
+    assert findings[0].kind is EgressKind.TRUSTED_DESTINATION_RESIDUAL
+    assert findings[0].severity is EgressSeverity.MEDIUM
+
+
+def test_residual_is_never_high() -> None:
+    audit = _audit(
+        tools=[_tool("send", "Send.", {"secret": {"type": "string"}})],
+        resources=[ResourceInfo(uri="https://api.openai.com/v1/data")],
+    )
+    findings = EgressDetector(allowlist={"openai.com"}).scan_server(audit)
+    assert findings
+    assert all(f.severity is not EgressSeverity.HIGH for f in findings)
+
+
+def test_multi_tenant_hosts_arg_extends_the_curated_default() -> None:
+    # An operator-supplied host joins (does not replace) the curated default.
+    audit = _audit(resources=[ResourceInfo(uri="https://data.partner.example/x")])
+    findings = EgressDetector(
+        allowlist={"partner.example"}, multi_tenant_hosts={"data.partner.example"}
     ).scan_server(audit)
-    assert with_mt == []  # allowlisted host stays clean until the Phase 1 residual lands
+    assert len(findings) == 1
+    assert findings[0].kind is EgressKind.TRUSTED_DESTINATION_RESIDUAL
+    assert findings[0].severity is EgressSeverity.LOW
+
+
+def test_non_remote_userinfo_resource_does_not_set_credential_bearing() -> None:
+    # An ftp resource is not an egress destination (non-remote scheme); its templated
+    # userinfo must NOT inflate an unrelated allowlisted destination's residual to MEDIUM.
+    audit = _audit(
+        resources=[
+            ResourceInfo(uri="ftp://user:{token}@files.internal.example/x"),
+            ResourceInfo(uri="https://api.anthropic.com/data"),
+        ]
+    )
+    findings = EgressDetector(allowlist={"anthropic.com"}).scan_server(audit)
+    assert len(findings) == 1
+    f = findings[0]
+    assert f.destination_host == "api.anthropic.com"
+    assert f.kind is EgressKind.TRUSTED_DESTINATION_RESIDUAL
+    assert f.severity is EgressSeverity.LOW  # not elevated by the non-remote ftp credential
+
+
+def test_non_allowlisted_multi_tenant_host_is_outside_not_residual() -> None:
+    # The residual only applies to allowlisted hosts; a multi-tenant host that is NOT
+    # allowlisted is still a plain DESTINATION_OUTSIDE_ALLOWLIST finding.
+    audit = _audit(resources=[ResourceInfo(uri="https://api.anthropic.com/data")])
+    findings = EgressDetector(allowlist={"github.com"}).scan_server(audit)
+    assert len(findings) == 1
+    assert findings[0].kind is EgressKind.DESTINATION_OUTSIDE_ALLOWLIST
 
 
 # --- Static-only invariant -------------------------------------------------
