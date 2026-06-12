@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-06-12
+
 ### Added
 
 - **Rule of Two posture** on lethal-trifecta findings — every fired trifecta finding
@@ -27,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `egress_allowlist` / `multi_tenant_hosts` policy config that merges with the CLI flags.
   A per-server `servers.<name>.egress_allowlist` unions extra trusted destinations onto the
   global allowlist for that server only (mirroring per-server `denied_permissions`).
+  `--egress-check` runs SSRF internally to map outbound destinations; those SSRF findings
+  are reported only when `--ssrf-check` is also passed.
   Renders in the terminal, HTML, and SARIF reports. See `docs/EGRESS-DETECTION.md` and
   `examples/policies/egress.yaml`.
 
