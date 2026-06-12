@@ -79,7 +79,8 @@ def _trifecta_finding(
         leg3_contributors=leg3,
         description=meta.description,
         is_fleet=is_fleet,
-        rule_of_two=_compute_rule_of_two(leg1, leg2, leg3),
+        # Mirror production: analyze_fleet attributes tools to servers, analyze_server does not.
+        rule_of_two=_compute_rule_of_two(leg1, leg2, leg3, attribute_server=is_fleet),
     )
 
 

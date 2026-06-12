@@ -101,14 +101,21 @@ def _tools_for_category(
     return result
 
 
-def _leg_tools(contributors: list[tuple[str, str]]) -> list[str]:
-    """Deduplicate a leg's contributor tool names, preserving first-seen order."""
-    seen: set[str] = set()
+def _leg_tools(contributors: list[tuple[str, str]], attribute_server: bool = False) -> list[str]:
+    """Deduplicate a leg's contributor tool names, preserving first-seen order.
+
+    With ``attribute_server`` (fleet findings span multiple servers) each entry is rendered
+    ``tool (server)`` and deduplicated by ``(server, tool)``, so identical tool names on
+    different servers stay distinct and the remediation names which server each tool is on.
+    """
+    seen: set[tuple[str, str] | str] = set()
     tools: list[str] = []
-    for _server, tool in contributors:
-        if tool not in seen:
-            seen.add(tool)
-            tools.append(tool)
+    for server, tool in contributors:
+        dedup_key = (server, tool) if attribute_server else tool
+        if dedup_key in seen:
+            continue
+        seen.add(dedup_key)
+        tools.append(f"{tool} ({server})" if attribute_server else tool)
     return tools
 
 
@@ -116,6 +123,7 @@ def _compute_rule_of_two(
     leg1: list[tuple[str, str]],
     leg2: list[tuple[str, str]],
     leg3: list[tuple[str, str]],
+    attribute_server: bool = False,
 ) -> RuleOfTwoPosture:
     """Compute the advisory Rule-of-Two posture for a fired trifecta.
 
@@ -123,9 +131,14 @@ def _compute_rule_of_two(
     any contributing tool — removing the outbound channel breaks the trifecta with the
     least loss of read/ingest utility and is enforceable today via ``--egress-check``.
     Otherwise drops the leg with the fewest contributing tools (tie-break: lower leg
-    number). The other present legs are returned as alternatives.
+    number). The other present legs are returned as alternatives. ``attribute_server``
+    (set for fleet findings) labels each tool with its owning server.
     """
-    tools_by_leg = {1: _leg_tools(leg1), 2: _leg_tools(leg2), 3: _leg_tools(leg3)}
+    tools_by_leg = {
+        1: _leg_tools(leg1, attribute_server),
+        2: _leg_tools(leg2, attribute_server),
+        3: _leg_tools(leg3, attribute_server),
+    }
     present = [leg for leg in (1, 2, 3) if tools_by_leg[leg]]
 
     if tools_by_leg[3]:
@@ -233,6 +246,11 @@ class TrifectaAnalyzer:
                 leg3_contributors=leg3_contributors,
                 description=meta.description,
                 is_fleet=True,
-                rule_of_two=_compute_rule_of_two(leg1_contributors, leg2_contributors, leg3_contributors),
+                rule_of_two=_compute_rule_of_two(
+                    leg1_contributors,
+                    leg2_contributors,
+                    leg3_contributors,
+                    attribute_server=True,
+                ),
             )
         ]

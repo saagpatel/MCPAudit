@@ -453,3 +453,29 @@ class TestRuleOfTwoPosture:
         )
         assert posture.recommended_drop == 3
         assert posture.affected_tools == ["send"]  # deduped, order preserved
+
+    def test_fleet_attribution_labels_tools_with_server(self) -> None:
+        # attribute_server=True (fleet): identical tool names on different servers stay
+        # distinct and each is labelled with its owning server, so the remediation is
+        # actionable instead of an ambiguous "Remove send" across the whole deployment.
+        posture = _compute_rule_of_two(
+            [("reader", "read")],
+            [("fetcher", "fetch")],
+            [("sender-a", "send"), ("sender-b", "send")],  # same tool name, two servers
+            attribute_server=True,
+        )
+        assert posture.recommended_drop == 3
+        assert posture.affected_tools == ["send (sender-a)", "send (sender-b)"]
+        assert "send (sender-a)" in posture.action
+        assert "send (sender-b)" in posture.action
+
+    def test_fleet_finding_attributes_tools_to_servers(self) -> None:
+        # The analyze_fleet wiring passes attribute_server=True end to end.
+        leg1 = _audit("reader", [PermissionCategory.FILE_READ])
+        leg2 = _audit("fetcher", [], ingests=True)
+        leg3 = _audit("sender", [PermissionCategory.EXFILTRATION])
+        posture = analyzer.analyze_fleet([leg1, leg2, leg3])[0].rule_of_two
+        assert posture is not None
+        assert posture.affected_tools  # non-empty
+        assert all(t.endswith(")") and " (" in t for t in posture.affected_tools)
+        assert any("(sender)" in t for t in posture.affected_tools)
