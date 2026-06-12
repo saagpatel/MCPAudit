@@ -15,6 +15,7 @@ from mcp_audit.models import (
     ArtifactVerifySeverity,
     AuditReport,
     DriftStatus,
+    EgressSeverity,
     EscalationKind,
     EscalationSeverity,
     InjectionSeverity,
@@ -96,6 +97,7 @@ class ReportGenerator:
 
         self._render_injection_warnings(report)
         self._render_ssrf_warnings(report)
+        self._render_egress_warnings(report)
         self._render_trifecta_warnings(report)
         self._render_shadowing_warnings(report)
         self._render_escalation_warnings(report)
@@ -199,6 +201,42 @@ class ReportGenerator:
                 f.target_name,
                 f"[{sev_style}]{f.severity.value}[/{sev_style}]",
                 f.pattern_name,
+                "; ".join(f.evidence),
+                f.remediation,
+            )
+        self._console.print(tbl)
+
+    def _render_egress_warnings(self, report: AuditReport) -> None:
+        """Print egress (outbound-destination) findings section if any were found."""
+        all_findings = [(a.server.name, f) for a in report.audits for f in a.egress_findings]
+        if not all_findings:
+            return
+
+        self._console.print()
+        self._console.rule("[bold red]Egress / Outbound Destinations[/bold red]")
+        tbl = Table(show_lines=False)
+        tbl.add_column("Server", style="bold cyan", no_wrap=True)
+        tbl.add_column("Type", style="cyan")
+        tbl.add_column("Target", style="cyan")
+        tbl.add_column("Severity")
+        tbl.add_column("Kind")
+        tbl.add_column("Destination")
+        tbl.add_column("Evidence", overflow="fold")
+        tbl.add_column("Suggested Action", overflow="fold")
+
+        for server_name, f in all_findings:
+            sev_style = {
+                EgressSeverity.HIGH: "bold red",
+                EgressSeverity.MEDIUM: "yellow",
+                EgressSeverity.LOW: "dim",
+            }.get(f.severity, "")
+            tbl.add_row(
+                server_name,
+                f.target_type.value,
+                f.target_name,
+                f"[{sev_style}]{f.severity.value}[/{sev_style}]",
+                f.kind.value,
+                f.destination_host or "[dim]caller-controlled[/dim]",
                 "; ".join(f.evidence),
                 f.remediation,
             )

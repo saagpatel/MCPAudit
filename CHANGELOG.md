@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Egress detection** (`scan --egress-check`, opt-in) — audits *where* an MCP server may
+  send data, complementing SSRF's "can a caller steer the destination?". Flags fixed
+  destinations outside `--egress-allowlist` (`MCP040`, MEDIUM), unbounded caller-controlled
+  targets (`MCP041`, HIGH), and a **trusted-destination residual** (`MCP042`, LOW/MEDIUM) for
+  an allowlisted host that is multi-tenant or credential-bearing — the January 2026 Claude
+  Cowork lesson that a trusted host is not automatically a safe destination. Static and
+  schema/URI-derived; reuses the SSRF host primitives; never issues a request or reads a
+  credential value. Gated in policy via the dedicated `fail_on.egress` key, with
+  `egress_allowlist` / `multi_tenant_hosts` policy config that merges with the CLI flags.
+  Renders in the terminal, HTML, and SARIF reports. See `docs/EGRESS-DETECTION.md` and
+  `examples/policies/egress.yaml`.
+
 ## [2.0.0] - 2026-06-07
 
 ### Changed

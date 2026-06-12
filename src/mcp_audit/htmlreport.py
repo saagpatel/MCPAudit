@@ -141,6 +141,7 @@ class HtmlReportGenerator:
         body.append(self._permissions_table(audit))
         body.append(self._injection_table(audit))
         body.append(self._ssrf_table(audit))
+        body.append(self._egress_table(audit))
         body.append(self._trifecta_table(audit))
         body.append(self._escalation_table(audit))
         body.append(self._provenance_table(audit))
@@ -195,6 +196,20 @@ class HtmlReportGenerator:
             for f in audit.ssrf_findings
         ]
         return self._table("SSRF", ["Severity", "Rule", "Pattern", "Target", "Evidence"], rows)
+
+    def _egress_table(self, audit: ServerAudit) -> str:
+        rows = [
+            self._row(
+                self._sev_badge(f.severity.value),
+                self._esc(f.rule_id),
+                self._esc(f.kind.value),
+                self._esc(f.target_name),
+                self._esc(f.destination_host or "caller-controlled"),
+                self._esc("; ".join(f.evidence)),
+            )
+            for f in audit.egress_findings
+        ]
+        return self._table("Egress", ["Severity", "Rule", "Kind", "Target", "Destination", "Evidence"], rows)
 
     def _trifecta_table(self, audit: ServerAudit) -> str:
         rows = [

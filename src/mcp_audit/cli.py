@@ -177,6 +177,24 @@ def discover(client_filter: str | None, verbose: bool) -> None:
     help="Comma-separated trusted hosts; suppress SSRF findings whose fixed target host is allowlisted (subdomains included). Never suppresses caller-controlled targets.",  # noqa: E501
 )
 @click.option(
+    "--egress-check",
+    is_flag=True,
+    default=False,
+    help="Audit outbound destinations: flag egress outside the allowlist, unbounded caller-controlled targets, and trusted-but-multi-tenant residuals. Includes SSRF analysis.",  # noqa: E501
+)
+@click.option(
+    "--egress-allowlist",
+    default=None,
+    metavar="HOSTS",
+    help="Comma-separated trusted egress destination hosts (subdomains included). With --egress-check, fixed destinations outside this set are flagged.",  # noqa: E501
+)
+@click.option(
+    "--multi-tenant-hosts",
+    default=None,
+    metavar="HOSTS",
+    help="Comma-separated extra multi-tenant hosts treated as trusted-destination residual risk, beyond the curated default set. Effective with --egress-check.",  # noqa: E501
+)
+@click.option(
     "--pin-check", is_flag=True, default=False, help="Check for tool schema drift against stored pins."
 )  # noqa: E501
 @click.option(
@@ -248,6 +266,9 @@ def scan(
     inject_check: bool,
     ssrf_check: bool,
     ssrf_allowlist: str | None,
+    egress_check: bool,
+    egress_allowlist: str | None,
+    multi_tenant_hosts: str | None,
     pin_check: bool,
     trifecta_check: bool,
     shadow_check: bool,
@@ -278,6 +299,9 @@ def scan(
         inject_check,
         ssrf_check,
         ssrf_allowlist,
+        egress_check,
+        egress_allowlist,
+        multi_tenant_hosts,
         pin_check,
         trifecta_check,
         shadow_check,
@@ -301,6 +325,9 @@ async def _run_scan_core(
     inject_check: bool = False,
     ssrf_check: bool = False,
     ssrf_allowlist: str | None = None,
+    egress_check: bool = False,
+    egress_allowlist: str | None = None,
+    multi_tenant_hosts: str | None = None,
     pin_check: bool = False,
     trifecta_check: bool = False,
     shadow_check: bool = False,
@@ -363,6 +390,26 @@ async def _run_scan_core(
         ssrf_allow = parse_host_allowlist(ssrf_allowlist)
     elif ssrf_allowlist:
         console.print("[yellow]--ssrf-allowlist has no effect without --ssrf-check.[/yellow]")
+
+    egress_detector = None
+    if egress_check:
+        from mcp_audit.egress import EgressDetector
+        from mcp_audit.ssrf import SsrfDetector, parse_host_allowlist
+
+        egress_detector = EgressDetector(
+            parse_host_allowlist(egress_allowlist),
+            parse_host_allowlist(multi_tenant_hosts),
+        )
+        # Egress consumes the SSRF caller-controlled signal; ensure SSRF runs to feed it.
+        if ssrf_detector is None:
+            ssrf_detector = SsrfDetector()
+            console.print(
+                "[dim]--egress-check: SSRF analysis is included to map outbound destinations.[/dim]"
+            )
+    elif egress_allowlist or multi_tenant_hosts:
+        console.print(
+            "[yellow]--egress-allowlist/--multi-tenant-hosts have no effect without --egress-check.[/yellow]"
+        )
 
     trifecta_analyzer = None
     if trifecta_check:
@@ -468,6 +515,10 @@ async def _run_scan_core(
             # Optional SSRF detection (allowlist filtering happens in a post-loop pass)
             if ssrf_detector is not None:
                 audit.ssrf_findings = ssrf_detector.scan_server(audit.tools, audit.resources)
+
+            # Optional egress detection (consumes the SSRF findings just computed + resource URIs)
+            if egress_detector is not None:
+                audit.egress_findings = egress_detector.scan_server(audit)
 
             audit.non_tool_risk = scorer.score_non_tool(audit.capability_findings, audit.injection_findings)
 
@@ -659,6 +710,9 @@ async def _run_scan(
     inject_check: bool = False,
     ssrf_check: bool = False,
     ssrf_allowlist: str | None = None,
+    egress_check: bool = False,
+    egress_allowlist: str | None = None,
+    multi_tenant_hosts: str | None = None,
     pin_check: bool = False,
     trifecta_check: bool = False,
     shadow_check: bool = False,
@@ -679,6 +733,18 @@ async def _run_scan(
     override_applier = OverrideApplier(load_override_config(cfg_path))
     client_list = _parse_clients(clients)
 
+    # Load the policy up front so its egress_allowlist / multi_tenant_hosts can configure
+    # the egress detector; CLI flags merge with the policy-supplied hosts.
+    policy = None
+    if policy_path:
+        from mcp_audit.policy import load_policy
+
+        try:
+            policy = load_policy(Path(policy_path))
+        except Exception as exc:
+            console.print(f"[red]Failed to load policy {policy_path}: {redact_text(str(exc))}[/red]")
+            raise SystemExit(1) from exc
+
     report = await _run_scan_core(
         skip_connect,
         client_list,
@@ -688,6 +754,9 @@ async def _run_scan(
         inject_check=inject_check,
         ssrf_check=ssrf_check,
         ssrf_allowlist=ssrf_allowlist,
+        egress_check=egress_check,
+        egress_allowlist=_merge_host_args(egress_allowlist, policy.egress_allowlist if policy else []),
+        multi_tenant_hosts=_merge_host_args(multi_tenant_hosts, policy.multi_tenant_hosts if policy else []),
         pin_check=pin_check,
         trifecta_check=trifecta_check,
         shadow_check=shadow_check,
@@ -700,14 +769,9 @@ async def _run_scan(
         config_only=config_only,
     )
 
-    if policy_path:
-        from mcp_audit.policy import evaluate_policy, load_policy
+    if policy is not None:
+        from mcp_audit.policy import evaluate_policy
 
-        try:
-            policy = load_policy(Path(policy_path))
-        except Exception as exc:
-            console.print(f"[red]Failed to load policy {policy_path}: {redact_text(str(exc))}[/red]")
-            raise SystemExit(1) from exc
         report.policy_result = evaluate_policy(report, policy)
 
     gen = ReportGenerator(console=console)
@@ -743,6 +807,17 @@ async def _run_scan(
 
     if report.policy_result is not None and not report.policy_result.passed:
         raise SystemExit(2)
+
+
+def _merge_host_args(cli_value: str | None, policy_hosts: list[str]) -> str | None:
+    """Merge a comma-separated CLI host arg with policy-supplied hosts into one arg.
+
+    ``parse_host_allowlist`` normalises and dedups downstream, so a plain comma-join is
+    sufficient. Returns None when both sources are empty (no hosts configured).
+    """
+    parts = [cli_value] if cli_value else []
+    parts.extend(policy_hosts)
+    return ",".join(parts) if parts else None
 
 
 def _parse_clients(clients_str: str | None) -> list[ClientType] | None:

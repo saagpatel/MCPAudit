@@ -197,6 +197,9 @@ def test_run_scan_core_config_only_ignores_discovered_configs(monkeypatch: pytes
         False,  # inject_check
         False,  # ssrf_check
         None,  # ssrf_allowlist
+        False,  # egress_check
+        None,  # egress_allowlist
+        None,  # multi_tenant_hosts
         False,  # pin_check
         False,  # trifecta_check
         False,  # shadow_check
