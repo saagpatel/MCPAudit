@@ -264,6 +264,32 @@ def trifecta_metadata(severity: TrifectaSeverity) -> FindingMetadata:
     return TRIFECTA_FINDINGS[severity]
 
 
+# Rule-of-Two posture (Meta, Oct 2025): drop one leg to break the trifecta.
+RULE_OF_TWO_DESCRIPTION = (
+    "Rule of Two: an agent should hold at most two of {untrusted input, sensitive data "
+    "access, external communication}. Dropping any one leg breaks the trifecta."
+)
+
+# Per-leg remediation templates. {targets} is filled with the affected tool name(s).
+_RULE_OF_TWO_LEG_ACTIONS: dict[int, str] = {
+    1: "remove file-read access ({targets})",
+    2: "remove/disable the ingestion {targets}",
+    3: "restrict outbound destinations via --egress-check allowlist, or remove {targets}",
+}
+
+
+def rule_of_two_action(leg: int, tools: list[str]) -> str:
+    """Return the concrete remediation action for dropping ``leg``, naming ``tools``.
+
+    Example: ``rule_of_two_action(3, ["upload_file"])`` ->
+    "restrict outbound destinations via --egress-check allowlist, or remove tool 'upload_file'".
+    """
+    label = "tool" if len(tools) == 1 else "tools"
+    quoted = ", ".join(f"'{tool}'" for tool in tools)
+    targets = f"{label} {quoted}" if tools else "the affected tool(s)"
+    return _RULE_OF_TWO_LEG_ACTIONS[leg].format(targets=targets)
+
+
 SHADOWING_FINDINGS: dict[ShadowingKind, FindingMetadata] = {
     ShadowingKind.EXACT: FindingMetadata(
         rule_id="MCP015",

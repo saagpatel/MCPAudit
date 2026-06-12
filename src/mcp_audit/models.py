@@ -421,6 +421,24 @@ class EgressFinding(BaseModel):
         return egress_metadata(self.kind).remediation
 
 
+class RuleOfTwoPosture(BaseModel):
+    """Advisory Rule-of-Two remediation attached to a fired trifecta finding.
+
+    Meta's Oct 2025 framing: an agent should hold at most two of {untrusted input,
+    sensitive data access, external communication}. Dropping any one leg breaks the
+    trifecta. This posture names the legs present, recommends the single best leg to
+    drop (prefer Leg 3 / exfiltration when present, else the leg with the fewest
+    contributing tools), and lists the other legs as alternatives so the operator can
+    pick a different trade-off. Purely advisory — it never changes when the trifecta fires.
+    """
+
+    legs_present: list[int]  # subset of [1, 2, 3]
+    recommended_drop: int  # the leg to remove (1 | 2 | 3)
+    action: str  # concrete remediation text for the recommended drop
+    affected_tools: list[str]  # tool names tied to the dropped leg
+    alternatives: list[tuple[int, str]]  # (leg, action) for the other legs
+
+
 class TrifectaFinding(BaseModel):
     """A lethal-trifecta / toxic-flow finding.
 
@@ -441,6 +459,7 @@ class TrifectaFinding(BaseModel):
     leg3_contributors: list[tuple[str, str]]  # (server_name, tool_name)
     description: str
     is_fleet: bool = False  # True for fleet-level advisory finding
+    rule_of_two: RuleOfTwoPosture | None = None  # advisory remediation (attached when fired)
 
     @computed_field  # type: ignore[prop-decorator]
     @property

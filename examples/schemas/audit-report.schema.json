@@ -966,6 +966,59 @@
       "title": "RiskScore",
       "type": "object"
     },
+    "RuleOfTwoPosture": {
+      "description": "Advisory Rule-of-Two remediation attached to a fired trifecta finding.\n\nMeta's Oct 2025 framing: an agent should hold at most two of {untrusted input,\nsensitive data access, external communication}. Dropping any one leg breaks the\ntrifecta. This posture names the legs present, recommends the single best leg to\ndrop (prefer Leg 3 / exfiltration when present, else the leg with the fewest\ncontributing tools), and lists the other legs as alternatives so the operator can\npick a different trade-off. Purely advisory \u2014 it never changes when the trifecta fires.",
+      "properties": {
+        "legs_present": {
+          "items": {
+            "type": "integer"
+          },
+          "title": "Legs Present",
+          "type": "array"
+        },
+        "recommended_drop": {
+          "title": "Recommended Drop",
+          "type": "integer"
+        },
+        "action": {
+          "title": "Action",
+          "type": "string"
+        },
+        "affected_tools": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Affected Tools",
+          "type": "array"
+        },
+        "alternatives": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "type": "array"
+          },
+          "title": "Alternatives",
+          "type": "array"
+        }
+      },
+      "required": [
+        "legs_present",
+        "recommended_drop",
+        "action",
+        "affected_tools",
+        "alternatives"
+      ],
+      "title": "RuleOfTwoPosture",
+      "type": "object"
+    },
     "ServerAudit": {
       "description": "Complete audit result for a single MCP server.",
       "properties": {
@@ -1520,6 +1573,17 @@
           "default": false,
           "title": "Is Fleet",
           "type": "boolean"
+        },
+        "rule_of_two": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RuleOfTwoPosture"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
