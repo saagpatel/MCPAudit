@@ -15,6 +15,7 @@ from mcp_audit.models import (
     ArtifactVerifySeverity,
     AuditReport,
     DriftStatus,
+    EgressFinding,
     EgressSeverity,
     EscalationKind,
     EscalationSeverity,
@@ -232,10 +233,17 @@ class ReportGenerator:
                 server_name,
                 f"[{sev_style}]{f.severity.value}[/{sev_style}]",
                 f.rule_id,
-                f.destination_host or "[dim]caller-controlled[/dim]",
+                self._egress_destination_label(f),
                 f"{f.kind.value}: {'; '.join(f.evidence)}",
             )
         self._console.print(tbl)
+
+    @staticmethod
+    def _egress_destination_label(finding: EgressFinding) -> str:
+        destination_host = finding.destination_host
+        if destination_host:
+            return f"{destination_host} ({finding.target_name})"
+        return "[dim]caller-controlled[/dim]"
 
     def _render_trifecta_warnings(self, report: AuditReport) -> None:
         """Print lethal-trifecta findings (per-server and fleet-level) if any were found."""
