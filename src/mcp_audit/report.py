@@ -15,6 +15,7 @@ from mcp_audit.models import (
     ArtifactVerifySeverity,
     AuditReport,
     DriftStatus,
+    EgressFinding,
     EgressSeverity,
     EscalationKind,
     EscalationSeverity,
@@ -217,13 +218,10 @@ class ReportGenerator:
         self._console.rule("[bold red]Egress / Outbound Destinations[/bold red]")
         tbl = Table(show_lines=False)
         tbl.add_column("Server", style="bold cyan", no_wrap=True)
-        tbl.add_column("Type", style="cyan")
-        tbl.add_column("Target", style="cyan")
-        tbl.add_column("Severity")
-        tbl.add_column("Kind")
-        tbl.add_column("Destination")
+        tbl.add_column("Severity", no_wrap=True)
+        tbl.add_column("Rule", no_wrap=True)
+        tbl.add_column("Destination", no_wrap=True)
         tbl.add_column("Evidence", overflow="fold")
-        tbl.add_column("Suggested Action", overflow="fold")
 
         for server_name, f in all_findings:
             sev_style = {
@@ -233,15 +231,19 @@ class ReportGenerator:
             }.get(f.severity, "")
             tbl.add_row(
                 server_name,
-                f.target_type.value,
-                f.target_name,
                 f"[{sev_style}]{f.severity.value}[/{sev_style}]",
-                f.kind.value,
-                f.destination_host or "[dim]caller-controlled[/dim]",
-                "; ".join(f.evidence),
-                f.remediation,
+                f.rule_id,
+                self._egress_destination_label(f),
+                f"{f.kind.value}: {'; '.join(f.evidence)}",
             )
         self._console.print(tbl)
+
+    @staticmethod
+    def _egress_destination_label(finding: EgressFinding) -> str:
+        destination_host = finding.destination_host
+        if destination_host:
+            return f"{destination_host} ({finding.target_name})"
+        return "[dim]caller-controlled[/dim]"
 
     def _render_trifecta_warnings(self, report: AuditReport) -> None:
         """Print lethal-trifecta findings (per-server and fleet-level) if any were found."""
