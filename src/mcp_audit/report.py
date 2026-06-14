@@ -217,13 +217,10 @@ class ReportGenerator:
         self._console.rule("[bold red]Egress / Outbound Destinations[/bold red]")
         tbl = Table(show_lines=False)
         tbl.add_column("Server", style="bold cyan", no_wrap=True)
-        tbl.add_column("Type", style="cyan")
-        tbl.add_column("Target", style="cyan")
-        tbl.add_column("Severity")
-        tbl.add_column("Kind")
-        tbl.add_column("Destination")
+        tbl.add_column("Severity", no_wrap=True)
+        tbl.add_column("Rule", no_wrap=True)
+        tbl.add_column("Destination", no_wrap=True)
         tbl.add_column("Evidence", overflow="fold")
-        tbl.add_column("Suggested Action", overflow="fold")
 
         for server_name, f in all_findings:
             sev_style = {
@@ -233,13 +230,10 @@ class ReportGenerator:
             }.get(f.severity, "")
             tbl.add_row(
                 server_name,
-                f.target_type.value,
-                f.target_name,
                 f"[{sev_style}]{f.severity.value}[/{sev_style}]",
-                f.kind.value,
+                f.rule_id,
                 f.destination_host or "[dim]caller-controlled[/dim]",
-                "; ".join(f.evidence),
-                f.remediation,
+                f"{f.kind.value}: {'; '.join(f.evidence)}",
             )
         self._console.print(tbl)
 
