@@ -111,6 +111,12 @@ class TestTerminal:
         assert "evil.example" in out
         assert "caller-controlled" in out  # unbounded destination label
 
+    def test_fixed_destination_label_includes_specific_target(self) -> None:
+        fixed = next(
+            f for f in _audit().egress_findings if f.kind is EgressKind.DESTINATION_OUTSIDE_ALLOWLIST
+        )
+        assert ReportGenerator._egress_destination_label(fixed) == "evil.example (https://evil.example/data)"
+
 
 class TestHtml:
     def test_egress_table_renders(self) -> None:
