@@ -1,15 +1,12 @@
 # MCPAudit Next Roadmap
 
-MCPAudit `1.6.0` adds optional SSRF detection (`scan --ssrf-check`) on top of
-structured config-health findings, policy
-gates, prompt/resource non-tool risk reporting, reviewed stale pin cleanup,
-dashboard-consumer improvements, copy-pasteable adoption examples, adoption
-smoke coverage, redacted config-health fixtures, and expanded prompt/resource
-scoring evidence. It also adds output-contract upgrade compatibility coverage,
-field-report fixtures, and consumer-contract tests across the checked-in Python,
-Node, and dashboard examples. The field-report intake path now has a dedicated
-public issue template. The next line should collect external reports before
-changing scoring semantics.
+MCPAudit `2.1.0` is a stable public package line with config-health findings,
+policy gates, prompt/resource non-tool risk reporting, reviewed stale pin
+cleanup, detector coverage, SARIF/JSON/HTML outputs, redacted field-report
+fixtures, and consumer-contract tests across the checked-in Python, Node, and
+dashboard examples. The field-report intake path has a dedicated public issue
+template. The next line should collect external reports before using a beta
+label or changing scoring semantics.
 
 Tracked `1.5` evidence-intake work lives in `docs/1.5-EVIDENCE-INTAKE.md`,
 with the release decision in `docs/1.5-RELEASE-DECISION.md`.
@@ -108,7 +105,7 @@ Completed fixture/proposal issue:
 
 ## 5. Beta Readiness
 
-Status: polish shipped in `1.5.5`.
+Status: stable pre-beta in `2.1.0`; external evidence still open.
 
 Shipped through `1.5.1`:
 
@@ -149,7 +146,7 @@ Shipped through `1.5.5`:
   no-code beta decision;
 - issue comments that point #83, #84, and #85 at the request packet.
 
-Candidate follow-ups:
+Current follow-ups:
 
 - collect the first external redacted report:
   <https://github.com/saagpatel/MCPAudit/issues/83>;

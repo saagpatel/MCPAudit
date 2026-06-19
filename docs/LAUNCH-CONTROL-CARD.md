@@ -9,12 +9,16 @@ thin operator card over the canonical launch docs:
 
 ## Timing
 
-Primary windows:
+The prior June 9-10 and June 16-17, 2026 launch windows have passed. As of June
+19, 2026, use the next normal weekday morning window only after the final go
+check below is green and the maintainer has reply time reserved.
 
-- Tuesday, June 9, 2026, 8:00-9:30am ET
-- Wednesday, June 10, 2026, 8:00-9:30am ET
+Candidate windows:
 
-Sunday, June 7, 2026 is **not** the planned Hacker News launch window.
+- Tuesday, June 23, 2026, 8:00-9:30am ET
+- Wednesday, June 24, 2026, 8:00-9:30am ET
+
+Do not launch on a weekend or without the maintainer response window.
 
 ## Submit Fields
 
@@ -74,7 +78,7 @@ mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
 
 ## First 5 Minutes
 
-1. Run `python scripts/launch_preflight.py --print-hn-copy`.
+1. Run `uv run python scripts/launch_preflight.py --print-hn-copy`.
 2. Submit the printed repo URL and title.
 3. Paste the printed first comment within about 60 seconds.
 4. Confirm the first comment's command blocks rendered correctly.

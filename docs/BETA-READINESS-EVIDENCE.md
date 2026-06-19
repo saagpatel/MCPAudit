@@ -1,12 +1,12 @@
 # MCPAudit Beta Readiness Evidence
 
-MCPAudit `1.5.5` is a beta-readiness outreach polish release. It does not
-change scanner behavior or output schema. It adds evidence that current reports
-remain compatible with older JSON shapes, records config-only findings from real
-local MCP setup shapes, verifies checked-in JSON consumers against redacted
+MCPAudit `2.1.0` is a stable public package release, but it is still pre-beta
+for external-evidence purposes. The current evidence shows that reports remain
+compatible with older JSON shapes, records config-only findings from real local
+MCP setup shapes, verifies checked-in JSON consumers against redacted
 field-report fixtures, documents how to collect external redacted field reports
-safely, tracks the remaining external evidence issues, and includes a
-copy-paste request packet for contributors.
+safely, tracks the remaining external evidence issues, and includes a copy-paste
+request packet for contributors.
 
 Solo multi-environment checks are tracked in `docs/SOLO-EVIDENCE.md`. They can
 reduce install and documentation risk, but they do not replace the two external
@@ -37,12 +37,12 @@ Observed config-health signals:
 - credential-heavy configs.
 
 These signals are already covered by existing config-health behavior and
-fixtures, so `1.5.1` adds compatibility and documentation hardening rather than
-new diagnostics.
+fixtures, so the evidence lane adds compatibility and documentation hardening
+rather than new diagnostics.
 
-The `1.5.2` field-report pass keeps the same scanner boundary and adds redacted
-fixtures for mixed, single-client, and quiet config-only setup shapes. Details
-live in `docs/FIELD-REPORTS.md`.
+The field-report pass keeps the same scanner boundary and adds redacted fixtures
+for mixed, single-client, and quiet config-only setup shapes. Details live in
+`docs/FIELD-REPORTS.md`.
 
 ## Output Contract Evidence
 
@@ -56,32 +56,19 @@ Upgrade compatibility now covers:
 
 The compatibility decision remains:
 
-- compatible `1.x` releases may add optional fields;
+- compatible releases may add optional fields;
 - downstream consumers should ignore unknown fields;
 - `risk_score.composite` remains tool-centered;
 - prompt/resource risk remains additive through `non_tool_risk`.
 
-## Release Decision
+## Current Decision
 
-Ship `1.5.1` as polish instead of `1.6.0`.
+Keep `2.1.0` stable but pre-beta.
 
-Reason: this pass strengthens compatibility evidence and docs, but it does not
-add new user-facing scanner behavior. Reserve `1.6.0` for a future beta-prep
-feature or output-contract expansion backed by external redacted reports.
-
-Ship `1.5.2` as polish instead of `1.6.0`.
-
-Reason: this pass strengthens downstream consumer confidence and captures the
-current field-report workflow, but it still does not add scanner behavior or a
-new output schema. Keep the beta label blocked on external redacted reports or a
-reviewed output-contract expansion.
-
-Ship `1.5.3` as polish instead of `1.6.0`.
-
-Reason: this pass improves the external intake path for beta evidence, but it
-still does not include external redacted reports. Keep the beta label blocked
-until at least two external reports confirm the current JSON/SARIF contract and
-consumer examples.
+Reason: the current release strengthens downstream consumer confidence and
+captures the field-report workflow, but it still does not include external
+redacted reports. Keep the beta label blocked until at least two external
+reports confirm the current JSON/SARIF contract and consumer examples.
 
 The open external evidence issues are:
 
@@ -91,13 +78,31 @@ The open external evidence issues are:
 
 The contributor request packet is `docs/EXTERNAL-FIELD-REPORT-REQUEST.md`.
 
+## Historical Evidence Decisions
+
+These decisions are kept as an evidence ledger for the `1.5.x` intake work.
+They do not change the current `2.1.0` pre-beta gate.
+
+Ship `1.5.1` as polish instead of `1.6.0`.
+
+Reason: this pass strengthened compatibility evidence and docs, but it did not
+add new user-facing scanner behavior. Reserve beta-prep feature work or
+output-contract expansion for evidence backed by external redacted reports.
+
+Ship `1.5.3` as polish instead of `1.6.0`.
+
+Reason: this pass improved the external intake path for beta evidence, but it
+still did not include external redacted reports. Keep the beta label blocked
+until at least two external reports confirm the JSON/SARIF contract and consumer
+examples.
+
 Ship `1.5.4` as polish instead of `1.6.0`.
 
-Reason: this pass makes the external evidence blocker visible and trackable in
-GitHub and public docs, but it still does not include the external reports
-needed for beta.
+Reason: this pass made the external evidence blocker visible and trackable in
+GitHub and public docs, but it still did not include the external reports needed
+for beta.
 
 Ship `1.5.5` as polish instead of `1.6.0`.
 
-Reason: this pass makes the external report ask easier to send and easier to
-triage, but it still does not include the external reports needed for beta.
+Reason: this pass made the external report ask easier to send and easier to
+triage, but it still did not include the external reports needed for beta.

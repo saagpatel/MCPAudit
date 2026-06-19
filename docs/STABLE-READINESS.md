@@ -57,8 +57,8 @@ uv build --clear
 Then verify clean installs from PyPI after publish:
 
 ```bash
-uvx --from mcp-permission-audit mcp-audit --version
+uvx --from mcp-audits mcp-audit --version
 python -m venv /tmp/mcp-audit-smoke
-/tmp/mcp-audit-smoke/bin/python -m pip install mcp-permission-audit
+/tmp/mcp-audit-smoke/bin/python -m pip install mcp-audits
 /tmp/mcp-audit-smoke/bin/mcp-audit --version
 ```

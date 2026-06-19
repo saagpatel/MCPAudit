@@ -1,6 +1,6 @@
 # MCPAudit Field Reports
 
-MCPAudit `1.13.1` has a field-report lane for redacted setup evidence,
+MCPAudit `2.1.0` has a field-report lane for redacted setup evidence,
 consumer-contract hardening, and external beta-readiness intake. This lane
 remains config-only by default: collect shape and output evidence without
 spawning MCP servers, contacting remote endpoints, or storing credential values.
@@ -93,7 +93,7 @@ the level of detail that is useful in a public issue after the report has been
 generated with `--redact` and manually reviewed.
 
 ```text
-MCPAudit version: mcp-audit, version 1.13.1
+MCPAudit version: mcp-audit, version 2.1.0
 Operating system: macOS / Darwin
 MCP clients included: Claude Desktop and Cursor
 Approximate server count: 3
@@ -163,29 +163,39 @@ The contract is intentionally simple:
 - consumers should preserve server counts and status counts;
 - Python and Node compact summaries should agree for the same report.
 
-## Release Decision
+## Current Decision
+
+Keep `2.1.0` stable but pre-beta.
+
+Reason: the scanner, field-report template, redaction path, compatibility
+fixtures, and consumer examples are ready for external validation, but the beta
+label remains blocked until at least two external redacted reports confirm the
+current JSON/SARIF contract and downstream consumer path.
+
+## Historical Field-Report Decisions
+
+These decisions are kept as an evidence ledger for the `1.5.x` field-report
+work. They do not change the current `2.1.0` pre-beta gate.
 
 Ship `1.5.2` as polish instead of `1.6.0`.
 
-Reason: this pass improves field-report readiness and downstream example
-confidence, but it does not add scanner behavior or change the output schema.
-Reserve `1.6.0` for a future beta-prep feature or output-contract expansion
-backed by external redacted reports.
+Reason: this pass improved field-report readiness and downstream example
+confidence, but it did not add scanner behavior or change the output schema.
 
 Ship `1.5.3` as polish instead of `1.6.0`.
 
-Reason: this pass improves public field-report intake and beta-readiness
-tracking, but it still does not include external redacted reports or change the
+Reason: this pass improved public field-report intake and beta-readiness
+tracking, but it still did not include external redacted reports or change the
 scanner/output contract.
 
 Ship `1.5.4` as polish instead of `1.6.0`.
 
-Reason: this pass creates the external evidence milestone and keeps its three
-tracking issues visible from the public docs, but it still does not include the
+Reason: this pass created the external evidence milestone and kept its three
+tracking issues visible from the public docs, but it still did not include the
 external redacted reports needed for beta.
 
 Ship `1.5.5` as polish instead of `1.6.0`.
 
-Reason: this pass adds the contributor request packet and maintainer triage
-checklist, but it still does not include the external redacted reports needed
-for beta.
+Reason: this pass added the contributor request packet and maintainer triage
+checklist, but it still did not include the external redacted reports needed for
+beta.

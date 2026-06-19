@@ -35,7 +35,7 @@ two external redacted field reports are accepted.
 ```text
 The safe first run is config-only:
 
-uvx --from mcp-permission-audit mcp-audit scan --skip-connect
+uvx --from mcp-audits mcp-audit scan --skip-connect
 
 With --skip-connect it does not spawn MCP servers or contact remote endpoints; it
 reasons from the local config. If you are sharing a report publicly, use:

@@ -1,8 +1,8 @@
 # Beta And RC Readiness
 
-This document records the beta and release-candidate bar used for current
-`1.x` releases. MCPAudit `1.5.5` is a beta-readiness outreach polish release,
-not a beta cut.
+This document records the beta and release-candidate bar for the current
+MCPAudit line. MCPAudit `2.1.0` is a stable public package release, but it is
+still not a beta-labeled external-evidence release.
 
 ## Readiness Bar
 
@@ -34,12 +34,12 @@ not a beta cut.
 
 ## Current Decision
 
-Ship `1.5.5` as polish instead of `1.6.0` or beta.
+Keep `2.1.0` stable but pre-beta.
 
 The current evidence strengthens compatibility confidence and makes external
-field-report outreach easier, but it is still mostly local and fixture-based.
-Move to beta only after external redacted reports show that downstream consumers
-can safely rely on the current JSON/SARIF shapes.
+field-report outreach easier, but the beta label remains blocked until external
+redacted reports show that downstream consumers can safely rely on the current
+JSON/SARIF shapes.
 
 Open beta-evidence tracker:
 
@@ -65,4 +65,4 @@ uv build --clear
 ```
 
 Clean-install smoke checks should verify both `uvx --prerelease allow` and a
-temporary virtual environment with `pip install mcp-permission-audit`.
+temporary virtual environment with `pip install mcp-audits`.

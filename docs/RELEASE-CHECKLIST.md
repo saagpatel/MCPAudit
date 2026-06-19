@@ -23,7 +23,7 @@ being uploaded manually.
 - `README.md`, `SECURITY.md`, and `IMPLEMENTATION-ROADMAP.md` match live CLI
   behavior.
 - `mcp-audit --version` reports the release version.
-- `mcp-permission-audit` remains the PyPI distribution name and `mcp-audit`
+- `mcp-audits` remains the PyPI distribution name and `mcp-audit`
   remains the installed command.
 
 ## Clean Install Smoke
@@ -33,7 +33,7 @@ install.
 
 ```bash
 tmp="$(mktemp -d)"
-UV_CACHE_DIR="$tmp" uvx --prerelease allow --from mcp-permission-audit mcp-audit --version
+UV_CACHE_DIR="$tmp" uvx --prerelease allow --from mcp-audits mcp-audit --version
 rm -r "$tmp"
 ```
 
@@ -42,7 +42,7 @@ Use a temporary virtual environment for a plain pip install check.
 ```bash
 tmp="$(mktemp -d)"
 python -m venv "$tmp/venv"
-"$tmp/venv/bin/python" -m pip install mcp-permission-audit
+"$tmp/venv/bin/python" -m pip install mcp-audits
 "$tmp/venv/bin/mcp-audit" --version
 rm -r "$tmp"
 ```

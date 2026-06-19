@@ -104,7 +104,7 @@ permissions:
   security-events: write
 steps:
   - uses: actions/checkout@v6
-  - uses: saagpatel/MCPAudit@v2.0.0
+  - uses: saagpatel/MCPAudit@v2.1.0
     with:
       args: --inject-check --ssrf-check --trifecta-check
       # sarif defaults to mcp-audit.sarif and uploads to code scanning
