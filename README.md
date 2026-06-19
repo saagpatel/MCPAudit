@@ -67,7 +67,7 @@ mcp-audit scan                            # connected scan of every configured c
 **Drop it into CI in one step** — the composite GitHub Action runs the scan and writes SARIF straight to GitHub code scanning:
 
 ```yaml
-- uses: saagpatel/MCPAudit@v1.13.1        # config-only by default; optional policy gate exits 2
+- uses: saagpatel/MCPAudit@v2.1.0        # config-only by default; optional policy gate exits 2
 ```
 
 SARIF proof from the public fixture scan:
@@ -97,7 +97,7 @@ Use this path when sharing MCPAudit outside the repo:
 5. Use the HTML report screenshot when the audience needs a shareable artifact preview: it shows `scan --html` output from a redacted config-only report.
 6. Link the trust story: [`docs/MCP-TRUST-PACKET.md`](docs/MCP-TRUST-PACKET.md) explains how MCPAudit, mcpforge, and local MCP dogfooding relate without overstating any one project.
 7. Recruit evidence, not hype: [`docs/EXTERNAL-FIELD-REPORT-REQUEST.md`](docs/EXTERNAL-FIELD-REPORT-REQUEST.md) is the canonical two-minute field-report ask, and [`docs/FIELD-REPORTS.md#minimal-public-example`](docs/FIELD-REPORTS.md#minimal-public-example) shows what is safe to paste publicly.
-8. Post from the prepared copy: [`docs/LAUNCH-CONTROL-CARD.md`](docs/LAUNCH-CONTROL-CARD.md) is the single-screen launch cockpit; `python scripts/launch_preflight.py --print-hn-copy` runs the deterministic go/no-go check and prints the exact HN URL/title/comment, including public README / asset URL checks and PyPI / `uvx` package checks; [`launch-posts.md`](launch-posts.md) has the Show HN / r/mcp / LinkedIn drafts, title variants, and timing plan; [`docs/LAUNCH-DAY-RUNBOOK.md`](docs/LAUNCH-DAY-RUNBOOK.md) has the go/no-go checklist and response routing; [`docs/LAUNCH-RESPONSE-PLAYBOOK.md`](docs/LAUNCH-RESPONSE-PLAYBOOK.md) has live reply snippets. Keep the line honest: this is pre-beta until two external redacted reports land.
+8. Post from the prepared copy: [`docs/LAUNCH-CONTROL-CARD.md`](docs/LAUNCH-CONTROL-CARD.md) is the single-screen launch cockpit; `uv run python scripts/launch_preflight.py --print-hn-copy` runs the deterministic go/no-go check and prints the exact HN URL/title/comment, including public README / asset URL checks and PyPI / `uvx` package checks; [`launch-posts.md`](launch-posts.md) has the Show HN / r/mcp / LinkedIn drafts, title variants, and timing plan; [`docs/LAUNCH-DAY-RUNBOOK.md`](docs/LAUNCH-DAY-RUNBOOK.md) has the go/no-go checklist and response routing; [`docs/LAUNCH-RESPONSE-PLAYBOOK.md`](docs/LAUNCH-RESPONSE-PLAYBOOK.md) has live reply snippets. Keep the line honest: this is pre-beta until two external redacted reports land.
 
 ## Features
 
@@ -121,7 +121,7 @@ Use this path when sharing MCPAudit outside the repo:
 - **Byte-level artifact verification** — `scan --download-artifacts` (opt-in, **network**) goes one level deeper than the published-hash compare: it downloads the actual bytes the registry serves, hashes them, and checks them against both the registry's own published hash and a byte-hash captured at pin time (`MCP026`). It catches a CDN/mirror/MITM serving bytes inconsistent with the registry's integrity metadata (`PUBLISHED_MISMATCH`, HIGH) and a pinned file whose bytes changed or vanished (`BASELINE_MISMATCH`, HIGH); a newly-added file on a frozen version is an advisory MEDIUM, not a false alarm. Downloads stream through bounded hashers, never to disk, only to an allowlist of registry/CDN hosts (re-validated on every redirect hop). Network is contacted only under `--download-artifacts`, on both `pin` and `scan`.
 - **Multi-client support** — reads configs from Claude Desktop, Claude Code, Cursor, VSCode, and Windsurf — plus custom paths via `--config`; use `--config-only` for isolated scans of one config file
 - **Structured output** — Rich terminal report plus JSON and SARIF 2.1.0 export for ingestion by GitHub Advanced Security and SARIF-aware SAST pipelines, and a self-contained shareable HTML report via `scan --html report.html` (inline CSS, no JavaScript, redacted and fully HTML-escaped)
-- **Drop-in CI distribution** — a composite GitHub Action (`uses: saagpatel/MCPAudit@v2.0.0`) runs the scan, writes SARIF, and uploads it to code scanning in one step (config-only by default; optional policy gate exits `2`); a `pre-commit` hook (`id: mcp-audit`) audits repo-local `.mcp.json` / `.vscode/mcp.json` on commit. See `docs/ADOPTION-GUIDE.md`
+- **Drop-in CI distribution** — a composite GitHub Action (`uses: saagpatel/MCPAudit@v2.1.0`) runs the scan, writes SARIF, and uploads it to code scanning in one step (config-only by default; optional policy gate exits `2`); a `pre-commit` hook (`id: mcp-audit`) audits repo-local `.mcp.json` / `.vscode/mcp.json` on commit. See `docs/ADOPTION-GUIDE.md`
 - **Documented output contract** — JSON, SARIF rule IDs, and policy exit codes are documented in `docs/OUTPUT-CONTRACT.md`
 - **Watch mode** — `mcp-audit watch` re-scans on config file changes via `watchfiles` (optional extra: install with `mcp-audits[watch]`)
 
@@ -317,7 +317,7 @@ consumer-contract coverage. See
 mcpforge scaffolding with MCPAudit review output. See
 `docs/SOLO-EVIDENCE.md` for solo multi-environment evidence that can reduce
 release risk without replacing external reports. See
-`docs/ROADMAP-NEXT.md` for the current post-`1.5.5` roadmap. See
+`docs/ROADMAP-NEXT.md` for the current `2.1.0` roadmap. See
 `docs/1.5-EVIDENCE-INTAKE.md` for the current
 evidence-led `1.5` planning track. See `docs/BETA-READINESS-EVIDENCE.md` for
 the beta-readiness evidence and release decision. External beta-evidence reports

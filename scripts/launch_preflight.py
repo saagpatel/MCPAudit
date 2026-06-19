@@ -29,6 +29,9 @@ PUBLIC_URLS = {
     "GitHub README": "https://github.com/saagpatel/MCPAudit#readme",
     "PyPI project": PYPI_PROJECT_URL,
     "field-report issue template": FIELD_REPORT_ISSUE,
+    "field-report request": (
+        "https://raw.githubusercontent.com/saagpatel/MCPAudit/main/docs/EXTERNAL-FIELD-REPORT-REQUEST.md"
+    ),
     "hero GIF": "https://raw.githubusercontent.com/saagpatel/MCPAudit/main/docs/assets/hero-scan.gif",
     "config-only preview": (
         "https://raw.githubusercontent.com/saagpatel/MCPAudit/main/docs/assets/mcp-audit-config-only-scan.png"
@@ -40,8 +43,9 @@ PUBLIC_URLS = {
 
 REQUIRED_TEXT = {
     Path("docs/LAUNCH-CONTROL-CARD.md"): [
-        "Tuesday, June 9, 2026",
-        "Wednesday, June 10, 2026",
+        "Tuesday, June 23, 2026",
+        "Wednesday, June 24, 2026",
+        "Do not launch on a weekend",
         HN_SUBMIT_PAGE_URL,
         REPO_URL,
         TITLE,
