@@ -111,7 +111,7 @@ def test_mcp_trust_packet_is_discoverable_and_safe() -> None:
 
     assert "docs/MCP-TRUST-PACKET.md" in readme
     assert "uvx --from fastmcp-builder==0.3.0 mcpforge init" in packet
-    assert "uvx --from mcp-audits==2.1.0 mcp-audit scan" in packet
+    assert "uvx --from mcp-audits==2.2.0 mcp-audit scan" in packet
     assert "It has been smoke-checked" in packet
     assert "--config-only" in packet
     assert "--skip-connect" in packet
