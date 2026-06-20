@@ -150,9 +150,10 @@ Write SARIF for GitHub code scanning:
 - name: Audit MCP servers
   run: mcp-audit scan --sarif mcp-audit.sarif
 - name: Upload SARIF
-  uses: github/codeql-action/upload-sarif@v3
+  uses: github/codeql-action/upload-sarif@v4
   with:
     sarif_file: mcp-audit.sarif
+    category: mcp-audit
 ```
 
 Use JSON plus a local policy gate:
@@ -167,3 +168,4 @@ Copy-paste workflow examples live in `examples/ci/`:
 
 - `github-code-scanning.yml`
 - `generic-json-policy.yml`
+- `forge-then-audit.yml`

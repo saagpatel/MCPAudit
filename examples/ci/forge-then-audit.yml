@@ -1,0 +1,49 @@
+name: Forge Then Audit
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  forge-then-audit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Scaffold MCP server fixture
+        run: |
+          uvx --from fastmcp-builder==0.3.3 mcpforge init trust-packet-demo \
+            --transport stdio \
+            --output trust-packet-demo
+
+      - name: Validate generated fixture
+        run: |
+          uvx --from fastmcp-builder==0.3.3 mcpforge validate trust-packet-demo \
+            --json > mcpforge-validate.json
+
+      - name: Audit generated fixture
+        uses: saagpatel/MCPAudit@v2.2.0
+        with:
+          version: "2.2.0"
+          config: trust-packet-demo/config.json
+          skip-connect: "true"
+          args: --redact
+          json: mcp-audit.json
+          sarif: mcp-audit.sarif
+          sarif-category: mcp-audit/forge-then-audit
+
+      - name: Preserve demo evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forge-then-audit-evidence
+          path: |
+            mcpforge-validate.json
+            mcp-audit.json
+            mcp-audit.sarif

@@ -53,8 +53,10 @@ class TestCompositeAction:
     def test_uploads_sarif_by_default(self) -> None:
         action = _action()
         assert action["inputs"]["upload-sarif"]["default"] == "true"
+        assert action["inputs"]["sarif-category"]["default"] == "mcp-audit"
         steps_text = yaml.dump(action["runs"]["steps"])
         assert "github/codeql-action/upload-sarif" in steps_text
+        assert "category" in steps_text
 
     def test_exposes_outputs(self) -> None:
         outputs = _action()["outputs"]

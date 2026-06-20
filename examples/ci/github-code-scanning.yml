@@ -10,6 +10,7 @@ jobs:
   mcp-audit:
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       security-events: write
 
     steps:
@@ -22,6 +23,7 @@ jobs:
         run: mcp-audit scan --skip-connect --sarif mcp-audit.sarif
 
       - name: Upload SARIF
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: mcp-audit.sarif
+          category: mcp-audit
