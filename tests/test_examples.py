@@ -72,6 +72,20 @@ def test_ci_examples_install_published_package() -> None:
         assert ("mcp-audits" in text and "mcp-audit scan" in text) or "saagpatel/MCPAudit@" in text
 
 
+def test_ci_examples_install_uv_before_uvx() -> None:
+    for example_path in CI_EXAMPLES:
+        parsed = yaml.safe_load(example_path.read_text())
+        steps = parsed["jobs"][next(iter(parsed["jobs"]))]["steps"]
+        step_text = json.dumps(steps)
+
+        if "uvx" in step_text:
+            setup_uv_index = next(
+                index for index, step in enumerate(steps) if "astral-sh/setup-uv" in json.dumps(step)
+            )
+            first_uvx_index = next(index for index, step in enumerate(steps) if "uvx" in json.dumps(step))
+            assert setup_uv_index < first_uvx_index
+
+
 def test_ci_examples_default_to_config_only_adoption() -> None:
     for example_path in CI_EXAMPLES:
         text = example_path.read_text()
