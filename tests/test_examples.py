@@ -69,10 +69,7 @@ def test_ci_examples_are_valid_yaml() -> None:
 def test_ci_examples_install_published_package() -> None:
     for example_path in CI_EXAMPLES:
         text = example_path.read_text()
-        assert (
-            ("mcp-audits" in text and "mcp-audit scan" in text)
-            or "saagpatel/MCPAudit@" in text
-        )
+        assert ("mcp-audits" in text and "mcp-audit scan" in text) or "saagpatel/MCPAudit@" in text
 
 
 def test_ci_examples_default_to_config_only_adoption() -> None:
