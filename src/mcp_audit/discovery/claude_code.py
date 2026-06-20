@@ -77,6 +77,35 @@ def _extract_servers(
     return results
 
 
+def parse_mapping(data: Any, config_path: str) -> list[ServerConfig]:
+    """Extract ServerConfigs from an already-parsed config mapping.
+
+    Shared by file-based discovery (``ClaudeCodeDiscoverer.parse``) and the
+    in-memory ``mcp_audit.api`` entrypoint, so both honor identical config-format
+    handling: a top-level ``mcpServers`` map plus per-project
+    ``projects.*.mcpServers``. Returns an empty list for any non-mapping input.
+    """
+    if not isinstance(data, dict):
+        return []
+
+    results: list[ServerConfig] = []
+
+    # Global mcpServers (top-level)
+    global_servers = data.get("mcpServers")
+    results.extend(_extract_servers(global_servers, config_path, None))
+
+    # Per-project mcpServers
+    projects = data.get("projects") or {}
+    if isinstance(projects, dict):
+        for project_path, project_data in projects.items():
+            if not isinstance(project_data, dict):
+                continue
+            project_servers = project_data.get("mcpServers")
+            results.extend(_extract_servers(project_servers, config_path, str(project_path)))
+
+    return results
+
+
 class ClaudeCodeDiscoverer(ConfigDiscoverer):
     """Discovers MCP servers from Claude Code's ~/.claude.json config."""
 
@@ -95,23 +124,6 @@ class ClaudeCodeDiscoverer(ConfigDiscoverer):
             logger.debug("Could not read %s", config_path)
             return []
 
-        if not isinstance(data, dict):
-            return []
-
-        results: list[ServerConfig] = []
-
-        # Global mcpServers (top-level)
-        global_servers = data.get("mcpServers")
-        results.extend(_extract_servers(global_servers, config_path, None))
-
-        # Per-project mcpServers
-        projects = data.get("projects") or {}
-        if isinstance(projects, dict):
-            for project_path, project_data in projects.items():
-                if not isinstance(project_data, dict):
-                    continue
-                project_servers = project_data.get("mcpServers")
-                results.extend(_extract_servers(project_servers, config_path, str(project_path)))
-
+        results = parse_mapping(data, config_path)
         logger.debug("Claude Code: found %d servers in %s", len(results), config_path)
         return results

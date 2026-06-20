@@ -339,18 +339,25 @@ async def _run_scan_core(
     download_artifacts: bool = False,
     llm_analysis: bool = False,
     config_only: bool = False,
+    servers: list[ServerConfig] | None = None,
 ) -> AuditReport:
-    """Core scan pipeline — discovers, connects, analyzes, scores. Returns AuditReport."""
+    """Core scan pipeline — discovers, connects, analyzes, scores. Returns AuditReport.
+
+    When ``servers`` is provided (a pre-parsed list, e.g. from the in-memory
+    ``mcp_audit.api`` entrypoint), discovery is skipped entirely and that list is
+    scanned as-is — no filesystem access for config discovery.
+    """
     import os
 
     start = time.monotonic()
 
-    # 1. Discover servers
-    servers = [] if config_only else discover_all_configs(clients)
+    # 1. Discover servers (unless the caller supplied a pre-parsed list).
+    if servers is None:
+        servers = [] if config_only else discover_all_configs(clients)
 
-    if extra_config:
-        extra_servers = _parse_extra_config(Path(extra_config))
-        servers = extra_servers if config_only else servers + extra_servers
+        if extra_config:
+            extra_servers = _parse_extra_config(Path(extra_config))
+            servers = extra_servers if config_only else servers + extra_servers
 
     connector = ServerConnector(timeout=float(timeout))
     analyzer = PermissionAnalyzer()
