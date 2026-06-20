@@ -40,17 +40,17 @@ commands, generated server files, MCPAudit reports, and issue/fixture links.
 ## Safe Baseline Demo
 
 This demo uses the no-LLM scaffold path so anyone can reproduce it without API keys.
-It has been smoke-checked with `fastmcp-builder==0.3.0` and
+It has been smoke-checked with `fastmcp-builder==0.3.3` and
 `mcp-audits==2.2.0`.
 
 ```bash
 tmpdir="$(mktemp -d)"
 
-uvx --from fastmcp-builder==0.3.0 mcpforge init trust-packet-demo \
+uvx --from fastmcp-builder==0.3.3 mcpforge init trust-packet-demo \
   --transport stdio \
   --output "$tmpdir/trust-packet-demo"
 
-uvx --from fastmcp-builder==0.3.0 mcpforge validate \
+uvx --from fastmcp-builder==0.3.3 mcpforge validate \
   "$tmpdir/trust-packet-demo" \
   --json
 
@@ -76,13 +76,17 @@ Expected shape:
 This is the cleanest first demo because it proves the handoff between generator and auditor without
 requiring hosted model access.
 
+The matching GitHub Actions example is `examples/ci/forge-then-audit.yml`. It scaffolds the
+fixture, validates it, runs the MCPAudit composite Action in config-only mode, uploads SARIF to code
+scanning, and preserves JSON/SARIF/validation artifacts even when a gate fails.
+
 ## Useful Warning Variant
 
 `mcpforge init` defaults to `streamable-http`. If you omit `--transport stdio`, MCPAudit should flag
 the generated HTTP config as a remote endpoint during a config-only scan:
 
 ```bash
-uvx --from fastmcp-builder==0.3.0 mcpforge init trust-packet-http \
+uvx --from fastmcp-builder==0.3.3 mcpforge init trust-packet-http \
   --output "$tmpdir/trust-packet-http"
 
 uvx --from mcp-audits==2.2.0 mcp-audit scan \
@@ -105,13 +109,13 @@ Use the hosted mcpforge path only when provider access is healthy.
 ```bash
 export ANTHROPIC_API_KEY="..."
 
-uvx --from fastmcp-builder==0.3.0 mcpforge generate \
+uvx --from fastmcp-builder==0.3.3 mcpforge generate \
   "A read-only MCP server that summarizes a local CSV file" \
   --transport stdio \
   --yes \
   --output "$tmpdir/csv-summary-server"
 
-uvx --from fastmcp-builder==0.3.0 mcpforge validate "$tmpdir/csv-summary-server" --json
+uvx --from fastmcp-builder==0.3.3 mcpforge validate "$tmpdir/csv-summary-server" --json
 
 uvx --from mcp-audits==2.2.0 mcp-audit scan \
   --config "$tmpdir/csv-summary-server/config.json" \
@@ -134,6 +138,8 @@ A complete public packet should include:
 - a short note naming which scan path was used: config-only, connected, pin-check, policy-gated, or
   artifact-verification;
 - the smallest redacted fixture or report shape that can become regression coverage;
+- for CI runs, the GitHub code-scanning upload status or the preserved SARIF artifact when code
+  scanning is unavailable;
 - if applicable, a GitHub issue link for the field report and a note granting fixture permission.
 
 Do not include:
@@ -161,6 +167,20 @@ Use the safe example shape when deciding what to paste publicly:
 
 Two accepted external redacted reports are still the beta bar. Solo demos, generated fixtures, and
 bridge-db dogfood improve confidence, but they do not replace external evidence.
+
+## Trust Boundary
+
+This packet proves a workflow, not safety by assertion:
+
+- `mcpforge validate` checks the generated project shape, import path, lint posture, and tests.
+- MCPAudit `--config-only --skip-connect` checks the launch/config boundary without spawning the
+  generated server or contacting remote endpoints.
+- SARIF proves the report is machine-ingestable by CI/code-scanning consumers; it does not prove the
+  generated server is benign or production-ready.
+- PyPI Trusted Publishing and attestations bind the published package files to their publisher and
+  workflow provenance; they do not replace source review, dependency review, or runtime sandboxing.
+- The MCP Registry is a metadata/catalog surface. Treat a registry-ready `server.json` as discovery
+  metadata, not as an execution approval.
 
 ## Strongest Wedge
 

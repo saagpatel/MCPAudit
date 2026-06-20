@@ -82,9 +82,10 @@ Export SARIF and upload it with GitHub's SARIF action:
 - name: Audit MCP servers
   run: mcp-audit scan --inject-check --sarif mcp-audit.sarif
 - name: Upload SARIF
-  uses: github/codeql-action/upload-sarif@v3
+  uses: github/codeql-action/upload-sarif@v4
   with:
     sarif_file: mcp-audit.sarif
+    category: mcp-audit
 ```
 
 Use `scan --skip-connect --sarif mcp-audit.sarif` for config-only CI where
@@ -119,8 +120,14 @@ Inputs are passed to the underlying command through environment variables, not
 interpolated into the shell, so crafted input values cannot inject commands.
 
 Available inputs: `version`, `args`, `skip-connect`, `clients`, `config`,
-`policy`, `sarif`, `json`, `upload-sarif`, `working-directory`. Outputs:
+`policy`, `sarif`, `json`, `upload-sarif`, `sarif-category`,
+`working-directory`. Outputs:
 `sarif-file`, `json-file`, `exit-code`.
+
+For a generator-to-auditor CI demo, see `examples/ci/forge-then-audit.yml`.
+That workflow scaffolds a no-LLM mcpforge fixture, validates it, scans the
+generated `config.json` in config-only mode, uploads SARIF to code scanning,
+and preserves the validation, JSON, and SARIF artifacts for review.
 
 ## Pre-commit Hook
 

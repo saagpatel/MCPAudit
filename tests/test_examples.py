@@ -69,14 +69,27 @@ def test_ci_examples_are_valid_yaml() -> None:
 def test_ci_examples_install_published_package() -> None:
     for example_path in CI_EXAMPLES:
         text = example_path.read_text()
-        assert "mcp-audits" in text
-        assert "mcp-audit scan" in text
+        assert ("mcp-audits" in text and "mcp-audit scan" in text) or "saagpatel/MCPAudit@" in text
+
+
+def test_ci_examples_install_uv_before_uvx() -> None:
+    for example_path in CI_EXAMPLES:
+        parsed = yaml.safe_load(example_path.read_text())
+        steps = parsed["jobs"][next(iter(parsed["jobs"]))]["steps"]
+        step_text = json.dumps(steps)
+
+        if "uvx" in step_text:
+            setup_uv_index = next(
+                index for index, step in enumerate(steps) if "astral-sh/setup-uv" in json.dumps(step)
+            )
+            first_uvx_index = next(index for index, step in enumerate(steps) if "uvx" in json.dumps(step))
+            assert setup_uv_index < first_uvx_index
 
 
 def test_ci_examples_default_to_config_only_adoption() -> None:
     for example_path in CI_EXAMPLES:
         text = example_path.read_text()
-        assert "--skip-connect" in text
+        assert "--skip-connect" in text or 'skip-connect: "true"' in text
 
 
 def test_ci_examples_keep_reports_when_gates_fail() -> None:
@@ -94,6 +107,7 @@ def test_adoption_docs_reference_current_examples() -> None:
     combined_docs = "\n".join(path.read_text() for path in DOCS_REFERENCING_ADOPTION_EXAMPLES)
     required_paths = [
         "examples/ci/config-health-policy.yml",
+        "examples/ci/forge-then-audit.yml",
         "examples/ci/generic-json-policy.yml",
         "examples/ci/github-code-scanning.yml",
         "examples/ci/pin-stale-review.yml",
@@ -110,8 +124,9 @@ def test_mcp_trust_packet_is_discoverable_and_safe() -> None:
     packet = MCP_TRUST_PACKET.read_text()
 
     assert "docs/MCP-TRUST-PACKET.md" in readme
-    assert "uvx --from fastmcp-builder==0.3.0 mcpforge init" in packet
+    assert "uvx --from fastmcp-builder==0.3.3 mcpforge init" in packet
     assert "uvx --from mcp-audits==2.2.0 mcp-audit scan" in packet
+    assert "examples/ci/forge-then-audit.yml" in packet
     assert "It has been smoke-checked" in packet
     assert "--config-only" in packet
     assert "--skip-connect" in packet
@@ -120,6 +135,7 @@ def test_mcp_trust_packet_is_discoverable_and_safe() -> None:
     assert "`remote_endpoint` config-health finding" in packet
     assert "Do not include:" in packet
     assert "bridge-db` only as local operating-state infrastructure" in packet
+    assert "SARIF proves the report is machine-ingestable" in packet
 
 
 def test_strict_policy_example_exits_two() -> None:

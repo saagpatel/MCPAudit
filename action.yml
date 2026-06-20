@@ -58,6 +58,12 @@ inputs:
       `security-events: write`). Ignored when `sarif` is empty.
     required: false
     default: "true"
+  sarif-category:
+    description: >-
+      Optional GitHub code scanning category for this upload. Use a stable
+      value when multiple SARIF producers report on the same commit.
+    required: false
+    default: "mcp-audit"
   working-directory:
     description: Directory to run the scan from (repo-local configs are discovered relative to it).
     required: false
@@ -157,6 +163,7 @@ runs:
       uses: github/codeql-action/upload-sarif@v4
       with:
         sarif_file: ${{ steps.scan.outputs.sarif-file }}
+        category: ${{ inputs.sarif-category }}
 
     - name: Enforce scan result
       if: ${{ always() }}
