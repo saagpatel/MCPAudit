@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 concurrency:
   group: agent-permission-diff-${{ github.ref }}
@@ -22,7 +23,7 @@ jobs:
           fetch-depth: 0
 
       - name: Scan agent-facing permission changes
-        uses: saagpatel/agent-permission-diff-bot@v0.1.0
+        uses: saagpatel/agent-permission-diff-bot@v0.2.0
         with:
           mode: observe
           fail-on: critical
@@ -30,4 +31,5 @@ jobs:
           sarif: agent-permission-diff.sarif
           markdown: agent-permission-diff.md
           step-summary: "true"
+          comment: "true"
           upload-sarif: "false"
