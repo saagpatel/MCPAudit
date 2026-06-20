@@ -16,6 +16,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+
       - name: Scaffold MCP server fixture
         run: |
           uvx --from fastmcp-builder==0.3.3 mcpforge init trust-packet-demo \
