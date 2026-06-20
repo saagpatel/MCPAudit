@@ -307,9 +307,10 @@ consumer-contract coverage. See
 mcpforge scaffolding with MCPAudit review output. See
 `docs/SOLO-EVIDENCE.md` for solo multi-environment evidence that can reduce
 release risk without replacing external reports. See
-`docs/ROADMAP-NEXT.md` for the post-2.2.0 roadmap. See
-`docs/BETA-READINESS-EVIDENCE.md` for the beta-readiness evidence and release
-decision. External field-report evidence is tracked in
+`docs/ROADMAP-NEXT.md` for the post-2.2.0 roadmap and
+`docs/1.5-EVIDENCE-INTAKE.md` for the earlier adoption-hardening evidence
+intake. See `docs/BETA-READINESS-EVIDENCE.md` for the beta-readiness evidence
+and release decision. External field-report evidence is tracked in
 <https://github.com/saagpatel/MCPAudit/milestone/4>. See
 `docs/EXTERNAL-FIELD-REPORT-REQUEST.md` for the copy-paste contributor request,
 and `docs/EXTERNAL-OUTREACH-MESSAGES.md` for direct outreach messages.
