@@ -88,19 +88,6 @@ PyPI package: [`mcp-audits`](https://pypi.org/project/mcp-audits/) · installed 
 
 ---
 
-## External launch checklist
-
-Use this path when sharing MCPAudit outside the repo:
-
-1. Lead with the zero-touch preview image when safety is the point: it is generated from the bundled public fixture with `--config-only --skip-connect`, so it demonstrates the no-spawn/no-network review path.
-2. Use the connected GIF when the audience needs the real tool-schema story: it is recorded from `docs/assets/hero-demo-config.json`, a curated public fixture that may spawn only the listed no-auth sample servers.
-3. Use the SARIF/code-scanning proof when the audience is security or platform engineering: it shows `mcp-audit` findings uploaded as GitHub code-scanning alerts with stable `MCPxxx` rule IDs.
-4. Use the policy-gate GIF when the audience needs enforcement: it shows the same public fixture failing `examples/policies/ci-strict.yaml` with exit code `2`.
-5. Use the HTML report screenshot when the audience needs a shareable artifact preview: it shows `scan --html` output from a redacted config-only report.
-6. Link the trust story: [`docs/MCP-TRUST-PACKET.md`](docs/MCP-TRUST-PACKET.md) explains how MCPAudit, mcpforge, and local MCP dogfooding relate without overstating any one project.
-7. Recruit evidence, not hype: [`docs/EXTERNAL-FIELD-REPORT-REQUEST.md`](docs/EXTERNAL-FIELD-REPORT-REQUEST.md) is the canonical two-minute field-report ask, and [`docs/FIELD-REPORTS.md#minimal-public-example`](docs/FIELD-REPORTS.md#minimal-public-example) shows what is safe to paste publicly.
-8. Post from the prepared copy: [`docs/LAUNCH-CONTROL-CARD.md`](docs/LAUNCH-CONTROL-CARD.md) is the single-screen launch cockpit; `uv run python scripts/launch_preflight.py --print-hn-copy` runs the deterministic go/no-go check and prints the exact HN URL/title/comment, including public README / asset URL checks and PyPI / `uvx` package checks; [`launch-posts.md`](launch-posts.md) has the Show HN / r/mcp / LinkedIn drafts, title variants, and timing plan; [`docs/LAUNCH-DAY-RUNBOOK.md`](docs/LAUNCH-DAY-RUNBOOK.md) has the go/no-go checklist and response routing; [`docs/LAUNCH-RESPONSE-PLAYBOOK.md`](docs/LAUNCH-RESPONSE-PLAYBOOK.md) has live reply snippets. Keep the line honest: this is pre-beta until two external redacted reports land.
-
 ## Features
 
 - **Capability inventory** — catalogs server tools, prompts, and resources; tool, prompt, and resource capabilities are classified across six permission categories: `file_read`, `file_write`, `network`, `shell_execution`, `destructive`, `exfiltration`
@@ -140,6 +127,8 @@ uvx --from mcp-audits mcp-audit discover
 uv tool install mcp-audits
 # with watch mode support:
 uv tool install 'mcp-audits[watch]'
+# pip fallback:
+pip install mcp-audits
 ```
 
 ### Usage
@@ -228,11 +217,11 @@ mcp-audit scan --llm-analysis
 mcp-audit watch
 ```
 
-## Help validate the beta (2 minutes)
+## Help improve mcp-audit (2 minutes)
 
-mcp-audit needs **two external, redacted, config-only field reports** before it
-takes a beta label. If you run MCP servers, contributing one stays fully
-offline — no servers spawned, no network:
+Redacted field reports from real MCP configs help calibrate the scanner.
+If you run MCP servers, contributing one stays fully offline — no servers
+spawned, no network:
 
 ```bash
 python3 -m pip install --upgrade mcp-audits
@@ -299,9 +288,8 @@ servers:
 ```
 
 See `docs/ADOPTION-GUIDE.md` for local review, team CI, and GitHub code
-scanning setup paths. See `docs/1.1-ADOPTION.md` for `non_tool_risk` parsing
-examples and policy selection notes, and `examples/consumers/` for runnable
-JSON consumer examples. See `examples/policies/` for starter policies. See
+scanning setup paths, `non_tool_risk` parsing examples, and policy selection
+notes, and `examples/consumers/` for runnable JSON consumer examples. See `examples/policies/` for starter policies. See
 `docs/GOLDEN-ROLLOUT.md` for the recommended config-only to policy-gated
 rollout path. See `docs/STABLE-READINESS.md` for the stable-release bar. See
 `docs/PIN-MAINTENANCE.md` for reviewed pin refresh and stale server cleanup
@@ -319,11 +307,10 @@ consumer-contract coverage. See
 mcpforge scaffolding with MCPAudit review output. See
 `docs/SOLO-EVIDENCE.md` for solo multi-environment evidence that can reduce
 release risk without replacing external reports. See
-`docs/ROADMAP-NEXT.md` for the current `2.1.0` roadmap. See
-`docs/1.5-EVIDENCE-INTAKE.md` for the current
-evidence-led `1.5` planning track. See `docs/BETA-READINESS-EVIDENCE.md` for
-the beta-readiness evidence and release decision. External beta-evidence reports
-are tracked in <https://github.com/saagpatel/MCPAudit/milestone/4>. See
+`docs/ROADMAP-NEXT.md` for the post-2.2.0 roadmap. See
+`docs/BETA-READINESS-EVIDENCE.md` for the beta-readiness evidence and release
+decision. External field-report evidence is tracked in
+<https://github.com/saagpatel/MCPAudit/milestone/4>. See
 `docs/EXTERNAL-FIELD-REPORT-REQUEST.md` for the copy-paste contributor request,
 and `docs/EXTERNAL-OUTREACH-MESSAGES.md` for direct outreach messages.
 

@@ -35,6 +35,11 @@ Only run connected scans when the task explicitly calls for live MCP tool-schema
 - Do not read `.env` files, keychains, OAuth stores, browser profiles, raw logs, private transcripts, cookies, or credential-bearing configs.
 - Treat remote package verification, downloads, LLM analysis, and connected server scans as higher-reach modes that need explicit justification.
 
-## Next Recommended Move
+## Contributing
 
-Keep the release/doctor posture boring: scan safely, verify tests, and make every higher-reach audit mode explicit in command output and docs.
+See `CONTRIBUTING.md` for the full contribution guide. Before opening a PR:
+
+- Run `uv run pytest -q` and confirm all tests pass.
+- Run `uv run ruff check .` and `uv run ruff format --check` (zero findings expected).
+- For new detectors or report fields, add fixture-backed tests and update `docs/OUTPUT-CONTRACT.md`.
+- Prefer config-only (`--skip-connect`) fixtures; connected fixtures require explicit justification.

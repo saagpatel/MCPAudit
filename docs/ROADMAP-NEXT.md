@@ -1,6 +1,6 @@
 # MCPAudit Next Roadmap
 
-MCPAudit `2.1.0` is a stable public package line with config-health findings,
+MCPAudit `2.2.0` is a stable public package line with config-health findings,
 policy gates, prompt/resource non-tool risk reporting, reviewed stale pin
 cleanup, detector coverage, SARIF/JSON/HTML outputs, redacted field-report
 fixtures, and consumer-contract tests across the checked-in Python, Node, and
