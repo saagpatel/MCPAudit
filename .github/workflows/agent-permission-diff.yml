@@ -1,0 +1,33 @@
+name: Agent Permission Diff
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-permission-diff-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  permission-diff:
+    name: Agent-facing permission diff
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Scan agent-facing permission changes
+        uses: saagpatel/agent-permission-diff-bot@v0.1.0
+        with:
+          mode: observe
+          fail-on: critical
+          json: agent-permission-diff.json
+          sarif: agent-permission-diff.sarif
+          markdown: agent-permission-diff.md
+          step-summary: "true"
+          upload-sarif: "false"
