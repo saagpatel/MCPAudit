@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Programmatic config-only scan API** (`mcp_audit.api`) — `parse_config`,
+  `scan_config_only`, and `scan_config_only_dict` run the exact config-only,
+  skip-connect scan engine on an MCP client config already in memory (a parsed
+  mapping or raw JSON), for hosted callers such as a "paste your MCP config →
+  trust score" page. The path never spawns a server process and never makes a
+  network request — only declared configuration is statically inferred, matching
+  `mcp-audit scan --config <file> --config-only --skip-connect`. The discoverer's
+  format handling is shared via `discovery.claude_code.parse_mapping`, and
+  `_run_scan_core` accepts a pre-parsed `servers` list so discovery (and all
+  filesystem access) is skipped when the caller supplies one. `scan_config_only_dict`
+  scrubs host/username identifiers by default and refuses to run inside an active
+  event loop.
+
 ## [2.1.0] - 2026-06-12
 
 ### Added
