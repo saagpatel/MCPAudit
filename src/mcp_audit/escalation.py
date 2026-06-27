@@ -14,7 +14,7 @@ This is the temporal / supply-chain layer: a previously-trusted MCP server that
 ships an update quietly broadening its capability surface or mutating its
 description to carry agent-targeting instructions.  Findings are a pure DELTA
 against the pin store — a tool matching its baseline produces nothing, so the
-false-positive rate is near-zero by construction.
+finding stays scoped to a reviewed baseline delta.
 
 The detector reuses the existing permission inference (``PermissionAnalyzer``)
 and injection scanner (``InjectionDetector``); it performs no new inference of

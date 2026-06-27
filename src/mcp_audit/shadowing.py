@@ -17,9 +17,9 @@ Three tiers:
                                 skeletons match.
 
 Legit servers namespace their tools (slack_*, github_*).  In a 21-server real-
-world corpus there are ZERO exact or normalised collisions, so exact-match HIGH
-is safe with near-zero false positives.  Fuzzy edit-distance matching is
-deliberately excluded to keep the false-positive rate low.
+world corpus there are ZERO exact or normalised collisions.  Exact-match HIGH
+findings are designed to stay low-noise because the detector avoids fuzzy
+matching and reports only concrete cross-server collisions.
 
 Detector is purely additive and opt-in behind ``--shadow-check``.  It reads
 tool names only (never values, never credentials) and issues no network
