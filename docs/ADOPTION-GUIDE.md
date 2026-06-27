@@ -30,7 +30,7 @@ mcp-audit scan --config ./mcp.json --config-only --inject-check
 ```
 
 Review prompt/resource findings separately from the composite score. They are
-visible in reports and policy gates. In `1.1`, they also feed the additive
+visible in reports and policy gates. Current releases also feed the additive
 `non_tool_risk` field, but they do not change `risk_score.composite`.
 Review config-health findings before turning on policy gates for remote
 endpoints, shell-wrapper launches, deprecated transports, missing command paths,

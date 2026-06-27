@@ -25,7 +25,7 @@ places where untrusted MCP metadata can affect reports.
   `scan --skip-connect` for first review or untrusted configs.
 - Optional `--llm-analysis` sends selected metadata to a third-party API; do not
   use it for sensitive MCP configs.
-- Composite scoring is tool-centered for stable `1.0.0`. Prompt/resource
+- Composite scoring is tool-centered in the stable line. Prompt/resource
   findings are reportable and policy-gatable, but score migration needs
   calibration first.
 

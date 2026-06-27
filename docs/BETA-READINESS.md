@@ -1,7 +1,7 @@
 # Beta And RC Readiness
 
 This document records the beta and release-candidate bar for the current
-MCPAudit line. MCPAudit `2.1.0` is a stable public package release, but it is
+MCPAudit line. MCPAudit `2.2.0` is a stable public package release, but it is
 still not a beta-labeled external-evidence release.
 
 ## Readiness Bar
@@ -34,7 +34,7 @@ still not a beta-labeled external-evidence release.
 
 ## Current Decision
 
-Keep `2.1.0` stable but pre-beta.
+Keep `2.2.0` stable but pre-beta.
 
 The current evidence strengthens compatibility confidence and makes external
 field-report outreach easier, but the beta label remains blocked until external

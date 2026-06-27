@@ -3,7 +3,7 @@
 MCPAudit reports are designed for local review and CI ingestion. Keep this
 contract stable unless a release note calls out a breaking change.
 
-For stable `1.x`, compatible minor and patch releases may add optional JSON
+For stable `2.x`, compatible minor and patch releases may add optional JSON
 fields. Consumers should ignore unknown fields and should not fail when optional
 fields are present. Existing stable fields should only be removed or renamed
 with a release-note deprecation window and a breaking-version boundary.
@@ -99,7 +99,7 @@ Finding targets:
 
 Compatibility rules:
 
-- additive optional fields are allowed in compatible `1.x` releases;
+- additive optional fields are allowed in compatible stable releases;
 - existing stable fields require a release-note deprecation window before
   removal or rename in a breaking release;
 - SARIF rule IDs must remain stable unless a breaking release explicitly
