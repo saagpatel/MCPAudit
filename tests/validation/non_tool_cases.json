@@ -94,7 +94,7 @@
 		],
 		"expected_injections": [],
 		"expect_non_tool_risk": true,
-		"expected_non_tool_risk": 5.55
+		"expected_non_tool_risk": 5.1
 	},
 	{
 		"server_name": "github-workspace",
@@ -137,7 +137,7 @@
 			}
 		],
 		"expect_non_tool_risk": true,
-		"expected_non_tool_risk": 3.25
+		"expected_non_tool_risk": 2.35
 	},
 	{
 		"server_name": "postgres-analytics",
@@ -179,7 +179,7 @@
 		],
 		"expected_injections": [],
 		"expect_non_tool_risk": true,
-		"expected_non_tool_risk": 7.2
+		"expected_non_tool_risk": 4.95
 	},
 	{
 		"server_name": "slack-thread-export",
@@ -221,7 +221,7 @@
 		],
 		"expected_injections": [],
 		"expect_non_tool_risk": true,
-		"expected_non_tool_risk": 5.4
+		"expected_non_tool_risk": 4.8
 	},
 	{
 		"server_name": "calendar-scheduler",
@@ -578,7 +578,7 @@
 			}
 		],
 		"expect_non_tool_risk": true,
-		"expected_non_tool_risk": 9.55
+		"expected_non_tool_risk": 8.35
 	},
 	{
 		"server_name": "support-macro-library",
