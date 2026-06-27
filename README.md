@@ -84,6 +84,12 @@ Self-contained HTML report preview from a redacted config-only scan:
 
 ![mcp-audit self-contained HTML report](docs/assets/html-report.png)
 
+**Teach the risk safely:** [`examples/sandbox/`](examples/sandbox/) is a
+public-safe MCP prompt-injection sandbox with synthetic configs, benign twins,
+malicious-lookalike tool descriptions, a static config-only MCPAudit report, and
+a connected-tool manifest that demonstrates what config-only mode can and cannot
+prove.
+
 PyPI package: [`mcp-audits`](https://pypi.org/project/mcp-audits/) · installed command: `mcp-audit` · full flag and detector reference below.
 
 ---

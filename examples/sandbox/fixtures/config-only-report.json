@@ -1,0 +1,431 @@
+{
+  "scan_timestamp": "2026-06-27T00:00:00Z",
+  "hostname": "sandbox-host",
+  "os_platform": "Darwin",
+  "servers_discovered": 5,
+  "servers_connected": 0,
+  "servers_failed": 0,
+  "total_tools": 0,
+  "high_risk_servers": 0,
+  "audits": [
+    {
+      "server": {
+        "name": "toy-notes-reader",
+        "client": "claude_code",
+        "config_path": "examples/sandbox/fixtures/synthetic-mcp-config.json",
+        "project_path": null,
+        "command": "python",
+        "args": [
+          "examples/sandbox/toy_servers/notes_reader.py",
+          "--root",
+          "/tmp/mcpaudit-sandbox/notes"
+        ],
+        "env_keys": [],
+        "transport": "stdio",
+        "url": null,
+        "headers_keys": []
+      },
+      "connection_status": "skipped",
+      "connection_error": null,
+      "tools": [],
+      "prompts": [],
+      "resources": [],
+      "permissions": [],
+      "capability_findings": [],
+      "risk_score": {
+        "composite": 0.0,
+        "file_access": 0.0,
+        "network_access": 0.0,
+        "shell_execution": 0.0,
+        "destructive": 0.0,
+        "exfiltration": 0.0
+      },
+      "non_tool_risk": null,
+      "has_annotations": false,
+      "annotation_coverage": 0.0,
+      "injection_findings": [],
+      "ssrf_findings": [],
+      "egress_findings": [],
+      "drift_findings": [],
+      "trifecta_findings": [],
+      "escalation_findings": [],
+      "provenance_findings": [],
+      "integrity_findings": [],
+      "package_verify_findings": [],
+      "artifact_verify_findings": []
+    },
+    {
+      "server": {
+        "name": "toy-filesystem-wide",
+        "client": "claude_code",
+        "config_path": "examples/sandbox/fixtures/synthetic-mcp-config.json",
+        "project_path": null,
+        "command": "npx",
+        "args": [
+          "-y",
+          "@modelcontextprotocol/server-filesystem",
+          "/tmp"
+        ],
+        "env_keys": [],
+        "transport": "stdio",
+        "url": null,
+        "headers_keys": []
+      },
+      "connection_status": "skipped",
+      "connection_error": null,
+      "tools": [],
+      "prompts": [],
+      "resources": [],
+      "permissions": [
+        {
+          "category": "file_read",
+          "confidence": "low",
+          "evidence": [
+            "known server pattern '@modelcontextprotocol/server-filesystem'"
+          ],
+          "tool_name": "(config)",
+          "target_type": "tool",
+          "target_name": "(config)",
+          "rule_id": "MCP001",
+          "title": "File read capability",
+          "severity": "low",
+          "description": "Tool metadata indicates the server may read local files or file-like inputs.",
+          "remediation": "Review the configured paths and only keep this server enabled for trusted projects."
+        },
+        {
+          "category": "file_write",
+          "confidence": "low",
+          "evidence": [
+            "known server pattern '@modelcontextprotocol/server-filesystem'"
+          ],
+          "tool_name": "(config)",
+          "target_type": "tool",
+          "target_name": "(config)",
+          "rule_id": "MCP002",
+          "title": "File write capability",
+          "severity": "medium",
+          "description": "Tool metadata indicates the server may create or modify local files.",
+          "remediation": "Confirm the server is trusted before allowing it to run in writable project directories."
+        },
+        {
+          "category": "network",
+          "confidence": "low",
+          "evidence": [
+            "package runner command 'npx' may download code"
+          ],
+          "tool_name": "(config)",
+          "target_type": "tool",
+          "target_name": "(config)",
+          "rule_id": "MCP003",
+          "title": "Network access capability",
+          "severity": "medium",
+          "description": "Tool metadata or config hints indicate the server may contact external services.",
+          "remediation": "Check the server source and destination service before exposing private workspace data."
+        }
+      ],
+      "capability_findings": [],
+      "risk_score": {
+        "composite": 1.0499999999999998,
+        "file_access": 0.6,
+        "network_access": 0.44999999999999996,
+        "shell_execution": 0.0,
+        "destructive": 0.0,
+        "exfiltration": 0.0
+      },
+      "non_tool_risk": null,
+      "has_annotations": false,
+      "annotation_coverage": 0.0,
+      "injection_findings": [],
+      "ssrf_findings": [],
+      "egress_findings": [],
+      "drift_findings": [],
+      "trifecta_findings": [],
+      "escalation_findings": [],
+      "provenance_findings": [],
+      "integrity_findings": [],
+      "package_verify_findings": [],
+      "artifact_verify_findings": []
+    },
+    {
+      "server": {
+        "name": "toy-weather",
+        "client": "claude_code",
+        "config_path": "examples/sandbox/fixtures/synthetic-mcp-config.json",
+        "project_path": null,
+        "command": null,
+        "args": [],
+        "env_keys": [],
+        "transport": "http",
+        "url": "https://weather.example/mcp",
+        "headers_keys": []
+      },
+      "connection_status": "skipped",
+      "connection_error": null,
+      "tools": [],
+      "prompts": [],
+      "resources": [],
+      "permissions": [
+        {
+          "category": "network",
+          "confidence": "low",
+          "evidence": [
+            "http transport declares remote endpoint",
+            "command or args contain remote URL"
+          ],
+          "tool_name": "(config)",
+          "target_type": "tool",
+          "target_name": "(config)",
+          "rule_id": "MCP003",
+          "title": "Network access capability",
+          "severity": "medium",
+          "description": "Tool metadata or config hints indicate the server may contact external services.",
+          "remediation": "Check the server source and destination service before exposing private workspace data."
+        }
+      ],
+      "capability_findings": [],
+      "risk_score": {
+        "composite": 0.44999999999999996,
+        "file_access": 0.0,
+        "network_access": 0.44999999999999996,
+        "shell_execution": 0.0,
+        "destructive": 0.0,
+        "exfiltration": 0.0
+      },
+      "non_tool_risk": null,
+      "has_annotations": false,
+      "annotation_coverage": 0.0,
+      "injection_findings": [],
+      "ssrf_findings": [],
+      "egress_findings": [],
+      "drift_findings": [],
+      "trifecta_findings": [],
+      "escalation_findings": [],
+      "provenance_findings": [],
+      "integrity_findings": [],
+      "package_verify_findings": [],
+      "artifact_verify_findings": []
+    },
+    {
+      "server": {
+        "name": "toy-weather-lookalike",
+        "client": "claude_code",
+        "config_path": "examples/sandbox/fixtures/synthetic-mcp-config.json",
+        "project_path": null,
+        "command": "npx",
+        "args": [
+          "-y",
+          "@toy-lab/weather-tools",
+          "https://reports.example/collect"
+        ],
+        "env_keys": [
+          "WEATHER_API_TOKEN",
+          "SANDBOX_REPORT_TOKEN",
+          "TOY_EXPORT_KEY"
+        ],
+        "transport": "stdio",
+        "url": null,
+        "headers_keys": []
+      },
+      "connection_status": "skipped",
+      "connection_error": null,
+      "tools": [],
+      "prompts": [],
+      "resources": [],
+      "permissions": [
+        {
+          "category": "network",
+          "confidence": "low",
+          "evidence": [
+            "command or args contain remote URL",
+            "package runner command 'npx' may download code",
+            "env key 'WEATHER_API_TOKEN' suggests remote API"
+          ],
+          "tool_name": "(config)",
+          "target_type": "tool",
+          "target_name": "(config)",
+          "rule_id": "MCP003",
+          "title": "Network access capability",
+          "severity": "medium",
+          "description": "Tool metadata or config hints indicate the server may contact external services.",
+          "remediation": "Check the server source and destination service before exposing private workspace data."
+        }
+      ],
+      "capability_findings": [],
+      "risk_score": {
+        "composite": 0.44999999999999996,
+        "file_access": 0.0,
+        "network_access": 0.44999999999999996,
+        "shell_execution": 0.0,
+        "destructive": 0.0,
+        "exfiltration": 0.0
+      },
+      "non_tool_risk": null,
+      "has_annotations": false,
+      "annotation_coverage": 0.0,
+      "injection_findings": [],
+      "ssrf_findings": [],
+      "egress_findings": [],
+      "drift_findings": [],
+      "trifecta_findings": [],
+      "escalation_findings": [],
+      "provenance_findings": [],
+      "integrity_findings": [],
+      "package_verify_findings": [],
+      "artifact_verify_findings": []
+    },
+    {
+      "server": {
+        "name": "toy-shell-exporter",
+        "client": "claude_code",
+        "config_path": "examples/sandbox/fixtures/synthetic-mcp-config.json",
+        "project_path": null,
+        "command": "bash",
+        "args": [
+          "-lc",
+          "python examples/sandbox/toy_servers/report_exporter.py --dry-run --destination https://reports.example/upload"
+        ],
+        "env_keys": [
+          "TOY_DRY_RUN"
+        ],
+        "transport": "stdio",
+        "url": null,
+        "headers_keys": []
+      },
+      "connection_status": "skipped",
+      "connection_error": null,
+      "tools": [],
+      "prompts": [],
+      "resources": [],
+      "permissions": [
+        {
+          "category": "network",
+          "confidence": "low",
+          "evidence": [
+            "command or args contain remote URL"
+          ],
+          "tool_name": "(config)",
+          "target_type": "tool",
+          "target_name": "(config)",
+          "rule_id": "MCP003",
+          "title": "Network access capability",
+          "severity": "medium",
+          "description": "Tool metadata or config hints indicate the server may contact external services.",
+          "remediation": "Check the server source and destination service before exposing private workspace data."
+        },
+        {
+          "category": "shell_execution",
+          "confidence": "low",
+          "evidence": [
+            "shell wrapper command 'bash'"
+          ],
+          "tool_name": "(config)",
+          "target_type": "tool",
+          "target_name": "(config)",
+          "rule_id": "MCP004",
+          "title": "Shell execution capability",
+          "severity": "high",
+          "description": "Tool metadata indicates the server may run shell commands or local processes.",
+          "remediation": "Disable or isolate this server until you have reviewed the command surface and source."
+        }
+      ],
+      "capability_findings": [],
+      "risk_score": {
+        "composite": 1.3499999999999999,
+        "file_access": 0.0,
+        "network_access": 0.44999999999999996,
+        "shell_execution": 0.8999999999999999,
+        "destructive": 0.0,
+        "exfiltration": 0.0
+      },
+      "non_tool_risk": null,
+      "has_annotations": false,
+      "annotation_coverage": 0.0,
+      "injection_findings": [],
+      "ssrf_findings": [],
+      "egress_findings": [],
+      "drift_findings": [],
+      "trifecta_findings": [],
+      "escalation_findings": [],
+      "provenance_findings": [],
+      "integrity_findings": [],
+      "package_verify_findings": [],
+      "artifact_verify_findings": []
+    }
+  ],
+  "scan_duration_seconds": 0.0,
+  "config_health_findings": [
+    {
+      "finding_type": "package_runner_source_review",
+      "severity": "medium",
+      "server_name": "toy-filesystem-wide",
+      "summary": "'toy-filesystem-wide' launches through package runner 'npx'; review the package or image source before connecting.",
+      "details": [
+        "Source: @modelcontextprotocol/server-filesystem"
+      ],
+      "remediation": "Pin package versions or container digests where possible and review the source before running connected scans."
+    },
+    {
+      "finding_type": "remote_endpoint",
+      "severity": "medium",
+      "server_name": "toy-weather",
+      "summary": "'toy-weather' declares a remote endpoint; connected scans may contact the network.",
+      "details": [
+        "HTTP or SSE MCP transports contact the configured URL during scans."
+      ],
+      "remediation": "Review the remote endpoint before running connected scans."
+    },
+    {
+      "finding_type": "remote_url_argument",
+      "severity": "medium",
+      "server_name": "toy-weather-lookalike",
+      "summary": "'toy-weather-lookalike' command or args include a remote URL; review the outbound target.",
+      "details": [
+        "The configured command line contains an HTTP or HTTPS URL."
+      ],
+      "remediation": "Review the URL and package source before connecting to the server."
+    },
+    {
+      "finding_type": "package_runner_source_review",
+      "severity": "medium",
+      "server_name": "toy-weather-lookalike",
+      "summary": "'toy-weather-lookalike' launches through package runner 'npx'; review the package or image source before connecting.",
+      "details": [
+        "Source: @toy-lab/weather-tools"
+      ],
+      "remediation": "Pin package versions or container digests where possible and review the source before running connected scans."
+    },
+    {
+      "finding_type": "credential_heavy_config",
+      "severity": "medium",
+      "server_name": "toy-weather-lookalike",
+      "summary": "'toy-weather-lookalike' references 3 credential key names; review their access scope.",
+      "details": [
+        "Only credential key names are reported; credential values are not stored."
+      ],
+      "remediation": "Confirm the referenced credentials are scoped to the server's purpose."
+    },
+    {
+      "finding_type": "remote_url_argument",
+      "severity": "medium",
+      "server_name": "toy-shell-exporter",
+      "summary": "'toy-shell-exporter' command or args include a remote URL; review the outbound target.",
+      "details": [
+        "The configured command line contains an HTTP or HTTPS URL."
+      ],
+      "remediation": "Review the URL and package source before connecting to the server."
+    },
+    {
+      "finding_type": "shell_wrapper_launch",
+      "severity": "medium",
+      "server_name": "toy-shell-exporter",
+      "summary": "'toy-shell-exporter' launches through shell wrapper 'bash'; review args before connecting.",
+      "details": [
+        "Shell wrappers can hide compound commands in arguments."
+      ],
+      "remediation": "Review the shell arguments before running connected scans."
+    }
+  ],
+  "policy_result": null,
+  "fleet_trifecta_findings": [],
+  "shadowing_findings": []
+}

@@ -1,0 +1,787 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MCP Prompt-Injection Sandbox</title>
+  <link rel="icon" href="data:,">
+  <style>
+    :root {
+      --bg: #f5f3ee;
+      --panel: #fffdfa;
+      --panel-strong: #fcf7ee;
+      --ink: #1f2526;
+      --muted: #657070;
+      --line: #dad3c8;
+      --line-strong: #c8bdae;
+      --teal: #24706f;
+      --teal-strong: #0f5654;
+      --amber: #a46218;
+      --red: #a33a32;
+      --green: #35734d;
+      --shadow: 0 16px 44px rgba(32, 37, 38, 0.11);
+      --radius: 6px;
+      font-family:
+        Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+        "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        linear-gradient(180deg, rgba(255, 253, 250, 0.74), rgba(245, 243, 238, 0.88)),
+        var(--bg);
+    }
+
+    button,
+    select {
+      font: inherit;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: 280px minmax(420px, 1fr) 380px;
+      gap: 14px;
+      min-height: 100vh;
+      padding: 18px;
+    }
+
+    .rail,
+    .workspace,
+    .inspector {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      min-width: 0;
+    }
+
+    .rail {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .brand {
+      padding: 18px 18px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .brand h1 {
+      margin: 0 0 8px;
+      font-size: 20px;
+      line-height: 1.12;
+      letter-spacing: 0;
+    }
+
+    .brand p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .scenario-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 12px;
+      overflow: auto;
+    }
+
+    .scenario-button {
+      width: 100%;
+      border: 1px solid transparent;
+      border-radius: var(--radius);
+      padding: 12px;
+      background: transparent;
+      color: var(--ink);
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .scenario-button:hover {
+      background: #f7f0e5;
+      border-color: var(--line);
+    }
+
+    .scenario-button.active {
+      background: #eaf4f2;
+      border-color: #a8c9c5;
+      color: #123f3e;
+    }
+
+    .scenario-title {
+      display: block;
+      font-weight: 750;
+      font-size: 14px;
+      line-height: 1.25;
+    }
+
+    .scenario-family {
+      display: block;
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .source-strip {
+      margin-top: auto;
+      padding: 14px 16px 16px;
+      border-top: 1px solid var(--line);
+      background: var(--panel-strong);
+    }
+
+    .source-strip h2,
+    .section-label {
+      margin: 0 0 8px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.2;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .source-strip a {
+      display: block;
+      margin-top: 7px;
+      color: var(--teal-strong);
+      font-size: 12px;
+      line-height: 1.35;
+      text-decoration: none;
+    }
+
+    .source-strip a:hover {
+      text-decoration: underline;
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-rows: auto minmax(250px, 1fr);
+      overflow: hidden;
+    }
+
+    .topbar {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 14px;
+      align-items: start;
+      padding: 18px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    .topbar h2 {
+      margin: 0 0 8px;
+      font-size: clamp(24px, 3vw, 34px);
+      line-height: 1.05;
+      letter-spacing: 0;
+    }
+
+    .topbar p {
+      margin: 0;
+      max-width: 780px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .twin-toggle {
+      display: inline-grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px;
+      padding: 4px;
+      min-width: 246px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #f8f3ea;
+    }
+
+    .twin-toggle button {
+      border: 0;
+      border-radius: 4px;
+      padding: 9px 10px;
+      color: var(--muted);
+      background: transparent;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .twin-toggle button.active {
+      background: var(--ink);
+      color: #fffdfa;
+    }
+
+    .panes {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 14px;
+      min-height: 0;
+      padding: 14px;
+      background: #f4efe7;
+    }
+
+    .pane {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      min-height: 0;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      overflow: hidden;
+    }
+
+    .pane-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .pane-header strong {
+      font-size: 13px;
+      line-height: 1.2;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      border: 1px solid var(--line-strong);
+      border-radius: 999px;
+      padding: 0 9px;
+      color: var(--muted);
+      background: #fbf8f1;
+      font-size: 11px;
+      font-weight: 750;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .chip.high {
+      border-color: #deaea8;
+      color: var(--red);
+      background: #fff0ee;
+    }
+
+    .chip.medium {
+      border-color: #dfc69e;
+      color: var(--amber);
+      background: #fff7e8;
+    }
+
+    .chip.low {
+      border-color: #b8cdbb;
+      color: var(--green);
+      background: #edf8ef;
+    }
+
+    pre {
+      margin: 0;
+      padding: 14px;
+      overflow: auto;
+      color: #152021;
+      background: #fffdfa;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .inspector {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      overflow: hidden;
+    }
+
+    .inspector-head {
+      padding: 18px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    .inspector-head h2 {
+      margin: 0 0 9px;
+      font-size: 20px;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+
+    .inspector-head p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .inspector-scroll {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      overflow: auto;
+      padding: 14px;
+      background: #f4efe7;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      padding: 13px;
+    }
+
+    .finding {
+      display: grid;
+      gap: 10px;
+    }
+
+    .finding-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .finding-title {
+      margin: 0;
+      font-size: 14px;
+      line-height: 1.25;
+      font-weight: 760;
+    }
+
+    .finding p,
+    .card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+
+    .meta-row {
+      display: grid;
+      grid-template-columns: 112px minmax(0, 1fr);
+      gap: 10px;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .meta-row span:first-child {
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .meta-row span:last-child {
+      color: var(--ink);
+      overflow-wrap: anywhere;
+    }
+
+    .readout-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    .readout-item {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      border-bottom: 1px solid var(--line);
+      padding: 0 0 8px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .readout-item:last-child {
+      border-bottom: 0;
+      padding-bottom: 0;
+    }
+
+    .readout-item strong {
+      min-width: 94px;
+      color: var(--ink);
+      font-size: 12px;
+    }
+
+    .readout-item span {
+      text-align: right;
+      overflow-wrap: anywhere;
+    }
+
+    .empty {
+      border: 1px dashed var(--line-strong);
+      border-radius: var(--radius);
+      padding: 18px;
+      color: var(--muted);
+      background: #fffdfa;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .boundary {
+      display: grid;
+      gap: 9px;
+    }
+
+    .boundary strong {
+      color: var(--ink);
+      font-size: 13px;
+    }
+
+    .load-error {
+      margin: 18px;
+      border: 1px solid #dfc69e;
+      border-radius: var(--radius);
+      padding: 14px;
+      background: #fff7e8;
+      color: #563006;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 1320px) {
+      .app {
+        grid-template-columns: 240px minmax(0, 1fr);
+      }
+
+      .inspector {
+        grid-column: 1 / -1;
+        min-height: 460px;
+      }
+    }
+
+    @media (max-width: 780px) {
+      .app,
+      .panes,
+      .topbar {
+        grid-template-columns: 1fr;
+      }
+
+      .app {
+        padding: 10px;
+      }
+
+      .rail,
+      .workspace,
+      .inspector {
+        min-height: auto;
+      }
+
+      .twin-toggle {
+        width: 100%;
+        min-width: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <aside class="rail" aria-label="Scenarios">
+      <div class="brand">
+        <h1>MCP Prompt-Injection Sandbox</h1>
+        <p>Synthetic MCP configs, toy tool metadata, and calibrated MCPAudit-style findings.</p>
+      </div>
+      <div id="scenario-list" class="scenario-list"></div>
+      <div class="source-strip">
+        <h2>Source Backing</h2>
+        <div id="sources"></div>
+      </div>
+    </aside>
+
+    <section class="workspace" aria-label="Scenario workspace">
+      <div class="topbar">
+        <div>
+          <h2 id="scenario-title">Loading sandbox</h2>
+          <p id="scenario-copy">Loading synthetic fixtures.</p>
+        </div>
+        <div id="twin-toggle" class="twin-toggle" aria-label="Twin selector"></div>
+      </div>
+
+      <div class="panes">
+        <section class="pane" aria-label="Synthetic config">
+          <div class="pane-header">
+            <strong>Config Shape</strong>
+            <span id="config-chip" class="chip">config-only</span>
+          </div>
+          <pre id="config-pane">{}</pre>
+        </section>
+
+        <section class="pane" aria-label="Tool metadata">
+          <div class="pane-header">
+            <strong>Tool Metadata</strong>
+            <span id="tool-chip" class="chip">connected metadata</span>
+          </div>
+          <pre id="tool-pane">[]</pre>
+        </section>
+      </div>
+    </section>
+
+    <aside class="inspector" aria-label="Findings inspector">
+      <div class="inspector-head">
+        <h2 id="inspector-title">Findings</h2>
+        <p id="inspector-summary">Choose a scenario to inspect findings and proof boundaries.</p>
+      </div>
+      <div class="inspector-scroll">
+        <section class="card boundary">
+          <h2 class="section-label">Proof Boundary</h2>
+          <strong>Config-only can prove</strong>
+          <p id="config-boundary"></p>
+          <strong>Connected metadata can add</strong>
+          <p id="connected-boundary"></p>
+        </section>
+
+        <section class="card">
+          <h2 class="section-label">MCPAudit Config-Only Readout</h2>
+          <div id="report-readout" class="readout-list"></div>
+        </section>
+
+        <section class="card">
+          <h2 class="section-label">Calibration</h2>
+          <p id="calibration-note"></p>
+        </section>
+
+        <section id="findings"></section>
+      </div>
+    </aside>
+  </main>
+
+  <script>
+    const state = {
+      data: null,
+      config: null,
+      report: null,
+      manifest: null,
+      scenarioIndex: 0,
+      twinIndex: 0
+    };
+
+    const ids = {
+      scenarioList: document.getElementById("scenario-list"),
+      sources: document.getElementById("sources"),
+      scenarioTitle: document.getElementById("scenario-title"),
+      scenarioCopy: document.getElementById("scenario-copy"),
+      twinToggle: document.getElementById("twin-toggle"),
+      configPane: document.getElementById("config-pane"),
+      toolPane: document.getElementById("tool-pane"),
+      configChip: document.getElementById("config-chip"),
+      toolChip: document.getElementById("tool-chip"),
+      inspectorTitle: document.getElementById("inspector-title"),
+      inspectorSummary: document.getElementById("inspector-summary"),
+      configBoundary: document.getElementById("config-boundary"),
+      connectedBoundary: document.getElementById("connected-boundary"),
+      calibrationNote: document.getElementById("calibration-note"),
+      reportReadout: document.getElementById("report-readout"),
+      findings: document.getElementById("findings")
+    };
+
+    function pretty(value) {
+      return JSON.stringify(value, null, 2);
+    }
+
+    function serverConfig(name) {
+      if (!state.config || !state.config.mcpServers) {
+        return {};
+      }
+      return {
+        [name]: state.config.mcpServers[name] || {}
+      };
+    }
+
+    function severityClass(severity) {
+      if (severity === "high") return "high";
+      if (severity === "medium") return "medium";
+      if (severity === "low") return "low";
+      return "";
+    }
+
+    function renderScenarioButtons() {
+      ids.scenarioList.innerHTML = "";
+      state.data.scenarios.forEach((scenario, index) => {
+        const button = document.createElement("button");
+        button.className = `scenario-button${index === state.scenarioIndex ? " active" : ""}`;
+        button.type = "button";
+        button.innerHTML = `
+          <span class="scenario-title">${scenario.title}</span>
+          <span class="scenario-family">${scenario.risk_family}</span>
+        `;
+        button.addEventListener("click", () => {
+          state.scenarioIndex = index;
+          state.twinIndex = 0;
+          render();
+        });
+        ids.scenarioList.appendChild(button);
+      });
+    }
+
+    function renderSources() {
+      ids.sources.innerHTML = "";
+      state.data.source_backing.forEach((source) => {
+        const link = document.createElement("a");
+        link.href = source.url;
+        link.textContent = source.label;
+        link.target = "_blank";
+        link.rel = "noreferrer";
+        ids.sources.appendChild(link);
+      });
+    }
+
+    function renderTwinToggle(scenario) {
+      ids.twinToggle.innerHTML = "";
+      scenario.twins.forEach((twin, index) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = index === state.twinIndex ? "active" : "";
+        button.textContent = twin.kind;
+        button.addEventListener("click", () => {
+          state.twinIndex = index;
+          render();
+        });
+        ids.twinToggle.appendChild(button);
+      });
+    }
+
+    function renderFindings(twin) {
+      ids.findings.innerHTML = "";
+      const findings = twin.expected_findings || [];
+      if (findings.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "No expected finding for this benign twin. That is the point: same topic, lower-risk shape.";
+        ids.findings.appendChild(empty);
+        return;
+      }
+
+      findings.forEach((finding) => {
+        const card = document.createElement("article");
+        card.className = "card finding";
+        const label = finding.rule_id || finding.finding_type || "review";
+        card.innerHTML = `
+          <div class="finding-top">
+            <h3 class="finding-title">${label}</h3>
+            <span class="chip ${severityClass(finding.severity)}">${finding.severity}</span>
+          </div>
+          <div class="meta-grid">
+            <div class="meta-row"><span>Target</span><span>${finding.target_type}: ${finding.target_name}</span></div>
+            <div class="meta-row"><span>Evidence</span><span>${finding.evidence}</span></div>
+            <div class="meta-row"><span>Proof</span><span>${finding.what_mcpaudit_can_prove}</span></div>
+            <div class="meta-row"><span>Action</span><span>${finding.review_action}</span></div>
+          </div>
+        `;
+        ids.findings.appendChild(card);
+      });
+    }
+
+    function manifestKey(scenario, twin) {
+      return `${scenario.id}/${twin.kind}`;
+    }
+
+    function toolMetadata(scenario, twin) {
+      const set = state.manifest?.tool_sets?.[manifestKey(scenario, twin)];
+      return set?.tools || twin.tool_metadata || [];
+    }
+
+    function renderReportReadout(twin) {
+      if (!state.report) {
+        ids.reportReadout.innerHTML = `<div class="readout-item"><strong>Report</strong><span>Not loaded</span></div>`;
+        return;
+      }
+
+      const audit = (state.report.audits || []).find((item) => item.server.name === twin.config_server);
+      const health = (state.report.config_health_findings || [])
+        .filter((finding) => finding.server_name === twin.config_server)
+        .map((finding) => finding.finding_type);
+      const categories = audit
+        ? [...new Set((audit.permissions || []).map((permission) => permission.category))]
+        : [];
+
+      const rows = [
+        ["Status", audit ? audit.connection_status : "not in report"],
+        ["Tools", audit ? String((audit.tools || []).length) : "0"],
+        ["Permissions", categories.length ? categories.join(", ") : "none"],
+        ["Config Health", health.length ? health.join(", ") : "none"]
+      ];
+
+      ids.reportReadout.innerHTML = rows.map(([label, value]) => `
+        <div class="readout-item">
+          <strong>${label}</strong>
+          <span>${value}</span>
+        </div>
+      `).join("");
+    }
+
+    function render() {
+      const scenario = state.data.scenarios[state.scenarioIndex];
+      const twin = scenario.twins[state.twinIndex];
+      const tools = toolMetadata(scenario, twin);
+
+      renderScenarioButtons();
+      renderTwinToggle(scenario);
+
+      ids.scenarioTitle.textContent = scenario.title;
+      ids.scenarioCopy.textContent = scenario.why_this_matters;
+      ids.inspectorTitle.textContent = twin.server;
+      ids.inspectorSummary.textContent = twin.summary;
+      ids.configBoundary.textContent = scenario.config_only_boundary;
+      ids.connectedBoundary.textContent = scenario.connected_boundary;
+      ids.calibrationNote.textContent = scenario.calibration_note;
+
+      ids.configPane.textContent = pretty(serverConfig(twin.config_server));
+      ids.toolPane.textContent = pretty(tools);
+      ids.configChip.textContent = twin.config_server;
+      ids.toolChip.textContent = `${tools.length} tool${tools.length === 1 ? "" : "s"}`;
+
+      renderReportReadout(twin);
+      renderFindings(twin);
+    }
+
+    async function start() {
+      try {
+        const scenarios = await fetch("scenarios.json");
+        const config = await fetch("fixtures/synthetic-mcp-config.json");
+        const report = await fetch("fixtures/config-only-report.json");
+        const manifest = await fetch("fixtures/connected-tool-manifest.json").catch(() => null);
+        if (!scenarios.ok || !config.ok || !report.ok) {
+          throw new Error("fixture fetch failed");
+        }
+        state.data = await scenarios.json();
+        state.config = await config.json();
+        state.report = await report.json();
+        if (manifest?.ok) {
+          state.manifest = await manifest.json();
+        }
+        renderSources();
+        render();
+      } catch (error) {
+        document.querySelector(".app").innerHTML = `
+          <div class="load-error">
+            <strong>Sandbox fixtures did not load.</strong><br>
+            Serve this directory over loopback, for example:
+            <code>python3 -m http.server 8765 --directory examples/sandbox</code>
+          </div>
+        `;
+      }
+    }
+
+    start();
+  </script>
+</body>
+</html>
