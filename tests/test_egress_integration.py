@@ -145,6 +145,8 @@ class TestHtml:
             "MCP040",
             "MCP041",
             "MCP042",
+            "evil.example",
+            "api.anthropic.com",
             "destination_outside_allowlist",
             "unbounded_egress",
             "trusted_destination_residual",

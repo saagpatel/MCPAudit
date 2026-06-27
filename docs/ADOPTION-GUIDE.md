@@ -174,6 +174,7 @@ jq '.audits[] | {
 }' mcp-audit.json
 ```
 
-See `docs/1.1-ADOPTION.md` for more copy-paste parsing examples and
-`examples/schemas/audit-report.schema.json` for the generated JSON Schema.
+See historical `docs/1.1-ADOPTION.md` parsing examples from the original
+`non_tool_risk` rollout, and `examples/schemas/audit-report.schema.json`
+for the generated JSON Schema.
 Runnable Python and Node consumer examples live in `examples/consumers/`.
