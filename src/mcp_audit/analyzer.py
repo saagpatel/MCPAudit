@@ -1,5 +1,7 @@
 """Permission inference engine — keyword heuristics + MCP annotation analysis."""
 
+import re
+from functools import cache
 from urllib.parse import urlparse
 
 from mcp_audit.models import (
@@ -17,6 +19,32 @@ from mcp_audit.rules.patterns import PERMISSION_PATTERNS
 
 # Keyword strength → score contribution per match (multiplied by source weight later)
 _STRENGTH_SCORES: dict[str, int] = {"strong": 3, "moderate": 2, "weak": 1}
+_CAMEL_ACRONYM_BOUNDARY = re.compile(r"(?<=[A-Z])(?=[A-Z][a-z])")
+_CAMEL_WORD_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+
+
+def _keyword_text(text: str) -> str:
+    """Normalize identifier text before keyword matching.
+
+    MCP servers commonly use both snake_case and camelCase names; normalize
+    camelCase to separator-delimited tokens before lowercasing so `readFile`
+    still matches the `read_file` keyword while `report` still does not match
+    the `port` keyword.
+    """
+    text = _CAMEL_ACRONYM_BOUNDARY.sub("_", text)
+    return _CAMEL_WORD_BOUNDARY.sub("_", text).lower()
+
+
+@cache
+def _pattern_regex(pattern: str) -> re.Pattern[str]:
+    """Letter-boundary matcher for a capability keyword. Patterns are identifier
+    tokens ('rm', 'port', 'read_file'), so they must match whole tokens, not
+    substrings inside ordinary words ('terms', 'portfolio', 'evaluation'). The
+    boundary is letters-only, so identifier separators (_, -, /, .) still delimit
+    tokens: 'url' matches 'download_url' but not 'curl', 'port' never matches
+    'portfolio'."""
+    return re.compile(rf"(?<![a-z]){re.escape(pattern)}(?![a-z])")
+
 
 # Weighted score thresholds for confidence levels
 _HIGH_THRESHOLD = 6  # ≥2 strong name hits (3*weight=3 * 2 = 6)
@@ -277,7 +305,7 @@ class PermissionAnalyzer:
                 strength_score = _STRENGTH_SCORES[strength]
                 for pattern in patterns:
                     for text, source_weight in sources:
-                        if pattern in text.lower():
+                        if _pattern_regex(pattern).search(_keyword_text(text)):
                             total_score += strength_score * source_weight
                             if pattern not in evidence:
                                 evidence.append(pattern)
