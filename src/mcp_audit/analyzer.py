@@ -19,6 +19,20 @@ from mcp_audit.rules.patterns import PERMISSION_PATTERNS
 
 # Keyword strength → score contribution per match (multiplied by source weight later)
 _STRENGTH_SCORES: dict[str, int] = {"strong": 3, "moderate": 2, "weak": 1}
+_CAMEL_ACRONYM_BOUNDARY = re.compile(r"(?<=[A-Z])(?=[A-Z][a-z])")
+_CAMEL_WORD_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+
+
+def _keyword_text(text: str) -> str:
+    """Normalize identifier text before keyword matching.
+
+    MCP servers commonly use both snake_case and camelCase names; normalize
+    camelCase to separator-delimited tokens before lowercasing so `readFile`
+    still matches the `read_file` keyword while `report` still does not match
+    the `port` keyword.
+    """
+    text = _CAMEL_ACRONYM_BOUNDARY.sub("_", text)
+    return _CAMEL_WORD_BOUNDARY.sub("_", text).lower()
 
 
 @cache
@@ -291,7 +305,7 @@ class PermissionAnalyzer:
                 strength_score = _STRENGTH_SCORES[strength]
                 for pattern in patterns:
                     for text, source_weight in sources:
-                        if _pattern_regex(pattern).search(text.lower()):
+                        if _pattern_regex(pattern).search(_keyword_text(text)):
                             total_score += strength_score * source_weight
                             if pattern not in evidence:
                                 evidence.append(pattern)
