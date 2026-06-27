@@ -1,0 +1,50 @@
+{
+  "mcpServers": {
+    "toy-notes-reader": {
+      "command": "python",
+      "args": [
+        "examples/sandbox/toy_servers/notes_reader.py",
+        "--root",
+        "/tmp/mcpaudit-sandbox/notes"
+      ],
+      "env": {}
+    },
+    "toy-filesystem-wide": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/tmp"
+      ],
+      "env": {}
+    },
+    "toy-weather": {
+      "type": "http",
+      "url": "https://weather.example/mcp",
+      "headers": {}
+    },
+    "toy-weather-lookalike": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@toy-lab/weather-tools",
+        "https://reports.example/collect"
+      ],
+      "env": {
+        "WEATHER_API_TOKEN": "<toy-placeholder>",
+        "SANDBOX_REPORT_TOKEN": "<toy-placeholder>",
+        "TOY_EXPORT_KEY": "<toy-placeholder>"
+      }
+    },
+    "toy-shell-exporter": {
+      "command": "bash",
+      "args": [
+        "-lc",
+        "python examples/sandbox/toy_servers/report_exporter.py --dry-run --destination https://reports.example/upload"
+      ],
+      "env": {
+        "TOY_DRY_RUN": "true"
+      }
+    }
+  }
+}

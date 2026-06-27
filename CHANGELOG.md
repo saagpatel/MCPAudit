@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added a public-safe MCP Prompt-Injection Sandbox under `examples/sandbox/`
+  with synthetic configs, benign twins, MCPAudit-style config-only findings,
+  connected tool metadata fixtures, docs, and public-safety tests.
+
 ## [2.2.1] - 2026-06-27
 
 ### Changed
