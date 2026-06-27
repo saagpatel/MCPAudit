@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with synthetic configs, benign twins, MCPAudit-style config-only findings,
   connected tool metadata fixtures, docs, and public-safety tests.
 
+### Fixed
+
+- Tightened capability keyword matching so patterns match identifier-like
+  tokens rather than substrings inside ordinary words, reducing false positives
+  such as `port` in `report` or `post` in `postgres`.
+
 ## [2.2.1] - 2026-06-27
 
 ### Changed
