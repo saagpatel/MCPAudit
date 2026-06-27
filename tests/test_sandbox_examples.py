@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from mcp_audit.api import scan_config_only
 from mcp_audit.injection import InjectionDetector
@@ -33,11 +33,11 @@ PRIVATE_OR_SECRET_PATTERNS = [
 
 
 def _load_scenarios() -> dict[str, Any]:
-    return json.loads(SCENARIOS_PATH.read_text(encoding="utf-8"))
+    return cast(dict[str, Any], json.loads(SCENARIOS_PATH.read_text(encoding="utf-8")))
 
 
 def _load_manifest() -> dict[str, Any]:
-    return json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+    return cast(dict[str, Any], json.loads(MANIFEST_PATH.read_text(encoding="utf-8")))
 
 
 def _iter_sandbox_files() -> list[Path]:
