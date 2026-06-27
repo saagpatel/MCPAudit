@@ -495,8 +495,8 @@ class EscalationFinding(BaseModel):
                               pattern(s) absent from the pinned baseline.
 
     Purely a delta against the pin store: a tool matching its baseline produces no
-    finding, so the false-positive rate is near-zero by construction.  Requires a
-    pin baseline (``--escalation-check`` implies pin comparison).
+    finding, so findings stay scoped to reviewed baseline deltas.  Requires a pin
+    baseline (``--escalation-check`` implies pin comparison).
     """
 
     kind: EscalationKind

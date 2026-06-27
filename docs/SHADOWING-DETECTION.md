@@ -66,12 +66,12 @@ MCP016, not MCP017.
 
 Across 21 real-world server fixtures, there are **zero** exact or normalised
 collisions.  Legitimate servers namespace their tools (`slack_*`, `github_*`,
-`filesystem_*`).  This means an exact-match HIGH finding is genuinely anomalous
-with near-zero false positives.
+`filesystem_*`).  Exact-match HIGH findings should be uncommon in normal
+namespaced server fleets.
 
-Fuzzy edit-distance matching is deliberately excluded to keep the false-positive
-rate low.  A typo-similar name on two servers is a software quality issue, not a
-security signal.
+Fuzzy edit-distance matching is deliberately excluded so findings stay scoped to
+concrete cross-server name collisions.  A typo-similar name on two servers is a
+software quality issue, not a security signal.
 
 ## Output
 
@@ -145,9 +145,10 @@ JSON.
   `camelCase` in another) for unrelated tools may see collisions.  Review the
   canonical names — if the underlying tools do different things the finding is
   informational.
-- **Exact (MCP015)** is near-zero false positives in practice.  Identical tool
-  names on separate servers almost always indicate a naming conflict or
-  deliberate shadowing.
+- **Exact (MCP015)** findings are designed to stay low-noise because the
+  detector avoids fuzzy matching and reports only concrete cross-server
+  collisions.  Identical tool names on separate servers usually indicate a
+  naming conflict or deliberate shadowing.
 - **Homoglyph (MCP017)** is a deliberate spoofing indicator.  An accidental
   non-ASCII character in a tool name is rare; if it appears in the same slot as
   an ASCII name on another server, treat it as suspicious.
