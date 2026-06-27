@@ -12,7 +12,7 @@ Every MCP server wired into your editor is a process that can read your files, r
 
 Read-only by default: it never edits a config and reports env-var **key names only** (never values). Use `--skip-connect` for a zero-touch config-only pass that does not spawn MCP servers or contact remote endpoints; connected scans, package verification, downloads, and LLM analysis make their extra reach explicit in the command.
 
-> **🌐 Try it in your browser, no install:** paste any MCP client config at **[mcp-audit.saagarpatel.dev](https://mcp-audit.saagarpatel.dev)** for an instant config-only trust report. It runs this exact engine, never launches a server, never makes a network request, and stores nothing. The CLI below adds the connected deep checks (prompt-injection, SSRF, the lethal trifecta, schema drift, SARIF).
+> **🌐 Try it in your browser, no install:** paste any MCP client config at **[mcp-audit.saagarpatel.dev](https://mcp-audit.saagarpatel.dev)** for an instant config-only trust report. It runs this exact engine, never launches configured servers, never contacts configured endpoints, and stores nothing. The CLI below adds the connected deep checks (prompt-injection, SSRF, the lethal trifecta, schema drift, SARIF).
 
 ## ⚡ 60-second start
 
@@ -298,6 +298,8 @@ workflows. See `docs/PROMPT-RESOURCE-SCORING.md` and
 and migration path. See `docs/COMPOSITE-SCORING-PROPOSAL.md` for the future
 combined-score proposal. See `examples/ci/pin-stale-review.yml` and
 `examples/maintenance/stale-pin-review.sh` for routine stale pin review flows.
+See `docs/MAINTAINER-WORKFLOWS.md` for Codex-assisted maintainer workflows and
+the boundaries used for security-sensitive triage and release preparation.
 See `docs/FEEDBACK-TO-FIXTURES.md` for turning false positives, missing
 detections, output issues, and pin lifecycle feedback into safe regression
 fixtures. See `docs/FIELD-REPORTS.md` for the redacted field-report evidence

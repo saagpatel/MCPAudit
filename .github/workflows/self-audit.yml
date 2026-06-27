@@ -31,6 +31,7 @@ jobs:
       - name: Audit MCP servers (local action)
         uses: ./
         with:
+          config: examples/configs/popular-public-servers.json
           args: --inject-check --ssrf-check --trifecta-check --shadow-check
           sarif: mcp-audit.sarif
-          upload-sarif: "true"
+          upload-sarif: ${{ github.event_name != 'pull_request' }}
