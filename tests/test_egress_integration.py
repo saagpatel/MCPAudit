@@ -10,6 +10,7 @@ from __future__ import annotations
 import functools
 import io
 from datetime import UTC, datetime
+from html.parser import HTMLParser
 
 import anyio
 import pytest
@@ -32,6 +33,23 @@ from mcp_audit.policy import PolicyConfig, evaluate_policy
 from mcp_audit.report import ReportGenerator
 from mcp_audit.sarif import SarifGenerator
 from mcp_audit.ssrf import SsrfDetector
+
+
+class _TextCollector(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.text: list[str] = []
+
+    def handle_data(self, data: str) -> None:
+        value = data.strip()
+        if value:
+            self.text.append(value)
+
+
+def _html_text(html: str) -> set[str]:
+    parser = _TextCollector()
+    parser.feed(html)
+    return set(parser.text)
 
 
 def _audit() -> ServerAudit:
@@ -121,9 +139,16 @@ class TestTerminal:
 class TestHtml:
     def test_egress_table_renders(self) -> None:
         html = HtmlReportGenerator().generate(_report(_audit()))
-        assert "Egress" in html
-        assert "evil.example" in html
-        assert "api.anthropic.com" in html
+        text = _html_text(html)
+        assert {
+            "Egress",
+            "MCP040",
+            "MCP041",
+            "MCP042",
+            "destination_outside_allowlist",
+            "unbounded_egress",
+            "trusted_destination_residual",
+        } <= text
 
 
 class TestPolicyGate:

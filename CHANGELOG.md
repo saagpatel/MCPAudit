@@ -819,7 +819,19 @@ real workstations; API surface may still shift before the `1.0.0` stable cut.
 - Risk score output with pass/warn/fail thresholds
 - `mcp-audit` CLI entry point
 
-[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v1.5.5...HEAD
+[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/saagpatel/MCPAudit/compare/v2.1.0...v2.2.0
+[2.1.0]: https://github.com/saagpatel/MCPAudit/compare/v2.0.0...v2.1.0
+[2.0.0]: https://github.com/saagpatel/MCPAudit/compare/v1.13.1...v2.0.0
+[1.13.1]: https://github.com/saagpatel/MCPAudit/compare/v1.13.0...v1.13.1
+[1.13.0]: https://github.com/saagpatel/MCPAudit/compare/v1.12.0...v1.13.0
+[1.12.0]: https://github.com/saagpatel/MCPAudit/compare/v1.11.0...v1.12.0
+[1.11.0]: https://github.com/saagpatel/MCPAudit/compare/v1.10.0...v1.11.0
+[1.10.0]: https://github.com/saagpatel/MCPAudit/compare/v1.9.0...v1.10.0
+[1.9.0]: https://github.com/saagpatel/MCPAudit/compare/v1.8.0...v1.9.0
+[1.8.0]: https://github.com/saagpatel/MCPAudit/compare/v1.7.0...v1.8.0
+[1.7.0]: https://github.com/saagpatel/MCPAudit/compare/v1.6.0...v1.7.0
+[1.6.0]: https://github.com/saagpatel/MCPAudit/compare/v1.5.5...v1.6.0
 [1.5.5]: https://github.com/saagpatel/MCPAudit/compare/v1.5.4...v1.5.5
 [1.5.4]: https://github.com/saagpatel/MCPAudit/compare/v1.5.3...v1.5.4
 [1.5.3]: https://github.com/saagpatel/MCPAudit/compare/v1.5.2...v1.5.3
