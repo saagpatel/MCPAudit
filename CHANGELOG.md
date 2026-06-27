@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.1] - 2026-06-27
+
+### Changed
+
+- Refreshed docs and package metadata so the next PyPI package can reflect the
+  cleaned public-facing README and stable compatibility wording.
+- Softened unsupported false-positive wording in shadowing and escalation
+  documentation/docstrings. Findings remain scoped to concrete cross-server
+  tool-name collisions or reviewed baseline deltas.
+- No scanner behavior, output contract, or policy-gate semantics changed.
+
 ## [2.2.0] - 2026-06-20
 
 ### Added
@@ -246,8 +257,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     prompt-injection pattern(s) absent from the baseline.
 - `--escalation-check` implies a pin comparison: it reuses the pin store as the
   baseline (run `mcp-audit pin` first). Findings are a pure delta against the
-  baseline — a tool matching its pin produces nothing, so the false-positive rate
-  is near-zero by construction. The check reuses the existing permission and
+  baseline — a tool matching its pin produces nothing, so findings stay scoped to
+  reviewed baseline deltas. The check reuses the existing permission and
   injection analyzers; no new inference is performed and no network request is made.
 - Added `fail_on.escalation` policy gate, SARIF rules MCP018/MCP019
   (category `capability_escalation`), a terminal "Capability Escalation" report
@@ -298,8 +309,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unique within a single server by the MCP spec), offline, and deterministic — no
   network requests, no new runtime dependencies, no credential-value reads.
 - In a 21-server real-world corpus there are zero exact or normalised collisions
-  (legit servers namespace their tools), so exact-match HIGH is safe with near-zero
-  false positives. Fuzzy edit-distance matching is intentionally excluded.
+  (legit servers namespace their tools). Exact-match HIGH findings are designed
+  to stay low-noise because the detector avoids fuzzy matching and reports only
+  concrete cross-server collisions.
 - Added `AuditReport.shadowing_findings` (top-level list, populated only with
   `--shadow-check`; defaults to empty so all existing consumers are unaffected),
   stable SARIF rule IDs MCP015/016/017, a shadowing terminal section, a
@@ -819,7 +831,8 @@ real workstations; API surface may still shift before the `1.0.0` stable cut.
 - Risk score output with pass/warn/fail thresholds
 - `mcp-audit` CLI entry point
 
-[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v2.2.1...HEAD
+[2.2.1]: https://github.com/saagpatel/MCPAudit/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/saagpatel/MCPAudit/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/saagpatel/MCPAudit/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/saagpatel/MCPAudit/compare/v1.13.1...v2.0.0

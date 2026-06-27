@@ -30,9 +30,9 @@ baseline and the current scan, mcp-audit:
    **injection-pattern delta**.
 
 A finding is produced **only** for a genuine gain. A tool that matches its
-baseline produces nothing, so the false-positive rate is near-zero by
-construction. No new inference is performed, no network request is made, and no
-credential value is ever read.
+baseline produces nothing, so findings stay scoped to reviewed baseline deltas.
+No new inference is performed, no network request is made, and no credential
+value is ever read.
 
 `--escalation-check` **implies a pin comparison**: it reuses the pin store as the
 baseline. Run `mcp-audit pin` first. If no baseline exists, the scan prints a
