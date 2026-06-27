@@ -413,12 +413,12 @@
           ],
           "expected_findings": [
             {
-              "rule_id": "MCP016",
-              "severity": "medium",
-              "target_type": "fleet",
-              "target_name": "get_forecast / get-forecast",
-              "evidence": "Names collide after case and separator normalization.",
-              "what_mcpaudit_can_prove": "Connected tool metadata contains ambiguous names. Intent still requires human review.",
+              "finding_type": "shadowing-precondition",
+              "severity": "low",
+              "target_type": "tool_set",
+              "target_name": "toy-weather-lookalike",
+              "evidence": "Two generic tool names differ only by separator within one supplied server manifest.",
+              "what_mcpaudit_can_prove": "This is not an MCP016 fleet-shadowing finding by itself. MCPAudit needs two distinct servers with normalized tool-name collisions before MCP016 fires.",
               "review_action": "Namespace tools by server purpose, such as toy_weather_get_forecast."
             }
           ]
