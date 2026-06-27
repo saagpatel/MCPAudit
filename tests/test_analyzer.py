@@ -244,3 +244,42 @@ class TestAnalyzeCapabilities:
         resource = ResourceInfo(uri="memo://daily-note", name="daily note", description="Local memo text")
         findings = analyzer.analyze_capabilities([prompt], [resource])
         assert findings == []
+
+
+class TestKeywordWordBoundary:
+    """Capability keyword patterns are identifier tokens, not substrings: a pattern
+    like 'port' or 'rm' must not match inside a larger word such as 'portfolio' or
+    'terms'. Regression for content-resource false positives (a safe read-only
+    server serving prose got flagged network/destructive/shell on word fragments)."""
+
+    def test_substrings_in_resource_text_yield_no_capabilities(self) -> None:
+        # 'port'/'import' in 'important', 'rm' in 'terms'/'performance',
+        # 'eval' in 'evaluation' -- substrings of ordinary words, never tokens.
+        resource = ResourceInfo(
+            uri="memo://important-terms",
+            name="On terms and performance",
+            description="A careful evaluation of tradeoffs.",
+        )
+        findings = analyzer.analyze_capabilities([], [resource])
+        cats = {f.category for f in findings}
+        assert PermissionCategory.NETWORK not in cats
+        assert PermissionCategory.DESTRUCTIVE not in cats
+        assert PermissionCategory.SHELL_EXEC not in cats
+        assert PermissionCategory.FILE_READ not in cats
+
+    def test_substrings_in_prompt_text_yield_no_network(self) -> None:
+        # 'port' in 'report' used to create a bogus network signal.
+        prompt = PromptInfo(
+            name="write_report",
+            description="Create a report at the requested output path.",
+            arguments=["output_path", "content"],
+        )
+        findings = analyzer.analyze_capabilities([prompt], [])
+        cats = {f.category for f in findings}
+        assert PermissionCategory.NETWORK not in cats
+        assert PermissionCategory.FILE_WRITE in cats
+
+    def test_real_token_tool_still_detected(self) -> None:
+        # The word-boundary fix must not weaken genuine token detection.
+        assert PermissionCategory.FILE_READ in _categories(make_tool("read_file"))
+        assert PermissionCategory.DESTRUCTIVE in _categories(make_tool("rm", description="remove items"))
