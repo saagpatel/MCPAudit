@@ -283,3 +283,8 @@ class TestKeywordWordBoundary:
         # The word-boundary fix must not weaken genuine token detection.
         assert PermissionCategory.FILE_READ in _categories(make_tool("read_file"))
         assert PermissionCategory.DESTRUCTIVE in _categories(make_tool("rm", description="remove items"))
+
+    def test_camel_case_tool_tokens_still_detected(self) -> None:
+        assert PermissionCategory.FILE_READ in _categories(make_tool("readFile"))
+        assert PermissionCategory.SHELL_EXEC in _categories(make_tool("executeCommand"))
+        assert PermissionCategory.EXFILTRATION in _categories(make_tool("sendEmail"))
