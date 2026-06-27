@@ -6,7 +6,19 @@ readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [
-    { name = "saagpatel" }
+    { name = "Saagar Patel" }
+]
+keywords = [
+    "mcp",
+    "model-context-protocol",
+    "security",
+    "audit",
+    "ai-safety",
+    "claude-code",
+    "permission-audit",
+    "agent-security",
+    "prompt-injection",
+    "sarif",
 ]
 requires-python = ">=3.11"
 classifiers = [
