@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Published `server.json` for the official MCP registry
+  (`io.github.saagpatel/mcp-audit`) plus a `mcp-audits` console-script alias, so
+  the auditor launches as an MCP server via `uvx mcp-audits serve`.
 - Added a public-safe MCP Prompt-Injection Sandbox under `examples/sandbox/`
   with synthetic configs, benign twins, MCPAudit-style config-only findings,
   connected tool metadata fixtures, docs, and public-safety tests.

@@ -1,6 +1,6 @@
 [project]
 name = "mcp-audits"
-version = "2.2.1"
+version = "2.2.2"
 description = "MCP Permission Auditor — scan, enumerate, and risk-score all locally configured MCP servers"
 readme = "README.md"
 license = "MIT"
