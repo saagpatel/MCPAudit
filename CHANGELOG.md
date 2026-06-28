@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added the `mcp-name: io.github.saagpatel/mcp-audit` registry-ownership marker to
+  the README so the official MCP registry can verify PyPI namespace ownership.
 - Published `server.json` for the official MCP registry
   (`io.github.saagpatel/mcp-audit`) plus a `mcp-audits` console-script alias, so
   the auditor launches as an MCP server via `uvx mcp-audits serve`.
