@@ -1,6 +1,6 @@
 [project]
 name = "mcp-audits"
-version = "2.2.1"
+version = "2.2.2"
 description = "MCP Permission Auditor — scan, enumerate, and risk-score all locally configured MCP servers"
 readme = "README.md"
 license = "MIT"
@@ -53,6 +53,10 @@ Issues = "https://github.com/saagpatel/MCPAudit/issues"
 
 [project.scripts]
 mcp-audit = "mcp_audit.cli:main"
+# Registry alias: a console script named == the PyPI package (mcp-audits), so the
+# MCP server launches via `uvx mcp-audits serve` (the MCP Registry runs a pypi/stdio
+# server as `uvx <package>`, and uvx resolves <package> to a same-named executable).
+mcp-audits = "mcp_audit.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.11.2,<0.12.0"]

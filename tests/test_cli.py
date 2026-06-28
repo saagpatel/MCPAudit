@@ -37,7 +37,7 @@ def test_version_option_reports_installed_distribution_version() -> None:
 
     assert result.exit_code == 0
     assert "mcp-audit, version " in result.output
-    assert "2.2.1" in result.output
+    assert "2.2.2" in result.output
 
 
 def test_scan_writes_report_files_when_no_servers_discovered(
