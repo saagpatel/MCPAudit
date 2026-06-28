@@ -94,6 +94,51 @@ PyPI package: [`mcp-audits`](https://pypi.org/project/mcp-audits/) · installed 
 
 ---
 
+## Use as an MCP server
+
+`mcp-audit` is also an MCP server. Point any MCP client (Claude Code, Claude Desktop, Cursor) at it and your agent can audit its own MCP attack surface on demand: enumerate every configured server, risk-score them, and pull injection, SSRF, lethal-trifecta, shadowing, and drift findings without leaving the conversation.
+
+```bash
+uvx --from mcp-audits mcp-audit serve
+```
+
+Add it to a client config (Claude Code shown):
+
+```json
+{
+  "mcpServers": {
+    "mcp-audit": {
+      "command": "uvx",
+      "args": ["--from", "mcp-audits", "mcp-audit", "serve"]
+    }
+  }
+}
+```
+
+**stdio only, by design.** This server reads the MCP configs already on your machine, so it runs locally over stdio and is never offered as a hosted remote. It stays read-only (it never edits a config) and reports env-var **key names only**, never values.
+
+All tools are read-only and take no URL or filesystem path; server discovery is automatic from the standard client config locations.
+
+| Tool | Purpose | Args |
+|---|---|---|
+| `scan_mcp_servers` | Full audit of every discovered MCP server; returns the JSON report | `skip_connect: bool = false` |
+| `check_server` | Audit a single server by name | `name: str` |
+| `get_high_risk_servers` | Servers with a composite risk score of 7.0 or higher | none |
+| `list_discovered_servers` | Names and clients of all discovered servers (config-only, no spawning) | none |
+| `get_injection_findings` | Prompt-injection findings across all servers | none |
+| `get_ssrf_findings` | SSRF-shaped tools and resources across all servers | none |
+| `get_trifecta_findings` | Lethal-trifecta findings (per-server and fleet-level) | none |
+| `get_shadowing_findings` | Cross-server tool-name shadowing collisions | none |
+| `get_escalation_findings` | Capability-escalation ("rug pull") deltas vs the pin baseline | none |
+| `get_provenance_findings` | Launch-config and provenance drift vs the pin baseline | none |
+| `get_integrity_findings` | Launch-artifact on-disk hash drift vs the pin baseline | none |
+| `get_package_verify_findings` | Registry package-hash verification vs the pin baseline | none |
+| `get_artifact_verify_findings` | Byte-level artifact verification vs the pin baseline | none |
+
+The five drift tools (`get_escalation_findings`, `get_provenance_findings`, `get_integrity_findings`, `get_package_verify_findings`, `get_artifact_verify_findings`) compare against a saved baseline, so run `mcp-audit pin` first.
+
+---
+
 ## Features
 
 - **Capability inventory** — catalogs server tools, prompts, and resources; tool, prompt, and resource capabilities are classified across six permission categories: `file_read`, `file_write`, `network`, `shell_execution`, `destructive`, `exfiltration`
