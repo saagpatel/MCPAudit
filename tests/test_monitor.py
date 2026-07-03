@@ -181,3 +181,79 @@ class TestMakeTable:
         }
         table = mon._make_table()
         assert table.row_count == 2
+
+
+# ---------------------------------------------------------------------------
+# _read_message bounds — a hostile/buggy peer must not flood memory
+# ---------------------------------------------------------------------------
+
+
+class _FloodStream(anyio.abc.ByteReceiveStream):
+    """Endless byte stream that fails the test if too much is consumed."""
+
+    def __init__(self, preamble: bytes, filler: bytes = b"x", limit: int = 1_000_000) -> None:
+        self._preamble = bytearray(preamble)
+        self._filler = filler
+        self._limit = limit
+        self.served = 0
+
+    async def receive(self, max_bytes: int = 65536) -> bytes:
+        if self._preamble:
+            chunk = bytes(self._preamble[:max_bytes])
+            del self._preamble[:max_bytes]
+        else:
+            chunk = self._filler * max_bytes
+        self.served += len(chunk)
+        if self.served > self._limit:
+            pytest.fail("_read_message consumed unbounded bytes")
+        return chunk
+
+    async def aclose(self) -> None:
+        pass
+
+
+class TestReadMessageBounds:
+    @pytest.mark.anyio
+    async def test_oversized_content_length_rejected_without_reading_body(self) -> None:
+        header = f"Content-Length: {1 << 30}\r\n\r\n".encode()
+        stream = _FloodStream(header)
+        assert await _read_message(stream) is None
+        assert stream.served <= len(header)
+
+    @pytest.mark.anyio
+    async def test_endless_headers_rejected(self) -> None:
+        stream = _FloodStream(b"", filler=b"h")  # never sends \r\n\r\n
+        assert await _read_message(stream) is None
+
+
+class TestInterceptRobustness:
+    def test_null_arguments_handled(self) -> None:
+        # JSON-RPC allows "arguments": null with the key present.
+        mon = _make_monitor()
+        msg = {"method": "tools/call", "params": {"name": "t", "arguments": None}, "id": 3}
+        mon._intercept(msg, "→ server")
+        assert mon._pending[3][1] == "t"
+        logged = cast(dict[str, Any], _log_mock(mon).call_args[0][0])
+        assert logged["arg_keys"] == []
+
+    def test_positional_params_array_handled(self) -> None:
+        # JSON-RPC 2.0 permits params as a positional array.
+        mon = _make_monitor()
+        msg = {"method": "tools/call", "params": ["positional"], "id": 4}
+        mon._intercept(msg, "→ server")
+        assert mon._pending[4][1] == "<unknown>"
+
+    def test_wrong_direction_error_message_does_not_steal_pending(self) -> None:
+        mon = _make_monitor()
+        mon._pending[7] = ("tools/call", "list_files", datetime.now(UTC))
+
+        # A client→server message carrying an "error" key must not be treated
+        # as the response to pending id 7.
+        mon._intercept({"id": 7, "error": {"code": -1}}, "→ server")
+        assert 7 in mon._pending
+        assert mon._stats == {}
+
+        # The genuine response still lands afterwards.
+        mon._intercept({"id": 7, "result": {}}, "← client")
+        assert 7 not in mon._pending
+        assert mon._stats["list_files"]["calls"] == 1.0
