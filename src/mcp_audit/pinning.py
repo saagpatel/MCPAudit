@@ -66,6 +66,22 @@ class _NoAliasSafeDumper(yaml.SafeDumper):
         return True
 
 
+def _describe_parse_error(exc: Exception) -> str:
+    """Sanitized, secret-safe description of a pin file parse failure.
+
+    ``str(exc)`` on a YAML parser error renders a snippet of the offending
+    source line (``Mark.get_snippet``), which can echo a pasted secret back
+    into ``ScanWarning.message`` — a value that flows into scan JSON/MCP
+    responses. Report only the exception class and, when the parser
+    supplies one, its line/column — never the parser's rendered message.
+    """
+    name = type(exc).__name__
+    mark = getattr(exc, "problem_mark", None)
+    if mark is not None:
+        return f"{name} at line {mark.line + 1}, column {mark.column + 1}"
+    return name
+
+
 @contextmanager
 def _file_lock(path: Path) -> Iterator[None]:
     """Hold an exclusive advisory lock for a read-modify-write of ``path``.
@@ -444,7 +460,7 @@ class PinStore:
         except Exception as exc:
             if strict:
                 raise PinFileError(str(self._path), f"{type(exc).__name__}: {exc}") from exc
-            self._read_error = f"{type(exc).__name__}: {exc}"
+            self._read_error = _describe_parse_error(exc)
             logger.warning(
                 "Failed to parse pin file %s (%s) — treating as empty for reading; "
                 "pin mutations will refuse to overwrite it",

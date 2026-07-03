@@ -217,6 +217,26 @@ def test_pin_store_read_error_set_and_cleared(tmp_path: Path) -> None:
     assert healthy.read_error is None
 
 
+def test_pin_store_read_error_does_not_leak_source_snippet(tmp_path: Path) -> None:
+    """A parse error near a pasted secret must not echo the secret back.
+
+    PyYAML's rendered exception message includes a snippet of the offending
+    source line, so a hand-edited or corrupted pin file with a secret value
+    on the broken line would otherwise leak it into ``read_error`` — and from
+    there into ``ScanWarning.message``, which is serialized in scan JSON/MCP
+    responses.
+    """
+    from mcp_audit.pinning import PinStore
+
+    corrupt_path = tmp_path / "corrupt.yaml"
+    corrupt_path.write_text('servers:\n  demo:\n    token: "sk-live-should-not-leak-12345\n')
+    corrupted = PinStore(path=corrupt_path)
+
+    assert corrupted.read_error is not None
+    assert "sk-live-should-not-leak-12345" not in corrupted.read_error
+    assert "Error" in corrupted.read_error
+
+
 def test_stale_pin_baseline_names_affected_servers(monkeypatch: pytest.MonkeyPatch) -> None:
     """A pinned server whose baseline predates the check's capture is named in the warning."""
     from mcp_audit import pinning
