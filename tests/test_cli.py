@@ -41,6 +41,59 @@ def test_version_option_reports_installed_distribution_version() -> None:
     assert "2.3.0" in result.output
 
 
+def test_error_messages_route_to_stderr_not_stdout() -> None:
+    # Machine-parseable stdout (json/sarif pipelines) must never be polluted
+    # by human-facing error text.
+    result = CliRunner().invoke(cli.main, ["scan", "--skip-connect", "--clients", "bogus"])
+
+    assert result.exit_code == 1
+    assert "Unknown client" in result.stderr
+    # result.output interleaves both streams; result.stdout is stdout alone.
+    assert "Unknown client" not in result.stdout
+
+
+def test_redact_scrubs_planted_identifiers_across_all_file_formats(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # End-to-end for the --redact promise: a report carrying a real hostname,
+    # a home-path username, and a private server name must produce json/sarif/
+    # html artifacts with none of them present.
+    server = make_server_config(name="personal-secrets").model_copy(
+        update={"command": "/Users/alice/.claude/bin/personal-secrets-mcp"}
+    )
+    audit = ServerAudit(server=server, connection_status="skipped")
+
+    async def fake_run_scan(*args: object, **kwargs: object) -> AuditReport:
+        report = _report([audit])
+        report.hostname = "secret-host.local"
+        return report
+
+    monkeypatch.setattr(cli, "run_scan", fake_run_scan)
+    outputs = {ext: tmp_path / f"out.{ext}" for ext in ("json", "sarif", "html")}
+
+    result = CliRunner().invoke(
+        cli.main,
+        [
+            "scan",
+            "--skip-connect",
+            "--redact",
+            "--json",
+            str(outputs["json"]),
+            "--sarif",
+            str(outputs["sarif"]),
+            "--html",
+            str(outputs["html"]),
+        ],
+    )
+
+    assert result.exit_code == 0
+    for ext, path in outputs.items():
+        text = path.read_text()
+        assert "alice" not in text, f"{ext} leaked username"
+        assert "secret-host" not in text, f"{ext} leaked hostname"
+        assert "personal-secrets" not in text, f"{ext} leaked server name"
+
+
 def test_scan_writes_report_files_when_no_servers_discovered(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -249,6 +302,36 @@ def test_scan_reports_duplicate_server_names(monkeypatch: pytest.MonkeyPatch) ->
     assert result.exit_code == 0
     assert "Config health warnings found" in result.output
     assert "'srv' appears 2 times" in result.output
+
+
+def test_pin_unknown_server_exits_1_on_stderr(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    # `pin --server <typo>` pinned nothing; that is an error, not a shrug.
+    async def fake_run_scan(*args: object, **kwargs: object) -> AuditReport:
+        return _report([])
+
+    monkeypatch.setattr(cli, "run_scan", fake_run_scan)
+
+    result = CliRunner().invoke(
+        cli.main, ["pin", "--server", "ghost", "--pin-file", str(tmp_path / "pins.yaml")]
+    )
+
+    assert result.exit_code == 1
+    assert "not found" in result.stderr
+    assert "not found" not in result.stdout
+
+
+def test_pin_mutation_on_unparseable_pin_file_exits_1(tmp_path: Path) -> None:
+    # The store refuses to write through a baseline it cannot parse; the CLI
+    # must surface that as a clean error, and the file must survive untouched.
+    pin_path = tmp_path / "pins.yaml"
+    original = "servers: &s\n  keep:\n    tools: {}\nalso: *s\n"
+    pin_path.write_text(original)
+
+    result = CliRunner().invoke(cli.main, ["pin", "--clear", "keep", "--pin-file", str(pin_path)])
+
+    assert result.exit_code == 1
+    assert "cannot parse pin file" in result.stderr
+    assert pin_path.read_text() == original
 
 
 def test_run_pin_connects_before_pinning(monkeypatch: object, tmp_path: Path) -> None:

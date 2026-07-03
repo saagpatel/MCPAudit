@@ -18,6 +18,7 @@ from rich.live import Live
 from rich.table import Table
 
 from mcp_audit.discovery import discover_all_configs
+from mcp_audit.report import error_console as _error_console
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,9 @@ _CONTENT_LENGTH_HEADER = b"Content-Length: "
 _MAX_HEADER_BYTES = 64 * 1024
 _MAX_BODY_BYTES = 32 * 1024 * 1024
 _BODY_READ_TIMEOUT_S = 30.0
+# Log entries buffer in memory and hit disk on this cadence, so the proxy hot
+# path never blocks the event loop on file I/O.
+_LOG_FLUSH_INTERVAL_S = 0.5
 
 
 async def _read_message(stream: anyio.abc.ByteReceiveStream) -> dict[str, Any] | None:
@@ -114,6 +118,9 @@ class MCPProxyMonitor:
     def __init__(self, log_path: Path | None = None) -> None:
         self._log_path = log_path
         self._log_file = open(log_path, "a") if log_path else None  # noqa: SIM115
+        # Entries buffer here; the writer task drains them to disk in batches
+        # off the event loop. Final drain on shutdown guarantees no loss.
+        self._log_buffer: list[dict[str, Any]] = []
         # Per-tool stats: {tool_name: {"calls": int, "errors": int, "total_ms": float}}
         self._stats: dict[str, dict[str, float]] = {}
         # Pending requests by id
@@ -121,33 +128,42 @@ class MCPProxyMonitor:
 
     async def run(self, command: str, args: list[str], env: dict[str, str] | None = None) -> None:
         """Spawn server process and proxy stdio, logging tool calls."""
-        async with await anyio.open_process(
-            [command, *args],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=None,
-            env=env,
-        ) as process:
-            _console.print(f"[dim]Monitoring server process (pid={process.pid}). Ctrl+C to stop.[/dim]")
-            with Live(self._make_table(), refresh_per_second=2, console=_console) as live:
-                async with anyio.create_task_group() as tg:
-                    tg.start_soon(
-                        self._proxy_direction,
-                        sys.stdin.buffer,
-                        process.stdin,
-                        "→ server",
-                        live,
-                    )
-                    tg.start_soon(
-                        self._proxy_direction,
-                        process.stdout,
-                        sys.stdout.buffer,
-                        "← client",
-                        live,
-                    )
-
-        if self._log_file:
-            self._log_file.close()
+        try:
+            async with await anyio.open_process(
+                [command, *args],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=None,
+                env=env,
+            ) as process:
+                _console.print(f"[dim]Monitoring server process (pid={process.pid}). Ctrl+C to stop.[/dim]")
+                with Live(self._make_table(), refresh_per_second=2, console=_console) as live:
+                    proxying_done = anyio.Event()
+                    async with anyio.create_task_group() as tg:
+                        tg.start_soon(self._log_writer, proxying_done)
+                        async with anyio.create_task_group() as proxies:
+                            proxies.start_soon(
+                                self._proxy_direction,
+                                sys.stdin.buffer,
+                                process.stdin,
+                                "→ server",
+                                live,
+                            )
+                            proxies.start_soon(
+                                self._proxy_direction,
+                                process.stdout,
+                                sys.stdout.buffer,
+                                "← client",
+                                live,
+                            )
+                        proxying_done.set()
+        finally:
+            if self._log_file:
+                # Synchronous final drain: no entry may be lost on any exit
+                # path, including a crashed proxy direction.
+                self._write_batch(self._log_buffer)
+                self._log_buffer = []
+                self._log_file.close()
 
     async def _proxy_direction(
         self,
@@ -224,8 +240,26 @@ class MCPProxyMonitor:
 
     def _log(self, entry: dict[str, Any]) -> None:
         if self._log_file:
-            self._log_file.write(json.dumps(entry) + "\n")
-            self._log_file.flush()
+            self._log_buffer.append(entry)
+
+    async def _log_writer(self, proxying_done: anyio.Event) -> None:
+        """Drain buffered log entries to disk on a cadence, off the event loop."""
+        while not proxying_done.is_set():
+            with anyio.move_on_after(_LOG_FLUSH_INTERVAL_S):
+                await proxying_done.wait()
+            await self._drain_log_buffer()
+
+    async def _drain_log_buffer(self) -> None:
+        if not self._log_buffer or not self._log_file:
+            return
+        batch, self._log_buffer = self._log_buffer, []
+        await anyio.to_thread.run_sync(self._write_batch, batch)
+
+    def _write_batch(self, batch: list[dict[str, Any]]) -> None:
+        if not batch or not self._log_file:
+            return
+        self._log_file.write("".join(json.dumps(entry) + "\n" for entry in batch))
+        self._log_file.flush()
 
     def _make_table(self) -> Table:
         table = Table(title="MCP Tool Call Monitor", show_lines=False)
@@ -253,16 +287,24 @@ async def _run_monitor(server_name: str, log_path: str | None) -> None:
     servers = discover_all_configs(None)
     target = next((s for s in servers if s.name == server_name), None)
     if target is None:
-        _console.print(f"[red]Server '{server_name}' not found in any MCP config.[/red]")
+        _error_console.print(f"[red]Server '{server_name}' not found in any MCP config.[/red]")
         raise SystemExit(1)
     if not target.command:
-        _console.print(
+        _error_console.print(
             f"[red]Server '{server_name}' has no stdio command (HTTP transport not supported).[/red]"
         )
         raise SystemExit(1)
 
-    monitor = MCPProxyMonitor(log_path=Path(log_path) if log_path else None)
-    await monitor.run(
-        command=target.command,
-        args=target.args,
-    )
+    try:
+        monitor = MCPProxyMonitor(log_path=Path(log_path) if log_path else None)
+    except OSError as exc:
+        _error_console.print(f"[red]Cannot open log file {log_path}: {exc}[/red]")
+        raise SystemExit(1) from exc
+    try:
+        await monitor.run(
+            command=target.command,
+            args=target.args,
+        )
+    except OSError as exc:
+        _error_console.print(f"[red]Failed to launch server process '{target.command}': {exc}[/red]")
+        raise SystemExit(1) from exc

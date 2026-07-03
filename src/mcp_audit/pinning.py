@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -14,9 +16,77 @@ import yaml
 
 from mcp_audit.models import DriftFinding, DriftStatus, ServerConfig, ToolInfo
 
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Windows: mutations run best-effort unlocked
+    fcntl = None  # type: ignore[assignment]
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_PIN_PATH = Path.home() / ".mcp-audit-pins.yaml"
+
+# The pin file is user-editable; bound what we are willing to parse so a
+# corrupted or hostile file cannot exhaust memory. Real baselines are a few KB.
+_MAX_PIN_FILE_BYTES = 10 * 1024 * 1024
+
+
+class PinFileError(Exception):
+    """The pin file exists but cannot be parsed.
+
+    Raised only on the mutation path: writing through an unreadable baseline
+    would replace a file the user may be able to repair with a fresh one,
+    silently destroying every pinned server. Read paths degrade to empty
+    with a warning instead.
+    """
+
+    def __init__(self, path: str, reason: str) -> None:
+        self.path = path
+        self.reason = reason
+        super().__init__(f"cannot parse pin file {path}: {reason}")
+
+
+class _NoAliasSafeLoader(yaml.SafeLoader):
+    """SafeLoader that rejects aliases — blocks billion-laughs expansion.
+
+    Trade-off: a hand-edited pin file using a legitimate anchor/alias is also
+    rejected. That is acceptable ONLY because mutations refuse to touch an
+    unparseable file (see :class:`PinFileError`) rather than wiping it.
+    """
+
+    def compose_node(self, parent: Any, index: Any) -> Any:
+        if self.check_event(yaml.events.AliasEvent):  # type: ignore[no-untyped-call]
+            raise yaml.YAMLError("YAML aliases are not supported in the pin file")
+        return super().compose_node(parent, index)
+
+
+class _NoAliasSafeDumper(yaml.SafeDumper):
+    """SafeDumper that never emits anchors, so our own files always reload."""
+
+    def ignore_aliases(self, data: Any) -> bool:
+        return True
+
+
+@contextmanager
+def _file_lock(path: Path) -> Iterator[None]:
+    """Hold an exclusive advisory lock for a read-modify-write of ``path``.
+
+    Serializes concurrent ``mcp-audit pin`` processes so one run's baseline
+    cannot be erased by another's stale in-memory copy (lost update). On
+    platforms without ``fcntl`` the lock is a no-op and mutations remain
+    last-writer-wins. Caveat: ``flock`` may be silently non-serializing on
+    NFS-mounted home directories.
+    """
+    if fcntl is None:
+        yield
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = path.with_suffix(".yaml.lock")
+    with open(lock_path, "w") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
 
 
 @dataclass(frozen=True)
@@ -82,42 +152,46 @@ class PinStore:
         provenance detector can compare them on later scans.
         """
         now = datetime.now(UTC).isoformat()
-        if "servers" not in self._data:
-            self._data["servers"] = {}
-        server_entry: dict[str, Any] = self._data["servers"].setdefault(server_name, {"tools": {}})
-        tool_entries: dict[str, Any] = server_entry.setdefault("tools", {})
-        for tool in tools:
-            tool_entries[tool.name] = {
-                "hash": self.compute_hash(tool),
-                "pinned_at": now,
-                "snapshot": self._tool_snapshot(tool),
-            }
-        if server_config is not None:
-            snapshot = self._config_snapshot(server_config)
-            prior = server_entry.get("config_snapshot")
-            prior_snapshot = prior if isinstance(prior, dict) else {}
-            if package_hashes:
-                # Registry-published package hashes (npm/PyPI) captured under
-                # --verify-artifacts; values are hashes only, never package bytes.
-                snapshot["package_hashes"] = dict(package_hashes)
-            elif isinstance(prior_snapshot.get("package_hashes"), dict):
-                # Preserve a previously-captured registry baseline when this pin
-                # call did not supply one (e.g. a schema-only `pin --refresh`), so
-                # it isn't silently wiped by an unrelated refresh.
-                snapshot["package_hashes"] = prior_snapshot["package_hashes"]
-            if artifact_hashes:
-                # Byte-level registry artifact hashes (sha256 over the served npm/PyPI
-                # bytes) captured under --download-artifacts; hashes only, never bytes.
-                # NOTE: stored under "registry_artifact_hashes" — distinct from
-                # "artifact_hashes", which _config_snapshot already owns for the MCP024
-                # on-disk launch-artifact baseline ({path: sha256}). The two namespaces
-                # must never share a key.
-                snapshot["registry_artifact_hashes"] = dict(artifact_hashes)
-            elif isinstance(prior_snapshot.get("registry_artifact_hashes"), dict):
-                snapshot["registry_artifact_hashes"] = prior_snapshot["registry_artifact_hashes"]
-            server_entry["config_snapshot"] = snapshot
-        self._data["pinned_at"] = now
-        self._write()
+        with _file_lock(self._path):
+            # Re-read under the lock: another process may have written pins
+            # since this store loaded, and mutating a stale copy would erase them.
+            self._data = self._load(strict=True)
+            if "servers" not in self._data:
+                self._data["servers"] = {}
+            server_entry: dict[str, Any] = self._data["servers"].setdefault(server_name, {"tools": {}})
+            tool_entries: dict[str, Any] = server_entry.setdefault("tools", {})
+            for tool in tools:
+                tool_entries[tool.name] = {
+                    "hash": self.compute_hash(tool),
+                    "pinned_at": now,
+                    "snapshot": self._tool_snapshot(tool),
+                }
+            if server_config is not None:
+                snapshot = self._config_snapshot(server_config)
+                prior = server_entry.get("config_snapshot")
+                prior_snapshot = prior if isinstance(prior, dict) else {}
+                if package_hashes:
+                    # Registry-published package hashes (npm/PyPI) captured under
+                    # --verify-artifacts; values are hashes only, never package bytes.
+                    snapshot["package_hashes"] = dict(package_hashes)
+                elif isinstance(prior_snapshot.get("package_hashes"), dict):
+                    # Preserve a previously-captured registry baseline when this pin
+                    # call did not supply one (e.g. a schema-only `pin --refresh`), so
+                    # it isn't silently wiped by an unrelated refresh.
+                    snapshot["package_hashes"] = prior_snapshot["package_hashes"]
+                if artifact_hashes:
+                    # Byte-level registry artifact hashes (sha256 over the served npm/PyPI
+                    # bytes) captured under --download-artifacts; hashes only, never bytes.
+                    # NOTE: stored under "registry_artifact_hashes" — distinct from
+                    # "artifact_hashes", which _config_snapshot already owns for the MCP024
+                    # on-disk launch-artifact baseline ({path: sha256}). The two namespaces
+                    # must never share a key.
+                    snapshot["registry_artifact_hashes"] = dict(artifact_hashes)
+                elif isinstance(prior_snapshot.get("registry_artifact_hashes"), dict):
+                    snapshot["registry_artifact_hashes"] = prior_snapshot["registry_artifact_hashes"]
+                server_entry["config_snapshot"] = snapshot
+            self._data["pinned_at"] = now
+            self._write()
 
     def check_drift(self, server_name: str, tools: list[ToolInfo]) -> list[DriftFinding]:
         """Compare current tool hashes against stored pins. Returns drift findings."""
@@ -191,10 +265,12 @@ class PinStore:
 
     def remove_server(self, server_name: str) -> None:
         """Remove all pins for a server. No-op if server not pinned."""
-        servers: dict[str, Any] = self._data.get("servers", {})
-        if server_name in servers:
-            del servers[server_name]
-            self._write()
+        with _file_lock(self._path):
+            self._data = self._load(strict=True)
+            servers: dict[str, Any] = self._data.get("servers", {})
+            if server_name in servers:
+                del servers[server_name]
+                self._write()
 
     def pinned_servers(self) -> list[str]:
         """Return list of server names that have pins."""
@@ -332,21 +408,48 @@ class PinStore:
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _load(self) -> dict[str, Any]:
+    def _load(self, *, strict: bool = False) -> dict[str, Any]:
+        """Parse the pin file.
+
+        ``strict=False`` (read paths): parse failures degrade to ``{}`` with a
+        warning — a broken baseline should not block a scan. ``strict=True``
+        (mutation paths): parse failures raise :class:`PinFileError`, because
+        writing through them would wipe a possibly-repairable baseline.
+        """
         if not self._path.exists():
             return {}
         try:
-            raw: Any = yaml.safe_load(self._path.read_text())
+            # Bounded read (not stat-then-read): the file cannot grow past the
+            # cap between a size check and the read.
+            with open(self._path, "rb") as handle:
+                data = handle.read(_MAX_PIN_FILE_BYTES + 1)
+            if len(data) > _MAX_PIN_FILE_BYTES:
+                raise yaml.YAMLError(f"pin file exceeds {_MAX_PIN_FILE_BYTES} bytes")
+            raw: Any = yaml.load(data.decode("utf-8"), Loader=_NoAliasSafeLoader)  # noqa: S506 - loader subclasses SafeLoader
             return dict(raw) if isinstance(raw, dict) else {}
-        except Exception:
-            logger.warning("Failed to parse pin file %s — treating as empty", self._path)
+        except Exception as exc:
+            if strict:
+                raise PinFileError(str(self._path), f"{type(exc).__name__}: {exc}") from exc
+            logger.warning(
+                "Failed to parse pin file %s (%s) — treating as empty for reading; "
+                "pin mutations will refuse to overwrite it",
+                self._path,
+                exc,
+            )
             return {}
 
     def _write(self) -> None:
         """Write pin data atomically (tmp file → rename)."""
         self._path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self._path.with_suffix(".yaml.tmp")
-        tmp.write_text(yaml.dump(self._data, default_flow_style=False, allow_unicode=True))
+        tmp.write_text(
+            yaml.dump(
+                self._data,
+                Dumper=_NoAliasSafeDumper,
+                default_flow_style=False,
+                allow_unicode=True,
+            )
+        )
         tmp.rename(self._path)
 
     def _parse_datetime(self, value: object) -> datetime | None:

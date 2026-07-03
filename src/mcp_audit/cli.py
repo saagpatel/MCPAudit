@@ -31,7 +31,7 @@ from mcp_audit.models import (
 )
 from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
 from mcp_audit.redaction import redact_text
-from mcp_audit.report import ReportGenerator, scrub_report_identifiers
+from mcp_audit.report import ReportGenerator, error_console, scrub_report_identifiers
 
 console = Console()
 
@@ -61,8 +61,8 @@ def discover(client_filter: str | None, verbose: bool) -> None:
             clients = [ClientType(client_filter)]
         except ValueError:
             valid = ", ".join(c.value for c in ClientType)
-            console.print(f"[red]Unknown client '{client_filter}'. Valid values: {valid}[/red]")
-            raise SystemExit(1)
+            error_console.print(f"[red]Unknown client '{client_filter}'. Valid values: {valid}[/red]")
+            raise SystemExit(1) from None
 
     parse_errors: list[ConfigParseError] = []
     servers = discover_all_configs(clients, parse_errors)
@@ -416,7 +416,7 @@ async def _run_scan(
         try:
             policy = load_policy(Path(policy_path))
         except Exception as exc:
-            console.print(f"[red]Failed to load policy {policy_path}: {redact_text(str(exc))}[/red]")
+            error_console.print(f"[red]Failed to load policy {policy_path}: {redact_text(str(exc))}[/red]")
             raise SystemExit(1) from exc
 
     scan_options = ScanOptions(
@@ -521,8 +521,8 @@ def _parse_clients(clients_str: str | None) -> list[ClientType] | None:
             result.append(ClientType(part))
         except ValueError:
             valid = ", ".join(c.value for c in ClientType)
-            console.print(f"[red]Unknown client '{part}'. Valid values: {valid}[/red]")
-            raise SystemExit(1)
+            error_console.print(f"[red]Unknown client '{part}'. Valid values: {valid}[/red]")
+            raise SystemExit(1) from None
     return result or None
 
 
@@ -626,7 +626,7 @@ def pin_command(
     download_artifacts: bool,
 ) -> None:
     """Pin tool schemas for drift detection on subsequent scans."""
-    from mcp_audit.pinning import DEFAULT_PIN_PATH, PinStore
+    from mcp_audit.pinning import DEFAULT_PIN_PATH, PinFileError, PinStore
 
     store = PinStore(path=Path(pin_file) if pin_file else DEFAULT_PIN_PATH)
 
@@ -654,37 +654,43 @@ def pin_command(
     if apply_refresh and not (refresh_server or clear_stale):
         raise click.ClickException("--apply can only be used with --refresh or --clear-stale.")
 
-    if clear_server:
-        store.remove_server(clear_server)
-        console.print(f"[green]Removed pins for server '{clear_server}'.[/green]")
-        return
+    try:
+        if clear_server:
+            store.remove_server(clear_server)
+            console.print(f"[green]Removed pins for server '{clear_server}'.[/green]")
+            return
 
-    if status:
-        _render_pin_status(store, json_status)
-        return
+        if status:
+            _render_pin_status(store, json_status)
+            return
 
-    if stale:
-        _render_pin_stale(store, json_status)
-        return
+        if stale:
+            _render_pin_stale(store, json_status)
+            return
 
-    if clear_stale:
-        _render_pin_clear_stale(store, json_status, apply_refresh)
-        return
+        if clear_stale:
+            _render_pin_clear_stale(store, json_status, apply_refresh)
+            return
 
-    if refresh_server:
-        anyio.run(
-            _run_pin_refresh,
-            refresh_server,
-            store,
-            apply_refresh,
-            json_status,
-            verify_artifacts,
-            download_artifacts,
-        )
-        return
+        if refresh_server:
+            anyio.run(
+                _run_pin_refresh,
+                refresh_server,
+                store,
+                apply_refresh,
+                json_status,
+                verify_artifacts,
+                download_artifacts,
+            )
+            return
 
-    # Pin servers
-    anyio.run(_run_pin, server_name, store, verify_artifacts, download_artifacts)
+        # Pin servers
+        anyio.run(_run_pin, server_name, store, verify_artifacts, download_artifacts)
+    except PinFileError as exc:
+        # Mutations refuse to write through an unparseable pin file — wiping a
+        # repairable baseline is worse than failing loudly.
+        error_console.print(f"[red]{exc}. Fix or remove the file, then re-run.[/red]")
+        raise SystemExit(1) from exc
 
 
 async def _run_pin(
@@ -739,7 +745,8 @@ async def _run_pin(
         console.print(f"[green]Pinned {len(audit.tools)} tool(s) for '{audit.server.name}'{suffix}.[/green]")
 
     if server_name and not matched:
-        console.print(f"[yellow]Server '{server_name}' not found.[/yellow]")
+        error_console.print(f"[red]Server '{server_name}' not found — nothing was pinned.[/red]")
+        raise SystemExit(1)
 
 
 def _make_registry_verifiers(

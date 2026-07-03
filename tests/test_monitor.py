@@ -264,3 +264,72 @@ class TestInterceptRobustness:
         mon._intercept({"id": 7, "result": {}}, "← client")
         assert 7 not in mon._pending
         assert mon._stats["list_files"]["calls"] == 1.0
+
+
+class TestLogBuffering:
+    def test_log_buffers_without_touching_disk(self, tmp_path: Any) -> None:
+        # The hot path must not perform file I/O; entries buffer in memory
+        # until the writer task drains them.
+        log_path = tmp_path / "monitor.jsonl"
+        mon = MCPProxyMonitor(log_path=log_path)
+        try:
+            mon._log({"ts": "t1", "tool": "a"})
+            mon._log({"ts": "t2", "tool": "b"})
+            assert log_path.read_text() == ""
+            assert len(mon._log_buffer) == 2
+        finally:
+            mon._log_file.close()  # type: ignore[union-attr]
+
+    @pytest.mark.anyio
+    async def test_drain_writes_buffered_entries_in_order(self, tmp_path: Any) -> None:
+        log_path = tmp_path / "monitor.jsonl"
+        mon = MCPProxyMonitor(log_path=log_path)
+        try:
+            mon._log({"seq": 1})
+            mon._log({"seq": 2})
+            await mon._drain_log_buffer()
+            lines = [json.loads(line) for line in log_path.read_text().splitlines()]
+            assert [line["seq"] for line in lines] == [1, 2]
+            assert mon._log_buffer == []
+        finally:
+            mon._log_file.close()  # type: ignore[union-attr]
+
+
+class TestRunMonitorGuards:
+    def _fake_discover(self, command: str | None) -> Any:
+        from mcp_audit.models import ClientType, ServerConfig, TransportType
+
+        server = ServerConfig(
+            name="srv",
+            command=command,
+            args=[],
+            transport=TransportType.STDIO,
+            client=ClientType.CLAUDE_CODE,
+            config_path="/dev/null",
+        )
+        return lambda clients, parse_errors=None: [server]
+
+    @pytest.mark.anyio
+    async def test_unopenable_log_path_exits_cleanly(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+    ) -> None:
+        from mcp_audit import monitor as monitor_mod
+
+        monkeypatch.setattr(monitor_mod, "discover_all_configs", self._fake_discover("echo"))
+        bad_path = tmp_path / "missing-dir" / "log.jsonl"
+        with pytest.raises(SystemExit) as excinfo:
+            await monitor_mod._run_monitor("srv", str(bad_path))
+        assert excinfo.value.code == 1
+
+    @pytest.mark.anyio
+    async def test_missing_server_binary_exits_cleanly(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from mcp_audit import monitor as monitor_mod
+
+        monkeypatch.setattr(
+            monitor_mod,
+            "discover_all_configs",
+            self._fake_discover("/nonexistent/definitely-not-a-binary"),
+        )
+        with pytest.raises(SystemExit) as excinfo:
+            await monitor_mod._run_monitor("srv", None)
+        assert excinfo.value.code == 1

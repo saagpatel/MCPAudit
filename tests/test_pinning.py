@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
 import yaml
 
 from mcp_audit.models import ClientType, DriftStatus, ServerConfig, TransportType
-from mcp_audit.pinning import PinStore
+from mcp_audit.pinning import _MAX_PIN_FILE_BYTES, PinFileError, PinStore
 from tests.conftest import make_tool
 
 
@@ -405,3 +407,72 @@ def test_check_drift_tolerates_malformed_pinned_at(tmp_path: Path) -> None:
     removed = reloaded.check_drift("srv", [])
     assert [finding.status for finding in removed] == [DriftStatus.REMOVED]
     assert removed[0].pinned_at is None
+
+
+class TestConcurrentSafety:
+    def test_second_store_mutation_preserves_first_stores_writes(self, tmp_path: Path) -> None:
+        # Classic lost update: both stores load before either writes. Without
+        # re-read-under-lock, beta's write erases alpha's pins entirely.
+        path = tmp_path / "pins.yaml"
+        store_a = PinStore(path=path)
+        store_b = PinStore(path=path)
+        store_a.pin_server("alpha", [make_tool("t1")])
+        store_b.pin_server("beta", [make_tool("t2")])
+        assert set(PinStore(path=path).pinned_servers()) == {"alpha", "beta"}
+
+    def test_remove_server_preserves_concurrent_writes(self, tmp_path: Path) -> None:
+        path = tmp_path / "pins.yaml"
+        store_a = PinStore(path=path)
+        store_a.pin_server("alpha", [make_tool("t1")])
+        store_b = PinStore(path=path)
+        store_a.pin_server("gamma", [make_tool("t3")])
+        store_b.remove_server("alpha")
+        assert set(PinStore(path=path).pinned_servers()) == {"gamma"}
+
+
+class TestHostileFileBounds:
+    def test_oversized_pin_file_treated_as_empty(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        path = tmp_path / "pins.yaml"
+        path.write_text("x" * (_MAX_PIN_FILE_BYTES + 1))
+        with caplog.at_level(logging.WARNING):
+            store = PinStore(path=path)
+        assert store.pinned_servers() == []
+        assert "pin file" in caplog.text
+
+    def test_alias_expansion_rejected(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        # Billion-laughs shape: anchors referenced by aliases must not expand.
+        bomb = 'a: &a ["x", "x"]\nb: &b [*a, *a]\nc: [*b, *b]\n'
+        path = tmp_path / "pins.yaml"
+        path.write_text(bomb)
+        with caplog.at_level(logging.WARNING):
+            store = PinStore(path=path)
+        assert store.pinned_servers() == []
+
+    def test_mutation_refuses_to_wipe_unparseable_pin_file(self, tmp_path: Path) -> None:
+        # A hand-edited pin file with a legitimate anchor/alias is unsupported,
+        # but pinning through it must FAIL, not silently replace the whole
+        # baseline with a fresh single-server file.
+        path = tmp_path / "pins.yaml"
+        original = "defaults: &d\n  note: shared\nservers:\n  keep:\n    tools: {}\n  other: *d\n"
+        path.write_text(original)
+        store = PinStore(path=path)  # read path degrades to empty, fine
+
+        with pytest.raises(PinFileError):
+            store.pin_server("new-server", [make_tool("t")])
+        with pytest.raises(PinFileError):
+            store.remove_server("keep")
+        assert path.read_text() == original  # baseline untouched
+
+    def test_written_file_never_contains_anchors(self, tmp_path: Path) -> None:
+        # A shared object reference must not serialize as a YAML anchor, or our
+        # own writes would be rejected by the alias-free loader on next read.
+        path = tmp_path / "pins.yaml"
+        store = PinStore(path=path)
+        shared = {"k": "sha256:aa"}
+        store._data = {"servers": {"one": {"pkg": shared}, "two": {"pkg": shared}}}
+        store._write()
+        text = path.read_text()
+        assert "&id" not in text and "*id" not in text
+        assert set(PinStore(path=path).pinned_servers()) == {"one", "two"}

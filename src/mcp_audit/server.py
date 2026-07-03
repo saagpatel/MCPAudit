@@ -14,6 +14,7 @@ from rich.console import Console
 from mcp_audit.discovery import discover_all_configs
 from mcp_audit.engine import ScanOptions, run_scan
 from mcp_audit.models import AuditReport
+from mcp_audit.report import error_console as _error_console
 
 logger = logging.getLogger(__name__)
 
@@ -42,11 +43,11 @@ def _install_to_config(config_path: Path, server_name: str = "mcp-audit") -> boo
     try:
         raw: Any = json.loads(config_path.read_text())
     except (json.JSONDecodeError, OSError) as exc:
-        _console.print(f"[red]Could not read {config_path}: {exc}[/red]")
+        _error_console.print(f"[red]Could not read {config_path}: {exc}[/red]")
         return False
 
     if not isinstance(raw, dict):
-        _console.print(f"[red]Unexpected config format in {config_path}[/red]")
+        _error_console.print(f"[red]Unexpected config format in {config_path}[/red]")
         return False
 
     mcp_servers: dict[str, Any] = raw.setdefault("mcpServers", {})
@@ -60,7 +61,7 @@ def _install_to_config(config_path: Path, server_name: str = "mcp-audit") -> boo
         _console.print(f"[green]Registered {server_name} in {config_path}[/green]")
         return True
     except OSError as exc:
-        _console.print(f"[red]Could not write {config_path}: {exc}[/red]")
+        _error_console.print(f"[red]Could not write {config_path}: {exc}[/red]")
         return False
 
 
@@ -368,21 +369,31 @@ def serve_command(install: bool) -> None:
 
 
 def _do_install() -> None:
-    """Write mcp-audit server entry to detected config files."""
-    installed_any = False
-    for config_path in _CLAUDE_DESKTOP_CONFIG_PATHS:
-        if config_path.exists() and _install_to_config(config_path):
-            installed_any = True
+    """Write mcp-audit server entry to detected config files.
 
-    if _CLAUDE_CODE_CONFIG_PATH.exists() and _install_to_config(_CLAUDE_CODE_CONFIG_PATH):
-        installed_any = True
+    Exit contract: 0 when no config exists (manual hint printed) or every
+    found config was updated; 1 when any found config could not be updated —
+    a found-but-unusable config must never masquerade as "not found".
+    """
+    found = 0
+    succeeded = 0
+    for config_path in [*_CLAUDE_DESKTOP_CONFIG_PATHS, _CLAUDE_CODE_CONFIG_PATH]:
+        if not config_path.exists():
+            continue
+        found += 1
+        if _install_to_config(config_path):
+            succeeded += 1
 
-    if not installed_any:
+    if found == 0:
         _console.print("[yellow]No Claude config files found. Add manually:[/yellow]")
         _console.print(
             '  Add to your claude_desktop_config.json or .claude.json under "mcpServers":\n'
             '  "mcp-audit": {"command": "mcp-audit", "args": ["serve"]}'
         )
+        return
+    if succeeded < found:
+        # Per-file error text already printed by _install_to_config.
+        raise SystemExit(1)
 
 
 async def _serve() -> None:
