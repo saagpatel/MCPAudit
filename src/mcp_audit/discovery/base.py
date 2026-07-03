@@ -48,8 +48,16 @@ class ConfigDiscoverer(ABC):
         (or logged as a warning when no accumulator is given) and skipped, so
         one corrupt config cannot take down the rest of the sweep.
         """
+        try:
+            paths = self.config_paths()
+        except (OSError, RuntimeError) as exc:
+            # Path.cwd() raises OSError when the working directory was deleted;
+            # Path.home() raises RuntimeError when no home resolves. Neither
+            # may take down the other clients' discovery.
+            logger.warning("%s: cannot resolve config paths (%s) — skipping", type(self).__name__, exc)
+            return []
         results: list[ServerConfig] = []
-        for path in self.config_paths():
+        for path in paths:
             if path.exists():
                 try:
                     results.extend(self.parse(path))

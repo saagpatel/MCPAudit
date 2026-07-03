@@ -359,6 +359,18 @@ class TestParseFailureSurfacing:
             assert CursorDiscoverer().discover() == []
         assert any("broken.json" in record.getMessage() for record in caplog.records)
 
+    def test_unresolvable_config_paths_skip_discoverer_not_sweep(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        # Path.cwd() raises OSError when the working directory was deleted;
+        # one client's path resolution failing must not crash the whole sweep.
+        with (
+            patch.object(CursorDiscoverer, "config_paths", side_effect=OSError("cwd was deleted")),
+            caplog.at_level(logging.WARNING, logger="mcp_audit.discovery.base"),
+        ):
+            assert CursorDiscoverer().discover() == []
+        assert any("cannot resolve config paths" in r.getMessage() for r in caplog.records)
+
     def test_discover_all_configs_threads_parse_errors(self, tmp_path: Path) -> None:
         broken = tmp_path / "broken.json"
         broken.write_text("definitely not json")
