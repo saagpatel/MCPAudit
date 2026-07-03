@@ -225,6 +225,13 @@ class TestReadMessageBounds:
         stream = _FloodStream(b"", filler=b"h")  # never sends \r\n\r\n
         assert await _read_message(stream) is None
 
+    @pytest.mark.anyio
+    async def test_partial_body_with_valid_json_prefix_rejected(self) -> None:
+        # Peer declares 100 bytes, sends only b"{}" (valid JSON!), then EOFs.
+        # Decoding the partial would forward a frame-boundary-violating message.
+        stream = _ByteStream(b"Content-Length: 100\r\n\r\n{}")
+        assert await _read_message(stream) is None
+
 
 class TestInterceptRobustness:
     def test_null_arguments_handled(self) -> None:
