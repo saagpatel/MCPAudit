@@ -36,6 +36,14 @@ class TestAnnotationFindings:
         assert PermissionCategory.FILE_READ in cats
         assert Confidence.DECLARED in confs
 
+    def test_read_only_hint_true_with_destructive_hint_unset_suppresses_destructive(self) -> None:
+        # Per the MCP spec, destructiveHint is meaningful only when
+        # readOnlyHint is false; the null-defaults-to-true rule must not
+        # override an explicit read-only declaration.
+        tool = make_tool("list_files", annotations=ToolAnnotations(read_only_hint=True))
+        cats = _categories(tool)
+        assert PermissionCategory.DESTRUCTIVE not in cats
+
     def test_read_only_hint_true_suppresses_file_write(self) -> None:
         tool = make_tool(
             "write_file",

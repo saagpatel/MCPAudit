@@ -25,10 +25,20 @@ _console = Console()
 
 # MCP stdio framing: "Content-Length: N\r\n\r\n<json>"
 _CONTENT_LENGTH_HEADER = b"Content-Length: "
+# Bounds on peer-controlled reads: the proxy monitors a process it explicitly
+# distrusts, so a claimed Content-Length or a never-terminating header block
+# must not translate into unbounded memory or an unrecoverable hang.
+_MAX_HEADER_BYTES = 64 * 1024
+_MAX_BODY_BYTES = 32 * 1024 * 1024
+_BODY_READ_TIMEOUT_S = 30.0
 
 
 async def _read_message(stream: anyio.abc.ByteReceiveStream) -> dict[str, Any] | None:
-    """Read one LSP-framed JSON-RPC message from a byte stream. Returns None on EOF."""
+    """Read one LSP-framed JSON-RPC message from a byte stream.
+
+    Returns None on EOF or on a protocol violation (oversized header/body,
+    body that never completes) — the caller treats None as end of session.
+    """
     # Read headers until \r\n\r\n
     header_buf = bytearray()
     while True:
@@ -39,6 +49,9 @@ async def _read_message(stream: anyio.abc.ByteReceiveStream) -> dict[str, Any] |
         header_buf.extend(chunk)
         if header_buf.endswith(b"\r\n\r\n"):
             break
+        if len(header_buf) > _MAX_HEADER_BYTES:
+            logger.warning("MCP framing: header block exceeded %d bytes; ending session", _MAX_HEADER_BYTES)
+            return None
 
     # Parse Content-Length
     content_length = 0
@@ -52,17 +65,35 @@ async def _read_message(stream: anyio.abc.ByteReceiveStream) -> dict[str, Any] |
 
     if content_length <= 0:
         return None
+    if content_length > _MAX_BODY_BYTES:
+        logger.warning(
+            "MCP framing: declared Content-Length %d exceeds %d-byte cap; ending session",
+            content_length,
+            _MAX_BODY_BYTES,
+        )
+        return None
 
-    # Read body
+    # Read body. The header already arrived, so the body should follow
+    # promptly — a peer that stalls here would otherwise hang the proxy.
     body = bytearray()
     remaining = content_length
-    while remaining > 0:
-        try:
-            chunk = await stream.receive(min(remaining, 4096))
-        except (anyio.EndOfStream, anyio.ClosedResourceError):
-            break
-        body.extend(chunk)
-        remaining -= len(chunk)
+    with anyio.move_on_after(_BODY_READ_TIMEOUT_S):
+        while remaining > 0:
+            try:
+                chunk = await stream.receive(min(remaining, 4096))
+            except (anyio.EndOfStream, anyio.ClosedResourceError):
+                break
+            body.extend(chunk)
+            remaining -= len(chunk)
+
+    if remaining > 0:
+        # Timeout or EOF mid-body. A partial buffer can still be valid JSON
+        # (e.g. b"{}" of a declared 100 bytes) — decoding it would forward a
+        # message that violates the frame boundary and desyncs the session.
+        logger.warning(
+            "MCP framing: body incomplete (%d of %d bytes); ending session", len(body), content_length
+        )
+        return None
 
     try:
         return json.loads(body.decode("utf-8"))  # type: ignore[no-any-return]
@@ -147,9 +178,14 @@ class MCPProxyMonitor:
         msg_id = msg.get("id")
 
         if method == "tools/call" and direction == "→ server":
-            params: dict[str, Any] = msg.get("params", {})
-            tool_name: str = params.get("name", "<unknown>")
-            arg_keys = list(params.get("arguments", {}).keys())
+            # JSON-RPC permits params as a positional array and "arguments"
+            # as an explicit null — neither may crash the proxy.
+            raw_params = msg.get("params")
+            params: dict[str, Any] = raw_params if isinstance(raw_params, dict) else {}
+            raw_name = params.get("name")
+            tool_name: str = raw_name if isinstance(raw_name, str) else "<unknown>"
+            arguments = params.get("arguments")
+            arg_keys = list(arguments.keys()) if isinstance(arguments, dict) else []
             entry: dict[str, Any] = {
                 "ts": ts,
                 "direction": "request",
@@ -162,7 +198,7 @@ class MCPProxyMonitor:
             if msg_id is not None:
                 self._pending[msg_id] = (method, tool_name, now)
 
-        elif msg_id is not None and direction == "← client" and "result" in msg or "error" in msg:
+        elif direction == "← client" and msg_id is not None and ("result" in msg or "error" in msg):
             if msg_id in self._pending:
                 _req_method, tool_name, req_ts = self._pending.pop(msg_id)
                 duration_ms = (now - req_ts).total_seconds() * 1000

@@ -74,12 +74,16 @@ async def _watch_loop(
         _console.print("[red]watchfiles not installed. Run: pip install 'mcp-audits[watch]'[/red]")
         raise SystemExit(1)
 
-    from mcp_audit.cli import _parse_clients, _run_scan_core
+    from mcp_audit.cli import _parse_clients
+    from mcp_audit.engine import ScanOptions, run_scan
     from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
 
     client_list = _parse_clients(clients_str)
     cfg_path = Path(override_config_path) if override_config_path else DEFAULT_OVERRIDE_PATH
     override_applier = OverrideApplier(load_override_config(cfg_path))
+    scan_options = ScanOptions(
+        skip_connect=skip_connect, clients=client_list, timeout=timeout, extra_config=extra_config
+    )
     gen = ReportGenerator(console=_console)
 
     watch_paths = _get_watch_paths()
@@ -90,14 +94,18 @@ async def _watch_loop(
     _console.print(f"[dim]Watching {len(watch_paths)} config file(s) for changes. Ctrl+C to stop.[/dim]")
 
     # Initial scan
-    report = await _run_scan_core(skip_connect, client_list, timeout, extra_config, override_applier)
+    try:
+        report = await run_scan(scan_options, override_applier=override_applier, console=_console)
+    except ValueError as exc:
+        _console.print(f"[red]{exc}[/red]")
+        raise SystemExit(1) from exc
     gen.render_terminal(report, verbose=verbose)
     _write_outputs(report, json_output, sarif_output)
 
     prev_report = report
     async for changes in awatch(*[str(p) for p in watch_paths]):
         _console.rule("[dim]Config changed — re-scanning[/dim]")
-        new_report = await _run_scan_core(skip_connect, client_list, timeout, extra_config, override_applier)
+        new_report = await run_scan(scan_options, override_applier=override_applier, console=_console)
         _render_diff(prev_report, new_report)
         gen.render_terminal(new_report, verbose=verbose)
         _write_outputs(new_report, json_output, sarif_output)

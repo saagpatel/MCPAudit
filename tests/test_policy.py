@@ -392,8 +392,8 @@ def test_scan_threads_per_server_egress_allowlist_from_policy(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """``_run_scan`` derives the per-server egress allowlist map from ``policy.server_rules``
-    and threads it into ``_run_scan_core``. Regression guard for the map-building half of
-    the wiring; the apply half (map → detector) is covered in test_egress_integration."""
+    and threads it into the engine's ``run_scan`` options. Regression guard for the map-building
+    half of the wiring; the apply half (map → detector) is covered in test_egress_integration."""
     policy_path = tmp_path / "policy.yaml"
     policy_path.write_text(
         """
@@ -410,8 +410,8 @@ servers:
     )
     captured: dict[str, object] = {}
 
-    async def fake_run_scan_core(*args: object, **kwargs: object) -> AuditReport:
-        captured.update(kwargs)
+    async def fake_run_scan(*args: object, **kwargs: object) -> AuditReport:
+        captured["options"] = args[0]
         return AuditReport(
             scan_timestamp=datetime.now(UTC),
             hostname="h",
@@ -425,8 +425,8 @@ servers:
             scan_duration_seconds=0.0,
         )
 
-    monkeypatch.setattr(cli, "_run_scan_core", fake_run_scan_core)
-    monkeypatch.setattr(cli, "discover_all_configs", lambda clients: [])
+    monkeypatch.setattr(cli, "run_scan", fake_run_scan)
+    monkeypatch.setattr(cli, "discover_all_configs", lambda clients, parse_errors=None: [])
 
     anyio.run(
         cli._run_scan,
@@ -443,7 +443,8 @@ servers:
     )
 
     # Only servers with a non-empty per-server egress_allowlist appear in the map.
-    assert captured["egress_server_allowlists"] == {"trusted": ["logs.internal.example"]}
+    options = captured["options"]
+    assert options.egress_server_allowlists == {"trusted": ["logs.internal.example"]}  # type: ignore[attr-defined]
 
 
 def test_per_server_egress_threshold_override(tmp_path: Path) -> None:
@@ -646,12 +647,10 @@ deny:
     json_path = tmp_path / "report.json"
     audit = _audit_with_shell_finding()
 
-    monkeypatch.setattr(cli, "discover_all_configs", lambda clients: [audit.server])
-
-    async def fake_run_scan_core(*args: object, **kwargs: object) -> AuditReport:
+    async def fake_run_scan(*args: object, **kwargs: object) -> AuditReport:
         return _audit_report(audit)
 
-    monkeypatch.setattr(cli, "_run_scan_core", fake_run_scan_core)
+    monkeypatch.setattr(cli, "run_scan", fake_run_scan)
 
     with pytest.raises(SystemExit) as exc:
         anyio.run(

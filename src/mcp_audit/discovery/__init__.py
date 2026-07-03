@@ -2,7 +2,7 @@
 
 import logging
 
-from mcp_audit.discovery.base import ConfigDiscoverer
+from mcp_audit.discovery.base import ConfigDiscoverer, ConfigParseError
 from mcp_audit.discovery.claude_code import ClaudeCodeDiscoverer
 from mcp_audit.discovery.claude_desktop import ClaudeDesktopDiscoverer
 from mcp_audit.discovery.cursor import CursorDiscoverer
@@ -23,10 +23,14 @@ _DISCOVERERS: dict[ClientType, type[ConfigDiscoverer]] = {
 
 def discover_all_configs(
     clients: list[ClientType] | None = None,
+    parse_errors: list[ConfigParseError] | None = None,
 ) -> list[ServerConfig]:
     """Discover MCP server configs from all (or filtered) clients.
 
-    Deduplicates by (name, client, config_path, project_path).
+    Deduplicates by (name, client, config_path, project_path). Configs that
+    exist but fail to parse are collected into ``parse_errors`` (or logged as
+    warnings when no accumulator is given) so a corrupt file surfaces instead
+    of silently shrinking the sweep.
     """
     active = clients if clients is not None else list(_DISCOVERERS.keys())
     seen: set[tuple[str, str, str, str | None]] = set()
@@ -38,7 +42,7 @@ def discover_all_configs(
             logger.debug("No discoverer registered for %s", client_type)
             continue
         discoverer = discoverer_cls()
-        for server in discoverer.discover():
+        for server in discoverer.discover(parse_errors):
             key = (server.name, server.client.value, server.config_path, server.project_path)
             if key in seen:
                 logger.debug("Skipping duplicate server %r from %s", server.name, server.config_path)
@@ -52,6 +56,7 @@ def discover_all_configs(
 
 __all__ = [
     "ConfigDiscoverer",
+    "ConfigParseError",
     "ClaudeCodeDiscoverer",
     "ClaudeDesktopDiscoverer",
     "CursorDiscoverer",

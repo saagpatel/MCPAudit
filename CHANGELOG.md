@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added `mcp_audit.engine` — the public scan-engine module. `run_scan()` plus a
+  frozen `ScanOptions` dataclass replace the private 24-argument
+  `cli._run_scan_core` as the one sanctioned entry point into the scan pipeline
+  (discover → connect → analyze → score). The engine is silent by default and
+  only renders progress/warnings when a caller passes a rich `Console`, so
+  library and MCP-server callers can never leak scan chatter onto
+  machine-readable channels.
+- Added `schema_version` (currently `1`, exported as
+  `models.AUDIT_REPORT_SCHEMA_VERSION`) to `AuditReport` so downstream
+  consumers (mcp-trust, shadow-mcp, hosted `mcp_audit.api` callers) can detect
+  contract drift at runtime. Additive fields do not bump it.
+- Added `mcp_audit.confighealth` — config-health analysis
+  (`config_health_findings`, `duplicate_server_config_counts`) extracted from
+  `cli.py` into its own importable module.
+
 - Added the `mcp-name: io.github.saagpatel/mcp-audit` registry-ownership marker to
   the README so the official MCP registry can verify PyPI namespace ownership.
 - Published `server.json` for the official MCP registry
@@ -17,6 +32,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added a public-safe MCP Prompt-Injection Sandbox under `examples/sandbox/`
   with synthetic configs, benign twins, MCPAudit-style config-only findings,
   connected tool metadata fixtures, docs, and public-safety tests.
+
+### Changed
+
+- `mcp_audit.cli`, the MCP server tools (`serve`), `watch`, and
+  `mcp_audit.api` are now thin consumers of `mcp_audit.engine`; the MCP server
+  tools no longer print engine warnings onto stdout (which carries MCP stdio
+  protocol frames), and `pin` flows call the engine directly.
+- A missing or unparseable `--config` path is now a hard error (`run_scan`
+  raises `ValueError`; the CLI exits with a clear message) instead of printing
+  a warning and continuing with an empty server list — a typo'd path can no
+  longer degrade into a clean zero-finding report that passes downstream
+  gates.
+
+### Deprecated
+
+- `mcp_audit.cli._run_scan_core` is now a compatibility shim that emits a
+  `DeprecationWarning` and delegates to `mcp_audit.engine.run_scan`. External
+  callers (e.g. shadow-mcp) should migrate to `mcp_audit.engine`.
 
 ### Fixed
 

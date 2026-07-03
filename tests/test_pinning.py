@@ -384,3 +384,24 @@ class TestArtifactHashNamespaces:
         # A later schema-only refresh (no artifact_hashes) must not wipe the baseline.
         store.pin_server("srv", [make_tool("t")], cfg)
         assert store.baseline_artifact_hashes("srv") == {"pypi:x:2.0.0": "abc"}
+
+
+def test_check_drift_tolerates_malformed_pinned_at(tmp_path: Path) -> None:
+    """A hand-edited or corrupt pinned_at must not crash drift checking."""
+    path = tmp_path / "pins.yaml"
+    store = PinStore(path=path)
+    store.pin_server("srv", [make_tool("t", description="original")])
+
+    data = yaml.safe_load(path.read_text())
+    data["servers"]["srv"]["tools"]["t"]["pinned_at"] = "not-a-timestamp"
+    path.write_text(yaml.safe_dump(data))
+
+    reloaded = PinStore(path=path)
+
+    changed = reloaded.check_drift("srv", [make_tool("t", description="changed")])
+    assert [finding.status for finding in changed] == [DriftStatus.CHANGED]
+    assert changed[0].pinned_at is None
+
+    removed = reloaded.check_drift("srv", [])
+    assert [finding.status for finding in removed] == [DriftStatus.REMOVED]
+    assert removed[0].pinned_at is None

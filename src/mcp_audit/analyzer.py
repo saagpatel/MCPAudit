@@ -211,8 +211,9 @@ class PermissionAnalyzer:
                 )
             )
 
-        # destructiveHint: None treated as true
-        if ann.destructive_hint is True or ann.destructive_hint is None:
+        # destructiveHint: None treated as true, but per the MCP spec it is
+        # meaningful only when readOnlyHint is false.
+        if ann.read_only_hint is not True and (ann.destructive_hint is True or ann.destructive_hint is None):
             _d = ann.destructive_hint
             evidence = "destructiveHint=true" if _d is True else "destructiveHint=null (spec default: true)"
             findings.append(

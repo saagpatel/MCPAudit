@@ -151,8 +151,7 @@ class PinStore:
                 stored_hash: str = pin_entry.get("hash", "")
                 current_hash = self.compute_hash(tool)
                 if stored_hash != current_hash:
-                    pinned_at_str: str | None = pin_entry.get("pinned_at")
-                    pinned_at = datetime.fromisoformat(pinned_at_str) if pinned_at_str else None
+                    pinned_at = self._parse_datetime(pin_entry.get("pinned_at"))
                     findings.append(
                         DriftFinding(
                             server_name=server_name,
@@ -173,8 +172,7 @@ class PinStore:
         for tool_name in pinned_names - current_names:
             pin_entry = pinned_tools[tool_name]
             stored_hash = pin_entry.get("hash", "")
-            pinned_at_str = pin_entry.get("pinned_at")
-            pinned_at = datetime.fromisoformat(pinned_at_str) if pinned_at_str else None
+            pinned_at = self._parse_datetime(pin_entry.get("pinned_at"))
             findings.append(
                 DriftFinding(
                     server_name=server_name,

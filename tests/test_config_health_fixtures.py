@@ -4,15 +4,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from mcp_audit.cli import _config_health_findings
+from mcp_audit.confighealth import config_health_findings
+from mcp_audit.discovery import ConfigParseError
 from mcp_audit.discovery.claude_code import ClaudeCodeDiscoverer
+from mcp_audit.models import ClientType, ConfigHealthSeverity
 
 CONFIG_HEALTH_FIXTURES = Path("tests/fixtures/config_health")
 
 
 def _finding_types(fixture_name: str) -> set[str]:
     servers = ClaudeCodeDiscoverer().parse(CONFIG_HEALTH_FIXTURES / fixture_name)
-    return {finding.finding_type for finding in _config_health_findings(servers)}
+    return {finding.finding_type for finding in config_health_findings(servers)}
 
 
 def test_local_shadowing_fixture_covers_current_config_health_signals() -> None:
@@ -48,7 +50,7 @@ def test_config_health_fixtures_do_not_expose_credential_values() -> None:
 
     for fixture_path in CONFIG_HEALTH_FIXTURES.glob("*.json"):
         servers = ClaudeCodeDiscoverer().parse(fixture_path)
-        findings = _config_health_findings(servers)
+        findings = config_health_findings(servers)
         rendered = " ".join(
             [
                 *(str(server.model_dump()) for server in servers),
@@ -57,3 +59,20 @@ def test_config_health_fixtures_do_not_expose_credential_values() -> None:
         )
         for marker in secret_markers:
             assert marker not in rendered
+
+
+def test_parse_errors_surface_as_high_findings() -> None:
+    errors = [
+        ConfigParseError(
+            path="/home/user/.cursor/mcp.json",
+            client=ClientType.CURSOR,
+            reason="Expecting value: line 1 column 1 (char 0)",
+        )
+    ]
+    findings = config_health_findings([], parse_errors=errors)
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.finding_type == "config_parse_failure"
+    assert finding.severity is ConfigHealthSeverity.HIGH
+    assert "/home/user/.cursor/mcp.json" in finding.summary
+    assert "cursor" in finding.summary

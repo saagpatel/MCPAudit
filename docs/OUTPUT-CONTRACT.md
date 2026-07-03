@@ -19,6 +19,10 @@ with a release-note deprecation window and a breaking-version boundary.
 The JSON report is the serialized `AuditReport` model. Consumers should treat
 unknown fields as additive. Important stable top-level fields:
 
+- `schema_version` — integer version of this report contract (currently `1`).
+  Bumped only on breaking shape changes (field removals, renames, retypes);
+  additive optional fields do NOT bump it. Consumers wanting runtime drift
+  detection should check this field before relying on field access.
 - `scan_timestamp`
 - `servers_discovered`
 - `servers_connected`
@@ -122,6 +126,9 @@ SARIF output uses stable MCP rule IDs:
 - `MCP024`: launch-artifact integrity drift vs pin baseline (on-disk binary/script hash change)
 - `MCP025`: registry package-verification drift vs pin baseline (npm/PyPI published hash change; network, opt-in)
 - `MCP026`: byte-level artifact verification vs pin baseline (downloaded bytes don't match the registry-published hash, or a pinned file changed/added since baseline; network, opt-in)
+- `MCP040`: outbound destination outside the egress allowlist (fixed, non-caller-controlled destination; opt-in `--egress-check`)
+- `MCP041`: unbounded caller-controlled outbound destination (URL/host parameter or templated host authority; opt-in `--egress-check`)
+- `MCP042`: allowlisted destination with residual egress risk (multi-tenant data-bearing API or caller-attachable credentials; opt-in `--egress-check`)
 
 ## Compatibility Fixture
 

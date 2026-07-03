@@ -885,9 +885,20 @@ class ShadowingFinding(BaseModel):
         return shadowing_metadata(self.kind).remediation
 
 
+AUDIT_REPORT_SCHEMA_VERSION = 1
+"""Version of the AuditReport JSON contract.
+
+Bump on breaking shape changes (field removals/renames/retypes) so downstream
+consumers — mcp-trust's engine adapter, shadow-mcp's grading path, hosted
+callers of :mod:`mcp_audit.api` — can detect drift at runtime instead of
+failing on attribute access. Additive fields do NOT bump this.
+"""
+
+
 class AuditReport(BaseModel):
     """Top-level audit report containing all server audits."""
 
+    schema_version: int = AUDIT_REPORT_SCHEMA_VERSION
     scan_timestamp: datetime
     hostname: str
     os_platform: str

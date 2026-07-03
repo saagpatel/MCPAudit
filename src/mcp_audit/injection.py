@@ -82,17 +82,13 @@ def _unicode_extract(chars: set[str]) -> Callable[[str, str], str]:
 
 
 def _role_check(lower: str, _orig: str) -> bool:
-    # Match at start of text, after newline, or after the first word (tool name prefix)
+    # Match at start of text or after any newline; scan_* joins the name and
+    # description segments with newlines, so segment starts are line starts.
     for prefix in _ROLE_PREFIXES:
         clean = prefix.lstrip("\n")
         if lower.startswith(clean):
             return True
-        # After any newline
         if f"\n{clean}" in lower:
-            return True
-        # At start of description portion — after "toolname " prefix
-        space_idx = lower.find(" ")
-        if space_idx != -1 and lower[space_idx + 1 :].startswith(clean):
             return True
     return False
 
@@ -205,7 +201,9 @@ class InjectionDetector:
         """Return all injection findings for a single tool."""
         # Normalize name: replace underscores/hyphens with spaces for phrase matching
         normalized_name = tool.name.replace("_", " ").replace("-", " ")
-        combined = f"{normalized_name} {tool.description or ''}"
+        # Newline join (matching scan_prompt/scan_resource) so line-anchored
+        # checks see the description start as a line start.
+        combined = f"{normalized_name}\n{tool.description or ''}"
         return self._scan_text(CapabilityTarget.TOOL, tool.name, combined, tool.name)
 
     def scan_prompt(self, prompt: PromptInfo) -> list[InjectionFinding]:
