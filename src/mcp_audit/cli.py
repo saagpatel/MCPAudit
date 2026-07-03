@@ -739,7 +739,8 @@ async def _run_pin(
         console.print(f"[green]Pinned {len(audit.tools)} tool(s) for '{audit.server.name}'{suffix}.[/green]")
 
     if server_name and not matched:
-        console.print(f"[yellow]Server '{server_name}' not found.[/yellow]")
+        error_console.print(f"[red]Server '{server_name}' not found — nothing was pinned.[/red]")
+        raise SystemExit(1)
 
 
 def _make_registry_verifiers(

@@ -262,6 +262,22 @@ def test_scan_reports_duplicate_server_names(monkeypatch: pytest.MonkeyPatch) ->
     assert "'srv' appears 2 times" in result.output
 
 
+def test_pin_unknown_server_exits_1_on_stderr(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    # `pin --server <typo>` pinned nothing; that is an error, not a shrug.
+    async def fake_run_scan(*args: object, **kwargs: object) -> AuditReport:
+        return _report([])
+
+    monkeypatch.setattr(cli, "run_scan", fake_run_scan)
+
+    result = CliRunner().invoke(
+        cli.main, ["pin", "--server", "ghost", "--pin-file", str(tmp_path / "pins.yaml")]
+    )
+
+    assert result.exit_code == 1
+    assert "not found" in result.stderr
+    assert "not found" not in result.stdout
+
+
 def test_run_pin_connects_before_pinning(monkeypatch: object, tmp_path: Path) -> None:
     store = PinStore(path=tmp_path / "pins.yaml")
     audit = ServerAudit(
