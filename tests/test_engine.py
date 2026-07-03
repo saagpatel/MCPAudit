@@ -188,14 +188,16 @@ async def test_one_failing_server_does_not_kill_the_scan(monkeypatch: pytest.Mon
     ok = make_server_config(name="ok")
     monkeypatch.setattr(engine, "discover_all_configs", lambda clients, parse_errors=None: [boom, ok])
 
-    real_skip = engine.ServerConnector.skip_connect_audit
+    from mcp_audit.connector import ServerConnector
+
+    real_skip = ServerConnector.skip_connect_audit
 
     def exploding(self: object, srv: ServerConfig) -> object:
         if srv.name == "boom":
             raise RuntimeError("kaboom")
         return real_skip(self, srv)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(engine.ServerConnector, "skip_connect_audit", exploding)
+    monkeypatch.setattr(ServerConnector, "skip_connect_audit", exploding)
 
     report = await run_scan(ScanOptions(skip_connect=True))
 
