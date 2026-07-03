@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from mcp_audit.discovery.base import ConfigDiscoverer
+from mcp_audit.discovery.base import ConfigDiscoverer, ConfigParseError
 from mcp_audit.models import ClientType, ServerConfig, TransportType
 
 logger = logging.getLogger(__name__)
@@ -21,12 +21,11 @@ class WindsurfDiscoverer(ConfigDiscoverer):
         config_path = str(path)
         try:
             data: Any = json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
-            logger.debug("Could not read %s", config_path)
-            return []
+        except Exception as exc:
+            raise ConfigParseError(config_path, ClientType.WINDSURF, f"{type(exc).__name__}: {exc}") from exc
 
         if not isinstance(data, dict):
-            return []
+            raise ConfigParseError(config_path, ClientType.WINDSURF, "top-level structure is not an object")
 
         mcp_servers = data.get("mcpServers")
         if not isinstance(mcp_servers, dict):

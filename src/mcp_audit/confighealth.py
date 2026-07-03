@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from collections.abc import Sequence
 from pathlib import Path
 
+from mcp_audit.discovery.base import ConfigParseError
 from mcp_audit.models import (
     ConfigHealthFinding,
     ConfigHealthSeverity,
@@ -53,8 +55,28 @@ def _conflicting_definition_server_names(servers: list[ServerConfig]) -> dict[st
     }
 
 
-def config_health_findings(servers: list[ServerConfig]) -> list[ConfigHealthFinding]:
+def config_health_findings(
+    servers: list[ServerConfig],
+    parse_errors: Sequence[ConfigParseError] = (),
+) -> list[ConfigHealthFinding]:
     findings: list[ConfigHealthFinding] = []
+
+    # Parse failures first: they mean part of the fleet was never audited,
+    # which outranks any warning about the servers that were.
+    for error in parse_errors:
+        findings.append(
+            ConfigHealthFinding(
+                finding_type="config_parse_failure",
+                severity=ConfigHealthSeverity.HIGH,
+                server_name=None,
+                summary=(
+                    f"Could not parse {error.client.value} config at {error.path}; "
+                    "servers defined there were not audited."
+                ),
+                details=[redact_text(error.reason)],
+                remediation="Repair or restore this config file, then re-run the scan.",
+            )
+        )
 
     for name, count in sorted(duplicate_server_config_counts(servers).items()):
         findings.append(

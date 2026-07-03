@@ -5,7 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from mcp_audit.confighealth import config_health_findings
+from mcp_audit.discovery import ConfigParseError
 from mcp_audit.discovery.claude_code import ClaudeCodeDiscoverer
+from mcp_audit.models import ClientType, ConfigHealthSeverity
 
 CONFIG_HEALTH_FIXTURES = Path("tests/fixtures/config_health")
 
@@ -57,3 +59,20 @@ def test_config_health_fixtures_do_not_expose_credential_values() -> None:
         )
         for marker in secret_markers:
             assert marker not in rendered
+
+
+def test_parse_errors_surface_as_high_findings() -> None:
+    errors = [
+        ConfigParseError(
+            path="/home/user/.cursor/mcp.json",
+            client=ClientType.CURSOR,
+            reason="Expecting value: line 1 column 1 (char 0)",
+        )
+    ]
+    findings = config_health_findings([], parse_errors=errors)
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.finding_type == "config_parse_failure"
+    assert finding.severity is ConfigHealthSeverity.HIGH
+    assert "/home/user/.cursor/mcp.json" in finding.summary
+    assert "cursor" in finding.summary

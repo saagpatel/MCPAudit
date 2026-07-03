@@ -29,7 +29,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from mcp_audit.analyzer import PermissionAnalyzer
 from mcp_audit.confighealth import config_health_findings
 from mcp_audit.connector import ServerConnector
-from mcp_audit.discovery import discover_all_configs
+from mcp_audit.discovery import ConfigParseError, discover_all_configs
 from mcp_audit.models import (
     AuditReport,
     ClientType,
@@ -103,8 +103,9 @@ async def run_scan(
     start = time.monotonic()
 
     # 1. Discover servers (unless the caller supplied a pre-parsed list).
+    parse_errors: list[ConfigParseError] = []
     if servers is None:
-        servers = [] if opts.config_only else discover_all_configs(opts.clients)
+        servers = [] if opts.config_only else discover_all_configs(opts.clients, parse_errors)
 
         if opts.extra_config:
             extra_servers = _parse_extra_config(Path(opts.extra_config))
@@ -469,7 +470,7 @@ async def run_scan(
         ),
         audits=audits,
         scan_duration_seconds=time.monotonic() - start,
-        config_health_findings=config_health_findings(servers),
+        config_health_findings=config_health_findings(servers, parse_errors),
         fleet_trifecta_findings=fleet_trifecta,
         shadowing_findings=shadowing,
     )

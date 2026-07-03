@@ -426,7 +426,7 @@ servers:
         )
 
     monkeypatch.setattr(cli, "run_scan", fake_run_scan)
-    monkeypatch.setattr(cli, "discover_all_configs", lambda clients: [])
+    monkeypatch.setattr(cli, "discover_all_configs", lambda clients, parse_errors=None: [])
 
     anyio.run(
         cli._run_scan,

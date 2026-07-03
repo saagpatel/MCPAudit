@@ -187,7 +187,7 @@ class TestPerServerAllowlistWiring:
             ServerConfig(name=n, client=ClientType.CLAUDE_DESKTOP, config_path="/test/config.json")
             for n in ("trusted", "other")
         ]
-        monkeypatch.setattr(engine, "discover_all_configs", lambda clients: servers)
+        monkeypatch.setattr(engine, "discover_all_configs", lambda clients, parse_errors=None: servers)
 
         audit_for = self._fixed_host_audit
 
@@ -240,7 +240,7 @@ class TestEgressSsrfSubstrate:
 
     def _run(self, monkeypatch: pytest.MonkeyPatch, *, ssrf_check: bool) -> ServerAudit:
         servers = [ServerConfig(name="s", client=ClientType.CLAUDE_DESKTOP, config_path="/test/config.json")]
-        monkeypatch.setattr(engine, "discover_all_configs", lambda clients: servers)
+        monkeypatch.setattr(engine, "discover_all_configs", lambda clients, parse_errors=None: servers)
         audit_for = self._caller_controlled_audit
 
         class FakeConnector:

@@ -16,11 +16,12 @@ import click
 from rich.console import Console
 
 from mcp_audit.confighealth import config_health_findings, duplicate_server_config_counts
-from mcp_audit.discovery import discover_all_configs
+from mcp_audit.discovery import ConfigParseError, discover_all_configs
 from mcp_audit.engine import ScanOptions, run_scan
 from mcp_audit.models import (
     AuditReport,
     ClientType,
+    ConfigHealthFinding,
     DriftFinding,
     DriftStatus,
     EscalationFinding,
@@ -63,9 +64,11 @@ def discover(client_filter: str | None, verbose: bool) -> None:
             console.print(f"[red]Unknown client '{client_filter}'. Valid values: {valid}[/red]")
             raise SystemExit(1)
 
-    servers = discover_all_configs(clients)
+    parse_errors: list[ConfigParseError] = []
+    servers = discover_all_configs(clients, parse_errors)
 
     if not servers:
+        _render_config_health_findings(config_health_findings(servers, parse_errors))
         console.print("[yellow]No MCP servers found.[/yellow]")
         return
 
@@ -111,7 +114,7 @@ def discover(client_filter: str | None, verbose: bool) -> None:
         )
 
     console.print(table)
-    _render_config_health_warnings(servers)
+    _render_config_health_findings(config_health_findings(servers, parse_errors))
 
 
 @main.command()
@@ -461,8 +464,11 @@ async def _run_scan(
 
     gen = ReportGenerator(console=console)
 
+    # Render config-health warnings from the report itself so parse failures
+    # surface even when they left nothing to audit.
+    _render_config_health_findings(report.config_health_findings)
+
     if report.audits:
-        _render_config_health_warnings([audit.server for audit in report.audits])
         gen.render_terminal(report, verbose=verbose)
     else:
         # No servers discovered. Fall through so any requested report files are
@@ -524,8 +530,7 @@ def _truncate(s: str, max_len: int) -> str:
     return s if len(s) <= max_len else s[: max_len - 1] + "…"
 
 
-def _render_config_health_warnings(servers: list[ServerConfig]) -> None:
-    findings = config_health_findings(servers)
+def _render_config_health_findings(findings: list[ConfigHealthFinding]) -> None:
     if not findings:
         return
 

@@ -1,12 +1,13 @@
 """Unit tests for config discoverers."""
 
 import json
+import logging
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from mcp_audit.discovery import discover_all_configs
+from mcp_audit.discovery import ConfigDiscoverer, ConfigParseError, discover_all_configs
 from mcp_audit.discovery.claude_code import ClaudeCodeDiscoverer
 from mcp_audit.discovery.claude_desktop import ClaudeDesktopDiscoverer
 from mcp_audit.discovery.cursor import CursorDiscoverer
@@ -299,3 +300,71 @@ class TestDiscoverAllConfigs:
             patch.object(WindsurfDiscoverer, "config_paths", return_value=[missing]),
         ):
             assert discover_all_configs() == []
+
+
+# ---------------------------------------------------------------------------
+# Parse-failure surfacing
+# ---------------------------------------------------------------------------
+
+_ALL_DISCOVERERS = [
+    ClaudeCodeDiscoverer,
+    ClaudeDesktopDiscoverer,
+    CursorDiscoverer,
+    VSCodeDiscoverer,
+    WindsurfDiscoverer,
+]
+
+
+class TestParseFailureSurfacing:
+    @pytest.mark.parametrize("discoverer_cls", _ALL_DISCOVERERS)
+    def test_unparseable_config_raises_config_parse_error(
+        self, tmp_path: Path, discoverer_cls: type[ConfigDiscoverer]
+    ) -> None:
+        broken = tmp_path / "broken.json"
+        broken.write_text('{"mcpServers": {')  # truncated mid-save
+        with pytest.raises(ConfigParseError) as excinfo:
+            discoverer_cls().parse(broken)
+        assert excinfo.value.path == str(broken)
+        assert excinfo.value.reason
+
+    @pytest.mark.parametrize("discoverer_cls", _ALL_DISCOVERERS)
+    def test_non_object_top_level_raises_config_parse_error(
+        self, tmp_path: Path, discoverer_cls: type[ConfigDiscoverer]
+    ) -> None:
+        broken = tmp_path / "list.json"
+        broken.write_text('["not", "a", "config"]')
+        with pytest.raises(ConfigParseError):
+            discoverer_cls().parse(broken)
+
+    def test_discover_collects_errors_and_keeps_scanning(self, tmp_path: Path) -> None:
+        broken = tmp_path / "broken.json"
+        broken.write_text("{")
+        good = tmp_path / "good.json"
+        good.write_text(json.dumps({"mcpServers": {"ok": {"command": "echo"}}}))
+        errors: list[ConfigParseError] = []
+        with patch.object(CursorDiscoverer, "config_paths", return_value=[broken, good]):
+            servers = CursorDiscoverer().discover(parse_errors=errors)
+        assert [server.name for server in servers] == ["ok"]
+        assert [error.path for error in errors] == [str(broken)]
+
+    def test_discover_without_accumulator_warns(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        broken = tmp_path / "broken.json"
+        broken.write_text("{")
+        with (
+            patch.object(CursorDiscoverer, "config_paths", return_value=[broken]),
+            caplog.at_level(logging.WARNING, logger="mcp_audit.discovery.base"),
+        ):
+            assert CursorDiscoverer().discover() == []
+        assert any("broken.json" in record.getMessage() for record in caplog.records)
+
+    def test_discover_all_configs_threads_parse_errors(self, tmp_path: Path) -> None:
+        broken = tmp_path / "broken.json"
+        broken.write_text("definitely not json")
+        errors: list[ConfigParseError] = []
+        with patch.object(CursorDiscoverer, "config_paths", return_value=[broken]):
+            servers = discover_all_configs([ClientType.CURSOR], parse_errors=errors)
+        assert servers == []
+        assert len(errors) == 1
+        assert errors[0].client is ClientType.CURSOR

@@ -11,6 +11,7 @@ import pytest
 from click.testing import CliRunner
 
 from mcp_audit import cli, engine
+from mcp_audit.confighealth import config_health_findings
 from mcp_audit.engine import ScanOptions
 from mcp_audit.models import AuditReport, ServerAudit, TransportType
 from mcp_audit.pinning import PinStore
@@ -83,7 +84,9 @@ def test_scan_missing_config_path_is_a_hard_error(monkeypatch: pytest.MonkeyPatc
 def test_discover_reports_duplicate_server_names(monkeypatch: pytest.MonkeyPatch) -> None:
     first_server = make_server_config(name="srv")
     second_server = first_server.model_copy(update={"config_path": "/tmp/other_config.json"})
-    monkeypatch.setattr(cli, "discover_all_configs", lambda clients: [first_server, second_server])
+    monkeypatch.setattr(
+        cli, "discover_all_configs", lambda clients, parse_errors=None: [first_server, second_server]
+    )
 
     result = CliRunner().invoke(cli.main, ["discover"])
 
@@ -125,7 +128,7 @@ def test_discover_reports_config_health_warnings(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(
         cli,
         "discover_all_configs",
-        lambda clients: [
+        lambda clients, parse_errors=None: [
             missing_command,
             missing_binary,
             sse_server,
@@ -160,7 +163,9 @@ def test_discover_reports_global_project_scope_conflicts(monkeypatch: pytest.Mon
             "project_path": "/repo",
         }
     )
-    monkeypatch.setattr(cli, "discover_all_configs", lambda clients: [global_server, project_server])
+    monkeypatch.setattr(
+        cli, "discover_all_configs", lambda clients, parse_errors=None: [global_server, project_server]
+    )
 
     result = CliRunner().invoke(cli.main, ["discover"])
 
@@ -180,7 +185,9 @@ def test_discover_reports_conflicting_server_definitions(monkeypatch: pytest.Mon
         command="uvx",
         args=["--from", "example-search-mcp", "search-mcp"],
     ).model_copy(update={"config_path": "/tmp/other_config.json"})
-    monkeypatch.setattr(cli, "discover_all_configs", lambda clients: [npx_server, uvx_server])
+    monkeypatch.setattr(
+        cli, "discover_all_configs", lambda clients, parse_errors=None: [npx_server, uvx_server]
+    )
 
     result = CliRunner().invoke(cli.main, ["discover"])
 
@@ -194,7 +201,7 @@ def test_run_scan_config_only_ignores_discovered_configs(monkeypatch: pytest.Mon
     discovered = make_server_config(name="discovered")
     custom = make_server_config(name="custom")
 
-    monkeypatch.setattr(engine, "discover_all_configs", lambda clients: [discovered])
+    monkeypatch.setattr(engine, "discover_all_configs", lambda clients, parse_errors=None: [discovered])
     monkeypatch.setattr(engine, "_parse_extra_config", lambda path: [custom])
 
     report = anyio.run(
@@ -209,7 +216,9 @@ def test_run_scan_reports_structured_config_health(monkeypatch: pytest.MonkeyPat
     first_server = make_server_config(name="srv")
     second_server = first_server.model_copy(update={"config_path": "/tmp/other_config.json"})
 
-    monkeypatch.setattr(engine, "discover_all_configs", lambda clients: [first_server, second_server])
+    monkeypatch.setattr(
+        engine, "discover_all_configs", lambda clients, parse_errors=None: [first_server, second_server]
+    )
 
     report = anyio.run(engine.run_scan, ScanOptions(skip_connect=True))
 
@@ -227,7 +236,11 @@ def test_scan_reports_duplicate_server_names(monkeypatch: pytest.MonkeyPatch) ->
     ]
 
     async def fake_run_scan(*args: object, **kwargs: object) -> AuditReport:
-        return _report(audits)
+        # Mirror the engine contract: run_scan embeds config-health findings in
+        # the report; the CLI renders them from there.
+        report = _report(audits)
+        report.config_health_findings = config_health_findings([first_server, second_server])
+        return report
 
     monkeypatch.setattr(cli, "run_scan", fake_run_scan)
 
@@ -631,7 +644,11 @@ def test_pin_stale_reports_removed_server_without_writing(
     store = PinStore(path=pin_file)
     store.pin_server("configured", [make_tool("read_file")])
     store.pin_server("removed", [make_tool("write_file")])
-    monkeypatch.setattr(cli, "discover_all_configs", lambda clients: [make_server_config(name="configured")])
+    monkeypatch.setattr(
+        cli,
+        "discover_all_configs",
+        lambda clients, parse_errors=None: [make_server_config(name="configured")],
+    )
 
     result = CliRunner().invoke(cli.main, ["pin", "--stale", "--pin-file", str(pin_file)])
 
@@ -650,7 +667,11 @@ def test_pin_stale_json_reports_removed_server_without_writing(
     store = PinStore(path=pin_file)
     store.pin_server("configured", [make_tool("read_file")])
     store.pin_server("removed", [make_tool("write_file")])
-    monkeypatch.setattr(cli, "discover_all_configs", lambda clients: [make_server_config(name="configured")])
+    monkeypatch.setattr(
+        cli,
+        "discover_all_configs",
+        lambda clients, parse_errors=None: [make_server_config(name="configured")],
+    )
 
     result = CliRunner().invoke(cli.main, ["pin", "--stale", "--json", "--pin-file", str(pin_file)])
 
@@ -671,7 +692,11 @@ def test_pin_clear_stale_reviews_removed_servers_without_writing(
     store.pin_server("configured", [make_tool("read_file")])
     store.pin_server("removed-a", [make_tool("write_file")])
     store.pin_server("removed-b", [make_tool("delete_file")])
-    monkeypatch.setattr(cli, "discover_all_configs", lambda clients: [make_server_config(name="configured")])
+    monkeypatch.setattr(
+        cli,
+        "discover_all_configs",
+        lambda clients, parse_errors=None: [make_server_config(name="configured")],
+    )
 
     result = CliRunner().invoke(cli.main, ["pin", "--clear-stale", "--pin-file", str(pin_file)])
 
@@ -694,7 +719,11 @@ def test_pin_clear_stale_json_applies_reviewed_cleanup(
     store.pin_server("configured", [make_tool("read_file")])
     store.pin_server("removed-a", [make_tool("write_file")])
     store.pin_server("removed-b", [make_tool("delete_file")])
-    monkeypatch.setattr(cli, "discover_all_configs", lambda clients: [make_server_config(name="configured")])
+    monkeypatch.setattr(
+        cli,
+        "discover_all_configs",
+        lambda clients, parse_errors=None: [make_server_config(name="configured")],
+    )
 
     result = CliRunner().invoke(
         cli.main,

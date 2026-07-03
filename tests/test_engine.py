@@ -16,8 +16,9 @@ import pytest
 from rich.console import Console
 
 from mcp_audit import engine
+from mcp_audit.discovery import ConfigParseError
 from mcp_audit.engine import ScanOptions, run_scan
-from mcp_audit.models import AUDIT_REPORT_SCHEMA_VERSION
+from mcp_audit.models import AUDIT_REPORT_SCHEMA_VERSION, ClientType, ServerConfig
 from tests.conftest import make_server_config
 
 
@@ -49,7 +50,9 @@ def test_run_scan_is_silent_by_default(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Library/MCP callers get no stdout chatter — stdout may carry MCP stdio frames."""
-    monkeypatch.setattr(engine, "discover_all_configs", lambda clients: [make_server_config(name="srv")])
+    monkeypatch.setattr(
+        engine, "discover_all_configs", lambda clients, parse_errors=None: [make_server_config(name="srv")]
+    )
     # llm_analysis without an API key prints an advisory warning on the CLI path;
     # with no console passed, it must stay silent.
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
@@ -62,7 +65,9 @@ def test_run_scan_is_silent_by_default(
 
 
 def test_run_scan_prints_warnings_to_provided_console(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(engine, "discover_all_configs", lambda clients: [make_server_config(name="srv")])
+    monkeypatch.setattr(
+        engine, "discover_all_configs", lambda clients, parse_errors=None: [make_server_config(name="srv")]
+    )
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
     buffer = io.StringIO()
@@ -77,7 +82,9 @@ def test_run_scan_prints_warnings_to_provided_console(monkeypatch: pytest.Monkey
 
 
 def test_report_carries_schema_version(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(engine, "discover_all_configs", lambda clients: [make_server_config(name="srv")])
+    monkeypatch.setattr(
+        engine, "discover_all_configs", lambda clients, parse_errors=None: [make_server_config(name="srv")]
+    )
 
     report = anyio.run(run_scan, ScanOptions(skip_connect=True))
 
@@ -87,7 +94,7 @@ def test_report_carries_schema_version(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_run_scan_raises_on_missing_extra_config(monkeypatch: pytest.MonkeyPatch) -> None:
     """A typo'd extra_config path must fail loudly, never degrade to an empty clean report."""
-    monkeypatch.setattr(engine, "discover_all_configs", lambda clients: [])
+    monkeypatch.setattr(engine, "discover_all_configs", lambda clients, parse_errors=None: [])
 
     async def _scan() -> None:
         await run_scan(ScanOptions(skip_connect=True, config_only=True, extra_config="/nope/missing.json"))
@@ -143,7 +150,9 @@ def test_cli_run_scan_core_shim_warns_and_delegates(monkeypatch: pytest.MonkeyPa
     from mcp_audit import cli
     from mcp_audit.overrides import OverrideApplier, OverrideConfig
 
-    monkeypatch.setattr(engine, "discover_all_configs", lambda clients: [make_server_config(name="srv")])
+    monkeypatch.setattr(
+        engine, "discover_all_configs", lambda clients, parse_errors=None: [make_server_config(name="srv")]
+    )
 
     with pytest.warns(DeprecationWarning, match="mcp_audit.engine.run_scan"):
         report = anyio.run(
@@ -151,3 +160,23 @@ def test_cli_run_scan_core_shim_warns_and_delegates(monkeypatch: pytest.MonkeyPa
         )
 
     assert [audit.server.name for audit in report.audits] == ["srv"]
+
+
+async def test_run_scan_surfaces_discovery_parse_errors(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_discover(
+        clients: list[ClientType] | None = None,
+        parse_errors: list[ConfigParseError] | None = None,
+    ) -> list[ServerConfig]:
+        if parse_errors is not None:
+            parse_errors.append(
+                ConfigParseError(path="/tmp/broken.json", client=ClientType.CURSOR, reason="boom")
+            )
+        return []
+
+    monkeypatch.setattr(engine, "discover_all_configs", fake_discover)
+    report = await run_scan(ScanOptions(skip_connect=True))
+    failures = [
+        finding for finding in report.config_health_findings if finding.finding_type == "config_parse_failure"
+    ]
+    assert len(failures) == 1
+    assert "/tmp/broken.json" in failures[0].summary
