@@ -105,7 +105,7 @@ permissions:
   security-events: write
 steps:
   - uses: actions/checkout@v6
-  - uses: saagpatel/MCPAudit@v2.2.3
+  - uses: saagpatel/MCPAudit@v2.3.0
     with:
       args: --inject-check --ssrf-check --trifecta-check
       # sarif defaults to mcp-audit.sarif and uploads to code scanning
@@ -138,7 +138,7 @@ spawns or connects to servers) and triggers when a repo-root `.mcp.json` or a
 ```yaml
 repos:
   - repo: https://github.com/saagpatel/MCPAudit
-    rev: v2.2.3
+    rev: v2.3.0
     hooks:
       - id: mcp-audit
 ```
