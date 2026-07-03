@@ -70,6 +70,9 @@ _USER_AGENT = "mcp-audit (+https://github.com/saagpatel/MCPAudit)"
 # refuse a malicious/oversized artifact instead of streaming it forever.
 _DOWNLOAD_TIMEOUT = 30
 _MAX_ARTIFACT_BYTES = 64 * 1024 * 1024
+# Registry metadata JSON is a few KB (npm version doc) to a few MB (PyPI /json
+# for old packages with many releases) — bound it far below artifact size.
+_MAX_METADATA_BYTES = 8 * 1024 * 1024
 _CHUNK = 1 << 16
 # A package@version with more distribution files than this is treated as unverifiable
 # rather than downloaded, bounding total transfer against a metadata response that lists
@@ -220,10 +223,9 @@ class RegistryClient:
         req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
         try:
             with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:  # noqa: S310 (https only)
-                # Bounded read: registry metadata is at most a few MB; a hostile
-                # response must not exhaust memory (same cap as artifact bytes).
-                raw = resp.read(_MAX_ARTIFACT_BYTES + 1)
-                if len(raw) > _MAX_ARTIFACT_BYTES:
+                # Bounded read: a hostile response must not exhaust memory.
+                raw = resp.read(_MAX_METADATA_BYTES + 1)
+                if len(raw) > _MAX_METADATA_BYTES:
                     logger.debug("Registry metadata response exceeded cap: %s", url)
                     result = None
                 else:

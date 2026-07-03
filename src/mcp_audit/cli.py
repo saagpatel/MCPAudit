@@ -626,7 +626,7 @@ def pin_command(
     download_artifacts: bool,
 ) -> None:
     """Pin tool schemas for drift detection on subsequent scans."""
-    from mcp_audit.pinning import DEFAULT_PIN_PATH, PinStore
+    from mcp_audit.pinning import DEFAULT_PIN_PATH, PinFileError, PinStore
 
     store = PinStore(path=Path(pin_file) if pin_file else DEFAULT_PIN_PATH)
 
@@ -654,37 +654,43 @@ def pin_command(
     if apply_refresh and not (refresh_server or clear_stale):
         raise click.ClickException("--apply can only be used with --refresh or --clear-stale.")
 
-    if clear_server:
-        store.remove_server(clear_server)
-        console.print(f"[green]Removed pins for server '{clear_server}'.[/green]")
-        return
+    try:
+        if clear_server:
+            store.remove_server(clear_server)
+            console.print(f"[green]Removed pins for server '{clear_server}'.[/green]")
+            return
 
-    if status:
-        _render_pin_status(store, json_status)
-        return
+        if status:
+            _render_pin_status(store, json_status)
+            return
 
-    if stale:
-        _render_pin_stale(store, json_status)
-        return
+        if stale:
+            _render_pin_stale(store, json_status)
+            return
 
-    if clear_stale:
-        _render_pin_clear_stale(store, json_status, apply_refresh)
-        return
+        if clear_stale:
+            _render_pin_clear_stale(store, json_status, apply_refresh)
+            return
 
-    if refresh_server:
-        anyio.run(
-            _run_pin_refresh,
-            refresh_server,
-            store,
-            apply_refresh,
-            json_status,
-            verify_artifacts,
-            download_artifacts,
-        )
-        return
+        if refresh_server:
+            anyio.run(
+                _run_pin_refresh,
+                refresh_server,
+                store,
+                apply_refresh,
+                json_status,
+                verify_artifacts,
+                download_artifacts,
+            )
+            return
 
-    # Pin servers
-    anyio.run(_run_pin, server_name, store, verify_artifacts, download_artifacts)
+        # Pin servers
+        anyio.run(_run_pin, server_name, store, verify_artifacts, download_artifacts)
+    except PinFileError as exc:
+        # Mutations refuse to write through an unparseable pin file — wiping a
+        # repairable baseline is worse than failing loudly.
+        error_console.print(f"[red]{exc}. Fix or remove the file, then re-run.[/red]")
+        raise SystemExit(1) from exc
 
 
 async def _run_pin(

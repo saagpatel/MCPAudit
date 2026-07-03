@@ -10,7 +10,7 @@ import pytest
 import yaml
 
 from mcp_audit.models import ClientType, DriftStatus, ServerConfig, TransportType
-from mcp_audit.pinning import _MAX_PIN_FILE_BYTES, PinStore
+from mcp_audit.pinning import _MAX_PIN_FILE_BYTES, PinFileError, PinStore
 from tests.conftest import make_tool
 
 
@@ -449,6 +449,21 @@ class TestHostileFileBounds:
         with caplog.at_level(logging.WARNING):
             store = PinStore(path=path)
         assert store.pinned_servers() == []
+
+    def test_mutation_refuses_to_wipe_unparseable_pin_file(self, tmp_path: Path) -> None:
+        # A hand-edited pin file with a legitimate anchor/alias is unsupported,
+        # but pinning through it must FAIL, not silently replace the whole
+        # baseline with a fresh single-server file.
+        path = tmp_path / "pins.yaml"
+        original = "defaults: &d\n  note: shared\nservers:\n  keep:\n    tools: {}\n  other: *d\n"
+        path.write_text(original)
+        store = PinStore(path=path)  # read path degrades to empty, fine
+
+        with pytest.raises(PinFileError):
+            store.pin_server("new-server", [make_tool("t")])
+        with pytest.raises(PinFileError):
+            store.remove_server("keep")
+        assert path.read_text() == original  # baseline untouched
 
     def test_written_file_never_contains_anchors(self, tmp_path: Path) -> None:
         # A shared object reference must not serialize as a YAML anchor, or our
