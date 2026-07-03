@@ -34,7 +34,7 @@ class _NoAliasSafeLoader(yaml.SafeLoader):
     """SafeLoader that rejects aliases — blocks billion-laughs expansion."""
 
     def compose_node(self, parent: Any, index: Any) -> Any:
-        if self.check_event(yaml.events.AliasEvent):
+        if self.check_event(yaml.events.AliasEvent):  # type: ignore[no-untyped-call]
             raise yaml.YAMLError("YAML aliases are not allowed in the pin file")
         return super().compose_node(parent, index)
 
