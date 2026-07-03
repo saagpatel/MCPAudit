@@ -10,7 +10,14 @@ from pathlib import Path
 import pytest
 
 from mcp_audit.engine import ScanOptions
-from mcp_audit.models import AuditReport, InjectionFinding, InjectionSeverity, RiskScore, ServerAudit
+from mcp_audit.models import (
+    AuditReport,
+    InjectionFinding,
+    InjectionSeverity,
+    RiskScore,
+    ScanWarning,
+    ServerAudit,
+)
 from mcp_audit.server import _MCP_AUDIT_SERVER_ENTRY, _build_mcp_server, _install_to_config
 from tests.conftest import make_server_config
 
@@ -183,16 +190,19 @@ async def test_get_injection_findings_uses_connected_scan(monkeypatch: pytest.Mo
     assert isinstance(options, ScanOptions)
     assert options.skip_connect is False
     assert options.inject_check is True
-    assert payload == [
-        {
-            "server": "srv",
-            "tool": "evil_tool",
-            "severity": "high",
-            "pattern": "ignore_instructions",
-            "description": "Tool description attempts to override AI instructions",
-            "matched_text": "ignore previous instructions",
-        }
-    ]
+    assert payload == {
+        "findings": [
+            {
+                "server": "srv",
+                "tool": "evil_tool",
+                "severity": "high",
+                "pattern": "ignore_instructions",
+                "description": "Tool description attempts to override AI instructions",
+                "matched_text": "ignore previous instructions",
+            }
+        ],
+        "warnings": [],
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -200,7 +210,7 @@ async def test_get_injection_findings_uses_connected_scan(monkeypatch: pytest.Mo
 # ---------------------------------------------------------------------------
 
 
-def _report_with(audits: list[ServerAudit]) -> AuditReport:
+def _report_with(audits: list[ServerAudit], warnings: list[ScanWarning] | None = None) -> AuditReport:
     return AuditReport(
         scan_timestamp=datetime.now(UTC),
         hostname="test-host",
@@ -212,6 +222,7 @@ def _report_with(audits: list[ServerAudit]) -> AuditReport:
         high_risk_servers=0,
         audits=audits,
         scan_duration_seconds=0.01,
+        warnings=warnings or [],
     )
 
 
@@ -242,19 +253,40 @@ def _stub_run_scan(monkeypatch: pytest.MonkeyPatch, report: AuditReport) -> dict
         ("get_artifact_verify_findings", "download_artifacts", True),
     ],
 )
-async def test_findings_tools_thread_flags_and_return_json_lists(
+async def test_findings_tools_thread_flags_and_wrap_findings_with_warnings(
     monkeypatch: pytest.MonkeyPatch, tool_name: str, flag: str, expect_skip_connect: bool
 ) -> None:
-    """Every findings tool must enable its check flag and return a JSON list."""
+    """Every findings tool must enable its check flag and return `{findings, warnings}`."""
     seen = _stub_run_scan(monkeypatch, _report_with([]))
 
     app = _build_mcp_server()
     _content, metadata = await app.call_tool(tool_name, {})
 
-    assert json.loads(metadata["result"]) == []
+    assert json.loads(metadata["result"]) == {"findings": [], "warnings": []}
     options = seen["options"]
     assert getattr(options, flag) is True
     assert options.skip_connect is expect_skip_connect
+
+
+@pytest.mark.anyio
+async def test_findings_tools_surface_coverage_warnings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An empty findings list with a warning must be distinguishable from 'checked, clean'."""
+    warning = ScanWarning(
+        code="pin_baseline_missing",
+        message="--provenance-check: no pin baseline found. Run `mcp-audit pin` first.",
+        check="provenance_check",
+    )
+    _stub_run_scan(monkeypatch, _report_with([], warnings=[warning]))
+
+    app = _build_mcp_server()
+    _content, metadata = await app.call_tool("get_provenance_findings", {})
+
+    payload = json.loads(metadata["result"])
+    assert payload["findings"] == []
+    [emitted] = payload["warnings"]
+    assert emitted["code"] == "pin_baseline_missing"
+    assert emitted["check"] == "provenance_check"
+    assert emitted["servers"] == []
 
 
 @pytest.mark.anyio

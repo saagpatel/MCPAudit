@@ -33,6 +33,7 @@ from mcp_audit.discovery import ConfigParseError, discover_all_configs
 from mcp_audit.models import (
     AuditReport,
     ClientType,
+    ScanWarning,
     ServerAudit,
     ServerConfig,
     ShadowingFinding,
@@ -100,6 +101,15 @@ async def run_scan(
     applier = override_applier if override_applier is not None else OverrideApplier(OverrideConfig())
     out = console if console is not None else Console(quiet=True)
 
+    # Coverage warnings are data first, console rendering second: the report
+    # carries them so JSON/MCP consumers can tell "checked, clean" from
+    # "check silently skipped" — the console line is just the CLI view.
+    scan_warnings: list[ScanWarning] = []
+
+    def warn(code: str, message: str, *, check: str | None = None, servers: list[str] | None = None) -> None:
+        scan_warnings.append(ScanWarning(code=code, message=message, check=check, servers=servers or []))
+        out.print(f"[yellow]{message}[/yellow]")
+
     start = time.monotonic()
 
     # 1. Discover servers (unless the caller supplied a pre-parsed list).
@@ -120,16 +130,21 @@ async def run_scan(
     if opts.llm_analysis:
         api_key = os.environ.get("ANTHROPIC_API_KEY", "")
         if not api_key:
-            out.print("[yellow]--llm-analysis: ANTHROPIC_API_KEY not set, skipping LLM analysis.[/yellow]")
+            warn(
+                "missing_credential",
+                "--llm-analysis: ANTHROPIC_API_KEY not set, skipping LLM analysis.",
+                check="llm_analysis",
+            )
         else:
             try:
                 from mcp_audit.llm_analyzer import LLMAnalyzer
 
                 llm_analyzer = LLMAnalyzer(api_key=api_key)
             except ImportError:
-                out.print(
-                    "[yellow]--llm-analysis: anthropic package not installed. "
-                    "Run: pip install 'mcp-audits[llm]'[/yellow]"
+                warn(
+                    "missing_dependency",
+                    "--llm-analysis: anthropic package not installed. Run: pip install 'mcp-audits[llm]'",
+                    check="llm_analysis",
                 )
 
     injection_detector = None
@@ -147,7 +162,11 @@ async def run_scan(
         ssrf_detector = SsrfDetector()
         ssrf_allow = parse_host_allowlist(opts.ssrf_allowlist)
     elif opts.ssrf_allowlist:
-        out.print("[yellow]--ssrf-allowlist has no effect without --ssrf-check.[/yellow]")
+        warn(
+            "option_ignored",
+            "--ssrf-allowlist has no effect without --ssrf-check.",
+            check="ssrf_check",
+        )
 
     egress_detector = None
     egress_server_allow: dict[str, set[str]] = {}
@@ -177,8 +196,10 @@ async def run_scan(
                 "pass --ssrf-check to also report SSRF findings.[/dim]"
             )
     elif opts.egress_allowlist or opts.multi_tenant_hosts:
-        out.print(
-            "[yellow]--egress-allowlist/--multi-tenant-hosts have no effect without --egress-check.[/yellow]"
+        warn(
+            "option_ignored",
+            "--egress-allowlist/--multi-tenant-hosts have no effect without --egress-check.",
+            check="egress_check",
         )
 
     trifecta_analyzer = None
@@ -363,40 +384,42 @@ async def run_scan(
             for i, srv in enumerate(servers):
                 tg.start_soon(audit_one_guarded, i, srv)
 
-    # Escalation needs a baseline; warn if asked for but nothing is pinned.
-    if opts.escalation_check and pin_store is not None and not pin_store.pinned_servers():
-        out.print(
-            "[yellow]--escalation-check: no pin baseline found. "
-            "Run `mcp-audit pin` first to capture a baseline to compare against.[/yellow]"
-        )
-
-    # Provenance needs a config snapshot in the baseline; warn if nothing is pinned.
-    if opts.provenance_check and pin_store is not None and not pin_store.pinned_servers():
-        out.print(
-            "[yellow]--provenance-check: no pin baseline found. "
-            "Run `mcp-audit pin` first to capture a launch-config baseline to compare against.[/yellow]"
-        )
-
-    # Integrity needs artifact hashes in the baseline; warn if nothing is pinned.
-    if opts.integrity_check and pin_store is not None and not pin_store.pinned_servers():
-        out.print(
-            "[yellow]--integrity-check: no pin baseline found. "
-            "Run `mcp-audit pin` first to capture launch-artifact hashes to compare against.[/yellow]"
-        )
-
-    # Package verification needs registry hashes captured with --verify-artifacts.
-    if opts.verify_artifacts and pin_store is not None and not pin_store.pinned_servers():
-        out.print(
-            "[yellow]--verify-artifacts: no pin baseline found. "
-            "Run `mcp-audit pin --verify-artifacts` first to capture registry package hashes.[/yellow]"
-        )
-
-    # Byte-level artifact verification needs hashes captured with --download-artifacts.
-    if opts.download_artifacts and pin_store is not None and not pin_store.pinned_servers():
-        out.print(
-            "[yellow]--download-artifacts: no pin baseline found. "
-            "Run `mcp-audit pin --download-artifacts` first to capture artifact byte-hashes.[/yellow]"
-        )
+    # Every pin-comparison check needs a baseline; warn if asked for but nothing is pinned.
+    if pin_store is not None and not pin_store.pinned_servers():
+        no_baseline_checks: list[tuple[str, str, str]] = [
+            (
+                "escalation_check",
+                "--escalation-check",
+                "Run `mcp-audit pin` first to capture a baseline to compare against.",
+            ),
+            (
+                "provenance_check",
+                "--provenance-check",
+                "Run `mcp-audit pin` first to capture a launch-config baseline to compare against.",
+            ),
+            (
+                "integrity_check",
+                "--integrity-check",
+                "Run `mcp-audit pin` first to capture launch-artifact hashes to compare against.",
+            ),
+            (
+                "verify_artifacts",
+                "--verify-artifacts",
+                "Run `mcp-audit pin --verify-artifacts` first to capture registry package hashes.",
+            ),
+            (
+                "download_artifacts",
+                "--download-artifacts",
+                "Run `mcp-audit pin --download-artifacts` first to capture artifact byte-hashes.",
+            ),
+        ]
+        for check_field, flag, remedy in no_baseline_checks:
+            if getattr(opts, check_field):
+                warn(
+                    "pin_baseline_missing",
+                    f"{flag}: no pin baseline found. {remedy}",
+                    check=check_field,
+                )
 
     # Per-server staleness: a server IS pinned but its baseline predates the
     # provenance/integrity snapshot, so it is silently skipped. Surface it so the
@@ -406,37 +429,46 @@ async def run_scan(
     ):
         pinned = set(pin_store.pinned_servers())
         scanned_pinned = [audit.server.name for audit in audits if audit.server.name in pinned]
-        if opts.provenance_check:
-            stale = sorted(n for n in scanned_pinned if pin_store.baseline_config(n) is None)
+        stale_baseline_checks = [
+            (
+                "provenance_check",
+                "--provenance-check",
+                pin_store.baseline_config,
+                "predate launch-config snapshots and were skipped",
+                "Re-pin with `mcp-audit pin` to enable provenance comparison.",
+            ),
+            (
+                "integrity_check",
+                "--integrity-check",
+                pin_store.baseline_artifacts,
+                "predate artifact-hash capture and were skipped",
+                "Re-pin with `mcp-audit pin` to enable integrity comparison.",
+            ),
+            (
+                "verify_artifacts",
+                "--verify-artifacts",
+                pin_store.baseline_package_hashes,
+                "lack captured registry hashes and were skipped",
+                "Re-pin with `mcp-audit pin --verify-artifacts` to enable verification.",
+            ),
+            (
+                "download_artifacts",
+                "--download-artifacts",
+                pin_store.baseline_artifact_hashes,
+                "lack captured artifact byte-hashes and were skipped",
+                "Re-pin with `mcp-audit pin --download-artifacts` to enable verification.",
+            ),
+        ]
+        for check_field, flag, baseline_of, phrase, remedy in stale_baseline_checks:
+            if not getattr(opts, check_field):
+                continue
+            stale = sorted(n for n in scanned_pinned if baseline_of(n) is None)
             if stale:
-                out.print(
-                    f"[yellow]--provenance-check: {len(stale)} pinned server(s) predate "
-                    f"launch-config snapshots and were skipped: {', '.join(stale)}. "
-                    "Re-pin with `mcp-audit pin` to enable provenance comparison.[/yellow]"
-                )
-        if opts.integrity_check:
-            stale = sorted(n for n in scanned_pinned if pin_store.baseline_artifacts(n) is None)
-            if stale:
-                out.print(
-                    f"[yellow]--integrity-check: {len(stale)} pinned server(s) predate "
-                    f"artifact-hash capture and were skipped: {', '.join(stale)}. "
-                    "Re-pin with `mcp-audit pin` to enable integrity comparison.[/yellow]"
-                )
-        if opts.verify_artifacts:
-            stale = sorted(n for n in scanned_pinned if pin_store.baseline_package_hashes(n) is None)
-            if stale:
-                out.print(
-                    f"[yellow]--verify-artifacts: {len(stale)} pinned server(s) lack captured "
-                    f"registry hashes and were skipped: {', '.join(stale)}. "
-                    "Re-pin with `mcp-audit pin --verify-artifacts` to enable verification.[/yellow]"
-                )
-        if opts.download_artifacts:
-            stale = sorted(n for n in scanned_pinned if pin_store.baseline_artifact_hashes(n) is None)
-            if stale:
-                out.print(
-                    f"[yellow]--download-artifacts: {len(stale)} pinned server(s) lack captured "
-                    f"artifact byte-hashes and were skipped: {', '.join(stale)}. "
-                    "Re-pin with `mcp-audit pin --download-artifacts` to enable verification.[/yellow]"
+                warn(
+                    "pin_baseline_stale",
+                    f"{flag}: {len(stale)} pinned server(s) {phrase}: {', '.join(stale)}. {remedy}",
+                    check=check_field,
+                    servers=stale,
                 )
 
     # SSRF substrate suppression — when egress ran SSRF only to map its destinations and
@@ -486,6 +518,7 @@ async def run_scan(
         config_health_findings=config_health_findings(servers, parse_errors),
         fleet_trifecta_findings=fleet_trifecta,
         shadowing_findings=shadowing,
+        warnings=scan_warnings,
     )
     return report
 

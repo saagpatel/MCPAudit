@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `AuditReport.warnings` — structured `ScanWarning` entries for every requested
+  check that was skipped or degraded (missing/stale pin baseline, missing
+  credential or dependency, ignored option). Previously these were
+  console-only, so JSON and MCP-server consumers could not distinguish
+  "checked, clean" from "check silently skipped". Additive: `schema_version`
+  stays `1`; the code vocabulary is documented in docs/OUTPUT-CONTRACT.md.
+
+### Changed
+
+- MCP server `get_*_findings` tools now return `{"findings": [...],
+  "warnings": [...]}` instead of a bare findings list, so a caller can tell an
+  empty result apart from a check that could not run (e.g. a drift tool called
+  with no pin baseline). `scan_mcp_servers` carries the same warnings via the
+  report's `warnings` field.
+
 ## [2.3.0] - 2026-07-03
 
 ### Added
