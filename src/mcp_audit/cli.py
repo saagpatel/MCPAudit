@@ -62,7 +62,7 @@ def discover(client_filter: str | None, verbose: bool) -> None:
         except ValueError:
             valid = ", ".join(c.value for c in ClientType)
             error_console.print(f"[red]Unknown client '{client_filter}'. Valid values: {valid}[/red]")
-            raise SystemExit(1)
+            raise SystemExit(1) from None
 
     parse_errors: list[ConfigParseError] = []
     servers = discover_all_configs(clients, parse_errors)
@@ -522,7 +522,7 @@ def _parse_clients(clients_str: str | None) -> list[ClientType] | None:
         except ValueError:
             valid = ", ".join(c.value for c in ClientType)
             error_console.print(f"[red]Unknown client '{part}'. Valid values: {valid}[/red]")
-            raise SystemExit(1)
+            raise SystemExit(1) from None
     return result or None
 
 

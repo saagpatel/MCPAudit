@@ -73,7 +73,7 @@ async def _watch_loop(
         from watchfiles import awatch  # type: ignore[import-not-found, unused-ignore]
     except ImportError:
         _error_console.print("[red]watchfiles not installed. Run: pip install 'mcp-audits[watch]'[/red]")
-        raise SystemExit(1)
+        raise SystemExit(1) from None
 
     from mcp_audit.cli import _parse_clients
     from mcp_audit.engine import ScanOptions, run_scan
@@ -104,7 +104,7 @@ async def _watch_loop(
     _write_outputs(report, json_output, sarif_output)
 
     prev_report = report
-    async for changes in awatch(*[str(p) for p in watch_paths]):
+    async for _changes in awatch(*[str(p) for p in watch_paths]):
         _console.rule("[dim]Config changed — re-scanning[/dim]")
         new_report = await run_scan(scan_options, override_applier=override_applier, console=_console)
         _render_diff(prev_report, new_report)
