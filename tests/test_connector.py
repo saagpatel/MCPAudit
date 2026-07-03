@@ -423,3 +423,34 @@ async def test_connection_error_is_redacted(monkeypatch: pytest.MonkeyPatch) -> 
     audit = await connector.connect(config)
     assert audit.connection_status == "failed"
     assert audit.connection_error == "failed with token=<redacted>"
+
+
+class _SpawnAborted(Exception):
+    """Raised by the fake stdio_client so no real process is ever spawned."""
+
+
+async def test_connect_stdio_never_hands_spawned_server_an_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pin the load-bearing safety property of connected scans: the spawned
+    server gets env=None, which makes the mcp SDK use its curated safe default
+    environment — never the operator's os.environ and never the credentials the
+    config declares for the server. A regression here would inject real secrets
+    into a process this tool exists to distrust.
+    """
+    captured: dict[str, object] = {}
+
+    def fake_stdio_client(params: object) -> object:
+        captured["env"] = params.env  # type: ignore[attr-defined]
+        raise _SpawnAborted
+
+    monkeypatch.setattr("mcp_audit.connector.stdio_client", fake_stdio_client)
+
+    connector = ServerConnector(timeout=1.0)
+    config = make_server_config(name="srv", env_keys=["GITHUB_TOKEN", "AWS_SECRET_ACCESS_KEY"])
+
+    with pytest.raises(_SpawnAborted):
+        await connector._connect_stdio(config)
+
+    assert "env" in captured
+    assert captured["env"] is None
