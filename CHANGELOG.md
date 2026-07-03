@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `pin_baseline_corrupted` warning code — a pin baseline file that exists but
+  cannot be parsed now emits its own `ScanWarning` (naming the file and the
+  parse error) instead of folding into `pin_baseline_missing`. A corrupted
+  baseline can mask a wiped or tampered pin store, which is a materially
+  different condition from never having pinned. Extends the strict-write
+  honesty from 2.3.0 (`PinFileError` refuses mutations through unparseable
+  files) to the read/report path. (#158)
+
 ## [2.4.0] - 2026-07-03
 
 ### Added
