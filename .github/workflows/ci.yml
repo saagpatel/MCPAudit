@@ -34,7 +34,10 @@ jobs:
         run: uv run mypy .
 
       - name: Unit tests
-        run: uv run pytest tests/ -v --ignore=tests/test_connector.py
+        run: uv run pytest tests/ -v --ignore=tests/test_connector.py --cov=mcp_audit
 
       - name: Integration tests (connector)
-        run: uv run pytest tests/test_connector.py -v
+        run: uv run pytest tests/test_connector.py -v --cov=mcp_audit --cov-append
+
+      - name: Coverage gate
+        run: uv run coverage report --fail-under=85
