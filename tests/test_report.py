@@ -372,3 +372,105 @@ def test_scrub_report_identifiers_aliases_server_names() -> None:
     assert scrubbed.audits[0].server.name == "server-01"
     assert scrubbed.audits[0].server.command == "/Users/<redacted>/.claude/bin/server-01-mcp"
     assert "personal-ops" not in scrubbed.model_dump_json()
+
+
+class TestBaselineDriftRenderers:
+    """The pin-baseline warning renderers only run for users who HAVE findings —
+    a typo'd field access here crashes exactly the scans that matter most."""
+
+    def _render(self, audit_update: dict[str, object]) -> str:
+        con, buf = _make_console()
+        audit = _make_audit(name="srv").model_copy(update=audit_update)
+        ReportGenerator(console=con).render_terminal(_base_report([audit]))
+        return buf.getvalue()
+
+    def test_escalation_findings_render(self) -> None:
+        from mcp_audit.models import EscalationFinding, EscalationKind, EscalationSeverity
+
+        finding = EscalationFinding(
+            kind=EscalationKind.CAPABILITY,
+            severity=EscalationSeverity.HIGH,
+            server_name="srv",
+            tool_name="read_file",
+            gained_categories=[PermissionCategory.SHELL_EXEC],
+            description="tool gained shell execution since pin",
+        )
+        out = self._render({"escalation_findings": [finding]})
+        assert "Capability Escalation" in out
+        assert "read_file" in out
+        assert PermissionCategory.SHELL_EXEC.value in out
+
+    def test_provenance_findings_render(self) -> None:
+        from mcp_audit.models import ProvenanceFinding, ProvenanceKind, ProvenanceSeverity
+
+        finding = ProvenanceFinding(
+            kind=ProvenanceKind.COMMAND,
+            severity=ProvenanceSeverity.HIGH,
+            server_name="srv",
+            summary="launch command changed from npx to curl",
+            baseline="npx",
+            current="curl",
+        )
+        out = self._render({"provenance_findings": [finding]})
+        assert "Provenance" in out
+        assert "launch command changed" in out
+
+    def test_integrity_findings_render(self) -> None:
+        from mcp_audit.models import IntegrityFinding, IntegrityKind, IntegritySeverity
+
+        finding = IntegrityFinding(
+            kind=IntegrityKind.ARTIFACT_DRIFT,
+            severity=IntegritySeverity.HIGH,
+            server_name="srv",
+            artifact_path="/opt/srv/main.js",
+            baseline_hash="sha256:aa",
+            current_hash="sha256:bb",
+            summary="on-disk launch artifact hash changed",
+        )
+        out = self._render({"integrity_findings": [finding]})
+        assert "Integrity" in out
+        assert "main.js" in out
+
+    def test_package_verify_findings_render(self) -> None:
+        from mcp_audit.models import (
+            PackageVerifyFinding,
+            PackageVerifyKind,
+            PackageVerifySeverity,
+        )
+
+        finding = PackageVerifyFinding(
+            kind=PackageVerifyKind.REGISTRY_DRIFT,
+            severity=PackageVerifySeverity.HIGH,
+            server_name="srv",
+            ecosystem="npm",
+            package="left-pad",
+            version="1.0.0",
+            baseline_hash="sha512:aa",
+            current_hash="sha512:bb",
+            summary="registry-published hash changed for pinned version",
+        )
+        out = self._render({"package_verify_findings": [finding]})
+        assert "Registry Package Verification" in out
+        assert "left-pad" in out
+
+    def test_artifact_verify_findings_render(self) -> None:
+        from mcp_audit.models import (
+            ArtifactVerifyFinding,
+            ArtifactVerifyKind,
+            ArtifactVerifySeverity,
+        )
+
+        finding = ArtifactVerifyFinding(
+            kind=ArtifactVerifyKind.PUBLISHED_MISMATCH,
+            severity=ArtifactVerifySeverity.HIGH,
+            server_name="srv",
+            ecosystem="pypi",
+            package="mcp-thing",
+            version="2.0.0",
+            baseline_hash="sha256:aa",
+            current_hash="sha256:bb",
+            summary="served artifact bytes do not match published hash",
+        )
+        out = self._render({"artifact_verify_findings": [finding]})
+        assert "Artifact Byte Verification" in out
+        assert "mcp-thing" in out
