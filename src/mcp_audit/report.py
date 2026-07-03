@@ -37,6 +37,11 @@ def _default_console() -> Console:
     return Console()
 
 
+# Shared stderr console for human-facing error text. Machine-parseable stdout
+# (json/sarif pipelines) must never be polluted by error messages.
+error_console = Console(stderr=True)
+
+
 class ReportGenerator:
     """Renders audit reports as Rich terminal output or JSON files."""
 

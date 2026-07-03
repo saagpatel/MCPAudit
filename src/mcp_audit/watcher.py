@@ -13,6 +13,7 @@ from rich.console import Console
 from mcp_audit.discovery import discover_all_configs
 from mcp_audit.models import AuditReport
 from mcp_audit.report import ReportGenerator
+from mcp_audit.report import error_console as _error_console
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +72,7 @@ async def _watch_loop(
     try:
         from watchfiles import awatch  # type: ignore[import-not-found, unused-ignore]
     except ImportError:
-        _console.print("[red]watchfiles not installed. Run: pip install 'mcp-audits[watch]'[/red]")
+        _error_console.print("[red]watchfiles not installed. Run: pip install 'mcp-audits[watch]'[/red]")
         raise SystemExit(1)
 
     from mcp_audit.cli import _parse_clients
@@ -97,7 +98,7 @@ async def _watch_loop(
     try:
         report = await run_scan(scan_options, override_applier=override_applier, console=_console)
     except ValueError as exc:
-        _console.print(f"[red]{exc}[/red]")
+        _error_console.print(f"[red]{exc}[/red]")
         raise SystemExit(1) from exc
     gen.render_terminal(report, verbose=verbose)
     _write_outputs(report, json_output, sarif_output)

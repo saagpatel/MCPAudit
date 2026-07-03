@@ -14,6 +14,7 @@ from rich.console import Console
 from mcp_audit.discovery import discover_all_configs
 from mcp_audit.engine import ScanOptions, run_scan
 from mcp_audit.models import AuditReport
+from mcp_audit.report import error_console as _error_console
 
 logger = logging.getLogger(__name__)
 
@@ -42,11 +43,11 @@ def _install_to_config(config_path: Path, server_name: str = "mcp-audit") -> boo
     try:
         raw: Any = json.loads(config_path.read_text())
     except (json.JSONDecodeError, OSError) as exc:
-        _console.print(f"[red]Could not read {config_path}: {exc}[/red]")
+        _error_console.print(f"[red]Could not read {config_path}: {exc}[/red]")
         return False
 
     if not isinstance(raw, dict):
-        _console.print(f"[red]Unexpected config format in {config_path}[/red]")
+        _error_console.print(f"[red]Unexpected config format in {config_path}[/red]")
         return False
 
     mcp_servers: dict[str, Any] = raw.setdefault("mcpServers", {})
@@ -60,7 +61,7 @@ def _install_to_config(config_path: Path, server_name: str = "mcp-audit") -> boo
         _console.print(f"[green]Registered {server_name} in {config_path}[/green]")
         return True
     except OSError as exc:
-        _console.print(f"[red]Could not write {config_path}: {exc}[/red]")
+        _error_console.print(f"[red]Could not write {config_path}: {exc}[/red]")
         return False
 
 

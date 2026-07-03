@@ -18,6 +18,7 @@ from rich.live import Live
 from rich.table import Table
 
 from mcp_audit.discovery import discover_all_configs
+from mcp_audit.report import error_console as _error_console
 
 logger = logging.getLogger(__name__)
 
@@ -286,10 +287,10 @@ async def _run_monitor(server_name: str, log_path: str | None) -> None:
     servers = discover_all_configs(None)
     target = next((s for s in servers if s.name == server_name), None)
     if target is None:
-        _console.print(f"[red]Server '{server_name}' not found in any MCP config.[/red]")
+        _error_console.print(f"[red]Server '{server_name}' not found in any MCP config.[/red]")
         raise SystemExit(1)
     if not target.command:
-        _console.print(
+        _error_console.print(
             f"[red]Server '{server_name}' has no stdio command (HTTP transport not supported).[/red]"
         )
         raise SystemExit(1)
@@ -297,7 +298,7 @@ async def _run_monitor(server_name: str, log_path: str | None) -> None:
     try:
         monitor = MCPProxyMonitor(log_path=Path(log_path) if log_path else None)
     except OSError as exc:
-        _console.print(f"[red]Cannot open log file {log_path}: {exc}[/red]")
+        _error_console.print(f"[red]Cannot open log file {log_path}: {exc}[/red]")
         raise SystemExit(1) from exc
     try:
         await monitor.run(
@@ -305,5 +306,5 @@ async def _run_monitor(server_name: str, log_path: str | None) -> None:
             args=target.args,
         )
     except OSError as exc:
-        _console.print(f"[red]Failed to launch server process '{target.command}': {exc}[/red]")
+        _error_console.print(f"[red]Failed to launch server process '{target.command}': {exc}[/red]")
         raise SystemExit(1) from exc

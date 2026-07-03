@@ -31,7 +31,7 @@ from mcp_audit.models import (
 )
 from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
 from mcp_audit.redaction import redact_text
-from mcp_audit.report import ReportGenerator, scrub_report_identifiers
+from mcp_audit.report import ReportGenerator, error_console, scrub_report_identifiers
 
 console = Console()
 
@@ -61,7 +61,7 @@ def discover(client_filter: str | None, verbose: bool) -> None:
             clients = [ClientType(client_filter)]
         except ValueError:
             valid = ", ".join(c.value for c in ClientType)
-            console.print(f"[red]Unknown client '{client_filter}'. Valid values: {valid}[/red]")
+            error_console.print(f"[red]Unknown client '{client_filter}'. Valid values: {valid}[/red]")
             raise SystemExit(1)
 
     parse_errors: list[ConfigParseError] = []
@@ -416,7 +416,7 @@ async def _run_scan(
         try:
             policy = load_policy(Path(policy_path))
         except Exception as exc:
-            console.print(f"[red]Failed to load policy {policy_path}: {redact_text(str(exc))}[/red]")
+            error_console.print(f"[red]Failed to load policy {policy_path}: {redact_text(str(exc))}[/red]")
             raise SystemExit(1) from exc
 
     scan_options = ScanOptions(
@@ -521,7 +521,7 @@ def _parse_clients(clients_str: str | None) -> list[ClientType] | None:
             result.append(ClientType(part))
         except ValueError:
             valid = ", ".join(c.value for c in ClientType)
-            console.print(f"[red]Unknown client '{part}'. Valid values: {valid}[/red]")
+            error_console.print(f"[red]Unknown client '{part}'. Valid values: {valid}[/red]")
             raise SystemExit(1)
     return result or None
 

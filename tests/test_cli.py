@@ -41,6 +41,17 @@ def test_version_option_reports_installed_distribution_version() -> None:
     assert "2.3.0" in result.output
 
 
+def test_error_messages_route_to_stderr_not_stdout() -> None:
+    # Machine-parseable stdout (json/sarif pipelines) must never be polluted
+    # by human-facing error text.
+    result = CliRunner().invoke(cli.main, ["scan", "--skip-connect", "--clients", "bogus"])
+
+    assert result.exit_code == 1
+    assert "Unknown client" in result.stderr
+    # result.output interleaves both streams; result.stdout is stdout alone.
+    assert "Unknown client" not in result.stdout
+
+
 def test_scan_writes_report_files_when_no_servers_discovered(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
