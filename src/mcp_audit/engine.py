@@ -346,9 +346,22 @@ async def run_scan(
             audits[idx] = audit
             progress.advance(task_id)
 
+        async def audit_one_guarded(idx: int, srv: ServerConfig) -> None:
+            # One server's analyzer crash must not cancel the sibling audits:
+            # an uncaught exception in a task group takes down the whole scan.
+            try:
+                await audit_one(idx, srv)
+            except Exception as exc:
+                audits[idx] = ServerAudit(
+                    server=srv,
+                    connection_status="failed",
+                    connection_error=redact_text(f"analysis error: {type(exc).__name__}: {exc}"),
+                )
+                progress.advance(task_id)
+
         async with anyio.create_task_group() as tg:
             for i, srv in enumerate(servers):
-                tg.start_soon(audit_one, i, srv)
+                tg.start_soon(audit_one_guarded, i, srv)
 
     # Escalation needs a baseline; warn if asked for but nothing is pinned.
     if opts.escalation_check and pin_store is not None and not pin_store.pinned_servers():

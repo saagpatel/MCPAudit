@@ -180,3 +180,27 @@ async def test_run_scan_surfaces_discovery_parse_errors(monkeypatch: pytest.Monk
     ]
     assert len(failures) == 1
     assert "/tmp/broken.json" in failures[0].summary
+
+
+async def test_one_failing_server_does_not_kill_the_scan(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A per-server analysis crash becomes a failed audit, not a dead fleet scan."""
+    boom = make_server_config(name="boom")
+    ok = make_server_config(name="ok")
+    monkeypatch.setattr(engine, "discover_all_configs", lambda clients, parse_errors=None: [boom, ok])
+
+    real_skip = engine.ServerConnector.skip_connect_audit
+
+    def exploding(self: object, srv: ServerConfig) -> object:
+        if srv.name == "boom":
+            raise RuntimeError("kaboom")
+        return real_skip(self, srv)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(engine.ServerConnector, "skip_connect_audit", exploding)
+
+    report = await run_scan(ScanOptions(skip_connect=True))
+
+    by_name = {audit.server.name: audit for audit in report.audits}
+    assert set(by_name) == {"boom", "ok"}
+    assert by_name["boom"].connection_status == "failed"
+    assert "kaboom" in (by_name["boom"].connection_error or "")
+    assert by_name["ok"].connection_status == "skipped"
