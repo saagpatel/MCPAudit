@@ -220,8 +220,15 @@ class RegistryClient:
         req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
         try:
             with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:  # noqa: S310 (https only)
-                data = json.loads(resp.read().decode("utf-8"))
-                result = data if isinstance(data, dict) else None
+                # Bounded read: registry metadata is at most a few MB; a hostile
+                # response must not exhaust memory (same cap as artifact bytes).
+                raw = resp.read(_MAX_ARTIFACT_BYTES + 1)
+                if len(raw) > _MAX_ARTIFACT_BYTES:
+                    logger.debug("Registry metadata response exceeded cap: %s", url)
+                    result = None
+                else:
+                    data = json.loads(raw.decode("utf-8"))
+                    result = data if isinstance(data, dict) else None
         except (urllib.error.URLError, TimeoutError, ValueError, OSError):
             logger.debug("Registry fetch failed: %s", url)
             result = None

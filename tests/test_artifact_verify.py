@@ -119,7 +119,7 @@ class TestRegistryJsonCache:
             def __exit__(self, *a: object) -> None:
                 return None
 
-            def read(self) -> bytes:
+            def read(self, amt: int | None = None) -> bytes:
                 return b'{"ok": 1}'
 
         def fake_urlopen(req: urllib.request.Request, timeout: float) -> _Resp:
@@ -133,6 +133,27 @@ class TestRegistryJsonCache:
         second = client._get_json("https://pypi.org/pypi/x/1.0.0/json")
         assert first == second == {"ok": 1}
         assert calls == ["https://pypi.org/pypi/x/1.0.0/json"]  # second call served from cache
+
+
+class TestRegistryJsonBound:
+    def test_oversized_metadata_response_rejected(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # A hostile/misbehaving registry must not be able to make the metadata
+        # fetch slurp unbounded bytes; the read is capped and an over-cap body
+        # is discarded, never parsed.
+        class _Resp:
+            def __enter__(self) -> _Resp:
+                return self
+
+            def __exit__(self, *a: object) -> None:
+                return None
+
+            def read(self, amt: int | None = None) -> bytes:
+                assert amt is not None, "_get_json must issue a bounded read"
+                return b"x" * amt  # body continues past whatever cap was requested
+
+        monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout: _Resp())
+        client = RegistryClient()
+        assert client._get_json("https://pypi.org/pypi/x/1.0.0/json") is None
 
 
 class TestRedirectAllowlist:
