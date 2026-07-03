@@ -139,6 +139,8 @@ All tools are read-only and take no URL or filesystem path; server discovery is 
 
 The five drift tools (`get_escalation_findings`, `get_provenance_findings`, `get_integrity_findings`, `get_package_verify_findings`, `get_artifact_verify_findings`) compare against a saved baseline, so run `mcp-audit pin` first.
 
+Every `get_*_findings` tool returns a JSON object with `findings` and `warnings` lists. `warnings` names any requested check that was skipped or degraded (for example, a drift tool called with no pin baseline) — so an empty `findings` list with empty `warnings` genuinely means "checked, clean".
+
 ---
 
 ## Features

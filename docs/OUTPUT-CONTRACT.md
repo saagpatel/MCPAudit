@@ -49,6 +49,22 @@ The report top level also includes:
 
 - `fleet_trifecta_findings`
 - `shadowing_findings`
+- `warnings` — structured coverage warnings (additive in 2.4). Each entry
+  records a requested check that was skipped or degraded, so consumers that
+  never see console output (JSON pipelines, the MCP server tools) can
+  distinguish "checked, clean" from "check silently skipped". Fields:
+  - `code` — stable machine key. Current vocabulary:
+    `pin_baseline_missing` (check requested but nothing is pinned),
+    `pin_baseline_stale` (pinned servers whose baseline predates the capture
+    this check compares against; named in `servers`),
+    `missing_credential` (e.g. `--llm-analysis` without `ANTHROPIC_API_KEY`),
+    `missing_dependency` (e.g. the `anthropic` package not installed),
+    `option_ignored` (an option passed without the check that consumes it).
+    The vocabulary is additive — consumers must tolerate unknown codes.
+  - `message` — plain-text human summary including remediation.
+  - `check` — the scan option whose coverage was reduced, or `null`.
+  - `servers` — affected server names; empty means the whole scan.
+  An empty list means every requested check ran at full coverage.
 
 `risk_score.composite` is tool-centered. `non_tool_risk` is an additive
 prompt/resource triage signal and does not change `risk_score.composite`.

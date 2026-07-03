@@ -15,7 +15,8 @@
       "servers_discovered",
       "servers_failed",
       "shadowing_findings",
-      "total_tools"
+      "total_tools",
+      "warnings"
     ],
     "audit_count": 1,
     "audit_keys": [
@@ -81,7 +82,8 @@
       "servers_discovered",
       "servers_failed",
       "shadowing_findings",
-      "total_tools"
+      "total_tools",
+      "warnings"
     ],
     "audit_count": 1,
     "audit_keys": [
@@ -140,7 +142,8 @@
       "servers_discovered",
       "servers_failed",
       "shadowing_findings",
-      "total_tools"
+      "total_tools",
+      "warnings"
     ],
     "audit_count": 1,
     "audit_keys": [
@@ -197,7 +200,8 @@
       "servers_discovered",
       "servers_failed",
       "shadowing_findings",
-      "total_tools"
+      "total_tools",
+      "warnings"
     ],
     "audit_count": 1,
     "audit_keys": [
@@ -264,7 +268,8 @@
       "servers_discovered",
       "servers_failed",
       "shadowing_findings",
-      "total_tools"
+      "total_tools",
+      "warnings"
     ],
     "audit_count": 1,
     "audit_keys": [
@@ -342,7 +347,8 @@
       "servers_discovered",
       "servers_failed",
       "shadowing_findings",
-      "total_tools"
+      "total_tools",
+      "warnings"
     ],
     "audit_count": 1,
     "audit_keys": [
@@ -401,7 +407,8 @@
       "servers_discovered",
       "servers_failed",
       "shadowing_findings",
-      "total_tools"
+      "total_tools",
+      "warnings"
     ],
     "audit_count": 1,
     "audit_keys": [
@@ -481,7 +488,8 @@
       "servers_discovered",
       "servers_failed",
       "shadowing_findings",
-      "total_tools"
+      "total_tools",
+      "warnings"
     ],
     "audit_count": 2,
     "audit_keys": [
@@ -541,7 +549,8 @@
       "servers_discovered",
       "servers_failed",
       "shadowing_findings",
-      "total_tools"
+      "total_tools",
+      "warnings"
     ],
     "audit_count": 1,
     "audit_keys": [
@@ -618,7 +627,8 @@
       "servers_discovered",
       "servers_failed",
       "shadowing_findings",
-      "total_tools"
+      "total_tools",
+      "warnings"
     ],
     "audit_count": 1,
     "audit_keys": [

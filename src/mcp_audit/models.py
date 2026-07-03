@@ -885,6 +885,25 @@ class ShadowingFinding(BaseModel):
         return shadowing_metadata(self.kind).remediation
 
 
+class ScanWarning(BaseModel):
+    """A non-fatal condition that reduced scan coverage.
+
+    Emitted when a requested check could not run (no pin baseline, missing
+    credential or dependency) or an option had no effect. Structured so JSON
+    and MCP consumers — which see no console output — can distinguish
+    "checked, clean" from "check silently skipped".
+
+    ``code`` is a stable machine key from the vocabulary documented in
+    docs/OUTPUT-CONTRACT.md. The vocabulary is additive: consumers must
+    tolerate codes they do not recognize.
+    """
+
+    code: str
+    message: str  # plain text, remediation included; no console markup
+    check: str | None = None  # the ScanOptions field whose coverage was reduced
+    servers: list[str] = Field(default_factory=list)  # affected servers; empty = whole scan
+
+
 AUDIT_REPORT_SCHEMA_VERSION = 1
 """Version of the AuditReport JSON contract.
 
@@ -913,3 +932,4 @@ class AuditReport(BaseModel):
     policy_result: PolicyResult | None = None
     fleet_trifecta_findings: list[TrifectaFinding] = Field(default_factory=list)
     shadowing_findings: list[ShadowingFinding] = Field(default_factory=list)
+    warnings: list[ScanWarning] = Field(default_factory=list)

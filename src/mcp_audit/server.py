@@ -77,6 +77,19 @@ async def _scan(options: ScanOptions) -> AuditReport:
     return await run_scan(options, override_applier=applier)
 
 
+def _findings_payload(report: AuditReport, findings: list[dict[str, Any]]) -> str:
+    """Wrap a findings list with the scan's coverage warnings.
+
+    ``warnings`` is what lets a caller distinguish "checked, clean" (empty
+    findings, empty warnings) from "check skipped" (empty findings plus a
+    warning naming the missing baseline/credential and its remediation).
+    """
+    return json.dumps(
+        {"findings": findings, "warnings": [w.model_dump() for w in report.warnings]},
+        indent=2,
+    )
+
+
 def _build_mcp_server() -> Any:
     """Build and return the FastMCP server instance with all tools registered."""
     from mcp.server import FastMCP
@@ -120,7 +133,7 @@ def _build_mcp_server() -> Any:
 
     @app.tool()  # type: ignore[untyped-decorator]
     async def get_injection_findings() -> str:
-        """Return all prompt injection findings across all servers. Returns JSON list."""
+        """Return all prompt injection findings across all servers. Returns JSON `{findings, warnings}`."""
         report = await _scan(ScanOptions(inject_check=True))
         all_findings = []
         for audit in report.audits:
@@ -135,11 +148,11 @@ def _build_mcp_server() -> Any:
                         "matched_text": f.matched_text,
                     }
                 )
-        return json.dumps(all_findings, indent=2)
+        return _findings_payload(report, all_findings)
 
     @app.tool()  # type: ignore[untyped-decorator]
     async def get_ssrf_findings() -> str:
-        """Return all SSRF findings across all servers. Returns JSON list."""
+        """Return all SSRF findings across all servers. Returns JSON `{findings, warnings}`."""
         report = await _scan(ScanOptions(ssrf_check=True))
         all_findings = []
         for audit in report.audits:
@@ -155,11 +168,11 @@ def _build_mcp_server() -> Any:
                         "evidence": f.evidence,
                     }
                 )
-        return json.dumps(all_findings, indent=2)
+        return _findings_payload(report, all_findings)
 
     @app.tool()  # type: ignore[untyped-decorator]
     async def get_trifecta_findings() -> str:
-        """Return all lethal-trifecta findings (per-server and fleet-level). Returns JSON list."""
+        """Return per-server and fleet-level lethal-trifecta findings. Returns JSON `{findings, warnings}`."""
         report = await _scan(ScanOptions(trifecta_check=True))
         all_findings = []
         for audit in report.audits:
@@ -189,11 +202,11 @@ def _build_mcp_server() -> Any:
                     "description": f.description,
                 }
             )
-        return json.dumps(all_findings, indent=2)
+        return _findings_payload(report, all_findings)
 
     @app.tool()  # type: ignore[untyped-decorator]
     async def get_shadowing_findings() -> str:
-        """Return all cross-server tool-name shadowing findings. Returns JSON list."""
+        """Return all cross-server tool-name shadowing findings. Returns JSON `{findings, warnings}`."""
         report = await _scan(ScanOptions(shadow_check=True))
         all_findings = []
         for f in report.shadowing_findings:
@@ -207,13 +220,14 @@ def _build_mcp_server() -> Any:
                     "description": f.description,
                 }
             )
-        return json.dumps(all_findings, indent=2)
+        return _findings_payload(report, all_findings)
 
     @app.tool()  # type: ignore[untyped-decorator]
     async def get_escalation_findings() -> str:
-        """Return capability-escalation findings vs the pin baseline. Returns JSON list.
+        """Return capability-escalation findings vs the pin baseline. Returns JSON `{findings, warnings}`.
 
-        Requires a pin baseline (run `mcp-audit pin` first); without pins the list is empty.
+        Requires a pin baseline (run `mcp-audit pin` first); without pins `findings` is
+        empty and `warnings` carries a `pin_baseline_missing` entry explaining why.
         """
         report = await _scan(ScanOptions(escalation_check=True))
         all_findings = []
@@ -231,14 +245,15 @@ def _build_mcp_server() -> Any:
                         "description": f.description,
                     }
                 )
-        return json.dumps(all_findings, indent=2)
+        return _findings_payload(report, all_findings)
 
     @app.tool()  # type: ignore[untyped-decorator]
     async def get_provenance_findings() -> str:
-        """Return launch-config / provenance drift findings vs the pin baseline. Returns JSON list.
+        """Return launch-config provenance drift vs the pin baseline. Returns JSON `{findings, warnings}`.
 
         Requires a pin baseline with a config snapshot (run `mcp-audit pin` first); without one
-        the list is empty.
+        `findings` is empty and `warnings` carries a `pin_baseline_missing` or
+        `pin_baseline_stale` entry explaining why.
         """
         report = await _scan(ScanOptions(provenance_check=True))
         all_findings = []
@@ -256,14 +271,14 @@ def _build_mcp_server() -> Any:
                         "description": f.description,
                     }
                 )
-        return json.dumps(all_findings, indent=2)
+        return _findings_payload(report, all_findings)
 
     @app.tool()  # type: ignore[untyped-decorator]
     async def get_integrity_findings() -> str:
-        """Return launch-artifact integrity (on-disk hash) drift vs the pin baseline. Returns JSON list.
+        """Return launch-artifact integrity drift vs the pin baseline. Returns JSON `{findings, warnings}`.
 
         Requires a pin baseline that captured artifact hashes (run `mcp-audit pin` first); without
-        one the list is empty. Offline — only on-disk bytes are hashed.
+        one `findings` is empty and `warnings` explains why. Offline — only on-disk bytes are hashed.
         """
         # Integrity is purely offline (re-hashing on-disk artifacts vs the pin
         # store), so skip spawning/connecting to servers entirely.
@@ -283,15 +298,15 @@ def _build_mcp_server() -> Any:
                         "description": f.description,
                     }
                 )
-        return json.dumps(all_findings, indent=2)
+        return _findings_payload(report, all_findings)
 
     @app.tool()  # type: ignore[untyped-decorator]
     async def get_package_verify_findings() -> str:
-        """Return registry package-verification drift vs the pin baseline. Returns JSON list.
+        """Return registry package-hash drift vs the pin baseline. Returns JSON `{findings, warnings}`.
 
         NETWORK: contacts the npm/PyPI registry. Requires a pin baseline captured with
-        `mcp-audit pin --verify-artifacts`; without one the list is empty. Does not connect
-        to the audited MCP servers (skip_connect).
+        `mcp-audit pin --verify-artifacts`; without one `findings` is empty and `warnings`
+        explains why. Does not connect to the audited MCP servers (skip_connect).
         """
         report = await _scan(ScanOptions(skip_connect=True, verify_artifacts=True))
         all_findings = []
@@ -311,15 +326,15 @@ def _build_mcp_server() -> Any:
                         "description": f.description,
                     }
                 )
-        return json.dumps(all_findings, indent=2)
+        return _findings_payload(report, all_findings)
 
     @app.tool()  # type: ignore[untyped-decorator]
     async def get_artifact_verify_findings() -> str:
-        """Return byte-level artifact-verification findings vs the pin baseline. Returns JSON list.
+        """Return byte-level artifact drift vs the pin baseline. Returns JSON `{findings, warnings}`.
 
         NETWORK: downloads npm/PyPI artifact bytes and hashes them. Requires a pin baseline
-        captured with `mcp-audit pin --download-artifacts`; without one the list is empty. Does
-        not connect to the audited MCP servers (skip_connect).
+        captured with `mcp-audit pin --download-artifacts`; without one `findings` is empty
+        and `warnings` explains why. Does not connect to the audited MCP servers (skip_connect).
         """
         report = await _scan(ScanOptions(skip_connect=True, download_artifacts=True))
         all_findings = []
@@ -339,7 +354,7 @@ def _build_mcp_server() -> Any:
                         "description": f.description,
                     }
                 )
-        return json.dumps(all_findings, indent=2)
+        return _findings_payload(report, all_findings)
 
     @app.tool()  # type: ignore[untyped-decorator]
     def list_discovered_servers() -> str:

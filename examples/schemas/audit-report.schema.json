@@ -1019,6 +1019,44 @@
       "title": "RuleOfTwoPosture",
       "type": "object"
     },
+    "ScanWarning": {
+      "description": "A non-fatal condition that reduced scan coverage.\n\nEmitted when a requested check could not run (no pin baseline, missing\ncredential or dependency) or an option had no effect. Structured so JSON\nand MCP consumers \u2014 which see no console output \u2014 can distinguish\n\"checked, clean\" from \"check silently skipped\".\n\n``code`` is a stable machine key from the vocabulary documented in\ndocs/OUTPUT-CONTRACT.md. The vocabulary is additive: consumers must\ntolerate codes they do not recognize.",
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "check": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Check"
+        },
+        "servers": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Servers",
+          "type": "array"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "ScanWarning",
+      "type": "object"
+    },
     "ServerAudit": {
       "description": "Complete audit result for a single MCP server.",
       "properties": {
@@ -1686,6 +1724,13 @@
         "$ref": "#/$defs/ShadowingFinding"
       },
       "title": "Shadowing Findings",
+      "type": "array"
+    },
+    "warnings": {
+      "items": {
+        "$ref": "#/$defs/ScanWarning"
+      },
+      "title": "Warnings",
       "type": "array"
     }
   },

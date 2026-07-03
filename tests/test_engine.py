@@ -114,6 +114,101 @@ def test_run_scan_raises_on_unparseable_extra_config(tmp_path: Path) -> None:
         anyio.run(_scan)
 
 
+def test_skipped_check_surfaces_as_structured_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A silently-skipped check must be visible in report data, not just on the console."""
+    monkeypatch.setattr(
+        engine, "discover_all_configs", lambda clients, parse_errors=None: [make_server_config(name="srv")]
+    )
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    report = anyio.run(run_scan, ScanOptions(skip_connect=True, llm_analysis=True))
+
+    [warning] = [w for w in report.warnings if w.check == "llm_analysis"]
+    assert warning.code == "missing_credential"
+    assert warning.servers == []
+    assert "[yellow]" not in warning.message  # plain text, no console markup
+    assert report.model_dump(mode="json")["warnings"][0]["code"] == "missing_credential"
+
+
+def test_ignored_option_surfaces_as_structured_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(engine, "discover_all_configs", lambda clients, parse_errors=None: [])
+
+    report = anyio.run(run_scan, ScanOptions(skip_connect=True, ssrf_allowlist="internal.example"))
+
+    [warning] = [w for w in report.warnings if w.code == "option_ignored"]
+    assert warning.check == "ssrf_check"
+
+
+def test_clean_scan_reports_no_warnings(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        engine, "discover_all_configs", lambda clients, parse_errors=None: [make_server_config(name="srv")]
+    )
+
+    report = anyio.run(run_scan, ScanOptions(skip_connect=True))
+
+    assert report.warnings == []
+
+
+def test_missing_pin_baseline_surfaces_as_structured_warning(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Pin-comparison checks with nothing pinned emit one warning per requested check."""
+    from mcp_audit import pinning
+
+    monkeypatch.setattr(
+        engine, "discover_all_configs", lambda clients, parse_errors=None: [make_server_config(name="srv")]
+    )
+    real_pin_store = pinning.PinStore
+    monkeypatch.setattr(pinning, "PinStore", lambda: real_pin_store(path=tmp_path / "pins.yaml"))
+
+    report = anyio.run(run_scan, ScanOptions(skip_connect=True, escalation_check=True, integrity_check=True))
+
+    warnings = {w.check: w for w in report.warnings}
+    assert set(warnings) == {"escalation_check", "integrity_check"}
+    assert all(w.code == "pin_baseline_missing" for w in warnings.values())
+    assert "--escalation-check: no pin baseline found" in warnings["escalation_check"].message
+
+
+def test_stale_pin_baseline_names_affected_servers(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A pinned server whose baseline predates the check's capture is named in the warning."""
+    from mcp_audit import pinning
+
+    class _StalePinStore:
+        def pinned_servers(self) -> list[str]:
+            return ["srv"]
+
+        def baseline_config(self, name: str) -> None:
+            return None
+
+        def baseline_tools(self, name: str) -> None:
+            return None
+
+        def baseline_artifacts(self, name: str) -> None:
+            return None
+
+        def baseline_package_hashes(self, name: str) -> None:
+            return None
+
+        def baseline_artifact_hashes(self, name: str) -> None:
+            return None
+
+        def check_drift(self, name: str, tools: object) -> list[object]:
+            return []
+
+    monkeypatch.setattr(
+        engine, "discover_all_configs", lambda clients, parse_errors=None: [make_server_config(name="srv")]
+    )
+    monkeypatch.setattr(pinning, "PinStore", lambda: _StalePinStore())
+
+    report = anyio.run(run_scan, ScanOptions(skip_connect=True, provenance_check=True))
+
+    [warning] = report.warnings
+    assert warning.code == "pin_baseline_stale"
+    assert warning.check == "provenance_check"
+    assert warning.servers == ["srv"]
+    assert "srv" in warning.message
+
+
 def test_schema_version_pins_top_level_field_set() -> None:
     """Couples schema_version to the AuditReport field set.
 
@@ -140,6 +235,7 @@ def test_schema_version_pins_top_level_field_set() -> None:
         "policy_result",
         "fleet_trifecta_findings",
         "shadowing_findings",
+        "warnings",
     }
 
 
