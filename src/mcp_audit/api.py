@@ -3,8 +3,8 @@
 This is the library entrypoint behind hosted callers — e.g. a "paste your MCP
 config -> trust score" page — that hold a config in memory rather than on disk.
 
-Its load-bearing guarantee: it reuses the exact CLI scan engine
-(:func:`mcp_audit.cli._run_scan_core` in ``skip_connect`` / ``config_only`` mode)
+Its load-bearing guarantee: it reuses the exact scan engine
+(:func:`mcp_audit.engine.run_scan` in ``skip_connect`` / ``config_only`` mode)
 while NEVER spawning a server process and NEVER making a network request. Only
 declared configuration is inferred — the same conservative static analysis as
 ``mcp-audit scan --config <file> --config-only --skip-connect``.
@@ -20,10 +20,6 @@ from typing import Any
 import anyio
 
 from mcp_audit.models import AuditReport, ServerConfig
-
-# ``skip_connect`` makes the connection timeout inert (no connection is ever
-# attempted); a small positive value satisfies the core signature.
-_SCAN_TIMEOUT = 10
 
 # Synthetic ``config_path`` for pasted, file-less configs. Surfaces in findings
 # in place of a real on-disk path.
@@ -80,17 +76,11 @@ async def scan_config_only(
     declared configuration only. No server process is launched and no network
     request is made.
     """
-    from mcp_audit.cli import _run_scan_core
-    from mcp_audit.overrides import OverrideApplier, OverrideConfig
+    from mcp_audit.engine import ScanOptions, run_scan
 
     servers = parse_config(config, source=source)
-    return await _run_scan_core(
-        skip_connect=True,
-        clients=None,
-        timeout=_SCAN_TIMEOUT,
-        extra_config=None,
-        override_applier=OverrideApplier(OverrideConfig()),
-        config_only=True,
+    return await run_scan(
+        ScanOptions(skip_connect=True, config_only=True),
         servers=servers,
     )
 

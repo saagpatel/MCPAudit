@@ -3,11 +3,7 @@
 from __future__ import annotations
 
 import logging
-import platform
-import re
-import socket
-import time
-from collections import Counter
+import warnings
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -18,38 +14,25 @@ if TYPE_CHECKING:
 import anyio
 import click
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
-from mcp_audit.analyzer import PermissionAnalyzer
-from mcp_audit.connector import ServerConnector
+from mcp_audit.confighealth import config_health_findings, duplicate_server_config_counts
 from mcp_audit.discovery import discover_all_configs
+from mcp_audit.engine import ScanOptions, run_scan
 from mcp_audit.models import (
     AuditReport,
     ClientType,
-    ConfigHealthFinding,
-    ConfigHealthSeverity,
     DriftFinding,
     DriftStatus,
     EscalationFinding,
     ProvenanceFinding,
     ServerAudit,
     ServerConfig,
-    ShadowingFinding,
-    TransportType,
-    TrifectaFinding,
 )
 from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
 from mcp_audit.redaction import redact_text
 from mcp_audit.report import ReportGenerator, scrub_report_identifiers
-from mcp_audit.scorer import RiskScorer
 
 console = Console()
-
-_CREDENTIAL_HEAVY_THRESHOLD = 3
-_REMOTE_URL = re.compile(r"https?://", re.IGNORECASE)
-_SHELL_WRAPPERS = {"bash", "sh", "zsh", "fish", "pwsh", "powershell", "cmd", "cmd.exe"}
-_PACKAGE_RUNNERS = {"npx", "uvx", "docker"}
-_DOCKER_SUBCOMMANDS = {"container", "image", "pull", "run"}
 
 
 @click.group()
@@ -341,386 +324,47 @@ async def _run_scan_core(
     config_only: bool = False,
     servers: list[ServerConfig] | None = None,
 ) -> AuditReport:
-    """Core scan pipeline — discovers, connects, analyzes, scores. Returns AuditReport.
+    """Deprecated compatibility alias for :func:`mcp_audit.engine.run_scan`.
 
-    When ``servers`` is provided (a pre-parsed list, e.g. from the in-memory
-    ``mcp_audit.api`` entrypoint), discovery is skipped entirely and that list is
-    scanned as-is — no filesystem access for config discovery.
+    The scan pipeline moved to :mod:`mcp_audit.engine`; this wrapper keeps the
+    old private entry point working for external callers (e.g. shadow-mcp)
+    until they migrate. It preserves the historical behavior of printing
+    progress + advisory warnings to the CLI console.
+
+    FROZEN SURFACE: never extend this signature. New scan options go on
+    :class:`mcp_audit.engine.ScanOptions` only — a flag added here but not
+    forwarded in the kwargs block below would be silently ignored.
     """
-    import os
-
-    start = time.monotonic()
-
-    # 1. Discover servers (unless the caller supplied a pre-parsed list).
-    if servers is None:
-        servers = [] if config_only else discover_all_configs(clients)
-
-        if extra_config:
-            extra_servers = _parse_extra_config(Path(extra_config))
-            servers = extra_servers if config_only else servers + extra_servers
-
-    connector = ServerConnector(timeout=float(timeout))
-    analyzer = PermissionAnalyzer()
-    scorer = RiskScorer()
-
-    # Optional Phase 3 components
-    llm_analyzer = None
-    if llm_analysis:
-        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-        if not api_key:
-            console.print(  # noqa: E501
-                "[yellow]--llm-analysis: ANTHROPIC_API_KEY not set, skipping LLM analysis.[/yellow]"
-            )
-        else:
-            try:
-                from mcp_audit.llm_analyzer import LLMAnalyzer
-
-                llm_analyzer = LLMAnalyzer(api_key=api_key)
-            except ImportError:
-                console.print(
-                    "[yellow]--llm-analysis: anthropic package not installed. "
-                    "Run: pip install 'mcp-audits[llm]'[/yellow]"
-                )
-
-    injection_detector = None
-    if inject_check:
-        from mcp_audit.injection import InjectionDetector
-
-        injection_detector = InjectionDetector()
-
-    ssrf_detector = None
-    ssrf_allow: set[str] = set()
-    ssrf_suppressed = 0
-    if ssrf_check:
-        from mcp_audit.ssrf import SsrfDetector, parse_host_allowlist
-
-        ssrf_detector = SsrfDetector()
-        ssrf_allow = parse_host_allowlist(ssrf_allowlist)
-    elif ssrf_allowlist:
-        console.print("[yellow]--ssrf-allowlist has no effect without --ssrf-check.[/yellow]")
-
-    egress_detector = None
-    egress_server_allow: dict[str, set[str]] = {}
-    if egress_check:
-        from mcp_audit.egress import EgressDetector
-        from mcp_audit.ssrf import SsrfDetector, parse_host_allowlist
-
-        egress_detector = EgressDetector(
-            parse_host_allowlist(egress_allowlist),
-            parse_host_allowlist(multi_tenant_hosts),
-        )
-        # Per-server allowlists (policy ``servers.<name>.egress_allowlist``) are normalised
-        # once here and unioned with the global allowlist per server inside the scan loop.
-        egress_server_allow = {
-            name: parse_host_allowlist(",".join(hosts))
-            for name, hosts in (egress_server_allowlists or {}).items()
-            if hosts
-        }
-        # Egress consumes the SSRF caller-controlled signal; ensure SSRF runs to feed it.
-        # When SSRF was not explicitly requested it runs as an internal substrate only — its
-        # findings are dropped post-loop (see "SSRF substrate suppression") so they never
-        # surface in output or trip the fail_on.ssrf gate unasked.
-        if ssrf_detector is None:
-            ssrf_detector = SsrfDetector()
-            console.print(
-                "[dim]--egress-check runs SSRF internally to map outbound destinations; "
-                "pass --ssrf-check to also report SSRF findings.[/dim]"
-            )
-    elif egress_allowlist or multi_tenant_hosts:
-        console.print(
-            "[yellow]--egress-allowlist/--multi-tenant-hosts have no effect without --egress-check.[/yellow]"
-        )
-
-    trifecta_analyzer = None
-    if trifecta_check:
-        from mcp_audit.trifecta import TrifectaAnalyzer
-
-        trifecta_analyzer = TrifectaAnalyzer()
-
-    shadowing_analyzer = None
-    if shadow_check:
-        from mcp_audit.shadowing import ShadowingAnalyzer
-
-        shadowing_analyzer = ShadowingAnalyzer()
-
-    escalation_analyzer = None
-    if escalation_check:
-        from mcp_audit.escalation import EscalationAnalyzer
-
-        escalation_analyzer = EscalationAnalyzer()
-
-    provenance_analyzer = None
-    if provenance_check:
-        from mcp_audit.provenance import ProvenanceAnalyzer
-
-        provenance_analyzer = ProvenanceAnalyzer()
-
-    integrity_analyzer = None
-    if integrity_check:
-        from mcp_audit.integrity import IntegrityAnalyzer
-
-        integrity_analyzer = IntegrityAnalyzer()
-
-    # One RegistryClient shared by both verifiers so a package's registry JSON (which
-    # carries both the published hash and the artifact download URL) is fetched once per
-    # scan when --verify-artifacts and --download-artifacts run together. Fresh per scan,
-    # so the per-instance cache never serves stale metadata across scans.
-    package_verifier = None
-    artifact_verifier = None
-    if verify_artifacts or download_artifacts:
-        from mcp_audit.pkgverify import ArtifactVerifier, PackageVerifier, RegistryClient
-
-        registry_client = RegistryClient()
-        if verify_artifacts:
-            package_verifier = PackageVerifier(fetch=registry_client.fetch_hash)
-        if download_artifacts:
-            artifact_verifier = ArtifactVerifier(fetch=registry_client.fetch_artifact)
-
-    # --escalation/provenance/integrity-check, --verify-artifacts and
-    # --download-artifacts all imply a pin comparison, so a pin store is needed even
-    # when --pin-check was not passed. Drift output stays gated on pin_check.
-    pin_store = None
-    if (
-        pin_check
-        or escalation_check
-        or provenance_check
-        or integrity_check
-        or verify_artifacts
-        or download_artifacts
-    ):
-        from mcp_audit.pinning import PinStore
-
-        pin_store = PinStore()
-
-    audits: list[ServerAudit] = [ServerAudit(server=s, connection_status="pending") for s in servers]
-
-    # 2. Connect / analyze / score each server concurrently
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        TimeElapsedColumn(),
-        console=console,
-        transient=True,
-    ) as progress:
-        task_id = progress.add_task(f"Auditing {len(servers)} server(s)...", total=len(servers))
-
-        async def audit_one(idx: int, srv: ServerConfig) -> None:
-            if skip_connect:
-                audit = connector.skip_connect_audit(srv)
-            else:
-                audit = await connector.connect(srv)
-
-            # Analyze tool list for new permission findings
-            if not skip_connect or not audit.permissions:
-                raw_findings = analyzer.analyze_server(audit.tools)
-            else:
-                raw_findings = list(audit.permissions)
-
-            # Optional LLM augmentation for low-confidence tools
-            if llm_analyzer is not None:
-                llm_findings = await llm_analyzer.analyze_server(audit.tools, raw_findings)
-                raw_findings = raw_findings + llm_findings
-
-            # Apply user overrides between analysis and scoring
-            audit.permissions = override_applier.apply(srv.name, raw_findings)
-            audit.capability_findings = analyzer.analyze_capabilities(audit.prompts, audit.resources)
-            audit.risk_score = scorer.score_server(audit.permissions)
-
-            # Optional injection detection
-            if injection_detector is not None:
-                audit.injection_findings = injection_detector.scan_server(
-                    audit.tools, audit.prompts, audit.resources
-                )
-
-            # Optional SSRF detection (allowlist filtering happens in a post-loop pass)
-            if ssrf_detector is not None:
-                audit.ssrf_findings = ssrf_detector.scan_server(audit.tools, audit.resources)
-
-            # Optional egress detection (consumes the SSRF findings just computed + resource URIs)
-            if egress_detector is not None:
-                audit.egress_findings = egress_detector.scan_server(audit, egress_server_allow.get(srv.name))
-
-            audit.non_tool_risk = scorer.score_non_tool(audit.capability_findings, audit.injection_findings)
-
-            # Optional pin drift check (gated on --pin-check, not mere store presence)
-            if pin_store is not None and pin_check:
-                audit.drift_findings = pin_store.check_drift(srv.name, audit.tools)
-
-            # Optional trifecta per-server detection
-            if trifecta_analyzer is not None:
-                audit.trifecta_findings = trifecta_analyzer.analyze_server(audit)
-
-            # Optional capability-escalation check vs the pin baseline
-            if escalation_analyzer is not None and pin_store is not None:
-                baseline = pin_store.baseline_tools(srv.name)
-                if baseline:
-                    audit.escalation_findings = escalation_analyzer.analyze_server(
-                        srv.name, baseline, audit.tools
-                    )
-
-            # Optional provenance / launch-config drift check vs the pin baseline
-            if provenance_analyzer is not None and pin_store is not None:
-                baseline_config = pin_store.baseline_config(srv.name)
-                if baseline_config:
-                    audit.provenance_findings = provenance_analyzer.analyze_server(srv, baseline_config)
-
-            # Optional launch-artifact integrity (on-disk hash) check vs the pin baseline
-            if integrity_analyzer is not None and pin_store is not None:
-                baseline_artifacts = pin_store.baseline_artifacts(srv.name)
-                if baseline_artifacts:
-                    audit.integrity_findings = integrity_analyzer.analyze_server(srv.name, baseline_artifacts)
-
-            # Optional registry package verification (network) vs the pin baseline.
-            # Runs in a worker thread so the synchronous registry I/O never blocks
-            # the anyio event loop.
-            if package_verifier is not None and pin_store is not None:
-                baseline_pkgs = pin_store.baseline_package_hashes(srv.name)
-                if baseline_pkgs:
-                    audit.package_verify_findings = await anyio.to_thread.run_sync(
-                        package_verifier.analyze_server, srv.name, srv, baseline_pkgs
-                    )
-
-            # Optional byte-level artifact verification (network) vs the pin baseline.
-            # Downloads + hashes off the event loop so blocking I/O never stalls anyio.
-            if artifact_verifier is not None and pin_store is not None:
-                baseline_artifact_pkgs = pin_store.baseline_artifact_hashes(srv.name)
-                if baseline_artifact_pkgs:
-                    audit.artifact_verify_findings = await anyio.to_thread.run_sync(
-                        artifact_verifier.analyze_server, srv.name, srv, baseline_artifact_pkgs
-                    )
-
-            audits[idx] = audit
-            progress.advance(task_id)
-
-        async with anyio.create_task_group() as tg:
-            for i, srv in enumerate(servers):
-                tg.start_soon(audit_one, i, srv)
-
-    # Escalation needs a baseline; warn if asked for but nothing is pinned.
-    if escalation_check and pin_store is not None and not pin_store.pinned_servers():
-        console.print(
-            "[yellow]--escalation-check: no pin baseline found. "
-            "Run `mcp-audit pin` first to capture a baseline to compare against.[/yellow]"
-        )
-
-    # Provenance needs a config snapshot in the baseline; warn if nothing is pinned.
-    if provenance_check and pin_store is not None and not pin_store.pinned_servers():
-        console.print(
-            "[yellow]--provenance-check: no pin baseline found. "
-            "Run `mcp-audit pin` first to capture a launch-config baseline to compare against.[/yellow]"
-        )
-
-    # Integrity needs artifact hashes in the baseline; warn if nothing is pinned.
-    if integrity_check and pin_store is not None and not pin_store.pinned_servers():
-        console.print(
-            "[yellow]--integrity-check: no pin baseline found. "
-            "Run `mcp-audit pin` first to capture launch-artifact hashes to compare against.[/yellow]"
-        )
-
-    # Package verification needs registry hashes captured with --verify-artifacts.
-    if verify_artifacts and pin_store is not None and not pin_store.pinned_servers():
-        console.print(
-            "[yellow]--verify-artifacts: no pin baseline found. "
-            "Run `mcp-audit pin --verify-artifacts` first to capture registry package hashes.[/yellow]"
-        )
-
-    # Byte-level artifact verification needs hashes captured with --download-artifacts.
-    if download_artifacts and pin_store is not None and not pin_store.pinned_servers():
-        console.print(
-            "[yellow]--download-artifacts: no pin baseline found. "
-            "Run `mcp-audit pin --download-artifacts` first to capture artifact byte-hashes.[/yellow]"
-        )
-
-    # Per-server staleness: a server IS pinned but its baseline predates the
-    # provenance/integrity snapshot, so it is silently skipped. Surface it so the
-    # user knows the check ran but found nothing to compare for those servers.
-    if pin_store is not None and (
-        provenance_check or integrity_check or verify_artifacts or download_artifacts
-    ):
-        pinned = set(pin_store.pinned_servers())
-        scanned_pinned = [audit.server.name for audit in audits if audit.server.name in pinned]
-        if provenance_check:
-            stale = sorted(n for n in scanned_pinned if pin_store.baseline_config(n) is None)
-            if stale:
-                console.print(
-                    f"[yellow]--provenance-check: {len(stale)} pinned server(s) predate "
-                    f"launch-config snapshots and were skipped: {', '.join(stale)}. "
-                    "Re-pin with `mcp-audit pin` to enable provenance comparison.[/yellow]"
-                )
-        if integrity_check:
-            stale = sorted(n for n in scanned_pinned if pin_store.baseline_artifacts(n) is None)
-            if stale:
-                console.print(
-                    f"[yellow]--integrity-check: {len(stale)} pinned server(s) predate "
-                    f"artifact-hash capture and were skipped: {', '.join(stale)}. "
-                    "Re-pin with `mcp-audit pin` to enable integrity comparison.[/yellow]"
-                )
-        if verify_artifacts:
-            stale = sorted(n for n in scanned_pinned if pin_store.baseline_package_hashes(n) is None)
-            if stale:
-                console.print(
-                    f"[yellow]--verify-artifacts: {len(stale)} pinned server(s) lack captured "
-                    f"registry hashes and were skipped: {', '.join(stale)}. "
-                    "Re-pin with `mcp-audit pin --verify-artifacts` to enable verification.[/yellow]"
-                )
-        if download_artifacts:
-            stale = sorted(n for n in scanned_pinned if pin_store.baseline_artifact_hashes(n) is None)
-            if stale:
-                console.print(
-                    f"[yellow]--download-artifacts: {len(stale)} pinned server(s) lack captured "
-                    f"artifact byte-hashes and were skipped: {', '.join(stale)}. "
-                    "Re-pin with `mcp-audit pin --download-artifacts` to enable verification.[/yellow]"
-                )
-
-    # SSRF substrate suppression — when egress ran SSRF only to map its destinations and
-    # --ssrf-check was not requested, egress has already consumed the findings, so drop them
-    # here (post-loop, beside the allowlist pass) rather than surface them in output or gating.
-    if egress_check and not ssrf_check:
-        for audit in audits:
-            audit.ssrf_findings = []
-
-    # SSRF allowlist suppression — post-loop pass over all audits (outer scope, so
-    # the suppressed counter accumulates cleanly).
-    if ssrf_allow:
-        from mcp_audit.ssrf import filter_allowlisted_ssrf
-
-        for audit in audits:
-            audit.ssrf_findings, dropped = filter_allowlisted_ssrf(audit.ssrf_findings, ssrf_allow)
-            ssrf_suppressed += dropped
-    if ssrf_suppressed:
-        console.print(
-            f"[dim]--ssrf-allowlist: suppressed {ssrf_suppressed} SSRF finding(s) "
-            "with an allowlisted fixed target host.[/dim]"
-        )
-
-    # Fleet-level trifecta pass — runs once after all servers are audited
-    fleet_trifecta: list[TrifectaFinding] = []
-    if trifecta_analyzer is not None:
-        fleet_trifecta = trifecta_analyzer.analyze_fleet(audits)
-
-    # Fleet-level shadowing pass — runs once after all servers are audited
-    shadowing: list[ShadowingFinding] = []
-    if shadowing_analyzer is not None:
-        shadowing = shadowing_analyzer.analyze_fleet(audits)
-
-    report = AuditReport(
-        scan_timestamp=datetime.now(UTC),
-        hostname=socket.gethostname(),
-        os_platform=platform.system(),
-        servers_discovered=len(servers),
-        servers_connected=sum(1 for a in audits if a.connection_status == "connected"),
-        servers_failed=sum(1 for a in audits if a.connection_status in ("failed", "timeout")),
-        total_tools=sum(len(a.tools) for a in audits),
-        high_risk_servers=sum(
-            1 for a in audits if a.risk_score is not None and a.risk_score.composite >= 7.0
-        ),
-        audits=audits,
-        scan_duration_seconds=time.monotonic() - start,
-        config_health_findings=_config_health_findings(servers),
-        fleet_trifecta_findings=fleet_trifecta,
-        shadowing_findings=shadowing,
+    warnings.warn(
+        "mcp_audit.cli._run_scan_core is deprecated; use mcp_audit.engine.run_scan "
+        "with mcp_audit.engine.ScanOptions instead.",
+        DeprecationWarning,
+        stacklevel=2,
     )
-    return report
+    options = ScanOptions(
+        skip_connect=skip_connect,
+        config_only=config_only,
+        clients=clients,
+        timeout=timeout,
+        extra_config=extra_config,
+        inject_check=inject_check,
+        ssrf_check=ssrf_check,
+        egress_check=egress_check,
+        pin_check=pin_check,
+        trifecta_check=trifecta_check,
+        shadow_check=shadow_check,
+        escalation_check=escalation_check,
+        provenance_check=provenance_check,
+        integrity_check=integrity_check,
+        verify_artifacts=verify_artifacts,
+        download_artifacts=download_artifacts,
+        llm_analysis=llm_analysis,
+        ssrf_allowlist=ssrf_allowlist,
+        egress_allowlist=egress_allowlist,
+        multi_tenant_hosts=multi_tenant_hosts,
+        egress_server_allowlists=egress_server_allowlists,
+    )
+    return await run_scan(options, servers=servers, override_applier=override_applier, console=console)
 
 
 async def _run_scan(
@@ -752,7 +396,7 @@ async def _run_scan(
     config_only: bool = False,
     redact: bool = False,
 ) -> None:
-    """CLI scan entrypoint — calls _run_scan_core then renders output."""
+    """CLI scan entrypoint — calls the engine's run_scan then renders output."""
     if config_only and not extra_config:
         raise click.ClickException("--config-only requires --config PATH.")
 
@@ -772,16 +416,25 @@ async def _run_scan(
             console.print(f"[red]Failed to load policy {policy_path}: {redact_text(str(exc))}[/red]")
             raise SystemExit(1) from exc
 
-    report = await _run_scan_core(
-        skip_connect,
-        client_list,
-        timeout,
-        extra_config,
-        override_applier,
+    scan_options = ScanOptions(
+        skip_connect=skip_connect,
+        config_only=config_only,
+        clients=client_list,
+        timeout=timeout,
+        extra_config=extra_config,
         inject_check=inject_check,
         ssrf_check=ssrf_check,
-        ssrf_allowlist=ssrf_allowlist,
         egress_check=egress_check,
+        pin_check=pin_check,
+        trifecta_check=trifecta_check,
+        shadow_check=shadow_check,
+        escalation_check=escalation_check,
+        provenance_check=provenance_check,
+        integrity_check=integrity_check,
+        verify_artifacts=verify_artifacts,
+        download_artifacts=download_artifacts,
+        llm_analysis=llm_analysis,
+        ssrf_allowlist=ssrf_allowlist,
         egress_allowlist=_merge_host_args(egress_allowlist, policy.egress_allowlist if policy else []),
         multi_tenant_hosts=_merge_host_args(multi_tenant_hosts, policy.multi_tenant_hosts if policy else []),
         egress_server_allowlists=(
@@ -793,17 +446,13 @@ async def _run_scan(
             if policy
             else None
         ),
-        pin_check=pin_check,
-        trifecta_check=trifecta_check,
-        shadow_check=shadow_check,
-        escalation_check=escalation_check,
-        provenance_check=provenance_check,
-        integrity_check=integrity_check,
-        verify_artifacts=verify_artifacts,
-        download_artifacts=download_artifacts,
-        llm_analysis=llm_analysis,
-        config_only=config_only,
     )
+    try:
+        report = await run_scan(scan_options, override_applier=override_applier, console=console)
+    except ValueError as exc:
+        # A caller-supplied --config path that is missing or unparseable must be
+        # a hard error, not a silently-empty scan that passes downstream gates.
+        raise click.ClickException(str(exc)) from exc
 
     if policy is not None:
         from mcp_audit.policy import evaluate_policy
@@ -871,309 +520,18 @@ def _parse_clients(clients_str: str | None) -> list[ClientType] | None:
     return result or None
 
 
-def _parse_extra_config(path: Path) -> list[ServerConfig]:
-    """Attempt to parse a standalone config file using Claude Code discoverer as fallback."""
-    if not path.exists():
-        console.print(f"[red]Config file not found: {path}[/red]")
-        return []
-    try:
-        from mcp_audit.discovery.claude_code import ClaudeCodeDiscoverer
-
-        return ClaudeCodeDiscoverer().parse(path)
-    except Exception as exc:
-        console.print(f"[red]Failed to parse {path}: {redact_text(str(exc))}[/red]")
-        return []
-
-
 def _truncate(s: str, max_len: int) -> str:
     return s if len(s) <= max_len else s[: max_len - 1] + "…"
 
 
-def _duplicate_server_config_counts(servers: list[ServerConfig]) -> dict[str, int]:
-    counts = Counter(server.name for server in servers)
-    return {name: count for name, count in counts.items() if count > 1}
-
-
-def _conflicting_scope_server_names(servers: list[ServerConfig]) -> dict[str, list[str]]:
-    scopes_by_name: dict[str, set[str]] = {}
-    for server in servers:
-        scope = "global" if server.project_path is None else f"project:{server.project_path}"
-        scopes_by_name.setdefault(server.name, set()).add(scope)
-    return {
-        name: sorted(scopes)
-        for name, scopes in scopes_by_name.items()
-        if "global" in scopes and any(scope.startswith("project:") for scope in scopes)
-    }
-
-
-def _conflicting_definition_server_names(servers: list[ServerConfig]) -> dict[str, list[str]]:
-    definitions_by_name: dict[str, set[str]] = {}
-    for server in servers:
-        definitions_by_name.setdefault(server.name, set()).add(_server_definition_summary(server))
-    return {
-        name: sorted(definitions) for name, definitions in definitions_by_name.items() if len(definitions) > 1
-    }
-
-
 def _render_config_health_warnings(servers: list[ServerConfig]) -> None:
-    findings = _config_health_findings(servers)
+    findings = config_health_findings(servers)
     if not findings:
         return
 
     console.print("[yellow]Config health warnings found.[/yellow]")
     for finding in findings:
         console.print(f"[yellow]- {finding.summary}[/yellow]")
-
-
-def _config_health_findings(servers: list[ServerConfig]) -> list[ConfigHealthFinding]:
-    findings: list[ConfigHealthFinding] = []
-
-    for name, count in sorted(_duplicate_server_config_counts(servers).items()):
-        findings.append(
-            ConfigHealthFinding(
-                finding_type="duplicate_server_name",
-                severity=ConfigHealthSeverity.MEDIUM,
-                server_name=name,
-                summary=(
-                    f"'{name}' appears {count} times; pins are keyed by server name, so rename "
-                    "duplicate MCP server entries before pinning."
-                ),
-                details=[f"{count} discovered configs share the same server name."],
-                remediation="Rename duplicate MCP server entries before creating or refreshing pins.",
-            )
-        )
-
-    for name, scopes in sorted(_conflicting_scope_server_names(servers).items()):
-        findings.append(
-            ConfigHealthFinding(
-                finding_type="conflicting_scope_server_name",
-                severity=ConfigHealthSeverity.MEDIUM,
-                server_name=name,
-                summary=(
-                    f"'{name}' is configured in both global and project scopes; "
-                    "review which entry should be authoritative before pinning."
-                ),
-                details=scopes,
-                remediation=(
-                    "If project-local shadowing is intentional, give the project server a unique reviewed "
-                    "name before pinning. Otherwise remove the unintended duplicate so reviews and pins "
-                    "refer to one authoritative scope."
-                ),
-            )
-        )
-
-    for name, definitions in sorted(_conflicting_definition_server_names(servers).items()):
-        findings.append(
-            ConfigHealthFinding(
-                finding_type="conflicting_server_definition",
-                severity=ConfigHealthSeverity.MEDIUM,
-                server_name=name,
-                summary=(
-                    f"'{name}' has multiple command or URL definitions across discovered configs; "
-                    "review which one should be trusted."
-                ),
-                details=definitions,
-                remediation=(
-                    "Align duplicate server definitions or rename entries so each reviewed server name "
-                    "maps to one intended command or URL."
-                ),
-            )
-        )
-
-    for server in servers:
-        if server.transport == TransportType.STDIO and not server.command:
-            findings.append(
-                ConfigHealthFinding(
-                    finding_type="missing_stdio_command",
-                    severity=ConfigHealthSeverity.HIGH,
-                    server_name=server.name,
-                    summary=f"'{server.name}' uses stdio but has no command; connected scans will fail.",
-                    details=["stdio transport requires a configured command."],
-                    remediation="Add a command for the server or remove the incomplete config entry.",
-                )
-            )
-        if _missing_local_binary(server):
-            findings.append(
-                ConfigHealthFinding(
-                    finding_type="missing_local_binary",
-                    severity=ConfigHealthSeverity.HIGH,
-                    server_name=server.name,
-                    summary=(
-                        f"'{server.name}' command path does not exist locally; connected scans will fail."
-                    ),
-                    details=[f"Configured command: {server.command}"],
-                    remediation=(
-                        "Install the referenced local binary, correct the command path, or remove the stale "
-                        "server entry."
-                    ),
-                )
-            )
-        if server.transport == TransportType.SSE:
-            findings.append(
-                ConfigHealthFinding(
-                    finding_type="deprecated_sse_transport",
-                    severity=ConfigHealthSeverity.LOW,
-                    server_name=server.name,
-                    summary=(
-                        f"'{server.name}' uses deprecated SSE transport; prefer Streamable HTTP if supported."
-                    ),
-                    details=["SSE is a legacy MCP transport."],
-                    remediation="Move the server to Streamable HTTP when the server supports it.",
-                )
-            )
-        if server.transport in (TransportType.HTTP, TransportType.SSE) or server.url:
-            findings.append(
-                ConfigHealthFinding(
-                    finding_type="remote_endpoint",
-                    severity=ConfigHealthSeverity.MEDIUM,
-                    server_name=server.name,
-                    summary=(
-                        f"'{server.name}' declares a remote endpoint; connected scans may contact "
-                        "the network."
-                    ),
-                    details=["HTTP or SSE MCP transports contact the configured URL during scans."],
-                    remediation="Review the remote endpoint before running connected scans.",
-                )
-            )
-        if _REMOTE_URL.search(_config_command_line(server)):
-            findings.append(
-                ConfigHealthFinding(
-                    finding_type="remote_url_argument",
-                    severity=ConfigHealthSeverity.MEDIUM,
-                    server_name=server.name,
-                    summary=(
-                        f"'{server.name}' command or args include a remote URL; review the outbound target."
-                    ),
-                    details=["The configured command line contains an HTTP or HTTPS URL."],
-                    remediation="Review the URL and package source before connecting to the server.",
-                )
-            )
-        package_runner_source = _package_runner_source(server)
-        if package_runner_source is not None:
-            findings.append(
-                ConfigHealthFinding(
-                    finding_type="package_runner_source_review",
-                    severity=ConfigHealthSeverity.MEDIUM,
-                    server_name=server.name,
-                    summary=(
-                        f"'{server.name}' launches through package runner '{_command_name(server.command)}'; "
-                        "review the package or image source before connecting."
-                    ),
-                    details=[f"Source: {redact_text(package_runner_source)}"],
-                    remediation=(
-                        "Pin package versions or container digests where possible and review the source "
-                        "before running connected scans."
-                    ),
-                )
-            )
-        command_name = _command_name(server.command)
-        if command_name in _SHELL_WRAPPERS:
-            findings.append(
-                ConfigHealthFinding(
-                    finding_type="shell_wrapper_launch",
-                    severity=ConfigHealthSeverity.MEDIUM,
-                    server_name=server.name,
-                    summary=(
-                        f"'{server.name}' launches through shell wrapper '{command_name}'; "
-                        "review args before connecting."
-                    ),
-                    details=["Shell wrappers can hide compound commands in arguments."],
-                    remediation="Review the shell arguments before running connected scans.",
-                )
-            )
-        credential_count = len(server.env_keys) + len(server.headers_keys)
-        if credential_count >= _CREDENTIAL_HEAVY_THRESHOLD:
-            findings.append(
-                ConfigHealthFinding(
-                    finding_type="credential_heavy_config",
-                    severity=ConfigHealthSeverity.MEDIUM,
-                    server_name=server.name,
-                    summary=(
-                        f"'{server.name}' references {credential_count} credential key names; "
-                        "review their access scope."
-                    ),
-                    details=["Only credential key names are reported; credential values are not stored."],
-                    remediation="Confirm the referenced credentials are scoped to the server's purpose.",
-                )
-            )
-
-    return findings
-
-
-def _config_command_line(server: ServerConfig) -> str:
-    return " ".join(part for part in [server.command, *server.args] if part)
-
-
-def _missing_local_binary(server: ServerConfig) -> bool:
-    if server.transport != TransportType.STDIO or not server.command:
-        return False
-    command = server.command.strip()
-    if "/" in command or "\\" in command:
-        return not Path(command).expanduser().exists()
-    return False
-
-
-def _package_runner_source(server: ServerConfig) -> str | None:
-    command_name = _command_name(server.command)
-    if command_name not in _PACKAGE_RUNNERS:
-        return None
-    if command_name == "docker":
-        return _docker_image_source(server.args)
-    return _first_package_source_arg(server.args)
-
-
-def _first_package_source_arg(args: list[str]) -> str | None:
-    skip_next = False
-    for arg in args:
-        if skip_next:
-            return arg
-        if arg in {"--package", "--from", "-p"}:
-            skip_next = True
-            continue
-        if arg.startswith("-"):
-            continue
-        return arg
-    return None
-
-
-def _docker_image_source(args: list[str]) -> str | None:
-    if not args:
-        return None
-    index = 0
-    if args[0] in _DOCKER_SUBCOMMANDS:
-        index = 1
-    if len(args) > 1 and args[0] == "container" and args[1] == "run":
-        index = 2
-    while index < len(args):
-        arg = args[index]
-        if arg in {"--env", "-e", "--name", "--network", "--platform", "--volume", "-v", "--workdir", "-w"}:
-            index += 2
-            continue
-        if arg.startswith("--") and "=" not in arg:
-            index += 1
-            continue
-        if arg.startswith("-") and "=" not in arg:
-            index += 1
-            continue
-        return arg
-    return None
-
-
-def _server_definition_summary(server: ServerConfig) -> str:
-    if server.url:
-        return f"{server.transport.value} url={redact_text(server.url)}"
-    command = server.command or "missing-command"
-    source = _package_runner_source(server)
-    if source is not None:
-        return f"{server.transport.value} command={_command_name(command)} source={redact_text(source)}"
-    return f"{server.transport.value} command={_command_name(command)}"
-
-
-def _command_name(command: str | None) -> str:
-    if not command:
-        return ""
-    normalized = command.replace("\\", "/").rstrip("/")
-    return normalized.rsplit("/", 1)[-1].lower()
 
 
 # Register watch, monitor, serve, pin subcommands
@@ -1335,7 +693,7 @@ async def _run_pin(
 
     assert isinstance(store, PS)
     override_applier = OverrideApplier(load_override_config(DEFAULT_OVERRIDE_PATH))
-    report = await _run_scan_core(False, None, 10, None, override_applier)
+    report = await run_scan(ScanOptions(), override_applier=override_applier, console=console)
     duplicate_names = _duplicate_server_names(report.audits)
     verifier, artifact_verifier = _make_registry_verifiers(verify_artifacts, download_artifacts)
 
@@ -1431,7 +789,7 @@ async def _run_pin_refresh(
     assert isinstance(store, PS)
     verifier, artifact_verifier = _make_registry_verifiers(verify_artifacts, download_artifacts)
     override_applier = OverrideApplier(load_override_config(DEFAULT_OVERRIDE_PATH))
-    report = await _run_scan_core(False, None, 10, None, override_applier)
+    report = await run_scan(ScanOptions(), override_applier=override_applier, console=console)
 
     matching_audits = [audit for audit in report.audits if audit.server.name == server_name]
     if not matching_audits:
@@ -1558,7 +916,7 @@ def _refresh_security_deltas(
 
 
 def _duplicate_server_names(audits: list[ServerAudit]) -> set[str]:
-    return set(_duplicate_server_config_counts([audit.server for audit in audits]))
+    return set(duplicate_server_config_counts([audit.server for audit in audits]))
 
 
 def _ambiguous_pin_message(server_name: str) -> str:

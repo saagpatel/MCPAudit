@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from mcp_audit.cli import _config_health_findings
+from mcp_audit.confighealth import config_health_findings
 from mcp_audit.discovery.claude_code import ClaudeCodeDiscoverer
 
 CONFIG_HEALTH_FIXTURES = Path("tests/fixtures/config_health")
@@ -12,7 +12,7 @@ CONFIG_HEALTH_FIXTURES = Path("tests/fixtures/config_health")
 
 def _finding_types(fixture_name: str) -> set[str]:
     servers = ClaudeCodeDiscoverer().parse(CONFIG_HEALTH_FIXTURES / fixture_name)
-    return {finding.finding_type for finding in _config_health_findings(servers)}
+    return {finding.finding_type for finding in config_health_findings(servers)}
 
 
 def test_local_shadowing_fixture_covers_current_config_health_signals() -> None:
@@ -48,7 +48,7 @@ def test_config_health_fixtures_do_not_expose_credential_values() -> None:
 
     for fixture_path in CONFIG_HEALTH_FIXTURES.glob("*.json"):
         servers = ClaudeCodeDiscoverer().parse(fixture_path)
-        findings = _config_health_findings(servers)
+        findings = config_health_findings(servers)
         rendered = " ".join(
             [
                 *(str(server.model_dump()) for server in servers),

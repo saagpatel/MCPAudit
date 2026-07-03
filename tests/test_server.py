@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from mcp_audit.engine import ScanOptions
 from mcp_audit.models import AuditReport, InjectionFinding, InjectionSeverity, ServerAudit
 from mcp_audit.server import _MCP_AUDIT_SERVER_ENTRY, _build_mcp_server, _install_to_config
 from tests.conftest import make_server_config
@@ -126,20 +127,22 @@ async def test_get_injection_findings_uses_connected_scan(monkeypatch: pytest.Mo
         scan_duration_seconds=0.01,
     )
 
-    async def fake_run_scan_core(*args: object, **kwargs: object) -> AuditReport:
-        seen.update(kwargs)
+    async def fake_run_scan(options: ScanOptions, **kwargs: object) -> AuditReport:
+        seen["options"] = options
         return report
 
-    import mcp_audit.cli as cli
+    import mcp_audit.server as server_module
 
-    monkeypatch.setattr(cli, "_run_scan_core", fake_run_scan_core)
+    monkeypatch.setattr(server_module, "run_scan", fake_run_scan)
 
     app = _build_mcp_server()
     _content, metadata = await app.call_tool("get_injection_findings", {})
     payload = json.loads(metadata["result"])
 
-    assert seen["skip_connect"] is False
-    assert seen["inject_check"] is True
+    options = seen["options"]
+    assert isinstance(options, ScanOptions)
+    assert options.skip_connect is False
+    assert options.inject_check is True
     assert payload == [
         {
             "server": "srv",

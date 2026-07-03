@@ -16,8 +16,9 @@ import anyio
 import pytest
 from rich.console import Console
 
-from mcp_audit import cli
+from mcp_audit import engine
 from mcp_audit.egress import EgressDetector
+from mcp_audit.engine import ScanOptions
 from mcp_audit.htmlreport import HtmlReportGenerator
 from mcp_audit.models import (
     AuditReport,
@@ -28,7 +29,6 @@ from mcp_audit.models import (
     ServerConfig,
     ToolInfo,
 )
-from mcp_audit.overrides import OverrideApplier, OverrideConfig
 from mcp_audit.policy import PolicyConfig, evaluate_policy
 from mcp_audit.report import ReportGenerator
 from mcp_audit.sarif import SarifGenerator
@@ -187,7 +187,7 @@ class TestPerServerAllowlistWiring:
             ServerConfig(name=n, client=ClientType.CLAUDE_DESKTOP, config_path="/test/config.json")
             for n in ("trusted", "other")
         ]
-        monkeypatch.setattr(cli, "discover_all_configs", lambda clients: servers)
+        monkeypatch.setattr(engine, "discover_all_configs", lambda clients: servers)
 
         audit_for = self._fixed_host_audit
 
@@ -197,18 +197,15 @@ class TestPerServerAllowlistWiring:
             async def connect(self, srv: ServerConfig) -> ServerAudit:
                 return audit_for(srv.name)
 
-        monkeypatch.setattr(cli, "ServerConnector", FakeConnector)
+        monkeypatch.setattr(engine, "ServerConnector", FakeConnector)
 
         report = anyio.run(
             functools.partial(
-                cli._run_scan_core,
-                False,  # skip_connect
-                None,  # clients
-                10,  # timeout
-                None,  # extra_config
-                OverrideApplier(OverrideConfig()),
-                egress_check=True,
-                egress_server_allowlists={"trusted": ["logs.internal.example"]},
+                engine.run_scan,
+                ScanOptions(
+                    egress_check=True,
+                    egress_server_allowlists={"trusted": ["logs.internal.example"]},
+                ),
             )
         )
 
@@ -243,7 +240,7 @@ class TestEgressSsrfSubstrate:
 
     def _run(self, monkeypatch: pytest.MonkeyPatch, *, ssrf_check: bool) -> ServerAudit:
         servers = [ServerConfig(name="s", client=ClientType.CLAUDE_DESKTOP, config_path="/test/config.json")]
-        monkeypatch.setattr(cli, "discover_all_configs", lambda clients: servers)
+        monkeypatch.setattr(engine, "discover_all_configs", lambda clients: servers)
         audit_for = self._caller_controlled_audit
 
         class FakeConnector:
@@ -252,18 +249,12 @@ class TestEgressSsrfSubstrate:
             async def connect(self, srv: ServerConfig) -> ServerAudit:
                 return audit_for(srv.name)
 
-        monkeypatch.setattr(cli, "ServerConnector", FakeConnector)
+        monkeypatch.setattr(engine, "ServerConnector", FakeConnector)
 
         report = anyio.run(
             functools.partial(
-                cli._run_scan_core,
-                False,  # skip_connect
-                None,  # clients
-                10,  # timeout
-                None,  # extra_config
-                OverrideApplier(OverrideConfig()),
-                ssrf_check=ssrf_check,
-                egress_check=True,
+                engine.run_scan,
+                ScanOptions(ssrf_check=ssrf_check, egress_check=True),
             )
         )
         return report.audits[0]

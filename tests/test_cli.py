@@ -10,9 +10,9 @@ import anyio
 import pytest
 from click.testing import CliRunner
 
-from mcp_audit import cli
+from mcp_audit import cli, engine
+from mcp_audit.engine import ScanOptions
 from mcp_audit.models import AuditReport, ServerAudit, TransportType
-from mcp_audit.overrides import OverrideApplier, OverrideConfig
 from mcp_audit.pinning import PinStore
 from tests.conftest import make_server_config, make_tool
 
@@ -45,7 +45,7 @@ def test_scan_writes_report_files_when_no_servers_discovered(
 ) -> None:
     # Regression: an empty scan must still write requested report files so CI
     # consumers (e.g. SARIF upload) always have an artifact to ingest.
-    monkeypatch.setattr(cli, "discover_all_configs", lambda *a, **k: [])
+    monkeypatch.setattr(engine, "discover_all_configs", lambda *a, **k: [])
     sarif_path = tmp_path / "out.sarif"
     json_path = tmp_path / "out.json"
 
@@ -68,6 +68,16 @@ def test_scan_config_only_requires_config() -> None:
 
     assert result.exit_code != 0
     assert "--config-only requires --config PATH" in result.output
+
+
+def test_scan_missing_config_path_is_a_hard_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A typo'd --config path must error out, not silently scan nothing and pass gates.
+    monkeypatch.setattr(engine, "discover_all_configs", lambda *a, **k: [])
+
+    result = CliRunner().invoke(cli.main, ["scan", "--skip-connect", "--config", "/nope/missing.json"])
+
+    assert result.exit_code != 0
+    assert "not found" in result.output
 
 
 def test_discover_reports_duplicate_server_names(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -180,56 +190,28 @@ def test_discover_reports_conflicting_server_definitions(monkeypatch: pytest.Mon
     assert "'search' launches through package runner 'uvx'" in result.output
 
 
-def test_run_scan_core_config_only_ignores_discovered_configs(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_scan_config_only_ignores_discovered_configs(monkeypatch: pytest.MonkeyPatch) -> None:
     discovered = make_server_config(name="discovered")
     custom = make_server_config(name="custom")
 
-    monkeypatch.setattr(cli, "discover_all_configs", lambda clients: [discovered])
-    monkeypatch.setattr(cli, "_parse_extra_config", lambda path: [custom])
+    monkeypatch.setattr(engine, "discover_all_configs", lambda clients: [discovered])
+    monkeypatch.setattr(engine, "_parse_extra_config", lambda path: [custom])
 
     report = anyio.run(
-        cli._run_scan_core,
-        True,  # skip_connect
-        None,  # clients
-        10,  # timeout
-        "custom.json",  # extra_config
-        OverrideApplier(OverrideConfig()),
-        False,  # inject_check
-        False,  # ssrf_check
-        None,  # ssrf_allowlist
-        False,  # egress_check
-        None,  # egress_allowlist
-        None,  # multi_tenant_hosts
-        None,  # egress_server_allowlists
-        False,  # pin_check
-        False,  # trifecta_check
-        False,  # shadow_check
-        False,  # escalation_check
-        False,  # provenance_check
-        False,  # integrity_check
-        False,  # verify_artifacts
-        False,  # download_artifacts
-        False,  # llm_analysis
-        True,  # config_only
+        engine.run_scan,
+        ScanOptions(skip_connect=True, config_only=True, extra_config="custom.json"),
     )
 
     assert [audit.server.name for audit in report.audits] == ["custom"]
 
 
-def test_run_scan_core_reports_structured_config_health(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_scan_reports_structured_config_health(monkeypatch: pytest.MonkeyPatch) -> None:
     first_server = make_server_config(name="srv")
     second_server = first_server.model_copy(update={"config_path": "/tmp/other_config.json"})
 
-    monkeypatch.setattr(cli, "discover_all_configs", lambda clients: [first_server, second_server])
+    monkeypatch.setattr(engine, "discover_all_configs", lambda clients: [first_server, second_server])
 
-    report = anyio.run(
-        cli._run_scan_core,
-        True,
-        None,
-        10,
-        None,
-        OverrideApplier(OverrideConfig()),
-    )
+    report = anyio.run(engine.run_scan, ScanOptions(skip_connect=True))
 
     assert [finding.finding_type for finding in report.config_health_findings] == ["duplicate_server_name"]
     assert report.config_health_findings[0].server_name == "srv"
@@ -243,12 +225,11 @@ def test_scan_reports_duplicate_server_names(monkeypatch: pytest.MonkeyPatch) ->
         ServerAudit(server=first_server, connection_status="skipped"),
         ServerAudit(server=second_server, connection_status="skipped"),
     ]
-    monkeypatch.setattr(cli, "discover_all_configs", lambda clients: [first_server, second_server])
 
-    async def fake_run_scan_core(*args: object, **kwargs: object) -> AuditReport:
+    async def fake_run_scan(*args: object, **kwargs: object) -> AuditReport:
         return _report(audits)
 
-    monkeypatch.setattr(cli, "_run_scan_core", fake_run_scan_core)
+    monkeypatch.setattr(cli, "run_scan", fake_run_scan)
 
     result = CliRunner().invoke(cli.main, ["scan", "--skip-connect"])
 
@@ -266,11 +247,11 @@ def test_run_pin_connects_before_pinning(monkeypatch: object, tmp_path: Path) ->
     )
     seen_skip_connect: list[bool] = []
 
-    async def fake_run_scan_core(skip_connect: bool, *args: object, **kwargs: object) -> AuditReport:
-        seen_skip_connect.append(skip_connect)
+    async def fake_run_scan(options: ScanOptions, *args: object, **kwargs: object) -> AuditReport:
+        seen_skip_connect.append(options.skip_connect)
         return _report([audit])
 
-    monkeypatch.setattr(cli, "_run_scan_core", fake_run_scan_core)  # type: ignore[attr-defined]
+    monkeypatch.setattr(cli, "run_scan", fake_run_scan)  # type: ignore[attr-defined]
 
     anyio.run(cli._run_pin, None, store)
 
@@ -286,10 +267,10 @@ def test_run_pin_skips_failed_connections(monkeypatch: object, tmp_path: Path) -
         connection_error="boom",
     )
 
-    async def fake_run_scan_core(*args: object, **kwargs: object) -> AuditReport:
+    async def fake_run_scan(*args: object, **kwargs: object) -> AuditReport:
         return _report([audit])
 
-    monkeypatch.setattr(cli, "_run_scan_core", fake_run_scan_core)  # type: ignore[attr-defined]
+    monkeypatch.setattr(cli, "run_scan", fake_run_scan)  # type: ignore[attr-defined]
 
     anyio.run(cli._run_pin, None, store)
 
@@ -313,10 +294,10 @@ def test_run_pin_skips_duplicate_server_names_without_writing(monkeypatch: objec
         ),
     ]
 
-    async def fake_run_scan_core(*args: object, **kwargs: object) -> AuditReport:
+    async def fake_run_scan(*args: object, **kwargs: object) -> AuditReport:
         return _report(audits)
 
-    monkeypatch.setattr(cli, "_run_scan_core", fake_run_scan_core)  # type: ignore[attr-defined]
+    monkeypatch.setattr(cli, "run_scan", fake_run_scan)  # type: ignore[attr-defined]
 
     anyio.run(cli._run_pin, None, store)
 
@@ -332,10 +313,10 @@ def test_run_pin_refresh_reviews_drift_without_writing(monkeypatch: object, tmp_
         tools=[make_tool("read_file", description="v2")],
     )
 
-    async def fake_run_scan_core(*args: object, **kwargs: object) -> AuditReport:
+    async def fake_run_scan(*args: object, **kwargs: object) -> AuditReport:
         return _report([audit])
 
-    monkeypatch.setattr(cli, "_run_scan_core", fake_run_scan_core)  # type: ignore[attr-defined]
+    monkeypatch.setattr(cli, "run_scan", fake_run_scan)  # type: ignore[attr-defined]
 
     anyio.run(cli._run_pin_refresh, "srv", store, False)
 
@@ -353,10 +334,10 @@ def test_run_pin_refresh_applies_reviewed_baseline(monkeypatch: object, tmp_path
         tools=[make_tool("read_file", description="v2")],
     )
 
-    async def fake_run_scan_core(*args: object, **kwargs: object) -> AuditReport:
+    async def fake_run_scan(*args: object, **kwargs: object) -> AuditReport:
         return _report([audit])
 
-    monkeypatch.setattr(cli, "_run_scan_core", fake_run_scan_core)  # type: ignore[attr-defined]
+    monkeypatch.setattr(cli, "run_scan", fake_run_scan)  # type: ignore[attr-defined]
 
     anyio.run(cli._run_pin_refresh, "srv", store, True)
 
@@ -374,10 +355,10 @@ def test_pin_refresh_requires_apply_to_write(monkeypatch: object, tmp_path: Path
         tools=[make_tool("read_file", description="v2")],
     )
 
-    async def fake_run_scan_core(*args: object, **kwargs: object) -> AuditReport:
+    async def fake_run_scan(*args: object, **kwargs: object) -> AuditReport:
         return _report([audit])
 
-    monkeypatch.setattr(cli, "_run_scan_core", fake_run_scan_core)  # type: ignore[attr-defined]
+    monkeypatch.setattr(cli, "run_scan", fake_run_scan)  # type: ignore[attr-defined]
 
     result = CliRunner().invoke(cli.main, ["pin", "--refresh", "srv", "--pin-file", str(pin_file)])
 
@@ -396,10 +377,10 @@ def test_pin_refresh_json_reports_drift_without_writing(monkeypatch: object, tmp
         tools=[make_tool("read_file", description="v2")],
     )
 
-    async def fake_run_scan_core(*args: object, **kwargs: object) -> AuditReport:
+    async def fake_run_scan(*args: object, **kwargs: object) -> AuditReport:
         return _report([audit])
 
-    monkeypatch.setattr(cli, "_run_scan_core", fake_run_scan_core)  # type: ignore[attr-defined]
+    monkeypatch.setattr(cli, "run_scan", fake_run_scan)  # type: ignore[attr-defined]
 
     result = CliRunner().invoke(
         cli.main,
@@ -429,10 +410,10 @@ def test_pin_refresh_json_surfaces_artifact_capture_warnings(monkeypatch: object
         tools=[make_tool("read_file", description="v1")],
     )
 
-    async def fake_run_scan_core(*args: object, **kwargs: object) -> AuditReport:
+    async def fake_run_scan(*args: object, **kwargs: object) -> AuditReport:
         return _report([audit])
 
-    monkeypatch.setattr(cli, "_run_scan_core", fake_run_scan_core)  # type: ignore[attr-defined]
+    monkeypatch.setattr(cli, "run_scan", fake_run_scan)  # type: ignore[attr-defined]
 
     # Inject a verifier whose served bytes fail the published-hash check → refused + warned.
     inconsistent = ArtifactVerifier(
@@ -477,10 +458,10 @@ def test_pin_refresh_json_reports_duplicate_server_name_without_writing(
         ),
     ]
 
-    async def fake_run_scan_core(*args: object, **kwargs: object) -> AuditReport:
+    async def fake_run_scan(*args: object, **kwargs: object) -> AuditReport:
         return _report(audits)
 
-    monkeypatch.setattr(cli, "_run_scan_core", fake_run_scan_core)  # type: ignore[attr-defined]
+    monkeypatch.setattr(cli, "run_scan", fake_run_scan)  # type: ignore[attr-defined]
 
     result = CliRunner().invoke(
         cli.main,
@@ -506,7 +487,7 @@ def test_provenance_check_warns_on_stale_pinned_server(
     pin_file = tmp_path / "pins.yaml"
     PinStore(path=pin_file).pin_server("legacy", [make_tool("t")])  # 2-arg: no config_snapshot
     monkeypatch.setattr(pinning, "PinStore", lambda *a, **k: PinStore(path=pin_file))
-    monkeypatch.setattr(cli, "discover_all_configs", lambda *a, **k: [make_server_config(name="legacy")])
+    monkeypatch.setattr(engine, "discover_all_configs", lambda *a, **k: [make_server_config(name="legacy")])
 
     result = CliRunner().invoke(cli.main, ["scan", "--skip-connect", "--provenance-check"])
 
@@ -516,8 +497,8 @@ def test_provenance_check_warns_on_stale_pinned_server(
 
 def test_scan_integrity_check_flag_runs(monkeypatch: pytest.MonkeyPatch) -> None:
     # Flag-level smoke: --integrity-check threads through click -> _run_scan ->
-    # _run_scan_core (instantiating the analyzer + pin store) without error.
-    monkeypatch.setattr(cli, "discover_all_configs", lambda *a, **k: [])
+    # engine.run_scan (instantiating the analyzer + pin store) without error.
+    monkeypatch.setattr(engine, "discover_all_configs", lambda *a, **k: [])
     result = CliRunner().invoke(cli.main, ["scan", "--integrity-check", "--skip-connect"])
     assert result.exit_code == 0, result.output
     assert "No MCP servers found." in result.output
@@ -544,10 +525,10 @@ def test_pin_refresh_surfaces_escalation_delta(monkeypatch: object, tmp_path: Pa
         ],
     )
 
-    async def fake_run_scan_core(*args: object, **kwargs: object) -> AuditReport:
+    async def fake_run_scan(*args: object, **kwargs: object) -> AuditReport:
         return _report([audit])
 
-    monkeypatch.setattr(cli, "_run_scan_core", fake_run_scan_core)  # type: ignore[attr-defined]
+    monkeypatch.setattr(cli, "run_scan", fake_run_scan)  # type: ignore[attr-defined]
 
     result = CliRunner().invoke(cli.main, ["pin", "--refresh", "srv", "--json", "--pin-file", str(pin_file)])
 
@@ -575,10 +556,10 @@ def test_pin_refresh_surfaces_provenance_delta(monkeypatch: object, tmp_path: Pa
         tools=[make_tool("read_file", description="reads a file")],
     )
 
-    async def fake_run_scan_core(*args: object, **kwargs: object) -> AuditReport:
+    async def fake_run_scan(*args: object, **kwargs: object) -> AuditReport:
         return _report([audit])
 
-    monkeypatch.setattr(cli, "_run_scan_core", fake_run_scan_core)  # type: ignore[attr-defined]
+    monkeypatch.setattr(cli, "run_scan", fake_run_scan)  # type: ignore[attr-defined]
 
     result = CliRunner().invoke(cli.main, ["pin", "--refresh", "srv", "--json", "--pin-file", str(pin_file)])
 
@@ -741,12 +722,12 @@ def test_scan_redact_flag_scrubs_json(monkeypatch: pytest.MonkeyPatch, tmp_path:
     )
     audit = ServerAudit(server=cfg, connection_status="skipped")
 
-    async def fake_run_scan_core(*args: object, **kwargs: object) -> AuditReport:
+    async def fake_run_scan(*args: object, **kwargs: object) -> AuditReport:
         report = _report([audit])
         report.hostname = "secret-host.local"
         return report
 
-    monkeypatch.setattr(cli, "_run_scan_core", fake_run_scan_core)
+    monkeypatch.setattr(cli, "run_scan", fake_run_scan)
     out = tmp_path / "report.json"
     result = CliRunner().invoke(cli.main, ["scan", "--skip-connect", "--json", str(out), "--redact"])
 
@@ -762,12 +743,12 @@ def test_scan_without_redact_keeps_identifiers(monkeypatch: pytest.MonkeyPatch, 
     cfg = make_server_config(name="srv").model_copy(update={"config_path": "/Users/alice/.claude.json"})
     audit = ServerAudit(server=cfg, connection_status="skipped")
 
-    async def fake_run_scan_core(*args: object, **kwargs: object) -> AuditReport:
+    async def fake_run_scan(*args: object, **kwargs: object) -> AuditReport:
         report = _report([audit])
         report.hostname = "secret-host.local"
         return report
 
-    monkeypatch.setattr(cli, "_run_scan_core", fake_run_scan_core)
+    monkeypatch.setattr(cli, "run_scan", fake_run_scan)
     out = tmp_path / "report.json"
     result = CliRunner().invoke(cli.main, ["scan", "--skip-connect", "--json", str(out)])
 
@@ -782,10 +763,10 @@ def test_scan_redact_flag_aliases_server_names(monkeypatch: pytest.MonkeyPatch, 
     )
     audit = ServerAudit(server=cfg, connection_status="skipped")
 
-    async def fake_run_scan_core(*args: object, **kwargs: object) -> AuditReport:
+    async def fake_run_scan(*args: object, **kwargs: object) -> AuditReport:
         return _report([audit])
 
-    monkeypatch.setattr(cli, "_run_scan_core", fake_run_scan_core)
+    monkeypatch.setattr(cli, "run_scan", fake_run_scan)
     out = tmp_path / "report.json"
     result = CliRunner().invoke(cli.main, ["scan", "--skip-connect", "--json", str(out), "--redact"])
 

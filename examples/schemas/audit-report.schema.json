@@ -1607,6 +1607,11 @@
   },
   "description": "Top-level audit report containing all server audits.",
   "properties": {
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
     "scan_timestamp": {
       "format": "date-time",
       "title": "Scan Timestamp",

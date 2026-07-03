@@ -19,6 +19,10 @@ with a release-note deprecation window and a breaking-version boundary.
 The JSON report is the serialized `AuditReport` model. Consumers should treat
 unknown fields as additive. Important stable top-level fields:
 
+- `schema_version` — integer version of this report contract (currently `1`).
+  Bumped only on breaking shape changes (field removals, renames, retypes);
+  additive optional fields do NOT bump it. Consumers wanting runtime drift
+  detection should check this field before relying on field access.
 - `scan_timestamp`
 - `servers_discovered`
 - `servers_connected`

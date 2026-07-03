@@ -1,0 +1,153 @@
+"""Tests for the public scan engine (mcp_audit.engine).
+
+Covers the contract the CLI, MCP server, api.py, and downstream packages
+(mcp-trust, shadow-mcp) rely on: ScanOptions defaults, silence-by-default
+output discipline, the AuditReport schema_version marker, and the deprecated
+cli._run_scan_core compatibility shim.
+"""
+
+from __future__ import annotations
+
+import io
+from pathlib import Path
+
+import anyio
+import pytest
+from rich.console import Console
+
+from mcp_audit import engine
+from mcp_audit.engine import ScanOptions, run_scan
+from mcp_audit.models import AUDIT_REPORT_SCHEMA_VERSION
+from tests.conftest import make_server_config
+
+
+def test_scan_options_defaults_mirror_flagless_scan() -> None:
+    options = ScanOptions()
+    assert options.skip_connect is False
+    assert options.config_only is False
+    assert options.timeout == 10
+    assert not any(
+        getattr(options, flag)
+        for flag in (
+            "inject_check",
+            "ssrf_check",
+            "egress_check",
+            "pin_check",
+            "trifecta_check",
+            "shadow_check",
+            "escalation_check",
+            "provenance_check",
+            "integrity_check",
+            "verify_artifacts",
+            "download_artifacts",
+            "llm_analysis",
+        )
+    )
+
+
+def test_run_scan_is_silent_by_default(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Library/MCP callers get no stdout chatter — stdout may carry MCP stdio frames."""
+    monkeypatch.setattr(engine, "discover_all_configs", lambda clients: [make_server_config(name="srv")])
+    # llm_analysis without an API key prints an advisory warning on the CLI path;
+    # with no console passed, it must stay silent.
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    report = anyio.run(run_scan, ScanOptions(skip_connect=True, llm_analysis=True))
+
+    assert report.servers_discovered == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+
+
+def test_run_scan_prints_warnings_to_provided_console(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(engine, "discover_all_configs", lambda clients: [make_server_config(name="srv")])
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    buffer = io.StringIO()
+    console = Console(file=buffer, force_terminal=False)
+
+    async def _scan() -> None:
+        await run_scan(ScanOptions(skip_connect=True, llm_analysis=True), console=console)
+
+    anyio.run(_scan)
+
+    assert "--llm-analysis" in buffer.getvalue()
+
+
+def test_report_carries_schema_version(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(engine, "discover_all_configs", lambda clients: [make_server_config(name="srv")])
+
+    report = anyio.run(run_scan, ScanOptions(skip_connect=True))
+
+    assert report.schema_version == AUDIT_REPORT_SCHEMA_VERSION == 1
+    assert report.model_dump(mode="json")["schema_version"] == 1
+
+
+def test_run_scan_raises_on_missing_extra_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A typo'd extra_config path must fail loudly, never degrade to an empty clean report."""
+    monkeypatch.setattr(engine, "discover_all_configs", lambda clients: [])
+
+    async def _scan() -> None:
+        await run_scan(ScanOptions(skip_connect=True, config_only=True, extra_config="/nope/missing.json"))
+
+    with pytest.raises(ValueError, match="not found"):
+        anyio.run(_scan)
+
+
+def test_run_scan_raises_on_unparseable_extra_config(tmp_path: Path) -> None:
+    bad = tmp_path / "bad.json"
+    bad.write_text("{not json")
+
+    async def _scan() -> None:
+        await run_scan(ScanOptions(skip_connect=True, config_only=True, extra_config=str(bad)))
+
+    with pytest.raises(ValueError, match="Failed to parse"):
+        anyio.run(_scan)
+
+
+def test_schema_version_pins_top_level_field_set() -> None:
+    """Couples schema_version to the AuditReport field set.
+
+    If this test fails because you REMOVED, RENAMED, or RETYPED a field, bump
+    AUDIT_REPORT_SCHEMA_VERSION and update docs/OUTPUT-CONTRACT.md. If you only
+    ADDED a field, extend this set — additive changes do not bump the version.
+    """
+    from mcp_audit.models import AuditReport
+
+    assert AUDIT_REPORT_SCHEMA_VERSION == 1
+    assert set(AuditReport.model_fields) == {
+        "schema_version",
+        "scan_timestamp",
+        "hostname",
+        "os_platform",
+        "servers_discovered",
+        "servers_connected",
+        "servers_failed",
+        "total_tools",
+        "high_risk_servers",
+        "audits",
+        "scan_duration_seconds",
+        "config_health_findings",
+        "policy_result",
+        "fleet_trifecta_findings",
+        "shadowing_findings",
+    }
+
+
+def test_cli_run_scan_core_shim_warns_and_delegates(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The old private entry point still works (shadow-mcp compat) but warns."""
+    from functools import partial
+
+    from mcp_audit import cli
+    from mcp_audit.overrides import OverrideApplier, OverrideConfig
+
+    monkeypatch.setattr(engine, "discover_all_configs", lambda clients: [make_server_config(name="srv")])
+
+    with pytest.warns(DeprecationWarning, match="mcp_audit.engine.run_scan"):
+        report = anyio.run(
+            partial(cli._run_scan_core, True, None, 10, None, OverrideApplier(OverrideConfig()))
+        )
+
+    assert [audit.server.name for audit in report.audits] == ["srv"]

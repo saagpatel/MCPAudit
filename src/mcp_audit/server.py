@@ -12,6 +12,8 @@ import click
 from rich.console import Console
 
 from mcp_audit.discovery import discover_all_configs
+from mcp_audit.engine import ScanOptions, run_scan
+from mcp_audit.models import AuditReport
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +64,18 @@ def _install_to_config(config_path: Path, server_name: str = "mcp-audit") -> boo
         return False
 
 
+async def _scan(options: ScanOptions) -> AuditReport:
+    """Run the scan engine with the user's override file loaded.
+
+    Deliberately passes no console: engine progress/warnings stay silent so
+    nothing can leak onto stdout, which carries the MCP stdio protocol frames.
+    """
+    from mcp_audit.overrides import OverrideApplier, load_override_config
+
+    applier = OverrideApplier(load_override_config())
+    return await run_scan(options, override_applier=applier)
+
+
 def _build_mcp_server() -> Any:
     """Build and return the FastMCP server instance with all tools registered."""
     from mcp.server import FastMCP
@@ -77,33 +91,13 @@ def _build_mcp_server() -> Any:
     @app.tool()  # type: ignore[untyped-decorator]
     async def scan_mcp_servers(skip_connect: bool = False) -> str:
         """Run a full audit of all discovered MCP servers. Returns JSON report."""
-        from mcp_audit.cli import _run_scan_core
-        from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
-
-        override_applier = OverrideApplier(load_override_config(DEFAULT_OVERRIDE_PATH))
-        report = await _run_scan_core(
-            skip_connect=skip_connect,
-            clients=None,
-            timeout=10,
-            extra_config=None,
-            override_applier=override_applier,
-        )
+        report = await _scan(ScanOptions(skip_connect=skip_connect))
         return report.model_dump_json(indent=2)
 
     @app.tool()  # type: ignore[untyped-decorator]
     async def get_high_risk_servers() -> str:
         """Return servers with composite risk score ≥ 7.0. Returns JSON list."""
-        from mcp_audit.cli import _run_scan_core
-        from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
-
-        override_applier = OverrideApplier(load_override_config(DEFAULT_OVERRIDE_PATH))
-        report = await _run_scan_core(
-            skip_connect=False,
-            clients=None,
-            timeout=10,
-            extra_config=None,
-            override_applier=override_applier,
-        )
+        report = await _scan(ScanOptions())
         high_risk = [
             {"name": a.server.name, "score": a.risk_score.composite if a.risk_score else 0.0}
             for a in report.audits
@@ -114,17 +108,7 @@ def _build_mcp_server() -> Any:
     @app.tool()  # type: ignore[untyped-decorator]
     async def check_server(name: str) -> str:
         """Audit a single server by name. Returns JSON audit result."""
-        from mcp_audit.cli import _run_scan_core
-        from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
-
-        override_applier = OverrideApplier(load_override_config(DEFAULT_OVERRIDE_PATH))
-        report = await _run_scan_core(
-            skip_connect=False,
-            clients=None,
-            timeout=10,
-            extra_config=None,
-            override_applier=override_applier,
-        )
+        report = await _scan(ScanOptions())
         audit = next((a for a in report.audits if a.server.name == name), None)
         if audit is None:
             return json.dumps({"error": f"Server '{name}' not found"})
@@ -133,18 +117,7 @@ def _build_mcp_server() -> Any:
     @app.tool()  # type: ignore[untyped-decorator]
     async def get_injection_findings() -> str:
         """Return all prompt injection findings across all servers. Returns JSON list."""
-        from mcp_audit.cli import _run_scan_core
-        from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
-
-        override_applier = OverrideApplier(load_override_config(DEFAULT_OVERRIDE_PATH))
-        report = await _run_scan_core(
-            skip_connect=False,
-            clients=None,
-            timeout=10,
-            extra_config=None,
-            override_applier=override_applier,
-            inject_check=True,
-        )
+        report = await _scan(ScanOptions(inject_check=True))
         all_findings = []
         for audit in report.audits:
             for f in audit.injection_findings:
@@ -163,18 +136,7 @@ def _build_mcp_server() -> Any:
     @app.tool()  # type: ignore[untyped-decorator]
     async def get_ssrf_findings() -> str:
         """Return all SSRF findings across all servers. Returns JSON list."""
-        from mcp_audit.cli import _run_scan_core
-        from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
-
-        override_applier = OverrideApplier(load_override_config(DEFAULT_OVERRIDE_PATH))
-        report = await _run_scan_core(
-            skip_connect=False,
-            clients=None,
-            timeout=10,
-            extra_config=None,
-            override_applier=override_applier,
-            ssrf_check=True,
-        )
+        report = await _scan(ScanOptions(ssrf_check=True))
         all_findings = []
         for audit in report.audits:
             for f in audit.ssrf_findings:
@@ -194,18 +156,7 @@ def _build_mcp_server() -> Any:
     @app.tool()  # type: ignore[untyped-decorator]
     async def get_trifecta_findings() -> str:
         """Return all lethal-trifecta findings (per-server and fleet-level). Returns JSON list."""
-        from mcp_audit.cli import _run_scan_core
-        from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
-
-        override_applier = OverrideApplier(load_override_config(DEFAULT_OVERRIDE_PATH))
-        report = await _run_scan_core(
-            skip_connect=False,
-            clients=None,
-            timeout=10,
-            extra_config=None,
-            override_applier=override_applier,
-            trifecta_check=True,
-        )
+        report = await _scan(ScanOptions(trifecta_check=True))
         all_findings = []
         for audit in report.audits:
             for f in audit.trifecta_findings:
@@ -239,18 +190,7 @@ def _build_mcp_server() -> Any:
     @app.tool()  # type: ignore[untyped-decorator]
     async def get_shadowing_findings() -> str:
         """Return all cross-server tool-name shadowing findings. Returns JSON list."""
-        from mcp_audit.cli import _run_scan_core
-        from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
-
-        override_applier = OverrideApplier(load_override_config(DEFAULT_OVERRIDE_PATH))
-        report = await _run_scan_core(
-            skip_connect=False,
-            clients=None,
-            timeout=10,
-            extra_config=None,
-            override_applier=override_applier,
-            shadow_check=True,
-        )
+        report = await _scan(ScanOptions(shadow_check=True))
         all_findings = []
         for f in report.shadowing_findings:
             all_findings.append(
@@ -271,18 +211,7 @@ def _build_mcp_server() -> Any:
 
         Requires a pin baseline (run `mcp-audit pin` first); without pins the list is empty.
         """
-        from mcp_audit.cli import _run_scan_core
-        from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
-
-        override_applier = OverrideApplier(load_override_config(DEFAULT_OVERRIDE_PATH))
-        report = await _run_scan_core(
-            skip_connect=False,
-            clients=None,
-            timeout=10,
-            extra_config=None,
-            override_applier=override_applier,
-            escalation_check=True,
-        )
+        report = await _scan(ScanOptions(escalation_check=True))
         all_findings = []
         for audit in report.audits:
             for f in audit.escalation_findings:
@@ -307,18 +236,7 @@ def _build_mcp_server() -> Any:
         Requires a pin baseline with a config snapshot (run `mcp-audit pin` first); without one
         the list is empty.
         """
-        from mcp_audit.cli import _run_scan_core
-        from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
-
-        override_applier = OverrideApplier(load_override_config(DEFAULT_OVERRIDE_PATH))
-        report = await _run_scan_core(
-            skip_connect=False,
-            clients=None,
-            timeout=10,
-            extra_config=None,
-            override_applier=override_applier,
-            provenance_check=True,
-        )
+        report = await _scan(ScanOptions(provenance_check=True))
         all_findings = []
         for audit in report.audits:
             for f in audit.provenance_findings:
@@ -343,20 +261,9 @@ def _build_mcp_server() -> Any:
         Requires a pin baseline that captured artifact hashes (run `mcp-audit pin` first); without
         one the list is empty. Offline — only on-disk bytes are hashed.
         """
-        from mcp_audit.cli import _run_scan_core
-        from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
-
-        override_applier = OverrideApplier(load_override_config(DEFAULT_OVERRIDE_PATH))
         # Integrity is purely offline (re-hashing on-disk artifacts vs the pin
         # store), so skip spawning/connecting to servers entirely.
-        report = await _run_scan_core(
-            skip_connect=True,
-            clients=None,
-            timeout=10,
-            extra_config=None,
-            override_applier=override_applier,
-            integrity_check=True,
-        )
+        report = await _scan(ScanOptions(skip_connect=True, integrity_check=True))
         all_findings = []
         for audit in report.audits:
             for f in audit.integrity_findings:
@@ -382,18 +289,7 @@ def _build_mcp_server() -> Any:
         `mcp-audit pin --verify-artifacts`; without one the list is empty. Does not connect
         to the audited MCP servers (skip_connect).
         """
-        from mcp_audit.cli import _run_scan_core
-        from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
-
-        override_applier = OverrideApplier(load_override_config(DEFAULT_OVERRIDE_PATH))
-        report = await _run_scan_core(
-            skip_connect=True,
-            clients=None,
-            timeout=10,
-            extra_config=None,
-            override_applier=override_applier,
-            verify_artifacts=True,
-        )
+        report = await _scan(ScanOptions(skip_connect=True, verify_artifacts=True))
         all_findings = []
         for audit in report.audits:
             for f in audit.package_verify_findings:
@@ -421,18 +317,7 @@ def _build_mcp_server() -> Any:
         captured with `mcp-audit pin --download-artifacts`; without one the list is empty. Does
         not connect to the audited MCP servers (skip_connect).
         """
-        from mcp_audit.cli import _run_scan_core
-        from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
-
-        override_applier = OverrideApplier(load_override_config(DEFAULT_OVERRIDE_PATH))
-        report = await _run_scan_core(
-            skip_connect=True,
-            clients=None,
-            timeout=10,
-            extra_config=None,
-            override_applier=override_applier,
-            download_artifacts=True,
-        )
+        report = await _scan(ScanOptions(skip_connect=True, download_artifacts=True))
         all_findings = []
         for audit in report.audits:
             for f in audit.artifact_verify_findings:
