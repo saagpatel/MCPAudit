@@ -413,8 +413,23 @@ async def run_scan(
                 "Run `mcp-audit pin --download-artifacts` first to capture artifact byte-hashes.",
             ),
         ]
+        # A pin file that exists but cannot be parsed is a materially different
+        # (and scarier) condition than never having pinned — it can mask a wiped
+        # or tampered baseline — so it gets its own code instead of folding into
+        # "missing". Mutations already refuse to write through such a file.
+        corrupted = pin_store.read_error
         for check_field, flag, remedy in no_baseline_checks:
-            if getattr(opts, check_field):
+            if not getattr(opts, check_field):
+                continue
+            if corrupted:
+                warn(
+                    "pin_baseline_corrupted",
+                    f"{flag}: pin baseline file {pin_store.path} exists but could not "
+                    f"be parsed ({corrupted}). Repair the file or re-pin; pin "
+                    "mutations refuse to overwrite it.",
+                    check=check_field,
+                )
+            else:
                 warn(
                     "pin_baseline_missing",
                     f"{flag}: no pin baseline found. {remedy}",

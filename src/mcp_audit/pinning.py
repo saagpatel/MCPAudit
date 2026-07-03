@@ -66,6 +66,22 @@ class _NoAliasSafeDumper(yaml.SafeDumper):
         return True
 
 
+def _describe_parse_error(exc: Exception) -> str:
+    """Sanitized, secret-safe description of a pin file parse failure.
+
+    ``str(exc)`` on a YAML parser error renders a snippet of the offending
+    source line (``Mark.get_snippet``), which can echo a pasted secret back
+    into ``ScanWarning.message`` — a value that flows into scan JSON/MCP
+    responses. Report only the exception class and, when the parser
+    supplies one, its line/column — never the parser's rendered message.
+    """
+    name = type(exc).__name__
+    mark = getattr(exc, "problem_mark", None)
+    if mark is not None:
+        return f"{name} at line {mark.line + 1}, column {mark.column + 1}"
+    return name
+
+
 @contextmanager
 def _file_lock(path: Path) -> Iterator[None]:
     """Hold an exclusive advisory lock for a read-modify-write of ``path``.
@@ -112,12 +128,24 @@ class PinStore:
 
     def __init__(self, path: Path = DEFAULT_PIN_PATH) -> None:
         self._path = path
+        self._read_error: str | None = None
         self._data: dict[str, Any] = self._load()
 
     @property
     def path(self) -> Path:
         """Return the backing pin file path."""
         return self._path
+
+    @property
+    def read_error(self) -> str | None:
+        """Parse failure from the last non-strict load, or ``None``.
+
+        Set when the pin file exists but could not be parsed, so callers can
+        tell a corrupted baseline (scarier: possibly wiped or tampered) apart
+        from a genuinely absent one — both otherwise look like
+        ``pinned_servers() == []``.
+        """
+        return self._read_error
 
     # ------------------------------------------------------------------
     # Public API
@@ -417,6 +445,7 @@ class PinStore:
         writing through them would wipe a possibly-repairable baseline.
         """
         if not self._path.exists():
+            self._read_error = None
             return {}
         try:
             # Bounded read (not stat-then-read): the file cannot grow past the
@@ -426,10 +455,12 @@ class PinStore:
             if len(data) > _MAX_PIN_FILE_BYTES:
                 raise yaml.YAMLError(f"pin file exceeds {_MAX_PIN_FILE_BYTES} bytes")
             raw: Any = yaml.load(data.decode("utf-8"), Loader=_NoAliasSafeLoader)  # noqa: S506 - loader subclasses SafeLoader
+            self._read_error = None
             return dict(raw) if isinstance(raw, dict) else {}
         except Exception as exc:
             if strict:
                 raise PinFileError(str(self._path), f"{type(exc).__name__}: {exc}") from exc
+            self._read_error = _describe_parse_error(exc)
             logger.warning(
                 "Failed to parse pin file %s (%s) — treating as empty for reading; "
                 "pin mutations will refuse to overwrite it",

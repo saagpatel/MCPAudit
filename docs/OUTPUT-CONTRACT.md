@@ -55,6 +55,10 @@ The report top level also includes:
   distinguish "checked, clean" from "check silently skipped". Fields:
   - `code` — stable machine key. Current vocabulary:
     `pin_baseline_missing` (check requested but nothing is pinned),
+    `pin_baseline_corrupted` (a pin baseline file exists but could not be
+    parsed — materially different from "missing", since it can mask a wiped
+    or tampered baseline; the message names the file and parse error, and
+    pin mutations refuse to overwrite such a file),
     `pin_baseline_stale` (pinned servers whose baseline predates the capture
     this check compares against; named in `servers`),
     `missing_credential` (e.g. `--llm-analysis` without `ANTHROPIC_API_KEY`),

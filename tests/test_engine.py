@@ -169,6 +169,74 @@ def test_missing_pin_baseline_surfaces_as_structured_warning(
     assert "--escalation-check: no pin baseline found" in warnings["escalation_check"].message
 
 
+def test_corrupted_pin_baseline_gets_distinct_warning_code(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An unparseable pin file must not masquerade as never-pinned.
+
+    A corrupted baseline can mask a wiped or tampered pin store, so it gets
+    ``pin_baseline_corrupted`` (naming the file and parse error) instead of
+    ``pin_baseline_missing``.
+    """
+    from mcp_audit import pinning
+
+    pin_file = tmp_path / "pins.yaml"
+    pin_file.write_text("{unclosed: [broken yaml")
+
+    monkeypatch.setattr(
+        engine, "discover_all_configs", lambda clients, parse_errors=None: [make_server_config(name="srv")]
+    )
+    real_pin_store = pinning.PinStore
+    monkeypatch.setattr(pinning, "PinStore", lambda: real_pin_store(path=pin_file))
+
+    report = anyio.run(run_scan, ScanOptions(skip_connect=True, escalation_check=True, integrity_check=True))
+
+    warnings = {w.check: w for w in report.warnings}
+    assert set(warnings) == {"escalation_check", "integrity_check"}
+    assert all(w.code == "pin_baseline_corrupted" for w in warnings.values())
+    assert str(pin_file) in warnings["escalation_check"].message
+    assert "could not be parsed" in warnings["escalation_check"].message
+    assert "pin_baseline_missing" not in {w.code for w in report.warnings}
+
+
+def test_pin_store_read_error_set_and_cleared(tmp_path: Path) -> None:
+    from mcp_audit.pinning import PinStore
+
+    missing = PinStore(path=tmp_path / "absent.yaml")
+    assert missing.read_error is None
+
+    corrupt_path = tmp_path / "corrupt.yaml"
+    corrupt_path.write_text("{unclosed: [broken yaml")
+    corrupted = PinStore(path=corrupt_path)
+    assert corrupted.read_error is not None
+    assert "Error" in corrupted.read_error  # parse error class is named
+
+    healthy_path = tmp_path / "healthy.yaml"
+    healthy_path.write_text("servers: {}\n")
+    healthy = PinStore(path=healthy_path)
+    assert healthy.read_error is None
+
+
+def test_pin_store_read_error_does_not_leak_source_snippet(tmp_path: Path) -> None:
+    """A parse error near a pasted secret must not echo the secret back.
+
+    PyYAML's rendered exception message includes a snippet of the offending
+    source line, so a hand-edited or corrupted pin file with a secret value
+    on the broken line would otherwise leak it into ``read_error`` — and from
+    there into ``ScanWarning.message``, which is serialized in scan JSON/MCP
+    responses.
+    """
+    from mcp_audit.pinning import PinStore
+
+    corrupt_path = tmp_path / "corrupt.yaml"
+    corrupt_path.write_text('servers:\n  demo:\n    token: "sk-live-should-not-leak-12345\n')
+    corrupted = PinStore(path=corrupt_path)
+
+    assert corrupted.read_error is not None
+    assert "sk-live-should-not-leak-12345" not in corrupted.read_error
+    assert "Error" in corrupted.read_error
+
+
 def test_stale_pin_baseline_names_affected_servers(monkeypatch: pytest.MonkeyPatch) -> None:
     """A pinned server whose baseline predates the check's capture is named in the warning."""
     from mcp_audit import pinning
