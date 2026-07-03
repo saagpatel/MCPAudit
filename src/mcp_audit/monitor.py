@@ -86,6 +86,15 @@ async def _read_message(stream: anyio.abc.ByteReceiveStream) -> dict[str, Any] |
             body.extend(chunk)
             remaining -= len(chunk)
 
+    if remaining > 0:
+        # Timeout or EOF mid-body. A partial buffer can still be valid JSON
+        # (e.g. b"{}" of a declared 100 bytes) — decoding it would forward a
+        # message that violates the frame boundary and desyncs the session.
+        logger.warning(
+            "MCP framing: body incomplete (%d of %d bytes); ending session", len(body), content_length
+        )
+        return None
+
     try:
         return json.loads(body.decode("utf-8"))  # type: ignore[no-any-return]
     except (json.JSONDecodeError, UnicodeDecodeError):
