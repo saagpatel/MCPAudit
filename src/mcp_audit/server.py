@@ -79,6 +79,7 @@ async def _scan(options: ScanOptions) -> AuditReport:
 def _build_mcp_server() -> Any:
     """Build and return the FastMCP server instance with all tools registered."""
     from mcp.server import FastMCP
+    from mcp.server.fastmcp.exceptions import ToolError
 
     app: Any = FastMCP(
         name="mcp-audit",
@@ -111,7 +112,9 @@ def _build_mcp_server() -> Any:
         report = await _scan(ScanOptions())
         audit = next((a for a in report.audits if a.server.name == name), None)
         if audit is None:
-            return json.dumps({"error": f"Server '{name}' not found"})
+            # Raise so MCP clients see isError=true, not a successful call
+            # whose payload smuggles an error they must parse out of band.
+            raise ToolError(f"Server '{name}' not found")
         return audit.model_dump_json(indent=2)
 
     @app.tool()  # type: ignore[untyped-decorator]
