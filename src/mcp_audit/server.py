@@ -369,21 +369,31 @@ def serve_command(install: bool) -> None:
 
 
 def _do_install() -> None:
-    """Write mcp-audit server entry to detected config files."""
-    installed_any = False
-    for config_path in _CLAUDE_DESKTOP_CONFIG_PATHS:
-        if config_path.exists() and _install_to_config(config_path):
-            installed_any = True
+    """Write mcp-audit server entry to detected config files.
 
-    if _CLAUDE_CODE_CONFIG_PATH.exists() and _install_to_config(_CLAUDE_CODE_CONFIG_PATH):
-        installed_any = True
+    Exit contract: 0 when no config exists (manual hint printed) or every
+    found config was updated; 1 when any found config could not be updated —
+    a found-but-unusable config must never masquerade as "not found".
+    """
+    found = 0
+    succeeded = 0
+    for config_path in [*_CLAUDE_DESKTOP_CONFIG_PATHS, _CLAUDE_CODE_CONFIG_PATH]:
+        if not config_path.exists():
+            continue
+        found += 1
+        if _install_to_config(config_path):
+            succeeded += 1
 
-    if not installed_any:
+    if found == 0:
         _console.print("[yellow]No Claude config files found. Add manually:[/yellow]")
         _console.print(
             '  Add to your claude_desktop_config.json or .claude.json under "mcpServers":\n'
             '  "mcp-audit": {"command": "mcp-audit", "args": ["serve"]}'
         )
+        return
+    if succeeded < found:
+        # Per-file error text already printed by _install_to_config.
+        raise SystemExit(1)
 
 
 async def _serve() -> None:

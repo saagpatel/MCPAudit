@@ -75,6 +75,46 @@ class TestInstallToConfig:
         assert result is False
 
 
+class TestDoInstall:
+    def _patch_paths(self, monkeypatch: pytest.MonkeyPatch, desktop: list[Path], code: Path) -> None:
+        import mcp_audit.server as server_module
+
+        monkeypatch.setattr(server_module, "_CLAUDE_DESKTOP_CONFIG_PATHS", desktop)
+        monkeypatch.setattr(server_module, "_CLAUDE_CODE_CONFIG_PATH", code)
+
+    def test_found_but_unusable_config_exits_1_without_not_found_lie(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        from mcp_audit.server import _do_install
+
+        broken = tmp_path / "claude_desktop_config.json"
+        broken.write_text("not valid json")
+        self._patch_paths(monkeypatch, [broken], tmp_path / "absent.json")
+
+        with pytest.raises(SystemExit) as excinfo:
+            _do_install()
+        assert excinfo.value.code == 1
+        assert "No Claude config files found" not in capsys.readouterr().out
+
+    def test_no_configs_found_prints_manual_hint_and_exits_0(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        from mcp_audit.server import _do_install
+
+        self._patch_paths(monkeypatch, [tmp_path / "a.json"], tmp_path / "b.json")
+        _do_install()  # must not raise
+        assert "No Claude config files found" in capsys.readouterr().out
+
+    def test_successful_install_exits_0(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        from mcp_audit.server import _do_install
+
+        cfg = tmp_path / "claude_desktop_config.json"
+        cfg.write_text(json.dumps({"mcpServers": {}}))
+        self._patch_paths(monkeypatch, [cfg], tmp_path / "absent.json")
+        _do_install()  # must not raise
+        assert "mcp-audit" in json.loads(cfg.read_text())["mcpServers"]
+
+
 class TestBuildMcpServer:
     def test_returns_fastmcp_instance(self) -> None:
         app = _build_mcp_server()
