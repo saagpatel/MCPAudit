@@ -341,8 +341,8 @@ class ReportGenerator:
         tbl.add_column("Tool", style="cyan")
         tbl.add_column("Kind")
         tbl.add_column("Severity")
-        tbl.add_column("Gained", overflow="fold")
-        tbl.add_column("Suggested Action", overflow="fold")
+        tbl.add_column("Gained", overflow="fold", min_width=18)
+        tbl.add_column("Suggested Action", overflow="fold", max_width=42)
 
         for server_name, f in findings:
             sev_style = {
