@@ -35,6 +35,18 @@ Only run connected scans when the task explicitly calls for live MCP tool-schema
 - Do not read `.env` files, keychains, OAuth stores, browser profiles, raw logs, private transcripts, cookies, or credential-bearing configs.
 - Treat remote package verification, downloads, LLM analysis, and connected server scans as higher-reach modes that need explicit justification.
 
+## Review guidelines
+
+Focus Codex review on scan correctness, silent skipped checks, degraded-state
+warnings, report schema compatibility, secret exposure in findings/warnings,
+and release or registry drift. Treat comments on missing tests as merge-relevant
+when the change touches detectors, report fields, scan modes, package
+verification, SARIF/JSON/HTML output, or MCP connection behavior.
+
+For docs-only PRs, comment only when the docs claim a scan, safety property,
+output field, release version, or verification path that is not supported by
+the reviewed tree.
+
 ## Contributing
 
 See `CONTRIBUTING.md` for the full contribution guide. Before opening a PR:
