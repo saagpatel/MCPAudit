@@ -24,7 +24,7 @@ jobs:
           fetch-depth: 0
 
       - name: Scan agent-facing permission changes
-        uses: saagpatel/agent-permission-diff-bot@v0.4.0
+        uses: saagpatel/agent-permission-diff-bot@v0.5.0
         with:
           mode: observe
           fail-on: critical
