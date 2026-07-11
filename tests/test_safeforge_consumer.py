@@ -7,11 +7,14 @@ import json
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import anyio
 import pytest
 
+from mcp_audit.api import scan_config_only as real_scan_config_only
 from mcp_audit.connector import ServerConnector
+from mcp_audit.models import AuditReport
 from mcp_audit.safeforge import StageId
 from mcp_audit.safeforge_consumer import SafeForgePreinstallResult, consume_forge_receipt
 
@@ -310,3 +313,46 @@ async def test_config_environment_keys_must_match_receipt(tmp_path: Path) -> Non
     result = await _consume(receipt, root)
     assert not result.accepted
     assert result.findings[0].code == "SF-FORGE-CONFIG-ENV"
+
+
+async def test_invalid_command_shape_cannot_accept_zero_audits(tmp_path: Path) -> None:
+    root = _write_artifact_root(tmp_path)
+    config = json.loads((root / "config.json").read_text())
+    config["mcpServers"]["safeforge-echo"]["command"] = {"not": "a string"}
+    (root / "config.json").write_text(json.dumps(config), encoding="utf-8")
+    result = await _consume(_receipt(root), root)
+    assert not result.accepted
+    assert result.findings[0].code == "SF-FORGE-CONFIG-TRANSPORT"
+
+
+async def test_zero_audit_report_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _zero_audits(config: dict[str, Any] | str | bytes, *, source: str) -> AuditReport:
+        report = await real_scan_config_only(config, source=source)
+        return report.model_copy(update={"audits": [], "servers_discovered": 0})
+
+    monkeypatch.setattr("mcp_audit.safeforge_consumer.scan_config_only", _zero_audits)
+    root = _write_artifact_root(tmp_path)
+    result = await _consume(_receipt(root), root)
+    assert not result.accepted
+    assert result.findings[0].code == "SF-AUDIT-SERVER-BINDING"
+
+
+async def test_extra_project_server_cannot_create_unbound_audit(tmp_path: Path) -> None:
+    root = _write_artifact_root(tmp_path)
+    config = json.loads((root / "config.json").read_text())
+    config["projects"] = {
+        "/tmp/project": {"mcpServers": {"extra-server": {"command": "python", "args": ["extra.py"]}}}
+    }
+    (root / "config.json").write_text(json.dumps(config), encoding="utf-8")
+    result = await _consume(_receipt(root), root)
+    assert not result.accepted
+    assert result.findings[0].code == "SF-AUDIT-SERVER-BINDING"
+
+
+async def test_streamable_receipt_rejects_local_command_config(tmp_path: Path) -> None:
+    root = _write_artifact_root(tmp_path)
+    receipt = _receipt(root)
+    receipt["source"]["transport"] = "streamable-http"  # type: ignore[index]
+    result = await _consume(receipt, root)
+    assert not result.accepted
+    assert result.findings[0].code == "SF-FORGE-CONFIG-TRANSPORT"

@@ -226,6 +226,13 @@ async def consume_forge_receipt(
         return config_error
 
     report = await scan_config_only(config_payload, source="safeforge://forge-receipt-v0")
+    audited_servers = [audit.server.name for audit in report.audits]
+    if audited_servers != [receipt.source.server_id]:
+        return _blocked(
+            "SF-AUDIT-SERVER-BINDING",
+            f"config-only audit must contain exactly the receipt server; got {audited_servers}",
+            StageId.AUDIT_CONFIG,
+        )
     report = scrub_report_identifiers(report)
     report = report.model_copy(
         update={
@@ -325,10 +332,16 @@ def _validate_config_binding(
     server = servers[receipt.source.server_id]
     if not isinstance(server, dict):
         return _blocked("SF-FORGE-CONFIG-SHAPE", "server config must contain an object")
-    if receipt.source.transport == "stdio" and ("url" in server or not server.get("command")):
+    if receipt.source.transport == "stdio":
+        if "url" in server or not isinstance(server.get("command"), str) or not server["command"]:
+            return _blocked(
+                "SF-FORGE-CONFIG-TRANSPORT",
+                "stdio receipt must bind a local string command config without a URL",
+            )
+    elif "command" in server or not isinstance(server.get("url"), str) or not server["url"]:
         return _blocked(
             "SF-FORGE-CONFIG-TRANSPORT",
-            "stdio receipt must bind a local command config without a URL",
+            "streamable-http receipt must bind a URL config without a local command",
         )
     env = server.get("env", {})
     if not isinstance(env, dict) or set(env) != set(receipt.generation.required_env_keys):
