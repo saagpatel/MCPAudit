@@ -6,6 +6,7 @@ import copy
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from mcp_audit.safeforge import (
     RESEARCH_MVP_STAGE_ORDER,
@@ -64,7 +65,7 @@ def _stage(stage_id: StageId, *, attempt: int = 1, state: str = "passed") -> dic
     return stage
 
 
-def _base_manifest() -> dict[str, object]:
+def _base_manifest() -> dict[str, Any]:
     return {
         "contract": {
             "contract_id": "safeforge.pipeline",
@@ -131,7 +132,7 @@ def _base_manifest() -> dict[str, object]:
 
 def _final_manifest() -> dict[str, object]:
     manifest = _base_manifest()
-    manifest["run"]["decision"] = "eligible"  # type: ignore[index]
+    manifest["run"]["decision"] = "eligible"
     manifest["stages"] = [_stage(stage_id) for stage_id in RESEARCH_MVP_STAGE_ORDER]
     manifest["sandbox"] = {
         "provider": "docker",
@@ -240,38 +241,38 @@ def test_schema_forbids_secret_bearing_extra_fields() -> None:
 
 def test_digest_format_is_fail_closed() -> None:
     manifest = _base_manifest()
-    manifest["artifact"]["tree_digest"] = "not-a-digest"  # type: ignore[index]
+    manifest["artifact"]["tree_digest"] = "not-a-digest"
     assert _codes(manifest) == {"SF-CONTRACT-SCHEMA"}
 
 
 def test_artifact_uri_must_be_portable() -> None:
     manifest = _base_manifest()
-    manifest["artifact"]["files"][0]["uri"] = "/Users/private/server.py"  # type: ignore[index]
+    manifest["artifact"]["files"][0]["uri"] = "/Users/private/server.py"
     assert _codes(manifest) == {"SF-CONTRACT-SCHEMA"}
 
 
 def test_artifact_uri_rejects_remote_and_windows_absolute_references() -> None:
     for uri in ("https://example.invalid/evidence.json", "C:\\private\\evidence.json"):
         manifest = _base_manifest()
-        manifest["artifact"]["files"][0]["uri"] = uri  # type: ignore[index]
+        manifest["artifact"]["files"][0]["uri"] = uri
         assert _codes(manifest) == {"SF-CONTRACT-SCHEMA"}
 
 
 def test_negotiated_protocol_must_be_supported() -> None:
     manifest = _base_manifest()
-    manifest["subject"]["mcp_protocol_negotiated"] = "2024-11-05"  # type: ignore[index]
+    manifest["subject"]["mcp_protocol_negotiated"] = "2024-11-05"
     assert _codes(manifest) == {"SF-CONTRACT-SCHEMA"}
 
 
 def test_tool_id_must_bind_server_and_name() -> None:
     manifest = _base_manifest()
-    manifest["toolbom"][0]["tool_id"] = "other-server#echo"  # type: ignore[index]
+    manifest["toolbom"][0]["tool_id"] = "other-server#echo"
     assert "SF-CONTRACT-TOOL-ID" in _codes(manifest)
 
 
 def test_duplicate_tool_ids_are_rejected() -> None:
     manifest = _base_manifest()
-    manifest["toolbom"].append(copy.deepcopy(manifest["toolbom"][0]))  # type: ignore[union-attr,index]
+    manifest["toolbom"].append(copy.deepcopy(manifest["toolbom"][0]))
     assert "SF-CONTRACT-TOOL-DUPLICATE" in _codes(manifest)
 
 

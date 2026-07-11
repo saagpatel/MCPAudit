@@ -13,7 +13,7 @@ import pytest
 
 from mcp_audit.connector import ServerConnector
 from mcp_audit.safeforge import StageId
-from mcp_audit.safeforge_consumer import consume_forge_receipt
+from mcp_audit.safeforge_consumer import SafeForgePreinstallResult, consume_forge_receipt
 
 _NOW = datetime(2026, 7, 10, 12, 0, tzinfo=UTC)
 _FILES = {
@@ -153,7 +153,7 @@ def _receipt(root: Path) -> dict[str, object]:
     }
 
 
-async def _consume(receipt: dict[str, object], root: Path):
+async def _consume(receipt: dict[str, object], root: Path) -> SafeForgePreinstallResult:
     return await consume_forge_receipt(
         receipt,
         root,

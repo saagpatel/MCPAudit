@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from typing import Any
 
 from mcp_audit.safeforge_consumer import ForgeReceiptV0Input
 from mcp_audit.safeforge_contract_linter import ContractChange, lint_forge_receipt_schema
 
 
-def _schema() -> dict[str, object]:
+def _schema() -> dict[str, Any]:
     return ForgeReceiptV0Input.model_json_schema()
 
 
@@ -29,14 +30,14 @@ def test_annotation_only_changes_remain_compatible() -> None:
 
 def test_required_field_order_is_not_semantic_drift() -> None:
     schema = deepcopy(_schema())
-    schema["required"] = list(reversed(schema["required"]))  # type: ignore[arg-type]
+    schema["required"] = list(reversed(schema["required"]))
     result = lint_forge_receipt_schema(schema)
     assert result.compatible
 
 
 def test_new_optional_field_is_additive_but_blocked_by_strict_v0_consumer() -> None:
     schema = deepcopy(_schema())
-    schema["properties"]["producer_note"] = {"type": "string"}  # type: ignore[index]
+    schema["properties"]["producer_note"] = {"type": "string"}
     result = lint_forge_receipt_schema(schema)
     assert not result.compatible
     assert result.issues[0].change is ContractChange.ADDITIVE
@@ -45,7 +46,7 @@ def test_new_optional_field_is_additive_but_blocked_by_strict_v0_consumer() -> N
 
 def test_required_field_or_version_change_is_breaking() -> None:
     schema = deepcopy(_schema())
-    schema["required"] = [name for name in schema["required"] if name != "artifact"]  # type: ignore[index]
+    schema["required"] = [name for name in schema["required"] if name != "artifact"]
     result = lint_forge_receipt_schema(schema)
     assert not result.compatible
     assert any(issue.change is ContractChange.BREAKING for issue in result.issues)
@@ -53,9 +54,9 @@ def test_required_field_or_version_change_is_breaking() -> None:
 
 def test_consumer_only_constraint_is_breaking() -> None:
     schema = deepcopy(_schema())
-    producer = schema["$defs"]["ForgeProducerInput"]  # type: ignore[index]
-    producer["properties"]["version"].pop("minLength", None)  # type: ignore[index]
-    producer["properties"]["version"]["maxLength"] = 20  # type: ignore[index]
+    producer = schema["$defs"]["ForgeProducerInput"]
+    producer["properties"]["version"].pop("minLength", None)
+    producer["properties"]["version"]["maxLength"] = 20
     result = lint_forge_receipt_schema(schema)
     assert not result.compatible
     assert any(issue.path.endswith("/maxLength") for issue in result.issues)
