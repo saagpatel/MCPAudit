@@ -100,6 +100,86 @@ The generated JSON Schema for the current model is checked in at
 `examples/schemas/audit-report.schema.json` and is tested against the live
 Pydantic model.
 
+## SafeForge Manifest v0
+
+SafeForge uses a separate, additive evidence-envelope contract; it does not
+change `AuditReport` schema version `1`. The generated schema is checked in at
+`examples/schemas/safeforge-manifest-v0.schema.json` and is tested against the
+live `SafeForgeManifest` model.
+
+The v0 contract is intentionally pre-install and read-only. Importing or calling
+`mcp_audit.safeforge` does not install dependencies, launch an MCP server, run a
+connected scan, evaluate a live policy, grade a server, or publish anything.
+Producers populate the manifest; `validate_safeforge_manifest` checks its shape
+and the research pipeline's fail-closed semantics.
+
+`consume_forge_receipt` in `mcp_audit.safeforge_consumer` accepts a
+`ForgeReceiptV0` payload plus its generated artifact root. It validates the
+producer contract, rejects symlinks and any undeclared file, recomputes every
+file and tree digest, verifies dependency and launch-config bindings, and then
+runs only `scan_config_only`. A successful handoff records these stages, in
+order: `source.bind`, `forge.plan`, `forge.generate`, `validate.static`,
+`contract.preinstall`, and `audit.config`. Receipt, artifact, dependency, config,
+or config-audit warnings block the handoff. The partial manifest remains
+`building`; protocol negotiation, sandboxing, connected audit, grading, policy
+binding, publication, and final receipt creation are explicitly outside this
+consumer.
+
+Before receipt ingestion, coordinators can pass mcpforge's exported JSON Schema
+to `lint_forge_receipt_schema` in `mcp_audit.safeforge_contract_linter`. The
+linter dereferences and canonicalizes both schemas, ignores annotation-only
+changes such as titles and descriptions, and compares their accepted semantic
+shape. Exact matches pass. New optional producer fields are classified as
+`additive`, but still fail the strict v0 compatibility gate because MCPAudit
+rejects unknown receipt fields. Removed fields, required-field changes, version
+changes, and constraint changes are classified as `breaking`. The result includes
+canonical producer and consumer SHA-256 digests, so a workflow can bind its
+compatibility decision without importing or executing generated server code.
+
+Contract schema input is limited to one MiB, receipt input to four MiB, and
+schema normalization to local fragment references, 64 levels, and 10,000 nodes.
+Malformed, external, missing, cyclic, or oversized schemas return structured
+fail-closed output rather than escaping the JSON command contract.
+
+ToolBOM entries bind declared capabilities to an implementation digest and
+code-observed filesystem/network behavior. Filesystem access requires the
+`filesystem` permission, and observed network destinations must match declared
+egress. An unresolved producer security warning is not preinstall-eligible and
+cannot be converted into a passed static stage.
+
+The `mcp-audit safeforge-preinstall` command composes those two boundaries. It
+requires `--producer-schema`, `--receipt`, `--artifact-root`, `--run-id`,
+`--created-at`, and `--coordinator-revision`. Contract linting runs before the
+artifact path is inspected. Standard output is always one JSON object: exit `0`
+means the contract and preinstall audit were accepted, exit `1` means a
+fail-closed contract or preinstall decision, and exit `2` means the command
+inputs could not be parsed. The command has no connected, install, sandbox,
+grading, policy, publication, or finalization mode.
+
+For deterministic receipt replay, the embedded config-only report replaces four
+non-security runtime fields with canonical values: its timestamp is the required
+coordinator `--created-at`, hostname is `<canonical-host>`, platform is
+`canonical`, and elapsed time is `0.0`. Findings, warnings, coverage, server
+configuration evidence, and risk calculations are not normalized. This makes
+the report reference and partial manifest stable for identical declared inputs.
+
+Stable v0 identities:
+
+- `contract_id`: `safeforge.pipeline`
+- `contract_version`: `0.1.0`
+- `profile`: `research-mvp`
+
+The validator distinguishes structural failures from semantic pipeline
+failures. Structural failures use `SF-CONTRACT-SCHEMA`; semantic findings use
+stable `SF-*` codes for tool identity, attempt history, state transitions,
+stage order, final evidence, policy status, grade freshness, and publication
+dry-run status. Required stages that are skipped, unknown, stale, failed, or
+blocked cannot finalize as eligible.
+
+Manifest models reject unknown fields and permit credential *key names* only.
+Artifact references must use portable relative URIs and SHA-256 digests; local
+absolute paths and `file:` URIs are invalid.
+
 Finding targets:
 
 - tool permission and drift findings use `tool_name` and additive

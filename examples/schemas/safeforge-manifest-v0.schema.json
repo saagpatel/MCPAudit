@@ -1,0 +1,970 @@
+{
+  "$defs": {
+    "ArtifactInventory": {
+      "additionalProperties": false,
+      "properties": {
+        "dependency_manifest_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Dependency Manifest Digest",
+          "type": "string"
+        },
+        "files": {
+          "items": {
+            "$ref": "#/$defs/ArtifactReference"
+          },
+          "minItems": 1,
+          "title": "Files",
+          "type": "array"
+        },
+        "lockfile_digest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lockfile Digest"
+        },
+        "package_identities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Package Identities",
+          "type": "array"
+        },
+        "tree_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Tree Digest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tree_digest",
+        "files",
+        "dependency_manifest_digest"
+      ],
+      "title": "ArtifactInventory",
+      "type": "object"
+    },
+    "ArtifactReference": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]*$",
+          "title": "Artifact Id",
+          "type": "string"
+        },
+        "digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Digest",
+          "type": "string"
+        },
+        "media_type": {
+          "minLength": 1,
+          "title": "Media Type",
+          "type": "string"
+        },
+        "uri": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Portable relative reference only; absolute and file URIs are rejected.",
+          "title": "Uri"
+        }
+      },
+      "required": [
+        "artifact_id",
+        "media_type",
+        "digest"
+      ],
+      "title": "ArtifactReference",
+      "type": "object"
+    },
+    "AuditEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "connection_statuses": {
+          "additionalProperties": {
+            "enum": [
+              "connected",
+              "failed",
+              "timeout",
+              "skipped"
+            ],
+            "type": "string"
+          },
+          "title": "Connection Statuses",
+          "type": "object"
+        },
+        "detector_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Detector Ids",
+          "type": "array"
+        },
+        "report": {
+          "$ref": "#/$defs/ArtifactReference"
+        },
+        "report_schema_version": {
+          "minimum": 1,
+          "title": "Report Schema Version",
+          "type": "integer"
+        },
+        "warning_codes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warning Codes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "report",
+        "report_schema_version",
+        "detector_ids",
+        "connection_statuses"
+      ],
+      "title": "AuditEvidence",
+      "type": "object"
+    },
+    "ContractHeader": {
+      "additionalProperties": false,
+      "properties": {
+        "contract_id": {
+          "const": "safeforge.pipeline",
+          "default": "safeforge.pipeline",
+          "title": "Contract Id",
+          "type": "string"
+        },
+        "contract_version": {
+          "const": "0.1.0",
+          "default": "0.1.0",
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "profile": {
+          "const": "research-mvp",
+          "default": "research-mvp",
+          "title": "Profile",
+          "type": "string"
+        }
+      },
+      "title": "ContractHeader",
+      "type": "object"
+    },
+    "Coverage": {
+      "additionalProperties": false,
+      "properties": {
+        "executed": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Executed",
+          "type": "array"
+        },
+        "requested": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Requested",
+          "type": "array"
+        },
+        "skipped": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Skipped",
+          "type": "array"
+        },
+        "unavailable": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Unavailable",
+          "type": "array"
+        }
+      },
+      "title": "Coverage",
+      "type": "object"
+    },
+    "DeclaredCapabilities": {
+      "additionalProperties": false,
+      "properties": {
+        "auth_scopes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Auth Scopes",
+          "type": "array"
+        },
+        "credential_keys": {
+          "items": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+            "type": "string"
+          },
+          "title": "Credential Keys",
+          "type": "array"
+        },
+        "data_zones": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Data Zones",
+          "type": "array"
+        },
+        "egress_destinations": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Egress Destinations",
+          "type": "array"
+        },
+        "permissions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Permissions",
+          "type": "array"
+        }
+      },
+      "title": "DeclaredCapabilities",
+      "type": "object"
+    },
+    "GradeEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "audit_report_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Audit Report Digest",
+          "type": "string"
+        },
+        "current": {
+          "title": "Current",
+          "type": "boolean"
+        },
+        "grade": {
+          "minLength": 1,
+          "title": "Grade",
+          "type": "string"
+        },
+        "grading_policy_version": {
+          "minLength": 1,
+          "title": "Grading Policy Version",
+          "type": "string"
+        },
+        "transparency": {
+          "minLength": 1,
+          "title": "Transparency",
+          "type": "string"
+        }
+      },
+      "required": [
+        "grade",
+        "transparency",
+        "audit_report_digest",
+        "grading_policy_version",
+        "current"
+      ],
+      "title": "GradeEvidence",
+      "type": "object"
+    },
+    "IntegrityEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "hash_algorithm": {
+          "const": "sha256",
+          "default": "sha256",
+          "title": "Hash Algorithm",
+          "type": "string"
+        },
+        "receipt_refs": {
+          "items": {
+            "$ref": "#/$defs/ArtifactReference"
+          },
+          "minItems": 1,
+          "title": "Receipt Refs",
+          "type": "array"
+        },
+        "signature_refs": {
+          "items": {
+            "$ref": "#/$defs/ArtifactReference"
+          },
+          "title": "Signature Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "receipt_refs"
+      ],
+      "title": "IntegrityEvidence",
+      "type": "object"
+    },
+    "PipelineDecision": {
+      "enum": [
+        "building",
+        "eligible",
+        "blocked",
+        "stale"
+      ],
+      "title": "PipelineDecision",
+      "type": "string"
+    },
+    "PolicyEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "audit",
+            "egress"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "policy_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Policy Digest",
+          "type": "string"
+        },
+        "policy_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]*$",
+          "title": "Policy Id",
+          "type": "string"
+        },
+        "policy_version": {
+          "minLength": 1,
+          "title": "Policy Version",
+          "type": "string"
+        },
+        "result": {
+          "enum": [
+            "passed",
+            "failed",
+            "unknown"
+          ],
+          "title": "Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "policy_id",
+        "policy_version",
+        "policy_digest",
+        "result"
+      ],
+      "title": "PolicyEvidence",
+      "type": "object"
+    },
+    "ProducerIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "dirty": {
+          "title": "Dirty",
+          "type": "boolean"
+        },
+        "executable": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Executable"
+        },
+        "name": {
+          "pattern": "^[a-z0-9][a-z0-9._-]*$",
+          "title": "Name",
+          "type": "string"
+        },
+        "revision": {
+          "minLength": 1,
+          "title": "Revision",
+          "type": "string"
+        },
+        "source": {
+          "description": "Package or repository identity; never a secret URL.",
+          "minLength": 1,
+          "title": "Source",
+          "type": "string"
+        },
+        "version": {
+          "minLength": 1,
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "source",
+        "revision",
+        "dirty"
+      ],
+      "title": "ProducerIdentity",
+      "type": "object"
+    },
+    "PublicationEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "dry_run": {
+          "const": true,
+          "default": true,
+          "title": "Dry Run",
+          "type": "boolean"
+        },
+        "metadata_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Metadata Digest",
+          "type": "string"
+        },
+        "result": {
+          "enum": [
+            "passed",
+            "failed",
+            "unknown"
+          ],
+          "title": "Result",
+          "type": "string"
+        },
+        "schema_version": {
+          "minLength": 1,
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "target": {
+          "minLength": 1,
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target",
+        "metadata_digest",
+        "schema_version",
+        "result"
+      ],
+      "title": "PublicationEvidence",
+      "type": "object"
+    },
+    "RunInfo": {
+      "additionalProperties": false,
+      "properties": {
+        "coordinator": {
+          "$ref": "#/$defs/ProducerIdentity"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "decision": {
+          "$ref": "#/$defs/PipelineDecision",
+          "default": "building"
+        },
+        "run_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]*$",
+          "title": "Run Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "created_at",
+        "coordinator"
+      ],
+      "title": "RunInfo",
+      "type": "object"
+    },
+    "SandboxEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "credential_mode": {
+          "enum": [
+            "none",
+            "dummy",
+            "live"
+          ],
+          "title": "Credential Mode",
+          "type": "string"
+        },
+        "image_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Image Digest",
+          "type": "string"
+        },
+        "isolates": {
+          "title": "Isolates",
+          "type": "boolean"
+        },
+        "mounts": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Mounts",
+          "type": "array"
+        },
+        "network": {
+          "enum": [
+            "none",
+            "restricted",
+            "host"
+          ],
+          "title": "Network",
+          "type": "string"
+        },
+        "policy_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Policy Digest",
+          "type": "string"
+        },
+        "provider": {
+          "minLength": 1,
+          "title": "Provider",
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "isolates",
+        "image_digest",
+        "network",
+        "credential_mode",
+        "policy_digest"
+      ],
+      "title": "SandboxEvidence",
+      "type": "object"
+    },
+    "StageAttempt": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt": {
+          "minimum": 1,
+          "title": "Attempt",
+          "type": "integer"
+        },
+        "coverage": {
+          "$ref": "#/$defs/Coverage"
+        },
+        "failure_codes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Failure Codes",
+          "type": "array"
+        },
+        "finding_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Finding Ids",
+          "type": "array"
+        },
+        "finished_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Finished At"
+        },
+        "inputs": {
+          "items": {
+            "$ref": "#/$defs/ArtifactReference"
+          },
+          "title": "Inputs",
+          "type": "array"
+        },
+        "limitations": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Limitations",
+          "type": "array"
+        },
+        "outputs": {
+          "items": {
+            "$ref": "#/$defs/ArtifactReference"
+          },
+          "title": "Outputs",
+          "type": "array"
+        },
+        "producer": {
+          "$ref": "#/$defs/ProducerIdentity"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "stage_id": {
+          "$ref": "#/$defs/StageId"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Started At"
+        },
+        "state": {
+          "$ref": "#/$defs/StageState"
+        }
+      },
+      "required": [
+        "stage_id",
+        "attempt",
+        "state",
+        "producer"
+      ],
+      "title": "StageAttempt",
+      "type": "object"
+    },
+    "StageId": {
+      "enum": [
+        "source.bind",
+        "forge.plan",
+        "forge.generate",
+        "validate.static",
+        "contract.preinstall",
+        "audit.config",
+        "sandbox.prepare",
+        "sandbox.materialize",
+        "audit.connected",
+        "trust.grade",
+        "runtime.policy.bind",
+        "publication.dry_run",
+        "receipt.finalize"
+      ],
+      "title": "StageId",
+      "type": "string"
+    },
+    "StageState": {
+      "enum": [
+        "pending",
+        "running",
+        "passed",
+        "failed",
+        "skipped",
+        "unknown",
+        "stale",
+        "blocked"
+      ],
+      "title": "StageState",
+      "type": "string"
+    },
+    "Subject": {
+      "additionalProperties": false,
+      "properties": {
+        "mcp_protocol_negotiated": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mcp Protocol Negotiated"
+        },
+        "mcp_protocol_supported": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Mcp Protocol Supported",
+          "type": "array"
+        },
+        "server_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]*$",
+          "title": "Server Id",
+          "type": "string"
+        },
+        "source_kind": {
+          "enum": [
+            "natural-language",
+            "openapi",
+            "structured-plan",
+            "scaffold"
+          ],
+          "title": "Source Kind",
+          "type": "string"
+        },
+        "source_spec_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Source Spec Digest",
+          "type": "string"
+        },
+        "transport": {
+          "enum": [
+            "stdio",
+            "streamable-http"
+          ],
+          "title": "Transport",
+          "type": "string"
+        }
+      },
+      "required": [
+        "server_id",
+        "source_kind",
+        "source_spec_digest",
+        "transport",
+        "mcp_protocol_supported"
+      ],
+      "title": "Subject",
+      "type": "object"
+    },
+    "ToolAnnotations": {
+      "additionalProperties": false,
+      "properties": {
+        "destructive": {
+          "title": "Destructive",
+          "type": "boolean"
+        },
+        "idempotent": {
+          "title": "Idempotent",
+          "type": "boolean"
+        },
+        "open_world": {
+          "title": "Open World",
+          "type": "boolean"
+        },
+        "read_only": {
+          "title": "Read Only",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "read_only",
+        "destructive",
+        "idempotent",
+        "open_world"
+      ],
+      "title": "ToolAnnotations",
+      "type": "object"
+    },
+    "ToolBOMEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "annotations": {
+          "$ref": "#/$defs/ToolAnnotations"
+        },
+        "declared": {
+          "$ref": "#/$defs/DeclaredCapabilities"
+        },
+        "description_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Description Digest",
+          "type": "string"
+        },
+        "implementation_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Implementation Digest",
+          "type": "string"
+        },
+        "input_schema_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Input Schema Digest",
+          "type": "string"
+        },
+        "name": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$",
+          "title": "Name",
+          "type": "string"
+        },
+        "observed_capabilities": {
+          "items": {
+            "enum": [
+              "filesystem",
+              "network"
+            ],
+            "type": "string"
+          },
+          "title": "Observed Capabilities",
+          "type": "array"
+        },
+        "observed_egress_destinations": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Observed Egress Destinations",
+          "type": "array"
+        },
+        "output_schema_digest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Schema Digest"
+        },
+        "tool_id": {
+          "minLength": 3,
+          "title": "Tool Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool_id",
+        "name",
+        "description_digest",
+        "input_schema_digest",
+        "implementation_digest",
+        "annotations",
+        "declared"
+      ],
+      "title": "ToolBOMEntry",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "artifact": {
+      "$ref": "#/$defs/ArtifactInventory"
+    },
+    "audit": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AuditEvidence"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "contract": {
+      "$ref": "#/$defs/ContractHeader"
+    },
+    "grade": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/GradeEvidence"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "integrity": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/IntegrityEvidence"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "limitations": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Limitations",
+      "type": "array"
+    },
+    "policies": {
+      "items": {
+        "$ref": "#/$defs/PolicyEvidence"
+      },
+      "title": "Policies",
+      "type": "array"
+    },
+    "producers": {
+      "items": {
+        "$ref": "#/$defs/ProducerIdentity"
+      },
+      "minItems": 1,
+      "title": "Producers",
+      "type": "array"
+    },
+    "publication": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PublicationEvidence"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "run": {
+      "$ref": "#/$defs/RunInfo"
+    },
+    "sandbox": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SandboxEvidence"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "stages": {
+      "items": {
+        "$ref": "#/$defs/StageAttempt"
+      },
+      "minItems": 1,
+      "title": "Stages",
+      "type": "array"
+    },
+    "subject": {
+      "$ref": "#/$defs/Subject"
+    },
+    "toolbom": {
+      "items": {
+        "$ref": "#/$defs/ToolBOMEntry"
+      },
+      "minItems": 1,
+      "title": "Toolbom",
+      "type": "array"
+    }
+  },
+  "required": [
+    "contract",
+    "run",
+    "subject",
+    "producers",
+    "artifact",
+    "toolbom",
+    "stages"
+  ],
+  "title": "SafeForgeManifest",
+  "type": "object"
+}
