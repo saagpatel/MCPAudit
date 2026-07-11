@@ -188,7 +188,10 @@ def test_runtime_only_capability_mutations_fail_closed(mutation: object, code: s
     assert caught.value.stage is StageId.AUDIT_CONNECTED
 
 
-def test_declared_or_dynamic_egress_is_blocked_before_materialization(tmp_path: Path) -> None:
+def test_declared_or_dynamic_egress_is_blocked_before_materialization(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("mcp_audit.safeforge_runtime._SANDBOX_EXEC", tmp_path / "missing")
     for declared, observed in [(["example.invalid"], ["network"]), ([], ["network"])]:
         receipt = _receipt()
         receipt.toolbom[0].declared.egress_destinations = declared
@@ -200,7 +203,10 @@ def test_declared_or_dynamic_egress_is_blocked_before_materialization(tmp_path: 
         assert caught.value.code == "SF-SANDBOX-EGRESS-UNSUPPORTED"
 
 
-def test_filesystem_capability_is_blocked_before_materialization(tmp_path: Path) -> None:
+def test_filesystem_capability_is_blocked_before_materialization(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("mcp_audit.safeforge_runtime._SANDBOX_EXEC", tmp_path / "missing")
     receipt = _receipt()
     receipt.toolbom[0].observed_capabilities = ["filesystem"]
     receipt.toolbom[0].declared.permissions = ["filesystem"]

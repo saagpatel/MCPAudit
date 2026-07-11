@@ -193,12 +193,6 @@ async def run_safeforge_pipeline(
 def _execute_runtime(
     receipt: ForgeReceiptV0Input, artifact_root: Path, root: Path
 ) -> tuple[dict[str, Any], dict[str, str], list[RuntimeStepEvidence]]:
-    if not _SANDBOX_EXEC.is_file() or not _UV.is_file() or not _PYTHON.is_file():
-        raise _RuntimeBlocked(
-            "SF-SANDBOX-UNAVAILABLE",
-            StageId.SANDBOX_PREPARE,
-            "macOS Seatbelt, uv, and CPython 3.12 are required",
-        )
     if receipt.source.transport != "stdio":
         raise _RuntimeBlocked(
             "SF-SANDBOX-TRANSPORT",
@@ -247,6 +241,12 @@ def _execute_runtime(
             "SF-SANDBOX-FILESYSTEM-UNSUPPORTED",
             StageId.SANDBOX_PREPARE,
             "the research runtime supports only tools with no filesystem capability",
+        )
+    if not _SANDBOX_EXEC.is_file() or not _UV.is_file() or not _PYTHON.is_file():
+        raise _RuntimeBlocked(
+            "SF-SANDBOX-UNAVAILABLE",
+            StageId.SANDBOX_PREPARE,
+            "macOS Seatbelt, uv, and CPython 3.12 are required",
         )
 
     project = root / "artifact"
