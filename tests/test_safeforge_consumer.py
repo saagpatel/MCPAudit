@@ -278,6 +278,18 @@ async def test_changed_file_digest_blocks(tmp_path: Path) -> None:
     assert result.findings[0].code == "SF-FORGE-ARTIFACT-DIGEST"
 
 
+async def test_lockfile_substitution_blocks_before_materialization(tmp_path: Path) -> None:
+    root = _write_artifact_root(tmp_path)
+    (root / "uv.lock").write_text('[[package]]\nname = "fastmcp"\nversion = "3.4.4"\n')
+    receipt = _receipt(root)
+    lock = next(item for item in receipt["artifact"]["files"] if item["path"] == "uv.lock")  # type: ignore[index]
+    receipt["artifact"]["lockfile_digest"] = lock["digest"]  # type: ignore[index]
+    (root / "uv.lock").write_text('[[package]]\nname = "substituted"\nversion = "9"\n')
+    result = await _consume(receipt, root)
+    assert not result.accepted
+    assert result.findings[0].code == "SF-FORGE-ARTIFACT-DIGEST"
+
+
 async def test_tree_digest_mismatch_blocks(tmp_path: Path) -> None:
     root = _write_artifact_root(tmp_path)
     receipt = _receipt(root)
@@ -323,6 +335,23 @@ async def test_invalid_command_shape_cannot_accept_zero_audits(tmp_path: Path) -
     result = await _consume(_receipt(root), root)
     assert not result.accepted
     assert result.findings[0].code == "SF-FORGE-CONFIG-TRANSPORT"
+
+
+async def test_launch_arguments_must_match_receipt(tmp_path: Path) -> None:
+    root = _write_artifact_root(tmp_path)
+    config = json.loads((root / "config.json").read_text())
+    config["mcpServers"]["safeforge-echo"]["args"] = ["run", "python", "other.py"]
+    (root / "config.json").write_text(json.dumps(config), encoding="utf-8")
+    receipt = _receipt(root)
+    receipt["launch"] = {
+        "command": "python",
+        "args": ["server.py"],
+        "url": None,
+        "env_keys": [],
+    }
+    result = await _consume(receipt, root)
+    assert not result.accepted
+    assert result.findings[0].code == "SF-FORGE-CONFIG-LAUNCH"
 
 
 async def test_zero_audit_report_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

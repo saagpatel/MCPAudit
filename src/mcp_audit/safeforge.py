@@ -224,6 +224,14 @@ class SandboxEvidence(_StrictModel):
     mounts: list[str] = Field(default_factory=list)
     credential_mode: Literal["none", "dummy", "live"]
     policy_digest: Digest
+    home_isolated: bool = False
+    cache_isolated: bool = False
+    filesystem_denied: bool = False
+    network_denied: bool = False
+    keychain_denied: bool = False
+    process_group_terminated: bool = False
+    cleanup_verified: bool = False
+    limits: dict[str, int] = Field(default_factory=dict)
 
 
 class AuditEvidence(_StrictModel):
@@ -240,6 +248,8 @@ class PolicyEvidence(_StrictModel):
     policy_version: str = Field(min_length=1)
     policy_digest: Digest
     result: Literal["passed", "failed", "unknown"]
+    artifact_digest: Digest | None = None
+    audit_digest: Digest | None = None
 
 
 class GradeEvidence(_StrictModel):
@@ -248,6 +258,8 @@ class GradeEvidence(_StrictModel):
     audit_report_digest: Digest
     grading_policy_version: str = Field(min_length=1)
     current: bool
+    confidence: Literal["low", "medium", "high"] = "low"
+    limitations: list[str] = Field(default_factory=list)
 
 
 class PublicationEvidence(_StrictModel):
@@ -548,8 +560,33 @@ def _validate_final_manifest(manifest: SafeForgeManifest) -> list[SafeForgeFindi
             findings.append(
                 _error("SF-SANDBOX-CREDENTIALS", "credential-free research fixture requires none mode")
             )
+        if not all(
+            (
+                manifest.sandbox.home_isolated,
+                manifest.sandbox.cache_isolated,
+                manifest.sandbox.filesystem_denied,
+                manifest.sandbox.network_denied,
+                manifest.sandbox.keychain_denied,
+                manifest.sandbox.process_group_terminated,
+                manifest.sandbox.cleanup_verified,
+            )
+        ):
+            findings.append(
+                _error("SF-SANDBOX-PROOF", "final sandbox requires every isolation and cleanup proof")
+            )
     if manifest.policies and any(policy.result != "passed" for policy in manifest.policies):
         findings.append(_error("SF-POLICY-NOT-PASSED", "all final policies must pass"))
+    if manifest.policies and (
+        manifest.audit is None
+        or any(
+            policy.artifact_digest != manifest.artifact.tree_digest
+            or policy.audit_digest != manifest.audit.report.digest
+            for policy in manifest.policies
+        )
+    ):
+        findings.append(
+            _error("SF-POLICY-BINDING", "every final policy must bind exact artifact and audit digests")
+        )
     policy_kinds = {policy.kind for policy in manifest.policies}
     if policy_kinds != {"audit", "egress"}:
         findings.append(
