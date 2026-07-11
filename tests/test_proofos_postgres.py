@@ -902,7 +902,9 @@ def test_successful_but_deceptive_rollback_is_blocked(tmp_path: Path) -> None:
         rollback_sql="ALTER TABLE app.accounts DROP CONSTRAINT accounts_display_name_len;",
     )
     phases = _manifest().model_dump(mode="json")["phases"]
-    phases[0]["rollback_digest"] = digest_bytes(deceptive["expand"].rollback_sql.encode())
+    deceptive_rollback = deceptive["expand"].rollback_sql
+    assert deceptive_rollback is not None
+    phases[0]["rollback_digest"] = digest_bytes(deceptive_rollback.encode())
     receipt = verify_postgres_migration(
         _manifest(phases),
         _BASELINE,
