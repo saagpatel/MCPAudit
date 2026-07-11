@@ -73,6 +73,13 @@ class ForgeGenerationInput(_StrictModel):
     required_env_keys: list[EnvKey] = Field(default_factory=list)
 
 
+class ForgeLaunchInput(_StrictModel):
+    command: str | None = None
+    args: list[str] = Field(default_factory=list)
+    url: str | None = None
+    env_keys: list[EnvKey] = Field(default_factory=list)
+
+
 class ForgeArtifactFileInput(_StrictModel):
     path: str
     media_type: str
@@ -155,6 +162,7 @@ class ForgeReceiptV0Input(_StrictModel):
     producer: ForgeProducerInput
     source: ForgeSourceInput
     generation: ForgeGenerationInput
+    launch: ForgeLaunchInput | None = None
     artifact: ForgeArtifactInventoryInput
     toolbom: list[ForgeToolBOMInput] = Field(min_length=1)
     validation: ForgeValidationInput
@@ -172,6 +180,13 @@ class ForgeReceiptV0Input(_StrictModel):
             expected = f"{self.source.server_id}#{tool.name}"
             if tool.tool_id != expected:
                 raise ValueError(f"tool_id {tool.tool_id!r} must equal {expected!r}")
+        if self.launch is not None:
+            if self.source.transport == "stdio" and (not self.launch.command or self.launch.url is not None):
+                raise ValueError("stdio launch requires command and forbids url")
+            if self.source.transport == "streamable-http" and (
+                self.launch.command is not None or not self.launch.url
+            ):
+                raise ValueError("streamable-http launch requires url and forbids command")
         expected_eligible = all(
             state == "passed"
             for state in (self.validation.syntax, self.validation.security, self.validation.lint)
@@ -315,6 +330,14 @@ def _verify_artifact_root(
             "SF-FORGE-DEPENDENCY-BINDING",
             "dependency manifest digest does not match pyproject.toml",
         )
+    lockfile = next((item for item in ordered if item.path == "uv.lock"), None)
+    if receipt.artifact.lockfile_digest is not None and (
+        lockfile is None or lockfile.digest != receipt.artifact.lockfile_digest
+    ):
+        return _blocked(
+            "SF-FORGE-LOCK-BINDING",
+            "lockfile digest does not match uv.lock",
+        )
     return None
 
 
@@ -349,6 +372,17 @@ def _validate_config_binding(
             "SF-FORGE-CONFIG-ENV",
             "config environment key names do not match forge receipt",
         )
+    if receipt.launch is not None:
+        if (
+            server.get("command") != receipt.launch.command
+            or server.get("args", []) != receipt.launch.args
+            or server.get("url") != receipt.launch.url
+            or sorted(env) != receipt.launch.env_keys
+        ):
+            return _blocked(
+                "SF-FORGE-CONFIG-LAUNCH",
+                "config command, arguments, URL, or environment keys differ from forge receipt",
+            )
     return None
 
 

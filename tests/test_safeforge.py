@@ -142,6 +142,13 @@ def _final_manifest() -> dict[str, object]:
         "mounts": [],
         "credential_mode": "none",
         "policy_digest": _DIGEST_B,
+        "home_isolated": True,
+        "cache_isolated": True,
+        "filesystem_denied": True,
+        "network_denied": True,
+        "keychain_denied": True,
+        "process_group_terminated": True,
+        "cleanup_verified": True,
     }
     manifest["audit"] = {
         "report": _artifact("mcp-audit-report", _DIGEST_B),
@@ -157,6 +164,8 @@ def _final_manifest() -> dict[str, object]:
             "policy_version": "1",
             "policy_digest": _DIGEST_A,
             "result": "passed",
+            "artifact_digest": _DIGEST_A,
+            "audit_digest": _DIGEST_B,
         },
         {
             "kind": "egress",
@@ -164,6 +173,8 @@ def _final_manifest() -> dict[str, object]:
             "policy_version": "1",
             "policy_digest": _DIGEST_B,
             "result": "passed",
+            "artifact_digest": _DIGEST_A,
+            "audit_digest": _DIGEST_B,
         },
     ]
     manifest["grade"] = {

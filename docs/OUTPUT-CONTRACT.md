@@ -156,6 +156,33 @@ fail-closed contract or preinstall decision, and exit `2` means the command
 inputs could not be parsed. The command has no connected, install, sandbox,
 grading, policy, publication, or finalization mode.
 
+`mcp-audit safeforge-run` resumes that accepted preinstall envelope through
+`sandbox.prepare`, `sandbox.materialize`, `audit.connected`, `trust.grade`,
+`runtime.policy.bind`, `publication.dry_run`, and `receipt.finalize`. Standard
+output remains one strict JSON object. Exit `0` requires an `eligible` final
+manifest; exit `1` is a fail-closed pipeline decision; exit `2` is invalid
+input. The runtime command never edits an MCP client, installs on the host,
+publishes, or contacts a generated-server endpoint outside its disposable
+boundary.
+
+The current research provider is macOS Seatbelt with network fully denied. It
+proves isolated HOME/cache/temp state, denial of user-home and mounted-volume
+access, keychain denial, locked offline materialization, CPU/memory/disk/process
+and wall-time enforcement, process-group termination, and cleanup. Receipts
+with credentials or any declared/observed egress are blocked because
+redirect-safe hostname allowlisting is not yet proven. Runtime tool names,
+descriptions, input/output schemas, annotations, prompts, resources, protocol,
+receipt-bound launch configuration, and a bounded synthetic call are compared
+before grading.
+Generated tests and the connected MCP session run with process creation denied;
+the session uses FastMCP's in-memory protocol transport, so the research grade
+does not claim that an unrestricted host-side stdio launcher is safe.
+
+Final policy evidence binds the exact artifact-tree and connected-audit
+digests. The publication stage is a metadata-only local install-plan dry run.
+The final receipt is created only when all thirteen stages are current and
+passed; skipped, unknown, stale, failed, or blocked stages cannot finalize.
+
 For deterministic receipt replay, the embedded config-only report replaces four
 non-security runtime fields with canonical values: its timestamp is the required
 coordinator `--created-at`, hostname is `<canonical-host>`, platform is

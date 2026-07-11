@@ -250,6 +250,16 @@
           "title": "Audit Report Digest",
           "type": "string"
         },
+        "confidence": {
+          "default": "low",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Confidence",
+          "type": "string"
+        },
         "current": {
           "title": "Current",
           "type": "boolean"
@@ -263,6 +273,13 @@
           "minLength": 1,
           "title": "Grading Policy Version",
           "type": "string"
+        },
+        "limitations": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Limitations",
+          "type": "array"
         },
         "transparency": {
           "minLength": 1,
@@ -324,6 +341,32 @@
     "PolicyEvidence": {
       "additionalProperties": false,
       "properties": {
+        "artifact_digest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Artifact Digest"
+        },
+        "audit_digest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Audit Digest"
+        },
         "kind": {
           "enum": [
             "audit",
@@ -493,6 +536,16 @@
     "SandboxEvidence": {
       "additionalProperties": false,
       "properties": {
+        "cache_isolated": {
+          "default": false,
+          "title": "Cache Isolated",
+          "type": "boolean"
+        },
+        "cleanup_verified": {
+          "default": false,
+          "title": "Cleanup Verified",
+          "type": "boolean"
+        },
         "credential_mode": {
           "enum": [
             "none",
@@ -502,6 +555,16 @@
           "title": "Credential Mode",
           "type": "string"
         },
+        "filesystem_denied": {
+          "default": false,
+          "title": "Filesystem Denied",
+          "type": "boolean"
+        },
+        "home_isolated": {
+          "default": false,
+          "title": "Home Isolated",
+          "type": "boolean"
+        },
         "image_digest": {
           "pattern": "^sha256:[0-9a-f]{64}$",
           "title": "Image Digest",
@@ -510,6 +573,18 @@
         "isolates": {
           "title": "Isolates",
           "type": "boolean"
+        },
+        "keychain_denied": {
+          "default": false,
+          "title": "Keychain Denied",
+          "type": "boolean"
+        },
+        "limits": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Limits",
+          "type": "object"
         },
         "mounts": {
           "items": {
@@ -527,10 +602,20 @@
           "title": "Network",
           "type": "string"
         },
+        "network_denied": {
+          "default": false,
+          "title": "Network Denied",
+          "type": "boolean"
+        },
         "policy_digest": {
           "pattern": "^sha256:[0-9a-f]{64}$",
           "title": "Policy Digest",
           "type": "string"
+        },
+        "process_group_terminated": {
+          "default": false,
+          "title": "Process Group Terminated",
+          "type": "boolean"
         },
         "provider": {
           "minLength": 1,
