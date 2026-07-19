@@ -84,7 +84,9 @@ The observer:
    dependency caches, build output, known secret files, or detected literal
    credentials; Git-ignored files that still pass these staging filters are
    copied but force `repository_dirty: true`, so the recorded subject commit is
-   explicitly non-binding;
+   explicitly non-binding. Dependency discovery, a staged-tree hash, and the
+   byte comparison with the recorded subject commit are captured from this same
+   immutable staged copy before execution;
 2. creates a container with no host mount, no forwarded socket, network mode
    `none`, a read-only image root, `no-new-privileges`, and bounded CPU, memory,
    process, and tmpfs resources;
@@ -114,15 +116,17 @@ it is hashed and omitted.
 
 ## Release trust manifest
 
-Repository-only discovery covers `.mcp.json`, `.vscode/mcp.json`,
+Repository-only discovery runs against the exact staged subject snapshot and
+covers `.mcp.json`, `.vscode/mcp.json`,
 `.cursor/mcp.json`, MCP-named `package.json` and `pyproject.toml` dependencies,
 and `server.json` packages. Every occurrence gets a stable dependency ID and
 exact source pointer. Environment and header values are never copied; only key
 names are retained.
 
-The join uses the local mcp-trust catalog snapshot, catalog seed,
+The join uses one byte snapshot of the local mcp-trust catalog snapshot, catalog seed,
 `masked-grades.json`, and spec-shift format version. Every required input must be
-tracked and byte-identical to the recorded trust commit; ignored or otherwise
+tracked, and the bytes actually parsed and hashed must be byte-identical to the
+recorded trust commit; ignored or otherwise
 untracked files do not count as clean authority. Missing, stale, masked,
 ambiguous, unmatched, dirty-source, commit-unbound, or version-unbound evidence
 remains explicit in the manifest. A grade is historical evidence about an

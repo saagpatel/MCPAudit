@@ -26,6 +26,7 @@ from mcp_audit.proof_models import (
     IsolationEvidence,
     NetworkEvidence,
     Observation,
+    SubjectSnapshotEvidence,
     SurfaceObservation,
     canonical_json_bytes,
     sha256_bytes,
@@ -185,8 +186,10 @@ def observe_command(
     staging_container_id: str | None = None
     runtime_image: str | None = None
     try:
-        _stage_repository(repo.resolve(), staged)
+        subject_root = repo.resolve()
+        _stage_repository(subject_root, staged)
         before_files = _file_snapshot(staged)
+        subject_snapshot = _subject_snapshot_evidence(subject_root, staged, before_files)
         before_databases = _database_snapshot(staged)
         _make_disposable_writable(staged)
         image_id = _local_image_id(image)
@@ -348,6 +351,7 @@ def observe_command(
         )
         recorded_argv, recorded_argv_sha256 = _command_argv_evidence(command)
         return Observation(
+            subject_snapshot=subject_snapshot,
             isolation=isolation,
             command=CommandEvidence(
                 argv=recorded_argv,
@@ -427,6 +431,87 @@ def _stage_repository(source: Path, destination: Path) -> None:
 def repository_input_is_in_scope(relative: Path) -> bool:
     """Return whether the observer copies this repository-relative path."""
     return not any(part in _IGNORED_NAMES for part in relative.parts)
+
+
+def _subject_snapshot_evidence(
+    source: Path,
+    staged: Path,
+    staged_tree: dict[str, tuple[str, str | None]],
+) -> SubjectSnapshotEvidence:
+    from mcp_audit.proof_trust import discover_repo_mcp
+
+    dependencies, diagnostics = discover_repo_mcp(staged)
+    staged_tree_sha256 = sha256_bytes(canonical_json_bytes(staged_tree))
+    commit: str | None = None
+    dirty: bool | None = None
+    try:
+        commit = subprocess.run(
+            ["git", "-C", str(source), "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout.strip()
+        prefix = subprocess.run(
+            ["git", "-C", str(source), "rev-parse", "--show-prefix"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout.strip()
+        object_format = subprocess.run(
+            ["git", "-C", str(source), "rev-parse", "--show-object-format"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout.strip()
+        tree_command = ["git", "-C", str(source), "ls-tree", "-r", "-z", commit]
+        if prefix:
+            tree_command.extend(["--", prefix])
+        tree = subprocess.run(
+            tree_command,
+            check=True,
+            capture_output=True,
+            timeout=5,
+        ).stdout
+        committed_tree: dict[str, tuple[str, str | None]] = {}
+        for record in tree.split(b"\0"):
+            if not record:
+                continue
+            metadata, raw_path = record.split(b"\t", 1)
+            mode, object_type, object_id = metadata.decode("ascii").split()
+            repository_path = os.fsdecode(raw_path)
+            relative = repository_path[len(prefix) :] if prefix else repository_path
+            if repository_input_is_in_scope(Path(relative)):
+                kind = "file" if object_type == "blob" and mode in {"100644", "100755"} else "other"
+                committed_tree[relative] = (kind, object_id if kind == "file" else None)
+                parent = Path(relative).parent
+                while parent != Path("."):
+                    committed_tree[parent.as_posix()] = ("directory", None)
+                    parent = parent.parent
+        dirty = set(staged_tree) != set(committed_tree) or any(
+            staged_tree[path][0] != committed_tree[path][0] for path in set(staged_tree) & set(committed_tree)
+        )
+        if not dirty:
+            for relative, (kind, expected_object_id) in committed_tree.items():
+                if kind != "file":
+                    continue
+                value = (staged / relative).read_bytes()
+                header = f"blob {len(value)}\0".encode()
+                actual_object_id = hashlib.new(object_format, header + value).hexdigest()
+                if expected_object_id != actual_object_id:
+                    dirty = True
+                    break
+    except (OSError, UnicodeError, ValueError, subprocess.SubprocessError):
+        dirty = None
+    return SubjectSnapshotEvidence(
+        repository_commit=commit,
+        repository_dirty=dirty,
+        staged_tree_sha256=staged_tree_sha256,
+        dependencies=dependencies,
+        diagnostics=diagnostics,
+    )
 
 
 def _make_disposable_writable(root: Path) -> None:

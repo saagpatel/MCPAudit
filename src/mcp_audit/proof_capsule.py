@@ -174,6 +174,15 @@ def build_capsule(
     comparison: BillComparison,
     trust_manifest: ReleaseTrustManifest,
 ) -> EvidenceCapsule:
+    subject = observation.subject_snapshot
+    if (
+        trust_manifest.repository_commit != subject.repository_commit
+        or trust_manifest.repository_dirty != subject.repository_dirty
+        or trust_manifest.repository_staged_tree_sha256 != subject.staged_tree_sha256
+        or trust_manifest.dependencies != subject.dependencies
+        or trust_manifest.diagnostics != subject.diagnostics
+    ):
+        raise ValueError("trust manifest subject evidence does not match the staged observation snapshot")
     commit, dirty, provenance_source = _producer_state()
     producer_limitations: list[str] = []
     if commit is None:

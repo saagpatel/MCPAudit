@@ -150,18 +150,6 @@ class NetworkEvidence(StrictModel):
     external_contact_count: Literal[0] = 0
 
 
-class Observation(StrictModel):
-    schema_version: Literal["proof-before-action.observation.v1"] = OBSERVATION_SCHEMA
-    isolation: IsolationEvidence
-    command: CommandEvidence
-    filesystem: SurfaceObservation
-    file_changes: list[FileChange] = Field(default_factory=list)
-    database: SurfaceObservation
-    database_changes: list[DatabaseChange] = Field(default_factory=list)
-    network: NetworkEvidence
-    limitations: list[str] = Field(default_factory=list)
-
-
 class ComparisonFinding(StrictModel):
     code: str
     severity: Literal["error", "unknown", "info"]
@@ -199,6 +187,27 @@ class DiscoveryDiagnostic(StrictModel):
     source_pointer: str
     code: str
     message: str
+
+
+class SubjectSnapshotEvidence(StrictModel):
+    repository_commit: str | None
+    repository_dirty: bool | None
+    staged_tree_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    dependencies: list[DependencyOccurrence] = Field(default_factory=list)
+    diagnostics: list[DiscoveryDiagnostic] = Field(default_factory=list)
+
+
+class Observation(StrictModel):
+    schema_version: Literal["proof-before-action.observation.v1"] = OBSERVATION_SCHEMA
+    subject_snapshot: SubjectSnapshotEvidence
+    isolation: IsolationEvidence
+    command: CommandEvidence
+    filesystem: SurfaceObservation
+    file_changes: list[FileChange] = Field(default_factory=list)
+    database: SurfaceObservation
+    database_changes: list[DatabaseChange] = Field(default_factory=list)
+    network: NetworkEvidence
+    limitations: list[str] = Field(default_factory=list)
 
 
 class TrustEvidence(StrictModel):
@@ -256,6 +265,10 @@ class ReleaseTrustManifest(StrictModel):
     schema_version: Literal["proof-before-action.trust-manifest.v1"] = TRUST_MANIFEST_SCHEMA
     repository_commit: str | None
     repository_dirty: bool | None
+    repository_staged_tree_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
     discovery_coverage: Literal["complete", "partial", "unknown"]
     dependencies: list[DependencyOccurrence]
     diagnostics: list[DiscoveryDiagnostic] = Field(default_factory=list)

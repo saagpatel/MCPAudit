@@ -70,7 +70,11 @@ def inspect(
             timeout_seconds=timeout_seconds,
         )
         comparison = compare_bill(declared, observed)
-        trust = build_release_trust_manifest(repo, trust_root)
+        trust = build_release_trust_manifest(
+            repo,
+            trust_root,
+            subject_snapshot=observed.subject_snapshot,
+        )
         capsule = build_capsule(declared, observed, comparison, trust)
         root_sha256 = export_capsule(capsule, output)
     except (OSError, ValueError, yaml.YAMLError, ValidationError, ObservationBlocked) as exc:

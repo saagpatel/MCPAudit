@@ -62,6 +62,9 @@ platform.
 - Git-ignored subject files that enter the observer staging inventory force the
   subject repository to dirty/unbound; ignored dependency caches and generated
   metadata excluded from staging do not alter subject provenance.
+- Subject commit binding, staged-tree hashing, and dependency discovery all use
+  the same pre-execution staged snapshot. Trust joining likewise parses, hashes,
+  and commit-compares one captured byte set rather than rereading live files.
 
 ## Residual threats and honest unknowns
 

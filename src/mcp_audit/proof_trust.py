@@ -17,23 +17,36 @@ from mcp_audit.proof_models import (
     DependencyOccurrence,
     DiscoveryDiagnostic,
     ReleaseTrustManifest,
+    SubjectSnapshotEvidence,
     TrustEntry,
     TrustEvidence,
     TrustSource,
     canonical_json_bytes,
     sha256_bytes,
 )
-from mcp_audit.proof_observer import repository_input_is_in_scope
 
 _REPO_CONFIGS = (".mcp.json", ".vscode/mcp.json", ".cursor/mcp.json")
 _EXACT_VERSION = re.compile(r"^\d+(?:\.\d+)*(?:[-+][0-9A-Za-z.-]+)?$")
 _PYPI_NORMALIZE = re.compile(r"[-_.]+")
 
 
-def build_release_trust_manifest(repo: Path, trust_root: Path | None) -> ReleaseTrustManifest:
+def build_release_trust_manifest(
+    repo: Path,
+    trust_root: Path | None,
+    *,
+    subject_snapshot: SubjectSnapshotEvidence | None = None,
+) -> ReleaseTrustManifest:
     root = repo.resolve()
-    dependencies, diagnostics = discover_repo_mcp(root)
-    commit, dirty = _git_state(root, include_staged_ignored=True)
+    if subject_snapshot is None:
+        dependencies, diagnostics = discover_repo_mcp(root)
+        commit, dirty = _git_state(root)
+        staged_tree_sha256 = None
+    else:
+        dependencies = subject_snapshot.dependencies
+        diagnostics = subject_snapshot.diagnostics
+        commit = subject_snapshot.repository_commit
+        dirty = subject_snapshot.repository_dirty
+        staged_tree_sha256 = subject_snapshot.staged_tree_sha256
     if trust_root is None:
         entries = [
             TrustEntry(
@@ -49,6 +62,7 @@ def build_release_trust_manifest(repo: Path, trust_root: Path | None) -> Release
         return ReleaseTrustManifest(
             repository_commit=commit,
             repository_dirty=dirty,
+            repository_staged_tree_sha256=staged_tree_sha256,
             discovery_coverage="partial" if diagnostics else "complete",
             dependencies=dependencies,
             diagnostics=diagnostics,
@@ -60,12 +74,12 @@ def build_release_trust_manifest(repo: Path, trust_root: Path | None) -> Release
             ],
         )
     return _join_trust(
-        root,
         trust_root.resolve(),
         dependencies,
         diagnostics,
         repository_commit=commit,
         repository_dirty=dirty,
+        repository_staged_tree_sha256=staged_tree_sha256,
     )
 
 
@@ -341,13 +355,13 @@ def _occurrence(
 
 
 def _join_trust(
-    repo: Path,
     trust_root: Path,
     dependencies: list[DependencyOccurrence],
     diagnostics: list[DiscoveryDiagnostic],
     *,
     repository_commit: str | None,
     repository_dirty: bool | None,
+    repository_staged_tree_sha256: str | None,
 ) -> ReleaseTrustManifest:
     files = {
         "catalog_snapshot.json": trust_root / "src/mcp_trust/catalog_snapshot.json",
@@ -371,19 +385,22 @@ def _join_trust(
             diagnostics,
             repository_commit,
             repository_dirty,
+            repository_staged_tree_sha256,
             f"mcp-trust source is incomplete: {', '.join(sorted(missing))}",
         )
     try:
-        snapshot = json.loads(files["catalog_snapshot.json"].read_text(encoding="utf-8"))
-        seed = json.loads(files["seed_servers.json"].read_text(encoding="utf-8"))
-        masked_payload = json.loads(files["masked-grades.json"].read_text(encoding="utf-8"))
-        spec_shift = json.loads(files["spec_shift_verdicts.json"].read_text(encoding="utf-8"))
+        input_bytes = {name: path.read_bytes() for name, path in files.items()}
+        snapshot = json.loads(input_bytes["catalog_snapshot.json"])
+        seed = json.loads(input_bytes["seed_servers.json"])
+        masked_payload = json.loads(input_bytes["masked-grades.json"])
+        spec_shift = json.loads(input_bytes["spec_shift_verdicts.json"])
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         return _unknown_trust_manifest(
             dependencies,
             diagnostics,
             repository_commit,
             repository_dirty,
+            repository_staged_tree_sha256,
             f"mcp-trust source could not be parsed: {type(exc).__name__}",
         )
     if not _valid_trust_input_shapes(snapshot, seed, masked_payload, spec_shift):
@@ -392,16 +409,17 @@ def _join_trust(
             diagnostics,
             repository_commit,
             repository_dirty,
+            repository_staged_tree_sha256,
             "mcp-trust source has an unsupported data shape",
         )
     masked = set(masked_payload)
     trust_commit, trust_dirty = _git_state(trust_root)
     trust_inputs_bound = bool(
         trust_commit
-        and _files_match_git_commit(
+        and _input_bytes_match_git_commit(
             trust_root,
             trust_commit,
-            list(files.values()),
+            {files[name]: value for name, value in input_bytes.items()},
         )
     )
     snapshot_generated_at = str(snapshot.get("generated_at", "")) or "unknown"
@@ -413,7 +431,7 @@ def _join_trust(
             "catalog_snapshot": snapshot.get("schema_version", "unknown"),
             "spec_shift": spec_shift.get("format_version", "unknown"),
         },
-        file_sha256={name: sha256_bytes(path.read_bytes()) for name, path in sorted(files.items())},
+        file_sha256={name: sha256_bytes(input_bytes[name]) for name in sorted(files)},
         snapshot_generated_at=snapshot_generated_at,
         evaluated_at=evaluated_at,
     )
@@ -478,6 +496,7 @@ def _join_trust(
     return ReleaseTrustManifest(
         repository_commit=repository_commit,
         repository_dirty=repository_dirty,
+        repository_staged_tree_sha256=repository_staged_tree_sha256,
         discovery_coverage="partial" if diagnostics else "complete",
         dependencies=dependencies,
         diagnostics=diagnostics,
@@ -619,11 +638,13 @@ def _unknown_trust_manifest(
     diagnostics: list[DiscoveryDiagnostic],
     repository_commit: str | None,
     repository_dirty: bool | None,
+    repository_staged_tree_sha256: str | None,
     reason: str,
 ) -> ReleaseTrustManifest:
     return ReleaseTrustManifest(
         repository_commit=repository_commit,
         repository_dirty=repository_dirty,
+        repository_staged_tree_sha256=repository_staged_tree_sha256,
         discovery_coverage="unknown",
         dependencies=dependencies,
         diagnostics=diagnostics,
@@ -738,11 +759,7 @@ def _is_stale(scanned_at: Any, evaluated_at: str) -> bool | None:
     return (evaluated - scanned).days > 90
 
 
-def _git_state(
-    root: Path,
-    *,
-    include_staged_ignored: bool = False,
-) -> tuple[str | None, bool | None]:
+def _git_state(root: Path) -> tuple[str | None, bool | None]:
     try:
         commit = subprocess.run(
             ["git", "-C", str(root), "rev-parse", "HEAD"],
@@ -758,40 +775,17 @@ def _git_state(
             text=True,
             timeout=5,
         ).stdout
-        dirty = bool(status)
-        if include_staged_ignored:
-            ignored = subprocess.run(
-                [
-                    "git",
-                    "-C",
-                    str(root),
-                    "ls-files",
-                    "--others",
-                    "--ignored",
-                    "--exclude-standard",
-                    "-z",
-                    "--",
-                    ".",
-                ],
-                check=True,
-                capture_output=True,
-                text=True,
-                timeout=5,
-            ).stdout
-            dirty = dirty or any(
-                repository_input_is_in_scope(Path(relative)) for relative in ignored.split("\0") if relative
-            )
-        return commit, dirty
+        return commit, bool(status)
     except (OSError, subprocess.SubprocessError):
         return None, None
 
 
-def _files_match_git_commit(
+def _input_bytes_match_git_commit(
     root: Path,
     commit: str,
-    paths: list[Path],
+    inputs: dict[Path, bytes],
 ) -> bool:
-    for path in paths:
+    for path, loaded_bytes in inputs.items():
         try:
             relative = path.relative_to(root).as_posix()
             committed = subprocess.run(
@@ -800,7 +794,7 @@ def _files_match_git_commit(
                 capture_output=True,
                 timeout=5,
             )
-            if committed.returncode != 0 or committed.stdout != path.read_bytes():
+            if committed.returncode != 0 or committed.stdout != loaded_bytes:
                 return False
         except (OSError, ValueError, subprocess.SubprocessError):
             return False
@@ -811,7 +805,11 @@ def _repository_limitations(commit: str | None, dirty: bool | None) -> list[str]
     limitations: list[str] = []
     if commit is None:
         limitations.append("Subject repository commit is UNKNOWN; release evidence is not commit-bound.")
-    if dirty:
+    if dirty is None:
+        limitations.append(
+            "Subject staged-tree binding is UNKNOWN; the repository commit cannot be treated as binding."
+        )
+    elif dirty:
         limitations.append(
             "Subject repository is dirty; its commit does not bind the inspected working tree."
         )

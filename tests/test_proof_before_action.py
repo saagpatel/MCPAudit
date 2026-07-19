@@ -23,7 +23,9 @@ from mcp_audit.proof_cli import main
 from mcp_audit.proof_models import (
     CAPSULE_SCHEMA,
     ActionDeclaration,
+    Observation,
     ReleaseTrustManifest,
+    SubjectSnapshotEvidence,
     canonical_json_bytes,
     sha256_bytes,
 )
@@ -32,7 +34,10 @@ from mcp_audit.proof_observer import (
     _cleanup_docker_resource,
     _cleanup_local_root,
     _command_argv_evidence,
+    _file_snapshot,
     _redact_argv,
+    _stage_repository,
+    _subject_snapshot_evidence,
     observe_command,
 )
 from mcp_audit.proof_trust import build_release_trust_manifest
@@ -72,8 +77,12 @@ def _repo(tmp_path: Path) -> Path:
     return root
 
 
-def _empty_trust(repo: Path) -> ReleaseTrustManifest:
-    return build_release_trust_manifest(repo, None)
+def _empty_trust(repo: Path, observation: Observation) -> ReleaseTrustManifest:
+    return build_release_trust_manifest(
+        repo,
+        None,
+        subject_snapshot=observation.subject_snapshot,
+    )
 
 
 def test_cli_docker_timeout_is_a_structured_inspection_block(
@@ -192,8 +201,8 @@ def test_read_only_command_passes_and_is_deterministic(tmp_path: Path) -> None:
     first_comparison = compare_bill(_declaration(), first)
     second_comparison = compare_bill(_declaration(), second)
     assert first_comparison.verdict == "pass"
-    first_capsule = build_capsule(_declaration(), first, first_comparison, _empty_trust(repo))
-    second_capsule = build_capsule(_declaration(), second, second_comparison, _empty_trust(repo))
+    first_capsule = build_capsule(_declaration(), first, first_comparison, _empty_trust(repo, first))
+    second_capsule = build_capsule(_declaration(), second, second_comparison, _empty_trust(repo, second))
     assert canonical_json_bytes(first_capsule) == canonical_json_bytes(second_capsule)
 
 
@@ -417,19 +426,40 @@ def test_ignored_staged_subject_input_marks_the_commit_unbound(
     subprocess.run(["git", "-C", str(repo), "commit", "-qm", "fixture"], check=True)
     (repo / "node_modules").mkdir()
     (repo / "node_modules/cache.txt").write_text("excluded\n", encoding="utf-8")
+    excluded_stage = tmp_path / "excluded-stage"
+    excluded_stage.mkdir()
+    _stage_repository(repo, excluded_stage)
 
-    excluded_only = build_release_trust_manifest(repo, None)
+    excluded_only = _subject_snapshot_evidence(
+        repo,
+        excluded_stage,
+        _file_snapshot(excluded_stage),
+    )
 
     assert excluded_only.repository_dirty is False
     (repo / ".mcp.json").write_text(
         '{"mcpServers":{"ignored":{"command":"npx","args":["@fixture/ignored-mcp"]}}}',
         encoding="utf-8",
     )
+    ignored_stage = tmp_path / "ignored-stage"
+    ignored_stage.mkdir()
+    _stage_repository(repo, ignored_stage)
+    subject_snapshot = _subject_snapshot_evidence(
+        repo,
+        ignored_stage,
+        _file_snapshot(ignored_stage),
+    )
+    (repo / ".mcp.json").unlink()
 
-    manifest = build_release_trust_manifest(repo, None)
+    manifest = build_release_trust_manifest(
+        repo,
+        None,
+        subject_snapshot=subject_snapshot,
+    )
 
-    assert manifest.repository_commit == excluded_only.repository_commit
+    assert manifest.repository_commit == subject_snapshot.repository_commit
     assert manifest.repository_dirty is True
+    assert manifest.repository_staged_tree_sha256 == subject_snapshot.staged_tree_sha256
     assert manifest.dependencies[0].source_path == ".mcp.json"
     assert (
         "Subject repository is dirty; its commit does not bind the inspected working tree."
@@ -465,7 +495,6 @@ def test_declaration_omission_is_deterministic() -> None:
         FileChange,
         IsolationEvidence,
         NetworkEvidence,
-        Observation,
         SurfaceObservation,
     )
 
@@ -478,6 +507,11 @@ def test_declaration_omission_is_deterministic() -> None:
         complete=True,
     )
     observation = Observation(
+        subject_snapshot=SubjectSnapshotEvidence(
+            repository_commit=None,
+            repository_dirty=None,
+            staged_tree_sha256="d" * 64,
+        ),
         isolation=IsolationEvidence(
             image_reference="fixture",
             image_id="sha256:" + "a" * 64,
@@ -660,6 +694,42 @@ def test_dirty_trust_source_cannot_emit_authoritative_grade_details(tmp_path: Pa
     )
 
 
+def test_loaded_trust_bytes_must_match_the_recorded_commit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = _repo(tmp_path)
+    (repo / ".mcp.json").write_text(
+        '{"mcpServers":{"known":{"command":"npx","args":["@fixture/known-mcp"]}}}',
+        encoding="utf-8",
+    )
+    trust = _trust_fixture(tmp_path)
+    snapshot_path = trust / "src/mcp_trust/catalog_snapshot.json"
+    original_read_bytes = Path.read_bytes
+
+    def read_bytes(path: Path) -> bytes:
+        value = original_read_bytes(path)
+        if path == snapshot_path:
+            payload = json.loads(value)
+            payload["servers"][0]["grade"] = "A"
+            return json.dumps(payload).encode()
+        return value
+
+    monkeypatch.setattr(Path, "read_bytes", read_bytes)
+
+    manifest = build_release_trust_manifest(repo, trust)
+
+    assert manifest.trust_source is not None
+    assert manifest.trust_source.dirty is False
+    evidence = manifest.entries[0].evidence
+    assert evidence.state == "unverifiable"
+    assert evidence.grade is None
+    assert (
+        "required mcp-trust inputs are not byte-identical to the trust commit; "
+        "entry-level trust evidence is non-authoritative" in evidence.unknown_reasons
+    )
+
+
 def test_ignored_untracked_trust_inputs_cannot_escape_commit_binding(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     (repo / ".mcp.json").write_text(
@@ -780,7 +850,16 @@ def test_tampering_and_wrong_commit_or_schema_are_detected(tmp_path: Path) -> No
     declaration = _declaration()
     observation = observe_command(repo, ["node", "-e", "process.exit(0)"], image="node:24-slim")
     comparison = compare_bill(declaration, observation)
-    capsule = build_capsule(declaration, observation, comparison, build_release_trust_manifest(repo, None))
+    capsule = build_capsule(
+        declaration,
+        observation,
+        comparison,
+        build_release_trust_manifest(
+            repo,
+            None,
+            subject_snapshot=observation.subject_snapshot,
+        ),
+    )
     output = tmp_path / "capsule"
     root_sha = export_capsule(capsule, output)
     assert verify_capsule(output, expect_root_sha256=root_sha)["valid"] is True
@@ -821,7 +900,16 @@ def test_offline_html_escapes_untrusted_text(tmp_path: Path) -> None:
     declaration = _declaration(name="<img src=x onerror=alert(1)>")
     observation = observe_command(repo, ["node", "-e", "process.exit(0)"], image="node:24-slim")
     comparison = compare_bill(declaration, observation)
-    capsule = build_capsule(declaration, observation, comparison, build_release_trust_manifest(repo, None))
+    capsule = build_capsule(
+        declaration,
+        observation,
+        comparison,
+        build_release_trust_manifest(
+            repo,
+            None,
+            subject_snapshot=observation.subject_snapshot,
+        ),
+    )
     output = tmp_path / "capsule"
     export_capsule(capsule, output)
     page = (output / "report.html").read_text(encoding="utf-8")
