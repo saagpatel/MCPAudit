@@ -86,7 +86,9 @@ The observer:
    copied but force `repository_dirty: true`, so the recorded subject commit is
    explicitly non-binding. Dependency discovery, a staged-tree hash, and the
    byte comparison with the recorded subject commit are captured from this same
-   immutable staged copy before execution;
+   immutable staged copy before execution. Files are opened relative to walked
+   directory descriptors with link following disabled, copied from that open
+   identity, and validated again from the private staged bytes;
 2. creates a container with no host mount, no forwarded socket, network mode
    `none`, a read-only image root, `no-new-privileges`, and bounded CPU, memory,
    process, and tmpfs resources;
@@ -155,6 +157,11 @@ fields. Removing, renaming, retyping, changing requiredness, changing canonical
 JSON semantics, or changing evidence meaning requires a new version identifier.
 The capsule index is versioned separately so the portable envelope can evolve
 without silently changing capsule semantics.
+
+Legacy observation-v1 capsules emitted before staged subject evidence was added
+remain verifiable. New capsule construction requires `subject_snapshot` and the
+matching manifest staged-tree hash; compatibility parsing does not let new
+producers omit that binding.
 
 Canonical JSON uses UTF-8, sorted keys, compact separators, one terminal newline,
 and no floating-point values. The primitive is compatible with AIGCCore's

@@ -401,36 +401,91 @@ def observe_command(
 def _stage_repository(source: Path, destination: Path) -> None:
     if not source.is_dir():
         raise ObservationBlocked("repository path is not a directory")
+    no_follow = getattr(os, "O_NOFOLLOW", None)
+    if no_follow is None:
+        raise ObservationBlocked("platform cannot securely open repository inputs without following links")
     file_count = 0
     total_bytes = 0
-    for path in sorted(source.rglob("*")):
-        relative = path.relative_to(source)
-        if not repository_input_is_in_scope(relative):
-            continue
-        if path.is_symlink():
-            raise ObservationBlocked(f"input contains a symlink: {relative.as_posix()}")
-        target = destination / relative
-        if path.is_dir():
-            target.mkdir(parents=True, exist_ok=True)
-            continue
-        if not path.is_file():
-            raise ObservationBlocked(f"unsupported input file type: {relative.as_posix()}")
-        if path.name.lower() in _SENSITIVE_INPUT_NAMES:
-            raise ObservationBlocked(
-                f"repository contains a sensitive file that will not be copied: {relative.as_posix()}"
-            )
-        file_count += 1
-        total_bytes += path.stat().st_size
-        if file_count > _MAX_FILES or total_bytes > _MAX_INPUT_BYTES:
-            raise ObservationBlocked("repository exceeds the staging file-count or byte limit")
-        _validate_staged_input(path, relative)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(path, target)
+    for directory, directory_names, file_names, directory_fd in os.fwalk(
+        source,
+        topdown=True,
+        follow_symlinks=False,
+    ):
+        relative_directory = Path(directory).relative_to(source)
+        retained_directories: list[str] = []
+        for name in sorted(directory_names):
+            relative = relative_directory / name
+            if not repository_input_is_in_scope(relative):
+                continue
+            try:
+                mode = os.stat(name, dir_fd=directory_fd, follow_symlinks=False).st_mode
+            except OSError as exc:
+                raise ObservationBlocked(
+                    f"repository input directory could not be inspected: {relative.as_posix()}"
+                ) from exc
+            if not stat.S_ISDIR(mode):
+                raise ObservationBlocked(f"input contains a symlink: {relative.as_posix()}")
+            retained_directories.append(name)
+            (destination / relative).mkdir(parents=True, exist_ok=True)
+        directory_names[:] = retained_directories
+
+        for name in sorted(file_names):
+            relative = relative_directory / name
+            if not repository_input_is_in_scope(relative):
+                continue
+            if name.lower() in _SENSITIVE_INPUT_NAMES:
+                raise ObservationBlocked(
+                    f"repository contains a sensitive file that will not be copied: {relative.as_posix()}"
+                )
+            flags = os.O_RDONLY | no_follow | getattr(os, "O_CLOEXEC", 0) | os.O_NONBLOCK
+            try:
+                descriptor = os.open(name, flags, dir_fd=directory_fd)
+            except OSError as exc:
+                raise ObservationBlocked(
+                    f"input contains a symlink or unreadable file: {relative.as_posix()}"
+                ) from exc
+            try:
+                opened = os.fstat(descriptor)
+                if not stat.S_ISREG(opened.st_mode):
+                    raise ObservationBlocked(f"unsupported input file type: {relative.as_posix()}")
+                file_count += 1
+                if file_count > _MAX_FILES or opened.st_size > _MAX_INPUT_BYTES - total_bytes:
+                    raise ObservationBlocked("repository exceeds the staging file-count or byte limit")
+                target = destination / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with os.fdopen(descriptor, "rb") as source_file:
+                    descriptor = -1
+                    copied_bytes = _copy_open_repository_file(
+                        source_file,
+                        target,
+                        max_bytes=_MAX_INPUT_BYTES - total_bytes,
+                    )
+                total_bytes += copied_bytes
+                _validate_staged_input(target, relative)
+            finally:
+                if descriptor >= 0:
+                    os.close(descriptor)
 
 
 def repository_input_is_in_scope(relative: Path) -> bool:
     """Return whether the observer copies this repository-relative path."""
     return not any(part in _IGNORED_NAMES for part in relative.parts)
+
+
+def _copy_open_repository_file(
+    source: Any,
+    target: Path,
+    *,
+    max_bytes: int,
+) -> int:
+    copied = 0
+    with target.open("xb") as output:
+        while chunk := source.read(1024 * 1024):
+            copied += len(chunk)
+            if copied > max_bytes:
+                raise ObservationBlocked("repository exceeds the staging file-count or byte limit")
+            output.write(chunk)
+    return copied
 
 
 def _subject_snapshot_evidence(

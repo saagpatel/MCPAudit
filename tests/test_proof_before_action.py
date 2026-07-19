@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import sqlite3
 import subprocess
@@ -187,6 +188,45 @@ def test_cleanup_readback_fails_closed_for_nonzero_docker_and_remaining_local_ro
     local_root.mkdir()
     monkeypatch.setattr(shutil, "rmtree", lambda *args, **kwargs: None)
     assert _cleanup_local_root(local_root) == "local temporary evidence root still exists after cleanup"
+
+
+def test_staging_keeps_the_open_file_identity_when_the_source_path_is_replaced(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = _repo(tmp_path)
+    outside = tmp_path / "outside.txt"
+    outside.write_text("outside value\n", encoding="utf-8")
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    real_open = os.open
+    swapped = False
+
+    def swapping_open(
+        path: str | bytes,
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        nonlocal swapped
+        descriptor = real_open(path, flags, mode, dir_fd=dir_fd)
+        if path == "input.txt" and dir_fd is not None and not swapped:
+            swapped = True
+            (repo / "input.txt").unlink()
+            (repo / "input.txt").symlink_to(outside)
+        return descriptor
+
+    monkeypatch.setattr(os, "open", swapping_open)
+
+    _stage_repository(repo, staged)
+
+    assert (staged / "input.txt").read_text(encoding="utf-8") == "stable\n"
+    assert (repo / "input.txt").is_symlink()
+    second_stage = tmp_path / "second-stage"
+    second_stage.mkdir()
+    with pytest.raises(ObservationBlocked, match="symlink or unreadable file"):
+        _stage_repository(repo, second_stage)
 
 
 @requires_docker
@@ -863,6 +903,29 @@ def test_tampering_and_wrong_commit_or_schema_are_detected(tmp_path: Path) -> No
     output = tmp_path / "capsule"
     root_sha = export_capsule(capsule, output)
     assert verify_capsule(output, expect_root_sha256=root_sha)["valid"] is True
+    capsule_path = output / "capsule.json"
+    index_path = output / "capsule-index.json"
+    original_capsule = capsule_path.read_bytes()
+    original_index = index_path.read_bytes()
+    legacy_capsule = json.loads(original_capsule)
+    legacy_capsule["payload"]["observation"].pop("subject_snapshot")
+    legacy_capsule["payload"]["trust_manifest"].pop("repository_staged_tree_sha256")
+    legacy_capsule["integrity"]["payload_sha256"] = sha256_bytes(
+        canonical_json_bytes(legacy_capsule["payload"])
+    )
+    legacy_capsule_bytes = canonical_json_bytes(legacy_capsule)
+    capsule_path.write_bytes(legacy_capsule_bytes)
+    legacy_index = json.loads(original_index)
+    capsule_artifact = next(
+        artifact for artifact in legacy_index["artifacts"] if artifact["path"] == "capsule.json"
+    )
+    capsule_artifact["sha256"] = sha256_bytes(legacy_capsule_bytes)
+    capsule_artifact["bytes"] = len(legacy_capsule_bytes)
+    index_path.write_bytes(canonical_json_bytes(legacy_index))
+    legacy_result = verify_capsule(output)
+    assert legacy_result["valid"] is True, legacy_result
+    capsule_path.write_bytes(original_capsule)
+    index_path.write_bytes(original_index)
     wrong_root = verify_capsule(output, expect_root_sha256="0" * 64)
     assert wrong_root["valid"] is False
     assert wrong_root["authority"] == "unverified"
@@ -879,16 +942,15 @@ def test_tampering_and_wrong_commit_or_schema_are_detected(tmp_path: Path) -> No
         "producer_commit_mismatch",
         "expected_schema_mismatch",
     } <= codes
-    original_index = (output / "capsule-index.json").read_bytes()
     index = json.loads(original_index)
     index["subject_commit"] = "0" * 40
-    (output / "capsule-index.json").write_bytes(canonical_json_bytes(index))
+    index_path.write_bytes(canonical_json_bytes(index))
     semantic_tamper = verify_capsule(output)
     assert "index_subject_mismatch" in {item["code"] for item in semantic_tamper["errors"]}
-    (output / "capsule-index.json").write_bytes(original_index)
-    payload = bytearray((output / "capsule.json").read_bytes())
+    index_path.write_bytes(original_index)
+    payload = bytearray(capsule_path.read_bytes())
     payload[len(payload) // 2] ^= 1
-    (output / "capsule.json").write_bytes(payload)
+    capsule_path.write_bytes(payload)
     tampered = verify_capsule(output)
     assert tampered["valid"] is False
     assert "artifact_tampered" in {item["code"] for item in tampered["errors"]}

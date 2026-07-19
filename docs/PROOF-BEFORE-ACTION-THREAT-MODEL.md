@@ -65,6 +65,9 @@ platform.
 - Subject commit binding, staged-tree hashing, and dependency discovery all use
   the same pre-execution staged snapshot. Trust joining likewise parses, hashes,
   and commit-compares one captured byte set rather than rereading live files.
+- Repository files are copied from no-follow descriptors opened relative to
+  walked directory descriptors, then the private copied bytes receive content
+  validation. A source-path replacement cannot redirect the copy.
 
 ## Residual threats and honest unknowns
 

@@ -69,6 +69,8 @@ def inspect(
             image=image,
             timeout_seconds=timeout_seconds,
         )
+        if observed.subject_snapshot is None:
+            raise ObservationBlocked("staged subject snapshot evidence was not captured")
         comparison = compare_bill(declared, observed)
         trust = build_release_trust_manifest(
             repo,

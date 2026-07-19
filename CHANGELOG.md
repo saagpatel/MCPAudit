@@ -30,7 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the staged observation now mark the subject commit dirty and non-binding.
   Subject commit binding and dependency discovery now travel with the exact
   pre-execution staged-tree hash, and trust parsing/hashing/commit comparison
-  uses one captured byte snapshot to prevent clean-after-read races.
+  uses one captured byte snapshot to prevent clean-after-read races. No-follow,
+  directory-relative source descriptors close validation-to-copy link races,
+  while legacy observation-v1 capsules remain verification-compatible and new
+  capsules require the staged subject binding.
 - `pin_baseline_corrupted` warning code — a pin baseline file that exists but
   cannot be parsed now emits its own `ScanWarning` (naming the file and the
   parse error) instead of folding into `pin_baseline_missing`. A corrupted

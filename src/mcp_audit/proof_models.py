@@ -199,7 +199,7 @@ class SubjectSnapshotEvidence(StrictModel):
 
 class Observation(StrictModel):
     schema_version: Literal["proof-before-action.observation.v1"] = OBSERVATION_SCHEMA
-    subject_snapshot: SubjectSnapshotEvidence
+    subject_snapshot: SubjectSnapshotEvidence | None = None
     isolation: IsolationEvidence
     command: CommandEvidence
     filesystem: SurfaceObservation

@@ -175,6 +175,8 @@ def build_capsule(
     trust_manifest: ReleaseTrustManifest,
 ) -> EvidenceCapsule:
     subject = observation.subject_snapshot
+    if subject is None:
+        raise ValueError("new capsules require staged subject snapshot evidence")
     if (
         trust_manifest.repository_commit != subject.repository_commit
         or trust_manifest.repository_dirty != subject.repository_dirty
@@ -378,7 +380,7 @@ def verify_capsule(
         errors.append({"code": "capsule_schema_invalid", "message": type(exc).__name__})
         capsule = None
     if capsule is not None:
-        payload_digest = sha256_bytes(canonical_json_bytes(capsule.payload))
+        payload_digest = sha256_bytes(canonical_json_bytes(raw["payload"]))
         if payload_digest != capsule.integrity.payload_sha256:
             errors.append({"code": "payload_tampered", "message": "payload hash mismatch"})
         if expect_schema and capsule.schema_version != expect_schema:
