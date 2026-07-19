@@ -603,6 +603,16 @@ def test_discovery_preserves_the_selected_server_map_pointer(
         ({"headers": []}, "/mcpServers/fixture/headers"),
         ({"headers": {"X-Test": 0}}, "/mcpServers/fixture/headers/X-Test"),
         ({"type": 0}, "/mcpServers/fixture/type"),
+        (
+            {"args": ["--package=@attacker/mcp", "--", "safe"]},
+            "/mcpServers/fixture/args",
+        ),
+        (
+            {"args": ["--package", "@attacker/mcp", "--", "safe"]},
+            "/mcpServers/fixture/args",
+        ),
+        ({"args": ["-p", "@attacker/mcp", "safe"]}, "/mcpServers/fixture/args"),
+        ({"args": ["-c", "safe"]}, "/mcpServers/fixture/args"),
     ],
 )
 def test_malformed_server_config_fields_are_partial_and_unmatched(
@@ -626,6 +636,34 @@ def test_malformed_server_config_fields_are_partial_and_unmatched(
     assert manifest.discovery_coverage == "partial"
     assert manifest.dependencies == []
     assert pointer in {item.source_pointer for item in manifest.diagnostics}
+
+
+def test_query_bearing_remote_identity_cannot_alias_the_base_endpoint(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path)
+    (repo / ".mcp.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "base": {"url": "https://gateway.example/mcp"},
+                    "tenant": {
+                        "url": "https://gateway.example/mcp?tenant=unreviewed",
+                    },
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    manifest = build_release_trust_manifest(repo, None)
+    identities = {item.config_name: item.identity_name for item in manifest.dependencies}
+
+    assert identities["base"] == "https://gateway.example/mcp"
+    assert identities["tenant"] is not None
+    assert identities["tenant"].startswith("sha256:")
+    assert identities["tenant"] != identities["base"]
+    assert "tenant=unreviewed" not in identities["tenant"]
 
 
 @pytest.mark.parametrize(

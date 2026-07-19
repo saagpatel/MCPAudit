@@ -62,7 +62,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scalar coercion, and float/canonicalization failures return structured invalid
   results instead of escaping the verifier. Malformed repository command, URL,
   argument, environment, header, or transport fields now make discovery partial
-  instead of being normalized into a trust match.
+  instead of being normalized into a trust match. Query-bearing remote URLs no
+  longer alias their base endpoint, and npm package-selection/call options
+  cannot be skipped to apply trust to a different positional argument.
 - `pin_baseline_corrupted` warning code — a pin baseline file that exists but
   cannot be parsed now emits its own `ScanWarning` (naming the file and the
   parse error) instead of folding into `pin_baseline_missing`. A corrupted

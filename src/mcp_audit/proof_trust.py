@@ -530,6 +530,17 @@ def _config_entry_diagnostics(
     transport = config.get("type")
     if "type" in config and (not isinstance(transport, str) or not transport):
         invalid("/type", "transport type must be a non-empty string")
+    if (
+        isinstance(command, str)
+        and Path(command).name.lower() in {"npx", "npm", "pnpm", "yarn"}
+        and isinstance(args, list)
+        and all(isinstance(value, str) for value in args)
+        and _npm_args_have_unbound_package_selection(args)
+    ):
+        invalid(
+            "/args",
+            "npm package-selection or call options cannot be bound to one dependency",
+        )
     return diagnostics
 
 
@@ -984,7 +995,11 @@ def _dependency_key(dependency: DependencyOccurrence) -> tuple[str, str]:
 
 
 def _parse_npm_args(args: list[str]) -> tuple[str, str | None, str | None, bool]:
-    candidates = [item for item in args if item and not item.startswith("-")]
+    if _npm_args_have_unbound_package_selection(args):
+        return "npm", None, None, False
+    candidates = [
+        item for item in args if item and not item.startswith("-") and item not in {"exec", "dlx", "x"}
+    ]
     if not candidates:
         return "npm", None, None, False
     raw = candidates[0]
@@ -996,6 +1011,20 @@ def _parse_npm_args(args: list[str]) -> tuple[str, str | None, str | None, bool]
             version = candidate
     exact = bool(version and _EXACT_VERSION.fullmatch(version))
     return "npm", _normalize_package(name, "npm"), version if exact else None, exact
+
+
+def _npm_args_have_unbound_package_selection(args: list[str]) -> bool:
+    selectors = ("--package", "-p", "--call", "-c")
+    for item in args:
+        if item == "--":
+            break
+        if item in {"exec", "dlx", "x"}:
+            continue
+        if item in selectors or any(item.startswith(f"{selector}=") for selector in selectors):
+            return True
+        if item and not item.startswith("-"):
+            break
+    return False
 
 
 def _parse_pypi_args(args: list[str]) -> tuple[str, str | None, str | None, bool]:
@@ -1027,6 +1056,15 @@ def _normalize_remote(url: str) -> str:
     try:
         parsed = urlsplit(url)
     except ValueError:
+        return "sha256:" + hashlib.sha256(url.encode()).hexdigest()
+    if (
+        parsed.scheme.lower() not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.query
+        or parsed.fragment
+        or parsed.username
+        or parsed.password
+    ):
         return "sha256:" + hashlib.sha256(url.encode()).hexdigest()
     host = parsed.hostname or ""
     try:

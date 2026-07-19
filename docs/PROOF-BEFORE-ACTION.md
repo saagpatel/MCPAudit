@@ -169,6 +169,10 @@ local trust source UNKNOWN instead of being coerced into evidence.
 Repository config command, URL, argument, environment, header, and transport
 shapes are likewise type-checked before identity matching; malformed values
 produce exact-pointer partial-discovery diagnostics and no trust match.
+Query-, fragment-, or userinfo-bearing remote endpoints receive a private
+full-URL hash so they cannot alias a base endpoint or leak sensitive URL
+components. npm package-selection/call options are partial and non-authoritative
+until one executed dependency can be modeled exactly.
 Snapshot generation time must be a valid, non-future, timezone-aware timestamp
 that is not earlier than any contained scan. A record without proven network
 isolation cannot be `current`, even when its dependency match is otherwise exact.
