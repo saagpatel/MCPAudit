@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import sqlite3
@@ -374,6 +375,34 @@ def test_server_descriptor_scalar_transport_is_a_partial_diagnostic(
             "package transport must be an object",
         )
     ]
+
+
+def test_discovery_preserves_the_selected_server_map_pointer(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path)
+    (repo / ".mcp.json").write_text(
+        json.dumps(
+            {
+                "servers": {
+                    "known": {
+                        "command": "npx",
+                        "args": ["@fixture/known-mcp"],
+                    },
+                    "broken": None,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    manifest = build_release_trust_manifest(repo, None)
+
+    dependency = manifest.dependencies[0]
+    assert dependency.source_pointer == "/servers/known"
+    material = b".mcp.json\0/servers/known\0npm\0@fixture/known-mcp"
+    assert dependency.dependency_id == "dep_" + hashlib.sha256(material).hexdigest()[:20]
+    assert manifest.diagnostics[0].source_pointer == "/servers/broken"
 
 
 @requires_docker

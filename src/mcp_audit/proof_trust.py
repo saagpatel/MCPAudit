@@ -89,7 +89,8 @@ def discover_repo_mcp(
                 )
             )
             continue
-        servers = payload.get("mcpServers", payload.get("servers")) if isinstance(payload, dict) else None
+        server_map_key = "mcpServers" if isinstance(payload, dict) and "mcpServers" in payload else "servers"
+        servers = payload.get(server_map_key) if isinstance(payload, dict) else None
         if not isinstance(servers, dict):
             diagnostics.append(
                 DiscoveryDiagnostic(
@@ -101,7 +102,7 @@ def discover_repo_mcp(
             )
             continue
         for name, config in servers.items():
-            pointer = f"/mcpServers/{_json_pointer(str(name))}"
+            pointer = f"/{server_map_key}/{_json_pointer(str(name))}"
             if not isinstance(config, dict):
                 diagnostics.append(
                     DiscoveryDiagnostic(
