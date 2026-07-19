@@ -32,6 +32,7 @@ from mcp_audit.proof_models import (
     Observation,
     ReleaseTrustManifest,
     SubjectSnapshotEvidence,
+    TrustEvidence,
     canonical_json_bytes,
     sha256_bytes,
 )
@@ -585,6 +586,125 @@ def test_discovery_preserves_the_selected_server_map_pointer(
     material = b".mcp.json\0/servers/known\0npm\0@fixture/known-mcp"
     assert dependency.dependency_id == "dep_" + hashlib.sha256(material).hexdigest()[:20]
     assert manifest.diagnostics[0].source_pointer == "/servers/broken"
+
+
+@pytest.mark.parametrize(
+    "section",
+    ["dependencies", "devDependencies", "optionalDependencies"],
+)
+def test_non_object_package_dependency_sections_are_partial(
+    tmp_path: Path,
+    section: str,
+) -> None:
+    repo = _repo(tmp_path)
+    (repo / "package.json").write_text(json.dumps({section: ["@fixture/mcp"]}), encoding="utf-8")
+
+    manifest = build_release_trust_manifest(repo, None)
+
+    assert manifest.discovery_coverage == "partial"
+    assert manifest.dependencies == []
+    assert [(item.source_pointer, item.code) for item in manifest.diagnostics] == [
+        (f"/{section}", "invalid_manifest")
+    ]
+
+
+@pytest.mark.parametrize(
+    ("contents", "pointer"),
+    [
+        ("project = []\n", "/project"),
+        ('[project]\ndependencies = "mcp"\n', "/project/dependencies"),
+        ("[project]\ndependencies = [1]\n", "/project/dependencies/0"),
+    ],
+)
+def test_malformed_pyproject_dependency_shapes_are_partial(
+    tmp_path: Path,
+    contents: str,
+    pointer: str,
+) -> None:
+    repo = _repo(tmp_path)
+    (repo / "pyproject.toml").write_text(contents, encoding="utf-8")
+
+    manifest = build_release_trust_manifest(repo, None)
+
+    assert manifest.discovery_coverage == "partial"
+    assert manifest.dependencies == []
+    assert [(item.source_pointer, item.code) for item in manifest.diagnostics] == [
+        (pointer, "invalid_manifest")
+    ]
+
+
+@pytest.mark.parametrize(
+    ("state", "match_state"),
+    [
+        ("current", "unmatched"),
+        ("stale", "ambiguous"),
+        ("unmatched", "exact"),
+        ("ambiguous", "exact"),
+        ("masked", "unmatched"),
+    ],
+)
+def test_trust_evidence_rejects_contradictory_state_and_match(
+    state: str,
+    match_state: str,
+) -> None:
+    with pytest.raises(ValueError, match="trust evidence"):
+        TrustEvidence.model_validate({"state": state, "match_state": match_state})
+
+
+@pytest.mark.parametrize(
+    "updates",
+    [
+        {"network_isolation": "unknown", "version_alignment": "not_applicable"},
+        {"network_isolation": "verified_none", "version_alignment": "dependency_unresolved"},
+    ],
+)
+def test_current_trust_evidence_requires_complete_authority(
+    updates: dict[str, str],
+) -> None:
+    with pytest.raises(ValueError, match="current trust evidence"):
+        TrustEvidence.model_validate(
+            {
+                "state": "current",
+                "match_state": "exact",
+                **updates,
+            }
+        )
+
+
+def test_non_string_package_dependency_version_is_partial(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    (repo / "package.json").write_text(
+        json.dumps({"dependencies": {"@fixture/mcp": {"version": "1.0.0"}}}),
+        encoding="utf-8",
+    )
+
+    manifest = build_release_trust_manifest(repo, None)
+
+    assert manifest.discovery_coverage == "partial"
+    assert manifest.dependencies == []
+    assert manifest.diagnostics[0].source_pointer == "/dependencies/@fixture~1mcp"
+
+
+@pytest.mark.parametrize(
+    ("payload", "pointer"),
+    [
+        ([], "/"),
+        ({"packages": {}}, "/packages"),
+    ],
+)
+def test_malformed_server_descriptor_root_shapes_are_partial(
+    tmp_path: Path,
+    payload: object,
+    pointer: str,
+) -> None:
+    repo = _repo(tmp_path)
+    (repo / "server.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    manifest = build_release_trust_manifest(repo, None)
+
+    assert manifest.discovery_coverage == "partial"
+    assert manifest.dependencies == []
+    assert manifest.diagnostics[0].source_pointer == pointer
 
 
 def test_ignored_staged_subject_input_marks_the_commit_unbound(

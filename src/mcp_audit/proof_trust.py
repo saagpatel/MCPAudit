@@ -134,22 +134,53 @@ def discover_repo_mcp(
     if package_json.is_file():
         try:
             package_payload = json.loads(package_json.read_text(encoding="utf-8"))
-            for section in ("dependencies", "devDependencies", "optionalDependencies"):
-                values = package_payload.get(section, {})
-                if not isinstance(values, dict):
-                    continue
-                for name, version in values.items():
-                    if "mcp" not in str(name).lower():
-                        continue
-                    dependencies.append(
-                        _package_occurrence(
-                            "package.json",
-                            f"/{section}/{_json_pointer(str(name))}",
-                            str(name),
-                            str(version),
-                            "npm",
-                        )
+            if not isinstance(package_payload, dict):
+                diagnostics.append(
+                    DiscoveryDiagnostic(
+                        source_path="package.json",
+                        source_pointer="/",
+                        code="invalid_manifest",
+                        message="package manifest must be an object",
                     )
+                )
+            else:
+                for section in ("dependencies", "devDependencies", "optionalDependencies"):
+                    if section not in package_payload:
+                        continue
+                    values = package_payload[section]
+                    if not isinstance(values, dict):
+                        diagnostics.append(
+                            DiscoveryDiagnostic(
+                                source_path="package.json",
+                                source_pointer=f"/{section}",
+                                code="invalid_manifest",
+                                message=f"{section} must be an object",
+                            )
+                        )
+                        continue
+                    for name, version in values.items():
+                        if "mcp" not in str(name).lower():
+                            continue
+                        pointer = f"/{section}/{_json_pointer(str(name))}"
+                        if not isinstance(version, str):
+                            diagnostics.append(
+                                DiscoveryDiagnostic(
+                                    source_path="package.json",
+                                    source_pointer=pointer,
+                                    code="invalid_manifest",
+                                    message="package dependency version must be a string",
+                                )
+                            )
+                            continue
+                        dependencies.append(
+                            _package_occurrence(
+                                "package.json",
+                                pointer,
+                                str(name),
+                                version,
+                                "npm",
+                            )
+                        )
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             diagnostics.append(
                 DiscoveryDiagnostic(
@@ -163,11 +194,46 @@ def discover_repo_mcp(
     pyproject = repo / "pyproject.toml"
     if pyproject.is_file():
         try:
-            project = tomllib.loads(pyproject.read_text(encoding="utf-8")).get("project", {})
-            for index, spec in enumerate(project.get("dependencies", [])):
-                if "mcp" not in str(spec).lower():
+            pyproject_payload = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+            project = pyproject_payload.get("project", {})
+            if not isinstance(project, dict):
+                diagnostics.append(
+                    DiscoveryDiagnostic(
+                        source_path="pyproject.toml",
+                        source_pointer="/project",
+                        code="invalid_manifest",
+                        message="project must be a table",
+                    )
+                )
+                project_dependencies: list[Any] = []
+            else:
+                dependencies_value = project.get("dependencies", [])
+                if not isinstance(dependencies_value, list):
+                    diagnostics.append(
+                        DiscoveryDiagnostic(
+                            source_path="pyproject.toml",
+                            source_pointer="/project/dependencies",
+                            code="invalid_manifest",
+                            message="project dependencies must be an array",
+                        )
+                    )
+                    project_dependencies = []
+                else:
+                    project_dependencies = dependencies_value
+            for index, spec in enumerate(project_dependencies):
+                if not isinstance(spec, str):
+                    diagnostics.append(
+                        DiscoveryDiagnostic(
+                            source_path="pyproject.toml",
+                            source_pointer=f"/project/dependencies/{index}",
+                            code="invalid_manifest",
+                            message="project dependency must be a string",
+                        )
+                    )
                     continue
-                name, version, exact = _parse_pypi_spec(str(spec))
+                if "mcp" not in spec.lower():
+                    continue
+                name, version, exact = _parse_pypi_spec(spec)
                 dependencies.append(
                     _occurrence(
                         source_path="pyproject.toml",
@@ -196,7 +262,30 @@ def discover_repo_mcp(
     if descriptor.is_file():
         try:
             payload = json.loads(descriptor.read_text(encoding="utf-8"))
-            packages = payload.get("packages", []) if isinstance(payload, dict) else []
+            if not isinstance(payload, dict):
+                diagnostics.append(
+                    DiscoveryDiagnostic(
+                        source_path="server.json",
+                        source_pointer="/",
+                        code="invalid_manifest",
+                        message="MCP registry descriptor must be an object",
+                    )
+                )
+                packages: list[Any] = []
+            else:
+                packages_value = payload.get("packages", [])
+                if not isinstance(packages_value, list):
+                    diagnostics.append(
+                        DiscoveryDiagnostic(
+                            source_path="server.json",
+                            source_pointer="/packages",
+                            code="invalid_manifest",
+                            message="packages must be an array",
+                        )
+                    )
+                    packages = []
+                else:
+                    packages = packages_value
             for index, package in enumerate(packages):
                 if not isinstance(package, dict):
                     diagnostics.append(

@@ -46,7 +46,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   resolved immutable image ID, and complete surfaces with unknown state fields
   remain non-passing. Contradictory complete-surface fields also remain
   non-passing, and the custom PEP 517 requirement hooks delegate correctly to
-  uv-build instead of recursing.
+  uv-build instead of recursing. Contradictory trust state/match/authority
+  combinations are rejected, while malformed package, Python, and registry
+  dependency-manifest shapes produce partial discovery diagnostics rather than
+  tracebacks or falsely complete coverage.
 - `pin_baseline_corrupted` warning code — a pin baseline file that exists but
   cannot be parsed now emits its own `ScanWarning` (naming the file and the
   parse error) instead of folding into `pin_baseline_missing`. A corrupted

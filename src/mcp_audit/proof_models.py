@@ -238,11 +238,23 @@ class TrustEvidence(StrictModel):
     unknown_reasons: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def masked_records_withhold_details(self) -> TrustEvidence:
+    def enforce_cross_field_consistency(self) -> TrustEvidence:
         if self.state == "masked" and any(
             value is not None for value in (self.grade, self.transparency, self.scanned_at, self.engine)
         ):
             raise ValueError("masked trust evidence must not expose withheld scan details")
+        if self.state in {"current", "stale"} and self.match_state != "exact":
+            raise ValueError("current or stale trust evidence requires an exact match")
+        if self.state == "current" and self.network_isolation != "verified_none":
+            raise ValueError("current trust evidence requires verified network isolation")
+        if self.state == "current" and self.version_alignment not in {"exact", "not_applicable"}:
+            raise ValueError("current trust evidence requires authoritative version alignment")
+        if self.state == "masked" and self.match_state != "exact":
+            raise ValueError("masked trust evidence requires an exact match")
+        if self.state == "unmatched" and self.match_state != "unmatched":
+            raise ValueError("unmatched trust evidence requires an unmatched match state")
+        if self.state == "ambiguous" and self.match_state != "ambiguous":
+            raise ValueError("ambiguous trust evidence requires an ambiguous match state")
         return self
 
 
