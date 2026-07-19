@@ -11,8 +11,8 @@ regressions and enforce two invariants that matter for a security tool:
 
 from __future__ import annotations
 
+import json
 import re
-import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -23,9 +23,9 @@ PRECOMMIT_PATH = Path(".pre-commit-hooks.yaml")
 SELF_AUDIT_PATH = Path(".github/workflows/self-audit.yml")
 
 
-def _package_version() -> str:
-    data = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
-    version = data["project"]["version"]
+def _public_action_version() -> str:
+    data = json.loads(Path("docs/release-state.json").read_text(encoding="utf-8"))
+    version = data["published_version"]
     assert isinstance(version, str)
     return version
 
@@ -96,9 +96,9 @@ class TestPreCommitHook:
         # Should not fire on unrelated JSON.
         assert not pattern.search("package.json")
 
-    def test_rev_in_docs_matches_package_version(self) -> None:
-        # The pre-commit usage example pins `rev: v<version>`; keep it in sync.
-        version_tag = f"v{_package_version()}"
+    def test_rev_in_docs_matches_public_release(self) -> None:
+        # Candidate metadata may move ahead, but examples must name an existing public tag.
+        version_tag = f"v{_public_action_version()}"
         adoption = Path("docs/ADOPTION-GUIDE.md").read_text(encoding="utf-8")
         assert f"rev: {version_tag}" in adoption
 

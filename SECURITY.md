@@ -58,6 +58,24 @@ MCPAudit parses and displays content from MCP server configs and MCP server meta
 
 When the optional `anthropic` dependency is installed and `--llm-analysis` is used, MCPAudit sends selected tool names, descriptions, and parameter names to the Anthropic API for permission classification. In this mode, content from audited MCP server configs is transmitted over the network to a third-party service. Do not use `--llm-analysis` if your MCP configs contain sensitive information (API keys in args, internal hostnames, etc.).
 
+### Proof Before Action
+
+`proof-before-action` compares a declared boundary with observations from a
+disposable Docker execution and emits a versioned offline evidence capsule.
+Verification binds the staged subject, producer revision, deterministic report
+projection, and an independently supplied root hash.
+
+Its result is evidence about the declared and observed surfaces, not a general
+sandbox or safety guarantee. Unknown, stale, masked, unmatched, incomplete,
+unobservable, dirty, or authority-unverified evidence remains non-authoritative
+and cannot become a passing safety claim.
+
+The observer does not prove complete Unix-domain socket coverage, host-kernel
+isolation, or safety outside the declared surfaces. A valid capsule also does
+not prove that an operator independently obtained the root hash; callers must
+supply and protect that trust input themselves. See
+[`docs/SECURITY-REVIEW.md`](docs/SECURITY-REVIEW.md) for the detailed boundary.
+
 ---
 
 ## Supported versions

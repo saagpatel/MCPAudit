@@ -27,6 +27,7 @@ from mcp_audit.proof_trust import build_release_trust_manifest
 
 
 @click.group()
+@click.version_option(package_name="mcp-audits", prog_name="proof-before-action")
 def main() -> None:
     """Observe first, compare with declared limits, then emit portable evidence."""
 

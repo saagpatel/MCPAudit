@@ -38,7 +38,7 @@ def test_version_option_reports_installed_distribution_version() -> None:
 
     assert result.exit_code == 0
     assert "mcp-audit, version " in result.output
-    assert "2.4.0" in result.output
+    assert "2.5.0" in result.output
 
 
 def test_error_messages_route_to_stderr_not_stdout() -> None:
