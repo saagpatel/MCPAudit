@@ -75,6 +75,11 @@ Without `--expect-root-sha256`, a successful verification result reports
 artifact. A supplied root reports `anchored` only when it matches; a mismatch is
 invalid and remains `authority: unverified`.
 
+Verification recomputes the comparison from the declaration and observation,
+requires the trust manifest to match the staged subject snapshot, and
+regenerates the offline HTML. Updating all internal hashes cannot make a forged
+comparison, detached trust entry, or misleading report valid.
+
 Wheel and source-distribution builds use the repository's uv-backed PEP 517
 wrapper to embed the exact source revision and pre-build dirty state. Installed
 commands read only that packaged metadata; source checkouts use Git only when

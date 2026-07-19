@@ -124,6 +124,12 @@ and limitations. `capsule-index.json` binds hashes and byte lengths for the JSON
 evidence and offline HTML view, plus subject and producer commits. Internal
 hashes prove consistency only. The verifier reports authority as `anchored` only
 when the caller supplies a matching independently recorded root SHA-256.
+Verification also recomputes the declaration/observation comparison, checks the
+trust manifest against the staged subject snapshot, and regenerates the offline
+HTML projection. A self-consistently rehashed capsule cannot override those
+semantic bindings. `current` or `stale` trust entries must also agree with a
+clean committed trust source and its recorded scan/snapshot/evaluation
+chronology; `current` additionally requires complete diagnostic-free discovery.
 
 `proof-before-action inspect` exits `0` for a passing comparison, `1` for a
 blocked or unknown comparison, and `2` when validation or observation cannot

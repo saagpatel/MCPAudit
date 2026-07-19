@@ -226,14 +226,10 @@ def build_capsule(
     subject = observation.subject_snapshot
     if subject is None:
         raise ValueError("new capsules require staged subject snapshot evidence")
-    if (
-        trust_manifest.repository_commit != subject.repository_commit
-        or trust_manifest.repository_dirty != subject.repository_dirty
-        or trust_manifest.repository_staged_tree_sha256 != subject.staged_tree_sha256
-        or trust_manifest.dependencies != subject.dependencies
-        or trust_manifest.diagnostics != subject.diagnostics
-    ):
+    if not _trust_manifest_matches_subject(observation, trust_manifest):
         raise ValueError("trust manifest subject evidence does not match the staged observation snapshot")
+    if comparison != compare_bill(declaration, observation):
+        raise ValueError("comparison does not match the declaration and observation")
     commit, dirty, provenance_source = _producer_state()
     producer_limitations: list[str] = []
     if commit is None:
@@ -272,6 +268,21 @@ def build_capsule(
     return EvidenceCapsule(
         payload=payload,
         integrity=CapsuleIntegrity(payload_sha256=sha256_bytes(canonical_json_bytes(payload))),
+    )
+
+
+def _trust_manifest_matches_subject(
+    observation: Observation,
+    trust_manifest: ReleaseTrustManifest,
+) -> bool:
+    subject = observation.subject_snapshot
+    return bool(
+        subject is not None
+        and trust_manifest.repository_commit == subject.repository_commit
+        and trust_manifest.repository_dirty == subject.repository_dirty
+        and trust_manifest.repository_staged_tree_sha256 == subject.staged_tree_sha256
+        and trust_manifest.dependencies == subject.dependencies
+        and trust_manifest.diagnostics == subject.diagnostics
     )
 
 
@@ -432,6 +443,35 @@ def verify_capsule(
         payload_digest = sha256_bytes(canonical_json_bytes(raw["payload"]))
         if payload_digest != capsule.integrity.payload_sha256:
             errors.append({"code": "payload_tampered", "message": "payload hash mismatch"})
+        if capsule.payload.observation.subject_snapshot is not None and not _trust_manifest_matches_subject(
+            capsule.payload.observation,
+            capsule.payload.trust_manifest,
+        ):
+            errors.append(
+                {
+                    "code": "subject_manifest_mismatch",
+                    "message": "trust manifest does not match the staged observation snapshot",
+                }
+            )
+        expected_comparison = compare_bill(
+            capsule.payload.declaration,
+            capsule.payload.observation,
+        )
+        if capsule.payload.comparison != expected_comparison:
+            errors.append(
+                {
+                    "code": "comparison_mismatch",
+                    "message": "comparison does not match the declaration and observation",
+                }
+            )
+        expected_report = render_offline_html(capsule).encode("utf-8")
+        if (root / "report.html").read_bytes() != expected_report:
+            errors.append(
+                {
+                    "code": "report_projection_mismatch",
+                    "message": "offline report does not match the canonical capsule projection",
+                }
+            )
         if expect_schema and capsule.schema_version != expect_schema:
             errors.append(
                 {

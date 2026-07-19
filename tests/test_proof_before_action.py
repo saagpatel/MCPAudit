@@ -23,12 +23,14 @@ from mcp_audit.proof_capsule import (
     build_capsule,
     compare_bill,
     export_capsule,
+    render_offline_html,
     verify_capsule,
 )
 from mcp_audit.proof_cli import main
 from mcp_audit.proof_models import (
     CAPSULE_SCHEMA,
     ActionDeclaration,
+    EvidenceCapsule,
     Observation,
     ReleaseTrustManifest,
     SubjectSnapshotEvidence,
@@ -894,7 +896,7 @@ def test_loopback_network_attempt_is_detected_without_external_contact(tmp_path:
     assert "network_destination_unknown" in {item.code for item in declared_comparison.findings}
 
 
-def test_declaration_omission_is_deterministic() -> None:
+def test_declaration_omission_is_deterministic(tmp_path: Path) -> None:
     from mcp_audit.proof_models import (
         CommandEvidence,
         FileChange,
@@ -998,6 +1000,138 @@ def test_declaration_omission_is_deterministic() -> None:
     contradictory_comparison = compare_bill(_declaration(), contradictory)
     assert contradictory_comparison.verdict == "unknown"
     assert "observation_state_contradictory" in {item.code for item in contradictory_comparison.findings}
+
+    repo = _repo(tmp_path)
+    trust_manifest = build_release_trust_manifest(
+        repo,
+        None,
+        subject_snapshot=observation.subject_snapshot,
+    )
+    forged_comparison = first.model_copy(update={"findings": [], "verdict": "pass"})
+    with pytest.raises(ValueError, match="comparison does not match"):
+        build_capsule(
+            _declaration(),
+            observation,
+            forged_comparison,
+            trust_manifest,
+        )
+    with pytest.raises(ValueError, match="trust manifest subject evidence"):
+        build_capsule(
+            _declaration(),
+            observation,
+            first,
+            trust_manifest.model_copy(update={"repository_dirty": True}),
+        )
+
+
+def test_verifier_recomputes_semantic_capsule_bindings(tmp_path: Path) -> None:
+    from mcp_audit.proof_models import (
+        CommandEvidence,
+        IsolationEvidence,
+        NetworkEvidence,
+        SurfaceObservation,
+    )
+
+    unchanged = SurfaceObservation(
+        attempted=None,
+        decision="unknown",
+        outcome="unknown",
+        persisted="unchanged",
+        mechanism="fixture",
+        complete=False,
+    )
+    observation = Observation(
+        subject_snapshot=SubjectSnapshotEvidence(
+            repository_commit=None,
+            repository_dirty=None,
+            staged_tree_sha256="d" * 64,
+        ),
+        isolation=IsolationEvidence(
+            image_reference="fixture",
+            image_id="sha256:" + "a" * 64,
+            runtime_user="65534:65534",
+            container_network_mode="none",
+            log_driver="none",
+            root_filesystem_read_only=True,
+            capabilities_dropped=True,
+            no_new_privileges=True,
+            pids_limit=128,
+            memory_bytes=536870912,
+            nano_cpus=1000000000,
+            tmpfs_paths=["/pba", "/tmp", "/workspace"],
+            containment="partial",
+        ),
+        command=CommandEvidence(
+            argv=["node"],
+            argv_sha256="c" * 64,
+            executable="node",
+            exit_code=0,
+            timed_out=False,
+            stdout_sha256="a" * 64,
+            stderr_sha256="a" * 64,
+            stdout_bytes=0,
+            stderr_bytes=0,
+        ),
+        filesystem=unchanged,
+        database=unchanged,
+        network=NetworkEvidence(surface=unchanged),
+    )
+    declaration = _declaration()
+    comparison = compare_bill(declaration, observation)
+    repo = _repo(tmp_path)
+    trust_manifest = build_release_trust_manifest(
+        repo,
+        None,
+        subject_snapshot=observation.subject_snapshot,
+    )
+    capsule = build_capsule(declaration, observation, comparison, trust_manifest)
+    output = tmp_path / "capsule"
+    export_capsule(capsule, output)
+    original_index = json.loads((output / "capsule-index.json").read_bytes())
+
+    def write_consistent_forgery(raw: dict[str, object]) -> None:
+        payload = raw["payload"]
+        assert isinstance(payload, dict)
+        integrity = raw["integrity"]
+        assert isinstance(integrity, dict)
+        integrity["payload_sha256"] = sha256_bytes(canonical_json_bytes(payload))
+        forged = EvidenceCapsule.model_validate(raw)
+        capsule_bytes = canonical_json_bytes(forged)
+        report_bytes = render_offline_html(forged).encode("utf-8")
+        (output / "capsule.json").write_bytes(capsule_bytes)
+        (output / "report.html").write_bytes(report_bytes)
+        index = json.loads(json.dumps(original_index))
+        for artifact in index["artifacts"]:
+            path = output / artifact["path"]
+            value = path.read_bytes()
+            artifact["bytes"] = len(value)
+            artifact["sha256"] = sha256_bytes(value)
+        (output / "capsule-index.json").write_bytes(canonical_json_bytes(index))
+
+    raw = capsule.model_dump(mode="json")
+    raw["payload"]["comparison"]["findings"] = []
+    raw["payload"]["comparison"]["verdict"] = "pass"
+    write_consistent_forgery(raw)
+    result = verify_capsule(output)
+    assert "comparison_mismatch" in {item["code"] for item in result["errors"]}
+
+    raw = capsule.model_dump(mode="json")
+    raw["payload"]["trust_manifest"]["repository_dirty"] = True
+    write_consistent_forgery(raw)
+    result = verify_capsule(output)
+    assert "subject_manifest_mismatch" in {item["code"] for item in result["errors"]}
+
+    raw = capsule.model_dump(mode="json")
+    write_consistent_forgery(raw)
+    forged_report = b"<!doctype html><title>forged pass</title>"
+    (output / "report.html").write_bytes(forged_report)
+    index = json.loads((output / "capsule-index.json").read_bytes())
+    report_artifact = next(item for item in index["artifacts"] if item["path"] == "report.html")
+    report_artifact["bytes"] = len(forged_report)
+    report_artifact["sha256"] = sha256_bytes(forged_report)
+    (output / "capsule-index.json").write_bytes(canonical_json_bytes(index))
+    result = verify_capsule(output)
+    assert "report_projection_mismatch" in {item["code"] for item in result["errors"]}
 
 
 def test_build_requirement_hooks_delegate_to_uv_build(
@@ -1168,6 +1302,21 @@ def test_same_day_scan_uses_deterministic_end_of_day_freshness(tmp_path: Path) -
     assert manifest.trust_source.evaluated_at.endswith("T23:59:59.999999+00:00")
     assert evidence.state == "current"
     assert evidence.network_isolation == "verified_none"
+
+    forged = manifest.model_dump(mode="json")
+    forged["trust_source"]["dirty"] = True
+    with pytest.raises(ValueError, match="clean committed source"):
+        ReleaseTrustManifest.model_validate(forged)
+
+    forged = manifest.model_dump(mode="json")
+    forged["entries"][0]["evidence"]["scanned_at"] = "2025-01-01T00:00:00+00:00"
+    with pytest.raises(ValueError, match="recorded freshness"):
+        ReleaseTrustManifest.model_validate(forged)
+
+    forged = manifest.model_dump(mode="json")
+    forged["discovery_coverage"] = "partial"
+    with pytest.raises(ValueError, match="diagnostic-free discovery"):
+        ReleaseTrustManifest.model_validate(forged)
 
 
 @pytest.mark.parametrize(

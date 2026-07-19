@@ -301,6 +301,14 @@ class TrustSource(StrictModel):
     snapshot_generated_at: str
     evaluated_at: str
 
+    @model_validator(mode="after")
+    def timestamps_are_chronological(self) -> TrustSource:
+        generated = _aware_datetime(self.snapshot_generated_at, "trust snapshot generation")
+        evaluated = _aware_datetime(self.evaluated_at, "trust evaluation")
+        if generated > evaluated:
+            raise ValueError("trust snapshot generation must not follow evaluation")
+        return self
+
 
 class ReleaseTrustManifest(StrictModel):
     schema_version: Literal["proof-before-action.trust-manifest.v1"] = TRUST_MANIFEST_SCHEMA
@@ -332,6 +340,32 @@ class ReleaseTrustManifest(StrictModel):
             for dependency_id, entry in entries_by_id.items()
         ):
             raise ValueError("every trust entry must bind the full dependency occurrence")
+        chronological_entries = [
+            entry for entry in self.entries if entry.evidence.state in {"current", "stale"}
+        ]
+        if chronological_entries:
+            if (
+                self.trust_source is None
+                or self.trust_source.repository_commit is None
+                or self.trust_source.dirty is not False
+            ):
+                raise ValueError("current or stale trust evidence requires a clean committed source")
+            generated = _aware_datetime(
+                self.trust_source.snapshot_generated_at,
+                "trust snapshot generation",
+            )
+            evaluated = _aware_datetime(self.trust_source.evaluated_at, "trust evaluation")
+            for entry in chronological_entries:
+                scanned = _aware_datetime(entry.evidence.scanned_at, "trust scan")
+                if scanned > generated or scanned > evaluated:
+                    raise ValueError("trust scan must not follow snapshot generation or evaluation")
+                stale = (evaluated - scanned).days > 90
+                if (entry.evidence.state == "stale") != stale:
+                    raise ValueError("trust evidence state does not match recorded freshness")
+        if any(entry.evidence.state == "current" for entry in self.entries) and (
+            self.discovery_coverage != "complete" or self.diagnostics
+        ):
+            raise ValueError("current trust evidence requires complete diagnostic-free discovery")
         return self
 
 
@@ -405,6 +439,18 @@ def canonical_json_bytes(value: BaseModel | dict[str, Any] | list[Any]) -> bytes
 
 def sha256_bytes(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
+
+
+def _aware_datetime(value: str | None, label: str) -> datetime:
+    if not value:
+        raise ValueError(f"{label} timestamp is required")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError(f"{label} timestamp must be valid") from exc
+    if parsed.tzinfo is None:
+        raise ValueError(f"{label} timestamp must be timezone-aware")
+    return parsed
 
 
 def _reject_floats(value: Any) -> None:
