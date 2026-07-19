@@ -56,7 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recomputes the comparison, staged-subject trust binding, and offline HTML
   projection instead of accepting a merely self-consistent rehash. Current and
   stale entries must agree with clean committed source chronology, and current
-  evidence requires complete diagnostic-free dependency discovery.
+  evidence requires complete diagnostic-free dependency discovery. Command
+  identity is bound to canonical recorded argv, and verification rejects
+  noncanonical capsule or index encodings.
 - `pin_baseline_corrupted` warning code — a pin baseline file that exists but
   cannot be parsed now emits its own `ScanWarning` (naming the file and the
   parse error) instead of folding into `pin_baseline_missing`. A corrupted

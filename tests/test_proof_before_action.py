@@ -936,7 +936,7 @@ def test_declaration_omission_is_deterministic(tmp_path: Path) -> None:
         ),
         command=CommandEvidence(
             argv=["node"],
-            argv_sha256="c" * 64,
+            argv_sha256=sha256_bytes(canonical_json_bytes(["node"])),
             executable="node",
             exit_code=0,
             timed_out=False,
@@ -1063,7 +1063,7 @@ def test_verifier_recomputes_semantic_capsule_bindings(tmp_path: Path) -> None:
         ),
         command=CommandEvidence(
             argv=["node"],
-            argv_sha256="c" * 64,
+            argv_sha256=sha256_bytes(canonical_json_bytes(["node"])),
             executable="node",
             exit_code=0,
             timed_out=False,
@@ -1076,6 +1076,12 @@ def test_verifier_recomputes_semantic_capsule_bindings(tmp_path: Path) -> None:
         database=unchanged,
         network=NetworkEvidence(surface=unchanged),
     )
+    command_payload = observation.command.model_dump(mode="json")
+    with pytest.raises(ValueError, match="executable must match"):
+        CommandEvidence.model_validate({**command_payload, "executable": "python"})
+    with pytest.raises(ValueError, match="argv hash does not match"):
+        CommandEvidence.model_validate({**command_payload, "argv_sha256": "0" * 64})
+
     declaration = _declaration()
     comparison = compare_bill(declaration, observation)
     repo = _repo(tmp_path)
@@ -1132,6 +1138,25 @@ def test_verifier_recomputes_semantic_capsule_bindings(tmp_path: Path) -> None:
     (output / "capsule-index.json").write_bytes(canonical_json_bytes(index))
     result = verify_capsule(output)
     assert "report_projection_mismatch" in {item["code"] for item in result["errors"]}
+
+    write_consistent_forgery(capsule.model_dump(mode="json"))
+    capsule_path = output / "capsule.json"
+    noncanonical_capsule = json.dumps(json.loads(capsule_path.read_bytes()), indent=2).encode()
+    capsule_path.write_bytes(noncanonical_capsule)
+    index = json.loads((output / "capsule-index.json").read_bytes())
+    capsule_artifact = next(item for item in index["artifacts"] if item["path"] == "capsule.json")
+    capsule_artifact["bytes"] = len(noncanonical_capsule)
+    capsule_artifact["sha256"] = sha256_bytes(noncanonical_capsule)
+    (output / "capsule-index.json").write_bytes(canonical_json_bytes(index))
+    result = verify_capsule(output)
+    assert "capsule_noncanonical" in {item["code"] for item in result["errors"]}
+
+    write_consistent_forgery(capsule.model_dump(mode="json"))
+    index_path = output / "capsule-index.json"
+    noncanonical_index = json.dumps(json.loads(index_path.read_bytes()), indent=2).encode()
+    index_path.write_bytes(noncanonical_index)
+    result = verify_capsule(output)
+    assert "index_noncanonical" in {item["code"] for item in result["errors"]}
 
 
 def test_build_requirement_hooks_delegate_to_uv_build(

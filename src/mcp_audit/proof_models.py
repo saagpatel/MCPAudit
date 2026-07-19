@@ -6,6 +6,7 @@ import hashlib
 import json
 from datetime import datetime
 from enum import StrEnum
+from pathlib import Path
 from typing import Any, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -134,15 +135,23 @@ class IsolationEvidence(StrictModel):
 
 
 class CommandEvidence(StrictModel):
-    argv: list[str]
-    argv_sha256: str
-    executable: str
+    argv: list[str] = Field(min_length=1)
+    argv_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    executable: str = Field(min_length=1)
     exit_code: int | None
     timed_out: bool
-    stdout_sha256: str
-    stderr_sha256: str
-    stdout_bytes: int
-    stderr_bytes: int
+    stdout_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    stderr_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    stdout_bytes: int = Field(ge=0)
+    stderr_bytes: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def executable_and_argv_are_bound(self) -> CommandEvidence:
+        if self.executable != Path(self.argv[0]).name:
+            raise ValueError("command executable must match argv[0]")
+        if self.argv_sha256 != sha256_bytes(canonical_json_bytes(self.argv)):
+            raise ValueError("command argv hash does not match recorded argv")
+        return self
 
 
 class NetworkEvidence(StrictModel):

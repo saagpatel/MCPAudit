@@ -409,13 +409,21 @@ def verify_capsule(
     index_bytes = (root / "capsule-index.json").read_bytes()
     root_sha256 = sha256_bytes(index_bytes)
     try:
-        index = CapsuleIndex.model_validate_json(index_bytes)
+        raw_index = json.loads(index_bytes)
+        index = CapsuleIndex.model_validate(raw_index)
     except Exception as exc:  # Pydantic reports a stable failure class below.
         return {
             "valid": False,
             "root_sha256": root_sha256,
             "errors": [{"code": "index_schema_invalid", "message": type(exc).__name__}],
         }
+    if canonical_json_bytes(raw_index) != index_bytes:
+        errors.append(
+            {
+                "code": "index_noncanonical",
+                "message": "capsule index is not canonical JSON",
+            }
+        )
     if index.schema_version != CAPSULE_INDEX_SCHEMA:
         errors.append({"code": "index_schema_unsupported", "message": index.schema_version})
     for artifact in index.artifacts:
@@ -440,6 +448,13 @@ def verify_capsule(
         errors.append({"code": "capsule_schema_invalid", "message": type(exc).__name__})
         capsule = None
     if capsule is not None:
+        if canonical_json_bytes(raw) != capsule_bytes:
+            errors.append(
+                {
+                    "code": "capsule_noncanonical",
+                    "message": "capsule is not canonical JSON",
+                }
+            )
         payload_digest = sha256_bytes(canonical_json_bytes(raw["payload"]))
         if payload_digest != capsule.integrity.payload_sha256:
             errors.append({"code": "payload_tampered", "message": "payload hash mismatch"})

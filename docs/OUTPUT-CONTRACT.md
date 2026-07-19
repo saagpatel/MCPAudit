@@ -130,6 +130,9 @@ HTML projection. A self-consistently rehashed capsule cannot override those
 semantic bindings. `current` or `stale` trust entries must also agree with a
 clean committed trust source and its recorded scan/snapshot/evaluation
 chronology; `current` additionally requires complete diagnostic-free discovery.
+The recorded executable must match `argv[0]`, the argv digest must match the
+canonical redacted argv, and both JSON files must already be byte-for-byte
+canonical rather than merely parse to an equivalent object.
 
 `proof-before-action inspect` exits `0` for a passing comparison, `1` for a
 blocked or unknown comparison, and `2` when validation or observation cannot
