@@ -23,9 +23,20 @@ boundary equivalent to a fresh mountless VM.
 - The untrusted command executes only in the container.
 - Docker image lookup is local-only; the tool never pulls an image.
 - The runtime container has network mode `none`, a read-only image root, no
-  host mounts, no forwarded sockets, no inherited host environment, all Linux
-  capabilities dropped, `no-new-privileges`, UID/GID `65534:65534`, and CPU,
-  memory, PID, time, and tmpfs bounds.
+  host mounts, no forwarded sockets, no inherited host environment,
+  `no-new-privileges`, and CPU, memory, PID, time, and tmpfs bounds.
+- A fixed root-owned PID 1 observer retains only `KILL`, `SETGID`, `SETPCAP`,
+  and `SETUID` so it can protect the evidence tmpfs, empty the tested command's
+  capability bounding set, launch it as UID/GID `65534:65534`, enforce its
+  deadline, and terminate surviving descendants.
+- The tested command's actual UID/GID tuples, supplementary groups, all five
+  Linux capability masks, and `NoNewPrivs` value are captured from `/proc`
+  through a pre-opened evidence descriptor that is closed before the declared
+  command starts. Any missing or nonconforming profile blocks inspection.
+- PID 1 uses a fixed observer `PATH` that excludes the writable workspace, then
+  verifies that every task of every command descendant is terminal before
+  streaming one attached workspace/evidence archive. A failed quiescence
+  readback blocks the inspection.
 - Container configuration is read back and mismatches block execution.
 - Known secret-bearing files, detected literal credentials, non-UTF-8/binary
   assets, databases not clearly named as synthetic SQLite fixtures, and every
@@ -49,7 +60,7 @@ boundary equivalent to a fresh mountless VM.
 | Current Colima VM host sharing | Not a proven isolation boundary | The VM may expose broader host-adjacent state than the runtime container. A hostile-kernel test should use a fresh mountless VM instead. |
 | macOS Keychain, TCC, XPC, Apple Events, GUI, devices, and host kernel | Unobserved | The Linux fixture cannot justify claims about these surfaces. |
 | Transient create-delete or write-restore | Unobserved | Final-state hashing can miss an attempt that leaves no persisted delta. |
-| Nested or very short-lived child processes | Incompletely observed | The declared top-level executable is bound, but child executable identities and effects can escape complete process attribution. |
+| Nested or very short-lived child processes | Final state quiesced; identity attribution incomplete | Surviving descendants are terminated before the final archive, but child executable identities and transient effects are not completely attributed. |
 | SQLite transactions with no final delta | Unobserved | Semantic comparison proves final content, not every query or transaction attempt. |
 | Non-SQLite databases | File-level only | Semantic records and remote database effects are unknown. |
 | Network destination | Unobserved | Namespace counters reveal common IP/TCP/UDP attempts, not the requested hostname or endpoint. |

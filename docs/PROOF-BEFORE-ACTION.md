@@ -75,21 +75,32 @@ The observer:
    synthetic SQLite fixtures into a temporary staging image without `.git`,
    dependency caches, build output, known secret files, or detected literal
    credentials;
-2. creates a non-root container with no host mount, no forwarded socket,
-   network mode `none`, a read-only image root, all capabilities dropped,
-   `no-new-privileges`, and bounded CPU, memory, process, and tmpfs resources;
-3. runs the command against a disposable tmpfs workspace;
-4. collects file hashes, SQLite schema/row digests, and Linux IP/TCP/UDP counter
-   deltas while the container remains alive;
-5. removes the container and temporary staging image.
+2. creates a container with no host mount, no forwarded socket, network mode
+   `none`, a read-only image root, `no-new-privileges`, and bounded CPU, memory,
+   process, and tmpfs resources;
+3. uses a fixed PID 1 observer with only `KILL`, `SETGID`, `SETPCAP`, and
+   `SETUID` to open root-owned evidence files, empty the command capability
+   bounding set, then launch the tested command as
+   UID/GID `65534:65534` with empty inheritable, permitted, effective, bounding,
+   and ambient capability sets; the command's actual `/proc` identity,
+   supplementary groups, capability masks, and `NoNewPrivs` state are captured
+   through a pre-opened evidence descriptor, closed before the declared command
+   starts, and validated into every observation;
+4. terminates every surviving command descendant, verifies every Linux task is
+   terminal from `/proc`, and only then streams one attached archive containing
+   the disposable workspace and root-owned evidence;
+5. collects file hashes, SQLite schema/row digests, and Linux IP/TCP/UDP counter
+   deltas from that quiesced archive;
+6. removes the container and temporary staging image.
 
 File and SQLite comparisons are complete for persisted regular files that can be
 collected. `attempted: null` means no attempt could be inferred; it does not mean
 the action was proven unable to attempt the effect. Network counters distinguish
 an observed attempt from no counter change, but cannot identify the requested
 destination. Link or special-file output blocks collection rather than silently
-disappearing. Command output is redirected inside the bounded evidence tmpfs
-under an OS file-size limit before it is hashed and omitted.
+disappearing. The command cannot write the observer-owned evidence tmpfs.
+Command output is redirected there by PID 1 under an OS file-size limit before
+it is hashed and omitted.
 
 ## Release trust manifest
 

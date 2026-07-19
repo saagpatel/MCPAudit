@@ -97,6 +97,18 @@ class SurfaceObservation(StrictModel):
     limitations: list[str] = Field(default_factory=list)
 
 
+class CommandRuntimeProfile(StrictModel):
+    uids: tuple[Literal[65534], Literal[65534], Literal[65534], Literal[65534]]
+    gids: tuple[Literal[65534], Literal[65534], Literal[65534], Literal[65534]]
+    supplementary_groups: list[int] = Field(max_length=0)
+    capabilities_inheritable: Literal[0]
+    capabilities_permitted: Literal[0]
+    capabilities_effective: Literal[0]
+    capabilities_bounding: Literal[0]
+    capabilities_ambient: Literal[0]
+    no_new_privileges: Literal[True]
+
+
 class IsolationEvidence(StrictModel):
     provider: Literal["docker-in-colima"] = "docker-in-colima"
     image_reference: str
@@ -115,6 +127,9 @@ class IsolationEvidence(StrictModel):
     secrets_forwarded: list[str] = Field(default_factory=list)
     containment: Literal["partial"]
     limitations: list[str] = Field(default_factory=list)
+    observer_user: Literal["0:0"] | None = None
+    observer_capabilities: list[Literal["KILL", "SETGID", "SETPCAP", "SETUID"]] = Field(default_factory=list)
+    command_runtime_profile: CommandRuntimeProfile | None = None
 
 
 class CommandEvidence(StrictModel):

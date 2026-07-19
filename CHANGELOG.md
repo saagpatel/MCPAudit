@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and an offline evidence capsule, and verifies capsule integrity against
   explicit producer commits and independently supplied root hashes. Unknown,
   stale, masked, unmatched, or unobservable evidence remains non-authoritative.
+  Its minimally capable observer protects evidence from the unprivileged,
+  capability-free tested command, stops surviving descendants before the final
+  archive, and fails closed when command identity, quiescence, or cleanup cannot
+  be confirmed.
 - `pin_baseline_corrupted` warning code — a pin baseline file that exists but
   cannot be parsed now emits its own `ScanWarning` (naming the file and the
   parse error) instead of folding into `pin_baseline_missing`. A corrupted

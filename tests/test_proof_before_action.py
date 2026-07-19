@@ -164,6 +164,103 @@ def test_read_only_command_passes_and_is_deterministic(tmp_path: Path) -> None:
 
 
 @requires_docker
+def test_background_descendant_cannot_mutate_after_observation_completion(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    (repo / "padding.txt").write_text("x" * (2 * 1024 * 1024), encoding="utf-8")
+    child = (
+        "const fs=require('fs');let sawWorkspaceTar=false;"
+        "setInterval(()=>{let active=false;"
+        "for(const entry of fs.readdirSync('/proc')){"
+        "if(!/^\\d+$/.test(entry))continue;"
+        "try{const argv=fs.readFileSync(`/proc/${entry}/cmdline`,'utf8').split('\\0');"
+        "const executable=(argv[0]||'').split('/').pop();"
+        "if(executable==='tar'&&argv.some(value=>value==='workspace'||value==='/workspace'))"
+        "active=true;}catch{}}"
+        "if(active)sawWorkspaceTar=true;"
+        "if(sawWorkspaceTar&&!active){"
+        "fs.writeFileSync('late-descendant.txt','evasion');"
+        "try{fs.writeFileSync('/pba/stdout','attack-completed')}catch{}"
+        "process.exit(0);}},1)"
+    )
+    command = [
+        "node",
+        "-e",
+        (
+            "const {spawn}=require('child_process');"
+            f"spawn(process.execPath,['-e',{json.dumps(child)}],"
+            "{detached:true,stdio:'ignore'}).unref()"
+        ),
+    ]
+    observation = observe_command(repo, command, image="node:24-slim")
+    assert observation.command.exit_code == 0
+    assert observation.command.timed_out is False
+    assert observation.command.stdout_sha256 == sha256_bytes(b"")
+    assert observation.file_changes == []
+    assert compare_bill(_declaration(), observation).verdict == "pass"
+
+
+@requires_docker
+def test_command_timeout_still_emits_fail_closed_observation(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    observation = observe_command(
+        repo,
+        ["node", "-e", "setTimeout(()=>{},10000)"],
+        image="node:24-slim",
+        timeout_seconds=1,
+    )
+    assert observation.command.timed_out is True
+    assert observation.command.exit_code is None
+    comparison = compare_bill(_declaration(), observation)
+    assert comparison.verdict == "block"
+    assert "command_timeout" in {item.code for item in comparison.findings}
+
+
+@requires_docker
+def test_command_is_unprivileged_and_cannot_rewrite_observer_evidence(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    code = (
+        "const fs=require('fs');"
+        "if(process.getuid()!==65534||process.getgid()!==65534)process.exit(10);"
+        "if(process.env.PATH!=='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin')"
+        "process.exit(13);"
+        "try{fs.writeFileSync('/pba/network.before','forged');process.exit(11)}"
+        "catch(error){if(error.code!=='EACCES')process.exit(12)}"
+    )
+    observation = observe_command(repo, ["node", "-e", code], image="node:24-slim")
+    assert observation.command.exit_code == 0
+    assert observation.isolation.runtime_user == "65534:65534"
+    assert observation.isolation.observer_user == "0:0"
+    assert observation.isolation.observer_capabilities == [
+        "KILL",
+        "SETGID",
+        "SETPCAP",
+        "SETUID",
+    ]
+    assert observation.isolation.command_runtime_profile is not None
+    profile = observation.isolation.command_runtime_profile
+    assert profile.uids == (65534, 65534, 65534, 65534)
+    assert profile.gids == (65534, 65534, 65534, 65534)
+    assert profile.supplementary_groups == []
+    assert profile.capabilities_inheritable == 0
+    assert profile.capabilities_permitted == 0
+    assert profile.capabilities_effective == 0
+    assert profile.capabilities_bounding == 0
+    assert profile.capabilities_ambient == 0
+    assert profile.no_new_privileges is True
+    assert compare_bill(_declaration(), observation).verdict == "pass"
+
+
+@requires_docker
+def test_option_like_command_is_not_consumed_by_setpriv(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    observation = observe_command(repo, ["--help"], image="node:24-slim")
+    assert observation.command.exit_code not in {None, 0}
+    comparison = compare_bill(_declaration(), observation)
+    assert comparison.verdict == "block"
+    assert "command_failed" in {item.code for item in comparison.findings}
+
+
+@requires_docker
 def test_undeclared_file_write_is_detected_and_blocked(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     observation = observe_command(

@@ -15,12 +15,12 @@ import subprocess
 import sys
 import tarfile
 import tempfile
-import time
 from pathlib import Path, PurePosixPath
 from typing import Any, Literal, cast
 
 from mcp_audit.proof_models import (
     CommandEvidence,
+    CommandRuntimeProfile,
     DatabaseChange,
     FileChange,
     IsolationEvidence,
@@ -92,19 +92,70 @@ _MAX_FILES = 10_000
 _MAX_INPUT_BYTES = 512 * 1024 * 1024
 _MAX_OUTPUT_BYTES = 256 * 1024
 _MAX_TEXT_FILE_BYTES = 16 * 1024 * 1024
+_RUNTIME_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 _WRAPPER = r"""
 set -eu
 cp -R /pba-input/. /workspace/
+chmod -R a+rwX /workspace
 cat /proc/net/snmp > /pba/network.before
 ulimit -f 512
 set +e
-"$@" > /pba/stdout 2> /pba/stderr
+timeout --signal=TERM --kill-after=1 "${PBA_TIMEOUT_SECONDS}s" \
+    setpriv --reuid=65534 --regid=65534 --clear-groups \
+    --bounding-set=-all --inh-caps=-all --ambient-caps=-all --no-new-privs \
+    -- /bin/sh -c '
+        cat /proc/self/status >&3 || exit 125
+        exec 3>&-
+        exec "$@"
+    ' proof-before-action-command "$@" \
+    3> /pba/command.status > /pba/stdout 2> /pba/stderr
 rc=$?
 set -e
+chmod 0400 /pba/command.status
+if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+    touch /pba/timed-out
+fi
+quiescent=false
+for _sweep in 1 2 3 4 5; do
+    kill -KILL -1 2>/dev/null || true
+    sleep 0.05
+    active=false
+    for status in /proc/[0-9]*/task/[0-9]*/status; do
+        task=${status%/status}
+        tid=${task##*/}
+        [ "$tid" = "$$" ] && continue
+        if [ ! -r "$status" ]; then
+            active=true
+            continue
+        fi
+        state=
+        while read -r key value _rest; do
+            if [ "$key" = "State:" ]; then
+                state=$value
+                break
+            fi
+        done < "$status" || active=true
+        if [ -z "$state" ]; then
+            active=true
+            continue
+        fi
+        case "$state" in
+            Z|X|x) ;;
+            *) active=true ;;
+        esac
+    done
+    if [ "$active" = false ]; then
+        quiescent=true
+        break
+    fi
+done
+if [ "$quiescent" = false ]; then
+    exit 3
+fi
 cat /proc/net/snmp > /pba/network.after
 printf '%s\n' "$rc" > /pba/exit-code
 touch /pba/complete
-sleep 600
+tar -C / -cf - workspace pba
 """
 
 
@@ -125,11 +176,11 @@ def observe_command(
         raise ObservationBlocked("timeout must be between 1 and 600 seconds")
     root = Path(tempfile.mkdtemp(prefix="proof-before-action-"))
     staged = root / "staged"
-    collected = root / "collected"
-    evidence = root / "evidence"
+    collected_root = root / "collected"
+    collected = collected_root / "workspace"
+    evidence = collected_root / "pba"
     staged.mkdir(mode=0o700)
-    collected.mkdir(mode=0o700)
-    evidence.mkdir(mode=0o700)
+    collected_root.mkdir(mode=0o700)
     container_id: str | None = None
     staging_container_id: str | None = None
     runtime_image: str | None = None
@@ -175,7 +226,8 @@ def observe_command(
             raise ObservationBlocked(
                 "content-addressed staging image failed: " + _safe_error(committed.stderr)
             )
-        _run(["docker", "rm", "-f", staging_container_id], timeout=20)
+        if error := _cleanup_docker_resource(["docker", "rm", "-f", staging_container_id], timeout=20):
+            raise ObservationBlocked("staging container cleanup could not be confirmed: " + error)
         staging_container_id = None
         create = _run(
             [
@@ -188,6 +240,14 @@ def observe_command(
                 "--read-only",
                 "--cap-drop",
                 "ALL",
+                "--cap-add",
+                "KILL",
+                "--cap-add",
+                "SETGID",
+                "--cap-add",
+                "SETPCAP",
+                "--cap-add",
+                "SETUID",
                 "--security-opt",
                 "no-new-privileges",
                 "--pids-limit",
@@ -203,15 +263,19 @@ def observe_command(
                 "--tmpfs",
                 "/workspace:rw,nosuid,nodev,size=536870912,mode=0777",
                 "--tmpfs",
-                "/pba:rw,noexec,nosuid,nodev,size=8388608,mode=0777",
+                "/pba:rw,noexec,nosuid,nodev,size=8388608,mode=0700",
                 "--workdir",
                 "/workspace",
                 "--user",
-                "65534:65534",
+                "0:0",
                 "--env",
                 "HOME=/nonexistent",
                 "--env",
                 "LANG=C.UTF-8",
+                "--env",
+                f"PATH={_RUNTIME_PATH}",
+                "--env",
+                f"PBA_TIMEOUT_SECONDS={timeout_seconds}",
                 "--entrypoint",
                 "/bin/sh",
                 runtime_image,
@@ -227,23 +291,27 @@ def observe_command(
         container_id = create.stdout.decode().strip()
         inspect = _inspect_container(container_id)
         isolation = _isolation_evidence(image, image_id, inspect)
-        started = _run(["docker", "start", container_id], timeout=20)
-        if started.returncode != 0:
-            raise ObservationBlocked("container start failed: " + _safe_error(started.stderr))
-
-        timed_out = not _wait_for_completion(container_id, timeout_seconds)
-        if timed_out:
-            _run(["docker", "kill", container_id], timeout=10)
-        if not timed_out:
-            _collect_tree(container_id, "/workspace", collected, timeout=60)
-            _collect_tree(container_id, "/pba", evidence, timeout=20)
-            _run(["docker", "kill", container_id], timeout=10)
+        attached = _run(
+            ["docker", "start", "--attach", container_id],
+            timeout=timeout_seconds + 75,
+        )
+        if attached.returncode != 0:
+            raise ObservationBlocked(
+                f"observer wrapper failed with exit code {attached.returncode} "
+                "before completing evidence collection: " + _safe_error(attached.stderr)
+            )
+        _extract_observation_archive(attached.stdout, collected_root)
+        if not (evidence / "complete").is_file():
+            raise ObservationBlocked("observer wrapper exited before completing evidence collection")
+        command_runtime_profile = _read_command_runtime_profile(evidence / "command.status")
+        isolation = isolation.model_copy(update={"command_runtime_profile": command_runtime_profile})
+        timed_out = (evidence / "timed-out").is_file()
         exit_code = _read_exit_code(evidence / "exit-code")
         if timed_out:
             exit_code = None
 
-        after_files = before_files if timed_out else _file_snapshot(collected)
-        after_databases = before_databases if timed_out else _database_snapshot(collected)
+        after_files = _file_snapshot(collected)
+        after_databases = _database_snapshot(collected)
         file_changes = _diff_files(before_files, after_files)
         database_changes = _diff_databases(before_databases, after_databases)
         network = _network_evidence(
@@ -497,57 +565,36 @@ def _require_image_tools(image: str) -> None:
             "no-new-privileges",
             "--entrypoint",
             "/bin/sh",
+            "--env",
+            f"PATH={_RUNTIME_PATH}",
             image,
             "-c",
-            "test -r /proc/net/snmp && command -v tar >/dev/null",
+            "test -r /proc/net/snmp && command -v tar >/dev/null "
+            "&& command -v timeout >/dev/null && command -v setpriv >/dev/null",
         ],
         timeout=20,
     )
     if result.returncode != 0:
-        raise ObservationBlocked("local image lacks the required sh, tar, or procfs observer")
-
-
-def _wait_for_completion(container_id: str, timeout_seconds: int) -> bool:
-    deadline = time.monotonic() + timeout_seconds
-    while time.monotonic() < deadline:
-        marker = _run(
-            ["docker", "exec", container_id, "test", "-f", "/pba/complete"],
-            timeout=5,
+        raise ObservationBlocked(
+            "local image lacks the required sh, tar, timeout, setpriv, or procfs observer"
         )
-        if marker.returncode == 0:
-            return True
-        state = _run(
-            ["docker", "inspect", "--format", "{{.State.Running}}", container_id],
-            timeout=5,
-        )
-        if state.returncode != 0 or state.stdout.decode().strip() != "true":
-            logs = _run(["docker", "logs", container_id], timeout=10)
-            raise ObservationBlocked(
-                "observer wrapper exited before evidence collection: "
-                + _safe_error(logs.stderr or logs.stdout)
-            )
-        time.sleep(0.1)
-    return False
 
 
-def _collect_tree(container_id: str, source: str, destination: Path, *, timeout: int) -> None:
-    archived = _run(
-        ["docker", "exec", container_id, "tar", "-C", source, "-cf", "-", "."],
-        timeout=timeout,
-    )
-    if archived.returncode != 0:
-        raise ObservationBlocked("runtime evidence collection failed: " + _safe_error(archived.stderr))
+def _extract_observation_archive(value: bytes, destination: Path) -> None:
     file_count = 0
     total_bytes = 0
     try:
-        with tarfile.open(fileobj=io.BytesIO(archived.stdout), mode="r:") as archive:
+        with tarfile.open(fileobj=io.BytesIO(value), mode="r:") as archive:
             for member in archive:
                 relative = PurePosixPath(member.name)
                 parts = tuple(part for part in relative.parts if part != ".")
-                if relative.is_absolute() or ".." in parts:
+                if (
+                    relative.is_absolute()
+                    or ".." in parts
+                    or not parts
+                    or parts[0] not in {"workspace", "pba"}
+                ):
                     raise ObservationBlocked("runtime evidence archive contains an unsafe path")
-                if not parts:
-                    continue
                 target = destination.joinpath(*parts)
                 if member.isdir():
                     target.mkdir(parents=True, exist_ok=True)
@@ -570,6 +617,46 @@ def _collect_tree(container_id: str, source: str, destination: Path, *, timeout:
         raise ObservationBlocked("runtime evidence archive is invalid") from exc
 
 
+def _read_command_runtime_profile(path: Path) -> CommandRuntimeProfile:
+    try:
+        fields: dict[str, str] = {}
+        for line in path.read_text(encoding="utf-8").splitlines():
+            key, separator, value = line.partition(":")
+            if separator:
+                fields[key] = value.strip()
+        uids = tuple(int(item) for item in fields["Uid"].split())
+        gids = tuple(int(item) for item in fields["Gid"].split())
+        groups = [int(item) for item in fields["Groups"].split()]
+        capability_fields = {
+            key: int(fields[key], 16) for key in ("CapInh", "CapPrm", "CapEff", "CapBnd", "CapAmb")
+        }
+        no_new_privileges = int(fields["NoNewPrivs"])
+    except (KeyError, OSError, UnicodeError, ValueError) as exc:
+        raise ObservationBlocked("tested command runtime profile was unavailable or malformed") from exc
+    expected_identity = (65534, 65534, 65534, 65534)
+    if (
+        uids != expected_identity
+        or gids != expected_identity
+        or groups
+        or any(capability_fields.values())
+        or no_new_privileges != 1
+    ):
+        raise ObservationBlocked(
+            "tested command runtime profile did not match the required unprivileged identity"
+        )
+    return CommandRuntimeProfile(
+        uids=(65534, 65534, 65534, 65534),
+        gids=(65534, 65534, 65534, 65534),
+        supplementary_groups=groups,
+        capabilities_inheritable=0,
+        capabilities_permitted=0,
+        capabilities_effective=0,
+        capabilities_bounding=0,
+        capabilities_ambient=0,
+        no_new_privileges=True,
+    )
+
+
 def _inspect_container(container_id: str) -> dict[str, Any]:
     result = _run(["docker", "inspect", container_id], timeout=20)
     if result.returncode != 0:
@@ -583,6 +670,7 @@ def _isolation_evidence(image: str, image_id: str, inspect: dict[str, Any]) -> I
     mounts = inspect.get("Mounts", [])
     network = str(host.get("NetworkMode", "unknown"))
     cap_drop = {str(item).upper() for item in host.get("CapDrop", [])}
+    cap_add = {str(item).upper().removeprefix("CAP_") for item in host.get("CapAdd", [])}
     security = [str(item) for item in host.get("SecurityOpt", [])]
     root_read_only = bool(host.get("ReadonlyRootfs"))
     runtime_user = str(inspect.get("Config", {}).get("User", ""))
@@ -591,19 +679,26 @@ def _isolation_evidence(image: str, image_id: str, inspect: dict[str, Any]) -> I
     pids_limit = host.get("PidsLimit")
     memory_bytes = host.get("Memory")
     nano_cpus = host.get("NanoCpus")
-    tmpfs_paths = sorted(str(item) for item in host.get("Tmpfs", {}))
+    tmpfs = {str(key): str(value) for key, value in host.get("Tmpfs", {}).items()}
+    expected_tmpfs = {
+        "/pba": "rw,noexec,nosuid,nodev,size=8388608,mode=0700",
+        "/tmp": "rw,noexec,nosuid,nodev,size=67108864,mode=1777",
+        "/workspace": "rw,nosuid,nodev,size=536870912,mode=0777",
+    }
+    tmpfs_paths = sorted(tmpfs)
     if (
         network != "none"
         or "ALL" not in cap_drop
         or not root_read_only
         or mounts
-        or runtime_user != "65534:65534"
+        or cap_add != {"KILL", "SETGID", "SETPCAP", "SETUID"}
+        or runtime_user != "0:0"
         or not no_new_privileges
         or log_driver != "none"
         or pids_limit != 128
         or memory_bytes != 536870912
         or nano_cpus != 1000000000
-        or tmpfs_paths != ["/pba", "/tmp", "/workspace"]
+        or tmpfs != expected_tmpfs
     ):
         raise ObservationBlocked(
             "container isolation readback did not match the required fail-closed profile"
@@ -625,12 +720,18 @@ def _isolation_evidence(image: str, image_id: str, inspect: dict[str, Any]) -> I
         secrets_forwarded=[],
         containment="partial",
         limitations=[
+            "The fixed PID 1 observer retains only KILL, SETGID, SETPCAP, and SETUID "
+            "so it can protect evidence, empty the command capability bounding set, "
+            "enforce the unprivileged command identity, and terminate descendants.",
+            "The tested command runs as 65534:65534 with an empty capability bounding set.",
             "The container has no host mounts or forwarded sockets, but it runs inside "
             "a networked Colima VM.",
             "A container or VM escape could reach a broader host-adjacent surface; "
             "hostile-kernel isolation is not proven.",
             "Loopback remains available inside the isolated network namespace.",
         ],
+        observer_user="0:0",
+        observer_capabilities=["KILL", "SETGID", "SETPCAP", "SETUID"],
     )
 
 
