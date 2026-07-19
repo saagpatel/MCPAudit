@@ -224,6 +224,9 @@ def test_oidc_authority_is_confined_to_post_build_publish_job() -> None:
     assert "actions/upload-artifact@" in build_job
     assert "needs: build" in publish_job
     assert "environment: pypi" in publish_job
+    assert workflow.count("actions: read") == 2
+    assert workflow.count("GH_TOKEN: ${{ github.token }}") == 2
+    assert workflow.count("Authorization: Bearer $GH_TOKEN") == 2
     assert "id-token: write" in publish_job
     assert "$RUNNER_TEMP/pypi-environment.json" in workflow
     assert ".can_admins_bypass == false" in publish_job

@@ -13,6 +13,7 @@ on:
         type: string
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
@@ -42,9 +43,12 @@ jobs:
           python-version: "3.11"
 
       - name: Read back protected PyPI environment
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           curl --fail --location --silent --show-error \
             --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer $GH_TOKEN" \
             --header "X-GitHub-Api-Version: 2026-03-10" \
             "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/environments/pypi" \
             --output "$RUNNER_TEMP/pypi-environment.json"
@@ -106,14 +110,18 @@ jobs:
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
+      actions: read
       contents: read
       id-token: write  # OIDC trusted publishing
 
     steps:
       - name: Verify protected PyPI environment is still enforced
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           curl --fail --location --silent --show-error \
             --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer $GH_TOKEN" \
             --header "X-GitHub-Api-Version: 2026-03-10" \
             "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/environments/pypi" \
             --output "$RUNNER_TEMP/pypi-environment.json"
