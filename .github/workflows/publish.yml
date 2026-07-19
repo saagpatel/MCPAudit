@@ -11,10 +11,6 @@ on:
         description: Exact 40-character commit recorded in the release approval
         required: true
         type: string
-      approval:
-        description: Type publish-mcp-audits to confirm this separately authorized publish
-        required: true
-        type: string
 
 permissions:
   contents: read
@@ -34,9 +30,16 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Read back protected PyPI environment
+        run: |
+          curl --fail --location --silent --show-error \
+            --header "Accept: application/vnd.github+json" \
+            --header "X-GitHub-Api-Version: 2026-03-10" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/environments/pypi" \
+            --output "$RUNNER_TEMP/pypi-environment.json"
+
       - name: Verify release authorization binding
         env:
-          RELEASE_APPROVAL: ${{ inputs.approval }}
           RELEASE_COMMIT: ${{ inputs.commit }}
           RELEASE_TAG: ${{ inputs.tag }}
         run: |
@@ -44,7 +47,7 @@ jobs:
           uv run python scripts/verify_release.py \
             --tag "$RELEASE_TAG" \
             --commit "$RELEASE_COMMIT" \
-            --approval-token "$RELEASE_APPROVAL" \
+            --environment-json "$RUNNER_TEMP/pypi-environment.json" \
             --require-publishable
 
       - name: Install locked dependencies
@@ -70,6 +73,7 @@ jobs:
           uv run python scripts/verify_release.py \
             --tag "$RELEASE_TAG" \
             --commit "$RELEASE_COMMIT" \
+            --environment-json "$RUNNER_TEMP/pypi-environment.json" \
             --require-publishable \
             --dist-dir dist
           sha256sum dist/* | tee SHA256SUMS
@@ -95,6 +99,23 @@ jobs:
       id-token: write  # OIDC trusted publishing
 
     steps:
+      - name: Verify protected PyPI environment is still enforced
+        run: |
+          curl --fail --location --silent --show-error \
+            --header "Accept: application/vnd.github+json" \
+            --header "X-GitHub-Api-Version: 2026-03-10" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/environments/pypi" \
+            --output "$RUNNER_TEMP/pypi-environment.json"
+          jq --exit-status '
+            .can_admins_bypass == false
+            and any(
+              .protection_rules[];
+              .type == "required_reviewers"
+              and .prevent_self_review == true
+              and (.reviewers | length) > 0
+            )
+          ' "$RUNNER_TEMP/pypi-environment.json"
+
       - name: Download exact candidate artifacts
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:

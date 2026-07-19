@@ -69,7 +69,6 @@ def test_candidate_metadata_verifier_passes() -> None:
     ("arguments", "message"),
     [
         (["--require-publishable"], "candidate state is intentionally non-publishable"),
-        (["--approval-token", "wrong"], "publication approval token is invalid"),
     ],
 )
 def test_candidate_metadata_verifier_fails_closed(
@@ -128,6 +127,62 @@ proof-before-action = mcp_audit.proof_cli:main
         )
 
 
+def test_release_notes_must_be_finalized_before_publication() -> None:
+    check = RELEASE_VERIFIER["_check_release_notes"]
+
+    with pytest.raises(
+        RELEASE_VERIFIER["VerificationError"],
+        match="declare release status",
+    ):
+        check("# MCPAudit 2.5.0\n", version="2.5.0", status="release")
+    with pytest.raises(
+        RELEASE_VERIFIER["VerificationError"],
+        match="candidate-only publication language",
+    ):
+        check(
+            "# MCPAudit 2.5.0\n\nRelease status: approved\n\nPublic release remains `NO-GO`.\n",
+            version="2.5.0",
+            status="release",
+        )
+    check(
+        "# MCPAudit 2.5.0\n\nRelease status: approved\n",
+        version="2.5.0",
+        status="release",
+    )
+
+
+def test_pypi_environment_requires_independent_non_bypassable_review() -> None:
+    verify = RELEASE_VERIFIER["verify_environment_protection"]
+    protected: dict[str, Any] = {
+        "can_admins_bypass": False,
+        "protection_rules": [
+            {
+                "type": "required_reviewers",
+                "prevent_self_review": True,
+                "reviewers": [{"type": "User", "reviewer": {"login": "reviewer"}}],
+            }
+        ],
+    }
+
+    verify(protected)
+    for unsafe in (
+        {**protected, "can_admins_bypass": True},
+        {**protected, "protection_rules": []},
+        {
+            **protected,
+            "protection_rules": [
+                {
+                    "type": "required_reviewers",
+                    "prevent_self_review": False,
+                    "reviewers": protected["protection_rules"][0]["reviewers"],
+                }
+            ],
+        },
+    ):
+        with pytest.raises(RELEASE_VERIFIER["VerificationError"]):
+            verify(unsafe)
+
+
 def test_publication_requires_a_separate_manual_dispatch() -> None:
     workflow = Path(".github/workflows/publish.yml").read_text(encoding="utf-8")
 
@@ -136,7 +191,8 @@ def test_publication_requires_a_separate_manual_dispatch() -> None:
     assert "\n  push:" not in trigger
     assert "commit:" in trigger
     assert "tag:" in trigger
-    assert "approval:" in trigger
+    assert "approval:" not in trigger
+    assert "publish-mcp-audits" not in workflow
 
 
 def test_oidc_authority_is_confined_to_post_build_publish_job() -> None:
@@ -150,7 +206,14 @@ def test_oidc_authority_is_confined_to_post_build_publish_job() -> None:
     assert "needs: build" in publish_job
     assert "environment: pypi" in publish_job
     assert "id-token: write" in publish_job
+    assert "$RUNNER_TEMP/pypi-environment.json" in workflow
+    assert ".can_admins_bypass == false" in publish_job
+    assert ".prevent_self_review == true" in publish_job
+    assert "required_reviewers" in publish_job
     assert "sha256sum -c SHA256SUMS" in publish_job
+    assert publish_job.index("Verify protected PyPI environment") < publish_job.index(
+        "sha256sum -c SHA256SUMS"
+    )
     assert publish_job.index("sha256sum -c SHA256SUMS") < publish_job.index("pypa/gh-action-pypi-publish@")
 
 

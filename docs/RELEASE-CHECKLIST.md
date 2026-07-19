@@ -101,12 +101,14 @@ publication.
 
 1. Obtain separate publication approval naming the exact 40-character merge
    commit and `vX.Y.Z` tag. Confirm the `pypi` environment requires an
-   independent reviewer; otherwise stop with `NO-GO`.
+   independent reviewer, prevents self-review, and disables administrator
+   bypass; otherwise stop with `NO-GO`.
 2. Create the tag only after that approval. Tag creation does not publish.
-3. Manually dispatch `Publish to PyPI` with the exact tag, commit, and
-   `publish-mcp-audits` confirmation. The workflow rechecks the tag/commit/main
-   binding, release-state gate, lockfile, tests, style, types, package metadata,
-   and clean build provenance.
+3. Manually dispatch `Publish to PyPI` with the exact tag and commit. A typed
+   confirmation is not authorization. The workflow reads back the live
+   environment protections and rechecks the tag/commit/main binding,
+   release-state gate, lockfile, tests, style, types, package metadata, and
+   clean build provenance.
 4. Review the build job's wheel and sdist SHA-256 values before approving the
    protected `publish` job. That job downloads the exact retained artifact,
    verifies its hashes, and only then requests PyPI OIDC authority.

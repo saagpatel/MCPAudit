@@ -17,7 +17,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RELEASE_STATE_PATH = ROOT / "docs/release-state.json"
-EXPECTED_APPROVAL = "publish-mcp-audits"
 VERSION_RE = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 COMMIT_RE = re.compile(r"[0-9a-f]{40}")
 
@@ -65,6 +64,36 @@ def _run_git(*args: str) -> str:
     return result.stdout.strip()
 
 
+def _check_release_notes(raw: str, *, version: str, status: str) -> None:
+    if f"MCPAudit {version}" not in raw:
+        raise VerificationError("versioned release notes are missing or mismatched")
+    marker = "Release status: candidate" if status == "candidate" else "Release status: approved"
+    if marker not in raw:
+        raise VerificationError(f"release notes do not declare {status} status")
+    if status == "release" and ("`NO-GO`" in raw or "does not authorize" in raw):
+        raise VerificationError("release notes still contain candidate-only publication language")
+
+
+def verify_environment_protection(raw: object) -> None:
+    if not isinstance(raw, dict):
+        raise VerificationError("PyPI environment response must be an object")
+    if raw.get("can_admins_bypass") is not False:
+        raise VerificationError("PyPI environment permits administrator bypass")
+    rules = raw.get("protection_rules")
+    if not isinstance(rules, list):
+        raise VerificationError("PyPI environment protection rules are unavailable")
+    for rule in rules:
+        if (
+            isinstance(rule, dict)
+            and rule.get("type") == "required_reviewers"
+            and rule.get("prevent_self_review") is True
+            and isinstance(rule.get("reviewers"), list)
+            and len(rule["reviewers"]) > 0
+        ):
+            return
+    raise VerificationError("PyPI environment requires a reviewer with self-review prevention")
+
+
 def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object]]:
     version = _version()
     state = _release_state()
@@ -80,9 +109,10 @@ def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object
     published = state.get("published_version")
     if not isinstance(published, str) or VERSION_RE.fullmatch(published) is None:
         raise VerificationError("published version is invalid")
-    status = state.get("status")
-    if status not in {"candidate", "release"}:
+    status_value = state.get("status")
+    if not isinstance(status_value, str) or status_value not in {"candidate", "release"}:
         raise VerificationError("release status must be candidate or release")
+    status = status_value
     if status == "release" and published != version:
         raise VerificationError("release status requires published_version to equal the candidate")
     public_version = version if status == "release" else published
@@ -101,8 +131,13 @@ def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object
     if not isinstance(dependencies, list) or "mcp>=1.28.1" not in dependencies:
         raise VerificationError("project metadata does not retain the mcp>=1.28.1 security floor")
     release_notes = ROOT / f"docs/{version.rsplit('.', maxsplit=1)[0]}-RELEASE-NOTES.md"
-    if not release_notes.is_file() or f"MCPAudit {version}" not in release_notes.read_text(encoding="utf-8"):
-        raise VerificationError("versioned release notes are missing or mismatched")
+    if not release_notes.is_file():
+        raise VerificationError("versioned release notes are missing")
+    _check_release_notes(
+        release_notes.read_text(encoding="utf-8"),
+        version=version,
+        status=status,
+    )
     if status == "candidate":
         if f"## [{version}] - Unreleased" not in changelog:
             raise VerificationError("candidate changelog section is not explicitly unreleased")
@@ -231,7 +266,11 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tag", help="exact v-prefixed release tag")
     parser.add_argument("--commit", help="exact 40-character approved commit")
-    parser.add_argument("--approval-token")
+    parser.add_argument(
+        "--environment-json",
+        type=Path,
+        help="live GitHub response for the protected PyPI environment",
+    )
     parser.add_argument("--require-publishable", action="store_true")
     parser.add_argument("--dist-dir", type=Path)
     return parser
@@ -245,16 +284,16 @@ def main() -> int:
             raise VerificationError("--tag requires --commit")
         if args.require_publishable and (args.tag is None or args.commit is None):
             raise VerificationError("publish verification requires --tag and --commit")
+        if args.require_publishable and args.environment_json is None:
+            raise VerificationError("publish verification requires live PyPI environment state")
         if args.commit is not None:
             verify_git_binding(
                 tag=args.tag,
                 commit=args.commit,
                 require_landed=args.require_publishable,
             )
-        if args.approval_token is not None and args.approval_token != EXPECTED_APPROVAL:
-            raise VerificationError("publication approval token is invalid")
-        if args.require_publishable and args.approval_token is None and args.dist_dir is None:
-            raise VerificationError("initial publish verification requires an approval token")
+        if args.environment_json is not None:
+            verify_environment_protection(json.loads(args.environment_json.read_text(encoding="utf-8")))
         hashes: list[tuple[str, str]] = []
         if args.dist_dir is not None:
             if args.commit is None:
