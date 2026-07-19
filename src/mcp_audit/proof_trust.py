@@ -23,6 +23,7 @@ from mcp_audit.proof_models import (
     canonical_json_bytes,
     sha256_bytes,
 )
+from mcp_audit.proof_observer import repository_input_is_in_scope
 
 _REPO_CONFIGS = (".mcp.json", ".vscode/mcp.json", ".cursor/mcp.json")
 _EXACT_VERSION = re.compile(r"^\d+(?:\.\d+)*(?:[-+][0-9A-Za-z.-]+)?$")
@@ -32,7 +33,7 @@ _PYPI_NORMALIZE = re.compile(r"[-_.]+")
 def build_release_trust_manifest(repo: Path, trust_root: Path | None) -> ReleaseTrustManifest:
     root = repo.resolve()
     dependencies, diagnostics = discover_repo_mcp(root)
-    commit, dirty = _git_state(root)
+    commit, dirty = _git_state(root, include_staged_ignored=True)
     if trust_root is None:
         entries = [
             TrustEntry(
@@ -737,7 +738,11 @@ def _is_stale(scanned_at: Any, evaluated_at: str) -> bool | None:
     return (evaluated - scanned).days > 90
 
 
-def _git_state(root: Path) -> tuple[str | None, bool | None]:
+def _git_state(
+    root: Path,
+    *,
+    include_staged_ignored: bool = False,
+) -> tuple[str | None, bool | None]:
     try:
         commit = subprocess.run(
             ["git", "-C", str(root), "rev-parse", "HEAD"],
@@ -753,7 +758,30 @@ def _git_state(root: Path) -> tuple[str | None, bool | None]:
             text=True,
             timeout=5,
         ).stdout
-        return commit, bool(status)
+        dirty = bool(status)
+        if include_staged_ignored:
+            ignored = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(root),
+                    "ls-files",
+                    "--others",
+                    "--ignored",
+                    "--exclude-standard",
+                    "-z",
+                    "--",
+                    ".",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            ).stdout
+            dirty = dirty or any(
+                repository_input_is_in_scope(Path(relative)) for relative in ignored.split("\0") if relative
+            )
+        return commit, dirty
     except (OSError, subprocess.SubprocessError):
         return None, None
 

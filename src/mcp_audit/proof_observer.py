@@ -401,7 +401,7 @@ def _stage_repository(source: Path, destination: Path) -> None:
     total_bytes = 0
     for path in sorted(source.rglob("*")):
         relative = path.relative_to(source)
-        if any(part in _IGNORED_NAMES for part in relative.parts):
+        if not repository_input_is_in_scope(relative):
             continue
         if path.is_symlink():
             raise ObservationBlocked(f"input contains a symlink: {relative.as_posix()}")
@@ -422,6 +422,11 @@ def _stage_repository(source: Path, destination: Path) -> None:
         _validate_staged_input(path, relative)
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(path, target)
+
+
+def repository_input_is_in_scope(relative: Path) -> bool:
+    """Return whether the observer copies this repository-relative path."""
+    return not any(part in _IGNORED_NAMES for part in relative.parts)
 
 
 def _make_disposable_writable(root: Path) -> None:

@@ -82,7 +82,9 @@ The observer:
 1. copies a bounded, symlink-free, UTF-8 text snapshot plus explicitly named
    synthetic SQLite fixtures into a temporary staging image without `.git`,
    dependency caches, build output, known secret files, or detected literal
-   credentials;
+   credentials; Git-ignored files that still pass these staging filters are
+   copied but force `repository_dirty: true`, so the recorded subject commit is
+   explicitly non-binding;
 2. creates a container with no host mount, no forwarded socket, network mode
    `none`, a read-only image root, `no-new-privileges`, and bounded CPU, memory,
    process, and tmpfs resources;

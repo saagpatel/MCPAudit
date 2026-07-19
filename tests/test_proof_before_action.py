@@ -405,6 +405,38 @@ def test_discovery_preserves_the_selected_server_map_pointer(
     assert manifest.diagnostics[0].source_pointer == "/servers/broken"
 
 
+def test_ignored_staged_subject_input_marks_the_commit_unbound(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path)
+    (repo / ".gitignore").write_text(".mcp.json\nnode_modules/\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.email", "proof@example.test"], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.name", "Proof Fixture"], check=True)
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "fixture"], check=True)
+    (repo / "node_modules").mkdir()
+    (repo / "node_modules/cache.txt").write_text("excluded\n", encoding="utf-8")
+
+    excluded_only = build_release_trust_manifest(repo, None)
+
+    assert excluded_only.repository_dirty is False
+    (repo / ".mcp.json").write_text(
+        '{"mcpServers":{"ignored":{"command":"npx","args":["@fixture/ignored-mcp"]}}}',
+        encoding="utf-8",
+    )
+
+    manifest = build_release_trust_manifest(repo, None)
+
+    assert manifest.repository_commit == excluded_only.repository_commit
+    assert manifest.repository_dirty is True
+    assert manifest.dependencies[0].source_path == ".mcp.json"
+    assert (
+        "Subject repository is dirty; its commit does not bind the inspected working tree."
+        in manifest.limitations
+    )
+
+
 @requires_docker
 def test_loopback_network_attempt_is_detected_without_external_contact(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
