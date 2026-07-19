@@ -129,6 +129,46 @@ def test_seeded_sqlite_mutation_is_semantically_detected(tmp_path: Path) -> None
     assert change.changed_tables == ["items"]
     comparison = compare_bill(_declaration(), observation)
     assert "undeclared_database_write" in {item.code for item in comparison.findings}
+    declared_database_write = _declaration(
+        destinations={"files": [], "databases": ["seeded.db"], "network": []},
+        side_effects={"filesystem": "none", "database": "write", "network": "none"},
+    )
+    declared_comparison = compare_bill(declared_database_write, observation)
+    assert declared_comparison.verdict == "pass"
+    assert declared_comparison.observed_capabilities == ["database_write"]
+
+
+@pytest.mark.parametrize("transport", [None, "stdio"])
+def test_server_descriptor_scalar_transport_is_a_partial_diagnostic(
+    tmp_path: Path, transport: object
+) -> None:
+    repo = _repo(tmp_path)
+    (repo / "server.json").write_text(
+        json.dumps(
+            {
+                "name": "fixture",
+                "packages": [
+                    {
+                        "identifier": "@fixture/server",
+                        "registryType": "npm",
+                        "transport": transport,
+                        "version": "1.0.0",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    manifest = build_release_trust_manifest(repo, None)
+    assert manifest.discovery_coverage == "partial"
+    assert manifest.dependencies[0].transport == "unknown"
+    assert [(item.source_pointer, item.code, item.message) for item in manifest.diagnostics] == [
+        (
+            "/packages/0/transport",
+            "invalid_entry",
+            "package transport must be an object",
+        )
+    ]
 
 
 @requires_docker

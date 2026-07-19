@@ -38,6 +38,8 @@ def compare_bill(declaration: ActionDeclaration, observation: Observation) -> Bi
     capabilities: list[str] = []
     findings: list[ComparisonFinding] = []
     executable = observation.command.executable
+    database_paths = {item.path for item in observation.database_changes}
+    non_database_file_changes = [item for item in observation.file_changes if item.path not in database_paths]
     if executable not in declaration.tools:
         findings.append(
             ComparisonFinding(
@@ -47,7 +49,7 @@ def compare_bill(declaration: ActionDeclaration, observation: Observation) -> Bi
                 evidence=[executable],
             )
         )
-    if observation.file_changes:
+    if non_database_file_changes:
         capabilities.append("file_write")
         if declaration.side_effects.filesystem != "write" and "file_write" not in declaration.permissions:
             findings.append(
@@ -55,12 +57,12 @@ def compare_bill(declaration: ActionDeclaration, observation: Observation) -> Bi
                     code="undeclared_file_write",
                     severity="error",
                     message="the command changed files without declaring file-write authority",
-                    evidence=[item.path for item in observation.file_changes],
+                    evidence=[item.path for item in non_database_file_changes],
                 )
             )
         outside = [
             item.path
-            for item in observation.file_changes
+            for item in non_database_file_changes
             if declaration.destinations.files
             and not any(fnmatch.fnmatch(item.path, pattern) for pattern in declaration.destinations.files)
         ]

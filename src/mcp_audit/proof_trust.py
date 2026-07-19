@@ -196,12 +196,25 @@ def discover_repo_mcp(
                 kind = "npm" if registry == "npm" else "pypi" if registry == "pypi" else "unknown"
                 name = str(package.get("identifier", ""))
                 version = str(package.get("version", "")) or None
+                transport_payload = package.get("transport", {})
+                if isinstance(transport_payload, dict):
+                    transport = str(transport_payload.get("type", "unknown"))
+                else:
+                    diagnostics.append(
+                        DiscoveryDiagnostic(
+                            source_path="server.json",
+                            source_pointer=f"/packages/{index}/transport",
+                            code="invalid_entry",
+                            message="package transport must be an object",
+                        )
+                    )
+                    transport = "unknown"
                 dependencies.append(
                     _occurrence(
                         source_path="server.json",
                         source_pointer=f"/packages/{index}",
                         config_name=str(payload.get("name", name)),
-                        transport=str(package.get("transport", {}).get("type", "unknown")),
+                        transport=transport,
                         identity_kind=kind,
                         identity_name=_normalize_package(name, kind),
                         requested_version=version,
