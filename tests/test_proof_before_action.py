@@ -1158,6 +1158,51 @@ def test_verifier_recomputes_semantic_capsule_bindings(tmp_path: Path) -> None:
     result = verify_capsule(output)
     assert "index_noncanonical" in {item["code"] for item in result["errors"]}
 
+    def bind_capsule_bytes(capsule_bytes: bytes) -> None:
+        (output / "capsule.json").write_bytes(capsule_bytes)
+        index = json.loads(json.dumps(original_index))
+        for artifact in index["artifacts"]:
+            value = (output / artifact["path"]).read_bytes()
+            artifact["bytes"] = len(value)
+            artifact["sha256"] = sha256_bytes(value)
+        (output / "capsule-index.json").write_bytes(canonical_json_bytes(index))
+
+    for field_path, malformed_value in [
+        (("observation", "filesystem", "complete"), "false"),
+        (("observation", "command", "exit_code"), "0"),
+        (("observation", "command", "stdout_bytes"), "0"),
+    ]:
+        write_consistent_forgery(capsule.model_dump(mode="json"))
+        raw = capsule.model_dump(mode="json")
+        target = raw["payload"]
+        for key in field_path[:-1]:
+            target = target[key]
+        target[field_path[-1]] = malformed_value
+        raw["integrity"]["payload_sha256"] = sha256_bytes(canonical_json_bytes(raw["payload"]))
+        bind_capsule_bytes(canonical_json_bytes(raw))
+        result = verify_capsule(output)
+        assert "capsule_schema_invalid" in {item["code"] for item in result["errors"]}
+
+    write_consistent_forgery(capsule.model_dump(mode="json"))
+    raw = capsule.model_dump(mode="json")
+    raw["payload"]["observation"]["command"]["stdout_bytes"] = 0.0
+    float_capsule = (
+        json.dumps(raw, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode() + b"\n"
+    )
+    bind_capsule_bytes(float_capsule)
+    result = verify_capsule(output)
+    assert "capsule_schema_invalid" in {item["code"] for item in result["errors"]}
+
+    write_consistent_forgery(capsule.model_dump(mode="json"))
+    index = json.loads((output / "capsule-index.json").read_bytes())
+    index["artifacts"][0]["bytes"] = float(index["artifacts"][0]["bytes"])
+    float_index = (
+        json.dumps(index, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode() + b"\n"
+    )
+    (output / "capsule-index.json").write_bytes(float_index)
+    result = verify_capsule(output)
+    assert "index_schema_invalid" in {item["code"] for item in result["errors"]}
+
 
 def test_build_requirement_hooks_delegate_to_uv_build(
     monkeypatch: pytest.MonkeyPatch,

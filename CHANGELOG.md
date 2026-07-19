@@ -58,7 +58,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stale entries must agree with clean committed source chronology, and current
   evidence requires complete diagnostic-free dependency discovery. Command
   identity is bound to canonical recorded argv, and verification rejects
-  noncanonical capsule or index encodings.
+  noncanonical capsule or index encodings. Untrusted JSON is validated without
+  scalar coercion, and float/canonicalization failures return structured invalid
+  results instead of escaping the verifier.
 - `pin_baseline_corrupted` warning code — a pin baseline file that exists but
   cannot be parsed now emits its own `ScanWarning` (naming the file and the
   parse error) instead of folding into `pin_baseline_missing`. A corrupted

@@ -133,6 +133,9 @@ chronology; `current` additionally requires complete diagnostic-free discovery.
 The recorded executable must match `argv[0]`, the argv digest must match the
 canonical redacted argv, and both JSON files must already be byte-for-byte
 canonical rather than merely parse to an equivalent object.
+Untrusted capsule and index bytes are validated in strict JSON mode: stringified
+booleans/integers and floating-point substitutes are invalid, never coerced.
+Schema or canonicalization failures remain structured verifier results.
 
 `proof-before-action inspect` exits `0` for a passing comparison, `1` for a
 blocked or unknown comparison, and `2` when validation or observation cannot

@@ -82,6 +82,8 @@ comparison, detached trust entry, or misleading report valid.
 It also binds the recorded executable to the canonical redacted argv and rejects
 JSON that is semantically equivalent but not in the documented canonical byte
 encoding.
+Verification uses strict JSON scalar types, so stringified booleans or integers
+and floating-point substitutes are invalid rather than coerced.
 
 Wheel and source-distribution builds use the repository's uv-backed PEP 517
 wrapper to embed the exact source revision and pre-build dirty state. Installed
