@@ -103,19 +103,21 @@ def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object
     return version, state
 
 
-def verify_git_binding(*, tag: str, commit: str) -> None:
+def verify_git_binding(*, tag: str | None, commit: str, require_landed: bool) -> None:
     version = _version()
-    if tag != f"v{version}":
-        raise VerificationError(f"tag must be exactly v{version}")
     if COMMIT_RE.fullmatch(commit) is None:
         raise VerificationError("commit must be an exact lowercase 40-character Git object ID")
     if _run_git("rev-parse", "HEAD") != commit:
         raise VerificationError("checked-out HEAD does not match the approved commit")
-    if _run_git("rev-parse", f"refs/tags/{tag}^{{commit}}") != commit:
-        raise VerificationError("release tag does not resolve to the approved commit")
-    _run_git("merge-base", "--is-ancestor", commit, "origin/main")
     if _run_git("status", "--porcelain", "--untracked-files=all"):
         raise VerificationError("release checkout is dirty")
+    if tag is not None:
+        if tag != f"v{version}":
+            raise VerificationError(f"tag must be exactly v{version}")
+        if _run_git("rev-parse", f"refs/tags/{tag}^{{commit}}") != commit:
+            raise VerificationError("release tag does not resolve to the approved commit")
+    if require_landed:
+        _run_git("merge-base", "--is-ancestor", commit, "origin/main")
 
 
 def _parse_metadata(raw: bytes) -> email.message.Message:
@@ -180,10 +182,16 @@ def main() -> int:
     args = _parser().parse_args()
     try:
         version, _state = verify_metadata(require_publishable=args.require_publishable)
-        if args.tag is not None or args.commit is not None:
-            if args.tag is None or args.commit is None:
-                raise VerificationError("--tag and --commit must be supplied together")
-            verify_git_binding(tag=args.tag, commit=args.commit)
+        if args.tag is not None and args.commit is None:
+            raise VerificationError("--tag requires --commit")
+        if args.require_publishable and (args.tag is None or args.commit is None):
+            raise VerificationError("publish verification requires --tag and --commit")
+        if args.commit is not None:
+            verify_git_binding(
+                tag=args.tag,
+                commit=args.commit,
+                require_landed=args.require_publishable,
+            )
         if args.approval_token is not None and args.approval_token != EXPECTED_APPROVAL:
             raise VerificationError("publication approval token is invalid")
         if args.require_publishable and args.approval_token is None and args.dist_dir is None:
