@@ -126,6 +126,38 @@ limitations: []
     assert "Traceback" not in result.output
 
 
+def test_cli_invalid_declaration_yaml_is_a_structured_inspection_block(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path)
+    declaration = tmp_path / "declaration.yaml"
+    declaration.write_text("name: [unterminated\n", encoding="utf-8")
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "inspect",
+            "--repo",
+            str(repo),
+            "--declaration",
+            str(declaration),
+            "--output",
+            str(tmp_path / "capsule"),
+            "--",
+            "node",
+            "-e",
+            "process.exit(0)",
+        ],
+    )
+
+    assert result.exit_code == 2
+    payload = json.loads(result.output)
+    assert payload["ok"] is False
+    assert payload["error"]["code"] == "inspection_blocked"
+    assert "while parsing a flow sequence" in payload["error"]["message"]
+    assert "Traceback" not in result.output
+
+
 def test_cleanup_readback_fails_closed_for_nonzero_docker_and_remaining_local_root(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -605,6 +637,7 @@ def test_ignored_untracked_trust_inputs_cannot_escape_commit_binding(tmp_path: P
     [
         ("src/mcp_trust/catalog_snapshot.json", []),
         ("src/mcp_trust/catalog/seed_servers.json", {"servers": {}}),
+        ("src/mcp_trust/catalog/seed_servers.json", [{"source": "not-an-object"}]),
         ("masked-grades.json", {}),
         ("src/mcp_trust/core/spec_shift_verdicts.json", []),
     ],

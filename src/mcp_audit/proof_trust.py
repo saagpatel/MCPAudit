@@ -499,6 +499,8 @@ def _valid_trust_input_shapes(
     seed_rows = seed if isinstance(seed, list) else seed.get("servers") if isinstance(seed, dict) else None
     if not isinstance(seed_rows, list) or not all(isinstance(item, dict) for item in seed_rows):
         return False
+    if not all(isinstance(item.get("source", {}), dict) for item in seed_rows):
+        return False
     return isinstance(masked, list) and all(isinstance(item, str) for item in masked)
 
 
@@ -639,7 +641,9 @@ def _unknown_trust_manifest(
     )
 
 
-def _source_key(source: dict[str, Any]) -> tuple[str, str] | None:
+def _source_key(source: Any) -> tuple[str, str] | None:
+    if not isinstance(source, dict):
+        return None
     kind = str(source.get("kind", ""))
     reference = source.get("reference")
     if not isinstance(reference, str):

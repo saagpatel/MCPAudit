@@ -73,7 +73,7 @@ def inspect(
         trust = build_release_trust_manifest(repo, trust_root)
         capsule = build_capsule(declared, observed, comparison, trust)
         root_sha256 = export_capsule(capsule, output)
-    except (OSError, ValueError, ValidationError, ObservationBlocked) as exc:
+    except (OSError, ValueError, yaml.YAMLError, ValidationError, ObservationBlocked) as exc:
         click.echo(
             json.dumps(
                 {
