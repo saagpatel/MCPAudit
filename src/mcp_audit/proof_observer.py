@@ -79,11 +79,13 @@ _TEXT_SECRET_ASSIGNMENT = re.compile(
 )
 _SAFE_DATABASE_NAME = re.compile(r"(?i)(?:fixture|sample|seed|synthetic|test)")
 _PLACEHOLDER_VALUE = re.compile(
-    r"(?i)^(?:\$\{?[A-Z0-9_]+\}?|<[^>]+>|changeme|dummy|example|fixture|"
+    r"(?i)^(?:\$\{?[A-Z0-9_]+\}?|\$\{\{\s*(?:env|secrets|vars)\.[A-Z0-9_.-]+\s*\}\}|"
+    r"<[^>]+>|changeme|dummy|example|fixture|"
     r"placeholder|redacted|sample|synthetic|test)$"
 )
 _DATABASE_SUFFIXES = {".db", ".sqlite", ".sqlite3"}
 _REPO_CONFIG_NAMES = {".mcp.json", "server.json"}
+_TEXT_CONFIG_SUFFIXES = {".cfg", ".conf", ".ini", ".properties", ".toml", ".yaml", ".yml"}
 _MAX_FILES = 10_000
 _MAX_INPUT_BYTES = 512 * 1024 * 1024
 _MAX_OUTPUT_BYTES = 256 * 1024
@@ -403,14 +405,21 @@ def _validate_staged_input(path: Path, relative: Path) -> None:
             payload = None
         if payload is not None and _json_contains_literal_secret(payload):
             raise ObservationBlocked(f"repository JSON contains a literal credential: {relative.as_posix()}")
-    for match in _TEXT_SECRET_ASSIGNMENT.finditer(text):
-        key, match_value = match.groups()
-        if key.lower() == "id-token" and match_value.strip().lower() in {"none", "read", "write"}:
-            continue
-        if not _is_placeholder(match_value):
-            raise ObservationBlocked(
-                f"repository text contains a literal credential assignment: {relative.as_posix()}"
-            )
+    if path.suffix.lower() in _TEXT_CONFIG_SUFFIXES:
+        for match in _TEXT_SECRET_ASSIGNMENT.finditer(text):
+            key, match_value = match.groups()
+            if not _SENSITIVE_KEY.search(key):
+                continue
+            normalized_key = key.lower()
+            normalized_value = match_value.strip().lower()
+            if normalized_key == "id-token" and normalized_value in {"none", "read", "write"}:
+                continue
+            if normalized_key == "persist-credentials" and normalized_value == "false":
+                continue
+            if not _is_placeholder(match_value):
+                raise ObservationBlocked(
+                    f"repository text contains a literal credential assignment: {relative.as_posix()}"
+                )
 
 
 def _json_contains_literal_secret(value: Any) -> bool:

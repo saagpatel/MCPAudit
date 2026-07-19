@@ -364,19 +364,25 @@ def test_sensitive_repository_input_is_blocked_before_execution(tmp_path: Path) 
 
 
 @pytest.mark.parametrize(
-    "secret_config",
+    ("config_name", "secret_config"),
     [
-        '{"mcpServers":{"unsafe":{"command":"node","env":{"OPENAI_API_KEY":"sk-proj-literal"}}}}',
-        '{"mcpServers":{"unsafe":{"url":"https://example.test","headers":{"X-API-Key":"literal"}}}}',
-        "id-token: literal-value",
-        "OPENAI_API_KEY: literal-value",
+        (
+            ".mcp.json",
+            '{"mcpServers":{"unsafe":{"command":"node","env":{"OPENAI_API_KEY":"sk-proj-literal"}}}}',
+        ),
+        (
+            ".mcp.json",
+            '{"mcpServers":{"unsafe":{"url":"https://example.test","headers":{"X-API-Key":"literal"}}}}',
+        ),
+        ("unsafe.yml", "id-token: literal-value"),
+        ("unsafe.yml", "OPENAI_API_KEY: literal-value"),
     ],
 )
 def test_literal_config_secret_and_sensitive_argv_are_redacted_or_blocked(
-    tmp_path: Path, secret_config: str
+    tmp_path: Path, config_name: str, secret_config: str
 ) -> None:
     repo = _repo(tmp_path)
-    (repo / ".mcp.json").write_text(
+    (repo / config_name).write_text(
         secret_config,
         encoding="utf-8",
     )
@@ -438,7 +444,11 @@ def test_cli_inspect_and_verify_the_portable_capsule(tmp_path: Path) -> None:
     (repo / ".mypy_cache/cache").write_bytes(b"\0ignored type-checker data")
     (repo / ".github/workflows").mkdir(parents=True)
     (repo / ".github/workflows/publish.yml").write_text(
-        "permissions:\n  id-token: write\n",
+        "permissions:\n"
+        "  id-token: write\n"
+        "steps:\n"
+        "  persist-credentials: false\n"
+        "  token: ${{ secrets.TOKEN }}\n",
         encoding="utf-8",
     )
     declaration = tmp_path / "declaration.yaml"
