@@ -53,6 +53,7 @@ Issues = "https://github.com/saagpatel/MCPAudit/issues"
 
 [project.scripts]
 mcp-audit = "mcp_audit.cli:main"
+proof-before-action = "mcp_audit.proof_cli:main"
 # Registry alias: a console script named == the PyPI package (mcp-audits), so the
 # MCP server launches via `uvx mcp-audits serve` (the MCP Registry runs a pypi/stdio
 # server as `uvx <package>`, and uvx resolves <package> to a same-named executable).
@@ -60,14 +61,20 @@ mcp-audits = "mcp_audit.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.11.2,<0.12.0"]
-build-backend = "uv_build"
+build-backend = "mcp_audit_build_backend"
+backend-path = ["."]
 
 [tool.uv.build-backend]
 module-name = "mcp_audit"
+source-include = ["mcp_audit_build_backend.py"]
 
 [tool.mypy]
 strict = true
 python_version = "3.11"
+
+[[tool.mypy.overrides]]
+module = ["uv_build"]
+ignore_missing_imports = true
 
 [tool.ruff]
 target-version = "py311"

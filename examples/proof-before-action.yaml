@@ -1,0 +1,15 @@
+schema_version: proof-before-action.declaration.v1
+name: read repository metadata
+tools:
+  - node
+permissions: []
+destinations:
+  files: []
+  databases: []
+  network: []
+side_effects:
+  filesystem: none
+  database: none
+  network: none
+limitations:
+  - This declaration covers only the synthetic command supplied to the observer.

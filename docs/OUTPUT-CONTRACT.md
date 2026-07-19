@@ -100,6 +100,52 @@ The generated JSON Schema for the current model is checked in at
 `examples/schemas/audit-report.schema.json` and is tested against the live
 Pydantic model.
 
+## Proof Before Action v1
+
+Proof Before Action is a separate strict evidence contract; it does not change
+`AuditReport` schema version `1`. The five version identifiers are:
+
+- `proof-before-action.declaration.v1`
+- `proof-before-action.observation.v1`
+- `proof-before-action.trust-manifest.v1`
+- `proof-before-action.capsule.v1`
+- `proof-before-action.capsule-index.v1`
+
+The authoritative JSON Schemas are emitted from the live strict Pydantic models
+with `proof-before-action schema CONTRACT`. Unknown fields are rejected.
+Optional additive fields may be added within v1. A removal, rename, retype,
+requiredness change, evidence-semantics change, or canonicalization change
+requires a new contract identifier.
+
+`capsule.json` is canonical JSON with sorted keys, compact separators, UTF-8, one
+terminal newline, and no floating-point values. Its payload hash covers the
+declaration, observation, comparison, release trust manifest, producer state,
+and limitations. `capsule-index.json` binds hashes and byte lengths for the JSON
+evidence and offline HTML view, plus subject and producer commits. Internal
+hashes prove consistency only. The verifier reports authority as `anchored` only
+when the caller supplies a matching independently recorded root SHA-256.
+Verification also recomputes the declaration/observation comparison, checks the
+trust manifest against the staged subject snapshot, and regenerates the offline
+HTML projection. A self-consistently rehashed capsule cannot override those
+semantic bindings. `current` or `stale` trust entries must also agree with a
+clean committed trust source and its recorded scan/snapshot/evaluation
+chronology; `current` additionally requires complete diagnostic-free discovery.
+The recorded executable must match `argv[0]`, the argv digest must match the
+canonical redacted argv, and both JSON files must already be byte-for-byte
+canonical rather than merely parse to an equivalent object.
+Untrusted capsule and index bytes are validated in strict JSON mode: stringified
+booleans/integers and floating-point substitutes are invalid, never coerced.
+Schema or canonicalization failures remain structured verifier results.
+Missing staged-subject evidence is always invalid, including parseable legacy-v1
+payloads. A complete observer's transient filesystem or database attempt counts
+as an observed effect even when it leaves no persisted delta.
+
+`proof-before-action inspect` exits `0` for a passing comparison, `1` for a
+blocked or unknown comparison, and `2` when validation or observation cannot
+complete. `proof-before-action verify` exits `0` only when every requested hash,
+schema, commit, and authority check passes; otherwise it exits `1`. Both commands
+write one JSON object to standard output.
+
 ## SafeForge Manifest v0
 
 SafeForge uses a separate, additive evidence-envelope contract; it does not

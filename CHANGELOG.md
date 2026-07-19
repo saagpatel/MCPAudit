@@ -9,6 +9,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `proof-before-action` — a local-first CLI that compares a declared action
+  boundary with disposable runtime observations, emits versioned JSON schemas
+  and an offline evidence capsule, and verifies capsule integrity against
+  explicit producer commits and independently supplied root hashes. Unknown,
+  stale, masked, unmatched, or unobservable evidence remains non-authoritative.
+  Its minimally capable observer protects evidence from the unprivileged,
+  capability-free tested command, stops surviving descendants before the final
+  archive, and fails closed when command identity, quiescence, or cleanup cannot
+  be confirmed.
+  Dirty, commit-unbound, ignored/untracked, or commit-mismatched local mcp-trust
+  inputs now downgrade every matched entry to non-authoritative,
+  detail-withholding `unverifiable` evidence. Distribution builds embed
+  producer revision/dirty-state metadata, installed commands cannot inherit an
+  unrelated ancestor Git commit, and mismatched external roots remain
+  `authority: unverified`.
+  New observations report the environment-neutral `docker` provider instead of
+  assuming Colima, and valid-but-wrong-shaped trust inputs become structured
+  UNKNOWN manifests rather than tracebacks. Git-ignored subject files that enter
+  the staged observation now mark the subject commit dirty and non-binding.
+  Subject commit binding and dependency discovery now travel with the exact
+  pre-execution staged-tree hash, and trust parsing/hashing/commit comparison
+  uses one captured byte snapshot to prevent clean-after-read races. No-follow,
+  directory-relative source descriptors close validation-to-copy link races,
+  while legacy observation-v1 capsules remain parseable but verify invalid
+  without the staged subject binding required of all authoritative capsules.
+  Directory traversal/reopen
+  failures and accepted-but-untraversed directories now block instead of
+  silently omitting a changing subtree. Nested mcp-trust seed identities and
+  grade-bearing snapshot fields are type-validated before any row can become
+  current evidence; snapshot chronology and network-isolation proof also fail
+  closed before a record can remain current. Filesystem and database final-state
+  snapshots now report incomplete for transient-attempt coverage, IPv6 counters
+  join IPv4 network evidence, and same-day trust freshness uses a deterministic
+  end-of-day bound. Contradictory `not_applicable` sandbox/network records cannot
+  satisfy network-isolation proof. Docker staging is bound to the initially
+  resolved immutable image ID, and complete surfaces with unknown state fields
+  remain non-passing. Contradictory complete-surface fields also remain
+  non-passing, and the custom PEP 517 requirement hooks delegate correctly to
+  uv-build instead of recursing. Contradictory trust state/match/authority
+  combinations are rejected, while malformed package, Python, and registry
+  dependency-manifest shapes produce partial discovery diagnostics rather than
+  tracebacks or falsely complete coverage. Registry scalar fields no longer
+  coerce malformed values, trust entries bind the complete unique dependency
+  occurrence, `current` evidence requires a complete authoritative scan record,
+  and masked evidence withholds every scan detail. Capsule verification
+  recomputes the comparison, staged-subject trust binding, and offline HTML
+  projection instead of accepting a merely self-consistent rehash. Current and
+  stale entries must agree with clean committed source chronology, and current
+  evidence requires complete diagnostic-free dependency discovery. Command
+  identity is bound to canonical recorded argv, and verification rejects
+  noncanonical capsule or index encodings. Untrusted JSON is validated without
+  scalar coercion, and float/canonicalization failures return structured invalid
+  results instead of escaping the verifier. Malformed repository command, URL,
+  argument, environment, header, or transport fields now make discovery partial
+  instead of being normalized into a trust match. Query-bearing remote URLs no
+  longer alias their base endpoint, and npm package-selection/call options
+  cannot be skipped to apply trust to a different positional argument. Remote
+  paths preserve trailing slashes, and Boolean trust schema versions fail shape
+  validation instead of passing as Python integers. Raw remote URL controls and
+  invalid ports become partial discovery diagnostics. Complete observers must
+  treat transient filesystem/database attempts as effects, and verification
+  rejects any capsule missing either staged-subject binding. Inspection now
+  requires an independently supplied exact image ID before image-provided
+  observer tools run, and IP-counter observations remain incomplete because
+  Unix-domain socket activity is not observed. Staging preserves and binds Git
+  executable mode so the observed subject cannot silently differ from the
+  reviewed revision, and the attached evidence archive streams to a bounded host
+  file instead of accumulating untrusted output in memory.
 - `pin_baseline_corrupted` warning code — a pin baseline file that exists but
   cannot be parsed now emits its own `ScanWarning` (naming the file and the
   parse error) instead of folding into `pin_baseline_missing`. A corrupted
