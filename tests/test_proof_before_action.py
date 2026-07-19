@@ -604,6 +604,11 @@ def test_discovery_preserves_the_selected_server_map_pointer(
         ({"headers": {"X-Test": 0}}, "/mcpServers/fixture/headers/X-Test"),
         ({"type": 0}, "/mcpServers/fixture/type"),
         (
+            {"url": "https://gateway.example:not-a-port/mcp"},
+            "/mcpServers/fixture/url",
+        ),
+        ({"url": "https://gateway.example/m\tcp"}, "/mcpServers/fixture/url"),
+        (
             {"args": ["--package=@attacker/mcp", "--", "safe"]},
             "/mcpServers/fixture/args",
         ),
@@ -1079,6 +1084,44 @@ def test_declaration_omission_is_deterministic(tmp_path: Path) -> None:
     contradictory_comparison = compare_bill(_declaration(), contradictory)
     assert contradictory_comparison.verdict == "unknown"
     assert "observation_state_contradictory" in {item.code for item in contradictory_comparison.findings}
+
+    not_attempted = unchanged.model_copy(
+        update={
+            "attempted": False,
+            "decision": "not_applicable",
+            "outcome": "not_applicable",
+        }
+    )
+    transient_effect = unchanged.model_copy(
+        update={
+            "attempted": True,
+            "decision": "allowed",
+            "outcome": "succeeded",
+        }
+    )
+    transient_filesystem = clean_unknown.model_copy(
+        update={
+            "filesystem": transient_effect,
+            "database": not_attempted,
+            "network": NetworkEvidence(surface=not_attempted),
+        }
+    )
+    transient_filesystem_comparison = compare_bill(_declaration(), transient_filesystem)
+    assert transient_filesystem_comparison.verdict == "block"
+    assert "undeclared_file_write_attempt" in {item.code for item in transient_filesystem_comparison.findings}
+
+    transient_database = clean_unknown.model_copy(
+        update={
+            "filesystem": not_attempted,
+            "database": transient_effect,
+            "network": NetworkEvidence(surface=not_attempted),
+        }
+    )
+    transient_database_comparison = compare_bill(_declaration(), transient_database)
+    assert transient_database_comparison.verdict == "block"
+    assert "undeclared_database_write_attempt" in {
+        item.code for item in transient_database_comparison.findings
+    }
 
     repo = _repo(tmp_path)
     trust_manifest = build_release_trust_manifest(
@@ -1941,7 +1984,10 @@ def test_tampering_and_wrong_commit_or_schema_are_detected(tmp_path: Path) -> No
     capsule_artifact["bytes"] = len(legacy_capsule_bytes)
     index_path.write_bytes(canonical_json_bytes(legacy_index))
     legacy_result = verify_capsule(output)
-    assert legacy_result["valid"] is True, legacy_result
+    assert legacy_result["valid"] is False
+    assert {"subject_snapshot_missing", "subject_manifest_binding_missing"} <= {
+        item["code"] for item in legacy_result["errors"]
+    }
     capsule_path.write_bytes(original_capsule)
     index_path.write_bytes(original_index)
     wrong_root = verify_capsule(output, expect_root_sha256="0" * 64)

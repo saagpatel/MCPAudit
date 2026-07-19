@@ -136,6 +136,9 @@ canonical rather than merely parse to an equivalent object.
 Untrusted capsule and index bytes are validated in strict JSON mode: stringified
 booleans/integers and floating-point substitutes are invalid, never coerced.
 Schema or canonicalization failures remain structured verifier results.
+Missing staged-subject evidence is always invalid, including parseable legacy-v1
+payloads. A complete observer's transient filesystem or database attempt counts
+as an observed effect even when it leaves no persisted delta.
 
 `proof-before-action inspect` exits `0` for a passing comparison, `1` for a
 blocked or unknown comparison, and `2` when validation or observation cannot

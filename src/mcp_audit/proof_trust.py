@@ -502,6 +502,10 @@ def _config_entry_diagnostics(
         invalid("/command", "command must be a non-empty string")
     if "url" in config and (not isinstance(url, str) or not url):
         invalid("/url", "url must be a non-empty string")
+    elif isinstance(url, str):
+        remote_error = _remote_url_error(url)
+        if remote_error is not None:
+            invalid("/url", remote_error)
     if isinstance(command, str) and command and isinstance(url, str) and url:
         invalid("", "server entry must not define both command and url")
     if not (isinstance(command, str) and command) and not (isinstance(url, str) and url):
@@ -1057,8 +1061,11 @@ def _normalize_package(name: str, kind: str) -> str:
 
 
 def _normalize_remote(url: str) -> str:
+    if _remote_url_error(url) is not None:
+        return "sha256:" + hashlib.sha256(url.encode()).hexdigest()
     try:
         parsed = urlsplit(url)
+        port = parsed.port
     except ValueError:
         return "sha256:" + hashlib.sha256(url.encode()).hexdigest()
     if (
@@ -1078,9 +1085,22 @@ def _normalize_remote(url: str) -> str:
     if private:
         return "sha256:" + hashlib.sha256(url.encode()).hexdigest()
     netloc = host.lower()
-    if parsed.port:
-        netloc += f":{parsed.port}"
+    if port:
+        netloc += f":{port}"
     return urlunsplit((parsed.scheme.lower(), netloc, parsed.path, "", ""))
+
+
+def _remote_url_error(url: str) -> str | None:
+    if any(ord(character) < 0x20 or ord(character) == 0x7F or character.isspace() for character in url):
+        return "url must not contain whitespace or control characters"
+    try:
+        parsed = urlsplit(url)
+        _ = parsed.port
+    except ValueError:
+        return "url must contain a valid port"
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
+        return "url must be an absolute HTTP(S) endpoint"
+    return None
 
 
 def _is_stale(scanned_at: Any, evaluated_at: str) -> bool | None:

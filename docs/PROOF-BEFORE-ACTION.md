@@ -174,7 +174,9 @@ full-URL hash so they cannot alias a base endpoint or leak sensitive URL
 components. npm package-selection/call options are partial and non-authoritative
 until one executed dependency can be modeled exactly. Public remote paths retain
 their exact trailing-slash semantics, and Boolean values never satisfy integer
-trust schema-version fields.
+trust schema-version fields. Raw URL whitespace/control characters and invalid
+ports produce partial-discovery diagnostics instead of parser normalization or
+exceptions.
 Snapshot generation time must be a valid, non-future, timezone-aware timestamp
 that is not earlier than any contained scan. A record without proven network
 isolation cannot be `current`, even when its dependency match is otherwise exact.
@@ -207,9 +209,10 @@ The capsule index is versioned separately so the portable envelope can evolve
 without silently changing capsule semantics.
 
 Legacy observation-v1 capsules emitted before staged subject evidence was added
-remain verifiable. New capsule construction requires `subject_snapshot` and the
-matching manifest staged-tree hash; compatibility parsing does not let new
-producers omit that binding.
+remain parseable, but verification marks them invalid and unbound. Every valid
+capsule requires `subject_snapshot` and the matching manifest staged-tree hash;
+there is no compatibility path that turns missing subject evidence into
+authority.
 
 Canonical JSON uses UTF-8, sorted keys, compact separators, one terminal newline,
 and no floating-point values. The primitive is compatible with AIGCCore's

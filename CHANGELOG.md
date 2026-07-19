@@ -32,8 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pre-execution staged-tree hash, and trust parsing/hashing/commit comparison
   uses one captured byte snapshot to prevent clean-after-read races. No-follow,
   directory-relative source descriptors close validation-to-copy link races,
-  while legacy observation-v1 capsules remain verification-compatible and new
-  capsules require the staged subject binding. Directory traversal/reopen
+  while legacy observation-v1 capsules remain parseable but verify invalid
+  without the staged subject binding required of all authoritative capsules.
+  Directory traversal/reopen
   failures and accepted-but-untraversed directories now block instead of
   silently omitting a changing subtree. Nested mcp-trust seed identities and
   grade-bearing snapshot fields are type-validated before any row can become
@@ -66,7 +67,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   longer alias their base endpoint, and npm package-selection/call options
   cannot be skipped to apply trust to a different positional argument. Remote
   paths preserve trailing slashes, and Boolean trust schema versions fail shape
-  validation instead of passing as Python integers.
+  validation instead of passing as Python integers. Raw remote URL controls and
+  invalid ports become partial discovery diagnostics. Complete observers must
+  treat transient filesystem/database attempts as effects, and verification
+  rejects any capsule missing either staged-subject binding.
 - `pin_baseline_corrupted` warning code — a pin baseline file that exists but
   cannot be parsed now emits its own `ScanWarning` (naming the file and the
   parse error) instead of folding into `pin_baseline_missing`. A corrupted

@@ -51,14 +51,28 @@ def compare_bill(declaration: ActionDeclaration, observation: Observation) -> Bi
                 evidence=[executable],
             )
         )
-    if non_database_file_changes:
+    filesystem_attempt_without_persisted_change = (
+        observation.filesystem.attempted is True and not observation.file_changes
+    )
+    filesystem_effect_observed = (
+        bool(non_database_file_changes) or filesystem_attempt_without_persisted_change
+    )
+    if filesystem_effect_observed:
         capabilities.append("file_write")
         if declaration.side_effects.filesystem != "write" and "file_write" not in declaration.permissions:
             findings.append(
                 ComparisonFinding(
-                    code="undeclared_file_write",
+                    code=(
+                        "undeclared_file_write"
+                        if non_database_file_changes
+                        else "undeclared_file_write_attempt"
+                    ),
                     severity="error",
-                    message="the command changed files without declaring file-write authority",
+                    message=(
+                        "the command changed files without declaring file-write authority"
+                        if non_database_file_changes
+                        else "the command attempted a file write without declaring file-write authority"
+                    ),
                     evidence=[item.path for item in non_database_file_changes],
                 )
             )
@@ -77,14 +91,26 @@ def compare_bill(declaration: ActionDeclaration, observation: Observation) -> Bi
                     evidence=outside,
                 )
             )
-    if observation.database_changes:
+    database_effect_observed = bool(observation.database_changes) or observation.database.attempted is True
+    if database_effect_observed:
         capabilities.append("database_write")
         if declaration.side_effects.database != "write" and "database_write" not in declaration.permissions:
             findings.append(
                 ComparisonFinding(
-                    code="undeclared_database_write",
+                    code=(
+                        "undeclared_database_write"
+                        if observation.database_changes
+                        else "undeclared_database_write_attempt"
+                    ),
                     severity="error",
-                    message="the command changed a database without declaring database-write authority",
+                    message=(
+                        "the command changed a database without declaring database-write authority"
+                        if observation.database_changes
+                        else (
+                            "the command attempted a database write without declaring "
+                            "database-write authority"
+                        )
+                    ),
                     evidence=[item.path for item in observation.database_changes],
                 )
             )
@@ -460,9 +486,29 @@ def verify_capsule(
         payload_digest = sha256_bytes(canonical_json_bytes(raw["payload"]))
         if payload_digest != capsule.integrity.payload_sha256:
             errors.append({"code": "payload_tampered", "message": "payload hash mismatch"})
-        if capsule.payload.observation.subject_snapshot is not None and not _trust_manifest_matches_subject(
-            capsule.payload.observation,
-            capsule.payload.trust_manifest,
+        subject_snapshot_missing = capsule.payload.observation.subject_snapshot is None
+        manifest_binding_missing = capsule.payload.trust_manifest.repository_staged_tree_sha256 is None
+        if subject_snapshot_missing:
+            errors.append(
+                {
+                    "code": "subject_snapshot_missing",
+                    "message": "staged subject snapshot evidence is required",
+                }
+            )
+        if manifest_binding_missing:
+            errors.append(
+                {
+                    "code": "subject_manifest_binding_missing",
+                    "message": "trust manifest staged-tree binding is required",
+                }
+            )
+        if (
+            not subject_snapshot_missing
+            and not manifest_binding_missing
+            and not _trust_manifest_matches_subject(
+                capsule.payload.observation,
+                capsule.payload.trust_manifest,
+            )
         ):
             errors.append(
                 {
