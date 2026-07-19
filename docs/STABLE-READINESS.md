@@ -28,9 +28,9 @@ and the security dependency/pinning repairs recorded in the changelog. Existing
 
 Release evidence must establish:
 
-- package, `server.json`, changelog, and `docs/release-state.json` agree on the
-  2.5.0 candidate while public Action and pre-commit examples continue to name
-  the latest existing tag;
+- package, changelog, and `docs/release-state.json` agree on the 2.5.0
+  candidate while `server.json` and public Action/pre-commit examples continue
+  to name the latest existing public release;
 - wheel and sdist metadata require `mcp>=1.28.1` and expose `mcp-audit`,
   `mcp-audits`, and `proof-before-action`;
 - the full quality gate and an installed Proof Before Action workflow pass from

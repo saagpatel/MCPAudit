@@ -83,12 +83,14 @@ def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object
     status = state.get("status")
     if status not in {"candidate", "release"}:
         raise VerificationError("release status must be candidate or release")
-    if server.get("version") != version or server.get("packages", [{}])[0].get("version") != version:
-        raise VerificationError("server.json versions do not match project.version")
-    if f"## [{version}] -" not in changelog:
-        raise VerificationError("CHANGELOG.md has no candidate release section")
-
+    if status == "release" and published != version:
+        raise VerificationError("release status requires published_version to equal the candidate")
     public_version = version if status == "release" else published
+    if (
+        server.get("version") != public_version
+        or server.get("packages", [{}])[0].get("version") != public_version
+    ):
+        raise VerificationError("server.json does not reference the usable public release")
     for path, content in (("README.md", readme), ("docs/ADOPTION-GUIDE.md", adoption)):
         if f"saagpatel/MCPAudit@v{public_version}" not in content:
             raise VerificationError(f"{path} does not reference the usable public release")
@@ -98,6 +100,30 @@ def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object
     dependencies = _project().get("dependencies")
     if not isinstance(dependencies, list) or "mcp>=1.28.1" not in dependencies:
         raise VerificationError("project metadata does not retain the mcp>=1.28.1 security floor")
+    release_notes = ROOT / f"docs/{version.rsplit('.', maxsplit=1)[0]}-RELEASE-NOTES.md"
+    if not release_notes.is_file() or f"MCPAudit {version}" not in release_notes.read_text(encoding="utf-8"):
+        raise VerificationError("versioned release notes are missing or mismatched")
+    if status == "candidate":
+        if f"## [{version}] - Unreleased" not in changelog:
+            raise VerificationError("candidate changelog section is not explicitly unreleased")
+    else:
+        if (
+            re.search(
+                rf"^## \[{re.escape(version)}\] - \d{{4}}-\d{{2}}-\d{{2}}$",
+                changelog,
+                re.MULTILINE,
+            )
+            is None
+        ):
+            raise VerificationError("release changelog section must have a final date")
+        if f"[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v{version}...HEAD" not in changelog:
+            raise VerificationError("Unreleased comparison link is not based on the final tag")
+        previous = state.get("previous_version")
+        if not isinstance(previous, str) or VERSION_RE.fullmatch(previous) is None:
+            raise VerificationError("release status requires a valid previous_version")
+        expected_link = f"[{version}]: https://github.com/saagpatel/MCPAudit/compare/v{previous}...v{version}"
+        if expected_link not in changelog:
+            raise VerificationError("release comparison link is not finalized")
     if require_publishable and status != "release":
         raise VerificationError("candidate state is intentionally non-publishable")
     return version, state
@@ -141,6 +167,25 @@ def _check_provenance(raw: bytes, *, commit: str, name: str) -> None:
         raise VerificationError(f"{name} is not bound to the clean approved commit")
 
 
+def _check_entry_points(raw: bytes, *, name: str) -> None:
+    expected = {
+        "mcp-audit": "mcp_audit.cli:main",
+        "mcp-audits": "mcp_audit.cli:main",
+        "proof-before-action": "mcp_audit.proof_cli:main",
+    }
+    observed: dict[str, str] = {}
+    in_console_scripts = False
+    for line in raw.decode("utf-8").splitlines():
+        if line.startswith("["):
+            in_console_scripts = line.strip() == "[console_scripts]"
+            continue
+        if in_console_scripts and "=" in line:
+            command, target = line.split("=", maxsplit=1)
+            observed[command.strip()] = target.strip()
+    if observed != expected:
+        raise VerificationError(f"{name} console entry points do not match the release contract")
+
+
 def verify_distributions(*, dist_dir: Path, version: str, commit: str) -> list[tuple[str, str]]:
     wheel = dist_dir / f"mcp_audits-{version}-py3-none-any.whl"
     sdist = dist_dir / f"mcp_audits-{version}.tar.gz"
@@ -157,6 +202,10 @@ def verify_distributions(*, dist_dir: Path, version: str, commit: str) -> list[t
             commit=commit,
             name=wheel.name,
         )
+        _check_entry_points(
+            archive.read(f"mcp_audits-{version}.dist-info/entry_points.txt"),
+            name=wheel.name,
+        )
     with tarfile.open(sdist, mode="r:gz") as archive:
         prefix = f"mcp_audits-{version}"
         metadata_file = archive.extractfile(f"{prefix}/PKG-INFO")
@@ -165,6 +214,16 @@ def verify_distributions(*, dist_dir: Path, version: str, commit: str) -> list[t
             raise VerificationError("sdist metadata or provenance is missing")
         _check_distribution_metadata(metadata_file.read(), version=version, name=sdist.name)
         _check_provenance(provenance_file.read(), commit=commit, name=sdist.name)
+        pyproject_file = archive.extractfile(f"{prefix}/pyproject.toml")
+        if pyproject_file is None:
+            raise VerificationError("sdist pyproject.toml is missing")
+        scripts = tomllib.loads(pyproject_file.read().decode("utf-8")).get("project", {}).get("scripts")
+        if scripts != {
+            "mcp-audit": "mcp_audit.cli:main",
+            "mcp-audits": "mcp_audit.cli:main",
+            "proof-before-action": "mcp_audit.proof_cli:main",
+        }:
+            raise VerificationError("sdist console entry points do not match the release contract")
     return [(path.name, hashlib.sha256(path.read_bytes()).hexdigest()) for path in (wheel, sdist)]
 
 

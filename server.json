@@ -7,13 +7,13 @@
 		"url": "https://github.com/saagpatel/MCPAudit",
 		"source": "github"
 	},
-	"version": "2.5.0",
+	"version": "2.4.0",
 	"packages": [
 		{
 			"registryType": "pypi",
 			"registryBaseUrl": "https://pypi.org",
 			"identifier": "mcp-audits",
-			"version": "2.5.0",
+			"version": "2.4.0",
 			"runtimeHint": "uvx",
 			"transport": { "type": "stdio" },
 			"packageArguments": [{ "type": "positional", "value": "serve" }]

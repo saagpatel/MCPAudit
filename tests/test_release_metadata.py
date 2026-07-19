@@ -4,11 +4,18 @@ from __future__ import annotations
 
 import json
 import re
+import runpy
 import subprocess
 import tomllib
 from pathlib import Path
+from typing import Any
 
 import pytest
+
+RELEASE_VERIFIER: dict[str, Any] = runpy.run_path(
+    "scripts/verify_release.py",
+    run_name="release_verifier_test",
+)
 
 
 def _project_version() -> str:
@@ -30,10 +37,11 @@ def test_release_version_is_consistent_across_public_surfaces() -> None:
         "schema_version": "mcp-audit.release-state.v1",
         "candidate_version": version,
         "published_version": "2.4.0",
+        "previous_version": "2.4.0",
         "status": "candidate",
     }
-    assert server["version"] == version
-    assert server["packages"][0]["version"] == version
+    assert server["version"] == state["published_version"]
+    assert server["packages"][0]["version"] == state["published_version"]
     assert f"## [{version}] - Unreleased" in changelog
     assert f"[{version}]: https://github.com/saagpatel/MCPAudit/compare/" in changelog
     assert "saagpatel/MCPAudit@v2.4.0" in readme
@@ -77,6 +85,47 @@ def test_candidate_metadata_verifier_fails_closed(
     )
     assert result.returncode == 1
     assert message in result.stderr
+
+
+def test_release_state_cannot_keep_a_stale_published_version(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(
+        RELEASE_VERIFIER["verify_metadata"].__globals__,
+        "_release_state",
+        lambda: {
+            "schema_version": "mcp-audit.release-state.v1",
+            "candidate_version": "2.5.0",
+            "published_version": "2.4.0",
+            "previous_version": "2.4.0",
+            "status": "release",
+        },
+    )
+
+    with pytest.raises(
+        RELEASE_VERIFIER["VerificationError"],
+        match="published_version to equal the candidate",
+    ):
+        RELEASE_VERIFIER["verify_metadata"](require_publishable=True)
+
+
+def test_release_entry_points_are_exact() -> None:
+    RELEASE_VERIFIER["_check_entry_points"](
+        b"""[console_scripts]
+mcp-audit = mcp_audit.cli:main
+mcp-audits = mcp_audit.cli:main
+proof-before-action = mcp_audit.proof_cli:main
+""",
+        name="fixture.whl",
+    )
+    with pytest.raises(
+        RELEASE_VERIFIER["VerificationError"],
+        match="console entry points",
+    ):
+        RELEASE_VERIFIER["_check_entry_points"](
+            b"[console_scripts]\nmcp-audit = mcp_audit.cli:main\n",
+            name="fixture.whl",
+        )
 
 
 def test_publication_requires_a_separate_manual_dispatch() -> None:

@@ -2300,6 +2300,13 @@ def test_schema_cli_emits_the_strict_versioned_contract() -> None:
     assert schema["additionalProperties"] is False
 
 
+def test_cli_version_reports_installed_distribution_version() -> None:
+    result = CliRunner().invoke(main, ["--version"])
+
+    assert result.exit_code == 0
+    assert "proof-before-action, version 2.5.0" in result.output
+
+
 def test_capsule_index_rejects_path_expansion() -> None:
     from pydantic import ValidationError
 

@@ -22,11 +22,12 @@ being uploaded manually.
 
 ## Candidate Metadata Check
 
-- `pyproject.toml`, `server.json`, `docs/release-state.json`, and
-  `CHANGELOG.md` agree on the candidate version.
-- While `docs/release-state.json` has `status: candidate`, README Action and
-  pre-commit examples continue to name the latest existing public tag. They
-  must not advertise a tag that does not exist.
+- `pyproject.toml`, `docs/release-state.json`, and `CHANGELOG.md` agree on the
+  candidate version.
+- While `docs/release-state.json` has `status: candidate`, `server.json`,
+  README Action examples, and pre-commit examples continue to name the latest
+  existing public version/tag. They must not advertise a package or tag that
+  does not exist.
 - `README.md`, `SECURITY.md`, `docs/OUTPUT-CONTRACT.md`,
   `docs/STABLE-READINESS.md`, and the versioned release notes match live CLI
   behavior.
@@ -51,24 +52,29 @@ being uploaded manually.
   ownership makes that impossible, keep release status `NO-GO` until a reviewer
   or explicit residual-risk acceptance is available.
 
-## Clean Install Smoke
+## Exact Candidate Install Smoke
 
-Use an isolated cache for `uvx` so the check does not reuse an older local
-install.
+Build from the exact clean candidate commit, verify its provenance, then install
+the wheel and sdist directly. Do not use unversioned PyPI here: before
+publication, that would exercise the previous public release.
 
 ```bash
 tmp="$(mktemp -d)"
-UV_CACHE_DIR="$tmp" uvx --prerelease allow --from mcp-audits mcp-audit --version
-rm -r "$tmp"
+UV_CACHE_DIR="$tmp/cache" uv venv "$tmp/wheel"
+UV_CACHE_DIR="$tmp/cache" uv pip install \
+  --python "$tmp/wheel/bin/python" ./dist/mcp_audits-X.Y.Z-py3-none-any.whl
+"$tmp/wheel/bin/mcp-audit" --version
+"$tmp/wheel/bin/mcp-audits" --version
+"$tmp/wheel/bin/proof-before-action" --version
 ```
 
-Use a temporary virtual environment for a plain pip install check.
-
 ```bash
-tmp="$(mktemp -d)"
-python -m venv "$tmp/venv"
-"$tmp/venv/bin/python" -m pip install mcp-audits
-"$tmp/venv/bin/mcp-audit" --version
+UV_CACHE_DIR="$tmp/cache" uv venv "$tmp/sdist"
+UV_CACHE_DIR="$tmp/cache" uv pip install \
+  --python "$tmp/sdist/bin/python" ./dist/mcp_audits-X.Y.Z.tar.gz
+"$tmp/sdist/bin/mcp-audit" --version
+"$tmp/sdist/bin/mcp-audits" --version
+"$tmp/sdist/bin/proof-before-action" --version
 rm -r "$tmp"
 ```
 
@@ -78,7 +84,8 @@ Use a separate reviewed PR after the candidate has landed:
 
 1. Change `docs/release-state.json` to `status: release` and set
    `published_version` to the candidate version.
-2. Update README Action and pre-commit examples to the new public tag.
+2. Update `server.json`, README Action examples, and pre-commit examples to the
+   new public version/tag.
 3. Replace `Unreleased` with the release date in `CHANGELOG.md` and finalize its
    comparison links.
 4. Rerun the full local, security, metadata, build, and installed-command gates.
@@ -104,3 +111,15 @@ publication.
 
 Never re-run or bypass a failed publish gate. Repair the release state through a
 new reviewed commit and obtain a new exact approval.
+
+## Post-Publication Install Smoke
+
+After PyPI readback proves the new version exists, use an isolated cache so the
+check cannot reuse a local candidate install:
+
+```bash
+tmp="$(mktemp -d)"
+UV_CACHE_DIR="$tmp" uvx --from "mcp-audits==X.Y.Z" mcp-audit --version
+UV_CACHE_DIR="$tmp" uvx --from "mcp-audits==X.Y.Z" proof-before-action --version
+rm -r "$tmp"
+```
