@@ -517,6 +517,7 @@ def test_seeded_sqlite_mutation_is_semantically_detected(tmp_path: Path) -> None
     assert change.path == "seeded.db"
     assert change.change == "modified"
     assert change.changed_tables == ["items"]
+    assert observation.filesystem.attempted is None
     comparison = compare_bill(_declaration(), observation)
     assert "undeclared_database_write" in {item.code for item in comparison.findings}
     declared_database_write = _declaration(
@@ -983,6 +984,7 @@ def test_loopback_network_attempt_is_detected_without_external_contact(tmp_path:
 def test_declaration_omission_is_deterministic(tmp_path: Path) -> None:
     from mcp_audit.proof_models import (
         CommandEvidence,
+        DatabaseChange,
         FileChange,
         IsolationEvidence,
         NetworkEvidence,
@@ -1121,6 +1123,41 @@ def test_declaration_omission_is_deterministic(tmp_path: Path) -> None:
     assert transient_database_comparison.verdict == "block"
     assert "undeclared_database_write_attempt" in {
         item.code for item in transient_database_comparison.findings
+    }
+
+    database_file_change = FileChange(
+        path="seeded.db",
+        change="modified",
+        before_sha256="1" * 64,
+        after_sha256="2" * 64,
+    )
+    database_change = DatabaseChange(
+        path="seeded.db",
+        change="modified",
+        before_sha256="1" * 64,
+        after_sha256="2" * 64,
+        changed_tables=["items"],
+    )
+    transient_file_with_database_change = clean_unknown.model_copy(
+        update={
+            "file_changes": [database_file_change],
+            "database_changes": [database_change],
+            "filesystem": transient_effect.model_copy(update={"complete": True}),
+            "database": transient_effect,
+            "network": NetworkEvidence(surface=not_attempted),
+        }
+    )
+    database_only_declaration = _declaration(
+        destinations={"files": [], "databases": ["seeded.db"], "network": []},
+        side_effects={"filesystem": "none", "database": "write", "network": "none"},
+    )
+    transient_file_with_database_comparison = compare_bill(
+        database_only_declaration,
+        transient_file_with_database_change,
+    )
+    assert transient_file_with_database_comparison.verdict == "block"
+    assert "undeclared_file_write_attempt" in {
+        item.code for item in transient_file_with_database_comparison.findings
     }
 
     repo = _repo(tmp_path)

@@ -322,6 +322,8 @@ def observe_command(
         after_databases = _database_snapshot(collected)
         file_changes = _diff_files(before_files, after_files)
         database_changes = _diff_databases(before_databases, after_databases)
+        database_paths = {item.path for item in database_changes}
+        non_database_file_changes = [item for item in file_changes if item.path not in database_paths]
         network = _network_evidence(
             evidence / "network.before",
             evidence / "network.after",
@@ -332,10 +334,10 @@ def observe_command(
         stdout = _read_bounded(evidence / "stdout")
         stderr = _read_bounded(evidence / "stderr")
         filesystem = SurfaceObservation(
-            attempted=True if file_changes else None,
-            decision="allowed" if file_changes else "unknown",
-            outcome="succeeded" if file_changes else "unknown",
-            persisted="changed" if file_changes else "unchanged",
+            attempted=True if non_database_file_changes else None,
+            decision="allowed" if non_database_file_changes else "unknown",
+            outcome="succeeded" if non_database_file_changes else "unknown",
+            persisted="changed" if non_database_file_changes else "unchanged",
             mechanism="complete before/after hash inventory of the disposable workspace",
             complete=False,
             limitations=[

@@ -52,7 +52,7 @@ def compare_bill(declaration: ActionDeclaration, observation: Observation) -> Bi
             )
         )
     filesystem_attempt_without_persisted_change = (
-        observation.filesystem.attempted is True and not observation.file_changes
+        observation.filesystem.attempted is True and not non_database_file_changes
     )
     filesystem_effect_observed = (
         bool(non_database_file_changes) or filesystem_attempt_without_persisted_change
