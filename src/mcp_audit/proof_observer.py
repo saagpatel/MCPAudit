@@ -68,6 +68,7 @@ _SENSITIVE_VALUE = re.compile(
     r"://[^/@\s]+:[^/@\s]+@|"
     r"\b(?:AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{10,})\b"
 )
+_HOME_PATH = re.compile(r"(?<![A-Za-z0-9_])/(?:Users|home)/[^/\s\"']+(?:/[^\s\"']*)?")
 _SENSITIVE_KEY = re.compile(
     r"(?i)(?:^|[_-])(?:api[_-]?key|auth|authorization|cookie|credential|password|"
     r"private[_-]?key|secret|token)(?:$|[_-])"
@@ -121,7 +122,7 @@ def observe_command(
         raise ObservationBlocked("a command is required after --")
     if timeout_seconds < 1 or timeout_seconds > 600:
         raise ObservationBlocked("timeout must be between 1 and 600 seconds")
-    root = Path(tempfile.mkdtemp(prefix="proof-before-action-", dir="/private/tmp"))
+    root = Path(tempfile.mkdtemp(prefix="proof-before-action-"))
     staged = root / "staged"
     collected = root / "collected"
     evidence = root / "evidence"
@@ -276,11 +277,12 @@ def observe_command(
                 "Transient transactions that leave no SQLite or journal delta are not observable.",
             ],
         )
+        recorded_argv, recorded_argv_sha256 = _command_argv_evidence(command)
         return Observation(
             isolation=isolation,
             command=CommandEvidence(
-                argv=_redact_argv(command),
-                argv_sha256=sha256_bytes(canonical_json_bytes(command)),
+                argv=recorded_argv,
+                argv_sha256=recorded_argv_sha256,
                 executable=Path(command[0]).name,
                 exit_code=exit_code,
                 timed_out=timed_out,
@@ -366,10 +368,20 @@ def _redact_argv(argv: list[str]) -> list[str]:
         if _SENSITIVE_VALUE.search(value):
             redacted.append("<redacted>")
             continue
-        redacted.append(value)
+        redacted.append(_HOME_PATH.sub(_home_path_replacement, value))
         if _SENSITIVE_ARGUMENT.search(value):
             redact_next = True
     return redacted
+
+
+def _home_path_replacement(match: re.Match[str]) -> str:
+    parts = match.group(0).split("/", 3)
+    return "$HOME" + ("/" + parts[3] if len(parts) == 4 else "")
+
+
+def _command_argv_evidence(argv: list[str]) -> tuple[list[str], str]:
+    redacted = _redact_argv(argv)
+    return redacted, sha256_bytes(canonical_json_bytes(redacted))
 
 
 def _validate_staged_input(path: Path, relative: Path) -> None:

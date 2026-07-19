@@ -23,8 +23,14 @@ from mcp_audit.proof_models import (
     ActionDeclaration,
     ReleaseTrustManifest,
     canonical_json_bytes,
+    sha256_bytes,
 )
-from mcp_audit.proof_observer import ObservationBlocked, _redact_argv, observe_command
+from mcp_audit.proof_observer import (
+    ObservationBlocked,
+    _command_argv_evidence,
+    _redact_argv,
+    observe_command,
+)
 from mcp_audit.proof_trust import build_release_trust_manifest
 
 DOCKER_READY = (
@@ -400,6 +406,19 @@ def test_literal_config_secret_and_sensitive_argv_are_redacted_or_blocked(
             "--token=another-value",
         ]
     ) == ["tool", "--header", "<redacted>", "--token=<redacted>"]
+    private_argv = [
+        "node",
+        "/Users/alice/Projects/private-tool/run.js",
+        "--config=/home/bob/.config/private.json",
+    ]
+    recorded_argv, recorded_digest = _command_argv_evidence(private_argv)
+    assert recorded_argv == [
+        "node",
+        "$HOME/Projects/private-tool/run.js",
+        "--config=$HOME/.config/private.json",
+    ]
+    assert recorded_digest == sha256_bytes(canonical_json_bytes(recorded_argv))
+    assert recorded_digest != sha256_bytes(canonical_json_bytes(private_argv))
 
 
 def test_schema_cli_emits_the_strict_versioned_contract() -> None:
