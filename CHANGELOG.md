@@ -60,7 +60,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   identity is bound to canonical recorded argv, and verification rejects
   noncanonical capsule or index encodings. Untrusted JSON is validated without
   scalar coercion, and float/canonicalization failures return structured invalid
-  results instead of escaping the verifier.
+  results instead of escaping the verifier. Malformed repository command, URL,
+  argument, environment, header, or transport fields now make discovery partial
+  instead of being normalized into a trust match.
 - `pin_baseline_corrupted` warning code — a pin baseline file that exists but
   cannot be parsed now emits its own `ScanWarning` (naming the file and the
   parse error) instead of folding into `pin_baseline_missing`. A corrupted

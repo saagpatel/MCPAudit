@@ -591,6 +591,44 @@ def test_discovery_preserves_the_selected_server_map_pointer(
 
 
 @pytest.mark.parametrize(
+    ("updates", "pointer"),
+    [
+        ({"args": [0]}, "/mcpServers/fixture/args/0"),
+        ({"args": "not-an-array"}, "/mcpServers/fixture/args"),
+        ({"command": 0}, "/mcpServers/fixture/command"),
+        ({"url": 0}, "/mcpServers/fixture/url"),
+        ({"url": "https://example.invalid/mcp"}, "/mcpServers/fixture"),
+        ({"env": []}, "/mcpServers/fixture/env"),
+        ({"env": {"TOKEN": 0}}, "/mcpServers/fixture/env/TOKEN"),
+        ({"headers": []}, "/mcpServers/fixture/headers"),
+        ({"headers": {"X-Test": 0}}, "/mcpServers/fixture/headers/X-Test"),
+        ({"type": 0}, "/mcpServers/fixture/type"),
+    ],
+)
+def test_malformed_server_config_fields_are_partial_and_unmatched(
+    tmp_path: Path,
+    updates: dict[str, object],
+    pointer: str,
+) -> None:
+    repo = _repo(tmp_path)
+    config: dict[str, object] = {
+        "command": "npx",
+        "args": ["@fixture/known-mcp"],
+    }
+    config.update(updates)
+    (repo / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"fixture": config}}),
+        encoding="utf-8",
+    )
+
+    manifest = build_release_trust_manifest(repo, None)
+
+    assert manifest.discovery_coverage == "partial"
+    assert manifest.dependencies == []
+    assert pointer in {item.source_pointer for item in manifest.diagnostics}
+
+
+@pytest.mark.parametrize(
     "section",
     ["dependencies", "devDependencies", "optionalDependencies"],
 )

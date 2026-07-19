@@ -166,6 +166,9 @@ observed MCP surface, not an endorsement or runtime-safety proof.
 Seed identity/slug fields and every grade-bearing snapshot field must also match
 their documented scalar/object shapes; malformed nested data makes the complete
 local trust source UNKNOWN instead of being coerced into evidence.
+Repository config command, URL, argument, environment, header, and transport
+shapes are likewise type-checked before identity matching; malformed values
+produce exact-pointer partial-discovery diagnostics and no trust match.
 Snapshot generation time must be a valid, non-future, timezone-aware timestamp
 that is not earlier than any contained scan. A record without proven network
 isolation cannot be `current`, even when its dependency match is otherwise exact.

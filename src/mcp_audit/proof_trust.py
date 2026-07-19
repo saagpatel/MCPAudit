@@ -128,6 +128,10 @@ def discover_repo_mcp(
                     )
                 )
                 continue
+            entry_diagnostics = _config_entry_diagnostics(relative, pointer, config)
+            if entry_diagnostics:
+                diagnostics.extend(entry_diagnostics)
+                continue
             dependencies.append(_config_occurrence(relative, pointer, str(name), config))
 
     package_json = repo / "package.json"
@@ -435,7 +439,7 @@ def _config_occurrence(
     source_path: str, pointer: str, name: str, config: dict[str, Any]
 ) -> DependencyOccurrence:
     command = config.get("command")
-    args = [str(item) for item in config.get("args", [])] if isinstance(config.get("args", []), list) else []
+    args = cast(list[str], config.get("args", []))
     url = config.get("url")
     kind = "unknown"
     identity: str | None = None
@@ -457,9 +461,8 @@ def _config_occurrence(
             kind = "binary"
             identity = basename
             exact = True
-    env_keys = sorted(str(key) for key in config.get("env", {}) if isinstance(key, str))
-    headers = config.get("headers", {})
-    header_keys = sorted(str(key) for key in headers if isinstance(headers, dict))
+    env_keys = sorted(cast(dict[str, str], config.get("env", {})))
+    header_keys = sorted(cast(dict[str, str], config.get("headers", {})))
     return _occurrence(
         source_path=source_path,
         source_pointer=pointer,
@@ -474,6 +477,60 @@ def _config_occurrence(
         env_key_names=env_keys,
         header_key_names=header_keys,
     )
+
+
+def _config_entry_diagnostics(
+    source_path: str,
+    pointer: str,
+    config: dict[str, Any],
+) -> list[DiscoveryDiagnostic]:
+    diagnostics: list[DiscoveryDiagnostic] = []
+
+    def invalid(suffix: str, message: str) -> None:
+        diagnostics.append(
+            DiscoveryDiagnostic(
+                source_path=source_path,
+                source_pointer=f"{pointer}{suffix}",
+                code="invalid_entry",
+                message=message,
+            )
+        )
+
+    command = config.get("command")
+    url = config.get("url")
+    if "command" in config and (not isinstance(command, str) or not command):
+        invalid("/command", "command must be a non-empty string")
+    if "url" in config and (not isinstance(url, str) or not url):
+        invalid("/url", "url must be a non-empty string")
+    if isinstance(command, str) and command and isinstance(url, str) and url:
+        invalid("", "server entry must not define both command and url")
+    if not (isinstance(command, str) and command) and not (isinstance(url, str) and url):
+        invalid("", "server entry must define a valid command or url")
+
+    args = config.get("args", [])
+    if not isinstance(args, list):
+        invalid("/args", "args must be an array of strings")
+    else:
+        for index, value in enumerate(args):
+            if not isinstance(value, str):
+                invalid(f"/args/{index}", "argument must be a string")
+
+    for field in ("env", "headers"):
+        values = config.get(field, {})
+        if not isinstance(values, dict):
+            invalid(f"/{field}", f"{field} must be an object of string values")
+            continue
+        for key, value in values.items():
+            if not isinstance(value, str):
+                invalid(
+                    f"/{field}/{_json_pointer(str(key))}",
+                    f"{field} value must be a string",
+                )
+
+    transport = config.get("type")
+    if "type" in config and (not isinstance(transport, str) or not transport):
+        invalid("/type", "transport type must be a non-empty string")
+    return diagnostics
 
 
 def _package_occurrence(
