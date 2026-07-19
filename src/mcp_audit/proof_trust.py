@@ -413,6 +413,27 @@ def _join_trust(
         )
         for dependency in dependencies
     ]
+    trust_authority_reason: str | None = None
+    if trust_commit is None:
+        trust_authority_reason = (
+            "mcp-trust source commit could not be verified; entry-level trust evidence is non-authoritative"
+        )
+    elif trust_dirty is not False:
+        trust_authority_reason = (
+            "mcp-trust source worktree is dirty; entry-level trust evidence is non-authoritative"
+        )
+    if trust_authority_reason is not None:
+        entries = [
+            entry.model_copy(
+                update={
+                    "evidence": _without_trust_source_authority(
+                        entry.evidence,
+                        trust_authority_reason,
+                    )
+                }
+            )
+            for entry in entries
+        ]
     limitations = [
         "mcp-trust grades describe an observed MCP surface, not runtime safety or endorsement.",
         "Version applicability is UNKNOWN when mcp-trust evidence is not bound to the "
@@ -423,6 +444,8 @@ def _join_trust(
     ]
     if trust_dirty:
         limitations.append("The mcp-trust source worktree is dirty; trust-source authority is UNKNOWN.")
+    if trust_commit is None:
+        limitations.append("The mcp-trust source commit is UNKNOWN; trust-source authority is UNKNOWN.")
     return ReleaseTrustManifest(
         repository_commit=repository_commit,
         repository_dirty=repository_dirty,
@@ -432,6 +455,20 @@ def _join_trust(
         trust_source=source,
         entries=entries,
         limitations=limitations,
+    )
+
+
+def _without_trust_source_authority(
+    evidence: TrustEvidence,
+    reason: str,
+) -> TrustEvidence:
+    return TrustEvidence(
+        state="unverifiable",
+        match_state=evidence.match_state,
+        slug=evidence.slug,
+        network_isolation="unknown",
+        version_alignment=evidence.version_alignment,
+        unknown_reasons=list(dict.fromkeys([*evidence.unknown_reasons, reason])),
     )
 
 

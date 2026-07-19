@@ -460,7 +460,23 @@ def _trust_fixture(tmp_path: Path) -> Path:
     (trust / "src/mcp_trust/core/spec_shift_verdicts.json").write_text(
         '{"format_version":2,"servers":{}}', encoding="utf-8"
     )
+    _commit_trust_fixture(trust, "initial trust fixture")
     return trust
+
+
+def _commit_trust_fixture(trust: Path, message: str) -> None:
+    if not (trust / ".git").is_dir():
+        subprocess.run(["git", "init", "-q", str(trust)], check=True)
+        subprocess.run(
+            ["git", "-C", str(trust), "config", "user.email", "proof-fixture@example.invalid"],
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(trust), "config", "user.name", "Proof Fixture"],
+            check=True,
+        )
+    subprocess.run(["git", "-C", str(trust), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(trust), "commit", "-q", "-m", message], check=True)
 
 
 def test_known_unmatched_and_masked_dependencies_are_all_preserved(tmp_path: Path) -> None:
@@ -508,12 +524,45 @@ def test_stale_trust_evidence_is_historical_not_current(tmp_path: Path) -> None:
     snapshot["servers"][0]["scanned_at"] = "2025-01-01T00:00:00+00:00"
     snapshot["generated_at"] = "2025-01-02T00:00:00+00:00"
     snapshot_path.write_text(json.dumps(snapshot), encoding="utf-8")
+    _commit_trust_fixture(trust, "stale trust fixture")
     manifest = build_release_trust_manifest(repo, trust)
     assert manifest.entries[0].evidence.state == "stale"
     assert manifest.entries[0].evidence.grade == "B"
     assert manifest.trust_source is not None
     assert manifest.trust_source.snapshot_generated_at == "2025-01-02T00:00:00+00:00"
     assert manifest.trust_source.evaluated_at != manifest.trust_source.snapshot_generated_at
+
+
+def test_dirty_trust_source_cannot_emit_authoritative_grade_details(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    (repo / ".mcp.json").write_text(
+        '{"mcpServers":{"known":{"command":"npx","args":["@fixture/known-mcp"]}}}',
+        encoding="utf-8",
+    )
+    trust = _trust_fixture(tmp_path)
+    snapshot_path = trust / "src/mcp_trust/catalog_snapshot.json"
+    snapshot = json.loads(snapshot_path.read_text())
+    snapshot["servers"][0]["grade"] = "A"
+    snapshot_path.write_text(json.dumps(snapshot), encoding="utf-8")
+
+    manifest = build_release_trust_manifest(repo, trust)
+
+    assert manifest.trust_source is not None
+    assert manifest.trust_source.dirty is True
+    evidence = manifest.entries[0].evidence
+    assert evidence.state == "unverifiable"
+    assert evidence.match_state == "exact"
+    assert evidence.grade is None
+    assert evidence.transparency is None
+    assert evidence.scanned_at is None
+    assert evidence.engine is None
+    assert evidence.engine_version is None
+    assert evidence.scan_mode is None
+    assert evidence.network_isolation == "unknown"
+    assert (
+        "mcp-trust source worktree is dirty; entry-level trust evidence is non-authoritative"
+        in evidence.unknown_reasons
+    )
 
 
 @requires_docker
