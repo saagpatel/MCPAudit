@@ -367,6 +367,24 @@ def test_read_only_final_state_is_unknown_and_deterministic(tmp_path: Path) -> N
 
 
 @requires_docker
+def test_noop_observation_preserves_executable_mode(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    script = repo / "run-fixture"
+    script.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    script.chmod(0o755)
+
+    observation = observe_command(
+        repo,
+        ["./run-fixture"],
+        image="node:24-slim",
+        expected_image_id=_node_image_id(),
+    )
+
+    assert observation.command.exit_code == 0
+    assert observation.file_changes == []
+
+
+@requires_docker
 def test_transient_file_write_cannot_be_reported_as_read_only(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     observation = observe_command(

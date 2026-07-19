@@ -98,7 +98,7 @@ _MAX_TEXT_FILE_BYTES = 16 * 1024 * 1024
 _RUNTIME_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 _WRAPPER = r"""
 set -eu
-cp -R /pba-input/. /workspace/
+cp -R --preserve=mode --no-preserve=ownership /pba-input/. /workspace/
 chmod -R a+rwX /workspace
 cat /proc/net/snmp > /pba/network.before
 cat /proc/net/snmp6 > /pba/network6.before
@@ -273,7 +273,7 @@ def observe_command(
                 "--tmpfs",
                 "/tmp:rw,noexec,nosuid,nodev,size=67108864,mode=1777",
                 "--tmpfs",
-                "/workspace:rw,nosuid,nodev,size=536870912,mode=0777",
+                "/workspace:rw,exec,nosuid,nodev,size=536870912,mode=0777",
                 "--tmpfs",
                 "/pba:rw,noexec,nosuid,nodev,size=8388608,mode=0700",
                 "--workdir",
@@ -766,13 +766,14 @@ def _require_image_tools(image: str) -> None:
             image,
             "-c",
             "test -r /proc/net/snmp && test -r /proc/net/snmp6 && command -v tar >/dev/null "
-            "&& command -v timeout >/dev/null && command -v setpriv >/dev/null",
+            "&& command -v cp >/dev/null && command -v timeout >/dev/null "
+            "&& command -v setpriv >/dev/null",
         ],
         timeout=20,
     )
     if result.returncode != 0:
         raise ObservationBlocked(
-            "local image lacks the required sh, tar, timeout, setpriv, or procfs observer"
+            "local image lacks the required sh, cp, tar, timeout, setpriv, or procfs observer"
         )
 
 
@@ -805,6 +806,7 @@ def _extract_observation_archive(value: bytes, destination: Path) -> None:
                     target.parent.mkdir(parents=True, exist_ok=True)
                     with target.open("wb") as output:
                         shutil.copyfileobj(source_file, output)
+                    os.chmod(target, 0o755 if member.mode & 0o111 else 0o644)
                 else:
                     raise ObservationBlocked(
                         "runtime evidence contains a link or special file; collection stopped"
@@ -879,7 +881,7 @@ def _isolation_evidence(image: str, image_id: str, inspect: dict[str, Any]) -> I
     expected_tmpfs = {
         "/pba": "rw,noexec,nosuid,nodev,size=8388608,mode=0700",
         "/tmp": "rw,noexec,nosuid,nodev,size=67108864,mode=1777",
-        "/workspace": "rw,nosuid,nodev,size=536870912,mode=0777",
+        "/workspace": "rw,exec,nosuid,nodev,size=536870912,mode=0777",
     }
     tmpfs_paths = sorted(tmpfs)
     if (
