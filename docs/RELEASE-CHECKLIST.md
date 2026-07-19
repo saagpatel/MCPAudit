@@ -90,9 +90,11 @@ Use a separate reviewed PR after the candidate has landed:
    `published_version` to the candidate version.
 2. Update `server.json`, README Action examples, and pre-commit examples to the
    new public version/tag.
-3. Replace `Unreleased` with the release date in `CHANGELOG.md` and finalize its
+3. Change the versioned release-note markers to `Release status: approved` and
+   `Publication decision: GO`; remove candidate-only authorization language.
+4. Replace `Unreleased` with the release date in `CHANGELOG.md` and finalize its
    comparison links.
-4. Rerun the full local, security, metadata, build, and installed-command gates.
+5. Rerun the full local, security, metadata, build, and installed-command gates.
 
 Merging a candidate or release-state PR does not authorize tagging or
 publication.

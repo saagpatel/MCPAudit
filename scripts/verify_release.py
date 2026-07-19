@@ -67,9 +67,22 @@ def _run_git(*args: str) -> str:
 def _check_release_notes(raw: str, *, version: str, status: str) -> None:
     if f"MCPAudit {version}" not in raw:
         raise VerificationError("versioned release notes are missing or mismatched")
-    marker = "Release status: candidate" if status == "candidate" else "Release status: approved"
-    if marker not in raw:
-        raise VerificationError(f"release notes do not declare {status} status")
+    expected_status = "candidate" if status == "candidate" else "approved"
+    expected_decision = "NO-GO" if status == "candidate" else "GO"
+    status_markers = re.findall(
+        r"^Release status: (candidate|approved)$",
+        raw,
+        re.MULTILINE,
+    )
+    decision_markers = re.findall(
+        r"^Publication decision: (GO|NO-GO)$",
+        raw,
+        re.MULTILINE,
+    )
+    if status_markers != [expected_status]:
+        raise VerificationError("release notes have a missing or conflicting status marker")
+    if decision_markers != [expected_decision]:
+        raise VerificationError("release notes have a missing or conflicting publication decision")
     if status == "release" and ("`NO-GO`" in raw or "does not authorize" in raw):
         raise VerificationError("release notes still contain candidate-only publication language")
 

@@ -132,20 +132,35 @@ def test_release_notes_must_be_finalized_before_publication() -> None:
 
     with pytest.raises(
         RELEASE_VERIFIER["VerificationError"],
-        match="declare release status",
+        match="status marker",
     ):
         check("# MCPAudit 2.5.0\n", version="2.5.0", status="release")
+    with pytest.raises(
+        RELEASE_VERIFIER["VerificationError"],
+        match="status marker",
+    ):
+        check(
+            "# MCPAudit 2.5.0\n\n"
+            "Release status: candidate\n"
+            "Release status: approved\n"
+            "Publication decision: GO\n",
+            version="2.5.0",
+            status="release",
+        )
     with pytest.raises(
         RELEASE_VERIFIER["VerificationError"],
         match="candidate-only publication language",
     ):
         check(
-            "# MCPAudit 2.5.0\n\nRelease status: approved\n\nPublic release remains `NO-GO`.\n",
+            "# MCPAudit 2.5.0\n\n"
+            "Release status: approved\n"
+            "Publication decision: GO\n\n"
+            "Public release remains `NO-GO`.\n",
             version="2.5.0",
             status="release",
         )
     check(
-        "# MCPAudit 2.5.0\n\nRelease status: approved\n",
+        "# MCPAudit 2.5.0\n\nRelease status: approved\nPublication decision: GO\n",
         version="2.5.0",
         status="release",
     )
