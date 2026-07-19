@@ -46,6 +46,12 @@ comparison block or unknown, and `2` when observation or input validation is
 blocked. It always uses Docker network mode `none`; there is no option to enable
 network access.
 
+The v1 final-state observer intentionally returns `1` with verdict `unknown`
+when no persisted change is found, because transient filesystem and database
+attempts are not traced. Persisted undeclared effects still produce `block`.
+Exit `0` remains reserved for a future or alternate observer that can mark every
+requested surface complete without silently widening the claim.
+
 The output directory contains:
 
 - `capsule.json`: canonical evidence;
@@ -106,16 +112,20 @@ The observer:
 4. terminates every surviving command descendant, verifies every Linux task is
    terminal from `/proc`, and only then streams one attached archive containing
    the disposable workspace and root-owned evidence;
-5. collects file hashes, SQLite schema/row digests, and Linux IP/TCP/UDP counter
-   deltas from that quiesced archive;
+5. collects file hashes, SQLite schema/row digests, and Linux IPv4/IPv6
+   IP/TCP/UDP counter deltas from that quiesced archive;
 6. removes the container and temporary staging image.
 
 File and SQLite comparisons are complete for persisted regular files that can be
-collected. `attempted: null` means no attempt could be inferred; it does not mean
-the action was proven unable to attempt the effect. Network counters distinguish
-an observed attempt from no counter change, but cannot identify the requested
-destination. Link or special-file output blocks collection rather than silently
-disappearing. The command cannot write the observer-owned evidence tmpfs.
+collected, but their surfaces remain `complete: false`: final-state comparison
+cannot observe transient create-delete, write-restore, or transaction attempts.
+Consequently a clean final snapshot is `unknown`, never proof of read-only
+behavior. IPv4/IPv6 IP and UDP counters plus Linux's family-agnostic TCP counters
+distinguish an observed attempt from no counter change, but cannot identify the
+requested destination. Missing or regressed required counters make the network
+surface incomplete. Link or special-file output blocks collection rather than
+silently disappearing. The command cannot write the observer-owned evidence
+tmpfs.
 Command output is redirected there by PID 1 under an OS file-size limit before
 it is hashed and omitted.
 
@@ -143,9 +153,10 @@ Snapshot generation time must be a valid, non-future, timezone-aware timestamp
 that is not earlier than any contained scan. A record without proven network
 isolation cannot be `current`, even when its dependency match is otherwise exact.
 
-Freshness is evaluated at the current UTC date, recorded separately from the
-snapshot generation timestamp. Runs are byte-stable within that date; evidence
-can correctly cross the 90-day stale boundary on a later date.
+Freshness is evaluated at the deterministic end of the current UTC date,
+recorded separately from the snapshot generation timestamp. Runs are byte-stable
+within that date, same-day scans are eligible to remain current, and evidence can
+correctly cross the 90-day stale boundary on a later date.
 
 ## Schemas and compatibility
 

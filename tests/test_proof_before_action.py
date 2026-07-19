@@ -9,6 +9,7 @@ import shutil
 import sqlite3
 import subprocess
 from collections.abc import Callable, Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -37,6 +38,7 @@ from mcp_audit.proof_observer import (
     _cleanup_local_root,
     _command_argv_evidence,
     _file_snapshot,
+    _network_evidence,
     _redact_argv,
     _stage_repository,
     _subject_snapshot_evidence,
@@ -303,7 +305,7 @@ def test_staging_detects_a_directory_silently_skipped_by_fwalk(
 
 
 @requires_docker
-def test_read_only_command_passes_and_is_deterministic(tmp_path: Path) -> None:
+def test_read_only_final_state_is_unknown_and_deterministic(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     command = ["node", "-e", "require('fs').readFileSync('input.txt')"]
     first = observe_command(repo, command, image="node:24-slim")
@@ -313,10 +315,54 @@ def test_read_only_command_passes_and_is_deterministic(tmp_path: Path) -> None:
     assert first.network.surface.attempted is False
     first_comparison = compare_bill(_declaration(), first)
     second_comparison = compare_bill(_declaration(), second)
-    assert first_comparison.verdict == "pass"
+    assert first_comparison.verdict == "unknown"
+    assert "observation_incomplete" in {item.code for item in first_comparison.findings}
     first_capsule = build_capsule(_declaration(), first, first_comparison, _empty_trust(repo, first))
     second_capsule = build_capsule(_declaration(), second, second_comparison, _empty_trust(repo, second))
     assert canonical_json_bytes(first_capsule) == canonical_json_bytes(second_capsule)
+
+
+@requires_docker
+def test_transient_file_write_cannot_be_reported_as_read_only(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    observation = observe_command(
+        repo,
+        [
+            "node",
+            "-e",
+            "const fs=require('fs');fs.writeFileSync('transient.txt','x');fs.unlinkSync('transient.txt')",
+        ],
+        image="node:24-slim",
+    )
+
+    assert observation.file_changes == []
+    assert observation.filesystem.complete is False
+    comparison = compare_bill(_declaration(), observation)
+    assert comparison.verdict == "unknown"
+    assert "observation_incomplete" in {item.code for item in comparison.findings}
+
+
+@requires_docker
+def test_rolled_back_database_write_cannot_be_reported_as_read_only(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    database = sqlite3.connect(repo / "seeded.db")
+    database.execute("CREATE TABLE items(id INTEGER PRIMARY KEY, value TEXT NOT NULL)")
+    database.execute("INSERT INTO items(value) VALUES ('before')")
+    database.commit()
+    database.close()
+    code = (
+        "const {DatabaseSync}=require('node:sqlite');"
+        "const db=new DatabaseSync('seeded.db');"
+        "db.exec(\"BEGIN;UPDATE items SET value='transient' WHERE id=1;ROLLBACK;\");db.close()"
+    )
+
+    observation = observe_command(repo, ["node", "-e", code], image="node:24-slim")
+
+    assert observation.database_changes == []
+    assert observation.database.complete is False
+    comparison = compare_bill(_declaration(), observation)
+    assert comparison.verdict == "unknown"
+    assert "observation_incomplete" in {item.code for item in comparison.findings}
 
 
 @requires_docker
@@ -352,7 +398,7 @@ def test_background_descendant_cannot_mutate_after_observation_completion(tmp_pa
     assert observation.command.timed_out is False
     assert observation.command.stdout_sha256 == sha256_bytes(b"")
     assert observation.file_changes == []
-    assert compare_bill(_declaration(), observation).verdict == "pass"
+    assert compare_bill(_declaration(), observation).verdict == "unknown"
 
 
 @requires_docker
@@ -404,7 +450,7 @@ def test_command_is_unprivileged_and_cannot_rewrite_observer_evidence(tmp_path: 
     assert profile.capabilities_bounding == 0
     assert profile.capabilities_ambient == 0
     assert profile.no_new_privileges is True
-    assert compare_bill(_declaration(), observation).verdict == "pass"
+    assert compare_bill(_declaration(), observation).verdict == "unknown"
 
 
 @requires_docker
@@ -433,7 +479,9 @@ def test_undeclared_file_write_is_detected_and_blocked(tmp_path: Path) -> None:
         destinations={"files": ["created.txt"], "databases": [], "network": []},
         side_effects={"filesystem": "write", "database": "none", "network": "none"},
     )
-    assert compare_bill(declared_write, observation).verdict == "pass"
+    declared_comparison = compare_bill(declared_write, observation)
+    assert declared_comparison.verdict == "unknown"
+    assert "observation_incomplete" in {item.code for item in declared_comparison.findings}
 
 
 @requires_docker
@@ -462,7 +510,8 @@ def test_seeded_sqlite_mutation_is_semantically_detected(tmp_path: Path) -> None
         side_effects={"filesystem": "none", "database": "write", "network": "none"},
     )
     declared_comparison = compare_bill(declared_database_write, observation)
-    assert declared_comparison.verdict == "pass"
+    assert declared_comparison.verdict == "unknown"
+    assert "observation_incomplete" in {item.code for item in declared_comparison.findings}
     assert declared_comparison.observed_capabilities == ["database_write"]
 
 
@@ -775,6 +824,35 @@ def test_stale_trust_evidence_is_historical_not_current(tmp_path: Path) -> None:
     assert manifest.trust_source.evaluated_at != manifest.trust_source.snapshot_generated_at
 
 
+def test_same_day_scan_uses_deterministic_end_of_day_freshness(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    endpoint = "https://example.invalid/mcp"
+    (repo / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"known": {"url": endpoint}}}),
+        encoding="utf-8",
+    )
+    trust = _trust_fixture(tmp_path)
+    seed_path = trust / "src/mcp_trust/catalog/seed_servers.json"
+    seed = json.loads(seed_path.read_text())
+    seed[0]["source"] = {"kind": "remote", "reference": endpoint}
+    seed_path.write_text(json.dumps(seed), encoding="utf-8")
+    snapshot_path = trust / "src/mcp_trust/catalog_snapshot.json"
+    snapshot = json.loads(snapshot_path.read_text())
+    current = datetime.now(UTC).isoformat()
+    snapshot["generated_at"] = current
+    snapshot["servers"][0]["scanned_at"] = current
+    snapshot_path.write_text(json.dumps(snapshot), encoding="utf-8")
+    _commit_trust_fixture(trust, "same-day trust scan")
+
+    manifest = build_release_trust_manifest(repo, trust)
+    evidence = manifest.entries[0].evidence
+
+    assert manifest.trust_source is not None
+    assert manifest.trust_source.evaluated_at.endswith("T23:59:59.999999+00:00")
+    assert evidence.state == "current"
+    assert evidence.network_isolation == "verified_none"
+
+
 @pytest.mark.parametrize(
     "generated_at",
     [
@@ -835,6 +913,102 @@ def test_unproven_network_isolation_cannot_be_current_trust_evidence(tmp_path: P
     assert evidence.network_isolation == "unknown"
     assert evidence.state == "unverifiable"
     assert "mcp-trust record does not prove network isolation" in evidence.unknown_reasons
+
+
+def test_not_applicable_network_isolation_cannot_be_current_trust_evidence(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path)
+    endpoint = "https://example.invalid/mcp"
+    (repo / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"known": {"url": endpoint}}}),
+        encoding="utf-8",
+    )
+    trust = _trust_fixture(tmp_path)
+    seed_path = trust / "src/mcp_trust/catalog/seed_servers.json"
+    seed = json.loads(seed_path.read_text())
+    seed[0]["source"] = {"kind": "remote", "reference": endpoint}
+    seed_path.write_text(json.dumps(seed), encoding="utf-8")
+    snapshot_path = trust / "src/mcp_trust/catalog_snapshot.json"
+    snapshot = json.loads(snapshot_path.read_text())
+    snapshot["servers"][0]["scan_mode"] = "static-analysis"
+    snapshot["servers"][0]["sandbox"] = {"mode": "not_applicable", "network": "not_applicable"}
+    snapshot_path.write_text(json.dumps(snapshot), encoding="utf-8")
+    _commit_trust_fixture(trust, "network isolation not applicable")
+
+    evidence = build_release_trust_manifest(repo, trust).entries[0].evidence
+
+    assert evidence.match_state == "exact"
+    assert evidence.version_alignment == "not_applicable"
+    assert evidence.network_isolation == "not_applicable"
+    assert evidence.state == "unverifiable"
+    assert "network isolation was not applicable to the recorded scan" in evidence.unknown_reasons
+
+
+def test_ipv6_network_counters_are_observed(tmp_path: Path) -> None:
+    before = tmp_path / "network.before"
+    after = tmp_path / "network.after"
+    before6 = tmp_path / "network6.before"
+    after6 = tmp_path / "network6.after"
+    snmp = (
+        "Ip: OutRequests\nIp: 0\n"
+        "Tcp: ActiveOpens PassiveOpens AttemptFails\nTcp: 0 0 0\n"
+        "Udp: OutDatagrams\nUdp: 0\n"
+    )
+    before.write_text(snmp, encoding="utf-8")
+    after.write_text(snmp, encoding="utf-8")
+    before6.write_text(
+        "Ip6OutRequests 0\nUdp6OutDatagrams 0\n",
+        encoding="utf-8",
+    )
+    after6.write_text(
+        "Ip6OutRequests 1\nUdp6OutDatagrams 1\n",
+        encoding="utf-8",
+    )
+
+    evidence = _network_evidence(before, after, before6, after6, timed_out=False)
+
+    assert evidence.surface.complete is True
+    assert evidence.surface.attempted is True
+    assert evidence.counters["Ip6.OutRequests"] == 1
+    assert evidence.counters["Udp6.OutDatagrams"] == 1
+
+
+def test_missing_ipv6_counters_make_network_observation_incomplete(tmp_path: Path) -> None:
+    before = tmp_path / "network.before"
+    after = tmp_path / "network.after"
+    before.write_text("Ip: OutRequests\nIp: 0\n", encoding="utf-8")
+    after.write_text("Ip: OutRequests\nIp: 0\n", encoding="utf-8")
+
+    evidence = _network_evidence(
+        before,
+        after,
+        tmp_path / "missing-network6.before",
+        tmp_path / "missing-network6.after",
+        timed_out=False,
+    )
+
+    assert evidence.surface.complete is False
+    assert evidence.surface.attempted is None
+
+
+@requires_docker
+def test_ipv6_udp_attempt_is_detected_and_blocked(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    code = (
+        "const dgram=require('dgram');const socket=dgram.createSocket('udp6');"
+        "socket.send(Buffer.from('x'),9,'::1',error=>{socket.close();if(error)process.exit(2)})"
+    )
+
+    observation = observe_command(repo, ["node", "-e", code], image="node:24-slim")
+
+    assert observation.command.exit_code == 0
+    assert observation.network.surface.complete is True
+    assert observation.network.surface.attempted is True
+    assert observation.network.counters["Udp6.OutDatagrams"] > 0
+    comparison = compare_bill(_declaration(), observation)
+    assert comparison.verdict == "block"
+    assert "undeclared_network_attempt" in {item.code for item in comparison.findings}
 
 
 def test_dirty_trust_source_cannot_emit_authoritative_grade_details(tmp_path: Path) -> None:
@@ -1311,10 +1485,10 @@ limitations: []
             "process.exit(0)",
         ],
     )
-    assert inspected.exit_code == 0, inspected.output
+    assert inspected.exit_code == 1, inspected.output
     receipt = json.loads(inspected.output)
-    assert receipt["ok"] is True
-    assert receipt["verdict"] == "pass"
+    assert receipt["ok"] is False
+    assert receipt["verdict"] == "unknown"
     verified = runner.invoke(
         main,
         [

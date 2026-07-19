@@ -99,6 +99,7 @@ set -eu
 cp -R /pba-input/. /workspace/
 chmod -R a+rwX /workspace
 cat /proc/net/snmp > /pba/network.before
+cat /proc/net/snmp6 > /pba/network6.before
 ulimit -f 512
 set +e
 timeout --signal=TERM --kill-after=1 "${PBA_TIMEOUT_SECONDS}s" \
@@ -154,6 +155,7 @@ if [ "$quiescent" = false ]; then
     exit 3
 fi
 cat /proc/net/snmp > /pba/network.after
+cat /proc/net/snmp6 > /pba/network6.after
 printf '%s\n' "$rc" > /pba/exit-code
 touch /pba/complete
 tar -C / -cf - workspace pba
@@ -320,6 +322,8 @@ def observe_command(
         network = _network_evidence(
             evidence / "network.before",
             evidence / "network.after",
+            evidence / "network6.before",
+            evidence / "network6.after",
             timed_out=timed_out,
         )
         stdout = _read_bounded(evidence / "stdout")
@@ -330,10 +334,10 @@ def observe_command(
             outcome="succeeded" if file_changes else "unknown",
             persisted="changed" if file_changes else "unchanged",
             mechanism="complete before/after hash inventory of the disposable workspace",
-            complete=True,
+            complete=False,
             limitations=[
-                "Transient create-delete or write-restore attempts are not observable "
-                "without syscall tracing."
+                "Persisted regular-file state is completely compared, but transient "
+                "create-delete or write-restore attempts are not observable without syscall tracing."
             ],
         )
         database = SurfaceObservation(
@@ -342,11 +346,12 @@ def observe_command(
             outcome="succeeded" if database_changes else "unknown",
             persisted="changed" if database_changes else "unchanged",
             mechanism="SQLite schema, row-count, and row-digest comparison plus file hashes",
-            complete=not any(change.change == "unreadable" for change in database_changes),
+            complete=False,
             limitations=[
                 "Only copied SQLite files receive semantic inspection; other databases "
                 "remain file-level evidence.",
-                "Transient transactions that leave no SQLite or journal delta are not observable.",
+                "Persisted SQLite state is compared unless reported unreadable, but transient "
+                "transactions that leave no SQLite or journal delta are not observable.",
             ],
         )
         recorded_argv, recorded_argv_sha256 = _command_argv_evidence(command)
@@ -725,7 +730,7 @@ def _require_image_tools(image: str) -> None:
             f"PATH={_RUNTIME_PATH}",
             image,
             "-c",
-            "test -r /proc/net/snmp && command -v tar >/dev/null "
+            "test -r /proc/net/snmp && test -r /proc/net/snmp6 && command -v tar >/dev/null "
             "&& command -v timeout >/dev/null && command -v setpriv >/dev/null",
         ],
         timeout=20,
@@ -1038,8 +1043,21 @@ def _diff_databases(
     return changes
 
 
-def _network_evidence(before: Path, after: Path, *, timed_out: bool) -> NetworkEvidence:
-    if timed_out or not before.is_file() or not after.is_file():
+def _network_evidence(
+    before: Path,
+    after: Path,
+    before6: Path,
+    after6: Path,
+    *,
+    timed_out: bool,
+) -> NetworkEvidence:
+    if (
+        timed_out
+        or not before.is_file()
+        or not after.is_file()
+        or not before6.is_file()
+        or not after6.is_file()
+    ):
         return NetworkEvidence(
             surface=SurfaceObservation(
                 attempted=None,
@@ -1053,19 +1071,50 @@ def _network_evidence(before: Path, after: Path, *, timed_out: bool) -> NetworkE
         )
     old = _parse_snmp(before)
     new = _parse_snmp(after)
-    keys = (
+    old6 = _parse_snmp6(before6)
+    new6 = _parse_snmp6(after6)
+    ipv4_keys = (
         ("Tcp", "ActiveOpens"),
         ("Tcp", "PassiveOpens"),
         ("Tcp", "AttemptFails"),
         ("Udp", "OutDatagrams"),
         ("Ip", "OutRequests"),
     )
-    deltas = {
-        f"{protocol}.{field}": max(
-            0, new.get(protocol, {}).get(field, 0) - old.get(protocol, {}).get(field, 0)
+    ipv6_keys = ("Ip6OutRequests", "Udp6OutDatagrams")
+    if any(
+        field not in old.get(protocol, {}) or field not in new.get(protocol, {})
+        for protocol, field in ipv4_keys
+    ) or any(field not in old6 or field not in new6 for field in ipv6_keys):
+        return NetworkEvidence(
+            surface=SurfaceObservation(
+                attempted=None,
+                decision="unknown",
+                outcome="unknown",
+                persisted="unknown",
+                mechanism="Linux IPv4 and IPv6 network namespace counters",
+                complete=False,
+                limitations=["Required IPv4 or IPv6 network counters were unavailable."],
+            )
         )
-        for protocol, field in keys
+    if any(new[protocol][field] < old[protocol][field] for protocol, field in ipv4_keys) or any(
+        new6[field] < old6[field] for field in ipv6_keys
+    ):
+        return NetworkEvidence(
+            surface=SurfaceObservation(
+                attempted=None,
+                decision="unknown",
+                outcome="unknown",
+                persisted="unknown",
+                mechanism="Linux IPv4 and IPv6 network namespace counters",
+                complete=False,
+                limitations=["A required network counter regressed or wrapped during observation."],
+            )
+        )
+    deltas = {
+        f"{protocol}.{field}": new[protocol][field] - old[protocol][field] for protocol, field in ipv4_keys
     }
+    deltas["Ip6.OutRequests"] = new6["Ip6OutRequests"] - old6["Ip6OutRequests"]
+    deltas["Udp6.OutDatagrams"] = new6["Udp6OutDatagrams"] - old6["Udp6OutDatagrams"]
     attempted = any(value > 0 for value in deltas.values())
     failed = deltas["Tcp.AttemptFails"] > 0
     return NetworkEvidence(
@@ -1074,11 +1123,14 @@ def _network_evidence(before: Path, after: Path, *, timed_out: bool) -> NetworkE
             decision="blocked" if failed else "unknown" if attempted else "not_applicable",
             outcome="failed" if failed else "unknown" if attempted else "not_applicable",
             persisted="unchanged",
-            mechanism="per-container /proc/net/snmp counter delta under Docker network mode none",
+            mechanism=(
+                "per-container /proc/net/snmp and /proc/net/snmp6 counter deltas "
+                "under Docker network mode none"
+            ),
             complete=True,
             limitations=[
-                "Counters identify common IP/TCP/UDP activity but not the requested "
-                "destination or every socket family.",
+                "IPv4/IPv6 IP and UDP counters plus family-agnostic Linux TCP counters "
+                "identify activity but not the requested destination.",
                 "Docker network mode none proves no ordinary external interface, not "
                 "resistance to container escape.",
             ],
@@ -1098,6 +1150,19 @@ def _parse_snmp(path: Path) -> dict[str, dict[str, int]]:
         result[headers[0].rstrip(":")] = {
             key: int(value) for key, value in zip(headers[1:], values[1:], strict=False)
         }
+    return result
+
+
+def _parse_snmp6(path: Path) -> dict[str, int]:
+    result: dict[str, int] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        parts = line.split()
+        if len(parts) != 2:
+            continue
+        try:
+            result[parts[0]] = int(parts[1])
+        except ValueError:
+            continue
     return result
 
 

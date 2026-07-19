@@ -423,7 +423,7 @@ def _join_trust(
         )
     )
     snapshot_generated_at = str(snapshot.get("generated_at", "")) or "unknown"
-    evaluated_at = datetime.now(UTC).date().isoformat() + "T00:00:00+00:00"
+    evaluated_at = datetime.now(UTC).date().isoformat() + "T23:59:59.999999+00:00"
     source = TrustSource(
         repository_commit=trust_commit,
         dirty=trust_dirty,
@@ -675,9 +675,13 @@ def _match_dependency(
         if isinstance(sandbox, dict) and sandbox.get("mode") == "not_applicable"
         else "unknown"
     )
-    if network == "unknown":
+    if network != "verified_none":
         state = "unverifiable" if state == "current" else state
-        unknowns.append("mcp-trust record does not prove network isolation")
+        unknowns.append(
+            "mcp-trust record does not prove network isolation"
+            if network == "unknown"
+            else "network isolation was not applicable to the recorded scan"
+        )
     return TrustEvidence(
         state=state,  # type: ignore[arg-type]
         match_state="exact",

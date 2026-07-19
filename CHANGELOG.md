@@ -38,7 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   silently omitting a changing subtree. Nested mcp-trust seed identities and
   grade-bearing snapshot fields are type-validated before any row can become
   current evidence; snapshot chronology and network-isolation proof also fail
-  closed before a record can remain current.
+  closed before a record can remain current. Filesystem and database final-state
+  snapshots now report incomplete for transient-attempt coverage, IPv6 counters
+  join IPv4 network evidence, and same-day trust freshness uses a deterministic
+  end-of-day bound.
 - `pin_baseline_corrupted` warning code — a pin baseline file that exists but
   cannot be parsed now emits its own `ScanWarning` (naming the file and the
   parse error) instead of folding into `pin_baseline_missing`. A corrupted

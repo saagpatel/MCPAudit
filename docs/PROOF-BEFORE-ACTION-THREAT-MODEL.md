@@ -83,11 +83,11 @@ platform.
 | Container, VM, or hypervisor escape | Unknown | Could bypass the container controls. A capsule records containment as `partial`. |
 | Docker engine host or optional VM sharing | Not a proven isolation boundary | The engine layer may expose broader host-adjacent state than the runtime container. A hostile-kernel test should use a fresh mountless VM instead. |
 | macOS Keychain, TCC, XPC, Apple Events, GUI, devices, and host kernel | Unobserved | The Linux fixture cannot justify claims about these surfaces. |
-| Transient create-delete or write-restore | Unobserved | Final-state hashing can miss an attempt that leaves no persisted delta. |
+| Transient create-delete or write-restore | Explicitly incomplete | Final-state hashing can miss an attempt that leaves no persisted delta, so the filesystem surface cannot support `pass`. |
 | Nested or very short-lived child processes | Final state quiesced; identity attribution incomplete | Surviving descendants are terminated before the final archive, but child executable identities and transient effects are not completely attributed. |
-| SQLite transactions with no final delta | Unobserved | Semantic comparison proves final content, not every query or transaction attempt. |
+| SQLite transactions with no final delta | Explicitly incomplete | Semantic comparison proves final content, not every query or transaction attempt, so the database surface cannot support `pass`. |
 | Non-SQLite databases | File-level only | Semantic records and remote database effects are unknown. |
-| Network destination | Unobserved | Namespace counters reveal common IP/TCP/UDP attempts, not the requested hostname or endpoint. |
+| Network destination | Unobserved | IPv4/IPv6 IP and UDP counters plus family-agnostic Linux TCP counters reveal attempts, not the requested hostname or endpoint. Missing or regressed counters make the surface incomplete. |
 | Loopback inside the namespace | Available | A command can contact its own processes; the evidence marks attempts but does not call loopback external contact. |
 | Output links or special files | Fail-closed | Collection stops; the effect is not silently omitted and no completed capsule is issued. |
 | Unknown secret formats or low-entropy secret hashes | Residual risk | Redaction is best effort, and a digest can sometimes be guessed. Review declarations and commands before sharing capsules. |
@@ -98,13 +98,17 @@ platform.
 
 ## False claims the product must not make
 
-A successful run means the persisted regular-file/SQLite state and observable
-network counters matched the declaration within this container experiment. It
-does not mean the command is safe, cannot mutate, is sandboxed on macOS, is free
-of data exfiltration paths, or is approved for release.
+An `unknown` run can mean the persisted regular-file/SQLite state and observable
+network counters matched the declaration while transient write/transaction
+attempts remained unobservable. It does not mean the command is safe, cannot
+mutate, is sandboxed on macOS, is free of data exfiltration paths, or is approved
+for release.
 
-`pass` is a deterministic comparison result. Release authority still belongs to
-the operator and must account for every recorded limitation and unknown.
+The v1 final-state observer does not emit `pass` for a whole action because its
+filesystem and database attempt surfaces remain incomplete. The schema retains
+`pass` for compatibility with complete observation mechanisms; release
+authority still belongs to the operator and must account for every limitation
+and unknown.
 
 ## Safer high-risk profile
 
