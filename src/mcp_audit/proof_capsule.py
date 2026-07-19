@@ -151,6 +151,28 @@ def compare_bill(declaration: ActionDeclaration, observation: Observation) -> Bi
                 message="one or more requested observation surfaces were incomplete",
             )
         )
+    surfaces = (
+        observation.filesystem,
+        observation.database,
+        observation.network.surface,
+    )
+    if any(
+        surface.complete
+        and (
+            surface.attempted is None
+            or surface.decision == "unknown"
+            or surface.outcome == "unknown"
+            or surface.persisted == "unknown"
+        )
+        for surface in surfaces
+    ):
+        findings.append(
+            ComparisonFinding(
+                code="observation_state_unknown",
+                severity="unknown",
+                message="a completed observation surface retained an unknown state",
+            )
+        )
     verdict: Literal["pass", "block", "unknown"] = (
         "block"
         if any(item.severity == "error" for item in findings)

@@ -42,7 +42,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   snapshots now report incomplete for transient-attempt coverage, IPv6 counters
   join IPv4 network evidence, and same-day trust freshness uses a deterministic
   end-of-day bound. Contradictory `not_applicable` sandbox/network records cannot
-  satisfy network-isolation proof.
+  satisfy network-isolation proof. Docker staging is bound to the initially
+  resolved immutable image ID, and complete surfaces with unknown state fields
+  remain non-passing.
 - `pin_baseline_corrupted` warning code — a pin baseline file that exists but
   cannot be parsed now emits its own `ScanWarning` (naming the file and the
   parse error) instead of folding into `pin_baseline_missing`. A corrupted

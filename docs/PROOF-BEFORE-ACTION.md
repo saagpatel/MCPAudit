@@ -30,7 +30,8 @@ limitations: []
 ```
 
 Ensure the selected container image already exists locally. Proof Before Action
-will not pull it. Then inspect:
+will not pull it. The mutable reference is resolved once and every subsequent
+tool check and staging step uses that immutable image ID. Then inspect:
 
 ```console
 proof-before-action inspect \
@@ -126,6 +127,10 @@ requested destination. Missing or regressed required counters make the network
 surface incomplete. Link or special-file output blocks collection rather than
 silently disappearing. The command cannot write the observer-owned evidence
 tmpfs.
+
+Comparison also treats any schema-valid `complete: true` surface that retains an
+unknown attempted, decision, outcome, or persisted state as `unknown`. Legacy or
+alternate producers cannot use a completeness flag alone to manufacture `pass`.
 Command output is redirected there by PID 1 under an OS file-size limit before
 it is hashed and omitted.
 

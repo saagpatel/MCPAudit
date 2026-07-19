@@ -313,6 +313,14 @@ def test_read_only_final_state_is_unknown_and_deterministic(tmp_path: Path) -> N
     assert first.file_changes == []
     assert first.database_changes == []
     assert first.network.surface.attempted is False
+    expected_image_id = subprocess.run(
+        ["docker", "image", "inspect", "--format", "{{.Id}}", "node:24-slim"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert first.isolation.image_reference == "node:24-slim"
+    assert first.isolation.image_id == expected_image_id
     first_comparison = compare_bill(_declaration(), first)
     second_comparison = compare_bill(_declaration(), second)
     assert first_comparison.verdict == "unknown"
@@ -711,6 +719,19 @@ def test_declaration_omission_is_deterministic() -> None:
     second = compare_bill(_declaration(), observation)
     assert first.verdict == "block"
     assert canonical_json_bytes(first) == canonical_json_bytes(second)
+
+    clean_unknown = observation.model_copy(
+        update={
+            "filesystem": unchanged,
+            "file_changes": [],
+            "database": unchanged,
+            "database_changes": [],
+            "network": NetworkEvidence(surface=unchanged),
+        }
+    )
+    unknown_comparison = compare_bill(_declaration(), clean_unknown)
+    assert unknown_comparison.verdict == "unknown"
+    assert "observation_state_unknown" in {item.code for item in unknown_comparison.findings}
 
 
 def _trust_fixture(tmp_path: Path) -> Path:

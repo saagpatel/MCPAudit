@@ -195,7 +195,7 @@ def observe_command(
         before_databases = _database_snapshot(staged)
         _make_disposable_writable(staged)
         image_id = _local_image_id(image)
-        _require_image_tools(image)
+        _require_image_tools(image_id)
         name = "pba-" + secrets.token_hex(8)
         runtime_image = name + "-input"
         stage_create = _run(
@@ -208,7 +208,7 @@ def observe_command(
                 "none",
                 "--entrypoint",
                 "/bin/true",
-                image,
+                image_id,
             ],
             timeout=20,
         )
@@ -231,6 +231,9 @@ def observe_command(
             raise ObservationBlocked(
                 "content-addressed staging image failed: " + _safe_error(committed.stderr)
             )
+        committed_image_id = committed.stdout.decode().strip()
+        if not committed_image_id.startswith("sha256:"):
+            raise ObservationBlocked("content-addressed staging image did not return an immutable ID")
         if error := _cleanup_docker_resource(["docker", "rm", "-f", staging_container_id], timeout=20):
             raise ObservationBlocked("staging container cleanup could not be confirmed: " + error)
         staging_container_id = None
@@ -283,7 +286,7 @@ def observe_command(
                 f"PBA_TIMEOUT_SECONDS={timeout_seconds}",
                 "--entrypoint",
                 "/bin/sh",
-                runtime_image,
+                committed_image_id,
                 "-c",
                 _WRAPPER,
                 "proof-before-action-wrapper",
