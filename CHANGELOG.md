@@ -75,7 +75,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   observer tools run, and IP-counter observations remain incomplete because
   Unix-domain socket activity is not observed. Staging preserves and binds Git
   executable mode so the observed subject cannot silently differ from the
-  reviewed revision.
+  reviewed revision, and the attached evidence archive streams to a bounded host
+  file instead of accumulating untrusted output in memory.
 - `pin_baseline_corrupted` warning code — a pin baseline file that exists but
   cannot be parsed now emits its own `ScanWarning` (naming the file and the
   parse error) instead of folding into `pin_baseline_missing`. A corrupted

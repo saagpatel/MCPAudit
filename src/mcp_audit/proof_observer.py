@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import hashlib
-import io
 import json
 import os
 import re
 import secrets
+import selectors
 import shutil
 import sqlite3
 import stat
@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 from pathlib import Path, PurePosixPath
 from typing import Any, Literal, cast
 
@@ -93,6 +94,7 @@ _REPO_CONFIG_NAMES = {".mcp.json", "server.json"}
 _TEXT_CONFIG_SUFFIXES = {".cfg", ".conf", ".ini", ".properties", ".toml", ".yaml", ".yml"}
 _MAX_FILES = 10_000
 _MAX_INPUT_BYTES = 512 * 1024 * 1024
+_MAX_ARCHIVE_BYTES = _MAX_INPUT_BYTES + 32 * 1024 * 1024
 _MAX_OUTPUT_BYTES = 256 * 1024
 _MAX_TEXT_FILE_BYTES = 16 * 1024 * 1024
 _RUNTIME_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -303,8 +305,10 @@ def observe_command(
         container_id = create.stdout.decode().strip()
         inspect = _inspect_container(container_id)
         isolation = _isolation_evidence(image, image_id, inspect)
-        attached = _run(
+        archive_path = root / "observation.tar"
+        attached = _run_bounded_archive(
             ["docker", "start", "--attach", container_id],
+            archive_path,
             timeout=timeout_seconds + 75,
         )
         if attached.returncode != 0:
@@ -312,7 +316,7 @@ def observe_command(
                 f"observer wrapper failed with exit code {attached.returncode} "
                 "before completing evidence collection: " + _safe_error(attached.stderr)
             )
-        _extract_observation_archive(attached.stdout, collected_root)
+        _extract_observation_archive(archive_path, collected_root)
         if not (evidence / "complete").is_file():
             raise ObservationBlocked("observer wrapper exited before completing evidence collection")
         command_runtime_profile = _read_command_runtime_profile(evidence / "command.status")
@@ -777,11 +781,11 @@ def _require_image_tools(image: str) -> None:
         )
 
 
-def _extract_observation_archive(value: bytes, destination: Path) -> None:
+def _extract_observation_archive(value: Path, destination: Path) -> None:
     file_count = 0
     total_bytes = 0
     try:
-        with tarfile.open(fileobj=io.BytesIO(value), mode="r:") as archive:
+        with tarfile.open(value, mode="r:") as archive:
             for member in archive:
                 relative = PurePosixPath(member.name)
                 parts = tuple(part for part in relative.parts if part != ".")
@@ -1238,6 +1242,60 @@ def _run(argv: list[str], *, timeout: int) -> subprocess.CompletedProcess[bytes]
         )
     except subprocess.TimeoutExpired as exc:
         raise ObservationBlocked(f"Docker command timed out after {timeout} seconds") from exc
+
+
+def _run_bounded_archive(
+    argv: list[str],
+    output: Path,
+    *,
+    timeout: int,
+    max_bytes: int = _MAX_ARCHIVE_BYTES,
+) -> subprocess.CompletedProcess[bytes]:
+    process = subprocess.Popen(
+        argv,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env={"PATH": os.environ.get("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")},
+    )
+    if process.stdout is None or process.stderr is None:
+        process.kill()
+        process.wait()
+        raise ObservationBlocked("Docker archive command pipes were unavailable")
+    selector = selectors.DefaultSelector()
+    selector.register(process.stdout, selectors.EVENT_READ, "stdout")
+    selector.register(process.stderr, selectors.EVENT_READ, "stderr")
+    deadline = time.monotonic() + timeout
+    written = 0
+    stderr = bytearray()
+    try:
+        with output.open("xb") as archive:
+            while selector.get_map():
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise ObservationBlocked(f"Docker command timed out after {timeout} seconds")
+                for key, _events in selector.select(min(remaining, 0.25)):
+                    chunk = os.read(key.fd, 64 * 1024)
+                    if not chunk:
+                        selector.unregister(key.fileobj)
+                        continue
+                    if key.data == "stdout":
+                        if written + len(chunk) > max_bytes:
+                            raise ObservationBlocked("runtime evidence archive exceeded the host byte limit")
+                        archive.write(chunk)
+                        written += len(chunk)
+                    elif len(stderr) < _MAX_OUTPUT_BYTES:
+                        stderr.extend(chunk[: _MAX_OUTPUT_BYTES - len(stderr)])
+        returncode = process.wait(timeout=max(deadline - time.monotonic(), 0.001))
+        return subprocess.CompletedProcess(argv, returncode, b"", bytes(stderr))
+    except subprocess.TimeoutExpired as exc:
+        raise ObservationBlocked(f"Docker command timed out after {timeout} seconds") from exc
+    finally:
+        selector.close()
+        if process.poll() is None:
+            process.kill()
+            process.wait()
+        process.stdout.close()
+        process.stderr.close()
 
 
 def _cleanup_docker_resource(argv: list[str], *, timeout: int) -> str | None:

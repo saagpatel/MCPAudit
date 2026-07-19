@@ -127,7 +127,8 @@ The observer:
    starts, and validated into every observation;
 4. terminates every surviving command descendant, verifies every Linux task is
    terminal from `/proc`, and only then streams one attached archive containing
-   the disposable workspace and root-owned evidence;
+   the disposable workspace and root-owned evidence to a host temporary file
+   under a hard byte cap;
 5. collects file hashes, SQLite schema/row digests, and Linux IPv4/IPv6
    IP/TCP/UDP counter deltas from that quiesced archive;
 6. removes the container and temporary staging image.

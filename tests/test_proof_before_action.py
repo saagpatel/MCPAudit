@@ -46,6 +46,7 @@ from mcp_audit.proof_observer import (
     _file_snapshot,
     _network_evidence,
     _redact_argv,
+    _run_bounded_archive,
     _stage_repository,
     _subject_snapshot_evidence,
     _verify_expected_image_id,
@@ -106,6 +107,23 @@ def test_expected_image_id_is_required_and_exact() -> None:
     with pytest.raises(ObservationBlocked, match="does not match independently supplied"):
         _verify_expected_image_id(resolved, "sha256:" + "b" * 64)
     _verify_expected_image_id(resolved, resolved)
+
+
+def test_runtime_archive_is_capped_before_host_allocation(tmp_path: Path) -> None:
+    output = tmp_path / "archive.tar"
+    with pytest.raises(ObservationBlocked, match="exceeded the host byte limit"):
+        _run_bounded_archive(
+            [
+                sys.executable,
+                "-c",
+                "import sys; sys.stdout.buffer.write(b'x' * 4096)",
+            ],
+            output,
+            timeout=5,
+            max_bytes=1024,
+        )
+
+    assert output.stat().st_size <= 1024
 
 
 def _empty_trust(repo: Path, observation: Observation) -> ReleaseTrustManifest:
