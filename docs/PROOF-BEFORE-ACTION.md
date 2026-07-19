@@ -65,7 +65,15 @@ proof-before-action verify ./proof-capsule \
 
 Without `--expect-root-sha256`, a successful verification result reports
 `authority: unverified`: internal hashes cannot establish who authorized the
-artifact.
+artifact. A supplied root reports `anchored` only when it matches; a mismatch is
+invalid and remains `authority: unverified`.
+
+Wheel and source-distribution builds use the repository's uv-backed PEP 517
+wrapper to embed the exact source revision and pre-build dirty state. Installed
+commands read only that packaged metadata; source checkouts use Git only when
+the executing module is under that checkout's exact `src/mcp_audit` path. This
+prevents an installed virtual environment from inheriting an unrelated ancestor
+repository as its producer.
 
 ## Observation contract
 
@@ -111,10 +119,12 @@ exact source pointer. Environment and header values are never copied; only key
 names are retained.
 
 The join uses the local mcp-trust catalog snapshot, catalog seed,
-`masked-grades.json`, and spec-shift format version. Missing, stale, masked,
-ambiguous, unmatched, dirty-source, or version-unbound evidence remains explicit
-in the manifest. A grade is historical evidence about an observed MCP surface,
-not an endorsement or runtime-safety proof.
+`masked-grades.json`, and spec-shift format version. Every required input must be
+tracked and byte-identical to the recorded trust commit; ignored or otherwise
+untracked files do not count as clean authority. Missing, stale, masked,
+ambiguous, unmatched, dirty-source, commit-unbound, or version-unbound evidence
+remains explicit in the manifest. A grade is historical evidence about an
+observed MCP surface, not an endorsement or runtime-safety proof.
 
 Freshness is evaluated at the current UTC date, recorded separately from the
 snapshot generation timestamp. Runs are byte-stable within that date; evidence

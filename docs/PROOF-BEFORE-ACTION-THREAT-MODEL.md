@@ -51,6 +51,11 @@ boundary equivalent to a fresh mountless VM.
 - Offline HTML uses escaped text, no JavaScript, and a restrictive CSP.
 - Capsule, artifact, payload, subject-commit, producer-commit, schema, and
   optional external-root checks fail closed.
+- Distribution builds embed producer revision and dirty-state metadata; source
+  checkout discovery requires the executing module to be under the exact Git
+  root instead of accepting an arbitrary ancestor repository.
+- Every required mcp-trust input is read back from the recorded trust commit and
+  compared byte-for-byte before grade details can remain authoritative.
 
 ## Residual threats and honest unknowns
 
@@ -69,7 +74,8 @@ boundary equivalent to a fresh mountless VM.
 | Unknown secret formats or low-entropy secret hashes | Residual risk | Redaction is best effort, and a digest can sometimes be guessed. Review declarations and commands before sharing capsules. |
 | Malicious local Docker daemon or image | Trusted locally | A local image can contain hostile infrastructure. Pin and independently verify the image digest. |
 | Internal capsule hashes | Consistency only | They do not prove who authorized the capsule. Record the index root in an external authority channel. |
-| mcp-trust grade applicability | Evidence-limited | Stale, masked, missing, version-unbound, or dirty-source evidence remains unknown. |
+| mcp-trust grade applicability | Evidence-limited | Stale, masked, missing, version-unbound, dirty, ignored/untracked, or commit-mismatched evidence remains unknown. |
+| Producer build metadata | Evidence-limited | A clean embedded revision binds packaged code to its build source claim, but package authenticity still requires a trusted distribution channel or an externally anchored capsule root. |
 
 ## False claims the product must not make
 

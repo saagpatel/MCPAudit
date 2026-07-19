@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fnmatch
+import hmac
 import html
 import json
 import os
@@ -173,7 +174,7 @@ def build_capsule(
     comparison: BillComparison,
     trust_manifest: ReleaseTrustManifest,
 ) -> EvidenceCapsule:
-    commit, dirty = _producer_git_state()
+    commit, dirty, provenance_source = _producer_state()
     producer_limitations: list[str] = []
     if commit is None:
         producer_limitations.append(
@@ -204,6 +205,7 @@ def build_capsule(
             version=__version__,
             commit=commit,
             dirty=dirty,
+            provenance_source=provenance_source,
         ),
         limitations=limitations,
     )
@@ -407,7 +409,8 @@ def verify_capsule(
                     "message": f"expected {expect_producer_commit}, got {producer_commit}",
                 }
             )
-    if expect_root_sha256 and root_sha256 != expect_root_sha256:
+    root_matches = bool(expect_root_sha256 and hmac.compare_digest(root_sha256, expect_root_sha256))
+    if expect_root_sha256 and not root_matches:
         errors.append(
             {
                 "code": "authority_root_mismatch",
@@ -417,14 +420,38 @@ def verify_capsule(
     return {
         "valid": not errors,
         "root_sha256": root_sha256,
-        "authority": "anchored" if expect_root_sha256 else "unverified",
+        "authority": "anchored" if root_matches else "unverified",
         "errors": errors,
     }
 
 
-def _producer_git_state() -> tuple[str | None, bool | None]:
-    root = Path(__file__).resolve().parents[2]
+def _producer_state() -> tuple[
+    str | None,
+    bool | None,
+    Literal["build-metadata", "source-checkout"] | None,
+]:
+    embedded = _embedded_build_provenance()
+    if embedded is not None:
+        return (*embedded, "build-metadata")
+    module_path = Path(__file__).resolve()
+    root = module_path.parents[2]
+    expected_module = root / "src/mcp_audit/proof_capsule.py"
     try:
+        if expected_module.resolve() != module_path:
+            return None, None, None
+    except OSError:
+        return None, None, None
+    try:
+        top_level = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            env={"PATH": os.environ.get("PATH", "")},
+        ).stdout.strip()
+        if Path(top_level).resolve() != root:
+            return None, None, None
         commit = subprocess.run(
             ["git", "-C", str(root), "rev-parse", "HEAD"],
             check=True,
@@ -441,6 +468,29 @@ def _producer_git_state() -> tuple[str | None, bool | None]:
             timeout=5,
             env={"PATH": os.environ.get("PATH", "")},
         ).stdout
-        return commit, bool(status)
+        return commit, bool(status), "source-checkout"
     except (OSError, subprocess.SubprocessError):
+        return None, None, None
+
+
+def _embedded_build_provenance() -> tuple[str | None, bool | None] | None:
+    path = Path(__file__).with_name("_build_provenance.json")
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict) or payload.get("schema_version") != "mcp-audits.build-provenance.v1":
+            return None, None
+        commit = payload.get("commit")
+        dirty = payload.get("dirty")
+        if commit is not None and (
+            not isinstance(commit, str)
+            or len(commit) != 40
+            or any(character not in "0123456789abcdef" for character in commit)
+        ):
+            return None, None
+        if dirty is not None and not isinstance(dirty, bool):
+            return None, None
+        return commit, dirty
+    except (OSError, UnicodeError, json.JSONDecodeError):
         return None, None

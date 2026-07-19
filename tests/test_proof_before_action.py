@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
+import mcp_audit.proof_capsule as proof_capsule_module
 from mcp_audit.proof_capsule import (
     build_capsule,
     compare_bill,
@@ -565,6 +566,88 @@ def test_dirty_trust_source_cannot_emit_authoritative_grade_details(tmp_path: Pa
     )
 
 
+def test_ignored_untracked_trust_inputs_cannot_escape_commit_binding(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    (repo / ".mcp.json").write_text(
+        '{"mcpServers":{"known":{"command":"npx","args":["@fixture/known-mcp"]}}}',
+        encoding="utf-8",
+    )
+    trust = _trust_fixture(tmp_path)
+    required = [
+        "src/mcp_trust/catalog_snapshot.json",
+        "src/mcp_trust/catalog/seed_servers.json",
+        "masked-grades.json",
+        "src/mcp_trust/core/spec_shift_verdicts.json",
+    ]
+    subprocess.run(
+        ["git", "-C", str(trust), "rm", "--cached", "--quiet", "--", *required],
+        check=True,
+    )
+    (trust / ".gitignore").write_text("\n".join(required) + "\n", encoding="utf-8")
+    _commit_trust_fixture(trust, "ignore unbound trust inputs")
+
+    manifest = build_release_trust_manifest(repo, trust)
+
+    assert manifest.trust_source is not None
+    assert manifest.trust_source.dirty is False
+    evidence = manifest.entries[0].evidence
+    assert evidence.state == "unverifiable"
+    assert evidence.grade is None
+    assert (
+        "required mcp-trust inputs are not byte-identical to the trust commit; "
+        "entry-level trust evidence is non-authoritative" in evidence.unknown_reasons
+    )
+
+
+def test_installed_module_does_not_inherit_an_unrelated_ancestor_commit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ancestor = tmp_path / "caller"
+    ancestor.mkdir()
+    subprocess.run(["git", "init", "-q", str(ancestor)], check=True)
+    installed_module = ancestor / ".venv/lib/python3.11/site-packages/mcp_audit/proof_capsule.py"
+    installed_module.parent.mkdir(parents=True)
+    installed_module.write_text("# installed fixture\n", encoding="utf-8")
+    monkeypatch.setattr(
+        proof_capsule_module,
+        "__file__",
+        str(installed_module),
+    )
+
+    assert proof_capsule_module._producer_state() == (None, None, None)
+
+
+def test_installed_module_uses_embedded_build_provenance(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    installed_module = tmp_path / "site-packages/mcp_audit/proof_capsule.py"
+    installed_module.parent.mkdir(parents=True)
+    installed_module.write_text("# installed fixture\n", encoding="utf-8")
+    (installed_module.parent / "_build_provenance.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "mcp-audits.build-provenance.v1",
+                "commit": "a" * 40,
+                "dirty": False,
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        proof_capsule_module,
+        "__file__",
+        str(installed_module),
+    )
+
+    assert proof_capsule_module._producer_state() == (
+        "a" * 40,
+        False,
+        "build-metadata",
+    )
+
+
 @requires_docker
 def test_tampering_and_wrong_commit_or_schema_are_detected(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
@@ -575,6 +658,10 @@ def test_tampering_and_wrong_commit_or_schema_are_detected(tmp_path: Path) -> No
     output = tmp_path / "capsule"
     root_sha = export_capsule(capsule, output)
     assert verify_capsule(output, expect_root_sha256=root_sha)["valid"] is True
+    wrong_root = verify_capsule(output, expect_root_sha256="0" * 64)
+    assert wrong_root["valid"] is False
+    assert wrong_root["authority"] == "unverified"
+    assert "authority_root_mismatch" in {item["code"] for item in wrong_root["errors"]}
     wrong = verify_capsule(
         output,
         expect_subject_commit="0" * 40,

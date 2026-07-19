@@ -61,14 +61,20 @@ mcp-audits = "mcp_audit.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.11.2,<0.12.0"]
-build-backend = "uv_build"
+build-backend = "mcp_audit_build_backend"
+backend-path = ["."]
 
 [tool.uv.build-backend]
 module-name = "mcp_audit"
+source-include = ["mcp_audit_build_backend.py"]
 
 [tool.mypy]
 strict = true
 python_version = "3.11"
+
+[[tool.mypy.overrides]]
+module = ["uv_build"]
+ignore_missing_imports = true
 
 [tool.ruff]
 target-version = "py311"

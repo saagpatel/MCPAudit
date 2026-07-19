@@ -277,6 +277,7 @@ class ProducerEvidence(StrictModel):
     version: str
     commit: str | None
     dirty: bool | None
+    provenance_source: Literal["build-metadata", "source-checkout"] | None = None
     aigccore_primitive_source_commit: str = "d8c570cf148bb502b7ed0cc7fd58f1e054697180"
 
 

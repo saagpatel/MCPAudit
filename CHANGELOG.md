@@ -18,8 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   capability-free tested command, stops surviving descendants before the final
   archive, and fails closed when command identity, quiescence, or cleanup cannot
   be confirmed.
-  Dirty or commit-unbound local mcp-trust sources now downgrade every matched
-  entry to non-authoritative, detail-withholding `unverifiable` evidence.
+  Dirty, commit-unbound, ignored/untracked, or commit-mismatched local mcp-trust
+  inputs now downgrade every matched entry to non-authoritative,
+  detail-withholding `unverifiable` evidence. Distribution builds embed
+  producer revision/dirty-state metadata, installed commands cannot inherit an
+  unrelated ancestor Git commit, and mismatched external roots remain
+  `authority: unverified`.
 - `pin_baseline_corrupted` warning code — a pin baseline file that exists but
   cannot be parsed now emits its own `ScanWarning` (naming the file and the
   parse error) instead of folding into `pin_baseline_missing`. A corrupted

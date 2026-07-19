@@ -385,6 +385,14 @@ def _join_trust(
             f"mcp-trust source could not be parsed: {type(exc).__name__}",
         )
     trust_commit, trust_dirty = _git_state(trust_root)
+    trust_inputs_bound = bool(
+        trust_commit
+        and _files_match_git_commit(
+            trust_root,
+            trust_commit,
+            list(files.values()),
+        )
+    )
     snapshot_generated_at = str(snapshot.get("generated_at", "")) or "unknown"
     evaluated_at = datetime.now(UTC).date().isoformat() + "T00:00:00+00:00"
     source = TrustSource(
@@ -422,6 +430,11 @@ def _join_trust(
         trust_authority_reason = (
             "mcp-trust source worktree is dirty; entry-level trust evidence is non-authoritative"
         )
+    elif not trust_inputs_bound:
+        trust_authority_reason = (
+            "required mcp-trust inputs are not byte-identical to the trust commit; "
+            "entry-level trust evidence is non-authoritative"
+        )
     if trust_authority_reason is not None:
         entries = [
             entry.model_copy(
@@ -446,6 +459,11 @@ def _join_trust(
         limitations.append("The mcp-trust source worktree is dirty; trust-source authority is UNKNOWN.")
     if trust_commit is None:
         limitations.append("The mcp-trust source commit is UNKNOWN; trust-source authority is UNKNOWN.")
+    elif not trust_inputs_bound:
+        limitations.append(
+            "Required mcp-trust inputs are not byte-identical to the trust commit; "
+            "trust-source authority is UNKNOWN."
+        )
     return ReleaseTrustManifest(
         repository_commit=repository_commit,
         repository_dirty=repository_dirty,
@@ -707,6 +725,27 @@ def _git_state(root: Path) -> tuple[str | None, bool | None]:
         return commit, bool(status)
     except (OSError, subprocess.SubprocessError):
         return None, None
+
+
+def _files_match_git_commit(
+    root: Path,
+    commit: str,
+    paths: list[Path],
+) -> bool:
+    for path in paths:
+        try:
+            relative = path.relative_to(root).as_posix()
+            committed = subprocess.run(
+                ["git", "-C", str(root), "show", f"{commit}:{relative}"],
+                check=False,
+                capture_output=True,
+                timeout=5,
+            )
+            if committed.returncode != 0 or committed.stdout != path.read_bytes():
+                return False
+        except (OSError, ValueError, subprocess.SubprocessError):
+            return False
+    return True
 
 
 def _repository_limitations(commit: str | None, dirty: bool | None) -> list[str]:
