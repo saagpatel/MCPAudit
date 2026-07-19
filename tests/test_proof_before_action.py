@@ -650,6 +650,7 @@ def test_query_bearing_remote_identity_cannot_alias_the_base_endpoint(
                     "tenant": {
                         "url": "https://gateway.example/mcp?tenant=unreviewed",
                     },
+                    "trailing": {"url": "https://gateway.example/mcp/"},
                 }
             }
         ),
@@ -664,6 +665,8 @@ def test_query_bearing_remote_identity_cannot_alias_the_base_endpoint(
     assert identities["tenant"].startswith("sha256:")
     assert identities["tenant"] != identities["base"]
     assert "tenant=unreviewed" not in identities["tenant"]
+    assert identities["trailing"] == "https://gateway.example/mcp/"
+    assert identities["trailing"] != identities["base"]
 
 
 @pytest.mark.parametrize(
@@ -1755,6 +1758,39 @@ def test_wrong_shaped_trust_inputs_become_structured_unknown(
     )
     trust = _trust_fixture(tmp_path)
     (trust / relative).write_text(json.dumps(payload), encoding="utf-8")
+
+    manifest = build_release_trust_manifest(repo, trust)
+
+    assert manifest.discovery_coverage == "unknown"
+    assert manifest.trust_source is None
+    assert manifest.entries[0].evidence.state == "unverifiable"
+    assert manifest.entries[0].evidence.grade is None
+    assert "mcp-trust source has an unsupported data shape" in manifest.limitations
+
+
+@pytest.mark.parametrize(
+    ("relative", "field"),
+    [
+        ("src/mcp_trust/catalog_snapshot.json", "schema_version"),
+        ("src/mcp_trust/core/spec_shift_verdicts.json", "format_version"),
+    ],
+)
+def test_boolean_trust_schema_versions_are_structured_unknown(
+    tmp_path: Path,
+    relative: str,
+    field: str,
+) -> None:
+    repo = _repo(tmp_path)
+    (repo / ".mcp.json").write_text(
+        '{"mcpServers":{"known":{"command":"npx","args":["@fixture/known-mcp"]}}}',
+        encoding="utf-8",
+    )
+    trust = _trust_fixture(tmp_path)
+    path = trust / relative
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload[field] = True
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    _commit_trust_fixture(trust, "commit Boolean trust schema version")
 
     manifest = build_release_trust_manifest(repo, trust)
 

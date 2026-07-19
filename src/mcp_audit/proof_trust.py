@@ -760,9 +760,9 @@ def _valid_trust_input_shapes(
     if not isinstance(snapshot, dict) or not isinstance(spec_shift, dict):
         return False
     if (
-        not isinstance(snapshot.get("schema_version"), (int, str))
+        not _valid_schema_version(snapshot.get("schema_version"))
         or not isinstance(snapshot.get("generated_at"), str)
-        or not isinstance(spec_shift.get("format_version"), (int, str))
+        or not _valid_schema_version(spec_shift.get("format_version"))
         or not isinstance(spec_shift.get("servers"), dict)
     ):
         return False
@@ -779,6 +779,10 @@ def _valid_trust_input_shapes(
     if not isinstance(seed_rows, list) or not all(_valid_seed_row(item) for item in seed_rows):
         return False
     return isinstance(masked, list) and all(isinstance(item, str) for item in masked)
+
+
+def _valid_schema_version(value: Any) -> bool:
+    return isinstance(value, str) or (isinstance(value, int) and not isinstance(value, bool))
 
 
 def _trust_timestamp(value: Any) -> datetime | None:
@@ -1076,7 +1080,7 @@ def _normalize_remote(url: str) -> str:
     netloc = host.lower()
     if parsed.port:
         netloc += f":{parsed.port}"
-    return urlunsplit((parsed.scheme.lower(), netloc, parsed.path.rstrip("/"), "", ""))
+    return urlunsplit((parsed.scheme.lower(), netloc, parsed.path, "", ""))
 
 
 def _is_stale(scanned_at: Any, evaluated_at: str) -> bool | None:
