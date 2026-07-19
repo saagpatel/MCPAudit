@@ -32,6 +32,8 @@ from mcp_audit.proof_models import (
     sha256_bytes,
 )
 
+_FileSnapshot = dict[str, tuple[str, str | None, bool | None]]
+
 _IGNORED_NAMES = {
     ".DS_Store",
     ".coverage",
@@ -477,6 +479,7 @@ def _stage_repository(source: Path, destination: Path) -> None:
                         target,
                         max_bytes=_MAX_INPUT_BYTES - total_bytes,
                     )
+                os.chmod(target, 0o755 if opened.st_mode & 0o111 else 0o644)
                 total_bytes += copied_bytes
                 _validate_staged_input(target, relative)
             finally:
@@ -514,7 +517,7 @@ def _copy_open_repository_file(
 def _subject_snapshot_evidence(
     source: Path,
     staged: Path,
-    staged_tree: dict[str, tuple[str, str | None]],
+    staged_tree: _FileSnapshot,
 ) -> SubjectSnapshotEvidence:
     from mcp_audit.proof_trust import discover_repo_mcp
 
@@ -553,7 +556,7 @@ def _subject_snapshot_evidence(
             capture_output=True,
             timeout=5,
         ).stdout
-        committed_tree: dict[str, tuple[str, str | None]] = {}
+        committed_tree: _FileSnapshot = {}
         for record in tree.split(b"\0"):
             if not record:
                 continue
@@ -563,16 +566,22 @@ def _subject_snapshot_evidence(
             relative = repository_path[len(prefix) :] if prefix else repository_path
             if repository_input_is_in_scope(Path(relative)):
                 kind = "file" if object_type == "blob" and mode in {"100644", "100755"} else "other"
-                committed_tree[relative] = (kind, object_id if kind == "file" else None)
+                executable = mode == "100755" if kind == "file" else None
+                committed_tree[relative] = (
+                    kind,
+                    object_id if kind == "file" else None,
+                    executable,
+                )
                 parent = Path(relative).parent
                 while parent != Path("."):
-                    committed_tree[parent.as_posix()] = ("directory", None)
+                    committed_tree[parent.as_posix()] = ("directory", None, None)
                     parent = parent.parent
         dirty = set(staged_tree) != set(committed_tree) or any(
-            staged_tree[path][0] != committed_tree[path][0] for path in set(staged_tree) & set(committed_tree)
+            staged_tree[path][0] != committed_tree[path][0] or staged_tree[path][2] != committed_tree[path][2]
+            for path in set(staged_tree) & set(committed_tree)
         )
         if not dirty:
-            for relative, (kind, expected_object_id) in committed_tree.items():
+            for relative, (kind, expected_object_id, _executable) in committed_tree.items():
                 if kind != "file":
                     continue
                 value = (staged / relative).read_bytes()
@@ -594,7 +603,11 @@ def _subject_snapshot_evidence(
 
 def _make_disposable_writable(root: Path) -> None:
     for path in root.rglob("*"):
-        os.chmod(path, 0o777 if path.is_dir() else 0o666)
+        if path.is_dir():
+            mode = 0o777
+        else:
+            mode = 0o777 if path.stat().st_mode & 0o111 else 0o666
+        os.chmod(path, mode)
     os.chmod(root, 0o777)
 
 
@@ -918,25 +931,25 @@ def _isolation_evidence(image: str, image_id: str, inspect: dict[str, Any]) -> I
     )
 
 
-def _file_snapshot(root: Path) -> dict[str, tuple[str, str | None]]:
-    snapshot: dict[str, tuple[str, str | None]] = {}
+def _file_snapshot(root: Path) -> _FileSnapshot:
+    snapshot: _FileSnapshot = {}
     for path in sorted(root.rglob("*")):
         relative = path.relative_to(root).as_posix()
         mode = path.lstat().st_mode
         if stat.S_ISLNK(mode):
-            snapshot[relative] = ("symlink", None)
+            snapshot[relative] = ("symlink", None, None)
         elif stat.S_ISDIR(mode):
-            snapshot[relative] = ("directory", None)
+            snapshot[relative] = ("directory", None, None)
         elif stat.S_ISREG(mode):
-            snapshot[relative] = ("file", _sha256_file(path))
+            snapshot[relative] = ("file", _sha256_file(path), bool(mode & 0o111))
         else:
-            snapshot[relative] = ("other", None)
+            snapshot[relative] = ("other", None, None)
     return snapshot
 
 
 def _diff_files(
-    before: dict[str, tuple[str, str | None]],
-    after: dict[str, tuple[str, str | None]],
+    before: _FileSnapshot,
+    after: _FileSnapshot,
 ) -> list[FileChange]:
     changes: list[FileChange] = []
     for path in sorted(set(before) | set(after)):

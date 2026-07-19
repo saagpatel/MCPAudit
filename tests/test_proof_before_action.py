@@ -1017,6 +1017,35 @@ def test_ignored_staged_subject_input_marks_the_commit_unbound(
     )
 
 
+def test_staged_subject_preserves_and_binds_executable_mode(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    script = repo / "run-fixture"
+    script.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    script.chmod(0o755)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.email", "proof@example.test"], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.name", "Proof Fixture"], check=True)
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "fixture"], check=True)
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    _stage_repository(repo, staged)
+    staged_tree = _file_snapshot(staged)
+    bound = _subject_snapshot_evidence(repo, staged, staged_tree)
+
+    assert (staged / "run-fixture").stat().st_mode & 0o111
+    assert staged_tree["run-fixture"][2] is True
+    assert bound.repository_dirty is False
+
+    (staged / "run-fixture").chmod(0o644)
+    mode_changed_tree = _file_snapshot(staged)
+    mode_changed = _subject_snapshot_evidence(repo, staged, mode_changed_tree)
+
+    assert mode_changed_tree["run-fixture"][2] is False
+    assert mode_changed.staged_tree_sha256 != bound.staged_tree_sha256
+    assert mode_changed.repository_dirty is True
+
+
 @requires_docker
 def test_loopback_network_attempt_is_detected_without_external_contact(tmp_path: Path) -> None:
     repo = _repo(tmp_path)

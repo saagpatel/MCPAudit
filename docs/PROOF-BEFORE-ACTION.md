@@ -107,9 +107,10 @@ The observer:
    copied but force `repository_dirty: true`, so the recorded subject commit is
    explicitly non-binding. Dependency discovery, a staged-tree hash, and the
    byte comparison with the recorded subject commit are captured from this same
-   immutable staged copy before execution. Files are opened relative to walked
-   directory descriptors with link following disabled, copied from that open
-   identity, and validated again from the private staged bytes. A directory
+   immutable staged copy before execution. Tracked executable mode is preserved
+   and included in that staged-tree/commit binding. Files are opened relative to
+   walked directory descriptors with link following disabled, copied from that
+   open identity, and validated again from the private staged bytes. A directory
    traversal or reopen failure blocks inspection instead of omitting a subtree;
    accepted directory listings are also reconciled with every directory actually
    traversed so a runtime-silent skip is detected;
