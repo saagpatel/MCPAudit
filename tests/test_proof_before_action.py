@@ -908,6 +908,58 @@ def test_wrong_shaped_trust_inputs_become_structured_unknown(
     assert "mcp-trust source has an unsupported data shape" in manifest.limitations
 
 
+@pytest.mark.parametrize(
+    ("relative", "field_path"),
+    [
+        ("src/mcp_trust/catalog/seed_servers.json", (0, "slug")),
+        ("src/mcp_trust/catalog/seed_servers.json", (0, "source")),
+        ("src/mcp_trust/catalog/seed_servers.json", (0, "source", "kind")),
+        ("src/mcp_trust/catalog/seed_servers.json", (0, "source", "reference")),
+        ("src/mcp_trust/catalog_snapshot.json", ("schema_version",)),
+        ("src/mcp_trust/catalog_snapshot.json", ("generated_at",)),
+        ("src/mcp_trust/catalog_snapshot.json", ("servers", 0, "slug")),
+        ("src/mcp_trust/catalog_snapshot.json", ("servers", 0, "grade")),
+        ("src/mcp_trust/catalog_snapshot.json", ("servers", 0, "transparency")),
+        ("src/mcp_trust/catalog_snapshot.json", ("servers", 0, "scanned_at")),
+        ("src/mcp_trust/catalog_snapshot.json", ("servers", 0, "engine")),
+        ("src/mcp_trust/catalog_snapshot.json", ("servers", 0, "engine_version")),
+        ("src/mcp_trust/catalog_snapshot.json", ("servers", 0, "scan_mode")),
+        ("src/mcp_trust/catalog_snapshot.json", ("servers", 0, "sandbox")),
+        ("src/mcp_trust/catalog_snapshot.json", ("servers", 0, "sandbox", "mode")),
+        ("src/mcp_trust/catalog_snapshot.json", ("servers", 0, "sandbox", "network")),
+        ("src/mcp_trust/core/spec_shift_verdicts.json", ("format_version",)),
+        ("src/mcp_trust/core/spec_shift_verdicts.json", ("servers",)),
+    ],
+)
+def test_malformed_nested_trust_fields_become_structured_unknown(
+    tmp_path: Path,
+    relative: str,
+    field_path: tuple[str | int, ...],
+) -> None:
+    repo = _repo(tmp_path)
+    (repo / ".mcp.json").write_text(
+        '{"mcpServers":{"known":{"command":"npx","args":["@fixture/known-mcp"]}}}',
+        encoding="utf-8",
+    )
+    trust = _trust_fixture(tmp_path)
+    path = trust / relative
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    cursor = payload
+    for field in field_path[:-1]:
+        cursor = cursor[field]
+    cursor[field_path[-1]] = ["malformed"]
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    _commit_trust_fixture(trust, "commit malformed nested trust input")
+
+    manifest = build_release_trust_manifest(repo, trust)
+
+    assert manifest.discovery_coverage == "unknown"
+    assert manifest.trust_source is None
+    assert manifest.entries[0].evidence.state == "unverifiable"
+    assert manifest.entries[0].evidence.grade is None
+    assert "mcp-trust source has an unsupported data shape" in manifest.limitations
+
+
 def test_installed_module_does_not_inherit_an_unrelated_ancestor_commit(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

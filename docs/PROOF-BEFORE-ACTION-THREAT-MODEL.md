@@ -59,6 +59,9 @@ platform.
   root instead of accepting an arbitrary ancestor repository.
 - Every required mcp-trust input is read back from the recorded trust commit and
   compared byte-for-byte before grade details can remain authoritative.
+- Seed identities and all grade-bearing snapshot fields receive strict nested
+  type validation; malformed committed rows cannot be coerced into current
+  evidence.
 - Git-ignored subject files that enter the observer staging inventory force the
   subject repository to dirty/unbound; ignored dependency caches and generated
   metadata excluded from staging do not alter subject provenance.

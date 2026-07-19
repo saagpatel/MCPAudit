@@ -136,6 +136,9 @@ untracked files do not count as clean authority. Missing, stale, masked,
 ambiguous, unmatched, dirty-source, commit-unbound, or version-unbound evidence
 remains explicit in the manifest. A grade is historical evidence about an
 observed MCP surface, not an endorsement or runtime-safety proof.
+Seed identity/slug fields and every grade-bearing snapshot field must also match
+their documented scalar/object shapes; malformed nested data makes the complete
+local trust source UNKNOWN instead of being coerced into evidence.
 
 Freshness is evaluated at the current UTC date, recorded separately from the
 snapshot generation timestamp. Runs are byte-stable within that date; evidence

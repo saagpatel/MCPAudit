@@ -10,7 +10,7 @@ import subprocess
 import tomllib
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from urllib.parse import urlsplit, urlunsplit
 
 from mcp_audit.proof_models import (
@@ -514,15 +514,57 @@ def _valid_trust_input_shapes(
 ) -> bool:
     if not isinstance(snapshot, dict) or not isinstance(spec_shift, dict):
         return False
+    if (
+        not isinstance(snapshot.get("schema_version"), (int, str))
+        or not isinstance(snapshot.get("generated_at"), str)
+        or not isinstance(spec_shift.get("format_version"), (int, str))
+        or not isinstance(spec_shift.get("servers"), dict)
+    ):
+        return False
     records = snapshot.get("servers")
-    if not isinstance(records, list) or not all(isinstance(item, dict) for item in records):
+    if not isinstance(records, list) or not all(_valid_snapshot_record(item) for item in records):
         return False
     seed_rows = seed if isinstance(seed, list) else seed.get("servers") if isinstance(seed, dict) else None
-    if not isinstance(seed_rows, list) or not all(isinstance(item, dict) for item in seed_rows):
-        return False
-    if not all(isinstance(item.get("source", {}), dict) for item in seed_rows):
+    if not isinstance(seed_rows, list) or not all(_valid_seed_row(item) for item in seed_rows):
         return False
     return isinstance(masked, list) and all(isinstance(item, str) for item in masked)
+
+
+def _valid_seed_row(value: Any) -> bool:
+    if not isinstance(value, dict) or not isinstance(value.get("slug"), str) or not value["slug"]:
+        return False
+    source = value.get("source")
+    return (
+        isinstance(source, dict)
+        and isinstance(source.get("kind"), str)
+        and bool(source["kind"])
+        and isinstance(source.get("reference"), str)
+        and bool(source["reference"])
+    )
+
+
+def _valid_snapshot_record(value: Any) -> bool:
+    required_strings = (
+        "slug",
+        "grade",
+        "transparency",
+        "scanned_at",
+        "engine",
+        "engine_version",
+        "scan_mode",
+    )
+    if not isinstance(value, dict) or not all(
+        isinstance(value.get(field), str) and bool(value[field]) for field in required_strings
+    ):
+        return False
+    sandbox = value.get("sandbox")
+    return (
+        isinstance(sandbox, dict)
+        and isinstance(sandbox.get("mode"), str)
+        and bool(sandbox["mode"])
+        and isinstance(sandbox.get("network"), str)
+        and bool(sandbox["network"])
+    )
 
 
 def _without_trust_source_authority(
@@ -565,7 +607,7 @@ def _match_dependency(
             match_state="unmatched",
             unknown_reasons=["no mcp-trust catalog identity matched"],
         )
-    slug = str(candidates[0].get("slug", ""))
+    slug = cast(str, candidates[0]["slug"])
     if slug in masked:
         return TrustEvidence(
             state="masked",
@@ -605,7 +647,7 @@ def _match_dependency(
     if version_alignment in {"dependency_unresolved", "evidence_unversioned"}:
         state = "unverifiable" if state == "current" else state
         unknowns.append("evidence is not bound to an exact dependency version")
-    sandbox = record.get("sandbox", {})
+    sandbox = cast(dict[str, Any], record["sandbox"])
     network: Literal["verified_none", "unknown", "not_applicable"] = (
         "verified_none"
         if record.get("scan_mode") == "mcpaudit-local-network-off"
@@ -621,12 +663,12 @@ def _match_dependency(
         state=state,  # type: ignore[arg-type]
         match_state="exact",
         slug=slug,
-        grade=str(record.get("grade")) if record.get("grade") is not None else None,
-        transparency=record.get("transparency"),
-        scanned_at=record.get("scanned_at"),
-        engine=record.get("engine"),
-        engine_version=record.get("engine_version"),
-        scan_mode=record.get("scan_mode"),
+        grade=cast(str, record["grade"]),
+        transparency=cast(str, record["transparency"]),
+        scanned_at=cast(str, record["scanned_at"]),
+        engine=cast(str, record["engine"]),
+        engine_version=cast(str, record["engine_version"]),
+        scan_mode=cast(str, record["scan_mode"]),
         network_isolation=network,
         version_alignment=version_alignment,
         unknown_reasons=unknowns,
