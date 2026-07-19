@@ -31,6 +31,7 @@ from mcp_audit.proof_models import (
 )
 
 _IGNORED_NAMES = {
+    ".DS_Store",
     ".git",
     ".venv",
     "node_modules",

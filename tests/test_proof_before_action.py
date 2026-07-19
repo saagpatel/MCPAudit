@@ -431,6 +431,7 @@ def test_capsule_index_rejects_path_expansion() -> None:
 @requires_docker
 def test_cli_inspect_and_verify_the_portable_capsule(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
+    (repo / ".DS_Store").write_bytes(b"\0ignored macOS metadata")
     declaration = tmp_path / "declaration.yaml"
     declaration.write_text(
         """
