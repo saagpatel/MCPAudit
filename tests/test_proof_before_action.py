@@ -915,8 +915,17 @@ def test_unproven_network_isolation_cannot_be_current_trust_evidence(tmp_path: P
     assert "mcp-trust record does not prove network isolation" in evidence.unknown_reasons
 
 
-def test_not_applicable_network_isolation_cannot_be_current_trust_evidence(
+@pytest.mark.parametrize(
+    ("scan_mode", "network"),
+    [
+        ("static-analysis", "not_applicable"),
+        ("mcpaudit-local-network-off", "none"),
+    ],
+)
+def test_not_applicable_or_contradictory_network_isolation_is_not_current(
     tmp_path: Path,
+    scan_mode: str,
+    network: str,
 ) -> None:
     repo = _repo(tmp_path)
     endpoint = "https://example.invalid/mcp"
@@ -931,8 +940,8 @@ def test_not_applicable_network_isolation_cannot_be_current_trust_evidence(
     seed_path.write_text(json.dumps(seed), encoding="utf-8")
     snapshot_path = trust / "src/mcp_trust/catalog_snapshot.json"
     snapshot = json.loads(snapshot_path.read_text())
-    snapshot["servers"][0]["scan_mode"] = "static-analysis"
-    snapshot["servers"][0]["sandbox"] = {"mode": "not_applicable", "network": "not_applicable"}
+    snapshot["servers"][0]["scan_mode"] = scan_mode
+    snapshot["servers"][0]["sandbox"] = {"mode": "not_applicable", "network": network}
     snapshot_path.write_text(json.dumps(snapshot), encoding="utf-8")
     _commit_trust_fixture(trust, "network isolation not applicable")
 

@@ -667,12 +667,12 @@ def _match_dependency(
         unknowns.append("evidence is not bound to an exact dependency version")
     sandbox = cast(dict[str, Any], record["sandbox"])
     network: Literal["verified_none", "unknown", "not_applicable"] = (
-        "verified_none"
+        "not_applicable"
+        if sandbox.get("mode") == "not_applicable"
+        else "verified_none"
         if record.get("scan_mode") == "mcpaudit-local-network-off"
-        and isinstance(sandbox, dict)
+        and sandbox.get("mode") == "docker"
         and sandbox.get("network") == "none"
-        else "not_applicable"
-        if isinstance(sandbox, dict) and sandbox.get("mode") == "not_applicable"
         else "unknown"
     )
     if network != "verified_none":

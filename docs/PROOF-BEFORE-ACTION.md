@@ -152,6 +152,8 @@ local trust source UNKNOWN instead of being coerced into evidence.
 Snapshot generation time must be a valid, non-future, timezone-aware timestamp
 that is not earlier than any contained scan. A record without proven network
 isolation cannot be `current`, even when its dependency match is otherwise exact.
+Network-off evidence requires a Docker sandbox with `network: none`; contradictory
+`not_applicable` mode/network combinations remain unproven.
 
 Freshness is evaluated at the deterministic end of the current UTC date,
 recorded separately from the snapshot generation timestamp. Runs are byte-stable
