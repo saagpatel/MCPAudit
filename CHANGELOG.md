@@ -44,7 +44,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   end-of-day bound. Contradictory `not_applicable` sandbox/network records cannot
   satisfy network-isolation proof. Docker staging is bound to the initially
   resolved immutable image ID, and complete surfaces with unknown state fields
-  remain non-passing.
+  remain non-passing. Contradictory complete-surface fields also remain
+  non-passing, and the custom PEP 517 requirement hooks delegate correctly to
+  uv-build instead of recursing.
 - `pin_baseline_corrupted` warning code — a pin baseline file that exists but
   cannot be parsed now emits its own `ScanWarning` (naming the file and the
   parse error) instead of folding into `pin_baseline_missing`. A corrupted

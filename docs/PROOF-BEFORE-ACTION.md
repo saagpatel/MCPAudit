@@ -131,6 +131,8 @@ tmpfs.
 Comparison also treats any schema-valid `complete: true` surface that retains an
 unknown attempted, decision, outcome, or persisted state as `unknown`. Legacy or
 alternate producers cannot use a completeness flag alone to manufacture `pass`.
+Contradictory combinations such as `attempted: false` with
+`decision: allowed`/`outcome: succeeded` are likewise non-passing.
 Command output is redirected there by PID 1 under an OS file-size limit before
 it is hashed and omitted.
 

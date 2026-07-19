@@ -56,25 +56,25 @@ def build_editable(
 def get_requires_for_build_sdist(
     config_settings: Mapping[Any, Any] | None = None,
 ) -> list[str]:
-    from uv_build import get_requires_for_build_sdist
+    from uv_build import get_requires_for_build_sdist as uv_get_requires_for_build_sdist
 
-    return list(get_requires_for_build_sdist(config_settings))
+    return list(uv_get_requires_for_build_sdist(config_settings))
 
 
 def get_requires_for_build_wheel(
     config_settings: Mapping[Any, Any] | None = None,
 ) -> list[str]:
-    from uv_build import get_requires_for_build_wheel
+    from uv_build import get_requires_for_build_wheel as uv_get_requires_for_build_wheel
 
-    return list(get_requires_for_build_wheel(config_settings))
+    return list(uv_get_requires_for_build_wheel(config_settings))
 
 
 def get_requires_for_build_editable(
     config_settings: Mapping[Any, Any] | None = None,
 ) -> list[str]:
-    from uv_build import get_requires_for_build_editable
+    from uv_build import get_requires_for_build_editable as uv_get_requires_for_build_editable
 
-    return list(get_requires_for_build_editable(config_settings))
+    return list(uv_get_requires_for_build_editable(config_settings))
 
 
 def prepare_metadata_for_build_wheel(

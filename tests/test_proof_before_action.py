@@ -8,14 +8,17 @@ import os
 import shutil
 import sqlite3
 import subprocess
+import sys
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 from click.testing import CliRunner
 
 import mcp_audit.proof_capsule as proof_capsule_module
+import mcp_audit_build_backend as build_backend
 from mcp_audit.proof_capsule import (
     build_capsule,
     compare_bill,
@@ -732,6 +735,67 @@ def test_declaration_omission_is_deterministic() -> None:
     unknown_comparison = compare_bill(_declaration(), clean_unknown)
     assert unknown_comparison.verdict == "unknown"
     assert "observation_state_unknown" in {item.code for item in unknown_comparison.findings}
+
+    contradictory = clean_unknown.model_copy(
+        update={
+            "filesystem": unchanged.model_copy(
+                update={
+                    "attempted": False,
+                    "decision": "allowed",
+                    "outcome": "succeeded",
+                }
+            ),
+            "database": unchanged.model_copy(
+                update={
+                    "attempted": False,
+                    "decision": "not_applicable",
+                    "outcome": "not_applicable",
+                }
+            ),
+            "network": NetworkEvidence(
+                surface=unchanged.model_copy(
+                    update={
+                        "attempted": False,
+                        "decision": "not_applicable",
+                        "outcome": "not_applicable",
+                    }
+                )
+            ),
+        }
+    )
+    contradictory_comparison = compare_bill(_declaration(), contradictory)
+    assert contradictory_comparison.verdict == "unknown"
+    assert "observation_state_contradictory" in {item.code for item in contradictory_comparison.findings}
+
+
+def test_build_requirement_hooks_delegate_to_uv_build(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    uv_build = ModuleType("uv_build")
+    calls: list[tuple[str, object]] = []
+    for hook in ("sdist", "wheel", "editable"):
+        name = f"get_requires_for_build_{hook}"
+
+        def requirement_hook(
+            config_settings: object,
+            *,
+            hook_name: str = name,
+        ) -> list[str]:
+            calls.append((hook_name, config_settings))
+            return [hook_name]
+
+        monkeypatch.setattr(uv_build, name, requirement_hook, raising=False)
+    monkeypatch.setitem(sys.modules, "uv_build", uv_build)
+    settings = {"proof": "before-action"}
+
+    assert build_backend.get_requires_for_build_sdist(settings) == ["get_requires_for_build_sdist"]
+    assert build_backend.get_requires_for_build_wheel(settings) == ["get_requires_for_build_wheel"]
+    assert build_backend.get_requires_for_build_editable(settings) == ["get_requires_for_build_editable"]
+    assert calls == [
+        ("get_requires_for_build_sdist", settings),
+        ("get_requires_for_build_wheel", settings),
+        ("get_requires_for_build_editable", settings),
+    ]
 
 
 def _trust_fixture(tmp_path: Path) -> Path:

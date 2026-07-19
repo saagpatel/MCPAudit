@@ -26,6 +26,7 @@ from mcp_audit.proof_models import (
     Observation,
     ProducerEvidence,
     ReleaseTrustManifest,
+    SurfaceObservation,
     canonical_json_bytes,
     sha256_bytes,
 )
@@ -173,6 +174,14 @@ def compare_bill(declaration: ActionDeclaration, observation: Observation) -> Bi
                 message="a completed observation surface retained an unknown state",
             )
         )
+    if any(surface.complete and _surface_state_is_contradictory(surface) for surface in surfaces):
+        findings.append(
+            ComparisonFinding(
+                code="observation_state_contradictory",
+                severity="unknown",
+                message="a completed observation surface contained contradictory state fields",
+            )
+        )
     verdict: Literal["pass", "block", "unknown"] = (
         "block"
         if any(item.severity == "error" for item in findings)
@@ -188,6 +197,24 @@ def compare_bill(declaration: ActionDeclaration, observation: Observation) -> Bi
         findings=findings,
         verdict=verdict,
     )
+
+
+def _surface_state_is_contradictory(surface: SurfaceObservation) -> bool:
+    if surface.attempted is False:
+        return (
+            surface.decision != "not_applicable"
+            or surface.outcome != "not_applicable"
+            or surface.persisted != "unchanged"
+        )
+    if surface.attempted is True and (
+        surface.decision == "not_applicable" or surface.outcome == "not_applicable"
+    ):
+        return True
+    if (surface.decision == "not_applicable") != (surface.outcome == "not_applicable"):
+        return True
+    if surface.decision == "blocked" and surface.outcome == "succeeded":
+        return True
+    return surface.persisted == "changed" and surface.attempted is not True
 
 
 def build_capsule(
