@@ -73,8 +73,8 @@ _SENSITIVE_KEY = re.compile(
     r"private[_-]?key|secret|token)(?:$|[_-])"
 )
 _TEXT_SECRET_ASSIGNMENT = re.compile(
-    r"(?im)^\s*[A-Za-z0-9._-]*(?:api[_-]?key|auth|authorization|cookie|credential|"
-    r"password|private[_-]?key|secret|token)[A-Za-z0-9._-]*\s*[:=]\s*"
+    r"(?im)^\s*([A-Za-z0-9._-]*(?:api[_-]?key|auth|authorization|cookie|credential|"
+    r"password|private[_-]?key|secret|token)[A-Za-z0-9._-]*)\s*[:=]\s*"
     r"[\"']?([^\"'#\r\n]+)"
 )
 _SAFE_DATABASE_NAME = re.compile(r"(?i)(?:fixture|sample|seed|synthetic|test)")
@@ -404,7 +404,10 @@ def _validate_staged_input(path: Path, relative: Path) -> None:
         if payload is not None and _json_contains_literal_secret(payload):
             raise ObservationBlocked(f"repository JSON contains a literal credential: {relative.as_posix()}")
     for match in _TEXT_SECRET_ASSIGNMENT.finditer(text):
-        if not _is_placeholder(match.group(1)):
+        key, match_value = match.groups()
+        if key.lower() == "id-token" and match_value.strip().lower() in {"none", "read", "write"}:
+            continue
+        if not _is_placeholder(match_value):
             raise ObservationBlocked(
                 f"repository text contains a literal credential assignment: {relative.as_posix()}"
             )

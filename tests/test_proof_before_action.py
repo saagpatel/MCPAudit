@@ -368,6 +368,7 @@ def test_sensitive_repository_input_is_blocked_before_execution(tmp_path: Path) 
     [
         '{"mcpServers":{"unsafe":{"command":"node","env":{"OPENAI_API_KEY":"sk-proj-literal"}}}}',
         '{"mcpServers":{"unsafe":{"url":"https://example.test","headers":{"X-API-Key":"literal"}}}}',
+        "id-token: literal-value",
         "OPENAI_API_KEY: literal-value",
     ],
 )
@@ -435,6 +436,11 @@ def test_cli_inspect_and_verify_the_portable_capsule(tmp_path: Path) -> None:
     (repo / ".coverage").write_bytes(b"\0ignored coverage data")
     (repo / ".mypy_cache").mkdir()
     (repo / ".mypy_cache/cache").write_bytes(b"\0ignored type-checker data")
+    (repo / ".github/workflows").mkdir(parents=True)
+    (repo / ".github/workflows/publish.yml").write_text(
+        "permissions:\n  id-token: write\n",
+        encoding="utf-8",
+    )
     declaration = tmp_path / "declaration.yaml"
     declaration.write_text(
         """
