@@ -152,3 +152,15 @@ def test_oidc_authority_is_confined_to_post_build_publish_job() -> None:
     assert "id-token: write" in publish_job
     assert "sha256sum -c SHA256SUMS" in publish_job
     assert publish_job.index("sha256sum -c SHA256SUMS") < publish_job.index("pypa/gh-action-pypi-publish@")
+
+
+def test_candidate_checklist_verifies_exact_built_artifacts_before_install() -> None:
+    checklist = Path("docs/RELEASE-CHECKLIST.md").read_text(encoding="utf-8")
+
+    build = checklist.index("uv build --clear")
+    verify_artifacts = checklist.index("--dist-dir dist")
+    install_wheel = checklist.index("uv pip install")
+
+    assert 'candidate_commit="$(git rev-parse HEAD)"' in checklist
+    assert '--commit "$candidate_commit"' in checklist
+    assert build < verify_artifacts < install_wheel

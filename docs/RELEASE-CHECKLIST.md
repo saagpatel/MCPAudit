@@ -14,7 +14,11 @@ uv run ruff format --check
 git diff --check
 uv lock --check
 uv run python scripts/verify_release.py
+candidate_commit="$(git rev-parse HEAD)"
 uv build --clear
+uv run python scripts/verify_release.py \
+  --commit "$candidate_commit" \
+  --dist-dir dist
 ```
 
 Remove generated `dist/` artifacts after the build check unless the release is
