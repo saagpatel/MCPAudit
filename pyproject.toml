@@ -53,6 +53,7 @@ Issues = "https://github.com/saagpatel/MCPAudit/issues"
 
 [project.scripts]
 mcp-audit = "mcp_audit.cli:main"
+proof-before-action = "mcp_audit.proof_cli:main"
 # Registry alias: a console script named == the PyPI package (mcp-audits), so the
 # MCP server launches via `uvx mcp-audits serve` (the MCP Registry runs a pypi/stdio
 # server as `uvx <package>`, and uvx resolves <package> to a same-named executable).

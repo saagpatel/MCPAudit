@@ -14,6 +14,12 @@ Every MCP server wired into your editor is a process that can read your files, r
 
 Read-only by default: it never edits a config and reports env-var **key names only** (never values). Use `--skip-connect` for a zero-touch config-only pass that does not spawn MCP servers or contact remote endpoints; connected scans, package verification, downloads, and LLM analysis make their extra reach explicit in the command.
 
+For pre-run behavioral evidence, MCPAudit also includes
+[Proof Before Action](docs/PROOF-BEFORE-ACTION.md): a local-only CLI that runs a
+synthetic command in a disposable no-network container, compares observed
+effects with a declaration, joins repository MCP dependencies to local
+mcp-trust evidence, and exports verifiable JSON plus offline HTML.
+
 > **🌐 Try it in your browser, no install:** paste any MCP client config at **[mcp-audit.saagarpatel.dev](https://mcp-audit.saagarpatel.dev)** for an instant config-only trust report. It runs this exact engine, never launches configured servers, never contacts configured endpoints, and stores nothing. The CLI below adds the connected deep checks (prompt-injection, SSRF, the lethal trifecta, schema drift, SARIF).
 
 ## ⚡ 60-second start
