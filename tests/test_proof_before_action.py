@@ -27,6 +27,8 @@ from mcp_audit.proof_models import (
 )
 from mcp_audit.proof_observer import (
     ObservationBlocked,
+    _cleanup_docker_resource,
+    _cleanup_local_root,
     _command_argv_evidence,
     _redact_argv,
     observe_command,
@@ -121,6 +123,27 @@ limitations: []
     }
     assert result.exception is not None
     assert "Traceback" not in result.output
+
+
+def test_cleanup_readback_fails_closed_for_nonzero_docker_and_remaining_local_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    failed = subprocess.CompletedProcess[bytes](
+        args=["docker", "rm", "-f", "fixture"],
+        returncode=1,
+        stdout=b"",
+        stderr=b"daemon unavailable",
+    )
+    monkeypatch.setattr("mcp_audit.proof_observer._run", lambda argv, timeout: failed)
+    assert (
+        _cleanup_docker_resource(["docker", "rm", "-f", "fixture"], timeout=20)
+        == "Docker cleanup command failed with exit code 1"
+    )
+
+    local_root = tmp_path / "proof-before-action-fixture"
+    local_root.mkdir()
+    monkeypatch.setattr(shutil, "rmtree", lambda *args, **kwargs: None)
+    assert _cleanup_local_root(local_root) == "local temporary evidence root still exists after cleanup"
 
 
 @requires_docker

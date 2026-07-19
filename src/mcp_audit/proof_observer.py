@@ -312,21 +312,16 @@ def observe_command(
     finally:
         cleanup_errors: list[str] = []
         if container_id:
-            try:
-                _run(["docker", "rm", "-f", container_id], timeout=20)
-            except (OSError, ObservationBlocked) as exc:
-                cleanup_errors.append(str(exc))
+            if error := _cleanup_docker_resource(["docker", "rm", "-f", container_id], timeout=20):
+                cleanup_errors.append(error)
         if staging_container_id:
-            try:
-                _run(["docker", "rm", "-f", staging_container_id], timeout=20)
-            except (OSError, ObservationBlocked) as exc:
-                cleanup_errors.append(str(exc))
+            if error := _cleanup_docker_resource(["docker", "rm", "-f", staging_container_id], timeout=20):
+                cleanup_errors.append(error)
         if runtime_image:
-            try:
-                _run(["docker", "image", "rm", "-f", runtime_image], timeout=30)
-            except (OSError, ObservationBlocked) as exc:
-                cleanup_errors.append(str(exc))
-        shutil.rmtree(root, ignore_errors=True)
+            if error := _cleanup_docker_resource(["docker", "image", "rm", "-f", runtime_image], timeout=30):
+                cleanup_errors.append(error)
+        if error := _cleanup_local_root(root):
+            cleanup_errors.append(error)
         if cleanup_errors and sys.exc_info()[0] is None:
             raise ObservationBlocked("disposable Docker cleanup could not be confirmed: " + cleanup_errors[0])
 
@@ -883,6 +878,23 @@ def _run(argv: list[str], *, timeout: int) -> subprocess.CompletedProcess[bytes]
         )
     except subprocess.TimeoutExpired as exc:
         raise ObservationBlocked(f"Docker command timed out after {timeout} seconds") from exc
+
+
+def _cleanup_docker_resource(argv: list[str], *, timeout: int) -> str | None:
+    try:
+        result = _run(argv, timeout=timeout)
+    except (OSError, ObservationBlocked) as exc:
+        return str(exc)
+    if result.returncode != 0:
+        return f"Docker cleanup command failed with exit code {result.returncode}"
+    return None
+
+
+def _cleanup_local_root(root: Path) -> str | None:
+    shutil.rmtree(root, ignore_errors=True)
+    if root.exists():
+        return "local temporary evidence root still exists after cleanup"
+    return None
 
 
 def _safe_error(value: bytes) -> str:
