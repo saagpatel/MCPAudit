@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Raised the minimum `mcp` Python SDK version to 1.28.1, closing the vulnerable
+  WebSocket origin-validation, HTTP session-principal binding, and experimental
+  task-isolation ranges reported by GHSA-vj7q-gjh5-988w,
+  GHSA-jpw9-pfvf-9f58, and GHSA-hvrp-rf83-w775.
+- Pinned every external GitHub Action used by MCPAudit's CI, CodeQL,
+  self-audit, Scorecard, composite-action, and PyPI publishing paths to an
+  immutable commit while retaining the reviewed release version in comments.
+
 ### Added
 
 - `proof-before-action` — a local-first CLI that compares a declared action

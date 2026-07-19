@@ -309,7 +309,7 @@ For an end-to-end generator-to-auditor demo packet, see
 | Language | Python 3.11+ |
 | CLI | Click 8 |
 | Output | Rich |
-| MCP protocol | `mcp` SDK 1.27+ |
+| MCP protocol | `mcp` SDK 1.28.1+ |
 | Validation | Pydantic v2 |
 | Config parsing | PyYAML + json5 |
 | Watch mode | `watchfiles` (optional extra) |
