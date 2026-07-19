@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `proof-before-action` — a local-first CLI that compares a declared action
+  boundary with disposable runtime observations, emits versioned JSON schemas
+  and an offline evidence capsule, and verifies capsule integrity against
+  explicit producer commits and independently supplied root hashes. Unknown,
+  stale, masked, unmatched, or unobservable evidence remains non-authoritative.
 - `pin_baseline_corrupted` warning code — a pin baseline file that exists but
   cannot be parsed now emits its own `ScanWarning` (naming the file and the
   parse error) instead of folding into `pin_baseline_missing`. A corrupted

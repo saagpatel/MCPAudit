@@ -145,6 +145,15 @@ def _runtime_payload() -> dict[str, object]:
     }
 
 
+def _sandbox_python() -> str:
+    for root in (Path("/opt/homebrew/bin"), Path("/usr/local/bin"), Path("/usr/bin")):
+        for name in ("python3.12", "python3.13", "python3.11", "python3"):
+            candidate = root / name
+            if candidate.is_file():
+                return str(candidate.resolve())
+    raise AssertionError("a system Python outside /Users is required for Seatbelt acceptance")
+
+
 def test_runtime_capabilities_match_exact_receipt() -> None:
     _verify_runtime_capabilities(_receipt(), _runtime_payload())
 
@@ -261,7 +270,7 @@ def test_supervisor_kills_hanging_shutdown_resistant_process_group(
         (tmp_path / name).mkdir()
     monkeypatch.setitem(_LIMITS, "wall_seconds", 1)
     command = [
-        "/usr/local/bin/python3.12",
+        _sandbox_python(),
         "-c",
         "import signal,time; signal.signal(signal.SIGTERM, lambda *_: None); time.sleep(30)",
     ]
@@ -276,7 +285,7 @@ def test_supervisor_enforces_process_count(tmp_path: Path, monkeypatch: pytest.M
         (tmp_path / name).mkdir()
     monkeypatch.setitem(_LIMITS, "processes", 2)
     command = [
-        "/usr/local/bin/python3.12",
+        _sandbox_python(),
         "-c",
         "import os,time; [os.fork() for _ in range(4)]; time.sleep(30)",
     ]
@@ -291,7 +300,7 @@ def test_supervisor_enforces_memory_and_disk(tmp_path: Path, monkeypatch: pytest
         (tmp_path / name).mkdir()
     monkeypatch.setitem(_LIMITS, "memory_bytes", 10_000_000)
     memory = _run_sandboxed(
-        ["/usr/local/bin/python3.12", "-c", "import time; time.sleep(30)"],
+        [_sandbox_python(), "-c", "import time; time.sleep(30)"],
         tmp_path,
         tmp_path / "artifact",
         deny_network=True,
@@ -302,7 +311,7 @@ def test_supervisor_enforces_memory_and_disk(tmp_path: Path, monkeypatch: pytest
     monkeypatch.setitem(_LIMITS, "disk_bytes", 1_000_000)
     disk = _run_sandboxed(
         [
-            "/usr/local/bin/python3.12",
+            _sandbox_python(),
             "-c",
             "from pathlib import Path; import time; "
             'Path("large").write_bytes(b"x"*5_000_000); time.sleep(30)',
@@ -332,7 +341,7 @@ for action in (
         blocked += 1
 raise SystemExit(0 if blocked == 3 else 1)"""
     result = _run_sandboxed(
-        ["/usr/local/bin/python3.12", "-c", code],
+        [_sandbox_python(), "-c", code],
         tmp_path,
         tmp_path / "artifact",
         deny_network=True,
@@ -349,7 +358,7 @@ def test_kernel_enforces_cpu_limit_and_crash_is_contained(
         (tmp_path / name).mkdir()
     monkeypatch.setitem(_LIMITS, "cpu_seconds", 1)
     cpu = _run_sandboxed(
-        ["/usr/local/bin/python3.12", "-c", "while True: pass"],
+        [_sandbox_python(), "-c", "while True: pass"],
         tmp_path,
         tmp_path / "artifact",
         deny_network=True,
@@ -357,7 +366,7 @@ def test_kernel_enforces_cpu_limit_and_crash_is_contained(
     assert cpu.returncode != 0
 
     crash = _run_sandboxed(
-        ["/usr/local/bin/python3.12", "-c", "import os; os.abort()"],
+        [_sandbox_python(), "-c", "import os; os.abort()"],
         tmp_path,
         tmp_path / "artifact",
         deny_network=True,
@@ -370,7 +379,7 @@ def test_generated_code_profile_kernel_denies_child_processes(tmp_path: Path) ->
     for name in ("home", "cache", "tmp", "evidence", "artifact"):
         (tmp_path / name).mkdir()
     result = _run_sandboxed(
-        ["/usr/local/bin/python3.12", "-c", _FORK_PROBE_CODE],
+        [_sandbox_python(), "-c", _FORK_PROBE_CODE],
         tmp_path,
         tmp_path / "artifact",
         deny_network=True,

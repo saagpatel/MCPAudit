@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 import click
-import yaml  # type: ignore[import-untyped]
+import yaml
 from pydantic import BaseModel, ValidationError
 
 from mcp_audit.proof_capsule import (

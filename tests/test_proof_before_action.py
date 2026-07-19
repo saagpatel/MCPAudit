@@ -21,6 +21,7 @@ from mcp_audit.proof_cli import main
 from mcp_audit.proof_models import (
     CAPSULE_SCHEMA,
     ActionDeclaration,
+    ReleaseTrustManifest,
     canonical_json_bytes,
 )
 from mcp_audit.proof_observer import ObservationBlocked, _redact_argv, observe_command
@@ -61,7 +62,7 @@ def _repo(tmp_path: Path) -> Path:
     return root
 
 
-def _empty_trust(repo: Path):
+def _empty_trust(repo: Path) -> ReleaseTrustManifest:
     return build_release_trust_manifest(repo, None)
 
 
