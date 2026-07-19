@@ -286,6 +286,19 @@ def discover_repo_mcp(
                     packages = []
                 else:
                     packages = packages_value
+                descriptor_name_value = payload.get("name")
+                if "name" in payload and (
+                    not isinstance(descriptor_name_value, str) or not descriptor_name_value
+                ):
+                    diagnostics.append(
+                        DiscoveryDiagnostic(
+                            source_path="server.json",
+                            source_pointer="/name",
+                            code="invalid_manifest",
+                            message="descriptor name must be a non-empty string",
+                        )
+                    )
+                    packages = []
             for index, package in enumerate(packages):
                 if not isinstance(package, dict):
                     diagnostics.append(
@@ -297,34 +310,109 @@ def discover_repo_mcp(
                         )
                     )
                     continue
-                registry = str(package.get("registryType", "unknown"))
+                pointer = f"/packages/{index}"
+                invalid = False
+                registry_value = package.get("registryType")
+                if not isinstance(registry_value, str) or not registry_value:
+                    diagnostics.append(
+                        DiscoveryDiagnostic(
+                            source_path="server.json",
+                            source_pointer=f"{pointer}/registryType",
+                            code="invalid_entry",
+                            message="package registryType must be a non-empty string",
+                        )
+                    )
+                    invalid = True
+                    registry = "unknown"
+                else:
+                    registry = registry_value
                 kind = "npm" if registry == "npm" else "pypi" if registry == "pypi" else "unknown"
-                name = str(package.get("identifier", ""))
-                version = str(package.get("version", "")) or None
+                identifier_value = package.get("identifier")
+                if not isinstance(identifier_value, str) or not identifier_value:
+                    diagnostics.append(
+                        DiscoveryDiagnostic(
+                            source_path="server.json",
+                            source_pointer=f"{pointer}/identifier",
+                            code="invalid_entry",
+                            message="package identifier must be a non-empty string",
+                        )
+                    )
+                    invalid = True
+                    name = ""
+                else:
+                    name = identifier_value
+                version_value = package.get("version")
+                if "version" in package and (not isinstance(version_value, str) or not version_value):
+                    diagnostics.append(
+                        DiscoveryDiagnostic(
+                            source_path="server.json",
+                            source_pointer=f"{pointer}/version",
+                            code="invalid_entry",
+                            message="package version must be a non-empty string",
+                        )
+                    )
+                    invalid = True
+                    version = None
+                else:
+                    version = version_value
+                runtime_hint_value = package.get("runtimeHint")
+                if "runtimeHint" in package and (
+                    not isinstance(runtime_hint_value, str) or not runtime_hint_value
+                ):
+                    diagnostics.append(
+                        DiscoveryDiagnostic(
+                            source_path="server.json",
+                            source_pointer=f"{pointer}/runtimeHint",
+                            code="invalid_entry",
+                            message="package runtimeHint must be a non-empty string",
+                        )
+                    )
+                    invalid = True
+                    runtime_hint = None
+                else:
+                    runtime_hint = runtime_hint_value
                 transport_payload = package.get("transport", {})
                 if isinstance(transport_payload, dict):
-                    transport = str(transport_payload.get("type", "unknown"))
+                    transport_value = transport_payload.get("type")
+                    if "type" in transport_payload and (
+                        not isinstance(transport_value, str) or not transport_value
+                    ):
+                        diagnostics.append(
+                            DiscoveryDiagnostic(
+                                source_path="server.json",
+                                source_pointer=f"{pointer}/transport/type",
+                                code="invalid_entry",
+                                message="package transport type must be a non-empty string",
+                            )
+                        )
+                        invalid = True
+                        transport = "unknown"
+                    else:
+                        transport = transport_value or "unknown"
                 else:
                     diagnostics.append(
                         DiscoveryDiagnostic(
                             source_path="server.json",
-                            source_pointer=f"/packages/{index}/transport",
+                            source_pointer=f"{pointer}/transport",
                             code="invalid_entry",
                             message="package transport must be an object",
                         )
                     )
+                    invalid = True
                     transport = "unknown"
+                if invalid:
+                    continue
                 dependencies.append(
                     _occurrence(
                         source_path="server.json",
-                        source_pointer=f"/packages/{index}",
-                        config_name=str(payload.get("name", name)),
+                        source_pointer=pointer,
+                        config_name=payload.get("name", name),
                         transport=transport,
                         identity_kind=kind,
                         identity_name=_normalize_package(name, kind),
                         requested_version=version,
                         exact=bool(version and _EXACT_VERSION.fullmatch(version)),
-                        command_basename=str(package.get("runtimeHint", "")) or None,
+                        command_basename=runtime_hint,
                         args=[],
                     )
                 )

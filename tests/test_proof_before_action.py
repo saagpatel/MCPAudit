@@ -550,7 +550,7 @@ def test_server_descriptor_scalar_transport_is_a_partial_diagnostic(
     )
     manifest = build_release_trust_manifest(repo, None)
     assert manifest.discovery_coverage == "partial"
-    assert manifest.dependencies[0].transport == "unknown"
+    assert manifest.dependencies == []
     assert [(item.source_pointer, item.code, item.message) for item in manifest.diagnostics] == [
         (
             "/packages/0/transport",
@@ -671,6 +671,52 @@ def test_current_trust_evidence_requires_complete_authority(
         )
 
 
+def test_current_trust_evidence_requires_a_complete_scan_record() -> None:
+    with pytest.raises(ValueError, match="complete scan record"):
+        TrustEvidence.model_validate(
+            {
+                "state": "current",
+                "match_state": "exact",
+                "network_isolation": "verified_none",
+                "version_alignment": "exact",
+            }
+        )
+
+
+def test_current_trust_evidence_rejects_unknown_reasons() -> None:
+    with pytest.raises(ValueError, match="must not retain unknown reasons"):
+        TrustEvidence.model_validate(
+            {
+                "state": "current",
+                "match_state": "exact",
+                "slug": "fixture",
+                "grade": "A",
+                "transparency": "high",
+                "scanned_at": "2026-07-19T00:00:00+00:00",
+                "engine": "mcpaudit",
+                "engine_version": "2.4.0",
+                "scan_mode": "mcpaudit-local-network-off",
+                "network_isolation": "verified_none",
+                "version_alignment": "exact",
+                "unknown_reasons": ["contradiction"],
+            }
+        )
+
+
+@pytest.mark.parametrize("field", ["engine_version", "scan_mode"])
+def test_masked_trust_evidence_withholds_every_scan_detail(field: str) -> None:
+    with pytest.raises(ValueError, match="masked trust evidence"):
+        TrustEvidence.model_validate(
+            {
+                "state": "masked",
+                "match_state": "exact",
+                "slug": "fixture",
+                field: "private",
+                "unknown_reasons": ["operator-masked evidence is intentionally withheld"],
+            }
+        )
+
+
 def test_non_string_package_dependency_version_is_partial(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     (repo / "package.json").write_text(
@@ -705,6 +751,72 @@ def test_malformed_server_descriptor_root_shapes_are_partial(
     assert manifest.discovery_coverage == "partial"
     assert manifest.dependencies == []
     assert manifest.diagnostics[0].source_pointer == pointer
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "pointer"),
+    [
+        ("registryType", {}, "/packages/0/registryType"),
+        ("identifier", {}, "/packages/0/identifier"),
+        ("version", {}, "/packages/0/version"),
+        ("runtimeHint", {}, "/packages/0/runtimeHint"),
+        ("transport", {"type": {}}, "/packages/0/transport/type"),
+    ],
+)
+def test_malformed_server_descriptor_scalar_fields_are_partial(
+    tmp_path: Path,
+    field: str,
+    value: object,
+    pointer: str,
+) -> None:
+    repo = _repo(tmp_path)
+    package: dict[str, object] = {
+        "registryType": "npm",
+        "identifier": "@fixture/mcp",
+        "version": "1.0.0",
+        "runtimeHint": "npx",
+        "transport": {"type": "stdio"},
+    }
+    package[field] = value
+    (repo / "server.json").write_text(
+        json.dumps({"name": "fixture", "packages": [package]}),
+        encoding="utf-8",
+    )
+
+    manifest = build_release_trust_manifest(repo, None)
+
+    assert manifest.discovery_coverage == "partial"
+    assert manifest.dependencies == []
+    assert manifest.diagnostics[0].source_pointer == pointer
+
+
+def test_trust_manifest_binds_the_full_dependency_occurrence(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    (repo / ".mcp.json").write_text(
+        '{"mcpServers":{"fixture":{"command":"npx","args":["@fixture/mcp@1.0.0"]}}}',
+        encoding="utf-8",
+    )
+    manifest = build_release_trust_manifest(repo, None)
+    forged = manifest.model_dump(mode="json")
+    forged["entries"][0]["dependency"]["identity_name"] = "@fixture/other"
+
+    with pytest.raises(ValueError, match="full dependency occurrence"):
+        ReleaseTrustManifest.model_validate(forged)
+
+
+def test_trust_manifest_dependency_ids_are_unique(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    (repo / ".mcp.json").write_text(
+        '{"mcpServers":{"fixture":{"command":"npx","args":["@fixture/mcp@1.0.0"]}}}',
+        encoding="utf-8",
+    )
+    manifest = build_release_trust_manifest(repo, None)
+    duplicated = manifest.model_dump(mode="json")
+    duplicated["dependencies"].append(dict(duplicated["dependencies"][0]))
+    duplicated["entries"].append(dict(duplicated["entries"][0]))
+
+    with pytest.raises(ValueError, match="IDs must be unique"):
+        ReleaseTrustManifest.model_validate(duplicated)
 
 
 def test_ignored_staged_subject_input_marks_the_commit_unbound(

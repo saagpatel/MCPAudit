@@ -49,7 +49,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   uv-build instead of recursing. Contradictory trust state/match/authority
   combinations are rejected, while malformed package, Python, and registry
   dependency-manifest shapes produce partial discovery diagnostics rather than
-  tracebacks or falsely complete coverage.
+  tracebacks or falsely complete coverage. Registry scalar fields no longer
+  coerce malformed values, trust entries bind the complete unique dependency
+  occurrence, `current` evidence requires a complete authoritative scan record,
+  and masked evidence withholds every scan detail.
 - `pin_baseline_corrupted` warning code — a pin baseline file that exists but
   cannot be parsed now emits its own `ScanWarning` (naming the file and the
   parse error) instead of folding into `pin_baseline_missing`. A corrupted

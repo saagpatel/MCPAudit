@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import datetime
 from enum import StrEnum
 from typing import Any, Final, Literal
 
@@ -239,9 +240,15 @@ class TrustEvidence(StrictModel):
 
     @model_validator(mode="after")
     def enforce_cross_field_consistency(self) -> TrustEvidence:
-        if self.state == "masked" and any(
-            value is not None for value in (self.grade, self.transparency, self.scanned_at, self.engine)
-        ):
+        scan_details = (
+            self.grade,
+            self.transparency,
+            self.scanned_at,
+            self.engine,
+            self.engine_version,
+            self.scan_mode,
+        )
+        if self.state == "masked" and any(value is not None for value in scan_details):
             raise ValueError("masked trust evidence must not expose withheld scan details")
         if self.state in {"current", "stale"} and self.match_state != "exact":
             raise ValueError("current or stale trust evidence requires an exact match")
@@ -255,6 +262,28 @@ class TrustEvidence(StrictModel):
             raise ValueError("unmatched trust evidence requires an unmatched match state")
         if self.state == "ambiguous" and self.match_state != "ambiguous":
             raise ValueError("ambiguous trust evidence requires an ambiguous match state")
+        if self.match_state != "exact" and any(value is not None for value in scan_details):
+            raise ValueError("non-exact trust evidence must not expose scan details")
+        if self.state in {"current", "stale"}:
+            if not self.slug or not all(isinstance(value, str) and bool(value) for value in scan_details):
+                raise ValueError("current or stale trust evidence requires a complete scan record")
+            if self.scanned_at is None:
+                raise ValueError("current or stale trust evidence requires a scan timestamp")
+            try:
+                scanned_at = datetime.fromisoformat(self.scanned_at.replace("Z", "+00:00"))
+            except ValueError as exc:
+                raise ValueError("trust evidence scan timestamp must be valid") from exc
+            if scanned_at.tzinfo is None:
+                raise ValueError("trust evidence scan timestamp must be timezone-aware")
+        if self.state == "current" and self.unknown_reasons:
+            raise ValueError("current trust evidence must not retain unknown reasons")
+        if self.state in {"masked", "unmatched", "unverifiable", "ambiguous"} and not (self.unknown_reasons):
+            raise ValueError("non-authoritative trust evidence requires an unknown reason")
+        if self.state == "unverifiable" and any(value is not None for value in scan_details):
+            if not self.slug or not all(isinstance(value, str) and bool(value) for value in scan_details):
+                raise ValueError(
+                    "unverifiable trust evidence must expose either a complete scan record or none"
+                )
         return self
 
 
@@ -290,10 +319,19 @@ class ReleaseTrustManifest(StrictModel):
 
     @model_validator(mode="after")
     def every_dependency_has_one_entry(self) -> ReleaseTrustManifest:
-        dependency_ids = [item.dependency_id for item in self.dependencies]
-        entry_ids = [item.dependency.dependency_id for item in self.entries]
-        if sorted(dependency_ids) != sorted(entry_ids):
+        dependencies_by_id = {item.dependency_id: item for item in self.dependencies}
+        entries_by_id = {item.dependency.dependency_id: item for item in self.entries}
+        if len(dependencies_by_id) != len(self.dependencies):
+            raise ValueError("dependency occurrence IDs must be unique")
+        if len(entries_by_id) != len(self.entries):
+            raise ValueError("trust entry dependency IDs must be unique")
+        if dependencies_by_id.keys() != entries_by_id.keys():
             raise ValueError("every dependency occurrence must have exactly one trust entry")
+        if any(
+            entry.dependency != dependencies_by_id[dependency_id]
+            for dependency_id, entry in entries_by_id.items()
+        ):
+            raise ValueError("every trust entry must bind the full dependency occurrence")
         return self
 
 
