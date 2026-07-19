@@ -72,6 +72,57 @@ def _empty_trust(repo: Path) -> ReleaseTrustManifest:
     return build_release_trust_manifest(repo, None)
 
 
+def test_cli_docker_timeout_is_a_structured_inspection_block(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path)
+    declaration = tmp_path / "declaration.yaml"
+    declaration.write_text(
+        """
+schema_version: proof-before-action.declaration.v1
+name: timeout fixture
+tools: [node]
+permissions: []
+destinations: {files: [], databases: [], network: []}
+side_effects: {filesystem: none, database: none, network: none}
+limitations: []
+""".strip(),
+        encoding="utf-8",
+    )
+
+    def time_out(*args: object, **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        raise subprocess.TimeoutExpired(cmd=["docker"], timeout=20)
+
+    monkeypatch.setattr(subprocess, "run", time_out)
+    result = CliRunner().invoke(
+        main,
+        [
+            "inspect",
+            "--repo",
+            str(repo),
+            "--declaration",
+            str(declaration),
+            "--output",
+            str(tmp_path / "capsule"),
+            "--",
+            "node",
+            "-e",
+            "process.exit(0)",
+        ],
+    )
+    assert result.exit_code == 2
+    payload = json.loads(result.output)
+    assert payload == {
+        "ok": False,
+        "error": {
+            "code": "inspection_blocked",
+            "message": "Docker command timed out after 20 seconds",
+        },
+    }
+    assert result.exception is not None
+    assert "Traceback" not in result.output
+
+
 @requires_docker
 def test_read_only_command_passes_and_is_deterministic(tmp_path: Path) -> None:
     repo = _repo(tmp_path)

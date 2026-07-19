@@ -12,6 +12,7 @@ import shutil
 import sqlite3
 import stat
 import subprocess
+import sys
 import tarfile
 import tempfile
 import time
@@ -309,13 +310,25 @@ def observe_command(
             ],
         )
     finally:
+        cleanup_errors: list[str] = []
         if container_id:
-            _run(["docker", "rm", "-f", container_id], timeout=20)
+            try:
+                _run(["docker", "rm", "-f", container_id], timeout=20)
+            except (OSError, ObservationBlocked) as exc:
+                cleanup_errors.append(str(exc))
         if staging_container_id:
-            _run(["docker", "rm", "-f", staging_container_id], timeout=20)
+            try:
+                _run(["docker", "rm", "-f", staging_container_id], timeout=20)
+            except (OSError, ObservationBlocked) as exc:
+                cleanup_errors.append(str(exc))
         if runtime_image:
-            _run(["docker", "image", "rm", "-f", runtime_image], timeout=30)
+            try:
+                _run(["docker", "image", "rm", "-f", runtime_image], timeout=30)
+            except (OSError, ObservationBlocked) as exc:
+                cleanup_errors.append(str(exc))
         shutil.rmtree(root, ignore_errors=True)
+        if cleanup_errors and sys.exc_info()[0] is None:
+            raise ObservationBlocked("disposable Docker cleanup could not be confirmed: " + cleanup_errors[0])
 
 
 def _stage_repository(source: Path, destination: Path) -> None:
@@ -860,13 +873,16 @@ def _sha256_file(path: Path) -> str:
 
 
 def _run(argv: list[str], *, timeout: int) -> subprocess.CompletedProcess[bytes]:
-    return subprocess.run(
-        argv,
-        check=False,
-        capture_output=True,
-        timeout=timeout,
-        env={"PATH": os.environ.get("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")},
-    )
+    try:
+        return subprocess.run(
+            argv,
+            check=False,
+            capture_output=True,
+            timeout=timeout,
+            env={"PATH": os.environ.get("PATH", "/usr/bin:/bin:/usr/sbin:/sbin")},
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ObservationBlocked(f"Docker command timed out after {timeout} seconds") from exc
 
 
 def _safe_error(value: bytes) -> str:
