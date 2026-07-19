@@ -19,25 +19,38 @@ tests, and install path agree.
 - Known limitations are documented in release notes and beta/stable readiness
   docs.
 
-## Current Status
+## Current 2.5.0 Candidate
 
-Ready for stable release:
+The 2.5.0 candidate is a backward-compatible minor release. It adds Proof Before
+Action, ProofOS PostgreSQL verification, SafeForge runtime/pre-install evidence,
+and the security dependency/pinning repairs recorded in the changelog. Existing
+2.x audit-report and SARIF contracts remain additive.
 
-- package install and command naming are settled;
-- connected and config-only scan boundaries are documented;
-- JSON/SARIF rule IDs are documented and snapshot-tested;
-- older report shapes and additive future fields have compatibility fixtures;
-- user feedback has a fixture-driven intake path;
-- validation corpus covers common filesystem, network, shell, destructive,
-  exfiltration, browser, cloud, database, and messaging server shapes.
-- whole-repo strict typing passes with `uv run mypy .`.
+Release evidence must establish:
 
-Release-candidate decision:
+- package, `server.json`, changelog, and `docs/release-state.json` agree on the
+  2.5.0 candidate while public Action and pre-commit examples continue to name
+  the latest existing tag;
+- wheel and sdist metadata require `mcp>=1.28.1` and expose `mcp-audit`,
+  `mcp-audits`, and `proof-before-action`;
+- the full quality gate and an installed Proof Before Action workflow pass from
+  an exact clean candidate commit;
+- missing, stale, masked, unmatched, incomplete, or unobservable evidence never
+  becomes a safety claim;
+- the remaining OpenSSF human-review, fuzzing, and best-practices-badge findings
+  have explicit evidence-backed dispositions.
 
-- keep prompt/resource findings outside `risk_score.composite` for `1.0.0`;
-- keep `non_tool_risk` additive for `1.x`;
-- do not move to beta until external redacted reports confirm output-contract
-  stability for downstream consumers.
+The candidate may be merged after its required repository checks pass. Tagging,
+publishing, and external registry changes remain separate actions. Tag creation
+no longer triggers publication: the publish workflow requires a manual dispatch
+bound to an exact tag and commit, verifies the candidate, and exposes artifact
+hashes before the environment-bound OIDC job.
+Public release is NO-GO until they are explicitly authorized and the unresolved
+human-review risk is accepted or satisfied. The `pypi` environment must also
+require an independent reviewer; without that external protection, the
+candidate remains intentionally non-publishable. The absence of two external
+redacted field reports also remains a limitation: solo fixture evidence does not
+prove downstream adoption or broad environment compatibility.
 
 ## Go/No-Go Checklist
 

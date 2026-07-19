@@ -1,0 +1,6 @@
+{
+  "schema_version": "mcp-audit.release-state.v1",
+  "candidate_version": "2.5.0",
+  "published_version": "2.4.0",
+  "status": "candidate"
+}

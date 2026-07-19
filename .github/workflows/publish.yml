@@ -1,16 +1,93 @@
 name: Publish to PyPI
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Exact release tag (for example, v2.5.0)
+        required: true
+        type: string
+      commit:
+        description: Exact 40-character commit recorded in the release approval
+        required: true
+        type: string
+      approval:
+        description: Type publish-mcp-audits to confirm this separately authorized publish
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 jobs:
-  build-and-publish:
-    name: Build and publish to PyPI
+  build:
+    name: Verify and build exact release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.commit }}
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          python-version: "3.11"
+
+      - name: Verify release authorization binding
+        env:
+          RELEASE_APPROVAL: ${{ inputs.approval }}
+          RELEASE_COMMIT: ${{ inputs.commit }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          git fetch --force --tags origin main
+          uv run python scripts/verify_release.py \
+            --tag "$RELEASE_TAG" \
+            --commit "$RELEASE_COMMIT" \
+            --approval-token "$RELEASE_APPROVAL" \
+            --require-publishable
+
+      - name: Install locked dependencies
+        run: uv sync --dev --locked
+
+      - name: Run release quality gate
+        run: |
+          uv run pytest
+          uv run ruff check
+          uv run ruff format --check
+          uv run mypy .
+          uv lock --check
+          git diff --check
+
+      - name: Build wheel and sdist
+        run: uv build --clear
+
+      - name: Verify built distributions
+        env:
+          RELEASE_COMMIT: ${{ inputs.commit }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          uv run python scripts/verify_release.py \
+            --tag "$RELEASE_TAG" \
+            --commit "$RELEASE_COMMIT" \
+            --require-publishable \
+            --dist-dir dist
+          sha256sum dist/* | tee SHA256SUMS
+
+      - name: Upload exact candidate artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mcp-audits-${{ inputs.tag }}
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+            SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish approved artifacts to PyPI
+    needs: build
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -18,16 +95,20 @@ jobs:
       id-token: write  # OIDC trusted publishing
 
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
-      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+      - name: Download exact candidate artifacts
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
-          python-version: "3.11"
+          name: mcp-audits-${{ inputs.tag }}
+          path: release/
 
-      - name: Build wheel and sdist
-        run: uv build
+      - name: Read back artifact hashes
+        run: |
+          cd release
+          sha256sum -c SHA256SUMS
+          cat SHA256SUMS
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@ba38be9e461d3875417946c167d0b5f3d385a247 # v1.14.1
         with:
-          packages-dir: dist/
+          packages-dir: release/dist/
+          attestations: true
