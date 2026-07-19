@@ -775,6 +775,68 @@ def test_stale_trust_evidence_is_historical_not_current(tmp_path: Path) -> None:
     assert manifest.trust_source.evaluated_at != manifest.trust_source.snapshot_generated_at
 
 
+@pytest.mark.parametrize(
+    "generated_at",
+    [
+        "not-a-date",
+        "2026-07-18T00:00:00",
+        "2026-06-30T00:00:00+00:00",
+        "2999-01-01T00:00:00+00:00",
+    ],
+)
+def test_invalid_or_impossible_trust_generation_time_is_unknown(
+    tmp_path: Path,
+    generated_at: str,
+) -> None:
+    repo = _repo(tmp_path)
+    (repo / ".mcp.json").write_text(
+        '{"mcpServers":{"known":{"command":"npx","args":["@fixture/known-mcp"]}}}',
+        encoding="utf-8",
+    )
+    trust = _trust_fixture(tmp_path)
+    snapshot_path = trust / "src/mcp_trust/catalog_snapshot.json"
+    snapshot = json.loads(snapshot_path.read_text())
+    snapshot["generated_at"] = generated_at
+    snapshot_path.write_text(json.dumps(snapshot), encoding="utf-8")
+    _commit_trust_fixture(trust, "invalid trust generation time")
+
+    manifest = build_release_trust_manifest(repo, trust)
+
+    assert manifest.discovery_coverage == "unknown"
+    assert manifest.trust_source is None
+    assert manifest.entries[0].evidence.state == "unverifiable"
+    assert manifest.entries[0].evidence.grade is None
+    assert "mcp-trust source has an unsupported data shape" in manifest.limitations
+
+
+def test_unproven_network_isolation_cannot_be_current_trust_evidence(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    endpoint = "https://example.invalid/mcp"
+    (repo / ".mcp.json").write_text(
+        json.dumps({"mcpServers": {"known": {"url": endpoint}}}),
+        encoding="utf-8",
+    )
+    trust = _trust_fixture(tmp_path)
+    seed_path = trust / "src/mcp_trust/catalog/seed_servers.json"
+    seed = json.loads(seed_path.read_text())
+    seed[0]["source"] = {"kind": "remote", "reference": endpoint}
+    seed_path.write_text(json.dumps(seed), encoding="utf-8")
+    snapshot_path = trust / "src/mcp_trust/catalog_snapshot.json"
+    snapshot = json.loads(snapshot_path.read_text())
+    snapshot["servers"][0]["scan_mode"] = "mcpaudit-local-network-unknown"
+    snapshot["servers"][0]["sandbox"]["network"] = "unknown"
+    snapshot_path.write_text(json.dumps(snapshot), encoding="utf-8")
+    _commit_trust_fixture(trust, "network isolation unproven")
+
+    evidence = build_release_trust_manifest(repo, trust).entries[0].evidence
+
+    assert evidence.match_state == "exact"
+    assert evidence.version_alignment == "not_applicable"
+    assert evidence.network_isolation == "unknown"
+    assert evidence.state == "unverifiable"
+    assert "mcp-trust record does not prove network isolation" in evidence.unknown_reasons
+
+
 def test_dirty_trust_source_cannot_emit_authoritative_grade_details(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     (repo / ".mcp.json").write_text(

@@ -524,10 +524,28 @@ def _valid_trust_input_shapes(
     records = snapshot.get("servers")
     if not isinstance(records, list) or not all(_valid_snapshot_record(item) for item in records):
         return False
+    generated_at = _trust_timestamp(snapshot["generated_at"])
+    if generated_at is None or generated_at > datetime.now(UTC):
+        return False
+    scanned_at = [_trust_timestamp(item["scanned_at"]) for item in records]
+    if any(value is None or value > generated_at for value in scanned_at):
+        return False
     seed_rows = seed if isinstance(seed, list) else seed.get("servers") if isinstance(seed, dict) else None
     if not isinstance(seed_rows, list) or not all(_valid_seed_row(item) for item in seed_rows):
         return False
     return isinstance(masked, list) and all(isinstance(item, str) for item in masked)
+
+
+def _trust_timestamp(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        timestamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if timestamp.tzinfo is None:
+            return None
+        return timestamp.astimezone(UTC)
+    except (OverflowError, ValueError):
+        return None
 
 
 def _valid_seed_row(value: Any) -> bool:
@@ -658,6 +676,7 @@ def _match_dependency(
         else "unknown"
     )
     if network == "unknown":
+        state = "unverifiable" if state == "current" else state
         unknowns.append("mcp-trust record does not prove network isolation")
     return TrustEvidence(
         state=state,  # type: ignore[arg-type]

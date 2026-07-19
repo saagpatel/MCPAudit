@@ -139,6 +139,9 @@ observed MCP surface, not an endorsement or runtime-safety proof.
 Seed identity/slug fields and every grade-bearing snapshot field must also match
 their documented scalar/object shapes; malformed nested data makes the complete
 local trust source UNKNOWN instead of being coerced into evidence.
+Snapshot generation time must be a valid, non-future, timezone-aware timestamp
+that is not earlier than any contained scan. A record without proven network
+isolation cannot be `current`, even when its dependency match is otherwise exact.
 
 Freshness is evaluated at the current UTC date, recorded separately from the
 snapshot generation timestamp. Runs are byte-stable within that date; evidence

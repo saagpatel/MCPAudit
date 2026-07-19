@@ -62,6 +62,8 @@ platform.
 - Seed identities and all grade-bearing snapshot fields receive strict nested
   type validation; malformed committed rows cannot be coerced into current
   evidence.
+- Invalid, future, or scan-preceding snapshot generation timestamps invalidate
+  the trust source, and unproven network isolation prevents `current` evidence.
 - Git-ignored subject files that enter the observer staging inventory force the
   subject repository to dirty/unbound; ignored dependency caches and generated
   metadata excluded from staging do not alter subject provenance.
