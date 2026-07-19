@@ -409,6 +409,7 @@ def _stage_repository(source: Path, destination: Path) -> None:
     for directory, directory_names, file_names, directory_fd in os.fwalk(
         source,
         topdown=True,
+        onerror=_raise_repository_walk_error,
         follow_symlinks=False,
     ):
         relative_directory = Path(directory).relative_to(source)
@@ -465,6 +466,10 @@ def _stage_repository(source: Path, destination: Path) -> None:
             finally:
                 if descriptor >= 0:
                     os.close(descriptor)
+
+
+def _raise_repository_walk_error(error: OSError) -> None:
+    raise ObservationBlocked("repository input tree changed or could not be traversed completely") from error
 
 
 def repository_input_is_in_scope(relative: Path) -> bool:

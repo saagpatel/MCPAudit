@@ -33,7 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   uses one captured byte snapshot to prevent clean-after-read races. No-follow,
   directory-relative source descriptors close validation-to-copy link races,
   while legacy observation-v1 capsules remain verification-compatible and new
-  capsules require the staged subject binding.
+  capsules require the staged subject binding. Directory traversal/reopen
+  failures now block instead of silently omitting a changing subtree.
 - `pin_baseline_corrupted` warning code — a pin baseline file that exists but
   cannot be parsed now emits its own `ScanWarning` (naming the file and the
   parse error) instead of folding into `pin_baseline_missing`. A corrupted

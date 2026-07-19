@@ -67,7 +67,8 @@ platform.
   and commit-compares one captured byte set rather than rereading live files.
 - Repository files are copied from no-follow descriptors opened relative to
   walked directory descriptors, then the private copied bytes receive content
-  validation. A source-path replacement cannot redirect the copy.
+  validation. A source-path replacement cannot redirect the copy, and a
+  directory-walk reopen failure blocks rather than producing a partial tree.
 
 ## Residual threats and honest unknowns
 
