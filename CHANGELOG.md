@@ -70,7 +70,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   validation instead of passing as Python integers. Raw remote URL controls and
   invalid ports become partial discovery diagnostics. Complete observers must
   treat transient filesystem/database attempts as effects, and verification
-  rejects any capsule missing either staged-subject binding.
+  rejects any capsule missing either staged-subject binding. Inspection now
+  requires an independently supplied exact image ID before image-provided
+  observer tools run, and IP-counter observations remain incomplete because
+  Unix-domain socket activity is not observed.
 - `pin_baseline_corrupted` warning code — a pin baseline file that exists but
   cannot be parsed now emits its own `ScanWarning` (naming the file and the
   parse error) instead of folding into `pin_baseline_missing`. A corrupted

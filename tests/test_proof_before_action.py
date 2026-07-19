@@ -48,6 +48,7 @@ from mcp_audit.proof_observer import (
     _redact_argv,
     _stage_repository,
     _subject_snapshot_evidence,
+    _verify_expected_image_id,
     observe_command,
 )
 from mcp_audit.proof_trust import build_release_trust_manifest
@@ -80,11 +81,31 @@ def _declaration(**updates: object) -> ActionDeclaration:
     return ActionDeclaration.model_validate(payload)
 
 
+def _node_image_id() -> str:
+    return subprocess.run(
+        ["docker", "image", "inspect", "--format", "{{.Id}}", "node:24-slim"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
 def _repo(tmp_path: Path) -> Path:
     root = tmp_path / "repo"
     root.mkdir()
     (root / "input.txt").write_text("stable\n", encoding="utf-8")
     return root
+
+
+def test_expected_image_id_is_required_and_exact() -> None:
+    resolved = "sha256:" + "a" * 64
+    with pytest.raises(ObservationBlocked, match="independently sourced"):
+        _verify_expected_image_id(resolved, None)
+    with pytest.raises(ObservationBlocked, match="must be an exact sha256"):
+        _verify_expected_image_id(resolved, "node:24-slim")
+    with pytest.raises(ObservationBlocked, match="does not match independently supplied"):
+        _verify_expected_image_id(resolved, "sha256:" + "b" * 64)
+    _verify_expected_image_id(resolved, resolved)
 
 
 def _empty_trust(repo: Path, observation: Observation) -> ReleaseTrustManifest:
@@ -125,6 +146,8 @@ limitations: []
             str(repo),
             "--declaration",
             str(declaration),
+            "--expect-image-id",
+            "sha256:" + "a" * 64,
             "--output",
             str(tmp_path / "capsule"),
             "--",
@@ -161,6 +184,8 @@ def test_cli_invalid_declaration_yaml_is_a_structured_inspection_block(
             str(repo),
             "--declaration",
             str(declaration),
+            "--expect-image-id",
+            "sha256:" + "a" * 64,
             "--output",
             str(tmp_path / "capsule"),
             "--",
@@ -314,17 +339,22 @@ def test_staging_detects_a_directory_silently_skipped_by_fwalk(
 def test_read_only_final_state_is_unknown_and_deterministic(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     command = ["node", "-e", "require('fs').readFileSync('input.txt')"]
-    first = observe_command(repo, command, image="node:24-slim")
-    second = observe_command(repo, command, image="node:24-slim")
+    first = observe_command(
+        repo,
+        command,
+        image="node:24-slim",
+        expected_image_id=_node_image_id(),
+    )
+    second = observe_command(
+        repo,
+        command,
+        image="node:24-slim",
+        expected_image_id=_node_image_id(),
+    )
     assert first.file_changes == []
     assert first.database_changes == []
     assert first.network.surface.attempted is False
-    expected_image_id = subprocess.run(
-        ["docker", "image", "inspect", "--format", "{{.Id}}", "node:24-slim"],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
+    expected_image_id = _node_image_id()
     assert first.isolation.image_reference == "node:24-slim"
     assert first.isolation.image_id == expected_image_id
     first_comparison = compare_bill(_declaration(), first)
@@ -347,6 +377,7 @@ def test_transient_file_write_cannot_be_reported_as_read_only(tmp_path: Path) ->
             "const fs=require('fs');fs.writeFileSync('transient.txt','x');fs.unlinkSync('transient.txt')",
         ],
         image="node:24-slim",
+        expected_image_id=_node_image_id(),
     )
 
     assert observation.file_changes == []
@@ -370,7 +401,12 @@ def test_rolled_back_database_write_cannot_be_reported_as_read_only(tmp_path: Pa
         "db.exec(\"BEGIN;UPDATE items SET value='transient' WHERE id=1;ROLLBACK;\");db.close()"
     )
 
-    observation = observe_command(repo, ["node", "-e", code], image="node:24-slim")
+    observation = observe_command(
+        repo,
+        ["node", "-e", code],
+        image="node:24-slim",
+        expected_image_id=_node_image_id(),
+    )
 
     assert observation.database_changes == []
     assert observation.database.complete is False
@@ -407,7 +443,12 @@ def test_background_descendant_cannot_mutate_after_observation_completion(tmp_pa
             "{detached:true,stdio:'ignore'}).unref()"
         ),
     ]
-    observation = observe_command(repo, command, image="node:24-slim")
+    observation = observe_command(
+        repo,
+        command,
+        image="node:24-slim",
+        expected_image_id=_node_image_id(),
+    )
     assert observation.command.exit_code == 0
     assert observation.command.timed_out is False
     assert observation.command.stdout_sha256 == sha256_bytes(b"")
@@ -422,6 +463,7 @@ def test_command_timeout_still_emits_fail_closed_observation(tmp_path: Path) -> 
         repo,
         ["node", "-e", "setTimeout(()=>{},10000)"],
         image="node:24-slim",
+        expected_image_id=_node_image_id(),
         timeout_seconds=1,
     )
     assert observation.command.timed_out is True
@@ -442,7 +484,12 @@ def test_command_is_unprivileged_and_cannot_rewrite_observer_evidence(tmp_path: 
         "try{fs.writeFileSync('/pba/network.before','forged');process.exit(11)}"
         "catch(error){if(error.code!=='EACCES')process.exit(12)}"
     )
-    observation = observe_command(repo, ["node", "-e", code], image="node:24-slim")
+    observation = observe_command(
+        repo,
+        ["node", "-e", code],
+        image="node:24-slim",
+        expected_image_id=_node_image_id(),
+    )
     assert observation.command.exit_code == 0
     assert observation.isolation.provider == "docker"
     assert observation.isolation.runtime_user == "65534:65534"
@@ -470,7 +517,12 @@ def test_command_is_unprivileged_and_cannot_rewrite_observer_evidence(tmp_path: 
 @requires_docker
 def test_option_like_command_is_not_consumed_by_setpriv(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
-    observation = observe_command(repo, ["--help"], image="node:24-slim")
+    observation = observe_command(
+        repo,
+        ["--help"],
+        image="node:24-slim",
+        expected_image_id=_node_image_id(),
+    )
     assert observation.command.exit_code not in {None, 0}
     comparison = compare_bill(_declaration(), observation)
     assert comparison.verdict == "block"
@@ -484,6 +536,7 @@ def test_undeclared_file_write_is_detected_and_blocked(tmp_path: Path) -> None:
         repo,
         ["node", "-e", "require('fs').writeFileSync('created.txt','proof')"],
         image="node:24-slim",
+        expected_image_id=_node_image_id(),
     )
     assert [(item.path, item.change) for item in observation.file_changes] == [("created.txt", "added")]
     comparison = compare_bill(_declaration(), observation)
@@ -511,7 +564,12 @@ def test_seeded_sqlite_mutation_is_semantically_detected(tmp_path: Path) -> None
         "const db=new DatabaseSync('seeded.db');"
         "db.exec(\"UPDATE items SET value='after' WHERE id=1\");db.close()"
     )
-    observation = observe_command(repo, ["node", "-e", code], image="node:24-slim")
+    observation = observe_command(
+        repo,
+        ["node", "-e", code],
+        image="node:24-slim",
+        expected_image_id=_node_image_id(),
+    )
     assert len(observation.database_changes) == 1
     change = observation.database_changes[0]
     assert change.path == "seeded.db"
@@ -966,7 +1024,12 @@ def test_loopback_network_attempt_is_detected_without_external_contact(tmp_path:
         "const net=require('net');const s=net.connect(9,'127.0.0.1');"
         "s.on('error',()=>process.exit(0));setTimeout(()=>process.exit(0),500)"
     )
-    observation = observe_command(repo, ["node", "-e", code], image="node:24-slim")
+    observation = observe_command(
+        repo,
+        ["node", "-e", code],
+        image="node:24-slim",
+        expected_image_id=_node_image_id(),
+    )
     assert observation.network.surface.attempted is True
     assert observation.network.external_contact_count == 0
     assert observation.network.counters["Tcp.ActiveOpens"] >= 1
@@ -1672,8 +1735,9 @@ def test_ipv6_network_counters_are_observed(tmp_path: Path) -> None:
 
     evidence = _network_evidence(before, after, before6, after6, timed_out=False)
 
-    assert evidence.surface.complete is True
+    assert evidence.surface.complete is False
     assert evidence.surface.attempted is True
+    assert "Unix-domain socket activity" in " ".join(evidence.surface.limitations)
     assert evidence.counters["Ip6.OutRequests"] == 1
     assert evidence.counters["Udp6.OutDatagrams"] == 1
 
@@ -1704,11 +1768,17 @@ def test_ipv6_udp_attempt_is_detected_and_blocked(tmp_path: Path) -> None:
         "socket.send(Buffer.from('x'),9,'::1',error=>{socket.close();if(error)process.exit(2)})"
     )
 
-    observation = observe_command(repo, ["node", "-e", code], image="node:24-slim")
+    observation = observe_command(
+        repo,
+        ["node", "-e", code],
+        image="node:24-slim",
+        expected_image_id=_node_image_id(),
+    )
 
     assert observation.command.exit_code == 0
-    assert observation.network.surface.complete is True
+    assert observation.network.surface.complete is False
     assert observation.network.surface.attempted is True
+    assert "Unix-domain socket activity" in " ".join(observation.network.surface.limitations)
     assert observation.network.counters["Udp6.OutDatagrams"] > 0
     comparison = compare_bill(_declaration(), observation)
     assert comparison.verdict == "block"
@@ -1986,7 +2056,12 @@ def test_installed_module_uses_embedded_build_provenance(
 def test_tampering_and_wrong_commit_or_schema_are_detected(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     declaration = _declaration()
-    observation = observe_command(repo, ["node", "-e", "process.exit(0)"], image="node:24-slim")
+    observation = observe_command(
+        repo,
+        ["node", "-e", "process.exit(0)"],
+        image="node:24-slim",
+        expected_image_id=_node_image_id(),
+    )
     comparison = compare_bill(declaration, observation)
     capsule = build_capsule(
         declaration,
@@ -2061,7 +2136,12 @@ def test_tampering_and_wrong_commit_or_schema_are_detected(tmp_path: Path) -> No
 def test_offline_html_escapes_untrusted_text(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     declaration = _declaration(name="<img src=x onerror=alert(1)>")
-    observation = observe_command(repo, ["node", "-e", "process.exit(0)"], image="node:24-slim")
+    observation = observe_command(
+        repo,
+        ["node", "-e", "process.exit(0)"],
+        image="node:24-slim",
+        expected_image_id=_node_image_id(),
+    )
     comparison = compare_bill(declaration, observation)
     capsule = build_capsule(
         declaration,
@@ -2090,6 +2170,7 @@ def test_sensitive_repository_input_is_blocked_before_execution(tmp_path: Path) 
             repo,
             ["node", "-e", "process.exit(0)"],
             image="node:24-slim",
+            expected_image_id=_node_image_id(),
         )
 
 
@@ -2121,6 +2202,7 @@ def test_literal_config_secret_and_sensitive_argv_are_redacted_or_blocked(
             repo,
             ["node", "-e", "process.exit(0)"],
             image="node:24-slim",
+            expected_image_id=_node_image_id(),
         )
     assert _redact_argv(
         [
@@ -2217,6 +2299,8 @@ limitations: []
             str(repo),
             "--declaration",
             str(declaration),
+            "--expect-image-id",
+            _node_image_id(),
             "--output",
             str(output),
             "--",

@@ -171,6 +171,7 @@ def observe_command(
     command: list[str],
     *,
     image: str,
+    expected_image_id: str | None = None,
     timeout_seconds: int = 45,
 ) -> Observation:
     if not command:
@@ -195,6 +196,7 @@ def observe_command(
         before_databases = _database_snapshot(staged)
         _make_disposable_writable(staged)
         image_id = _local_image_id(image)
+        _verify_expected_image_id(image_id, expected_image_id)
         _require_image_tools(image_id)
         name = "pba-" + secrets.token_hex(8)
         runtime_image = name + "-input"
@@ -716,6 +718,21 @@ def _local_image_id(image: str) -> str:
     return result.stdout.decode().strip()
 
 
+def _verify_expected_image_id(resolved: str, expected: str | None) -> None:
+    if expected is None:
+        raise ObservationBlocked(
+            "an independently sourced --expect-image-id is required before image-provided "
+            "observer tools can run"
+        )
+    if not re.fullmatch(r"sha256:[0-9a-f]{64}", expected):
+        raise ObservationBlocked("--expect-image-id must be an exact sha256 image ID")
+    if resolved != expected:
+        raise ObservationBlocked(
+            f"resolved image ID {resolved!r} does not match independently supplied "
+            f"--expect-image-id {expected!r}"
+        )
+
+
 def _require_image_tools(image: str) -> None:
     result = _run(
         [
@@ -1132,10 +1149,11 @@ def _network_evidence(
                 "per-container /proc/net/snmp and /proc/net/snmp6 counter deltas "
                 "under Docker network mode none"
             ),
-            complete=True,
+            complete=False,
             limitations=[
                 "IPv4/IPv6 IP and UDP counters plus family-agnostic Linux TCP counters "
                 "identify activity but not the requested destination.",
+                "Unix-domain socket activity, including abstract sockets, is not observed.",
                 "Docker network mode none proves no ordinary external interface, not "
                 "resistance to container escape.",
             ],

@@ -87,11 +87,11 @@ platform.
 | Nested or very short-lived child processes | Final state quiesced; identity attribution incomplete | Surviving descendants are terminated before the final archive, but child executable identities and transient effects are not completely attributed. |
 | SQLite transactions with no final delta | Explicitly incomplete | Semantic comparison proves final content, not every query or transaction attempt, so the database surface cannot support `pass`. |
 | Non-SQLite databases | File-level only | Semantic records and remote database effects are unknown. |
-| Network destination | Unobserved | IPv4/IPv6 IP and UDP counters plus family-agnostic Linux TCP counters reveal attempts, not the requested hostname or endpoint. Missing or regressed counters make the surface incomplete. |
+| Network destination and Unix-domain sockets | Unobserved | IPv4/IPv6 IP and UDP counters plus family-agnostic Linux TCP counters reveal some attempts, not the requested hostname, endpoint, or Unix-domain socket activity. The network surface remains incomplete. |
 | Loopback inside the namespace | Available | A command can contact its own processes; the evidence marks attempts but does not call loopback external contact. |
 | Output links or special files | Fail-closed | Collection stops; the effect is not silently omitted and no completed capsule is issued. |
 | Unknown secret formats or low-entropy secret hashes | Residual risk | Redaction is best effort, and a digest can sometimes be guessed. Review declarations and commands before sharing capsules. |
-| Malicious local Docker daemon or image | Trusted locally | A local image can contain hostile infrastructure. Pin and independently verify the image digest. |
+| Malicious local Docker daemon or image | Caller-pinned, otherwise blocked | The CLI requires an independently sourced exact image ID and verifies the local resolution before image-provided observer tools run. The caller's trust record and Docker daemon integrity remain outside the capsule's proof. |
 | Internal capsule hashes | Consistency only | They do not prove who authorized the capsule. Record the index root in an external authority channel. |
 | mcp-trust grade applicability | Evidence-limited | Stale, masked, missing, version-unbound, dirty, ignored/untracked, or commit-mismatched evidence remains unknown. |
 | Producer build metadata | Evidence-limited | A clean embedded revision binds packaged code to its build source claim, but package authenticity still requires a trusted distribution channel or an externally anchored capsule root. |

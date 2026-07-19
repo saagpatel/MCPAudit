@@ -47,6 +47,11 @@ def main() -> None:
     type=click.Path(path_type=Path, exists=True, file_okay=False, readable=True),
 )
 @click.option("--image", default="node:24-slim", show_default=True)
+@click.option(
+    "--expect-image-id",
+    required=True,
+    help="Exact sha256 image ID obtained from an independent trusted record.",
+)
 @click.option("--timeout", "timeout_seconds", default=45, type=click.IntRange(1, 600))
 @click.option("--output", type=click.Path(path_type=Path), required=True)
 @click.argument("command", nargs=-1, type=click.UNPROCESSED, required=True)
@@ -55,6 +60,7 @@ def inspect(
     declaration: Path,
     trust_root: Path | None,
     image: str,
+    expect_image_id: str,
     timeout_seconds: int,
     output: Path,
     command: tuple[str, ...],
@@ -67,6 +73,7 @@ def inspect(
             repo,
             list(command),
             image=image,
+            expected_image_id=expect_image_id,
             timeout_seconds=timeout_seconds,
         )
         if observed.subject_snapshot is None:

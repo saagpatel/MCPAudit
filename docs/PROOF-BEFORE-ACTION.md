@@ -30,14 +30,18 @@ limitations: []
 ```
 
 Ensure the selected container image already exists locally. Proof Before Action
-will not pull it. The mutable reference is resolved once and every subsequent
-tool check and staging step uses that immutable image ID. Then inspect:
+will not pull it. Obtain its exact `sha256:` image ID from an independent trusted
+record; the CLI fails closed before any image-provided observer utility runs
+unless the local resolution matches that supplied ID. The mutable reference is
+resolved once and every subsequent tool check and staging step uses the matched
+immutable image ID. Then inspect:
 
 ```console
 proof-before-action inspect \
   --repo ./repository-under-review \
   --declaration ./proof-before-action.yaml \
   --trust-root ../mcp-trust \
+  --expect-image-id "$TRUSTED_IMAGE_ID" \
   --output ./proof-capsule \
   -- node -e "require('fs').readFileSync('README.md')"
 ```
@@ -133,8 +137,10 @@ cannot observe transient create-delete, write-restore, or transaction attempts.
 Consequently a clean final snapshot is `unknown`, never proof of read-only
 behavior. IPv4/IPv6 IP and UDP counters plus Linux's family-agnostic TCP counters
 distinguish an observed attempt from no counter change, but cannot identify the
-requested destination. Missing or regressed required counters make the network
-surface incomplete. Link or special-file output blocks collection rather than
+requested destination or observe Unix-domain sockets, including abstract
+sockets. The network surface therefore remains incomplete even when every
+required counter is available; missing or regressed counters add another
+fail-closed reason. Link or special-file output blocks collection rather than
 silently disappearing. The command cannot write the observer-owned evidence
 tmpfs.
 
