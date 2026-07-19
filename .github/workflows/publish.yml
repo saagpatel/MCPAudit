@@ -16,9 +16,19 @@ permissions:
   contents: read
 
 jobs:
+  validate-dispatch-ref:
+    name: Refuse non-main workflow definitions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require workflow dispatch from main
+        env:
+          DISPATCH_REF: ${{ github.ref }}
+        run: |
+          test "$DISPATCH_REF" = "refs/heads/main"
+
   build:
     name: Verify and build exact release
-    if: github.ref == 'refs/heads/main'
+    needs: validate-dispatch-ref
     runs-on: ubuntu-latest
 
     steps:
@@ -93,7 +103,6 @@ jobs:
   publish:
     name: Publish approved artifacts to PyPI
     needs: build
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: pypi
     permissions:

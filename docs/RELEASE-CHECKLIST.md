@@ -106,8 +106,9 @@ publication.
    independent reviewer, prevents self-review, and disables administrator
    bypass; otherwise stop with `NO-GO`.
 2. Create the tag only after that approval. Tag creation does not publish.
-3. Manually dispatch `Publish to PyPI` with the exact tag and commit. A typed
-   confirmation is not authorization. The workflow reads back the live
+3. From the `main` branch, manually dispatch `Publish to PyPI` with the exact
+   tag and commit. A tag or feature-branch dispatch fails before the build. A
+   typed confirmation is not authorization. The workflow reads back the live
    environment protections and rechecks the tag/commit/main binding,
    release-state gate, lockfile, tests, style, types, package metadata, and
    clean build provenance.

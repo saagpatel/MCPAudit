@@ -202,15 +202,16 @@ def test_publication_requires_a_separate_manual_dispatch() -> None:
     workflow = Path(".github/workflows/publish.yml").read_text(encoding="utf-8")
 
     trigger = workflow.split("\npermissions:", maxsplit=1)[0]
-    build_job, publish_job = workflow.split("\n  publish:\n", maxsplit=1)
+    validation_job, build_job = workflow.split("\n  build:\n", maxsplit=1)
     assert "workflow_dispatch:" in trigger
     assert "\n  push:" not in trigger
     assert "commit:" in trigger
     assert "tag:" in trigger
     assert "approval:" not in trigger
     assert "publish-mcp-audits" not in workflow
-    assert "if: github.ref == 'refs/heads/main'" in build_job
-    assert "if: github.ref == 'refs/heads/main'" in publish_job
+    assert "validate-dispatch-ref:" in validation_job
+    assert 'test "$DISPATCH_REF" = "refs/heads/main"' in validation_job
+    assert "needs: validate-dispatch-ref" in build_job
 
 
 def test_oidc_authority_is_confined_to_post_build_publish_job() -> None:
