@@ -724,10 +724,10 @@ def _isolation_evidence(image: str, image_id: str, inspect: dict[str, Any]) -> I
             "so it can protect evidence, empty the command capability bounding set, "
             "enforce the unprivileged command identity, and terminate descendants.",
             "The tested command runs as 65534:65534 with an empty capability bounding set.",
-            "The container has no host mounts or forwarded sockets, but it runs inside "
-            "a networked Colima VM.",
-            "A container or VM escape could reach a broader host-adjacent surface; "
-            "hostile-kernel isolation is not proven.",
+            "The container has no host mounts or forwarded sockets, but the Docker engine "
+            "and any VM or hypervisor layer are outside the observed boundary.",
+            "A container escape, or VM escape when a VM is present, could reach a broader "
+            "host-adjacent surface; hostile-kernel isolation is not proven.",
             "Loopback remains available inside the isolated network namespace.",
         ],
         observer_user="0:0",

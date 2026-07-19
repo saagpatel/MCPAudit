@@ -374,7 +374,7 @@ def _join_trust(
     try:
         snapshot = json.loads(files["catalog_snapshot.json"].read_text(encoding="utf-8"))
         seed = json.loads(files["seed_servers.json"].read_text(encoding="utf-8"))
-        masked = set(json.loads(files["masked-grades.json"].read_text(encoding="utf-8")))
+        masked_payload = json.loads(files["masked-grades.json"].read_text(encoding="utf-8"))
         spec_shift = json.loads(files["spec_shift_verdicts.json"].read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         return _unknown_trust_manifest(
@@ -384,6 +384,15 @@ def _join_trust(
             repository_dirty,
             f"mcp-trust source could not be parsed: {type(exc).__name__}",
         )
+    if not _valid_trust_input_shapes(snapshot, seed, masked_payload, spec_shift):
+        return _unknown_trust_manifest(
+            dependencies,
+            diagnostics,
+            repository_commit,
+            repository_dirty,
+            "mcp-trust source has an unsupported data shape",
+        )
+    masked = set(masked_payload)
     trust_commit, trust_dirty = _git_state(trust_root)
     trust_inputs_bound = bool(
         trust_commit
@@ -474,6 +483,23 @@ def _join_trust(
         entries=entries,
         limitations=limitations,
     )
+
+
+def _valid_trust_input_shapes(
+    snapshot: Any,
+    seed: Any,
+    masked: Any,
+    spec_shift: Any,
+) -> bool:
+    if not isinstance(snapshot, dict) or not isinstance(spec_shift, dict):
+        return False
+    records = snapshot.get("servers")
+    if not isinstance(records, list) or not all(isinstance(item, dict) for item in records):
+        return False
+    seed_rows = seed if isinstance(seed, list) else seed.get("servers") if isinstance(seed, dict) else None
+    if not isinstance(seed_rows, list) or not all(isinstance(item, dict) for item in seed_rows):
+        return False
+    return isinstance(masked, list) and all(isinstance(item, str) for item in masked)
 
 
 def _without_trust_source_authority(

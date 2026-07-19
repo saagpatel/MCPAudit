@@ -11,12 +11,15 @@ capsule.
 The implementation has four relevant boundaries:
 
 1. the macOS host and local Docker client;
-2. the Colima Linux VM;
+2. the Docker engine host and any optional engine VM (Colima on the current
+   macOS setup);
 3. the restricted Docker container;
 4. the exported evidence directory.
 
-The container is disposable. The Colima VM is not treated as a security
-boundary equivalent to a fresh mountless VM.
+The container is disposable. The engine host and any engine VM are not treated
+as a security boundary equivalent to a fresh mountless VM. Capsules name the
+provider as environment-neutral `docker`; they do not infer a VM from the client
+platform.
 
 ## Enforced controls
 
@@ -62,7 +65,7 @@ boundary equivalent to a fresh mountless VM.
 | Threat or surface | Status | Consequence |
 | --- | --- | --- |
 | Container, VM, or hypervisor escape | Unknown | Could bypass the container controls. A capsule records containment as `partial`. |
-| Current Colima VM host sharing | Not a proven isolation boundary | The VM may expose broader host-adjacent state than the runtime container. A hostile-kernel test should use a fresh mountless VM instead. |
+| Docker engine host or optional VM sharing | Not a proven isolation boundary | The engine layer may expose broader host-adjacent state than the runtime container. A hostile-kernel test should use a fresh mountless VM instead. |
 | macOS Keychain, TCC, XPC, Apple Events, GUI, devices, and host kernel | Unobserved | The Linux fixture cannot justify claims about these surfaces. |
 | Transient create-delete or write-restore | Unobserved | Final-state hashing can miss an attempt that leaves no persisted delta. |
 | Nested or very short-lived child processes | Final state quiesced; identity attribution incomplete | Surviving descendants are terminated before the final archive, but child executable identities and transient effects are not completely attributed. |

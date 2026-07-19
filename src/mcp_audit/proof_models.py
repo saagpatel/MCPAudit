@@ -110,7 +110,7 @@ class CommandRuntimeProfile(StrictModel):
 
 
 class IsolationEvidence(StrictModel):
-    provider: Literal["docker-in-colima"] = "docker-in-colima"
+    provider: Literal["docker", "docker-in-colima"] = "docker"
     image_reference: str
     image_id: str
     runtime_user: Literal["65534:65534"]

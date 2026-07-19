@@ -24,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   producer revision/dirty-state metadata, installed commands cannot inherit an
   unrelated ancestor Git commit, and mismatched external roots remain
   `authority: unverified`.
+  New observations report the environment-neutral `docker` provider instead of
+  assuming Colima, and valid-but-wrong-shaped trust inputs become structured
+  UNKNOWN manifests rather than tracebacks.
 - `pin_baseline_corrupted` warning code — a pin baseline file that exists but
   cannot be parsed now emits its own `ScanWarning` (naming the file and the
   parse error) instead of folding into `pin_baseline_missing`. A corrupted

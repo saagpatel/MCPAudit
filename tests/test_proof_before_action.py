@@ -229,6 +229,7 @@ def test_command_is_unprivileged_and_cannot_rewrite_observer_evidence(tmp_path: 
     )
     observation = observe_command(repo, ["node", "-e", code], image="node:24-slim")
     assert observation.command.exit_code == 0
+    assert observation.isolation.provider == "docker"
     assert observation.isolation.runtime_user == "65534:65534"
     assert observation.isolation.observer_user == "0:0"
     assert observation.isolation.observer_capabilities == [
@@ -597,6 +598,37 @@ def test_ignored_untracked_trust_inputs_cannot_escape_commit_binding(tmp_path: P
         "required mcp-trust inputs are not byte-identical to the trust commit; "
         "entry-level trust evidence is non-authoritative" in evidence.unknown_reasons
     )
+
+
+@pytest.mark.parametrize(
+    ("relative", "payload"),
+    [
+        ("src/mcp_trust/catalog_snapshot.json", []),
+        ("src/mcp_trust/catalog/seed_servers.json", {"servers": {}}),
+        ("masked-grades.json", {}),
+        ("src/mcp_trust/core/spec_shift_verdicts.json", []),
+    ],
+)
+def test_wrong_shaped_trust_inputs_become_structured_unknown(
+    tmp_path: Path,
+    relative: str,
+    payload: object,
+) -> None:
+    repo = _repo(tmp_path)
+    (repo / ".mcp.json").write_text(
+        '{"mcpServers":{"known":{"command":"npx","args":["@fixture/known-mcp"]}}}',
+        encoding="utf-8",
+    )
+    trust = _trust_fixture(tmp_path)
+    (trust / relative).write_text(json.dumps(payload), encoding="utf-8")
+
+    manifest = build_release_trust_manifest(repo, trust)
+
+    assert manifest.discovery_coverage == "unknown"
+    assert manifest.trust_source is None
+    assert manifest.entries[0].evidence.state == "unverifiable"
+    assert manifest.entries[0].evidence.grade is None
+    assert "mcp-trust source has an unsupported data shape" in manifest.limitations
 
 
 def test_installed_module_does_not_inherit_an_unrelated_ancestor_commit(
