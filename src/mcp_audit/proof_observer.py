@@ -73,6 +73,14 @@ _SENSITIVE_VALUE = re.compile(
     r"://[^/@\s]+:[^/@\s]+@|"
     r"\b(?:AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{10,})\b"
 )
+_LITERAL_CREDENTIAL_VALUE = re.compile(
+    r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]+|"
+    r"://[^/@\s]+:[^/@\s]+@|"
+    r"\b(?:AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{10,})\b"
+)
+_SENSITIVE_HEADER_ASSIGNMENT = re.compile(
+    r"(?i)(?:authorization|proxy-authorization|cookie|set-cookie)\s*[:=]\s*[\"']?([^\"'\r\n]+)"
+)
 _HOME_PATH = re.compile(r"(?<![A-Za-z0-9_])/(?:Users|home)/[^/\s\"']+(?:/[^\s\"']*)?")
 _SENSITIVE_KEY = re.compile(
     r"(?i)(?:^|[_-])(?:api[_-]?key|auth|authorization|cookie|credential|password|"
@@ -667,7 +675,7 @@ def _validate_staged_input(path: Path, relative: Path) -> None:
         raise ObservationBlocked(
             f"repository input appears to contain private key material: {relative.as_posix()}"
         )
-    if _SENSITIVE_VALUE.search(text):
+    if _contains_literal_credential_material(text):
         raise ObservationBlocked(
             f"repository input appears to contain credential material: {relative.as_posix()}"
         )
@@ -693,6 +701,18 @@ def _validate_staged_input(path: Path, relative: Path) -> None:
                 raise ObservationBlocked(
                     f"repository text contains a literal credential assignment: {relative.as_posix()}"
                 )
+
+
+def _contains_literal_credential_material(text: str) -> bool:
+    if _LITERAL_CREDENTIAL_VALUE.search(text):
+        return True
+    for match in _SENSITIVE_HEADER_ASSIGNMENT.finditer(text):
+        value = match.group(1).strip().rstrip("\\").strip().strip("\"'")
+        if value.lower().startswith("bearer "):
+            value = value[7:].strip()
+        if not _is_placeholder(value):
+            return True
+    return False
 
 
 def _json_contains_literal_secret(value: Any) -> bool:

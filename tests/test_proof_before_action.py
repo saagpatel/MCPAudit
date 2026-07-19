@@ -2240,6 +2240,48 @@ def test_sensitive_repository_input_is_blocked_before_execution(tmp_path: Path) 
 
 
 @pytest.mark.parametrize(
+    "placeholder",
+    ["$GH_TOKEN", "${{ secrets.GH_TOKEN }}"],
+)
+def test_placeholder_authorization_header_is_staged(tmp_path: Path, placeholder: str) -> None:
+    repo = _repo(tmp_path)
+    workflow = repo / ".github/workflows/publish.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text(
+        f'run: curl --header "Authorization: Bearer {placeholder}" https://example.test\n',
+        encoding="utf-8",
+    )
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    _stage_repository(repo, staged)
+    assert (staged / ".github/workflows/publish.yml").read_text(encoding="utf-8") == (
+        workflow.read_text(encoding="utf-8")
+    )
+
+
+@pytest.mark.parametrize(
+    "literal_header",
+    [
+        "Authorization: Bearer private-value",
+        'Authorization: "Basic private-value"',
+        "Cookie: session=private-value",
+    ],
+)
+def test_literal_authorization_and_cookie_headers_are_blocked(
+    tmp_path: Path,
+    literal_header: str,
+) -> None:
+    repo = _repo(tmp_path)
+    workflow = repo / ".github/workflows/publish.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text(f"header: {literal_header}\n", encoding="utf-8")
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    with pytest.raises(ObservationBlocked, match="credential material"):
+        _stage_repository(repo, staged)
+
+
+@pytest.mark.parametrize(
     ("config_name", "secret_config"),
     [
         (
