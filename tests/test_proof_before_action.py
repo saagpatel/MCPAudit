@@ -432,6 +432,9 @@ def test_capsule_index_rejects_path_expansion() -> None:
 def test_cli_inspect_and_verify_the_portable_capsule(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     (repo / ".DS_Store").write_bytes(b"\0ignored macOS metadata")
+    (repo / ".coverage").write_bytes(b"\0ignored coverage data")
+    (repo / ".mypy_cache").mkdir()
+    (repo / ".mypy_cache/cache").write_bytes(b"\0ignored type-checker data")
     declaration = tmp_path / "declaration.yaml"
     declaration.write_text(
         """

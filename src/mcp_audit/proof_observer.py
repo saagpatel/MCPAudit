@@ -32,8 +32,14 @@ from mcp_audit.proof_models import (
 
 _IGNORED_NAMES = {
     ".DS_Store",
+    ".coverage",
     ".git",
+    ".mypy_cache",
+    ".nox",
+    ".serena",
+    ".tox",
     ".venv",
+    "htmlcov",
     "node_modules",
     "__pycache__",
     ".pytest_cache",
