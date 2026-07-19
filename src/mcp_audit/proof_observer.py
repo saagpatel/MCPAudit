@@ -406,6 +406,8 @@ def _stage_repository(source: Path, destination: Path) -> None:
         raise ObservationBlocked("platform cannot securely open repository inputs without following links")
     file_count = 0
     total_bytes = 0
+    expected_directories = {"."}
+    traversed_directories: set[str] = set()
     for directory, directory_names, file_names, directory_fd in os.fwalk(
         source,
         topdown=True,
@@ -413,6 +415,7 @@ def _stage_repository(source: Path, destination: Path) -> None:
         follow_symlinks=False,
     ):
         relative_directory = Path(directory).relative_to(source)
+        traversed_directories.add(relative_directory.as_posix())
         retained_directories: list[str] = []
         for name in sorted(directory_names):
             relative = relative_directory / name
@@ -427,6 +430,7 @@ def _stage_repository(source: Path, destination: Path) -> None:
             if not stat.S_ISDIR(mode):
                 raise ObservationBlocked(f"input contains a symlink: {relative.as_posix()}")
             retained_directories.append(name)
+            expected_directories.add(relative.as_posix())
             (destination / relative).mkdir(parents=True, exist_ok=True)
         directory_names[:] = retained_directories
 
@@ -466,6 +470,8 @@ def _stage_repository(source: Path, destination: Path) -> None:
             finally:
                 if descriptor >= 0:
                     os.close(descriptor)
+    if traversed_directories != expected_directories:
+        raise ObservationBlocked("repository input tree changed or could not be traversed completely")
 
 
 def _raise_repository_walk_error(error: OSError) -> None:

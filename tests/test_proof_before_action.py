@@ -267,6 +267,41 @@ def test_staging_fails_closed_when_the_repository_walk_cannot_continue(
         onerror(OSError("directory disappeared"))
 
 
+def test_staging_detects_a_directory_silently_skipped_by_fwalk(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = _repo(tmp_path)
+    (repo / "child").mkdir()
+    (repo / "child/config.json").write_text("{}\n", encoding="utf-8")
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    real_fwalk = os.fwalk
+
+    def skipping_fwalk(
+        top: str | os.PathLike[str],
+        topdown: bool = True,
+        onerror: Callable[[OSError], object] | None = None,
+        *,
+        follow_symlinks: bool = False,
+        dir_fd: int | None = None,
+    ) -> Iterator[tuple[str, list[str], list[str], int]]:
+        for entry in real_fwalk(
+            top,
+            topdown=topdown,
+            onerror=onerror,
+            follow_symlinks=follow_symlinks,
+            dir_fd=dir_fd,
+        ):
+            if Path(entry[0]).name != "child":
+                yield entry
+
+    monkeypatch.setattr(os, "fwalk", skipping_fwalk)
+
+    with pytest.raises(ObservationBlocked, match="could not be traversed completely"):
+        _stage_repository(repo, staged)
+
+
 @requires_docker
 def test_read_only_command_passes_and_is_deterministic(tmp_path: Path) -> None:
     repo = _repo(tmp_path)

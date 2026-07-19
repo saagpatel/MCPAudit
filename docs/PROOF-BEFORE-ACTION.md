@@ -90,6 +90,8 @@ The observer:
    directory descriptors with link following disabled, copied from that open
    identity, and validated again from the private staged bytes. A directory
    traversal or reopen failure blocks inspection instead of omitting a subtree;
+   accepted directory listings are also reconciled with every directory actually
+   traversed so a runtime-silent skip is detected;
 2. creates a container with no host mount, no forwarded socket, network mode
    `none`, a read-only image root, `no-new-privileges`, and bounded CPU, memory,
    process, and tmpfs resources;
