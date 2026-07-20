@@ -17,6 +17,14 @@ REVIEWED_ACTION_RELEASES = {
     "github/codeql-action/analyze": ("7188fc363630916deb702c7fdcf4e481b751f97a", "v4.37.1"),
     "github/codeql-action/init": ("7188fc363630916deb702c7fdcf4e481b751f97a", "v4.37.1"),
     "github/codeql-action/upload-sarif": ("7188fc363630916deb702c7fdcf4e481b751f97a", "v4.37.1"),
+    "google/clusterfuzzlite/actions/build_fuzzers": (
+        "82652fb49e77bc29c35da1167bb286e93c6bcc05",
+        "v1",
+    ),
+    "google/clusterfuzzlite/actions/run_fuzzers": (
+        "82652fb49e77bc29c35da1167bb286e93c6bcc05",
+        "v1",
+    ),
     "ossf/scorecard-action": ("4eaacf0543bb3f2c246792bd56e8cdeffafb205a", "v2.4.3"),
     "pypa/gh-action-pypi-publish": ("ba38be9e461d3875417946c167d0b5f3d385a247", "v1.14.1"),
     "saagpatel/agent-permission-diff-bot": (
