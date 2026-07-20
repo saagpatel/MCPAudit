@@ -366,7 +366,12 @@ def test_kernel_enforces_cpu_limit_and_crash_is_contained(
     assert cpu.returncode != 0
 
     crash = _run_sandboxed(
-        [_sandbox_python(), "-c", "import os; os.abort()"],
+        # Do not use Python's os.abort() here: Homebrew Python.app can hand that
+        # crash to macOS CrashReporter and produce a GUI "Python quit unexpectedly"
+        # dialog when the full suite is launched from Codex/ChatGPT. SIGKILL still
+        # gives the sandbox a real abnormal signal termination to contain without
+        # asking CrashReporter to present an interactive process-crash dialog.
+        ["/bin/sh", "-c", "kill -KILL $$"],
         tmp_path,
         tmp_path / "artifact",
         deny_network=True,
