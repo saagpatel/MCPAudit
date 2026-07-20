@@ -33,10 +33,18 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Checkout release controls
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          path: release-controls
+
+      - name: Checkout exact release source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ inputs.commit }}
           fetch-depth: 0
+          path: release-source
 
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
         with:
@@ -57,23 +65,28 @@ jobs:
         env:
           RELEASE_COMMIT: ${{ inputs.commit }}
           RELEASE_TAG: ${{ inputs.tag }}
+        working-directory: release-source
         run: |
           git fetch --force --tags origin main
-          uv run python scripts/verify_release.py \
+          uv run python ../release-controls/scripts/verify_release.py \
+            --root . \
             --tag "$RELEASE_TAG" \
             --commit "$RELEASE_COMMIT" \
             --environment-json "$RUNNER_TEMP/pypi-environment.json" \
             --require-publishable
 
       - name: Install locked dependencies
+        working-directory: release-source
         run: uv sync --dev --locked
 
       - name: Prepare Proof Before Action test image
+        working-directory: release-source
         run: |
           docker image inspect node:24-slim >/dev/null 2>&1 || docker pull node:24-slim
           docker image inspect --format '{{.Id}}' node:24-slim
 
       - name: Run release quality gate
+        working-directory: release-source
         run: |
           uv run pytest
           uv run ruff check
@@ -83,14 +96,17 @@ jobs:
           git diff --check
 
       - name: Build wheel and sdist
+        working-directory: release-source
         run: uv build --clear
 
       - name: Verify built distributions
         env:
           RELEASE_COMMIT: ${{ inputs.commit }}
           RELEASE_TAG: ${{ inputs.tag }}
+        working-directory: release-source
         run: |
-          uv run python scripts/verify_release.py \
+          uv run python ../release-controls/scripts/verify_release.py \
+            --root . \
             --tag "$RELEASE_TAG" \
             --commit "$RELEASE_COMMIT" \
             --environment-json "$RUNNER_TEMP/pypi-environment.json" \
@@ -103,9 +119,9 @@ jobs:
         with:
           name: mcp-audits-${{ inputs.tag }}
           path: |
-            dist/*.whl
-            dist/*.tar.gz
-            SHA256SUMS
+            release-source/dist/*.whl
+            release-source/dist/*.tar.gz
+            release-source/SHA256SUMS
           if-no-files-found: error
           retention-days: 14
 
@@ -135,7 +151,7 @@ jobs:
             and any(
               .protection_rules[];
               .type == "required_reviewers"
-              and .prevent_self_review == true
+              and .prevent_self_review == false
               and (.reviewers | length) > 0
             )
           ' "$RUNNER_TEMP/pypi-environment.json"

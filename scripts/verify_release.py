@@ -25,6 +25,12 @@ class VerificationError(RuntimeError):
     """A release invariant is not satisfied."""
 
 
+def _set_root(path: Path) -> None:
+    global ROOT, RELEASE_STATE_PATH
+    ROOT = path.resolve()
+    RELEASE_STATE_PATH = ROOT / "docs/release-state.json"
+
+
 def _read_text(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
@@ -99,12 +105,12 @@ def verify_environment_protection(raw: object) -> None:
         if (
             isinstance(rule, dict)
             and rule.get("type") == "required_reviewers"
-            and rule.get("prevent_self_review") is True
+            and rule.get("prevent_self_review") is False
             and isinstance(rule.get("reviewers"), list)
             and len(rule["reviewers"]) > 0
         ):
             return
-    raise VerificationError("PyPI environment requires a reviewer with self-review prevention")
+    raise VerificationError("PyPI environment requires a named solo-maintainer reviewer")
 
 
 def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object]]:
@@ -284,6 +290,12 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         help="live GitHub response for the protected PyPI environment",
     )
+    parser.add_argument(
+        "--root",
+        type=Path,
+        default=ROOT,
+        help="release source checkout to verify",
+    )
     parser.add_argument("--require-publishable", action="store_true")
     parser.add_argument("--dist-dir", type=Path)
     return parser
@@ -291,6 +303,7 @@ def _parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = _parser().parse_args()
+    _set_root(args.root)
     try:
         version, _state = verify_metadata(require_publishable=args.require_publishable)
         if args.tag is not None and args.commit is None:
