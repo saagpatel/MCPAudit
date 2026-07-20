@@ -45,6 +45,13 @@ def test_mcp_runtime_dependency_excludes_known_vulnerable_versions() -> None:
     assert tuple(map(int, match.groups())) >= (1, 28, 1)
 
 
+def test_clusterfuzzlite_uses_oss_fuzz_python_builder() -> None:
+    build_script = (REPO_ROOT / ".clusterfuzzlite" / "build.sh").read_text(encoding="utf-8")
+
+    assert 'compile_python_fuzzer "$fuzzer"' in build_script
+    assert "pyinstaller" not in build_script.lower()
+
+
 def test_external_github_actions_are_pinned_to_immutable_commits() -> None:
     action_files = [
         REPO_ROOT / "action.yml",
