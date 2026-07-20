@@ -47,9 +47,16 @@ def test_mcp_runtime_dependency_excludes_known_vulnerable_versions() -> None:
 
 def test_clusterfuzzlite_uses_oss_fuzz_python_builder() -> None:
     build_script = (REPO_ROOT / ".clusterfuzzlite" / "build.sh").read_text(encoding="utf-8")
+    dockerfile = (REPO_ROOT / ".clusterfuzzlite" / "Dockerfile").read_text(encoding="utf-8")
+    requirements = (REPO_ROOT / ".clusterfuzzlite" / "requirements.txt").read_text(encoding="utf-8")
 
     assert 'compile_python_fuzzer "$fuzzer"' in build_script
     assert "pyinstaller" not in build_script.lower()
+    assert "pip install ." not in build_script
+    assert "pip install --require-hashes -r .clusterfuzzlite/requirements.txt" in build_script
+    assert "PYTHONPATH" in build_script
+    assert "gcr.io/oss-fuzz-base/base-builder-python@sha256:" in dockerfile
+    assert "--hash=sha256:" in requirements
 
 
 def test_external_github_actions_are_pinned_to_immutable_commits() -> None:
