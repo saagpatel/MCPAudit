@@ -33,6 +33,7 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Application Frameworks",
 ]
 dependencies = [
+    "agent-governance-toolkit-core==4.1.0",
     "click>=8.0",
     "rich>=15.0.0",
     "anyio>=4.0",

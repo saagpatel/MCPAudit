@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added an experimental, fixture-only evidence-to-enforcement workflow pinned
+  to Microsoft Agent Governance Toolkit 4.1.0. It keeps observed evidence,
+  policy recommendation, operator approval, and effective-state proof as
+  separate versioned contracts; supports only exact tool allow, deny, and
+  approval decisions; and fails closed on unsupported constraints, stale or
+  drifted evidence, approval mismatch, runtime mismatch, or verification
+  failure. Program-owned fixture state includes cooperative mutation locking,
+  behavioral negative controls, deterministic no-op verification, and rollback.
+
 ### Changed
 
 - Made config-only scan status explicit across terminal, JSON, and HTML reports,

@@ -1,0 +1,253 @@
+{
+  "$defs": {
+    "AuditDecision": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed": {
+          "title": "Allowed",
+          "type": "boolean"
+        },
+        "approval_status": {
+          "anyOf": [
+            {
+              "enum": [
+                "pending",
+                "approved",
+                "denied"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approval Status"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "tool_name": {
+          "title": "Tool Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool_name",
+        "allowed",
+        "reason"
+      ],
+      "title": "AuditDecision",
+      "type": "object"
+    },
+    "BehavioralProbe": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed": {
+          "title": "Allowed",
+          "type": "boolean"
+        },
+        "handler_executions": {
+          "minimum": 0,
+          "title": "Handler Executions",
+          "type": "integer"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "tool_name": {
+          "title": "Tool Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool_name",
+        "allowed",
+        "handler_executions",
+        "reason"
+      ],
+      "title": "BehavioralProbe",
+      "type": "object"
+    },
+    "GatewayConfigReadback": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed_tools": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowed Tools",
+          "type": "array"
+        },
+        "builtin_sanitization": {
+          "title": "Builtin Sanitization",
+          "type": "boolean"
+        },
+        "denied_tools": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Denied Tools",
+          "type": "array"
+        },
+        "policy_name": {
+          "title": "Policy Name",
+          "type": "string"
+        },
+        "rate_limit": {
+          "title": "Rate Limit",
+          "type": "integer"
+        },
+        "sensitive_tools": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Sensitive Tools",
+          "type": "array"
+        }
+      },
+      "required": [
+        "policy_name",
+        "allowed_tools",
+        "denied_tools",
+        "sensitive_tools",
+        "rate_limit",
+        "builtin_sanitization"
+      ],
+      "title": "GatewayConfigReadback",
+      "type": "object"
+    },
+    "ServerIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "origin": {
+          "minLength": 1,
+          "title": "Origin",
+          "type": "string"
+        },
+        "server_name": {
+          "minLength": 1,
+          "title": "Server Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "origin",
+        "server_name"
+      ],
+      "title": "ServerIdentity",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "allowed_tools": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Allowed Tools",
+      "type": "array"
+    },
+    "applied_at": {
+      "format": "date-time",
+      "pattern": "(?:Z|\\+00:00)$",
+      "title": "Applied At",
+      "type": "string"
+    },
+    "approval_tools": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Approval Tools",
+      "type": "array"
+    },
+    "audit_decisions": {
+      "items": {
+        "$ref": "#/$defs/AuditDecision"
+      },
+      "title": "Audit Decisions",
+      "type": "array"
+    },
+    "behavioral_probes": {
+      "items": {
+        "$ref": "#/$defs/BehavioralProbe"
+      },
+      "title": "Behavioral Probes",
+      "type": "array"
+    },
+    "denied_tools": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Denied Tools",
+      "type": "array"
+    },
+    "fail_closed_runtime_error": {
+      "title": "Fail Closed Runtime Error",
+      "type": "boolean"
+    },
+    "gateway_config": {
+      "$ref": "#/$defs/GatewayConfigReadback"
+    },
+    "handler_counters": {
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "title": "Handler Counters",
+      "type": "object"
+    },
+    "negative_controls_passed": {
+      "title": "Negative Controls Passed",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "const": "mcpaudit.effective-state.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "subject": {
+      "$ref": "#/$defs/ServerIdentity"
+    },
+    "supported_intent_matches": {
+      "title": "Supported Intent Matches",
+      "type": "boolean"
+    },
+    "target_adapter": {
+      "const": "microsoft-agt-mcp-gateway",
+      "title": "Target Adapter",
+      "type": "string"
+    },
+    "target_runtime_distribution": {
+      "const": "agent-governance-toolkit-core",
+      "title": "Target Runtime Distribution",
+      "type": "string"
+    },
+    "target_runtime_version": {
+      "const": "4.1.0",
+      "title": "Target Runtime Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "subject",
+    "target_adapter",
+    "target_runtime_distribution",
+    "target_runtime_version",
+    "applied_at",
+    "allowed_tools",
+    "denied_tools",
+    "approval_tools",
+    "gateway_config",
+    "audit_decisions",
+    "behavioral_probes",
+    "fail_closed_runtime_error",
+    "handler_counters",
+    "supported_intent_matches",
+    "negative_controls_passed"
+  ],
+  "title": "EffectiveStateV1",
+  "type": "object"
+}
