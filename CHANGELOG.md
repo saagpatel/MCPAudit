@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Tightened Proof Before Action staging so placeholder authorization headers
+  cannot be combined with adjacent literal material, and local placeholder
+  variables cannot be backed by staged literal credential assignments.
+
 ## [2.5.0] - Unreleased
 
 ### Security
