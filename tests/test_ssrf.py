@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pytest import MonkeyPatch
+from pytest import MonkeyPatch, mark
 
 import mcp_audit.ssrf as ssrf_module
 from mcp_audit.models import (
@@ -325,6 +325,34 @@ def test_referenced_definition_is_scanned_at_use_site() -> None:
     assert "URL-shaped parameter 'request.targetUrl'" in findings[0].evidence
 
 
+def test_tuple_form_array_items_are_scanned_with_indexed_paths() -> None:
+    detector = SsrfDetector()
+    tool = ToolInfo(
+        name="fetch_resource",
+        description="Fetch a resource.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "targets": {
+                    "type": "array",
+                    "items": [
+                        {
+                            "type": "object",
+                            "properties": {"targetUrl": {"type": "string"}},
+                        },
+                        {"type": "string"},
+                    ],
+                }
+            },
+        },
+    )
+
+    findings = detector.scan_tool(tool)
+
+    assert len(findings) == 1
+    assert "URL-shaped parameter 'targets[0].targetUrl'" in findings[0].evidence
+
+
 def test_cyclic_programmatic_schema_is_finite() -> None:
     detector = SsrfDetector()
     tool = _tool(
@@ -471,6 +499,37 @@ def test_unresolved_reference_is_visible_and_fail_closed() -> None:
     assert findings[0].pattern_name == "schema_traversal_incomplete"
     assert (
         "schema traversal incomplete: unresolved or external reference: #/$defs/Missing"
+        in findings[0].evidence
+    )
+
+
+@mark.parametrize(
+    ("keyword", "reference"),
+    [
+        ("$dynamicRef", "#request"),
+        ("$recursiveRef", "#"),
+    ],
+)
+def test_dynamic_reference_semantics_are_visible_and_fail_closed(
+    keyword: str,
+    reference: str,
+) -> None:
+    detector = SsrfDetector()
+    tool = ToolInfo(
+        name="search",
+        description="Search documents.",
+        input_schema={
+            "type": "object",
+            "properties": {"request": {keyword: reference}},
+        },
+    )
+
+    findings = detector.scan_tool(tool)
+
+    assert len(findings) == 1
+    assert findings[0].pattern_name == "schema_traversal_incomplete"
+    assert (
+        f"schema traversal incomplete: unsupported dynamic reference {keyword}: {reference}"
         in findings[0].evidence
     )
 

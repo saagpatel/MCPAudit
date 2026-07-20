@@ -186,6 +186,11 @@ def _iter_schema_properties(schema: dict[str, object]) -> _SchemaWalkResult:
             else:
                 stack.append((resolved, prefix, depth + 1, branch))
 
+        for keyword in ("$dynamicRef", "$recursiveRef"):
+            dynamic_ref = node.get(keyword)
+            if isinstance(dynamic_ref, str):
+                incomplete.add(f"unsupported dynamic reference {keyword}: {dynamic_ref}")
+
         properties = node.get("properties")
         if isinstance(properties, dict):
             nested: list[tuple[dict[str, object], str, int, frozenset[int]]] = []
@@ -210,13 +215,22 @@ def _iter_schema_properties(schema: dict[str, object]) -> _SchemaWalkResult:
         for keyword, suffix in (
             ("additionalProperties", ".*"),
             ("contains", "[]"),
-            ("items", "[]"),
             ("unevaluatedItems", "[]"),
             ("unevaluatedProperties", ".*"),
         ):
             child = node.get(keyword)
             if isinstance(child, dict):
                 stack.append((child, f"{prefix}{suffix}", depth + 1, branch))
+
+        items = node.get("items")
+        if isinstance(items, dict):
+            stack.append((items, f"{prefix}[]", depth + 1, branch))
+        elif isinstance(items, list):
+            stack.extend(
+                (child, f"{prefix}[{index}]", depth + 1, branch)
+                for index, child in reversed(list(enumerate(items)))
+                if isinstance(child, dict)
+            )
 
         for keyword in ("allOf", "anyOf", "oneOf"):
             children = node.get(keyword)
