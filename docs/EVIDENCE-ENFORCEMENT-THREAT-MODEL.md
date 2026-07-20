@@ -42,6 +42,15 @@ after rollback. A no-op also requires the existing rollback record to bind that
 exact approval, rollback identity, applied-state digest, and captured pre-state;
 identical unowned or differently approved state is rejected.
 
+Raw JSON-RPC request-envelope parsing belongs to the MCP host, not this fixture
+adapter. SDKs may disagree about accepting an unrecognized top-level `name`
+beside the canonical `params.name`. The adapter does not consume that envelope:
+its authority-bearing evidence, recommendation, and approval contracts forbid
+unknown fields, derive identity from the exact origin-qualified `subject`, and
+reject an extra top-level identity before fixture-state mutation. This is a
+compensating adapter boundary, not a claim that different MCP SDK parsers are
+equivalent.
+
 ### TOCTOU and drift
 
 Application and rollback acquire a persistent, program-owned `fcntl` lock for

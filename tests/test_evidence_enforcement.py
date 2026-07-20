@@ -172,6 +172,23 @@ def test_models_are_strict_versioned_utc_and_canonical() -> None:
     assert digest_model(evidence).startswith("sha256:")
 
 
+def test_sa015_conflicting_top_level_identity_cannot_cross_authority_contracts(
+    tmp_path: Path,
+) -> None:
+    """Reject the cross-SDK ambiguity before it can become fixture authority."""
+    _, evidence, recommendation, approval = _bundle(tmp_path)
+
+    for model, value in (
+        (ObservedEvidenceV1, evidence),
+        (PolicyRecommendationV1, recommendation),
+        (ApprovedPolicyIntentV1, approval),
+    ):
+        payload = value.model_dump(mode="json")
+        payload["name"] = "danger"
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            model.model_validate(payload)
+
+
 def test_audit_report_v1_is_preserved_and_converted_without_authorizing() -> None:
     report = _report()
     evidence = _evidence(report)
