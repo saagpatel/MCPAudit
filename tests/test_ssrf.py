@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pytest import MonkeyPatch
+
 import mcp_audit.ssrf as ssrf_module
 from mcp_audit.models import (
     CapabilityTarget,
@@ -335,7 +337,11 @@ def test_cyclic_programmatic_schema_is_finite() -> None:
             }
         },
     )
-    request_schema = tool.input_schema["properties"]["request"]
+    input_schema = tool.input_schema
+    assert isinstance(input_schema, dict)
+    root_properties = input_schema["properties"]
+    assert isinstance(root_properties, dict)
+    request_schema = root_properties["request"]
     assert isinstance(request_schema, dict)
     request_properties = request_schema["properties"]
     assert isinstance(request_properties, dict)
@@ -373,7 +379,9 @@ def test_recursive_local_ref_is_finite_and_preserves_use_site() -> None:
     assert "URL-shaped parameter 'request.endpoint'" in findings[0].evidence
 
 
-def test_property_budget_exhaustion_is_visible_and_fail_closed(monkeypatch) -> None:
+def test_property_budget_exhaustion_is_visible_and_fail_closed(
+    monkeypatch: MonkeyPatch,
+) -> None:
     monkeypatch.setattr(ssrf_module, "_MAX_SCHEMA_PROPERTIES", 1)
     detector = SsrfDetector()
     tool = ToolInfo(
@@ -396,7 +404,9 @@ def test_property_budget_exhaustion_is_visible_and_fail_closed(monkeypatch) -> N
     assert "schema traversal incomplete: property budget exceeded (1)" in findings[0].evidence
 
 
-def test_node_budget_exhaustion_is_visible_and_fail_closed(monkeypatch) -> None:
+def test_node_budget_exhaustion_is_visible_and_fail_closed(
+    monkeypatch: MonkeyPatch,
+) -> None:
     monkeypatch.setattr(ssrf_module, "_MAX_SCHEMA_NODES", 1)
     detector = SsrfDetector()
     tool = ToolInfo(
@@ -420,7 +430,9 @@ def test_node_budget_exhaustion_is_visible_and_fail_closed(monkeypatch) -> None:
     assert "schema traversal incomplete: node budget exceeded (1)" in findings[0].evidence
 
 
-def test_depth_budget_exhaustion_is_visible_and_fail_closed(monkeypatch) -> None:
+def test_depth_budget_exhaustion_is_visible_and_fail_closed(
+    monkeypatch: MonkeyPatch,
+) -> None:
     monkeypatch.setattr(ssrf_module, "_MAX_SCHEMA_DEPTH", 2)
     detector = SsrfDetector()
     schema: dict[str, object] = {"type": "string"}
