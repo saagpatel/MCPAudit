@@ -92,6 +92,10 @@ _TEXT_SECRET_ASSIGNMENT = re.compile(
     r"password|private[_-]?key|secret|token)[A-Za-z0-9._-]*)\s*[:=]\s*"
     r"[\"']?([^\"'#\r\n]+)"
 )
+_TEXT_VARIABLE_ASSIGNMENT = re.compile(
+    r"(?im)^\s*(?:(?:export|readonly|local|typeset)\s+|declare(?:\s+-[A-Za-z]+)*\s+)?"
+    r"([A-Za-z_][A-Za-z0-9_]*)\s*[:=]\s*[\"']?([^\"'#\r\n]+)"
+)
 _SAFE_DATABASE_NAME = re.compile(r"(?i)(?:fixture|sample|seed|synthetic|test)")
 _PLACEHOLDER_VALUE = re.compile(
     r"(?i)^(?:\$\{?[A-Z0-9_]+\}?|\$\{\{\s*(?:(?:env|secrets|vars)\.[A-Z0-9_.-]+|github\.token)\s*\}\}|"
@@ -728,18 +732,28 @@ def _sensitive_header_value(line: str, match: re.Match[str]) -> tuple[str, bool]
     prefix_quote = (
         line[match.start() - 1] if match.start() > 0 and line[match.start() - 1] in {"'", '"'} else ""
     )
+    if prefix_quote and prefix_quote in line[match.start() : start]:
+        prefix_quote = ""
+    if prefix_quote:
+        outer_end = line.rfind(prefix_quote, start)
+        if outer_end < start:
+            return "", True
+        value = line[start:outer_end].strip()
+        if value.startswith(("'", '"')):
+            value_quote = value[0]
+            inner_end = value.find(value_quote, 1)
+            if inner_end < 0:
+                return "", True
+            suffix = value[inner_end + 1 :]
+            return value[1:inner_end], bool(suffix.strip())
+        return value, False
     if start < len(line) and line[start] in {"'", '"'}:
         value_quote = line[start]
         end = line.find(value_quote, start + 1)
         if end < 0:
             return "", True
-        return line[start + 1 : end], False
-    if prefix_quote:
-        end = line.find(prefix_quote, start)
-        if end < 0:
-            return "", True
-        suffix = line[end + 1 :]
-        return line[start:end], bool(suffix and suffix[0] not in {" ", "\t"})
+        suffix = line[end + 1 :].strip()
+        return line[start + 1 : end], bool(suffix and not re.fullmatch(r"[\]},]+", suffix))
     return line[start:], False
 
 
@@ -821,17 +835,27 @@ def _validate_staged_placeholder_sources(root: Path) -> None:
         _literal, references = _credential_material(text)
         for reference in references:
             referenced_variables.setdefault(reference, relative)
-        for match in _TEXT_SECRET_ASSIGNMENT.finditer(text):
+        for match in _TEXT_VARIABLE_ASSIGNMENT.finditer(text):
             key, match_value = match.groups()
-            if _SENSITIVE_KEY.search(key):
-                assignments.setdefault(key, []).append((relative, match_value))
+            assignments.setdefault(key, []).append((relative, match_value))
     for variable, header_relative in referenced_variables.items():
-        for assignment_relative, assignment_value in assignments.get(variable, []):
-            if _secret_assignment_is_literal(variable.lower(), assignment_value):
-                raise ObservationBlocked(
-                    "repository text defines a literal credential used by a staged placeholder: "
-                    f"{assignment_relative.as_posix()} -> {header_relative.as_posix()}"
-                )
+        pending = [variable]
+        visited: set[str] = set()
+        while pending:
+            current = pending.pop()
+            if current in visited:
+                continue
+            visited.add(current)
+            for assignment_relative, assignment_value in assignments.get(current, []):
+                normalized_value = assignment_value.strip()
+                if alias := _local_placeholder_reference(normalized_value):
+                    pending.append(alias)
+                    continue
+                if _secret_assignment_is_literal(current.lower(), normalized_value):
+                    raise ObservationBlocked(
+                        "repository text defines a literal credential used by a staged placeholder: "
+                        f"{assignment_relative.as_posix()} -> {header_relative.as_posix()}"
+                    )
 
 
 def _is_placeholder(value: str) -> bool:

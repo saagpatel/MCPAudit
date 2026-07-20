@@ -2312,11 +2312,31 @@ def test_placeholder_authorization_header_rejects_adjacent_shell_literal(tmp_pat
         _stage_repository(repo, staged)
 
 
+def test_placeholder_authorization_header_rejects_nested_quote_literal(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    (repo / "publish.sh").write_text(
+        "curl -H 'Authorization: \"Bearer $GH_TOKEN\"private-value' https://example.test\n",
+        encoding="utf-8",
+    )
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    with pytest.raises(ObservationBlocked, match="credential material"):
+        _stage_repository(repo, staged)
+
+
 @pytest.mark.parametrize(
     ("assignment_name", "assignment_text"),
     [
         ("same.sh", 'GH_TOKEN="private-value"\ncurl --header "Authorization: Bearer $GH_TOKEN"\n'),
         ("same.sh", 'export GH_TOKEN="private-value"\ncurl --header "Authorization: Bearer $GH_TOKEN"\n'),
+        ("same.sh", 'declare -x GH_TOKEN="private-value"\ncurl --header "Authorization: Bearer $GH_TOKEN"\n'),
+        ("same.sh", 'VALUE="private-value"\ncurl --header "Authorization: Bearer $VALUE"\n'),
+        (
+            "same.sh",
+            'REAL_TOKEN="private-value"\n'
+            "GH_TOKEN=$REAL_TOKEN\n"
+            'curl --header "Authorization: Bearer $GH_TOKEN"\n',
+        ),
     ],
 )
 def test_placeholder_authorization_header_rejects_same_file_literal_assignment(
