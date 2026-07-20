@@ -799,6 +799,26 @@ def _json_contains_literal_secret(value: Any) -> bool:
     return False
 
 
+def _json_local_placeholder_references(value: Any) -> set[str]:
+    references: set[str] = set()
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            if str(key) == "headers" and isinstance(nested, dict):
+                for header, item in nested.items():
+                    if not isinstance(item, str):
+                        continue
+                    if not _SENSITIVE_HEADER_ASSIGNMENT.fullmatch(f"{header}: "):
+                        continue
+                    normalized = _normalize_sensitive_header_value(item)
+                    if reference := _local_placeholder_reference(normalized):
+                        references.add(reference)
+            references.update(_json_local_placeholder_references(nested))
+    elif isinstance(value, list):
+        for item in value:
+            references.update(_json_local_placeholder_references(item))
+    return references
+
+
 def _literal_header_config_value(header: Any, value: Any) -> bool:
     if not isinstance(value, str):
         return value is not None
@@ -837,7 +857,16 @@ def _validate_staged_placeholder_sources(root: Path) -> None:
         except UnicodeDecodeError:
             continue
         relative = path.relative_to(root)
-        _literal, references = _credential_material(text)
+        payload = None
+        if path.suffix.lower() == ".json" or path.name in _REPO_CONFIG_NAMES:
+            try:
+                payload = json.loads(text)
+            except json.JSONDecodeError:
+                pass
+        if payload is not None:
+            references = _json_local_placeholder_references(payload)
+        else:
+            _literal, references = _credential_material(text)
         for reference in references:
             referenced_variables.setdefault(reference, relative)
         for match in _TEXT_VARIABLE_ASSIGNMENT.finditer(text):

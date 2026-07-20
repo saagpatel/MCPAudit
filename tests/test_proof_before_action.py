@@ -2313,6 +2313,22 @@ def test_multiple_placeholder_json_headers_are_staged(tmp_path: Path) -> None:
     )
 
 
+def test_multiple_placeholder_json_headers_reject_cross_file_literal_assignment(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path)
+    (repo / ".mcp.json").write_text(
+        '{"mcpServers":{"safe":{"headers":{"Authorization":"Bearer $GH_TOKEN",'
+        '"X-Trace":"$TRACE"},"url":"https://example.test"}}}\n',
+        encoding="utf-8",
+    )
+    (repo / "secrets.sh").write_text('GH_TOKEN="private-value"\n', encoding="utf-8")
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    with pytest.raises(ObservationBlocked, match="literal credential used by a staged placeholder"):
+        _stage_repository(repo, staged)
+
+
 def test_literal_credential_in_json_command_is_blocked(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     (repo / "package.json").write_text(
