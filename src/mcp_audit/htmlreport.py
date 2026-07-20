@@ -107,7 +107,13 @@ class HtmlReportGenerator:
     # ------------------------------------------------------------------
 
     def _summary(self, report: AuditReport) -> str:
+        connection_mode = {
+            "attempted": "Connections attempted",
+            "skipped": "Config only",
+            "unknown": "Unknown",
+        }[report.connection_mode.value]
         stats = [
+            ("Connection mode", connection_mode),
             ("Discovered", report.servers_discovered),
             ("Connected", report.servers_connected),
             ("Failed", report.servers_failed),

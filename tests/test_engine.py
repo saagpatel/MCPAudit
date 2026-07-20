@@ -9,6 +9,7 @@ cli._run_scan_core compatibility shim.
 from __future__ import annotations
 
 import io
+from functools import partial
 from pathlib import Path
 
 import anyio
@@ -18,7 +19,12 @@ from rich.console import Console
 from mcp_audit import engine
 from mcp_audit.discovery import ConfigParseError
 from mcp_audit.engine import ScanOptions, run_scan
-from mcp_audit.models import AUDIT_REPORT_SCHEMA_VERSION, ClientType, ServerConfig
+from mcp_audit.models import (
+    AUDIT_REPORT_SCHEMA_VERSION,
+    ClientType,
+    ConnectionMode,
+    ServerConfig,
+)
 from tests.conftest import make_server_config
 
 
@@ -90,6 +96,21 @@ def test_report_carries_schema_version(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert report.schema_version == AUDIT_REPORT_SCHEMA_VERSION == 1
     assert report.model_dump(mode="json")["schema_version"] == 1
+
+
+def test_report_distinguishes_skipped_from_attempted_connections(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        engine, "discover_all_configs", lambda clients, parse_errors=None: [make_server_config(name="srv")]
+    )
+
+    skipped = anyio.run(run_scan, ScanOptions(skip_connect=True))
+    attempted = anyio.run(partial(run_scan, ScanOptions(), servers=[]))
+
+    assert skipped.connection_mode is ConnectionMode.SKIPPED
+    assert skipped.model_dump(mode="json")["connection_mode"] == "skipped"
+    assert attempted.connection_mode is ConnectionMode.ATTEMPTED
 
 
 def test_run_scan_raises_on_missing_extra_config(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -292,6 +313,7 @@ def test_schema_version_pins_top_level_field_set() -> None:
         "scan_timestamp",
         "hostname",
         "os_platform",
+        "connection_mode",
         "servers_discovered",
         "servers_connected",
         "servers_failed",

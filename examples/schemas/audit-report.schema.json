@@ -142,6 +142,16 @@
       "title": "Confidence",
       "type": "string"
     },
+    "ConnectionMode": {
+      "description": "Whether this scan attempted to connect to configured MCP servers.",
+      "enum": [
+        "unknown",
+        "attempted",
+        "skipped"
+      ],
+      "title": "ConnectionMode",
+      "type": "string"
+    },
     "ConfigHealthFinding": {
       "description": "A configuration health warning found before connecting to an MCP server.",
       "properties": {
@@ -1662,6 +1672,10 @@
     "os_platform": {
       "title": "Os Platform",
       "type": "string"
+    },
+    "connection_mode": {
+      "$ref": "#/$defs/ConnectionMode",
+      "default": "unknown"
     },
     "servers_discovered": {
       "title": "Servers Discovered",

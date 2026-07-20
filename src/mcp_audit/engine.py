@@ -33,6 +33,7 @@ from mcp_audit.discovery import ConfigParseError, discover_all_configs
 from mcp_audit.models import (
     AuditReport,
     ClientType,
+    ConnectionMode,
     ScanWarning,
     ServerAudit,
     ServerConfig,
@@ -521,6 +522,7 @@ async def run_scan(
         scan_timestamp=datetime.now(UTC),
         hostname=socket.gethostname(),
         os_platform=platform.system(),
+        connection_mode=ConnectionMode.SKIPPED if opts.skip_connect else ConnectionMode.ATTEMPTED,
         servers_discovered=len(servers),
         servers_connected=sum(1 for a in audits if a.connection_status == "connected"),
         servers_failed=sum(1 for a in audits if a.connection_status in ("failed", "timeout")),

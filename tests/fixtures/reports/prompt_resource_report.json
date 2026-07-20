@@ -2,6 +2,7 @@
   "scan_timestamp": "2026-05-09T11:15:00Z",
   "hostname": "example-host",
   "os_platform": "Darwin",
+  "connection_mode": "attempted",
   "servers_discovered": 1,
   "servers_connected": 1,
   "servers_failed": 0,

@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from mcp_audit.models import AuditReport
+from mcp_audit.models import AuditReport, ConnectionMode
 from mcp_audit.sarif import SarifGenerator
 
 FIXTURES = [
@@ -159,6 +159,7 @@ def test_legacy_reports_load_through_current_model() -> None:
         report = AuditReport.model_validate_json(fixture.read_text())
         dumped = report.model_dump(mode="json")
         assert report.scan_timestamp
+        assert report.connection_mode is ConnectionMode.UNKNOWN
         assert "config_health_findings" in dumped
         assert "policy_result" in dumped
         for audit in report.audits:
