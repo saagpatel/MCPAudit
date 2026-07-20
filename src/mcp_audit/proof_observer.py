@@ -79,7 +79,8 @@ _LITERAL_CREDENTIAL_VALUE = re.compile(
     r"\b(?:AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{10,})\b"
 )
 _SENSITIVE_HEADER_ASSIGNMENT = re.compile(
-    r"(?i)(?:authorization|proxy-authorization|cookie|set-cookie)\s*[:=]\s*[\"']?([^\"'\r\n]+)"
+    r"(?i)(?<![A-Za-z0-9_-])(?:authorization|proxy-authorization|cookie|set-cookie)"
+    r"\s*[\"']?\s*[:=]\s*"
 )
 _HOME_PATH = re.compile(r"(?<![A-Za-z0-9_])/(?:Users|home)/[^/\s\"']+(?:/[^\s\"']*)?")
 _SENSITIVE_KEY = re.compile(
@@ -87,16 +88,17 @@ _SENSITIVE_KEY = re.compile(
     r"private[_-]?key|secret|token)(?:$|[_-])"
 )
 _TEXT_SECRET_ASSIGNMENT = re.compile(
-    r"(?im)^\s*([A-Za-z0-9._-]*(?:api[_-]?key|auth|authorization|cookie|credential|"
+    r"(?im)^\s*(?:export\s+)?([A-Za-z0-9._-]*(?:api[_-]?key|auth|authorization|cookie|credential|"
     r"password|private[_-]?key|secret|token)[A-Za-z0-9._-]*)\s*[:=]\s*"
     r"[\"']?([^\"'#\r\n]+)"
 )
 _SAFE_DATABASE_NAME = re.compile(r"(?i)(?:fixture|sample|seed|synthetic|test)")
 _PLACEHOLDER_VALUE = re.compile(
-    r"(?i)^(?:\$\{?[A-Z0-9_]+\}?|\$\{\{\s*(?:env|secrets|vars)\.[A-Z0-9_.-]+\s*\}\}|"
+    r"(?i)^(?:\$\{?[A-Z0-9_]+\}?|\$\{\{\s*(?:(?:env|secrets|vars)\.[A-Z0-9_.-]+|github\.token)\s*\}\}|"
     r"<[^>]+>|changeme|dummy|example|fixture|"
     r"placeholder|redacted|sample|synthetic|test)$"
 )
+_LOCAL_ENV_PLACEHOLDER = re.compile(r"^\$\{?([A-Za-z0-9_]+)\}?$")
 _DATABASE_SUFFIXES = {".db", ".sqlite", ".sqlite3"}
 _REPO_CONFIG_NAMES = {".mcp.json", "server.json"}
 _TEXT_CONFIG_SUFFIXES = {".cfg", ".conf", ".ini", ".properties", ".toml", ".yaml", ".yml"}
@@ -499,6 +501,7 @@ def _stage_repository(source: Path, destination: Path) -> None:
                     os.close(descriptor)
     if traversed_directories != expected_directories:
         raise ObservationBlocked("repository input tree changed or could not be traversed completely")
+    _validate_staged_placeholder_sources(destination)
 
 
 def _raise_repository_walk_error(error: OSError) -> None:
@@ -692,27 +695,64 @@ def _validate_staged_input(path: Path, relative: Path) -> None:
             if not _SENSITIVE_KEY.search(key):
                 continue
             normalized_key = key.lower()
-            normalized_value = match_value.strip().lower()
-            if normalized_key == "id-token" and normalized_value in {"none", "read", "write"}:
-                continue
-            if normalized_key == "persist-credentials" and normalized_value == "false":
-                continue
-            if not _is_placeholder(match_value):
+            if _secret_assignment_is_literal(normalized_key, match_value):
                 raise ObservationBlocked(
                     f"repository text contains a literal credential assignment: {relative.as_posix()}"
                 )
 
 
 def _contains_literal_credential_material(text: str) -> bool:
+    literal, _references = _credential_material(text)
+    return literal
+
+
+def _credential_material(text: str) -> tuple[bool, set[str]]:
+    references: set[str] = set()
     if _LITERAL_CREDENTIAL_VALUE.search(text):
-        return True
-    for match in _SENSITIVE_HEADER_ASSIGNMENT.finditer(text):
-        value = match.group(1).strip().rstrip("\\").strip().strip("\"'")
-        if value.lower().startswith("bearer "):
-            value = value[7:].strip()
-        if not _is_placeholder(value):
-            return True
-    return False
+        return True, references
+    for line in text.splitlines():
+        for match in _SENSITIVE_HEADER_ASSIGNMENT.finditer(line):
+            value, shell_suffix_literal = _sensitive_header_value(line, match)
+            if shell_suffix_literal:
+                return True, references
+            normalized = _normalize_sensitive_header_value(value)
+            if not _is_placeholder(normalized):
+                return True, references
+            if reference := _local_placeholder_reference(normalized):
+                references.add(reference)
+    return False, references
+
+
+def _sensitive_header_value(line: str, match: re.Match[str]) -> tuple[str, bool]:
+    start = match.end()
+    prefix_quote = (
+        line[match.start() - 1] if match.start() > 0 and line[match.start() - 1] in {"'", '"'} else ""
+    )
+    if start < len(line) and line[start] in {"'", '"'}:
+        value_quote = line[start]
+        end = line.find(value_quote, start + 1)
+        if end < 0:
+            return "", True
+        return line[start + 1 : end], False
+    if prefix_quote:
+        end = line.find(prefix_quote, start)
+        if end < 0:
+            return "", True
+        suffix = line[end + 1 :]
+        return line[start:end], bool(suffix and suffix[0] not in {" ", "\t"})
+    return line[start:], False
+
+
+def _normalize_sensitive_header_value(value: str) -> str:
+    normalized = value.strip().rstrip("\\").strip().strip("\"'")
+    if normalized.lower().startswith("bearer "):
+        return normalized[7:].strip()
+    return normalized
+
+
+def _local_placeholder_reference(value: str) -> str | None:
+    match = _LOCAL_ENV_PLACEHOLDER.fullmatch(value.strip())
+    return match.group(1) if match else None
 
 
 def _json_contains_literal_secret(value: Any) -> bool:
@@ -720,8 +760,13 @@ def _json_contains_literal_secret(value: Any) -> bool:
         for key, nested in value.items():
             key_text = str(key)
             if key_text in {"env", "headers"} and isinstance(nested, dict):
+                if key_text == "headers":
+                    if any(_literal_header_config_value(header, item) for header, item in nested.items()):
+                        return True
+                    continue
                 if any(_literal_secret_value(item) for item in nested.values()):
                     return True
+                continue
             if _SENSITIVE_KEY.search(key_text) and _literal_secret_value(nested):
                 return True
             if key_text == "args" and isinstance(nested, list):
@@ -735,10 +780,58 @@ def _json_contains_literal_secret(value: Any) -> bool:
     return False
 
 
+def _literal_header_config_value(header: Any, value: Any) -> bool:
+    if not isinstance(value, str):
+        return value is not None
+    header_text = str(header)
+    if _SENSITIVE_HEADER_ASSIGNMENT.fullmatch(f"{header_text}: "):
+        return not _is_placeholder(_normalize_sensitive_header_value(value))
+    return _literal_secret_value(value)
+
+
 def _literal_secret_value(value: Any) -> bool:
     if isinstance(value, str):
         return bool(value.strip()) and not _is_placeholder(value)
     return value is not None
+
+
+def _secret_assignment_is_literal(normalized_key: str, value: str) -> bool:
+    normalized_value = value.strip().lower()
+    if normalized_key == "id-token" and normalized_value in {"none", "read", "write"}:
+        return False
+    if normalized_key == "persist-credentials" and normalized_value == "false":
+        return False
+    return not _is_placeholder(value)
+
+
+def _validate_staged_placeholder_sources(root: Path) -> None:
+    referenced_variables: dict[str, Path] = {}
+    assignments: dict[str, list[tuple[Path, str]]] = {}
+    for path in sorted(root.rglob("*")):
+        if not path.is_file() or path.suffix.lower() in _DATABASE_SUFFIXES:
+            continue
+        try:
+            raw_value = path.read_bytes()
+            if b"\0" in raw_value:
+                continue
+            text = raw_value.decode("utf-8")
+        except UnicodeDecodeError:
+            continue
+        relative = path.relative_to(root)
+        _literal, references = _credential_material(text)
+        for reference in references:
+            referenced_variables.setdefault(reference, relative)
+        for match in _TEXT_SECRET_ASSIGNMENT.finditer(text):
+            key, match_value = match.groups()
+            if _SENSITIVE_KEY.search(key):
+                assignments.setdefault(key, []).append((relative, match_value))
+    for variable, header_relative in referenced_variables.items():
+        for assignment_relative, assignment_value in assignments.get(variable, []):
+            if _secret_assignment_is_literal(variable.lower(), assignment_value):
+                raise ObservationBlocked(
+                    "repository text defines a literal credential used by a staged placeholder: "
+                    f"{assignment_relative.as_posix()} -> {header_relative.as_posix()}"
+                )
 
 
 def _is_placeholder(value: str) -> bool:
