@@ -794,6 +794,8 @@ def _json_contains_literal_secret(value: Any) -> bool:
                 return True
     elif isinstance(value, list):
         return any(_json_contains_literal_secret(item) for item in value)
+    elif isinstance(value, str):
+        return _contains_literal_credential_material(value)
     return False
 
 

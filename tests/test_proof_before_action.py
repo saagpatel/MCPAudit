@@ -2313,6 +2313,18 @@ def test_multiple_placeholder_json_headers_are_staged(tmp_path: Path) -> None:
     )
 
 
+def test_literal_credential_in_json_command_is_blocked(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    (repo / "package.json").write_text(
+        '{"scripts":{"publish":"curl -H Authorization: Bearer private-value"}}\n',
+        encoding="utf-8",
+    )
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    with pytest.raises(ObservationBlocked, match="literal credential"):
+        _stage_repository(repo, staged)
+
+
 def test_placeholder_authorization_header_rejects_adjacent_shell_literal(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     workflow = repo / ".github/workflows/publish.yml"
