@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Made config-only scan status explicit across terminal, JSON, and HTML reports,
+  so zero connected and zero failed servers cannot be mistaken for a clean
+  connected scan.
 - Documented and enforced the solo-maintainer PyPI publication policy: the
   protected environment still requires named maintainer approval and disables
   administrator bypass, but no longer claims independent release review.

@@ -3,6 +3,7 @@
     "top_level_keys": [
       "audits",
       "config_health_findings",
+      "connection_mode",
       "fleet_trifecta_findings",
       "high_risk_servers",
       "hostname",
@@ -70,6 +71,7 @@
     "top_level_keys": [
       "audits",
       "config_health_findings",
+      "connection_mode",
       "fleet_trifecta_findings",
       "high_risk_servers",
       "hostname",
@@ -130,6 +132,7 @@
     "top_level_keys": [
       "audits",
       "config_health_findings",
+      "connection_mode",
       "fleet_trifecta_findings",
       "high_risk_servers",
       "hostname",
@@ -188,6 +191,7 @@
     "top_level_keys": [
       "audits",
       "config_health_findings",
+      "connection_mode",
       "fleet_trifecta_findings",
       "high_risk_servers",
       "hostname",
@@ -256,6 +260,7 @@
     "top_level_keys": [
       "audits",
       "config_health_findings",
+      "connection_mode",
       "fleet_trifecta_findings",
       "high_risk_servers",
       "hostname",
@@ -335,6 +340,7 @@
     "top_level_keys": [
       "audits",
       "config_health_findings",
+      "connection_mode",
       "fleet_trifecta_findings",
       "high_risk_servers",
       "hostname",
@@ -395,6 +401,7 @@
     "top_level_keys": [
       "audits",
       "config_health_findings",
+      "connection_mode",
       "fleet_trifecta_findings",
       "high_risk_servers",
       "hostname",
@@ -476,6 +483,7 @@
     "top_level_keys": [
       "audits",
       "config_health_findings",
+      "connection_mode",
       "fleet_trifecta_findings",
       "high_risk_servers",
       "hostname",
@@ -537,6 +545,7 @@
     "top_level_keys": [
       "audits",
       "config_health_findings",
+      "connection_mode",
       "fleet_trifecta_findings",
       "high_risk_servers",
       "hostname",
@@ -615,6 +624,7 @@
     "top_level_keys": [
       "audits",
       "config_health_findings",
+      "connection_mode",
       "fleet_trifecta_findings",
       "high_risk_servers",
       "hostname",
