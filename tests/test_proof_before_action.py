@@ -2460,6 +2460,26 @@ def test_placeholder_authorization_header_rejects_inline_env_literal_assignment(
         _stage_repository(repo, staged)
 
 
+@pytest.mark.parametrize(
+    "assignment",
+    [
+        """env 'GH_TOKEN=private-value' curl --header "Authorization: Bearer $GH_TOKEN"\n""",
+        """export "GH_TOKEN=private-value"\ncurl --header "Authorization: Bearer $GH_TOKEN"\n""",
+        """env: { GH_TOKEN: private-value }\nrun: curl --header "Authorization: Bearer $GH_TOKEN"\n""",
+    ],
+)
+def test_placeholder_authorization_header_rejects_alternate_literal_assignment_syntax(
+    tmp_path: Path,
+    assignment: str,
+) -> None:
+    repo = _repo(tmp_path)
+    (repo / "publish.yml").write_text(assignment, encoding="utf-8")
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    with pytest.raises(ObservationBlocked, match="literal credential used by a staged placeholder"):
+        _stage_repository(repo, staged)
+
+
 def test_placeholder_authorization_alias_cycle_is_staged(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     (repo / "environment.sh").write_text("GH_TOKEN=$REAL_TOKEN\nREAL_TOKEN=$GH_TOKEN\n", encoding="utf-8")

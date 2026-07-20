@@ -97,6 +97,13 @@ _TEXT_VARIABLE_ASSIGNMENT = re.compile(
     r"([A-Za-z_][A-Za-z0-9_]*)\s*[:=]\s*[\"']?([^\"'#\r\n]+)"
 )
 _INLINE_VARIABLE_ASSIGNMENT = re.compile(r"(?m)(?:^|\s)([A-Za-z_][A-Za-z0-9_]*)\s*=\s*[\"']?([^\s\"']+)")
+_QUOTED_VARIABLE_ASSIGNMENT = re.compile(
+    r"""(?m)(?:^|\s)(?:env\s+|export\s+)?["']([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([^"']+)["']"""
+)
+_YAML_INLINE_ENV = re.compile(r"(?im)^\s*env\s*:\s*\{([^}\r\n]*)\}")
+_YAML_INLINE_ASSIGNMENT = re.compile(
+    r"""(?:^|,)\s*["']?([A-Za-z_][A-Za-z0-9_]*)["']?\s*:\s*["']?([^,"'}\s]+)"""
+)
 _SAFE_DATABASE_NAME = re.compile(r"(?i)(?:fixture|sample|seed|synthetic|test)")
 _PLACEHOLDER_VALUE = re.compile(
     r"(?i)^(?:\$\{?[A-Z0-9_]+\}?|\$\{\{\s*(?:(?:env|secrets|vars)\.[A-Z0-9_.-]+|github\.token)\s*\}\}|"
@@ -893,6 +900,13 @@ def _validate_staged_placeholder_sources(root: Path) -> None:
         for match in _INLINE_VARIABLE_ASSIGNMENT.finditer(text):
             key, match_value = match.groups()
             assignments.setdefault(key, []).append((relative, match_value))
+        for match in _QUOTED_VARIABLE_ASSIGNMENT.finditer(text):
+            key, match_value = match.groups()
+            assignments.setdefault(key, []).append((relative, match_value))
+        for env_match in _YAML_INLINE_ENV.finditer(text):
+            for match in _YAML_INLINE_ASSIGNMENT.finditer(env_match.group(1)):
+                key, match_value = match.groups()
+                assignments.setdefault(key, []).append((relative, match_value))
     for variable, header_relative in referenced_variables.items():
         pending = [variable]
         visited: set[str] = set()
