@@ -1,0 +1,98 @@
+{
+  "$defs": {
+    "ServerIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "origin": {
+          "minLength": 1,
+          "title": "Origin",
+          "type": "string"
+        },
+        "server_name": {
+          "minLength": 1,
+          "title": "Server Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "origin",
+        "server_name"
+      ],
+      "title": "ServerIdentity",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "approved_at": {
+      "format": "date-time",
+      "pattern": "(?:Z|\\+00:00)$",
+      "title": "Approved At",
+      "type": "string"
+    },
+    "evidence_sha256": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Evidence Sha256",
+      "type": "string"
+    },
+    "expires_at": {
+      "format": "date-time",
+      "pattern": "(?:Z|\\+00:00)$",
+      "title": "Expires At",
+      "type": "string"
+    },
+    "operator_label": {
+      "minLength": 1,
+      "title": "Operator Label",
+      "type": "string"
+    },
+    "pre_state_sha256": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Pre State Sha256",
+      "type": "string"
+    },
+    "recommendation_sha256": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Recommendation Sha256",
+      "type": "string"
+    },
+    "rollback_id": {
+      "minLength": 1,
+      "title": "Rollback Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "mcpaudit.approved-policy-intent.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "subject": {
+      "$ref": "#/$defs/ServerIdentity"
+    },
+    "target_adapter": {
+      "const": "microsoft-agt-mcp-gateway",
+      "title": "Target Adapter",
+      "type": "string"
+    },
+    "target_runtime_version": {
+      "const": "4.1.0",
+      "title": "Target Runtime Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "recommendation_sha256",
+    "evidence_sha256",
+    "subject",
+    "target_adapter",
+    "target_runtime_version",
+    "pre_state_sha256",
+    "approved_at",
+    "expires_at",
+    "operator_label",
+    "rollback_id"
+  ],
+  "title": "ApprovedPolicyIntentV1",
+  "type": "object"
+}
