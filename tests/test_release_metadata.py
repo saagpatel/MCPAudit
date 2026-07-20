@@ -215,6 +215,17 @@ def test_publication_requires_a_separate_manual_dispatch() -> None:
     assert "needs: validate-dispatch-ref" in build_job
 
 
+def test_publish_gate_prepares_proof_before_action_test_image() -> None:
+    workflow = Path(".github/workflows/publish.yml").read_text(encoding="utf-8")
+    build_job, _publish_job = workflow.split("\n  publish:\n", maxsplit=1)
+
+    assert "Prepare Proof Before Action test image" in build_job
+    assert "docker image inspect node:24-slim" in build_job
+    assert "docker pull node:24-slim" in build_job
+    assert "docker image inspect --format '{{.Id}}' node:24-slim" in build_job
+    assert build_job.index("Prepare Proof Before Action test image") < build_job.index("uv run pytest")
+
+
 def test_oidc_authority_is_confined_to_post_build_publish_job() -> None:
     workflow = Path(".github/workflows/publish.yml").read_text(encoding="utf-8")
     build_job, publish_job = workflow.split("\n  publish:\n", maxsplit=1)

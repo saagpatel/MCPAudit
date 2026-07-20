@@ -68,6 +68,11 @@ jobs:
       - name: Install locked dependencies
         run: uv sync --dev --locked
 
+      - name: Prepare Proof Before Action test image
+        run: |
+          docker image inspect node:24-slim >/dev/null 2>&1 || docker pull node:24-slim
+          docker image inspect --format '{{.Id}}' node:24-slim
+
       - name: Run release quality gate
         run: |
           uv run pytest
