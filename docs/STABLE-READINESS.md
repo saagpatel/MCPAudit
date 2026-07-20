@@ -19,18 +19,17 @@ tests, and install path agree.
 - Known limitations are documented in release notes and beta/stable readiness
   docs.
 
-## Current 2.5.0 Candidate
+## Current 2.5.0 Release
 
-The 2.5.0 candidate is a backward-compatible minor release. It adds Proof Before
+The 2.5.0 release is a backward-compatible minor release. It adds Proof Before
 Action, ProofOS PostgreSQL verification, SafeForge runtime/pre-install evidence,
 and the security dependency/pinning repairs recorded in the changelog. Existing
 2.x audit-report and SARIF contracts remain additive.
 
 Release evidence must establish:
 
-- package, changelog, and `docs/release-state.json` agree on the 2.5.0
-  candidate while `server.json` and public Action/pre-commit examples continue
-  to name the latest existing public release;
+- package, changelog, `docs/release-state.json`, `server.json`, and public
+  Action/pre-commit examples agree on the 2.5.0 public release;
 - wheel and sdist metadata require `mcp>=1.28.1` and expose `mcp-audit`,
   `mcp-audits`, and `proof-before-action`;
 - the full quality gate and an installed Proof Before Action workflow pass from
@@ -40,17 +39,15 @@ Release evidence must establish:
 - the remaining OpenSSF human-review, fuzzing, and best-practices-badge findings
   have explicit evidence-backed dispositions.
 
-The candidate may be merged after its required repository checks pass. Tagging,
-publishing, and external registry changes remain separate actions. Tag creation
-no longer triggers publication: the publish workflow requires a manual dispatch
-bound to an exact tag and commit, verifies the candidate, and exposes artifact
-hashes before the environment-bound OIDC job.
-Public release is NO-GO until they are explicitly authorized and the unresolved
-human-review risk is accepted or satisfied. The `pypi` environment must also
-require an independent reviewer; without that external protection, the
-candidate remains intentionally non-publishable. The absence of two external
-redacted field reports also remains a limitation: solo fixture evidence does not
-prove downstream adoption or broad environment compatibility.
+Tagging, publishing, and external registry changes remain separate actions. Tag
+creation no longer triggers publication: the publish workflow requires a manual
+dispatch bound to an exact tag and commit, verifies the release state, and
+exposes artifact hashes before the environment-bound OIDC job. The `pypi`
+environment requires an independent reviewer, prevents self-review, and disables
+administrator bypass. The unresolved human-review, fuzzing, and best-practices
+Scorecard findings are accepted release limitations, and the absence of two
+external redacted field reports remains a limitation: solo fixture evidence does
+not prove downstream adoption or broad environment compatibility.
 
 ## Go/No-Go Checklist
 

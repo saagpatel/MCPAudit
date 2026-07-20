@@ -36,24 +36,25 @@ def test_release_version_is_consistent_across_public_surfaces() -> None:
     assert state == {
         "schema_version": "mcp-audit.release-state.v1",
         "candidate_version": version,
-        "published_version": "2.4.0",
+        "published_version": version,
         "previous_version": "2.4.0",
-        "status": "candidate",
+        "status": "release",
     }
     assert server["version"] == state["published_version"]
     assert server["packages"][0]["version"] == state["published_version"]
-    assert f"## [{version}] - Unreleased" in changelog
-    assert f"[{version}]: https://github.com/saagpatel/MCPAudit/compare/" in changelog
-    assert "saagpatel/MCPAudit@v2.4.0" in readme
-    assert "saagpatel/MCPAudit@v2.4.0" in adoption
-    assert "rev: v2.4.0" in adoption
+    assert re.search(rf"^## \[{re.escape(version)}\] - \d{{4}}-\d{{2}}-\d{{2}}$", changelog, re.MULTILINE)
+    assert f"[{version}]: https://github.com/saagpatel/MCPAudit/compare/v2.4.0...v{version}" in changelog
+    assert f"[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v{version}...HEAD" in changelog
+    assert f"saagpatel/MCPAudit@v{version}" in readme
+    assert f"saagpatel/MCPAudit@v{version}" in adoption
+    assert f"rev: v{version}" in adoption
 
 
 def test_release_version_is_a_stable_semantic_version() -> None:
     assert re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", _project_version())
 
 
-def test_candidate_metadata_verifier_passes() -> None:
+def test_release_metadata_verifier_passes() -> None:
     result = subprocess.run(
         ["uv", "run", "python", "scripts/verify_release.py"],
         check=False,
@@ -68,10 +69,10 @@ def test_candidate_metadata_verifier_passes() -> None:
 @pytest.mark.parametrize(
     ("arguments", "message"),
     [
-        (["--require-publishable"], "candidate state is intentionally non-publishable"),
+        (["--require-publishable"], "publish verification requires --tag and --commit"),
     ],
 )
-def test_candidate_metadata_verifier_fails_closed(
+def test_publishable_metadata_verifier_requires_exact_binding(
     arguments: list[str],
     message: str,
 ) -> None:
