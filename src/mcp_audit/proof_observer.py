@@ -94,11 +94,14 @@ _TEXT_SECRET_ASSIGNMENT = re.compile(
 )
 _TEXT_VARIABLE_ASSIGNMENT = re.compile(
     r"(?im)^\s*(?:(?:export|readonly|local|typeset)\s+|declare(?:\s+-[A-Za-z]+)*\s+)?"
-    r"([A-Za-z_][A-Za-z0-9_]*)\s*[:=]\s*[\"']?([^\"'#\r\n]+)"
+    r"[\"']?([A-Za-z_][A-Za-z0-9_]*)[\"']?[ \t]*[:=][ \t]*[\"']?([^\"'#\r\n]+)"
 )
 _INLINE_VARIABLE_ASSIGNMENT = re.compile(r"(?m)(?:^|\s)([A-Za-z_][A-Za-z0-9_]*)\s*=\s*[\"']?([^\s\"']+)")
 _QUOTED_VARIABLE_ASSIGNMENT = re.compile(
     r"""(?m)(?:^|\s)(?:env\s+|export\s+)?["']([A-Za-z_][A-Za-z0-9_]*)\s*=\s*([^"']+)["']"""
+)
+_QUOTED_KEY_VARIABLE_ASSIGNMENT = re.compile(
+    r"""(?m)(?:^|\s)(?:env\s+|export\s+)?["']([A-Za-z_][A-Za-z0-9_]*)["']\s*=\s*["']?([^\s"']+)"""
 )
 _YAML_INLINE_ENV = re.compile(r"(?im)^\s*env\s*:\s*\{([^}\r\n]*)\}")
 _YAML_INLINE_ASSIGNMENT = re.compile(
@@ -901,6 +904,9 @@ def _validate_staged_placeholder_sources(root: Path) -> None:
             key, match_value = match.groups()
             assignments.setdefault(key, []).append((relative, match_value))
         for match in _QUOTED_VARIABLE_ASSIGNMENT.finditer(text):
+            key, match_value = match.groups()
+            assignments.setdefault(key, []).append((relative, match_value))
+        for match in _QUOTED_KEY_VARIABLE_ASSIGNMENT.finditer(text):
             key, match_value = match.groups()
             assignments.setdefault(key, []).append((relative, match_value))
         for env_match in _YAML_INLINE_ENV.finditer(text):

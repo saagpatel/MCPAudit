@@ -2464,8 +2464,10 @@ def test_placeholder_authorization_header_rejects_inline_env_literal_assignment(
     "assignment",
     [
         """env 'GH_TOKEN=private-value' curl --header "Authorization: Bearer $GH_TOKEN"\n""",
+        """env 'GH_TOKEN'=private-value curl --header "Authorization: Bearer $GH_TOKEN"\n""",
         """export "GH_TOKEN=private-value"\ncurl --header "Authorization: Bearer $GH_TOKEN"\n""",
         """env: { GH_TOKEN: private-value }\nrun: curl --header "Authorization: Bearer $GH_TOKEN"\n""",
+        """env:\n  "GH_TOKEN": private-value\nrun: curl --header "Authorization: Bearer $GH_TOKEN"\n""",
     ],
 )
 def test_placeholder_authorization_header_rejects_alternate_literal_assignment_syntax(
