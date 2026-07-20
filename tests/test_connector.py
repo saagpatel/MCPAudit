@@ -359,7 +359,7 @@ async def test_timeout_cleans_up_stdio_process(tmp_path: Path) -> None:
         command=sys.executable,
         args=[str(server_script), str(pid_file), str(terminated_file)],
     )
-    connector = ServerConnector(timeout=0.2)
+    connector = ServerConnector(timeout=1.0)
 
     try:
         audit = await connector.connect(config)

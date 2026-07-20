@@ -2240,6 +2240,281 @@ def test_sensitive_repository_input_is_blocked_before_execution(tmp_path: Path) 
 
 
 @pytest.mark.parametrize(
+    "placeholder",
+    ["$GH_TOKEN", "${{ secrets.GH_TOKEN }}", "${{ github.token }}"],
+)
+def test_placeholder_authorization_header_is_staged(tmp_path: Path, placeholder: str) -> None:
+    repo = _repo(tmp_path)
+    workflow = repo / ".github/workflows/publish.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text(
+        f'run: curl --header "Authorization: Bearer {placeholder}" https://example.test\n',
+        encoding="utf-8",
+    )
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    _stage_repository(repo, staged)
+    assert (staged / ".github/workflows/publish.yml").read_text(encoding="utf-8") == (
+        workflow.read_text(encoding="utf-8")
+    )
+
+
+def test_placeholder_authorization_header_with_github_token_assignment_is_staged(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    workflow = repo / ".github/workflows/publish.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text(
+        """env:
+  GH_TOKEN: ${{ github.token }}
+jobs:
+  publish:
+    steps:
+      - run: |
+          curl --header "Authorization: Bearer $GH_TOKEN" \\
+            https://example.test
+""",
+        encoding="utf-8",
+    )
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    _stage_repository(repo, staged)
+    assert (staged / ".github/workflows/publish.yml").read_text(encoding="utf-8") == (
+        workflow.read_text(encoding="utf-8")
+    )
+
+
+def test_placeholder_authorization_json_header_is_staged(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    (repo / ".mcp.json").write_text(
+        '{"mcpServers":{"safe":{"url":"https://example.test",'
+        '"headers":{"Authorization":"Bearer $GH_TOKEN"}}}}\n',
+        encoding="utf-8",
+    )
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    _stage_repository(repo, staged)
+    assert (staged / ".mcp.json").read_text(encoding="utf-8") == (repo / ".mcp.json").read_text(
+        encoding="utf-8"
+    )
+
+
+def test_multiple_placeholder_json_headers_are_staged(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    (repo / ".mcp.json").write_text(
+        '{"mcpServers":{"safe":{"headers":{"Authorization":"Bearer $GH_TOKEN",'
+        '"X-Trace":"$TRACE"},"url":"https://example.test"}}}\n',
+        encoding="utf-8",
+    )
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    _stage_repository(repo, staged)
+    assert (staged / ".mcp.json").read_text(encoding="utf-8") == (repo / ".mcp.json").read_text(
+        encoding="utf-8"
+    )
+
+
+def test_multiple_placeholder_json_headers_reject_cross_file_literal_assignment(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path)
+    (repo / ".mcp.json").write_text(
+        '{"mcpServers":{"safe":{"headers":{"Authorization":"Bearer $GH_TOKEN",'
+        '"X-Trace":"$TRACE"},"url":"https://example.test"}}}\n',
+        encoding="utf-8",
+    )
+    (repo / "secrets.sh").write_text('GH_TOKEN="private-value"\n', encoding="utf-8")
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    with pytest.raises(ObservationBlocked, match="literal credential used by a staged placeholder"):
+        _stage_repository(repo, staged)
+
+
+def test_custom_placeholder_json_header_rejects_cross_file_literal_assignment(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path)
+    (repo / ".mcp.json").write_text(
+        '{"mcpServers":{"safe":{"headers":{"X-API-Key":"$API_KEY"},"url":"https://example.test"}}}\n',
+        encoding="utf-8",
+    )
+    (repo / "secrets.sh").write_text('API_KEY="private-value"\n', encoding="utf-8")
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    with pytest.raises(ObservationBlocked, match="literal credential used by a staged placeholder"):
+        _stage_repository(repo, staged)
+
+
+def test_json_env_alias_rejects_cross_file_literal_assignment(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    (repo / ".mcp.json").write_text(
+        '{"mcpServers":{"safe":{"env":{"GH_TOKEN":"$REAL_TOKEN"},'
+        '"headers":{"Authorization":"Bearer $GH_TOKEN"},"url":"https://example.test"}}}\n',
+        encoding="utf-8",
+    )
+    (repo / "secrets.sh").write_text('REAL_TOKEN="private-value"\n', encoding="utf-8")
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    with pytest.raises(ObservationBlocked, match="literal credential used by a staged placeholder"):
+        _stage_repository(repo, staged)
+
+
+def test_literal_credential_in_json_command_is_blocked(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    (repo / "package.json").write_text(
+        '{"scripts":{"publish":"curl -H Authorization: Bearer private-value"}}\n',
+        encoding="utf-8",
+    )
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    with pytest.raises(ObservationBlocked, match="literal credential"):
+        _stage_repository(repo, staged)
+
+
+def test_placeholder_authorization_header_rejects_adjacent_shell_literal(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    workflow = repo / ".github/workflows/publish.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text(
+        'run: curl --header "Authorization: Bearer $GH_TOKEN""private-value" https://example.test\n',
+        encoding="utf-8",
+    )
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    with pytest.raises(ObservationBlocked, match="credential material"):
+        _stage_repository(repo, staged)
+
+
+def test_placeholder_authorization_header_rejects_outer_quote_literal_suffix(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    (repo / "publish.sh").write_text(
+        'curl -H "Authorization: Bearer $GH_TOKEN"private-value https://example.test\n',
+        encoding="utf-8",
+    )
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    with pytest.raises(ObservationBlocked, match="credential material"):
+        _stage_repository(repo, staged)
+
+
+def test_placeholder_authorization_header_rejects_nested_quote_literal(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    (repo / "publish.sh").write_text(
+        "curl -H 'Authorization: \"Bearer $GH_TOKEN\"private-value' https://example.test\n",
+        encoding="utf-8",
+    )
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    with pytest.raises(ObservationBlocked, match="credential material"):
+        _stage_repository(repo, staged)
+
+
+@pytest.mark.parametrize(
+    ("assignment_name", "assignment_text"),
+    [
+        ("same.sh", 'GH_TOKEN="private-value"\ncurl --header "Authorization: Bearer $GH_TOKEN"\n'),
+        ("same.sh", 'export GH_TOKEN="private-value"\ncurl --header "Authorization: Bearer $GH_TOKEN"\n'),
+        ("same.sh", 'declare -x GH_TOKEN="private-value"\ncurl --header "Authorization: Bearer $GH_TOKEN"\n'),
+        ("same.sh", 'VALUE="private-value"\ncurl --header "Authorization: Bearer $VALUE"\n'),
+        (
+            "same.sh",
+            'REAL_TOKEN="private-value"\n'
+            "GH_TOKEN=$REAL_TOKEN\n"
+            'curl --header "Authorization: Bearer $GH_TOKEN"\n',
+        ),
+    ],
+)
+def test_placeholder_authorization_header_rejects_same_file_literal_assignment(
+    tmp_path: Path,
+    assignment_name: str,
+    assignment_text: str,
+) -> None:
+    repo = _repo(tmp_path)
+    (repo / assignment_name).write_text(assignment_text, encoding="utf-8")
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    with pytest.raises(ObservationBlocked, match="literal credential used by a staged placeholder"):
+        _stage_repository(repo, staged)
+
+
+def test_placeholder_authorization_header_rejects_cross_file_literal_assignment(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    (repo / "secrets.sh").write_text('GH_TOKEN="private-value"\n', encoding="utf-8")
+    (repo / "publish.sh").write_text('curl --header "Authorization: Bearer $GH_TOKEN"\n', encoding="utf-8")
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    with pytest.raises(ObservationBlocked, match="literal credential used by a staged placeholder"):
+        _stage_repository(repo, staged)
+
+
+def test_placeholder_authorization_header_rejects_inline_env_literal_assignment(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path)
+    (repo / "publish.sh").write_text(
+        'env GH_TOKEN="private-value" curl --header "Authorization: Bearer $GH_TOKEN"\n',
+        encoding="utf-8",
+    )
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    with pytest.raises(ObservationBlocked, match="literal credential used by a staged placeholder"):
+        _stage_repository(repo, staged)
+
+
+@pytest.mark.parametrize(
+    "assignment",
+    [
+        """env 'GH_TOKEN=private-value' curl --header "Authorization: Bearer $GH_TOKEN"\n""",
+        """env 'GH_TOKEN'=private-value curl --header "Authorization: Bearer $GH_TOKEN"\n""",
+        """export "GH_TOKEN=private-value"\ncurl --header "Authorization: Bearer $GH_TOKEN"\n""",
+        """env: { GH_TOKEN: private-value }\nrun: curl --header "Authorization: Bearer $GH_TOKEN"\n""",
+        """env:\n  "GH_TOKEN": private-value\nrun: curl --header "Authorization: Bearer $GH_TOKEN"\n""",
+    ],
+)
+def test_placeholder_authorization_header_rejects_alternate_literal_assignment_syntax(
+    tmp_path: Path,
+    assignment: str,
+) -> None:
+    repo = _repo(tmp_path)
+    (repo / "publish.yml").write_text(assignment, encoding="utf-8")
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    with pytest.raises(ObservationBlocked, match="literal credential used by a staged placeholder"):
+        _stage_repository(repo, staged)
+
+
+def test_placeholder_authorization_alias_cycle_is_staged(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    (repo / "environment.sh").write_text("GH_TOKEN=$REAL_TOKEN\nREAL_TOKEN=$GH_TOKEN\n", encoding="utf-8")
+    (repo / "publish.sh").write_text('curl --header "Authorization: Bearer $GH_TOKEN"\n', encoding="utf-8")
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    _stage_repository(repo, staged)
+    assert (staged / "publish.sh").is_file()
+
+
+@pytest.mark.parametrize(
+    "literal_header",
+    [
+        "Authorization: Bearer private-value",
+        'Authorization: "Basic private-value"',
+        "Cookie: session=private-value",
+    ],
+)
+def test_literal_authorization_and_cookie_headers_are_blocked(
+    tmp_path: Path,
+    literal_header: str,
+) -> None:
+    repo = _repo(tmp_path)
+    workflow = repo / ".github/workflows/publish.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text(f"header: {literal_header}\n", encoding="utf-8")
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    with pytest.raises(ObservationBlocked, match="credential material"):
+        _stage_repository(repo, staged)
+
+
+@pytest.mark.parametrize(
     ("config_name", "secret_config"),
     [
         (
