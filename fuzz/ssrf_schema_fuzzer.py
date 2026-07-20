@@ -62,6 +62,7 @@ def main() -> None:
 
     import atheris  # type: ignore[import-not-found]
 
+    atheris.instrument_all()
     atheris.Setup(sys.argv, fuzz_one_input)
     atheris.Fuzz()
 

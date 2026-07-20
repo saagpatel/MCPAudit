@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from fuzz.ssrf_schema_fuzzer import fuzz_one_input
+import sys
+from types import SimpleNamespace
+
+from fuzz.ssrf_schema_fuzzer import fuzz_one_input, main
 
 
 def test_ssrf_schema_fuzzer_smoke_cases() -> None:
@@ -14,3 +17,19 @@ def test_ssrf_schema_fuzzer_smoke_cases() -> None:
 
     for case in cases:
         fuzz_one_input(case)
+
+
+def test_fuzzer_instruments_loaded_code_before_setup(monkeypatch) -> None:
+    calls: list[object] = []
+    fake_atheris = SimpleNamespace(
+        instrument_all=lambda: calls.append("instrument_all"),
+        Setup=lambda argv, callback: calls.append(("setup", argv, callback)),
+        Fuzz=lambda: calls.append("fuzz"),
+    )
+    monkeypatch.setitem(sys.modules, "atheris", fake_atheris)
+
+    main()
+
+    assert calls[0] == "instrument_all"
+    assert calls[1] == ("setup", sys.argv, fuzz_one_input)
+    assert calls[2] == "fuzz"
