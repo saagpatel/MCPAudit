@@ -10,10 +10,10 @@ FULL_COMMIT_SHA = re.compile(r"[0-9a-f]{40}")
 # Changing any row is an explicit supply-chain review event, not a shape-only update.
 REVIEWED_ACTION_RELEASES = {
     "actions/checkout": ("9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0", "v7.0.0"),
-    "actions/download-artifact": ("634f93cb2916e3fdff6788551b99b062d0335ce0", "v5.0.0"),
+    "actions/download-artifact": ("3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c", "v8.0.1"),
     "actions/setup-python": ("ece7cb06caefa5fff74198d8649806c4678c61a1", "v6.3.0"),
-    "actions/upload-artifact": ("ea165f8d65b6e75b540449e92b4886f43607fa02", "v4.6.2"),
-    "astral-sh/setup-uv": ("37802adc94f370d6bfd71619e3f0bf239e1f3b78", "v7.6.0"),
+    "actions/upload-artifact": ("043fb46d1a93c77aae656e7c1c64a875d1fc6a0a", "v7.0.1"),
+    "astral-sh/setup-uv": ("11f9893b081a58869d3b5fccaea48c9e9e46f990", "v8.3.2"),
     "github/codeql-action/analyze": ("7188fc363630916deb702c7fdcf4e481b751f97a", "v4.37.1"),
     "github/codeql-action/init": ("7188fc363630916deb702c7fdcf4e481b751f97a", "v4.37.1"),
     "github/codeql-action/upload-sarif": ("7188fc363630916deb702c7fdcf4e481b751f97a", "v4.37.1"),
