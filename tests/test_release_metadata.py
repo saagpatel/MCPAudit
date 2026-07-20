@@ -167,15 +167,15 @@ def test_release_notes_must_be_finalized_before_publication() -> None:
     )
 
 
-def test_pypi_environment_requires_independent_non_bypassable_review() -> None:
+def test_pypi_environment_requires_named_solo_maintainer_review() -> None:
     verify = RELEASE_VERIFIER["verify_environment_protection"]
     protected: dict[str, Any] = {
         "can_admins_bypass": False,
         "protection_rules": [
             {
                 "type": "required_reviewers",
-                "prevent_self_review": True,
-                "reviewers": [{"type": "User", "reviewer": {"login": "reviewer"}}],
+                "prevent_self_review": False,
+                "reviewers": [{"type": "User", "reviewer": {"login": "maintainer"}}],
             }
         ],
     }
@@ -189,7 +189,7 @@ def test_pypi_environment_requires_independent_non_bypassable_review() -> None:
             "protection_rules": [
                 {
                     "type": "required_reviewers",
-                    "prevent_self_review": False,
+                    "prevent_self_review": True,
                     "reviewers": protected["protection_rules"][0]["reviewers"],
                 }
             ],
@@ -219,6 +219,13 @@ def test_publish_gate_prepares_proof_before_action_test_image() -> None:
     workflow = Path(".github/workflows/publish.yml").read_text(encoding="utf-8")
     build_job, _publish_job = workflow.split("\n  publish:\n", maxsplit=1)
 
+    assert "Checkout release controls" in build_job
+    assert "Checkout exact release source" in build_job
+    assert "path: release-controls" in build_job
+    assert "path: release-source" in build_job
+    assert "../release-controls/scripts/verify_release.py" in build_job
+    assert "--root ." in build_job
+    assert "working-directory: release-source" in build_job
     assert "Prepare Proof Before Action test image" in build_job
     assert "docker image inspect node:24-slim" in build_job
     assert "docker pull node:24-slim" in build_job
@@ -242,7 +249,7 @@ def test_oidc_authority_is_confined_to_post_build_publish_job() -> None:
     assert "id-token: write" in publish_job
     assert "$RUNNER_TEMP/pypi-environment.json" in workflow
     assert ".can_admins_bypass == false" in publish_job
-    assert ".prevent_self_review == true" in publish_job
+    assert ".prevent_self_review == false" in publish_job
     assert "required_reviewers" in publish_job
     assert "sha256sum -c SHA256SUMS" in publish_job
     assert publish_job.index("Verify protected PyPI environment") < publish_job.index(

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Documented and enforced the solo-maintainer PyPI publication policy: the
+  protected environment still requires named maintainer approval and disables
+  administrator bypass, but no longer claims independent release review.
+
 ## [2.5.0] - 2026-07-19
 
 ### Security

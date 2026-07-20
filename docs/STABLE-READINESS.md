@@ -43,11 +43,13 @@ Tagging, publishing, and external registry changes remain separate actions. Tag
 creation no longer triggers publication: the publish workflow requires a manual
 dispatch bound to an exact tag and commit, verifies the release state, and
 exposes artifact hashes before the environment-bound OIDC job. The `pypi`
-environment requires an independent reviewer, prevents self-review, and disables
-administrator bypass. The unresolved human-review, fuzzing, and best-practices
-Scorecard findings are accepted release limitations, and the absence of two
-external redacted field reports remains a limitation: solo fixture evidence does
-not prove downstream adoption or broad environment compatibility.
+environment requires a named maintainer approval and disables administrator
+bypass, but it is explicitly configured for solo-maintainer publishing and does
+not provide independent review. The unresolved human-review, fuzzing, and
+best-practices Scorecard findings are accepted release limitations, and the
+absence of two external redacted field reports remains a limitation: solo
+fixture evidence does not prove downstream adoption or broad environment
+compatibility.
 
 ## Go/No-Go Checklist
 

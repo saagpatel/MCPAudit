@@ -102,9 +102,10 @@ publication.
 ## Publish (Separately Authorized)
 
 1. Obtain separate publication approval naming the exact 40-character merge
-   commit and `vX.Y.Z` tag. Confirm the `pypi` environment requires an
-   independent reviewer, prevents self-review, and disables administrator
-   bypass; otherwise stop with `NO-GO`.
+   commit and `vX.Y.Z` tag. Confirm the `pypi` environment requires a named
+   maintainer reviewer, permits solo-maintainer approval, and disables
+   administrator bypass; otherwise stop with `NO-GO`. This is not independent
+   review, so the publication approval must explicitly accept that limitation.
 2. Create the tag only after that approval. Tag creation does not publish.
 3. From the `main` branch, manually dispatch `Publish to PyPI` with the exact
    tag and commit. A tag or feature-branch dispatch fails before the build. A
