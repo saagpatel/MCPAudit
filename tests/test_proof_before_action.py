@@ -2329,6 +2329,35 @@ def test_multiple_placeholder_json_headers_reject_cross_file_literal_assignment(
         _stage_repository(repo, staged)
 
 
+def test_custom_placeholder_json_header_rejects_cross_file_literal_assignment(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path)
+    (repo / ".mcp.json").write_text(
+        '{"mcpServers":{"safe":{"headers":{"X-API-Key":"$API_KEY"},"url":"https://example.test"}}}\n',
+        encoding="utf-8",
+    )
+    (repo / "secrets.sh").write_text('API_KEY="private-value"\n', encoding="utf-8")
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    with pytest.raises(ObservationBlocked, match="literal credential used by a staged placeholder"):
+        _stage_repository(repo, staged)
+
+
+def test_json_env_alias_rejects_cross_file_literal_assignment(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    (repo / ".mcp.json").write_text(
+        '{"mcpServers":{"safe":{"env":{"GH_TOKEN":"$REAL_TOKEN"},'
+        '"headers":{"Authorization":"Bearer $GH_TOKEN"},"url":"https://example.test"}}}\n',
+        encoding="utf-8",
+    )
+    (repo / "secrets.sh").write_text('REAL_TOKEN="private-value"\n', encoding="utf-8")
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    with pytest.raises(ObservationBlocked, match="literal credential used by a staged placeholder"):
+        _stage_repository(repo, staged)
+
+
 def test_literal_credential_in_json_command_is_blocked(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     (repo / "package.json").write_text(
@@ -2411,6 +2440,20 @@ def test_placeholder_authorization_header_rejects_cross_file_literal_assignment(
     repo = _repo(tmp_path)
     (repo / "secrets.sh").write_text('GH_TOKEN="private-value"\n', encoding="utf-8")
     (repo / "publish.sh").write_text('curl --header "Authorization: Bearer $GH_TOKEN"\n', encoding="utf-8")
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    with pytest.raises(ObservationBlocked, match="literal credential used by a staged placeholder"):
+        _stage_repository(repo, staged)
+
+
+def test_placeholder_authorization_header_rejects_inline_env_literal_assignment(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path)
+    (repo / "publish.sh").write_text(
+        'env GH_TOKEN="private-value" curl --header "Authorization: Bearer $GH_TOKEN"\n',
+        encoding="utf-8",
+    )
     staged = tmp_path / "staged"
     staged.mkdir()
     with pytest.raises(ObservationBlocked, match="literal credential used by a staged placeholder"):

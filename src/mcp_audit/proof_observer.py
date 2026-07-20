@@ -96,6 +96,7 @@ _TEXT_VARIABLE_ASSIGNMENT = re.compile(
     r"(?im)^\s*(?:(?:export|readonly|local|typeset)\s+|declare(?:\s+-[A-Za-z]+)*\s+)?"
     r"([A-Za-z_][A-Za-z0-9_]*)\s*[:=]\s*[\"']?([^\"'#\r\n]+)"
 )
+_INLINE_VARIABLE_ASSIGNMENT = re.compile(r"(?m)(?:^|\s)([A-Za-z_][A-Za-z0-9_]*)\s*=\s*[\"']?([^\s\"']+)")
 _SAFE_DATABASE_NAME = re.compile(r"(?i)(?:fixture|sample|seed|synthetic|test)")
 _PLACEHOLDER_VALUE = re.compile(
     r"(?i)^(?:\$\{?[A-Z0-9_]+\}?|\$\{\{\s*(?:(?:env|secrets|vars)\.[A-Z0-9_.-]+|github\.token)\s*\}\}|"
@@ -799,24 +800,38 @@ def _json_contains_literal_secret(value: Any) -> bool:
     return False
 
 
-def _json_local_placeholder_references(value: Any) -> set[str]:
+def _json_placeholder_provenance(value: Any) -> tuple[set[str], dict[str, list[str]]]:
     references: set[str] = set()
+    assignments: dict[str, list[str]] = {}
     if isinstance(value, dict):
         for key, nested in value.items():
-            if str(key) == "headers" and isinstance(nested, dict):
+            key_text = str(key)
+            if key_text == "headers" and isinstance(nested, dict):
                 for header, item in nested.items():
                     if not isinstance(item, str):
                         continue
-                    if not _SENSITIVE_HEADER_ASSIGNMENT.fullmatch(f"{header}: "):
-                        continue
-                    normalized = _normalize_sensitive_header_value(item)
+                    normalized = (
+                        _normalize_sensitive_header_value(item)
+                        if _SENSITIVE_HEADER_ASSIGNMENT.fullmatch(f"{header}: ")
+                        else item.strip()
+                    )
                     if reference := _local_placeholder_reference(normalized):
                         references.add(reference)
-            references.update(_json_local_placeholder_references(nested))
+            elif key_text == "env" and isinstance(nested, dict):
+                for variable, item in nested.items():
+                    if isinstance(item, str):
+                        assignments.setdefault(str(variable), []).append(item)
+            nested_references, nested_assignments = _json_placeholder_provenance(nested)
+            references.update(nested_references)
+            for variable, values in nested_assignments.items():
+                assignments.setdefault(variable, []).extend(values)
     elif isinstance(value, list):
         for item in value:
-            references.update(_json_local_placeholder_references(item))
-    return references
+            nested_references, nested_assignments = _json_placeholder_provenance(item)
+            references.update(nested_references)
+            for variable, values in nested_assignments.items():
+                assignments.setdefault(variable, []).extend(values)
+    return references, assignments
 
 
 def _literal_header_config_value(header: Any, value: Any) -> bool:
@@ -864,12 +879,18 @@ def _validate_staged_placeholder_sources(root: Path) -> None:
             except json.JSONDecodeError:
                 pass
         if payload is not None:
-            references = _json_local_placeholder_references(payload)
+            references, json_assignments = _json_placeholder_provenance(payload)
+            for key, values in json_assignments.items():
+                for value in values:
+                    assignments.setdefault(key, []).append((relative, value))
         else:
             _literal, references = _credential_material(text)
         for reference in references:
             referenced_variables.setdefault(reference, relative)
         for match in _TEXT_VARIABLE_ASSIGNMENT.finditer(text):
+            key, match_value = match.groups()
+            assignments.setdefault(key, []).append((relative, match_value))
+        for match in _INLINE_VARIABLE_ASSIGNMENT.finditer(text):
             key, match_value = match.groups()
             assignments.setdefault(key, []).append((relative, match_value))
     for variable, header_relative in referenced_variables.items():
