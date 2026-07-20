@@ -13,6 +13,7 @@ def test_ssrf_schema_fuzzer_smoke_cases() -> None:
         b"",
         b"https://{host}/metadata",
         b'{"properties":{"targetUrl":{"type":"string","format":"uri"}}}',
+        b'{"properties":{"request":{"type":"object","properties":{"targetUrl":{"type":"string"}}}}}',
         b'{"input_schema":{"properties":{"hostname":{"type":"string"}}},"description":"proxy request"}',
         b"\xff\xfe\x00not-json",
     ]

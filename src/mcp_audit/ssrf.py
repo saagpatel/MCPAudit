@@ -115,6 +115,68 @@ def _has_fetch_verb(*texts: str | None) -> bool:
     return False
 
 
+def _iter_schema_properties(schema: dict[str, object]) -> list[tuple[str, str, object]]:
+    """Return named properties from every reachable JSON Schema branch.
+
+    MCP tool inputs routinely nest request targets inside objects, arrays, and
+    composition keywords. Walk only schema-bearing keywords so examples and
+    other arbitrary metadata cannot manufacture findings. Object identity
+    tracking keeps programmatically constructed cyclic schemas finite without
+    imposing a depth cutoff that would create another silent false-negative.
+    """
+    found: list[tuple[str, str, object]] = []
+    stack: list[tuple[dict[str, object], str]] = [(schema, "")]
+    visited: set[int] = set()
+
+    while stack:
+        node, prefix = stack.pop()
+        identity = id(node)
+        if identity in visited:
+            continue
+        visited.add(identity)
+
+        properties = node.get("properties")
+        if isinstance(properties, dict):
+            nested: list[tuple[dict[str, object], str]] = []
+            for raw_name, property_schema in properties.items():
+                name = str(raw_name)
+                path = f"{prefix}.{name}" if prefix else name
+                found.append((path, name, property_schema))
+                if isinstance(property_schema, dict):
+                    nested.append((property_schema, path))
+            stack.extend(reversed(nested))
+
+        for keyword in (
+            "additionalProperties",
+            "contains",
+            "else",
+            "if",
+            "items",
+            "not",
+            "propertyNames",
+            "then",
+            "unevaluatedItems",
+            "unevaluatedProperties",
+        ):
+            child = node.get(keyword)
+            if isinstance(child, dict):
+                stack.append((child, prefix))
+
+        for keyword in ("allOf", "anyOf", "oneOf", "prefixItems"):
+            children = node.get(keyword)
+            if isinstance(children, list):
+                stack.extend((child, prefix) for child in reversed(children) if isinstance(child, dict))
+
+        for keyword in ("$defs", "definitions", "dependentSchemas", "patternProperties"):
+            children = node.get(keyword)
+            if isinstance(children, dict):
+                stack.extend(
+                    (child, prefix) for child in reversed(list(children.values())) if isinstance(child, dict)
+                )
+
+    return found
+
+
 class SsrfDetector:
     """Detects SSRF-prone capabilities from tool schemas and resource URIs."""
 
@@ -122,12 +184,12 @@ class SsrfDetector:
         """Return at most one SSRF finding for a single tool (highest applicable severity)."""
         if not isinstance(tool.input_schema, dict):
             return []
-        props = tool.input_schema.get("properties")
-        if not isinstance(props, dict):
-            return []
 
-        url_params = [str(k) for k in props if _is_url_param(str(k), props[k])]
-        host_params = [str(k) for k in props if str(k) not in url_params and _is_host_param(str(k))]
+        properties = _iter_schema_properties(tool.input_schema)
+        url_params = [path for path, name, schema in properties if _is_url_param(name, schema)]
+        host_params = [
+            path for path, name, _schema in properties if path not in url_params and _is_host_param(name)
+        ]
         has_verb = _has_fetch_verb(tool.name, tool.description)
 
         if not url_params and not host_params:

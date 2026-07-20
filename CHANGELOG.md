@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Detect URL- and host-shaped parameters throughout nested MCP tool schemas,
+  including object, array-item, and composition branches, while ignoring
+  non-schema metadata and terminating safely on cyclic in-memory schemas.
+
 ### Changed
 
 - Made config-only scan status explicit across terminal, JSON, and HTML reports,
