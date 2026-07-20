@@ -9,6 +9,7 @@ metadata endpoints) — not that the server is exploitable.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from urllib.parse import urlparse
 
 from mcp_audit.models import (
@@ -77,6 +78,18 @@ _WORD_RE = re.compile(r"[a-z0-9]+")
 _CAMEL_BOUNDARY = re.compile(r"([a-z0-9])([A-Z])")
 _ACRONYM_BOUNDARY = re.compile(r"([A-Z]+)([A-Z][a-z])")
 
+# Input schemas are untrusted. These limits are deliberately well above normal
+# MCP schemas while keeping traversal deterministic under schema amplification.
+_MAX_SCHEMA_NODES = 2_048
+_MAX_SCHEMA_DEPTH = 64
+_MAX_SCHEMA_PROPERTIES = 4_096
+
+
+@dataclass
+class _SchemaWalkResult:
+    properties: list[tuple[str, str, object]]
+    incomplete_reasons: list[str]
+
 
 def _word_tokens(text: str) -> list[str]:
     spaced = _ACRONYM_BOUNDARY.sub(r"\1_\2", _CAMEL_BOUNDARY.sub(r"\1_\2", text))
@@ -115,66 +128,128 @@ def _has_fetch_verb(*texts: str | None) -> bool:
     return False
 
 
-def _iter_schema_properties(schema: dict[str, object]) -> list[tuple[str, str, object]]:
-    """Return named properties from every reachable JSON Schema branch.
+def _resolve_local_ref(root: dict[str, object], ref: str) -> dict[str, object] | None:
+    """Resolve one same-document JSON Pointer without loading external data."""
+    if ref == "#":
+        return root
+    if not ref.startswith("#/"):
+        return None
+    current: object = root
+    for raw_token in ref[2:].split("/"):
+        token = raw_token.replace("~1", "/").replace("~0", "~")
+        if isinstance(current, dict) and token in current:
+            current = current[token]
+        elif isinstance(current, list) and token.isdigit() and int(token) < len(current):
+            current = current[int(token)]
+        else:
+            return None
+    return current if isinstance(current, dict) else None
+
+
+def _iter_schema_properties(schema: dict[str, object]) -> _SchemaWalkResult:
+    """Return named properties from reachable, bounded JSON Schema branches.
 
     MCP tool inputs routinely nest request targets inside objects, arrays, and
-    composition keywords. Walk only schema-bearing keywords so examples and
-    other arbitrary metadata cannot manufacture findings. Object identity
-    tracking keeps programmatically constructed cyclic schemas finite without
-    imposing a depth cutoff that would create another silent false-negative.
+    composition keywords. Definition registries are traversed only through a
+    local ``$ref``, so unused definitions cannot manufacture findings. Cycles
+    are stopped by branch ancestry and explicit node/depth/property budgets.
+    Any unresolved reference or exhausted budget is returned to the caller as
+    visible incomplete-analysis evidence.
     """
     found: list[tuple[str, str, object]] = []
-    stack: list[tuple[dict[str, object], str]] = [(schema, "")]
-    visited: set[int] = set()
+    incomplete: set[str] = set()
+    stack: list[tuple[dict[str, object], str, int, frozenset[int]]] = [
+        (schema, "", 0, frozenset()),
+    ]
+    visited_nodes = 0
+    property_count = 0
 
     while stack:
-        node, prefix = stack.pop()
-        identity = id(node)
-        if identity in visited:
+        if visited_nodes >= _MAX_SCHEMA_NODES:
+            incomplete.add(f"node budget exceeded ({_MAX_SCHEMA_NODES})")
+            break
+        node, prefix, depth, ancestors = stack.pop()
+        if depth > _MAX_SCHEMA_DEPTH:
+            incomplete.add(f"depth budget exceeded ({_MAX_SCHEMA_DEPTH})")
             continue
-        visited.add(identity)
+        identity = id(node)
+        if identity in ancestors:
+            continue
+        visited_nodes += 1
+        branch = ancestors | {identity}
+
+        ref = node.get("$ref")
+        if isinstance(ref, str):
+            resolved = _resolve_local_ref(schema, ref)
+            if resolved is None:
+                incomplete.add(f"unresolved or external reference: {ref}")
+            else:
+                stack.append((resolved, prefix, depth + 1, branch))
 
         properties = node.get("properties")
         if isinstance(properties, dict):
-            nested: list[tuple[dict[str, object], str]] = []
+            nested: list[tuple[dict[str, object], str, int, frozenset[int]]] = []
+            property_budget_exhausted = False
             for raw_name, property_schema in properties.items():
+                if property_count >= _MAX_SCHEMA_PROPERTIES:
+                    incomplete.add(
+                        f"property budget exceeded ({_MAX_SCHEMA_PROPERTIES})",
+                    )
+                    property_budget_exhausted = True
+                    break
                 name = str(raw_name)
                 path = f"{prefix}.{name}" if prefix else name
                 found.append((path, name, property_schema))
+                property_count += 1
                 if isinstance(property_schema, dict):
-                    nested.append((property_schema, path))
+                    nested.append((property_schema, path, depth + 1, branch))
+            if property_budget_exhausted:
+                break
             stack.extend(reversed(nested))
 
-        for keyword in (
-            "additionalProperties",
-            "contains",
-            "else",
-            "if",
-            "items",
-            "not",
-            "propertyNames",
-            "then",
-            "unevaluatedItems",
-            "unevaluatedProperties",
+        for keyword, suffix in (
+            ("additionalProperties", ".*"),
+            ("contains", "[]"),
+            ("items", "[]"),
+            ("unevaluatedItems", "[]"),
+            ("unevaluatedProperties", ".*"),
         ):
             child = node.get(keyword)
             if isinstance(child, dict):
-                stack.append((child, prefix))
+                stack.append((child, f"{prefix}{suffix}", depth + 1, branch))
 
-        for keyword in ("allOf", "anyOf", "oneOf", "prefixItems"):
+        for keyword in ("allOf", "anyOf", "oneOf"):
             children = node.get(keyword)
             if isinstance(children, list):
-                stack.extend((child, prefix) for child in reversed(children) if isinstance(child, dict))
+                stack.extend(
+                    (child, prefix, depth + 1, branch)
+                    for child in reversed(children)
+                    if isinstance(child, dict)
+                )
 
-        for keyword in ("$defs", "definitions", "dependentSchemas", "patternProperties"):
+        prefix_items = node.get("prefixItems")
+        if isinstance(prefix_items, list):
+            stack.extend(
+                (child, f"{prefix}[{index}]", depth + 1, branch)
+                for index, child in reversed(list(enumerate(prefix_items)))
+                if isinstance(child, dict)
+            )
+
+        for keyword in ("dependentSchemas", "patternProperties"):
             children = node.get(keyword)
             if isinstance(children, dict):
                 stack.extend(
-                    (child, prefix) for child in reversed(list(children.values())) if isinstance(child, dict)
+                    (child, f"{prefix}.*", depth + 1, branch)
+                    for child in reversed(list(children.values()))
+                    if isinstance(child, dict)
                 )
 
-    return found
+        for keyword in ("else", "if", "not", "then"):
+            child = node.get(keyword)
+            if isinstance(child, dict):
+                stack.append((child, prefix, depth + 1, branch))
+
+    return _SchemaWalkResult(found, sorted(incomplete))
 
 
 class SsrfDetector:
@@ -185,17 +260,21 @@ class SsrfDetector:
         if not isinstance(tool.input_schema, dict):
             return []
 
-        properties = _iter_schema_properties(tool.input_schema)
-        url_params = [path for path, name, schema in properties if _is_url_param(name, schema)]
+        walk = _iter_schema_properties(tool.input_schema)
+        url_params = [path for path, name, schema in walk.properties if _is_url_param(name, schema)]
         host_params = [
-            path for path, name, _schema in properties if path not in url_params and _is_host_param(name)
+            path for path, name, _schema in walk.properties if path not in url_params and _is_host_param(name)
         ]
         has_verb = _has_fetch_verb(tool.name, tool.description)
 
         if not url_params and not host_params:
-            return []
-
-        if url_params and has_verb:
+            if not walk.incomplete_reasons:
+                return []
+            severity, pattern = (
+                SsrfSeverity.MEDIUM,
+                "schema_traversal_incomplete",
+            )
+        elif url_params and has_verb:
             severity, pattern = SsrfSeverity.HIGH, "url_param_with_fetch_verb"
         elif url_params:
             severity, pattern = SsrfSeverity.MEDIUM, "url_param"
@@ -208,6 +287,7 @@ class SsrfDetector:
         evidence += [f"host/address parameter '{name}'" for name in host_params]
         if has_verb:
             evidence.append("server-side fetch verb in tool name or description")
+        evidence += [f"schema traversal incomplete: {reason}" for reason in walk.incomplete_reasons]
 
         from mcp_audit.taxonomy import ssrf_metadata
 

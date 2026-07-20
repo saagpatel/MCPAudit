@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import mcp_audit.ssrf as ssrf_module
 from mcp_audit.models import (
     CapabilityTarget,
     ResourceInfo,
@@ -197,7 +198,7 @@ def test_array_item_host_param_is_detected() -> None:
 
     assert len(findings) == 1
     assert findings[0].severity is SsrfSeverity.MEDIUM
-    assert "host/address parameter 'targets.hostname'" in findings[0].evidence
+    assert "host/address parameter 'targets[].hostname'" in findings[0].evidence
 
 
 def test_composed_schema_url_param_is_detected() -> None:
@@ -279,6 +280,49 @@ def test_schema_metadata_does_not_manufacture_nested_properties() -> None:
     assert detector.scan_tool(tool) == []
 
 
+def test_unused_definition_does_not_manufacture_finding() -> None:
+    detector = SsrfDetector()
+    tool = ToolInfo(
+        name="search",
+        description="Search documents.",
+        input_schema={
+            "type": "object",
+            "properties": {"query": {"type": "string"}},
+            "$defs": {
+                "UnusedRequest": {
+                    "type": "object",
+                    "properties": {"targetUrl": {"type": "string"}},
+                }
+            },
+        },
+    )
+
+    assert detector.scan_tool(tool) == []
+
+
+def test_referenced_definition_is_scanned_at_use_site() -> None:
+    detector = SsrfDetector()
+    tool = ToolInfo(
+        name="fetch_resource",
+        description="Fetch a resource.",
+        input_schema={
+            "type": "object",
+            "properties": {"request": {"$ref": "#/$defs/Request"}},
+            "$defs": {
+                "Request": {
+                    "type": "object",
+                    "properties": {"targetUrl": {"type": "string"}},
+                }
+            },
+        },
+    )
+
+    findings = detector.scan_tool(tool)
+
+    assert len(findings) == 1
+    assert "URL-shaped parameter 'request.targetUrl'" in findings[0].evidence
+
+
 def test_cyclic_programmatic_schema_is_finite() -> None:
     detector = SsrfDetector()
     tool = _tool(
@@ -301,6 +345,122 @@ def test_cyclic_programmatic_schema_is_finite() -> None:
 
     assert len(findings) == 1
     assert "URL-shaped parameter 'request.endpoint'" in findings[0].evidence
+
+
+def test_recursive_local_ref_is_finite_and_preserves_use_site() -> None:
+    detector = SsrfDetector()
+    tool = ToolInfo(
+        name="fetch_resource",
+        description="Fetch a resource.",
+        input_schema={
+            "type": "object",
+            "properties": {"request": {"$ref": "#/$defs/Request"}},
+            "$defs": {
+                "Request": {
+                    "type": "object",
+                    "properties": {
+                        "endpoint": {"type": "string"},
+                        "child": {"$ref": "#/$defs/Request"},
+                    },
+                }
+            },
+        },
+    )
+
+    findings = detector.scan_tool(tool)
+
+    assert len(findings) == 1
+    assert "URL-shaped parameter 'request.endpoint'" in findings[0].evidence
+
+
+def test_property_budget_exhaustion_is_visible_and_fail_closed(monkeypatch) -> None:
+    monkeypatch.setattr(ssrf_module, "_MAX_SCHEMA_PROPERTIES", 1)
+    detector = SsrfDetector()
+    tool = ToolInfo(
+        name="search",
+        description="Search documents.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "targetUrl": {"type": "string"},
+            },
+        },
+    )
+
+    findings = detector.scan_tool(tool)
+
+    assert len(findings) == 1
+    assert findings[0].pattern_name == "schema_traversal_incomplete"
+    assert findings[0].severity is SsrfSeverity.MEDIUM
+    assert "schema traversal incomplete: property budget exceeded (1)" in findings[0].evidence
+
+
+def test_node_budget_exhaustion_is_visible_and_fail_closed(monkeypatch) -> None:
+    monkeypatch.setattr(ssrf_module, "_MAX_SCHEMA_NODES", 1)
+    detector = SsrfDetector()
+    tool = ToolInfo(
+        name="search",
+        description="Search documents.",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "request": {
+                    "type": "object",
+                    "properties": {"targetUrl": {"type": "string"}},
+                }
+            },
+        },
+    )
+
+    findings = detector.scan_tool(tool)
+
+    assert len(findings) == 1
+    assert findings[0].pattern_name == "schema_traversal_incomplete"
+    assert "schema traversal incomplete: node budget exceeded (1)" in findings[0].evidence
+
+
+def test_depth_budget_exhaustion_is_visible_and_fail_closed(monkeypatch) -> None:
+    monkeypatch.setattr(ssrf_module, "_MAX_SCHEMA_DEPTH", 2)
+    detector = SsrfDetector()
+    schema: dict[str, object] = {"type": "string"}
+    for name in ("level3", "level2", "level1", "root"):
+        schema = {
+            "type": "object",
+            "properties": {name: schema},
+        }
+    tool = ToolInfo(
+        name="search",
+        description="Search documents.",
+        input_schema=schema,
+    )
+
+    findings = detector.scan_tool(tool)
+
+    assert len(findings) == 1
+    assert findings[0].pattern_name == "schema_traversal_incomplete"
+    assert "schema traversal incomplete: depth budget exceeded (2)" in findings[0].evidence
+
+
+def test_unresolved_reference_is_visible_and_fail_closed() -> None:
+    detector = SsrfDetector()
+    tool = ToolInfo(
+        name="search",
+        description="Search documents.",
+        input_schema={
+            "type": "object",
+            "properties": {"request": {"$ref": "#/$defs/Missing"}},
+        },
+    )
+
+    findings = detector.scan_tool(tool)
+
+    assert len(findings) == 1
+    assert findings[0].pattern_name == "schema_traversal_incomplete"
+    assert (
+        "schema traversal incomplete: unresolved or external reference: #/$defs/Missing"
+        in findings[0].evidence
+    )
 
 
 # --- Tool: no finding (avoid flagging plain network tools) ------------------

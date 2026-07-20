@@ -10,8 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - Detect URL- and host-shaped parameters throughout nested MCP tool schemas,
-  including object, array-item, and composition branches, while ignoring
-  non-schema metadata and terminating safely on cyclic in-memory schemas.
+  including object, array-item, composition, and reachable local-reference
+  branches. The walker ignores unused definition registries and non-schema
+  metadata, terminates safely on cycles, and reports bounded-traversal or
+  unresolved-reference gaps as visible fail-closed findings.
 
 ### Added
 
