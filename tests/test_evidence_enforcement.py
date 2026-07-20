@@ -226,6 +226,83 @@ def test_compiler_translates_only_exact_tool_decisions(tmp_path: Path) -> None:
     assert compiled.approval_tools == ["write_fixture"]
 
 
+@pytest.mark.parametrize("mutation", ["remapped", "missing", "extra", "duplicate"])
+def test_compiler_and_approval_refuse_noncanonical_fixture_decisions(
+    mutation: str,
+    tmp_path: Path,
+) -> None:
+    _, _, recommendation, _ = _bundle(tmp_path)
+    decisions = list(recommendation.decisions)
+    if mutation == "remapped":
+        decisions = [
+            item.model_copy(update={"decision": Decision.ALLOW})
+            if item.tool.name == "delete_fixture"
+            else item
+            for item in decisions
+        ]
+    elif mutation == "missing":
+        decisions = decisions[:-1]
+    elif mutation == "extra":
+        decisions.append(
+            decisions[-1].model_copy(
+                update={
+                    "tool": decisions[-1].tool.model_copy(
+                        update={
+                            "name": "extra_fixture",
+                            "origin_qualified_name": (f"{recommendation.subject.qualified}::extra_fixture"),
+                        }
+                    )
+                }
+            )
+        )
+    else:
+        decisions.append(decisions[0])
+    changed = recommendation.model_copy(update={"decisions": decisions})
+
+    compiled = compile_policy(changed)
+
+    assert not compiled.supported
+    assert any(error.field == "decisions" for error in compiled.errors)
+    with pytest.raises(PolicyOutcomeError, match="fixed fixture policy"):
+        _approval(changed)
+    path = tmp_path / f"{mutation}-recommendation.json"
+    path.write_bytes(canonical_json_bytes(changed))
+    cli_result = CliRunner().invoke(
+        cli.main,
+        [
+            "enforcement-fixture",
+            "approve",
+            "--recommendation",
+            str(path),
+            "--approved-at",
+            "2026-07-20T12:01:00Z",
+            "--expires-at",
+            "2026-07-20T13:00:00Z",
+            "--operator-label",
+            "fixture-operator",
+        ],
+    )
+    expected_exit = 2 if mutation == "duplicate" else 1
+    expected_code = "invalid_input" if mutation == "duplicate" else "fail_closed"
+    assert cli_result.exit_code == expected_exit
+    assert json.loads(cli_result.stdout)["error"]["code"] == expected_code
+
+
+def test_apply_refuses_matching_approval_for_remapped_fixture_decision(tmp_path: Path) -> None:
+    state_dir, evidence, recommendation, approval = _bundle(tmp_path)
+    decisions = [
+        item.model_copy(update={"decision": Decision.ALLOW}) if item.tool.name == "delete_fixture" else item
+        for item in recommendation.decisions
+    ]
+    changed = recommendation.model_copy(update={"decisions": decisions})
+    matching_approval = approval.model_copy(update={"recommendation_sha256": digest_model(changed)})
+
+    with pytest.raises(PolicyOutcomeError, match="unsupported policy translation"):
+        apply_fixture_policy(evidence, changed, matching_approval, state_dir)
+
+    assert not state_dir.exists()
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [
@@ -429,11 +506,11 @@ def test_changed_binding_invalidates_old_approval(
         )
 
 
-def test_changed_tool_set_invalidates_old_approval(tmp_path: Path) -> None:
+def test_changed_tool_set_fails_before_old_approval_can_apply(tmp_path: Path) -> None:
     state_dir, evidence, recommendation, approval = _bundle(tmp_path)
     changed = recommendation.model_copy(update={"decisions": recommendation.decisions[:-1]})
 
-    with pytest.raises(ApprovalBindingError):
+    with pytest.raises(PolicyOutcomeError, match="unsupported policy translation"):
         apply_fixture_policy(evidence, changed, approval, state_dir)
 
 
@@ -804,14 +881,11 @@ def test_fixture_directory_and_temporary_symlinks_are_rejected(tmp_path: Path) -
     state_dir, evidence, recommendation, approval = _bundle(tmp_path)
     apply_fixture_policy(evidence, recommendation, approval, state_dir)
     current = read_fixture_state(state_dir, evidence.subject)
-    changed_decisions = [
-        item.model_copy(update={"decision": Decision.ALLOW}) if item.tool.name == "delete_fixture" else item
-        for item in recommendation.decisions
-    ]
+    drifted = current.model_copy(update={"denied_tools": []})
+    enforcement._atomic_write(state_dir / "state.json", canonical_json_bytes(drifted))
     changed = recommendation.model_copy(
         update={
-            "decisions": changed_decisions,
-            "pre_state_sha256": state_digest(current),
+            "pre_state_sha256": state_digest(drifted),
             "rollback_id": "rollback-fixture-002",
         }
     )
@@ -825,7 +899,7 @@ def test_fixture_directory_and_temporary_symlinks_are_rejected(tmp_path: Path) -
     assert canary.read_text(encoding="utf-8") == "unchanged"
     assert (state_dir / "state.json").read_bytes() == state_bytes
     temporary.unlink()
-    assert read_fixture_state(state_dir, evidence.subject) == current
+    assert read_fixture_state(state_dir, evidence.subject) == drifted
 
 
 def test_rollback_probe_failure_never_leaves_partial_state(
@@ -941,14 +1015,11 @@ def test_failed_second_apply_restores_prior_rollback_lineage(
     current = read_fixture_state(state_dir, evidence.subject)
     rollback_path = state_dir / "rollback.json"
     previous_rollback = rollback_path.read_bytes()
-    changed_decisions = [
-        item.model_copy(update={"decision": Decision.ALLOW}) if item.tool.name == "delete_fixture" else item
-        for item in recommendation.decisions
-    ]
+    drifted = current.model_copy(update={"denied_tools": []})
+    enforcement._atomic_write(state_dir / "state.json", canonical_json_bytes(drifted))
     changed = recommendation.model_copy(
         update={
-            "decisions": changed_decisions,
-            "pre_state_sha256": state_digest(current),
+            "pre_state_sha256": state_digest(drifted),
             "rollback_id": "rollback-fixture-002",
         }
     )
@@ -980,7 +1051,7 @@ def test_failed_second_apply_restores_prior_rollback_lineage(
     with pytest.raises(PolicyOutcomeError, match="prior state was restored"):
         apply_fixture_policy(evidence, changed, changed_approval, state_dir)
 
-    assert read_fixture_state(state_dir, evidence.subject) == current
+    assert read_fixture_state(state_dir, evidence.subject) == drifted
     assert rollback_path.read_bytes() == previous_rollback
 
 

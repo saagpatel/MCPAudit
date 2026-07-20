@@ -65,6 +65,13 @@ class Decision(StrEnum):
     APPROVAL = "approval"
 
 
+FIXTURE_POLICY_DECISIONS: Final[tuple[tuple[str, Decision], ...]] = (
+    ("delete_fixture", Decision.DENY),
+    ("read_fixture", Decision.ALLOW),
+    ("write_fixture", Decision.APPROVAL),
+)
+
+
 class ServerIdentity(StrictModel):
     origin: str = Field(min_length=1)
     server_name: str = Field(min_length=1)
@@ -457,6 +464,8 @@ def approve_recommendation(
     operator_label: str,
 ) -> ApprovedPolicyIntentV1:
     """Bind an operator's explicit approval to the exact recommendation."""
+    if _fixture_decision_mapping(recommendation) != FIXTURE_POLICY_DECISIONS:
+        raise PolicyOutcomeError("recommendation does not match the fixed fixture policy")
     if expires_at > recommendation.expires_at:
         raise ValueError("approval cannot outlive its recommendation")
     return ApprovedPolicyIntentV1(
@@ -477,6 +486,14 @@ def approve_recommendation(
 def compile_policy(recommendation: PolicyRecommendationV1) -> CompiledPolicy:
     """Compile only exact tool decisions; reject every unsupported constraint."""
     errors: list[UnsupportedTranslation] = []
+    if _fixture_decision_mapping(recommendation) != FIXTURE_POLICY_DECISIONS:
+        errors.append(
+            UnsupportedTranslation(
+                code="unsupported_translation",
+                field="decisions",
+                message="adapter v1 requires the exact fixed fixture decision mapping",
+            )
+        )
     restriction_fields = {
         "restrictions.network_egress": recommendation.restrictions.network_egress,
         "restrictions.filesystem_resources": recommendation.restrictions.filesystem_resources,
@@ -516,6 +533,12 @@ def compile_policy(recommendation: PolicyRecommendationV1) -> CompiledPolicy:
             item.tool.name for item in recommendation.decisions if item.decision is Decision.APPROVAL
         ),
     )
+
+
+def _fixture_decision_mapping(
+    recommendation: PolicyRecommendationV1,
+) -> tuple[tuple[str, Decision], ...]:
+    return tuple(sorted((item.tool.name, item.decision) for item in recommendation.decisions))
 
 
 def validate_approval(
