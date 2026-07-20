@@ -173,6 +173,7 @@ Every `get_*_findings` tool returns a JSON object with `findings` and `warnings`
 - **Structured output** — Rich terminal report plus JSON and SARIF 2.1.0 export for ingestion by GitHub Advanced Security and SARIF-aware SAST pipelines, and a self-contained shareable HTML report via `scan --html report.html` (inline CSS, no JavaScript, redacted and fully HTML-escaped)
 - **Drop-in CI distribution** — a composite GitHub Action (`uses: saagpatel/MCPAudit@v2.5.0`) runs the scan, writes SARIF, and uploads it to code scanning in one step (config-only by default; optional policy gate exits `2`); a `pre-commit` hook (`id: mcp-audit`) audits repo-local `.mcp.json` / `.vscode/mcp.json` on commit. See `docs/ADOPTION-GUIDE.md`
 - **Documented output contract** — JSON, SARIF rule IDs, and policy exit codes are documented in `docs/OUTPUT-CONTRACT.md`
+- **Experimental fixture enforcement** — a separate, exact-version AGT `MCPGateway` compatibility slice converts one synthetic connected report into explicitly approved fixture-only policy and proves readback, negative controls, idempotency, and rollback; it never changes normal MCP client configuration ([guide](docs/EVIDENCE-ENFORCEMENT-AGT-FIXTURE.md))
 - **Watch mode** — `mcp-audit watch` re-scans on config file changes via `watchfiles` (optional extra: install with `mcp-audits[watch]`)
 
 ## Quick Start

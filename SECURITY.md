@@ -1,5 +1,18 @@
 # Security Policy
 
+## Experimental fixture enforcement
+
+The `enforcement-fixture` commands are a program-owned synthetic compatibility
+harness, not a production enforcement gateway. They are exact-pinned to
+`agent-governance-toolkit-core==4.1.0`, reject unsupported translation, and may
+write only to explicitly named fixture-state directories whose basename starts
+with `mcpaudit-enforcement-fixture-` and whose ownership marker is valid.
+Managed state and temporary paths may not be symlinks. Apply and rollback use a
+persistent program-owned fixture lock; processes that ignore that lock remain
+outside the harness guarantee. Do not point these commands at normal MCP
+configuration or treat their proof as authority for a real server. See
+`docs/EVIDENCE-ENFORCEMENT-THREAT-MODEL.md`.
+
 MCPAudit is itself a security tool. This document covers two distinct concerns:
 
 1. How to report vulnerabilities **in MCPAudit** (the auditor tool itself)

@@ -1,0 +1,256 @@
+{
+  "$defs": {
+    "ArgumentConstraints": {
+      "additionalProperties": false,
+      "properties": {
+        "exact_equals": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": "Exact Equals",
+          "type": "object"
+        }
+      },
+      "title": "ArgumentConstraints",
+      "type": "object"
+    },
+    "Decision": {
+      "enum": [
+        "allow",
+        "deny",
+        "approval"
+      ],
+      "title": "Decision",
+      "type": "string"
+    },
+    "RuntimeRestrictions": {
+      "additionalProperties": false,
+      "properties": {
+        "filesystem_resources": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Filesystem Resources",
+          "type": "array"
+        },
+        "network_egress": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Network Egress",
+          "type": "array"
+        },
+        "secret_reference_names": {
+          "items": {
+            "pattern": "^[A-Z][A-Z0-9_]{0,127}$",
+            "type": "string"
+          },
+          "title": "Secret Reference Names",
+          "type": "array"
+        }
+      },
+      "title": "RuntimeRestrictions",
+      "type": "object"
+    },
+    "ServerIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "origin": {
+          "minLength": 1,
+          "title": "Origin",
+          "type": "string"
+        },
+        "server_name": {
+          "minLength": 1,
+          "title": "Server Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "origin",
+        "server_name"
+      ],
+      "title": "ServerIdentity",
+      "type": "object"
+    },
+    "ToolDecision": {
+      "additionalProperties": false,
+      "properties": {
+        "argument_constraints": {
+          "$ref": "#/$defs/ArgumentConstraints"
+        },
+        "decision": {
+          "$ref": "#/$defs/Decision"
+        },
+        "tool": {
+          "$ref": "#/$defs/ToolIdentity"
+        }
+      },
+      "required": [
+        "tool",
+        "decision"
+      ],
+      "title": "ToolDecision",
+      "type": "object"
+    },
+    "ToolIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "origin_qualified_name": {
+          "minLength": 1,
+          "title": "Origin Qualified Name",
+          "type": "string"
+        },
+        "schema_sha256": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Schema Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "origin_qualified_name",
+        "name",
+        "schema_sha256"
+      ],
+      "title": "ToolIdentity",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "canonical_source_sha256": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Canonical Source Sha256",
+      "type": "string"
+    },
+    "client_scope": {
+      "minLength": 1,
+      "title": "Client Scope",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "pattern": "(?:Z|\\+00:00)$",
+      "title": "Created At",
+      "type": "string"
+    },
+    "decisions": {
+      "items": {
+        "$ref": "#/$defs/ToolDecision"
+      },
+      "minItems": 1,
+      "title": "Decisions",
+      "type": "array"
+    },
+    "evidence_sha256": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Evidence Sha256",
+      "type": "string"
+    },
+    "expires_at": {
+      "format": "date-time",
+      "pattern": "(?:Z|\\+00:00)$",
+      "title": "Expires At",
+      "type": "string"
+    },
+    "launch_sha256": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Launch Sha256",
+      "type": "string"
+    },
+    "pre_state_sha256": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Pre State Sha256",
+      "type": "string"
+    },
+    "provenance": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Provenance",
+      "type": "array"
+    },
+    "restrictions": {
+      "$ref": "#/$defs/RuntimeRestrictions"
+    },
+    "rollback_id": {
+      "minLength": 1,
+      "title": "Rollback Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "mcpaudit.policy-recommendation.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "subject": {
+      "$ref": "#/$defs/ServerIdentity"
+    },
+    "target_adapter": {
+      "const": "microsoft-agt-mcp-gateway",
+      "title": "Target Adapter",
+      "type": "string"
+    },
+    "target_runtime_distribution": {
+      "const": "agent-governance-toolkit-core",
+      "title": "Target Runtime Distribution",
+      "type": "string"
+    },
+    "target_runtime_version": {
+      "const": "4.1.0",
+      "title": "Target Runtime Version",
+      "type": "string"
+    },
+    "transport": {
+      "minLength": 1,
+      "title": "Transport",
+      "type": "string"
+    },
+    "unknowns": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Unknowns",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "evidence_sha256",
+    "subject",
+    "client_scope",
+    "transport",
+    "canonical_source_sha256",
+    "launch_sha256",
+    "decisions",
+    "created_at",
+    "expires_at",
+    "provenance",
+    "target_adapter",
+    "target_runtime_distribution",
+    "target_runtime_version",
+    "pre_state_sha256",
+    "rollback_id"
+  ],
+  "title": "PolicyRecommendationV1",
+  "type": "object"
+}

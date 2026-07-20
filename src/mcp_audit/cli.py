@@ -19,6 +19,7 @@ from rich.console import Console
 
 from mcp_audit.confighealth import config_health_findings, duplicate_server_config_counts
 from mcp_audit.discovery import ConfigParseError, discover_all_configs
+from mcp_audit.enforcement_cli import enforcement_fixture
 from mcp_audit.engine import ScanOptions, run_scan
 from mcp_audit.models import (
     AuditReport,
@@ -47,6 +48,9 @@ def main(debug: bool) -> None:
     """MCP Permission Auditor — scan and risk-score locally configured MCP servers."""
     if debug:
         logging.basicConfig(level=logging.DEBUG)
+
+
+main.add_command(enforcement_fixture)
 
 
 @main.command("safeforge-preinstall")

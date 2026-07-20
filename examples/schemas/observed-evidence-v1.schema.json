@@ -1,0 +1,174 @@
+{
+  "$defs": {
+    "ServerIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "origin": {
+          "minLength": 1,
+          "title": "Origin",
+          "type": "string"
+        },
+        "server_name": {
+          "minLength": 1,
+          "title": "Server Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "origin",
+        "server_name"
+      ],
+      "title": "ServerIdentity",
+      "type": "object"
+    },
+    "ToolIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "origin_qualified_name": {
+          "minLength": 1,
+          "title": "Origin Qualified Name",
+          "type": "string"
+        },
+        "schema_sha256": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Schema Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "origin_qualified_name",
+        "name",
+        "schema_sha256"
+      ],
+      "title": "ToolIdentity",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "audit_report_schema_version": {
+      "const": 1,
+      "title": "Audit Report Schema Version",
+      "type": "integer"
+    },
+    "canonical_source_sha256": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Canonical Source Sha256",
+      "type": "string"
+    },
+    "client_scope": {
+      "minLength": 1,
+      "title": "Client Scope",
+      "type": "string"
+    },
+    "connected": {
+      "title": "Connected",
+      "type": "boolean"
+    },
+    "drifted": {
+      "default": false,
+      "title": "Drifted",
+      "type": "boolean"
+    },
+    "launch_sha256": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Launch Sha256",
+      "type": "string"
+    },
+    "masked": {
+      "default": false,
+      "title": "Masked",
+      "type": "boolean"
+    },
+    "missing": {
+      "default": false,
+      "title": "Missing",
+      "type": "boolean"
+    },
+    "observed_at": {
+      "format": "date-time",
+      "pattern": "(?:Z|\\+00:00)$",
+      "title": "Observed At",
+      "type": "string"
+    },
+    "provenance": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Provenance",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "mcpaudit.observed-evidence.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "secret_reference_names": {
+      "items": {
+        "pattern": "^[A-Z][A-Z0-9_]{0,127}$",
+        "type": "string"
+      },
+      "title": "Secret Reference Names",
+      "type": "array"
+    },
+    "stale": {
+      "default": false,
+      "title": "Stale",
+      "type": "boolean"
+    },
+    "subject": {
+      "$ref": "#/$defs/ServerIdentity"
+    },
+    "tools": {
+      "items": {
+        "$ref": "#/$defs/ToolIdentity"
+      },
+      "title": "Tools",
+      "type": "array"
+    },
+    "transport": {
+      "minLength": 1,
+      "title": "Transport",
+      "type": "string"
+    },
+    "unknowns": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Unknowns",
+      "type": "array"
+    },
+    "unverifiable": {
+      "default": false,
+      "title": "Unverifiable",
+      "type": "boolean"
+    },
+    "warning_codes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warning Codes",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "observed_at",
+    "audit_report_schema_version",
+    "subject",
+    "client_scope",
+    "transport",
+    "canonical_source_sha256",
+    "launch_sha256",
+    "connected",
+    "provenance"
+  ],
+  "title": "ObservedEvidenceV1",
+  "type": "object"
+}

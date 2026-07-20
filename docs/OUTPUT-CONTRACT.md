@@ -104,6 +104,30 @@ The generated JSON Schema for the current model is checked in at
 `examples/schemas/audit-report.schema.json` and is tested against the live
 Pydantic model.
 
+## Experimental fixture enforcement contracts
+
+The `enforcement-fixture` command group is separate from read-only scan
+behavior. Its four strict versioned contracts are checked in as:
+
+- `examples/schemas/observed-evidence-v1.schema.json`
+- `examples/schemas/policy-recommendation-v1.schema.json`
+- `examples/schemas/approved-policy-intent-v1.schema.json`
+- `examples/schemas/effective-state-v1.schema.json`
+
+All four use `extra=forbid`, required schema/target identity fields, explicit
+UTC timestamp patterns, compact sorted canonical JSON with a trailing newline
+for SHA-256 binding, and constrained secret-reference names. Cross-field
+timestamp ordering is enforced by the live models. They do not change
+`AuditReport` schema version `1`.
+
+Every `enforcement-fixture` subcommand writes exactly one JSON object to stdout.
+Diagnostics use stderr. Exit `0` means verified success or verified no-op, exit
+`1` means a fail-closed policy/runtime result, and exit `2` means invalid input.
+Invalid-input messages are generic so rejected values are not reflected into
+stdout or stderr; unexpected exceptions also become one fail-closed JSON object.
+See `docs/EVIDENCE-ENFORCEMENT-AGT-FIXTURE.md` for command-specific fields and
+the exact target-version policy.
+
 ## Proof Before Action v1
 
 Proof Before Action is a separate strict evidence contract; it does not change
