@@ -682,17 +682,18 @@ def _validate_staged_input(path: Path, relative: Path) -> None:
         raise ObservationBlocked(
             f"repository input appears to contain private key material: {relative.as_posix()}"
         )
-    if _contains_literal_credential_material(text):
-        raise ObservationBlocked(
-            f"repository input appears to contain credential material: {relative.as_posix()}"
-        )
+    payload = None
     if path.suffix.lower() == ".json" or path.name in _REPO_CONFIG_NAMES:
         try:
             payload = json.loads(text)
         except json.JSONDecodeError:
-            payload = None
+            pass
         if payload is not None and _json_contains_literal_secret(payload):
             raise ObservationBlocked(f"repository JSON contains a literal credential: {relative.as_posix()}")
+    if payload is None and _contains_literal_credential_material(text):
+        raise ObservationBlocked(
+            f"repository input appears to contain credential material: {relative.as_posix()}"
+        )
     if path.suffix.lower() in _TEXT_CONFIG_SUFFIXES:
         for match in _TEXT_SECRET_ASSIGNMENT.finditer(text):
             key, match_value = match.groups()
@@ -738,6 +739,8 @@ def _sensitive_header_value(line: str, match: re.Match[str]) -> tuple[str, bool]
         outer_end = line.rfind(prefix_quote, start)
         if outer_end < start:
             return "", True
+        outer_suffix = line[outer_end + 1 :]
+        outer_suffix_literal = bool(outer_suffix and outer_suffix[0] not in {" ", "\t"})
         value = line[start:outer_end].strip()
         if value.startswith(("'", '"')):
             value_quote = value[0]
@@ -745,8 +748,8 @@ def _sensitive_header_value(line: str, match: re.Match[str]) -> tuple[str, bool]
             if inner_end < 0:
                 return "", True
             suffix = value[inner_end + 1 :]
-            return value[1:inner_end], bool(suffix.strip())
-        return value, False
+            return value[1:inner_end], bool(suffix.strip()) or outer_suffix_literal
+        return value, outer_suffix_literal
     if start < len(line) and line[start] in {"'", '"'}:
         value_quote = line[start]
         end = line.find(value_quote, start + 1)
