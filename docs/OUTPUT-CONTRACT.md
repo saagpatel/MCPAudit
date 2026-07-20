@@ -24,6 +24,10 @@ unknown fields as additive. Important stable top-level fields:
   additive optional fields do NOT bump it. Consumers wanting runtime drift
   detection should check this field before relying on field access.
 - `scan_timestamp`
+- `connection_mode` — `attempted` when server connections were attempted,
+  `skipped` for a `--skip-connect` config-only scan, or `unknown` when an older
+  report omitted the additive field. This prevents zero connected and zero
+  failed servers from being mistaken for a clean connected scan.
 - `servers_discovered`
 - `servers_connected`
 - `servers_failed`

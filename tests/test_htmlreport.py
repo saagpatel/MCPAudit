@@ -21,6 +21,7 @@ from mcp_audit.models import (
     AuditReport,
     ClientType,
     Confidence,
+    ConnectionMode,
     EscalationFinding,
     EscalationKind,
     EscalationSeverity,
@@ -167,6 +168,16 @@ class TestEmptyReport:
         html = _GEN.generate(report)
         assert html.startswith("<!DOCTYPE html>")
         assert "None." in html  # empty-table marker
+
+
+def test_config_only_report_names_connection_mode() -> None:
+    report = AuditReport.model_validate_json(
+        Path("tests/fixtures/reports/config_only_report.json").read_text()
+    )
+    report.connection_mode = ConnectionMode.SKIPPED
+    html = _GEN.generate(report)
+    assert "Connection mode" in html
+    assert "Config only" in html
 
 
 class TestFixtureRendering:

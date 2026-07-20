@@ -14,6 +14,7 @@ from mcp_audit.models import (
     CapabilityFinding,
     CapabilityTarget,
     Confidence,
+    ConnectionMode,
     DriftFinding,
     DriftStatus,
     InjectionFinding,
@@ -34,7 +35,10 @@ def _make_console() -> tuple[Console, io.StringIO]:
     return con, buf
 
 
-def _base_report(audits: list[ServerAudit] | None = None) -> AuditReport:
+def _base_report(
+    audits: list[ServerAudit] | None = None,
+    connection_mode: ConnectionMode = ConnectionMode.ATTEMPTED,
+) -> AuditReport:
     return AuditReport(
         scan_timestamp=datetime.now(UTC),
         hostname="testhost",
@@ -46,6 +50,7 @@ def _base_report(audits: list[ServerAudit] | None = None) -> AuditReport:
         high_risk_servers=sum(1 for a in (audits or []) if a.risk_score and a.risk_score.composite >= 7.0),
         audits=audits or [],
         scan_duration_seconds=1.23,
+        connection_mode=connection_mode,
     )
 
 
@@ -126,6 +131,30 @@ class TestTerminalRender:
         gen.render_terminal(report)
         output = buf.getvalue()
         assert "2" in output  # servers_discovered
+
+    def test_summary_names_config_only_mode_without_implying_connection_success(self) -> None:
+        con, buf = _make_console()
+        gen = ReportGenerator(console=con)
+        audit = _make_audit("srv", status="skipped")
+        gen.render_terminal(_base_report([audit], connection_mode=ConnectionMode.SKIPPED))
+        output = buf.getvalue()
+        assert "Config-only scan." in output
+        assert "failed to connect" not in output
+
+    def test_summary_preserves_failure_count_for_attempted_connections(self) -> None:
+        con, buf = _make_console()
+        gen = ReportGenerator(console=con)
+        gen.render_terminal(_base_report([_make_audit("srv")]))
+        assert "0 failed to connect." in buf.getvalue()
+
+    def test_summary_does_not_infer_connection_status_for_legacy_report(self) -> None:
+        con, buf = _make_console()
+        gen = ReportGenerator(console=con)
+        report = _base_report([_make_audit("srv")], connection_mode=ConnectionMode.UNKNOWN)
+        gen.render_terminal(report)
+        output = buf.getvalue()
+        assert "Connection mode unknown." in output
+        assert "failed to connect" not in output
 
     def test_empty_report_no_crash(self) -> None:
         con, buf = _make_console()

@@ -1,7 +1,8 @@
 {
 	"scan_timestamp": "2026-05-31T12:00:00Z",
 	"hostname": "test-host",
-	"os_platform": "Test",
+  "os_platform": "Test",
+  "connection_mode": "attempted",
 	"servers_discovered": 1,
 	"servers_connected": 1,
 	"servers_failed": 0,

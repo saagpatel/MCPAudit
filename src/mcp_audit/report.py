@@ -14,6 +14,7 @@ from rich.text import Text
 from mcp_audit.models import (
     ArtifactVerifySeverity,
     AuditReport,
+    ConnectionMode,
     DriftStatus,
     EgressFinding,
     EgressSeverity,
@@ -52,12 +53,18 @@ class ReportGenerator:
         """Print the full audit report to the console."""
         report = _redacted_report(report)
         n_clients = len({a.server.client for a in report.audits})
+        if report.connection_mode is ConnectionMode.SKIPPED:
+            connection_summary = "[cyan]Config-only scan.[/cyan]"
+        elif report.connection_mode is ConnectionMode.ATTEMPTED:
+            connection_summary = f"[yellow]{report.servers_failed} failed to connect.[/yellow]"
+        else:
+            connection_summary = "[yellow]Connection mode unknown.[/yellow]"
 
         summary = (
             f"Scanned [bold]{report.servers_discovered}[/bold] servers across "
             f"[bold]{n_clients}[/bold] clients. "
             f"[red bold]{report.high_risk_servers} high-risk.[/red bold] "
-            f"[yellow]{report.servers_failed} failed to connect.[/yellow] "
+            f"{connection_summary} "
             f"({report.scan_duration_seconds:.1f}s)"
         )
         self._console.print(Panel(summary, title="mcp-audit scan", expand=False))

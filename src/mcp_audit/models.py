@@ -20,6 +20,14 @@ class ClientType(StrEnum):
     WINDSURF = "windsurf"
 
 
+class ConnectionMode(StrEnum):
+    """Whether this scan attempted to connect to configured MCP servers."""
+
+    UNKNOWN = "unknown"
+    ATTEMPTED = "attempted"
+    SKIPPED = "skipped"
+
+
 class PermissionCategory(StrEnum):
     FILE_READ = "file_read"
     FILE_WRITE = "file_write"
@@ -921,6 +929,7 @@ class AuditReport(BaseModel):
     scan_timestamp: datetime
     hostname: str
     os_platform: str
+    connection_mode: ConnectionMode = ConnectionMode.UNKNOWN
     servers_discovered: int
     servers_connected: int
     servers_failed: int
