@@ -7,16 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Detect URL- and host-shaped parameters throughout nested MCP tool schemas,
+  including object, array-item, composition, and reachable local-reference
+  branches. The walker ignores unused definition registries and non-schema
+  metadata, terminates safely on cycles, and reports bounded-traversal or
+  unresolved-reference gaps as visible fail-closed findings.
+
 ### Added
 
 - Added an experimental, fixture-only evidence-to-enforcement workflow pinned
   to Microsoft Agent Governance Toolkit 4.1.0. It keeps observed evidence,
   policy recommendation, operator approval, and effective-state proof as
-  separate versioned contracts; supports only exact tool allow, deny, and
-  approval decisions; and fails closed on unsupported constraints, stale or
-  drifted evidence, approval mismatch, runtime mismatch, or verification
-  failure. Program-owned fixture state includes cooperative mutation locking,
-  behavioral negative controls, deterministic no-op verification, and rollback.
+   separate versioned contracts; supports only exact tool allow, deny, and
+   approval decisions; and fails closed on unsupported constraints, stale or
+   drifted evidence, approval mismatch, runtime mismatch, or verification
+   failure. Program-owned fixture state includes cooperative mutation locking,
+   behavioral negative controls, deterministic no-op verification, and rollback.
 
 ### Changed
 
