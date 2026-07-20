@@ -3,6 +3,8 @@ from __future__ import annotations
 import sys
 from types import SimpleNamespace
 
+from pytest import MonkeyPatch
+
 from fuzz.ssrf_schema_fuzzer import fuzz_one_input, main
 
 
@@ -19,7 +21,7 @@ def test_ssrf_schema_fuzzer_smoke_cases() -> None:
         fuzz_one_input(case)
 
 
-def test_fuzzer_instruments_loaded_code_before_setup(monkeypatch) -> None:
+def test_fuzzer_instruments_loaded_code_before_setup(monkeypatch: MonkeyPatch) -> None:
     calls: list[object] = []
     fake_atheris = SimpleNamespace(
         instrument_all=lambda: calls.append("instrument_all"),
