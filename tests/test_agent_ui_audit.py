@@ -11,7 +11,6 @@ from click.testing import CliRunner
 from pydantic import ValidationError
 
 import mcp_audit.agent_ui_cli as agent_ui_cli
-import mcp_audit.agent_ui_scanner as agent_ui_scanner
 from mcp_audit.agent_ui_models import (
     A2UIFixtureManifest,
     A2UIMessage,
@@ -584,7 +583,7 @@ def test_descriptor_bound_read_enforces_limit_after_fstat(
         observed[6] = 1
         return os.stat_result(observed)
 
-    monkeypatch.setattr(agent_ui_scanner.os, "fstat", stale_small_fstat)
+    monkeypatch.setattr(os, "fstat", stale_small_fstat)
     with pytest.raises(AgentUIInputError, match="exceeds 1048576"):
         scan_agent_ui_path(path)
 
