@@ -17,6 +17,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added an experimental, fixture-first `mcp-audit agent-ui` static scanner for
+  program-owned MCP Apps/OpenAI metadata and A2UI v0.9 JSONL. Six stable
+  authority/state/disclosure/provenance/evidence/egress rules emit deterministic
+  JSON and inert offline HTML with explicit protocol/host assumptions.
+  Eighteen positive, vulnerable, and negative fixtures keep unsupported
+  protocols, catalogs, bindings, widget code, transports, and real-host
+  behavior `UNKNOWN` rather than safe.
+  Merge-review hardening also preserves prior supported A2UI contradictions,
+  validates strict nested component and JSON Pointer shapes, binds host-specific
+  accessibility metadata, requires authoritative approval versions, bounds
+  generic JSON nesting, reconciles dual standard/OpenAI metadata, resolves
+  nearest-ancestor provenance, rejects out-of-domain evidence states and
+  malformed HTTPS authorities, binds bounded reads to one file descriptor, and
+  uses descriptor-bound atomic no-clobber output commit.
 - Added an experimental, fixture-only evidence-to-enforcement workflow pinned
   to Microsoft Agent Governance Toolkit 4.1.0. It keeps observed evidence,
   policy recommendation, operator approval, and effective-state proof as

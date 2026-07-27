@@ -174,6 +174,65 @@ complete. `proof-before-action verify` exits `0` only when every requested hash,
 schema, commit, and authority check passes; otherwise it exits `1`. Both commands
 write one JSON object to standard output.
 
+## Agent UI Contract Auditor v1 (experimental)
+
+The offline `mcp-audit agent-ui` command group is separate from connected MCP
+scans and does not change `AuditReport` schema version `1`. Its strict contract
+identifiers are:
+
+- `mcpaudit.agent-ui.mcp-apps-fixture.v1`
+- `mcpaudit.agent-ui.a2ui-fixture.v1`
+- `mcpaudit.agent-ui.a2ui-message.v0.9`
+- `mcpaudit.agent-ui.report.v1`
+
+Authoritative JSON Schemas are emitted with `mcp-audit agent-ui schema
+CONTRACT`. Unknown fields are rejected. The emitted A2UI message schema includes
+strict discriminated shapes for every component in MCPAudit's fixed synthetic
+catalog; duplicate component IDs, invalid JSON Pointer escapes, excessive JSON
+nesting, and unsupported nested values cannot become a passing report. The
+A2UI fixture manifest is the first line of a program-owned JSONL test artifact;
+it is a sidecar and is not an A2UI wire message. Remaining lines accept only
+A2UI v0.9 messages under the fixed catalog. MCP Apps/OpenAI fixtures contain
+metadata and program-owned audit sidecars only; widget HTML and JavaScript are
+never input.
+
+Reports use sorted compact canonical JSON with one terminal newline and no
+timestamp or absolute input path. Stable finding IDs are `MCPUI001` through
+`MCPUI006`; `MCPUI000` records unsupported or ambiguous constructs with
+severity `unknown`. Each finding includes severity, title, target, evidence,
+remediation, protocol, host profile, and explicit assumptions. Report verdicts:
+
+- `pass`: supported checks found no contradiction and no ambiguity;
+- `fail`: at least one non-unknown rule fired;
+- `unknown`: only unsupported or ambiguous constructs remain.
+
+The HTML output is a deterministic escaped projection of the JSON report with
+`default-src 'none'`. It has no scripts or active links. The scan command exits
+`0` for `pass`, `1` for `fail` or `unknown`, and `2` for an input/output error.
+It refuses symlink inputs, implicit output replacement, output/input aliasing,
+and JSON/HTML output aliasing. All requested output targets are preflighted
+before staging begins. Fixture bytes come from one identity-checked regular-file
+descriptor and remain subject to the 1 MiB post-read bound. Output staging and
+commit stay relative to opened parent-directory descriptors; without `--force`,
+atomic create-if-absent commit prevents a post-preflight file from being
+clobbered and rolls back this command's prior sibling artifact on a later
+collision.
+
+For A2UI approval and evidence controls, data provenance resolves from an exact
+JSON Pointer or its nearest declared ancestor. Missing or explicit-unknown
+provenance and out-of-domain evidence/visual state strings are ambiguous, not
+passing. OpenAI-profile fixtures reconcile dual standard/OpenAI resource URI,
+visibility, widget-domain, and CSP declarations; contradictions are
+`MCPUI000`. Every supported external authority is a validated credential-free
+HTTPS origin before declaration matching.
+
+A passing fixture report is not evidence about widget bytes, renderer behavior,
+host consent, CSP enforcement, server authorization, transport ordering,
+sandboxing, authentication, or any real user workflow. A2UI, MCP Apps,
+OpenAI-specific extensions, AG-UI, and WebMCP remain distinct; the auditor does
+not claim translation or interoperability. See
+`docs/AGENT-UI-CONTRACT-AUDITOR.md`.
+
 ## SafeForge Manifest v0
 
 SafeForge uses a separate, additive evidence-envelope contract; it does not
