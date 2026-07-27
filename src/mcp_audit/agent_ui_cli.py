@@ -22,7 +22,7 @@ from mcp_audit.agent_ui_scanner import (
     AgentUIInputError,
     render_agent_ui_html,
     report_json_bytes,
-    scan_agent_ui_path,
+    scan_agent_ui_path_with_identity,
 )
 
 
@@ -61,7 +61,7 @@ def scan_command(
 ) -> None:
     """Statically scan one synthetic fixture without executing or connecting."""
     try:
-        report = scan_agent_ui_path(fixture)
+        report, input_identity = scan_agent_ui_path_with_identity(fixture)
         json_bytes = report_json_bytes(report)
         html_bytes = render_agent_ui_html(report).encode("utf-8")
         artifacts = [
@@ -72,7 +72,7 @@ def scan_command(
             )
             if item is not None
         ]
-        _write_artifacts(fixture, artifacts, force=force)
+        _write_artifacts(fixture, input_identity, artifacts, force=force)
     except (AgentUIInputError, OSError, ValueError) as exc:
         raise AgentUIUsageError(str(exc)) from exc
     if json_path is None:
@@ -160,6 +160,19 @@ def _validate_artifact_target(
         raise ValueError(f"output already exists (use --force): {path}")
 
 
+def _validate_input_alias(
+    parent_fd: int,
+    path: Path,
+    input_identity: tuple[int, int],
+) -> None:
+    try:
+        target = os.stat(path.name, dir_fd=parent_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    if (target.st_dev, target.st_ino) == input_identity:
+        raise ValueError(f"output must not alias the input fixture: {path}")
+
+
 def _stage_artifact(parent_fd: int, path: Path, content: bytes) -> _StagedArtifact:
     descriptor: int | None = None
     temporary_name = ""
@@ -211,6 +224,7 @@ def _rollback_created_artifacts(artifacts: list[_StagedArtifact]) -> None:
 
 def _write_artifacts(
     fixture: Path,
+    input_identity: tuple[int, int],
     artifacts: list[tuple[Path, bytes]],
     *,
     force: bool,
@@ -233,6 +247,7 @@ def _write_artifacts(
         for path, content in artifacts:
             parent_fd = _open_artifact_parent(path)
             parent_fds.append(parent_fd)
+            _validate_input_alias(parent_fd, path, input_identity)
             _validate_artifact_target(parent_fd, path, force=force)
             staged.append(_stage_artifact(parent_fd, path, content))
         for artifact in staged:

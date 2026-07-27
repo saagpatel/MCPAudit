@@ -332,16 +332,24 @@ def _unknown_report(
 
 def scan_agent_ui_path(path: Path) -> AgentUIReport:
     """Scan one program-owned JSON or JSONL fixture without external effects."""
-    raw = _read_fixture_bytes(path)
+    report, _ = scan_agent_ui_path_with_identity(path)
+    return report
+
+
+def scan_agent_ui_path_with_identity(path: Path) -> tuple[AgentUIReport, tuple[int, int]]:
+    """Scan one fixture and return the identity of the exact file descriptor read."""
+    raw, input_identity = _read_fixture_bytes(path)
     digest = sha256_bytes(raw)
     if path.suffix == ".jsonl":
-        return _scan_a2ui_jsonl(raw, digest)
-    if path.suffix == ".json":
-        return _scan_mcp_apps_json(raw, digest)
-    return _unknown_report(digest, "only .json and .jsonl fixture inputs are supported")
+        report = _scan_a2ui_jsonl(raw, digest)
+    elif path.suffix == ".json":
+        report = _scan_mcp_apps_json(raw, digest)
+    else:
+        report = _unknown_report(digest, "only .json and .jsonl fixture inputs are supported")
+    return report, input_identity
 
 
-def _read_fixture_bytes(path: Path) -> bytes:
+def _read_fixture_bytes(path: Path) -> tuple[bytes, tuple[int, int]]:
     """Read one identity-bound regular file without exceeding the input budget."""
     try:
         before = path.lstat()
@@ -376,7 +384,7 @@ def _read_fixture_bytes(path: Path) -> bytes:
         raw = b"".join(chunks)
         if len(raw) > _MAX_INPUT_BYTES:
             raise AgentUIInputError(f"input fixture exceeds {_MAX_INPUT_BYTES} bytes")
-        return raw
+        return raw, (opened.st_dev, opened.st_ino)
     finally:
         os.close(descriptor)
 
@@ -650,9 +658,9 @@ def _approval_findings(
 ) -> list[AgentUIFinding]:
     findings: list[AgentUIFinding] = []
     approval = control.approval
-    if not required:
-        return findings
     if approval is None:
+        if not required:
+            return findings
         return [
             _unknown(
                 target=control.component_id,
@@ -663,30 +671,36 @@ def _approval_findings(
             )
         ]
     stale_reasons: list[str] = []
-    if not approval.required:
-        stale_reasons.append("approval presentation marks the required action as not requiring approval")
+    if approval.required != required:
+        expected_requirement = "required" if required else "optional"
+        displayed_requirement = "required" if approval.required else "optional"
+        stale_reasons.append(
+            f"approval presentation marks the action as {displayed_requirement}, "
+            f"but the tool contract marks it as {expected_requirement}"
+        )
     if approval.evidence_state == EvidenceState.STALE.value:
         stale_reasons.append("approval evidence state is stale")
-    if expected_version is None:
-        findings.append(
-            _unknown(
-                target=control.component_id,
-                evidence="approval-required tool contract has no authoritative expected version",
-                protocol=protocol,
-                host_profile=host_profile,
-                assumptions=assumptions,
+    if required:
+        if expected_version is None:
+            findings.append(
+                _unknown(
+                    target=control.component_id,
+                    evidence="approval-required tool contract has no authoritative expected version",
+                    protocol=protocol,
+                    host_profile=host_profile,
+                    assumptions=assumptions,
+                )
             )
-        )
-    elif approval.expected_version not in {None, expected_version}:
-        stale_reasons.append(
-            f"presentation expected version {approval.expected_version} "
-            f"does not match tool contract {expected_version}"
-        )
-    if expected_version is not None and approval.displayed_version != expected_version:
-        stale_reasons.append(
-            f"displayed version {approval.displayed_version or '<missing>'} "
-            f"does not match expected {expected_version}"
-        )
+        elif approval.expected_version not in {None, expected_version}:
+            stale_reasons.append(
+                f"presentation expected version {approval.expected_version} "
+                f"does not match tool contract {expected_version}"
+            )
+        if expected_version is not None and approval.displayed_version != expected_version:
+            stale_reasons.append(
+                f"displayed version {approval.displayed_version or '<missing>'} "
+                f"does not match expected {expected_version}"
+            )
     if stale_reasons:
         findings.append(
             _finding(
@@ -839,26 +853,34 @@ def _resource_metadata_findings(fixture: MCPAppsFixture, resource: Any) -> list[
                 )
             )
 
-    for standard_name, standard_values, openai_name, openai_values in (
+    for standard_field, standard_name, standard_values, openai_field, openai_name, openai_values in (
         (
+            "connect_domains",
             "_meta.ui.csp.connectDomains",
             standard.csp.connect_domains,
+            "connect_domains",
             "openai/widgetCSP.connect_domains",
             openai.connect_domains,
         ),
         (
+            "resource_domains",
             "_meta.ui.csp.resourceDomains",
             standard.csp.resource_domains,
+            "resource_domains",
             "openai/widgetCSP.resource_domains",
             openai.resource_domains,
         ),
         (
+            "frame_domains",
             "_meta.ui.csp.frameDomains",
             standard.csp.frame_domains,
+            "frame_domains",
             "openai/widgetCSP.frame_domains",
             openai.frame_domains,
         ),
     ):
+        if standard_field not in standard.csp.model_fields_set or openai_field not in openai.model_fields_set:
+            continue
         standard_origins = _normalized_origins(standard_values)
         openai_origins = _normalized_origins(openai_values)
         if standard_origins != openai_origins:
@@ -1589,6 +1611,17 @@ def _scan_a2ui_status_badge(
             _a2ui_unknown(
                 f"component:{component_id}",
                 f"StatusBadge evidence state is outside the supported enum: {evidence_state}",
+            )
+        )
+    if evidence_resolved and evidence_state == EvidenceState.STALE.value:
+        findings.append(
+            _finding(
+                "MCPUI002",
+                target=f"component:{component_id}",
+                evidence=["StatusBadge evidence state is stale"],
+                protocol="a2ui",
+                host_profile=HostProfile.PROGRAM_OWNED_A2UI.value,
+                assumptions=_A2UI_ASSUMPTIONS,
             )
         )
     if state_found and displayed_state not in _VISUAL_STATES:

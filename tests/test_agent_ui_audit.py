@@ -158,6 +158,20 @@ def test_openai_compatibility_metadata_conflicts_are_unknown(tmp_path: Path) -> 
     assert any("connectDomains" in item for item in evidence)
 
 
+def test_openai_only_csp_metadata_does_not_conflict_with_absent_standard_csp(
+    tmp_path: Path,
+) -> None:
+    payload = json.loads(_fixture("mcpui006-external-positive.json").read_text())
+    payload["resources"][0]["_meta"].pop("ui")
+    path = tmp_path / "openai-only-csp.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    report = scan_agent_ui_path(path)
+
+    assert report.verdict == "pass"
+    assert report.findings == []
+
+
 def test_unsupported_a2ui_version_is_unknown_not_safe(tmp_path: Path) -> None:
     lines = _fixture("mcpui002-stale-positive.jsonl").read_text().splitlines()
     message = json.loads(lines[1])
@@ -371,6 +385,38 @@ def test_approval_required_false_is_a_stale_contract_finding(tmp_path: Path) -> 
     assert "MCPUI002" in {finding.rule_id for finding in report.findings}
 
 
+@pytest.mark.parametrize(
+    ("input_sources", "evidence_state", "visual_state", "expected_rule"),
+    [
+        (["untrusted_tool_output"], "current", "neutral", "MCPUI004"),
+        (["trusted_manifest"], "unknown", "pass", "MCPUI005"),
+    ],
+)
+def test_optional_approval_presentations_still_receive_safety_checks(
+    tmp_path: Path,
+    input_sources: list[str],
+    evidence_state: str,
+    visual_state: str,
+    expected_rule: str,
+) -> None:
+    payload = json.loads(_fixture("mcpui001-authority-positive.json").read_text())
+    payload["rendered_controls"][0]["approval"] = {
+        "required": False,
+        "expected_version": None,
+        "displayed_version": None,
+        "evidence_state": evidence_state,
+        "visual_state": visual_state,
+        "input_sources": input_sources,
+    }
+    path = tmp_path / f"optional-{expected_rule.lower()}.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    report = scan_agent_ui_path(path)
+
+    assert report.verdict == "fail"
+    assert {finding.rule_id for finding in report.findings} == {expected_rule}
+
+
 @pytest.mark.parametrize("input_sources", [None, ["unknown"]])
 def test_mcp_approval_provenance_must_be_established(
     tmp_path: Path,
@@ -447,6 +493,26 @@ def test_untrusted_status_badge_cannot_render_pass(tmp_path: Path) -> None:
 
     assert report.verdict == "fail"
     assert {finding.rule_id for finding in report.findings} == {"MCPUI005"}
+
+
+def test_stale_status_badge_is_a_stale_contract_finding_even_when_green(
+    tmp_path: Path,
+) -> None:
+    lines = _fixture("mcpui005-unknown-positive.jsonl").read_text().splitlines()
+    components = json.loads(lines[2])
+    components["updateComponents"]["components"][1]["tone"] = "green"
+    lines[2] = json.dumps(components)
+    data = json.loads(lines[3])
+    evidence = data["updateDataModel"]["value"]["evidence"]
+    evidence.update({"state": "stale", "label": "Passed", "visualState": "pass"})
+    lines[3] = json.dumps(data)
+    path = tmp_path / "stale-green-status.jsonl"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    report = scan_agent_ui_path(path)
+
+    assert report.verdict == "fail"
+    assert {finding.rule_id for finding in report.findings} == {"MCPUI002"}
 
 
 @pytest.mark.parametrize("component_kind", ["button", "badge"])
@@ -689,6 +755,43 @@ def test_cli_preflights_output_identity_and_complete_set(tmp_path: Path) -> None
     assert partial_result.exit_code == 2
     assert not json_path.exists()
     assert occupied_html.read_text(encoding="utf-8") == "occupied"
+
+
+def test_cli_rechecks_input_alias_against_opened_output_parent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture_parent = tmp_path / "fixture"
+    output_parent = tmp_path / "output"
+    fixture_parent.mkdir()
+    output_parent.mkdir()
+    fixture = fixture_parent / "contract.json"
+    fixture.write_bytes(_fixture("mcpui001-authority-positive.json").read_bytes())
+    original = fixture.read_bytes()
+    output = output_parent / fixture.name
+
+    def retarget_output_parent(path: Path) -> int:
+        assert path == output
+        flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_DIRECTORY", 0)
+        return os.open(fixture_parent, flags)
+
+    monkeypatch.setattr(agent_ui_cli, "_open_artifact_parent", retarget_output_parent)
+    result = CliRunner().invoke(
+        main,
+        [
+            "agent-ui",
+            "scan",
+            str(fixture),
+            "--json",
+            str(output),
+            "--force",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "must not alias the input fixture" in result.output
+    assert fixture.read_bytes() == original
+    assert not output.exists()
 
 
 def test_cli_no_force_commit_does_not_clobber_post_preflight_file(
