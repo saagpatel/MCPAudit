@@ -320,6 +320,20 @@ For an end-to-end generator-to-auditor demo packet, see
 
 The scanner enumerates MCP client config files, connects to each configured server, and calls `tools/list`, `prompts/list`, and `resources/list` over the MCP protocol when those capabilities are available. Stdio servers are started as subprocesses via `anyio`; HTTP/SSE servers are contacted at their configured URL. Returned tool schemas, prompt arguments, and resource URIs flow into the permission classifier (schema walker + regex ruleset over six permission categories) and the optional injection detector (pattern ruleset for instruction-override, role-switch, and hidden-directive phrasing). The risk scorer composes a per-category weighted sum clamped to 0–10 from tool findings, then separately reports additive `non_tool_risk` for prompt and resource capability or injection findings. `non_tool_risk` is for triage and output consumers; it does not change `risk_score.composite`. Reports render via Rich; JSON and SARIF 2.1.0 export are first-class. The pin store serializes SHA256 schema hashes plus reviewable tool snapshots to `~/.mcp-audit-pins.yaml` for actionable drift detection on subsequent `--pin-check` scans. Use `mcp-audit pin --refresh <server>` to preview expected drift for one reviewed server — including capability-escalation and launch-config/provenance deltas vs the baseline — then rerun with `--apply` to replace that server's pins. Use `mcp-audit pin --stale` to review pinned servers that are no longer present in discovered MCP configs before clearing them explicitly with `mcp-audit pin --clear <server>`.
 
+The experimental `mcp-audit agent-ui` group statically scans program-owned MCP
+Apps/OpenAI UI metadata fixtures and A2UI v0.9 JSONL fixtures. It emits
+deterministic JSON plus inert offline HTML and never loads widget code, connects
+to an MCP server, authenticates, or processes real user data. Unsupported
+protocols, catalogs, host behavior, bindings, malformed component shapes, and
+unbound approval versions remain `UNKNOWN`. Approval provenance inherits only
+from the nearest declared JSON Pointer, dual standard/OpenAI metadata must
+reconcile, malformed HTTPS authorities cannot pass by string equality, fixture
+reads are descriptor-bound and size-capped, and no-force report writes use
+atomic no-clobber commit. Supported contradictions cannot be erased by a later
+A2UI replacement or deletion. See
+[`docs/AGENT-UI-CONTRACT-AUDITOR.md`](docs/AGENT-UI-CONTRACT-AUDITOR.md) for the
+exact input profiles, six stable rules, fixtures, and claim ceiling.
+
 ### Local Policy Gates
 
 Policies are local YAML files evaluated after a scan. A failing policy exits with code `2` after terminal, JSON, or SARIF output is written.

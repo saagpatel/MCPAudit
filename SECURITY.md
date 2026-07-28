@@ -13,6 +13,27 @@ outside the harness guarantee. Do not point these commands at normal MCP
 configuration or treat their proof as authority for a real server. See
 `docs/EVIDENCE-ENFORCEMENT-THREAT-MODEL.md`.
 
+## Experimental Agent UI contract audit
+
+The `agent-ui` commands accept only program-owned synthetic MCP Apps/OpenAI
+metadata fixtures and A2UI v0.9 JSONL fixtures. They do not read widget HTML or
+JavaScript, contact an MCP server, call tools, fetch resources or catalogs,
+authenticate, install plugins, or process real user data. Symlink inputs are
+rejected; fixture bytes are read from one identity-checked descriptor with a
+post-read size bound; report outputs cannot alias each other or the input; and
+no-force output commit is descriptor-bound and atomic create-if-absent.
+Generic JSON nesting and A2UI traversal are bounded; duplicate JSON keys and
+same-update component IDs are invalid; missing or unknown approval provenance,
+out-of-domain evidence states, contradictory standard/OpenAI metadata, malformed
+HTTPS authorities, and unsupported protocol or host constructs produce
+`UNKNOWN`. Supported contradictions already established in an A2UI lifecycle
+cannot be erased by replacement or surface deletion.
+
+A passing fixture report proves only internal consistency for the supported
+static contract. It does not prove host sandboxing, CSP enforcement, transport
+integrity, authorization, renderer behavior, interoperability, or real-workflow
+safety. See `docs/AGENT-UI-CONTRACT-AUDITOR.md`.
+
 MCPAudit is itself a security tool. This document covers two distinct concerns:
 
 1. How to report vulnerabilities **in MCPAudit** (the auditor tool itself)
