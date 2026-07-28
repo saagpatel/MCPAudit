@@ -83,12 +83,12 @@ platform.
 | Container, VM, or hypervisor escape | Unknown | Could bypass the container controls. A capsule records containment as `partial`. |
 | Docker engine host or optional VM sharing | Not a proven isolation boundary | The engine layer may expose broader host-adjacent state than the runtime container. A hostile-kernel test should use a fresh mountless VM instead. |
 | macOS Keychain, TCC, XPC, Apple Events, GUI, devices, and host kernel | Unobserved | The Linux fixture cannot justify claims about these surfaces. |
-| Transient create-delete or write-restore | Explicit machine-readable `UNKNOWN` (`PBA-FS-TRANSIENT-001`) | Final-state hashing can miss an attempt that leaves no persisted delta, so the filesystem surface cannot support `pass`. |
+| Transient create-delete or write-restore | Explicit machine-readable `unknown` (`PBA-FS-TRANSIENT-001`) | Final-state hashing can miss an attempt that leaves no persisted delta, so the filesystem surface cannot support `pass`. |
 | Nested or very short-lived child processes | Final state quiesced; identity attribution incomplete | Surviving descendants are terminated before the final archive, but child executable identities and transient effects are not completely attributed. |
-| SQLite queries or transactions with no final delta | Explicit machine-readable `UNKNOWN` (`PBA-DB-NO-DELTA-001`) | Semantic comparison proves final content, not every query or transaction attempt, so the database surface cannot support `pass`. |
+| SQLite queries or transactions with no final delta | Explicit machine-readable `unknown` (`PBA-DB-NO-DELTA-001`) | Semantic comparison proves final content, not every query or transaction attempt, so the database surface cannot support `pass`. |
 | Non-SQLite databases | File-level only | Semantic records and remote database effects are unknown. |
-| Requested network destination or hostname | Explicit machine-readable `UNKNOWN` (`PBA-NET-DESTINATION-001`) | IPv4/IPv6 IP and UDP counters plus family-agnostic Linux TCP counters reveal some activity, not the requested IP, port, or hostname. A blocked attempt is not destination observation. |
-| Filesystem and abstract Unix-domain sockets | Explicit machine-readable `UNKNOWN` (`PBA-UNIX-SOCKET-001`) | IP counters do not cover AF_UNIX, and no accepted deterministic socket event source exists in v1. |
+| Requested network destination or hostname | Explicit machine-readable `unknown` (`PBA-NET-DESTINATION-001`) | IPv4/IPv6 IP and UDP counters plus family-agnostic Linux TCP counters reveal some activity, not the requested IP, port, or hostname. A blocked attempt is not destination observation. |
+| Filesystem and abstract Unix-domain sockets | Explicit machine-readable `unknown` (`PBA-UNIX-SOCKET-001`) | IP counters do not cover AF_UNIX, and no accepted deterministic socket event source exists in v2. |
 | Loopback inside the namespace | Available | A command can contact its own processes; the evidence marks attempts but does not call loopback external contact. |
 | Output links or special files | Fail-closed | Collection stops; the effect is not silently omitted and no completed capsule is issued. |
 | Unknown secret formats or low-entropy secret hashes | Residual risk | Redaction is best effort, and a digest can sometimes be guessed. Review declarations and commands before sharing capsules. |

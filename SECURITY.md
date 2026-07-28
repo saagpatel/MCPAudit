@@ -104,7 +104,7 @@ sandbox or safety guarantee. Unknown, stale, masked, unmatched, incomplete,
 unobservable, dirty, or authority-unverified evidence remains non-authoritative
 and cannot become a passing safety claim.
 
-The observation-v2 observer emits stable machine-readable `UNKNOWN` receipts for transient
+The observation-v2 observer emits stable machine-readable `unknown` receipts for transient
 create-delete/write-restore attempts, no-delta SQLite queries or transactions,
 requested network destinations or hostnames, and filesystem or abstract
 Unix-domain sockets. It does not prove those surfaces observed, blocked, or
