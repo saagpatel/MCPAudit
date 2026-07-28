@@ -240,11 +240,13 @@ proof-before-action schema capsule
 proof-before-action schema capsule-index
 ```
 
-All current contract identifiers end in `.v1`. Additive changes require optional
-fields. Removing, renaming, retyping, changing requiredness, changing canonical
-JSON semantics, or changing evidence meaning requires a new version identifier.
-The capsule index is versioned separately so the portable envelope can evolve
-without silently changing capsule semantics.
+The current contract identifiers are versioned independently: declaration and
+trust manifest remain `.v1`, while observation, capsule, and capsule index are
+`.v2`. Additive changes require optional fields. Removing, renaming, retyping,
+changing requiredness, changing canonical JSON semantics, or changing evidence
+meaning requires a new version identifier. The capsule index is versioned
+separately so the portable envelope can evolve without silently changing capsule
+semantics.
 
 Legacy observation-v1 capsules emitted before staged subject evidence was added
 remain parseable, but verification marks them invalid and unbound. Every valid

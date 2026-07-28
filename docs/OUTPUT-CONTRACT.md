@@ -128,7 +128,7 @@ stdout or stderr; unexpected exceptions also become one fail-closed JSON object.
 See `docs/EVIDENCE-ENFORCEMENT-AGT-FIXTURE.md` for command-specific fields and
 the exact target-version policy.
 
-## Proof Before Action v1
+## Proof Before Action contracts
 
 Proof Before Action is a separate strict evidence contract; it does not change
 `AuditReport` schema version `1`. The five version identifiers are:
