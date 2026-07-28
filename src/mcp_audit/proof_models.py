@@ -12,10 +12,16 @@ from typing import Any, Final, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 DECLARATION_SCHEMA: Final = "proof-before-action.declaration.v1"
-OBSERVATION_SCHEMA: Final = "proof-before-action.observation.v1"
+OBSERVATION_SCHEMA_V1: Final = "proof-before-action.observation.v1"
+OBSERVATION_SCHEMA: Final = "proof-before-action.observation.v2"
 TRUST_MANIFEST_SCHEMA: Final = "proof-before-action.trust-manifest.v1"
-CAPSULE_SCHEMA: Final = "proof-before-action.capsule.v1"
-CAPSULE_INDEX_SCHEMA: Final = "proof-before-action.capsule-index.v1"
+CAPSULE_SCHEMA_V1: Final = "proof-before-action.capsule.v1"
+CAPSULE_SCHEMA: Final = "proof-before-action.capsule.v2"
+CAPSULE_INDEX_SCHEMA_V1: Final = "proof-before-action.capsule-index.v1"
+CAPSULE_INDEX_SCHEMA: Final = "proof-before-action.capsule-index.v2"
+SUPPORTED_OBSERVATION_SCHEMAS: Final = (OBSERVATION_SCHEMA_V1, OBSERVATION_SCHEMA)
+SUPPORTED_CAPSULE_SCHEMAS: Final = (CAPSULE_SCHEMA_V1, CAPSULE_SCHEMA)
+SUPPORTED_CAPSULE_INDEX_SCHEMAS: Final = (CAPSULE_INDEX_SCHEMA_V1, CAPSULE_INDEX_SCHEMA)
 ATTEMPT_EVIDENCE_RULE_IDS: Final = (
     "PBA-FS-TRANSIENT-001",
     "PBA-DB-NO-DELTA-001",
@@ -298,7 +304,10 @@ class SubjectSnapshotEvidence(StrictModel):
 
 
 class Observation(StrictModel):
-    schema_version: Literal["proof-before-action.observation.v1"] = OBSERVATION_SCHEMA
+    schema_version: Literal[
+        "proof-before-action.observation.v1",
+        "proof-before-action.observation.v2",
+    ] = OBSERVATION_SCHEMA
     subject_snapshot: SubjectSnapshotEvidence | None = None
     isolation: IsolationEvidence
     command: CommandEvidence
@@ -315,6 +324,8 @@ class Observation(StrictModel):
         rule_ids = [item.rule_id for item in self.attempt_evidence]
         if len(rule_ids) != len(set(rule_ids)):
             raise ValueError("attempt evidence rule IDs must be unique")
+        if self.schema_version == OBSERVATION_SCHEMA_V1 and "attempt_evidence" in self.model_fields_set:
+            raise ValueError("observation v1 cannot contain v2 attempt-evidence semantics")
         return self
 
 
@@ -500,9 +511,21 @@ class CapsuleIntegrity(StrictModel):
 
 
 class EvidenceCapsule(StrictModel):
-    schema_version: Literal["proof-before-action.capsule.v1"] = CAPSULE_SCHEMA
+    schema_version: Literal[
+        "proof-before-action.capsule.v1",
+        "proof-before-action.capsule.v2",
+    ] = CAPSULE_SCHEMA
     payload: CapsulePayload
     integrity: CapsuleIntegrity
+
+    @model_validator(mode="after")
+    def capsule_and_observation_versions_match(self) -> EvidenceCapsule:
+        expected_observation = (
+            OBSERVATION_SCHEMA_V1 if self.schema_version == CAPSULE_SCHEMA_V1 else OBSERVATION_SCHEMA
+        )
+        if self.payload.observation.schema_version != expected_observation:
+            raise ValueError("capsule and observation schema versions must match")
+        return self
 
 
 class IndexedArtifact(StrictModel):
@@ -514,14 +537,25 @@ class IndexedArtifact(StrictModel):
 
 
 class CapsuleIndex(StrictModel):
-    schema_version: Literal["proof-before-action.capsule-index.v1"] = CAPSULE_INDEX_SCHEMA
-    capsule_schema_version: Literal["proof-before-action.capsule.v1"] = CAPSULE_SCHEMA
+    schema_version: Literal[
+        "proof-before-action.capsule-index.v1",
+        "proof-before-action.capsule-index.v2",
+    ] = CAPSULE_INDEX_SCHEMA
+    capsule_schema_version: Literal[
+        "proof-before-action.capsule.v1",
+        "proof-before-action.capsule.v2",
+    ] = CAPSULE_SCHEMA
     subject_commit: str | None
     producer_commit: str | None
     artifacts: list[IndexedArtifact]
 
     @model_validator(mode="after")
     def artifact_set_is_fixed(self) -> CapsuleIndex:
+        expected_capsule_schema = (
+            CAPSULE_SCHEMA_V1 if self.schema_version == CAPSULE_INDEX_SCHEMA_V1 else CAPSULE_SCHEMA
+        )
+        if self.capsule_schema_version != expected_capsule_schema:
+            raise ValueError("capsule index and capsule schema versions must match")
         by_path = {item.path: item for item in self.artifacts}
         if sorted(by_path) != ["capsule.json", "report.html"] or len(by_path) != len(self.artifacts):
             raise ValueError("capsule index must contain exactly capsule.json and report.html")

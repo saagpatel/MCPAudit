@@ -134,16 +134,23 @@ Proof Before Action is a separate strict evidence contract; it does not change
 `AuditReport` schema version `1`. The five version identifiers are:
 
 - `proof-before-action.declaration.v1`
-- `proof-before-action.observation.v1`
+- `proof-before-action.observation.v2`
 - `proof-before-action.trust-manifest.v1`
-- `proof-before-action.capsule.v1`
-- `proof-before-action.capsule-index.v1`
+- `proof-before-action.capsule.v2`
+- `proof-before-action.capsule-index.v2`
+
+The verifier also supports historical
+`proof-before-action.observation.v1`,
+`proof-before-action.capsule.v1`, and
+`proof-before-action.capsule-index.v1` bundles under their original comparison
+and offline-report projection. Version families cannot be mixed.
 
 The authoritative JSON Schemas are emitted from the live strict Pydantic models
 with `proof-before-action schema CONTRACT`. Unknown fields are rejected.
-Optional additive fields may be added within v1. A removal, rename, retype,
-requiredness change, evidence-semantics change, or canonicalization change
-requires a new contract identifier.
+Optional additive fields may be added within one version. A removal, rename,
+retype, requiredness change, evidence-semantics change, or canonicalization
+change requires a new contract identifier. New inspection/export writes only
+the current versions above; legacy support is verification-only compatibility.
 
 `capsule.json` is canonical JSON with sorted keys, compact separators, UTF-8, one
 terminal newline, and no floating-point values. Its payload hash covers the
@@ -168,8 +175,8 @@ Missing staged-subject evidence is always invalid, including parseable legacy-v1
 payloads. A complete observer's transient filesystem or database attempt counts
 as an observed effect even when it leaves no persisted delta.
 
-`Observation.attempt_evidence` is an additive optional list for legacy parsing.
-New observations emit exactly one strict receipt for each stable rule:
+Observation v2 adds `attempt_evidence`. New observations emit exactly one strict
+receipt for each stable rule:
 
 - `PBA-FS-TRANSIENT-001` / `filesystem.transient_attempt`;
 - `PBA-DB-NO-DELTA-001` / `database.no_delta_attempt`;
@@ -191,10 +198,16 @@ The current Docker backend emits all four as `unknown`, confidence `none`, and
 support `unsupported`. It records final workspace hashes, SQLite semantic/final
 state, network namespace counters, or the validated observer contract as
 bounded provenance without claiming those mechanisms traced the attempt.
-Missing or unresolved receipts add an `unknown` comparison finding. V1 also
+Missing or unresolved receipts add an `unknown` comparison finding. V2 also
 adds an `unknown` finding for `observed` or `blocked` receipt claims because no
 accepted attempt-trace mechanism exists in this contract version. The offline
 HTML projection includes the same rule/state/support/attribution matrix.
+
+That last evidence-semantics change is versioned: it is the v2 comparison and
+HTML contract. Historical v1 observations do not accept `attempt_evidence` and
+are recomputed/rendered with the original v1 behavior, so an integrity-anchored
+v1 bundle remains byte-compatible and verifiable. A v1 bundle is historical
+evidence, not a v2 attempt-evidence claim.
 
 `proof-before-action inspect` exits `0` for a passing comparison, `1` for a
 blocked or unknown comparison, and `2` when validation or observation cannot

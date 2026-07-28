@@ -28,7 +28,8 @@ places where untrusted MCP metadata can affect reports.
   filesystem writes, no-delta SQLite activity, requested network destinations,
   and Unix-domain sockets. The current Docker backend marks all four
   `unknown`/`unsupported`; missing receipts or producer-asserted observed/blocked
-  states cannot manufacture a passing v1 comparison.
+  states cannot manufacture a passing v2 comparison. Historical v1 bundles
+  retain their original comparison and offline-report verification semantics.
 
 ## Remaining Risks
 

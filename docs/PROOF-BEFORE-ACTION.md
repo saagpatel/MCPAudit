@@ -70,7 +70,7 @@ needs provenance stronger than internal consistency. Verify later:
 proof-before-action verify ./proof-capsule \
   --expect-subject-commit "$SUBJECT_COMMIT" \
   --expect-producer-commit "$PRODUCER_COMMIT" \
-  --expect-schema proof-before-action.capsule.v1 \
+  --expect-schema proof-before-action.capsule.v2 \
   --expect-root-sha256 "$RECORDED_ROOT"
 ```
 
@@ -161,14 +161,16 @@ state (`observed`, `blocked`, `incomplete`, or `unknown`), attribution
 confidence, platform, backend support, observer-owned provenance, and explicit
 unknown reasons. The current Docker observer emits only the honest
 `unknown`/`unsupported` form for these four rules. Missing receipts and
-unresolved receipts prevent `pass`. The v1 comparison contract also rejects an
-alternate producer's `observed` or `blocked` value as passing proof because v1
+unresolved receipts prevent `pass`. The v2 comparison contract also rejects an
+alternate producer's `observed` or `blocked` value as passing proof because v2
 has no accepted attempt-trace mechanism.
 
-This is an additive observation-v1 field. Earlier observations remain
-parseable, but their missing receipts are explicitly non-passing. A future
-observer that can safely support one of these states must use a versioned
-evidence-semantics change rather than relabel final-state or counter evidence.
+This evidence semantics is observation/capsule/index v2. Historical v1 bundles
+remain verifiable under their original comparison and offline HTML projection;
+they are not reinterpreted as v2 attempt evidence, cannot contain the v2 field,
+and are never emitted by the current observer. A future observer that can safely
+support one of these states must use another versioned evidence-semantics change
+rather than relabel final-state or counter evidence.
 
 Comparison also treats any schema-valid `complete: true` surface that retains an
 unknown attempted, decision, outcome, or persisted state as `unknown`. Legacy or
@@ -246,10 +248,12 @@ capsule requires `subject_snapshot` and the matching manifest staged-tree hash;
 there is no compatibility path that turns missing subject evidence into
 authority.
 
-Observation-v1 capsules emitted before `attempt_evidence` was added also remain
-parseable. Recomputed comparison marks the four missing stable receipts
-`attempt_evidence_missing`, so an older capsule cannot become a passing attempt
-claim through compatibility defaults.
+Observation/capsule/index v1 bundles emitted before `attempt_evidence` was added
+remain parseable and verifiable with their stored v1 comparison and original
+offline projection. Verification dispatches by the bound version family; it
+does not add v2 findings to v1 evidence. New v2 output marks missing stable
+receipts `attempt_evidence_missing`, so omission cannot manufacture a passing
+v2 attempt claim.
 
 Canonical JSON uses UTF-8, sorted keys, compact separators, one terminal newline,
 and no floating-point values. The primitive is compatible with AIGCCore's

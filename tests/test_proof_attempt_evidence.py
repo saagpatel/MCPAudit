@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import sqlite3
 import subprocess
@@ -12,16 +13,24 @@ import pytest
 from click.testing import CliRunner
 from pydantic import ValidationError
 
-from mcp_audit.proof_capsule import compare_bill
+from mcp_audit.proof_capsule import build_capsule, compare_bill, export_capsule, verify_capsule
 from mcp_audit.proof_cli import main
 from mcp_audit.proof_models import (
+    CAPSULE_INDEX_SCHEMA,
+    CAPSULE_SCHEMA,
+    CAPSULE_SCHEMA_V1,
+    OBSERVATION_SCHEMA,
+    OBSERVATION_SCHEMA_V1,
     ActionDeclaration,
     AttemptEvidence,
     AttemptEvidenceProvenance,
+    EvidenceCapsule,
     Observation,
     canonical_json_bytes,
+    sha256_bytes,
 )
 from mcp_audit.proof_observer import _attempt_evidence_receipts, observe_command
+from mcp_audit.proof_trust import build_release_trust_manifest
 
 DOCKER_READY = (
     shutil.which("docker") is not None
@@ -190,6 +199,81 @@ def test_unsupported_platform_receipt_stays_machine_readable_unknown() -> None:
     assert receipt.state == "unknown"
     assert receipt.support == "unsupported"
     assert receipt.platform == "darwin"
+
+
+@requires_docker
+def test_versioned_attempt_semantics_preserve_historical_v1_capsule_verification(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path)
+    observation = observe_command(
+        repo,
+        ["node", "-e", "process.exit(0)"],
+        image="node:24-slim",
+        expected_image_id=_node_image_id(),
+    )
+    assert observation.schema_version == OBSERVATION_SCHEMA
+    declaration = _declaration()
+    trust = build_release_trust_manifest(
+        repo,
+        None,
+        subject_snapshot=observation.subject_snapshot,
+    )
+    current = build_capsule(
+        declaration,
+        observation,
+        compare_bill(declaration, observation),
+        trust,
+    )
+    assert current.schema_version == CAPSULE_SCHEMA
+    current_output = tmp_path / "current-capsule"
+    export_capsule(current, current_output)
+    assert (
+        json.loads((current_output / "capsule-index.json").read_bytes())["schema_version"]
+        == CAPSULE_INDEX_SCHEMA
+    )
+    legacy_observation_payload = observation.model_dump(mode="json")
+    legacy_observation_payload["schema_version"] = OBSERVATION_SCHEMA_V1
+    legacy_observation_payload.pop("attempt_evidence")
+    legacy_observation = Observation.model_validate(legacy_observation_payload)
+    with pytest.raises(
+        ValidationError,
+        match="observation v1 cannot contain v2 attempt-evidence semantics",
+    ):
+        Observation.model_validate(
+            {
+                **legacy_observation_payload,
+                "attempt_evidence": [],
+            }
+        )
+    legacy_payload = current.model_dump(mode="json")
+    mixed_payload = current.model_dump(mode="json")
+    mixed_payload["schema_version"] = CAPSULE_SCHEMA_V1
+    with pytest.raises(
+        ValidationError,
+        match="capsule and observation schema versions must match",
+    ):
+        EvidenceCapsule.model_validate(mixed_payload)
+    legacy_payload["schema_version"] = CAPSULE_SCHEMA_V1
+    legacy_payload["payload"]["observation"] = legacy_observation_payload
+    legacy_payload["payload"]["comparison"] = compare_bill(
+        declaration,
+        legacy_observation,
+    ).model_dump(mode="json")
+    legacy_payload["integrity"]["payload_sha256"] = sha256_bytes(
+        canonical_json_bytes(legacy_payload["payload"])
+    )
+    legacy_capsule = EvidenceCapsule.model_validate(legacy_payload)
+    output = tmp_path / "legacy-capsule"
+
+    export_capsule(legacy_capsule, output)
+
+    assert verify_capsule(output)["valid"] is True
+    assert b"Attempt-level evidence" not in (output / "report.html").read_bytes()
+    assert (
+        json.loads((output / "capsule-index.json").read_bytes())["capsule_schema_version"]
+        == CAPSULE_SCHEMA_V1
+    )
 
 
 @requires_docker

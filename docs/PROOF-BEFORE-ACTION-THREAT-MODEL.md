@@ -112,9 +112,13 @@ authority still belongs to the operator and must account for every limitation
 and unknown.
 
 The attempt receipt vocabulary includes `observed` and `blocked` so a versioned
-future observer can distinguish them, but v1 has no accepted attempt-trace
+future observer can distinguish them, but v2 has no accepted attempt-trace
 mechanism. Replacing an `unknown` receipt with either value, or omitting a
 receipt, remains non-passing when comparison is recomputed.
+
+Historical v1 observation/capsule/index bundles are verified with their
+original comparison and HTML projection. They are not reinterpreted as v2
+attempt receipts, and the current observer cannot emit v1 output.
 
 ## Attempt-observer mechanism decision
 
@@ -131,7 +135,7 @@ The current backend intentionally does not add a tracer:
   short-lived activity, so they cannot support trustworthy attribution.
 
 Those mechanisms are rejected rather than used to manufacture detection. The
-four receipts bind the observer's actual final-state/counter provenance and
+four v2 receipts bind the observer's actual final-state/counter provenance and
 fail closed as `UNKNOWN`.
 
 ## Safer high-risk profile
