@@ -30,11 +30,17 @@ from mcp_audit.proof_models import (
     AttemptEvidence,
     AttemptEvidenceProvenance,
     EvidenceCapsule,
+    NetworkEvidence,
     Observation,
+    SurfaceObservation,
     canonical_json_bytes,
     sha256_bytes,
 )
-from mcp_audit.proof_observer import _attempt_evidence_receipts, observe_command
+from mcp_audit.proof_observer import (
+    _attempt_evidence_receipts,
+    _network_evidence,
+    observe_command,
+)
 from mcp_audit.proof_trust import build_release_trust_manifest
 
 DOCKER_READY = (
@@ -128,9 +134,24 @@ def _declaration() -> ActionDeclaration:
     )
 
 
+def _available_network_evidence() -> NetworkEvidence:
+    return NetworkEvidence(
+        surface=SurfaceObservation(
+            attempted=False,
+            decision="not_applicable",
+            outcome="not_applicable",
+            persisted="unchanged",
+            mechanism="synthetic complete counter delta fixture",
+            complete=False,
+            limitations=["Counters do not identify requested destinations."],
+        ),
+        counters={"Ip.OutRequests": 0},
+    )
+
+
 def test_attempt_evidence_schema_is_additive_strict_and_deterministic() -> None:
-    first = _attempt_evidence_receipts()
-    second = _attempt_evidence_receipts()
+    first = _attempt_evidence_receipts(_available_network_evidence())
+    second = _attempt_evidence_receipts(_available_network_evidence())
 
     assert canonical_json_bytes([item.model_dump(mode="json") for item in first]) == (
         canonical_json_bytes([item.model_dump(mode="json") for item in second])
@@ -155,7 +176,9 @@ def test_emitted_schema_enforces_attempt_receipt_invariants() -> None:
         **observation_schema["properties"]["attempt_evidence"],
     }
     validator = Draft202012Validator(attempt_schema)
-    receipts = [item.model_dump(mode="json") for item in _attempt_evidence_receipts()]
+    receipts = [
+        item.model_dump(mode="json") for item in _attempt_evidence_receipts(_available_network_evidence())
+    ]
     validator.validate(receipts)
 
     wrong_surface = [{**receipts[0], "surface": "network.requested_destination"}]
@@ -213,7 +236,7 @@ def test_emitted_schema_enforces_attempt_receipt_invariants() -> None:
 
 
 def test_attempt_evidence_rejects_claim_inflation_and_wrong_rule_binding() -> None:
-    payload = _attempt_evidence_receipts()[0].model_dump(mode="json")
+    payload = _attempt_evidence_receipts(_available_network_evidence())[0].model_dump(mode="json")
     with pytest.raises(ValidationError, match="unsupported attempt evidence must remain unknown"):
         AttemptEvidence.model_validate(
             {
@@ -246,6 +269,46 @@ def test_attempt_evidence_rejects_claim_inflation_and_wrong_rule_binding() -> No
                 "attribution_confidence": "high",
             }
         )
+
+
+def test_network_receipt_reflects_counter_availability(tmp_path: Path) -> None:
+    available = _attempt_evidence_receipts(_available_network_evidence())[2]
+    assert {item.kind for item in available.provenance} == {"network_namespace_counters"}
+    assert "before/after counter deltas" in available.provenance[0].source
+
+    missing_paths = [tmp_path / name for name in ("before", "after", "before6", "after6")]
+    timed_out = _network_evidence(*missing_paths, timed_out=True)
+    missing = _network_evidence(*missing_paths, timed_out=False)
+
+    before, after, before6, after6 = [
+        tmp_path / name for name in ("regress.before", "regress.after", "regress6.before", "regress6.after")
+    ]
+    before.write_text(
+        "Ip: OutRequests\nIp: 1\n"
+        "Tcp: ActiveOpens PassiveOpens AttemptFails\nTcp: 1 1 1\n"
+        "Udp: OutDatagrams\nUdp: 1\n",
+        encoding="utf-8",
+    )
+    after.write_text(
+        "Ip: OutRequests\nIp: 0\n"
+        "Tcp: ActiveOpens PassiveOpens AttemptFails\nTcp: 0 0 0\n"
+        "Udp: OutDatagrams\nUdp: 0\n",
+        encoding="utf-8",
+    )
+    before6.write_text("Ip6OutRequests 1\nUdp6OutDatagrams 1\n", encoding="utf-8")
+    after6.write_text("Ip6OutRequests 0\nUdp6OutDatagrams 0\n", encoding="utf-8")
+    regressed = _network_evidence(before, after, before6, after6, timed_out=False)
+
+    for network, expected_reason in (
+        (timed_out, "command timed out"),
+        (missing, "counter snapshots were unavailable"),
+        (regressed, "counter regressed or wrapped"),
+    ):
+        unavailable = _attempt_evidence_receipts(network)[2]
+        assert network.counters == {}
+        assert {item.kind for item in unavailable.provenance} == {"observer_contract"}
+        assert "no usable before/after network counter deltas" in unavailable.provenance[0].source
+        assert any(expected_reason in reason for reason in unavailable.unknown_reasons)
 
 
 def test_unsupported_platform_receipt_stays_machine_readable_unknown() -> None:
@@ -574,4 +637,9 @@ def test_benign_twin_and_failure_controls_keep_attempt_gaps_unknown(
     assert compare_bill(_declaration(), benign).verdict == "unknown"
     assert all(item.state == "unknown" for item in failure.attempt_evidence)
     assert failure.command.timed_out is True
+    failure_network_receipt = next(
+        item for item in failure.attempt_evidence if item.rule_id == "PBA-NET-DESTINATION-001"
+    )
+    assert {item.kind for item in failure_network_receipt.provenance} == {"observer_contract"}
+    assert any("timed out" in reason for reason in failure_network_receipt.unknown_reasons)
     assert compare_bill(_declaration(), failure).verdict == "block"

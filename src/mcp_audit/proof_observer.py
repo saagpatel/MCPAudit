@@ -414,7 +414,7 @@ def observe_command(
             database=database,
             database_changes=database_changes,
             network=network,
-            attempt_evidence=_attempt_evidence_receipts(),
+            attempt_evidence=_attempt_evidence_receipts(network),
             limitations=[
                 "The Linux guest cannot represent macOS Keychain, TCC, XPC, Apple Events, "
                 "GUI, device, or kernel effects.",
@@ -1307,13 +1307,7 @@ def _network_evidence(
     *,
     timed_out: bool,
 ) -> NetworkEvidence:
-    if (
-        timed_out
-        or not before.is_file()
-        or not after.is_file()
-        or not before6.is_file()
-        or not after6.is_file()
-    ):
+    if timed_out:
         return NetworkEvidence(
             surface=SurfaceObservation(
                 attempted=None,
@@ -1322,7 +1316,19 @@ def _network_evidence(
                 persisted="unknown",
                 mechanism="Linux network namespace counters",
                 complete=False,
-                limitations=["Network counters were unavailable because the run did not exit normally."],
+                limitations=["Network counter deltas were unavailable because the command timed out."],
+            )
+        )
+    if not before.is_file() or not after.is_file() or not before6.is_file() or not after6.is_file():
+        return NetworkEvidence(
+            surface=SurfaceObservation(
+                attempted=None,
+                decision="unknown",
+                outcome="unknown",
+                persisted="unknown",
+                mechanism="Linux network namespace counters",
+                complete=False,
+                limitations=["Required before/after network counter snapshots were unavailable."],
             )
         )
     old = _parse_snmp(before)
@@ -1396,7 +1402,31 @@ def _network_evidence(
     )
 
 
-def _attempt_evidence_receipts() -> list[AttemptEvidence]:
+def _attempt_evidence_receipts(network: NetworkEvidence) -> list[AttemptEvidence]:
+    destination_reason = (
+        "Namespace counters do not encode the requested IP, port, or hostname; "
+        "a blocked network attempt is not destination observation."
+    )
+    if network.counters:
+        network_provenance = AttemptEvidenceProvenance(
+            kind="network_namespace_counters",
+            source=("observer-owned IPv4/IPv6 IP, TCP, and UDP before/after counter deltas from procfs"),
+            observer_owned=True,
+        )
+        network_unknown_reasons = [destination_reason]
+    else:
+        network_provenance = AttemptEvidenceProvenance(
+            kind="observer_contract",
+            source=("observer-owned NetworkEvidence recorded no usable before/after network counter deltas"),
+            observer_owned=True,
+        )
+        counter_limitations = network.surface.limitations or [
+            "Network counter evidence was unavailable without a more specific observer reason."
+        ]
+        network_unknown_reasons = [
+            destination_reason,
+            *[f"Counter evidence unavailable: {reason}" for reason in counter_limitations],
+        ]
     return [
         AttemptEvidence(
             rule_id="PBA-FS-TRANSIENT-001",
@@ -1454,19 +1484,8 @@ def _attempt_evidence_receipts() -> list[AttemptEvidence]:
             platform="linux",
             backend="docker",
             support="unsupported",
-            provenance=[
-                AttemptEvidenceProvenance(
-                    kind="network_namespace_counters",
-                    source=(
-                        "observer-owned IPv4/IPv6 IP, TCP, and UDP before/after counter deltas from procfs"
-                    ),
-                    observer_owned=True,
-                )
-            ],
-            unknown_reasons=[
-                "Namespace counters do not encode the requested IP, port, or hostname; "
-                "a blocked network attempt is not destination observation."
-            ],
+            provenance=[network_provenance],
+            unknown_reasons=network_unknown_reasons,
         ),
         AttemptEvidence(
             rule_id="PBA-UNIX-SOCKET-001",

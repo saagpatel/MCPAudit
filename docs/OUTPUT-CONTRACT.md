@@ -203,8 +203,11 @@ Each receipt contains:
 
 The current Docker backend emits all four as `unknown`, confidence `none`, and
 support `unsupported`. It records final workspace hashes, SQLite semantic/final
-state, network namespace counters, or the validated observer contract as
-bounded provenance without claiming those mechanisms traced the attempt.
+state, available network namespace counter deltas, or the validated observer
+contract as bounded provenance without claiming those mechanisms traced the
+attempt. If counter snapshots are missing, unavailable, or regressed, the
+network-destination receipt uses observer-contract provenance and carries the
+exact counter-degradation limitation instead of claiming deltas were collected.
 Missing or unresolved receipts add an `unknown` comparison finding. V2 also
 adds an `unknown` finding for `observed` or `blocked` receipt claims because no
 accepted attempt-trace mechanism exists in this contract version. The offline

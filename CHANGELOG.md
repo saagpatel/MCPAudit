@@ -20,7 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `unknown`/`unsupported` with bounded provenance. Missing receipts, unresolved
   receipts, or unaccepted observed/blocked claims remain non-passing; no
   tracing privilege, host instrumentation, mount, socket, or network authority
-  was added.
+  was added. Network-destination receipts claim counter provenance only when
+  deltas were collected; timeout, missing, or regressed counters retain their
+  exact degradation reason under observer-contract provenance.
 - Detect URL- and host-shaped parameters throughout nested MCP tool schemas,
   including object, array-item, composition, and reachable local-reference
   branches. The walker ignores unused definition registries and non-schema
