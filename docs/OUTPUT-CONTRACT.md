@@ -168,6 +168,34 @@ Missing staged-subject evidence is always invalid, including parseable legacy-v1
 payloads. A complete observer's transient filesystem or database attempt counts
 as an observed effect even when it leaves no persisted delta.
 
+`Observation.attempt_evidence` is an additive optional list for legacy parsing.
+New observations emit exactly one strict receipt for each stable rule:
+
+- `PBA-FS-TRANSIENT-001` / `filesystem.transient_attempt`;
+- `PBA-DB-NO-DELTA-001` / `database.no_delta_attempt`;
+- `PBA-NET-DESTINATION-001` / `network.requested_destination`;
+- `PBA-UNIX-SOCKET-001` / `network.unix_socket`.
+
+Each receipt contains:
+
+- `rule_id` and its fixed `surface`;
+- the fixed `operations` covered by that rule;
+- `state`: `observed`, `blocked`, `incomplete`, or `unknown`;
+- `attribution_confidence`: `high`, `medium`, `low`, or `none`;
+- `platform`, `backend`, and `support`;
+- one or more provenance rows with `kind`, `source`, and
+  `observer_owned`;
+- `unknown_reasons` for every `incomplete` or `unknown` state.
+
+The current Docker backend emits all four as `unknown`, confidence `none`, and
+support `unsupported`. It records final workspace hashes, SQLite semantic/final
+state, network namespace counters, or the validated observer contract as
+bounded provenance without claiming those mechanisms traced the attempt.
+Missing or unresolved receipts add an `unknown` comparison finding. V1 also
+adds an `unknown` finding for `observed` or `blocked` receipt claims because no
+accepted attempt-trace mechanism exists in this contract version. The offline
+HTML projection includes the same rule/state/support/attribution matrix.
+
 `proof-before-action inspect` exits `0` for a passing comparison, `1` for a
 blocked or unknown comparison, and `2` when validation or observation cannot
 complete. `proof-before-action verify` exits `0` only when every requested hash,

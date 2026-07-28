@@ -24,6 +24,11 @@ places where untrusted MCP metadata can affect reports.
 - Proof Before Action treats stale, masked, unmatched, unobservable, incomplete,
   dirty, or authority-unverified evidence as non-passing. A complete observation
   is not itself a claim that the tested action is generally safe.
+- Proof Before Action emits four stable attempt-evidence receipts for transient
+  filesystem writes, no-delta SQLite activity, requested network destinations,
+  and Unix-domain sockets. The current Docker backend marks all four
+  `unknown`/`unsupported`; missing receipts or producer-asserted observed/blocked
+  states cannot manufacture a passing v1 comparison.
 
 ## Remaining Risks
 
@@ -34,9 +39,11 @@ places where untrusted MCP metadata can affect reports.
 - Optional `--llm-analysis` sends selected metadata to a third-party API; do not
   use it for sensitive MCP configs.
 - Proof Before Action is a bounded evidence collector, not a general sandbox.
-  Its current Docker observer does not establish complete Unix-domain socket
-  coverage, host-kernel isolation, or safety outside the declared and observed
-  surfaces.
+  Its current Docker observer does not trace the four attempt-level blind spots,
+  establish host-kernel isolation, or prove safety outside the declared and
+  observed surfaces. Privileged host/kernel tracing, relaxed container
+  capabilities, and bypassable process instrumentation remain deliberately
+  outside the profile.
 - Release-trust evidence remains only as authoritative as its independently
   supplied root and exact producer/subject bindings.
 - Composite scoring is tool-centered in the stable line. Prompt/resource

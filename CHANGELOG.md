@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Added stable attempt-evidence receipts for Proof Before Action's four
+  documented observer blind spots: transient filesystem writes, no-delta
+  SQLite activity, requested network destinations, and Unix-domain sockets.
+  The current Docker backend reports each as machine-readable
+  `unknown`/`unsupported` with bounded provenance. Missing receipts, unresolved
+  receipts, or unaccepted observed/blocked claims remain non-passing; no
+  tracing privilege, host instrumentation, mount, socket, or network authority
+  was added.
 - Detect URL- and host-shaped parameters throughout nested MCP tool schemas,
   including object, array-item, composition, and reachable local-reference
   branches. The walker ignores unused definition registries and non-schema

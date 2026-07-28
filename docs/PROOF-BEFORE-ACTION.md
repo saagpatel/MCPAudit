@@ -146,6 +146,30 @@ fail-closed reason. Link or special-file output blocks collection rather than
 silently disappearing. The command cannot write the observer-owned evidence
 tmpfs.
 
+Every observation also includes exactly one receipt for each documented
+attempt-level blind spot:
+
+| Rule | Surface | Current Docker state |
+| --- | --- | --- |
+| `PBA-FS-TRANSIENT-001` | create-delete and write-restore | `unknown`, `unsupported` |
+| `PBA-DB-NO-DELTA-001` | no-delta query and rolled-back transaction | `unknown`, `unsupported` |
+| `PBA-NET-DESTINATION-001` | requested IP/port or hostname | `unknown`, `unsupported` |
+| `PBA-UNIX-SOCKET-001` | filesystem and Linux abstract Unix sockets | `unknown`, `unsupported` |
+
+Each strict receipt binds its stable rule and surface IDs, operation variants,
+state (`observed`, `blocked`, `incomplete`, or `unknown`), attribution
+confidence, platform, backend support, observer-owned provenance, and explicit
+unknown reasons. The current Docker observer emits only the honest
+`unknown`/`unsupported` form for these four rules. Missing receipts and
+unresolved receipts prevent `pass`. The v1 comparison contract also rejects an
+alternate producer's `observed` or `blocked` value as passing proof because v1
+has no accepted attempt-trace mechanism.
+
+This is an additive observation-v1 field. Earlier observations remain
+parseable, but their missing receipts are explicitly non-passing. A future
+observer that can safely support one of these states must use a versioned
+evidence-semantics change rather than relabel final-state or counter evidence.
+
 Comparison also treats any schema-valid `complete: true` surface that retains an
 unknown attempted, decision, outcome, or persisted state as `unknown`. Legacy or
 alternate producers cannot use a completeness flag alone to manufacture `pass`.
@@ -221,6 +245,11 @@ remain parseable, but verification marks them invalid and unbound. Every valid
 capsule requires `subject_snapshot` and the matching manifest staged-tree hash;
 there is no compatibility path that turns missing subject evidence into
 authority.
+
+Observation-v1 capsules emitted before `attempt_evidence` was added also remain
+parseable. Recomputed comparison marks the four missing stable receipts
+`attempt_evidence_missing`, so an older capsule cannot become a passing attempt
+claim through compatibility defaults.
 
 Canonical JSON uses UTF-8, sorted keys, compact separators, one terminal newline,
 and no floating-point values. The primitive is compatible with AIGCCore's

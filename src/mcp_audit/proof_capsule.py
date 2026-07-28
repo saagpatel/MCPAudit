@@ -13,9 +13,11 @@ from typing import Any, Literal
 
 from mcp_audit import __version__
 from mcp_audit.proof_models import (
+    ATTEMPT_EVIDENCE_RULE_IDS,
     CAPSULE_INDEX_SCHEMA,
     CAPSULE_SCHEMA,
     ActionDeclaration,
+    AttemptEvidence,
     BillComparison,
     CapsuleIndex,
     CapsuleIntegrity,
@@ -176,6 +178,54 @@ def compare_bill(declaration: ActionDeclaration, observation: Observation) -> Bi
                 code="observation_incomplete",
                 severity="unknown",
                 message="one or more requested observation surfaces were incomplete",
+            )
+        )
+    attempt_evidence_by_rule: dict[str, AttemptEvidence] = {
+        item.rule_id: item for item in observation.attempt_evidence
+    }
+    missing_attempt_evidence = [
+        rule_id for rule_id in ATTEMPT_EVIDENCE_RULE_IDS if rule_id not in attempt_evidence_by_rule
+    ]
+    if missing_attempt_evidence:
+        findings.append(
+            ComparisonFinding(
+                code="attempt_evidence_missing",
+                severity="unknown",
+                message="one or more required attempt-evidence receipts were missing",
+                evidence=missing_attempt_evidence,
+            )
+        )
+    unresolved_attempt_evidence = [
+        rule_id
+        for rule_id in ATTEMPT_EVIDENCE_RULE_IDS
+        if rule_id in attempt_evidence_by_rule
+        and attempt_evidence_by_rule[rule_id].state in {"incomplete", "unknown"}
+    ]
+    if unresolved_attempt_evidence:
+        findings.append(
+            ComparisonFinding(
+                code="attempt_evidence_unresolved",
+                severity="unknown",
+                message="one or more attempt-level observer blind spots remain unresolved",
+                evidence=unresolved_attempt_evidence,
+            )
+        )
+    unsupported_attempt_claims = [
+        rule_id
+        for rule_id in ATTEMPT_EVIDENCE_RULE_IDS
+        if rule_id in attempt_evidence_by_rule
+        and attempt_evidence_by_rule[rule_id].state in {"observed", "blocked"}
+    ]
+    if unsupported_attempt_claims:
+        findings.append(
+            ComparisonFinding(
+                code="attempt_evidence_claim_unsupported",
+                severity="unknown",
+                message=(
+                    "the v1 comparison contract has no accepted attempt-trace mechanism "
+                    "for observed or blocked claims"
+                ),
+                evidence=unsupported_attempt_claims,
             )
         )
     surfaces = (
@@ -374,6 +424,19 @@ def render_offline_html(capsule: EvidenceCapsule) -> str:
         or "<tr><td colspan='4'>No MCP dependency was discovered.</td></tr>"
     )
     limitations = "".join(f"<li>{html.escape(item)}</li>" for item in capsule.payload.limitations)
+    attempt_rows = (
+        "".join(
+            "<tr>"
+            f"<td><code>{html.escape(item.rule_id)}</code></td>"
+            f"<td>{html.escape(item.surface)}</td>"
+            f"<td>{html.escape(item.state)}</td>"
+            f"<td>{html.escape(item.support)}</td>"
+            f"<td>{html.escape(item.attribution_confidence)}</td>"
+            "</tr>"
+            for item in capsule.payload.observation.attempt_evidence
+        )
+        or "<tr><td colspan='5'>Required attempt evidence is missing.</td></tr>"
+    )
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
@@ -396,6 +459,9 @@ th,td{{border:1px solid #374151;padding:8px;text-align:left}}.muted{{color:#9ca3
 <li>Network attempt observed: {html.escape(str(capsule.payload.observation.network.surface.attempted))}</li>
 </ul>
 <h2>Declaration comparison</h2><ul>{findings}</ul>
+<h2>Attempt-level evidence</h2>
+<table><thead><tr><th>Rule</th><th>Surface</th><th>State</th><th>Support</th><th>Attribution</th></tr></thead>
+<tbody>{attempt_rows}</tbody></table>
 <h2>Release trust manifest</h2>
 <table><thead><tr><th>Config</th><th>Identity</th><th>Evidence state</th><th>Grade</th></tr></thead>
 <tbody>{trust_rows}</tbody></table>

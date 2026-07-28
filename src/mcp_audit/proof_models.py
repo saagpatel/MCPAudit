@@ -16,6 +16,30 @@ OBSERVATION_SCHEMA: Final = "proof-before-action.observation.v1"
 TRUST_MANIFEST_SCHEMA: Final = "proof-before-action.trust-manifest.v1"
 CAPSULE_SCHEMA: Final = "proof-before-action.capsule.v1"
 CAPSULE_INDEX_SCHEMA: Final = "proof-before-action.capsule-index.v1"
+ATTEMPT_EVIDENCE_RULE_IDS: Final = (
+    "PBA-FS-TRANSIENT-001",
+    "PBA-DB-NO-DELTA-001",
+    "PBA-NET-DESTINATION-001",
+    "PBA-UNIX-SOCKET-001",
+)
+_ATTEMPT_EVIDENCE_RULES: Final[dict[str, tuple[str, tuple[str, ...]]]] = {
+    "PBA-FS-TRANSIENT-001": (
+        "filesystem.transient_attempt",
+        ("create_delete", "write_restore"),
+    ),
+    "PBA-DB-NO-DELTA-001": (
+        "database.no_delta_attempt",
+        ("query_no_delta", "transaction_rollback"),
+    ),
+    "PBA-NET-DESTINATION-001": (
+        "network.requested_destination",
+        ("connect_ip", "resolve_hostname"),
+    ),
+    "PBA-UNIX-SOCKET-001": (
+        "network.unix_socket",
+        ("abstract_socket", "filesystem_socket"),
+    ),
+}
 
 
 class StrictModel(BaseModel):
@@ -87,6 +111,72 @@ class DatabaseChange(StrictModel):
     after_sha256: str | None = None
     changed_tables: list[str] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
+
+
+class AttemptEvidenceProvenance(StrictModel):
+    kind: Literal[
+        "workspace_final_state",
+        "sqlite_final_state",
+        "network_namespace_counters",
+        "observer_contract",
+    ]
+    source: str = Field(min_length=1)
+    observer_owned: bool
+
+
+class AttemptEvidence(StrictModel):
+    rule_id: Literal[
+        "PBA-FS-TRANSIENT-001",
+        "PBA-DB-NO-DELTA-001",
+        "PBA-NET-DESTINATION-001",
+        "PBA-UNIX-SOCKET-001",
+    ]
+    surface: Literal[
+        "filesystem.transient_attempt",
+        "database.no_delta_attempt",
+        "network.requested_destination",
+        "network.unix_socket",
+    ]
+    operations: list[
+        Literal[
+            "create_delete",
+            "write_restore",
+            "query_no_delta",
+            "transaction_rollback",
+            "connect_ip",
+            "resolve_hostname",
+            "abstract_socket",
+            "filesystem_socket",
+        ]
+    ] = Field(min_length=1)
+    state: Literal["observed", "blocked", "incomplete", "unknown"]
+    attribution_confidence: Literal["high", "medium", "low", "none"]
+    platform: str = Field(min_length=1)
+    backend: str = Field(min_length=1)
+    support: Literal["supported", "partial", "unsupported"]
+    provenance: list[AttemptEvidenceProvenance] = Field(min_length=1)
+    unknown_reasons: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def state_and_rule_are_consistent(self) -> AttemptEvidence:
+        expected_surface, expected_operations = _ATTEMPT_EVIDENCE_RULES[self.rule_id]
+        if self.surface != expected_surface or tuple(self.operations) != expected_operations:
+            raise ValueError("attempt evidence rule ID must bind its stable surface and operations")
+        if len(self.operations) != len(set(self.operations)):
+            raise ValueError("attempt evidence operations must not contain duplicates")
+        if self.state in {"incomplete", "unknown"} and not self.unknown_reasons:
+            raise ValueError("unresolved attempt evidence requires an unknown reason")
+        if self.state == "unknown" and self.attribution_confidence != "none":
+            raise ValueError("unknown attempt evidence must use no attribution confidence")
+        if self.state in {"observed", "blocked"} and self.attribution_confidence == "none":
+            raise ValueError("observed or blocked attempt evidence requires attribution confidence")
+        if self.state in {"observed", "blocked"} and self.unknown_reasons:
+            raise ValueError("observed or blocked attempt evidence must not retain unknown reasons")
+        if self.state in {"observed", "blocked"} and not all(item.observer_owned for item in self.provenance):
+            raise ValueError("observed or blocked attempt evidence requires observer-owned provenance")
+        if self.support == "unsupported" and self.state != "unknown":
+            raise ValueError("unsupported attempt evidence must remain unknown")
+        return self
 
 
 class SurfaceObservation(StrictModel):
@@ -217,7 +307,15 @@ class Observation(StrictModel):
     database: SurfaceObservation
     database_changes: list[DatabaseChange] = Field(default_factory=list)
     network: NetworkEvidence
+    attempt_evidence: list[AttemptEvidence] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def attempt_evidence_rule_ids_are_unique(self) -> Observation:
+        rule_ids = [item.rule_id for item in self.attempt_evidence]
+        if len(rule_ids) != len(set(rule_ids)):
+            raise ValueError("attempt evidence rule IDs must be unique")
+        return self
 
 
 class TrustEvidence(StrictModel):

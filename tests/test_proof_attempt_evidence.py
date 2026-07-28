@@ -1,0 +1,390 @@
+"""Failing controls for Proof Before Action attempt-level evidence gaps."""
+
+from __future__ import annotations
+
+import shutil
+import sqlite3
+import subprocess
+from pathlib import Path
+from typing import Any, cast
+
+import pytest
+from click.testing import CliRunner
+from pydantic import ValidationError
+
+from mcp_audit.proof_capsule import compare_bill
+from mcp_audit.proof_cli import main
+from mcp_audit.proof_models import (
+    ActionDeclaration,
+    AttemptEvidence,
+    AttemptEvidenceProvenance,
+    Observation,
+    canonical_json_bytes,
+)
+from mcp_audit.proof_observer import _attempt_evidence_receipts, observe_command
+
+DOCKER_READY = (
+    shutil.which("docker") is not None
+    and subprocess.run(
+        ["docker", "image", "inspect", "node:24-slim"],
+        check=False,
+        capture_output=True,
+    ).returncode
+    == 0
+)
+requires_docker = pytest.mark.skipif(
+    not DOCKER_READY,
+    reason="local node:24-slim image and Docker are required",
+)
+
+EXPECTED_ATTEMPT_RECEIPTS = {
+    "PBA-FS-TRANSIENT-001": {
+        "surface": "filesystem.transient_attempt",
+        "operations": ["create_delete", "write_restore"],
+        "provenance_kinds": {"workspace_final_state"},
+    },
+    "PBA-DB-NO-DELTA-001": {
+        "surface": "database.no_delta_attempt",
+        "operations": ["query_no_delta", "transaction_rollback"],
+        "provenance_kinds": {"sqlite_final_state"},
+    },
+    "PBA-NET-DESTINATION-001": {
+        "surface": "network.requested_destination",
+        "operations": ["connect_ip", "resolve_hostname"],
+        "provenance_kinds": {"network_namespace_counters"},
+    },
+    "PBA-UNIX-SOCKET-001": {
+        "surface": "network.unix_socket",
+        "operations": ["abstract_socket", "filesystem_socket"],
+        "provenance_kinds": {"observer_contract"},
+    },
+}
+
+
+def _repo(tmp_path: Path) -> Path:
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "input.txt").write_text("stable\n", encoding="utf-8")
+    return root
+
+
+def _node_image_id() -> str:
+    return subprocess.run(
+        ["docker", "image", "inspect", "--format", "{{.Id}}", "node:24-slim"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
+def _receipt(observation: Observation, rule_id: str) -> dict[str, Any]:
+    payload = observation.model_dump(mode="json")
+    receipts = payload.get("attempt_evidence")
+    assert isinstance(receipts, list), "explicit attempt_evidence receipts are missing"
+    matches = [item for item in receipts if item.get("rule_id") == rule_id]
+    assert len(matches) == 1, f"expected exactly one {rule_id} receipt"
+    receipt = cast(dict[str, Any], matches[0])
+    expected = EXPECTED_ATTEMPT_RECEIPTS[rule_id]
+    assert receipt["surface"] == expected["surface"]
+    assert receipt["operations"] == expected["operations"]
+    assert receipt["state"] == "unknown"
+    assert receipt["attribution_confidence"] == "none"
+    assert receipt["platform"] == "linux"
+    assert receipt["backend"] == "docker"
+    assert receipt["support"] == "unsupported"
+    assert receipt["unknown_reasons"]
+    assert {item["kind"] for item in receipt["provenance"]} == expected["provenance_kinds"]
+    return receipt
+
+
+def _declaration() -> ActionDeclaration:
+    return ActionDeclaration.model_validate(
+        {
+            "name": "attempt evidence fixture",
+            "tools": ["node"],
+            "permissions": [],
+            "destinations": {"files": [], "databases": [], "network": []},
+            "side_effects": {
+                "filesystem": "none",
+                "database": "none",
+                "network": "none",
+            },
+            "limitations": [],
+        }
+    )
+
+
+def test_attempt_evidence_schema_is_additive_strict_and_deterministic() -> None:
+    first = _attempt_evidence_receipts()
+    second = _attempt_evidence_receipts()
+
+    assert canonical_json_bytes([item.model_dump(mode="json") for item in first]) == (
+        canonical_json_bytes([item.model_dump(mode="json") for item in second])
+    )
+    assert [item.rule_id for item in first] == list(EXPECTED_ATTEMPT_RECEIPTS)
+
+    result = CliRunner().invoke(main, ["schema", "observation"])
+    assert result.exit_code == 0
+    schema = result.output
+    assert '"attempt_evidence"' in schema
+    assert "PBA-FS-TRANSIENT-001" in schema
+    assert "PBA-UNIX-SOCKET-001" in schema
+
+
+def test_attempt_evidence_rejects_claim_inflation_and_wrong_rule_binding() -> None:
+    payload = _attempt_evidence_receipts()[0].model_dump(mode="json")
+    with pytest.raises(ValidationError, match="unsupported attempt evidence must remain unknown"):
+        AttemptEvidence.model_validate(
+            {
+                **payload,
+                "state": "observed",
+                "attribution_confidence": "high",
+                "unknown_reasons": [],
+            }
+        )
+    with pytest.raises(ValidationError, match="stable surface and operations"):
+        AttemptEvidence.model_validate(
+            {
+                **payload,
+                "surface": "network.requested_destination",
+            }
+        )
+    with pytest.raises(ValidationError, match="requires an unknown reason"):
+        AttemptEvidence.model_validate(
+            {
+                **payload,
+                "unknown_reasons": [],
+            }
+        )
+    with pytest.raises(ValidationError, match="must not retain unknown reasons"):
+        AttemptEvidence.model_validate(
+            {
+                **payload,
+                "state": "observed",
+                "support": "supported",
+                "attribution_confidence": "high",
+            }
+        )
+
+
+def test_unsupported_platform_receipt_stays_machine_readable_unknown() -> None:
+    receipt = AttemptEvidence(
+        rule_id="PBA-UNIX-SOCKET-001",
+        surface="network.unix_socket",
+        operations=["abstract_socket", "filesystem_socket"],
+        state="unknown",
+        attribution_confidence="none",
+        platform="darwin",
+        backend="native",
+        support="unsupported",
+        provenance=[
+            AttemptEvidenceProvenance(
+                kind="observer_contract",
+                source="no supported native observer backend",
+                observer_owned=True,
+            )
+        ],
+        unknown_reasons=["native platform observation is unsupported"],
+    )
+
+    assert receipt.state == "unknown"
+    assert receipt.support == "unsupported"
+    assert receipt.platform == "darwin"
+
+
+@requires_docker
+@pytest.mark.parametrize(
+    "code",
+    [
+        ("const fs=require('fs');fs.writeFileSync('transient.txt','created');fs.unlinkSync('transient.txt')"),
+        (
+            "const fs=require('fs');"
+            "const before=fs.readFileSync('input.txt');"
+            "fs.writeFileSync('input.txt','modified\\n');"
+            "fs.writeFileSync('input.txt',before)"
+        ),
+    ],
+    ids=["create-delete", "write-restore"],
+)
+def test_transient_filesystem_attempt_has_explicit_unknown_receipt(
+    tmp_path: Path,
+    code: str,
+) -> None:
+    repo = _repo(tmp_path)
+
+    observation = observe_command(
+        repo,
+        ["node", "-e", code],
+        image="node:24-slim",
+        expected_image_id=_node_image_id(),
+    )
+
+    assert observation.file_changes == []
+    assert observation.filesystem.complete is False
+    _receipt(observation, "PBA-FS-TRANSIENT-001")
+    comparison = compare_bill(_declaration(), observation)
+    assert comparison.verdict == "unknown"
+    assert "attempt_evidence_unresolved" in {item.code for item in comparison.findings}
+
+    missing = observation.model_copy(update={"attempt_evidence": []})
+    missing_comparison = compare_bill(_declaration(), missing)
+    assert missing_comparison.verdict == "unknown"
+    assert "attempt_evidence_missing" in {item.code for item in missing_comparison.findings}
+
+    forged_receipt = observation.attempt_evidence[0].model_copy(
+        update={
+            "state": "observed",
+            "support": "supported",
+            "attribution_confidence": "high",
+            "unknown_reasons": [],
+        }
+    )
+    forged = observation.model_copy(
+        update={
+            "attempt_evidence": [
+                forged_receipt,
+                *observation.attempt_evidence[1:],
+            ]
+        }
+    )
+    forged_comparison = compare_bill(_declaration(), forged)
+    assert forged_comparison.verdict == "unknown"
+    assert "attempt_evidence_claim_unsupported" in {item.code for item in forged_comparison.findings}
+
+
+@requires_docker
+def test_no_delta_sqlite_attempt_has_explicit_unknown_receipt(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    database = sqlite3.connect(repo / "synthetic.db")
+    database.execute("CREATE TABLE items(id INTEGER PRIMARY KEY, value TEXT NOT NULL)")
+    database.execute("INSERT INTO items(value) VALUES ('before')")
+    database.commit()
+    database.close()
+    code = (
+        "const {DatabaseSync}=require('node:sqlite');"
+        "const db=new DatabaseSync('synthetic.db');"
+        "db.prepare('SELECT value FROM items WHERE id=?').get(1);"
+        "db.exec(\"BEGIN;UPDATE items SET value='transient' WHERE id=1;ROLLBACK;\");"
+        "db.close()"
+    )
+
+    observation = observe_command(
+        repo,
+        ["node", "-e", code],
+        image="node:24-slim",
+        expected_image_id=_node_image_id(),
+    )
+
+    assert observation.database_changes == []
+    assert observation.database.complete is False
+    _receipt(observation, "PBA-DB-NO-DELTA-001")
+
+
+@requires_docker
+@pytest.mark.parametrize(
+    "code",
+    [
+        (
+            "const net=require('net');"
+            "const socket=net.connect({host:'198.51.100.7',port:443});"
+            "socket.on('error',()=>process.exit(0));"
+            "setTimeout(()=>process.exit(4),1000)"
+        ),
+        (
+            "const net=require('net');"
+            "const socket=net.connect({host:'pba-denied.invalid',port:443});"
+            "socket.on('error',()=>process.exit(0));"
+            "setTimeout(()=>process.exit(4),1000)"
+        ),
+    ],
+    ids=["ip-destination", "hostname-destination"],
+)
+def test_denied_network_destination_has_explicit_unknown_receipt(
+    tmp_path: Path,
+    code: str,
+) -> None:
+    repo = _repo(tmp_path)
+
+    observation = observe_command(
+        repo,
+        ["node", "-e", code],
+        image="node:24-slim",
+        expected_image_id=_node_image_id(),
+    )
+
+    assert observation.isolation.container_network_mode == "none"
+    assert observation.network.external_contact_count == 0
+    assert observation.network.surface.complete is False
+    _receipt(observation, "PBA-NET-DESTINATION-001")
+
+
+@requires_docker
+@pytest.mark.parametrize(
+    "code",
+    [
+        (
+            "const fs=require('fs'),net=require('net');"
+            "const path='transient.sock';"
+            "const server=net.createServer(socket=>socket.end());"
+            "server.listen(path,()=>{"
+            "const client=net.connect(path);"
+            "client.on('close',()=>server.close(()=>{"
+            "try{fs.unlinkSync(path)}catch(error){if(error.code!=='ENOENT')throw error}"
+            "process.exit(0)}))});"
+            "setTimeout(()=>process.exit(4),1500)"
+        ),
+        (
+            r"const net=require('net');"
+            r"const path='\0pba-abstract-control';"
+            r"const server=net.createServer(socket=>socket.end());"
+            r"server.listen(path,()=>{"
+            r"const client=net.connect(path);"
+            r"client.on('close',()=>server.close(()=>process.exit(0)))});"
+            r"setTimeout(()=>process.exit(4),1500)"
+        ),
+    ],
+    ids=["filesystem-socket", "abstract-socket"],
+)
+def test_unix_socket_activity_has_explicit_unknown_receipt(
+    tmp_path: Path,
+    code: str,
+) -> None:
+    repo = _repo(tmp_path)
+
+    observation = observe_command(
+        repo,
+        ["node", "-e", code],
+        image="node:24-slim",
+        expected_image_id=_node_image_id(),
+    )
+
+    assert observation.file_changes == []
+    assert observation.network.surface.complete is False
+    assert "Unix-domain socket activity" in " ".join(observation.network.surface.limitations)
+    _receipt(observation, "PBA-UNIX-SOCKET-001")
+
+
+@requires_docker
+def test_benign_twin_and_failure_controls_keep_attempt_gaps_unknown(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path)
+    benign = observe_command(
+        repo,
+        ["node", "-e", "require('fs').readFileSync('input.txt')"],
+        image="node:24-slim",
+        expected_image_id=_node_image_id(),
+    )
+    failure = observe_command(
+        repo,
+        ["node", "-e", "setTimeout(()=>{},10000)"],
+        image="node:24-slim",
+        expected_image_id=_node_image_id(),
+        timeout_seconds=1,
+    )
+
+    assert all(item.state == "unknown" for item in benign.attempt_evidence)
+    assert compare_bill(_declaration(), benign).verdict == "unknown"
+    assert all(item.state == "unknown" for item in failure.attempt_evidence)
+    assert failure.command.timed_out is True
+    assert compare_bill(_declaration(), failure).verdict == "block"
