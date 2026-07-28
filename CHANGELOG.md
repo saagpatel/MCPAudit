@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.0] - Unreleased
+
 ### Security
 
 - Detect URL- and host-shaped parameters throughout nested MCP tool schemas,
@@ -1035,6 +1037,7 @@ real workstations; API surface may still shift before the `1.0.0` stable cut.
 - `mcp-audit` CLI entry point
 
 [Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v2.5.0...HEAD
+[2.6.0]: https://github.com/saagpatel/MCPAudit/compare/v2.5.0...HEAD
 [2.5.0]: https://github.com/saagpatel/MCPAudit/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/saagpatel/MCPAudit/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/saagpatel/MCPAudit/compare/v2.2.1...v2.3.0

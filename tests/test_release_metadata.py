@@ -25,7 +25,7 @@ def _project_version() -> str:
     return version
 
 
-def test_release_version_is_consistent_across_public_surfaces() -> None:
+def test_candidate_version_is_consistent_across_release_surfaces() -> None:
     version = _project_version()
     state = json.loads(Path("docs/release-state.json").read_text(encoding="utf-8"))
     server = json.loads(Path("server.json").read_text(encoding="utf-8"))
@@ -36,18 +36,18 @@ def test_release_version_is_consistent_across_public_surfaces() -> None:
     assert state == {
         "schema_version": "mcp-audit.release-state.v1",
         "candidate_version": version,
-        "published_version": version,
-        "previous_version": "2.4.0",
-        "status": "release",
+        "published_version": "2.5.0",
+        "previous_version": "2.5.0",
+        "status": "candidate",
     }
     assert server["version"] == state["published_version"]
     assert server["packages"][0]["version"] == state["published_version"]
-    assert re.search(rf"^## \[{re.escape(version)}\] - \d{{4}}-\d{{2}}-\d{{2}}$", changelog, re.MULTILINE)
-    assert f"[{version}]: https://github.com/saagpatel/MCPAudit/compare/v2.4.0...v{version}" in changelog
-    assert f"[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v{version}...HEAD" in changelog
-    assert f"saagpatel/MCPAudit@v{version}" in readme
-    assert f"saagpatel/MCPAudit@v{version}" in adoption
-    assert f"rev: v{version}" in adoption
+    assert f"## [{version}] - Unreleased" in changelog
+    assert f"[{version}]: https://github.com/saagpatel/MCPAudit/compare/v2.5.0...HEAD" in changelog
+    assert "[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v2.5.0...HEAD" in changelog
+    assert "saagpatel/MCPAudit@v2.5.0" in readme
+    assert "saagpatel/MCPAudit@v2.5.0" in adoption
+    assert "rev: v2.5.0" in adoption
 
 
 def test_release_version_is_a_stable_semantic_version() -> None:
@@ -63,13 +63,13 @@ def test_release_metadata_verifier_passes() -> None:
         timeout=30,
     )
     assert result.returncode == 0, result.stderr
-    assert "release metadata verified for 2.5.0" in result.stdout
+    assert "release metadata verified for 2.6.0" in result.stdout
 
 
 @pytest.mark.parametrize(
     ("arguments", "message"),
     [
-        (["--require-publishable"], "publish verification requires --tag and --commit"),
+        (["--require-publishable"], "candidate state is intentionally non-publishable"),
     ],
 )
 def test_publishable_metadata_verifier_requires_exact_binding(
@@ -95,9 +95,9 @@ def test_release_state_cannot_keep_a_stale_published_version(
         "_release_state",
         lambda: {
             "schema_version": "mcp-audit.release-state.v1",
-            "candidate_version": "2.5.0",
-            "published_version": "2.4.0",
-            "previous_version": "2.4.0",
+            "candidate_version": "2.6.0",
+            "published_version": "2.5.0",
+            "previous_version": "2.5.0",
             "status": "release",
         },
     )
