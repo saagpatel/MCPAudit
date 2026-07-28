@@ -172,6 +172,10 @@ and are never emitted by the current observer. A future observer that can safely
 support one of these states must use another versioned evidence-semantics change
 rather than relabel final-state or counter evidence.
 
+The emitted observation, capsule, and capsule-index JSON Schemas encode those
+same version-family constraints with conditionals, so offline schema validation
+cannot accept a combination that the live verifier rejects.
+
 Comparison also treats any schema-valid `complete: true` surface that retains an
 unknown attempted, decision, outcome, or persisted state as `unknown`. Legacy or
 alternate producers cannot use a completeness flag alone to manufacture `pass`.

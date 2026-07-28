@@ -151,6 +151,10 @@ Optional additive fields may be added within one version. A removal, rename,
 retype, requiredness change, evidence-semantics change, or canonicalization
 change requires a new contract identifier. New inspection/export writes only
 the current versions above; legacy support is verification-only compatibility.
+The observation, capsule, and index schemas include JSON Schema conditionals
+that reject v2 attempt evidence in v1 observations and reject mixed
+capsule/observation or index/capsule version families during offline validation,
+matching the live model validators.
 
 `capsule.json` is canonical JSON with sorted keys, compact separators, UTF-8, one
 terminal newline, and no floating-point values. Its payload hash covers the

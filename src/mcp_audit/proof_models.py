@@ -9,7 +9,9 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, Final, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, GetJsonSchemaHandler, model_validator
+from pydantic.json_schema import JsonSchemaValue
+from pydantic_core import CoreSchema
 
 DECLARATION_SCHEMA: Final = "proof-before-action.declaration.v1"
 OBSERVATION_SCHEMA_V1: Final = "proof-before-action.observation.v1"
@@ -319,6 +321,26 @@ class Observation(StrictModel):
     attempt_evidence: list[AttemptEvidence] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
 
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls,
+        core_schema: CoreSchema,
+        handler: GetJsonSchemaHandler,
+    ) -> JsonSchemaValue:
+        schema = handler(core_schema)
+        schema["allOf"] = [
+            {
+                "if": {
+                    "properties": {
+                        "schema_version": {"const": OBSERVATION_SCHEMA_V1},
+                    },
+                    "required": ["schema_version"],
+                },
+                "then": {"not": {"required": ["attempt_evidence"]}},
+            }
+        ]
+        return schema
+
     @model_validator(mode="after")
     def attempt_evidence_rule_ids_are_unique(self) -> Observation:
         rule_ids = [item.rule_id for item in self.attempt_evidence]
@@ -518,6 +540,56 @@ class EvidenceCapsule(StrictModel):
     payload: CapsulePayload
     integrity: CapsuleIntegrity
 
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls,
+        core_schema: CoreSchema,
+        handler: GetJsonSchemaHandler,
+    ) -> JsonSchemaValue:
+        schema = handler(core_schema)
+        schema["allOf"] = [
+            {
+                "if": {
+                    "properties": {
+                        "schema_version": {"const": CAPSULE_SCHEMA_V1},
+                    },
+                    "required": ["schema_version"],
+                },
+                "then": {
+                    "properties": {
+                        "payload": {
+                            "properties": {
+                                "observation": {
+                                    "properties": {
+                                        "schema_version": {
+                                            "const": OBSERVATION_SCHEMA_V1,
+                                        }
+                                    },
+                                    "required": ["schema_version"],
+                                }
+                            }
+                        }
+                    }
+                },
+                "else": {
+                    "properties": {
+                        "payload": {
+                            "properties": {
+                                "observation": {
+                                    "properties": {
+                                        "schema_version": {
+                                            "const": OBSERVATION_SCHEMA,
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+            }
+        ]
+        return schema
+
     @model_validator(mode="after")
     def capsule_and_observation_versions_match(self) -> EvidenceCapsule:
         expected_observation = (
@@ -548,6 +620,40 @@ class CapsuleIndex(StrictModel):
     subject_commit: str | None
     producer_commit: str | None
     artifacts: list[IndexedArtifact]
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls,
+        core_schema: CoreSchema,
+        handler: GetJsonSchemaHandler,
+    ) -> JsonSchemaValue:
+        schema = handler(core_schema)
+        schema["allOf"] = [
+            {
+                "if": {
+                    "properties": {
+                        "schema_version": {"const": CAPSULE_INDEX_SCHEMA_V1},
+                    },
+                    "required": ["schema_version"],
+                },
+                "then": {
+                    "properties": {
+                        "capsule_schema_version": {
+                            "const": CAPSULE_SCHEMA_V1,
+                        }
+                    },
+                    "required": ["capsule_schema_version"],
+                },
+                "else": {
+                    "properties": {
+                        "capsule_schema_version": {
+                            "const": CAPSULE_SCHEMA,
+                        }
+                    }
+                },
+            }
+        ]
+        return schema
 
     @model_validator(mode="after")
     def artifact_set_is_fixed(self) -> CapsuleIndex:

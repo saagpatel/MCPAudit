@@ -11,12 +11,17 @@ from typing import Any, cast
 
 import pytest
 from click.testing import CliRunner
+from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
+from jsonschema.exceptions import (  # type: ignore[import-untyped]
+    ValidationError as JsonSchemaValidationError,
+)
 from pydantic import ValidationError
 
 from mcp_audit.proof_capsule import build_capsule, compare_bill, export_capsule, verify_capsule
 from mcp_audit.proof_cli import main
 from mcp_audit.proof_models import (
     CAPSULE_INDEX_SCHEMA,
+    CAPSULE_INDEX_SCHEMA_V1,
     CAPSULE_SCHEMA,
     CAPSULE_SCHEMA_V1,
     OBSERVATION_SCHEMA,
@@ -270,10 +275,41 @@ def test_versioned_attempt_semantics_preserve_historical_v1_capsule_verification
 
     assert verify_capsule(output)["valid"] is True
     assert b"Attempt-level evidence" not in (output / "report.html").read_bytes()
-    assert (
-        json.loads((output / "capsule-index.json").read_bytes())["capsule_schema_version"]
-        == CAPSULE_SCHEMA_V1
-    )
+    current_index = json.loads((current_output / "capsule-index.json").read_bytes())
+    legacy_index = json.loads((output / "capsule-index.json").read_bytes())
+    assert legacy_index["capsule_schema_version"] == CAPSULE_SCHEMA_V1
+
+    emitted_schemas: dict[str, dict[str, Any]] = {}
+    for contract in ("observation", "capsule", "capsule-index"):
+        result = CliRunner().invoke(main, ["schema", contract])
+        assert result.exit_code == 0
+        emitted_schemas[contract] = cast(dict[str, Any], json.loads(result.output))
+    observation_schema = emitted_schemas["observation"]
+    capsule_schema = emitted_schemas["capsule"]
+    index_schema = emitted_schemas["capsule-index"]
+    Draft202012Validator(observation_schema).validate(observation.model_dump(mode="json"))
+    Draft202012Validator(observation_schema).validate(legacy_observation_payload)
+    Draft202012Validator(capsule_schema).validate(current.model_dump(mode="json"))
+    Draft202012Validator(capsule_schema).validate(legacy_payload)
+    Draft202012Validator(index_schema).validate(current_index)
+    Draft202012Validator(index_schema).validate(legacy_index)
+
+    with pytest.raises(JsonSchemaValidationError):
+        Draft202012Validator(observation_schema).validate(
+            {
+                **legacy_observation_payload,
+                "attempt_evidence": [],
+            }
+        )
+    with pytest.raises(JsonSchemaValidationError):
+        Draft202012Validator(capsule_schema).validate(mixed_payload)
+    with pytest.raises(JsonSchemaValidationError):
+        Draft202012Validator(index_schema).validate(
+            {
+                **current_index,
+                "schema_version": CAPSULE_INDEX_SCHEMA_V1,
+            }
+        )
 
 
 @requires_docker
