@@ -9,13 +9,45 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any, Final, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, GetJsonSchemaHandler, model_validator
+from pydantic.json_schema import JsonSchemaValue
+from pydantic_core import CoreSchema
 
 DECLARATION_SCHEMA: Final = "proof-before-action.declaration.v1"
-OBSERVATION_SCHEMA: Final = "proof-before-action.observation.v1"
+OBSERVATION_SCHEMA_V1: Final = "proof-before-action.observation.v1"
+OBSERVATION_SCHEMA: Final = "proof-before-action.observation.v2"
 TRUST_MANIFEST_SCHEMA: Final = "proof-before-action.trust-manifest.v1"
-CAPSULE_SCHEMA: Final = "proof-before-action.capsule.v1"
-CAPSULE_INDEX_SCHEMA: Final = "proof-before-action.capsule-index.v1"
+CAPSULE_SCHEMA_V1: Final = "proof-before-action.capsule.v1"
+CAPSULE_SCHEMA: Final = "proof-before-action.capsule.v2"
+CAPSULE_INDEX_SCHEMA_V1: Final = "proof-before-action.capsule-index.v1"
+CAPSULE_INDEX_SCHEMA: Final = "proof-before-action.capsule-index.v2"
+SUPPORTED_OBSERVATION_SCHEMAS: Final = (OBSERVATION_SCHEMA_V1, OBSERVATION_SCHEMA)
+SUPPORTED_CAPSULE_SCHEMAS: Final = (CAPSULE_SCHEMA_V1, CAPSULE_SCHEMA)
+SUPPORTED_CAPSULE_INDEX_SCHEMAS: Final = (CAPSULE_INDEX_SCHEMA_V1, CAPSULE_INDEX_SCHEMA)
+ATTEMPT_EVIDENCE_RULE_IDS: Final = (
+    "PBA-FS-TRANSIENT-001",
+    "PBA-DB-NO-DELTA-001",
+    "PBA-NET-DESTINATION-001",
+    "PBA-UNIX-SOCKET-001",
+)
+_ATTEMPT_EVIDENCE_RULES: Final[dict[str, tuple[str, tuple[str, ...]]]] = {
+    "PBA-FS-TRANSIENT-001": (
+        "filesystem.transient_attempt",
+        ("create_delete", "write_restore"),
+    ),
+    "PBA-DB-NO-DELTA-001": (
+        "database.no_delta_attempt",
+        ("query_no_delta", "transaction_rollback"),
+    ),
+    "PBA-NET-DESTINATION-001": (
+        "network.requested_destination",
+        ("connect_ip", "resolve_hostname"),
+    ),
+    "PBA-UNIX-SOCKET-001": (
+        "network.unix_socket",
+        ("abstract_socket", "filesystem_socket"),
+    ),
+}
 
 
 class StrictModel(BaseModel):
@@ -87,6 +119,155 @@ class DatabaseChange(StrictModel):
     after_sha256: str | None = None
     changed_tables: list[str] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
+
+
+class AttemptEvidenceProvenance(StrictModel):
+    kind: Literal[
+        "workspace_final_state",
+        "sqlite_final_state",
+        "network_namespace_counters",
+        "observer_contract",
+    ]
+    source: str = Field(min_length=1)
+    observer_owned: bool
+
+
+class AttemptEvidence(StrictModel):
+    rule_id: Literal[
+        "PBA-FS-TRANSIENT-001",
+        "PBA-DB-NO-DELTA-001",
+        "PBA-NET-DESTINATION-001",
+        "PBA-UNIX-SOCKET-001",
+    ]
+    surface: Literal[
+        "filesystem.transient_attempt",
+        "database.no_delta_attempt",
+        "network.requested_destination",
+        "network.unix_socket",
+    ]
+    operations: list[
+        Literal[
+            "create_delete",
+            "write_restore",
+            "query_no_delta",
+            "transaction_rollback",
+            "connect_ip",
+            "resolve_hostname",
+            "abstract_socket",
+            "filesystem_socket",
+        ]
+    ] = Field(min_length=1)
+    state: Literal["observed", "blocked", "incomplete", "unknown"]
+    attribution_confidence: Literal["high", "medium", "low", "none"]
+    platform: str = Field(min_length=1)
+    backend: str = Field(min_length=1)
+    support: Literal["supported", "partial", "unsupported"]
+    provenance: list[AttemptEvidenceProvenance] = Field(min_length=1)
+    unknown_reasons: list[str] = Field(default_factory=list)
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls,
+        core_schema: CoreSchema,
+        handler: GetJsonSchemaHandler,
+    ) -> JsonSchemaValue:
+        schema = handler(core_schema)
+        rule_bindings = [
+            {
+                "if": {
+                    "properties": {"rule_id": {"const": rule_id}},
+                    "required": ["rule_id"],
+                },
+                "then": {
+                    "properties": {
+                        "surface": {"const": surface},
+                        "operations": {"const": list(operations)},
+                    }
+                },
+            }
+            for rule_id, (surface, operations) in _ATTEMPT_EVIDENCE_RULES.items()
+        ]
+        schema["allOf"] = [
+            *rule_bindings,
+            {
+                "if": {
+                    "properties": {
+                        "state": {"enum": ["incomplete", "unknown"]},
+                    },
+                    "required": ["state"],
+                },
+                "then": {
+                    "properties": {
+                        "unknown_reasons": {"minItems": 1},
+                    },
+                    "required": ["unknown_reasons"],
+                },
+            },
+            {
+                "if": {
+                    "properties": {"state": {"const": "unknown"}},
+                    "required": ["state"],
+                },
+                "then": {
+                    "properties": {
+                        "attribution_confidence": {"const": "none"},
+                    }
+                },
+            },
+            {
+                "if": {
+                    "properties": {
+                        "state": {"enum": ["observed", "blocked"]},
+                    },
+                    "required": ["state"],
+                },
+                "then": {
+                    "properties": {
+                        "attribution_confidence": {"not": {"const": "none"}},
+                        "unknown_reasons": {"maxItems": 0},
+                        "provenance": {
+                            "items": {
+                                "properties": {
+                                    "observer_owned": {"const": True},
+                                },
+                                "required": ["observer_owned"],
+                            }
+                        },
+                    }
+                },
+            },
+            {
+                "if": {
+                    "properties": {"support": {"const": "unsupported"}},
+                    "required": ["support"],
+                },
+                "then": {
+                    "properties": {"state": {"const": "unknown"}},
+                },
+            },
+        ]
+        return schema
+
+    @model_validator(mode="after")
+    def state_and_rule_are_consistent(self) -> AttemptEvidence:
+        expected_surface, expected_operations = _ATTEMPT_EVIDENCE_RULES[self.rule_id]
+        if self.surface != expected_surface or tuple(self.operations) != expected_operations:
+            raise ValueError("attempt evidence rule ID must bind its stable surface and operations")
+        if len(self.operations) != len(set(self.operations)):
+            raise ValueError("attempt evidence operations must not contain duplicates")
+        if self.state in {"incomplete", "unknown"} and not self.unknown_reasons:
+            raise ValueError("unresolved attempt evidence requires an unknown reason")
+        if self.state == "unknown" and self.attribution_confidence != "none":
+            raise ValueError("unknown attempt evidence must use no attribution confidence")
+        if self.state in {"observed", "blocked"} and self.attribution_confidence == "none":
+            raise ValueError("observed or blocked attempt evidence requires attribution confidence")
+        if self.state in {"observed", "blocked"} and self.unknown_reasons:
+            raise ValueError("observed or blocked attempt evidence must not retain unknown reasons")
+        if self.state in {"observed", "blocked"} and not all(item.observer_owned for item in self.provenance):
+            raise ValueError("observed or blocked attempt evidence requires observer-owned provenance")
+        if self.support == "unsupported" and self.state != "unknown":
+            raise ValueError("unsupported attempt evidence must remain unknown")
+        return self
 
 
 class SurfaceObservation(StrictModel):
@@ -208,7 +389,10 @@ class SubjectSnapshotEvidence(StrictModel):
 
 
 class Observation(StrictModel):
-    schema_version: Literal["proof-before-action.observation.v1"] = OBSERVATION_SCHEMA
+    schema_version: Literal[
+        "proof-before-action.observation.v1",
+        "proof-before-action.observation.v2",
+    ] = OBSERVATION_SCHEMA
     subject_snapshot: SubjectSnapshotEvidence | None = None
     isolation: IsolationEvidence
     command: CommandEvidence
@@ -217,7 +401,49 @@ class Observation(StrictModel):
     database: SurfaceObservation
     database_changes: list[DatabaseChange] = Field(default_factory=list)
     network: NetworkEvidence
+    attempt_evidence: list[AttemptEvidence] = Field(default_factory=list)
     limitations: list[str] = Field(default_factory=list)
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls,
+        core_schema: CoreSchema,
+        handler: GetJsonSchemaHandler,
+    ) -> JsonSchemaValue:
+        schema = handler(core_schema)
+        attempt_evidence_schema = schema["properties"]["attempt_evidence"]
+        attempt_evidence_schema["allOf"] = [
+            {
+                "contains": {
+                    "properties": {"rule_id": {"const": rule_id}},
+                    "required": ["rule_id"],
+                },
+                "minContains": 0,
+                "maxContains": 1,
+            }
+            for rule_id in ATTEMPT_EVIDENCE_RULE_IDS
+        ]
+        schema["allOf"] = [
+            {
+                "if": {
+                    "properties": {
+                        "schema_version": {"const": OBSERVATION_SCHEMA_V1},
+                    },
+                    "required": ["schema_version"],
+                },
+                "then": {"not": {"required": ["attempt_evidence"]}},
+            }
+        ]
+        return schema
+
+    @model_validator(mode="after")
+    def attempt_evidence_rule_ids_are_unique(self) -> Observation:
+        rule_ids = [item.rule_id for item in self.attempt_evidence]
+        if len(rule_ids) != len(set(rule_ids)):
+            raise ValueError("attempt evidence rule IDs must be unique")
+        if self.schema_version == OBSERVATION_SCHEMA_V1 and "attempt_evidence" in self.model_fields_set:
+            raise ValueError("observation v1 cannot contain v2 attempt-evidence semantics")
+        return self
 
 
 class TrustEvidence(StrictModel):
@@ -402,9 +628,71 @@ class CapsuleIntegrity(StrictModel):
 
 
 class EvidenceCapsule(StrictModel):
-    schema_version: Literal["proof-before-action.capsule.v1"] = CAPSULE_SCHEMA
+    schema_version: Literal[
+        "proof-before-action.capsule.v1",
+        "proof-before-action.capsule.v2",
+    ] = CAPSULE_SCHEMA
     payload: CapsulePayload
     integrity: CapsuleIntegrity
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls,
+        core_schema: CoreSchema,
+        handler: GetJsonSchemaHandler,
+    ) -> JsonSchemaValue:
+        schema = handler(core_schema)
+        schema["allOf"] = [
+            {
+                "if": {
+                    "properties": {
+                        "schema_version": {"const": CAPSULE_SCHEMA_V1},
+                    },
+                    "required": ["schema_version"],
+                },
+                "then": {
+                    "properties": {
+                        "payload": {
+                            "properties": {
+                                "observation": {
+                                    "properties": {
+                                        "schema_version": {
+                                            "const": OBSERVATION_SCHEMA_V1,
+                                        }
+                                    },
+                                    "required": ["schema_version"],
+                                }
+                            }
+                        }
+                    }
+                },
+                "else": {
+                    "properties": {
+                        "payload": {
+                            "properties": {
+                                "observation": {
+                                    "properties": {
+                                        "schema_version": {
+                                            "const": OBSERVATION_SCHEMA,
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+            }
+        ]
+        return schema
+
+    @model_validator(mode="after")
+    def capsule_and_observation_versions_match(self) -> EvidenceCapsule:
+        expected_observation = (
+            OBSERVATION_SCHEMA_V1 if self.schema_version == CAPSULE_SCHEMA_V1 else OBSERVATION_SCHEMA
+        )
+        if self.payload.observation.schema_version != expected_observation:
+            raise ValueError("capsule and observation schema versions must match")
+        return self
 
 
 class IndexedArtifact(StrictModel):
@@ -416,14 +704,59 @@ class IndexedArtifact(StrictModel):
 
 
 class CapsuleIndex(StrictModel):
-    schema_version: Literal["proof-before-action.capsule-index.v1"] = CAPSULE_INDEX_SCHEMA
-    capsule_schema_version: Literal["proof-before-action.capsule.v1"] = CAPSULE_SCHEMA
+    schema_version: Literal[
+        "proof-before-action.capsule-index.v1",
+        "proof-before-action.capsule-index.v2",
+    ] = CAPSULE_INDEX_SCHEMA
+    capsule_schema_version: Literal[
+        "proof-before-action.capsule.v1",
+        "proof-before-action.capsule.v2",
+    ] = CAPSULE_SCHEMA
     subject_commit: str | None
     producer_commit: str | None
     artifacts: list[IndexedArtifact]
 
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls,
+        core_schema: CoreSchema,
+        handler: GetJsonSchemaHandler,
+    ) -> JsonSchemaValue:
+        schema = handler(core_schema)
+        schema["allOf"] = [
+            {
+                "if": {
+                    "properties": {
+                        "schema_version": {"const": CAPSULE_INDEX_SCHEMA_V1},
+                    },
+                    "required": ["schema_version"],
+                },
+                "then": {
+                    "properties": {
+                        "capsule_schema_version": {
+                            "const": CAPSULE_SCHEMA_V1,
+                        }
+                    },
+                    "required": ["capsule_schema_version"],
+                },
+                "else": {
+                    "properties": {
+                        "capsule_schema_version": {
+                            "const": CAPSULE_SCHEMA,
+                        }
+                    }
+                },
+            }
+        ]
+        return schema
+
     @model_validator(mode="after")
     def artifact_set_is_fixed(self) -> CapsuleIndex:
+        expected_capsule_schema = (
+            CAPSULE_SCHEMA_V1 if self.schema_version == CAPSULE_INDEX_SCHEMA_V1 else CAPSULE_SCHEMA
+        )
+        if self.capsule_schema_version != expected_capsule_schema:
+            raise ValueError("capsule index and capsule schema versions must match")
         by_path = {item.path: item for item in self.artifacts}
         if sorted(by_path) != ["capsule.json", "report.html"] or len(by_path) != len(self.artifacts):
             raise ValueError("capsule index must contain exactly capsule.json and report.html")

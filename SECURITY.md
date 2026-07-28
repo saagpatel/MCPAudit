@@ -104,10 +104,21 @@ sandbox or safety guarantee. Unknown, stale, masked, unmatched, incomplete,
 unobservable, dirty, or authority-unverified evidence remains non-authoritative
 and cannot become a passing safety claim.
 
-The observer does not prove complete Unix-domain socket coverage, host-kernel
-isolation, or safety outside the declared surfaces. A valid capsule also does
-not prove that an operator independently obtained the root hash; callers must
-supply and protect that trust input themselves. See
+The observation-v2 observer emits stable machine-readable `unknown` receipts for transient
+create-delete/write-restore attempts, no-delta SQLite queries or transactions,
+requested network destinations or hostnames, and filesystem or abstract
+Unix-domain sockets. It does not prove those surfaces observed, blocked, or
+safe. Missing or unresolved attempt receipts are non-passing, and v2 does not
+accept a producer's unsupported observed/blocked claim as proof.
+
+Historical observation/capsule/index v1 bundles remain verifiable under their
+original comparison and offline-report semantics. They are not reinterpreted as
+v2 attempt evidence, and new observations cannot emit the v1 contract.
+
+The observer also does not prove host-kernel isolation or safety outside the
+declared surfaces. A valid capsule does not prove that an operator independently
+obtained the root hash; callers must supply and protect that trust input
+themselves. See
 [`docs/SECURITY-REVIEW.md`](docs/SECURITY-REVIEW.md) for the detailed boundary.
 
 ---
