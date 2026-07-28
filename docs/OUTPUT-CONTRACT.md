@@ -154,7 +154,10 @@ the current versions above; legacy support is verification-only compatibility.
 The observation, capsule, and index schemas include JSON Schema conditionals
 that reject v2 attempt evidence in v1 observations and reject mixed
 capsule/observation or index/capsule version families during offline validation,
-matching the live model validators.
+matching the live model validators. The observation schema also binds every
+attempt rule to its stable surface and ordered operations, enforces state,
+support, attribution, provenance, and unknown-reason consistency, and rejects
+duplicate rule IDs.
 
 `capsule.json` is canonical JSON with sorted keys, compact separators, UTF-8, one
 terminal newline, and no floating-point values. Its payload hash covers the

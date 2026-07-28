@@ -14,9 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   SQLite activity, requested network destinations, and Unix-domain sockets.
   New output uses versioned observation/capsule/index v2 contracts; historical
   v1 capsules retain their original comparison and offline-report verification
-  semantics, and generated JSON Schemas encode the same version-family
-  constraints for offline consumers. The current Docker backend reports each as
-  machine-readable
+  semantics, and generated JSON Schemas encode the same version-family and
+  per-receipt invariants for offline consumers. The current Docker backend
+  reports each as machine-readable
   `unknown`/`unsupported` with bounded provenance. Missing receipts, unresolved
   receipts, or unaccepted observed/blocked claims remain non-passing; no
   tracing privilege, host instrumentation, mount, socket, or network authority

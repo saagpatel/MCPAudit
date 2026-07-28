@@ -165,6 +165,89 @@ class AttemptEvidence(StrictModel):
     provenance: list[AttemptEvidenceProvenance] = Field(min_length=1)
     unknown_reasons: list[str] = Field(default_factory=list)
 
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls,
+        core_schema: CoreSchema,
+        handler: GetJsonSchemaHandler,
+    ) -> JsonSchemaValue:
+        schema = handler(core_schema)
+        rule_bindings = [
+            {
+                "if": {
+                    "properties": {"rule_id": {"const": rule_id}},
+                    "required": ["rule_id"],
+                },
+                "then": {
+                    "properties": {
+                        "surface": {"const": surface},
+                        "operations": {"const": list(operations)},
+                    }
+                },
+            }
+            for rule_id, (surface, operations) in _ATTEMPT_EVIDENCE_RULES.items()
+        ]
+        schema["allOf"] = [
+            *rule_bindings,
+            {
+                "if": {
+                    "properties": {
+                        "state": {"enum": ["incomplete", "unknown"]},
+                    },
+                    "required": ["state"],
+                },
+                "then": {
+                    "properties": {
+                        "unknown_reasons": {"minItems": 1},
+                    },
+                    "required": ["unknown_reasons"],
+                },
+            },
+            {
+                "if": {
+                    "properties": {"state": {"const": "unknown"}},
+                    "required": ["state"],
+                },
+                "then": {
+                    "properties": {
+                        "attribution_confidence": {"const": "none"},
+                    }
+                },
+            },
+            {
+                "if": {
+                    "properties": {
+                        "state": {"enum": ["observed", "blocked"]},
+                    },
+                    "required": ["state"],
+                },
+                "then": {
+                    "properties": {
+                        "attribution_confidence": {"not": {"const": "none"}},
+                        "unknown_reasons": {"maxItems": 0},
+                        "provenance": {
+                            "items": {
+                                "properties": {
+                                    "observer_owned": {"const": True},
+                                },
+                                "required": ["observer_owned"],
+                            }
+                        },
+                    }
+                },
+            },
+            {
+                "if": {
+                    "properties": {"support": {"const": "unsupported"}},
+                    "required": ["support"],
+                },
+                "then": {
+                    "properties": {"state": {"const": "unknown"}},
+                },
+            },
+        ]
+        return schema
+
     @model_validator(mode="after")
     def state_and_rule_are_consistent(self) -> AttemptEvidence:
         expected_surface, expected_operations = _ATTEMPT_EVIDENCE_RULES[self.rule_id]
@@ -328,6 +411,18 @@ class Observation(StrictModel):
         handler: GetJsonSchemaHandler,
     ) -> JsonSchemaValue:
         schema = handler(core_schema)
+        attempt_evidence_schema = schema["properties"]["attempt_evidence"]
+        attempt_evidence_schema["allOf"] = [
+            {
+                "contains": {
+                    "properties": {"rule_id": {"const": rule_id}},
+                    "required": ["rule_id"],
+                },
+                "minContains": 0,
+                "maxContains": 1,
+            }
+            for rule_id in ATTEMPT_EVIDENCE_RULE_IDS
+        ]
         schema["allOf"] = [
             {
                 "if": {

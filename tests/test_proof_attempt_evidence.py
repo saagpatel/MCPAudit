@@ -145,6 +145,73 @@ def test_attempt_evidence_schema_is_additive_strict_and_deterministic() -> None:
     assert "PBA-UNIX-SOCKET-001" in schema
 
 
+def test_emitted_schema_enforces_attempt_receipt_invariants() -> None:
+    result = CliRunner().invoke(main, ["schema", "observation"])
+    assert result.exit_code == 0
+    observation_schema = cast(dict[str, Any], json.loads(result.output))
+    attempt_schema = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": observation_schema["$defs"],
+        **observation_schema["properties"]["attempt_evidence"],
+    }
+    validator = Draft202012Validator(attempt_schema)
+    receipts = [item.model_dump(mode="json") for item in _attempt_evidence_receipts()]
+    validator.validate(receipts)
+
+    wrong_surface = [{**receipts[0], "surface": "network.requested_destination"}]
+    with pytest.raises(JsonSchemaValidationError):
+        validator.validate(wrong_surface)
+
+    claim_inflated = [
+        {
+            **receipts[0],
+            "state": "observed",
+            "attribution_confidence": "high",
+            "unknown_reasons": [],
+        }
+    ]
+    with pytest.raises(JsonSchemaValidationError):
+        validator.validate(claim_inflated)
+
+    attributed_unknown = [{**receipts[0], "attribution_confidence": "low"}]
+    with pytest.raises(JsonSchemaValidationError):
+        validator.validate(attributed_unknown)
+
+    observed_with_unknown_reason = [
+        {
+            **receipts[0],
+            "state": "observed",
+            "support": "supported",
+            "attribution_confidence": "high",
+        }
+    ]
+    with pytest.raises(JsonSchemaValidationError):
+        validator.validate(observed_with_unknown_reason)
+
+    unowned_observation = [
+        {
+            **observed_with_unknown_reason[0],
+            "unknown_reasons": [],
+            "provenance": [
+                {
+                    **receipts[0]["provenance"][0],
+                    "observer_owned": False,
+                }
+            ],
+        }
+    ]
+    with pytest.raises(JsonSchemaValidationError):
+        validator.validate(unowned_observation)
+
+    missing_reason = [{**receipts[0], "unknown_reasons": []}]
+    with pytest.raises(JsonSchemaValidationError):
+        validator.validate(missing_reason)
+
+    duplicate_rule = [receipts[0], {**receipts[0], "platform": "darwin"}]
+    with pytest.raises(JsonSchemaValidationError):
+        validator.validate(duplicate_rule)
+
+
 def test_attempt_evidence_rejects_claim_inflation_and_wrong_rule_binding() -> None:
     payload = _attempt_evidence_receipts()[0].model_dump(mode="json")
     with pytest.raises(ValidationError, match="unsupported attempt evidence must remain unknown"):
