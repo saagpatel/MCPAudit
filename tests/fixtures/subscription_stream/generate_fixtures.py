@@ -132,9 +132,10 @@ def close(
             "jsonrpc": "2.0",
             "id": subscription_id,
             "result": {
+                "resultType": "complete",
                 "_meta": {
                     "io.modelcontextprotocol/subscriptionId": subscription_id,
-                }
+                },
             },
         },
     }

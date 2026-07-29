@@ -310,6 +310,12 @@ hierarchies or authorization. JSONL uses one header object without `events`,
 then one event object per line; both serializations reduce through the same
 strict model.
 
+Current subscription notifications require JSON-RPC 2.0 notification shape;
+graceful closes require a current result with `resultType`. Listener IDs are
+compared type-exactly across each logical stream. Resource subscription,
+notification, and declared binding values must be bounded syntactically valid
+URIs; multiple listeners may independently acknowledge the same URI.
+
 Reports are sorted compact canonical JSON with one terminal newline. They have
 no timestamp or absolute input path and contain:
 

@@ -27,7 +27,8 @@ The analyzer implements this narrow split:
   `io.modelcontextprotocol/subscriptionId`.
 - The graceful close response preserves that subscription ID. Cancellation,
   disconnect, close, and trace-declared replacement terminate the old stream.
-  A later listener is evaluated as a new stream.
+  A current-protocol graceful close is a JSON-RPC 2.0 result with
+  `resultType`. A later listener is evaluated as a new stream.
 
 This feature intentionally does not evaluate general per-request `_meta`,
 headers, MRTR input requests/responses, or retry correctness. Those belong to
@@ -60,13 +61,17 @@ Every event explicitly identifies its stream kind (`request` or
 `subscription`), stream ID, request ID, subscription ID, direction, lifecycle,
 protocol version, offset, and JSON-RPC message. Disconnect events carry no
 message. Replacement openings identify the prior stream they replace.
+Subscription notifications must have JSON-RPC 2.0 notification shape, and
+message/envelope identifiers are compared with type-exact stream identity.
 
 For `notifications/resources/updated`, an exact notification URI can bind
 directly to the listener's acknowledged resource subscription. A sub-resource
 or otherwise non-exact URI requires
 `declared_resource_subscription` in the event. The analyzer checks that
 declaration against the listener's acknowledged filter; it does not infer URI
-hierarchies or authorization.
+hierarchies or authorization. Resource subscription, update, and declared
+binding values must be bounded syntactically valid URIs. Multiple active
+listeners may independently acknowledge the same resource.
 
 Unknown fields, duplicate JSON keys, non-standard numeric constants, excessive
 nesting, and invalid strict types cannot become passing evidence.
@@ -143,7 +148,8 @@ The scanner refuses or reports unknown beyond these limits:
 | Observed duration / event offset | 86,400,000 ms |
 
 Fixture reads use one no-follow regular-file descriptor, enforce size before
-and after reading, and reject identity or size changes during the read.
+and after reading, request nonblocking open semantics, and reject special files
+or identity/size changes during the read.
 
 ## Semantic controls
 

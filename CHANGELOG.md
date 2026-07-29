@@ -40,7 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   lifecycle, acknowledgment, and compatibility handling. Thirty vulnerable,
   negative, and near-miss fixtures cover interleaving, reconnect, legacy,
   truncated, and missing-ack behavior without opening a network stream or
-  widening the general scan or stateless round-trip contracts.
+  widening the general scan or stateless round-trip contracts. Current message
+  shapes, result types, type-exact listener IDs, resource URI syntax, and
+  nonblocking regular-file reads fail closed when evidence is malformed.
 - Added an experimental, fixture-first `mcp-audit agent-ui` static scanner for
   program-owned MCP Apps/OpenAI metadata and A2UI v0.9 JSONL. Six stable
   authority/state/disclosure/provenance/evidence/egress rules emit deterministic

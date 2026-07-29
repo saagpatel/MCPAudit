@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import socket
 import subprocess
 from pathlib import Path
@@ -63,6 +64,12 @@ def _payload(name: str) -> dict[str, Any]:
 
 def _bytes(payload: object) -> bytes:
     return (json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n").encode()
+
+
+def _add_current_result_types(payload: dict[str, Any]) -> None:
+    for event in payload["events"]:
+        if event["lifecycle"] == "close":
+            event["message"]["result"]["resultType"] = "complete"
 
 
 def test_fixture_inventory_has_ten_vulnerable_negative_near_miss_triplets() -> None:
@@ -355,6 +362,169 @@ def test_missing_notification_method_is_unknown_not_an_opt_in_violation() -> Non
     report = scan_subscription_stream_bytes(_bytes(payload))
     assert report.verdict == "unknown"
     assert {finding.rule_id for finding in report.findings} == {"MCPSUB000"}
+
+
+def test_malformed_current_protocol_messages_are_unknown() -> None:
+    cases: list[dict[str, Any]] = []
+
+    wrong_notification_version = _payload("wrong-type-negative")
+    _add_current_result_types(wrong_notification_version)
+    wrong_notification_version["events"][2]["message"]["jsonrpc"] = "1.0"
+    cases.append(wrong_notification_version)
+
+    request_shaped_acknowledgment = _payload("wrong-type-negative")
+    _add_current_result_types(request_shaped_acknowledgment)
+    request_shaped_acknowledgment["events"][1]["message"]["id"] = "unexpected"
+    cases.append(request_shaped_acknowledgment)
+
+    wrong_close_version = _payload("wrong-type-negative")
+    _add_current_result_types(wrong_close_version)
+    wrong_close_version["events"][3]["message"]["jsonrpc"] = "1.0"
+    cases.append(wrong_close_version)
+
+    missing_result_type = _payload("wrong-type-negative")
+    _add_current_result_types(missing_result_type)
+    missing_result_type["events"][3]["message"]["result"].pop("resultType")
+    cases.append(missing_result_type)
+
+    for payload in cases:
+        report = scan_subscription_stream_bytes(_bytes(payload))
+        assert report.verdict == "unknown"
+        assert report.coverage == "unknown"
+        assert "MCPSUB000" in {finding.rule_id for finding in report.findings}
+
+
+def test_checked_in_current_close_results_declare_result_type() -> None:
+    close_count = 0
+    for path in FIXTURE_ROOT.glob("*.json"):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        for event in payload["events"]:
+            if event["lifecycle"] == "close":
+                close_count += 1
+                assert event["message"]["result"]["resultType"] == "complete"
+    assert close_count > 0
+
+
+def test_subscription_event_envelope_identifiers_cannot_drift() -> None:
+    payload = _payload("wrong-type-negative")
+    _add_current_result_types(payload)
+    payload["events"][2]["request_id"] = "stale-listener"
+    payload["events"][2]["subscription_id"] = "stale-listener"
+    report = scan_subscription_stream_bytes(_bytes(payload))
+    assert report.verdict == "fail"
+    assert "MCPSUB002" in {finding.rule_id for finding in report.findings}
+
+
+def test_wire_identifiers_do_not_treat_booleans_as_numeric_ids() -> None:
+    payload = _payload("wrong-type-negative")
+    _add_current_result_types(payload)
+    for event in payload["events"]:
+        event["request_id"] = 1
+        event["subscription_id"] = 1
+    payload["events"][0]["message"]["id"] = True
+    payload["events"][1]["message"]["params"]["_meta"]["io.modelcontextprotocol/subscriptionId"] = True
+    payload["events"][2]["message"]["params"]["_meta"]["io.modelcontextprotocol/subscriptionId"] = True
+    payload["events"][3]["message"]["id"] = True
+    payload["events"][3]["message"]["result"]["_meta"]["io.modelcontextprotocol/subscriptionId"] = True
+    report = scan_subscription_stream_bytes(_bytes(payload))
+    assert report.verdict == "fail"
+    assert "MCPSUB002" in {finding.rule_id for finding in report.findings}
+
+
+def test_malformed_resource_uris_are_unknown() -> None:
+    payload = _payload("wrong-resource-listener-negative")
+    _add_current_result_types(payload)
+    for event in payload["events"]:
+        message = event.get("message") or {}
+        params = message.get("params") or {}
+        notifications = params.get("notifications")
+        if isinstance(notifications, dict) and "resourceSubscriptions" in notifications:
+            notifications["resourceSubscriptions"] = ["not a uri"]
+        if message.get("method") == "notifications/resources/updated":
+            params["uri"] = "not a uri"
+            event["declared_resource_subscription"] = "not a uri"
+    report = scan_subscription_stream_bytes(_bytes(payload))
+    assert report.verdict == "unknown"
+    assert report.coverage == "unknown"
+    assert "MCPSUB000" in {finding.rule_id for finding in report.findings}
+
+
+def test_two_active_listeners_may_acknowledge_the_same_resource() -> None:
+    payload = _payload("wrong-resource-listener-vulnerable")
+    _add_current_result_types(payload)
+    shared_resource = "file:///shared"
+    for event in payload["events"]:
+        message = event.get("message") or {}
+        params = message.get("params") or {}
+        notifications = params.get("notifications")
+        if isinstance(notifications, dict) and "resourceSubscriptions" in notifications:
+            notifications["resourceSubscriptions"] = [shared_resource]
+        if message.get("method") == "notifications/resources/updated":
+            params["uri"] = shared_resource
+            event["declared_resource_subscription"] = shared_resource
+    report = scan_subscription_stream_bytes(_bytes(payload))
+    assert report.verdict == "pass"
+    assert report.coverage == "complete"
+    assert report.findings == []
+
+
+def test_cancellation_terminates_only_its_subscription() -> None:
+    baseline = _payload("wrong-type-negative")
+    _add_current_result_types(baseline)
+    opening, acknowledgment, notification, _close = baseline["events"]
+    cancellation = {
+        "stream_id": "tools-listener",
+        "stream_kind": "subscription",
+        "request_id": "listen-tools",
+        "subscription_id": "listen-tools",
+        "direction": "client_to_server",
+        "lifecycle": "cancel",
+        "protocol_version": "2026-07-28",
+        "offset_ms": 2,
+        "message": {
+            "jsonrpc": "2.0",
+            "method": "notifications/cancelled",
+            "params": {"requestId": "listen-tools"},
+        },
+    }
+
+    clean = copy.deepcopy(baseline)
+    clean["events"] = [opening, acknowledgment, cancellation]
+    clean["observed_duration_ms"] = 2
+    clean_report = scan_subscription_stream_bytes(_bytes(clean))
+    assert clean_report.verdict == "pass"
+    assert clean_report.coverage == "complete"
+
+    post_cancel = copy.deepcopy(clean)
+    later_notification = copy.deepcopy(notification)
+    later_notification["offset_ms"] = 3
+    post_cancel["events"].append(later_notification)
+    post_cancel["observed_duration_ms"] = 3
+    post_cancel_report = scan_subscription_stream_bytes(_bytes(post_cancel))
+    assert post_cancel_report.verdict == "fail"
+    assert "MCPSUB005" in {finding.rule_id for finding in post_cancel_report.findings}
+
+    malformed = copy.deepcopy(clean)
+    malformed["events"][2]["message"]["jsonrpc"] = "1.0"
+    malformed_report = scan_subscription_stream_bytes(_bytes(malformed))
+    assert malformed_report.verdict == "unknown"
+    assert malformed_report.coverage == "unknown"
+
+
+def test_fixture_open_requests_nonblocking_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    opened: dict[str, int] = {}
+
+    def capture_open(path: Path, flags: int) -> int:
+        del path
+        opened["flags"] = flags
+        raise OSError("synthetic stop")
+
+    monkeypatch.setattr("mcp_audit.subscription_stream_scanner.os.open", capture_open)
+    with pytest.raises(SubscriptionStreamInputError):
+        scan_subscription_stream_path(Path("synthetic.fixture"))
+    assert opened["flags"] & getattr(os, "O_NONBLOCK", 0)
 
 
 def test_every_subscription_notification_is_checked_for_subscription_id() -> None:

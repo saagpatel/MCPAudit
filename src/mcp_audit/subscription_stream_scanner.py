@@ -13,6 +13,7 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
 from pathlib import Path
 from typing import Any, Never
+from urllib.parse import urlsplit
 
 from pydantic import ValidationError
 
@@ -48,6 +49,8 @@ _SARIF_SCHEMA = (
     "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json"
 )
 _PROTOCOL_VERSION_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_URI_SCHEME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*$")
+_INVALID_URI_CHARACTERS = frozenset('<>"{}|\\^`')
 
 _ASSUMPTIONS = [
     "Event list order is the observed delivery order; offset_ms is bounded descriptive evidence.",
@@ -491,7 +494,12 @@ def _coverage(findings: Iterable[SubscriptionFinding]) -> str:
 
 
 def _read_fixture_bytes(path: Path) -> bytes:
-    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+    )
     try:
         descriptor = os.open(path, flags)
     except OSError as exc:
@@ -610,6 +618,56 @@ def _protocol_relation(version: str) -> str:
             return "unsupported"
         return "legacy" if version < SUPPORTED_PROTOCOL_REVISION else "unsupported"
     return "unsupported"
+
+
+def _request_ids_match(observed: object, expected: RequestId) -> bool:
+    return type(observed) is type(expected) and observed == expected
+
+
+def _notification_shape_error(message: dict[str, Any]) -> str | None:
+    if message.get("jsonrpc") != "2.0":
+        return "subscription notification is not JSON-RPC 2.0"
+    if "id" in message:
+        return "subscription notification carries a request identifier"
+    if "result" in message or "error" in message:
+        return "subscription notification carries response fields"
+    if not isinstance(message.get("method"), str):
+        return "subscription notification method is absent or malformed"
+    return None
+
+
+def _close_response_shape_error(message: dict[str, Any]) -> str | None:
+    if message.get("jsonrpc") != "2.0":
+        return "graceful close response is not JSON-RPC 2.0"
+    if "id" not in message:
+        return "graceful close response lacks a request identifier"
+    if "method" in message or "error" in message:
+        return "graceful close response carries notification or error fields"
+    result = message.get("result")
+    if not isinstance(result, dict):
+        return "graceful close response result is absent or malformed"
+    if not isinstance(result.get("resultType"), str):
+        return "graceful close response lacks a current-protocol resultType"
+    return None
+
+
+def _is_bounded_resource_uri(value: object) -> bool:
+    if (
+        not isinstance(value, str)
+        or not value
+        or len(value) > MAX_RESOURCE_URI_CHARS
+        or not value.isascii()
+        or any(character.isspace() or ord(character) < 0x20 or ord(character) == 0x7F for character in value)
+        or any(character in _INVALID_URI_CHARACTERS for character in value)
+        or re.search(r"%(?![0-9A-Fa-f]{2})", value) is not None
+    ):
+        return False
+    try:
+        parsed = urlsplit(value)
+        _ = parsed.port
+    except ValueError:
+        return False
+    return bool(parsed.scheme and _URI_SCHEME_RE.fullmatch(parsed.scheme))
 
 
 def _compatibility(events: Iterable[TraceEvent]) -> CompatibilitySummary:
@@ -766,6 +824,17 @@ def _reduce_event(
             evidence=["subscription event has no preceding opening for its stream"],
             event_index=event_index,
         )
+    if not _request_ids_match(event.request_id, subscription.request_id) or not _request_ids_match(
+        event.subscription_id, subscription.subscription_id
+    ):
+        state = _add_finding(
+            state,
+            "MCPSUB002",
+            outcome=FindingOutcome.VIOLATION,
+            target=_event_target(event, event_index),
+            evidence=["event envelope identifiers do not match the opened listener"],
+            event_index=event_index,
+        )
     if event.lifecycle is Lifecycle.MESSAGE:
         return _subscription_message(state, subscription, event, event_index)
     if event.lifecycle is Lifecycle.CLOSE:
@@ -800,6 +869,15 @@ def _reduce_request_event(
         and isinstance(method, str)
         and (method in _SUBSCRIPTION_METHODS or method == _ACK_METHOD)
     ):
+        if (shape_error := _notification_shape_error(message)) is not None:
+            state = _add_finding(
+                state,
+                "MCPSUB000",
+                outcome=FindingOutcome.UNKNOWN,
+                target=_event_target(event, event_index),
+                evidence=[shape_error],
+                event_index=event_index,
+            )
         return _add_finding(
             state,
             "MCPSUB003",
@@ -849,7 +927,13 @@ def _open_subscription(
             event_index=event_index,
         )
     message = event.message
-    if message.get("jsonrpc") != "2.0" or message.get("method") != "subscriptions/listen":
+    if (
+        message.get("jsonrpc") != "2.0"
+        or message.get("method") != "subscriptions/listen"
+        or "id" not in message
+        or "result" in message
+        or "error" in message
+    ):
         return _add_finding(
             state,
             "MCPSUB000",
@@ -868,7 +952,9 @@ def _open_subscription(
             evidence=["subscription opening lacks an envelope subscription identifier"],
             event_index=event_index,
         )
-    if event.request_id != subscription_id or message.get("id") != subscription_id:
+    if not _request_ids_match(event.request_id, subscription_id) or not _request_ids_match(
+        message.get("id"), subscription_id
+    ):
         state = _add_finding(
             state,
             "MCPSUB002",
@@ -914,7 +1000,7 @@ def _open_subscription(
     same_identifier = [
         item
         for item in state.subscriptions
-        if item.subscription_id == subscription_id and item.stream_id != event.stream_id
+        if _request_ids_match(item.subscription_id, subscription_id) and item.stream_id != event.stream_id
     ]
     if any(item.active for item in same_identifier):
         state = _add_finding(
@@ -980,7 +1066,7 @@ def _parse_filter(
     if (
         not isinstance(resources, list)
         or len(resources) > MAX_RESOURCE_SUBSCRIPTIONS
-        or not all(isinstance(item, str) and 0 < len(item) <= MAX_RESOURCE_URI_CHARS for item in resources)
+        or not all(_is_bounded_resource_uri(item) for item in resources)
         or len(resources) != len(set(resources))
     ):
         return None, f"{context} resourceSubscriptions is malformed or exceeds its limit"
@@ -1014,6 +1100,15 @@ def _subscription_message(
     if not subscription.active:
         return _terminal_delivery_finding(state, subscription, event, event_index)
     message = event.message
+    if (shape_error := _notification_shape_error(message)) is not None:
+        state = _add_finding(
+            state,
+            "MCPSUB000",
+            outcome=FindingOutcome.UNKNOWN,
+            target=target,
+            evidence=[shape_error],
+            event_index=event_index,
+        )
     method = message.get("method")
     if isinstance(method, str) and method.startswith("notifications/"):
         state = _check_subscription_meta(
@@ -1056,7 +1151,7 @@ def _subscription_message(
         )
         return state.with_subscription(replace(subscription, server_notification_seen=True))
 
-    if subscription.acknowledged is None:
+    if subscription.acknowledged is None and not subscription.server_notification_seen:
         state = _add_finding(
             state,
             "MCPSUB006",
@@ -1191,7 +1286,7 @@ def _check_subscription_meta(
     event_index: int,
 ) -> _ReducerState:
     present, observed = _notification_subscription_id(message)
-    if present and observed == subscription.subscription_id:
+    if present and _request_ids_match(observed, subscription.subscription_id):
         return state
     evidence = (
         ["notification omitted io.modelcontextprotocol/subscriptionId"]
@@ -1222,7 +1317,7 @@ def _check_resource_binding(
     params = message.get("params") if isinstance(message, dict) else None
     resource_uri = params.get("uri") if isinstance(params, dict) else None
     target = _event_target(event, event_index)
-    if not isinstance(resource_uri, str) or len(resource_uri) > MAX_RESOURCE_URI_CHARS:
+    if not _is_bounded_resource_uri(resource_uri):
         return _add_finding(
             state,
             "MCPSUB000",
@@ -1238,6 +1333,15 @@ def _check_resource_binding(
     binding = event.declared_resource_subscription
     if binding is None and resource_uri in current_resources:
         binding = resource_uri
+    if binding is not None and not _is_bounded_resource_uri(binding):
+        return _add_finding(
+            state,
+            "MCPSUB000",
+            outcome=FindingOutcome.UNKNOWN,
+            target=target,
+            evidence=["declared resource subscription URI is malformed"],
+            event_index=event_index,
+        )
     if binding is None:
         return _add_finding(
             state,
@@ -1250,27 +1354,14 @@ def _check_resource_binding(
             ],
             event_index=event_index,
         )
-    owners = [
-        item
-        for item in state.subscriptions
-        if item.active
-        and item.acknowledged is not None
-        and binding in item.acknowledged.resource_subscriptions
-    ]
-    if len(owners) > 1:
-        return _add_finding(
-            state,
-            "MCPSUB000",
-            outcome=FindingOutcome.UNKNOWN,
-            target=target,
-            evidence=[
-                "declared resource binding is acknowledged by multiple active listeners",
-                _opaque_ref("resource-subscription", binding),
-            ],
-            event_index=event_index,
-        )
     if binding not in current_resources:
-        other_listener = any(item.stream_id != subscription.stream_id for item in owners)
+        other_listener = any(
+            item.active
+            and item.stream_id != subscription.stream_id
+            and item.acknowledged is not None
+            and binding in item.acknowledged.resource_subscriptions
+            for item in state.subscriptions
+        )
         evidence = [
             (
                 "declared resource binding belongs to another active listener"
@@ -1310,10 +1401,21 @@ def _close_subscription(
             event_index=event_index,
         )
     else:
+        if (shape_error := _close_response_shape_error(message)) is not None:
+            state = _add_finding(
+                state,
+                "MCPSUB000",
+                outcome=FindingOutcome.UNKNOWN,
+                target=target,
+                evidence=[shape_error],
+                event_index=event_index,
+            )
         result = message.get("result")
         metadata = result.get("_meta") if isinstance(result, dict) else None
         observed = metadata.get(_SUBSCRIPTION_ID_KEY) if isinstance(metadata, dict) else None
-        if message.get("id") != subscription.subscription_id or observed != subscription.subscription_id:
+        if not _request_ids_match(message.get("id"), subscription.subscription_id) or not _request_ids_match(
+            observed, subscription.subscription_id
+        ):
             state = _add_finding(
                 state,
                 "MCPSUB002",
@@ -1336,11 +1438,20 @@ def _cancel_subscription(
     target = _event_target(event, event_index)
     message = event.message
     params = message.get("params") if isinstance(message, dict) else None
+    if isinstance(message, dict) and (shape_error := _notification_shape_error(message)) is not None:
+        state = _add_finding(
+            state,
+            "MCPSUB000",
+            outcome=FindingOutcome.UNKNOWN,
+            target=target,
+            evidence=[shape_error],
+            event_index=event_index,
+        )
     if (
         not isinstance(message, dict)
         or message.get("method") != "notifications/cancelled"
         or not isinstance(params, dict)
-        or params.get("requestId") != subscription.subscription_id
+        or not _request_ids_match(params.get("requestId"), subscription.subscription_id)
     ):
         state = _add_finding(
             state,
