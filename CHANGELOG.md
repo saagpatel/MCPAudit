@@ -56,14 +56,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Added experimental `mcp-audit oauth-transcript` JSON and SARIF commands with
-  strict v1 fixture/report schemas, stable `MCPOAUTH000`–`MCPOAUTH006` findings,
+  strict v1 fixture/report schemas, stable `MCPOAUTH000`–`MCPOAUTH007` findings,
   and vulnerable/negative/near-miss fixture triplets. The rules are pinned to
   MCP Authorization 2025-11-25 plus the current-draft snapshot retrieved
   2026-07-28 and distinguish required, recommended, deprecated, and unsupported
   checks. Valid multi-resource behavior and deprecated DCR fallback remain
   supported; wrong-resource, issuer-mix-up, changed-issuer credential reuse,
-  scope mismatch, stale discovery, malformed metadata, credential-looking
-  input, and missing evidence have dedicated controls.
+  scope mismatch, redirect mismatch, stale discovery, malformed metadata,
+  credential-looking input, and missing evidence have dedicated controls.
+- Hardened the OAuth transcript auditor against seven locally reproduced
+  correctness defects: registration/request/response/redemption redirect drift,
+  token-stage scope widening or dropping, unrequested accepted audiences,
+  CIMD/persisted-credential contradictions, unavailable pre-registration,
+  secret-bearing exception chains, and recommendation/deprecation output drift.
 - Added an experimental, fixture-first `mcp-audit agent-ui` static scanner for
   program-owned MCP Apps/OpenAI metadata and A2UI v0.9 JSONL. Six stable
   authority/state/disclosure/provenance/evidence/egress rules emit deterministic

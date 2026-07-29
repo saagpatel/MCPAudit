@@ -19,6 +19,8 @@ OTHER_AUTHORITY = "https://other-auth.example"
 METADATA = "https://mcp.example/.well-known/oauth-protected-resource/mcp"
 METADATA_V2 = "https://mcp.example/.well-known/oauth-protected-resource/mcp-v2"
 REDIRECT = "http://127.0.0.1:43119/callback"
+REDIRECT_OTHER = "http://127.0.0.1:43119/other"
+REDIRECT_EPHEMERAL = "http://127.0.0.1:49152/callback"
 
 
 def base(fixture_id: str, control_kind: str) -> dict[str, Any]:
@@ -129,6 +131,7 @@ def base(fixture_id: str, control_kind: str) -> dict[str, Any]:
                 "request_url": f"{AUTHORITY}/token",
                 "grant_type": "authorization_code",
                 "code_marker": "<redacted>",
+                "redirect_uri": REDIRECT,
                 "resources": [RESOURCE],
                 "scopes": ["mcp.read"],
                 "credential_record_id": "synthetic-dcr-client",
@@ -228,6 +231,13 @@ def fixture(rule: int, control: str) -> dict[str, Any]:
             payload["observations"][3]["scopes"] = ["mcp.read", "mcp.write"]
             payload["observations"][5]["scopes"] = ["mcp.read", "mcp.write"]
             payload["observations"][6]["scopes"] = ["mcp.read", "mcp.write"]
+    elif rule == 7:
+        if control == "vulnerable":
+            payload["observations"][5]["redirect_uri"] = REDIRECT_OTHER
+        elif control == "near_miss":
+            payload["observations"][3]["redirect_uri"] = REDIRECT_EPHEMERAL
+            payload["observations"][4]["redirect_uri"] = REDIRECT_EPHEMERAL
+            payload["observations"][5]["redirect_uri"] = REDIRECT_EPHEMERAL
     return payload
 
 
@@ -240,7 +250,7 @@ def write_fixture(name: str, payload: dict[str, Any]) -> None:
 
 def main() -> None:
     ROOT.mkdir(parents=True, exist_ok=True)
-    for rule in range(7):
+    for rule in range(8):
         for control in ("vulnerable", "negative", "near_miss"):
             write_fixture(f"mcpoauth{rule:03d}-{control}.json", fixture(rule, control))
 

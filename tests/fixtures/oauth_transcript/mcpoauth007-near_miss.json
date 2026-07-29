@@ -9,8 +9,16 @@
     "token_response_exchange_id": "token-response"
   },
   "control_kind": "near_miss",
-  "credential_records": [],
-  "fixture_id": "mcpoauth004-near_miss",
+  "credential_records": [
+    {
+      "client_id_marker": "SYNTHETIC_CLIENT_ID",
+      "client_secret_marker": "<redacted>",
+      "issuer": "https://auth.example",
+      "method": "dynamic_client_registration",
+      "record_id": "synthetic-dcr-client"
+    }
+  ],
+  "fixture_id": "mcpoauth007-near_miss",
   "intended_authorization_server": "https://auth.example",
   "intended_resource": "https://mcp.example/mcp",
   "observations": [
@@ -46,7 +54,7 @@
     {
       "authorization_endpoint": "https://auth.example/authorize",
       "authorization_response_iss_parameter_supported": true,
-      "client_id_metadata_document_supported": true,
+      "client_id_metadata_document_supported": false,
       "document_state": "complete",
       "exchange_id": "authorization-metadata",
       "issuer": "https://auth.example",
@@ -60,11 +68,11 @@
       "token_endpoint": "https://auth.example/token"
     },
     {
-      "client_id_kind": "https_metadata_url",
+      "client_id_kind": "opaque",
       "exchange_id": "authorization-request",
       "kind": "authorization_request",
       "recorded_issuer": "https://auth.example",
-      "redirect_uri": "http://127.0.0.1:43119/callback",
+      "redirect_uri": "http://127.0.0.1:49152/callback",
       "redirects_followed": 0,
       "request_url": "https://auth.example/authorize",
       "resources": [
@@ -81,18 +89,18 @@
       "handling": "accepted",
       "issuer": "https://auth.example",
       "kind": "authorization_response",
-      "redirect_uri": "http://127.0.0.1:43119/callback",
+      "redirect_uri": "http://127.0.0.1:49152/callback",
       "redirects_followed": 1,
       "response_status": 302,
       "sequence": 5
     },
     {
       "code_marker": "<redacted>",
-      "credential_record_id": null,
+      "credential_record_id": "synthetic-dcr-client",
       "exchange_id": "token-request",
       "grant_type": "authorization_code",
       "kind": "token_request",
-      "redirect_uri": "http://127.0.0.1:43119/callback",
+      "redirect_uri": "http://127.0.0.1:49152/callback",
       "redirects_followed": 0,
       "request_url": "https://auth.example/token",
       "resources": [
@@ -126,10 +134,10 @@
   ],
   "program_owned": true,
   "registration": {
-    "application_type": null,
+    "application_type": "native",
     "client_kind": "native",
-    "issuer": null,
-    "method": "client_id_metadata_document",
+    "issuer": "https://auth.example",
+    "method": "dynamic_client_registration",
     "pre_registered_available": false,
     "redirect_uris": [
       "http://127.0.0.1:43119/callback"

@@ -766,6 +766,18 @@
           "title": "Kind",
           "type": "string"
         },
+        "redirect_uri": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Redirect Uri"
+        },
         "redirects_followed": {
           "default": 0,
           "maximum": 5,

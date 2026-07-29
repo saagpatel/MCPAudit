@@ -176,6 +176,18 @@ _RULES: dict[str, RuleDefinition] = {
             "RFC 6750 Section 3",
         ),
     ),
+    "MCPOAUTH007": RuleDefinition(
+        FindingSeverity.HIGH,
+        RequirementLevel.REQUIRED,
+        "Authorization redirect URI evidence is not consistently bound",
+        "Validate the authorization-request redirect against registration, require the observed response "
+        "at that same URI, and send the identical URI during authorization-code redemption.",
+        (
+            "MCP Authorization 2025-11-25: Open Redirection",
+            "RFC 6749 Sections 3.1.2.3, 4.1.3, and 10.6",
+            "RFC 8252 Sections 7.3 and 8.4",
+        ),
+    ),
 }
 
 _SEVERITY_ORDER = {
@@ -279,19 +291,25 @@ def _validation_evidence(exc: ValidationError) -> str:
 
 
 def _read_fixture_bytes(path: Path) -> tuple[bytes, tuple[int, int]]:
+    before: os.stat_result | None
     try:
         before = path.lstat()
-    except OSError as exc:
-        raise OAuthTranscriptInputError("cannot inspect input fixture") from exc
+    except OSError:
+        before = None
+    if before is None:
+        raise OAuthTranscriptInputError("cannot inspect input fixture")
     if not stat.S_ISREG(before.st_mode):
         raise OAuthTranscriptInputError("input fixture must be a regular non-symlink file")
 
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0)
     flags |= getattr(os, "O_NOFOLLOW", 0)
+    descriptor: int | None
     try:
         descriptor = os.open(path, flags)
-    except OSError as exc:
-        raise OAuthTranscriptInputError("input fixture must be a regular non-symlink file") from exc
+    except OSError:
+        descriptor = None
+    if descriptor is None:
+        raise OAuthTranscriptInputError("input fixture must be a regular non-symlink file")
     try:
         opened = os.fstat(descriptor)
         if not stat.S_ISREG(opened.st_mode):
@@ -321,6 +339,8 @@ def parse_oauth_transcript_bytes(raw: bytes) -> OAuthTranscriptFixture:
     if len(raw) > MAX_INPUT_BYTES:
         raise OAuthTranscriptInputError(f"input fixture exceeds {MAX_INPUT_BYTES} bytes")
     _validate_json_nesting(raw)
+    json_error: str | None = None
+    payload: Any = None
     try:
         payload = json.loads(
             raw,
@@ -328,12 +348,16 @@ def parse_oauth_transcript_bytes(raw: bytes) -> OAuthTranscriptFixture:
             parse_constant=_reject_json_constant,
         )
     except (UnicodeDecodeError, json.JSONDecodeError, ValueError, RecursionError) as exc:
-        raise OAuthTranscriptInputError(f"invalid JSON fixture: {type(exc).__name__}") from exc
+        json_error = f"invalid JSON fixture: {type(exc).__name__}"
+    if json_error is not None:
+        raise OAuthTranscriptInputError(json_error)
     _reject_credential_looking_values(payload)
+    validation_error: str | None = None
     try:
         return OAuthTranscriptFixture.model_validate(payload, strict=True)
     except ValidationError as exc:
-        raise OAuthTranscriptInputError(_validation_evidence(exc)) from exc
+        validation_error = _validation_evidence(exc)
+    raise OAuthTranscriptInputError(validation_error or "schema validation failed")
 
 
 def parse_oauth_transcript_path(path: Path) -> tuple[OAuthTranscriptFixture, bytes, tuple[int, int]]:
@@ -387,6 +411,23 @@ def _resource_key(value: str) -> tuple[str, str, int | None, str, str]:
 
 def _resource_equal(first: str, second: str) -> bool:
     return _resource_key(first) == _resource_key(second)
+
+
+def _registered_redirect_equal(first: str, second: str, client_kind: str) -> bool:
+    if first == second:
+        return True
+    if client_kind != ClientKind.NATIVE.value:
+        return False
+    registered = urlsplit(first)
+    requested = urlsplit(second)
+    loopback_literals = {"127.0.0.1", "::1"}
+    return (
+        registered.scheme == requested.scheme == "http"
+        and registered.hostname == requested.hostname
+        and registered.hostname in loopback_literals
+        and registered.path == requested.path
+        and registered.query == requested.query
+    )
 
 
 def _metadata_candidates(issuer: str) -> dict[MetadataKind, set[str]]:
@@ -625,6 +666,10 @@ def _evaluate_resource_binding(
         ]
         if audience.accepted_for_resource is not None:
             accepted_resources.append(audience.accepted_for_resource)
+        if token is not None and accepted_resources:
+            for observed_audience in audience.audiences:
+                if not any(_resource_equal(item, observed_audience) for item in token.resources):
+                    violations.append("token audience includes a resource absent from the token request")
         for accepted_resource in accepted_resources:
             if not any(_resource_equal(item, accepted_resource) for item in audience.audiences):
                 violations.append(
@@ -706,9 +751,11 @@ def _evaluate_credential_binding(
     flow: Flow,
 ) -> list[OAuthTranscriptFinding]:
     method = fixture.registration.method
-    if method == RegistrationMethod.CLIENT_ID_METADATA_DOCUMENT.value:
-        return []
     token = flow.token_request
+    if method == RegistrationMethod.CLIENT_ID_METADATA_DOCUMENT.value and (
+        token is None or token.credential_record_id is None
+    ):
+        return []
     authority = flow.authorization_metadata
     if token is None:
         return [_unknown("client-credential-binding", "token request observation is missing")]
@@ -727,6 +774,10 @@ def _evaluate_credential_binding(
         violations.append("selected credential record method differs from the registration selection")
     if record.issuer != authority.issuer:
         violations.append("selected client credentials were issued by a different authorization server")
+    if method == RegistrationMethod.CLIENT_ID_METADATA_DOCUMENT.value:
+        if not violations:
+            return []
+        return [_finding("MCPOAUTH004", target="client-credential-binding", evidence=violations)]
     if fixture.registration.issuer is None:
         return [
             *(
@@ -755,6 +806,7 @@ def _evaluate_registration(fixture: OAuthTranscriptFixture, flow: Flow) -> list[
     registration = fixture.registration
     violations: list[str] = []
     advisory: list[str] = []
+    deprecated_advisory: list[str] = []
     unknown_evidence: list[str] = []
     cimd_supported = authority.client_id_metadata_document_supported is True
     dcr_supported = authority.registration_endpoint is not None
@@ -775,6 +827,11 @@ def _evaluate_registration(fixture: OAuthTranscriptFixture, flow: Flow) -> list[
         and registration.method != RegistrationMethod.PRE_REGISTERED.value
     ):
         advisory.append("pre-registered client information was available but not selected first")
+    if (
+        registration.method == RegistrationMethod.PRE_REGISTERED.value
+        and not registration.pre_registered_available
+    ):
+        violations.append("pre-registered client information was selected but is unavailable")
     if registration.method == RegistrationMethod.CLIENT_ID_METADATA_DOCUMENT.value and not cimd_supported:
         violations.append("Client ID Metadata Documents were selected without advertised server support")
     elif registration.method == RegistrationMethod.DYNAMIC_CLIENT_REGISTRATION.value:
@@ -806,9 +863,11 @@ def _evaluate_registration(fixture: OAuthTranscriptFixture, flow: Flow) -> list[
                     )
         if dcr_supported:
             if cimd_supported:
-                advisory.append("deprecated DCR was selected even though CIMD support is advertised")
+                deprecated_advisory.append(
+                    "deprecated DCR was selected even though CIMD support is advertised"
+                )
             else:
-                advisory.append("DCR is a deprecated but supported backwards-compatible fallback")
+                deprecated_advisory.append("DCR is a deprecated but supported backwards-compatible fallback")
     elif registration.method == RegistrationMethod.USER_SUPPLIED.value and (cimd_supported or dcr_supported):
         advisory.append(
             "manual client input was selected while an automatic registration method is available"
@@ -822,6 +881,17 @@ def _evaluate_registration(fixture: OAuthTranscriptFixture, flow: Flow) -> list[
                 "MCPOAUTH005",
                 target="client-registration",
                 evidence=advisory,
+                outcome=FindingOutcome.ADVISORY,
+                severity=FindingSeverity.LOW,
+                requirement_level=RequirementLevel.RECOMMENDED,
+            )
+        )
+    if deprecated_advisory:
+        findings.append(
+            _finding(
+                "MCPOAUTH005",
+                target="client-registration",
+                evidence=deprecated_advisory,
                 outcome=FindingOutcome.ADVISORY,
                 severity=FindingSeverity.LOW,
                 requirement_level=RequirementLevel.DEPRECATED,
@@ -870,17 +940,69 @@ def _evaluate_scopes(fixture: OAuthTranscriptFixture, flow: Flow) -> list[OAuthT
         fixture.intended_resource,
     ):
         violations.append("challenged scopes are attributed to a different protected resource")
-    token_scopes = flow.token_response.scopes if flow.token_response is not None else None
-    effective_returned = requested if token_scopes is None else set(token_scopes)
-    successful_use = any(
-        _resource_equal(item.request_url, fixture.intended_resource) and 200 <= item.response_status < 300
-        for item in flow.resource_uses
-    )
-    if expected - effective_returned and successful_use:
-        violations.append("the protected resource accepted a token that silently dropped required scopes")
+    token_request = flow.token_request
+    token_response = flow.token_response
+    if token_request is None:
+        return [
+            *([_finding("MCPOAUTH006", target="scope-binding", evidence=violations)] if violations else []),
+            _unknown("scope-binding", "token request scope evidence is unavailable"),
+        ]
+    token_requested = requested if token_request.scopes is None else set(token_request.scopes)
+    if expected - token_requested:
+        violations.append("token request drops challenged or previously granted scopes")
+    if token_requested - requested:
+        violations.append("token request widens scopes beyond the authorization request")
+    if token_response is None:
+        return [
+            *([_finding("MCPOAUTH006", target="scope-binding", evidence=violations)] if violations else []),
+            _unknown("scope-binding", "token response scope evidence is unavailable"),
+        ]
+    effective_returned = token_requested if token_response.scopes is None else set(token_response.scopes)
+    if expected - effective_returned:
+        violations.append("returned token scope set drops challenged or previously granted scopes")
+    if effective_returned - token_requested:
+        violations.append("returned token scope set widens beyond the token request")
     if not violations:
         return []
     return [_finding("MCPOAUTH006", target="scope-binding", evidence=violations)]
+
+
+def _evaluate_redirect_binding(
+    fixture: OAuthTranscriptFixture,
+    flow: Flow,
+) -> list[OAuthTranscriptFinding]:
+    request = flow.authorization_request
+    response = flow.authorization_response
+    token = flow.token_request
+    unknown_evidence: list[str] = []
+    violations: list[str] = []
+    if request is None:
+        unknown_evidence.append("authorization request redirect evidence is unavailable")
+    else:
+        if not any(
+            _registered_redirect_equal(
+                registered,
+                request.redirect_uri,
+                fixture.registration.client_kind,
+            )
+            for registered in fixture.registration.redirect_uris
+        ):
+            violations.append("authorization request redirect URI is absent from client registration")
+    if response is None:
+        unknown_evidence.append("authorization response redirect evidence is unavailable")
+    elif request is not None and response.redirect_uri != request.redirect_uri:
+        violations.append("authorization response arrived at a URI different from the request")
+    if token is None:
+        unknown_evidence.append("token request redirect evidence is unavailable")
+    elif token.redirect_uri is None:
+        unknown_evidence.append("authorization-code redemption redirect URI is missing")
+    elif request is not None and token.redirect_uri != request.redirect_uri:
+        violations.append("authorization-code redemption redirect URI differs from the request")
+    findings: list[OAuthTranscriptFinding] = []
+    if violations:
+        findings.append(_finding("MCPOAUTH007", target="redirect-binding", evidence=violations))
+    findings.extend(_unknown("redirect-binding", item) for item in unknown_evidence)
+    return findings
 
 
 def _sort_findings(findings: list[OAuthTranscriptFinding]) -> list[OAuthTranscriptFinding]:
@@ -925,6 +1047,7 @@ def scan_oauth_transcript(fixture: OAuthTranscriptFixture, input_sha256: str) ->
             *_evaluate_credential_binding(fixture, flow),
             *_evaluate_registration(fixture, flow),
             *_evaluate_scopes(fixture, flow),
+            *_evaluate_redirect_binding(fixture, flow),
         ]
     )
     return OAuthTranscriptReport(
