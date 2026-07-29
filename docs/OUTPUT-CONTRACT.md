@@ -284,6 +284,63 @@ OpenAI-specific extensions, AG-UI, and WebMCP remain distinct; the auditor does
 not claim translation or interoperability. See
 `docs/AGENT-UI-CONTRACT-AUDITOR.md`.
 
+## MCP Cache Contract Auditor v1 (experimental)
+
+The offline `mcp-audit cache-contract` command group is separate from connected
+MCP scans and does not change `AuditReport` schema version `1`. Its strict
+contract identifiers are:
+
+- `mcpaudit.cache-contract.trace.v1`;
+- `mcpaudit.cache-contract.report.v1`.
+
+Authoritative JSON Schemas are emitted with `mcp-audit cache-contract schema
+trace|report`. Unknown fields are rejected. The trace binds every event to
+explicit sequence and logical-millisecond values, a protocol version,
+principal, asserted authorization-context `cache_partition`, method, complete
+result-affecting parameters, and response/use/refresh/change-event evidence.
+
+Reports use sorted compact canonical JSON with one terminal newline and no
+timestamp, hostname, platform, duration, random ID, or absolute input path.
+The trace digest is computed after sorting events by explicit sequence, so
+serialization order does not change output when causal order is unchanged.
+Stable finding IDs are `MCPCACHE001` through `MCPCACHE009`; `MCPCACHE000`
+records malformed, unsupported, ambiguous, truncated, or bounded-out evidence
+with severity `unknown`. Each finding includes severity, requirement level,
+title, generated event target, fixed evidence code, remediation, protocol
+version, event sequence numbers, and explicit assumptions. Trace-controlled
+principal/partition labels, parameter values, URIs, and response bodies are not
+reflected into findings.
+
+Report verdicts:
+
+- `pass`: supported list/read checks are complete and no contradiction remains;
+- `fail`: at least one non-unknown rule fired;
+- `unknown`: only malformed, unsupported, ambiguous, or incomplete coverage
+  remains.
+
+The scan command exits `0` for `pass`, `1` for `fail` or `unknown`, and `2` for
+a file-system input failure. Malformed JSON and strict-contract failures emit
+one structured `unknown` report before exit `1`. The input must be a regular
+non-symlink file and is read through one identity-checked descriptor under a
+1 MiB bound.
+
+The analyzer supports MCP `2026-07-28` complete results for `tools/list`,
+`prompts/list`, `resources/list`, `resources/templates/list`, and
+`resources/read`. It checks required `ttlMs`/`cacheScope`, exact request-key
+reuse, private authorization partitioning, explicit TTL/refresh behavior,
+validated list/resource notifications, linked page scope, deterministic
+unpaginated tools ordering, and non-cacheable multi-round-trip results.
+`server/discover`, older/future revisions, URI alias/prefix invalidation,
+notification delivery to other cache instances, and ordering of other lists
+remain explicitly unsupported.
+
+`MCPCACHE005` is a SHOULD-level freshness finding, not a claim that MCP always
+forbids stale use. A causal exact-key `refresh_error` preserves the protocol's
+permission to serve stale data after a failed re-fetch. A passing fixture
+report does not prove HTTP caching, performance, server/client/proxy behavior,
+authorization, confidentiality, notification delivery, or any production
+cache. See `docs/CACHE-CONTRACT-AUDITOR.md`.
+
 ## SafeForge Manifest v0
 
 SafeForge uses a separate, additive evidence-envelope contract; it does not

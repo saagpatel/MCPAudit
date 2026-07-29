@@ -31,6 +31,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added an experimental, fixture-first `mcp-audit cache-contract` analyzer for
+  program-owned MCP `2026-07-28` list/read cache traces. A bounded logical-clock
+  state machine checks required `ttlMs`/`cacheScope`, exact request keys,
+  private authorization partitions, expiry/refresh behavior, validated change
+  events, linked page scope, deterministic tools ordering, and non-cacheable
+  multi-round-trip results under stable `MCPCACHE000`–`MCPCACHE009` findings.
+  Canonical reports are independent of wall clock and event-array
+  serialization order; unsupported, malformed, ambiguous, and truncated
+  evidence stays explicitly `UNKNOWN`.
 - Added an experimental, fixture-first `mcp-audit agent-ui` static scanner for
   program-owned MCP Apps/OpenAI metadata and A2UI v0.9 JSONL. Six stable
   authority/state/disclosure/provenance/evidence/egress rules emit deterministic
