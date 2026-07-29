@@ -561,6 +561,23 @@ def test_input_and_state_bounds_fail_closed() -> None:
     assert scan_cache_bytes(b" " * (MAX_INPUT_BYTES + 1)).verdict == "unknown"
 
 
+def test_oversized_path_and_cli_emit_structured_unknown(tmp_path: Path) -> None:
+    trace_path = tmp_path / "oversized.json"
+    raw = b" " * (MAX_INPUT_BYTES + 1)
+    trace_path.write_bytes(raw)
+
+    report = scan_cache_path(trace_path)
+    assert report.verdict == "unknown"
+    assert report.findings[0].evidence == "input_size_limit_exceeded"
+    assert report_json_bytes(report) == report_json_bytes(scan_cache_bytes(raw))
+
+    result = CliRunner().invoke(main, ["cache-contract", "scan", str(trace_path)])
+    assert result.exit_code == 1, result.output
+    payload = json.loads(result.output)
+    assert payload["verdict"] == "unknown"
+    assert payload["findings"][0]["evidence"] == "input_size_limit_exceeded"
+
+
 def test_event_and_retained_entry_counts_are_bounded() -> None:
     base = json.loads((FIXTURES / "missing-metadata-negative.json").read_text(encoding="utf-8"))
     template = base["events"][0]

@@ -26,7 +26,10 @@ Exit codes:
 - `2`: the input file could not be safely opened or read.
 
 Malformed JSON and strict-contract validation failures still emit a structured
-`unknown` report and exit `1`. File-system failures exit `2`.
+`unknown` report and exit `1`. A stable regular file larger than 1 MiB is read
+only through the first 1 MiB plus one sentinel byte and likewise emits
+structured `unknown` before exit `1`; its trace digest binds that inspected
+prefix, not the unread remainder. File-system failures exit `2`.
 
 ## Versioned trace contract
 

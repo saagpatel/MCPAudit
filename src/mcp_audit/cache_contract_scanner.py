@@ -328,8 +328,6 @@ def scan_cache_path(path: Path) -> CacheAuditReport:
         raise CacheContractInputError("refusing symlink cache trace input")
     if not stat.S_ISREG(metadata.st_mode):
         raise CacheContractInputError("cache trace input is not a regular file")
-    if metadata.st_size > MAX_INPUT_BYTES:
-        raise CacheContractInputError(f"cache trace exceeds the {MAX_INPUT_BYTES}-byte input limit")
 
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
     descriptor: int | None = None
@@ -340,8 +338,6 @@ def scan_cache_path(path: Path) -> CacheAuditReport:
             raise CacheContractInputError("cache trace input is not a regular file")
         if (metadata.st_dev, metadata.st_ino) != (opened.st_dev, opened.st_ino):
             raise CacheContractInputError("cache trace identity changed before it was opened")
-        if opened.st_size > MAX_INPUT_BYTES:
-            raise CacheContractInputError(f"cache trace exceeds the {MAX_INPUT_BYTES}-byte input limit")
         chunks: list[bytes] = []
         remaining = MAX_INPUT_BYTES + 1
         while remaining > 0:
@@ -358,8 +354,6 @@ def scan_cache_path(path: Path) -> CacheAuditReport:
         if descriptor is not None:
             os.close(descriptor)
 
-    if len(raw) > MAX_INPUT_BYTES:
-        raise CacheContractInputError(f"cache trace exceeds the {MAX_INPUT_BYTES}-byte input limit")
     opened_identity = (opened.st_dev, opened.st_ino, opened.st_size, opened.st_mtime_ns)
     finished_identity = (
         finished.st_dev,

@@ -320,9 +320,11 @@ Report verdicts:
 
 The scan command exits `0` for `pass`, `1` for `fail` or `unknown`, and `2` for
 a file-system input failure. Malformed JSON and strict-contract failures emit
-one structured `unknown` report before exit `1`. The input must be a regular
-non-symlink file and is read through one identity-checked descriptor under a
-1 MiB bound.
+one structured `unknown` report before exit `1`. A stable regular file larger
+than 1 MiB is bounded to an inspected 1 MiB plus one sentinel byte and emits
+structured `unknown` before exit `1`; its trace digest binds only that inspected
+prefix. The input must be a regular non-symlink file and is read through one
+identity-checked descriptor.
 
 The analyzer supports MCP `2026-07-28` complete results for `tools/list`,
 `prompts/list`, `resources/list`, `resources/templates/list`, and
