@@ -153,8 +153,8 @@ The distinction matters:
 | Required metadata | Current complete cacheable results require `resultType`, `ttlMs`, and `cacheScope` | Missing and invalid metadata are separate MUST-level findings |
 | Cache key | Method plus every result-affecting parameter must match | Protocol version, method, and canonical parameters are bound; `public` never relaxes this |
 | Private scope | A private entry must not cross authorization contexts | `cache_partition` is the trace's explicit authorization-context assertion |
-| TTL | Fresh only while `now < received + ttlMs`; re-fetch on stale access is SHOULD | Use at equality or later is a SHOULD-level finding when a complete trace records no failed refresh |
-| Failed refresh | A client MAY serve stale after a re-fetch error | A causal, exact-key `refresh_error` makes later stale use permitted; the auditor does not call it a violation |
+| TTL | Fresh only while `now < received + ttlMs`; re-fetch on stale access is SHOULD | Use at equality or later is a SHOULD-level finding when a complete trace records no unsuperseded failed refresh |
+| Failed refresh | A client MAY serve stale after a re-fetch error | A causal, exact-key `refresh_error` permits stale use only until a later valid successful refresh supersedes that failed attempt |
 | Change event | A received relevant notification immediately makes the relevant cached result stale | Only validated normalized subscriptions and exact supported method/URI mappings invalidate |
 | Pagination | Pages have independent TTLs; one list request must keep the same cache scope | `page_group` is required before the cross-page MUST can be evaluated |
 | Ordering | Unchanged `tools/list` results SHOULD use deterministic ordering | Only unpaginated, same-key, same-set tools results are compared |
@@ -179,17 +179,18 @@ Results from requests carrying `inputResponses` or `requestState`, and
 | `MCPCACHE002` | high | protocol MUST | TTL or cache scope metadata is invalid |
 | `MCPCACHE003` | high | protocol MUST NOT | A private entry crosses asserted authorization partitions |
 | `MCPCACHE004` | high | protocol MUST NOT | Reuse or refresh crosses protocol version, method, or result-affecting parameters |
-| `MCPCACHE005` | medium | protocol SHOULD | A complete trace uses an entry at/after TTL without a valid refresh or recorded refresh error |
+| `MCPCACHE005` | medium | protocol SHOULD | A complete trace uses an entry at/after TTL without a valid refresh or a later unsuperseded refresh error |
 | `MCPCACHE006` | medium | protocol SHOULD | An unchanged unpaginated tools list changes deterministic order |
-| `MCPCACHE007` | medium | protocol contract | An entry is used after a relevant validated notification without refresh/error evidence |
+| `MCPCACHE007` | medium | protocol contract | An entry is used after a relevant validated notification without a valid refresh or later unsuperseded refresh error |
 | `MCPCACHE008` | high | protocol MUST | Explicitly linked pages from one list request disagree on `cacheScope` |
 | `MCPCACHE009` | high | protocol MUST NOT | An input-required or multi-round-trip retry result is cached |
 
 `MCPCACHE005` is deliberately not a MUST-level claim. TTL is a freshness hint,
 not a guarantee that server data remains unchanged for that duration, and MCP
-permits serving stale data after a failed refresh. The report records the
-complete-trace/no-refresh-error assumption that makes the SHOULD-level finding
-meaningful.
+permits serving stale data after a failed refresh. A later valid successful
+refresh supersedes that permission for the old source. The report records the
+complete-trace/no-unsuperseded-refresh-error assumption that makes the
+SHOULD-level finding meaningful.
 
 ## Change-event mapping
 

@@ -319,6 +319,67 @@ def test_refresh_error_before_expiry_does_not_authorize_later_stale_use() -> Non
     assert {finding.rule_id for finding in report.findings} == {"MCPCACHE005"}
 
 
+def test_successful_refresh_supersedes_prior_ttl_refresh_error() -> None:
+    payload = json.loads((FIXTURES / "refresh-negative.json").read_text(encoding="utf-8"))
+    refresh = payload["events"][1]
+    refresh["sequence"] = 3
+    refresh["at_ms"] = 11
+    refresh["source_event_id"] = "r1"
+    payload["events"].insert(
+        1,
+        {
+            "type": "refresh_error",
+            "event_id": "x1",
+            "sequence": 2,
+            "at_ms": 10,
+            "source_event_id": "r1",
+            "request": payload["events"][0]["request"],
+        },
+    )
+    payload["events"][3]["sequence"] = 4
+    payload["events"][3]["source_event_id"] = "r1"
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "fail"
+    assert {finding.rule_id for finding in report.findings} == {"MCPCACHE005"}
+
+
+def test_successful_refresh_supersedes_prior_notification_refresh_error() -> None:
+    payload = json.loads((FIXTURES / "change-event-vulnerable.json").read_text(encoding="utf-8"))
+    request = payload["events"][0]["request"]
+    refresh_result = payload["events"][0]["result"]
+    payload["events"][2]["sequence"] = 5
+    payload["events"].insert(
+        2,
+        {
+            "type": "refresh_error",
+            "event_id": "x1",
+            "sequence": 3,
+            "at_ms": 11,
+            "source_event_id": "r1",
+            "request": request,
+        },
+    )
+    payload["events"].insert(
+        3,
+        {
+            "type": "refresh",
+            "event_id": "r2",
+            "sequence": 4,
+            "at_ms": 12,
+            "source_event_id": "r1",
+            "request": request,
+            "result": refresh_result,
+        },
+    )
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "fail"
+    assert {finding.rule_id for finding in report.findings} == {"MCPCACHE007"}
+
+
 @pytest.mark.parametrize("event_type", ["refresh", "refresh_error"])
 def test_private_refresh_source_cannot_cross_partition(event_type: str) -> None:
     payload = json.loads((FIXTURES / "refresh-negative.json").read_text(encoding="utf-8"))

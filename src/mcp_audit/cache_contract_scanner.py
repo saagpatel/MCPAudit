@@ -100,6 +100,7 @@ class _Entry:
     invalidated_globally: int | None = None
     invalidated_partitions: dict[str, int] = field(default_factory=dict)
     refresh_errors: dict[str, list[tuple[int, int]]] = field(default_factory=dict)
+    successful_refreshes: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -519,8 +520,9 @@ def _refresh_error_allows_ttl_stale(entry: _Entry, event: UseEvent) -> bool:
     if entry.expires_at_ms is None:
         return False
     partition_key = "public" if entry.scope == "public" else event.request.cache_partition
+    latest_success = entry.successful_refreshes.get(partition_key, -1)
     return any(
-        error_sequence < event.sequence and error_at_ms >= entry.expires_at_ms
+        latest_success < error_sequence < event.sequence and error_at_ms >= entry.expires_at_ms
         for error_sequence, error_at_ms in entry.refresh_errors.get(partition_key, [])
     )
 
@@ -533,9 +535,25 @@ def _refresh_error_allows_notification_stale(
     if invalidated_at is None:
         return False
     partition_key = "public" if entry.scope == "public" else event.request.cache_partition
+    latest_success = entry.successful_refreshes.get(partition_key, -1)
     return any(
-        invalidated_at < error_sequence < event.sequence
+        max(invalidated_at, latest_success) < error_sequence < event.sequence
         for error_sequence, _ in entry.refresh_errors.get(partition_key, [])
+    )
+
+
+def _is_valid_successful_refresh(
+    event: RefreshEvent,
+    scope: str | None,
+    ttl_ms: int | None,
+) -> bool:
+    expected_payload = PAYLOAD_FIELDS[event.request.method]
+    return (
+        event.result.get("resultType") == "complete"
+        and isinstance(event.result.get(expected_payload), list)
+        and scope is not None
+        and ttl_ms is not None
+        and not _contains_mrtr_retry(event.request)
     )
 
 
@@ -888,6 +906,13 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                                 event_sequences=[source.event.sequence, event.sequence],
                             )
                         )
+                    elif (
+                        source.key == key
+                        and source.scope is not None
+                        and _is_valid_successful_refresh(event, scope, ttl_ms)
+                    ):
+                        partition_key = "public" if source.scope == "public" else request.cache_partition
+                        source.successful_refreshes[partition_key] = event.sequence
 
             if len(entries) >= MAX_RETAINED_ENTRIES:
                 collector.add(
@@ -1140,7 +1165,7 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                     "use_after_normative_invalidation",
                     "Refresh the exact invalidated entry before its next use.",
                     event_sequences=[source.event.sequence, invalidated_at, event.sequence],
-                    assumptions=["no recorded refresh error permits serving the stale response"],
+                    assumptions=["no unsuperseded recorded refresh error permits serving the stale response"],
                 )
             )
         if (
@@ -1159,7 +1184,12 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                     "use_at_or_after_ttl_boundary",
                     "Re-fetch on access after expiry and record a valid refresh before reuse.",
                     event_sequences=[source.event.sequence, event.sequence],
-                    assumptions=["the complete trace records no failed refresh that permits stale serving"],
+                    assumptions=[
+                        (
+                            "the complete trace records no unsuperseded failed refresh "
+                            "that permits stale serving"
+                        )
+                    ],
                 )
             )
 

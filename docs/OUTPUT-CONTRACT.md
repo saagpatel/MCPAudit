@@ -336,8 +336,9 @@ remain explicitly unsupported.
 
 `MCPCACHE005` is a SHOULD-level freshness finding, not a claim that MCP always
 forbids stale use. A causal exact-key `refresh_error` preserves the protocol's
-permission to serve stale data after a failed re-fetch. A passing fixture
-report does not prove HTTP caching, performance, server/client/proxy behavior,
+permission to serve stale data after a failed re-fetch only until a later valid
+successful refresh supersedes that failed attempt. A passing fixture report
+does not prove HTTP caching, performance, server/client/proxy behavior,
 authorization, confidentiality, notification delivery, or any production
 cache. See `docs/CACHE-CONTRACT-AUDITOR.md`.
 
