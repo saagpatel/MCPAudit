@@ -1,0 +1,1019 @@
+{
+  "$defs": {
+    "AudienceEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "accepted_for_resource": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Accepted For Resource"
+        },
+        "audiences": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Audiences",
+          "type": "array"
+        },
+        "source": {
+          "enum": [
+            "synthetic_jwt_claim",
+            "synthetic_introspection",
+            "none"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "current",
+            "missing",
+            "redacted",
+            "unverifiable"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "token_response_exchange_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9][a-z0-9._-]{2,63}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Token Response Exchange Id"
+        }
+      },
+      "required": [
+        "state",
+        "source",
+        "accepted_for_resource"
+      ],
+      "title": "AudienceEvidence",
+      "type": "object"
+    },
+    "AuthorizationRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "client_id_kind": {
+          "enum": [
+            "https_metadata_url",
+            "opaque"
+          ],
+          "title": "Client Id Kind",
+          "type": "string"
+        },
+        "exchange_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{2,63}$",
+          "title": "Exchange Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "authorization_request",
+          "title": "Kind",
+          "type": "string"
+        },
+        "recorded_issuer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Recorded Issuer"
+        },
+        "redirect_uri": {
+          "title": "Redirect Uri",
+          "type": "string"
+        },
+        "redirects_followed": {
+          "default": 0,
+          "maximum": 5,
+          "minimum": 0,
+          "title": "Redirects Followed",
+          "type": "integer"
+        },
+        "request_url": {
+          "title": "Request Url",
+          "type": "string"
+        },
+        "resources": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Resources",
+          "type": "array"
+        },
+        "scopes": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 32,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scopes"
+        },
+        "sequence": {
+          "maximum": 256,
+          "minimum": 1,
+          "title": "Sequence",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "exchange_id",
+        "sequence",
+        "kind",
+        "request_url",
+        "recorded_issuer",
+        "redirect_uri",
+        "client_id_kind"
+      ],
+      "title": "AuthorizationRequest",
+      "type": "object"
+    },
+    "AuthorizationResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "code_marker": {
+          "anyOf": [
+            {
+              "const": "<redacted>",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Code Marker"
+        },
+        "exchange_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{2,63}$",
+          "title": "Exchange Id",
+          "type": "string"
+        },
+        "handling": {
+          "enum": [
+            "accepted",
+            "rejected",
+            "unknown"
+          ],
+          "title": "Handling",
+          "type": "string"
+        },
+        "issuer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Issuer"
+        },
+        "kind": {
+          "const": "authorization_response",
+          "title": "Kind",
+          "type": "string"
+        },
+        "redirect_uri": {
+          "title": "Redirect Uri",
+          "type": "string"
+        },
+        "redirects_followed": {
+          "default": 0,
+          "maximum": 5,
+          "minimum": 0,
+          "title": "Redirects Followed",
+          "type": "integer"
+        },
+        "response_status": {
+          "enum": [
+            302,
+            303
+          ],
+          "title": "Response Status",
+          "type": "integer"
+        },
+        "sequence": {
+          "maximum": 256,
+          "minimum": 1,
+          "title": "Sequence",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "exchange_id",
+        "sequence",
+        "kind",
+        "response_status",
+        "redirect_uri",
+        "issuer",
+        "code_marker",
+        "handling"
+      ],
+      "title": "AuthorizationResponse",
+      "type": "object"
+    },
+    "AuthorizationServerMetadata": {
+      "additionalProperties": false,
+      "properties": {
+        "authorization_endpoint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Authorization Endpoint"
+        },
+        "authorization_response_iss_parameter_supported": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Authorization Response Iss Parameter Supported"
+        },
+        "client_id_metadata_document_supported": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Client Id Metadata Document Supported"
+        },
+        "document_state": {
+          "enum": [
+            "complete",
+            "malformed",
+            "redacted",
+            "missing"
+          ],
+          "title": "Document State",
+          "type": "string"
+        },
+        "exchange_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{2,63}$",
+          "title": "Exchange Id",
+          "type": "string"
+        },
+        "issuer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Issuer"
+        },
+        "kind": {
+          "const": "authorization_server_metadata",
+          "title": "Kind",
+          "type": "string"
+        },
+        "metadata_kind": {
+          "enum": [
+            "oauth",
+            "openid_connect"
+          ],
+          "title": "Metadata Kind",
+          "type": "string"
+        },
+        "redirects_followed": {
+          "default": 0,
+          "maximum": 5,
+          "minimum": 0,
+          "title": "Redirects Followed",
+          "type": "integer"
+        },
+        "registration_endpoint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Registration Endpoint"
+        },
+        "request_url": {
+          "title": "Request Url",
+          "type": "string"
+        },
+        "response_status": {
+          "maximum": 599,
+          "minimum": 100,
+          "title": "Response Status",
+          "type": "integer"
+        },
+        "sequence": {
+          "maximum": 256,
+          "minimum": 1,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "token_endpoint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Token Endpoint"
+        }
+      },
+      "required": [
+        "exchange_id",
+        "sequence",
+        "kind",
+        "request_url",
+        "response_status",
+        "document_state",
+        "metadata_kind",
+        "issuer",
+        "authorization_endpoint",
+        "token_endpoint"
+      ],
+      "title": "AuthorizationServerMetadata",
+      "type": "object"
+    },
+    "CredentialRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "client_id_marker": {
+          "const": "SYNTHETIC_CLIENT_ID",
+          "title": "Client Id Marker",
+          "type": "string"
+        },
+        "client_secret_marker": {
+          "anyOf": [
+            {
+              "const": "<redacted>",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Client Secret Marker"
+        },
+        "issuer": {
+          "title": "Issuer",
+          "type": "string"
+        },
+        "method": {
+          "enum": [
+            "pre_registered",
+            "dynamic_client_registration",
+            "user_supplied"
+          ],
+          "title": "Method",
+          "type": "string"
+        },
+        "record_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{2,63}$",
+          "title": "Record Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "record_id",
+        "method",
+        "issuer",
+        "client_id_marker"
+      ],
+      "title": "CredentialRecord",
+      "type": "object"
+    },
+    "ProtectedResourceChallenge": {
+      "additionalProperties": false,
+      "properties": {
+        "exchange_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{2,63}$",
+          "title": "Exchange Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "protected_resource_challenge",
+          "title": "Kind",
+          "type": "string"
+        },
+        "redirects_followed": {
+          "default": 0,
+          "maximum": 5,
+          "minimum": 0,
+          "title": "Redirects Followed",
+          "type": "integer"
+        },
+        "request_url": {
+          "title": "Request Url",
+          "type": "string"
+        },
+        "resource_metadata_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Resource Metadata Url"
+        },
+        "response_status": {
+          "const": 401,
+          "title": "Response Status",
+          "type": "integer"
+        },
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 32,
+          "title": "Scopes",
+          "type": "array"
+        },
+        "sequence": {
+          "maximum": 256,
+          "minimum": 1,
+          "title": "Sequence",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "exchange_id",
+        "sequence",
+        "kind",
+        "request_url",
+        "response_status",
+        "resource_metadata_url"
+      ],
+      "title": "ProtectedResourceChallenge",
+      "type": "object"
+    },
+    "ProtectedResourceMetadata": {
+      "additionalProperties": false,
+      "properties": {
+        "authorization_servers": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Authorization Servers",
+          "type": "array"
+        },
+        "document_state": {
+          "enum": [
+            "complete",
+            "malformed",
+            "redacted",
+            "missing"
+          ],
+          "title": "Document State",
+          "type": "string"
+        },
+        "exchange_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{2,63}$",
+          "title": "Exchange Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "protected_resource_metadata",
+          "title": "Kind",
+          "type": "string"
+        },
+        "redirects_followed": {
+          "default": 0,
+          "maximum": 5,
+          "minimum": 0,
+          "title": "Redirects Followed",
+          "type": "integer"
+        },
+        "request_url": {
+          "title": "Request Url",
+          "type": "string"
+        },
+        "resource": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Resource"
+        },
+        "response_status": {
+          "maximum": 599,
+          "minimum": 100,
+          "title": "Response Status",
+          "type": "integer"
+        },
+        "scopes_supported": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 32,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scopes Supported"
+        },
+        "sequence": {
+          "maximum": 256,
+          "minimum": 1,
+          "title": "Sequence",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "exchange_id",
+        "sequence",
+        "kind",
+        "request_url",
+        "response_status",
+        "document_state",
+        "resource"
+      ],
+      "title": "ProtectedResourceMetadata",
+      "type": "object"
+    },
+    "ProtectedResourceUse": {
+      "additionalProperties": false,
+      "properties": {
+        "authorization_marker": {
+          "const": "<redacted>",
+          "title": "Authorization Marker",
+          "type": "string"
+        },
+        "exchange_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{2,63}$",
+          "title": "Exchange Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "protected_resource_use",
+          "title": "Kind",
+          "type": "string"
+        },
+        "redirects_followed": {
+          "default": 0,
+          "maximum": 5,
+          "minimum": 0,
+          "title": "Redirects Followed",
+          "type": "integer"
+        },
+        "request_url": {
+          "title": "Request Url",
+          "type": "string"
+        },
+        "response_status": {
+          "maximum": 599,
+          "minimum": 100,
+          "title": "Response Status",
+          "type": "integer"
+        },
+        "sequence": {
+          "maximum": 256,
+          "minimum": 1,
+          "title": "Sequence",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "exchange_id",
+        "sequence",
+        "kind",
+        "request_url",
+        "authorization_marker",
+        "response_status"
+      ],
+      "title": "ProtectedResourceUse",
+      "type": "object"
+    },
+    "RegistrationSelection": {
+      "additionalProperties": false,
+      "properties": {
+        "application_type": {
+          "anyOf": [
+            {
+              "enum": [
+                "native",
+                "web"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Application Type"
+        },
+        "client_kind": {
+          "enum": [
+            "native",
+            "web"
+          ],
+          "title": "Client Kind",
+          "type": "string"
+        },
+        "issuer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Issuer"
+        },
+        "method": {
+          "enum": [
+            "client_id_metadata_document",
+            "pre_registered",
+            "dynamic_client_registration",
+            "user_supplied"
+          ],
+          "title": "Method",
+          "type": "string"
+        },
+        "pre_registered_available": {
+          "title": "Pre Registered Available",
+          "type": "boolean"
+        },
+        "redirect_uris": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "title": "Redirect Uris",
+          "type": "array"
+        }
+      },
+      "required": [
+        "method",
+        "client_kind",
+        "application_type",
+        "issuer",
+        "redirect_uris",
+        "pre_registered_available"
+      ],
+      "title": "RegistrationSelection",
+      "type": "object"
+    },
+    "ScopeContext": {
+      "additionalProperties": false,
+      "properties": {
+        "previously_granted_scopes": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 32,
+          "title": "Previously Granted Scopes",
+          "type": "array"
+        },
+        "reauthorization": {
+          "default": false,
+          "title": "Reauthorization",
+          "type": "boolean"
+        }
+      },
+      "title": "ScopeContext",
+      "type": "object"
+    },
+    "TokenRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "code_marker": {
+          "const": "<redacted>",
+          "title": "Code Marker",
+          "type": "string"
+        },
+        "credential_record_id": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9][a-z0-9._-]{2,63}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Credential Record Id"
+        },
+        "exchange_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{2,63}$",
+          "title": "Exchange Id",
+          "type": "string"
+        },
+        "grant_type": {
+          "const": "authorization_code",
+          "title": "Grant Type",
+          "type": "string"
+        },
+        "kind": {
+          "const": "token_request",
+          "title": "Kind",
+          "type": "string"
+        },
+        "redirects_followed": {
+          "default": 0,
+          "maximum": 5,
+          "minimum": 0,
+          "title": "Redirects Followed",
+          "type": "integer"
+        },
+        "request_url": {
+          "title": "Request Url",
+          "type": "string"
+        },
+        "resources": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Resources",
+          "type": "array"
+        },
+        "scopes": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 32,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scopes"
+        },
+        "sequence": {
+          "maximum": 256,
+          "minimum": 1,
+          "title": "Sequence",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "exchange_id",
+        "sequence",
+        "kind",
+        "request_url",
+        "grant_type",
+        "code_marker"
+      ],
+      "title": "TokenRequest",
+      "type": "object"
+    },
+    "TokenResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "access_token_marker": {
+          "anyOf": [
+            {
+              "const": "<redacted>",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Access Token Marker"
+        },
+        "exchange_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{2,63}$",
+          "title": "Exchange Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "token_response",
+          "title": "Kind",
+          "type": "string"
+        },
+        "redirects_followed": {
+          "default": 0,
+          "maximum": 5,
+          "minimum": 0,
+          "title": "Redirects Followed",
+          "type": "integer"
+        },
+        "response_status": {
+          "maximum": 599,
+          "minimum": 100,
+          "title": "Response Status",
+          "type": "integer"
+        },
+        "scopes": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 32,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scopes"
+        },
+        "sequence": {
+          "maximum": 256,
+          "minimum": 1,
+          "title": "Sequence",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "exchange_id",
+        "sequence",
+        "kind",
+        "response_status",
+        "access_token_marker"
+      ],
+      "title": "TokenResponse",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "audience_evidence": {
+      "$ref": "#/$defs/AudienceEvidence"
+    },
+    "control_kind": {
+      "enum": [
+        "vulnerable",
+        "negative",
+        "near_miss",
+        "special"
+      ],
+      "title": "Control Kind",
+      "type": "string"
+    },
+    "credential_records": {
+      "items": {
+        "$ref": "#/$defs/CredentialRecord"
+      },
+      "maxItems": 8,
+      "title": "Credential Records",
+      "type": "array"
+    },
+    "fixture_id": {
+      "pattern": "^[a-z0-9][a-z0-9._-]{2,127}$",
+      "title": "Fixture Id",
+      "type": "string"
+    },
+    "intended_authorization_server": {
+      "title": "Intended Authorization Server",
+      "type": "string"
+    },
+    "intended_resource": {
+      "title": "Intended Resource",
+      "type": "string"
+    },
+    "observations": {
+      "items": {
+        "discriminator": {
+          "mapping": {
+            "authorization_request": "#/$defs/AuthorizationRequest",
+            "authorization_response": "#/$defs/AuthorizationResponse",
+            "authorization_server_metadata": "#/$defs/AuthorizationServerMetadata",
+            "protected_resource_challenge": "#/$defs/ProtectedResourceChallenge",
+            "protected_resource_metadata": "#/$defs/ProtectedResourceMetadata",
+            "protected_resource_use": "#/$defs/ProtectedResourceUse",
+            "token_request": "#/$defs/TokenRequest",
+            "token_response": "#/$defs/TokenResponse"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/ProtectedResourceChallenge"
+          },
+          {
+            "$ref": "#/$defs/ProtectedResourceMetadata"
+          },
+          {
+            "$ref": "#/$defs/AuthorizationServerMetadata"
+          },
+          {
+            "$ref": "#/$defs/AuthorizationRequest"
+          },
+          {
+            "$ref": "#/$defs/AuthorizationResponse"
+          },
+          {
+            "$ref": "#/$defs/TokenRequest"
+          },
+          {
+            "$ref": "#/$defs/TokenResponse"
+          },
+          {
+            "$ref": "#/$defs/ProtectedResourceUse"
+          }
+        ]
+      },
+      "maxItems": 64,
+      "minItems": 1,
+      "title": "Observations",
+      "type": "array"
+    },
+    "program_owned": {
+      "const": true,
+      "title": "Program Owned",
+      "type": "boolean"
+    },
+    "registration": {
+      "$ref": "#/$defs/RegistrationSelection"
+    },
+    "schema_version": {
+      "const": "mcpaudit.oauth-transcript.fixture.v1",
+      "default": "mcpaudit.oauth-transcript.fixture.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "scope_context": {
+      "$ref": "#/$defs/ScopeContext"
+    },
+    "spec_profile": {
+      "const": "mcp-authorization-2025-11-25+draft-2026-07-28",
+      "default": "mcp-authorization-2025-11-25+draft-2026-07-28",
+      "title": "Spec Profile",
+      "type": "string"
+    },
+    "synthetic": {
+      "const": true,
+      "title": "Synthetic",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "program_owned",
+    "synthetic",
+    "fixture_id",
+    "control_kind",
+    "intended_resource",
+    "intended_authorization_server",
+    "registration",
+    "audience_evidence",
+    "observations"
+  ],
+  "title": "OAuthTranscriptFixture",
+  "type": "object"
+}
