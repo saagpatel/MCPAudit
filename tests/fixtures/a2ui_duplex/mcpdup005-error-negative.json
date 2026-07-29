@@ -1,0 +1,16 @@
+{
+  "schema_version": "mcpaudit.a2ui-duplex.fixture.v1",
+  "program_owned": true,
+  "fixture_id": "mcpdup005-error-negative",
+  "control_kind": "negative",
+  "protocol": "a2ui",
+  "protocol_version": "v0.9",
+  "clock_domain": "fixture-single-clock-v1",
+  "producer": {"producer_id": "synthetic-web-core", "profile": "web-core-react"},
+  "transcript": [
+    {"sequence": 1, "direction": "server_to_client", "message_id": "s-create", "observed_at": "2026-01-01T12:00:00Z", "message": {"version": "v0.9", "createSurface": {"surfaceId": "main", "catalogId": "urn:a2ui:basic:v0.9"}}},
+    {"sequence": 2, "direction": "server_to_client", "message_id": "s-components", "observed_at": "2026-01-01T12:00:01Z", "message": {"version": "v0.9", "updateComponents": {"surfaceId": "main", "components": [{"id": "status", "component": "Card"}]}}},
+    {"sequence": 3, "direction": "client_to_server", "message_id": "c-error", "observed_at": "2026-01-01T12:00:02Z", "message": {"version": "v0.9", "error": {"code": "RENDER_FAILED", "surfaceId": "main", "message": "synthetic renderer failure"}}, "metadata": {"a2uiClientCapabilities": {"v0.9": {"supportedCatalogIds": ["urn:a2ui:basic:v0.9"]}}}, "correlation": {"sourceComponentId": "status", "serverMessageId": "s-components"}},
+    {"sequence": 4, "direction": "server_to_client", "message_id": "s-error-ack", "observed_at": "2026-01-01T12:00:03Z", "message": {"version": "v0.9", "updateDataModel": {"surfaceId": "main", "path": "/", "value": {}}}, "acknowledges": ["c-error"]}
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "schema_version": "mcpaudit.a2ui-duplex.fixture.v1",
+  "program_owned": true,
+  "fixture_id": "mcpdup006-disclosure-near-miss",
+  "control_kind": "near-miss",
+  "protocol": "a2ui",
+  "protocol_version": "v0.9",
+  "clock_domain": "fixture-single-clock-v1",
+  "producer": {"producer_id": "synthetic-flutter", "profile": "flutter-a2ui"},
+  "transcript": [
+    {"sequence": 1, "direction": "server_to_client", "message_id": "s-create", "observed_at": "2026-01-01T12:00:00Z", "message": {"version": "v0.9", "createSurface": {"surfaceId": "main", "catalogId": "urn:a2ui:basic:v0.9", "sendDataModel": true}}},
+    {"sequence": 2, "direction": "server_to_client", "message_id": "s-components", "observed_at": "2026-01-01T12:00:01Z", "message": {"version": "v0.9", "updateComponents": {"surfaceId": "main", "components": [{"id": "submit", "component": "Button", "action": {"event": {"name": "submit_order", "context": {}}}}]}}},
+    {"sequence": 3, "direction": "client_to_server", "message_id": "c-action", "observed_at": "2026-01-01T12:00:02Z", "message": {"version": "v0.9", "action": {"name": "submit_order", "surfaceId": "main", "sourceComponentId": "submit", "timestamp": "2026-01-01T12:00:02Z", "context": {}}}, "metadata": {"a2uiClientCapabilities": {"v0.9": {"supportedCatalogIds": ["urn:a2ui:basic:v0.9"]}}}, "origin": {"surfaceRevision": 2, "componentRevision": 1, "serverMessageId": "s-components"}}
+  ]
+}

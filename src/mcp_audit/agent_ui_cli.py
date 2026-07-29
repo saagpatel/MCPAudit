@@ -12,6 +12,16 @@ from pathlib import Path
 import click
 from pydantic import BaseModel
 
+from mcp_audit.a2ui_duplex_models import (
+    A2UIDuplexFixture,
+    A2UIDuplexReport,
+    DuplexDisclosurePolicy,
+)
+from mcp_audit.a2ui_duplex_scanner import (
+    a2ui_duplex_report_json_bytes,
+    render_a2ui_duplex_sarif,
+    scan_a2ui_duplex_path_with_identity,
+)
 from mcp_audit.agent_ui_models import (
     A2UIFixtureManifest,
     A2UIMessage,
@@ -33,6 +43,79 @@ class AgentUIUsageError(click.ClickException):
 @click.group("agent-ui")
 def agent_ui() -> None:
     """Audit program-owned MCP Apps metadata and A2UI JSONL fixtures offline."""
+
+
+@agent_ui.group("duplex")
+def duplex() -> None:
+    """Audit paired A2UI server/client return-path fixtures offline."""
+
+
+@duplex.command("scan")
+@click.argument(
+    "fixture",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False, readable=True),
+)
+@click.option(
+    "--json",
+    "json_path",
+    type=click.Path(path_type=Path, dir_okay=False),
+    help="Write the canonical machine-readable duplex report.",
+)
+@click.option(
+    "--sarif",
+    "sarif_path",
+    type=click.Path(path_type=Path, dir_okay=False),
+    help="Write the deterministic SARIF 2.1.0 projection.",
+)
+@click.option(
+    "--redact",
+    is_flag=True,
+    default=False,
+    help="Deterministically pseudonymize fixture, producer, and finding targets.",
+)
+@click.option("--force", is_flag=True, default=False, help="Replace existing regular report files.")
+def duplex_scan_command(
+    fixture: Path,
+    json_path: Path | None,
+    sarif_path: Path | None,
+    redact: bool,
+    force: bool,
+) -> None:
+    """Analyze one synthetic paired A2UI transcript without executing or connecting."""
+    try:
+        report, input_identity = scan_a2ui_duplex_path_with_identity(fixture, redact=redact)
+        json_bytes = a2ui_duplex_report_json_bytes(report)
+        sarif_bytes = render_a2ui_duplex_sarif(report)
+        artifacts = [
+            item
+            for item in (
+                (json_path, json_bytes) if json_path is not None else None,
+                (sarif_path, sarif_bytes) if sarif_path is not None else None,
+            )
+            if item is not None
+        ]
+        _write_artifacts(fixture, input_identity, artifacts, force=force)
+    except (AgentUIInputError, OSError, ValueError) as exc:
+        raise AgentUIUsageError(str(exc)) from exc
+    if json_path is None:
+        click.echo(json_bytes.decode("utf-8"), nl=False)
+    if report.verdict != "pass":
+        raise click.exceptions.Exit(1)
+
+
+@duplex.command("schema")
+@click.argument(
+    "contract",
+    type=click.Choice(["fixture", "disclosure-policy", "report"]),
+)
+def duplex_schema_command(contract: str) -> None:
+    """Print one authoritative strict duplex JSON Schema."""
+    models: dict[str, type[BaseModel]] = {
+        "fixture": A2UIDuplexFixture,
+        "disclosure-policy": DuplexDisclosurePolicy,
+        "report": A2UIDuplexReport,
+    }
+    click.echo(json.dumps(models[contract].model_json_schema(), sort_keys=True))
 
 
 @agent_ui.command("scan")
@@ -238,7 +321,7 @@ def _write_artifacts(
     for index, (path, _) in enumerate(artifacts):
         for other_path, _ in artifacts[index + 1 :]:
             if _same_path(path, other_path):
-                raise ValueError("JSON and HTML outputs must use distinct paths")
+                raise ValueError("report outputs must use distinct paths")
 
     parent_fds: list[int] = []
     staged: list[_StagedArtifact] = []

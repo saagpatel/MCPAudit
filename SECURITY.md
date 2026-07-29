@@ -34,6 +34,17 @@ static contract. It does not prove host sandboxing, CSP enforcement, transport
 integrity, authorization, renderer behavior, interoperability, or real-workflow
 safety. See `docs/AGENT-UI-CONTRACT-AUDITOR.md`.
 
+The separate `agent-ui duplex` command accepts only strict program-owned paired
+A2UI transcript fixtures. It reuses the same descriptor-bound input and atomic
+report-output controls, adds fixed envelope/component/string/schema limits, and
+rejects credential-looking fixture fields or values. Findings never copy action
+context values, returned data-model values or key names, or renderer error
+messages. `--redact` additionally pseudonymizes fixture, producer, and finding
+target identifiers. A clean duplex report proves only the implemented
+referential/policy properties of the supplied envelopes; it does not prove
+renderer, transport, host, consent, authorization, accessibility, AG-UI, or
+real-workflow safety. See `docs/A2UI-DUPLEX-RETURN-PATH-AUDITOR.md`.
+
 MCPAudit is itself a security tool. This document covers two distinct concerns:
 
 1. How to report vulnerabilities **in MCPAudit** (the auditor tool itself)

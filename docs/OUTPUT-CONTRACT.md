@@ -284,6 +284,49 @@ OpenAI-specific extensions, AG-UI, and WebMCP remain distinct; the auditor does
 not claim translation or interoperability. See
 `docs/AGENT-UI-CONTRACT-AUDITOR.md`.
 
+## A2UI Duplex Return-Path Auditor v1 (experimental)
+
+The offline `mcp-audit agent-ui duplex` group extends the fixture-first Agent UI
+surface without changing `AuditReport` schema version `1` or the static
+`mcpaudit.agent-ui.report.v1` contract. Its strict identifiers are:
+
+- `mcpaudit.a2ui-duplex.fixture.v1`;
+- `mcpaudit.a2ui-duplex.disclosure-policy.v1`;
+- `mcpaudit.a2ui-duplex.report.v1`.
+
+Authoritative schemas are emitted with `mcp-audit agent-ui duplex schema
+CONTRACT`. The paired fixture is one strict program-owned JSON object containing
+A2UI v0.9 or v1.0 common surface messages, action/error returns, transport
+metadata, and fixture-owned sequence/revision/correlation sidecars. Unknown
+outer fields are rejected. Parseable malformed or unsupported envelope evidence
+produces `MCPDUP000` with status `unknown` or `unsupported`; unsafe JSON, unsafe
+paths, credential-looking content, or resource-limit violations are input
+errors.
+
+Reports use compact sorted canonical JSON with one terminal newline and no
+runtime timestamp or absolute input path. Stable IDs are `MCPDUP001` through
+`MCPDUP006`; `MCPDUP000` is the non-passing unknown/unsupported result. Each
+finding includes severity, status, target, deterministic non-value evidence,
+remediation, and observable basis. Verdicts are:
+
+- `pass`: supported checks found no contradiction or evidence gap;
+- `fail`: at least one rule finding fired;
+- `unknown`: only missing, malformed, or unsupported evidence remains.
+
+The optional SARIF 2.1.0 projection uses the same seven rule IDs and contains no
+absolute input path, context/data-model values, or error message text.
+`--redact` deterministically pseudonymizes fixture, producer, and finding target
+identifiers in both JSON and SARIF. JSON and SARIF outputs reuse the Agent UI
+descriptor-bound read and atomic no-clobber report-write path. The command exits
+`0` for `pass`, `1` for `fail` or `unknown`, and `2` for safe input/output
+failure.
+
+The analyzer computes per-surface and per-component revisions from transcript
+sequence IDs. It does not infer replay from payload equality or timestamp
+similarity. Full-model returns are evaluated only against the supplied
+`mcpaudit.a2ui-duplex.disclosure-policy.v1`; a present model with no policy is
+`UNKNOWN`. See `docs/A2UI-DUPLEX-RETURN-PATH-AUDITOR.md`.
+
 ## SafeForge Manifest v0
 
 SafeForge uses a separate, additive evidence-envelope contract; it does not

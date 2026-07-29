@@ -1,0 +1,15 @@
+{
+  "schema_version": "mcpaudit.a2ui-duplex.fixture.v1",
+  "program_owned": true,
+  "fixture_id": "mcpdup003-causality-negative",
+  "control_kind": "negative",
+  "protocol": "a2ui",
+  "protocol_version": "v1.0",
+  "clock_domain": "fixture-single-clock-v1",
+  "producer": {"producer_id": "synthetic-web-core-v1", "profile": "web-core-react"},
+  "transcript": [
+    {"sequence": 1, "direction": "server_to_client", "message_id": "s-create", "observed_at": "2026-01-01T12:00:00Z", "message": {"version": "v1.0", "createSurface": {"surfaceId": "main", "catalogId": "urn:a2ui:basic:v1.0"}}},
+    {"sequence": 2, "direction": "server_to_client", "message_id": "s-components", "observed_at": "2026-01-01T12:00:01Z", "message": {"version": "v1.0", "updateComponents": {"surfaceId": "main", "components": [{"id": "submit", "component": "Button", "action": {"event": {"name": "submit_order", "context": {"amount": {"path": "/amount"}}}}}]}}},
+    {"sequence": 3, "direction": "client_to_server", "message_id": "c-action-1", "observed_at": "2026-01-01T12:00:02Z", "message": {"version": "v1.0", "action": {"name": "submit_order", "surfaceId": "main", "sourceComponentId": "submit", "timestamp": "2026-01-01T12:00:02Z", "context": {"amount": 3}, "wantResponse": true, "actionId": "action-1"}}, "metadata": {"a2uiClientCapabilities": {"v1.0": {"supportedCatalogIds": ["urn:a2ui:basic:v1.0"]}}}, "origin": {"surfaceRevision": 2, "componentRevision": 1, "serverMessageId": "s-components"}}
+  ]
+}

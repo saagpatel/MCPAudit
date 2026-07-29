@@ -10,6 +10,12 @@ parses widget HTML or JavaScript, contacts an MCP server, calls a tool, fetches 
 resource or catalog, authenticates, installs a plugin, or processes real user
 data.
 
+Client-to-server return envelopes remain outside this static scanner. The
+separate `mcp-audit agent-ui duplex` analyzer evaluates paired synthetic A2UI
+surface/action/error/capability/data-model transcripts under its own
+`MCPDUP000`–`MCPDUP006` rules and report contract. See
+[`A2UI-DUPLEX-RETURN-PATH-AUDITOR.md`](A2UI-DUPLEX-RETURN-PATH-AUDITOR.md).
+
 ## Command
 
 ```bash

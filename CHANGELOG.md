@@ -31,11 +31,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added an experimental fixture-first A2UI Duplex Return-Path Auditor under
+  `mcp-audit agent-ui duplex`. It indexes paired v0.9/v1.0 synthetic surface and
+  return envelopes, recomputes surface/component revisions, validates emitted
+  action contracts with a bounded schema subset, detects observable
+  replay/causality contradictions, reconciles return-time catalog capabilities,
+  correlates and acknowledges renderer errors, and gates full-model return on a
+  versioned program-owned disclosure policy. Six non-colliding
+  `MCPDUP001`–`MCPDUP006` rules plus `MCPDUP000` unknown/unsupported behavior
+  emit byte-stable JSON and SARIF with optional deterministic identifier
+  redaction. Program-owned negative/vulnerable/near-miss fixtures cover two
+  plausible producer profiles while keeping live renderers, transports,
+  browsers, user data, host consent, authorization, accessibility, and
+  JavaScript/HTML safety outside the claim.
 - Added an experimental, fixture-first `mcp-audit agent-ui` static scanner for
   program-owned MCP Apps/OpenAI metadata and A2UI v0.9 JSONL. Six stable
   authority/state/disclosure/provenance/evidence/egress rules emit deterministic
   JSON and inert offline HTML with explicit protocol/host assumptions.
-  Eighteen positive, vulnerable, and negative fixtures keep unsupported
+  Eighteen negative, vulnerable, and near-miss fixtures keep unsupported
   protocols, catalogs, bindings, widget code, transports, and real-host
   behavior `UNKNOWN` rather than safe.
   Merge-review hardening also preserves prior supported A2UI contradictions,

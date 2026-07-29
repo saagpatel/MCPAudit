@@ -334,6 +334,17 @@ A2UI replacement or deletion. See
 [`docs/AGENT-UI-CONTRACT-AUDITOR.md`](docs/AGENT-UI-CONTRACT-AUDITOR.md) for the
 exact input profiles, six stable rules, fixtures, and claim ceiling.
 
+The companion `mcp-audit agent-ui duplex` command analyzes paired,
+program-owned A2UI surface messages and client action/error/capability/data-model
+returns. It recomputes active surface/component revisions, checks emitted action
+contracts, detects observable replay and impossible causality, reconciles the
+used catalog with return-time client capabilities, requires renderer-error
+correlation/acknowledgement, and applies full-model disclosure only from an
+explicit policy. Missing policy is `UNKNOWN`. The analyzer emits deterministic
+JSON and SARIF and keeps renderer behavior, transport integrity, host consent,
+authorization, AG-UI conformance, and real user data outside its claim. See
+[`docs/A2UI-DUPLEX-RETURN-PATH-AUDITOR.md`](docs/A2UI-DUPLEX-RETURN-PATH-AUDITOR.md).
+
 ### Local Policy Gates
 
 Policies are local YAML files evaluated after a scan. A failing policy exits with code `2` after terminal, JSON, or SARIF output is written.

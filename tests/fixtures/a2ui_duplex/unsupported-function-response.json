@@ -1,0 +1,14 @@
+{
+  "schema_version": "mcpaudit.a2ui-duplex.fixture.v1",
+  "program_owned": true,
+  "fixture_id": "unsupported-function-response",
+  "control_kind": "near-miss",
+  "protocol": "a2ui",
+  "protocol_version": "v1.0",
+  "clock_domain": "fixture-single-clock-v1",
+  "producer": {"producer_id": "synthetic-web-core-v1", "profile": "web-core-react"},
+  "transcript": [
+    {"sequence": 1, "direction": "server_to_client", "message_id": "s-create", "observed_at": "2026-01-01T12:00:00Z", "message": {"version": "v1.0", "createSurface": {"surfaceId": "main", "catalogId": "urn:a2ui:basic:v1.0"}}},
+    {"sequence": 2, "direction": "client_to_server", "message_id": "c-function-response", "observed_at": "2026-01-01T12:00:01Z", "message": {"version": "v1.0", "functionResponse": {"functionCallId": "call-1", "call": "format", "value": "ok"}}}
+  ]
+}
