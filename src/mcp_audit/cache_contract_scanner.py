@@ -621,6 +621,7 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
     ordering: dict[tuple[tuple[str, str, str], str], _OrderingBaseline] = {}
     ordering_epochs: dict[tuple[str, str], int] = {}
     page_scopes: dict[tuple[str, str, str], _PageBaseline] = {}
+    partition_principals: dict[str, tuple[str, int]] = {}
     analyzed_events = 0
     limitations: set[str] = set()
     protocol_versions: set[str] = {trace.protocol_version}
@@ -685,6 +686,34 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
         analyzed_events += 1
 
         if isinstance(event, NotificationEvent):
+            event_principal = event.principal
+            event_partition = event.cache_partition
+        else:
+            event_principal = event.request.principal
+            event_partition = event.request.cache_partition
+        partition_mapping_consistent = True
+        prior_partition_principal = partition_principals.get(event_partition)
+        if prior_partition_principal is None:
+            partition_principals[event_partition] = (event_principal, event.sequence)
+        elif prior_partition_principal[0] != event_principal:
+            partition_mapping_consistent = False
+            collector.add(
+                _finding(
+                    "MCPCACHE000",
+                    CacheSeverity.UNKNOWN,
+                    RequirementLevel.UNKNOWN,
+                    "Principal labels conflict within one asserted authorization partition",
+                    _event_target(event.sequence),
+                    "authorization_partition_mapping_ambiguous",
+                    "Use consistent principal labels or distinct authorization-context partitions.",
+                    event_sequences=[prior_partition_principal[1], event.sequence],
+                )
+            )
+            limitations.add("one or more authorization-partition assertions were ambiguous")
+
+        if isinstance(event, NotificationEvent):
+            if not partition_mapping_consistent:
+                continue
             if not event.subscription_validated:
                 collector.add(
                     _finding(
@@ -750,20 +779,6 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                 if entry.scope == "private" and (
                     entry.event.request.cache_partition != event.cache_partition
                 ):
-                    continue
-                if entry.scope == "private" and entry.event.request.principal != event.principal:
-                    collector.add(
-                        _finding(
-                            "MCPCACHE000",
-                            CacheSeverity.UNKNOWN,
-                            RequirementLevel.UNKNOWN,
-                            "Principal labels conflict within one asserted authorization partition",
-                            _event_target(event.sequence),
-                            "authorization_partition_mapping_ambiguous",
-                            "Use consistent principal labels or distinct authorization-context partitions.",
-                            event_sequences=[entry.event.sequence, event.sequence],
-                        )
-                    )
                     continue
                 if entry.scope == "public":
                     entry.invalidated_globally = event.sequence
@@ -922,24 +937,9 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                                 event_sequences=[source.event.sequence, event.sequence],
                             )
                         )
-                    elif source.scope == "private" and source.event.request.principal != request.principal:
-                        collector.add(
-                            _finding(
-                                "MCPCACHE000",
-                                CacheSeverity.UNKNOWN,
-                                RequirementLevel.UNKNOWN,
-                                "Principal labels conflict within one asserted authorization partition",
-                                _event_target(event.sequence),
-                                "authorization_partition_mapping_ambiguous",
-                                (
-                                    "Use consistent principal labels or distinct "
-                                    "authorization-context partitions."
-                                ),
-                                event_sequences=[source.event.sequence, event.sequence],
-                            )
-                        )
                     elif (
-                        source.key == key
+                        partition_mapping_consistent
+                        and source.key == key
                         and source.scope is not None
                         and _is_valid_successful_refresh(event, scope, ttl_ms)
                     ):
@@ -1028,6 +1028,7 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                 and "cursor" not in request.params
                 and "nextCursor" not in event.result
                 and scope is not None
+                and partition_mapping_consistent
             ):
                 ordering_items = _ordering_items(event.result)
                 if ordering_items is not None:
@@ -1130,20 +1131,12 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                         event_sequences=[source.event.sequence, event.sequence],
                     )
                 )
-            elif source.scope == "private" and not consistent_private_principal:
-                collector.add(
-                    _finding(
-                        "MCPCACHE000",
-                        CacheSeverity.UNKNOWN,
-                        RequirementLevel.UNKNOWN,
-                        "Principal labels conflict within one asserted authorization partition",
-                        _event_target(event.sequence),
-                        "authorization_partition_mapping_ambiguous",
-                        "Use consistent principal labels or distinct authorization-context partitions.",
-                        event_sequences=[source.event.sequence, event.sequence],
-                    )
-                )
-            if key_matches and same_private_partition and consistent_private_principal:
+            if (
+                key_matches
+                and same_private_partition
+                and consistent_private_principal
+                and partition_mapping_consistent
+            ):
                 partition_key = "public" if source.scope == "public" else request.cache_partition
                 source.refresh_errors.setdefault(partition_key, []).append((event.sequence, event.at_ms))
             continue
@@ -1159,19 +1152,6 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                         _event_target(event.sequence),
                         "private_cross_partition_reuse",
                         "Partition private entries by the complete authorization context.",
-                        event_sequences=[source.event.sequence, event.sequence],
-                    )
-                )
-            elif source.event.request.principal != request.principal:
-                collector.add(
-                    _finding(
-                        "MCPCACHE000",
-                        CacheSeverity.UNKNOWN,
-                        RequirementLevel.UNKNOWN,
-                        "Principal labels conflict within one asserted authorization partition",
-                        _event_target(event.sequence),
-                        "authorization_partition_mapping_ambiguous",
-                        "Use consistent principal labels or distinct authorization-context partitions.",
                         event_sequences=[source.event.sequence, event.sequence],
                     )
                 )

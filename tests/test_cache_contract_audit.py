@@ -121,6 +121,21 @@ def test_empty_string_next_cursor_remains_valid_paginated_evidence() -> None:
     assert report.coverage.state == "complete"
 
 
+@pytest.mark.parametrize(
+    "fixture_name",
+    ["ordering-drift-near-miss.json", "ordering-drift-vulnerable.json"],
+)
+def test_private_ordering_principal_conflict_is_unknown(fixture_name: str) -> None:
+    payload = json.loads((FIXTURES / fixture_name).read_text(encoding="utf-8"))
+    payload["events"][1]["request"]["principal"] = "bob"
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "unknown"
+    assert {finding.rule_id for finding in report.findings} == {"MCPCACHE000"}
+    assert {finding.evidence for finding in report.findings} == {"authorization_partition_mapping_ambiguous"}
+
+
 def test_malformed_fixture_is_explicit_unknown() -> None:
     report = _report("malformed.json")
     assert report.verdict == "unknown"

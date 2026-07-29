@@ -298,6 +298,9 @@ trace|report`. Unknown fields are rejected. The trace binds every event to
 explicit sequence and logical-millisecond values, a protocol version,
 principal, asserted authorization-context `cache_partition`, method, complete
 result-affecting parameters, and response/use/refresh/change-event evidence.
+Conflicting principal labels inside one asserted `cache_partition` produce
+incomplete `MCPCACHE000` coverage before private cache ordering evidence is
+compared.
 
 Reports use sorted compact canonical JSON with one terminal newline and no
 timestamp, hostname, platform, duration, random ID, or absolute input path.

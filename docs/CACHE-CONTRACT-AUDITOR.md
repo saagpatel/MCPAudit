@@ -155,7 +155,7 @@ The distinction matters:
 | --- | --- | --- |
 | Required metadata | Current complete cacheable results require `resultType`, `ttlMs`, and `cacheScope` | Missing and invalid metadata are separate MUST-level findings |
 | Cache key | Method plus every result-affecting parameter must match | Protocol version, method, and canonical parameters are bound; `public` never relaxes this |
-| Private scope | A private entry must not cross authorization contexts | `cache_partition` is the trace's explicit authorization-context assertion |
+| Private scope | A private entry must not cross authorization contexts | `cache_partition` is the trace's explicit authorization-context assertion; conflicting principal labels inside one partition make the trace `UNKNOWN` before private reuse, refresh, notification, or ordering evidence is trusted |
 | TTL | Fresh only while `now < received + ttlMs`; re-fetch on stale access is SHOULD | Use at equality or later is a SHOULD-level finding when a complete trace records no unsuperseded failed refresh |
 | Failed refresh | A client MAY serve stale after a re-fetch error | A causal, exact-key `refresh_error` permits stale use only until a later valid successful refresh supersedes that failed attempt |
 | Change event | A received relevant notification immediately makes the relevant cached result stale | Only validated normalized subscriptions and exact supported method/URI mappings invalidate |
