@@ -1,0 +1,35 @@
+{
+  "schema_version": "mcpaudit.mcp-roundtrip.trace.v1",
+  "program_owned": true,
+  "fixture_id": "mcprt002-negative",
+  "protocol_revision": "2026-07-28",
+  "transport": "stdio",
+  "events": [
+    {
+      "sequence": 0,
+      "kind": "client_request",
+      "observed_at": "2026-07-28T10:00:00Z",
+      "principal": "alice",
+      "message": {"jsonrpc": "2.0", "id": 1, "method": "server/discover", "params": {"_meta": {"io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientCapabilities": {}}}}
+    },
+    {
+      "sequence": 1,
+      "kind": "server_response",
+      "observed_at": "2026-07-28T10:00:01Z",
+      "message": {"jsonrpc": "2.0", "id": 1, "result": {"resultType": "complete", "supportedVersions": ["2026-07-28"], "capabilities": {"tools": {}}}}
+    },
+    {
+      "sequence": 2,
+      "kind": "client_request",
+      "observed_at": "2026-07-28T10:00:02Z",
+      "principal": "alice",
+      "message": {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "weather", "arguments": {}, "_meta": {"io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientCapabilities": {}}}}
+    },
+    {
+      "sequence": 3,
+      "kind": "server_response",
+      "observed_at": "2026-07-28T10:00:03Z",
+      "message": {"jsonrpc": "2.0", "id": 2, "result": {"resultType": "complete", "content": []}}
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "schema_version": "mcpaudit.mcp-roundtrip.trace.v1",
+  "program_owned": true,
+  "fixture_id": "mcprt006-vulnerable",
+  "protocol_revision": "2026-07-28",
+  "transport": "streamable-http",
+  "events": [
+    {
+      "sequence": 0,
+      "kind": "client_request",
+      "observed_at": "2026-07-28T10:00:00Z",
+      "principal": "alice",
+      "message": {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {"_meta": {"io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientCapabilities": {}}}},
+      "http": {"headers": {"MCP-Protocol-Version": "2026-07-28", "Mcp-Method": "tools/list"}}
+    },
+    {
+      "sequence": 1,
+      "kind": "stream_broken",
+      "observed_at": "2026-07-28T10:00:01Z",
+      "request_id": 1
+    },
+    {
+      "sequence": 2,
+      "kind": "client_request",
+      "observed_at": "2026-07-28T10:00:02Z",
+      "principal": "alice",
+      "retry_of": 1,
+      "message": {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {"_meta": {"io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientCapabilities": {}}}},
+      "http": {"headers": {"MCP-Protocol-Version": "2026-07-28", "Mcp-Method": "tools/list"}}
+    }
+  ]
+}

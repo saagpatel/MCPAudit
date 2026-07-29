@@ -1,0 +1,24 @@
+{
+  "schema_version": "mcpaudit.mcp-roundtrip.trace.v1",
+  "program_owned": true,
+  "fixture_id": "mcprt006-near-miss",
+  "protocol_revision": "2026-07-28",
+  "transport": "streamable-http",
+  "events": [
+    {
+      "sequence": 0,
+      "kind": "client_request",
+      "observed_at": "2026-07-28T10:00:00Z",
+      "principal": "alice",
+      "message": {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {"_meta": {"io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientCapabilities": {}}}},
+      "http": {"headers": {"MCP-Protocol-Version": "2026-07-28", "Mcp-Method": "tools/list"}}
+    },
+    {
+      "sequence": 1,
+      "kind": "server_response",
+      "observed_at": "2026-07-28T10:00:01Z",
+      "message": {"jsonrpc": "2.0", "id": 1, "result": {"resultType": "complete", "tools": []}},
+      "http": {"status": 200, "headers": {}}
+    }
+  ]
+}

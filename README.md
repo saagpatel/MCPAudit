@@ -334,6 +334,20 @@ A2UI replacement or deletion. See
 [`docs/AGENT-UI-CONTRACT-AUDITOR.md`](docs/AGENT-UI-CONTRACT-AUDITOR.md) for the
 exact input profiles, six stable rules, fixtures, and claim ceiling.
 
+The experimental `mcp-audit roundtrip` group audits program-owned synthetic
+JSON or JSONL MCP `2026-07-28` HTTP/stdio exchanges without connecting to a
+server or reading real transcripts. Seven stable `MCPRT000`–`MCPRT006` rules
+cover per-request metadata and version rejection, discovery consistency,
+Streamable HTTP standard/custom body-header mirrors, `resultType` and MRTR correlation,
+observable `requestState` replay boundaries, and fresh IDs after broken
+response streams. Missing correlation stays `UNKNOWN`; request-state
+cryptography stays `UNKNOWN` without a matching trusted program witness.
+Reports are deterministic canonical JSON with an additive projection through
+the existing SARIF generator. See
+[`docs/MCP-2026-ROUNDTRIP-AUDITOR.md`](docs/MCP-2026-ROUNDTRIP-AUDITOR.md) for
+the strict input profiles, limits, exit semantics, fixture controls, and claim
+ceiling.
+
 ### Local Policy Gates
 
 Policies are local YAML files evaluated after a scan. A failing policy exits with code `2` after terminal, JSON, or SARIF output is written.

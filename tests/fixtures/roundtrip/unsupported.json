@@ -1,0 +1,16 @@
+{
+  "schema_version": "mcpaudit.mcp-roundtrip.trace.v1",
+  "program_owned": true,
+  "fixture_id": "unsupported-revision",
+  "protocol_revision": "2025-11-25",
+  "transport": "stdio",
+  "events": [
+    {
+      "sequence": 0,
+      "kind": "client_request",
+      "observed_at": "2026-07-28T10:00:00Z",
+      "principal": "alice",
+      "message": {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {"_meta": {"io.modelcontextprotocol/protocolVersion": "2025-11-25", "io.modelcontextprotocol/clientCapabilities": {}}}}
+    }
+  ]
+}

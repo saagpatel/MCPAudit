@@ -1,0 +1,48 @@
+{
+  "schema_version": "mcpaudit.mcp-roundtrip.trace.v1",
+  "program_owned": true,
+  "fixture_id": "mcprt005-negative",
+  "protocol_revision": "2026-07-28",
+  "transport": "stdio",
+  "witnesses": [
+    {
+      "schema_version": "mcpaudit.mcp-roundtrip.request-state-witness.v1",
+      "trust": "trusted-program-witness",
+      "state_sha256": "192c9f90c29dfcdd137b418ab1b85f6e4d90915188ea18b08689551dc9640756",
+      "integrity_verified": true,
+      "principal_binding_verified": true,
+      "method_binding_verified": true,
+      "parameters_binding_verified": true,
+      "verified_at": "2026-07-28T10:00:01Z",
+      "expires_at": "2026-07-28T10:05:00Z"
+    }
+  ],
+  "events": [
+    {
+      "sequence": 0,
+      "kind": "client_request",
+      "observed_at": "2026-07-28T10:00:00Z",
+      "principal": "alice",
+      "message": {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "weather", "arguments": {"city": "sea"}, "_meta": {"io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientCapabilities": {"elicitation": {}}}}}
+    },
+    {
+      "sequence": 1,
+      "kind": "server_response",
+      "observed_at": "2026-07-28T10:00:01Z",
+      "message": {"jsonrpc": "2.0", "id": 1, "result": {"resultType": "input_required", "inputRequests": {"confirm": {"method": "elicitation/create", "params": {}}}, "requestState": "state-ok"}}
+    },
+    {
+      "sequence": 2,
+      "kind": "client_request",
+      "observed_at": "2026-07-28T10:00:02Z",
+      "principal": "alice",
+      "message": {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "weather", "arguments": {"city": "sea"}, "inputResponses": {"confirm": {"action": "accept"}}, "requestState": "state-ok", "_meta": {"io.modelcontextprotocol/protocolVersion": "2026-07-28", "io.modelcontextprotocol/clientCapabilities": {"elicitation": {}}}}}
+    },
+    {
+      "sequence": 3,
+      "kind": "server_response",
+      "observed_at": "2026-07-28T10:00:03Z",
+      "message": {"jsonrpc": "2.0", "id": 2, "result": {"resultType": "complete", "content": []}}
+    }
+  ]
+}

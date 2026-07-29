@@ -284,6 +284,62 @@ OpenAI-specific extensions, AG-UI, and WebMCP remain distinct; the auditor does
 not claim translation or interoperability. See
 `docs/AGENT-UI-CONTRACT-AUDITOR.md`.
 
+## MCP 2026 Stateless Round-Trip Report v1 (experimental)
+
+The offline `mcp-audit roundtrip` command group is separate from connected MCP
+scans and does not change `AuditReport` schema version `1`. Its strict contract
+identifiers are:
+
+- `mcpaudit.mcp-roundtrip.trace.v1`
+- `mcpaudit.mcp-roundtrip.trace-jsonl.v1`
+- `mcpaudit.mcp-roundtrip.request-state-witness.v1`
+- `mcpaudit.mcp-roundtrip.report.v1`
+
+Authoritative JSON Schemas are emitted with `mcp-audit roundtrip schema
+CONTRACT`. JSON input contains one trace envelope. JSONL input contains one
+manifest followed by one event per line. Unknown model fields, duplicate JSON
+keys, non-finite constants, non-increasing sequence values, credential-looking
+material, and resource-limit violations are rejected.
+
+Reports use sorted compact JSON with one terminal newline and no timestamp or
+absolute input path. They contain the fixture identifier, input SHA-256,
+accepted trace schema/revision/transport, aggregate verdict, all seven stable
+rule results, non-passing findings, claim boundaries, assumptions, and parser
+limits. Rule IDs are `MCPRT000` through `MCPRT006`. Rule statuses are `PASS`,
+`FAIL`, `UNKNOWN`, `UNSUPPORTED`, and `NOT_APPLICABLE`. Report verdicts:
+
+- `pass`: no rule is failed, unknown, or unsupported;
+- `fail`: one or more observable invariants failed;
+- `unknown`: no invariant failed, but required evidence is absent or
+  cryptographic protection is unwitnessed;
+- `unsupported`: the trace schema, protocol revision, or transport is outside
+  the implemented profile.
+
+The scan command exits `0` for `pass`, `1` for `fail`, `unknown`, or
+`unsupported`, and `2` for an input/output error. Its accepted input is limited
+to 2 MiB, 40 JSON nesting levels, 512 events, 50,000 nodes, 16 KiB strings, and
+128 KiB JSONL lines. Credential-looking input is rejected using a generic
+diagnostic; arbitrary message values are not copied into findings.
+
+`--sarif` uses MCPAudit's existing SARIF 2.1.0 generator and driver identity. It
+adds only the `MCPRT` rules and findings from the supplied round-trip report.
+It does not modify normal scan SARIF. SARIF locations use the synthetic fixture
+identifier rather than a filesystem path, and fingerprints are stable over the
+rule, fixture, and event sequence set.
+
+The same accepted trace bytes produce byte-identical report JSON. Output writes
+reuse the descriptor-bound, atomic no-clobber mechanism documented for the
+Agent UI auditor. Inputs must be regular non-symlink files; output/input and
+JSON/SARIF aliases are refused.
+
+A passing report claims only that the supplied program-owned synthetic trace
+satisfies the implemented observable invariants. It does not prove a real MCP
+host, server, client, transport, authorization system, runtime, cryptographic
+implementation, or deployment conforms or is safe. `requestState`
+cryptographic protection remains `UNKNOWN` unless the trace includes an exact
+matching `mcpaudit.mcp-roundtrip.request-state-witness.v1` witness. See
+`docs/MCP-2026-ROUNDTRIP-AUDITOR.md`.
+
 ## SafeForge Manifest v0
 
 SafeForge uses a separate, additive evidence-envelope contract; it does not

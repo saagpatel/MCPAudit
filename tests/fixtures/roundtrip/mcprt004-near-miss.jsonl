@@ -1,0 +1,3 @@
+{"schema_version":"mcpaudit.mcp-roundtrip.trace-jsonl.v1","program_owned":true,"fixture_id":"mcprt004-near-miss","protocol_revision":"2026-07-28","transport":"stdio","witnesses":[]}
+{"sequence":0,"kind":"client_request","observed_at":"2026-07-28T10:00:00Z","principal":"alice","message":{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}}
+{"sequence":1,"kind":"server_response","observed_at":"2026-07-28T10:00:01Z","message":{"jsonrpc":"2.0","id":1,"result":{"resultType":"complete","tools":[]}}}

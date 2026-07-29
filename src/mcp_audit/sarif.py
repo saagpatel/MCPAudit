@@ -45,6 +45,7 @@ from mcp_audit.models import (
     TrifectaSeverity,
 )
 from mcp_audit.redaction import redact_data
+from mcp_audit.roundtrip_models import RoundTripReport
 from mcp_audit.taxonomy import (
     ARTIFACT_VERIFY_FINDINGS,
     EGRESS_FINDINGS,
@@ -110,6 +111,44 @@ _TRIFECTA_RULE_DESCRIPTIONS = {
 
 _DRIFT_RULE_ID = "MCP009"
 _POLICY_RULE_ID = "MCP010"
+
+_ROUNDTRIP_RULES: dict[str, tuple[str, str, str]] = {
+    "MCPRT000": (
+        "Supported trace profile",
+        "The synthetic trace uses a supported schema, protocol revision, and transport.",
+        "Use the documented program-owned trace schema, revision, and transport.",
+    ),
+    "MCPRT001": (
+        "Per-request version and client capabilities",
+        "Requests carry required 2026 metadata and version mismatches are rejected.",
+        "Include version and client capabilities on every request and reject mismatches.",
+    ),
+    "MCPRT002": (
+        "Discovery consistency",
+        "Discovery advertisements agree with later version and capability behavior.",
+        "Make server/discover advertisements agree with later observable behavior.",
+    ),
+    "MCPRT003": (
+        "Streamable HTTP metadata mirroring",
+        "Required HTTP metadata agrees with the JSON-RPC body source.",
+        "Derive request headers from the body and reject mismatches.",
+    ),
+    "MCPRT004": (
+        "Result discrimination and MRTR correlation",
+        "Results and multi-round-trip requests satisfy observable 2026 correlation rules.",
+        "Correlate MRTR result types, methods, capabilities, state, responses, and IDs.",
+    ),
+    "MCPRT005": (
+        "Observable requestState replay boundaries",
+        "Request state stays within observable principal, method, parameter, and expiry bounds.",
+        "Reject state crossing a boundary and witness cryptographic claims explicitly.",
+    ),
+    "MCPRT006": (
+        "Broken-stream request ID renewal",
+        "Broken response streams are retried with a fresh JSON-RPC request ID.",
+        "Use a new request ID after a response stream breaks.",
+    ),
+}
 
 # Shadowing-specific SARIF rule IDs
 _SHADOWING_RULE_IDS: dict[ShadowingKind, str] = {
@@ -204,6 +243,78 @@ class SarifGenerator:
                         }
                     },
                     "results": self._make_results(report),
+                }
+            ],
+        }
+
+    def generate_roundtrip(self, report: RoundTripReport) -> dict[str, Any]:
+        """Project a strict round-trip report through the existing SARIF mechanism."""
+        report = RoundTripReport.model_validate(redact_data(report.model_dump(mode="json")))
+        try:
+            tool_version = pkg_version("mcp-audits")
+        except PackageNotFoundError:
+            tool_version = "0.0.0"
+        rules = [
+            {
+                "id": rule.rule_id,
+                "name": _ROUNDTRIP_RULES[rule.rule_id][0].replace(" ", ""),
+                "shortDescription": {"text": _ROUNDTRIP_RULES[rule.rule_id][0]},
+                "fullDescription": {"text": _ROUNDTRIP_RULES[rule.rule_id][1]},
+                "help": {"text": _ROUNDTRIP_RULES[rule.rule_id][2]},
+                "helpUri": (
+                    "https://github.com/saagpatel/MCPAudit/blob/main/docs/MCP-2026-ROUNDTRIP-AUDITOR.md"
+                ),
+                "properties": {"category": "mcp_2026_roundtrip"},
+            }
+            for rule in report.rules
+        ]
+        results = [
+            {
+                "ruleId": finding.rule_id,
+                "level": (
+                    "error"
+                    if finding.severity == "error"
+                    else "warning"
+                    if finding.severity == "warning"
+                    else "note"
+                ),
+                "message": {"text": finding.evidence},
+                "locations": [
+                    {
+                        "physicalLocation": {
+                            "artifactLocation": {"uri": f"mcpaudit://synthetic/{report.fixture_id}"}
+                        }
+                    }
+                ],
+                "partialFingerprints": {
+                    "mcpAuditStableId": _stable_fingerprint(
+                        finding.rule_id,
+                        report.fixture_id,
+                        ",".join(str(item) for item in finding.event_sequences) or "trace",
+                    )
+                },
+                "properties": {
+                    "status": finding.status,
+                    "event_sequences": finding.event_sequences,
+                    "remediation": finding.remediation,
+                },
+            }
+            for finding in report.findings
+        ]
+        return {
+            "version": "2.1.0",
+            "$schema": _SARIF_SCHEMA,
+            "runs": [
+                {
+                    "tool": {
+                        "driver": {
+                            "name": "mcp-audit",
+                            "version": tool_version,
+                            "informationUri": "https://github.com/saagpatel/MCPAudit",
+                            "rules": rules,
+                        }
+                    },
+                    "results": results,
                 }
             ],
         }

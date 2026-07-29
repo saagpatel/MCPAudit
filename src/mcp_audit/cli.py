@@ -36,6 +36,7 @@ from mcp_audit.models import (
 from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
 from mcp_audit.redaction import redact_text
 from mcp_audit.report import ReportGenerator, error_console, scrub_report_identifiers
+from mcp_audit.roundtrip_cli import roundtrip
 
 console = Console()
 _MAX_SAFEFORGE_SCHEMA_BYTES = 1_048_576
@@ -53,6 +54,7 @@ def main(debug: bool) -> None:
 
 main.add_command(enforcement_fixture)
 main.add_command(agent_ui)
+main.add_command(roundtrip)
 
 
 @main.command("safeforge-preinstall")

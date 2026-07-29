@@ -31,6 +31,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added an experimental, offline `mcp-audit roundtrip` auditor for
+  program-owned synthetic MCP `2026-07-28` JSON/JSONL HTTP and stdio traces.
+  Seven stable rules distinguish per-request metadata and version rejection,
+  discovery drift, HTTP body/header mismatches, invalid result/MRTR flows,
+  observable request-state replay, and broken-stream request-ID reuse.
+  Deterministic JSON and additive SARIF preserve existing scan schemas and
+  defaults; malformed, unsupported, oversized, credential-looking, missing, or
+  cryptographically unwitnessed evidence cannot become a clean result.
 - Added an experimental, fixture-first `mcp-audit agent-ui` static scanner for
   program-owned MCP Apps/OpenAI metadata and A2UI v0.9 JSONL. Six stable
   authority/state/disclosure/provenance/evidence/egress rules emit deterministic
