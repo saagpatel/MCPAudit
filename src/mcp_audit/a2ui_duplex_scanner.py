@@ -39,6 +39,7 @@ _MAX_STRING_BYTES: Final = 16_384
 _MAX_SCHEMA_DEPTH: Final = 16
 _MAX_SCHEMA_NODES: Final = 512
 
+_IDENTIFIER_VALUE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
 _SECRET_KEY = re.compile(
     r"(?:^|[_-])(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|"
     r"password|passwd|authorization|cookie|private[_-]?key|secret)(?:$|[_-])",
@@ -168,6 +169,7 @@ class _ComponentState:
 @dataclass
 class _SurfaceState:
     surface_id: str
+    generation: int
     revision: int
     catalog_id: str
     send_data_model: bool
@@ -175,6 +177,7 @@ class _SurfaceState:
     last_message_id: str
     last_sequence: int
     last_observed_at: datetime
+    component_evidence_complete: bool = True
     components: dict[str, _ComponentState] = field(default_factory=dict)
 
 
@@ -182,6 +185,7 @@ class _SurfaceState:
 class _ServerRecord:
     sequence: int
     surface_id: str
+    surface_generation: int
     kind: str
     component_ids: frozenset[str]
     observed_at: datetime
@@ -702,8 +706,20 @@ def _process_server_envelope(
                 )
             )
             return
+        if previous is not None and observed_at < previous.last_observed_at:
+            findings.append(
+                _finding(
+                    "MCPDUP003",
+                    target=envelope.message_id,
+                    evidence=["surface observation time moves backward across surface generations"],
+                    observable_basis=[
+                        "Server observation times are compared only inside the declared fixture single clock."
+                    ],
+                )
+            )
         created_surface = _SurfaceState(
             surface_id=surface_id,
+            generation=1 if previous is None else previous.generation + 1,
             revision=1,
             catalog_id=catalog_id,
             send_data_model=send_data_model,
@@ -726,6 +742,7 @@ def _process_server_envelope(
         server_records[envelope.message_id] = _ServerRecord(
             sequence=envelope.sequence,
             surface_id=surface_id,
+            surface_generation=created_surface.generation,
             kind=kind,
             component_ids=frozenset(created_component_ids),
             observed_at=observed_at,
@@ -745,6 +762,18 @@ def _process_server_envelope(
             )
         )
         return
+
+    if observed_at < active_surface.last_observed_at:
+        findings.append(
+            _finding(
+                "MCPDUP003",
+                target=envelope.message_id,
+                evidence=["surface observation time moves backward within an active surface generation"],
+                observable_basis=[
+                    "Server observation times are compared only inside the declared fixture single clock."
+                ],
+            )
+        )
 
     component_ids: set[str] = set()
     if kind == "updateComponents":
@@ -800,6 +829,7 @@ def _process_server_envelope(
     server_records[envelope.message_id] = _ServerRecord(
         sequence=envelope.sequence,
         surface_id=surface_id,
+        surface_generation=active_surface.generation,
         kind=kind,
         component_ids=frozenset(component_ids),
         observed_at=observed_at,
@@ -814,10 +844,15 @@ def _apply_components(
 ) -> set[str]:
     if not isinstance(value, list) or not value:
         findings.append(_unknown(target=envelope.message_id, evidence="components must be a non-empty array"))
+        surface.component_evidence_complete = False
         return set()
     identifiers: list[str] = []
     for component in value:
-        if isinstance(component, dict) and isinstance(component.get("id"), str):
+        if (
+            isinstance(component, dict)
+            and isinstance(component.get("id"), str)
+            and _IDENTIFIER_VALUE.fullmatch(component["id"])
+        ):
             identifiers.append(component["id"])
     if len(identifiers) != len(value) or len(identifiers) != len(set(identifiers)):
         findings.append(
@@ -826,6 +861,7 @@ def _apply_components(
                 evidence="component ids must be present, string-valued, and unique within an update",
             )
         )
+        surface.component_evidence_complete = False
         return set()
     observed_at = _parse_utc(envelope.observed_at)
     for component in value:
@@ -857,15 +893,20 @@ def _apply_components(
                 )
             else:
                 event = action.get("event")
-                if not isinstance(event, dict) or not {"name", "context"}.issubset(event):
+                if not isinstance(event, dict) or set(event) != {"name", "context"}:
                     action_declaration_supported = False
                     findings.append(
                         _unknown(
                             target=envelope.message_id,
-                            evidence="component action event is missing name or context",
+                            evidence="component action event uses an unsupported declaration shape",
+                            status="unsupported",
                         )
                     )
-                elif not isinstance(event.get("name"), str) or not isinstance(event.get("context"), dict):
+                elif (
+                    not isinstance(event.get("name"), str)
+                    or not _IDENTIFIER_VALUE.fullmatch(event["name"])
+                    or not isinstance(event.get("context"), dict)
+                ):
                     action_declaration_supported = False
                     findings.append(
                         _unknown(
@@ -975,11 +1016,11 @@ def _check_action(
     context = action.get("context")
     if (
         not isinstance(name, str)
-        or not name
+        or not _IDENTIFIER_VALUE.fullmatch(name)
         or not isinstance(surface_id, str)
-        or not surface_id
+        or not _IDENTIFIER_VALUE.fullmatch(surface_id)
         or not isinstance(component_id, str)
-        or not component_id
+        or not _IDENTIFIER_VALUE.fullmatch(component_id)
         or not isinstance(timestamp, str)
         or not timestamp
     ):
@@ -1002,18 +1043,28 @@ def _check_action(
     if fixture.protocol_version == "v1.0":
         want_response = action.get("wantResponse", False)
         action_id = action.get("actionId")
+        action_id_present = "actionId" in action
+        valid_action_id = isinstance(action_id, str) and bool(_IDENTIFIER_VALUE.fullmatch(action_id))
         if type(want_response) is not bool:
             findings.append(
                 _unknown(target=envelope.message_id, evidence="v1.0 wantResponse must be boolean")
             )
-        elif want_response and (not isinstance(action_id, str) or not action_id):
+        elif action_id_present and not valid_action_id:
+            findings.append(
+                _unknown(
+                    target=envelope.message_id,
+                    evidence="v1.0 actionId must be a supported non-empty identifier when present",
+                )
+            )
+        elif want_response and not valid_action_id:
             findings.append(
                 _unknown(
                     target=envelope.message_id,
                     evidence="v1.0 actionId is required when wantResponse is true",
                 )
             )
-        if isinstance(action_id, str) and action_id:
+        if valid_action_id:
+            assert isinstance(action_id, str)
             if action_id in seen_action_ids:
                 findings.append(
                     _finding(
@@ -1026,6 +1077,8 @@ def _check_action(
             seen_action_ids.add(action_id)
 
     surface = surfaces.get(surface_id)
+    if surface is not None and surface.active and not surface.component_evidence_complete:
+        return
     component = surface.components.get(component_id) if surface is not None and surface.active else None
     if surface is None or not surface.active:
         findings.append(
@@ -1136,17 +1189,25 @@ def _check_action_schema(
         if schema is None:
             continue
         budget = _SchemaBudget()
+        evaluation_budget = _SchemaBudget()
         violations: list[str] = []
         unsupported: set[str] = set()
         try:
-            _validate_schema_value(
+            _validate_schema_definition(
                 schema,
-                value,
                 depth=0,
                 budget=budget,
-                violations=violations,
                 unsupported=unsupported,
             )
+            if not unsupported:
+                _validate_schema_value(
+                    schema,
+                    value,
+                    depth=0,
+                    budget=evaluation_budget,
+                    violations=violations,
+                    unsupported=unsupported,
+                )
         except ValueError:
             unsupported.add("invalid schema shape or resource bound")
         if unsupported:
@@ -1189,6 +1250,128 @@ def _json_type_matches(expected: str, value: Any) -> bool:
     return False
 
 
+def _json_equal(left: Any, right: Any) -> bool:
+    if isinstance(left, bool) or isinstance(right, bool):
+        return isinstance(left, bool) and isinstance(right, bool) and left == right
+    if left is None or right is None:
+        return left is None and right is None
+    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+        return left == right
+    if isinstance(left, str) or isinstance(right, str):
+        return isinstance(left, str) and isinstance(right, str) and left == right
+    if isinstance(left, list) or isinstance(right, list):
+        return (
+            isinstance(left, list)
+            and isinstance(right, list)
+            and len(left) == len(right)
+            and all(
+                _json_equal(left_item, right_item) for left_item, right_item in zip(left, right, strict=True)
+            )
+        )
+    if isinstance(left, dict) or isinstance(right, dict):
+        return (
+            isinstance(left, dict)
+            and isinstance(right, dict)
+            and set(left) == set(right)
+            and all(_json_equal(left[key], right[key]) for key in left)
+        )
+    return False
+
+
+def _validate_schema_definition(
+    schema: Any,
+    *,
+    depth: int,
+    budget: _SchemaBudget,
+    unsupported: set[str],
+) -> None:
+    if depth > _MAX_SCHEMA_DEPTH:
+        raise ValueError("schema depth exceeded")
+    budget.nodes += 1
+    if budget.nodes > _MAX_SCHEMA_NODES:
+        raise ValueError("schema node budget exceeded")
+    if not isinstance(schema, dict):
+        raise ValueError("schema node must be object")
+    extra = set(schema) - _SUPPORTED_SCHEMA_KEYWORDS
+    if extra:
+        unsupported.update(extra)
+        return
+
+    if "type" in schema:
+        expected = schema["type"]
+        if not isinstance(expected, str) or expected not in {
+            "object",
+            "array",
+            "string",
+            "integer",
+            "number",
+            "boolean",
+            "null",
+        }:
+            raise ValueError("unsupported type")
+
+    if "enum" in schema:
+        enum = schema["enum"]
+        if not isinstance(enum, list) or not enum:
+            raise ValueError("enum must be non-empty array")
+
+    properties = schema.get("properties", {})
+    if not isinstance(properties, dict):
+        raise ValueError("properties must be object")
+    for key, nested_schema in properties.items():
+        if not isinstance(key, str):
+            raise ValueError("property names must be strings")
+        _validate_schema_definition(
+            nested_schema,
+            depth=depth + 1,
+            budget=budget,
+            unsupported=unsupported,
+        )
+
+    required = schema.get("required", [])
+    if (
+        not isinstance(required, list)
+        or any(not isinstance(item, str) for item in required)
+        or len(required) != len(set(required))
+    ):
+        raise ValueError("required must contain unique strings")
+    if "additionalProperties" in schema and type(schema["additionalProperties"]) is not bool:
+        raise ValueError("additionalProperties must be boolean")
+    if "items" in schema:
+        _validate_schema_definition(
+            schema["items"],
+            depth=depth + 1,
+            budget=budget,
+            unsupported=unsupported,
+        )
+
+    for minimum_keyword, maximum_keyword in (
+        ("minItems", "maxItems"),
+        ("minLength", "maxLength"),
+    ):
+        for keyword in (minimum_keyword, maximum_keyword):
+            if keyword in schema and (
+                not isinstance(schema[keyword], int)
+                or isinstance(schema[keyword], bool)
+                or schema[keyword] < 0
+            ):
+                raise ValueError("length bound must be a non-negative integer")
+        if (
+            minimum_keyword in schema
+            and maximum_keyword in schema
+            and schema[minimum_keyword] > schema[maximum_keyword]
+        ):
+            raise ValueError("minimum length bound exceeds maximum")
+
+    for keyword in ("minimum", "maximum"):
+        if keyword in schema and (
+            not isinstance(schema[keyword], (int, float)) or isinstance(schema[keyword], bool)
+        ):
+            raise ValueError("numeric bound must be a number")
+    if "minimum" in schema and "maximum" in schema and schema["minimum"] > schema["maximum"]:
+        raise ValueError("minimum exceeds maximum")
+
+
 def _validate_schema_value(
     schema: Any,
     value: Any,
@@ -1224,13 +1407,13 @@ def _validate_schema_value(
         if not _json_type_matches(expected, value):
             violations.append("type")
             return
-    if "const" in schema and value != schema["const"]:
+    if "const" in schema and not _json_equal(value, schema["const"]):
         violations.append("const")
     enum = schema.get("enum")
     if enum is not None:
         if not isinstance(enum, list) or not enum:
             raise ValueError("enum must be non-empty array")
-        if value not in enum:
+        if not any(_json_equal(value, enum_item) for enum_item in enum):
             violations.append("enum")
     if isinstance(value, dict):
         properties = schema.get("properties", {})
@@ -1424,6 +1607,16 @@ def _check_error(
             )
         )
         return
+    if fixture.protocol_version == "v1.0" and "functionCallId" in error:
+        function_call_id = error["functionCallId"]
+        if not isinstance(function_call_id, str) or not _IDENTIFIER_VALUE.fullmatch(function_call_id):
+            findings.append(
+                _unknown(
+                    target=envelope.message_id,
+                    evidence="v1.0 functionCallId must be a supported non-empty identifier when present",
+                )
+            )
+            return
     correlation = envelope.correlation
     if correlation is None:
         findings.append(
@@ -1435,16 +1628,23 @@ def _check_error(
     else:
         surface = surfaces.get(surface_id)
         record = server_records.get(correlation.server_message_id)
-        mismatch = (
+        if surface is not None and surface.active and not surface.component_evidence_complete:
+            findings.append(
+                _unknown(
+                    target=envelope.message_id,
+                    evidence="renderer error correlation depends on incomplete component evidence",
+                )
+            )
+        elif (
             surface is None
             or not surface.active
             or correlation.source_component_id not in surface.components
             or record is None
             or record.sequence >= envelope.sequence
             or record.surface_id != surface_id
+            or record.surface_generation != surface.generation
             or correlation.source_component_id not in record.component_ids
-        )
-        if mismatch:
+        ):
             findings.append(
                 _finding(
                     "MCPDUP005",
@@ -1557,7 +1757,7 @@ def _check_data_model_return(
             or policy is None
             or not policy.allow_full_data_model_return
             or (
-                bool(policy.allowed_top_level_keys)
+                policy.allowed_top_level_keys is not None
                 and not set(returned_model).issubset(policy.allowed_top_level_keys)
             )
         )

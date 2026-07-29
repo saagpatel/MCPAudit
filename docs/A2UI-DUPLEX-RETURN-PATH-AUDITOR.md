@@ -77,6 +77,12 @@ Each server message advances only its surface revision. A component revision
 advances only when that component ID appears in an update. An action's
 fixture-owned `origin` records the expected surface revision, component
 revision, and emitting server message ID; the analyzer recomputes all three.
+Delete/recreate starts a new internal surface generation, so an error cannot
+correlate through a reused v0.9 surface/component identifier to a message from
+the old generation. Action envelopes may carry only the action-origin sidecar,
+and error envelopes may carry only the error-correlation sidecar. Malformed
+component identifiers make dependent component checks `UNKNOWN` rather than
+creating a partial index.
 
 Client metadata preserves the official keys:
 
@@ -116,7 +122,8 @@ capability metadata.
 Repeated actions are legitimate when observable return/action IDs are distinct
 and their origins resolve. Timestamps fire only when the declared single-clock
 fixture makes an action earlier than the active surface revision or later than
-the observed return.
+the observed return, or when a surface's server observations move backward.
+Timestamp strings must also represent real UTC calendar instants.
 
 ## Action schemas
 
@@ -128,6 +135,13 @@ contracts use a bounded local subset of JSON Schema:
 - `type`, `properties`, `required`, `additionalProperties`, and `items`;
 - `enum` and `const`;
 - string, numeric, and array size bounds.
+
+The complete schema definition tree is validated before any returned value is
+evaluated, including schemas for optional properties absent from that return.
+Definition traversal and value evaluation have separate 512-visit budgets and
+the same 16-level depth limit. `enum` and `const` use JSON value equality:
+booleans are distinct from numbers, while numerically equal JSON numbers remain
+equal.
 
 References, composition, conditionals, regex patterns, remote schemas, and
 executable validators are unsupported and produce `MCPDUP000`, never `pass`.
@@ -142,6 +156,11 @@ executable validators are unsupported and produce `MCPDUP000`, never `pass`.
 3. have an explicit policy rule allowing full-model return; and
 4. contain only allowed top-level keys when the policy provides an allowlist.
 
+Omitting `allowed_top_level_keys` from an explicitly allowing rule means that
+the program-owned policy places no top-level-key restriction. Supplying
+`allowed_top_level_keys: []` is different: only an empty returned model is
+allowed.
+
 No returned model plus no policy is a clean non-applicable case. A returned
 model plus no policy is `UNKNOWN`. An explicit deny or out-of-policy return is
 `MCPDUP006`. The scanner does not invent a disclosure preference from field
@@ -152,10 +171,10 @@ names or payload content.
 The official error payload is paired with a fixture-owned correlation naming
 the source component and earlier server message. The component must be active
 on the error's surface and must appear in the correlated server component
-update. A later server envelope must explicitly acknowledge the client error
-message ID. This proves only that the paired transcript contains a correlation
-and receipt; it does not prove server logging, remediation, user visibility, or
-delivery outside the fixture.
+update from the same surface generation. A later server envelope must
+explicitly acknowledge the client error message ID. This proves only that the
+paired transcript contains a correlation and receipt; it does not prove server
+logging, remediation, user visibility, or delivery outside the fixture.
 
 ## Limits, privacy, and redaction
 
@@ -169,7 +188,8 @@ enforces:
 - 20,000 generic JSON nodes;
 - 16 KiB per string;
 - 64 JSON nesting levels;
-- 16 schema levels and 512 schema nodes.
+- 16 schema levels, 512 schema-definition nodes, and 512 value-evaluation
+  visits per schema.
 
 Credential-looking field names and values, plus private filesystem path-looking
 values outside JSON Pointer fields, are rejected before analysis.

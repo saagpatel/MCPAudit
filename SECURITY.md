@@ -37,13 +37,16 @@ safety. See `docs/AGENT-UI-CONTRACT-AUDITOR.md`.
 The separate `agent-ui duplex` command accepts only strict program-owned paired
 A2UI transcript fixtures. It reuses the same descriptor-bound input and atomic
 report-output controls, adds fixed envelope/component/string/schema limits, and
-rejects credential-looking fixture fields or values. Findings never copy action
-context values, returned data-model values or key names, or renderer error
-messages. `--redact` additionally pseudonymizes fixture, producer, and finding
-target identifiers. A clean duplex report proves only the implemented
-referential/policy properties of the supplied envelopes; it does not prove
-renderer, transport, host, consent, authorization, accessibility, AG-UI, or
-real-workflow safety. See `docs/A2UI-DUPLEX-RETURN-PATH-AUDITOR.md`.
+rejects credential-looking fixture fields or values. Schema definitions are
+bounded and checked in full before value evaluation; malformed component
+evidence stays unknown; and renderer-error correlations are bound to one
+surface generation. Findings never copy action context values, returned
+data-model values or key names, or renderer error messages. `--redact`
+additionally pseudonymizes fixture, producer, and finding target identifiers. A
+clean duplex report proves only the implemented referential/policy properties
+of the supplied envelopes; it does not prove renderer, transport, host, consent,
+authorization, accessibility, AG-UI, or real-workflow safety. See
+`docs/A2UI-DUPLEX-RETURN-PATH-AUDITOR.md`.
 
 MCPAudit is itself a security tool. This document covers two distinct concerns:
 

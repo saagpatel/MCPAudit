@@ -298,7 +298,10 @@ Authoritative schemas are emitted with `mcp-audit agent-ui duplex schema
 CONTRACT`. The paired fixture is one strict program-owned JSON object containing
 A2UI v0.9 or v1.0 common surface messages, action/error returns, transport
 metadata, and fixture-owned sequence/revision/correlation sidecars. Unknown
-outer fields are rejected. Parseable malformed or unsupported envelope evidence
+outer fields are rejected. Action origins and error correlations are
+message-kind-specific rather than interchangeable, identifier-bearing nested
+messages are normalized strictly, and timestamp strings must be real UTC
+calendar instants. Parseable malformed or unsupported envelope evidence
 produces `MCPDUP000` with status `unknown` or `unsupported`; unsafe JSON, unsafe
 paths, credential-looking content, or resource-limit violations are input
 errors.
@@ -321,11 +324,21 @@ descriptor-bound read and atomic no-clobber report-write path. The command exits
 `0` for `pass`, `1` for `fail` or `unknown`, and `2` for safe input/output
 failure.
 
-The analyzer computes per-surface and per-component revisions from transcript
-sequence IDs. It does not infer replay from payload equality or timestamp
-similarity. Full-model returns are evaluated only against the supplied
+The analyzer computes per-surface generations plus per-surface and per-component
+revisions from transcript sequence IDs. Error correlations cannot cross a
+delete/recreate generation, and server observations moving backward within the
+declared fixture-single-clock domain are findings. It does not infer replay
+from payload equality or timestamp similarity. Bounded action schemas are
+validated across the complete definition tree before values are evaluated;
+unsupported keywords in absent optional properties therefore cannot pass, and
+JSON booleans are distinct from numbers for `enum`/`const`.
+
+Full-model returns are evaluated only against the supplied
 `mcpaudit.a2ui-duplex.disclosure-policy.v1`; a present model with no policy is
-`UNKNOWN`. See `docs/A2UI-DUPLEX-RETURN-PATH-AUDITOR.md`.
+`UNKNOWN`. On an explicitly allowing surface rule, omitted
+`allowed_top_level_keys` means no key restriction while an explicit empty list
+allows only an empty model. See
+`docs/A2UI-DUPLEX-RETURN-PATH-AUDITOR.md`.
 
 ## SafeForge Manifest v0
 

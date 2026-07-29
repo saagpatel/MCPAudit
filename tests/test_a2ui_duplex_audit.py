@@ -222,11 +222,94 @@ def test_action_cannot_predate_the_active_surface_revision(tmp_path: Path) -> No
     assert {item.rule_id for item in report.findings} == {"MCPDUP003"}
 
 
+def test_surface_clock_cannot_move_backward_before_an_action(tmp_path: Path) -> None:
+    payload = _payload()
+    transcript = payload["transcript"]
+    assert isinstance(transcript, list)
+    transcript[0]["observed_at"] = "2026-01-01T12:00:05Z"
+    transcript[1]["observed_at"] = "2026-01-01T12:00:01Z"
+    transcript[2]["message"]["action"]["timestamp"] = "2026-01-01T12:00:02Z"
+    transcript[2]["observed_at"] = "2026-01-01T12:00:03Z"
+    report = scan_a2ui_duplex_path(_write_payload(tmp_path, payload))
+    assert report.verdict == "fail"
+    assert {item.rule_id for item in report.findings} == {"MCPDUP003"}
+    assert any("surface observation time moves backward" in item.evidence[0] for item in report.findings)
+
+
+def test_calendar_invalid_observed_at_is_unknown_not_an_input_error(tmp_path: Path) -> None:
+    payload = _payload()
+    transcript = payload["transcript"]
+    assert isinstance(transcript, list)
+    transcript[0]["observed_at"] = "2026-99-99T12:00:00Z"
+    report = scan_a2ui_duplex_path(_write_payload(tmp_path, payload))
+    assert report.verdict == "unknown"
+    assert [(item.rule_id, item.status) for item in report.findings] == [("MCPDUP000", "unknown")]
+
+
 def test_unsupported_action_schema_is_unknown_not_a_false_pass(tmp_path: Path) -> None:
     payload = _payload("mcpdup002-action-negative.json")
     contracts = payload["action_contracts"]
     assert isinstance(contracts, list)
     contracts[0]["context_schema"]["oneOf"] = [{"type": "object"}]
+    report = scan_a2ui_duplex_path(_write_payload(tmp_path, payload))
+    assert report.verdict == "unknown"
+    assert [(item.rule_id, item.status) for item in report.findings] == [("MCPDUP000", "unsupported")]
+
+
+def test_nested_unsupported_schema_is_unknown_even_when_property_is_absent(
+    tmp_path: Path,
+) -> None:
+    payload = _payload("mcpdup002-action-negative.json")
+    contracts = payload["action_contracts"]
+    assert isinstance(contracts, list)
+    contracts[0]["context_schema"]["properties"]["optional"] = {
+        "oneOf": [{"type": "string"}],
+    }
+    report = scan_a2ui_duplex_path(_write_payload(tmp_path, payload))
+    assert report.verdict == "unknown"
+    assert [(item.rule_id, item.status) for item in report.findings] == [("MCPDUP000", "unsupported")]
+
+
+def test_null_schema_type_is_unsupported_not_a_false_pass(tmp_path: Path) -> None:
+    payload = _payload("mcpdup002-action-negative.json")
+    contracts = payload["action_contracts"]
+    assert isinstance(contracts, list)
+    contracts[0]["context_schema"]["type"] = None
+    report = scan_a2ui_duplex_path(_write_payload(tmp_path, payload))
+    assert report.verdict == "unknown"
+    assert [(item.rule_id, item.status) for item in report.findings] == [("MCPDUP000", "unsupported")]
+
+
+@pytest.mark.parametrize(
+    "constraint",
+    [
+        {"const": 1},
+        {"enum": [1]},
+    ],
+)
+def test_action_schema_does_not_conflate_json_boolean_and_number(
+    tmp_path: Path,
+    constraint: dict[str, object],
+) -> None:
+    payload = _payload("mcpdup002-action-negative.json")
+    contracts = payload["action_contracts"]
+    assert isinstance(contracts, list)
+    contracts[0]["context_schema"]["properties"]["amount"] = constraint
+    transcript = payload["transcript"]
+    assert isinstance(transcript, list)
+    transcript[-1]["message"]["action"]["context"]["amount"] = True
+    report = scan_a2ui_duplex_path(_write_payload(tmp_path, payload))
+    assert report.verdict == "fail"
+    assert {item.rule_id for item in report.findings} == {"MCPDUP002"}
+
+
+def test_schema_budget_covers_absent_property_definitions(tmp_path: Path) -> None:
+    payload = _payload("mcpdup002-action-negative.json")
+    contracts = payload["action_contracts"]
+    assert isinstance(contracts, list)
+    contracts[0]["context_schema"]["properties"].update(
+        {f"optional_{index}": {"type": "string"} for index in range(513)}
+    )
     report = scan_a2ui_duplex_path(_write_payload(tmp_path, payload))
     assert report.verdict == "unknown"
     assert [(item.rule_id, item.status) for item in report.findings] == [("MCPDUP000", "unsupported")]
@@ -396,6 +479,144 @@ def test_strict_fixture_schema_rejects_unknown_outer_fields() -> None:
     payload["unsupported"] = True
     with pytest.raises(ValidationError):
         A2UIDuplexFixture.model_validate(payload, strict=True)
+
+
+def test_action_cannot_carry_error_correlation_sidecar(tmp_path: Path) -> None:
+    payload = _payload()
+    transcript = payload["transcript"]
+    assert isinstance(transcript, list)
+    transcript[-1]["correlation"] = {
+        "sourceComponentId": "submit",
+        "serverMessageId": "s-components",
+    }
+    report = scan_a2ui_duplex_path(_write_payload(tmp_path, payload))
+    assert report.verdict == "unknown"
+    assert all(item.rule_id == "MCPDUP000" for item in report.findings)
+
+
+def test_error_cannot_carry_action_origin_sidecar(tmp_path: Path) -> None:
+    payload = _payload("mcpdup005-error-negative.json")
+    transcript = payload["transcript"]
+    assert isinstance(transcript, list)
+    transcript[2]["origin"] = {
+        "surfaceRevision": 2,
+        "componentRevision": 1,
+        "serverMessageId": "s-components",
+    }
+    report = scan_a2ui_duplex_path(_write_payload(tmp_path, payload))
+    assert report.verdict == "unknown"
+    assert all(item.rule_id == "MCPDUP000" for item in report.findings)
+
+
+def test_empty_component_identifier_is_unknown_not_a_false_pass(tmp_path: Path) -> None:
+    payload = _payload()
+    transcript = payload["transcript"]
+    assert isinstance(transcript, list)
+    components = transcript[1]["message"]["updateComponents"]["components"]
+    components.append({"id": "", "component": "Card"})
+    report = scan_a2ui_duplex_path(_write_payload(tmp_path, payload))
+    assert report.verdict == "unknown"
+    assert all(item.rule_id == "MCPDUP000" for item in report.findings)
+
+
+def test_component_action_event_rejects_unsupported_extra_fields(tmp_path: Path) -> None:
+    payload = _payload()
+    transcript = payload["transcript"]
+    assert isinstance(transcript, list)
+    event = transcript[1]["message"]["updateComponents"]["components"][0]["action"]["event"]
+    event["unsupported"] = True
+    report = scan_a2ui_duplex_path(_write_payload(tmp_path, payload))
+    assert report.verdict == "unknown"
+    assert [(item.rule_id, item.status) for item in report.findings] == [("MCPDUP000", "unsupported")]
+
+
+def test_v1_action_id_is_typed_even_when_no_response_is_requested(tmp_path: Path) -> None:
+    payload = _payload("mcpdup003-causality-negative.json")
+    transcript = payload["transcript"]
+    assert isinstance(transcript, list)
+    action = transcript[-1]["message"]["action"]
+    action["wantResponse"] = False
+    action["actionId"] = {"malformed": True}
+    report = scan_a2ui_duplex_path(_write_payload(tmp_path, payload))
+    assert report.verdict == "unknown"
+    assert all(item.rule_id == "MCPDUP000" for item in report.findings)
+
+
+def test_error_correlation_cannot_cross_a_recreated_surface_generation(
+    tmp_path: Path,
+) -> None:
+    payload = _payload("mcpdup005-error-negative.json")
+    transcript = payload["transcript"]
+    assert isinstance(transcript, list)
+    error = deepcopy(transcript[2])
+    acknowledgement = deepcopy(transcript[3])
+    payload["transcript"] = [
+        transcript[0],
+        transcript[1],
+        {
+            "sequence": 3,
+            "direction": "server_to_client",
+            "message_id": "s-delete",
+            "observed_at": "2026-01-01T12:00:02Z",
+            "message": {"version": "v0.9", "deleteSurface": {"surfaceId": "main"}},
+        },
+        {
+            "sequence": 4,
+            "direction": "server_to_client",
+            "message_id": "s-create-new",
+            "observed_at": "2026-01-01T12:00:03Z",
+            "message": {
+                "version": "v0.9",
+                "createSurface": {
+                    "surfaceId": "main",
+                    "catalogId": "urn:a2ui:basic:v0.9",
+                },
+            },
+        },
+        {
+            "sequence": 5,
+            "direction": "server_to_client",
+            "message_id": "s-components-new",
+            "observed_at": "2026-01-01T12:00:04Z",
+            "message": {
+                "version": "v0.9",
+                "updateComponents": {
+                    "surfaceId": "main",
+                    "components": [{"id": "status", "component": "Card"}],
+                },
+            },
+        },
+    ]
+    error["sequence"] = 6
+    error["observed_at"] = "2026-01-01T12:00:05Z"
+    acknowledgement["sequence"] = 7
+    acknowledgement["observed_at"] = "2026-01-01T12:00:06Z"
+    payload["transcript"].extend([error, acknowledgement])
+    report = scan_a2ui_duplex_path(_write_payload(tmp_path, payload))
+    assert report.verdict == "fail"
+    assert {item.rule_id for item in report.findings} == {"MCPDUP005"}
+
+
+def test_explicit_empty_disclosure_allowlist_denies_nonempty_model(
+    tmp_path: Path,
+) -> None:
+    payload = _payload("mcpdup006-disclosure-negative.json")
+    rules = payload["disclosure_policy"]["surface_rules"]
+    rules[0]["allowed_top_level_keys"] = []
+    report = scan_a2ui_duplex_path(_write_payload(tmp_path, payload))
+    assert report.verdict == "fail"
+    assert {item.rule_id for item in report.findings} == {"MCPDUP006"}
+
+
+def test_omitted_disclosure_allowlist_preserves_explicit_unrestricted_policy(
+    tmp_path: Path,
+) -> None:
+    payload = _payload("mcpdup006-disclosure-negative.json")
+    rules = payload["disclosure_policy"]["surface_rules"]
+    rules[0].pop("allowed_top_level_keys")
+    report = scan_a2ui_duplex_path(_write_payload(tmp_path, payload))
+    assert report.verdict == "pass"
+    assert report.findings == []
 
 
 def test_cli_writes_json_and_sarif_and_refuses_implicit_overwrite(tmp_path: Path) -> None:

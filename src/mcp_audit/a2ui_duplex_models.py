@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import UTC, datetime
 from typing import Any, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -52,11 +53,13 @@ class DuplexActionContract(DuplexStrictModel):
 class DuplexSurfaceDisclosureRule(DuplexStrictModel):
     surface_id: str = Field(pattern=_IDENTIFIER_PATTERN)
     allow_full_data_model_return: bool
-    allowed_top_level_keys: list[str] = Field(default_factory=list)
+    allowed_top_level_keys: list[str] | None = None
 
     @field_validator("allowed_top_level_keys")
     @classmethod
-    def top_level_keys_are_unique(cls, value: list[str]) -> list[str]:
+    def top_level_keys_are_unique(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
         return _unique_strings(value, "allowed top-level keys")
 
 
@@ -109,6 +112,17 @@ class DuplexTranscriptEnvelope(DuplexStrictModel):
     correlation: DuplexErrorCorrelation | None = None
     acknowledges: list[str] = Field(default_factory=list)
 
+    @field_validator("observed_at")
+    @classmethod
+    def observed_at_is_real_utc(cls, value: str) -> str:
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ValueError("observed_at must be a real UTC timestamp") from exc
+        if parsed.tzinfo is None or parsed.utcoffset() != UTC.utcoffset(parsed):
+            raise ValueError("observed_at must be a real UTC timestamp")
+        return value
+
     @field_validator("acknowledges")
     @classmethod
     def acknowledgements_are_unique(cls, value: list[str]) -> list[str]:
@@ -124,6 +138,11 @@ class DuplexTranscriptEnvelope(DuplexStrictModel):
         else:
             if self.acknowledges:
                 raise ValueError("client_to_server envelopes cannot acknowledge earlier client messages")
+            message_kinds = [key for key in self.message if key != "version"]
+            if message_kinds == ["action"] and self.correlation is not None:
+                raise ValueError("action returns cannot carry error correlation")
+            if message_kinds == ["error"] and self.origin is not None:
+                raise ValueError("error returns cannot carry action origin")
         return self
 
 

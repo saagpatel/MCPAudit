@@ -34,10 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added an experimental fixture-first A2UI Duplex Return-Path Auditor under
   `mcp-audit agent-ui duplex`. It indexes paired v0.9/v1.0 synthetic surface and
   return envelopes, recomputes surface/component revisions, validates emitted
-  action contracts with a bounded schema subset, detects observable
-  replay/causality contradictions, reconciles return-time catalog capabilities,
-  correlates and acknowledges renderer errors, and gates full-model return on a
-  versioned program-owned disclosure policy. Six non-colliding
+  action contracts with a fully preflighted bounded schema subset, detects
+  observable replay/causality and single-clock contradictions, reconciles
+  return-time catalog capabilities, binds renderer-error correlation to one
+  surface generation, and gates full-model return on a versioned program-owned
+  disclosure policy with distinct omitted and empty allowlist semantics. Six non-colliding
   `MCPDUP001`–`MCPDUP006` rules plus `MCPDUP000` unknown/unsupported behavior
   emit byte-stable JSON and SARIF with optional deterministic identifier
   redaction. Program-owned negative/vulnerable/near-miss fixtures cover two
