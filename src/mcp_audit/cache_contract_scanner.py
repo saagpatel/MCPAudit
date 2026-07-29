@@ -329,7 +329,12 @@ def scan_cache_path(path: Path) -> CacheAuditReport:
     if not stat.S_ISREG(metadata.st_mode):
         raise CacheContractInputError("cache trace input is not a regular file")
 
-    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+    )
     descriptor: int | None = None
     try:
         descriptor = os.open(path, flags)

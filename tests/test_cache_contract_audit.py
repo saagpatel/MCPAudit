@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 
@@ -20,7 +21,12 @@ from mcp_audit.cache_contract_models import (
     CacheAuditReport,
     CacheTrace,
 )
-from mcp_audit.cache_contract_scanner import report_json_bytes, scan_cache_bytes, scan_cache_path
+from mcp_audit.cache_contract_scanner import (
+    CacheContractInputError,
+    report_json_bytes,
+    scan_cache_bytes,
+    scan_cache_path,
+)
 from mcp_audit.cli import main
 
 FIXTURES = Path(__file__).parent / "fixtures" / "cache_contract"
@@ -612,6 +618,30 @@ def test_oversized_path_and_cli_emit_structured_unknown(tmp_path: Path) -> None:
     payload = json.loads(result.output)
     assert payload["verdict"] == "unknown"
     assert payload["findings"][0]["evidence"] == "input_size_limit_exceeded"
+
+
+def test_raced_fifo_is_opened_nonblocking_before_descriptor_validation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    nonblocking_flag = getattr(os, "O_NONBLOCK", 0)
+    if nonblocking_flag == 0:
+        pytest.skip("platform does not expose O_NONBLOCK")
+
+    trace_path = tmp_path / "trace.json"
+    trace_path.write_bytes((FIXTURES / "missing-metadata-negative.json").read_bytes())
+    real_open = os.open
+
+    def raced_open(path: str | bytes | os.PathLike[str] | os.PathLike[bytes], flags: int) -> int:
+        assert flags & nonblocking_flag
+        trace_path.unlink()
+        os.mkfifo(trace_path)
+        return real_open(path, flags)
+
+    monkeypatch.setattr(os, "open", raced_open)
+
+    with pytest.raises(CacheContractInputError, match="not a regular file"):
+        scan_cache_path(trace_path)
 
 
 def test_event_and_retained_entry_counts_are_bounded() -> None:

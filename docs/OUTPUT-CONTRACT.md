@@ -324,7 +324,9 @@ one structured `unknown` report before exit `1`. A stable regular file larger
 than 1 MiB is bounded to an inspected 1 MiB plus one sentinel byte and emits
 structured `unknown` before exit `1`; its trace digest binds only that inspected
 prefix. The input must be a regular non-symlink file and is read through one
-identity-checked descriptor.
+identity-checked descriptor. Where the platform exposes `O_NONBLOCK`, the
+descriptor uses it so a raced FIFO replacement cannot stall before type
+validation.
 
 The analyzer supports MCP `2026-07-28` complete results for `tools/list`,
 `prompts/list`, `resources/list`, `resources/templates/list`, and

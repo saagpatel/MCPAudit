@@ -235,9 +235,12 @@ The analyzer enforces:
 - logical times and TTLs within `0..2^53-1`;
 - 2,048 report findings.
 
-Inputs must be regular non-symlink files. One descriptor supplies the bounded
-bytes, and identity/size/mtime are rechecked after the read. The analyzer never
-opens paths named inside the trace.
+Inputs must be regular non-symlink files. Where the platform exposes
+`O_NONBLOCK`, the initial descriptor uses it before type and identity
+verification so a raced replacement with a FIFO cannot stall validation. That
+one descriptor supplies the bounded bytes, and identity/size/mtime are
+rechecked after the read. The analyzer never opens paths named inside the
+trace.
 
 Reports include a canonical logical-trace SHA-256, event sequence numbers, and
 fixed evidence codes. They do not reflect principal names, partition labels,
