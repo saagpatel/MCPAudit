@@ -110,6 +110,15 @@ class _OrderingBaseline:
     epoch: int
 
 
+@dataclass
+class _PageBaseline:
+    scope: str
+    event_sequence: int
+    principal: str
+    cache_partition: str
+    base_params: str
+
+
 class _FindingCollector:
     def __init__(self) -> None:
         self.findings: list[CacheFinding] = []
@@ -192,6 +201,12 @@ def _request_key(request: CacheRequest) -> tuple[str, str, str]:
         request.method,
         _json_bytes(request.params).decode("utf-8"),
     )
+
+
+def _page_base_params(request: CacheRequest) -> str:
+    params = dict(request.params)
+    params.pop("cursor", None)
+    return _json_bytes(params).decode("utf-8")
 
 
 def _trace_digest(trace: CacheTrace) -> str:
@@ -557,7 +572,7 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
     entries: dict[str, _Entry] = {}
     ordering: dict[tuple[tuple[str, str, str], str], _OrderingBaseline] = {}
     ordering_epochs: dict[tuple[str, str], int] = {}
-    page_scopes: dict[tuple[str, str, str, str, str], tuple[str, int]] = {}
+    page_scopes: dict[tuple[str, str, str], _PageBaseline] = {}
     analyzed_events = 0
     limitations: set[str] = set()
     protocol_versions: set[str] = {trace.protocol_version}
@@ -840,6 +855,39 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                             event_sequences=[source.event.sequence, event.sequence],
                         )
                     )
+                if source is not None and source.event.sequence < event.sequence:
+                    if (
+                        source.scope == "private"
+                        and source.event.request.cache_partition != request.cache_partition
+                    ):
+                        collector.add(
+                            _finding(
+                                "MCPCACHE003",
+                                CacheSeverity.HIGH,
+                                RequirementLevel.PROTOCOL_MUST,
+                                "Private cache entry crossed an authorization partition during refresh",
+                                _event_target(event.sequence),
+                                "private_cross_partition_refresh",
+                                "Refresh private entries only inside their asserted authorization partition.",
+                                event_sequences=[source.event.sequence, event.sequence],
+                            )
+                        )
+                    elif source.scope == "private" and source.event.request.principal != request.principal:
+                        collector.add(
+                            _finding(
+                                "MCPCACHE000",
+                                CacheSeverity.UNKNOWN,
+                                RequirementLevel.UNKNOWN,
+                                "Principal labels conflict within one asserted authorization partition",
+                                _event_target(event.sequence),
+                                "authorization_partition_mapping_ambiguous",
+                                (
+                                    "Use consistent principal labels or distinct "
+                                    "authorization-context partitions."
+                                ),
+                                event_sequences=[source.event.sequence, event.sequence],
+                            )
+                        )
 
             if len(entries) >= MAX_RETAINED_ENTRIES:
                 collector.add(
@@ -870,26 +918,53 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                 page_key = (
                     request.protocol_version,
                     request.method,
-                    request.principal,
-                    request.cache_partition,
                     event.page_group,
                 )
                 prior_page = page_scopes.get(page_key)
-                if prior_page is not None and prior_page[0] != scope:
-                    collector.add(
-                        _finding(
-                            "MCPCACHE008",
-                            CacheSeverity.HIGH,
-                            RequirementLevel.PROTOCOL_MUST,
-                            "Paginated list pages use inconsistent cache scopes",
-                            _event_target(event.sequence),
-                            "page_chain_cache_scope_mismatch",
-                            "Use one cacheScope for every page in the explicitly linked list request.",
-                            event_sequences=[prior_page[1], event.sequence],
-                        )
+                base_params = _page_base_params(request)
+                if prior_page is not None:
+                    identity_matches = (
+                        prior_page.principal == request.principal
+                        and prior_page.cache_partition == request.cache_partition
+                        and prior_page.base_params == base_params
                     )
+                    if not identity_matches:
+                        collector.add(
+                            _finding(
+                                "MCPCACHE000",
+                                CacheSeverity.UNKNOWN,
+                                RequirementLevel.UNKNOWN,
+                                "Linked page-chain request identity is inconsistent",
+                                _event_target(event.sequence),
+                                "page_chain_request_identity_ambiguous",
+                                (
+                                    "Use one principal, authorization partition, and non-cursor "
+                                    "parameter set for an explicitly linked page chain."
+                                ),
+                                event_sequences=[prior_page.event_sequence, event.sequence],
+                            )
+                        )
+                    elif prior_page.scope != scope:
+                        collector.add(
+                            _finding(
+                                "MCPCACHE008",
+                                CacheSeverity.HIGH,
+                                RequirementLevel.PROTOCOL_MUST,
+                                "Paginated list pages use inconsistent cache scopes",
+                                _event_target(event.sequence),
+                                "page_chain_cache_scope_mismatch",
+                                ("Use one cacheScope for every page in the explicitly linked list request."),
+                                event_sequences=[prior_page.event_sequence, event.sequence],
+                            )
+                        )
                 else:
-                    page_scopes[page_key] = (scope, event.sequence)
+                    page_scopes[page_key] = _PageBaseline(
+                        scope=scope,
+                        event_sequence=event.sequence,
+                        principal=request.principal,
+                        cache_partition=request.cache_partition,
+                        base_params=base_params,
+                    )
 
             if (
                 request.method == "tools/list"
@@ -982,7 +1057,23 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
             consistent_private_principal = (
                 source.scope != "private" or source.event.request.principal == request.principal
             )
-            if source.scope == "private" and same_private_partition and not consistent_private_principal:
+            if source.scope == "private" and not same_private_partition:
+                collector.add(
+                    _finding(
+                        "MCPCACHE003",
+                        CacheSeverity.HIGH,
+                        RequirementLevel.PROTOCOL_MUST,
+                        "Private cache entry crossed an authorization partition during failed refresh",
+                        _event_target(event.sequence),
+                        "private_cross_partition_refresh_error",
+                        (
+                            "Associate private refresh failures only with their asserted "
+                            "authorization partition."
+                        ),
+                        event_sequences=[source.event.sequence, event.sequence],
+                    )
+                )
+            elif source.scope == "private" and not consistent_private_principal:
                 collector.add(
                     _finding(
                         "MCPCACHE000",

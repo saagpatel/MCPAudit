@@ -196,6 +196,64 @@ def test_paginated_pages_must_keep_one_cache_scope() -> None:
     assert {finding.rule_id for finding in report.findings} == {"MCPCACHE008"}
 
 
+@pytest.mark.parametrize("identity_drift", ["partition", "params"])
+def test_paginated_page_chain_identity_drift_is_unknown(identity_drift: str) -> None:
+    request = {
+        "protocol_version": "2026-07-28",
+        "principal": "alice",
+        "cache_partition": "auth-a",
+        "method": "prompts/list",
+        "params": {},
+    }
+    next_request = {**request, "params": {"cursor": "next"}}
+    if identity_drift == "partition":
+        next_request["principal"] = "bob"
+        next_request["cache_partition"] = "auth-b"
+    else:
+        next_request["params"] = {"cursor": "next", "filter": "different"}
+    payload = {
+        "schema_version": "mcpaudit.cache-contract.trace.v1",
+        "trace_id": "page-chain-identity",
+        "protocol_version": "2026-07-28",
+        "trace_complete": True,
+        "events": [
+            {
+                "type": "response",
+                "event_id": "p1",
+                "sequence": 1,
+                "at_ms": 0,
+                "request": request,
+                "page_group": "pages-a",
+                "result": {
+                    "resultType": "complete",
+                    "ttlMs": 10,
+                    "cacheScope": "public",
+                    "prompts": [],
+                    "nextCursor": "next",
+                },
+            },
+            {
+                "type": "response",
+                "event_id": "p2",
+                "sequence": 2,
+                "at_ms": 1,
+                "request": next_request,
+                "page_group": "pages-a",
+                "result": {
+                    "resultType": "complete",
+                    "ttlMs": 20,
+                    "cacheScope": "public",
+                    "prompts": [],
+                },
+            },
+        ],
+    }
+    report = scan_cache_bytes(json.dumps(payload).encode())
+    assert report.verdict == "unknown"
+    assert {finding.rule_id for finding in report.findings} == {"MCPCACHE000"}
+    assert report.findings[0].evidence == "page_chain_request_identity_ambiguous"
+
+
 @pytest.mark.parametrize(
     "params",
     [{"requestState": "synthetic"}, {"inputResponses": {"answer": {"action": "accept"}}}],
@@ -216,6 +274,32 @@ def test_input_required_result_is_not_cacheable() -> None:
     assert {finding.rule_id for finding in report.findings} == {"MCPCACHE009"}
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("ttlMs", True),
+        ("ttlMs", "100"),
+        ("cacheScope", "shared"),
+        ("cacheScope", 1),
+    ],
+)
+def test_invalid_cache_metadata_types_are_rejected(field: str, value: object) -> None:
+    payload = json.loads((FIXTURES / "missing-metadata-negative.json").read_text(encoding="utf-8"))
+    payload["events"][0]["result"][field] = value
+    report = scan_cache_bytes(json.dumps(payload).encode())
+    assert report.verdict == "fail"
+    assert {finding.rule_id for finding in report.findings} == {"MCPCACHE002"}
+
+
+def test_public_cache_key_still_binds_method() -> None:
+    payload = json.loads((FIXTURES / "wrong-key-negative.json").read_text(encoding="utf-8"))
+    payload["events"][1]["request"]["method"] = "tools/list"
+    payload["events"][1]["request"]["params"] = {}
+    report = scan_cache_bytes(json.dumps(payload).encode())
+    assert report.verdict == "fail"
+    assert {finding.rule_id for finding in report.findings} == {"MCPCACHE004"}
+
+
 def test_mismatched_refresh_error_does_not_authorize_stale_use() -> None:
     payload = json.loads((FIXTURES / "expiry-near-miss.json").read_text(encoding="utf-8"))
     payload["events"][1]["request"]["params"] = {"cursor": "wrong-key"}
@@ -233,6 +317,36 @@ def test_refresh_error_before_expiry_does_not_authorize_later_stale_use() -> Non
     report = scan_cache_bytes(json.dumps(payload).encode())
     assert report.verdict == "fail"
     assert {finding.rule_id for finding in report.findings} == {"MCPCACHE005"}
+
+
+@pytest.mark.parametrize("event_type", ["refresh", "refresh_error"])
+def test_private_refresh_source_cannot_cross_partition(event_type: str) -> None:
+    payload = json.loads((FIXTURES / "refresh-negative.json").read_text(encoding="utf-8"))
+    payload["events"] = payload["events"][:2]
+    refresh = payload["events"][1]
+    refresh["request"]["principal"] = "bob"
+    refresh["request"]["cache_partition"] = "auth-b"
+    if event_type == "refresh_error":
+        refresh["type"] = "refresh_error"
+        del refresh["result"]
+    report = scan_cache_bytes(json.dumps(payload).encode())
+    assert report.verdict == "fail"
+    assert {finding.rule_id for finding in report.findings} == {"MCPCACHE003"}
+
+
+@pytest.mark.parametrize("event_type", ["refresh", "refresh_error"])
+def test_private_refresh_principal_conflict_is_unknown(event_type: str) -> None:
+    payload = json.loads((FIXTURES / "refresh-negative.json").read_text(encoding="utf-8"))
+    payload["events"] = payload["events"][:2]
+    refresh = payload["events"][1]
+    refresh["request"]["principal"] = "bob"
+    if event_type == "refresh_error":
+        refresh["type"] = "refresh_error"
+        del refresh["result"]
+    report = scan_cache_bytes(json.dumps(payload).encode())
+    assert report.verdict == "unknown"
+    assert {finding.rule_id for finding in report.findings} == {"MCPCACHE000"}
+    assert report.findings[0].evidence == "authorization_partition_mapping_ambiguous"
 
 
 def test_only_refresh_error_after_notification_authorizes_stale_use() -> None:
