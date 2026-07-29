@@ -1,0 +1,10 @@
+{"fixture":{"schema_version":"mcpaudit.ag-ui-interrupt.fixture.v1","program_owned":true,"fixture_id":"agui004-snapshot-near-miss","control_kind":"near-miss","protocol":"ag-ui","protocol_version":"@ag-ui/core@0.0.57","contract_revision":"34c3e0ceda257dd1366c6bdfe01c52777611e4bf","complete":true,"required_boundary_events":["STATE_SNAPSHOT","MESSAGES_SNAPSHOT"]}}
+{"kind":"run_input","sequence":1,"timestamp":"2026-07-28T12:00:00Z","input":{"threadId":"thread-a","runId":"run-a1"}}
+{"kind":"event","sequence":2,"timestamp":"2026-07-28T12:00:01Z","streamId":"stream-a1","event":{"type":"RUN_STARTED","threadId":"thread-a","runId":"run-a1"}}
+{"kind":"run_input","sequence":3,"timestamp":"2026-07-28T12:00:02Z","input":{"threadId":"thread-b","runId":"run-b1"}}
+{"kind":"event","sequence":4,"timestamp":"2026-07-28T12:00:03Z","streamId":"stream-b1","event":{"type":"RUN_STARTED","threadId":"thread-b","runId":"run-b1"}}
+{"kind":"event","sequence":5,"timestamp":"2026-07-28T12:00:04Z","streamId":"stream-a1","event":{"type":"STATE_SNAPSHOT","snapshot":{"checkpoint":"synthetic-a"}}}
+{"kind":"event","sequence":6,"timestamp":"2026-07-28T12:00:05Z","streamId":"stream-b1","event":{"type":"STATE_DELTA","delta":[]}}
+{"kind":"event","sequence":7,"timestamp":"2026-07-28T12:00:06Z","streamId":"stream-a1","event":{"type":"MESSAGES_SNAPSHOT","messages":[]}}
+{"kind":"event","sequence":8,"timestamp":"2026-07-28T12:00:07Z","streamId":"stream-a1","event":{"type":"RUN_FINISHED","threadId":"thread-a","runId":"run-a1","outcome":{"type":"interrupt","interrupts":[{"id":"interrupt-a","reason":"confirmation","responseSchema":{"type":"boolean"}}]}}}
+{"kind":"event","sequence":9,"timestamp":"2026-07-28T12:00:08Z","streamId":"stream-b1","event":{"type":"RUN_FINISHED","threadId":"thread-b","runId":"run-b1","outcome":{"type":"success"}}}

@@ -1,0 +1,7 @@
+{"fixture":{"schema_version":"mcpaudit.ag-ui-interrupt.fixture.v1","program_owned":true,"fixture_id":"agui001-binding-vulnerable","control_kind":"vulnerable","protocol":"ag-ui","protocol_version":"@ag-ui/core@0.0.57","contract_revision":"34c3e0ceda257dd1366c6bdfe01c52777611e4bf","complete":true,"required_boundary_events":[]}}
+{"kind":"run_input","sequence":1,"timestamp":"2026-07-28T12:00:00Z","input":{"threadId":"thread-a","runId":"run-a1"}}
+{"kind":"event","sequence":2,"timestamp":"2026-07-28T12:00:01Z","streamId":"stream-a1","event":{"type":"RUN_STARTED","threadId":"thread-a","runId":"run-a1"}}
+{"kind":"event","sequence":3,"timestamp":"2026-07-28T12:00:02Z","streamId":"stream-a1","event":{"type":"RUN_FINISHED","threadId":"thread-a","runId":"run-a1","outcome":{"type":"interrupt","interrupts":[{"id":"interrupt-a","reason":"confirmation","responseSchema":{"type":"boolean"}}]}}}
+{"kind":"run_input","sequence":4,"timestamp":"2026-07-28T12:00:03Z","input":{"threadId":"thread-b","runId":"run-b1","resume":[{"interruptId":"interrupt-a","status":"resolved","payload":true}]}}
+{"kind":"event","sequence":5,"timestamp":"2026-07-28T12:00:04Z","streamId":"stream-b1","event":{"type":"RUN_STARTED","threadId":"thread-b","runId":"run-b1"}}
+{"kind":"event","sequence":6,"timestamp":"2026-07-28T12:00:05Z","streamId":"stream-b1","event":{"type":"RUN_FINISHED","threadId":"thread-b","runId":"run-b1","outcome":{"type":"success"}}}

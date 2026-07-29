@@ -31,6 +31,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added an experimental, fixture-first `mcp-audit ag-ui-interrupt` analyzer
+  pinned to the `@ag-ui/core@0.0.57` interrupt draft at upstream commit
+  `34c3e0c`. A versioned program-owned JSONL projection and immutable reducer
+  reconstruct open/resolved/cancelled/superseded/expired interrupt state
+  without running an agent or workflow. Stable `AGUI000`–`AGUI006` rules cover
+  thread/source binding, exact parallel response sets, bounded response-schema
+  validation, tool-call identity, boundary snapshots, duplicate-resume
+  idempotency, and stale lifecycle reopening. Deterministic JSON/SARIF,
+  descriptor-bound no-clobber output, content/resource limits, credential-like
+  fixture rejection, and vulnerable/negative/near-miss semantic fixtures keep
+  malformed, truncated, unsupported, or unverifiable coverage `UNKNOWN`.
 - Added an experimental, fixture-first `mcp-audit agent-ui` static scanner for
   program-owned MCP Apps/OpenAI metadata and A2UI v0.9 JSONL. Six stable
   authority/state/disclosure/provenance/evidence/egress rules emit deterministic

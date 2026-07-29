@@ -1,0 +1,1 @@
+{"fixture":{"schema_version":"mcpaudit.ag-ui-interrupt.fixture.v1","program_owned":true,"fixture_id":"agui000-unsupported","control_kind":"vulnerable","protocol":"ag-ui","protocol_version":"@ag-ui/core@0.0.56","contract_revision":"unreviewed","complete":true,"required_boundary_events":[]}}

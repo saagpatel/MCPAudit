@@ -1,0 +1,11 @@
+{"fixture":{"schema_version":"mcpaudit.ag-ui-interrupt.fixture.v1","program_owned":true,"fixture_id":"agui003-contract-near-miss","control_kind":"near-miss","protocol":"ag-ui","protocol_version":"@ag-ui/core@0.0.57","contract_revision":"34c3e0ceda257dd1366c6bdfe01c52777611e4bf","complete":true,"required_boundary_events":[]}}
+{"kind":"run_input","sequence":1,"timestamp":"2026-07-28T12:00:00Z","input":{"threadId":"thread-a","runId":"run-1"}}
+{"kind":"event","sequence":2,"timestamp":"2026-07-28T12:00:01Z","streamId":"stream-1","event":{"type":"RUN_STARTED","threadId":"thread-a","runId":"run-1"}}
+{"kind":"event","sequence":3,"timestamp":"2026-07-28T12:00:02Z","streamId":"stream-1","event":{"type":"TOOL_CALL_START","toolCallId":"tool-1","toolCallName":"syntheticWrite"}}
+{"kind":"event","sequence":4,"timestamp":"2026-07-28T12:00:03Z","streamId":"stream-1","event":{"type":"TOOL_CALL_ARGS","toolCallId":"tool-1","delta":"{}"}}
+{"kind":"event","sequence":5,"timestamp":"2026-07-28T12:00:04Z","streamId":"stream-1","event":{"type":"TOOL_CALL_END","toolCallId":"tool-1"}}
+{"kind":"event","sequence":6,"timestamp":"2026-07-28T12:00:05Z","streamId":"stream-1","event":{"type":"RUN_FINISHED","threadId":"thread-a","runId":"run-1","outcome":{"type":"interrupt","interrupts":[{"id":"interrupt-1","reason":"tool_call","toolCallId":"tool-1","responseSchema":{"type":"object","properties":{"approved":{"type":"boolean"}},"required":["approved"],"additionalProperties":false}}]}}}
+{"kind":"run_input","sequence":7,"timestamp":"2026-07-28T12:00:06Z","input":{"threadId":"thread-a","runId":"run-2","resume":[{"interruptId":"interrupt-1","status":"resolved","payload":{"approved":true}}]}}
+{"kind":"event","sequence":8,"timestamp":"2026-07-28T12:00:07Z","streamId":"stream-2","event":{"type":"RUN_STARTED","threadId":"thread-a","runId":"run-2"}}
+{"kind":"event","sequence":9,"timestamp":"2026-07-28T12:00:08Z","streamId":"stream-2","event":{"type":"TOOL_CALL_RESULT","messageId":"message-1","toolCallId":"tool-1","content":"synthetic-ok","role":"tool"}}
+{"kind":"event","sequence":10,"timestamp":"2026-07-28T12:00:09Z","streamId":"stream-2","event":{"type":"RUN_FINISHED","threadId":"thread-a","runId":"run-2","outcome":{"type":"success"}}}

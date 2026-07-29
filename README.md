@@ -334,6 +334,18 @@ A2UI replacement or deletion. See
 [`docs/AGENT-UI-CONTRACT-AUDITOR.md`](docs/AGENT-UI-CONTRACT-AUDITOR.md) for the
 exact input profiles, six stable rules, fixtures, and claim ceiling.
 
+The experimental `mcp-audit ag-ui-interrupt` group reduces program-owned
+synthetic AG-UI event/resume JSONL without running an agent or workflow. It
+checks same-thread and exact interrupt-set binding, response completeness,
+payload schemas, tool-call identity, interrupt-boundary snapshots, replay
+idempotency, and stale lifecycle reopening. Interleaved streams remain valid
+when their `streamId`, run IDs, and causal relations remain valid. Output is
+deterministic JSON plus optional SARIF; malformed, truncated, unsupported, or
+credential-looking fixtures never become a clean result. See
+[`docs/AG-UI-INTERRUPT-INTEGRITY.md`](docs/AG-UI-INTERRUPT-INTEGRITY.md) for the
+pinned AG-UI draft, versioned input projection, stable `AGUI000`–`AGUI006`
+rules, resource limits, fixtures, and claim ceiling.
+
 ### Local Policy Gates
 
 Policies are local YAML files evaluated after a scan. A failing policy exits with code `2` after terminal, JSON, or SARIF output is written.

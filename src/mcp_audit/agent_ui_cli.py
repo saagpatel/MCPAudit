@@ -282,3 +282,14 @@ def _write_artifacts(
                 pass
         for descriptor in parent_fds:
             os.close(descriptor)
+
+
+def write_offline_artifacts(
+    fixture: Path,
+    input_identity: tuple[int, int],
+    artifacts: list[tuple[Path, bytes]],
+    *,
+    force: bool,
+) -> None:
+    """Write descriptor-bound offline artifacts with the Agent UI no-clobber contract."""
+    _write_artifacts(fixture, input_identity, artifacts, force=force)

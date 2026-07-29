@@ -284,6 +284,80 @@ OpenAI-specific extensions, AG-UI, and WebMCP remain distinct; the auditor does
 not claim translation or interoperability. See
 `docs/AGENT-UI-CONTRACT-AUDITOR.md`.
 
+## AG-UI Interrupt/Resume Integrity Auditor v1 (experimental)
+
+The offline `mcp-audit ag-ui-interrupt` command group is separate from
+connected MCP scans and from the MCP Apps/A2UI `agent-ui` scanner. It does not
+change `AuditReport` schema version `1`. Its strict contract identifiers are:
+
+- `mcpaudit.ag-ui-interrupt.fixture.v1`
+- `mcpaudit.ag-ui-interrupt.report.v1`
+
+The evaluated upstream contract is the AG-UI interrupt draft in
+`@ag-ui/core@0.0.57`, pinned to
+`ag-ui-protocol/ag-ui@34c3e0ceda257dd1366c6bdfe01c52777611e4bf`. The full
+contract identifier in every report is
+`@ag-ui/core@0.0.57+interrupt-draft@34c3e0ceda257dd1366c6bdfe01c52777611e4bf`.
+A different version or revision is unsupported and remains `UNKNOWN`.
+
+Authoritative JSON Schemas are emitted with `mcp-audit ag-ui-interrupt schema
+CONTRACT`. JSONL line 1 is the program-owned manifest. Remaining lines are
+bounded `run_input` or `event` projections with strictly increasing sequence
+numbers and nondecreasing timestamps. `streamId` and
+`required_boundary_events` are explicit program-owned transcript sidecars, not
+AG-UI wire fields. They bind non-lifecycle events to a run and declare which
+state/message snapshots that fixture requires at the interrupt boundary.
+
+Reports use sorted compact canonical JSON with one terminal newline, no
+timestamp, no absolute input path, and no payload, message, snapshot, or
+tool-result content. The reducer state includes ordered interrupt IDs and
+open/resolved/cancelled/superseded/expired counts. Report verdicts:
+
+- `pass`: supported complete coverage found no contradiction or ambiguity;
+- `fail`: at least one `AGUI001`–`AGUI006` finding fired;
+- `unknown`: only `AGUI000` incomplete, malformed, or unsupported coverage
+  remains.
+
+The scan exits `0` for `pass`, `1` for `fail` or `unknown`, and `2` for unsafe
+or unusable input/output boundaries. `--json` and `--sarif` use the same
+descriptor-bound atomic no-clobber output contract as `agent-ui`; replacement
+requires `--force`.
+
+Stable JSON and SARIF rule IDs are:
+
+- `AGUI000`: malformed, incomplete, unsupported, or causally unverifiable
+  transcript or response-schema coverage (`unknown`);
+- `AGUI001`: wrong thread/source-run or missing resume binding;
+- `AGUI002`: partial, extra, or duplicate response set;
+- `AGUI003`: response-schema or tool-call identity mismatch;
+- `AGUI004`: missing or causally invalid required interrupt-boundary snapshot;
+- `AGUI005`: exact resume tuple observably applied more than once;
+- `AGUI006`: expired, superseded, terminal, cancelled, or resolved interrupt
+  reopened, or an interrupt ID reused.
+
+SARIF output is a deterministic SARIF 2.1.0 projection with all seven rule
+descriptors and one result per report finding. It carries finding kind,
+sequence, and target only; it has no raw transcript location or content.
+
+The input limit is 4 MiB, 5,000 records, and 4,096 aggregate interrupt
+declarations. Per-line, nesting, node, string, snapshot-state, per-outcome
+interrupt, resume, and bounded JSON Schema limits apply. The complete declared
+schema shape is validated even when an optional property or empty array leaves
+a nested schema unexercised, and validation begins when the interrupt is
+declared rather than waiting for resolution. Non-`.jsonl` paths are rejected
+before opening. Credential-looking decoded strings and raw bytes, plus inexact
+or non-finite JSON numbers, are rejected generically. Tool-call event order,
+pre-interrupt result exclusion, result-before-error handling, and exactly-one
+result semantics across every non-error terminal are enforced. Unsupported
+schemas, events, versions, malformed/truncated records, late conflicting resume
+inputs, and missing terminal coverage do not pass.
+
+The supported claim is limited to the supplied synthetic transcript’s
+observable interrupt state-machine invariants. It does not establish framework
+internals, transport behavior outside the fixture, UI quality, human consent,
+authorization effectiveness, durable recovery, tool effects, or end-to-end
+agent safety. See `docs/AG-UI-INTERRUPT-INTEGRITY.md`.
+
 ## SafeForge Manifest v0
 
 SafeForge uses a separate, additive evidence-envelope contract; it does not

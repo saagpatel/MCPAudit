@@ -1,0 +1,3 @@
+{"fixture":{"schema_version":"mcpaudit.ag-ui-interrupt.fixture.v1","program_owned":true,"fixture_id":"agui000-malformed","control_kind":"vulnerable","protocol":"ag-ui","protocol_version":"@ag-ui/core@0.0.57","contract_revision":"34c3e0ceda257dd1366c6bdfe01c52777611e4bf","complete":true,"required_boundary_events":[]}}
+{"kind":"run_input","sequence":1,"timestamp":"2026-07-28T12:00:00Z","input":{"threadId":"thread-a","runId":"run-1"}}
+{"kind":"event","sequence":2,"timestamp":"2026-07-28T12:00:01Z","event":{"type":"RUN_STARTED","threadId":"thread-a","runId":"run-1"}}
