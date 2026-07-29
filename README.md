@@ -20,6 +20,13 @@ synthetic command in a disposable no-network container, compares observed
 effects with a declaration, joins repository MCP dependencies to local
 mcp-trust evidence, and exports verifiable JSON plus offline HTML.
 
+For the MCP `2026-07-28` protocol revision, the experimental
+[Subscription Stream Integrity Auditor](docs/SUBSCRIPTION-STREAM-INTEGRITY.md)
+reduces bounded synthetic request and `subscriptions/listen` traces without
+opening a stream. It detects opt-in, subscription-ID, stream-separation,
+resource-listener, acknowledgment, and post-close violations while keeping
+legacy, truncated, malformed, and ambiguous evidence `UNKNOWN`.
+
 > **🌐 Try it in your browser, no install:** paste any MCP client config at **[mcp-audit.saagarpatel.dev](https://mcp-audit.saagarpatel.dev)** for an instant config-only trust report. It runs this exact engine, never launches configured servers, never contacts configured endpoints, and stores nothing. The CLI below adds the connected deep checks (prompt-injection, SSRF, the lethal trifecta, schema drift, SARIF).
 
 ## ⚡ 60-second start
@@ -156,6 +163,7 @@ Every `get_*_findings` tool returns a JSON object with `findings` and `warnings`
 - **Config health diagnostics** — `discover` and `scan` flag duplicate server names, conflicting command or URL definitions, missing stdio commands, missing local command paths, project/global scope conflicts, package-runner launches, deprecated SSE transports, shell-wrapper launches, remote endpoints, and credential-heavy configs before users pin or connect; JSON reports include additive `config_health_findings`
 - **Risk scoring** — composite 0–10 per server as a weighted sum of tool permission categories, with a five-dimension breakdown (file access, network, shell, destructive, exfiltration); prompt/resource findings also produce an additive `non_tool_risk` signal without changing `risk_score.composite`
 - **Stable finding metadata** — permission and prompt-injection findings include stable rule IDs, severity, evidence, and suggested remediation so reports are easier to triage
+- **MCP 2026 subscription stream integrity** — `subscription-stream scan` evaluates program-owned synthetic multi-stream traces for listen-filter opt-in, acknowledged subscription IDs, request/subscription stream separation, resource-listener binding, and terminal lifecycle delivery; it emits deterministic JSON or SARIF without connecting to an MCP server. See `docs/SUBSCRIPTION-STREAM-INTEGRITY.md`
 - **Local policy gates** — `scan --policy policy.yaml` evaluates reports against local YAML rules and exits nonzero for CI enforcement
 - **Report redaction** — terminal, JSON, SARIF, and HTML report paths share a redaction layer for likely credential values; `scan --redact` adds an opt-in field-report pass that also scrubs the machine hostname and home-path usernames (`/Users/<name>`, `/home/<name>`, `C:\Users\<name>`) from `--json`/`--sarif`/`--html` output, and replaces server names with stable aliases (`server-01`, …) everywhere they appear — structured fields, free-text summaries, and command basenames — so a config-only report is safe to share (the field-report checklist stays the backstop for any residual free-text specifics)
 - **Prompt injection detection** — `scan --inject-check` scans tool, prompt, and resource text for instruction-override patterns, hidden directives, fake role turns, and adversarial phrasing; pattern-based, no LLM required
@@ -266,6 +274,12 @@ mcp-audit scan --download-artifacts     # download + verify on later scans
 mcp-audit scan --json audit.json --sarif audit.sarif
 mcp-audit scan --html audit.html
 
+# Audit a bounded synthetic MCP 2026 subscriptions/listen trace offline
+mcp-audit subscription-stream scan trace.json
+mcp-audit subscription-stream scan trace.json --format sarif
+mcp-audit subscription-stream schema trace
+mcp-audit subscription-stream schema report
+
 # Field-report mode: scrub hostname + home-path usernames from file output (opt-in)
 mcp-audit scan --skip-connect --json field-report.json --redact
 
@@ -333,6 +347,17 @@ atomic no-clobber commit. Supported contradictions cannot be erased by a later
 A2UI replacement or deletion. See
 [`docs/AGENT-UI-CONTRACT-AUDITOR.md`](docs/AGENT-UI-CONTRACT-AUDITOR.md) for the
 exact input profiles, six stable rules, fixtures, and claim ceiling.
+
+The experimental `mcp-audit subscription-stream` group is pinned to MCP
+`2026-07-28` and scans only program-owned synthetic traces. It keeps normal
+request response streams separate from long-lived `subscriptions/listen`
+streams, reduces lifecycle state immutably, emits canonical JSON or SARIF, and
+does not open SSE, stdio, network, host, or server connections. Legacy,
+truncated, missing-ack, malformed, and ambiguous evidence remains `UNKNOWN`.
+See
+[`docs/SUBSCRIPTION-STREAM-INTEGRITY.md`](docs/SUBSCRIPTION-STREAM-INTEGRITY.md)
+for the trace model, eight stable rule surfaces, bounds, semantic triplets, and
+claim ceiling.
 
 ### Local Policy Gates
 

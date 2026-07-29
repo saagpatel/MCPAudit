@@ -284,6 +284,76 @@ OpenAI-specific extensions, AG-UI, and WebMCP remain distinct; the auditor does
 not claim translation or interoperability. See
 `docs/AGENT-UI-CONTRACT-AUDITOR.md`.
 
+## MCP Subscription Stream Integrity v1 (experimental)
+
+The offline `mcp-audit subscription-stream` command group is separate from the
+general connected/config-only scan and does not change `AuditReport` schema
+version `1`. It is pinned to MCP protocol revision `2026-07-28` and accepts only
+program-owned synthetic JSON or JSONL traces.
+
+Strict contract identifiers:
+
+- `mcpaudit.mcp-subscription-trace.v1`
+- `mcpaudit.mcp-subscription-report.v1`
+
+Authoritative schemas are emitted by `mcp-audit subscription-stream schema
+trace` and `mcp-audit subscription-stream schema report`. Unknown fields,
+duplicate JSON keys, non-standard constants, excessive nesting, out-of-bound
+IDs/durations/events/streams, and invalid event shapes cannot produce a pass.
+
+The trace is a versioned ordered event list. Every event explicitly declares
+stream kind, request ID, subscription ID, direction, lifecycle, protocol
+version, offset, and bounded JSON-RPC message. Subscription replacement also
+names the prior stream. Non-exact resource updates require a
+`declared_resource_subscription` binding; the report does not infer URI
+hierarchies or authorization. JSONL uses one header object without `events`,
+then one event object per line; both serializations reduce through the same
+strict model.
+
+Reports are sorted compact canonical JSON with one terminal newline. They have
+no timestamp or absolute input path and contain:
+
+- fixture/report schema identities and the pinned protocol revision;
+- input SHA-256;
+- `verdict` (`pass`, `fail`, or `unknown`);
+- `coverage` (`complete` or `unknown`);
+- deterministic findings with outcome, severity, target, event index,
+  evidence, remediation, assumptions, and fingerprint;
+- bounded stream/event statistics and compatibility counts;
+- the enforced analyzer limits, assumptions, supported inputs, unsupported
+  inputs, and claim ceiling.
+
+Stable rules:
+
+- `MCPSUB000`: malformed, incomplete, unsupported, or ambiguous coverage;
+- `MCPSUB001`: unrequested or unacknowledged notification type;
+- `MCPSUB002`: missing or changed subscription identifier;
+- `MCPSUB003`: request/subscription stream confusion;
+- `MCPSUB004`: resource update bound to the wrong listener;
+- `MCPSUB005`: delivery after close, cancellation, disconnect, or replacement;
+- `MCPSUB006`: missing, duplicated, late, malformed, or expanded acknowledgment;
+- `MCPSUB007`: older protocol-era compatibility evidence.
+
+`MCPSUB000` and `MCPSUB007` are unknown outcomes. `MCPSUB006` is a violation
+for observed ordering/filter contradictions and unknown when acknowledgment
+evidence is missing or malformed. A report is `fail` when any violation is
+observed, even if another finding makes coverage unknown; it is `unknown` when
+only unknown findings remain. No findings yields `pass` with complete coverage.
+
+`subscription-stream scan TRACE` emits JSON. `--format sarif` emits a
+deterministic SARIF 2.1.0 projection with the same rule IDs, outcomes,
+fingerprints, coverage, protocol revision, and a synthetic fixture URI. The
+command exits `0` only for `pass`, `1` for `fail` or `unknown`, and `2` when the
+path cannot be read safely. It does not write files, open streams, connect to
+MCP endpoints, spawn processes, or inspect arbitrary references.
+
+The stream reducer does not evaluate general per-request metadata, headers,
+MRTR, retries, or transport round trips. A pass supports only that the supplied
+synthetic streams satisfy the implemented observable routing/lifecycle
+invariants. It does not prove delivery reliability, authorization, absence of
+server-side leakage, encryption, production isolation, or backward
+compatibility. See `docs/SUBSCRIPTION-STREAM-INTEGRITY.md`.
+
 ## SafeForge Manifest v0
 
 SafeForge uses a separate, additive evidence-envelope contract; it does not
@@ -440,6 +510,10 @@ SARIF output uses stable MCP rule IDs:
 - `MCP040`: outbound destination outside the egress allowlist (fixed, non-caller-controlled destination; opt-in `--egress-check`)
 - `MCP041`: unbounded caller-controlled outbound destination (URL/host parameter or templated host authority; opt-in `--egress-check`)
 - `MCP042`: allowlisted destination with residual egress risk (multi-tenant data-bearing API or caller-attachable credentials; opt-in `--egress-check`)
+- `MCPSUB000`-`MCPSUB007`: standalone MCP `2026-07-28` subscription-stream
+  trace results (unknown coverage / opt-in / subscription ID / stream
+  separation / resource binding / terminal lifecycle / acknowledgment /
+  compatibility); emitted only by `subscription-stream scan --format sarif`
 
 ## Compatibility Fixture
 

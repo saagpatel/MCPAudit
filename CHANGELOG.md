@@ -31,6 +31,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added an experimental fixture-first MCP `2026-07-28`
+  `subscriptions/listen` stream-integrity auditor. The offline
+  `subscription-stream` command reduces bounded program-owned request and
+  subscription traces, emits deterministic JSON or SARIF, and uses stable
+  `MCPSUB000`-`MCPSUB007` rules for opt-in, subscription-ID preservation,
+  request/subscription separation, resource-listener binding, terminal
+  lifecycle, acknowledgment, and compatibility handling. Thirty vulnerable,
+  negative, and near-miss fixtures cover interleaving, reconnect, legacy,
+  truncated, and missing-ack behavior without opening a network stream or
+  widening the general scan or stateless round-trip contracts.
 - Added an experimental, fixture-first `mcp-audit agent-ui` static scanner for
   program-owned MCP Apps/OpenAI metadata and A2UI v0.9 JSONL. Six stable
   authority/state/disclosure/provenance/evidence/egress rules emit deterministic
