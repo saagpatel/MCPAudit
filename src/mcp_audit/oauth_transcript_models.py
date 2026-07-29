@@ -272,6 +272,7 @@ class TokenRequest(ObservationBase):
     request_url: str
     grant_type: Literal["authorization_code"]
     code_marker: Literal["<redacted>"]
+    redirect_uri: str | None = None
     resources: list[str] = Field(default_factory=list, max_length=8)
     scopes: list[str] | None = Field(default=None, max_length=32)
     credential_record_id: str | None = Field(
@@ -283,6 +284,11 @@ class TokenRequest(ObservationBase):
     @classmethod
     def request_url_is_synthetic(cls, value: str) -> str:
         return _require_synthetic_url(value)
+
+    @field_validator("redirect_uri")
+    @classmethod
+    def redirect_is_synthetic(cls, value: str | None) -> str | None:
+        return None if value is None else _require_synthetic_url(value, redirect=True)
 
     @field_validator("resources")
     @classmethod
@@ -484,6 +490,7 @@ class OAuthTranscriptFinding(StrictModel):
         "MCPOAUTH004",
         "MCPOAUTH005",
         "MCPOAUTH006",
+        "MCPOAUTH007",
     ]
     severity: FindingSeverity
     outcome: FindingOutcome

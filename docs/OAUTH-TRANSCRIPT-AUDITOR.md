@@ -45,12 +45,21 @@ folded into v1.
 | Dynamic Client Registration | deprecated in the pinned draft, but still allowed as a supported fallback |
 | DCR `application_type` appropriate to native/web client kind | required by the pinned MCP draft |
 | Challenge-first least-privilege scope selection | recommended; silent drops and cross-resource attribution are violations |
+| Registered, received, and redemption-time redirect URI binding | required; native loopback registration permits only the RFC 8252 port exception |
 | Token signatures, PKCE correctness, IdP integrity, consent, and production authorization | unsupported |
 | Authorization-server mappings from resource indicators to abstract/general audiences | unsupported; mark the audience evidence `unverifiable` |
 
 Dynamic Client Registration is therefore not rejected universally. A valid DCR
 fallback produces a low-severity `deprecated` advisory and a passing verdict.
 An unsupported DCR endpoint or incompatible `application_type` is a violation.
+Non-DCR method-priority advisories remain `recommended`, not `deprecated`.
+
+RFC 8707 permits an authorization server to downscope a token and requires the
+effective scope to be returned when it differs. The v1 analyzer intentionally
+uses a stricter, `recommended` flow invariant: a clean report preserves the
+challenged scope set through the recorded token request and response. A
+token-stage reduction is therefore a fixture-policy violation, not a claim that
+OAuth universally forbids downscoping.
 
 ## Commands
 
@@ -85,6 +94,8 @@ rules:
 - ordered 401 challenge, protected-resource metadata, authorization-server
   metadata, authorization request/response, token request/response, and
   protected-resource-use observations;
+- registered redirect URIs plus normalized authorization-request,
+  authorization-response, and optional redemption-time redirect evidence;
 - the selected registration method and redacted issuer-bound credential record;
 - supplied synthetic audience evidence and prior-scope context.
 
@@ -97,7 +108,8 @@ inferred; fixtures that depend on such a mapping must set audience evidence to
 `unverifiable`, which yields `UNKNOWN`.
 Unknown fields, duplicate keys, fragments, URL user information, credential-like
 values, symlink inputs, malformed authorities, excessive nesting, or excessive
-traversal are rejected without echoing the input value.
+traversal are rejected without echoing the input value or retaining the source
+parse/validation error in the sanitized public exception chain.
 
 Parser limits are part of every report:
 
@@ -121,6 +133,7 @@ The analyzer never follows a redirect or fetches a URL found in a fixture.
 | `MCPOAUTH004` | issuer-bound persisted client credential reuse | violation |
 | `MCPOAUTH005` | registration selection and `application_type` compatibility | violation or deprecated advisory |
 | `MCPOAUTH006` | challenged/requested/returned scope binding | violation |
+| `MCPOAUTH007` | registration/request/response/redemption redirect URI binding | violation |
 
 Findings contain a stable ID, severity, outcome, requirement level, title,
 semantic target, redacted evidence summary, remediation, primary references,
@@ -143,7 +156,7 @@ fixture path, or extra evidence. JSON remains the authoritative report.
 ## Fixture corpus
 
 `tests/fixtures/oauth_transcript/` contains vulnerable, negative, and near-miss
-triplets for `MCPOAUTH000` through `MCPOAUTH006`. Each negative control clears
+triplets for `MCPOAUTH000` through `MCPOAUTH007`. Each negative control clears
 its vulnerable twin by changing one semantic binding. The corpus includes:
 
 - stale discovery and wrong-resource metadata;
@@ -154,6 +167,8 @@ its vulnerable twin by changing one semantic binding. The corpus includes:
 - invalid DCR `application_type` and a safe deprecated DCR fallback;
 - scope widening, authoritative challenge scopes, and reauthorization scope
   preservation;
+- redemption redirect mismatch and the native-loopback registration port
+  exception;
 - malformed metadata, missing audience evidence, wrong-audience rejection, and
   credential-looking input rejection.
 

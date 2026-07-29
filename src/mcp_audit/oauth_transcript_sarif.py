@@ -24,6 +24,7 @@ _RULE_TITLES = {
     "MCPOAUTH004": "Issuer-bound client credential reuse",
     "MCPOAUTH005": "Registration method and application type",
     "MCPOAUTH006": "Protected-resource scope binding",
+    "MCPOAUTH007": "Authorization redirect URI binding",
 }
 
 

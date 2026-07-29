@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import socket
 import subprocess
+import traceback
 from pathlib import Path
 from typing import Any
 
@@ -51,8 +52,8 @@ def _semantic_diff_count(first: Any, second: Any, path: tuple[str, ...] = ()) ->
 
 def test_fixture_inventory_has_vulnerable_negative_near_miss_triplets() -> None:
     triplets = [path for path in FIXTURE_ROOT.glob("mcpoauth*.json") if path.parent == FIXTURE_ROOT]
-    assert len(triplets) == 21
-    for rule in range(7):
+    assert len(triplets) == 24
+    for rule in range(8):
         prefix = f"mcpoauth{rule:03d}-"
         members = sorted(path.name for path in triplets if path.name.startswith(prefix))
         assert members == [
@@ -62,7 +63,7 @@ def test_fixture_inventory_has_vulnerable_negative_near_miss_triplets() -> None:
         ]
 
 
-@pytest.mark.parametrize("rule", range(7))
+@pytest.mark.parametrize("rule", range(8))
 def test_each_vulnerable_control_fires_only_its_stable_rule(rule: int) -> None:
     report = scan_oauth_transcript_path(_fixture(f"mcpoauth{rule:03d}-vulnerable.json"))
     expected = f"MCPOAUTH{rule:03d}"
@@ -76,7 +77,7 @@ def test_each_vulnerable_control_fires_only_its_stable_rule(rule: int) -> None:
         assert finding.assumptions
 
 
-@pytest.mark.parametrize("rule", range(7))
+@pytest.mark.parametrize("rule", range(8))
 def test_each_negative_control_changes_one_semantic_binding_and_clears_the_rule(rule: int) -> None:
     vulnerable = _payload(f"mcpoauth{rule:03d}-vulnerable.json")
     negative = _payload(f"mcpoauth{rule:03d}-negative.json")
@@ -89,7 +90,7 @@ def test_each_negative_control_changes_one_semantic_binding_and_clears_the_rule(
     assert all(item.outcome.value == "advisory" for item in report.findings)
 
 
-@pytest.mark.parametrize("rule", range(1, 7))
+@pytest.mark.parametrize("rule", range(1, 8))
 def test_near_misses_do_not_create_false_violations(rule: int) -> None:
     report = scan_oauth_transcript_path(_fixture(f"mcpoauth{rule:03d}-near_miss.json"))
     assert report.verdict == "pass"
@@ -111,6 +112,7 @@ def test_required_named_security_scenarios_are_covered() -> None:
     issuer_mixup = scan_oauth_transcript_path(_fixture("mcpoauth003-vulnerable.json"))
     credential_reuse = scan_oauth_transcript_path(_fixture("mcpoauth004-vulnerable.json"))
     scope_mismatch = scan_oauth_transcript_path(_fixture("mcpoauth006-vulnerable.json"))
+    redirect_mismatch = scan_oauth_transcript_path(_fixture("mcpoauth007-vulnerable.json"))
     assert [item.rule_id for item in stale.findings if item.outcome.value == "violation"] == ["MCPOAUTH001"]
     assert [item.rule_id for item in wrong_resource.findings if item.outcome.value == "violation"] == [
         "MCPOAUTH001"
@@ -123,6 +125,9 @@ def test_required_named_security_scenarios_are_covered() -> None:
     ]
     assert [item.rule_id for item in scope_mismatch.findings if item.outcome.value == "violation"] == [
         "MCPOAUTH006"
+    ]
+    assert [item.rule_id for item in redirect_mismatch.findings if item.outcome.value == "violation"] == [
+        "MCPOAUTH007"
     ]
 
 
@@ -166,6 +171,18 @@ def test_wrong_audience_acceptance_fails_and_missing_intended_decision_is_unknow
     assert "MCPOAUTH002" in {item.rule_id for item in report.findings if item.outcome.value == "violation"}
 
 
+def test_unrequested_returned_audience_is_not_accepted_as_bound(tmp_path: Path) -> None:
+    payload = _payload("mcpoauth002-negative.json")
+    payload["fixture_id"] = "unrequested-returned-audience"
+    payload["audience_evidence"]["audiences"].append("https://api.example/data")
+    path = tmp_path / "unrequested-returned-audience.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    report = scan_oauth_transcript_path(path)
+    assert report.verdict == "fail"
+    finding = next(item for item in report.findings if item.rule_id == "MCPOAUTH002")
+    assert "token audience includes a resource absent from the token request" in finding.evidence
+
+
 def test_safe_deprecated_dcr_fallback_is_advisory_not_forbidden() -> None:
     report = scan_oauth_transcript_path(_fixture("mcpoauth005-negative.json"))
     dcr = [item for item in report.findings if item.rule_id == "MCPOAUTH005"]
@@ -174,6 +191,42 @@ def test_safe_deprecated_dcr_fallback_is_advisory_not_forbidden() -> None:
     assert dcr[0].outcome.value == "advisory"
     assert dcr[0].requirement_level.value == "deprecated"
     assert "backwards-compatible fallback" in dcr[0].evidence[0]
+    sarif_result = next(
+        item
+        for item in oauth_report_to_sarif(report)["runs"][0]["results"]
+        if item["ruleId"] == "MCPOAUTH005"
+    )
+    assert sarif_result["properties"]["requirement_level"] == "deprecated"
+
+
+def test_registration_priority_advisory_is_recommended_not_deprecated(tmp_path: Path) -> None:
+    payload = _payload("mcpoauth004-near_miss.json")
+    payload["fixture_id"] = "cimd-while-pre-registration-available"
+    payload["registration"]["pre_registered_available"] = True
+    path = tmp_path / "registration-priority.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    report = scan_oauth_transcript_path(path)
+    finding = next(item for item in report.findings if item.rule_id == "MCPOAUTH005")
+    assert report.verdict == "pass"
+    assert finding.outcome.value == "advisory"
+    assert finding.requirement_level.value == "recommended"
+    sarif_result = next(
+        item
+        for item in oauth_report_to_sarif(report)["runs"][0]["results"]
+        if item["ruleId"] == "MCPOAUTH005"
+    )
+    assert sarif_result["properties"]["requirement_level"] == "recommended"
+
+
+def test_selected_pre_registration_must_be_available(tmp_path: Path) -> None:
+    payload = _payload("mcpoauth005-near_miss.json")
+    payload["fixture_id"] = "unavailable-pre-registration"
+    payload["registration"]["pre_registered_available"] = False
+    path = tmp_path / "unavailable-pre-registration.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    report = scan_oauth_transcript_path(path)
+    assert report.verdict == "fail"
+    assert "MCPOAUTH005" in {item.rule_id for item in report.findings if item.outcome.value == "violation"}
 
 
 def test_user_supplied_persisted_client_state_is_still_issuer_bound(tmp_path: Path) -> None:
@@ -187,6 +240,91 @@ def test_user_supplied_persisted_client_state_is_still_issuer_bound(tmp_path: Pa
     report = scan_oauth_transcript_path(path)
     assert report.verdict == "fail"
     assert "MCPOAUTH004" in {item.rule_id for item in report.findings if item.outcome.value == "violation"}
+
+
+def test_cimd_does_not_conceal_a_referenced_persisted_credential(tmp_path: Path) -> None:
+    payload = _payload("mcpoauth004-near_miss.json")
+    payload["fixture_id"] = "cimd-with-stale-persisted-credential"
+    payload["credential_records"] = [
+        {
+            "record_id": "synthetic-dcr-client",
+            "method": "dynamic_client_registration",
+            "issuer": "https://other-auth.example",
+            "client_id_marker": "SYNTHETIC_CLIENT_ID",
+            "client_secret_marker": "<redacted>",
+        }
+    ]
+    payload["observations"][5]["credential_record_id"] = "synthetic-dcr-client"
+    path = tmp_path / "cimd-with-credential.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    report = scan_oauth_transcript_path(path)
+    assert report.verdict == "fail"
+    assert "MCPOAUTH004" in {item.rule_id for item in report.findings if item.outcome.value == "violation"}
+
+
+@pytest.mark.parametrize(
+    ("observation_index", "new_redirect"),
+    [
+        (3, "http://127.0.0.1:43119/other"),
+        (4, "http://127.0.0.1:43119/other"),
+        (5, "http://127.0.0.1:43119/other"),
+    ],
+)
+def test_redirect_binding_covers_request_response_and_redemption(
+    observation_index: int,
+    new_redirect: str,
+    tmp_path: Path,
+) -> None:
+    payload = _payload("mcpoauth007-negative.json")
+    payload["fixture_id"] = f"redirect-mismatch-{observation_index}"
+    payload["observations"][observation_index]["redirect_uri"] = new_redirect
+    path = tmp_path / f"redirect-mismatch-{observation_index}.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    report = scan_oauth_transcript_path(path)
+    assert report.verdict == "fail"
+    assert "MCPOAUTH007" in {item.rule_id for item in report.findings if item.outcome.value == "violation"}
+
+
+def test_native_loopback_registration_allows_ephemeral_request_port() -> None:
+    report = scan_oauth_transcript_path(_fixture("mcpoauth007-near_miss.json"))
+    assert report.verdict == "pass"
+    assert all(item.rule_id != "MCPOAUTH007" for item in report.findings)
+
+
+def test_missing_redemption_redirect_evidence_is_unknown(tmp_path: Path) -> None:
+    payload = _payload("mcpoauth007-negative.json")
+    payload["fixture_id"] = "missing-redemption-redirect"
+    payload["observations"][5]["redirect_uri"] = None
+    path = tmp_path / "missing-redemption-redirect.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    report = scan_oauth_transcript_path(path)
+    assert report.verdict == "unknown"
+    assert "MCPOAUTH000" in {item.rule_id for item in report.findings if item.outcome.value == "unknown"}
+    assert all(item.rule_id != "MCPOAUTH007" for item in report.findings)
+
+
+def test_token_stage_scope_widening_and_dropping_are_not_false_safe(tmp_path: Path) -> None:
+    widened_request = _payload("mcpoauth006-negative.json")
+    widened_request["fixture_id"] = "token-request-scope-widening"
+    widened_request["observations"][5]["scopes"].append("mcp.admin")
+
+    widened_response = _payload("mcpoauth006-negative.json")
+    widened_response["fixture_id"] = "token-response-scope-widening"
+    widened_response["observations"][6]["scopes"].append("mcp.admin")
+
+    dropped_response = _payload("mcpoauth006-negative.json")
+    dropped_response["fixture_id"] = "denied-use-scope-drop"
+    dropped_response["observations"][6]["scopes"] = []
+    dropped_response["observations"][7]["response_status"] = 403
+
+    for index, payload in enumerate((widened_request, widened_response, dropped_response)):
+        path = tmp_path / f"scope-binding-{index}.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        report = scan_oauth_transcript_path(path)
+        assert report.verdict == "fail"
+        assert "MCPOAUTH006" in {
+            item.rule_id for item in report.findings if item.outcome.value == "violation"
+        }
 
 
 def test_oidc_application_type_redirect_constraints_are_observable(tmp_path: Path) -> None:
@@ -217,7 +355,7 @@ def test_report_is_deterministic_strict_and_redacted() -> None:
     assert "<redacted>" not in output
 
 
-def test_credential_looking_input_is_rejected_without_reflection() -> None:
+def test_credential_looking_input_is_rejected_without_reflection(tmp_path: Path) -> None:
     path = _fixture("rejected/credential-looking.json")
     raw = path.read_bytes()
     assert SENTINEL_SECRET.encode() in raw
@@ -235,6 +373,33 @@ def test_credential_looking_input_is_rejected_without_reflection() -> None:
     with pytest.raises(OAuthTranscriptInputError) as secret_field_error:
         parse_oauth_transcript_bytes(json.dumps(secret_field).encode())
     assert SENTINEL_SECRET not in str(secret_field_error.value)
+    assert SENTINEL_SECRET not in "".join(traceback.format_exception(secret_field_error.value))
+    assert secret_field_error.value.__cause__ is None
+    assert secret_field_error.value.__context__ is None
+    secret_field_path = tmp_path / "invalid-fixture.json"
+    secret_field_path.write_text(json.dumps(secret_field), encoding="utf-8")
+    cli_error = CliRunner().invoke(
+        main,
+        ["oauth-transcript", "scan", str(secret_field_path)],
+    )
+    assert cli_error.exit_code == 2
+    assert cli_error.exception is not None
+    assert SENTINEL_SECRET not in cli_error.output
+    assert SENTINEL_SECRET not in "".join(traceback.format_exception(cli_error.exception))
+    assert cli_error.exception.__cause__ is None
+    click_context = cli_error.exception.__context__
+    assert click_context is not None
+    assert SENTINEL_SECRET not in "".join(traceback.format_exception(click_context))
+    assert click_context.__cause__ is None
+    assert click_context.__context__ is None
+
+    duplicate_secret_key = json.dumps({SENTINEL_SECRET: 1})[:-1]
+    duplicate_secret_key += f',"{SENTINEL_SECRET}":2}}'
+    with pytest.raises(OAuthTranscriptInputError) as duplicate_error:
+        parse_oauth_transcript_bytes(duplicate_secret_key.encode())
+    assert SENTINEL_SECRET not in "".join(traceback.format_exception(duplicate_error.value))
+    assert duplicate_error.value.__cause__ is None
+    assert duplicate_error.value.__context__ is None
 
 
 def test_duplicate_keys_and_symlink_inputs_are_rejected() -> None:
@@ -363,7 +528,7 @@ def test_sarif_uses_existing_compatibility_shape_without_fixture_locations() -> 
     run = sarif["runs"][0]
     assert run["tool"]["driver"]["name"] == "mcp-audit"
     assert {item["id"] for item in run["tool"]["driver"]["rules"]} == {
-        f"MCPOAUTH{rule:03d}" for rule in range(7)
+        f"MCPOAUTH{rule:03d}" for rule in range(8)
     }
     assert all("locations" not in item for item in run["results"])
     assert "other-auth.example" not in json.dumps(sarif)

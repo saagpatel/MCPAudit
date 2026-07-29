@@ -304,7 +304,7 @@ authorization-response issuer validation, issuer-bound client state, and DCR
 
 Reports use sorted compact canonical JSON with one terminal newline and no
 timestamp or input path. Stable finding IDs are `MCPOAUTH001` through
-`MCPOAUTH006`; `MCPOAUTH000` represents missing, malformed, redacted,
+`MCPOAUTH007`; `MCPOAUTH000` represents missing, malformed, redacted,
 unsupported, or unverifiable evidence. Each finding contains severity,
 `violation|advisory|unknown` outcome, `required|recommended|deprecated|unsupported`
 requirement level, title, semantic target, redacted evidence, remediation,
@@ -324,7 +324,9 @@ descriptor-bound, atomic, no-clobber path as the Agent UI auditor.
 
 Secret-bearing fields accept only redaction markers. Findings and errors omit
 raw authorization headers, cookies, codes, tokens, secrets, query values,
-arbitrary bodies, and input URLs. Input is limited to 1 MiB, 32 JSON levels, 64
+arbitrary bodies, and input URLs; sanitized parser and CLI exceptions do not
+retain the source parse/validation exception as a cause or context. Input is
+limited to 1 MiB, 32 JSON levels, 64
 observations, 8 metadata documents, 5 recorded redirects, and 2,048 characters
 per URL. URLs are never fetched, redirects are never followed, and no network,
 browser, OAuth, MCP, account, keychain, or credential-store path exists.

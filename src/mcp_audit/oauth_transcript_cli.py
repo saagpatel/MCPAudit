@@ -52,6 +52,7 @@ def scan_command(
     force: bool,
 ) -> None:
     """Evaluate observable bindings without connecting, authenticating, or fetching."""
+    usage_error: str | None = None
     try:
         report, input_identity = scan_oauth_transcript_path_with_identity(fixture)
         json_bytes = report_json_bytes(report)
@@ -74,7 +75,9 @@ def scan_command(
         ]
         _write_artifacts(fixture, input_identity, artifacts, force=force)
     except (OAuthTranscriptInputError, OSError, ValueError) as exc:
-        raise OAuthTranscriptUsageError(str(exc)) from exc
+        usage_error = str(exc)
+    if usage_error is not None:
+        raise OAuthTranscriptUsageError(usage_error)
     if json_path is None:
         click.echo(json_bytes.decode("utf-8"), nl=False)
     if report.verdict != "pass":

@@ -100,6 +100,7 @@
       "exchange_id": "token-request",
       "grant_type": "authorization_code",
       "kind": "token_request",
+      "redirect_uri": "http://127.0.0.1:43119/callback",
       "redirects_followed": 0,
       "request_url": "https://auth.example/token",
       "resources": [
