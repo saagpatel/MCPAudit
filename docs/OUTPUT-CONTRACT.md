@@ -284,6 +284,61 @@ OpenAI-specific extensions, AG-UI, and WebMCP remain distinct; the auditor does
 not claim translation or interoperability. See
 `docs/AGENT-UI-CONTRACT-AUDITOR.md`.
 
+## Tool Result Contract Auditor v1 (experimental)
+
+The offline `mcp-audit tool-result` command group evaluates only strict,
+program-owned paired `tools/list` and `tools/call` fixtures. It does not connect
+to MCP servers, execute tools, discover configurations, or change
+`AuditReport` schema version `1` or the existing SARIF contract.
+
+Its contract identifiers are:
+
+- `mcpaudit.tool-result.fixture.v1`
+- `mcpaudit.tool-result.report.v1`
+
+The supported wire profile is MCP `2026-07-28`. That profile requires
+per-request protocol/capability metadata, `resultType`, and list-result
+`ttlMs`/`cacheScope`; permits any JSON value in `structuredContent`; and uses
+JSON Schema 2020-12 for `outputSchema`. Other protocol revisions, forward
+`resultType` extensions, and `input_required` payload semantics not implemented
+by this auditor are explicit unsupported coverage.
+
+Stable finding IDs are `MCPTR001` through `MCPTR006`; `MCPTR000` represents
+incomplete, malformed, truncated, unsupported, or resource-exhausted evidence.
+Reports use `pass`, `fail`, or `unknown` verdicts and `complete`, `incomplete`,
+or `unsupported` coverage. Findings are sorted. JSON is compact, key-sorted,
+UTF-8, terminated by one newline, and contains no timestamp or absolute fixture
+path. Duplicate JSON object keys and non-finite numeric constants are rejected
+by the strict fixture parser. A cursor-bearing list request or `nextCursor`
+response is incomplete pagination evidence, so absence from that page cannot
+establish a list/call identity violation.
+
+When `outputSchema` is declared, a supported complete call result must contain
+`structuredContent` and validate against it. The bounded validator accepts
+absent or canonical JSON Schema 2020-12 dialect declarations and same-document
+references. External references, regex keywords, custom vocabularies,
+over-budget schemas, unavailable bounded timing, and unresolved validation
+remain `MCPTR000` rather than pass.
+
+Content, structured content, resource links, and embedded resources are
+distinct channels. Explicit `requiredChannels` cannot be satisfied by another
+channel. Text and structured content are compared only under an explicit
+`json_equivalent` fixture policy. `independent` permits legitimate
+channel-specific representation. When both channels exist without a policy,
+`MCPTR005` is `unknown`. Duplicate keys in policy-coupled JSON text violate the
+declared policy instead of receiving last-key-wins interpretation.
+
+Application-only metadata keys are explicit fixture policy. Bound `_meta`
+values are never copied into report findings. A reflection into model-visible
+tool declarations, content, or structured content fires `MCPTR006` using only
+redacted structural evidence.
+
+The scan command exits `0` for pass, `1` for fail or unknown, and `2` for a
+safe input/output error. Stdout is the read-only default. `--json` opts into
+descriptor-bound atomic output with no implicit replacement. See
+`docs/TOOL-RESULT-CONTRACT-AUDITOR.md` for the rules, fixture sidecars,
+dependency decision, resource bounds, corpus, and claim ceiling.
+
 ## SafeForge Manifest v0
 
 SafeForge uses a separate, additive evidence-envelope contract; it does not

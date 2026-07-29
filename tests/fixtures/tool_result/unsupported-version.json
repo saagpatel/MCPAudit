@@ -1,0 +1,10 @@
+{
+  "applicationOnlyMetadataKeys": [],
+  "calls": [],
+  "controlKind": "vulnerable",
+  "fixtureId": "unsupported-version.vulnerable",
+  "programOwned": true,
+  "protocolRevision": "2025-11-25",
+  "schemaVersion": "mcpaudit.tool-result.fixture.v1",
+  "toolsList": null
+}

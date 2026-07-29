@@ -31,6 +31,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added an experimental, fixture-first `mcp-audit tool-result` auditor for
+  paired MCP `2026-07-28` `tools/list` and `tools/call` evidence. Six stable
+  schema/correlation/result/resource/channel/metadata rules plus `MCPTR000`
+  incomplete coverage validate bounded JSON Schema 2020-12 output, current
+  result discriminators and list cache fields, distinct content/resource
+  channels, explicit dual-channel policies, and redacted application-only
+  metadata. Twenty-seven vulnerable, negative, and near-miss fixtures remain
+  offline and deterministic; unsupported revisions, schema capability,
+  external references, resource exhaustion, and incomplete list evidence are
+  `UNKNOWN`. `jsonschema==4.26.0` is now a pinned direct dependency rather than
+  an implicit transitive dependency.
 - Added an experimental, fixture-first `mcp-audit agent-ui` static scanner for
   program-owned MCP Apps/OpenAI metadata and A2UI v0.9 JSONL. Six stable
   authority/state/disclosure/provenance/evidence/egress rules emit deterministic

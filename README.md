@@ -312,6 +312,7 @@ For an end-to-end generator-to-auditor demo packet, see
 | Output | Rich |
 | MCP protocol | `mcp` SDK 1.28.1+ |
 | Validation | Pydantic v2 |
+| JSON Schema | `jsonschema` 4.26.0 (Draft 2020-12) |
 | Config parsing | PyYAML + json5 |
 | Watch mode | `watchfiles` (optional extra) |
 | Optional LLM | Anthropic SDK |
@@ -333,6 +334,18 @@ atomic no-clobber commit. Supported contradictions cannot be erased by a later
 A2UI replacement or deletion. See
 [`docs/AGENT-UI-CONTRACT-AUDITOR.md`](docs/AGENT-UI-CONTRACT-AUDITOR.md) for the
 exact input profiles, six stable rules, fixtures, and claim ceiling.
+
+The experimental `mcp-audit tool-result` group evaluates program-owned paired
+`tools/list` and `tools/call` evidence against the MCP `2026-07-28` observable
+result contract. It validates bounded JSON Schema 2020-12 structured output,
+JSON-RPC/tool/tool-use correlation, current result discriminators and list
+cache fields, resource/content shapes, explicit dual-channel policies, and
+application-only metadata non-reflection. Legitimate text/structured
+divergence passes only when declared `independent`; absent policy, unsupported
+schema capability, incomplete list evidence, and unsupported revisions remain
+`UNKNOWN`. The command is offline, stdout-only by default, and does not change
+the main report or SARIF schemas. See
+[`docs/TOOL-RESULT-CONTRACT-AUDITOR.md`](docs/TOOL-RESULT-CONTRACT-AUDITOR.md).
 
 ### Local Policy Gates
 

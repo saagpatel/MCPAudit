@@ -1,0 +1,77 @@
+{
+  "applicationOnlyMetadataKeys": [],
+  "calls": [
+    {
+      "channelPolicy": null,
+      "request": {
+        "id": "call-1",
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {
+          "_meta": {
+            "io.modelcontextprotocol/clientCapabilities": {},
+            "io.modelcontextprotocol/protocolVersion": "2026-07-28"
+          },
+          "arguments": {},
+          "name": "weather"
+        }
+      },
+      "response": {
+        "error": {
+          "code": -32602
+        },
+        "id": "call-1",
+        "jsonrpc": "2.0"
+      }
+    }
+  ],
+  "controlKind": "vulnerable",
+  "fixtureId": "malformed-error.vulnerable",
+  "programOwned": true,
+  "protocolRevision": "2026-07-28",
+  "schemaVersion": "mcpaudit.tool-result.fixture.v1",
+  "toolsList": {
+    "request": {
+      "id": "list-1",
+      "jsonrpc": "2.0",
+      "method": "tools/list",
+      "params": {
+        "_meta": {
+          "io.modelcontextprotocol/clientCapabilities": {},
+          "io.modelcontextprotocol/protocolVersion": "2026-07-28"
+        }
+      }
+    },
+    "response": {
+      "id": "list-1",
+      "jsonrpc": "2.0",
+      "result": {
+        "cacheScope": "private",
+        "resultType": "complete",
+        "tools": [
+          {
+            "description": "Return synthetic weather data",
+            "inputSchema": {
+              "additionalProperties": false,
+              "type": "object"
+            },
+            "name": "weather",
+            "outputSchema": {
+              "additionalProperties": false,
+              "properties": {
+                "temperature": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "temperature"
+              ],
+              "type": "object"
+            }
+          }
+        ],
+        "ttlMs": 0
+      }
+    }
+  }
+}

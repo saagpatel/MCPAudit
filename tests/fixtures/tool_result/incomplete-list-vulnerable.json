@@ -1,0 +1,49 @@
+{
+  "applicationOnlyMetadataKeys": [],
+  "calls": [
+    {
+      "channelPolicy": {
+        "representation": "independent",
+        "requiredChannels": [
+          "content",
+          "structuredContent"
+        ]
+      },
+      "request": {
+        "id": "call-1",
+        "jsonrpc": "2.0",
+        "method": "tools/call",
+        "params": {
+          "_meta": {
+            "io.modelcontextprotocol/clientCapabilities": {},
+            "io.modelcontextprotocol/protocolVersion": "2026-07-28"
+          },
+          "arguments": {},
+          "name": "weather"
+        }
+      },
+      "response": {
+        "id": "call-1",
+        "jsonrpc": "2.0",
+        "result": {
+          "content": [
+            {
+              "text": "Synthetic temperature is 22",
+              "type": "text"
+            }
+          ],
+          "resultType": "complete",
+          "structuredContent": {
+            "temperature": 22
+          }
+        }
+      }
+    }
+  ],
+  "controlKind": "vulnerable",
+  "fixtureId": "incomplete-list.vulnerable",
+  "programOwned": true,
+  "protocolRevision": "2026-07-28",
+  "schemaVersion": "mcpaudit.tool-result.fixture.v1",
+  "toolsList": null
+}
