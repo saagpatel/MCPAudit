@@ -331,7 +331,10 @@ The analyzer supports MCP `2026-07-28` complete results for `tools/list`,
 `resources/read`. It checks required `ttlMs`/`cacheScope`, exact request-key
 reuse, private authorization partitioning, explicit TTL/refresh behavior,
 validated list/resource notifications, linked page scope, deterministic
-unpaginated tools ordering, and non-cacheable multi-round-trip results.
+unpaginated tools ordering, string-shaped opaque pagination cursors, and
+non-cacheable multi-round-trip results. Present non-string `cursor` or
+`nextCursor` values produce incomplete `MCPCACHE000` coverage instead of a
+passing ordering result; an empty string remains a valid cursor.
 `server/discover`, older/future revisions, URI alias/prefix invalidation,
 notification delivery to other cache instances, and ordering of other lists
 remain explicitly unsupported.

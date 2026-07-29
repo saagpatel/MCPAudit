@@ -506,6 +506,37 @@ def _validate_response_metadata(
     return scope, ttl_ms
 
 
+def _validate_pagination_cursor_shapes(
+    event: ResponseEvent | RefreshEvent,
+    collector: _FindingCollector,
+) -> bool:
+    if event.request.method not in LIST_METHODS:
+        return True
+
+    request_cursor_malformed = "cursor" in event.request.params and not isinstance(
+        event.request.params["cursor"], str
+    )
+    response_cursor_malformed = "nextCursor" in event.result and not isinstance(
+        event.result["nextCursor"], str
+    )
+    if not request_cursor_malformed and not response_cursor_malformed:
+        return True
+
+    collector.add(
+        _finding(
+            "MCPCACHE000",
+            CacheSeverity.UNKNOWN,
+            RequirementLevel.PROTOCOL_CONTRACT,
+            "List pagination cursor shape is malformed",
+            _event_target(event.sequence),
+            "pagination_cursor_shape_unverified",
+            "Use string cursor and nextCursor values, or omit the field when no cursor is present.",
+            event_sequences=[event.sequence],
+        )
+    )
+    return False
+
+
 def _contains_mrtr_retry(request: CacheRequest) -> bool:
     return "inputResponses" in request.params or "requestState" in request.params
 
@@ -804,6 +835,8 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                         event_sequences=[event.sequence],
                     )
                 )
+            if not _validate_pagination_cursor_shapes(event, collector):
+                limitations.add("one or more list pagination cursor shapes were malformed")
             scope, ttl_ms = _validate_response_metadata(event, collector)
             expires_at_ms: int | None = None
             if ttl_ms is not None and clock_reliable:

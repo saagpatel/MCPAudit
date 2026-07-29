@@ -159,7 +159,7 @@ The distinction matters:
 | TTL | Fresh only while `now < received + ttlMs`; re-fetch on stale access is SHOULD | Use at equality or later is a SHOULD-level finding when a complete trace records no unsuperseded failed refresh |
 | Failed refresh | A client MAY serve stale after a re-fetch error | A causal, exact-key `refresh_error` permits stale use only until a later valid successful refresh supersedes that failed attempt |
 | Change event | A received relevant notification immediately makes the relevant cached result stale | Only validated normalized subscriptions and exact supported method/URI mappings invalidate |
-| Pagination | Pages have independent TTLs; one list request must keep the same cache scope | `page_group` is required before the cross-page MUST can be evaluated |
+| Pagination | Pages have independent TTLs; one list request must keep the same cache scope; cursors are opaque strings | `page_group` is required before the cross-page MUST can be evaluated; a present non-string `cursor` or `nextCursor` makes coverage `UNKNOWN`, while an empty string remains a valid cursor |
 | Ordering | Unchanged `tools/list` results SHOULD use deterministic ordering | Only unpaginated, same-key, same-set tools results are compared |
 
 MCP does **not** specify URI alias/prefix invalidation, arbitrary dependency

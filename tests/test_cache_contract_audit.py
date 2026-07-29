@@ -79,6 +79,42 @@ def test_semantic_fixture_triplets(
     assert report.coverage.state == ("complete" if "MCPCACHE000" not in rule_ids else "incomplete")
 
 
+@pytest.mark.parametrize("next_cursor", [None, 7, {"opaque": "cursor"}])
+def test_malformed_next_cursor_is_explicit_unknown(next_cursor: object) -> None:
+    payload = json.loads((FIXTURES / "ordering-drift-vulnerable.json").read_text(encoding="utf-8"))
+    for event in payload["events"]:
+        event["result"]["nextCursor"] = next_cursor
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "unknown"
+    assert {finding.rule_id for finding in report.findings} == {"MCPCACHE000"}
+    assert {finding.evidence for finding in report.findings} == {"pagination_cursor_shape_unverified"}
+    assert report.coverage.state == "incomplete"
+
+
+def test_malformed_request_cursor_is_explicit_unknown() -> None:
+    payload = json.loads((FIXTURES / "ordering-drift-vulnerable.json").read_text(encoding="utf-8"))
+    for event in payload["events"]:
+        event["request"]["params"]["cursor"] = None
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "unknown"
+    assert {finding.evidence for finding in report.findings} == {"pagination_cursor_shape_unverified"}
+
+
+def test_empty_string_next_cursor_remains_valid_paginated_evidence() -> None:
+    payload = json.loads((FIXTURES / "ordering-drift-vulnerable.json").read_text(encoding="utf-8"))
+    for event in payload["events"]:
+        event["result"]["nextCursor"] = ""
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "pass"
+    assert report.coverage.state == "complete"
+
+
 def test_malformed_fixture_is_explicit_unknown() -> None:
     report = _report("malformed.json")
     assert report.verdict == "unknown"

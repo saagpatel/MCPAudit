@@ -39,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   multi-round-trip results under stable `MCPCACHE000`–`MCPCACHE009` findings.
   Canonical reports are independent of wall clock and event-array
   serialization order; unsupported, malformed, ambiguous, and truncated
-  evidence stays explicitly `UNKNOWN`.
+  evidence—including non-string pagination cursors—stays explicitly `UNKNOWN`.
 - Added an experimental, fixture-first `mcp-audit agent-ui` static scanner for
   program-owned MCP Apps/OpenAI metadata and A2UI v0.9 JSONL. Six stable
   authority/state/disclosure/provenance/evidence/egress rules emit deterministic
