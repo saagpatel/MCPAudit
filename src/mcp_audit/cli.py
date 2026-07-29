@@ -33,6 +33,7 @@ from mcp_audit.models import (
     ServerAudit,
     ServerConfig,
 )
+from mcp_audit.oauth_transcript_cli import oauth_transcript
 from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
 from mcp_audit.redaction import redact_text
 from mcp_audit.report import ReportGenerator, error_console, scrub_report_identifiers
@@ -53,6 +54,7 @@ def main(debug: bool) -> None:
 
 main.add_command(enforcement_fixture)
 main.add_command(agent_ui)
+main.add_command(oauth_transcript)
 
 
 @main.command("safeforge-preinstall")

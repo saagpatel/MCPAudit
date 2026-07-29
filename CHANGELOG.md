@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Added a strict, redacted, fixture-first MCP OAuth transcript auditor for
+  observable discovery, issuer, RFC 8707 resource/audience, registration,
+  issuer-bound credential, and protected-resource scope bindings. The analyzer
+  has no network, browser, OAuth, MCP, keychain, account, token, or credential
+  path; rejects credential-looking values without reflection; bounds input,
+  nesting, URLs, documents, observations, redirects, and traversal; and keeps
+  incomplete or malformed evidence `UNKNOWN`. Its supported claim is limited to
+  the supplied synthetic transcript and excludes token signature validation,
+  PKCE correctness, IdP integrity, consent, live authorization, and production
+  security.
 - Added stable attempt-evidence receipts for Proof Before Action's four
   documented observer blind spots: transient filesystem writes, no-delta
   SQLite activity, requested network destinations, and Unix-domain sockets.
@@ -31,6 +41,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added experimental `mcp-audit oauth-transcript` JSON and SARIF commands with
+  strict v1 fixture/report schemas, stable `MCPOAUTH000`–`MCPOAUTH006` findings,
+  and vulnerable/negative/near-miss fixture triplets. The rules are pinned to
+  MCP Authorization 2025-11-25 plus the current-draft snapshot retrieved
+  2026-07-28 and distinguish required, recommended, deprecated, and unsupported
+  checks. Valid multi-resource behavior and deprecated DCR fallback remain
+  supported; wrong-resource, issuer-mix-up, changed-issuer credential reuse,
+  scope mismatch, stale discovery, malformed metadata, credential-looking
+  input, and missing evidence have dedicated controls.
 - Added an experimental, fixture-first `mcp-audit agent-ui` static scanner for
   program-owned MCP Apps/OpenAI metadata and A2UI v0.9 JSONL. Six stable
   authority/state/disclosure/provenance/evidence/egress rules emit deterministic

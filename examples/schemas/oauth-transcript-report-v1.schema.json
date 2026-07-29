@@ -1,0 +1,226 @@
+{
+  "$defs": {
+    "FindingOutcome": {
+      "enum": [
+        "violation",
+        "advisory",
+        "unknown"
+      ],
+      "title": "FindingOutcome",
+      "type": "string"
+    },
+    "FindingSeverity": {
+      "enum": [
+        "high",
+        "medium",
+        "low",
+        "unknown"
+      ],
+      "title": "FindingSeverity",
+      "type": "string"
+    },
+    "OAuthTranscriptFinding": {
+      "additionalProperties": false,
+      "properties": {
+        "assumptions": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Assumptions",
+          "type": "array"
+        },
+        "evidence": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Evidence",
+          "type": "array"
+        },
+        "outcome": {
+          "$ref": "#/$defs/FindingOutcome"
+        },
+        "references": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "References",
+          "type": "array"
+        },
+        "remediation": {
+          "title": "Remediation",
+          "type": "string"
+        },
+        "requirement_level": {
+          "$ref": "#/$defs/RequirementLevel"
+        },
+        "rule_id": {
+          "enum": [
+            "MCPOAUTH000",
+            "MCPOAUTH001",
+            "MCPOAUTH002",
+            "MCPOAUTH003",
+            "MCPOAUTH004",
+            "MCPOAUTH005",
+            "MCPOAUTH006"
+          ],
+          "title": "Rule Id",
+          "type": "string"
+        },
+        "severity": {
+          "$ref": "#/$defs/FindingSeverity"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rule_id",
+        "severity",
+        "outcome",
+        "requirement_level",
+        "title",
+        "target",
+        "evidence",
+        "remediation",
+        "references",
+        "assumptions"
+      ],
+      "title": "OAuthTranscriptFinding",
+      "type": "object"
+    },
+    "ParserLimits": {
+      "additionalProperties": false,
+      "properties": {
+        "input_bytes": {
+          "title": "Input Bytes",
+          "type": "integer"
+        },
+        "json_depth": {
+          "title": "Json Depth",
+          "type": "integer"
+        },
+        "metadata_documents": {
+          "title": "Metadata Documents",
+          "type": "integer"
+        },
+        "observations": {
+          "title": "Observations",
+          "type": "integer"
+        },
+        "redirects": {
+          "title": "Redirects",
+          "type": "integer"
+        },
+        "url_length": {
+          "title": "Url Length",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "input_bytes",
+        "json_depth",
+        "observations",
+        "metadata_documents",
+        "redirects",
+        "url_length"
+      ],
+      "title": "ParserLimits",
+      "type": "object"
+    },
+    "RequirementLevel": {
+      "enum": [
+        "required",
+        "recommended",
+        "deprecated",
+        "unsupported"
+      ],
+      "title": "RequirementLevel",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "claim_ceiling": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Claim Ceiling",
+      "type": "array"
+    },
+    "findings": {
+      "items": {
+        "$ref": "#/$defs/OAuthTranscriptFinding"
+      },
+      "title": "Findings",
+      "type": "array"
+    },
+    "fixture_id": {
+      "title": "Fixture Id",
+      "type": "string"
+    },
+    "input_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Input Sha256",
+      "type": "string"
+    },
+    "parser_limits": {
+      "$ref": "#/$defs/ParserLimits"
+    },
+    "schema_version": {
+      "const": "mcpaudit.oauth-transcript.report.v1",
+      "default": "mcpaudit.oauth-transcript.report.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "spec_profile": {
+      "title": "Spec Profile",
+      "type": "string"
+    },
+    "supported_inputs": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Supported Inputs",
+      "type": "array"
+    },
+    "unsupported_inputs": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Unsupported Inputs",
+      "type": "array"
+    },
+    "verdict": {
+      "enum": [
+        "pass",
+        "fail",
+        "unknown"
+      ],
+      "title": "Verdict",
+      "type": "string"
+    }
+  },
+  "required": [
+    "fixture_id",
+    "spec_profile",
+    "input_sha256",
+    "verdict",
+    "parser_limits",
+    "supported_inputs",
+    "unsupported_inputs",
+    "claim_ceiling"
+  ],
+  "title": "OAuthTranscriptReport",
+  "type": "object"
+}

@@ -284,6 +284,57 @@ OpenAI-specific extensions, AG-UI, and WebMCP remain distinct; the auditor does
 not claim translation or interoperability. See
 `docs/AGENT-UI-CONTRACT-AUDITOR.md`.
 
+## MCP OAuth Transcript Auditor v1 (experimental)
+
+The offline `mcp-audit oauth-transcript` command group is separate from normal
+MCP discovery and connected scans. It does not change `AuditReport` schema
+version `1`. Its strict contract identifiers are:
+
+- `mcpaudit.oauth-transcript.fixture.v1`
+- `mcpaudit.oauth-transcript.report.v1`
+
+Authoritative schemas are checked in at
+`examples/schemas/oauth-transcript-fixture-v1.schema.json` and
+`examples/schemas/oauth-transcript-report-v1.schema.json`, and are emitted by
+`mcp-audit oauth-transcript schema fixture|report`. Unknown fields are rejected.
+The specification profile is pinned to
+`mcp-authorization-2025-11-25+draft-2026-07-28`; the dated draft portion covers
+authorization-response issuer validation, issuer-bound client state, and DCR
+`application_type` behavior.
+
+Reports use sorted compact canonical JSON with one terminal newline and no
+timestamp or input path. Stable finding IDs are `MCPOAUTH001` through
+`MCPOAUTH006`; `MCPOAUTH000` represents missing, malformed, redacted,
+unsupported, or unverifiable evidence. Each finding contains severity,
+`violation|advisory|unknown` outcome, `required|recommended|deprecated|unsupported`
+requirement level, title, semantic target, redacted evidence, remediation,
+primary references, and assumptions.
+
+Report verdicts are:
+
+- `pass`: no violation or unknown finding; deprecated/recommended advisories may remain;
+- `fail`: at least one violation;
+- `unknown`: no violation, but one or more bindings cannot be evaluated.
+
+The scan command exits `0` for `pass`, `1` for `fail` or `unknown`, and `2` for
+an input/output error. `--json` writes the canonical report. `--sarif` writes a
+SARIF 2.1.0 compatibility projection using the existing `mcp-audit` driver and
+stable rule IDs; JSON remains authoritative. Output creation uses the same
+descriptor-bound, atomic, no-clobber path as the Agent UI auditor.
+
+Secret-bearing fields accept only redaction markers. Findings and errors omit
+raw authorization headers, cookies, codes, tokens, secrets, query values,
+arbitrary bodies, and input URLs. Input is limited to 1 MiB, 32 JSON levels, 64
+observations, 8 metadata documents, 5 recorded redirects, and 2,048 characters
+per URL. URLs are never fetched, redirects are never followed, and no network,
+browser, OAuth, MCP, account, keychain, or credential-store path exists.
+
+A passing report proves only the implemented binding invariants in the
+supplied synthetic transcript. It does not prove token signature validity,
+PKCE correctness, client-authentication strength, IdP integrity, consent,
+real-world authorization, or production security. See
+`docs/OAUTH-TRANSCRIPT-AUDITOR.md`.
+
 ## SafeForge Manifest v0
 
 SafeForge uses a separate, additive evidence-envelope contract; it does not
