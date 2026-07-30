@@ -484,6 +484,41 @@ def test_malformed_payload_is_not_further_graded(
 
 
 @pytest.mark.parametrize(
+    ("method", "payload_field", "member"),
+    [
+        ("tools/list", "tools", None),
+        ("tools/list", "tools", {}),
+        ("prompts/list", "prompts", None),
+        ("resources/list", "resources", None),
+        ("resources/templates/list", "resourceTemplates", None),
+        ("resources/read", "contents", None),
+    ],
+)
+def test_malformed_payload_member_is_not_further_graded(
+    method: str,
+    payload_field: str,
+    member: object,
+) -> None:
+    payload = json.loads((FIXTURES / "missing-metadata-negative.json").read_text(encoding="utf-8"))
+    event = payload["events"][0]
+    event["request"]["method"] = method
+    if method == "resources/read":
+        event["request"]["params"] = {"uri": "test://resource"}
+    event["result"] = {
+        "resultType": "complete",
+        "ttlMs": 100,
+        "cacheScope": "private",
+        payload_field: [member],
+    }
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "unknown"
+    assert {finding.rule_id for finding in report.findings} == {"MCPCACHE000"}
+    assert {finding.evidence for finding in report.findings} == {"cacheable_payload_unverified"}
+
+
+@pytest.mark.parametrize(
     ("field", "value"),
     [
         ("ttlMs", True),

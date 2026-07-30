@@ -10,6 +10,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final, Literal
 
+from mcp.types import (
+    BlobResourceContents,
+    Prompt,
+    Resource,
+    ResourceTemplate,
+    TextResourceContents,
+    Tool,
+)
 from pydantic import ValidationError
 
 from mcp_audit.cache_contract_models import (
@@ -444,8 +452,7 @@ def _validate_response_metadata(
                 )
             )
 
-    expected_payload = PAYLOAD_FIELDS[event.request.method]
-    payload_valid = isinstance(result.get(expected_payload), list)
+    payload_valid = _payload_members_valid(event.request.method, result)
     if not payload_valid:
         collector.add(
             _finding(
@@ -519,6 +526,35 @@ def _validate_response_metadata(
     if not payload_valid:
         return None, None
     return scope, ttl_ms
+
+
+def _payload_members_valid(method: str, result: dict[str, Any]) -> bool:
+    payload = result.get(PAYLOAD_FIELDS[method])
+    if not isinstance(payload, list):
+        return False
+
+    try:
+        if method == "tools/list":
+            for member in payload:
+                Tool.model_validate(member)
+        elif method == "prompts/list":
+            for member in payload:
+                Prompt.model_validate(member)
+        elif method == "resources/list":
+            for member in payload:
+                Resource.model_validate(member)
+        elif method == "resources/templates/list":
+            for member in payload:
+                ResourceTemplate.model_validate(member)
+        else:
+            for member in payload:
+                try:
+                    TextResourceContents.model_validate(member)
+                except ValidationError:
+                    BlobResourceContents.model_validate(member)
+    except ValidationError:
+        return False
+    return True
 
 
 def _validate_pagination_cursor_shapes(
@@ -596,10 +632,9 @@ def _is_valid_successful_refresh(
     ttl_ms: int | None,
     cursor_shapes_valid: bool,
 ) -> bool:
-    expected_payload = PAYLOAD_FIELDS[event.request.method]
     return (
         event.result.get("resultType") == "complete"
-        and isinstance(event.result.get(expected_payload), list)
+        and _payload_members_valid(event.request.method, event.result)
         and scope is not None
         and ttl_ms is not None
         and cursor_shapes_valid
