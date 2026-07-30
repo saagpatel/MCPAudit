@@ -898,7 +898,7 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                         )
                     )
                     continue
-                if source.scope is None or source.ttl_ms is None:
+                if source.scope is None or source.ttl_ms is None or source.expires_at_ms is None:
                     continue
 
         if isinstance(event, NotificationEvent):

@@ -382,6 +382,56 @@ def test_partially_gradable_source_does_not_poison_supported_partition_evidence(
     }
 
 
+def test_source_without_computable_expiry_does_not_poison_partition_evidence() -> None:
+    payload = json.loads((FIXTURES / "expiry-vulnerable.json").read_text(encoding="utf-8"))
+    partial_request = {
+        "protocol_version": "2026-07-28",
+        "principal": "alice",
+        "cache_partition": "auth-a",
+        "method": "tools/list",
+        "params": {},
+    }
+    payload["events"][0]["sequence"] = 3
+    payload["events"][0]["at_ms"] = MAX_LOGICAL_MS
+    payload["events"][0]["result"]["ttlMs"] = 0
+    payload["events"][1]["sequence"] = 4
+    payload["events"][1]["at_ms"] = MAX_LOGICAL_MS
+    payload["events"][0:0] = [
+        {
+            "type": "response",
+            "event_id": "overflow-source",
+            "sequence": 1,
+            "at_ms": MAX_LOGICAL_MS,
+            "request": partial_request,
+            "result": {
+                "resultType": "complete",
+                "ttlMs": 1,
+                "cacheScope": "private",
+                "tools": [],
+            },
+        },
+        {
+            "type": "use",
+            "event_id": "overflow-use",
+            "sequence": 2,
+            "at_ms": MAX_LOGICAL_MS,
+            "source_event_id": "overflow-source",
+            "request": {
+                **partial_request,
+                "principal": "bob",
+            },
+        },
+    ]
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "fail"
+    assert {finding.evidence for finding in report.findings} == {
+        "expiry_outside_simulator_clock",
+        "use_at_or_after_ttl_boundary",
+    }
+
+
 @pytest.mark.parametrize("event_type", ["use", "refresh_error"])
 def test_unsupported_use_like_method_is_not_further_graded(event_type: str) -> None:
     payload = json.loads((FIXTURES / "expiry-negative.json").read_text(encoding="utf-8"))
