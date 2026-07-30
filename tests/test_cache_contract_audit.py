@@ -140,6 +140,8 @@ def test_empty_string_next_cursor_remains_valid_paginated_evidence() -> None:
 )
 def test_private_ordering_principal_conflict_is_unknown(fixture_name: str) -> None:
     payload = json.loads((FIXTURES / fixture_name).read_text(encoding="utf-8"))
+    for event in payload["events"]:
+        event["result"]["cacheScope"] = "private"
     payload["events"][1]["request"]["principal"] = "bob"
 
     report = scan_cache_bytes(json.dumps(payload).encode())
@@ -147,6 +149,16 @@ def test_private_ordering_principal_conflict_is_unknown(fixture_name: str) -> No
     assert report.verdict == "unknown"
     assert {finding.rule_id for finding in report.findings} == {"MCPCACHE000"}
     assert {finding.evidence for finding in report.findings} == {"authorization_partition_mapping_ambiguous"}
+
+
+def test_public_ordering_check_survives_partition_principal_conflict() -> None:
+    payload = json.loads((FIXTURES / "ordering-drift-vulnerable.json").read_text(encoding="utf-8"))
+    payload["events"][1]["request"]["principal"] = "bob"
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "fail"
+    assert {finding.rule_id for finding in report.findings} == {"MCPCACHE000", "MCPCACHE006"}
 
 
 def test_private_partition_mapping_conflict_remains_ambiguous() -> None:
@@ -459,6 +471,40 @@ def test_successful_refresh_supersedes_prior_ttl_refresh_error() -> None:
     assert {finding.rule_id for finding in report.findings} == {"MCPCACHE005"}
 
 
+def test_public_successful_refresh_survives_partition_principal_conflict() -> None:
+    payload = json.loads((FIXTURES / "refresh-negative.json").read_text(encoding="utf-8"))
+    payload["events"][0]["result"]["cacheScope"] = "public"
+    refresh = payload["events"][1]
+    refresh["sequence"] = 4
+    refresh["at_ms"] = 11
+    refresh["source_event_id"] = "r1"
+    refresh["result"]["cacheScope"] = "public"
+    conflict = json.loads(json.dumps(payload["events"][0]))
+    conflict["event_id"] = "r-conflict"
+    conflict["sequence"] = 3
+    conflict["at_ms"] = 10
+    conflict["request"]["principal"] = "bob"
+    payload["events"].insert(
+        1,
+        {
+            "type": "refresh_error",
+            "event_id": "x1",
+            "sequence": 2,
+            "at_ms": 10,
+            "source_event_id": "r1",
+            "request": payload["events"][0]["request"],
+        },
+    )
+    payload["events"].insert(2, conflict)
+    payload["events"][4]["sequence"] = 5
+    payload["events"][4]["source_event_id"] = "r1"
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "fail"
+    assert {finding.rule_id for finding in report.findings} == {"MCPCACHE000", "MCPCACHE005"}
+
+
 def test_malformed_refresh_cursor_does_not_supersede_prior_refresh_error() -> None:
     payload = json.loads((FIXTURES / "refresh-negative.json").read_text(encoding="utf-8"))
     refresh = payload["events"][1]
@@ -595,6 +641,24 @@ def test_public_entry_notification_invalidation_applies_to_every_later_use() -> 
     report = scan_cache_bytes(json.dumps(payload).encode())
     assert report.verdict == "fail"
     assert {finding.rule_id for finding in report.findings} == {"MCPCACHE007"}
+
+
+def test_public_notification_check_survives_partition_principal_conflict() -> None:
+    payload = json.loads((FIXTURES / "change-event-vulnerable.json").read_text(encoding="utf-8"))
+    payload["events"][0]["result"]["cacheScope"] = "public"
+    conflict = json.loads(json.dumps(payload["events"][0]))
+    conflict["event_id"] = "r2"
+    conflict["sequence"] = 2
+    conflict["at_ms"] = 5
+    conflict["request"]["principal"] = "bob"
+    payload["events"][1]["sequence"] = 3
+    payload["events"][2]["sequence"] = 4
+    payload["events"].insert(1, conflict)
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "fail"
+    assert {finding.rule_id for finding in report.findings} == {"MCPCACHE000", "MCPCACHE007"}
 
 
 def test_public_entry_refresh_error_applies_to_shared_entry() -> None:

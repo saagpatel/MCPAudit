@@ -720,8 +720,6 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
             limitations.add("one or more authorization-partition assertions were ambiguous")
 
         if isinstance(event, NotificationEvent):
-            if not partition_mapping_consistent:
-                continue
             if not event.subscription_validated:
                 collector.add(
                     _finding(
@@ -783,6 +781,8 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                     )
                     continue
                 if not relevant:
+                    continue
+                if entry.scope == "private" and not partition_mapping_consistent:
                     continue
                 if entry.scope == "private" and (
                     entry.event.request.cache_partition != event.cache_partition
@@ -952,7 +952,7 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                             )
                         )
                     elif (
-                        partition_mapping_consistent
+                        (source.scope == "public" or partition_mapping_consistent)
                         and source.key == key
                         and source.scope is not None
                         and _is_valid_successful_refresh(
@@ -1047,7 +1047,7 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                 and "cursor" not in request.params
                 and "nextCursor" not in event.result
                 and scope is not None
-                and partition_mapping_consistent
+                and (scope == "public" or partition_mapping_consistent)
             ):
                 ordering_items = _ordering_items(event.result)
                 if ordering_items is not None:
@@ -1160,7 +1160,7 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                 key_matches
                 and same_private_partition
                 and consistent_private_principal
-                and partition_mapping_consistent
+                and (source.scope == "public" or partition_mapping_consistent)
             ):
                 partition_key = "public" if source.scope == "public" else request.cache_partition
                 source.refresh_errors.setdefault(partition_key, []).append((event.sequence, event.at_ms))
