@@ -747,37 +747,6 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
             continue
 
         if isinstance(event, NotificationEvent):
-            event_principal = event.principal
-            event_partition = event.cache_partition
-        else:
-            event_principal = event.request.principal
-            event_partition = event.request.cache_partition
-        partition_mapping_consistent = event_partition not in conflicted_partitions
-        prior_partition_principal = partition_principals.get(event_partition)
-        if partition_mapping_consistent and prior_partition_principal is None:
-            partition_principals[event_partition] = (event_principal, event.sequence)
-        elif (
-            partition_mapping_consistent
-            and prior_partition_principal is not None
-            and prior_partition_principal[0] != event_principal
-        ):
-            partition_mapping_consistent = False
-            conflicted_partitions.add(event_partition)
-            collector.add(
-                _finding(
-                    "MCPCACHE000",
-                    CacheSeverity.UNKNOWN,
-                    RequirementLevel.UNKNOWN,
-                    "Principal labels conflict within one asserted authorization partition",
-                    _event_target(event.sequence),
-                    "authorization_partition_mapping_ambiguous",
-                    "Use consistent principal labels or distinct authorization-context partitions.",
-                    event_sequences=[prior_partition_principal[1], event.sequence],
-                )
-            )
-            limitations.add("one or more authorization-partition assertions were ambiguous")
-
-        if isinstance(event, NotificationEvent):
             if not event.subscription_validated:
                 collector.add(
                     _finding(
@@ -822,6 +791,88 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                     )
                 )
                 continue
+        else:
+            request = event.request
+            if request.protocol_version != CURRENT_PROTOCOL_VERSION:
+                collector.add(
+                    _finding(
+                        "MCPCACHE000",
+                        CacheSeverity.UNKNOWN,
+                        RequirementLevel.UNKNOWN,
+                        "Event protocol version is unsupported",
+                        _event_target(event.sequence),
+                        "unsupported_event_protocol_version",
+                        f"Use {CURRENT_PROTOCOL_VERSION} for current cache-contract analysis.",
+                        protocol_version=request.protocol_version,
+                        event_sequences=[event.sequence],
+                    )
+                )
+                limitations.add("one or more event protocol versions are unsupported")
+                continue
+            if request.method not in SUPPORTED_METHODS:
+                collector.add(
+                    _finding(
+                        "MCPCACHE000",
+                        CacheSeverity.UNKNOWN,
+                        RequirementLevel.UNKNOWN,
+                        "Method is outside the list/read cache-auditor scope",
+                        _event_target(event.sequence),
+                        "unsupported_cacheable_method",
+                        "Use a supported list/read method; server/discover remains an explicit coverage gap.",
+                        event_sequences=[event.sequence],
+                    )
+                )
+                limitations.add("server/discover and non-list/read methods are outside this auditor")
+                continue
+            if request.method == "resources/read":
+                request_uri = request.params.get("uri")
+                if not isinstance(request_uri, str) or not request_uri:
+                    collector.add(
+                        _finding(
+                            "MCPCACHE000",
+                            CacheSeverity.UNKNOWN,
+                            RequirementLevel.UNKNOWN,
+                            "Resource-read request URI is missing or malformed",
+                            _event_target(event.sequence),
+                            "resource_request_uri_unverified",
+                            "Provide the non-empty resource URI used by the current resources/read request.",
+                            event_sequences=[event.sequence],
+                        )
+                    )
+                    continue
+
+        if isinstance(event, NotificationEvent):
+            event_principal = event.principal
+            event_partition = event.cache_partition
+        else:
+            event_principal = event.request.principal
+            event_partition = event.request.cache_partition
+        partition_mapping_consistent = event_partition not in conflicted_partitions
+        prior_partition_principal = partition_principals.get(event_partition)
+        if partition_mapping_consistent and prior_partition_principal is None:
+            partition_principals[event_partition] = (event_principal, event.sequence)
+        elif (
+            partition_mapping_consistent
+            and prior_partition_principal is not None
+            and prior_partition_principal[0] != event_principal
+        ):
+            partition_mapping_consistent = False
+            conflicted_partitions.add(event_partition)
+            collector.add(
+                _finding(
+                    "MCPCACHE000",
+                    CacheSeverity.UNKNOWN,
+                    RequirementLevel.UNKNOWN,
+                    "Principal labels conflict within one asserted authorization partition",
+                    _event_target(event.sequence),
+                    "authorization_partition_mapping_ambiguous",
+                    "Use consistent principal labels or distinct authorization-context partitions.",
+                    event_sequences=[prior_partition_principal[1], event.sequence],
+                )
+            )
+            limitations.add("one or more authorization-partition assertions were ambiguous")
+
+        if isinstance(event, NotificationEvent):
             for entry in entries.values():
                 relevant = _notification_relevant(entry, event)
                 if relevant is None:
@@ -859,53 +910,6 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
             continue
 
         request = event.request
-        if request.protocol_version != CURRENT_PROTOCOL_VERSION:
-            collector.add(
-                _finding(
-                    "MCPCACHE000",
-                    CacheSeverity.UNKNOWN,
-                    RequirementLevel.UNKNOWN,
-                    "Event protocol version is unsupported",
-                    _event_target(event.sequence),
-                    "unsupported_event_protocol_version",
-                    f"Use {CURRENT_PROTOCOL_VERSION} for current cache-contract analysis.",
-                    protocol_version=request.protocol_version,
-                    event_sequences=[event.sequence],
-                )
-            )
-            limitations.add("one or more event protocol versions are unsupported")
-            continue
-        if request.method not in SUPPORTED_METHODS:
-            collector.add(
-                _finding(
-                    "MCPCACHE000",
-                    CacheSeverity.UNKNOWN,
-                    RequirementLevel.UNKNOWN,
-                    "Method is outside the list/read cache-auditor scope",
-                    _event_target(event.sequence),
-                    "unsupported_cacheable_method",
-                    "Use a supported list/read method; server/discover remains an explicit coverage gap.",
-                    event_sequences=[event.sequence],
-                )
-            )
-            limitations.add("server/discover and non-list/read methods are outside this auditor")
-            continue
-        if request.method == "resources/read":
-            request_uri = request.params.get("uri")
-            if not isinstance(request_uri, str) or not request_uri:
-                collector.add(
-                    _finding(
-                        "MCPCACHE000",
-                        CacheSeverity.UNKNOWN,
-                        RequirementLevel.UNKNOWN,
-                        "Resource-read request URI is missing or malformed",
-                        _event_target(event.sequence),
-                        "resource_request_uri_unverified",
-                        "Provide the non-empty resource URI used by the current resources/read request.",
-                        event_sequences=[event.sequence],
-                    )
-                )
-                continue
 
         if isinstance(event, (UseEvent, RefreshErrorEvent)) and not (
             _validate_pagination_cursor_shapes(event, collector)

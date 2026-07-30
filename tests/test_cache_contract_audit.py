@@ -239,6 +239,37 @@ def test_unsupported_use_like_event_is_not_further_graded(event_type: str) -> No
     assert {finding.evidence for finding in report.findings} == {"unsupported_event_protocol_version"}
 
 
+def test_unsupported_event_does_not_poison_supported_partition_evidence() -> None:
+    payload = json.loads((FIXTURES / "expiry-vulnerable.json").read_text(encoding="utf-8"))
+    payload["events"].insert(
+        0,
+        {
+            "type": "use",
+            "event_id": "unsupported-use",
+            "sequence": 1,
+            "at_ms": 0,
+            "source_event_id": "not-observed",
+            "request": {
+                "protocol_version": "2025-11-25",
+                "principal": "bob",
+                "cache_partition": "auth-a",
+                "method": "tools/list",
+                "params": {},
+            },
+        },
+    )
+    payload["events"][1]["sequence"] = 2
+    payload["events"][2]["sequence"] = 3
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "fail"
+    assert {finding.evidence for finding in report.findings} == {
+        "unsupported_event_protocol_version",
+        "use_at_or_after_ttl_boundary",
+    }
+
+
 @pytest.mark.parametrize("event_type", ["use", "refresh_error"])
 def test_unsupported_use_like_method_is_not_further_graded(event_type: str) -> None:
     payload = json.loads((FIXTURES / "expiry-negative.json").read_text(encoding="utf-8"))
