@@ -704,6 +704,37 @@ def test_input_required_violation_survives_malformed_cursor() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    ("mutation", "evidence"),
+    [
+        ("missing-result-type", "required_result_type_missing"),
+        ("invalid-ttl", "invalid_ttl"),
+        ("invalid-scope", "invalid_cache_scope"),
+    ],
+)
+def test_metadata_violation_survives_malformed_cursor(
+    mutation: str,
+    evidence: str,
+) -> None:
+    payload = json.loads((FIXTURES / "missing-metadata-negative.json").read_text(encoding="utf-8"))
+    event = payload["events"][0]
+    event["request"]["params"]["cursor"] = None
+    if mutation == "missing-result-type":
+        event["result"].pop("resultType")
+    elif mutation == "invalid-ttl":
+        event["result"]["ttlMs"] = "100"
+    else:
+        event["result"]["cacheScope"] = "shared"
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "fail"
+    assert {finding.evidence for finding in report.findings} == {
+        evidence,
+        "pagination_cursor_shape_unverified",
+    }
+
+
 @pytest.mark.parametrize("result_type", [None, {}, []])
 def test_malformed_result_type_is_structured_unknown(
     result_type: object,

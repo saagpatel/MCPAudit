@@ -865,17 +865,14 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                         event_sequences=[event.sequence],
                     )
                 )
+            if isinstance(event, (ResponseEvent, RefreshEvent)):
+                response_metadata = _validate_response_metadata(event, collector)
             cursor_shapes_valid = _validate_pagination_cursor_shapes(event, collector)
             if not cursor_shapes_valid:
-                if (
-                    isinstance(event, (ResponseEvent, RefreshEvent))
-                    and event.result.get("resultType") == "input_required"
-                ):
-                    _record_input_required_violation(event, collector)
                 limitations.add("one or more list pagination cursor shapes were malformed")
                 continue
             if isinstance(event, (ResponseEvent, RefreshEvent)):
-                response_metadata = _validate_response_metadata(event, collector)
+                assert response_metadata is not None
                 _, response_ttl_ms = response_metadata
                 if response_ttl_ms is not None and clock_reliable:
                     if event.at_ms <= MAX_LOGICAL_MS - response_ttl_ms:
