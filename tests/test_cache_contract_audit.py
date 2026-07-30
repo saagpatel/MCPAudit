@@ -194,6 +194,22 @@ def test_public_ordering_check_survives_partition_principal_conflict() -> None:
     assert {finding.rule_id for finding in report.findings} == {"MCPCACHE000", "MCPCACHE006"}
 
 
+def test_private_ordering_survives_uncomputable_expiry_with_known_partition() -> None:
+    payload = json.loads((FIXTURES / "ordering-drift-vulnerable.json").read_text(encoding="utf-8"))
+    for event in payload["events"]:
+        event["result"]["cacheScope"] = "private"
+    payload["events"][1]["at_ms"] = MAX_LOGICAL_MS
+    payload["events"][1]["result"]["ttlMs"] = 1
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "fail"
+    assert {finding.evidence for finding in report.findings} == {
+        "expiry_outside_simulator_clock",
+        "tools_list_order_drift",
+    }
+
+
 def test_private_partition_mapping_conflict_remains_ambiguous() -> None:
     payload = json.loads((FIXTURES / "change-event-vulnerable.json").read_text(encoding="utf-8"))
     conflict = json.loads(json.dumps(payload["events"][0]))

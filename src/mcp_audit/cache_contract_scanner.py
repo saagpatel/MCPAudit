@@ -927,7 +927,12 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
         else:
             event_principal = event.request.principal
             event_partition = event.request.cache_partition
-        partition_mapping_consistent = False
+        prior_partition_principal = partition_principals.get(event_partition)
+        partition_mapping_consistent = (
+            event_partition not in conflicted_partitions
+            and prior_partition_principal is not None
+            and prior_partition_principal[0] == event_principal
+        )
         partition_state_eligible = source_state_eligible and (
             not isinstance(event, (ResponseEvent, RefreshEvent))
             or (
@@ -938,12 +943,11 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
             )
         )
         if partition_state_eligible:
-            partition_mapping_consistent = event_partition not in conflicted_partitions
-            prior_partition_principal = partition_principals.get(event_partition)
-            if partition_mapping_consistent and prior_partition_principal is None:
+            if event_partition not in conflicted_partitions and prior_partition_principal is None:
                 partition_principals[event_partition] = (event_principal, event.sequence)
+                partition_mapping_consistent = True
             elif (
-                partition_mapping_consistent
+                event_partition not in conflicted_partitions
                 and prior_partition_principal is not None
                 and prior_partition_principal[0] != event_principal
             ):
