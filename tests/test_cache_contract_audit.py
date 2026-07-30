@@ -1598,7 +1598,10 @@ def test_event_and_retained_entry_counts_are_bounded() -> None:
     assert event_report.coverage.input_state == "malformed"
 
 
-def test_ungradable_responses_do_not_exhaust_retained_entry_capacity() -> None:
+@pytest.mark.parametrize("ungradable_kind", ["unsupported_result_type", "ttl_outside_clock"])
+def test_ungradable_responses_do_not_exhaust_retained_entry_capacity(
+    ungradable_kind: str,
+) -> None:
     payload = json.loads((FIXTURES / "expiry-vulnerable.json").read_text(encoding="utf-8"))
     response = payload["events"][0]
     use = payload["events"][1]
@@ -1608,7 +1611,10 @@ def test_ungradable_responses_do_not_exhaust_retained_entry_capacity() -> None:
         event["event_id"] = f"unsupported-{index}"
         event["sequence"] = index
         event["at_ms"] = index
-        event["result"]["resultType"] = "unsupported"
+        if ungradable_kind == "unsupported_result_type":
+            event["result"]["resultType"] = "unsupported"
+        else:
+            event["result"]["ttlMs"] = MAX_LOGICAL_MS + 1
         ungradable_events.append(event)
 
     response["event_id"] = "gradable"
@@ -1626,6 +1632,32 @@ def test_ungradable_responses_do_not_exhaust_retained_entry_capacity() -> None:
     assert report.coverage.retained_entries == 1
     assert "MCPCACHE005" in {finding.rule_id for finding in report.findings}
     assert "retained_entry_limit_exceeded" not in {finding.evidence for finding in report.findings}
+
+
+def test_retained_entry_cap_does_not_hide_ordering_drift() -> None:
+    payload = json.loads((FIXTURES / "ordering-drift-vulnerable.json").read_text(encoding="utf-8"))
+    drift_events = payload["events"]
+    filler_events = []
+    for index in range(MAX_RETAINED_ENTRIES):
+        event = json.loads(json.dumps(drift_events[0]))
+        event["event_id"] = f"filler-{index}"
+        event["sequence"] = index
+        event["at_ms"] = index
+        event["request"]["params"] = {"slot": index}
+        filler_events.append(event)
+
+    for offset, event in enumerate(drift_events):
+        event["sequence"] = MAX_RETAINED_ENTRIES + offset
+        event["at_ms"] = MAX_RETAINED_ENTRIES
+    payload["events"] = [*filler_events, *drift_events]
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "fail"
+    assert report.coverage.retained_entries == MAX_RETAINED_ENTRIES
+    assert {"retained_entry_limit_exceeded", "tools_list_order_drift"} <= {
+        finding.evidence for finding in report.findings
+    }
 
 
 def test_strict_schemas_are_versioned_and_closed() -> None:

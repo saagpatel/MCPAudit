@@ -680,6 +680,7 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
 
     collector = _FindingCollector()
     entries: dict[str, _Entry] = {}
+    identity_only_entries: dict[str, _Entry] = {}
     ungradable_entry_ids: set[str] = set()
     ordering: dict[tuple[tuple[str, str, str], str], _OrderingBaseline] = {}
     ordering_epochs: dict[tuple[str, str], int] = {}
@@ -895,6 +896,8 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                         )
             if isinstance(event, (RefreshEvent, RefreshErrorEvent, UseEvent)):
                 source = entries.get(event.source_event_id)
+                if source is None:
+                    source = identity_only_entries.get(event.source_event_id)
                 if source is None and event.source_event_id in ungradable_entry_ids:
                     continue
                 if source is None or source.event.sequence >= event.sequence:
@@ -1076,7 +1079,18 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                 ungradable_entry_ids.add(event.event_id)
                 continue
 
-            if len(entries) >= MAX_RETAINED_ENTRIES:
+            entry = _Entry(
+                event=event,
+                key=key,
+                scope=scope,
+                ttl_ms=ttl_ms,
+                expires_at_ms=response_expires_at_ms,
+            )
+            if ttl_ms is None or response_expires_at_ms is None:
+                # Bounded by MAX_EVENTS and retained only for request-key and
+                # authorization-partition evidence, never freshness state.
+                identity_only_entries[event.event_id] = entry
+            elif len(entries) >= MAX_RETAINED_ENTRIES:
                 collector.add(
                     _finding(
                         "MCPCACHE000",
@@ -1090,16 +1104,8 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                     )
                 )
                 limitations.add("later cache entries were not retained")
-                continue
-
-            entry = _Entry(
-                event=event,
-                key=key,
-                scope=scope,
-                ttl_ms=ttl_ms,
-                expires_at_ms=response_expires_at_ms,
-            )
-            entries[event.event_id] = entry
+            else:
+                entries[event.event_id] = entry
 
             if (
                 event.page_group is not None
