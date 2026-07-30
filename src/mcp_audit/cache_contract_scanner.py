@@ -530,7 +530,7 @@ def _validate_response_metadata(
         )
     else:
         ttl_ms = None
-    if not payload_valid:
+    if result_type != "complete" or not payload_valid:
         return None, None
     return scope, ttl_ms
 

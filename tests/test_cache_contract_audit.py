@@ -807,6 +807,14 @@ def test_malformed_payload_member_is_not_further_graded(
             },
             "cacheable_payload_unverified",
         ),
+        (
+            {
+                "ttlMs": 100,
+                "cacheScope": "private",
+                "tools": [],
+            },
+            "required_result_type_missing",
+        ),
     ],
 )
 def test_ungradable_response_does_not_poison_supported_partition_evidence(
