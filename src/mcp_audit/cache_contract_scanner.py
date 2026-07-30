@@ -680,6 +680,7 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
 
     collector = _FindingCollector()
     entries: dict[str, _Entry] = {}
+    ungradable_entry_ids: set[str] = set()
     ordering: dict[tuple[tuple[str, str, str], str], _OrderingBaseline] = {}
     ordering_epochs: dict[tuple[str, str], int] = {}
     page_scopes: dict[tuple[str, str, str], _PageBaseline] = {}
@@ -894,6 +895,8 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                         )
             if isinstance(event, (RefreshEvent, RefreshErrorEvent, UseEvent)):
                 source = entries.get(event.source_event_id)
+                if source is None and event.source_event_id in ungradable_entry_ids:
+                    continue
                 if source is None or source.event.sequence >= event.sequence:
                     if isinstance(event, RefreshEvent):
                         title = "Refresh source is missing or non-causal"
@@ -1068,6 +1071,10 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                 ):
                     partition_key = "public" if source.scope == "public" else request.cache_partition
                     source.successful_refreshes[partition_key] = event.sequence
+
+            if scope is None:
+                ungradable_entry_ids.add(event.event_id)
+                continue
 
             if len(entries) >= MAX_RETAINED_ENTRIES:
                 collector.add(
