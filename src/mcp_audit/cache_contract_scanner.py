@@ -755,6 +755,7 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
 
         cursor_shapes_valid = True
         response_metadata: tuple[str | None, int | None] | None = None
+        source: _Entry | None = None
         if isinstance(event, NotificationEvent):
             if not event.subscription_validated:
                 collector.add(
@@ -873,6 +874,32 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                 continue
             if isinstance(event, (ResponseEvent, RefreshEvent)):
                 response_metadata = _validate_response_metadata(event, collector)
+            if isinstance(event, (RefreshEvent, RefreshErrorEvent, UseEvent)):
+                source = entries.get(event.source_event_id)
+                if source is None or source.event.sequence >= event.sequence:
+                    if isinstance(event, RefreshEvent):
+                        title = "Refresh source is missing or non-causal"
+                        evidence = "refresh_source_unverified"
+                        remediation = "Reference an earlier retained response or refresh event."
+                    else:
+                        title = "Cache source is missing or non-causal"
+                        evidence = "cache_source_unverified"
+                        remediation = "Reference an earlier retained response or refresh event."
+                    collector.add(
+                        _finding(
+                            "MCPCACHE000",
+                            CacheSeverity.UNKNOWN,
+                            RequirementLevel.UNKNOWN,
+                            title,
+                            _event_target(event.sequence),
+                            evidence,
+                            remediation,
+                            event_sequences=[event.sequence],
+                        )
+                    )
+                    continue
+                if source.scope is None:
+                    continue
 
         if isinstance(event, NotificationEvent):
             event_principal = event.principal
@@ -989,21 +1016,8 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                 continue
 
             if isinstance(event, RefreshEvent):
-                source = entries.get(event.source_event_id)
-                if source is None or source.event.sequence >= event.sequence:
-                    collector.add(
-                        _finding(
-                            "MCPCACHE000",
-                            CacheSeverity.UNKNOWN,
-                            RequirementLevel.UNKNOWN,
-                            "Refresh source is missing or non-causal",
-                            _event_target(event.sequence),
-                            "refresh_source_unverified",
-                            "Reference an earlier retained response or refresh event.",
-                            event_sequences=[event.sequence],
-                        )
-                    )
-                elif source.scope is not None and source.key != key:
+                assert source is not None
+                if source.key != key:
                     collector.add(
                         _finding(
                             "MCPCACHE004",
@@ -1016,36 +1030,34 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                             event_sequences=[source.event.sequence, event.sequence],
                         )
                     )
-                if source is not None and source.event.sequence < event.sequence:
-                    if (
-                        source.scope == "private"
-                        and source.event.request.cache_partition != request.cache_partition
-                    ):
-                        collector.add(
-                            _finding(
-                                "MCPCACHE003",
-                                CacheSeverity.HIGH,
-                                RequirementLevel.PROTOCOL_MUST,
-                                "Private cache entry crossed an authorization partition during refresh",
-                                _event_target(event.sequence),
-                                "private_cross_partition_refresh",
-                                "Refresh private entries only inside their asserted authorization partition.",
-                                event_sequences=[source.event.sequence, event.sequence],
-                            )
+                if (
+                    source.scope == "private"
+                    and source.event.request.cache_partition != request.cache_partition
+                ):
+                    collector.add(
+                        _finding(
+                            "MCPCACHE003",
+                            CacheSeverity.HIGH,
+                            RequirementLevel.PROTOCOL_MUST,
+                            "Private cache entry crossed an authorization partition during refresh",
+                            _event_target(event.sequence),
+                            "private_cross_partition_refresh",
+                            "Refresh private entries only inside their asserted authorization partition.",
+                            event_sequences=[source.event.sequence, event.sequence],
                         )
-                    elif (
-                        ((source.scope == "public" and scope == "public") or partition_mapping_consistent)
-                        and source.key == key
-                        and source.scope is not None
-                        and _is_valid_successful_refresh(
-                            event,
-                            scope,
-                            ttl_ms,
-                            cursor_shapes_valid,
-                        )
-                    ):
-                        partition_key = "public" if source.scope == "public" else request.cache_partition
-                        source.successful_refreshes[partition_key] = event.sequence
+                    )
+                elif (
+                    ((source.scope == "public" and scope == "public") or partition_mapping_consistent)
+                    and source.key == key
+                    and _is_valid_successful_refresh(
+                        event,
+                        scope,
+                        ttl_ms,
+                        cursor_shapes_valid,
+                    )
+                ):
+                    partition_key = "public" if source.scope == "public" else request.cache_partition
+                    source.successful_refreshes[partition_key] = event.sequence
 
             if len(entries) >= MAX_RETAINED_ENTRIES:
                 collector.add(
@@ -1168,23 +1180,7 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                     )
             continue
 
-        source = entries.get(event.source_event_id)
-        if source is None or source.event.sequence >= event.sequence:
-            collector.add(
-                _finding(
-                    "MCPCACHE000",
-                    CacheSeverity.UNKNOWN,
-                    RequirementLevel.UNKNOWN,
-                    "Cache source is missing or non-causal",
-                    _event_target(event.sequence),
-                    "cache_source_unverified",
-                    "Reference an earlier retained response or refresh event.",
-                    event_sequences=[event.sequence],
-                )
-            )
-            continue
-        if source.scope is None:
-            continue
+        assert source is not None
         if (
             source.scope == "private"
             and source.event.request.cache_partition == request.cache_partition
