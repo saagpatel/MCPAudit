@@ -553,13 +553,21 @@ def _contains_mrtr_retry(request: CacheRequest) -> bool:
     return "inputResponses" in request.params or "requestState" in request.params
 
 
-def _refresh_error_allows_ttl_stale(entry: _Entry, event: UseEvent) -> bool:
+def _refresh_error_allows_ttl_stale(
+    entry: _Entry,
+    event: UseEvent,
+    invalidated_at: int | None,
+) -> bool:
     if entry.expires_at_ms is None:
         return False
     partition_key = "public" if entry.scope == "public" else event.request.cache_partition
     latest_success = entry.successful_refreshes.get(partition_key, -1)
     return any(
-        latest_success < error_sequence < event.sequence and error_at_ms >= entry.expires_at_ms
+        latest_success < error_sequence < event.sequence
+        and (
+            error_at_ms >= entry.expires_at_ms
+            or (invalidated_at is not None and invalidated_at < error_sequence)
+        )
         for error_sequence, error_at_ms in entry.refresh_errors.get(partition_key, [])
     )
 
@@ -1224,7 +1232,7 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
             clock_reliable
             and source.expires_at_ms is not None
             and event.at_ms >= source.expires_at_ms
-            and not _refresh_error_allows_ttl_stale(source, event)
+            and not _refresh_error_allows_ttl_stale(source, event, invalidated_at)
         ):
             collector.add(
                 _finding(

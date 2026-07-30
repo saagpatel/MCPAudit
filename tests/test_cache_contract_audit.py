@@ -685,6 +685,28 @@ def test_only_refresh_error_after_notification_authorizes_stale_use() -> None:
     assert after_notification.verdict == "pass"
 
 
+def test_notification_refresh_error_authorizes_use_after_later_ttl_boundary() -> None:
+    payload = json.loads((FIXTURES / "change-event-vulnerable.json").read_text(encoding="utf-8"))
+    payload["events"][2]["sequence"] = 4
+    payload["events"][2]["at_ms"] = 101
+    payload["events"].insert(
+        2,
+        {
+            "type": "refresh_error",
+            "event_id": "x1",
+            "sequence": 3,
+            "at_ms": 20,
+            "source_event_id": "r1",
+            "request": payload["events"][0]["request"],
+        },
+    )
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "pass"
+    assert report.coverage.state == "complete"
+
+
 def test_public_entry_notification_invalidation_applies_to_every_later_use() -> None:
     payload = json.loads((FIXTURES / "private-reuse-near-miss.json").read_text(encoding="utf-8"))
     payload["events"][1]["sequence"] = 3
