@@ -6,6 +6,7 @@ import json
 import os
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 from click.testing import CliRunner
@@ -288,7 +289,7 @@ def test_private_partition_mapping_conflict_is_unknown() -> None:
     assert {finding.rule_id for finding in report.findings} == {"MCPCACHE000"}
 
 
-def test_paginated_pages_must_keep_one_cache_scope() -> None:
+def _page_scope_payload() -> dict[str, Any]:
     request = {
         "protocol_version": "2026-07-28",
         "principal": "alice",
@@ -296,7 +297,7 @@ def test_paginated_pages_must_keep_one_cache_scope() -> None:
         "method": "prompts/list",
         "params": {},
     }
-    payload = {
+    return {
         "schema_version": "mcpaudit.cache-contract.trace.v1",
         "trace_id": "page-scope",
         "protocol_version": "2026-07-28",
@@ -333,9 +334,28 @@ def test_paginated_pages_must_keep_one_cache_scope() -> None:
             },
         ],
     }
+
+
+def test_paginated_pages_must_keep_one_cache_scope() -> None:
+    payload = _page_scope_payload()
     report = scan_cache_bytes(json.dumps(payload).encode())
     assert report.verdict == "fail"
     assert {finding.rule_id for finding in report.findings} == {"MCPCACHE008"}
+
+
+@pytest.mark.parametrize("malformed_field", ["cursor", "nextCursor"])
+def test_malformed_cursor_skips_linked_page_scope_grading(malformed_field: str) -> None:
+    payload = _page_scope_payload()
+    if malformed_field == "cursor":
+        payload["events"][1]["request"]["params"]["cursor"] = None
+    else:
+        payload["events"][0]["result"]["nextCursor"] = None
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "unknown"
+    assert {finding.rule_id for finding in report.findings} == {"MCPCACHE000"}
+    assert {finding.evidence for finding in report.findings} == {"pagination_cursor_shape_unverified"}
 
 
 @pytest.mark.parametrize("identity_drift", ["partition", "params"])

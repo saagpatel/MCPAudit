@@ -1011,7 +1011,12 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
             )
             entries[event.event_id] = entry
 
-            if event.page_group is not None and request.method in LIST_METHODS and scope is not None:
+            if (
+                event.page_group is not None
+                and request.method in LIST_METHODS
+                and scope is not None
+                and cursor_shapes_valid
+            ):
                 page_key = (
                     request.protocol_version,
                     request.method,
