@@ -125,6 +125,37 @@ def test_malformed_use_like_cursor_is_not_further_graded(event_type: str) -> Non
     assert {finding.evidence for finding in report.findings} == {"pagination_cursor_shape_unverified"}
 
 
+def test_malformed_cursor_does_not_poison_supported_partition_evidence() -> None:
+    payload = json.loads((FIXTURES / "expiry-vulnerable.json").read_text(encoding="utf-8"))
+    payload["events"].insert(
+        0,
+        {
+            "type": "use",
+            "event_id": "malformed-use",
+            "sequence": 1,
+            "at_ms": 0,
+            "source_event_id": "not-observed",
+            "request": {
+                "protocol_version": "2026-07-28",
+                "principal": "bob",
+                "cache_partition": "auth-a",
+                "method": "tools/list",
+                "params": {"cursor": None},
+            },
+        },
+    )
+    payload["events"][1]["sequence"] = 2
+    payload["events"][2]["sequence"] = 3
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "fail"
+    assert {finding.evidence for finding in report.findings} == {
+        "pagination_cursor_shape_unverified",
+        "use_at_or_after_ttl_boundary",
+    }
+
+
 def test_empty_string_next_cursor_remains_valid_paginated_evidence() -> None:
     payload = json.loads((FIXTURES / "ordering-drift-vulnerable.json").read_text(encoding="utf-8"))
     for event in payload["events"]:

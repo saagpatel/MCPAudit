@@ -746,6 +746,7 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
         if not trace_version_supported:
             continue
 
+        cursor_shapes_valid = True
         if isinstance(event, NotificationEvent):
             if not event.subscription_validated:
                 collector.add(
@@ -840,6 +841,23 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                         )
                     )
                     continue
+            if isinstance(event, (ResponseEvent, RefreshEvent)) and _contains_mrtr_retry(request):
+                collector.add(
+                    _finding(
+                        "MCPCACHE009",
+                        CacheSeverity.HIGH,
+                        RequirementLevel.PROTOCOL_MUST,
+                        "A multi-round-trip retry result was cached",
+                        _event_target(event.sequence),
+                        "mrtr_retry_result_cached",
+                        "Do not cache results from requests carrying inputResponses or requestState.",
+                        event_sequences=[event.sequence],
+                    )
+                )
+            cursor_shapes_valid = _validate_pagination_cursor_shapes(event, collector)
+            if not cursor_shapes_valid:
+                limitations.add("one or more list pagination cursor shapes were malformed")
+                continue
 
         if isinstance(event, NotificationEvent):
             event_principal = event.principal
@@ -911,29 +929,7 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
 
         request = event.request
 
-        if isinstance(event, (UseEvent, RefreshErrorEvent)) and not (
-            _validate_pagination_cursor_shapes(event, collector)
-        ):
-            limitations.add("one or more list pagination cursor shapes were malformed")
-            continue
-
         if isinstance(event, (ResponseEvent, RefreshEvent)):
-            if _contains_mrtr_retry(request):
-                collector.add(
-                    _finding(
-                        "MCPCACHE009",
-                        CacheSeverity.HIGH,
-                        RequirementLevel.PROTOCOL_MUST,
-                        "A multi-round-trip retry result was cached",
-                        _event_target(event.sequence),
-                        "mrtr_retry_result_cached",
-                        "Do not cache results from requests carrying inputResponses or requestState.",
-                        event_sequences=[event.sequence],
-                    )
-                )
-            cursor_shapes_valid = _validate_pagination_cursor_shapes(event, collector)
-            if not cursor_shapes_valid:
-                limitations.add("one or more list pagination cursor shapes were malformed")
             scope, ttl_ms = _validate_response_metadata(event, collector)
             expires_at_ms: int | None = None
             if ttl_ms is not None and clock_reliable:
