@@ -110,6 +110,19 @@ def test_malformed_request_cursor_is_explicit_unknown() -> None:
     assert {finding.evidence for finding in report.findings} == {"pagination_cursor_shape_unverified"}
 
 
+@pytest.mark.parametrize("event_type", ["use", "refresh_error"])
+def test_malformed_use_like_cursor_is_not_further_graded(event_type: str) -> None:
+    payload = json.loads((FIXTURES / "expiry-negative.json").read_text(encoding="utf-8"))
+    payload["events"][1]["type"] = event_type
+    payload["events"][1]["request"]["params"]["cursor"] = None
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "unknown"
+    assert {finding.rule_id for finding in report.findings} == {"MCPCACHE000"}
+    assert {finding.evidence for finding in report.findings} == {"pagination_cursor_shape_unverified"}
+
+
 def test_empty_string_next_cursor_remains_valid_paginated_evidence() -> None:
     payload = json.loads((FIXTURES / "ordering-drift-vulnerable.json").read_text(encoding="utf-8"))
     for event in payload["events"]:
@@ -128,6 +141,24 @@ def test_empty_string_next_cursor_remains_valid_paginated_evidence() -> None:
 def test_private_ordering_principal_conflict_is_unknown(fixture_name: str) -> None:
     payload = json.loads((FIXTURES / fixture_name).read_text(encoding="utf-8"))
     payload["events"][1]["request"]["principal"] = "bob"
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "unknown"
+    assert {finding.rule_id for finding in report.findings} == {"MCPCACHE000"}
+    assert {finding.evidence for finding in report.findings} == {"authorization_partition_mapping_ambiguous"}
+
+
+def test_private_partition_mapping_conflict_remains_ambiguous() -> None:
+    payload = json.loads((FIXTURES / "change-event-vulnerable.json").read_text(encoding="utf-8"))
+    conflict = json.loads(json.dumps(payload["events"][0]))
+    conflict["event_id"] = "r2"
+    conflict["sequence"] = 2
+    conflict["at_ms"] = 5
+    conflict["request"]["principal"] = "bob"
+    payload["events"][1]["sequence"] = 3
+    payload["events"][2]["sequence"] = 4
+    payload["events"].insert(1, conflict)
 
     report = scan_cache_bytes(json.dumps(payload).encode())
 
@@ -177,6 +208,19 @@ def test_unsupported_use_like_event_is_not_further_graded(event_type: str) -> No
     assert report.verdict == "unknown"
     assert {finding.rule_id for finding in report.findings} == {"MCPCACHE000"}
     assert {finding.evidence for finding in report.findings} == {"unsupported_event_protocol_version"}
+
+
+@pytest.mark.parametrize("event_type", ["use", "refresh_error"])
+def test_unsupported_use_like_method_is_not_further_graded(event_type: str) -> None:
+    payload = json.loads((FIXTURES / "expiry-negative.json").read_text(encoding="utf-8"))
+    payload["events"][1]["type"] = event_type
+    payload["events"][1]["request"]["method"] = "server/discover"
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "unknown"
+    assert {finding.rule_id for finding in report.findings} == {"MCPCACHE000"}
+    assert {finding.evidence for finding in report.findings} == {"unsupported_cacheable_method"}
 
 
 def test_event_serialization_order_does_not_change_output() -> None:
@@ -413,6 +457,34 @@ def test_successful_refresh_supersedes_prior_ttl_refresh_error() -> None:
 
     assert report.verdict == "fail"
     assert {finding.rule_id for finding in report.findings} == {"MCPCACHE005"}
+
+
+def test_malformed_refresh_cursor_does_not_supersede_prior_refresh_error() -> None:
+    payload = json.loads((FIXTURES / "refresh-negative.json").read_text(encoding="utf-8"))
+    refresh = payload["events"][1]
+    refresh["sequence"] = 3
+    refresh["at_ms"] = 11
+    refresh["source_event_id"] = "r1"
+    refresh["result"]["nextCursor"] = None
+    payload["events"].insert(
+        1,
+        {
+            "type": "refresh_error",
+            "event_id": "x1",
+            "sequence": 2,
+            "at_ms": 10,
+            "source_event_id": "r1",
+            "request": payload["events"][0]["request"],
+        },
+    )
+    payload["events"][3]["sequence"] = 4
+    payload["events"][3]["source_event_id"] = "r1"
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "unknown"
+    assert {finding.rule_id for finding in report.findings} == {"MCPCACHE000"}
+    assert {finding.evidence for finding in report.findings} == {"pagination_cursor_shape_unverified"}
 
 
 def test_successful_refresh_supersedes_prior_notification_refresh_error() -> None:

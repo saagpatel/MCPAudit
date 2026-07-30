@@ -512,7 +512,7 @@ def _validate_response_metadata(
 
 
 def _validate_pagination_cursor_shapes(
-    event: ResponseEvent | RefreshEvent,
+    event: ResponseEvent | RefreshEvent | RefreshErrorEvent | UseEvent,
     collector: _FindingCollector,
 ) -> bool:
     if event.request.method not in LIST_METHODS:
@@ -521,8 +521,8 @@ def _validate_pagination_cursor_shapes(
     request_cursor_malformed = "cursor" in event.request.params and not isinstance(
         event.request.params["cursor"], str
     )
-    response_cursor_malformed = "nextCursor" in event.result and not isinstance(
-        event.result["nextCursor"], str
+    response_cursor_malformed = isinstance(event, (ResponseEvent, RefreshEvent)) and (
+        "nextCursor" in event.result and not isinstance(event.result["nextCursor"], str)
     )
     if not request_cursor_malformed and not response_cursor_malformed:
         return True
@@ -576,6 +576,7 @@ def _is_valid_successful_refresh(
     event: RefreshEvent,
     scope: str | None,
     ttl_ms: int | None,
+    cursor_shapes_valid: bool,
 ) -> bool:
     expected_payload = PAYLOAD_FIELDS[event.request.method]
     return (
@@ -583,6 +584,7 @@ def _is_valid_successful_refresh(
         and isinstance(event.result.get(expected_payload), list)
         and scope is not None
         and ttl_ms is not None
+        and cursor_shapes_valid
         and not _contains_mrtr_retry(event.request)
     )
 
@@ -622,6 +624,7 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
     ordering_epochs: dict[tuple[str, str], int] = {}
     page_scopes: dict[tuple[str, str, str], _PageBaseline] = {}
     partition_principals: dict[str, tuple[str, int]] = {}
+    conflicted_partitions: set[str] = set()
     analyzed_events = 0
     limitations: set[str] = set()
     protocol_versions: set[str] = {trace.protocol_version}
@@ -691,12 +694,17 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
         else:
             event_principal = event.request.principal
             event_partition = event.request.cache_partition
-        partition_mapping_consistent = True
+        partition_mapping_consistent = event_partition not in conflicted_partitions
         prior_partition_principal = partition_principals.get(event_partition)
-        if prior_partition_principal is None:
+        if partition_mapping_consistent and prior_partition_principal is None:
             partition_principals[event_partition] = (event_principal, event.sequence)
-        elif prior_partition_principal[0] != event_principal:
+        elif (
+            partition_mapping_consistent
+            and prior_partition_principal is not None
+            and prior_partition_principal[0] != event_principal
+        ):
             partition_mapping_consistent = False
+            conflicted_partitions.add(event_partition)
             collector.add(
                 _finding(
                     "MCPCACHE000",
@@ -808,6 +816,21 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
             )
             limitations.add("one or more event protocol versions are unsupported")
             continue
+        if request.method not in SUPPORTED_METHODS:
+            collector.add(
+                _finding(
+                    "MCPCACHE000",
+                    CacheSeverity.UNKNOWN,
+                    RequirementLevel.UNKNOWN,
+                    "Method is outside the list/read cache-auditor scope",
+                    _event_target(event.sequence),
+                    "unsupported_cacheable_method",
+                    "Use a supported list/read method; server/discover remains an explicit coverage gap.",
+                    event_sequences=[event.sequence],
+                )
+            )
+            limitations.add("server/discover and non-list/read methods are outside this auditor")
+            continue
         if request.method == "resources/read":
             request_uri = request.params.get("uri")
             if not isinstance(request_uri, str) or not request_uri:
@@ -825,22 +848,13 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                 )
                 continue
 
+        if isinstance(event, (UseEvent, RefreshErrorEvent)) and not (
+            _validate_pagination_cursor_shapes(event, collector)
+        ):
+            limitations.add("one or more list pagination cursor shapes were malformed")
+            continue
+
         if isinstance(event, (ResponseEvent, RefreshEvent)):
-            if request.method not in SUPPORTED_METHODS:
-                collector.add(
-                    _finding(
-                        "MCPCACHE000",
-                        CacheSeverity.UNKNOWN,
-                        RequirementLevel.UNKNOWN,
-                        "Method is outside the list/read cache-auditor scope",
-                        _event_target(event.sequence),
-                        "unsupported_cacheable_method",
-                        "Use a supported list/read method; server/discover remains an explicit coverage gap.",
-                        event_sequences=[event.sequence],
-                    )
-                )
-                limitations.add("server/discover and non-list/read methods are outside this auditor")
-                continue
             if _contains_mrtr_retry(request):
                 collector.add(
                     _finding(
@@ -854,7 +868,8 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                         event_sequences=[event.sequence],
                     )
                 )
-            if not _validate_pagination_cursor_shapes(event, collector):
+            cursor_shapes_valid = _validate_pagination_cursor_shapes(event, collector)
+            if not cursor_shapes_valid:
                 limitations.add("one or more list pagination cursor shapes were malformed")
             scope, ttl_ms = _validate_response_metadata(event, collector)
             expires_at_ms: int | None = None
@@ -940,7 +955,12 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                         partition_mapping_consistent
                         and source.key == key
                         and source.scope is not None
-                        and _is_valid_successful_refresh(event, scope, ttl_ms)
+                        and _is_valid_successful_refresh(
+                            event,
+                            scope,
+                            ttl_ms,
+                            cursor_shapes_valid,
+                        )
                     ):
                         partition_key = "public" if source.scope == "public" else request.cache_partition
                         source.successful_refreshes[partition_key] = event.sequence
@@ -1075,6 +1095,12 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                     event_sequences=[event.sequence],
                 )
             )
+            continue
+        if (
+            source.scope == "private"
+            and source.event.request.cache_partition == request.cache_partition
+            and not partition_mapping_consistent
+        ):
             continue
         try:
             use_key = _request_key(request)

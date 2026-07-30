@@ -62,7 +62,9 @@ auditor never tries to derive authorization identity from `principal`, inspect
 credential material, or prove that a real cache partitions correctly. A
 private reuse across different `cache_partition` values is a contradiction. A
 different principal label inside one asserted partition is ambiguous and
-therefore `UNKNOWN`.
+therefore `UNKNOWN`. Once observed, that partition remains ambiguous for the
+rest of the trace; later events cannot restore trusted private-cache evidence
+by returning to an earlier principal label.
 
 Example:
 
@@ -160,7 +162,7 @@ The distinction matters:
 | TTL | Fresh only while `now < received + ttlMs`; re-fetch on stale access is SHOULD | Use at equality or later is a SHOULD-level finding when a complete trace records no unsuperseded failed refresh |
 | Failed refresh | A client MAY serve stale after a re-fetch error | A causal, exact-key `refresh_error` permits stale use only until a later valid successful refresh supersedes that failed attempt |
 | Change event | A received relevant notification immediately makes the relevant cached result stale | Only validated normalized subscriptions and exact supported method/URI mappings invalidate |
-| Pagination | Pages have independent TTLs; one list request must keep the same cache scope; cursors are opaque strings | `page_group` is required before the cross-page MUST can be evaluated; a present non-string `cursor` or `nextCursor` makes coverage `UNKNOWN`, while an empty string remains a valid cursor |
+| Pagination | Pages have independent TTLs; one list request must keep the same cache scope; cursors are opaque strings | `page_group` is required before the cross-page MUST can be evaluated; a present non-string `cursor` on any list event or `nextCursor` on a response/refresh makes coverage `UNKNOWN`, while an empty string remains a valid cursor |
 | Ordering | Unchanged `tools/list` results SHOULD use deterministic ordering | Only unpaginated, same-key, same-set tools results are compared |
 
 MCP does **not** specify URI alias/prefix invalidation, arbitrary dependency
