@@ -50,7 +50,7 @@ def _report(name: str) -> CacheAuditReport:
         ("private-reuse-near-miss.json", "pass", set()),
         ("wrong-key-vulnerable.json", "fail", {"MCPCACHE004"}),
         ("wrong-key-negative.json", "pass", set()),
-        ("wrong-key-near-miss.json", "fail", {"MCPCACHE000", "MCPCACHE004"}),
+        ("wrong-key-near-miss.json", "unknown", {"MCPCACHE000"}),
         ("expiry-vulnerable.json", "fail", {"MCPCACHE005"}),
         ("expiry-negative.json", "pass", set()),
         ("expiry-near-miss.json", "pass", set()),
@@ -164,6 +164,19 @@ def test_unsupported_version_is_not_graded_green() -> None:
     assert report.verdict == "unknown"
     assert report.coverage.input_state == "unsupported"
     assert report.protocol_versions == ["2025-11-25"]
+
+
+@pytest.mark.parametrize("event_type", ["use", "refresh_error"])
+def test_unsupported_use_like_event_is_not_further_graded(event_type: str) -> None:
+    payload = json.loads((FIXTURES / "expiry-negative.json").read_text(encoding="utf-8"))
+    payload["events"][1]["type"] = event_type
+    payload["events"][1]["request"]["protocol_version"] = "2025-11-25"
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "unknown"
+    assert {finding.rule_id for finding in report.findings} == {"MCPCACHE000"}
+    assert {finding.evidence for finding in report.findings} == {"unsupported_event_protocol_version"}
 
 
 def test_event_serialization_order_does_not_change_output() -> None:

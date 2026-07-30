@@ -43,7 +43,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Trace descriptors use `O_NONBLOCK` where available before type and identity
   validation so a raced FIFO replacement cannot stall the offline scan, and
   conflicting principal labels inside one asserted authorization partition
-  become `UNKNOWN` before private ordering is compared.
+  become `UNKNOWN` before private ordering is compared. Unsupported-version
+  events stop at incomplete coverage instead of being graded against
+  current-version cache keys.
 - Added an experimental, fixture-first `mcp-audit agent-ui` static scanner for
   program-owned MCP Apps/OpenAI metadata and A2UI v0.9 JSONL. Six stable
   authority/state/disclosure/provenance/evidence/egress rules emit deterministic

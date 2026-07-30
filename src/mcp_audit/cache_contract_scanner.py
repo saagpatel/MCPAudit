@@ -807,7 +807,8 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                 )
             )
             limitations.add("one or more event protocol versions are unsupported")
-        if request.protocol_version == CURRENT_PROTOCOL_VERSION and request.method == "resources/read":
+            continue
+        if request.method == "resources/read":
             request_uri = request.params.get("uri")
             if not isinstance(request_uri, str) or not request_uri:
                 collector.add(
@@ -839,8 +840,6 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                     )
                 )
                 limitations.add("server/discover and non-list/read methods are outside this auditor")
-                continue
-            if request.protocol_version != CURRENT_PROTOCOL_VERSION:
                 continue
             if _contains_mrtr_retry(request):
                 collector.add(

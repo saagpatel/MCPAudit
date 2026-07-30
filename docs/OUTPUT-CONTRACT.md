@@ -342,7 +342,9 @@ non-cacheable multi-round-trip results. Present non-string `cursor` or
 passing ordering result; an empty string remains a valid cursor.
 `server/discover`, older/future revisions, URI alias/prefix invalidation,
 notification delivery to other cache instances, and ordering of other lists
-remain explicitly unsupported.
+remain explicitly unsupported. An event carrying an unsupported protocol
+version produces incomplete `MCPCACHE000` coverage and is not subsequently
+graded against current-version cache keys or freshness rules.
 
 `MCPCACHE005` is a SHOULD-level freshness finding, not a claim that MCP always
 forbids stale use. A causal exact-key `refresh_error` preserves the protocol's
