@@ -707,6 +707,40 @@ def test_notification_refresh_error_authorizes_use_after_later_ttl_boundary() ->
     assert report.coverage.state == "complete"
 
 
+def test_successful_refresh_supersedes_invalidation_before_later_refresh_error() -> None:
+    payload = json.loads((FIXTURES / "change-event-vulnerable.json").read_text(encoding="utf-8"))
+    payload["events"][2]["sequence"] = 5
+    payload["events"][2]["at_ms"] = 101
+    payload["events"].insert(
+        2,
+        {
+            "type": "refresh",
+            "event_id": "r2",
+            "sequence": 3,
+            "at_ms": 20,
+            "source_event_id": "r1",
+            "request": payload["events"][0]["request"],
+            "result": payload["events"][0]["result"],
+        },
+    )
+    payload["events"].insert(
+        3,
+        {
+            "type": "refresh_error",
+            "event_id": "x1",
+            "sequence": 4,
+            "at_ms": 30,
+            "source_event_id": "r1",
+            "request": payload["events"][0]["request"],
+        },
+    )
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "fail"
+    assert {finding.rule_id for finding in report.findings} == {"MCPCACHE005", "MCPCACHE007"}
+
+
 def test_public_entry_notification_invalidation_applies_to_every_later_use() -> None:
     payload = json.loads((FIXTURES / "private-reuse-near-miss.json").read_text(encoding="utf-8"))
     payload["events"][1]["sequence"] = 3

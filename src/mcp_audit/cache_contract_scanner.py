@@ -566,7 +566,7 @@ def _refresh_error_allows_ttl_stale(
         latest_success < error_sequence < event.sequence
         and (
             error_at_ms >= entry.expires_at_ms
-            or (invalidated_at is not None and invalidated_at < error_sequence)
+            or (invalidated_at is not None and latest_success < invalidated_at < error_sequence)
         )
         for error_sequence, error_at_ms in entry.refresh_errors.get(partition_key, [])
     )
@@ -582,7 +582,7 @@ def _refresh_error_allows_notification_stale(
     partition_key = "public" if entry.scope == "public" else event.request.cache_partition
     latest_success = entry.successful_refreshes.get(partition_key, -1)
     return any(
-        max(invalidated_at, latest_success) < error_sequence < event.sequence
+        latest_success < invalidated_at < error_sequence < event.sequence
         for error_sequence, _ in entry.refresh_errors.get(partition_key, [])
     )
 
