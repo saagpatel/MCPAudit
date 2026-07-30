@@ -210,6 +210,21 @@ def test_private_ordering_survives_uncomputable_expiry_with_known_partition() ->
     }
 
 
+def test_private_ordering_survives_ttl_outside_clock_bound() -> None:
+    payload = json.loads((FIXTURES / "ordering-drift-vulnerable.json").read_text(encoding="utf-8"))
+    for event in payload["events"]:
+        event["result"]["cacheScope"] = "private"
+    payload["events"][0]["result"]["ttlMs"] = MAX_LOGICAL_MS + 1
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "fail"
+    assert {finding.evidence for finding in report.findings} == {
+        "ttl_outside_simulator_clock",
+        "tools_list_order_drift",
+    }
+
+
 def test_private_ordering_survives_clock_ambiguity() -> None:
     payload = json.loads((FIXTURES / "ordering-drift-vulnerable.json").read_text(encoding="utf-8"))
     for event in payload["events"]:

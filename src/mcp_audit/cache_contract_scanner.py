@@ -1167,8 +1167,7 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                     and prior_ordering_principal == request.principal
                 )
                 if (
-                    ttl_ms is not None
-                    and request.cache_partition not in conflicted_partitions
+                    request.cache_partition not in conflicted_partitions
                     and request.cache_partition not in ordering_conflicted_partitions
                 ):
                     if prior_ordering_principal is None:
