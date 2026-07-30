@@ -1154,6 +1154,13 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
             ordering_partition_consistent = scope == "public"
             if scope == "private":
                 prior_ordering_principal = ordering_partition_principals.get(request.cache_partition)
+                established_partition_principal = partition_principals.get(request.cache_partition)
+                if established_partition_principal is not None:
+                    if prior_ordering_principal is None:
+                        prior_ordering_principal = established_partition_principal[0]
+                        ordering_partition_principals[request.cache_partition] = prior_ordering_principal
+                    elif prior_ordering_principal != established_partition_principal[0]:
+                        ordering_conflicted_partitions.add(request.cache_partition)
                 ordering_partition_consistent = (
                     request.cache_partition not in conflicted_partitions
                     and request.cache_partition not in ordering_conflicted_partitions

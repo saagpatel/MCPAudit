@@ -226,6 +226,37 @@ def test_private_ordering_survives_clock_ambiguity() -> None:
     }
 
 
+def test_private_ordering_reconciles_validated_partition_identity() -> None:
+    payload = json.loads((FIXTURES / "ordering-drift-vulnerable.json").read_text(encoding="utf-8"))
+    for event in payload["events"]:
+        event["sequence"] += 1
+        event["request"]["principal"] = "bob"
+        event["result"]["cacheScope"] = "private"
+    payload["events"][0]["at_ms"] = 10
+    payload["events"][1]["at_ms"] = 0
+    payload["events"].insert(
+        0,
+        {
+            "type": "notification",
+            "event_id": "n1",
+            "sequence": 1,
+            "at_ms": 10,
+            "principal": "alice",
+            "cache_partition": "auth-a",
+            "method": "notifications/tools/list_changed",
+            "params": {},
+            "subscription_validated": True,
+        },
+    )
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "unknown"
+    assert {finding.evidence for finding in report.findings} == {
+        "clock_sequence_ambiguous",
+    }
+
+
 def test_private_partition_mapping_conflict_remains_ambiguous() -> None:
     payload = json.loads((FIXTURES / "change-event-vulnerable.json").read_text(encoding="utf-8"))
     conflict = json.loads(json.dumps(payload["events"][0]))
