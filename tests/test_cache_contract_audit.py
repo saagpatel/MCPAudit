@@ -209,6 +209,21 @@ def test_unsupported_version_is_not_graded_green() -> None:
     assert report.protocol_versions == ["2025-11-25"]
 
 
+def test_unsupported_trace_version_stops_current_event_grading() -> None:
+    payload = json.loads((FIXTURES / "expiry-vulnerable.json").read_text(encoding="utf-8"))
+    payload["protocol_version"] = "2025-11-25"
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "unknown"
+    assert report.coverage.input_state == "unsupported"
+    assert report.coverage.analyzed_events == 2
+    assert report.coverage.retained_entries == 0
+    assert report.protocol_versions == ["2025-11-25", "2026-07-28"]
+    assert {finding.rule_id for finding in report.findings} == {"MCPCACHE000"}
+    assert {finding.evidence for finding in report.findings} == {"unsupported_protocol_version"}
+
+
 @pytest.mark.parametrize("event_type", ["use", "refresh_error"])
 def test_unsupported_use_like_event_is_not_further_graded(event_type: str) -> None:
     payload = json.loads((FIXTURES / "expiry-negative.json").read_text(encoding="utf-8"))

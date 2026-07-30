@@ -628,8 +628,9 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
     analyzed_events = 0
     limitations: set[str] = set()
     protocol_versions: set[str] = {trace.protocol_version}
+    trace_version_supported = trace.protocol_version == CURRENT_PROTOCOL_VERSION
 
-    if trace.protocol_version != CURRENT_PROTOCOL_VERSION:
+    if not trace_version_supported:
         collector.add(
             _finding(
                 "MCPCACHE000",
@@ -687,6 +688,10 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
 
     for event in ordered_events:
         analyzed_events += 1
+        if not isinstance(event, NotificationEvent):
+            protocol_versions.add(event.request.protocol_version)
+        if not trace_version_supported:
+            continue
 
         if isinstance(event, NotificationEvent):
             event_principal = event.principal
@@ -799,7 +804,6 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
             continue
 
         request = event.request
-        protocol_versions.add(request.protocol_version)
         if request.protocol_version != CURRENT_PROTOCOL_VERSION:
             collector.add(
                 _finding(

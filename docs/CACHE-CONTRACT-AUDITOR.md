@@ -132,9 +132,10 @@ This version analyzes complete results for:
 MCP `2026-07-28` also makes `server/discover` cacheable. Discovery is
 intentionally outside this list/read analyzer and is reported as an explicit
 coverage gap rather than silently treated as checked. Earlier and future
-protocol versions are unsupported and produce `UNKNOWN`; events using those
-versions are not graded against current cache keys or freshness rules, and
-older results are not graded for missing `ttlMs`/`cacheScope`.
+protocol versions are unsupported and produce `UNKNOWN`; an unsupported
+top-level trace version stops event grading, while individual events using an
+unsupported version are not graded against current cache keys or freshness
+rules. Older results are not graded for missing `ttlMs`/`cacheScope`.
 
 The implementation is aligned to the final
 [MCP caching contract](https://modelcontextprotocol.io/specification/2026-07-28/server/utilities/caching),
