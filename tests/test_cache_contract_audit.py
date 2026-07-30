@@ -432,6 +432,37 @@ def test_source_without_computable_expiry_does_not_poison_partition_evidence() -
     }
 
 
+@pytest.mark.parametrize(
+    ("mutation", "evidence"),
+    [
+        ("request-key", "cache_request_key_mismatch"),
+        ("private-partition", "private_cross_partition_reuse"),
+    ],
+)
+def test_uncomputable_expiry_preserves_expiry_independent_violations(
+    mutation: str,
+    evidence: str,
+) -> None:
+    payload = json.loads((FIXTURES / "expiry-negative.json").read_text(encoding="utf-8"))
+    response, use = payload["events"]
+    response["at_ms"] = MAX_LOGICAL_MS
+    response["result"]["ttlMs"] = 1
+    use["at_ms"] = MAX_LOGICAL_MS
+    if mutation == "request-key":
+        use["request"]["params"] = {"filter": "different"}
+    else:
+        use["request"]["principal"] = "bob"
+        use["request"]["cache_partition"] = "auth-b"
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "fail"
+    assert {finding.evidence for finding in report.findings} == {
+        evidence,
+        "expiry_outside_simulator_clock",
+    }
+
+
 @pytest.mark.parametrize("event_type", ["use", "refresh_error"])
 def test_unsupported_use_like_method_is_not_further_graded(event_type: str) -> None:
     payload = json.loads((FIXTURES / "expiry-negative.json").read_text(encoding="utf-8"))

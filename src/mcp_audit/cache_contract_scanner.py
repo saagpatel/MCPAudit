@@ -756,6 +756,7 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
         cursor_shapes_valid = True
         response_metadata: tuple[str | None, int | None] | None = None
         source: _Entry | None = None
+        source_state_eligible = True
         if isinstance(event, NotificationEvent):
             if not event.subscription_validated:
                 collector.add(
@@ -898,8 +899,9 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                         )
                     )
                     continue
-                if source.scope is None or source.ttl_ms is None or source.expires_at_ms is None:
+                if source.scope is None:
                     continue
+                source_state_eligible = source.ttl_ms is not None and source.expires_at_ms is not None
 
         if isinstance(event, NotificationEvent):
             event_principal = event.principal
@@ -908,10 +910,13 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
             event_principal = event.request.principal
             event_partition = event.request.cache_partition
         partition_mapping_consistent = False
-        partition_state_eligible = not isinstance(event, (ResponseEvent, RefreshEvent)) or (
-            response_metadata is not None
-            and response_metadata[0] is not None
-            and response_metadata[1] is not None
+        partition_state_eligible = source_state_eligible and (
+            not isinstance(event, (ResponseEvent, RefreshEvent))
+            or (
+                response_metadata is not None
+                and response_metadata[0] is not None
+                and response_metadata[1] is not None
+            )
         )
         if partition_state_eligible:
             partition_mapping_consistent = event_partition not in conflicted_partitions
@@ -1184,6 +1189,7 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
         if (
             source.scope == "private"
             and source.event.request.cache_partition == request.cache_partition
+            and partition_state_eligible
             and not partition_mapping_consistent
         ):
             continue
@@ -1217,7 +1223,6 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                     event_sequences=[source.event.sequence, event.sequence],
                 )
             )
-
         if isinstance(event, RefreshErrorEvent):
             same_private_partition = (
                 source.scope != "private" or source.event.request.cache_partition == request.cache_partition
