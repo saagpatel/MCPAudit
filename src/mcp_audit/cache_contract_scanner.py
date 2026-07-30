@@ -445,7 +445,8 @@ def _validate_response_metadata(
             )
 
     expected_payload = PAYLOAD_FIELDS[event.request.method]
-    if not isinstance(result.get(expected_payload), list):
+    payload_valid = isinstance(result.get(expected_payload), list)
+    if not payload_valid:
         collector.add(
             _finding(
                 "MCPCACHE000",
@@ -515,6 +516,8 @@ def _validate_response_metadata(
         )
     else:
         ttl_ms = None
+    if not payload_valid:
+        return None, None
     return scope, ttl_ms
 
 

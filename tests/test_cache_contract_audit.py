@@ -460,6 +460,30 @@ def test_malformed_result_type_is_structured_unknown(
 
 
 @pytest.mark.parametrize(
+    ("fixture_name", "event_index", "payload_field"),
+    [
+        ("expiry-vulnerable.json", 0, "tools"),
+        ("change-event-vulnerable.json", 0, "tools"),
+        ("wrong-key-vulnerable.json", 0, "contents"),
+        ("refresh-negative.json", 1, "tools"),
+    ],
+)
+def test_malformed_payload_is_not_further_graded(
+    fixture_name: str,
+    event_index: int,
+    payload_field: str,
+) -> None:
+    payload = json.loads((FIXTURES / fixture_name).read_text(encoding="utf-8"))
+    payload["events"][event_index]["result"][payload_field] = {}
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "unknown"
+    assert {finding.rule_id for finding in report.findings} == {"MCPCACHE000"}
+    assert {finding.evidence for finding in report.findings} == {"cacheable_payload_unverified"}
+
+
+@pytest.mark.parametrize(
     ("field", "value"),
     [
         ("ttlMs", True),

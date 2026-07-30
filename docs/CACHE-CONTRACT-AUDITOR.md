@@ -137,8 +137,8 @@ top-level trace version stops event grading, while individual events using an
 unsupported version are not graded against current cache keys or freshness
 rules. Older results are not graded for missing `ttlMs`/`cacheScope`.
 Present malformed or unsupported `resultType` values likewise produce
-`UNKNOWN`; they do not establish a cache scope for refresh, reuse, or
-notification grading.
+`UNKNOWN`. So does a malformed required list/read payload; neither establishes
+a cache scope for refresh, reuse, or notification grading.
 
 The implementation is aligned to the final
 [MCP caching contract](https://modelcontextprotocol.io/specification/2026-07-28/server/utilities/caching),
