@@ -321,6 +321,11 @@ Report verdicts:
 - `unknown`: only malformed, unsupported, ambiguous, or incomplete coverage
   remains.
 
+If the 2,048-finding bound is exceeded, an
+`MCPCACHE000`/`finding_limit_exceeded` marker is emitted and at least one
+observed non-unknown finding is retained, preventing output truncation from
+downgrading a `fail` verdict to `unknown`.
+
 The scan command exits `0` for `pass`, `1` for `fail` or `unknown`, and `2` for
 a file-system input failure. Malformed JSON and strict-contract failures emit
 one structured `unknown` report before exit `1`. A stable regular file larger

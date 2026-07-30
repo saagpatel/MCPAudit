@@ -12,6 +12,7 @@ from click.testing import CliRunner
 
 from mcp_audit.cache_contract_models import (
     MAX_EVENTS,
+    MAX_FINDINGS,
     MAX_INPUT_BYTES,
     MAX_JSON_KEY_LENGTH,
     MAX_KEY_BYTES,
@@ -791,6 +792,61 @@ def test_input_and_state_bounds_fail_closed() -> None:
     assert scan_cache_bytes(json.dumps(out_of_range_clock).encode()).verdict == "unknown"
 
     assert scan_cache_bytes(b" " * (MAX_INPUT_BYTES + 1)).verdict == "unknown"
+
+
+def test_finding_limit_preserves_a_late_concrete_violation() -> None:
+    events = [
+        {
+            "type": "notification",
+            "event_id": f"n{sequence}",
+            "sequence": sequence,
+            "at_ms": sequence,
+            "principal": "alice",
+            "cache_partition": "auth-a",
+            "method": "notifications/unsupported",
+            "params": {},
+            "subscription_validated": True,
+        }
+        for sequence in range(1, MAX_FINDINGS)
+    ]
+    events.append(
+        {
+            "type": "response",
+            "event_id": "r-invalid",
+            "sequence": MAX_FINDINGS,
+            "at_ms": MAX_FINDINGS,
+            "request": {
+                "protocol_version": "2026-07-28",
+                "principal": "alice",
+                "cache_partition": "auth-a",
+                "method": "tools/list",
+                "params": {},
+            },
+            "result": {
+                "resultType": "complete",
+                "ttlMs": -1,
+                "cacheScope": "private",
+                "tools": [],
+            },
+        }
+    )
+    raw = json.dumps(
+        {
+            "schema_version": "mcpaudit.cache-contract.trace.v1",
+            "trace_id": "late-concrete-finding",
+            "protocol_version": "2026-07-28",
+            "trace_complete": True,
+            "events": events,
+        }
+    ).encode()
+    assert len(raw) <= MAX_INPUT_BYTES
+
+    report = scan_cache_bytes(raw)
+
+    assert report.verdict == "fail"
+    assert len(report.findings) == MAX_FINDINGS
+    assert "MCPCACHE002" in {finding.rule_id for finding in report.findings}
+    assert "finding_limit_exceeded" in {finding.evidence for finding in report.findings}
 
 
 def test_oversized_path_and_cli_emit_structured_unknown(tmp_path: Path) -> None:

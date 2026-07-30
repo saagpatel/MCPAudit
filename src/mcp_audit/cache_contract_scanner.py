@@ -124,12 +124,18 @@ class _FindingCollector:
     def __init__(self) -> None:
         self.findings: list[CacheFinding] = []
         self._overflowed = False
+        self._has_concrete = False
 
     def add(self, finding: CacheFinding) -> None:
+        is_concrete = finding.severity != CacheSeverity.UNKNOWN
         if len(self.findings) < MAX_FINDINGS - 1:
             self.findings.append(finding)
+            self._has_concrete = self._has_concrete or is_concrete
             return
         self._overflowed = True
+        if is_concrete and not self._has_concrete:
+            self.findings[-1] = finding
+            self._has_concrete = True
 
     def finish(self) -> list[CacheFinding]:
         if self._overflowed:
