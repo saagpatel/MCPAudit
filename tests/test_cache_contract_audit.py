@@ -827,6 +827,45 @@ def test_ungradable_response_does_not_poison_supported_partition_evidence(
     }
 
 
+def test_response_without_computable_expiry_does_not_poison_partition_evidence() -> None:
+    payload = json.loads((FIXTURES / "expiry-vulnerable.json").read_text(encoding="utf-8"))
+    payload["events"][0]["sequence"] = 2
+    payload["events"][0]["at_ms"] = MAX_LOGICAL_MS
+    payload["events"][0]["result"]["ttlMs"] = 0
+    payload["events"][1]["sequence"] = 3
+    payload["events"][1]["at_ms"] = MAX_LOGICAL_MS
+    payload["events"].insert(
+        0,
+        {
+            "type": "response",
+            "event_id": "overflow-response",
+            "sequence": 1,
+            "at_ms": MAX_LOGICAL_MS,
+            "request": {
+                "protocol_version": "2026-07-28",
+                "principal": "bob",
+                "cache_partition": "auth-a",
+                "method": "tools/list",
+                "params": {},
+            },
+            "result": {
+                "resultType": "complete",
+                "ttlMs": 1,
+                "cacheScope": "private",
+                "tools": [],
+            },
+        },
+    )
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "fail"
+    assert {finding.evidence for finding in report.findings} == {
+        "expiry_outside_simulator_clock",
+        "use_at_or_after_ttl_boundary",
+    }
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [

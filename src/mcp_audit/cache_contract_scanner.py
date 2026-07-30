@@ -755,6 +755,7 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
 
         cursor_shapes_valid = True
         response_metadata: tuple[str | None, int | None] | None = None
+        response_expires_at_ms: int | None = None
         source: _Entry | None = None
         source_state_eligible = True
         if isinstance(event, NotificationEvent):
@@ -875,6 +876,23 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                 continue
             if isinstance(event, (ResponseEvent, RefreshEvent)):
                 response_metadata = _validate_response_metadata(event, collector)
+                _, response_ttl_ms = response_metadata
+                if response_ttl_ms is not None and clock_reliable:
+                    if event.at_ms <= MAX_LOGICAL_MS - response_ttl_ms:
+                        response_expires_at_ms = event.at_ms + response_ttl_ms
+                    else:
+                        collector.add(
+                            _finding(
+                                "MCPCACHE000",
+                                CacheSeverity.UNKNOWN,
+                                RequirementLevel.SIMULATOR_POLICY,
+                                "Expiry exceeds the bounded logical-clock model",
+                                _event_target(event.sequence),
+                                "expiry_outside_simulator_clock",
+                                ("Use receipt time and TTL values whose sum remains in the clock range."),
+                                event_sequences=[event.sequence],
+                            )
+                        )
             if isinstance(event, (RefreshEvent, RefreshErrorEvent, UseEvent)):
                 source = entries.get(event.source_event_id)
                 if source is None or source.event.sequence >= event.sequence:
@@ -916,6 +934,7 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                 response_metadata is not None
                 and response_metadata[0] is not None
                 and response_metadata[1] is not None
+                and response_expires_at_ms is not None
             )
         )
         if partition_state_eligible:
@@ -986,23 +1005,6 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
         if isinstance(event, (ResponseEvent, RefreshEvent)):
             assert response_metadata is not None
             scope, ttl_ms = response_metadata
-            expires_at_ms: int | None = None
-            if ttl_ms is not None and clock_reliable:
-                if event.at_ms <= MAX_LOGICAL_MS - ttl_ms:
-                    expires_at_ms = event.at_ms + ttl_ms
-                else:
-                    collector.add(
-                        _finding(
-                            "MCPCACHE000",
-                            CacheSeverity.UNKNOWN,
-                            RequirementLevel.SIMULATOR_POLICY,
-                            "Expiry exceeds the bounded logical-clock model",
-                            _event_target(event.sequence),
-                            "expiry_outside_simulator_clock",
-                            "Use receipt time and TTL values whose sum remains in the clock range.",
-                            event_sequences=[event.sequence],
-                        )
-                    )
             try:
                 key = _request_key(request)
             except (TypeError, ValueError):
@@ -1085,7 +1087,7 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                 key=key,
                 scope=scope,
                 ttl_ms=ttl_ms,
-                expires_at_ms=expires_at_ms,
+                expires_at_ms=response_expires_at_ms,
             )
             entries[event.event_id] = entry
 
