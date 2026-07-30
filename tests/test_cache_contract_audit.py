@@ -210,6 +210,22 @@ def test_private_ordering_survives_uncomputable_expiry_with_known_partition() ->
     }
 
 
+def test_private_ordering_survives_clock_ambiguity() -> None:
+    payload = json.loads((FIXTURES / "ordering-drift-vulnerable.json").read_text(encoding="utf-8"))
+    for event in payload["events"]:
+        event["result"]["cacheScope"] = "private"
+    payload["events"][0]["at_ms"] = 10
+    payload["events"][1]["at_ms"] = 0
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "fail"
+    assert {finding.evidence for finding in report.findings} == {
+        "clock_sequence_ambiguous",
+        "tools_list_order_drift",
+    }
+
+
 def test_private_partition_mapping_conflict_remains_ambiguous() -> None:
     payload = json.loads((FIXTURES / "change-event-vulnerable.json").read_text(encoding="utf-8"))
     conflict = json.loads(json.dumps(payload["events"][0]))

@@ -685,6 +685,8 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
     page_scopes: dict[tuple[str, str, str], _PageBaseline] = {}
     partition_principals: dict[str, tuple[str, int]] = {}
     conflicted_partitions: set[str] = set()
+    ordering_partition_principals: dict[str, str] = {}
+    ordering_conflicted_partitions: set[str] = set()
     analyzed_events = 0
     limitations: set[str] = set()
     protocol_versions: set[str] = {trace.protocol_version}
@@ -1149,12 +1151,32 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                         base_params=base_params,
                     )
 
+            ordering_partition_consistent = scope == "public"
+            if scope == "private":
+                prior_ordering_principal = ordering_partition_principals.get(request.cache_partition)
+                ordering_partition_consistent = (
+                    request.cache_partition not in conflicted_partitions
+                    and request.cache_partition not in ordering_conflicted_partitions
+                    and prior_ordering_principal == request.principal
+                )
+                if (
+                    ttl_ms is not None
+                    and request.cache_partition not in conflicted_partitions
+                    and request.cache_partition not in ordering_conflicted_partitions
+                ):
+                    if prior_ordering_principal is None:
+                        ordering_partition_principals[request.cache_partition] = request.principal
+                        ordering_partition_consistent = True
+                    elif prior_ordering_principal != request.principal:
+                        ordering_conflicted_partitions.add(request.cache_partition)
+                        ordering_partition_consistent = False
+
             if (
                 request.method == "tools/list"
                 and "cursor" not in request.params
                 and "nextCursor" not in event.result
                 and scope is not None
-                and (scope == "public" or partition_mapping_consistent)
+                and ordering_partition_consistent
             ):
                 ordering_items = _ordering_items(event.result)
                 if ordering_items is not None:
