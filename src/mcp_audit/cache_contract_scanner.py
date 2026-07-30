@@ -460,7 +460,7 @@ def _validate_response_metadata(
 
     scope_raw = result.get("cacheScope")
     scope: str | None
-    if scope_raw in {"public", "private"} and isinstance(scope_raw, str):
+    if isinstance(scope_raw, str) and scope_raw in {"public", "private"}:
         scope = scope_raw
     elif "cacheScope" in result:
         scope = None

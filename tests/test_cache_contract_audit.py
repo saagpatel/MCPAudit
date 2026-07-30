@@ -423,14 +423,28 @@ def test_input_required_result_is_not_cacheable() -> None:
         ("ttlMs", "100"),
         ("cacheScope", "shared"),
         ("cacheScope", 1),
+        ("cacheScope", {}),
+        ("cacheScope", []),
     ],
 )
-def test_invalid_cache_metadata_types_are_rejected(field: str, value: object) -> None:
+def test_invalid_cache_metadata_types_are_rejected(
+    field: str,
+    value: object,
+    tmp_path: Path,
+) -> None:
     payload = json.loads((FIXTURES / "missing-metadata-negative.json").read_text(encoding="utf-8"))
     payload["events"][0]["result"][field] = value
     report = scan_cache_bytes(json.dumps(payload).encode())
     assert report.verdict == "fail"
     assert {finding.rule_id for finding in report.findings} == {"MCPCACHE002"}
+
+    trace_path = tmp_path / "invalid-metadata.json"
+    trace_path.write_text(json.dumps(payload), encoding="utf-8")
+    result = CliRunner().invoke(main, ["cache-contract", "scan", str(trace_path)])
+    assert result.exit_code == 1, result.output
+    cli_report = json.loads(result.output)
+    assert cli_report["verdict"] == "fail"
+    assert {finding["rule_id"] for finding in cli_report["findings"]} == {"MCPCACHE002"}
 
 
 def test_public_cache_key_still_binds_method() -> None:
