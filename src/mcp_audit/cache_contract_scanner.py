@@ -952,7 +952,7 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                             )
                         )
                     elif (
-                        (source.scope == "public" or partition_mapping_consistent)
+                        ((source.scope == "public" and scope == "public") or partition_mapping_consistent)
                         and source.key == key
                         and source.scope is not None
                         and _is_valid_successful_refresh(

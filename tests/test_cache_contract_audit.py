@@ -471,14 +471,25 @@ def test_successful_refresh_supersedes_prior_ttl_refresh_error() -> None:
     assert {finding.rule_id for finding in report.findings} == {"MCPCACHE005"}
 
 
-def test_public_successful_refresh_survives_partition_principal_conflict() -> None:
+@pytest.mark.parametrize(
+    ("refresh_scope", "expected_verdict", "expected_rule_ids"),
+    [
+        ("public", "fail", {"MCPCACHE000", "MCPCACHE005"}),
+        ("private", "unknown", {"MCPCACHE000"}),
+    ],
+)
+def test_public_refresh_scope_respects_partition_principal_conflict(
+    refresh_scope: str,
+    expected_verdict: str,
+    expected_rule_ids: set[str],
+) -> None:
     payload = json.loads((FIXTURES / "refresh-negative.json").read_text(encoding="utf-8"))
     payload["events"][0]["result"]["cacheScope"] = "public"
     refresh = payload["events"][1]
     refresh["sequence"] = 4
     refresh["at_ms"] = 11
     refresh["source_event_id"] = "r1"
-    refresh["result"]["cacheScope"] = "public"
+    refresh["result"]["cacheScope"] = refresh_scope
     conflict = json.loads(json.dumps(payload["events"][0]))
     conflict["event_id"] = "r-conflict"
     conflict["sequence"] = 3
@@ -501,8 +512,8 @@ def test_public_successful_refresh_survives_partition_principal_conflict() -> No
 
     report = scan_cache_bytes(json.dumps(payload).encode())
 
-    assert report.verdict == "fail"
-    assert {finding.rule_id for finding in report.findings} == {"MCPCACHE000", "MCPCACHE005"}
+    assert report.verdict == expected_verdict
+    assert {finding.rule_id for finding in report.findings} == expected_rule_ids
 
 
 def test_malformed_refresh_cursor_does_not_supersede_prior_refresh_error() -> None:
