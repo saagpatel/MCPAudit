@@ -77,6 +77,8 @@ LIST_NOTIFICATION_METHODS: Final = {
     "notifications/resources/list_changed": frozenset({"resources/list", "resources/templates/list"}),
 }
 RESOURCE_UPDATED: Final = "notifications/resources/updated"
+_OrderingPartition = tuple[Literal["public", "private"], str]
+PUBLIC_ORDERING_PARTITION: Final[_OrderingPartition] = ("public", "")
 
 REPORT_ASSUMPTIONS: Final = [
     (
@@ -682,8 +684,8 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
     entries: dict[str, _Entry] = {}
     identity_only_entries: dict[str, _Entry] = {}
     ungradable_entry_ids: set[str] = set()
-    ordering: dict[tuple[tuple[str, str, str], str], _OrderingBaseline] = {}
-    ordering_epochs: dict[tuple[str, str], int] = {}
+    ordering: dict[tuple[tuple[str, str, str], _OrderingPartition], _OrderingBaseline] = {}
+    ordering_epochs: dict[tuple[str, _OrderingPartition], int] = {}
     page_scopes: dict[tuple[str, str, str], _PageBaseline] = {}
     partition_principals: dict[str, tuple[str, int]] = {}
     conflicted_partitions: set[str] = set()
@@ -1004,21 +1006,22 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                 else:
                     entry.invalidated_partitions[event.cache_partition] = event.sequence
             affected_ordering_methods = LIST_NOTIFICATION_METHODS.get(event.method)
-            ordering_epoch_keys: set[tuple[str, str]] = set()
+            ordering_epoch_keys: set[tuple[str, _OrderingPartition]] = set()
             if affected_ordering_methods is not None:
-                for request_key, ordering_partition in ordering:
+                for request_key, baseline_partition in ordering:
                     method = request_key[1]
                     if method not in affected_ordering_methods:
                         continue
-                    if ordering_partition == "public":
-                        ordering_epoch_keys.add((method, ordering_partition))
+                    ordering_scope, private_partition = baseline_partition
+                    if ordering_scope == "public":
+                        ordering_epoch_keys.add((method, baseline_partition))
                     elif (
-                        ordering_partition == event.cache_partition
-                        and ordering_partition not in conflicted_partitions
-                        and ordering_partition not in ordering_conflicted_partitions
-                        and ordering_partition_principals.get(ordering_partition) == event.principal
+                        private_partition == event.cache_partition
+                        and private_partition not in conflicted_partitions
+                        and private_partition not in ordering_conflicted_partitions
+                        and ordering_partition_principals.get(private_partition) == event.principal
                     ):
-                        ordering_epoch_keys.add((method, ordering_partition))
+                        ordering_epoch_keys.add((method, baseline_partition))
             for ordering_epoch_key in ordering_epoch_keys:
                 ordering_epochs[ordering_epoch_key] = ordering_epochs.get(ordering_epoch_key, 0) + 1
             continue
@@ -1093,19 +1096,24 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                 ungradable_entry_ids.add(event.event_id)
                 continue
 
-            entry = _Entry(
-                event=event,
-                key=key,
-                scope=scope,
-                ttl_ms=ttl_ms,
-                expires_at_ms=response_expires_at_ms,
-            )
             if ttl_ms is None or response_expires_at_ms is None:
                 # Bounded by MAX_EVENTS and retained only for request-key and
                 # authorization-partition evidence, never freshness state.
-                identity_only_entries[event.event_id] = entry
+                identity_only_entries[event.event_id] = _Entry(
+                    event=event,
+                    key=key,
+                    scope=scope,
+                    ttl_ms=None,
+                    expires_at_ms=None,
+                )
             elif len(entries) >= MAX_RETAINED_ENTRIES:
-                identity_only_entries[event.event_id] = entry
+                identity_only_entries[event.event_id] = _Entry(
+                    event=event,
+                    key=key,
+                    scope=scope,
+                    ttl_ms=None,
+                    expires_at_ms=None,
+                )
                 collector.add(
                     _finding(
                         "MCPCACHE000",
@@ -1120,7 +1128,13 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                 )
                 limitations.add("later cache entries were not retained")
             else:
-                entries[event.event_id] = entry
+                entries[event.event_id] = _Entry(
+                    event=event,
+                    key=key,
+                    scope=scope,
+                    ttl_ms=ttl_ms,
+                    expires_at_ms=response_expires_at_ms,
+                )
 
             if (
                 event.page_group is not None
@@ -1214,9 +1228,13 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
             ):
                 ordering_items = _ordering_items(event.result)
                 if ordering_items is not None:
-                    partition_key = "public" if scope == "public" else request.cache_partition
-                    epoch = ordering_epochs.get((request.method, partition_key), 0)
-                    baseline_key = (key, partition_key)
+                    ordering_partition_key: _OrderingPartition = (
+                        PUBLIC_ORDERING_PARTITION
+                        if scope == "public"
+                        else ("private", request.cache_partition)
+                    )
+                    epoch = ordering_epochs.get((request.method, ordering_partition_key), 0)
+                    baseline_key = (key, ordering_partition_key)
                     baseline = ordering.get(baseline_key)
                     if (
                         baseline is not None

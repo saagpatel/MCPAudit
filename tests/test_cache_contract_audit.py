@@ -1689,6 +1689,34 @@ def test_capped_response_still_supports_request_key_evidence() -> None:
     }
 
 
+def test_capped_response_is_not_freshness_graded() -> None:
+    payload = json.loads((FIXTURES / "expiry-vulnerable.json").read_text(encoding="utf-8"))
+    source, use = payload["events"]
+    filler_events = []
+    for index in range(MAX_RETAINED_ENTRIES):
+        event = json.loads(json.dumps(source))
+        event["event_id"] = f"filler-{index}"
+        event["sequence"] = index
+        event["at_ms"] = index
+        event["request"]["params"] = {"slot": index}
+        filler_events.append(event)
+
+    source["event_id"] = "capped-source"
+    source["sequence"] = MAX_RETAINED_ENTRIES
+    source["at_ms"] = MAX_RETAINED_ENTRIES
+    source["result"]["ttlMs"] = 0
+    use["source_event_id"] = "capped-source"
+    use["sequence"] = MAX_RETAINED_ENTRIES + 1
+    use["at_ms"] = MAX_RETAINED_ENTRIES
+    payload["events"] = [*filler_events, source, use]
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "unknown"
+    assert report.coverage.retained_entries == MAX_RETAINED_ENTRIES
+    assert {finding.evidence for finding in report.findings} == {"retained_entry_limit_exceeded"}
+
+
 @pytest.mark.parametrize("scope", ["public", "private"])
 def test_notification_resets_identity_only_ordering_baseline(scope: str) -> None:
     payload = json.loads((FIXTURES / "ordering-drift-vulnerable.json").read_text(encoding="utf-8"))
@@ -1716,6 +1744,38 @@ def test_notification_resets_identity_only_ordering_baseline(scope: str) -> None
 
     assert report.verdict == "unknown"
     assert {finding.evidence for finding in report.findings} == {"ttl_outside_simulator_clock"}
+
+
+def test_private_partition_named_public_does_not_collide_with_public_ordering() -> None:
+    payload = json.loads((FIXTURES / "ordering-drift-vulnerable.json").read_text(encoding="utf-8"))
+    first, second = payload["events"]
+    first["result"]["ttlMs"] = MAX_LOGICAL_MS + 1
+    for event in (first, second):
+        event["result"]["cacheScope"] = "private"
+        event["request"]["cache_partition"] = "public"
+    second["sequence"] = 3
+    payload["events"].insert(
+        1,
+        {
+            "type": "notification",
+            "event_id": "n1",
+            "sequence": 2,
+            "at_ms": 0,
+            "principal": "bob",
+            "cache_partition": "auth-b",
+            "method": "notifications/tools/list_changed",
+            "params": {},
+            "subscription_validated": True,
+        },
+    )
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "fail"
+    assert {finding.evidence for finding in report.findings} == {
+        "ttl_outside_simulator_clock",
+        "tools_list_order_drift",
+    }
 
 
 def test_strict_schemas_are_versioned_and_closed() -> None:
