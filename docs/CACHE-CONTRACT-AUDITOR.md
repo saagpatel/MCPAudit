@@ -236,7 +236,8 @@ The analyzer enforces:
 
 - 1 MiB maximum input;
 - 2,048 events;
-- 512 retained entries;
+- 512 retained freshness-state entries; compact request-key and partition
+  identities remain bounded by the 2,048-event input limit;
 - 256 KiB per result body;
 - 8 KiB per canonical request/notification key;
 - 256 characters per JSON object key;

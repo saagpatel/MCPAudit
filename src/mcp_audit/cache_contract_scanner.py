@@ -1001,11 +1001,25 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                     continue
                 if entry.scope == "public":
                     entry.invalidated_globally = event.sequence
-                    ordering_partition = "public"
                 else:
                     entry.invalidated_partitions[event.cache_partition] = event.sequence
-                    ordering_partition = event.cache_partition
-                ordering_epoch_key = (entry.event.request.method, ordering_partition)
+            affected_ordering_methods = LIST_NOTIFICATION_METHODS.get(event.method)
+            ordering_epoch_keys: set[tuple[str, str]] = set()
+            if affected_ordering_methods is not None:
+                for request_key, ordering_partition in ordering:
+                    method = request_key[1]
+                    if method not in affected_ordering_methods:
+                        continue
+                    if ordering_partition == "public":
+                        ordering_epoch_keys.add((method, ordering_partition))
+                    elif (
+                        ordering_partition == event.cache_partition
+                        and ordering_partition not in conflicted_partitions
+                        and ordering_partition not in ordering_conflicted_partitions
+                        and ordering_partition_principals.get(ordering_partition) == event.principal
+                    ):
+                        ordering_epoch_keys.add((method, ordering_partition))
+            for ordering_epoch_key in ordering_epoch_keys:
                 ordering_epochs[ordering_epoch_key] = ordering_epochs.get(ordering_epoch_key, 0) + 1
             continue
 
@@ -1091,6 +1105,7 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                 # authorization-partition evidence, never freshness state.
                 identity_only_entries[event.event_id] = entry
             elif len(entries) >= MAX_RETAINED_ENTRIES:
+                identity_only_entries[event.event_id] = entry
                 collector.add(
                     _finding(
                         "MCPCACHE000",

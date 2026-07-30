@@ -1660,6 +1660,64 @@ def test_retained_entry_cap_does_not_hide_ordering_drift() -> None:
     }
 
 
+def test_capped_response_still_supports_request_key_evidence() -> None:
+    payload = json.loads((FIXTURES / "wrong-key-vulnerable.json").read_text(encoding="utf-8"))
+    source, use = payload["events"]
+    filler_events = []
+    for index in range(MAX_RETAINED_ENTRIES):
+        event = json.loads(json.dumps(source))
+        event["event_id"] = f"filler-{index}"
+        event["sequence"] = index
+        event["at_ms"] = index
+        event["request"]["params"] = {"uri": f"test://filler-{index}"}
+        filler_events.append(event)
+
+    source["event_id"] = "capped-source"
+    source["sequence"] = MAX_RETAINED_ENTRIES
+    source["at_ms"] = MAX_RETAINED_ENTRIES
+    use["source_event_id"] = "capped-source"
+    use["sequence"] = MAX_RETAINED_ENTRIES + 1
+    use["at_ms"] = MAX_RETAINED_ENTRIES
+    payload["events"] = [*filler_events, source, use]
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "fail"
+    assert report.coverage.retained_entries == MAX_RETAINED_ENTRIES
+    assert {"retained_entry_limit_exceeded", "cache_request_key_mismatch"} <= {
+        finding.evidence for finding in report.findings
+    }
+
+
+@pytest.mark.parametrize("scope", ["public", "private"])
+def test_notification_resets_identity_only_ordering_baseline(scope: str) -> None:
+    payload = json.loads((FIXTURES / "ordering-drift-vulnerable.json").read_text(encoding="utf-8"))
+    first, second = payload["events"]
+    first["result"]["ttlMs"] = MAX_LOGICAL_MS + 1
+    first["result"]["cacheScope"] = scope
+    second["result"]["cacheScope"] = scope
+    second["sequence"] = 3
+    payload["events"].insert(
+        1,
+        {
+            "type": "notification",
+            "event_id": "n1",
+            "sequence": 2,
+            "at_ms": 0,
+            "principal": "alice",
+            "cache_partition": "auth-a",
+            "method": "notifications/tools/list_changed",
+            "params": {},
+            "subscription_validated": True,
+        },
+    )
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "unknown"
+    assert {finding.evidence for finding in report.findings} == {"ttl_outside_simulator_clock"}
+
+
 def test_strict_schemas_are_versioned_and_closed() -> None:
     trace_schema = CacheTrace.model_json_schema()
     report_schema = CacheAuditReport.model_json_schema()
