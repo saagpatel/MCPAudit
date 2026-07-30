@@ -1247,7 +1247,8 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                     )
                 )
             if (
-                key_matches
+                source_state_eligible
+                and key_matches
                 and same_private_partition
                 and consistent_private_principal
                 and (source.scope == "public" or partition_mapping_consistent)
@@ -1270,6 +1271,8 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                         event_sequences=[source.event.sequence, event.sequence],
                     )
                 )
+        if not source_state_eligible:
+            continue
 
         invalidated_at = (
             source.invalidated_globally

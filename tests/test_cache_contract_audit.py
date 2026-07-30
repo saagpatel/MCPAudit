@@ -463,6 +463,19 @@ def test_uncomputable_expiry_preserves_expiry_independent_violations(
     }
 
 
+def test_uncomputable_expiry_does_not_establish_notification_freshness() -> None:
+    payload = json.loads((FIXTURES / "change-event-vulnerable.json").read_text(encoding="utf-8"))
+    for event in payload["events"]:
+        event["at_ms"] = MAX_LOGICAL_MS
+    payload["events"][0]["result"]["ttlMs"] = 1
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "unknown"
+    assert {finding.rule_id for finding in report.findings} == {"MCPCACHE000"}
+    assert {finding.evidence for finding in report.findings} == {"expiry_outside_simulator_clock"}
+
+
 @pytest.mark.parametrize("event_type", ["use", "refresh_error"])
 def test_unsupported_use_like_method_is_not_further_graded(event_type: str) -> None:
     payload = json.loads((FIXTURES / "expiry-negative.json").read_text(encoding="utf-8"))
