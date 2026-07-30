@@ -494,6 +494,16 @@ def _coverage(findings: Iterable[SubscriptionFinding]) -> str:
 
 
 def _read_fixture_bytes(path: Path) -> bytes:
+    try:
+        expected = path.lstat()
+    except OSError as exc:
+        raise SubscriptionStreamInputError("fixture is inaccessible or is a symlink") from exc
+    if stat.S_ISLNK(expected.st_mode):
+        raise SubscriptionStreamInputError("fixture is inaccessible or is a symlink")
+    if not stat.S_ISREG(expected.st_mode):
+        raise SubscriptionStreamInputError("fixture is not a regular file")
+    if expected.st_size > MAX_INPUT_BYTES:
+        raise SubscriptionStreamInputError(f"fixture exceeds the {MAX_INPUT_BYTES}-byte input limit")
     flags = (
         os.O_RDONLY
         | getattr(os, "O_CLOEXEC", 0)
@@ -508,6 +518,8 @@ def _read_fixture_bytes(path: Path) -> bytes:
         opened = os.fstat(descriptor)
         if not stat.S_ISREG(opened.st_mode):
             raise SubscriptionStreamInputError("fixture is not a regular file")
+        if (expected.st_dev, expected.st_ino) != (opened.st_dev, opened.st_ino):
+            raise SubscriptionStreamInputError("fixture changed or is a symlink")
         if opened.st_size > MAX_INPUT_BYTES:
             raise SubscriptionStreamInputError(f"fixture exceeds the {MAX_INPUT_BYTES}-byte input limit")
         chunks: list[bytes] = []
@@ -864,10 +876,17 @@ def _reduce_request_event(
     if not isinstance(message, dict):
         return state
     method = message.get("method")
-    if (
-        event.direction is Direction.SERVER_TO_CLIENT
-        and isinstance(method, str)
-        and (method in _SUBSCRIPTION_METHODS or method == _ACK_METHOD)
+    if "method" in message and not isinstance(method, str):
+        return _add_finding(
+            state,
+            "MCPSUB000",
+            outcome=FindingOutcome.UNKNOWN,
+            target=_event_target(event, event_index),
+            evidence=["request stream JSON-RPC method is absent or malformed"],
+            event_index=event_index,
+        )
+    if event.direction is Direction.SERVER_TO_CLIENT and (
+        method in _SUBSCRIPTION_METHODS or method == _ACK_METHOD
     ):
         if (shape_error := _notification_shape_error(message)) is not None:
             state = _add_finding(
@@ -886,11 +905,27 @@ def _reduce_request_event(
             evidence=[f"{method} appeared on a request response stream"],
             event_index=event_index,
         )
-    if (
-        event.direction is Direction.SERVER_TO_CLIENT
-        and method in _REQUEST_SCOPED_METHODS
-        and _notification_subscription_id(message)[0]
-    ):
+    if isinstance(method, str) and method in _REQUEST_SCOPED_METHODS:
+        if event.direction is not Direction.SERVER_TO_CLIENT:
+            return _add_finding(
+                state,
+                "MCPSUB000",
+                outcome=FindingOutcome.UNKNOWN,
+                target=_event_target(event, event_index),
+                evidence=["request-scoped notification is not on a server-to-client request stream"],
+                event_index=event_index,
+            )
+        if (shape_error := _notification_shape_error(message)) is not None:
+            return _add_finding(
+                state,
+                "MCPSUB000",
+                outcome=FindingOutcome.UNKNOWN,
+                target=_event_target(event, event_index),
+                evidence=[shape_error],
+                event_index=event_index,
+            )
+        if not _notification_subscription_id(message)[0]:
+            return state
         return _add_finding(
             state,
             "MCPSUB003",
@@ -1110,7 +1145,9 @@ def _subscription_message(
             event_index=event_index,
         )
     method = message.get("method")
-    if isinstance(method, str) and method.startswith("notifications/"):
+    if not isinstance(method, str):
+        return state.with_subscription(replace(subscription, server_notification_seen=True))
+    if method.startswith("notifications/"):
         state = _check_subscription_meta(
             state,
             subscription,
@@ -1127,16 +1164,6 @@ def _subscription_message(
             outcome=FindingOutcome.VIOLATION,
             target=target,
             evidence=[f"{method} appeared on a long-lived subscription stream"],
-            event_index=event_index,
-        )
-        return state.with_subscription(replace(subscription, server_notification_seen=True))
-    if not isinstance(method, str):
-        state = _add_finding(
-            state,
-            "MCPSUB000",
-            outcome=FindingOutcome.UNKNOWN,
-            target=target,
-            evidence=["subscription JSON-RPC notification has no method"],
             event_index=event_index,
         )
         return state.with_subscription(replace(subscription, server_notification_seen=True))

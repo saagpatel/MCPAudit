@@ -394,6 +394,39 @@ def test_malformed_current_protocol_messages_are_unknown() -> None:
         assert "MCPSUB000" in {finding.rule_id for finding in report.findings}
 
 
+@pytest.mark.parametrize(
+    "mutation",
+    ["wrong_jsonrpc", "forbidden_id", "wrong_direction", "non_string_method"],
+)
+def test_malformed_request_scoped_notifications_are_unknown(mutation: str) -> None:
+    payload = _payload("request-leak-negative")
+    message = payload["events"][1]["message"]
+    if mutation == "wrong_jsonrpc":
+        message["jsonrpc"] = "1.0"
+    elif mutation == "forbidden_id":
+        message["id"] = "unexpected"
+    elif mutation == "wrong_direction":
+        payload["events"][1]["direction"] = "client_to_server"
+    elif mutation == "non_string_method":
+        message["method"] = ["notifications/progress"]
+    else:  # pragma: no cover - exhaustive guard for type checkers
+        raise AssertionError(mutation)
+
+    report = scan_subscription_stream_bytes(_bytes(payload))
+    assert report.verdict == "unknown"
+    assert report.coverage == "unknown"
+    assert "MCPSUB000" in {finding.rule_id for finding in report.findings}
+
+
+def test_subscription_non_string_method_is_unknown_not_a_crash() -> None:
+    payload = _payload("wrong-type-negative")
+    payload["events"][2]["message"]["method"] = ["notifications/tools/list_changed"]
+    report = scan_subscription_stream_bytes(_bytes(payload))
+    assert report.verdict == "unknown"
+    assert report.coverage == "unknown"
+    assert {finding.rule_id for finding in report.findings} == {"MCPSUB000"}
+
+
 def test_checked_in_current_close_results_declare_result_type() -> None:
     close_count = 0
     for path in FIXTURE_ROOT.glob("*.json"):
@@ -512,8 +545,11 @@ def test_cancellation_terminates_only_its_subscription() -> None:
 
 
 def test_fixture_open_requests_nonblocking_mode(
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    fixture = tmp_path / "trace.json"
+    fixture.write_bytes(_bytes(_payload("wrong-type-negative")))
     opened: dict[str, int] = {}
 
     def capture_open(path: Path, flags: int) -> int:
@@ -523,7 +559,7 @@ def test_fixture_open_requests_nonblocking_mode(
 
     monkeypatch.setattr("mcp_audit.subscription_stream_scanner.os.open", capture_open)
     with pytest.raises(SubscriptionStreamInputError):
-        scan_subscription_stream_path(Path("synthetic.fixture"))
+        scan_subscription_stream_path(fixture)
     assert opened["flags"] & getattr(os, "O_NONBLOCK", 0)
 
 
@@ -596,6 +632,17 @@ def test_scanner_has_no_network_or_process_execution_path(
 def test_symlink_input_is_rejected(tmp_path: Path) -> None:
     fixture = tmp_path / "trace.json"
     fixture.symlink_to(_fixture("wrong-type-negative").resolve())
+    with pytest.raises(SubscriptionStreamInputError, match="symlink"):
+        scan_subscription_stream_path(fixture)
+
+
+def test_symlink_input_is_rejected_without_o_nofollow(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = tmp_path / "trace.json"
+    fixture.symlink_to(_fixture("wrong-type-negative").resolve())
+    monkeypatch.delattr("mcp_audit.subscription_stream_scanner.os.O_NOFOLLOW", raising=False)
     with pytest.raises(SubscriptionStreamInputError, match="symlink"):
         scan_subscription_stream_path(fixture)
 
