@@ -383,7 +383,8 @@ def _validate_response_metadata(
 ) -> tuple[str | None, int | None]:
     result = event.result
     sequence = event.sequence
-    if "resultType" not in result:
+    result_type_present = "resultType" in result
+    if not result_type_present:
         collector.add(
             _finding(
                 "MCPCACHE001",
@@ -412,7 +413,7 @@ def _validate_response_metadata(
             )
         )
         return None, None
-    if result_type is not None and result_type != "complete":
+    if result_type_present and result_type != "complete":
         collector.add(
             _finding(
                 "MCPCACHE000",
@@ -793,6 +794,8 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                     continue
                 if not relevant:
                     continue
+                if entry.scope is None:
+                    continue
                 if entry.scope == "private" and not partition_mapping_consistent:
                     continue
                 if entry.scope == "private" and (
@@ -931,7 +934,7 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                             event_sequences=[event.sequence],
                         )
                     )
-                elif source.key != key:
+                elif source.scope is not None and source.key != key:
                     collector.add(
                         _finding(
                             "MCPCACHE004",
@@ -1105,6 +1108,8 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                     event_sequences=[event.sequence],
                 )
             )
+            continue
+        if source.scope is None:
             continue
         if (
             source.scope == "private"

@@ -416,6 +416,29 @@ def test_input_required_result_is_not_cacheable() -> None:
     assert {finding.rule_id for finding in report.findings} == {"MCPCACHE009"}
 
 
+@pytest.mark.parametrize("result_type", [None, {}, []])
+def test_malformed_result_type_is_structured_unknown(
+    result_type: object,
+    tmp_path: Path,
+) -> None:
+    payload = json.loads((FIXTURES / "missing-metadata-negative.json").read_text(encoding="utf-8"))
+    payload["events"][0]["result"]["resultType"] = result_type
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "unknown"
+    assert {finding.rule_id for finding in report.findings} == {"MCPCACHE000"}
+    assert {finding.evidence for finding in report.findings} == {"unsupported_result_type"}
+
+    trace_path = tmp_path / "malformed-result-type.json"
+    trace_path.write_text(json.dumps(payload), encoding="utf-8")
+    result = CliRunner().invoke(main, ["cache-contract", "scan", str(trace_path)])
+    assert result.exit_code == 1, result.output
+    cli_report = json.loads(result.output)
+    assert cli_report["verdict"] == "unknown"
+    assert {finding["evidence"] for finding in cli_report["findings"]} == {"unsupported_result_type"}
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [
@@ -700,6 +723,43 @@ def test_public_notification_check_survives_partition_principal_conflict() -> No
 
     assert report.verdict == "fail"
     assert {finding.rule_id for finding in report.findings} == {"MCPCACHE000", "MCPCACHE007"}
+
+
+def test_notification_does_not_invalidate_an_entry_with_unknown_scope() -> None:
+    payload = json.loads((FIXTURES / "change-event-vulnerable.json").read_text(encoding="utf-8"))
+    payload["events"][0]["result"]["resultType"] = "unsupported"
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "unknown"
+    assert {finding.rule_id for finding in report.findings} == {"MCPCACHE000"}
+    assert {finding.evidence for finding in report.findings} == {"unsupported_result_type"}
+
+
+@pytest.mark.parametrize("event_type", ["use", "refresh_error"])
+def test_use_like_event_does_not_grade_an_entry_with_unknown_scope(event_type: str) -> None:
+    payload = json.loads((FIXTURES / "wrong-key-vulnerable.json").read_text(encoding="utf-8"))
+    payload["events"][0]["result"]["resultType"] = "unsupported"
+    payload["events"][1]["type"] = event_type
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "unknown"
+    assert {finding.rule_id for finding in report.findings} == {"MCPCACHE000"}
+    assert {finding.evidence for finding in report.findings} == {"unsupported_result_type"}
+
+
+def test_refresh_does_not_grade_a_source_with_unknown_scope() -> None:
+    payload = json.loads((FIXTURES / "refresh-negative.json").read_text(encoding="utf-8"))
+    payload["events"] = payload["events"][:2]
+    payload["events"][0]["result"]["resultType"] = "unsupported"
+    payload["events"][1]["request"]["params"] = {"cursor": "different-key"}
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "unknown"
+    assert {finding.rule_id for finding in report.findings} == {"MCPCACHE000"}
+    assert {finding.evidence for finding in report.findings} == {"unsupported_result_type"}
 
 
 def test_public_entry_refresh_error_applies_to_shared_entry() -> None:
