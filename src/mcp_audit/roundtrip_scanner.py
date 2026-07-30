@@ -523,6 +523,41 @@ def _responses_by_id(trace: RoundTripTrace) -> dict[tuple[str, str], list[TraceE
     return output
 
 
+def _requests_by_id(trace: RoundTripTrace) -> dict[tuple[str, str], list[TraceEvent]]:
+    output: dict[tuple[str, str], list[TraceEvent]] = {}
+    for event in _request_events(trace):
+        message_id = _message_id(event)
+        if message_id is not None:
+            output.setdefault(_id_key(message_id), []).append(event)
+    return output
+
+
+def _responses_after_request(
+    response_map: Mapping[tuple[str, str], list[TraceEvent]],
+    request: TraceEvent,
+) -> list[TraceEvent]:
+    message_id = _message_id(request)
+    if message_id is None:
+        return []
+    return [
+        response
+        for response in response_map.get(_id_key(message_id), [])
+        if response.sequence > request.sequence
+    ]
+
+
+def _origin_before_response(
+    request_map: Mapping[tuple[str, str], list[TraceEvent]],
+    response: TraceEvent,
+) -> TraceEvent | None:
+    message_id = _message_id(response)
+    origins = request_map.get(_id_key(message_id), []) if message_id is not None else []
+    return next(
+        (request for request in reversed(origins) if request.sequence < response.sequence),
+        None,
+    )
+
+
 def _response_is_explicit_version_rejection(
     event: TraceEvent,
     requested: str,
@@ -562,8 +597,7 @@ def _evaluate_request_envelopes(
             continue
         if version == SUPPORTED_PROTOCOL_REVISION:
             continue
-        message_id = _message_id(event)
-        candidates = responses.get(_id_key(message_id), []) if message_id is not None else []
+        candidates = _responses_after_request(responses, event)
         if not any(
             _response_is_explicit_version_rejection(
                 item,
@@ -605,7 +639,7 @@ def _evaluate_discovery(
     advertised: list[tuple[set[str], set[str], int]] = []
     for request in discover:
         message_id = _message_id(request)
-        candidates = responses.get(_id_key(message_id), []) if message_id is not None else []
+        candidates = _responses_after_request(responses, request) if message_id is not None else []
         if not candidates:
             unknown.append(request.sequence)
             continue
@@ -636,8 +670,7 @@ def _evaluate_discovery(
             if event.sequence <= response_sequence:
                 continue
             observed_later_behavior = True
-            response_id = _message_id(event)
-            candidates = response_map.get(_id_key(response_id), []) if response_id is not None else []
+            candidates = _responses_after_request(response_map, event)
             if not candidates:
                 unknown.append(event.sequence)
                 continue
@@ -747,17 +780,12 @@ def _schema_header_bindings(schema: Any) -> list[HeaderBinding] | None:
 def _tool_header_snapshots(
     trace: RoundTripTrace,
 ) -> dict[str, list[tuple[int, list[HeaderBinding] | None]]]:
-    requests = {
-        _id_key(message_id): event
-        for event in _request_events(trace)
-        if (message_id := _message_id(event)) is not None
-    }
+    requests = _requests_by_id(trace)
     snapshots: dict[str, list[tuple[int, list[HeaderBinding] | None]]] = {}
     for response in trace.events:
         if response.kind != "server_response":
             continue
-        message_id = _message_id(response)
-        origin = requests.get(_id_key(message_id)) if message_id is not None else None
+        origin = _origin_before_response(requests, response)
         if origin is None or _method(origin) != "tools/list":
             continue
         result = _message_mapping(response).get("result")
@@ -936,19 +964,17 @@ def _evaluate_mrtr(
     unknown: list[int] = []
     requests = _request_events(trace)
     response_map = _responses_by_id(trace)
+    request_map = _requests_by_id(trace)
     for candidates in response_map.values():
         if len(candidates) > 1:
             failures.extend(item.sequence for item in candidates)
-    request_map = {
-        _id_key(message_id): event for event in requests if (message_id := _message_id(event)) is not None
-    }
     breaks = [event for event in trace.events if event.kind == "stream_broken"]
     for request in requests:
         message_id = _message_id(request)
         if message_id is None:
             unknown.append(request.sequence)
             continue
-        has_response = bool(response_map.get(_id_key(message_id)))
+        has_response = bool(_responses_after_request(response_map, request))
         has_later_break = any(
             item.sequence > request.sequence and item.request_id == message_id for item in breaks
         )
@@ -956,8 +982,7 @@ def _evaluate_mrtr(
             unknown.append(request.sequence)
     for response in [event for event in trace.events if event.kind == "server_response"]:
         message = _message_mapping(response)
-        message_id = _message_id(response)
-        origin = request_map.get(_id_key(message_id)) if message_id is not None else None
+        origin = _origin_before_response(request_map, response)
         if origin is None:
             unknown.append(response.sequence)
             continue
@@ -1046,19 +1071,14 @@ def _state_witness(
 def _evaluate_request_state(
     trace: RoundTripTrace,
 ) -> tuple[RoundTripRuleResult, list[RoundTripFinding]]:
-    request_map = {
-        _id_key(message_id): event
-        for event in _request_events(trace)
-        if (message_id := _message_id(event)) is not None
-    }
+    request_map = _requests_by_id(trace)
     issued: list[tuple[str, TraceEvent, TraceEvent]] = []
     for response in trace.events:
         if response.kind != "server_response":
             continue
         result = _message_mapping(response).get("result")
         state = result.get("requestState") if isinstance(result, dict) else None
-        message_id = _message_id(response)
-        origin = request_map.get(_id_key(message_id)) if message_id is not None else None
+        origin = _origin_before_response(request_map, response)
         if isinstance(state, str) and origin is not None:
             issued.append((state, origin, response))
     if not issued:

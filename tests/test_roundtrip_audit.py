@@ -174,6 +174,48 @@ def test_partial_round_trip_is_unknown_not_clean(tmp_path: Path) -> None:
     assert _status(report, "MCPRT004") == "UNKNOWN"
 
 
+def test_complete_response_before_request_is_unknown_not_clean(tmp_path: Path) -> None:
+    payload = _payload("mcprt001-negative.json")
+    request = payload["events"][0]  # type: ignore[index]
+    response = payload["events"][1]  # type: ignore[index]
+    response["sequence"] = 0  # type: ignore[index]
+    request["sequence"] = 1  # type: ignore[index]
+    payload["events"] = [response, request]
+    path = tmp_path / "response-before-request.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    report = scan_roundtrip_path(path)
+
+    assert report.verdict == "unknown"
+    assert _status(report, "MCPRT004") == "UNKNOWN"
+    finding = next(item for item in report.findings if item.rule_id == "MCPRT004")
+    assert finding.status == "UNKNOWN"
+    assert finding.event_sequences == [0, 1]
+
+
+def test_interim_response_before_origin_request_is_unknown_not_clean(tmp_path: Path) -> None:
+    payload = _payload("mcprt004-negative.json")
+    origin = payload["events"][0]  # type: ignore[index]
+    interim = payload["events"][1]  # type: ignore[index]
+    retry = payload["events"][2]  # type: ignore[index]
+    final = payload["events"][3]  # type: ignore[index]
+    interim["sequence"] = 0  # type: ignore[index]
+    origin["sequence"] = 1  # type: ignore[index]
+    retry["sequence"] = 2  # type: ignore[index]
+    final["sequence"] = 3  # type: ignore[index]
+    payload["events"] = [interim, origin, retry, final]
+    path = tmp_path / "interim-response-before-origin.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    report = scan_roundtrip_path(path)
+
+    assert report.verdict == "unknown"
+    assert _status(report, "MCPRT004") == "UNKNOWN"
+    finding = next(item for item in report.findings if item.rule_id == "MCPRT004")
+    assert finding.status == "UNKNOWN"
+    assert finding.event_sequences == [0, 1]
+
+
 def test_stdio_duplicate_request_ids_are_reported(tmp_path: Path) -> None:
     payload = _payload("mcprt001-negative.json")
     duplicate = json.loads(json.dumps(payload["events"][0]))  # type: ignore[index]
