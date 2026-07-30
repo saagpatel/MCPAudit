@@ -385,6 +385,24 @@ def scan_cache_path(path: Path) -> CacheAuditReport:
     return scan_cache_bytes(raw)
 
 
+def _record_input_required_violation(
+    event: ResponseEvent | RefreshEvent,
+    collector: _FindingCollector,
+) -> None:
+    collector.add(
+        _finding(
+            "MCPCACHE009",
+            CacheSeverity.HIGH,
+            RequirementLevel.PROTOCOL_MUST,
+            "A non-cacheable multi-round-trip result was stored",
+            _event_target(event.sequence),
+            "input_required_result_cached",
+            "Do not cache input_required results or retry results carrying inputResponses/requestState.",
+            event_sequences=[event.sequence],
+        )
+    )
+
+
 def _validate_response_metadata(
     event: ResponseEvent | RefreshEvent,
     collector: _FindingCollector,
@@ -408,18 +426,7 @@ def _validate_response_metadata(
 
     result_type = result.get("resultType")
     if result_type == "input_required":
-        collector.add(
-            _finding(
-                "MCPCACHE009",
-                CacheSeverity.HIGH,
-                RequirementLevel.PROTOCOL_MUST,
-                "A non-cacheable multi-round-trip result was stored",
-                _event_target(sequence),
-                "input_required_result_cached",
-                "Do not cache input_required results or retry results carrying inputResponses/requestState.",
-                event_sequences=[sequence],
-            )
-        )
+        _record_input_required_violation(event, collector)
         return None, None
     if result_type_present and result_type != "complete":
         collector.add(
@@ -747,6 +754,7 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
             continue
 
         cursor_shapes_valid = True
+        response_metadata: tuple[str | None, int | None] | None = None
         if isinstance(event, NotificationEvent):
             if not event.subscription_validated:
                 collector.add(
@@ -856,8 +864,15 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
                 )
             cursor_shapes_valid = _validate_pagination_cursor_shapes(event, collector)
             if not cursor_shapes_valid:
+                if (
+                    isinstance(event, (ResponseEvent, RefreshEvent))
+                    and event.result.get("resultType") == "input_required"
+                ):
+                    _record_input_required_violation(event, collector)
                 limitations.add("one or more list pagination cursor shapes were malformed")
                 continue
+            if isinstance(event, (ResponseEvent, RefreshEvent)):
+                response_metadata = _validate_response_metadata(event, collector)
 
         if isinstance(event, NotificationEvent):
             event_principal = event.principal
@@ -865,30 +880,37 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
         else:
             event_principal = event.request.principal
             event_partition = event.request.cache_partition
-        partition_mapping_consistent = event_partition not in conflicted_partitions
-        prior_partition_principal = partition_principals.get(event_partition)
-        if partition_mapping_consistent and prior_partition_principal is None:
-            partition_principals[event_partition] = (event_principal, event.sequence)
-        elif (
-            partition_mapping_consistent
-            and prior_partition_principal is not None
-            and prior_partition_principal[0] != event_principal
-        ):
-            partition_mapping_consistent = False
-            conflicted_partitions.add(event_partition)
-            collector.add(
-                _finding(
-                    "MCPCACHE000",
-                    CacheSeverity.UNKNOWN,
-                    RequirementLevel.UNKNOWN,
-                    "Principal labels conflict within one asserted authorization partition",
-                    _event_target(event.sequence),
-                    "authorization_partition_mapping_ambiguous",
-                    "Use consistent principal labels or distinct authorization-context partitions.",
-                    event_sequences=[prior_partition_principal[1], event.sequence],
+        partition_mapping_consistent = False
+        partition_state_eligible = not isinstance(event, (ResponseEvent, RefreshEvent)) or (
+            response_metadata is not None
+            and response_metadata[0] is not None
+            and response_metadata[1] is not None
+        )
+        if partition_state_eligible:
+            partition_mapping_consistent = event_partition not in conflicted_partitions
+            prior_partition_principal = partition_principals.get(event_partition)
+            if partition_mapping_consistent and prior_partition_principal is None:
+                partition_principals[event_partition] = (event_principal, event.sequence)
+            elif (
+                partition_mapping_consistent
+                and prior_partition_principal is not None
+                and prior_partition_principal[0] != event_principal
+            ):
+                partition_mapping_consistent = False
+                conflicted_partitions.add(event_partition)
+                collector.add(
+                    _finding(
+                        "MCPCACHE000",
+                        CacheSeverity.UNKNOWN,
+                        RequirementLevel.UNKNOWN,
+                        "Principal labels conflict within one asserted authorization partition",
+                        _event_target(event.sequence),
+                        "authorization_partition_mapping_ambiguous",
+                        "Use consistent principal labels or distinct authorization-context partitions.",
+                        event_sequences=[prior_partition_principal[1], event.sequence],
+                    )
                 )
-            )
-            limitations.add("one or more authorization-partition assertions were ambiguous")
+                limitations.add("one or more authorization-partition assertions were ambiguous")
 
         if isinstance(event, NotificationEvent):
             for entry in entries.values():
@@ -930,7 +952,8 @@ def analyze_cache_trace(trace: CacheTrace) -> CacheAuditReport:
         request = event.request
 
         if isinstance(event, (ResponseEvent, RefreshEvent)):
-            scope, ttl_ms = _validate_response_metadata(event, collector)
+            assert response_metadata is not None
+            scope, ttl_ms = response_metadata
             expires_at_ms: int | None = None
             if ttl_ms is not None and clock_reliable:
                 if event.at_ms <= MAX_LOGICAL_MS - ttl_ms:

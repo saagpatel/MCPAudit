@@ -498,6 +498,21 @@ def test_input_required_result_is_not_cacheable() -> None:
     assert {finding.rule_id for finding in report.findings} == {"MCPCACHE009"}
 
 
+def test_input_required_violation_survives_malformed_cursor() -> None:
+    payload = json.loads((FIXTURES / "missing-metadata-negative.json").read_text(encoding="utf-8"))
+    payload["events"][0]["request"]["params"]["cursor"] = None
+    payload["events"][0]["result"] = {"resultType": "input_required", "inputRequests": {}}
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "fail"
+    assert {finding.rule_id for finding in report.findings} == {"MCPCACHE000", "MCPCACHE009"}
+    assert {finding.evidence for finding in report.findings} == {
+        "input_required_result_cached",
+        "pagination_cursor_shape_unverified",
+    }
+
+
 @pytest.mark.parametrize("result_type", [None, {}, []])
 def test_malformed_result_type_is_structured_unknown(
     result_type: object,
@@ -578,6 +593,63 @@ def test_malformed_payload_member_is_not_further_graded(
     assert report.verdict == "unknown"
     assert {finding.rule_id for finding in report.findings} == {"MCPCACHE000"}
     assert {finding.evidence for finding in report.findings} == {"cacheable_payload_unverified"}
+
+
+@pytest.mark.parametrize(
+    ("bad_result", "bad_evidence"),
+    [
+        (
+            {
+                "resultType": "streaming",
+                "ttlMs": 100,
+                "cacheScope": "private",
+                "tools": [],
+            },
+            "unsupported_result_type",
+        ),
+        (
+            {
+                "resultType": "complete",
+                "ttlMs": 100,
+                "cacheScope": "private",
+                "tools": [None],
+            },
+            "cacheable_payload_unverified",
+        ),
+    ],
+)
+def test_ungradable_response_does_not_poison_supported_partition_evidence(
+    bad_result: dict[str, object],
+    bad_evidence: str,
+) -> None:
+    payload = json.loads((FIXTURES / "expiry-vulnerable.json").read_text(encoding="utf-8"))
+    payload["events"].insert(
+        0,
+        {
+            "type": "response",
+            "event_id": "ungradable-response",
+            "sequence": 1,
+            "at_ms": 0,
+            "request": {
+                "protocol_version": "2026-07-28",
+                "principal": "bob",
+                "cache_partition": "auth-a",
+                "method": "tools/list",
+                "params": {},
+            },
+            "result": bad_result,
+        },
+    )
+    payload["events"][1]["sequence"] = 2
+    payload["events"][2]["sequence"] = 3
+
+    report = scan_cache_bytes(json.dumps(payload).encode())
+
+    assert report.verdict == "fail"
+    assert {finding.evidence for finding in report.findings} == {
+        bad_evidence,
+        "use_at_or_after_ttl_boundary",
+    }
 
 
 @pytest.mark.parametrize(
