@@ -1,0 +1,1 @@
+{"consumer_revision":"BridgeRecoveryReadinessProjection@b47e5428b0f512c5e4ab87212acdd1d844b365b0","decision_surface":"RecoveryAnchorV1 source-current recovery readiness","mutation_axes":["present","current","visible","consistent","supported","bound"],"path_id":"P3","producer_revision":"bridge-db@b47e5428b0f512c5e4ab87212acdd1d844b365b0","schema":"EvidenceConservationPathV1"}

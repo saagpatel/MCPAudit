@@ -1,0 +1,1 @@
+{"checks":[{"exit_code":0,"name":"bridge-db uv lock --check --offline","status":"PASS"}],"package_installs":0,"path_id":"P3","repository_writes":0,"schema":"OfflineLockConsistencyReceiptV1","status":"VERIFIED"}

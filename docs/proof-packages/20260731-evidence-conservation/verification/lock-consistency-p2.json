@@ -1,0 +1,1 @@
+{"checks":[{"exit_code":0,"name":"MCPAudit uv lock --check --offline","status":"PASS"},{"exit_code":0,"name":"mcp-trust uv lock --check --offline","status":"PASS"},{"exit_code":0,"name":"locked MCPAudit wheel and sdist digest presence","status":"PASS"}],"package_installs":0,"path_id":"P2","repository_writes":0,"schema":"OfflineLockConsistencyReceiptV1","status":"VERIFIED"}

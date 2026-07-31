@@ -1,0 +1,1 @@
+{"forbidden_fragments":["/Users/","/home/","bridge.db","saagpatel","api_key","access_token"],"forbidden_metadata_keys":["mutation_axis","expected_verdict","authority_ceiling","oracle","case_id","control_case_id"],"reserved_domains":["example.invalid"],"schema":"EvidencePackagePrivacyLocalityV1","semantic_diff_exclusions":["/padding"]}
