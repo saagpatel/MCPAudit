@@ -1,0 +1,58 @@
+{
+  "admission_state": "PENDING_INDEPENDENT_REVIEW",
+  "body": {
+    "admitted": false,
+    "artifact_manifest": [
+      {
+        "bytes": 1832,
+        "media_type": "application/json",
+        "name": "github-security-coverage-receipt.json",
+        "sha256": "bd2b3a6d1a12799a6b489fe1fada0c2ea06840cdc5101c3ca0618dc3963c5c42"
+      },
+      {
+        "bytes": 3472,
+        "media_type": "application/json",
+        "name": "portfolio-truth-0.11.0.json",
+        "sha256": "1f3fdf926125a2cae2e970235ec8811a9cc9550cff7bca3f591b975bd3800dcd"
+      }
+    ],
+    "automated_checks": {
+      "consumer_visible_label_absence": "PASS",
+      "decoded_secret_privacy": "PASS",
+      "full_contract_shape": "PASS",
+      "reserved_synthetic_identity": "PASS",
+      "semantic_locality": "PASS"
+    },
+    "consumer_invoked": false,
+    "expected_ceiling": {
+      "authority_ceiling": "NONAUTHORITATIVE",
+      "disposition": "MISBOUND",
+      "raw_signal": {
+        "frozen_pcc_coverage_state": "complete",
+        "oracle_binding": "subject_identity_mismatch",
+        "producer_head": "UNKNOWN_UNMUTATED"
+      },
+      "reason_family": "subject_identity_mismatch",
+      "source": "sealed-contract-adjudication-not-consumer-output"
+    },
+    "fixture_id": "P1-06",
+    "fixture_schema": "P1FullFixtureV2",
+    "independent_review": "PENDING_INDEPENDENT_REVIEW",
+    "kind": "primary-mutation",
+    "path_id": "P1",
+    "semantic_axis": "bound"
+  },
+  "candidate_state": "READY_FOR_INDEPENDENT_REVIEW",
+  "content_sha256": "4a3ecc4d81a64a8c7ed3a6724d7c6231043cdc736a34692a6740304fb2a8ef73",
+  "created_at": "2026-07-31T21:27:04Z",
+  "package_id": "20260731-evidence-conservation-v2",
+  "prerequisite_state": "PENDING",
+  "producer": {
+    "actor_id": "codex",
+    "role": "EVIDENCE_PACKAGE_GENERATOR"
+  },
+  "record_id": "fixture-admissibility-p1-06-v1",
+  "reviews": [],
+  "schema": "FixtureAdmissibilityV1",
+  "spec_sha256": "1b23e6220d228a170a964c0e889d3d2fecd4ddc9ae4c46a73d8b13f927ed0c74"
+}

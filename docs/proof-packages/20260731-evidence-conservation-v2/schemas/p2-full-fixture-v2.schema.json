@@ -1,0 +1,160 @@
+{
+  "$id": "https://example.invalid/mcpaudit/20260731-evidence-conservation-v2/P2FullFixtureV2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "artifacts": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "content_base64": {
+            "type": "string"
+          },
+          "encoding": {
+            "const": "base64"
+          },
+          "materialization_mode": {
+            "pattern": "^[0-7]{4}$",
+            "type": "string"
+          },
+          "media_type": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "media_type",
+          "encoding",
+          "bytes",
+          "sha256",
+          "materialization_mode",
+          "content_base64"
+        ],
+        "type": "object"
+      },
+      "maxItems": 2,
+      "minItems": 1,
+      "type": "array"
+    },
+    "changed_field_closure": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array",
+      "uniqueItems": true
+    },
+    "consumer_execution": {
+      "const": "FORBIDDEN_NOT_RUN"
+    },
+    "evaluation_time": {
+      "minLength": 10,
+      "type": "string"
+    },
+    "evidence_coordinates": {
+      "additionalProperties": {
+        "enum": [
+          0,
+          1
+        ]
+      },
+      "maxProperties": 6,
+      "minProperties": 6,
+      "type": "object"
+    },
+    "expected": {
+      "additionalProperties": false,
+      "properties": {
+        "authority_ceiling": {
+          "enum": [
+            "BLOCKED",
+            "NONAUTHORITATIVE",
+            "CONDITIONAL",
+            "STRONG"
+          ]
+        },
+        "disposition": {
+          "enum": [
+            "VALID",
+            "MISSING",
+            "STALE",
+            "MASKED",
+            "CONTRADICTORY",
+            "UNSUPPORTED",
+            "MISBOUND",
+            "NOT_PRIVATE"
+          ]
+        },
+        "raw_signal": {
+          "type": "object"
+        },
+        "reason_family": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "source": {
+          "const": "sealed-contract-adjudication-not-consumer-output"
+        }
+      },
+      "required": [
+        "source",
+        "authority_ceiling",
+        "disposition",
+        "reason_family",
+        "raw_signal"
+      ],
+      "type": "object"
+    },
+    "fixture_id": {
+      "pattern": "^P[123]-(C|0[1-6])$",
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "control",
+        "primary-mutation"
+      ]
+    },
+    "package_id": {
+      "const": "20260731-evidence-conservation-v2"
+    },
+    "path_id": {
+      "const": "P2"
+    },
+    "schema": {
+      "pattern": "^(P1|P2|P3)FullFixtureV2$",
+      "type": "string"
+    },
+    "semantic_axis": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "fixture_id",
+    "package_id",
+    "path_id",
+    "kind",
+    "semantic_axis",
+    "evidence_coordinates",
+    "evaluation_time",
+    "changed_field_closure",
+    "artifacts",
+    "expected",
+    "consumer_execution"
+  ],
+  "title": "P2FullFixtureV2",
+  "type": "object"
+}

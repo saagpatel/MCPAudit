@@ -1,0 +1,64 @@
+{
+  "corpus_kind": "NEAR_MISS",
+  "count": 6,
+  "entries": [
+    {
+      "boundary_id": "NEAR-01",
+      "inside": "evaluation one microsecond before 24-hour freshness boundary",
+      "outside": "evaluation one microsecond after 24-hour freshness boundary",
+      "outside_reason": "receipt_stale",
+      "path_id": "P1"
+    },
+    {
+      "boundary_id": "NEAR-02",
+      "inside": "redact optional non-authoritative metadata",
+      "outside": "redact one required provider count",
+      "outside_reason": "required_count_redacted",
+      "path_id": "P1"
+    },
+    {
+      "boundary_id": "NEAR-03",
+      "inside": "evaluation immediately before expires_at",
+      "outside": "evaluation exactly at expires_at",
+      "outside_reason": "candidate_expired",
+      "path_id": "P2"
+    },
+    {
+      "boundary_id": "NEAR-04",
+      "inside": "change optional non-authoritative receipt metadata",
+      "outside": "change receipt format_version from 1 to 2",
+      "outside_reason": "successful_scan_receipt_schema_invalid",
+      "path_id": "P2"
+    },
+    {
+      "boundary_id": "NEAR-05",
+      "inside": "byte-identical logical source",
+      "outside": "same-count update to one source row",
+      "outside_reason": "source_changed_since_anchor",
+      "path_id": "P3"
+    },
+    {
+      "boundary_id": "NEAR-06",
+      "inside": "exact anchor.json plus anchor.sqlite bundle",
+      "outside": "same bundle plus anchor.sqlite-wal",
+      "outside_artifact": {
+        "bytes": 9,
+        "content_base64": "dW50cmFja2Vk",
+        "name": "anchor.sqlite-wal",
+        "sha256": "86ed2df8017823dff5b258f8082cf4be80ad80fed3388b6818d9a631a49e464e"
+      },
+      "outside_raw_result": {
+        "errors": [
+          "anchor_artifact_set_mismatch"
+        ],
+        "ready": false,
+        "source_current": "ABSENT",
+        "state": "invalid"
+      },
+      "outside_reason": "anchor_artifact_set_mismatch",
+      "path_id": "P3"
+    }
+  ],
+  "execution_authorized": false,
+  "schema": "BoundaryCorpusV2"
+}

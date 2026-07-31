@@ -1,0 +1,34 @@
+{
+  "$id": "https://example.invalid/mcpaudit/20260731-evidence-conservation-v2/PackageValidationV2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "checks": {
+      "type": "array"
+    },
+    "counts": {
+      "type": "object"
+    },
+    "package_id": {
+      "const": "20260731-evidence-conservation-v2"
+    },
+    "schema": {
+      "const": "PackageValidationV2"
+    },
+    "status": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "UNKNOWN"
+      ]
+    }
+  },
+  "required": [
+    "schema",
+    "package_id",
+    "status",
+    "checks",
+    "counts"
+  ],
+  "title": "PackageValidationV2",
+  "type": "object"
+}

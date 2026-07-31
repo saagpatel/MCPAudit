@@ -1,0 +1,302 @@
+{
+  "admission_state": "BLOCKED_PREREQUISITE",
+  "body": {
+    "closure_claim": "full receipt plus full one-project snapshot contract closure",
+    "consumer_invoked": false,
+    "independent_review": "PENDING_INDEPENDENT_REVIEW",
+    "path_id": "P1",
+    "repositories": [
+      {
+        "commit": "fd61f1c06643c4431460e27aa9210ff8b931ef1d",
+        "name": "GithubRepoAuditor",
+        "repository_path": "<workspace>/GithubRepoAuditor",
+        "sources": [
+          {
+            "bytes": 3009,
+            "git_blob": "e61682f87220c770667ccf9cf4fff104ef24262d",
+            "path": "pyproject.toml",
+            "role": "decision-source-closure",
+            "sha256": "f3cdf5c34df5be4b3b8d6ea52facb9cff76ee20708af3cffc4d69c20bf0a0b9c"
+          },
+          {
+            "bytes": 135,
+            "git_blob": "38ff588af6b1d54914e1f76510a3212dec1b3396",
+            "path": "requirements.txt",
+            "role": "decision-source-closure",
+            "sha256": "22cc6c4cd15e7bd0702d18f1484930f6f216342faac1b58ab2c41efad42c9337"
+          },
+          {
+            "bytes": 8725,
+            "git_blob": "90ef2be8b9d9d4062f71d51ebb90429aa60e092e",
+            "path": "src/app/portfolio_truth.py",
+            "role": "decision-source-closure",
+            "sha256": "49d133af5660756507878fd0099b403e7a0b859de7f9ac041d48d0018e3c0db4"
+          },
+          {
+            "bytes": 77072,
+            "git_blob": "44091c91aa366b2ba409beb8e57eafa6a5c981cc",
+            "path": "src/cli.py",
+            "role": "decision-source-closure",
+            "sha256": "f3a88448f7f1c91eb80998cdb67e53b3beffc00ddd74dda116506312f7c80286"
+          },
+          {
+            "bytes": 2081,
+            "git_blob": "c72285938e080e61e8d46dcd35088080b9777649",
+            "path": "src/cli_output.py",
+            "role": "decision-source-closure",
+            "sha256": "a3cd8867bf7293258ee3865a61ad520e8ea8d2096cdcf88676206e4b6e938fee"
+          },
+          {
+            "bytes": 70500,
+            "git_blob": "1defb5967f996653544c07d50af6d8f0d80245c5",
+            "path": "src/github_security_coverage.py",
+            "role": "decision-source-closure",
+            "sha256": "84c72d8bfb2a65f62a4f4504cd4ca7a0b41b6d9e888801ef82f279382b448b39"
+          },
+          {
+            "bytes": 26574,
+            "git_blob": "629f9c4efe1874316466d02a96467fa8e919f1a4",
+            "path": "src/portfolio_catalog.py",
+            "role": "decision-source-closure",
+            "sha256": "94092e7feaced43801152b561c85ee84cd4935149ebfe5b84f5113401388e08a"
+          },
+          {
+            "bytes": 8322,
+            "git_blob": "da8d67e2448efb0b221a972d723e927c881ba6d7",
+            "path": "src/portfolio_pathing.py",
+            "role": "decision-source-closure",
+            "sha256": "312d170b47369cb97f60c004325976202e1ba17112f021b8fa8baa538adf0d92"
+          },
+          {
+            "bytes": 4055,
+            "git_blob": "3e10808ffe745973bcfa36bd2f0ba1b9e901df6f",
+            "path": "src/portfolio_repository_state.py",
+            "role": "decision-source-closure",
+            "sha256": "ccf3c34ef7428b68f2778866a3d7841974b7d740e7962124fcd7df0e4b2d8359"
+          },
+          {
+            "bytes": 5322,
+            "git_blob": "4feb6d45ab232215f2c8ee19c0540884708099a2",
+            "path": "src/portfolio_risk.py",
+            "role": "decision-source-closure",
+            "sha256": "af51310c8a4b3be725e58afcba063cdd8d3580c28d25eeba44f7d9ae27be979d"
+          },
+          {
+            "bytes": 10343,
+            "git_blob": "2cc70fdf3d568fb21931be025c486abc1b31aee4",
+            "path": "src/portfolio_security_gate.py",
+            "role": "decision-source-closure",
+            "sha256": "893c1a035560ac25928229acdadea5cea7df9bbc738025f02c764c543c7a6b33"
+          },
+          {
+            "bytes": 2376,
+            "git_blob": "def142491e58096ad24b50d7712e860f9b6fc7cb",
+            "path": "src/portfolio_truth_lineage.py",
+            "role": "decision-source-closure",
+            "sha256": "2bdecb8c83d442f14b01dd5ff5620f90763f1a717bb08c1d6f4395395c2e6970"
+          },
+          {
+            "bytes": 11026,
+            "git_blob": "4cd1b50e0fbddc6b785befd110bbc7da95b6e543",
+            "path": "src/portfolio_truth_publish.py",
+            "role": "decision-source-closure",
+            "sha256": "db2887dca7aa0136cf45fb19ef900a46cadbb714beb468802e4a8b1d9c0bd329"
+          },
+          {
+            "bytes": 57247,
+            "git_blob": "45e2b3dee537d3d9ddd70f5cc5f9cb5932e237a7",
+            "path": "src/portfolio_truth_reconcile.py",
+            "role": "decision-source-closure",
+            "sha256": "26ac220f5440091cb2a5f387969874d3feb2a2a2bbaebd2a4bb631bae0f0a71c"
+          },
+          {
+            "bytes": 23869,
+            "git_blob": "06bb5b15a5cb5fde59f0a8b6706a109b1ee2ded9",
+            "path": "src/portfolio_truth_render.py",
+            "role": "decision-source-closure",
+            "sha256": "503c94cea957632764d19f88318b4d8a837e26c5ae588ab8157bbcaca7e61a6b"
+          },
+          {
+            "bytes": 27248,
+            "git_blob": "fbec2b2d7db2c24e05d5b382d8af2bcd4e6b7f68",
+            "path": "src/portfolio_truth_sources.py",
+            "role": "decision-source-closure",
+            "sha256": "3c84b1f744516ef87bdae765bb7f2a9ff545da1abf4284c76a4abf196e71b708"
+          },
+          {
+            "bytes": 6768,
+            "git_blob": "bdaf0ab69192f622190673e413bda697f5780f6e",
+            "path": "src/portfolio_truth_status.py",
+            "role": "decision-source-closure",
+            "sha256": "1c11a2127b0a9756ede32ea7d64d6a6775731d9f661d62ce2d376fcd2aa7cc50"
+          },
+          {
+            "bytes": 19064,
+            "git_blob": "3a2d7447f5417495aaa495b35f50a249fee98e59",
+            "path": "src/portfolio_truth_types.py",
+            "role": "decision-source-closure",
+            "sha256": "b99383bc7eaf7e056979fc91bd23f0f087f5664582ec3b7772c68803e9fe0e2e"
+          },
+          {
+            "bytes": 9386,
+            "git_blob": "d539a585f97aa2359f055a352864096ea048c8cf",
+            "path": "src/portfolio_truth_validate.py",
+            "role": "decision-source-closure",
+            "sha256": "62e86df75d15e4a9129bb6e349c5f00e9e0f607e38012d4bd8020c4e4d975592"
+          },
+          {
+            "bytes": 8686,
+            "git_blob": "475b98a6346ed102331b11e7ce32cb8f839607e3",
+            "path": "src/producer_preflight.py",
+            "role": "decision-source-closure",
+            "sha256": "2f0128920c4e47fc0edb699c4f662bec18a9920aaaba124b7ff06b29e6d68ad0"
+          },
+          {
+            "bytes": 25555,
+            "git_blob": "df6b17ba706fcb5b9f6041bda5d8bb9a43264b0f",
+            "path": "tests/test_github_security_coverage.py",
+            "role": "decision-source-closure",
+            "sha256": "c4b19e4738e6deb87346fc1ce0a9d86ab5b490277138441126838bd9763c869d"
+          },
+          {
+            "bytes": 7724,
+            "git_blob": "b3985f40a71fd65b4f7392bba92674932ce9df21",
+            "path": "tests/test_portfolio_security_gate.py",
+            "role": "decision-source-closure",
+            "sha256": "d9dcadcf227a16f22cfb57147ac15a23d94c62676189d12ad28ee3cfcd7f3ab4"
+          },
+          {
+            "bytes": 118422,
+            "git_blob": "c56797663e3740eae8e6938b567681d6b0d959f5",
+            "path": "tests/test_portfolio_truth.py",
+            "role": "decision-source-closure",
+            "sha256": "ab684c8b24513f265e1a9f57dee4e3abd62804d3a5ab14c9b83ae46e10a9748d"
+          },
+          {
+            "bytes": 588820,
+            "git_blob": "523d6e193456ef79fb5d9729211e6c3369155c0a",
+            "path": "uv.lock",
+            "role": "decision-source-closure",
+            "sha256": "1b4d79dcedd731ddc0b35a01e8aa1672b0287afc6391d7aafe44223a130d21a6"
+          }
+        ],
+        "tree": "3f604b126015194b0c88f744bde04e45c1f4eb6d"
+      },
+      {
+        "commit": "1139cfb9bb1e8d005699f854df368583960e245c",
+        "name": "PortfolioCommandCenter",
+        "repository_path": "<workspace>/PortfolioCommandCenter",
+        "sources": [
+          {
+            "bytes": 1267,
+            "git_blob": "5ba5e89e7ce0de4801d8172a4ee654d5044983b0",
+            "path": "package.json",
+            "role": "decision-source-closure",
+            "sha256": "5fe0a83aee75da01174fbb2472adc41fa4a1760cc9df07313a5946eb17969f9b"
+          },
+          {
+            "bytes": 67444,
+            "git_blob": "8613d55a947980f691b91808cdfee4784ef3bc15",
+            "path": "pnpm-lock.yaml",
+            "role": "decision-source-closure",
+            "sha256": "ce22d21ebc110bf4d5f75858e36556c9b9e9911a9399be21c1c83eff3f4b2820"
+          },
+          {
+            "bytes": 262,
+            "git_blob": "b6571cfa9d1e7693220c3d9aa11b7a36077ef392",
+            "path": "pnpm-workspace.yaml",
+            "role": "decision-source-closure",
+            "sha256": "616498af1a9aea56ffbee45e4ecf0ceb84ca8aed8da75603b08d7148bcc2a19f"
+          },
+          {
+            "bytes": 31528,
+            "git_blob": "90e089886aea394efe72d52378510351bd9096ab",
+            "path": "src/portfolioTruthMutation.test.tsx",
+            "role": "decision-source-closure",
+            "sha256": "3a3f223c99039f43ec8d66b4a75bc0fff570d9e158b1200855b222f5f96408a8"
+          },
+          {
+            "bytes": 19748,
+            "git_blob": "1b89a917e59038fdebf707b862ee50bb8de7218b",
+            "path": "src/types.ts",
+            "role": "decision-source-closure",
+            "sha256": "687975d8991d1455b8bc1bd560a165afcba697fe0eee33af87d5de039f2e7798"
+          },
+          {
+            "bytes": 5003,
+            "git_blob": "c53aac40295a903ce961b4be4e18e87295283968",
+            "path": "src/validation.test.ts",
+            "role": "decision-source-closure",
+            "sha256": "121024d6253466bb08fb81f7d2a25f5c38ea1af742152f87d9f6dd24aed82677"
+          },
+          {
+            "bytes": 22804,
+            "git_blob": "9e9ff33b117d45c16f07d8dbb7ff189108374e06",
+            "path": "src/validation.ts",
+            "role": "decision-source-closure",
+            "sha256": "bacd0786d8f8d95627deba816099803a17fc9eb96f1b1016696b0981c5b5832b"
+          },
+          {
+            "bytes": 6472,
+            "git_blob": "37db54d25cf43f1fe07f6602a0fe701cfe6aa6ca",
+            "path": "src/views/OpsView.tsx",
+            "role": "decision-source-closure",
+            "sha256": "bb47c9e980134db0da23b89244666ad9538d669c77238c4dadb46a25a6d09406"
+          },
+          {
+            "bytes": 8399,
+            "git_blob": "57277c2bd766551f011027b25880fd1c8bce08ab",
+            "path": "src/views/PortfolioTable.tsx",
+            "role": "decision-source-closure",
+            "sha256": "624b99d23135c2b4149d8d0ac0ed8ae6a29f7d67179816cf36c9f11f379fe52d"
+          },
+          {
+            "bytes": 15720,
+            "git_blob": "f2924468512d255b9ea45c3924eed1657db72e7d",
+            "path": "src/views/ProjectDetail.tsx",
+            "role": "decision-source-closure",
+            "sha256": "e1d226975f23c6a11013adba6edd1ee912c6e180260db16417cff73c24cfc44b"
+          },
+          {
+            "bytes": 7978,
+            "git_blob": "6f95707ee2e927e5437384dfa8652ee0000ba976",
+            "path": "src/views/RiskSecurity.tsx",
+            "role": "decision-source-closure",
+            "sha256": "ca8884e2e910d5b71ff9f1cdb4ae548bdc1e5447c151136dead10c9fffd0bee1"
+          },
+          {
+            "bytes": 493,
+            "git_blob": "daa52195c23f375620c697a324942370ce5f14d2",
+            "path": "tsconfig.json",
+            "role": "decision-source-closure",
+            "sha256": "d5ef226cea72d7ba2ef398118140922c0cc3a9a90e748496c5df1172c471d0f7"
+          }
+        ],
+        "tree": "46ab1592b718c5785a5eaf73d5451d7cacfc7687"
+      }
+    ],
+    "runtime_prerequisite": {
+      "admission_effect": "P1_FREEZE_NOT_ADMITTED",
+      "network_used": false,
+      "observed_path_version": "11.18.0",
+      "observed_unexecuted_path": "/opt/homebrew/bin/pnpm",
+      "observed_unexecuted_resolved_path": "/opt/homebrew/Cellar/pnpm/11.18.0/libexec/lib/node_modules/pnpm/bin/pnpm.mjs",
+      "package_manager_invoked": false,
+      "required": "11.5.2",
+      "status": "UNKNOWN"
+    }
+  },
+  "candidate_state": "READY_FOR_INDEPENDENT_REVIEW",
+  "content_sha256": "5c228be46404262ead1a92ef89f9e474bb7044fa4b2600281cb997f62e1c733a",
+  "created_at": "2026-07-31T21:27:04Z",
+  "package_id": "20260731-evidence-conservation-v2",
+  "prerequisite_state": "UNKNOWN",
+  "producer": {
+    "actor_id": "codex",
+    "role": "EVIDENCE_PACKAGE_GENERATOR"
+  },
+  "record_id": "freeze-receipt-p1-v1",
+  "reviews": [],
+  "schema": "FreezeReceiptV1",
+  "spec_sha256": "1b23e6220d228a170a964c0e889d3d2fecd4ddc9ae4c46a73d8b13f927ed0c74"
+}

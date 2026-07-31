@@ -1,0 +1,28 @@
+{
+  "captured_at": "2026-07-31T21:27:04Z",
+  "platform": {
+    "machine": "arm64",
+    "system": "Darwin"
+  },
+  "pnpm_11_5_2": {
+    "admission_effect": "P1_FREEZE_NOT_ADMITTED",
+    "network_used": false,
+    "observed_path_version": "11.18.0",
+    "observed_unexecuted_path": "/opt/homebrew/bin/pnpm",
+    "observed_unexecuted_resolved_path": "/opt/homebrew/Cellar/pnpm/11.18.0/libexec/lib/node_modules/pnpm/bin/pnpm.mjs",
+    "package_manager_invoked": false,
+    "required": "11.5.2",
+    "status": "UNKNOWN"
+  },
+  "posix_permissions": {
+    "mode_0600_observed": "0600",
+    "mode_0644_observed": "0644",
+    "status": "PASS",
+    "unsupported_action": "ABORT_NO_EMULATION"
+  },
+  "python": {
+    "implementation": "CPython",
+    "version": "3.11.15"
+  },
+  "schema": "EnvironmentCapabilitiesV2"
+}

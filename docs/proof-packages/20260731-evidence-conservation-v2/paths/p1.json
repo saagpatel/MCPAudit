@@ -1,0 +1,22 @@
+{
+  "consumer": "PortfolioCommandCenter@1139cfb9bb1e8d005699f854df368583960e245c",
+  "consumer_execution": "NOT_AUTHORIZED",
+  "control_count": 1,
+  "coordinates": [
+    "present",
+    "current",
+    "visible",
+    "consistent",
+    "supported",
+    "bound"
+  ],
+  "decision_surface": "securityCoverageState plus Risk Security overall state",
+  "input_contract": "complete GitHubSecurityCoverageReceiptV1 plus complete one-project PortfolioTruth 0.11.0 snapshot",
+  "mutation_count": 6,
+  "package_id": "20260731-evidence-conservation-v2",
+  "path_id": "P1",
+  "primary_case_count": 7,
+  "producer": "GithubRepoAuditor@fd61f1c06643c4431460e27aa9210ff8b931ef1d",
+  "producer_head_behavior": "UNKNOWN_UNMUTATED_UNCLAIMED",
+  "schema": "EvidenceConservationPathV2"
+}

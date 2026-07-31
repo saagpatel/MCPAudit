@@ -1,0 +1,68 @@
+{
+  "$id": "https://example.invalid/mcpaudit/20260731-evidence-conservation-v2/OwnershipPreflightV1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "admission_state": {
+            "const": "ADMITTED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "reviews": {
+            "minItems": 2
+          }
+        },
+        "required": [
+          "reviews"
+        ]
+      }
+    }
+  ],
+  "properties": {
+    "allowed_paths": {
+      "items": {
+        "pattern": "^docs/proof\\-packages/20260731\\-evidence\\-conservation\\-v2/.+",
+        "type": "string"
+      },
+      "maxItems": 100,
+      "minItems": 100,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "operator_authorization": {
+      "required": [
+        "source_task_id",
+        "turn_id",
+        "message_item_id",
+        "text"
+      ],
+      "type": "object"
+    },
+    "package_id": {
+      "const": "20260731-evidence-conservation-v2"
+    },
+    "schema": {
+      "const": "OwnershipPreflightV1"
+    }
+  },
+  "required": [
+    "schema",
+    "record_id",
+    "package_id",
+    "candidate_state",
+    "admission_state",
+    "repository",
+    "worktree",
+    "branch",
+    "untouched_base_sha",
+    "allowed_root",
+    "allowed_paths",
+    "operator_authorization"
+  ],
+  "title": "OwnershipPreflightV1",
+  "type": "object"
+}

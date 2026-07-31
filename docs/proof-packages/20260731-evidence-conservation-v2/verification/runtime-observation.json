@@ -1,0 +1,12 @@
+{
+  "cases_executed": 0,
+  "cases_total": 21,
+  "claim": "NO_RUNTIME_OR_BASELINE_EVIDENCE",
+  "consumer_entrypoints_invoked": [],
+  "mcp_audit_scans": 0,
+  "network_requests": 0,
+  "package_manager_commands": 0,
+  "protocol_audits": 0,
+  "schema": "RuntimeObservationV2",
+  "status": "NOT_RUN_NOT_AUTHORIZED"
+}

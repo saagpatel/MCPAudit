@@ -1,0 +1,148 @@
+{
+  "$id": "https://example.invalid/mcpaudit/20260731-evidence-conservation-v2/OracleAdjudicationV1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "admission_state": {
+            "const": "ADMITTED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "candidate_state": {
+            "const": "TERMINAL_ADMITTED"
+          },
+          "prerequisite_state": {
+            "const": "SATISFIED"
+          },
+          "reviews": {
+            "minItems": 2
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "candidate_state": {
+            "const": "TERMINAL_ADMITTED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "admission_state": {
+            "const": "ADMITTED"
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "admission_state": {
+      "enum": [
+        "PENDING_INDEPENDENT_REVIEW",
+        "BLOCKED_PREREQUISITE",
+        "ADMITTED",
+        "REJECTED"
+      ]
+    },
+    "body": {
+      "type": "object"
+    },
+    "candidate_state": {
+      "enum": [
+        "READY_FOR_INDEPENDENT_REVIEW",
+        "TERMINAL_ADMITTED",
+        "TERMINAL_REJECTED"
+      ]
+    },
+    "content_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "created_at": {
+      "minLength": 10,
+      "type": "string"
+    },
+    "package_id": {
+      "const": "20260731-evidence-conservation-v2"
+    },
+    "prerequisite_state": {
+      "enum": [
+        "SATISFIED",
+        "PENDING",
+        "UNKNOWN",
+        "FAILED"
+      ]
+    },
+    "producer": {
+      "additionalProperties": false,
+      "properties": {
+        "actor_id": {
+          "const": "codex"
+        },
+        "role": {
+          "const": "EVIDENCE_PACKAGE_GENERATOR"
+        }
+      },
+      "required": [
+        "actor_id",
+        "role"
+      ],
+      "type": "object"
+    },
+    "record_id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "reviews": {
+      "items": {
+        "properties": {
+          "decision": {
+            "enum": [
+              "APPROVE",
+              "REJECT"
+            ]
+          },
+          "reviewer_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "reviewer_id",
+          "decision"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "schema": {
+      "const": "OracleAdjudicationV1"
+    },
+    "spec_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "record_id",
+    "package_id",
+    "candidate_state",
+    "admission_state",
+    "prerequisite_state",
+    "created_at",
+    "producer",
+    "reviews",
+    "spec_sha256",
+    "content_sha256",
+    "body"
+  ],
+  "title": "OracleAdjudicationV1",
+  "type": "object"
+}

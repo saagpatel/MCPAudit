@@ -1,0 +1,23 @@
+{
+  "consumer": "BridgeRecoveryReadinessProjection@b47e5428b0f512c5e4ab87212acdd1d844b365b0",
+  "consumer_execution": "NOT_AUTHORIZED",
+  "control_count": 1,
+  "coordinates": [
+    "present",
+    "current",
+    "visible",
+    "consistent",
+    "supported",
+    "private"
+  ],
+  "ctime_rule": "UNAVOIDABLE_EXCLUDED_MATERIALIZATION_EFFECT_COMPLETED_BEFORE_VERIFICATION",
+  "decision_surface": "source-current recovery readiness",
+  "input_contract": "genuine schema-22 source plus exact two-file RecoveryAnchorV1",
+  "mutation_count": 6,
+  "package_id": "20260731-evidence-conservation-v2",
+  "path_id": "P3",
+  "posix_rule": "UNPROVED_OR_UNSUPPORTED_MEANS_ENVIRONMENT_UNKNOWN_AND_ABORT_NO_EMULATION",
+  "primary_case_count": 7,
+  "producer": "bridge-db@b47e5428b0f512c5e4ab87212acdd1d844b365b0",
+  "schema": "EvidenceConservationPathV2"
+}

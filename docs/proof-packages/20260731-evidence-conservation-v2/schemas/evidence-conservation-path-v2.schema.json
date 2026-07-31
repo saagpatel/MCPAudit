@@ -1,0 +1,52 @@
+{
+  "$id": "https://example.invalid/mcpaudit/20260731-evidence-conservation-v2/EvidenceConservationPathV2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "consumer_execution": {
+      "const": "NOT_AUTHORIZED"
+    },
+    "control_count": {
+      "const": 1
+    },
+    "coordinates": {
+      "maxItems": 6,
+      "minItems": 6,
+      "type": "array"
+    },
+    "mutation_count": {
+      "const": 6
+    },
+    "package_id": {
+      "const": "20260731-evidence-conservation-v2"
+    },
+    "path_id": {
+      "enum": [
+        "P1",
+        "P2",
+        "P3"
+      ]
+    },
+    "primary_case_count": {
+      "const": 7
+    },
+    "schema": {
+      "const": "EvidenceConservationPathV2"
+    }
+  },
+  "required": [
+    "schema",
+    "path_id",
+    "package_id",
+    "primary_case_count",
+    "control_count",
+    "mutation_count",
+    "consumer_execution",
+    "producer",
+    "consumer",
+    "input_contract",
+    "decision_surface",
+    "coordinates"
+  ],
+  "title": "EvidenceConservationPathV2",
+  "type": "object"
+}

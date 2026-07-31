@@ -1,0 +1,11 @@
+{
+  "artifact_count": 100,
+  "byte_identical_count": 100,
+  "comparison": "two independent disposable full-package builds",
+  "differing_paths": [],
+  "environment_scope": "same-supported-environment",
+  "package_id": "20260731-evidence-conservation-v2",
+  "schema": "DeterministicRegenerationV2",
+  "second_environment": "PENDING_INDEPENDENT_REVIEW",
+  "status": "PASS"
+}

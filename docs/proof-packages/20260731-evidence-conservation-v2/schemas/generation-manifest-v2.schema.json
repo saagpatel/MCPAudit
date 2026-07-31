@@ -1,0 +1,33 @@
+{
+  "$id": "https://example.invalid/mcpaudit/20260731-evidence-conservation-v2/GenerationManifestV2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "artifact_count": {
+      "const": 99
+    },
+    "artifacts": {
+      "maxItems": 99,
+      "minItems": 99,
+      "type": "array"
+    },
+    "package_id": {
+      "const": "20260731-evidence-conservation-v2"
+    },
+    "schema": {
+      "const": "GenerationManifestV2"
+    },
+    "self_digest_rule": {
+      "const": "generation-manifest-excludes-itself"
+    }
+  },
+  "required": [
+    "schema",
+    "package_id",
+    "generated_at",
+    "artifact_count",
+    "artifacts",
+    "self_digest_rule"
+  ],
+  "title": "GenerationManifestV2",
+  "type": "object"
+}

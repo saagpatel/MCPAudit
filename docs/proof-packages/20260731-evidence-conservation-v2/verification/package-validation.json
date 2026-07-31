@@ -1,0 +1,25 @@
+{
+  "checks": [
+    "allowed_write_manifest_exact",
+    "json_schema_validation",
+    "full_fixture_structure",
+    "semantic_locality",
+    "candidate_record_counts",
+    "impossible_admitted_state_rejected",
+    "decoded_secret_privacy",
+    "coverage_counts",
+    "consumer_visible_label_absence"
+  ],
+  "consumers_invoked": 0,
+  "counts": {
+    "allowed_paths": 100,
+    "controls": 3,
+    "fixtures": 21,
+    "mutations": 18,
+    "records": 29,
+    "schemas": 19
+  },
+  "package_id": "20260731-evidence-conservation-v2",
+  "schema": "PackageValidationV2",
+  "status": "PASS"
+}

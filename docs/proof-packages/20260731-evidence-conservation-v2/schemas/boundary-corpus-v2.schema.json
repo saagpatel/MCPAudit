@@ -1,0 +1,36 @@
+{
+  "$id": "https://example.invalid/mcpaudit/20260731-evidence-conservation-v2/BoundaryCorpusV2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "corpus_kind": {
+      "enum": [
+        "NO_OP",
+        "NEAR_MISS"
+      ]
+    },
+    "count": {
+      "const": 6
+    },
+    "entries": {
+      "maxItems": 6,
+      "minItems": 6,
+      "type": "array"
+    },
+    "execution_authorized": {
+      "const": false
+    },
+    "schema": {
+      "const": "BoundaryCorpusV2"
+    }
+  },
+  "required": [
+    "schema",
+    "corpus_kind",
+    "count",
+    "entries",
+    "execution_authorized"
+  ],
+  "title": "BoundaryCorpusV2",
+  "type": "object"
+}

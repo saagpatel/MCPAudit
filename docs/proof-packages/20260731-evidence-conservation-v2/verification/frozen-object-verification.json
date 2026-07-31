@@ -1,0 +1,39 @@
+{
+  "live_worktree_bytes_used_as_freeze_evidence": false,
+  "objects": [
+    {
+      "commit": "fd61f1c06643c4431460e27aa9210ff8b931ef1d",
+      "name": "GithubRepoAuditor",
+      "status": "PASS",
+      "tree": "3f604b126015194b0c88f744bde04e45c1f4eb6d"
+    },
+    {
+      "commit": "1139cfb9bb1e8d005699f854df368583960e245c",
+      "name": "PortfolioCommandCenter",
+      "status": "PASS",
+      "tree": "46ab1592b718c5785a5eaf73d5451d7cacfc7687"
+    },
+    {
+      "commit": "9484d8bb1b059ce48f77015c4a84561675517a77",
+      "name": "MCPAudit",
+      "status": "PASS",
+      "tree": "e67d959ac3c341447eb2eb5d196c52afd62e1ee5"
+    },
+    {
+      "commit": "a30be69132802d2b24157066fa4dc125e8edfdca",
+      "name": "mcp-trust",
+      "status": "PASS",
+      "tree": "30e2ae0c0f9c3ec1aac265bd8b4baaa8c6b6bde1"
+    },
+    {
+      "commit": "b47e5428b0f512c5e4ab87212acdd1d844b365b0",
+      "name": "bridge-db",
+      "status": "PASS",
+      "tree": "f7499707fdaebd17155f1d1055abec1e6e1cd1c9"
+    }
+  ],
+  "repository_count": 5,
+  "schema": "FrozenObjectVerificationV2",
+  "source_count": 112,
+  "status": "PASS"
+}

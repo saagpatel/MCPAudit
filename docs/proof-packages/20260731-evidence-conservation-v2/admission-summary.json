@@ -1,0 +1,45 @@
+{
+  "admission_state": "PENDING_INDEPENDENT_REVIEW",
+  "boundaries": {
+    "near_miss": 6,
+    "no_op": 6
+  },
+  "candidate_state": "READY_FOR_INDEPENDENT_REVIEW",
+  "claim_ceiling": "READY_FOR_BLIND_REVIEW_ONLY",
+  "coverage": {
+    "covered": 11,
+    "cross": 1,
+    "partial": 6
+  },
+  "independent_review": {
+    "completed_count": 0,
+    "required_count": 2,
+    "status": "PENDING_INDEPENDENT_REVIEW"
+  },
+  "p1_freeze": "UNKNOWN_EXACT_PNPM_11_5_2",
+  "p2_scope": "PER_SERVER_FIXTURE_GRADE_ONLY",
+  "p3_posix_environment": "PASS",
+  "package_id": "20260731-evidence-conservation-v2",
+  "package_mode": "EVIDENCE_PACKAGE_ONLY",
+  "primary_corpus": {
+    "controls": 3,
+    "mutations": 18,
+    "total": 21
+  },
+  "record_counts": {
+    "BoundaryDecisionV1": 1,
+    "CoverageDeltaV1": 1,
+    "DeterminismProfileV1": 1,
+    "FixtureAdmissibilityV1": 21,
+    "FreezeReceiptV1": 3,
+    "OracleAdjudicationV1": 1,
+    "OwnershipPreflightV1": 1,
+    "total": 29
+  },
+  "runtime_execution": {
+    "authorized": false,
+    "cases_executed": 0,
+    "total_cases": 21
+  },
+  "schema": "AdmissionSummaryV2"
+}

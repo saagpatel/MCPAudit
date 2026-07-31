@@ -1,0 +1,64 @@
+{
+  "$id": "https://example.invalid/mcpaudit/20260731-evidence-conservation-v2/AdmissionSummaryV2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "admission_state": {
+            "const": "ADMITTED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "independent_review": {
+            "properties": {
+              "completed_count": {
+                "minimum": 2
+              }
+            }
+          },
+          "runtime_execution": {
+            "properties": {
+              "authorized": {
+                "const": true
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "admission_state": {
+      "enum": [
+        "PENDING_INDEPENDENT_REVIEW",
+        "ADMITTED",
+        "REJECTED"
+      ]
+    },
+    "package_id": {
+      "const": "20260731-evidence-conservation-v2"
+    },
+    "package_mode": {
+      "const": "EVIDENCE_PACKAGE_ONLY"
+    },
+    "schema": {
+      "const": "AdmissionSummaryV2"
+    }
+  },
+  "required": [
+    "schema",
+    "package_id",
+    "package_mode",
+    "candidate_state",
+    "admission_state",
+    "record_counts",
+    "primary_corpus",
+    "independent_review",
+    "runtime_execution"
+  ],
+  "title": "AdmissionSummaryV2",
+  "type": "object"
+}

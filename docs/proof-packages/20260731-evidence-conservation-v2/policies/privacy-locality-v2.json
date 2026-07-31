@@ -1,0 +1,18 @@
+{
+  "allowlisted_public_contract_identity": "saagpatel/GithubRepoAuditor",
+  "archives_and_sqlite_must_be_decoded": true,
+  "prohibited_consumer_bytes": [
+    "/Users/",
+    "/home/",
+    "case_id",
+    "oracle",
+    "live credential values"
+  ],
+  "reserved_subjects": [
+    "synthetic-lab/subject-alpha",
+    "synthetic-lab/subject-beta",
+    "synthetic-server",
+    "example.invalid"
+  ],
+  "schema": "PrivacyLocalityPolicyV2"
+}

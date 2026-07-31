@@ -1,0 +1,56 @@
+{
+  "admission_state": "PENDING_INDEPENDENT_REVIEW",
+  "body": {
+    "authorized_effects": [
+      "fresh_v2_package_root_writes",
+      "single_remote_writer_lease_creation_before_package_edits",
+      "single_local_package_commit",
+      "one_terminal_bridgedb_postflight_receipt_and_required_export"
+    ],
+    "decision": "V2_CONTRACT_APPROVED_FOR_EVIDENCE_PACKAGE_REBUILD_ONLY",
+    "normative_adjudicator": {
+      "task_id": "019fb993-a5c7-7100-aaa2-a0882d3d0724",
+      "terminal": "V2_CONTRACT_APPROVED"
+    },
+    "not_authorized": [
+      "admission",
+      "consumer_invocation",
+      "baseline_execution",
+      "subsequent_push",
+      "publication"
+    ],
+    "operator_messages": [
+      {
+        "message_item_id": "item-40",
+        "source_task_id": "019fb643-217f-7971-ac9d-e689aeef3358",
+        "text": "Advance the Evidence Conservation Mutation Pilot into a validation-spec chat, with every other portfolio item held at its current gate.",
+        "turn_id": "019fb681-98af-7f51-b1d1-fbd247687a39"
+      },
+      {
+        "message_item_id": "item-49",
+        "source_task_id": "019fb643-217f-7971-ac9d-e689aeef3358",
+        "text": "Approved",
+        "turn_id": "019fb6d4-602d-7b71-90d0-a7c732e73bbe"
+      },
+      {
+        "message_item_id": "item-127",
+        "source_task_id": "019fb643-217f-7971-ac9d-e689aeef3358",
+        "text": "Allow one-time remote creation of codex/evidence-conservation-v2-package-20260731 as the MCPAudit writer lease. All subsequent commits and outputs remain local-only. Allow one terminal BridgeDB postflight receipt and its required Markdown export after the v2 package commit; no other BridgeDB mutation is authorized.",
+        "turn_id": "019fb9b1-5a18-7341-a5c7-ca607a0d25a1"
+      }
+    ]
+  },
+  "candidate_state": "READY_FOR_INDEPENDENT_REVIEW",
+  "content_sha256": "8ecb39f7ce78960cba3905b4903b5037f0b8b9d3a354c89010382018a27c3685",
+  "created_at": "2026-07-31T21:27:04Z",
+  "package_id": "20260731-evidence-conservation-v2",
+  "prerequisite_state": "SATISFIED",
+  "producer": {
+    "actor_id": "codex",
+    "role": "EVIDENCE_PACKAGE_GENERATOR"
+  },
+  "record_id": "boundary-decision-v2-20260731",
+  "reviews": [],
+  "schema": "BoundaryDecisionV1",
+  "spec_sha256": "1b23e6220d228a170a964c0e889d3d2fecd4ddc9ae4c46a73d8b13f927ed0c74"
+}

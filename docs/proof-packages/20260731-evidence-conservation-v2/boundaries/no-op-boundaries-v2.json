@@ -1,0 +1,50 @@
+{
+  "corpus_kind": "NO_OP",
+  "count": 6,
+  "entries": [
+    {
+      "boundary_id": "NOOP-01",
+      "inside": "canonical receipt JSON member order",
+      "invariant": "authority_disposition_and_reason_multiset_identical",
+      "outside": "different JSON member order with identical values",
+      "path_id": "P1"
+    },
+    {
+      "boundary_id": "NOOP-02",
+      "inside": "no optional unknown metadata",
+      "invariant": "required receipt and projected security meaning unchanged",
+      "outside": "add one namespaced optional metadata member",
+      "path_id": "P1"
+    },
+    {
+      "boundary_id": "NOOP-03",
+      "inside": "canonical equivalent finding and tool order",
+      "invariant": "grade evidence and per-server fixture decision unchanged",
+      "outside": "equivalent order with all artifact bindings recomputed",
+      "path_id": "P2"
+    },
+    {
+      "boundary_id": "NOOP-04",
+      "inside": "UTC offset spelling +00:00",
+      "invariant": "instant and expiry relation unchanged",
+      "outside": "equivalent UTC spelling Z",
+      "path_id": "P2"
+    },
+    {
+      "boundary_id": "NOOP-05",
+      "inside": "canonical manifest member order",
+      "invariant": "manifest meaning and anchor verification unchanged",
+      "outside": "different manifest JSON member order with identical values",
+      "path_id": "P3"
+    },
+    {
+      "boundary_id": "NOOP-06",
+      "inside": "source database at one reserved fixture path",
+      "invariant": "URI-sensitive materialization path is outside semantic fingerprint",
+      "outside": "byte-identical logical source at another reserved fixture path",
+      "path_id": "P3"
+    }
+  ],
+  "execution_authorized": false,
+  "schema": "BoundaryCorpusV2"
+}

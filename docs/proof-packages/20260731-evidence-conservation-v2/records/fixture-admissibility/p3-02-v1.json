@@ -1,0 +1,61 @@
+{
+  "admission_state": "PENDING_INDEPENDENT_REVIEW",
+  "body": {
+    "admitted": false,
+    "artifact_manifest": [
+      {
+        "bytes": 176128,
+        "media_type": "application/vnd.sqlite3",
+        "name": "source.sqlite",
+        "sha256": "6b1bb288158014841836cf1643773f690f9ef99c26023019c81786b136419fb5"
+      },
+      {
+        "bytes": 184320,
+        "media_type": "application/x-tar",
+        "name": "recovery-anchor.tar",
+        "sha256": "ad81f40f8d6f175e1a3b248519c8c65c8235028f2c994c60940e320e57d65dfb"
+      }
+    ],
+    "automated_checks": {
+      "consumer_visible_label_absence": "PASS",
+      "decoded_secret_privacy": "PASS",
+      "full_contract_shape": "PASS",
+      "reserved_synthetic_identity": "PASS",
+      "semantic_locality": "PASS"
+    },
+    "consumer_invoked": false,
+    "expected_ceiling": {
+      "authority_ceiling": "NONAUTHORITATIVE",
+      "disposition": "STALE",
+      "raw_signal": {
+        "errors": [
+          "source_changed_since_anchor"
+        ],
+        "ready": false,
+        "source_current": false,
+        "state": "stale"
+      },
+      "reason_family": "source_changed_since_anchor",
+      "source": "sealed-contract-adjudication-not-consumer-output"
+    },
+    "fixture_id": "P3-02",
+    "fixture_schema": "P3FullFixtureV2",
+    "independent_review": "PENDING_INDEPENDENT_REVIEW",
+    "kind": "primary-mutation",
+    "path_id": "P3",
+    "semantic_axis": "current"
+  },
+  "candidate_state": "READY_FOR_INDEPENDENT_REVIEW",
+  "content_sha256": "e9bfc8929b2b978c994010b36edf55b351cc9303df42fae142bddb6d83e5c0ee",
+  "created_at": "2026-07-31T21:27:04Z",
+  "package_id": "20260731-evidence-conservation-v2",
+  "prerequisite_state": "PENDING",
+  "producer": {
+    "actor_id": "codex",
+    "role": "EVIDENCE_PACKAGE_GENERATOR"
+  },
+  "record_id": "fixture-admissibility-p3-02-v1",
+  "reviews": [],
+  "schema": "FixtureAdmissibilityV1",
+  "spec_sha256": "1b23e6220d228a170a964c0e889d3d2fecd4ddc9ae4c46a73d8b13f927ed0c74"
+}

@@ -1,0 +1,38 @@
+{
+  "admission_state": "PENDING_INDEPENDENT_REVIEW",
+  "body": {
+    "fixed_inputs": {
+      "canonical_json": true,
+      "encoding": "UTF-8",
+      "locale": "C",
+      "network": "DENIED",
+      "python_hash_seed": 0,
+      "random_seed": 0,
+      "timezone": "UTC"
+    },
+    "same_environment": {
+      "algorithm": "two independent full package builds and byte comparison",
+      "artifact_count": 100,
+      "byte_identical_count": 100,
+      "status": "PASS"
+    },
+    "second_supported_environment": {
+      "completed_count": 0,
+      "required_count": 1,
+      "status": "PENDING_INDEPENDENT_REVIEW"
+    }
+  },
+  "candidate_state": "READY_FOR_INDEPENDENT_REVIEW",
+  "content_sha256": "90d084abe3f8d5af5ef6d875324a5809e31e1a3e9027765f3dd80e2c1706060a",
+  "created_at": "2026-07-31T21:27:04Z",
+  "package_id": "20260731-evidence-conservation-v2",
+  "prerequisite_state": "PENDING",
+  "producer": {
+    "actor_id": "codex",
+    "role": "EVIDENCE_PACKAGE_GENERATOR"
+  },
+  "record_id": "determinism-profile-v2-20260731",
+  "reviews": [],
+  "schema": "DeterminismProfileV1",
+  "spec_sha256": "1b23e6220d228a170a964c0e889d3d2fecd4ddc9ae4c46a73d8b13f927ed0c74"
+}

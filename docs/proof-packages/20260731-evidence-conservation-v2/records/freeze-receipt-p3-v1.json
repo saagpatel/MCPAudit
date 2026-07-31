@@ -1,0 +1,115 @@
+{
+  "admission_state": "PENDING_INDEPENDENT_REVIEW",
+  "body": {
+    "closure_claim": "schema-22 source and RecoveryAnchorV1 decision closure",
+    "consumer_invoked": false,
+    "independent_review": "PENDING_INDEPENDENT_REVIEW",
+    "path_id": "P3",
+    "repositories": [
+      {
+        "commit": "b47e5428b0f512c5e4ab87212acdd1d844b365b0",
+        "name": "bridge-db",
+        "repository_path": "<workspace>/bridge-db",
+        "sources": [
+          {
+            "bytes": 1117,
+            "git_blob": "740bed1193e5b2a5eef0e528c44c730672ba1b48",
+            "path": "pyproject.toml",
+            "role": "decision-source-closure",
+            "sha256": "2d2d6fd5128603e2757a6952f21c06b6eb2b7493b8669e325de964f27692a595"
+          },
+          {
+            "bytes": 1091,
+            "git_blob": "d0919d668965ea4a57fc4bf71a485f32be5914be",
+            "path": "src/bridge_db/clock.py",
+            "role": "decision-source-closure",
+            "sha256": "482d39c77580f6708ba31e0a60554ebfc3a56c5c640e08b431e2512bf5dc331b"
+          },
+          {
+            "bytes": 6790,
+            "git_blob": "229811f44726ef768e63c8a0e3387156fab3dd72",
+            "path": "src/bridge_db/config.py",
+            "role": "decision-source-closure",
+            "sha256": "5c0b57fd8f684bcbbb34b23deb0552473b07791991eca0fc45bfb7f1d16b8ba5"
+          },
+          {
+            "bytes": 70210,
+            "git_blob": "4843a391668c448be924888fed345f0ea7ff1824",
+            "path": "src/bridge_db/db.py",
+            "role": "decision-source-closure",
+            "sha256": "96ad93104be0aedf9349ccb8b7ceb25f51cfff03c2ac39e59bc7fc2f32ae76f5"
+          },
+          {
+            "bytes": 35633,
+            "git_blob": "5ee93833ceedf8d914daaf5305fa1b1e14253731",
+            "path": "src/bridge_db/recovery.py",
+            "role": "decision-source-closure",
+            "sha256": "4a67339663dfd4f4317c80071f1dd5d25b13f74cf49905cd766d3cf1fd22a356"
+          },
+          {
+            "bytes": 34570,
+            "git_blob": "36c718828e9b7c14d14f292ffca5ded1b3584c8c",
+            "path": "src/bridge_db/tools/health.py",
+            "role": "decision-source-closure",
+            "sha256": "565955fcb2b26515646420126e814edeeadbf2a88080fbd1c040bfbd3ee1660b"
+          },
+          {
+            "bytes": 44358,
+            "git_blob": "717532b7ee2466199c722573af3f2a70ea43cd51",
+            "path": "tests/test_cli.py",
+            "role": "decision-source-closure",
+            "sha256": "516e79541d8db268b42f39607257a61501357dff500094af0884b70e77aef5ad"
+          },
+          {
+            "bytes": 61797,
+            "git_blob": "069bf796e963e658b5e75a21501fcc50641c8c9a",
+            "path": "tests/test_db.py",
+            "role": "decision-source-closure",
+            "sha256": "cb035bf01c055a4099af81b0f234f3dc992139a7eac39f2542210f2c295cf5d0"
+          },
+          {
+            "bytes": 51448,
+            "git_blob": "fc592e8c1140ded716048330a5208a8be36cc2f8",
+            "path": "tests/test_health.py",
+            "role": "decision-source-closure",
+            "sha256": "86126b549fb08934e9a67156baff7ee357c80ad9eb5258299b241dd52dda5271"
+          },
+          {
+            "bytes": 31632,
+            "git_blob": "da63ab6f6c64436919632b770be1acbf0bba551f",
+            "path": "tests/test_recovery.py",
+            "role": "decision-source-closure",
+            "sha256": "e31176ad87d3f717b701429f27687fa746568e159fc7ed70cae0b1ee4d8b7148"
+          },
+          {
+            "bytes": 121491,
+            "git_blob": "bec0032d57fd5adea4fbcdc0ed0d4c069db72189",
+            "path": "uv.lock",
+            "role": "decision-source-closure",
+            "sha256": "f300fccebaa2a5e68ceb3f98ced5bb115038dd6bfc19c8f93829d64d3c8d736f"
+          }
+        ],
+        "tree": "f7499707fdaebd17155f1d1055abec1e6e1cd1c9"
+      }
+    ],
+    "runtime_prerequisite": {
+      "mode_0600_observed": "0600",
+      "mode_0644_observed": "0644",
+      "status": "PASS",
+      "unsupported_action": "ABORT_NO_EMULATION"
+    }
+  },
+  "candidate_state": "READY_FOR_INDEPENDENT_REVIEW",
+  "content_sha256": "8ac6611a38e9c38e6d2a14a3062726003a7805a3c64def64d1143cebf99fda2a",
+  "created_at": "2026-07-31T21:27:04Z",
+  "package_id": "20260731-evidence-conservation-v2",
+  "prerequisite_state": "PENDING",
+  "producer": {
+    "actor_id": "codex",
+    "role": "EVIDENCE_PACKAGE_GENERATOR"
+  },
+  "record_id": "freeze-receipt-p3-v1",
+  "reviews": [],
+  "schema": "FreezeReceiptV1",
+  "spec_sha256": "1b23e6220d228a170a964c0e889d3d2fecd4ddc9ae4c46a73d8b13f927ed0c74"
+}

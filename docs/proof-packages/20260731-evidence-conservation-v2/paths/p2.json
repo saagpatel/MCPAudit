@@ -1,0 +1,29 @@
+{
+  "consumer": "mcp-trust@a30be69132802d2b24157066fa4dc125e8edfdca",
+  "consumer_execution": "NOT_AUTHORIZED",
+  "control_count": 1,
+  "coordinates": [
+    "present",
+    "current",
+    "visible",
+    "consistent",
+    "supported",
+    "bound"
+  ],
+  "decision_surface": "MCPTrustPerServerFixtureAdmissibilityV1",
+  "excluded": [
+    "GLOBAL_PUBLICATION",
+    "LAUNCH",
+    "DEPLOYMENT",
+    "SCHEDULER_READINESS",
+    "LIVE_SCAN"
+  ],
+  "input_contract": "complete EngineResult plus complete RefreshCandidateV1 directory, database, 11-field receipt, persisted scan/result, manifest, and snapshot",
+  "mutation_count": 6,
+  "package_id": "20260731-evidence-conservation-v2",
+  "path_id": "P2",
+  "primary_case_count": 7,
+  "producer": "MCPAudit@9484d8bb1b059ce48f77015c4a84561675517a77",
+  "schema": "EvidenceConservationPathV2",
+  "scope": "PER_SERVER_FIXTURE_GRADE_ONLY"
+}

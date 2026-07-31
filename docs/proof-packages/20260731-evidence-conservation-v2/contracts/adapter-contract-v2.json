@@ -1,0 +1,20 @@
+{
+  "allowed_operations": [
+    "decode",
+    "materialize",
+    "invoke_when_separately_authorized",
+    "capture"
+  ],
+  "capture_rule": "raw bytes are preserved without semantic normalization",
+  "current_execution_authority": "DECODE_MATERIALIZE_CAPTURE_ONLY",
+  "forbidden_operations": [
+    "compare_subject_identities",
+    "recompute_grades",
+    "synthesize_missing_fields",
+    "classify_from_fixture_labels",
+    "manufacture_reason_codes",
+    "invoke_without_separate_authority"
+  ],
+  "package_id": "20260731-evidence-conservation-v2",
+  "schema": "AdapterContractV2"
+}

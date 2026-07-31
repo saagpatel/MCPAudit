@@ -1,0 +1,60 @@
+{
+  "admission_state": "PENDING_INDEPENDENT_REVIEW",
+  "body": {
+    "admitted": false,
+    "artifact_manifest": [
+      {
+        "bytes": 176128,
+        "media_type": "application/vnd.sqlite3",
+        "name": "source.sqlite",
+        "sha256": "893432467ca5e5aad3b4472af1be2c29b847a3381d7b41f945c67152da74fff3"
+      },
+      {
+        "bytes": 184320,
+        "media_type": "application/x-tar",
+        "name": "recovery-anchor.tar",
+        "sha256": "a2bc587b6323e23277c6bd8210227af7427b20e801f59508f56ea3a541f95624"
+      }
+    ],
+    "automated_checks": {
+      "consumer_visible_label_absence": "PASS",
+      "decoded_secret_privacy": "PASS",
+      "full_contract_shape": "PASS",
+      "reserved_synthetic_identity": "PASS",
+      "semantic_locality": "PASS"
+    },
+    "consumer_invoked": false,
+    "expected_ceiling": {
+      "authority_ceiling": "BLOCKED",
+      "disposition": "UNSUPPORTED",
+      "raw_signal": {
+        "errors": [
+          "schema_incompatible"
+        ],
+        "ready": false,
+        "state": "invalid"
+      },
+      "reason_family": "schema_incompatible",
+      "source": "sealed-contract-adjudication-not-consumer-output"
+    },
+    "fixture_id": "P3-05",
+    "fixture_schema": "P3FullFixtureV2",
+    "independent_review": "PENDING_INDEPENDENT_REVIEW",
+    "kind": "primary-mutation",
+    "path_id": "P3",
+    "semantic_axis": "supported"
+  },
+  "candidate_state": "READY_FOR_INDEPENDENT_REVIEW",
+  "content_sha256": "144ee51d2c5f5755eff8adc3cfdfa5e8452b01626d856885686a7e6df30c7bad",
+  "created_at": "2026-07-31T21:27:04Z",
+  "package_id": "20260731-evidence-conservation-v2",
+  "prerequisite_state": "PENDING",
+  "producer": {
+    "actor_id": "codex",
+    "role": "EVIDENCE_PACKAGE_GENERATOR"
+  },
+  "record_id": "fixture-admissibility-p3-05-v1",
+  "reviews": [],
+  "schema": "FixtureAdmissibilityV1",
+  "spec_sha256": "1b23e6220d228a170a964c0e889d3d2fecd4ddc9ae4c46a73d8b13f927ed0c74"
+}

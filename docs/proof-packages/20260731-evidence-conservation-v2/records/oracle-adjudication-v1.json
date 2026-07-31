@@ -1,0 +1,136 @@
+{
+  "admission_state": "PENDING_INDEPENDENT_REVIEW",
+  "body": {
+    "baseline_execution_authorized": false,
+    "blind_oracle_reviews": {
+      "completed": 0,
+      "required": 2,
+      "status": "PENDING_INDEPENDENT_REVIEW"
+    },
+    "consumer_outputs_seen": false,
+    "contract_adjudication": {
+      "decision": "V2_CONTRACT_APPROVED",
+      "task_id": "019fb993-a5c7-7100-aaa2-a0882d3d0724"
+    },
+    "sealed_matrix": {
+      "P1-01": {
+        "authority": "NONAUTHORITATIVE",
+        "disposition": "MISSING",
+        "reason_family": "required_provider_missing"
+      },
+      "P1-02": {
+        "authority": "NONAUTHORITATIVE",
+        "disposition": "STALE",
+        "reason_family": "receipt_stale"
+      },
+      "P1-03": {
+        "authority": "NONAUTHORITATIVE",
+        "disposition": "MASKED",
+        "reason_family": "required_count_redacted"
+      },
+      "P1-04": {
+        "authority": "NONAUTHORITATIVE",
+        "disposition": "CONTRADICTORY",
+        "reason_family": "pagination_incomplete"
+      },
+      "P1-05": {
+        "authority": "NONAUTHORITATIVE",
+        "disposition": "UNSUPPORTED",
+        "reason_family": "receipt_schema_unsupported"
+      },
+      "P1-06": {
+        "authority": "NONAUTHORITATIVE",
+        "disposition": "MISBOUND",
+        "reason_family": "subject_identity_mismatch"
+      },
+      "P1-C": {
+        "authority": "STRONG",
+        "disposition": "VALID",
+        "reason_family": "complete"
+      },
+      "P2-01": {
+        "authority": "NONAUTHORITATIVE",
+        "disposition": "MISSING",
+        "reason_family": "missing-receipt"
+      },
+      "P2-02": {
+        "authority": "NONAUTHORITATIVE",
+        "disposition": "STALE",
+        "reason_family": "candidate_expired"
+      },
+      "P2-03": {
+        "authority": "NONAUTHORITATIVE",
+        "disposition": "MASKED",
+        "reason_family": "masked"
+      },
+      "P2-04": {
+        "authority": "BLOCKED",
+        "disposition": "CONTRADICTORY",
+        "reason_family": "fresh_grade_binding_mismatch"
+      },
+      "P2-05": {
+        "authority": "BLOCKED",
+        "disposition": "UNSUPPORTED",
+        "reason_family": "successful_scan_receipt_schema_invalid"
+      },
+      "P2-06": {
+        "authority": "BLOCKED",
+        "disposition": "MISBOUND",
+        "reason_family": "receipt_scan_binding_mismatch"
+      },
+      "P2-C": {
+        "authority": "STRONG",
+        "disposition": "VALID",
+        "reason_family": "fixture_candidate_valid"
+      },
+      "P3-01": {
+        "authority": "NONAUTHORITATIVE",
+        "disposition": "MISSING",
+        "reason_family": "anchor_missing"
+      },
+      "P3-02": {
+        "authority": "NONAUTHORITATIVE",
+        "disposition": "STALE",
+        "reason_family": "source_changed_since_anchor"
+      },
+      "P3-03": {
+        "authority": "BLOCKED",
+        "disposition": "MASKED",
+        "reason_family": "digest_mismatch"
+      },
+      "P3-04": {
+        "authority": "BLOCKED",
+        "disposition": "CONTRADICTORY",
+        "reason_family": "byte_size_mismatch"
+      },
+      "P3-05": {
+        "authority": "BLOCKED",
+        "disposition": "UNSUPPORTED",
+        "reason_family": "schema_incompatible"
+      },
+      "P3-06": {
+        "authority": "BLOCKED",
+        "disposition": "NOT_PRIVATE",
+        "reason_family": "backup_permissions_not_private"
+      },
+      "P3-C": {
+        "authority": "STRONG",
+        "disposition": "VALID",
+        "reason_family": "verified"
+      }
+    }
+  },
+  "candidate_state": "READY_FOR_INDEPENDENT_REVIEW",
+  "content_sha256": "f1181c417a81dd082c070d9d75119679f6acb6703c2abb483b5b436ef54f9a1f",
+  "created_at": "2026-07-31T21:27:04Z",
+  "package_id": "20260731-evidence-conservation-v2",
+  "prerequisite_state": "PENDING",
+  "producer": {
+    "actor_id": "codex",
+    "role": "EVIDENCE_PACKAGE_GENERATOR"
+  },
+  "record_id": "oracle-adjudication-v2-20260731",
+  "reviews": [],
+  "schema": "OracleAdjudicationV1",
+  "spec_sha256": "1b23e6220d228a170a964c0e889d3d2fecd4ddc9ae4c46a73d8b13f927ed0c74"
+}

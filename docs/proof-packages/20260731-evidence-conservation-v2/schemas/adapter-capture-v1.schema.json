@@ -1,0 +1,27 @@
+{
+  "$id": "https://example.invalid/mcpaudit/20260731-evidence-conservation-v2/AdapterCaptureV1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "captured_bytes_base64": {
+      "type": "string"
+    },
+    "fixture_id": {
+      "type": "string"
+    },
+    "schema": {
+      "const": "AdapterCaptureV1"
+    },
+    "sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "fixture_id",
+    "captured_bytes_base64",
+    "sha256"
+  ],
+  "title": "AdapterCaptureV1",
+  "type": "object"
+}

@@ -1,0 +1,26 @@
+{
+  "$id": "https://example.invalid/mcpaudit/20260731-evidence-conservation-v2/FrozenContractsV2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "package_id": {
+      "const": "20260731-evidence-conservation-v2"
+    },
+    "repositories": {
+      "maxItems": 5,
+      "minItems": 5,
+      "type": "array"
+    },
+    "schema": {
+      "const": "FrozenContractsV2"
+    }
+  },
+  "required": [
+    "schema",
+    "package_id",
+    "captured_at",
+    "repositories",
+    "closure_statement"
+  ],
+  "title": "FrozenContractsV2",
+  "type": "object"
+}
