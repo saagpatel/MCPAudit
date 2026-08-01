@@ -1,14 +1,80 @@
 {
   "$id": "https://example.invalid/mcpaudit/20260731-evidence-conservation-v2/FrozenContractsV2.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
   "properties": {
+    "captured_at": {
+      "type": "string"
+    },
+    "claim_ceiling": {
+      "const": "BOUNDED_REPOSITORY_LOCAL_CLOSURE_ONLY"
+    },
+    "closure_rule": {
+      "type": "object"
+    },
+    "closure_statement": {
+      "type": "string"
+    },
     "package_id": {
       "const": "20260731-evidence-conservation-v2"
     },
     "repositories": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "bounded_prefixes": {
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "commit": {
+            "pattern": "^[0-9a-f]{40}$",
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "repository_path": {
+            "type": "string"
+          },
+          "root_files": {
+            "minItems": 2,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "source_count": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "sources": {
+            "minItems": 1,
+            "type": "array"
+          },
+          "tree": {
+            "pattern": "^[0-9a-f]{40}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "repository_path",
+          "commit",
+          "tree",
+          "bounded_prefixes",
+          "root_files",
+          "source_count",
+          "sources"
+        ],
+        "type": "object"
+      },
       "maxItems": 5,
       "minItems": 5,
       "type": "array"
+    },
+    "residual_unknowns": {
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
     },
     "schema": {
       "const": "FrozenContractsV2"
@@ -19,7 +85,10 @@
     "package_id",
     "captured_at",
     "repositories",
-    "closure_statement"
+    "closure_rule",
+    "closure_statement",
+    "residual_unknowns",
+    "claim_ceiling"
   ],
   "title": "FrozenContractsV2",
   "type": "object"

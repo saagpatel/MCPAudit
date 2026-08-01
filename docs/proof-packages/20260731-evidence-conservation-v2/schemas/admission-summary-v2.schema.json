@@ -1,6 +1,7 @@
 {
   "$id": "https://example.invalid/mcpaudit/20260731-evidence-conservation-v2/AdmissionSummaryV2.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
   "allOf": [
     {
       "if": {
@@ -8,23 +9,281 @@
           "admission_state": {
             "const": "ADMITTED"
           }
-        }
+        },
+        "required": [
+          "admission_state"
+        ]
       },
       "then": {
         "properties": {
+          "candidate_state": {
+            "const": "TERMINAL_ADMITTED"
+          },
+          "claim_ceiling": {
+            "const": "ADMITTED_FOR_AUTHORIZED_BASELINE_ONLY"
+          },
           "independent_review": {
             "properties": {
               "completed_count": {
-                "minimum": 2
+                "const": 2
+              },
+              "status": {
+                "const": "COMPLETE"
               }
             }
+          },
+          "p1_freeze": {
+            "const": "PASS_EXACT_PNPM_11_5_2"
+          },
+          "p3_posix_environment": {
+            "const": "PASS"
+          },
+          "prerequisite_records": {
+            "properties": {
+              "admitted_count": {
+                "const": 29
+              },
+              "satisfied_count": {
+                "const": 29
+              },
+              "status": {
+                "const": "COMPLETE"
+              }
+            }
+          },
+          "review_receipts": {
+            "allOf": [
+              {
+                "contains": {
+                  "properties": {
+                    "review_type": {
+                      "const": "ORACLE_CONTRACT"
+                    }
+                  },
+                  "required": [
+                    "review_type"
+                  ]
+                },
+                "maxContains": 1,
+                "minContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "review_type": {
+                      "const": "FIXTURE_REPRODUCIBILITY"
+                    }
+                  },
+                  "required": [
+                    "review_type"
+                  ]
+                },
+                "maxContains": 1,
+                "minContains": 1
+              }
+            ],
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "completed_at": {
+                  "minLength": 10,
+                  "type": "string"
+                },
+                "decision": {
+                  "const": "APPROVE"
+                },
+                "independent": {
+                  "const": true
+                },
+                "receipt_id": {
+                  "pattern": "^review-[a-z0-9-]+$",
+                  "type": "string"
+                },
+                "review_type": {
+                  "enum": [
+                    "ORACLE_CONTRACT",
+                    "FIXTURE_REPRODUCIBILITY"
+                  ]
+                },
+                "reviewed_content_sha256": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "reviewed_spec_sha256": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "reviewer_id": {
+                  "pattern": "^v2-[a-z0-9-]+$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "receipt_id",
+                "reviewer_id",
+                "review_type",
+                "decision",
+                "reviewed_content_sha256",
+                "reviewed_spec_sha256",
+                "completed_at",
+                "independent"
+              ],
+              "type": "object"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array",
+            "uniqueItems": true
           },
           "runtime_execution": {
             "properties": {
               "authorized": {
                 "const": true
+              },
+              "cases_executed": {
+                "const": 21
+              },
+              "completed_case_ids": {
+                "const": [
+                  "P1-C",
+                  "P1-01",
+                  "P1-02",
+                  "P1-03",
+                  "P1-04",
+                  "P1-05",
+                  "P1-06",
+                  "P2-C",
+                  "P2-01",
+                  "P2-02",
+                  "P2-03",
+                  "P2-04",
+                  "P2-05",
+                  "P2-06",
+                  "P3-C",
+                  "P3-01",
+                  "P3-02",
+                  "P3-03",
+                  "P3-04",
+                  "P3-05",
+                  "P3-06"
+                ]
               }
             }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "admission_state": {
+            "const": "PENDING_INDEPENDENT_REVIEW"
+          }
+        },
+        "required": [
+          "admission_state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "candidate_state": {
+            "const": "READY_FOR_INDEPENDENT_REVIEW"
+          },
+          "claim_ceiling": {
+            "const": "READY_FOR_BLIND_REVIEW_ONLY"
+          },
+          "runtime_execution": {
+            "properties": {
+              "authorized": {
+                "const": false
+              },
+              "cases_executed": {
+                "const": 0
+              },
+              "completed_case_ids": {
+                "const": []
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "admission_state": {
+            "const": "REJECTED"
+          }
+        },
+        "required": [
+          "admission_state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "candidate_state": {
+            "const": "TERMINAL_REJECTED"
+          },
+          "claim_ceiling": {
+            "const": "REJECTED"
+          },
+          "independent_review": {
+            "properties": {
+              "status": {
+                "const": "REJECTED"
+              }
+            }
+          },
+          "review_receipts": {
+            "contains": {
+              "properties": {
+                "decision": {
+                  "const": "REJECT"
+                }
+              },
+              "required": [
+                "decision"
+              ]
+            },
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "candidate_state": {
+            "const": "TERMINAL_ADMITTED"
+          }
+        },
+        "required": [
+          "candidate_state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "admission_state": {
+            "const": "ADMITTED"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "candidate_state": {
+            "const": "TERMINAL_REJECTED"
+          }
+        },
+        "required": [
+          "candidate_state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "admission_state": {
+            "const": "REJECTED"
           }
         }
       }
@@ -38,11 +297,242 @@
         "REJECTED"
       ]
     },
+    "boundaries": {
+      "const": {
+        "near_miss": 6,
+        "no_op": 6
+      }
+    },
+    "bridge_postflight": {
+      "const": {
+        "markdown_export_run": false,
+        "receipt_written": false,
+        "retry_authorized": false,
+        "status": "FAILED_PREWRITE_BOUND_CREDENTIAL_NOT_ENROLLED"
+      }
+    },
+    "candidate_state": {
+      "enum": [
+        "READY_FOR_INDEPENDENT_REVIEW",
+        "TERMINAL_ADMITTED",
+        "TERMINAL_REJECTED"
+      ]
+    },
+    "claim_ceiling": {
+      "enum": [
+        "READY_FOR_BLIND_REVIEW_ONLY",
+        "ADMITTED_FOR_AUTHORIZED_BASELINE_ONLY",
+        "REJECTED"
+      ]
+    },
+    "coverage": {
+      "const": {
+        "covered": 11,
+        "cross": 1,
+        "partial": 6
+      }
+    },
+    "independent_review": {
+      "additionalProperties": false,
+      "properties": {
+        "completed_count": {
+          "maximum": 2,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "required_count": {
+          "const": 2
+        },
+        "status": {
+          "enum": [
+            "PENDING_INDEPENDENT_REVIEW",
+            "COMPLETE",
+            "REJECTED"
+          ]
+        }
+      },
+      "required": [
+        "required_count",
+        "completed_count",
+        "status"
+      ],
+      "type": "object"
+    },
+    "p1_freeze": {
+      "enum": [
+        "UNKNOWN_EXACT_PNPM_11_5_2",
+        "PASS_EXACT_PNPM_11_5_2"
+      ]
+    },
+    "p2_scope": {
+      "const": "PER_SERVER_FIXTURE_GRADE_ONLY"
+    },
+    "p3_posix_environment": {
+      "enum": [
+        "PASS",
+        "UNKNOWN"
+      ]
+    },
     "package_id": {
       "const": "20260731-evidence-conservation-v2"
     },
     "package_mode": {
       "const": "EVIDENCE_PACKAGE_ONLY"
+    },
+    "prerequisite_records": {
+      "additionalProperties": false,
+      "properties": {
+        "admitted_count": {
+          "maximum": 29,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "required_count": {
+          "const": 29
+        },
+        "satisfied_count": {
+          "maximum": 29,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "status": {
+          "enum": [
+            "PENDING",
+            "COMPLETE",
+            "FAILED"
+          ]
+        }
+      },
+      "required": [
+        "required_count",
+        "satisfied_count",
+        "admitted_count",
+        "status"
+      ],
+      "type": "object"
+    },
+    "primary_corpus": {
+      "const": {
+        "controls": 3,
+        "mutations": 18,
+        "total": 21
+      }
+    },
+    "record_counts": {
+      "type": "object"
+    },
+    "review_receipts": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "completed_at": {
+            "minLength": 10,
+            "type": "string"
+          },
+          "decision": {
+            "enum": [
+              "APPROVE",
+              "REJECT"
+            ]
+          },
+          "independent": {
+            "const": true
+          },
+          "receipt_id": {
+            "pattern": "^review-[a-z0-9-]+$",
+            "type": "string"
+          },
+          "review_type": {
+            "enum": [
+              "ORACLE_CONTRACT",
+              "FIXTURE_REPRODUCIBILITY"
+            ]
+          },
+          "reviewed_content_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "reviewed_spec_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "reviewer_id": {
+            "pattern": "^v2-[a-z0-9-]+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "receipt_id",
+          "reviewer_id",
+          "review_type",
+          "decision",
+          "reviewed_content_sha256",
+          "reviewed_spec_sha256",
+          "completed_at",
+          "independent"
+        ],
+        "type": "object"
+      },
+      "maxItems": 2,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "review_subject_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "runtime_execution": {
+      "additionalProperties": false,
+      "properties": {
+        "authorized": {
+          "type": "boolean"
+        },
+        "cases_executed": {
+          "maximum": 21,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "completed_case_ids": {
+          "items": {
+            "enum": [
+              "P1-C",
+              "P1-01",
+              "P1-02",
+              "P1-03",
+              "P1-04",
+              "P1-05",
+              "P1-06",
+              "P2-C",
+              "P2-01",
+              "P2-02",
+              "P2-03",
+              "P2-04",
+              "P2-05",
+              "P2-06",
+              "P3-C",
+              "P3-01",
+              "P3-02",
+              "P3-03",
+              "P3-04",
+              "P3-05",
+              "P3-06"
+            ]
+          },
+          "maxItems": 21,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "total_cases": {
+          "const": 21
+        }
+      },
+      "required": [
+        "authorized",
+        "cases_executed",
+        "total_cases",
+        "completed_case_ids"
+      ],
+      "type": "object"
     },
     "schema": {
       "const": "AdmissionSummaryV2"
@@ -56,8 +546,18 @@
     "admission_state",
     "record_counts",
     "primary_corpus",
+    "boundaries",
+    "coverage",
     "independent_review",
-    "runtime_execution"
+    "review_subject_sha256",
+    "review_receipts",
+    "prerequisite_records",
+    "runtime_execution",
+    "p1_freeze",
+    "p2_scope",
+    "p3_posix_environment",
+    "bridge_postflight",
+    "claim_ceiling"
   ],
   "title": "AdmissionSummaryV2",
   "type": "object"

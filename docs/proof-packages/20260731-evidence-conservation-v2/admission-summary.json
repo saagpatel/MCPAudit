@@ -4,6 +4,12 @@
     "near_miss": 6,
     "no_op": 6
   },
+  "bridge_postflight": {
+    "markdown_export_run": false,
+    "receipt_written": false,
+    "retry_authorized": false,
+    "status": "FAILED_PREWRITE_BOUND_CREDENTIAL_NOT_ENROLLED"
+  },
   "candidate_state": "READY_FOR_INDEPENDENT_REVIEW",
   "claim_ceiling": "READY_FOR_BLIND_REVIEW_ONLY",
   "coverage": {
@@ -21,6 +27,12 @@
   "p3_posix_environment": "PASS",
   "package_id": "20260731-evidence-conservation-v2",
   "package_mode": "EVIDENCE_PACKAGE_ONLY",
+  "prerequisite_records": {
+    "admitted_count": 0,
+    "required_count": 29,
+    "satisfied_count": 2,
+    "status": "PENDING"
+  },
   "primary_corpus": {
     "controls": 3,
     "mutations": 18,
@@ -36,9 +48,12 @@
     "OwnershipPreflightV1": 1,
     "total": 29
   },
+  "review_receipts": [],
+  "review_subject_sha256": "f6f882740f5f4285fb5910ffd963cb7a74af9d67522375d4eef891f25eaf1121",
   "runtime_execution": {
     "authorized": false,
     "cases_executed": 0,
+    "completed_case_ids": [],
     "total_cases": 21
   },
   "schema": "AdmissionSummaryV2"

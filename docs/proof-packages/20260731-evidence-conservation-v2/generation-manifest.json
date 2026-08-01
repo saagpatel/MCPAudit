@@ -1,5 +1,5 @@
 {
-  "artifact_count": 99,
+  "artifact_count": 98,
   "artifacts": [
     {
       "bytes": 802,
@@ -32,24 +32,24 @@
       "sha256": "02760e3af6a4b656ca31cbe918ff029d5c61b04d31f5327aae18ff7870728a5f"
     },
     {
-      "bytes": 1176,
+      "bytes": 1519,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/admission-report.md",
-      "sha256": "e6c400f04ef6531d4a4f1c4a47f26602c22cbd45929d9e60c53dcfefac8f8e0d"
+      "sha256": "395dad26a696cb093f971089643123a6976c24557a7d191ceed1c3695441bc08"
     },
     {
-      "bytes": 1103,
+      "bytes": 1574,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/admission-summary.json",
-      "sha256": "52a57f355daa3ffabd782a790d8f61d5b399c4052b9d2bcf9da0bb4f0464de52"
+      "sha256": "51afb7b1126397282ff2117e58d41a5faf609ee98d5582ee1f551b43050444c2"
     },
     {
-      "bytes": 2011,
+      "bytes": 2100,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/boundaries/near-miss-boundaries-v2.json",
-      "sha256": "9d3389b1198221340db926de8444c413b19f952050aac4f37c96fb198f791d83"
+      "sha256": "72579903758ac662ac92c9a74da53fe82a82becf4e4e39e3a4afce3b60c3c41f"
     },
     {
-      "bytes": 1728,
+      "bytes": 2120,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/boundaries/no-op-boundaries-v2.json",
-      "sha256": "9e7c0c5a8afba6c32fcd52ffdd492363b6dd2ff01b5558e648faa4df8a67bf90"
+      "sha256": "d73efbac5b1613e1b327c7dbbc26fca7c677766c7d12e9c6d90b349ee7b438f1"
     },
     {
       "bytes": 584,
@@ -57,9 +57,9 @@
       "sha256": "b2de52f2722e3999ac03ca479bd99967766efab7e7dfa773910fb52313166a8f"
     },
     {
-      "bytes": 34176,
+      "bytes": 243810,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/contracts/frozen-contracts-v2.json",
-      "sha256": "e6d88580fe21f0b7588f5d3acb896a824fbae34ab20b61258a1bafc222eb3f42"
+      "sha256": "4cb6674f16bb9d88b7b3425032b5f6f5ef852217abbf4f5be815cfcd3462af76"
     },
     {
       "bytes": 8123,
@@ -112,19 +112,19 @@
       "sha256": "1cbafb253de01db666e5c9671780eb7a4a228ccdb7c65c4cf7b48bfa8aa99c85"
     },
     {
-      "bytes": 56854,
+      "bytes": 56962,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/fixtures/p2-04.json",
-      "sha256": "064ee922b4672255d6302af73d40c07755cd8cce4d5050490ff6e8b90fb8c41e"
+      "sha256": "263073a050d6efbd551f01addfe57b2bf32b65a1061c6e72c26ff9084ab54a72"
     },
     {
-      "bytes": 56853,
+      "bytes": 56908,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/fixtures/p2-05.json",
-      "sha256": "41ee6ff52f3f7003d6efb736e7a10a52f32f30ba79a8dbd2aab1f5fcae84717b"
+      "sha256": "858eda8ce7957df80536a42101fe4cb3fe921864d8bb68165cb961aa833d5ddb"
     },
     {
-      "bytes": 56821,
+      "bytes": 56937,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/fixtures/p2-06.json",
-      "sha256": "a34dd10733b3e1fbcbbc33ca48254c2c8dd61320918b5b6944c759bc42d4f598"
+      "sha256": "c71fe665914da41dab1fccb9f9b334531d9d2687ed405b3c37002775d3572330"
     },
     {
       "bytes": 56734,
@@ -139,32 +139,32 @@
     {
       "bytes": 482145,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/fixtures/p3-02.json",
-      "sha256": "15447dc1922d0c2ad4ee963ad8c6b0fe1f5e8d44174e618e0ec20f95d56f1b43"
+      "sha256": "d0fd362025ef2ec172e4e7b3f64092074a0c21171e3d6a2d34140498d814742d"
     },
     {
       "bytes": 482056,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/fixtures/p3-03.json",
-      "sha256": "e950ea9b2a98d3939297c2ad60c03d02fcca2d6f201fd05c730b49277b5d6850"
+      "sha256": "c19c75341cbb4dfdfc92c389c066462a8fad36a52a476bf6b3327857d1edd4df"
     },
     {
       "bytes": 482078,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/fixtures/p3-04.json",
-      "sha256": "543afe0c6d572142ac8cb7850d06b23d003270dda3ccc8ea5756f668ed1960a8"
+      "sha256": "e1df5a0d54734fba2b38b7445fe79e899a2a7ac0f9cb53656e2c6b131a69bad8"
     },
     {
       "bytes": 482227,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/fixtures/p3-05.json",
-      "sha256": "1a127fe767adfffaf14299c822bab38ef02368d115ca1e093ea5eada9793e34e"
+      "sha256": "ddf63932ae45c9e9c862582545bf4ec8123ad3c9fd22b3ec0d2fe538c63e59fe"
     },
     {
       "bytes": 482749,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/fixtures/p3-06.json",
-      "sha256": "56743be83bf5a11eb3514d82b773073b7f48a35b1d1292d8a1300b54c72a6bed"
+      "sha256": "66d2a23ea7d91f39dcbcaee5a181087db9644ec0c2bbbe711ea8dfac18073f93"
     },
     {
       "bytes": 482073,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/fixtures/p3-control.json",
-      "sha256": "2775f1c19e1af22282219eac0a5473e22e5dc95f9c1c23d42de76baaa029e740"
+      "sha256": "1bfc5bc72a98078c5acef474c9cd30935a5864185dc50d1b2bca8a848247ac54"
     },
     {
       "bytes": 764,
@@ -192,149 +192,149 @@
       "sha256": "a1290dff89a78e4c81b3f8628dacbc4a6dbde6b1812183860e1c33711012cc82"
     },
     {
-      "bytes": 2309,
+      "bytes": 2992,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/records/boundary-decision-v1.json",
-      "sha256": "b601ad1992abb849c453ee784141200ec2414d726b93ff553a6b198f12be4901"
+      "sha256": "7494b855fd6c3187374c6c4afbd1ba3d0bebc8b621a25bc7f038d36e55f74cc4"
     },
     {
       "bytes": 7148,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/records/coverage-delta-v1.json",
-      "sha256": "06a47bbffe0b0f4f59cf67359db194805810c89b425e60263aebcce236a7ae24"
+      "sha256": "a445f96e0c421e8f38af5849da2452047f0c91ff670dd5b79d4e162c971d02c0"
     },
     {
       "bytes": 1168,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/records/determinism-profile-v1.json",
-      "sha256": "dedc02231b8c56e519b5d99b482d9d0896ccfc536adf44330a0807f59147eeb1"
+      "sha256": "b54a314240c7eaacc19da00055b287cca0293cd0df55dacfb017f0737336cd3e"
     },
     {
       "bytes": 1931,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/records/fixture-admissibility/p1-01-v1.json",
-      "sha256": "9cd03003f2cd9e9d0b773c7f0d6c579c5103baf9d2be6d0c6d99772a29da5ad7"
+      "sha256": "c9bfaaae250055c826b7e46eeabb193d1f3349e26781b3839819efe1fdbbe3b4"
     },
     {
       "bytes": 1903,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/records/fixture-admissibility/p1-02-v1.json",
-      "sha256": "e366767bc242d81cec1949f40fa70de9a536fdc4af8a8bed86ccf706697f419f"
+      "sha256": "76fdb19837ce4b00146e16efd3be723c406c17a9b4aea385cce355cd54ac69a4"
     },
     {
       "bytes": 1926,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/records/fixture-admissibility/p1-03-v1.json",
-      "sha256": "6c3e79ab50a31fb56f1ab6fa84322ed5a75fa1c9258d4b437f87ac25e5e4d93d"
+      "sha256": "882d271f3aa011c46ff8c65fc0f61d789b5c89ab3892043e73d953941b8e3091"
     },
     {
       "bytes": 1932,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/records/fixture-admissibility/p1-04-v1.json",
-      "sha256": "67ae7b4f6d03c5fe23e0fce760c07587945ee5b4fe1ba4d33642e6b4d29078d1"
+      "sha256": "481269c9f689b7b351ab7b7f2d5d82c6da5a91e0779207603e1eb579e2eb83c7"
     },
     {
       "bytes": 1939,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/records/fixture-admissibility/p1-05-v1.json",
-      "sha256": "af88ce8ef2c6fd7950a4bf53107ffe0be2748553939e7ab5f3ee8687e47b8f43"
+      "sha256": "14b41115f35a35af050a5c7ce93417adf0005d2acf46eee1e2da83e9ee4c273d"
     },
     {
       "bytes": 1996,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/records/fixture-admissibility/p1-06-v1.json",
-      "sha256": "88cee5fb6df649310e9c19bbe632c7ab360f0bde90d2a6ec1ab7e281b2e87cfd"
+      "sha256": "eaed2b42e70c3d3115c8fd10e1823be5f35f3eb10a0658d4aefc4c1af3d94c70"
     },
     {
       "bytes": 1882,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/records/fixture-admissibility/p1-control-v1.json",
-      "sha256": "a3b2f9c2f34d895123cf687e877a24b75068717c82f112c925701373b2fe5aaf"
+      "sha256": "536fd8015bc4cf8fc1d2164258d0b9eca7db568958e217fe623ab25aa1e5775a"
     },
     {
       "bytes": 1885,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/records/fixture-admissibility/p2-01-v1.json",
-      "sha256": "49135455834c19607c14130c9be708e55468c99404b40a04ab627f457ed6881a"
+      "sha256": "6c209bfc994d0c8dfd196fd2a8c27e83f3b59c52a52876b0949d4a07ef61f228"
     },
     {
       "bytes": 1900,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/records/fixture-admissibility/p2-02-v1.json",
-      "sha256": "1d404e3e0806f71b6e6b425e2e1a257d71f969244bf197e4d8012e910e3b62c5"
+      "sha256": "7efcd557126c3b18fd242b8b80198ed9fa81fa9845d02a0853158cc88732e371"
     },
     {
       "bytes": 1877,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/records/fixture-admissibility/p2-03-v1.json",
-      "sha256": "b468913ee95ca1f6fd148e329336fa14f37db54f00742e814530a842df015b43"
+      "sha256": "6dc56e788cb8fffa545179727862029dd8d9e80b9682b3705d0d09e92555fa59"
     },
     {
-      "bytes": 1875,
+      "bytes": 1983,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/records/fixture-admissibility/p2-04-v1.json",
-      "sha256": "ddf1bbcc1b537d6904b1d26c78631c67c83902a3ad5ddaf355dfe47ecc7e337e"
+      "sha256": "0312837382680728dd13dd9896930bda9ea654b4fbc768b35adf841a288e04f3"
     },
     {
-      "bytes": 1892,
+      "bytes": 1947,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/records/fixture-admissibility/p2-05-v1.json",
-      "sha256": "d0999279f1e251016b46b29fffcf5f86f637e1e11beeb458c8968ef6171616a8"
+      "sha256": "17470bf7c52a016e7738edc8cd65bc7f381e7f44234a7a7a59d078fe25179543"
     },
     {
-      "bytes": 1867,
+      "bytes": 1983,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/records/fixture-admissibility/p2-06-v1.json",
-      "sha256": "b2c42fd05e82a71802bc198c9eb90d4f585713fb7ed46ce9d2bafaadedc11279"
+      "sha256": "1772e9691af9168dd3884c20b6948b9ec40ae3a68efacd8f7fe2d6cd59f9b62a"
     },
     {
       "bytes": 1902,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/records/fixture-admissibility/p2-control-v1.json",
-      "sha256": "cb8028ff78460b7518fd85346385b11159a53b7c2615b5723b1f21ffab953e7c"
+      "sha256": "15b6762b61eadd22f55edc7bcecb9dcc4a036c6f42330a4621948b8afa2325f8"
     },
     {
       "bytes": 1717,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/records/fixture-admissibility/p3-01-v1.json",
-      "sha256": "3058c53d07eb7e6ad89926944e344ae1fcc5c73fa7766eeb928a51321c6d39fd"
+      "sha256": "8215d0b63e656918f193cf29d732ad017ae5eb6a605380341b7eab0316ad3bee"
     },
     {
       "bytes": 1981,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/records/fixture-admissibility/p3-02-v1.json",
-      "sha256": "36fdbdcc1855d08c0ad417cbafa93f0aa99eed2dadc10f75e195f19293d33f97"
+      "sha256": "4f6e09a8f1203c2a8280ff496686b52369384d18b03ec617f8c71004a5aeeaf4"
     },
     {
       "bytes": 1918,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/records/fixture-admissibility/p3-03-v1.json",
-      "sha256": "4b77ea70edd3676b3688d334d418a99a9e3863a5c833e8f3f32697b461cc1ae9"
+      "sha256": "fdcdba520022996e0bb75d1e3a936076b03d240850b7efe67ea4d6582608de9e"
     },
     {
       "bytes": 1934,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/records/fixture-admissibility/p3-04-v1.json",
-      "sha256": "582222ad38a9ee58600e6f40990ef7cf37dc1c3e67778c95c83a638aa363af55"
+      "sha256": "15e85993bcd567b091c26137c31544e8b965c53a02baa11ea69cd8e5bff9fcc7"
     },
     {
       "bytes": 1933,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/records/fixture-admissibility/p3-05-v1.json",
-      "sha256": "8ddc4d199f7516a2d14e8b4e5e7a8298f66fa8f4aa631370bab0a236d1d998a0"
+      "sha256": "13f00823f73482b899bf36d94797459e212a04fe2f8a0a500342b5c887448e00"
     },
     {
       "bytes": 2658,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/records/fixture-admissibility/p3-06-v1.json",
-      "sha256": "8b0e63b9c0210bf0109626a63fbaa3d8d507851fa0c814561f10fde08e84a9bf"
+      "sha256": "b00328375ebf1717aeb281cf719393486c489ec530e573dfeda4d680ca16b244"
     },
     {
       "bytes": 1974,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/records/fixture-admissibility/p3-control-v1.json",
-      "sha256": "65a20ebf11eb14e16ab3735d175a09ec4659c9ebd2f7d067be12e32611b27b1e"
+      "sha256": "7aff95b0e30f009e39de1be4209b072cb1757dc3e393425baec872b205b0dcc4"
     },
     {
-      "bytes": 12755,
+      "bytes": 163007,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/records/freeze-receipt-p1-v1.json",
-      "sha256": "6ab02e73bd18c5a3074ae13782133ba95b0ede6641ac843868319ec05af1e135"
+      "sha256": "0700448ef5ab9af39117eedba81862f20397344c6a94f43084aa98cb7620ac48"
     },
     {
-      "bytes": 21410,
+      "bytes": 69193,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/records/freeze-receipt-p2-v1.json",
-      "sha256": "f4c1adc5329131e36ce0ffe88d8c5f1c68eb7be41231f57f87ade6c883c1992c"
+      "sha256": "37d501ea8d091b308ee7679693d56a820935a786b3c076859c19150690bff16d"
     },
     {
-      "bytes": 4548,
+      "bytes": 27220,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/records/freeze-receipt-p3-v1.json",
-      "sha256": "f3a3002236c4b2e08e4d15e60d75a80ff48733d8562bd98055107cd0aff85222"
+      "sha256": "a12b74e3d807a5fa146bc742c99bae8c43c5765c7a920d9e525c7cc7c4e5a2a0"
     },
     {
-      "bytes": 4046,
+      "bytes": 4158,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/records/oracle-adjudication-v1.json",
-      "sha256": "1c5dfe71802d7d44216d86a20893944428221259897dbc84f54647739d7dc0ed"
+      "sha256": "efc6219ee075ae791cab3edbecbb357820eb595a6d36094b2207625216a9dc85"
     },
     {
-      "bytes": 12248,
+      "bytes": 12496,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/records/ownership-preflight-v1.json",
-      "sha256": "9a070fd01b5eae4754303139603c1c4342e8637fd4dedee6fd0c986c4ab9f601"
+      "sha256": "7096007408f0a8b44b51513114b5884dde8e44d5183b4624f1aad021bcb25945"
     },
     {
       "bytes": 589,
@@ -342,109 +342,109 @@
       "sha256": "2f4cd881a7350ca0a4f7f609f884fefa59f4fbcd694cef2ec4009333cebb2f18"
     },
     {
-      "bytes": 1351,
+      "bytes": 13152,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/schemas/admission-summary-v2.schema.json",
-      "sha256": "5585826e1c9b558f64c72645d79c2ad50ea34fe6bfe6a3ad61a30e5e8777c4b8"
+      "sha256": "7f7dfa19f5f487343cdb84a053c2c68ccb337e8ed0259acf3afbd9330154f550"
     },
     {
-      "bytes": 718,
+      "bytes": 6339,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/schemas/boundary-corpus-v2.schema.json",
-      "sha256": "822af3f1bcb6b71301d0916605cc52c894204fb7e3a739febb5a40b78c1042e0"
+      "sha256": "dae2d45b73ce6c28ecfae3c2093aaf41dc88809b9e226a6d39014d670090b34f"
     },
     {
-      "bytes": 2927,
+      "bytes": 9566,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/schemas/boundary-decision-v1.schema.json",
-      "sha256": "10df06a4f4bace521f4cbaeb69851581c78e3507ba99be93b2ae9ca2b89da6f5"
+      "sha256": "3de59b12a45f0b025452a901e728e7b9db72b7a3269dbac3a081b4be49999f1c"
     },
     {
-      "bytes": 2922,
+      "bytes": 68854,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/schemas/common-record-envelope-v1.schema.json",
-      "sha256": "5744ee24030b24b86d452853210c6e8b2e905fbe9fcb3a5d2f27c703716d2107"
+      "sha256": "4aa732fd02cc2582e82abe25e9b7f1a2636ab7b47d9772f4375640637eddb8ed"
     },
     {
-      "bytes": 2918,
+      "bytes": 10409,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/schemas/coverage-delta-v1.schema.json",
-      "sha256": "bd2dcccb8b2b61661e6840237911ffab385488f07cebce07b505fc4aad41de99"
+      "sha256": "0eb9ecbe0d82f151086251db8f69b244e496dfe323cd38f763df5f51c3531e87"
     },
     {
-      "bytes": 2933,
+      "bytes": 10432,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/schemas/determinism-profile-v1.schema.json",
-      "sha256": "1db1b891ca16609bc63440b469c75b1d0d4b63cdf8085f95316871440d6cd0ea"
+      "sha256": "c479f273d5fe9f064ce86f8ace119621ab23f9f3128bec51e331d336760fee63"
     },
     {
-      "bytes": 1064,
+      "bytes": 3207,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/schemas/evidence-conservation-path-v2.schema.json",
-      "sha256": "b0c36a979f058cb238a5ce79bbb1faf130da4d7c3f9cff44a8c21885962da061"
+      "sha256": "f1c2080f074cdab4d6ba8ce5e87f9c8bc45ff4b3cf0b10ca026508f51c75e92a"
     },
     {
-      "bytes": 2939,
+      "bytes": 11850,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/schemas/fixture-admissibility-v1.schema.json",
-      "sha256": "49c2a6b02efaec7cb9096d5bc4b9b4b8bc3ac1c5c512dbbfc61b3a523e6a1504"
+      "sha256": "355d72409b9ef36bbe9f694f2951302cda232c6cdfb5b10862969ddc94733a98"
     },
     {
-      "bytes": 2918,
+      "bytes": 11744,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/schemas/freeze-receipt-v1.schema.json",
-      "sha256": "3f6039e456843ca64acc513a0031478d79355c7b878ebe0a127f091f538c935e"
+      "sha256": "c1297edb39f39c5f339f6bd1a09068d7f31adca0c1963609c21c63c48379e61f"
     },
     {
-      "bytes": 592,
+      "bytes": 2173,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/schemas/frozen-contracts-v2.schema.json",
-      "sha256": "d1fbde1c468e540f1964863295070ffdea6507330ad15c7cf769ca5e4b24d616"
+      "sha256": "ebe107fbb3d6779dd1acff6b0ff2a22530f107259eb53d5ee75702e4170f14c4"
     },
     {
-      "bytes": 754,
+      "bytes": 785,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/schemas/generation-manifest-v2.schema.json",
-      "sha256": "f63376f111969efc85f39d5f9bdd905fd31890401f9ff0b190002280785f49a0"
+      "sha256": "c4fa57d794732111ba727e3d86a13ef5e0661efdb28390b975d7114b1515e988"
     },
     {
-      "bytes": 2933,
+      "bytes": 23509,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/schemas/oracle-adjudication-v1.schema.json",
-      "sha256": "0287ef910379bb21177070473de09fd45756545d5eb5197d93016cbd2cc4ec1e"
+      "sha256": "ed6278665f73b05ac1131d463cd4f927d9b819c50f967b88cb7da446b8c67886"
     },
     {
-      "bytes": 1428,
+      "bytes": 9294,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/schemas/ownership-preflight-v1.schema.json",
-      "sha256": "a5ddbde8f3fec160fd15c980f2d2b44efddad7f4592318fa1f0e262e32e3b008"
+      "sha256": "f58e37882c7a8510cbd39a51fcbc2aef2233cf29fe16b32c8bf71206d107d1cc"
     },
     {
-      "bytes": 3470,
+      "bytes": 12575,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/schemas/p1-full-fixture-v2.schema.json",
-      "sha256": "3f1ba05fc8aa95ef46131e04c3b430d7486115520a4d26b2e4dea3e058d80e3f"
+      "sha256": "350b948a480c2a1a47d029bfd301b7dd3e8705a409be1be057a8f3c2b9c28a3d"
     },
     {
-      "bytes": 3470,
+      "bytes": 12658,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/schemas/p2-full-fixture-v2.schema.json",
-      "sha256": "13a6670a69b03976038e445c38b5d1ab3d23bb0ff85de92f22d42541f375d792"
+      "sha256": "f10f8106b5dce8e5415d521aa02ffc4c9ae2e981c5c986264c9889e8f1abf64c"
     },
     {
-      "bytes": 3470,
+      "bytes": 15911,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/schemas/p3-full-fixture-v2.schema.json",
-      "sha256": "c96815070309a69584c6bc17bfd2d7745f20eab18e592f67146937a25a2f3fe6"
+      "sha256": "9cf3126f39d46d2bf8a3a12e97381a0e3e2d7cd4c99f4abb9da646663602845e"
     },
     {
-      "bytes": 671,
+      "bytes": 2218,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/schemas/package-validation-v2.schema.json",
-      "sha256": "8d285bffc7c06f465eba883e0b1273246c9e448c66ac757e0cdae18e721142ae"
+      "sha256": "72139b865fcb42a72c1cb4c10b1e552cc3e6ba5d3bd369f491c65d490f93b7dc"
     },
     {
-      "bytes": 3525,
+      "bytes": 48081,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/schemas/primary-fixture-v2.schema.json",
-      "sha256": "8cb46110c657aa356bdc6bbd6ccd1f5447b075548ecbd94ce81441a47a22571d"
+      "sha256": "209d1c19bbffa6647c6311aab16f8c12f2bba33d35686d3906357eca3c284557"
     },
     {
-      "bytes": 5049,
+      "bytes": 7128,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/spec/evidence-conservation-v2.md",
-      "sha256": "1b23e6220d228a170a964c0e889d3d2fecd4ddc9ae4c46a73d8b13f927ed0c74"
+      "sha256": "f6f882740f5f4285fb5910ffd963cb7a74af9d67522375d4eef891f25eaf1121"
     },
     {
       "bytes": 94,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/spec/evidence-conservation-v2.sha256",
-      "sha256": "0abcf34a0d42f0514772ff772cc7a43673908fdd044b3b4e0dbeb0874d955dcf"
+      "sha256": "c8eff5cb6316ce3c0ebec3aaed01a55a6f1cac1b2dae165ee4d21e9bb7464258"
     },
     {
-      "bytes": 3635,
+      "bytes": 21170,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/tests/test_evidence_package_v2.py",
-      "sha256": "5fb8297bf6bb3fa8dcdb8d23d16b60d5ea8d61740bc937f57d7601fda0224a5e"
+      "sha256": "d2ee74d3a94e14c5d56b54588d42a8dbdb25cda0e41063d25054ae1286db5aac"
     },
     {
       "bytes": 622,
@@ -457,9 +457,9 @@
       "sha256": "1da4ed4ddc90c2a555b8d408d7fb3d71093603bde38d073361c5fabb719d1533"
     },
     {
-      "bytes": 138200,
+      "bytes": 216270,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/tools/package_lib.py",
-      "sha256": "be591a42d43beacbc2a97ca29eafee0f825fd400353e864160b978feab2a65bb"
+      "sha256": "6c7715020461a6e392a84aaa54c38ec596e8d7f71396fd56a581c1d097bb9724"
     },
     {
       "bytes": 747,
@@ -484,12 +484,7 @@
     {
       "bytes": 1113,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/verification/frozen-object-verification.json",
-      "sha256": "32cdd580be7b9a9238b0db3783ac42c7b3b13950d34c4bedf882127d7e2e9b0c"
-    },
-    {
-      "bytes": 582,
-      "path": "docs/proof-packages/20260731-evidence-conservation-v2/verification/package-validation.json",
-      "sha256": "461ec9e37c7bbb5e4e4cc8a59a2e8f0567446ca2c1cc3aeea6dc0ec560de8034"
+      "sha256": "f075323735f17a213944a0d145ed1c42511ce238a5f85fccdfc714f78375281c"
     },
     {
       "bytes": 311,
@@ -498,8 +493,8 @@
     }
   ],
   "generated_at": "2026-07-31T21:27:04Z",
-  "generator_revision": "evidence-conservation-v2-clean-rebuild",
+  "generator_revision": "evidence-conservation-v2-bounded-review-repair",
   "package_id": "20260731-evidence-conservation-v2",
   "schema": "GenerationManifestV2",
-  "self_digest_rule": "generation-manifest-excludes-itself"
+  "self_digest_rule": "generation-manifest-excludes-itself-and-validator-captured-receipt"
 }

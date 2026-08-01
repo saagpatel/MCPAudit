@@ -1,25 +1,49 @@
 {
   "checks": [
+    "adversarial_admission_and_path_schema_bypasses_rejected",
     "allowed_write_manifest_exact",
-    "json_schema_validation",
-    "full_fixture_structure",
-    "semantic_locality",
+    "bounded_frozen_source_closure_and_digests",
     "candidate_record_counts",
-    "impossible_admitted_state_rejected",
-    "decoded_secret_privacy",
+    "candidate_record_hash_review_and_transition_integrity",
     "coverage_counts",
-    "consumer_visible_label_absence"
+    "declared_oracle_consistency_not_semantic_correctness",
+    "decoded_secret_privacy",
+    "deterministic_regeneration",
+    "generation_manifest_bindings",
+    "json_schema_validation",
+    "p1_full_fixture_structure_and_locality",
+    "p2_full_fixture_structure_and_locality",
+    "p2_native_receipt_qualified_discriminators",
+    "p3_full_fixture_structure_and_locality",
+    "p3_native_two_file_discriminator_closure",
+    "six_noop_and_six_near_miss_boundaries",
+    "spec_digest_binding",
+    "terminal_admission_summary_integrity"
   ],
   "consumers_invoked": 0,
-  "counts": {
-    "allowed_paths": 100,
-    "controls": 3,
-    "fixtures": 21,
-    "mutations": 18,
-    "records": 29,
-    "schemas": 19
-  },
+  "errors": [],
+  "file_count": 100,
+  "fixture_count": 21,
   "package_id": "20260731-evidence-conservation-v2",
-  "schema": "PackageValidationV2",
-  "status": "PASS"
+  "receipt_provenance": {
+    "captured_by": "tools/build_package.py",
+    "package_lib_sha256": "6c7715020461a6e392a84aaa54c38ec596e8d7f71396fd56a581c1d097bb9724",
+    "scope": [
+      "schemas",
+      "hashes",
+      "semantic_locality",
+      "declared_oracle_consistency",
+      "candidate_transition_integrity",
+      "bounded_frozen_source_closure",
+      "decoded_privacy"
+    ],
+    "validator_entrypoint": "tools/validate_package.py",
+    "validator_sha256": "a11955d256419dcfb75d8dcc5d110be3b41e195d8001ef0dca057479d32f9465"
+  },
+  "record_count": 29,
+  "schema": "PackageValidationResultV2",
+  "schema_count": 19,
+  "semantic_authority": "OUTSIDE_STRUCTURAL_VALIDATION_REQUIRES_FRESH_INDEPENDENT_REVIEW",
+  "status": "PASS",
+  "stored_receipt_matches": true
 }

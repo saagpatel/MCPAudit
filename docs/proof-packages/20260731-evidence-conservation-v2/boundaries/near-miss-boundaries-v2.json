@@ -25,9 +25,9 @@
     },
     {
       "boundary_id": "NEAR-04",
-      "inside": "change optional non-authoritative receipt metadata",
-      "outside": "change receipt format_version from 1 to 2",
-      "outside_reason": "successful_scan_receipt_schema_invalid",
+      "inside": "receipt approval is exactly {approval_ref: null}",
+      "outside": "change only receipt approval.approval_ref from null to synthetic-review-ref",
+      "outside_reason": "successful_scan_receipt_schema_invalid:synthetic-server-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.json",
       "path_id": "P2"
     },
     {
@@ -39,7 +39,7 @@
     },
     {
       "boundary_id": "NEAR-06",
-      "inside": "exact anchor.json plus anchor.sqlite bundle",
+      "inside": "exact manifest.json plus anchor.sqlite bundle",
       "outside": "same bundle plus anchor.sqlite-wal",
       "outside_artifact": {
         "bytes": 9,

@@ -38,7 +38,7 @@
     "authority_ceiling": "BLOCKED",
     "disposition": "UNSUPPORTED",
     "raw_signal": {
-      "error": "successful_scan_receipt_schema_invalid"
+      "error": "successful_scan_receipt_schema_invalid:synthetic-server-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.json"
     },
     "reason_family": "successful_scan_receipt_schema_invalid",
     "source": "sealed-contract-adjudication-not-consumer-output"

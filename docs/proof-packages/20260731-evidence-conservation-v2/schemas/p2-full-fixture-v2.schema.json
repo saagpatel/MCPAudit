@@ -1,56 +1,414 @@
 {
   "$id": "https://example.invalid/mcpaudit/20260731-evidence-conservation-v2/P2FullFixtureV2.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "additionalProperties": true,
-  "properties": {
-    "artifacts": {
-      "items": {
-        "additionalProperties": false,
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
         "properties": {
-          "bytes": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "content_base64": {
-            "type": "string"
-          },
-          "encoding": {
-            "const": "base64"
-          },
-          "materialization_mode": {
-            "pattern": "^[0-7]{4}$",
-            "type": "string"
-          },
-          "media_type": {
-            "minLength": 1,
-            "type": "string"
-          },
-          "name": {
-            "minLength": 1,
-            "type": "string"
-          },
-          "sha256": {
-            "pattern": "^[0-9a-f]{64}$",
-            "type": "string"
+          "fixture_id": {
+            "const": "P2-C"
           }
         },
         "required": [
-          "name",
-          "media_type",
-          "encoding",
-          "bytes",
-          "sha256",
-          "materialization_mode",
-          "content_base64"
-        ],
-        "type": "object"
+          "fixture_id"
+        ]
       },
+      "then": {
+        "properties": {
+          "evidence_coordinates": {
+            "const": {
+              "bound": 1,
+              "consistent": 1,
+              "current": 1,
+              "present": 1,
+              "supported": 1,
+              "visible": 1
+            }
+          },
+          "expected": {
+            "properties": {
+              "authority_ceiling": {
+                "const": "STRONG"
+              },
+              "disposition": {
+                "const": "VALID"
+              },
+              "reason_family": {
+                "const": "fixture_candidate_valid"
+              }
+            }
+          },
+          "kind": {
+            "const": "control"
+          },
+          "semantic_axis": {
+            "const": "control"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "fixture_id": {
+            "const": "P2-01"
+          }
+        },
+        "required": [
+          "fixture_id"
+        ]
+      },
+      "then": {
+        "properties": {
+          "evidence_coordinates": {
+            "const": {
+              "bound": 1,
+              "consistent": 1,
+              "current": 1,
+              "present": 0,
+              "supported": 1,
+              "visible": 1
+            }
+          },
+          "expected": {
+            "properties": {
+              "authority_ceiling": {
+                "const": "NONAUTHORITATIVE"
+              },
+              "disposition": {
+                "const": "MISSING"
+              },
+              "reason_family": {
+                "const": "missing-receipt"
+              }
+            }
+          },
+          "kind": {
+            "const": "primary-mutation"
+          },
+          "semantic_axis": {
+            "const": "present"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "fixture_id": {
+            "const": "P2-02"
+          }
+        },
+        "required": [
+          "fixture_id"
+        ]
+      },
+      "then": {
+        "properties": {
+          "evidence_coordinates": {
+            "const": {
+              "bound": 1,
+              "consistent": 1,
+              "current": 0,
+              "present": 1,
+              "supported": 1,
+              "visible": 1
+            }
+          },
+          "expected": {
+            "properties": {
+              "authority_ceiling": {
+                "const": "NONAUTHORITATIVE"
+              },
+              "disposition": {
+                "const": "STALE"
+              },
+              "reason_family": {
+                "const": "candidate_expired"
+              }
+            }
+          },
+          "kind": {
+            "const": "primary-mutation"
+          },
+          "semantic_axis": {
+            "const": "current"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "fixture_id": {
+            "const": "P2-03"
+          }
+        },
+        "required": [
+          "fixture_id"
+        ]
+      },
+      "then": {
+        "properties": {
+          "evidence_coordinates": {
+            "const": {
+              "bound": 1,
+              "consistent": 1,
+              "current": 1,
+              "present": 1,
+              "supported": 1,
+              "visible": 0
+            }
+          },
+          "expected": {
+            "properties": {
+              "authority_ceiling": {
+                "const": "NONAUTHORITATIVE"
+              },
+              "disposition": {
+                "const": "MASKED"
+              },
+              "reason_family": {
+                "const": "masked"
+              }
+            }
+          },
+          "kind": {
+            "const": "primary-mutation"
+          },
+          "semantic_axis": {
+            "const": "visible"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "fixture_id": {
+            "const": "P2-04"
+          }
+        },
+        "required": [
+          "fixture_id"
+        ]
+      },
+      "then": {
+        "properties": {
+          "evidence_coordinates": {
+            "const": {
+              "bound": 1,
+              "consistent": 0,
+              "current": 1,
+              "present": 1,
+              "supported": 1,
+              "visible": 1
+            }
+          },
+          "expected": {
+            "properties": {
+              "authority_ceiling": {
+                "const": "BLOCKED"
+              },
+              "disposition": {
+                "const": "CONTRADICTORY"
+              },
+              "reason_family": {
+                "const": "fresh_scan_binding_mismatch:synthetic-server-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.json"
+              }
+            }
+          },
+          "kind": {
+            "const": "primary-mutation"
+          },
+          "semantic_axis": {
+            "const": "consistent"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "fixture_id": {
+            "const": "P2-05"
+          }
+        },
+        "required": [
+          "fixture_id"
+        ]
+      },
+      "then": {
+        "properties": {
+          "evidence_coordinates": {
+            "const": {
+              "bound": 1,
+              "consistent": 1,
+              "current": 1,
+              "present": 1,
+              "supported": 0,
+              "visible": 1
+            }
+          },
+          "expected": {
+            "properties": {
+              "authority_ceiling": {
+                "const": "BLOCKED"
+              },
+              "disposition": {
+                "const": "UNSUPPORTED"
+              },
+              "reason_family": {
+                "const": "successful_scan_receipt_schema_invalid"
+              }
+            }
+          },
+          "kind": {
+            "const": "primary-mutation"
+          },
+          "semantic_axis": {
+            "const": "supported"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "fixture_id": {
+            "const": "P2-06"
+          }
+        },
+        "required": [
+          "fixture_id"
+        ]
+      },
+      "then": {
+        "properties": {
+          "evidence_coordinates": {
+            "const": {
+              "bound": 0,
+              "consistent": 1,
+              "current": 1,
+              "present": 1,
+              "supported": 1,
+              "visible": 1
+            }
+          },
+          "expected": {
+            "properties": {
+              "authority_ceiling": {
+                "const": "BLOCKED"
+              },
+              "disposition": {
+                "const": "MISBOUND"
+              },
+              "reason_family": {
+                "const": "successful_scan_receipt_mismatch:synthetic-server-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.json"
+              }
+            }
+          },
+          "kind": {
+            "const": "primary-mutation"
+          },
+          "semantic_axis": {
+            "const": "bound"
+          }
+        }
+      }
+    }
+  ],
+  "properties": {
+    "artifacts": {
+      "items": false,
       "maxItems": 2,
-      "minItems": 1,
+      "minItems": 2,
+      "prefixItems": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "content_base64": {
+              "type": "string"
+            },
+            "encoding": {
+              "const": "base64"
+            },
+            "materialization_mode": {
+              "pattern": "^[0-7]{4}$",
+              "type": "string"
+            },
+            "media_type": {
+              "const": "application/json"
+            },
+            "name": {
+              "const": "engine-result.json"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "media_type",
+            "encoding",
+            "bytes",
+            "sha256",
+            "materialization_mode",
+            "content_base64"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "bytes": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "content_base64": {
+              "type": "string"
+            },
+            "encoding": {
+              "const": "base64"
+            },
+            "materialization_mode": {
+              "pattern": "^[0-7]{4}$",
+              "type": "string"
+            },
+            "media_type": {
+              "const": "application/x-tar"
+            },
+            "name": {
+              "const": "refresh-candidate.tar"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "media_type",
+            "encoding",
+            "bytes",
+            "sha256",
+            "materialization_mode",
+            "content_base64"
+          ],
+          "type": "object"
+        }
+      ],
       "type": "array"
     },
     "changed_field_closure": {
       "items": {
+        "minLength": 1,
         "type": "string"
       },
       "type": "array",
@@ -64,14 +422,53 @@
       "type": "string"
     },
     "evidence_coordinates": {
-      "additionalProperties": {
-        "enum": [
-          0,
-          1
-        ]
+      "additionalProperties": false,
+      "properties": {
+        "bound": {
+          "enum": [
+            0,
+            1
+          ]
+        },
+        "consistent": {
+          "enum": [
+            0,
+            1
+          ]
+        },
+        "current": {
+          "enum": [
+            0,
+            1
+          ]
+        },
+        "present": {
+          "enum": [
+            0,
+            1
+          ]
+        },
+        "supported": {
+          "enum": [
+            0,
+            1
+          ]
+        },
+        "visible": {
+          "enum": [
+            0,
+            1
+          ]
+        }
       },
-      "maxProperties": 6,
-      "minProperties": 6,
+      "required": [
+        "present",
+        "current",
+        "visible",
+        "consistent",
+        "supported",
+        "bound"
+      ],
       "type": "object"
     },
     "expected": {
@@ -118,8 +515,15 @@
       "type": "object"
     },
     "fixture_id": {
-      "pattern": "^P[123]-(C|0[1-6])$",
-      "type": "string"
+      "enum": [
+        "P2-C",
+        "P2-01",
+        "P2-02",
+        "P2-03",
+        "P2-04",
+        "P2-05",
+        "P2-06"
+      ]
     },
     "kind": {
       "enum": [
@@ -133,12 +537,22 @@
     "path_id": {
       "const": "P2"
     },
+    "producer_head_behavior": {
+      "const": "NOT_APPLICABLE"
+    },
     "schema": {
-      "pattern": "^(P1|P2|P3)FullFixtureV2$",
-      "type": "string"
+      "const": "P2FullFixtureV2"
     },
     "semantic_axis": {
-      "type": "string"
+      "enum": [
+        "control",
+        "present",
+        "current",
+        "visible",
+        "consistent",
+        "supported",
+        "bound"
+      ]
     }
   },
   "required": [
@@ -153,6 +567,7 @@
     "changed_field_closure",
     "artifacts",
     "expected",
+    "producer_head_behavior",
     "consumer_execution"
   ],
   "title": "P2FullFixtureV2",

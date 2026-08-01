@@ -9,7 +9,10 @@
           "admission_state": {
             "const": "ADMITTED"
           }
-        }
+        },
+        "required": [
+          "admission_state"
+        ]
       },
       "then": {
         "properties": {
@@ -20,7 +23,142 @@
             "const": "SATISFIED"
           },
           "reviews": {
-            "minItems": 2
+            "allOf": [
+              {
+                "contains": {
+                  "properties": {
+                    "review_type": {
+                      "const": "ORACLE_CONTRACT"
+                    }
+                  },
+                  "required": [
+                    "review_type"
+                  ]
+                },
+                "maxContains": 1,
+                "minContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "review_type": {
+                      "const": "FIXTURE_REPRODUCIBILITY"
+                    }
+                  },
+                  "required": [
+                    "review_type"
+                  ]
+                },
+                "maxContains": 1,
+                "minContains": 1
+              }
+            ],
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "completed_at": {
+                  "minLength": 10,
+                  "type": "string"
+                },
+                "decision": {
+                  "const": "APPROVE"
+                },
+                "independent": {
+                  "const": true
+                },
+                "receipt_id": {
+                  "pattern": "^review-[a-z0-9-]+$",
+                  "type": "string"
+                },
+                "review_type": {
+                  "enum": [
+                    "ORACLE_CONTRACT",
+                    "FIXTURE_REPRODUCIBILITY"
+                  ]
+                },
+                "reviewed_content_sha256": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "reviewed_spec_sha256": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "reviewer_id": {
+                  "pattern": "^v2-[a-z0-9-]+$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "receipt_id",
+                "reviewer_id",
+                "review_type",
+                "decision",
+                "reviewed_content_sha256",
+                "reviewed_spec_sha256",
+                "completed_at",
+                "independent"
+              ],
+              "type": "object"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array",
+            "uniqueItems": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "admission_state": {
+            "const": "REJECTED"
+          }
+        },
+        "required": [
+          "admission_state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "candidate_state": {
+            "const": "TERMINAL_REJECTED"
+          },
+          "reviews": {
+            "contains": {
+              "properties": {
+                "decision": {
+                  "const": "REJECT"
+                }
+              },
+              "required": [
+                "decision"
+              ]
+            },
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "admission_state": {
+            "enum": [
+              "PENDING_INDEPENDENT_REVIEW",
+              "BLOCKED_PREREQUISITE"
+            ]
+          }
+        },
+        "required": [
+          "admission_state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "candidate_state": {
+            "const": "READY_FOR_INDEPENDENT_REVIEW"
           }
         }
       }
@@ -31,12 +169,34 @@
           "candidate_state": {
             "const": "TERMINAL_ADMITTED"
           }
-        }
+        },
+        "required": [
+          "candidate_state"
+        ]
       },
       "then": {
         "properties": {
           "admission_state": {
             "const": "ADMITTED"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "candidate_state": {
+            "const": "TERMINAL_REJECTED"
+          }
+        },
+        "required": [
+          "candidate_state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "admission_state": {
+            "const": "REJECTED"
           }
         }
       }
@@ -52,6 +212,73 @@
       ]
     },
     "body": {
+      "additionalProperties": false,
+      "properties": {
+        "authorized_effects": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "bounded_repair": {
+          "type": "object"
+        },
+        "bridge_postflight": {
+          "additionalProperties": false,
+          "properties": {
+            "attempted_once": {
+              "const": true
+            },
+            "markdown_export_run": {
+              "const": false
+            },
+            "outcome": {
+              "const": "FAILED_PREWRITE_BOUND_CREDENTIAL_NOT_ENROLLED"
+            },
+            "receipt_written": {
+              "const": false
+            },
+            "retry_authorized": {
+              "const": false
+            }
+          },
+          "required": [
+            "attempted_once",
+            "outcome",
+            "receipt_written",
+            "markdown_export_run",
+            "retry_authorized"
+          ],
+          "type": "object"
+        },
+        "decision": {
+          "const": "V2_CONTRACT_APPROVED_FOR_EVIDENCE_PACKAGE_REBUILD_ONLY"
+        },
+        "normative_adjudicator": {
+          "type": "object"
+        },
+        "not_authorized": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "operator_messages": {
+          "items": {
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "decision",
+        "normative_adjudicator",
+        "operator_messages",
+        "bounded_repair",
+        "bridge_postflight",
+        "authorized_effects",
+        "not_authorized"
+      ],
       "type": "object"
     },
     "candidate_state": {
@@ -102,24 +329,58 @@
     },
     "reviews": {
       "items": {
+        "additionalProperties": false,
         "properties": {
+          "completed_at": {
+            "minLength": 10,
+            "type": "string"
+          },
           "decision": {
             "enum": [
               "APPROVE",
               "REJECT"
             ]
           },
+          "independent": {
+            "const": true
+          },
+          "receipt_id": {
+            "pattern": "^review-[a-z0-9-]+$",
+            "type": "string"
+          },
+          "review_type": {
+            "enum": [
+              "ORACLE_CONTRACT",
+              "FIXTURE_REPRODUCIBILITY"
+            ]
+          },
+          "reviewed_content_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "reviewed_spec_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
           "reviewer_id": {
+            "pattern": "^v2-[a-z0-9-]+$",
             "type": "string"
           }
         },
         "required": [
+          "receipt_id",
           "reviewer_id",
-          "decision"
+          "review_type",
+          "decision",
+          "reviewed_content_sha256",
+          "reviewed_spec_sha256",
+          "completed_at",
+          "independent"
         ],
         "type": "object"
       },
-      "type": "array"
+      "type": "array",
+      "uniqueItems": true
     },
     "schema": {
       "const": "BoundaryDecisionV1"

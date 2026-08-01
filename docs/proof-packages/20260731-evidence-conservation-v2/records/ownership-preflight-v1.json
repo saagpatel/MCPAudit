@@ -4,6 +4,10 @@
   "package_id": "20260731-evidence-conservation-v2",
   "candidate_state": "READY_FOR_INDEPENDENT_REVIEW",
   "admission_state": "PENDING_INDEPENDENT_REVIEW",
+  "prerequisite_state": "SATISFIED",
+  "reviews": [],
+  "spec_sha256": "f6f882740f5f4285fb5910ffd963cb7a74af9d67522375d4eef891f25eaf1121",
+  "content_sha256": "37c1f5d8c6f9aa05ea78dc6d5aca05eec4fd2268fe2ad286a9a9be2885e843db",
   "captured_at": "2026-07-31T21:27:04Z",
   "writer": "codex",
   "repository": "<workspace>/MCPAudit",
@@ -164,7 +168,7 @@
     "release",
     "deployment",
     "publication",
-    "bridge_mutation_before_terminal_exception"
+    "bridge_mutation_or_receipt_retry_after_failed_terminal_attempt"
   ],
   "review": {
     "generator_is_reviewer": false,

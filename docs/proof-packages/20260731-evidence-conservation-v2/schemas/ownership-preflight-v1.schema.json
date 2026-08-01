@@ -1,6 +1,7 @@
 {
   "$id": "https://example.invalid/mcpaudit/20260731-evidence-conservation-v2/OwnershipPreflightV1.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
   "allOf": [
     {
       "if": {
@@ -8,21 +9,187 @@
           "admission_state": {
             "const": "ADMITTED"
           }
-        }
+        },
+        "required": [
+          "admission_state"
+        ]
       },
       "then": {
         "properties": {
+          "candidate_state": {
+            "const": "TERMINAL_ADMITTED"
+          },
+          "prerequisite_state": {
+            "const": "SATISFIED"
+          },
+          "review": {
+            "properties": {
+              "independent_review_status": {
+                "const": "COMPLETE"
+              }
+            }
+          },
           "reviews": {
-            "minItems": 2
+            "allOf": [
+              {
+                "contains": {
+                  "properties": {
+                    "review_type": {
+                      "const": "ORACLE_CONTRACT"
+                    }
+                  },
+                  "required": [
+                    "review_type"
+                  ]
+                },
+                "maxContains": 1,
+                "minContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "review_type": {
+                      "const": "FIXTURE_REPRODUCIBILITY"
+                    }
+                  },
+                  "required": [
+                    "review_type"
+                  ]
+                },
+                "maxContains": 1,
+                "minContains": 1
+              }
+            ],
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "completed_at": {
+                  "minLength": 10,
+                  "type": "string"
+                },
+                "decision": {
+                  "const": "APPROVE"
+                },
+                "independent": {
+                  "const": true
+                },
+                "receipt_id": {
+                  "pattern": "^review-[a-z0-9-]+$",
+                  "type": "string"
+                },
+                "review_type": {
+                  "enum": [
+                    "ORACLE_CONTRACT",
+                    "FIXTURE_REPRODUCIBILITY"
+                  ]
+                },
+                "reviewed_content_sha256": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "reviewed_spec_sha256": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "reviewer_id": {
+                  "pattern": "^v2-[a-z0-9-]+$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "receipt_id",
+                "reviewer_id",
+                "review_type",
+                "decision",
+                "reviewed_content_sha256",
+                "reviewed_spec_sha256",
+                "completed_at",
+                "independent"
+              ],
+              "type": "object"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array",
+            "uniqueItems": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "admission_state": {
+            "const": "REJECTED"
           }
         },
         "required": [
-          "reviews"
+          "admission_state"
         ]
+      },
+      "then": {
+        "properties": {
+          "candidate_state": {
+            "const": "TERMINAL_REJECTED"
+          },
+          "review": {
+            "properties": {
+              "independent_review_status": {
+                "const": "REJECTED"
+              }
+            }
+          },
+          "reviews": {
+            "contains": {
+              "properties": {
+                "decision": {
+                  "const": "REJECT"
+                }
+              },
+              "required": [
+                "decision"
+              ]
+            },
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "admission_state": {
+            "const": "PENDING_INDEPENDENT_REVIEW"
+          }
+        },
+        "required": [
+          "admission_state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "candidate_state": {
+            "const": "READY_FOR_INDEPENDENT_REVIEW"
+          },
+          "review": {
+            "properties": {
+              "independent_review_status": {
+                "const": "PENDING_INDEPENDENT_REVIEW"
+              }
+            }
+          }
+        }
       }
     }
   ],
   "properties": {
+    "admission_state": {
+      "enum": [
+        "PENDING_INDEPENDENT_REVIEW",
+        "ADMITTED",
+        "REJECTED"
+      ]
+    },
     "allowed_paths": {
       "items": {
         "pattern": "^docs/proof\\-packages/20260731\\-evidence\\-conservation\\-v2/.+",
@@ -32,6 +199,32 @@
       "minItems": 100,
       "type": "array",
       "uniqueItems": true
+    },
+    "allowed_root": {
+      "const": "docs/proof-packages/20260731-evidence-conservation-v2/"
+    },
+    "branch": {
+      "const": "codex/evidence-conservation-v2-package-20260731"
+    },
+    "candidate_state": {
+      "enum": [
+        "READY_FOR_INDEPENDENT_REVIEW",
+        "TERMINAL_ADMITTED",
+        "TERMINAL_REJECTED"
+      ]
+    },
+    "captured_at": {
+      "type": "string"
+    },
+    "content_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "forbidden_effects": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
     },
     "operator_authorization": {
       "required": [
@@ -45,8 +238,123 @@
     "package_id": {
       "const": "20260731-evidence-conservation-v2"
     },
+    "preflight": {
+      "type": "object"
+    },
+    "prerequisite_state": {
+      "enum": [
+        "SATISFIED",
+        "FAILED"
+      ]
+    },
+    "preserved_unrelated_state": {
+      "items": {
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "record_id": {
+      "const": "ownership-preflight-v2-20260731"
+    },
+    "remote_default_ref": {
+      "const": "refs/remotes/origin/main"
+    },
+    "repository": {
+      "const": "<workspace>/MCPAudit"
+    },
+    "review": {
+      "additionalProperties": false,
+      "properties": {
+        "generator_is_reviewer": {
+          "const": false
+        },
+        "independent_review_status": {
+          "enum": [
+            "PENDING_INDEPENDENT_REVIEW",
+            "COMPLETE",
+            "REJECTED"
+          ]
+        }
+      },
+      "required": [
+        "generator_is_reviewer",
+        "independent_review_status"
+      ],
+      "type": "object"
+    },
+    "reviews": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "completed_at": {
+            "minLength": 10,
+            "type": "string"
+          },
+          "decision": {
+            "enum": [
+              "APPROVE",
+              "REJECT"
+            ]
+          },
+          "independent": {
+            "const": true
+          },
+          "receipt_id": {
+            "pattern": "^review-[a-z0-9-]+$",
+            "type": "string"
+          },
+          "review_type": {
+            "enum": [
+              "ORACLE_CONTRACT",
+              "FIXTURE_REPRODUCIBILITY"
+            ]
+          },
+          "reviewed_content_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "reviewed_spec_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "reviewer_id": {
+            "pattern": "^v2-[a-z0-9-]+$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "receipt_id",
+          "reviewer_id",
+          "review_type",
+          "decision",
+          "reviewed_content_sha256",
+          "reviewed_spec_sha256",
+          "completed_at",
+          "independent"
+        ],
+        "type": "object"
+      },
+      "type": "array",
+      "uniqueItems": true
+    },
     "schema": {
       "const": "OwnershipPreflightV1"
+    },
+    "spec_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "untouched_base_sha": {
+      "const": "0e101cbfb9136bf62b38e668a15af9f683cde48e"
+    },
+    "worktree": {
+      "const": "<workspace>/.codex-worktrees/mcpaudit-evidence-conservation-v2-package-20260731"
+    },
+    "writer": {
+      "const": "codex"
+    },
+    "writer_lease": {
+      "type": "object"
     }
   },
   "required": [
@@ -55,13 +363,25 @@
     "package_id",
     "candidate_state",
     "admission_state",
+    "prerequisite_state",
+    "reviews",
+    "spec_sha256",
+    "content_sha256",
+    "captured_at",
+    "writer",
     "repository",
     "worktree",
     "branch",
+    "remote_default_ref",
     "untouched_base_sha",
+    "preflight",
+    "writer_lease",
     "allowed_root",
     "allowed_paths",
-    "operator_authorization"
+    "operator_authorization",
+    "preserved_unrelated_state",
+    "forbidden_effects",
+    "review"
   ],
   "title": "OwnershipPreflightV1",
   "type": "object"

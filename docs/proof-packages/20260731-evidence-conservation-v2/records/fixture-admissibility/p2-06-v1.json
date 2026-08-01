@@ -28,9 +28,9 @@
       "authority_ceiling": "BLOCKED",
       "disposition": "MISBOUND",
       "raw_signal": {
-        "error": "receipt_scan_binding_mismatch"
+        "error": "successful_scan_receipt_mismatch:synthetic-server-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.json"
       },
-      "reason_family": "receipt_scan_binding_mismatch",
+      "reason_family": "successful_scan_receipt_mismatch:synthetic-server-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.json",
       "source": "sealed-contract-adjudication-not-consumer-output"
     },
     "fixture_id": "P2-06",
@@ -41,7 +41,7 @@
     "semantic_axis": "bound"
   },
   "candidate_state": "READY_FOR_INDEPENDENT_REVIEW",
-  "content_sha256": "e21fbf8d3ea8ba95513e4d79e4f6e3012071236841676926b52a9c32f1565a1c",
+  "content_sha256": "c72a8ab878cad9a7e94692c06d27e40c54319be301381d87b8e8e87718e69d29",
   "created_at": "2026-07-31T21:27:04Z",
   "package_id": "20260731-evidence-conservation-v2",
   "prerequisite_state": "PENDING",
@@ -52,5 +52,5 @@
   "record_id": "fixture-admissibility-p2-06-v1",
   "reviews": [],
   "schema": "FixtureAdmissibilityV1",
-  "spec_sha256": "1b23e6220d228a170a964c0e889d3d2fecd4ddc9ae4c46a73d8b13f927ed0c74"
+  "spec_sha256": "f6f882740f5f4285fb5910ffd963cb7a74af9d67522375d4eef891f25eaf1121"
 }

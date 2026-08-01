@@ -22,7 +22,9 @@ import tarfile
 import tempfile
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
+
+import jsonschema  # type: ignore[import-untyped]
 
 PACKAGE_ID = "20260731-evidence-conservation-v2"
 PACKAGE_SCHEMA = "EvidenceConservationPackageV2"
@@ -33,126 +35,70 @@ P2_CREATED_AT = "2026-07-31T08:00:00+00:00"
 P2_MODEL_AT = "2026-07-31T08:00:00Z"
 P2_EXPIRES_AT = "2026-08-01T08:00:00+00:00"
 P3_CREATED_AT = "2026-07-31T08:00:00Z"
-GENERATOR_REVISION = "evidence-conservation-v2-clean-rebuild"
+GENERATOR_REVISION = "evidence-conservation-v2-bounded-review-repair"
+P2_RECEIPT_REF = "synthetic-server-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.json"
+STRUCTURAL_SEMANTIC_AUTHORITY = "OUTSIDE_STRUCTURAL_VALIDATION_REQUIRES_FRESH_INDEPENDENT_REVIEW"
 
 FROZEN_REPOSITORIES: dict[str, dict[str, Any]] = {
     "GithubRepoAuditor": {
         "path": "<workspace>/GithubRepoAuditor",
         "commit": "fd61f1c06643c4431460e27aa9210ff8b931ef1d",
         "tree": "3f604b126015194b0c88f744bde04e45c1f4eb6d",
+        "prefixes": ["src", "tests"],
         "paths": [
             "pyproject.toml",
             "requirements.txt",
             "uv.lock",
-            "src/app/portfolio_truth.py",
-            "src/cli.py",
-            "src/cli_output.py",
-            "src/github_security_coverage.py",
-            "src/portfolio_catalog.py",
-            "src/portfolio_pathing.py",
-            "src/portfolio_repository_state.py",
-            "src/portfolio_risk.py",
-            "src/portfolio_security_gate.py",
-            "src/portfolio_truth_lineage.py",
-            "src/portfolio_truth_publish.py",
-            "src/portfolio_truth_reconcile.py",
-            "src/portfolio_truth_render.py",
-            "src/portfolio_truth_sources.py",
-            "src/portfolio_truth_status.py",
-            "src/portfolio_truth_types.py",
-            "src/portfolio_truth_validate.py",
-            "src/producer_preflight.py",
-            "tests/test_github_security_coverage.py",
-            "tests/test_portfolio_security_gate.py",
-            "tests/test_portfolio_truth.py",
         ],
     },
     "PortfolioCommandCenter": {
         "path": "<workspace>/PortfolioCommandCenter",
         "commit": "1139cfb9bb1e8d005699f854df368583960e245c",
         "tree": "46ab1592b718c5785a5eaf73d5451d7cacfc7687",
+        "prefixes": ["src"],
         "paths": [
             "package.json",
             "pnpm-lock.yaml",
             "pnpm-workspace.yaml",
             "tsconfig.json",
-            "src/portfolioTruthMutation.test.tsx",
-            "src/types.ts",
-            "src/validation.test.ts",
-            "src/validation.ts",
-            "src/views/OpsView.tsx",
-            "src/views/PortfolioTable.tsx",
-            "src/views/ProjectDetail.tsx",
-            "src/views/RiskSecurity.tsx",
+            "vite.config.ts",
         ],
     },
     "MCPAudit": {
         "path": "<workspace>/MCPAudit",
         "commit": "9484d8bb1b059ce48f77015c4a84561675517a77",
         "tree": "e67d959ac3c341447eb2eb5d196c52afd62e1ee5",
-        "prefixes": ["src/mcp_audit"],
+        "prefixes": ["src/mcp_audit", "tests"],
         "paths": [
+            ".python-version",
             "pyproject.toml",
             "uv.lock",
-            "src/mcp_audit/analyzer.py",
-            "src/mcp_audit/connector.py",
-            "src/mcp_audit/engine.py",
-            "src/mcp_audit/models.py",
-            "src/mcp_audit/scorer.py",
-            "src/mcp_audit/taxonomy.py",
-            "tests/test_analyzer.py",
-            "tests/test_engine.py",
-            "tests/test_scorer.py",
         ],
     },
     "mcp-trust": {
         "path": "<workspace>/mcp-trust",
         "commit": "a30be69132802d2b24157066fa4dc125e8edfdca",
         "tree": "30e2ae0c0f9c3ec1aac265bd8b4baaa8c6b6bde1",
+        "prefixes": ["src/mcp_trust", "tests"],
         "paths": [
             "pyproject.toml",
             "uv.lock",
-            "src/mcp_trust/catalog/snapshot.py",
-            "src/mcp_trust/core/drift.py",
-            "src/mcp_trust/core/grading.py",
-            "src/mcp_trust/core/models.py",
-            "src/mcp_trust/core/provenance.py",
-            "src/mcp_trust/engine/base.py",
-            "src/mcp_trust/engine/credentials.py",
-            "src/mcp_trust/engine/mcpaudit.py",
-            "src/mcp_trust/engine/sandbox.py",
-            "src/mcp_trust/engine/stub.py",
-            "src/mcp_trust/receipts.py",
-            "src/mcp_trust/refresh.py",
-            "src/mcp_trust/store/db.py",
-            "src/mcp_trust/store/repository.py",
-            "tests/test_drift.py",
-            "tests/test_grading.py",
-            "tests/test_receipt_provenance.py",
-            "tests/test_refresh_candidate.py",
         ],
     },
     "bridge-db": {
         "path": "<workspace>/bridge-db",
         "commit": "b47e5428b0f512c5e4ab87212acdd1d844b365b0",
         "tree": "f7499707fdaebd17155f1d1055abec1e6e1cd1c9",
+        "prefixes": ["src/bridge_db", "tests"],
         "paths": [
+            ".python-version",
             "pyproject.toml",
             "uv.lock",
-            "src/bridge_db/clock.py",
-            "src/bridge_db/config.py",
-            "src/bridge_db/db.py",
-            "src/bridge_db/recovery.py",
-            "src/bridge_db/tools/health.py",
-            "tests/test_cli.py",
-            "tests/test_db.py",
-            "tests/test_health.py",
-            "tests/test_recovery.py",
         ],
     },
 }
 
-CASE_CEILINGS: dict[str, tuple[str, str, str]] = {
+NORMATIVE_ORACLE_ROWS: dict[str, tuple[str, str, str]] = {
     "P1-C": ("STRONG", "VALID", "complete"),
     "P1-01": ("NONAUTHORITATIVE", "MISSING", "required_provider_missing"),
     "P1-02": ("NONAUTHORITATIVE", "STALE", "receipt_stale"),
@@ -164,9 +110,17 @@ CASE_CEILINGS: dict[str, tuple[str, str, str]] = {
     "P2-01": ("NONAUTHORITATIVE", "MISSING", "missing-receipt"),
     "P2-02": ("NONAUTHORITATIVE", "STALE", "candidate_expired"),
     "P2-03": ("NONAUTHORITATIVE", "MASKED", "masked"),
-    "P2-04": ("BLOCKED", "CONTRADICTORY", "fresh_grade_binding_mismatch"),
+    "P2-04": (
+        "BLOCKED",
+        "CONTRADICTORY",
+        f"fresh_scan_binding_mismatch:{P2_RECEIPT_REF}",
+    ),
     "P2-05": ("BLOCKED", "UNSUPPORTED", "successful_scan_receipt_schema_invalid"),
-    "P2-06": ("BLOCKED", "MISBOUND", "receipt_scan_binding_mismatch"),
+    "P2-06": (
+        "BLOCKED",
+        "MISBOUND",
+        f"successful_scan_receipt_mismatch:{P2_RECEIPT_REF}",
+    ),
     "P3-C": ("STRONG", "VALID", "verified"),
     "P3-01": ("NONAUTHORITATIVE", "MISSING", "anchor_missing"),
     "P3-02": ("NONAUTHORITATIVE", "STALE", "source_changed_since_anchor"),
@@ -175,6 +129,49 @@ CASE_CEILINGS: dict[str, tuple[str, str, str]] = {
     "P3-05": ("BLOCKED", "UNSUPPORTED", "schema_incompatible"),
     "P3-06": ("BLOCKED", "NOT_PRIVATE", "backup_permissions_not_private"),
 }
+
+# Deliberately duplicated from the sealed normative matrix. Fixture generation
+# is not allowed to derive its semantic labels from the same mutable object that
+# renders the spec/oracle. The structural validator compares the two stored
+# declarations for consistency while explicitly making no semantic-correctness
+# claim; fresh independent review remains the semantic authority.
+FIXTURE_DECLARATIONS: dict[str, tuple[str, str, str]] = {
+    "P1-C": ("STRONG", "VALID", "complete"),
+    "P1-01": ("NONAUTHORITATIVE", "MISSING", "required_provider_missing"),
+    "P1-02": ("NONAUTHORITATIVE", "STALE", "receipt_stale"),
+    "P1-03": ("NONAUTHORITATIVE", "MASKED", "required_count_redacted"),
+    "P1-04": ("NONAUTHORITATIVE", "CONTRADICTORY", "pagination_incomplete"),
+    "P1-05": ("NONAUTHORITATIVE", "UNSUPPORTED", "receipt_schema_unsupported"),
+    "P1-06": ("NONAUTHORITATIVE", "MISBOUND", "subject_identity_mismatch"),
+    "P2-C": ("STRONG", "VALID", "fixture_candidate_valid"),
+    "P2-01": ("NONAUTHORITATIVE", "MISSING", "missing-receipt"),
+    "P2-02": ("NONAUTHORITATIVE", "STALE", "candidate_expired"),
+    "P2-03": ("NONAUTHORITATIVE", "MASKED", "masked"),
+    "P2-04": (
+        "BLOCKED",
+        "CONTRADICTORY",
+        f"fresh_scan_binding_mismatch:{P2_RECEIPT_REF}",
+    ),
+    "P2-05": ("BLOCKED", "UNSUPPORTED", "successful_scan_receipt_schema_invalid"),
+    "P2-06": (
+        "BLOCKED",
+        "MISBOUND",
+        f"successful_scan_receipt_mismatch:{P2_RECEIPT_REF}",
+    ),
+    "P3-C": ("STRONG", "VALID", "verified"),
+    "P3-01": ("NONAUTHORITATIVE", "MISSING", "anchor_missing"),
+    "P3-02": ("NONAUTHORITATIVE", "STALE", "source_changed_since_anchor"),
+    "P3-03": ("BLOCKED", "MASKED", "digest_mismatch"),
+    "P3-04": ("BLOCKED", "CONTRADICTORY", "byte_size_mismatch"),
+    "P3-05": ("BLOCKED", "UNSUPPORTED", "schema_incompatible"),
+    "P3-06": ("BLOCKED", "NOT_PRIVATE", "backup_permissions_not_private"),
+}
+
+PATH_CASE_IDS = {
+    path_id: tuple([f"{path_id}-C", *[f"{path_id}-{index:02d}" for index in range(1, 7)]])
+    for path_id in ("P1", "P2", "P3")
+}
+ALL_CASE_IDS = tuple(case_id for path_id in ("P1", "P2", "P3") for case_id in PATH_CASE_IDS[path_id])
 
 
 def canonical_json_bytes(value: Any) -> bytes:
@@ -233,8 +230,10 @@ def frozen_inventory() -> dict[str, Any]:
         ).stdout.strip()
         if observed_tree != frozen["tree"]:
             raise RuntimeError(f"frozen tree mismatch: {name}")
-        source_paths = set(frozen["paths"])
-        for prefix in frozen.get("prefixes", []):
+        root_files = sorted(set(str(path) for path in frozen["paths"]))
+        bounded_prefixes = sorted(set(str(prefix) for prefix in frozen.get("prefixes", [])))
+        source_paths = set(root_files)
+        for prefix in bounded_prefixes:
             listed = subprocess.run(
                 [
                     "git",
@@ -267,7 +266,14 @@ def frozen_inventory() -> dict[str, Any]:
                     "git_blob": blob,
                     "bytes": len(content),
                     "sha256": sha256_bytes(content),
-                    "role": "decision-source-closure",
+                    "role": (
+                        "bounded-source-test-subtree"
+                        if any(
+                            relative == prefix or relative.startswith(f"{prefix}/")
+                            for prefix in bounded_prefixes
+                        )
+                        else "build-lock-config"
+                    ),
                 }
             )
         repositories.append(
@@ -276,6 +282,9 @@ def frozen_inventory() -> dict[str, Any]:
                 "repository_path": repository,
                 "commit": revision,
                 "tree": observed_tree,
+                "bounded_prefixes": bounded_prefixes,
+                "root_files": root_files,
+                "source_count": len(sources),
                 "sources": sources,
             }
         )
@@ -284,11 +293,28 @@ def frozen_inventory() -> dict[str, Any]:
         "package_id": PACKAGE_ID,
         "captured_at": FIXED_CREATED_AT,
         "repositories": repositories,
+        "closure_rule": {
+            "schema": "BoundedRepositoryClosureV1",
+            "rule": (
+                "all tracked files under each exact source/test prefix plus named "
+                "root build-lock-config files at the frozen commit"
+            ),
+            "deterministic": True,
+            "repository_local": True,
+            "over_inclusive_within_prefixes": True,
+        },
         "closure_statement": (
-            "All grade, model, receipt, store, persisted-scan, snapshot, projection, "
-            "recovery, manifest, test, and dependency-lock decision sources used by "
-            "P1/P2/P3 are enumerated."
+            "The exact repository-local bounded source/test subtrees and named build, "
+            "lock, and configuration files are enumerated. This is not a claim of "
+            "complete external-package, dynamic-import, or runtime-state closure."
         ),
+        "residual_unknowns": [
+            "external_dependency_source_bytes",
+            "dynamic_import_targets_outside_bounded_prefixes",
+            "runtime_environment_and_service_state",
+            "unrelated_repository_subtrees",
+        ],
+        "claim_ceiling": "BOUNDED_REPOSITORY_LOCAL_CLOSURE_ONLY",
     }
 
 
@@ -536,7 +562,7 @@ def fixture_wrapper(
     changed_field_closure: list[str],
     raw_signal: dict[str, Any],
 ) -> dict[str, Any]:
-    authority, disposition, reason = CASE_CEILINGS[case_id]
+    authority, disposition, reason = FIXTURE_DECLARATIONS[case_id]
     return {
         "schema": f"{path_id}FullFixtureV2",
         "fixture_id": case_id,
@@ -1109,9 +1135,9 @@ def build_p2_fixtures() -> dict[str, dict[str, Any]]:
         "P2-01": {"result_state": "missing-receipt", "fresh_grade": None},
         "P2-02": {"verification_state": "stale", "boundary": "evaluation_at_expires_at"},
         "P2-03": {"result_state": "masked", "grade_visibility": "withheld"},
-        "P2-04": {"error": "fresh_grade_binding_mismatch"},
-        "P2-05": {"error": "successful_scan_receipt_schema_invalid"},
-        "P2-06": {"error": "receipt_scan_binding_mismatch"},
+        "P2-04": {"error": f"fresh_scan_binding_mismatch:{P2_RECEIPT_REF}"},
+        "P2-05": {"error": f"successful_scan_receipt_schema_invalid:{P2_RECEIPT_REF}"},
+        "P2-06": {"error": f"successful_scan_receipt_mismatch:{P2_RECEIPT_REF}"},
     }
     for index, case_id in enumerate(cases):
         axis = "control" if case_id == "P2-C" else coordinate_names[index - 1]
@@ -1301,7 +1327,7 @@ def _p3_anchor(case_id: str, control_database: bytes) -> bytes | None:
     return deterministic_tar(
         {
             ".": (None, 0o700),
-            "anchor.json": (canonical_json_bytes(manifest), 0o600),
+            "manifest.json": (canonical_json_bytes(manifest), 0o600),
             "anchor.sqlite": (database, database_mode),
         }
     )
@@ -1449,9 +1475,16 @@ def no_op_boundaries() -> dict[str, Any]:
         {
             "boundary_id": "NOOP-04",
             "path_id": "P2",
-            "inside": "UTC offset spelling +00:00",
-            "outside": "equivalent UTC spelling Z",
-            "invariant": "instant and expiry relation unchanged",
+            "inside": "MANIFEST.json.created_at is 2026-07-31T08:00:00+00:00",
+            "outside": "MANIFEST.json.created_at is the equivalent instant 2026-07-31T08:00:00Z",
+            "invariant": "_parse_utc_datetime instant and expiry relation unchanged",
+            "required_rebindings": [
+                "MANIFEST.sha256",
+                "refresh-candidate.tar bytes and sha256",
+                "fixture artifact bytes and sha256",
+                "FixtureAdmissibilityV1 artifact_manifest and content_sha256",
+                "generation-manifest bindings for the fixture and record",
+            ],
         },
         {
             "boundary_id": "NOOP-05",
@@ -1503,9 +1536,9 @@ def near_miss_boundaries() -> dict[str, Any]:
         {
             "boundary_id": "NEAR-04",
             "path_id": "P2",
-            "inside": "change optional non-authoritative receipt metadata",
-            "outside": "change receipt format_version from 1 to 2",
-            "outside_reason": "successful_scan_receipt_schema_invalid",
+            "inside": "receipt approval is exactly {approval_ref: null}",
+            "outside": "change only receipt approval.approval_ref from null to synthetic-review-ref",
+            "outside_reason": f"successful_scan_receipt_schema_invalid:{P2_RECEIPT_REF}",
         },
         {
             "boundary_id": "NEAR-05",
@@ -1517,7 +1550,7 @@ def near_miss_boundaries() -> dict[str, Any]:
         {
             "boundary_id": "NEAR-06",
             "path_id": "P3",
-            "inside": "exact anchor.json plus anchor.sqlite bundle",
+            "inside": "exact manifest.json plus anchor.sqlite bundle",
             "outside": "same bundle plus anchor.sqlite-wal",
             "outside_artifact": {
                 "name": "anchor.sqlite-wal",
@@ -1674,7 +1707,7 @@ def coverage_delta() -> dict[str, Any]:
         ],
     }
     entries = []
-    for case_id in CASE_CEILINGS:
+    for case_id in ALL_CASE_IDS:
         classification = "COVERED_CONTROL" if case_id.endswith("-C") else classes[case_id]
         entries.append(
             {
@@ -1755,7 +1788,7 @@ def environment_capabilities() -> dict[str, Any]:
 
 def canonical_spec() -> str:
     matrix_rows = []
-    for case_id, (authority, disposition, reason) in CASE_CEILINGS.items():
+    for case_id, (authority, disposition, reason) in NORMATIVE_ORACLE_ROWS.items():
         matrix_rows.append(f"| {case_id} | {authority} | {disposition} | `{reason}` |")
     matrix = "\n".join(matrix_rows)
     return (
@@ -1793,7 +1826,8 @@ set appropriate to its semantic mutation. Global publication, refresh launch,
 deployment, live scanning, and scheduler readiness are excluded.
 
 P3 uses a genuine schema-22 source and the exact two-file `RecoveryAnchorV1`
-bundle. P3-06 changes only actual `anchor.sqlite` mode from `0600` to `0644`.
+bundle `{{anchor.sqlite, manifest.json}}`. P3-06 changes only actual
+`anchor.sqlite` mode from `0600` to `0644`.
 Its raw result is invalid/not-ready with `permissions=not_private`,
 `recovery_readback=unverified`, only `backup_permissions_not_private`, and no
 `source_current` member. Its ceiling is `(BLOCKED, NOT_PRIVATE)`. The chmod
@@ -1808,6 +1842,14 @@ There are exactly six no-op boundaries and six near-miss boundaries. The sixth
 P3 near miss adds only `anchor.sqlite-wal` containing fixed bytes `b"untracked"`
 to an otherwise exact two-file bundle; the required reason is
 `anchor_artifact_set_mismatch`. It is not a primary mutation.
+
+`NOOP-04` changes only the instant-parsed `MANIFEST.json.created_at` spelling
+and requires rebinding `MANIFEST.sha256`, the enclosing tar, fixture artifact,
+fixture-admissibility record, and generation-manifest entries. `NEAR-04` uses a
+valid receipt with `approval_ref: null` as its inside state and changes only
+that required value to a non-null reserved reference outside, yielding the
+native receipt-qualified schema-invalid discriminator without duplicating
+P2-05's format-version mutation.
 
 ## Adapters and artifact safety
 
@@ -1828,6 +1870,31 @@ and at least two independent review receipts exist. All independent-review
 fields in this candidate remain pending. Exact pnpm 11.5.2 remains `UNKNOWN`,
 so P1 freeze admission is blocked. A second supported deterministic environment
 also remains pending.
+
+Terminal envelopes and their record bodies are co-constrained: admitted bodies
+must carry completed review/prerequisite state, recomputed content digests, and
+two distinct approving review types bound to those digests. An admitted summary
+also requires all 29 terminal records and all 21 completed case receipts.
+
+The prior one-shot BridgeDB postflight attempt failed before writing because
+the bound credential was no longer enrolled. No receipt row or Markdown export
+exists, no retry is authorized, and the failure is provenance-only.
+
+## Validation authority
+
+The stored package-validation receipt is captured from the actual structural
+validator by the package orchestrator. Structural validation covers schemas,
+hashes, locality, bounded frozen-source closure, record transition integrity,
+and consistency between independently declared fixture and sealed matrices.
+It does not establish semantic oracle correctness. Fixture declarations and
+the normative spec/oracle are separate sources, and fresh independent review
+remains the only semantic authority.
+
+Frozen-source inventory follows `BoundedRepositoryClosureV1`: every tracked
+file under named source/test prefixes plus named build/lock/config files at the
+exact commits is included. External dependencies, dynamic imports outside the
+bounded prefixes, runtime state, and unrelated repository subtrees remain
+`UNKNOWN`; no complete transitive runtime-closure claim is made.
 
 ## Coverage and claim ceiling
 
@@ -1874,93 +1941,660 @@ def _artifact_schema() -> dict[str, Any]:
     }
 
 
-def _fixture_schema(path_id: str | None = None) -> dict[str, Any]:
-    path_property: dict[str, Any]
-    if path_id is None:
-        path_property = {"enum": ["P1", "P2", "P3"]}
-    else:
-        path_property = {"const": path_id}
+def _artifact_const_schema(name: str, media_type: str) -> dict[str, Any]:
+    schema = _artifact_schema()
+    schema["properties"]["name"] = {"const": name}
+    schema["properties"]["media_type"] = {"const": media_type}
+    return schema
+
+
+def _artifact_list_schema(path_id: str) -> dict[str, Any]:
+    tuples = {
+        "P1": [
+            _artifact_const_schema("github-security-coverage-receipt.json", "application/json"),
+            _artifact_const_schema("portfolio-truth-0.11.0.json", "application/json"),
+        ],
+        "P2": [
+            _artifact_const_schema("engine-result.json", "application/json"),
+            _artifact_const_schema("refresh-candidate.tar", "application/x-tar"),
+        ],
+        "P3": [
+            _artifact_const_schema("source.sqlite", "application/vnd.sqlite3"),
+            _artifact_const_schema("recovery-anchor.tar", "application/x-tar"),
+        ],
+    }
+    full = {
+        "type": "array",
+        "prefixItems": tuples[path_id],
+        "items": False,
+        "minItems": 2,
+        "maxItems": 2,
+    }
+    if path_id != "P3":
+        return full
     return {
-        **_schema_base(f"{path_id or 'Primary'}FullFixtureV2"),
+        "oneOf": [
+            full,
+            {
+                "type": "array",
+                "prefixItems": [tuples["P3"][0]],
+                "items": False,
+                "minItems": 1,
+                "maxItems": 1,
+            },
+        ]
+    }
+
+
+def _fixture_shape(path_id: str) -> dict[str, Any]:
+    coordinate_names = [
+        "present",
+        "current",
+        "visible",
+        "consistent",
+        "supported",
+        "private" if path_id == "P3" else "bound",
+    ]
+    properties: dict[str, Any] = {
+        "schema": {"const": f"{path_id}FullFixtureV2"},
+        "fixture_id": {"enum": list(PATH_CASE_IDS[path_id])},
+        "package_id": {"const": PACKAGE_ID},
+        "path_id": {"const": path_id},
+        "kind": {"enum": ["control", "primary-mutation"]},
+        "semantic_axis": {"enum": ["control", *coordinate_names]},
+        "evidence_coordinates": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": coordinate_names,
+            "properties": {name: {"enum": [0, 1]} for name in coordinate_names},
+        },
+        "evaluation_time": {"type": "string", "minLength": 10},
+        "changed_field_closure": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1},
+            "uniqueItems": True,
+        },
+        "artifacts": _artifact_list_schema(path_id),
+        "expected": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": [
+                "source",
+                "authority_ceiling",
+                "disposition",
+                "reason_family",
+                "raw_signal",
+            ],
+            "properties": {
+                "source": {"const": "sealed-contract-adjudication-not-consumer-output"},
+                "authority_ceiling": {"enum": ["BLOCKED", "NONAUTHORITATIVE", "CONDITIONAL", "STRONG"]},
+                "disposition": {
+                    "enum": [
+                        "VALID",
+                        "MISSING",
+                        "STALE",
+                        "MASKED",
+                        "CONTRADICTORY",
+                        "UNSUPPORTED",
+                        "MISBOUND",
+                        "NOT_PRIVATE",
+                    ]
+                },
+                "reason_family": {"type": "string", "minLength": 1},
+                "raw_signal": {"type": "object"},
+            },
+        },
+        "producer_head_behavior": {"const": "UNKNOWN" if path_id == "P1" else "NOT_APPLICABLE"},
+        "consumer_execution": {"const": "FORBIDDEN_NOT_RUN"},
+    }
+    if path_id == "P3":
+        properties["excluded_materialization_effects"] = {"type": "array", "minItems": 1}
+        properties["posix_precondition"] = {"type": "object"}
+    required = [
+        "schema",
+        "fixture_id",
+        "package_id",
+        "path_id",
+        "kind",
+        "semantic_axis",
+        "evidence_coordinates",
+        "evaluation_time",
+        "changed_field_closure",
+        "artifacts",
+        "expected",
+        "producer_head_behavior",
+        "consumer_execution",
+    ]
+    case_rules = []
+    for index, case_id in enumerate(PATH_CASE_IDS[path_id]):
+        axis = "control" if case_id.endswith("-C") else coordinate_names[index - 1]
+        coordinates = {name: 1 for name in coordinate_names}
+        if axis != "control":
+            coordinates[axis] = 0
+        authority, disposition, reason = FIXTURE_DECLARATIONS[case_id]
+        then: dict[str, Any] = {
+            "properties": {
+                "kind": {"const": "control" if axis == "control" else "primary-mutation"},
+                "semantic_axis": {"const": axis},
+                "evidence_coordinates": {"const": coordinates},
+                "expected": {
+                    "properties": {
+                        "authority_ceiling": {"const": authority},
+                        "disposition": {"const": disposition},
+                        "reason_family": {"const": reason},
+                    }
+                },
+            }
+        }
+        if path_id == "P3" and case_id == "P3-01":
+            then["properties"]["artifacts"] = {
+                "type": "array",
+                "prefixItems": [_artifact_const_schema("source.sqlite", "application/vnd.sqlite3")],
+                "items": False,
+                "minItems": 1,
+                "maxItems": 1,
+            }
+        if case_id == "P3-06":
+            then["required"] = ["excluded_materialization_effects", "posix_precondition"]
+        case_rules.append(
+            {
+                "if": {"properties": {"fixture_id": {"const": case_id}}, "required": ["fixture_id"]},
+                "then": then,
+            }
+        )
+    return {
         "type": "object",
-        "additionalProperties": True,
+        "additionalProperties": False,
+        "required": required,
+        "properties": properties,
+        "allOf": case_rules,
+    }
+
+
+def _fixture_schema(path_id: str | None = None) -> dict[str, Any]:
+    if path_id is not None:
+        return {**_schema_base(f"{path_id}FullFixtureV2"), **_fixture_shape(path_id)}
+    return {
+        **_schema_base("PrimaryFullFixtureV2"),
+        "oneOf": [_fixture_shape(candidate) for candidate in ("P1", "P2", "P3")],
+    }
+
+
+def _review_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "additionalProperties": False,
         "required": [
-            "schema",
-            "fixture_id",
-            "package_id",
-            "path_id",
-            "kind",
-            "semantic_axis",
-            "evidence_coordinates",
-            "evaluation_time",
-            "changed_field_closure",
-            "artifacts",
-            "expected",
-            "consumer_execution",
+            "receipt_id",
+            "reviewer_id",
+            "review_type",
+            "decision",
+            "reviewed_content_sha256",
+            "reviewed_spec_sha256",
+            "completed_at",
+            "independent",
         ],
         "properties": {
-            "schema": {"type": "string", "pattern": "^(P1|P2|P3)FullFixtureV2$"},
-            "fixture_id": {"type": "string", "pattern": "^P[123]-(C|0[1-6])$"},
-            "package_id": {"const": PACKAGE_ID},
-            "path_id": path_property,
-            "kind": {"enum": ["control", "primary-mutation"]},
-            "semantic_axis": {"type": "string"},
-            "evidence_coordinates": {
-                "type": "object",
-                "minProperties": 6,
-                "maxProperties": 6,
-                "additionalProperties": {"enum": [0, 1]},
-            },
-            "evaluation_time": {"type": "string", "minLength": 10},
-            "changed_field_closure": {
-                "type": "array",
-                "items": {"type": "string"},
-                "uniqueItems": True,
-            },
-            "artifacts": {
-                "type": "array",
-                "minItems": 1,
-                "maxItems": 2,
-                "items": _artifact_schema(),
-            },
-            "expected": {
-                "type": "object",
-                "additionalProperties": False,
-                "required": [
-                    "source",
-                    "authority_ceiling",
-                    "disposition",
-                    "reason_family",
-                    "raw_signal",
-                ],
-                "properties": {
-                    "source": {"const": "sealed-contract-adjudication-not-consumer-output"},
-                    "authority_ceiling": {"enum": ["BLOCKED", "NONAUTHORITATIVE", "CONDITIONAL", "STRONG"]},
-                    "disposition": {
-                        "enum": [
-                            "VALID",
-                            "MISSING",
-                            "STALE",
-                            "MASKED",
-                            "CONTRADICTORY",
-                            "UNSUPPORTED",
-                            "MISBOUND",
-                            "NOT_PRIVATE",
-                        ]
-                    },
-                    "reason_family": {"type": "string", "minLength": 1},
-                    "raw_signal": {"type": "object"},
-                },
-            },
-            "consumer_execution": {"const": "FORBIDDEN_NOT_RUN"},
+            "receipt_id": {"type": "string", "pattern": "^review-[a-z0-9-]+$"},
+            "reviewer_id": {"type": "string", "pattern": "^v2-[a-z0-9-]+$"},
+            "review_type": {"enum": ["ORACLE_CONTRACT", "FIXTURE_REPRODUCIBILITY"]},
+            "decision": {"enum": ["APPROVE", "REJECT"]},
+            "reviewed_content_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "reviewed_spec_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "completed_at": {"type": "string", "minLength": 10},
+            "independent": {"const": True},
         },
     }
 
 
+def _approving_reviews_schema() -> dict[str, Any]:
+    review = _review_schema()
+    return {
+        "type": "array",
+        "minItems": 2,
+        "maxItems": 2,
+        "uniqueItems": True,
+        "items": {
+            **review,
+            "properties": {
+                **review["properties"],
+                "decision": {"const": "APPROVE"},
+            },
+        },
+        "allOf": [
+            {
+                "contains": {
+                    "properties": {"review_type": {"const": review_type}},
+                    "required": ["review_type"],
+                },
+                "minContains": 1,
+                "maxContains": 1,
+            }
+            for review_type in ("ORACLE_CONTRACT", "FIXTURE_REPRODUCIBILITY")
+        ],
+    }
+
+
+def _record_body_schema(schema_name: str) -> dict[str, Any]:
+    object_array = {"type": "array", "items": {"type": "object"}}
+    bodies: dict[str, dict[str, Any]] = {
+        "BoundaryDecisionV1": {
+            "required": [
+                "decision",
+                "normative_adjudicator",
+                "operator_messages",
+                "bounded_repair",
+                "bridge_postflight",
+                "authorized_effects",
+                "not_authorized",
+            ],
+            "properties": {
+                "decision": {"const": "V2_CONTRACT_APPROVED_FOR_EVIDENCE_PACKAGE_REBUILD_ONLY"},
+                "normative_adjudicator": {"type": "object"},
+                "operator_messages": object_array,
+                "bounded_repair": {"type": "object"},
+                "bridge_postflight": {
+                    "type": "object",
+                    "required": [
+                        "attempted_once",
+                        "outcome",
+                        "receipt_written",
+                        "markdown_export_run",
+                        "retry_authorized",
+                    ],
+                    "properties": {
+                        "attempted_once": {"const": True},
+                        "outcome": {"const": "FAILED_PREWRITE_BOUND_CREDENTIAL_NOT_ENROLLED"},
+                        "receipt_written": {"const": False},
+                        "markdown_export_run": {"const": False},
+                        "retry_authorized": {"const": False},
+                    },
+                    "additionalProperties": False,
+                },
+                "authorized_effects": {"type": "array", "items": {"type": "string"}},
+                "not_authorized": {"type": "array", "items": {"type": "string"}},
+            },
+        },
+        "FreezeReceiptV1": {
+            "required": [
+                "path_id",
+                "repositories",
+                "runtime_prerequisite",
+                "closure_rule",
+                "closure_claim",
+                "closure_claim_ceiling",
+                "residual_unknowns",
+                "consumer_invoked",
+                "independent_review",
+            ],
+            "properties": {
+                "path_id": {"enum": ["P1", "P2", "P3"]},
+                "repositories": {"type": "array", "minItems": 1, "items": {"type": "object"}},
+                "runtime_prerequisite": {"type": "object"},
+                "closure_rule": {"type": "object"},
+                "closure_claim": {"type": "string", "minLength": 1},
+                "closure_claim_ceiling": {"const": "BOUNDED_REPOSITORY_LOCAL_CLOSURE_ONLY"},
+                "residual_unknowns": {
+                    "type": "array",
+                    "minItems": 1,
+                    "uniqueItems": True,
+                    "items": {"type": "string"},
+                },
+                "consumer_invoked": {"const": False},
+                "independent_review": {"enum": ["PENDING_INDEPENDENT_REVIEW", "COMPLETE", "REJECTED"]},
+            },
+        },
+        "OracleAdjudicationV1": {
+            "required": [
+                "contract_adjudication",
+                "sealed_matrix",
+                "blind_oracle_reviews",
+                "consumer_outputs_seen",
+                "baseline_execution_authorized",
+            ],
+            "properties": {
+                "contract_adjudication": {"type": "object"},
+                "sealed_matrix": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": list(ALL_CASE_IDS),
+                    "properties": {
+                        case_id: {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "required": ["authority", "disposition", "reason_family"],
+                            "properties": {
+                                "authority": {"type": "string"},
+                                "disposition": {"type": "string"},
+                                "reason_family": {"type": "string"},
+                            },
+                        }
+                        for case_id in ALL_CASE_IDS
+                    },
+                },
+                "blind_oracle_reviews": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["completed", "required", "status"],
+                    "properties": {
+                        "completed": {"type": "integer", "minimum": 0, "maximum": 2},
+                        "required": {"const": 2},
+                        "status": {"enum": ["PENDING_INDEPENDENT_REVIEW", "COMPLETE", "REJECTED"]},
+                    },
+                },
+                "consumer_outputs_seen": {"const": False},
+                "baseline_execution_authorized": {"const": False},
+            },
+        },
+        "FixtureAdmissibilityV1": {
+            "required": [
+                "fixture_id",
+                "fixture_schema",
+                "path_id",
+                "kind",
+                "semantic_axis",
+                "artifact_manifest",
+                "automated_checks",
+                "expected_ceiling",
+                "consumer_invoked",
+                "independent_review",
+                "admitted",
+            ],
+            "properties": {
+                "fixture_id": {"enum": list(ALL_CASE_IDS)},
+                "fixture_schema": {"enum": ["P1FullFixtureV2", "P2FullFixtureV2", "P3FullFixtureV2"]},
+                "path_id": {"enum": ["P1", "P2", "P3"]},
+                "kind": {"enum": ["control", "primary-mutation"]},
+                "semantic_axis": {"type": "string"},
+                "artifact_manifest": {"type": "array", "minItems": 1, "items": {"type": "object"}},
+                "automated_checks": {"type": "object"},
+                "expected_ceiling": {"type": "object"},
+                "consumer_invoked": {"const": False},
+                "independent_review": {"enum": ["PENDING_INDEPENDENT_REVIEW", "COMPLETE", "REJECTED"]},
+                "admitted": {"type": "boolean"},
+                "posix_precondition": {"type": "object"},
+                "ctime": {"type": "array"},
+            },
+        },
+        "DeterminismProfileV1": {
+            "required": ["same_environment", "second_supported_environment", "fixed_inputs"],
+            "properties": {
+                "same_environment": {"type": "object"},
+                "second_supported_environment": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["completed_count", "required_count", "status"],
+                    "properties": {
+                        "completed_count": {"type": "integer", "minimum": 0, "maximum": 1},
+                        "required_count": {"const": 1},
+                        "status": {"enum": ["PENDING_INDEPENDENT_REVIEW", "PASS", "REJECTED"]},
+                    },
+                },
+                "fixed_inputs": {"type": "object"},
+            },
+        },
+        "CoverageDeltaV1": {
+            "required": [
+                "schema",
+                "package_id",
+                "primary_counts",
+                "control_counts",
+                "unmapped",
+                "entries",
+                "new_claim",
+            ],
+            "properties": {
+                "schema": {"const": "CoverageDeltaV1"},
+                "package_id": {"const": PACKAGE_ID},
+                "primary_counts": {"const": {"covered": 11, "partial": 6, "cross": 1}},
+                "control_counts": {"const": {"covered": 3}},
+                "unmapped": {"const": 0},
+                "entries": {"type": "array", "minItems": 21, "maxItems": 21},
+                "new_claim": {"type": "string", "minLength": 1},
+            },
+        },
+    }
+    body = bodies[schema_name]
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": body["required"],
+        "properties": body["properties"],
+    }
+
+
 def _record_envelope_schema(schema_name: str | None = None) -> dict[str, Any]:
-    schema_property: dict[str, Any] = {"type": "string"}
+    record_types = [
+        "BoundaryDecisionV1",
+        "FreezeReceiptV1",
+        "OracleAdjudicationV1",
+        "FixtureAdmissibilityV1",
+        "DeterminismProfileV1",
+        "CoverageDeltaV1",
+    ]
+    schema_property: dict[str, Any] = {"enum": record_types}
+    body_schema: dict[str, Any] = {"oneOf": [_record_body_schema(name) for name in record_types]}
+    body_conditions: list[dict[str, Any]] = []
     if schema_name is not None:
         schema_property = {"const": schema_name}
+        body_schema = _record_body_schema(schema_name)
+    else:
+        body_conditions = [
+            {
+                "if": {"properties": {"schema": {"const": name}}, "required": ["schema"]},
+                "then": {"properties": {"body": _record_body_schema(name)}},
+            }
+            for name in record_types
+        ]
+    approving_reviews = _approving_reviews_schema()
+    terminal_rules = [
+        {
+            "if": {"properties": {"admission_state": {"const": "ADMITTED"}}, "required": ["admission_state"]},
+            "then": {
+                "properties": {
+                    "candidate_state": {"const": "TERMINAL_ADMITTED"},
+                    "prerequisite_state": {"const": "SATISFIED"},
+                    "reviews": approving_reviews,
+                }
+            },
+        },
+        {
+            "if": {"properties": {"admission_state": {"const": "REJECTED"}}, "required": ["admission_state"]},
+            "then": {
+                "properties": {
+                    "candidate_state": {"const": "TERMINAL_REJECTED"},
+                    "reviews": {
+                        "minItems": 1,
+                        "contains": {
+                            "properties": {"decision": {"const": "REJECT"}},
+                            "required": ["decision"],
+                        },
+                    },
+                }
+            },
+        },
+        {
+            "if": {
+                "properties": {
+                    "admission_state": {"enum": ["PENDING_INDEPENDENT_REVIEW", "BLOCKED_PREREQUISITE"]}
+                },
+                "required": ["admission_state"],
+            },
+            "then": {"properties": {"candidate_state": {"const": "READY_FOR_INDEPENDENT_REVIEW"}}},
+        },
+        {
+            "if": {
+                "properties": {"candidate_state": {"const": "TERMINAL_ADMITTED"}},
+                "required": ["candidate_state"],
+            },
+            "then": {"properties": {"admission_state": {"const": "ADMITTED"}}},
+        },
+        {
+            "if": {
+                "properties": {"candidate_state": {"const": "TERMINAL_REJECTED"}},
+                "required": ["candidate_state"],
+            },
+            "then": {"properties": {"admission_state": {"const": "REJECTED"}}},
+        },
+    ]
+    admitted_body_constraints: dict[str, dict[str, Any]] = {
+        "FreezeReceiptV1": {
+            "properties": {"independent_review": {"const": "COMPLETE"}},
+            "allOf": [
+                {
+                    "if": {
+                        "properties": {"path_id": {"enum": ["P1", "P3"]}},
+                        "required": ["path_id"],
+                    },
+                    "then": {
+                        "properties": {
+                            "runtime_prerequisite": {
+                                "properties": {"status": {"const": "PASS"}},
+                                "required": ["status"],
+                            }
+                        }
+                    },
+                }
+            ],
+        },
+        "OracleAdjudicationV1": {
+            "properties": {
+                "blind_oracle_reviews": {
+                    "properties": {
+                        "completed": {"const": 2},
+                        "status": {"const": "COMPLETE"},
+                    }
+                }
+            }
+        },
+        "FixtureAdmissibilityV1": {
+            "properties": {
+                "independent_review": {"const": "COMPLETE"},
+                "admitted": {"const": True},
+            }
+        },
+        "DeterminismProfileV1": {
+            "properties": {
+                "second_supported_environment": {
+                    "properties": {
+                        "completed_count": {"const": 1},
+                        "status": {"const": "PASS"},
+                    }
+                }
+            }
+        },
+        "CoverageDeltaV1": {
+            "properties": {
+                "entries": {
+                    "items": {
+                        "properties": {"review_status": {"const": "COMPLETE"}},
+                        "required": ["review_status"],
+                    }
+                }
+            }
+        },
+    }
+    rejected_body_constraints: dict[str, dict[str, Any]] = {
+        "FreezeReceiptV1": {"properties": {"independent_review": {"const": "REJECTED"}}},
+        "OracleAdjudicationV1": {
+            "properties": {"blind_oracle_reviews": {"properties": {"status": {"const": "REJECTED"}}}}
+        },
+        "FixtureAdmissibilityV1": {
+            "properties": {
+                "independent_review": {"const": "REJECTED"},
+                "admitted": {"const": False},
+            }
+        },
+    }
+    pending_body_constraints: dict[str, dict[str, Any]] = {
+        "FreezeReceiptV1": {"properties": {"independent_review": {"const": "PENDING_INDEPENDENT_REVIEW"}}},
+        "OracleAdjudicationV1": {
+            "properties": {
+                "blind_oracle_reviews": {
+                    "properties": {
+                        "completed": {"const": 0},
+                        "status": {"const": "PENDING_INDEPENDENT_REVIEW"},
+                    }
+                }
+            }
+        },
+        "FixtureAdmissibilityV1": {
+            "properties": {
+                "independent_review": {"const": "PENDING_INDEPENDENT_REVIEW"},
+                "admitted": {"const": False},
+            }
+        },
+        "DeterminismProfileV1": {
+            "properties": {
+                "second_supported_environment": {
+                    "properties": {
+                        "completed_count": {"const": 0},
+                        "status": {"const": "PENDING_INDEPENDENT_REVIEW"},
+                    }
+                }
+            }
+        },
+        "CoverageDeltaV1": {
+            "properties": {
+                "entries": {
+                    "items": {
+                        "properties": {"review_status": {"const": "PENDING_INDEPENDENT_REVIEW"}},
+                        "required": ["review_status"],
+                    }
+                }
+            }
+        },
+    }
+    for record_type, body_constraint in admitted_body_constraints.items():
+        if schema_name is not None and schema_name != record_type:
+            continue
+        terminal_rules.append(
+            {
+                "if": {
+                    "properties": {
+                        "schema": {"const": record_type},
+                        "admission_state": {"const": "ADMITTED"},
+                    },
+                    "required": ["schema", "admission_state"],
+                },
+                "then": {"properties": {"body": body_constraint}},
+            }
+        )
+    for record_type, body_constraint in rejected_body_constraints.items():
+        if schema_name is not None and schema_name != record_type:
+            continue
+        terminal_rules.append(
+            {
+                "if": {
+                    "properties": {
+                        "schema": {"const": record_type},
+                        "admission_state": {"const": "REJECTED"},
+                    },
+                    "required": ["schema", "admission_state"],
+                },
+                "then": {"properties": {"body": body_constraint}},
+            }
+        )
+    for record_type, body_constraint in pending_body_constraints.items():
+        if schema_name is not None and schema_name != record_type:
+            continue
+        terminal_rules.append(
+            {
+                "if": {
+                    "properties": {
+                        "schema": {"const": record_type},
+                        "admission_state": {
+                            "enum": [
+                                "PENDING_INDEPENDENT_REVIEW",
+                                "BLOCKED_PREREQUISITE",
+                            ]
+                        },
+                    },
+                    "required": ["schema", "admission_state"],
+                },
+                "then": {"properties": {"body": body_constraint}},
+            }
+        )
     return {
         **_schema_base(schema_name or "CommonRecordEnvelopeV1"),
         "type": "object",
@@ -2009,37 +2643,12 @@ def _record_envelope_schema(schema_name: str | None = None) -> dict[str, Any]:
                     "role": {"const": "EVIDENCE_PACKAGE_GENERATOR"},
                 },
             },
-            "reviews": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "required": ["reviewer_id", "decision"],
-                    "properties": {
-                        "reviewer_id": {"type": "string"},
-                        "decision": {"enum": ["APPROVE", "REJECT"]},
-                    },
-                },
-            },
+            "reviews": {"type": "array", "uniqueItems": True, "items": _review_schema()},
             "spec_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
             "content_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-            "body": {"type": "object"},
+            "body": body_schema,
         },
-        "allOf": [
-            {
-                "if": {"properties": {"admission_state": {"const": "ADMITTED"}}},
-                "then": {
-                    "properties": {
-                        "candidate_state": {"const": "TERMINAL_ADMITTED"},
-                        "prerequisite_state": {"const": "SATISFIED"},
-                        "reviews": {"minItems": 2},
-                    }
-                },
-            },
-            {
-                "if": {"properties": {"candidate_state": {"const": "TERMINAL_ADMITTED"}}},
-                "then": {"properties": {"admission_state": {"const": "ADMITTED"}}},
-            },
-        ],
+        "allOf": [*body_conditions, *terminal_rules],
     }
 
 
@@ -2047,23 +2656,63 @@ def schemas() -> dict[str, dict[str, Any]]:
     ownership = {
         **_schema_base("OwnershipPreflightV1"),
         "type": "object",
+        "additionalProperties": False,
         "required": [
             "schema",
             "record_id",
             "package_id",
             "candidate_state",
             "admission_state",
+            "prerequisite_state",
+            "reviews",
+            "spec_sha256",
+            "content_sha256",
+            "captured_at",
+            "writer",
             "repository",
             "worktree",
             "branch",
+            "remote_default_ref",
             "untouched_base_sha",
+            "preflight",
+            "writer_lease",
             "allowed_root",
             "allowed_paths",
             "operator_authorization",
+            "preserved_unrelated_state",
+            "forbidden_effects",
+            "review",
         ],
         "properties": {
             "schema": {"const": "OwnershipPreflightV1"},
+            "record_id": {"const": "ownership-preflight-v2-20260731"},
             "package_id": {"const": PACKAGE_ID},
+            "candidate_state": {
+                "enum": [
+                    "READY_FOR_INDEPENDENT_REVIEW",
+                    "TERMINAL_ADMITTED",
+                    "TERMINAL_REJECTED",
+                ]
+            },
+            "admission_state": {"enum": ["PENDING_INDEPENDENT_REVIEW", "ADMITTED", "REJECTED"]},
+            "prerequisite_state": {"enum": ["SATISFIED", "FAILED"]},
+            "reviews": {"type": "array", "uniqueItems": True, "items": _review_schema()},
+            "spec_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "content_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "captured_at": {"type": "string"},
+            "writer": {"const": "codex"},
+            "repository": {"const": "<workspace>/MCPAudit"},
+            "worktree": {
+                "const": (
+                    "<workspace>/.codex-worktrees/mcpaudit-evidence-conservation-v2-package-20260731"
+                )
+            },
+            "branch": {"const": "codex/evidence-conservation-v2-package-20260731"},
+            "remote_default_ref": {"const": "refs/remotes/origin/main"},
+            "untouched_base_sha": {"const": "0e101cbfb9136bf62b38e668a15af9f683cde48e"},
+            "preflight": {"type": "object"},
+            "writer_lease": {"type": "object"},
+            "allowed_root": {"const": f"docs/proof-packages/{PACKAGE_ID}/"},
             "allowed_paths": {
                 "type": "array",
                 "minItems": 100,
@@ -2078,12 +2727,70 @@ def schemas() -> dict[str, dict[str, Any]]:
                 "type": "object",
                 "required": ["source_task_id", "turn_id", "message_item_id", "text"],
             },
+            "preserved_unrelated_state": {"type": "array", "items": {"type": "object"}},
+            "forbidden_effects": {"type": "array", "items": {"type": "string"}},
+            "review": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["generator_is_reviewer", "independent_review_status"],
+                "properties": {
+                    "generator_is_reviewer": {"const": False},
+                    "independent_review_status": {
+                        "enum": ["PENDING_INDEPENDENT_REVIEW", "COMPLETE", "REJECTED"]
+                    },
+                },
+            },
         },
         "allOf": [
             {
-                "if": {"properties": {"admission_state": {"const": "ADMITTED"}}},
-                "then": {"required": ["reviews"], "properties": {"reviews": {"minItems": 2}}},
-            }
+                "if": {
+                    "properties": {"admission_state": {"const": "ADMITTED"}},
+                    "required": ["admission_state"],
+                },
+                "then": {
+                    "properties": {
+                        "candidate_state": {"const": "TERMINAL_ADMITTED"},
+                        "prerequisite_state": {"const": "SATISFIED"},
+                        "reviews": _approving_reviews_schema(),
+                        "review": {"properties": {"independent_review_status": {"const": "COMPLETE"}}},
+                    }
+                },
+            },
+            {
+                "if": {
+                    "properties": {"admission_state": {"const": "REJECTED"}},
+                    "required": ["admission_state"],
+                },
+                "then": {
+                    "properties": {
+                        "candidate_state": {"const": "TERMINAL_REJECTED"},
+                        "reviews": {
+                            "minItems": 1,
+                            "contains": {
+                                "properties": {"decision": {"const": "REJECT"}},
+                                "required": ["decision"],
+                            },
+                        },
+                        "review": {"properties": {"independent_review_status": {"const": "REJECTED"}}},
+                    }
+                },
+            },
+            {
+                "if": {
+                    "properties": {"admission_state": {"const": "PENDING_INDEPENDENT_REVIEW"}},
+                    "required": ["admission_state"],
+                },
+                "then": {
+                    "properties": {
+                        "candidate_state": {"const": "READY_FOR_INDEPENDENT_REVIEW"},
+                        "review": {
+                            "properties": {
+                                "independent_review_status": {"const": "PENDING_INDEPENDENT_REVIEW"}
+                            }
+                        },
+                    }
+                },
+            },
         ],
     }
     boundary = {
@@ -2098,10 +2805,35 @@ def schemas() -> dict[str, dict[str, Any]]:
             "entries": {"type": "array", "minItems": 6, "maxItems": 6},
             "execution_authorized": {"const": False},
         },
+        "allOf": [
+            {
+                "if": {"properties": {"corpus_kind": {"const": kind}}, "required": ["corpus_kind"]},
+                "then": {
+                    "properties": {
+                        "entries": {
+                            "prefixItems": [
+                                {
+                                    "type": "object",
+                                    "required": ["boundary_id", "path_id"],
+                                    "properties": {
+                                        "boundary_id": {"const": f"{prefix}-{index:02d}"},
+                                        "path_id": {"const": path_id},
+                                    },
+                                }
+                                for index, path_id in enumerate(("P1", "P1", "P2", "P2", "P3", "P3"), start=1)
+                            ],
+                            "items": False,
+                        }
+                    }
+                },
+            }
+            for kind, prefix in (("NO_OP", "NOOP"), ("NEAR_MISS", "NEAR"))
+        ],
     }
     path = {
         **_schema_base("EvidenceConservationPathV2"),
         "type": "object",
+        "additionalProperties": False,
         "required": [
             "schema",
             "path_id",
@@ -2124,17 +2856,96 @@ def schemas() -> dict[str, dict[str, Any]]:
             "control_count": {"const": 1},
             "mutation_count": {"const": 6},
             "consumer_execution": {"const": "NOT_AUTHORIZED"},
+            "producer": {"type": "string"},
+            "consumer": {"type": "string"},
+            "input_contract": {"type": "string"},
+            "decision_surface": {"type": "string"},
             "coordinates": {"type": "array", "minItems": 6, "maxItems": 6},
+            "producer_head_behavior": {"type": "string"},
+            "scope": {"type": "string"},
+            "excluded": {"type": "array"},
+            "posix_rule": {"type": "string"},
+            "ctime_rule": {"type": "string"},
         },
+        "allOf": [
+            {
+                "if": {"properties": {"path_id": {"const": candidate}}, "required": ["path_id"]},
+                "then": {
+                    "properties": {
+                        "coordinates": {
+                            "const": [
+                                "present",
+                                "current",
+                                "visible",
+                                "consistent",
+                                "supported",
+                                "private" if candidate == "P3" else "bound",
+                            ]
+                        }
+                    },
+                    "required": (
+                        ["producer_head_behavior"]
+                        if candidate == "P1"
+                        else ["scope", "excluded"]
+                        if candidate == "P2"
+                        else ["posix_rule", "ctime_rule"]
+                    ),
+                },
+            }
+            for candidate in ("P1", "P2", "P3")
+        ],
     }
     frozen = {
         **_schema_base("FrozenContractsV2"),
         "type": "object",
-        "required": ["schema", "package_id", "captured_at", "repositories", "closure_statement"],
+        "additionalProperties": False,
+        "required": [
+            "schema",
+            "package_id",
+            "captured_at",
+            "repositories",
+            "closure_rule",
+            "closure_statement",
+            "residual_unknowns",
+            "claim_ceiling",
+        ],
         "properties": {
             "schema": {"const": "FrozenContractsV2"},
             "package_id": {"const": PACKAGE_ID},
-            "repositories": {"type": "array", "minItems": 5, "maxItems": 5},
+            "captured_at": {"type": "string"},
+            "repositories": {
+                "type": "array",
+                "minItems": 5,
+                "maxItems": 5,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": [
+                        "name",
+                        "repository_path",
+                        "commit",
+                        "tree",
+                        "bounded_prefixes",
+                        "root_files",
+                        "source_count",
+                        "sources",
+                    ],
+                    "properties": {
+                        "name": {"type": "string"},
+                        "repository_path": {"type": "string"},
+                        "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+                        "tree": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+                        "bounded_prefixes": {"type": "array", "minItems": 1, "uniqueItems": True},
+                        "root_files": {"type": "array", "minItems": 2, "uniqueItems": True},
+                        "source_count": {"type": "integer", "minimum": 1},
+                        "sources": {"type": "array", "minItems": 1},
+                    },
+                },
+            },
+            "closure_rule": {"type": "object"},
+            "closure_statement": {"type": "string"},
+            "residual_unknowns": {"type": "array", "minItems": 1, "uniqueItems": True},
+            "claim_ceiling": {"const": "BOUNDED_REPOSITORY_LOCAL_CLOSURE_ONLY"},
         },
     }
     generation = {
@@ -2151,14 +2962,17 @@ def schemas() -> dict[str, dict[str, Any]]:
         "properties": {
             "schema": {"const": "GenerationManifestV2"},
             "package_id": {"const": PACKAGE_ID},
-            "artifact_count": {"const": 99},
-            "artifacts": {"type": "array", "minItems": 99, "maxItems": 99},
-            "self_digest_rule": {"const": "generation-manifest-excludes-itself"},
+            "artifact_count": {"const": 98},
+            "artifacts": {"type": "array", "minItems": 98, "maxItems": 98},
+            "self_digest_rule": {
+                "const": "generation-manifest-excludes-itself-and-validator-captured-receipt"
+            },
         },
     }
     admission = {
         **_schema_base("AdmissionSummaryV2"),
         "type": "object",
+        "additionalProperties": False,
         "required": [
             "schema",
             "package_id",
@@ -2167,37 +2981,239 @@ def schemas() -> dict[str, dict[str, Any]]:
             "admission_state",
             "record_counts",
             "primary_corpus",
+            "boundaries",
+            "coverage",
             "independent_review",
+            "review_subject_sha256",
+            "review_receipts",
+            "prerequisite_records",
             "runtime_execution",
+            "p1_freeze",
+            "p2_scope",
+            "p3_posix_environment",
+            "bridge_postflight",
+            "claim_ceiling",
         ],
         "properties": {
             "schema": {"const": "AdmissionSummaryV2"},
             "package_id": {"const": PACKAGE_ID},
             "package_mode": {"const": "EVIDENCE_PACKAGE_ONLY"},
+            "candidate_state": {
+                "enum": [
+                    "READY_FOR_INDEPENDENT_REVIEW",
+                    "TERMINAL_ADMITTED",
+                    "TERMINAL_REJECTED",
+                ]
+            },
             "admission_state": {"enum": ["PENDING_INDEPENDENT_REVIEW", "ADMITTED", "REJECTED"]},
+            "record_counts": {"type": "object"},
+            "primary_corpus": {"const": {"controls": 3, "mutations": 18, "total": 21}},
+            "boundaries": {"const": {"no_op": 6, "near_miss": 6}},
+            "coverage": {"const": {"covered": 11, "partial": 6, "cross": 1}},
+            "independent_review": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["required_count", "completed_count", "status"],
+                "properties": {
+                    "required_count": {"const": 2},
+                    "completed_count": {"type": "integer", "minimum": 0, "maximum": 2},
+                    "status": {"enum": ["PENDING_INDEPENDENT_REVIEW", "COMPLETE", "REJECTED"]},
+                },
+            },
+            "review_subject_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "review_receipts": {
+                "type": "array",
+                "maxItems": 2,
+                "uniqueItems": True,
+                "items": _review_schema(),
+            },
+            "prerequisite_records": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["required_count", "satisfied_count", "admitted_count", "status"],
+                "properties": {
+                    "required_count": {"const": 29},
+                    "satisfied_count": {"type": "integer", "minimum": 0, "maximum": 29},
+                    "admitted_count": {"type": "integer", "minimum": 0, "maximum": 29},
+                    "status": {"enum": ["PENDING", "COMPLETE", "FAILED"]},
+                },
+            },
+            "runtime_execution": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["authorized", "cases_executed", "total_cases", "completed_case_ids"],
+                "properties": {
+                    "authorized": {"type": "boolean"},
+                    "cases_executed": {"type": "integer", "minimum": 0, "maximum": 21},
+                    "total_cases": {"const": 21},
+                    "completed_case_ids": {
+                        "type": "array",
+                        "maxItems": 21,
+                        "uniqueItems": True,
+                        "items": {"enum": list(ALL_CASE_IDS)},
+                    },
+                },
+            },
+            "p1_freeze": {"enum": ["UNKNOWN_EXACT_PNPM_11_5_2", "PASS_EXACT_PNPM_11_5_2"]},
+            "p2_scope": {"const": "PER_SERVER_FIXTURE_GRADE_ONLY"},
+            "p3_posix_environment": {"enum": ["PASS", "UNKNOWN"]},
+            "bridge_postflight": {
+                "const": {
+                    "status": "FAILED_PREWRITE_BOUND_CREDENTIAL_NOT_ENROLLED",
+                    "receipt_written": False,
+                    "markdown_export_run": False,
+                    "retry_authorized": False,
+                }
+            },
+            "claim_ceiling": {
+                "enum": [
+                    "READY_FOR_BLIND_REVIEW_ONLY",
+                    "ADMITTED_FOR_AUTHORIZED_BASELINE_ONLY",
+                    "REJECTED",
+                ]
+            },
         },
         "allOf": [
             {
-                "if": {"properties": {"admission_state": {"const": "ADMITTED"}}},
+                "if": {
+                    "properties": {"admission_state": {"const": "ADMITTED"}},
+                    "required": ["admission_state"],
+                },
                 "then": {
                     "properties": {
-                        "independent_review": {"properties": {"completed_count": {"minimum": 2}}},
-                        "runtime_execution": {"properties": {"authorized": {"const": True}}},
+                        "candidate_state": {"const": "TERMINAL_ADMITTED"},
+                        "independent_review": {
+                            "properties": {
+                                "completed_count": {"const": 2},
+                                "status": {"const": "COMPLETE"},
+                            }
+                        },
+                        "review_receipts": _approving_reviews_schema(),
+                        "prerequisite_records": {
+                            "properties": {
+                                "satisfied_count": {"const": 29},
+                                "admitted_count": {"const": 29},
+                                "status": {"const": "COMPLETE"},
+                            }
+                        },
+                        "runtime_execution": {
+                            "properties": {
+                                "authorized": {"const": True},
+                                "cases_executed": {"const": 21},
+                                "completed_case_ids": {"const": list(ALL_CASE_IDS)},
+                            }
+                        },
+                        "p1_freeze": {"const": "PASS_EXACT_PNPM_11_5_2"},
+                        "p3_posix_environment": {"const": "PASS"},
+                        "claim_ceiling": {"const": "ADMITTED_FOR_AUTHORIZED_BASELINE_ONLY"},
                     }
                 },
-            }
+            },
+            {
+                "if": {
+                    "properties": {"admission_state": {"const": "PENDING_INDEPENDENT_REVIEW"}},
+                    "required": ["admission_state"],
+                },
+                "then": {
+                    "properties": {
+                        "candidate_state": {"const": "READY_FOR_INDEPENDENT_REVIEW"},
+                        "runtime_execution": {
+                            "properties": {
+                                "authorized": {"const": False},
+                                "cases_executed": {"const": 0},
+                                "completed_case_ids": {"const": []},
+                            }
+                        },
+                        "claim_ceiling": {"const": "READY_FOR_BLIND_REVIEW_ONLY"},
+                    }
+                },
+            },
+            {
+                "if": {
+                    "properties": {"admission_state": {"const": "REJECTED"}},
+                    "required": ["admission_state"],
+                },
+                "then": {
+                    "properties": {
+                        "candidate_state": {"const": "TERMINAL_REJECTED"},
+                        "independent_review": {"properties": {"status": {"const": "REJECTED"}}},
+                        "review_receipts": {
+                            "minItems": 1,
+                            "contains": {
+                                "properties": {"decision": {"const": "REJECT"}},
+                                "required": ["decision"],
+                            },
+                        },
+                        "claim_ceiling": {"const": "REJECTED"},
+                    }
+                },
+            },
+            {
+                "if": {
+                    "properties": {"candidate_state": {"const": "TERMINAL_ADMITTED"}},
+                    "required": ["candidate_state"],
+                },
+                "then": {"properties": {"admission_state": {"const": "ADMITTED"}}},
+            },
+            {
+                "if": {
+                    "properties": {"candidate_state": {"const": "TERMINAL_REJECTED"}},
+                    "required": ["candidate_state"],
+                },
+                "then": {"properties": {"admission_state": {"const": "REJECTED"}}},
+            },
         ],
     }
     validation = {
-        **_schema_base("PackageValidationV2"),
+        **_schema_base("PackageValidationResultV2"),
         "type": "object",
-        "required": ["schema", "package_id", "status", "checks", "counts"],
+        "additionalProperties": False,
+        "required": [
+            "schema",
+            "package_id",
+            "status",
+            "file_count",
+            "fixture_count",
+            "record_count",
+            "schema_count",
+            "checks",
+            "errors",
+            "consumers_invoked",
+            "semantic_authority",
+            "receipt_provenance",
+            "stored_receipt_matches",
+        ],
         "properties": {
-            "schema": {"const": "PackageValidationV2"},
+            "schema": {"const": "PackageValidationResultV2"},
             "package_id": {"const": PACKAGE_ID},
-            "status": {"enum": ["PASS", "FAIL", "UNKNOWN"]},
-            "checks": {"type": "array"},
-            "counts": {"type": "object"},
+            "status": {"enum": ["PASS", "FAIL"]},
+            "file_count": {"const": 100},
+            "fixture_count": {"const": 21},
+            "record_count": {"const": 29},
+            "schema_count": {"const": 19},
+            "checks": {"type": "array", "uniqueItems": True, "items": {"type": "string"}},
+            "errors": {"type": "array", "items": {"type": "string"}},
+            "consumers_invoked": {"const": 0},
+            "semantic_authority": {"const": STRUCTURAL_SEMANTIC_AUTHORITY},
+            "receipt_provenance": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "captured_by",
+                    "validator_entrypoint",
+                    "validator_sha256",
+                    "package_lib_sha256",
+                    "scope",
+                ],
+                "properties": {
+                    "captured_by": {"const": "tools/build_package.py"},
+                    "validator_entrypoint": {"const": "tools/validate_package.py"},
+                    "validator_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                    "package_lib_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                    "scope": {"type": "array", "minItems": 1, "uniqueItems": True},
+                },
+            },
+            "stored_receipt_matches": {"type": "boolean"},
         },
     }
     adapter_capture = {
@@ -2304,11 +3320,29 @@ def candidate_records(
             "terminal": "V2_CONTRACT_APPROVED",
         },
         "operator_messages": operator_messages,
+        "bounded_repair": {
+            "source_task_id": "019fb643-217f-7971-ac9d-e689aeef3358",
+            "authorization": "single bounded v2 repair on the existing writer branch",
+            "review_contracts": [
+                "019fba52-e027-7240-ae54-a07ac88e8118",
+                "019fba52-dac0-7a82-94d5-7e7ae1c536f4",
+            ],
+            "new_branch_or_lease_authorized": False,
+            "publication_authorized": False,
+        },
+        "bridge_postflight": {
+            "attempted_once": True,
+            "outcome": "FAILED_PREWRITE_BOUND_CREDENTIAL_NOT_ENROLLED",
+            "receipt_written": False,
+            "markdown_export_run": False,
+            "retry_authorized": False,
+        },
         "authorized_effects": [
             "fresh_v2_package_root_writes",
             "single_remote_writer_lease_creation_before_package_edits",
             "single_local_package_commit",
             "one_terminal_bridgedb_postflight_receipt_and_required_export",
+            "single_bounded_v2_repair_commit_after_blind_review",
         ],
         "not_authorized": [
             "admission",
@@ -2331,7 +3365,10 @@ def candidate_records(
         "P1": {
             "repositories": ["GithubRepoAuditor", "PortfolioCommandCenter"],
             "runtime_prerequisite": environment["pnpm_11_5_2"],
-            "claim": "full receipt plus full one-project snapshot contract closure",
+            "claim": (
+                "bounded repository-local source/test closure for the full receipt "
+                "and one-project snapshot path"
+            ),
             "prerequisite": "UNKNOWN",
             "admission": "BLOCKED_PREREQUISITE",
         },
@@ -2341,14 +3378,20 @@ def candidate_records(
                 "status": "NOT_INVOKED_BY_EVIDENCE_PACKAGE",
                 "scope": "serialized per-server fixture artifacts only",
             },
-            "claim": "EngineResult, grading, receipt, store, persisted scan, result, and snapshot closure",
+            "claim": (
+                "bounded repository-local source/test closure for EngineResult, grading, "
+                "receipt, store, persisted scan, result, and snapshot"
+            ),
             "prerequisite": "PENDING",
             "admission": "PENDING_INDEPENDENT_REVIEW",
         },
         "P3": {
             "repositories": ["bridge-db"],
             "runtime_prerequisite": environment["posix_permissions"],
-            "claim": "schema-22 source and RecoveryAnchorV1 decision closure",
+            "claim": (
+                "bounded repository-local source/test closure for schema-22 source and "
+                "RecoveryAnchorV1 decisions"
+            ),
             "prerequisite": (
                 "PENDING" if environment["posix_permissions"]["status"] == "PASS" else "UNKNOWN"
             ),
@@ -2364,7 +3407,10 @@ def candidate_records(
             "path_id": path_id,
             "repositories": [repository_by_name[name] for name in definition["repositories"]],
             "runtime_prerequisite": definition["runtime_prerequisite"],
+            "closure_rule": frozen["closure_rule"],
             "closure_claim": definition["claim"],
+            "closure_claim_ceiling": frozen["claim_ceiling"],
+            "residual_unknowns": frozen["residual_unknowns"],
             "consumer_invoked": False,
             "independent_review": "PENDING_INDEPENDENT_REVIEW",
         }
@@ -2388,7 +3434,7 @@ def candidate_records(
                 "disposition": values[1],
                 "reason_family": values[2],
             }
-            for case_id, values in CASE_CEILINGS.items()
+            for case_id, values in NORMATIVE_ORACLE_ROWS.items()
         },
         "blind_oracle_reviews": {
             "required": 2,
@@ -2618,6 +3664,9 @@ def _admission_report(environment: dict[str, Any]) -> str:
 3. **Medium:** P3 POSIX materialization capability is `{posix_status}` on this
    environment. Any unproved environment must abort and may not emulate modes.
 4. **Medium:** a second supported deterministic environment is pending.
+5. **Medium:** the previously authorized one-shot BridgeDB postflight attempt
+   failed before any receipt or Markdown export was written. No retry or other
+   Bridge mutation is authorized.
 
 ## Candidate inventory
 
@@ -2627,6 +3676,8 @@ def _admission_report(environment: dict[str, Any]) -> str:
 - Coverage: 11 COVERED / 6 PARTIAL / 1 CROSS; 3/3 controls covered.
 - Runtime observations: 0/21; all consumer and scanner entrypoints forbidden.
 - Same-environment deterministic regeneration: 100/100 byte-identical.
+- Structural validation proves schema, hash, locality, bounded-closure, and
+  declared-consistency properties only; it does not prove oracle semantics.
 
 ## Admission ceiling
 
@@ -2702,14 +3753,29 @@ def build_core_payloads() -> dict[str, bytes]:
                     "completed_count": 0,
                     "status": "PENDING_INDEPENDENT_REVIEW",
                 },
+                "review_subject_sha256": spec_digest,
+                "review_receipts": [],
+                "prerequisite_records": {
+                    "required_count": 29,
+                    "satisfied_count": 2,
+                    "admitted_count": 0,
+                    "status": "PENDING",
+                },
                 "runtime_execution": {
                     "authorized": False,
                     "cases_executed": 0,
                     "total_cases": 21,
+                    "completed_case_ids": [],
                 },
                 "p1_freeze": "UNKNOWN_EXACT_PNPM_11_5_2",
                 "p2_scope": "PER_SERVER_FIXTURE_GRADE_ONLY",
                 "p3_posix_environment": environment["posix_permissions"]["status"],
+                "bridge_postflight": {
+                    "status": "FAILED_PREWRITE_BOUND_CREDENTIAL_NOT_ENROLLED",
+                    "receipt_written": False,
+                    "markdown_export_run": False,
+                    "retry_authorized": False,
+                },
                 "claim_ceiling": "READY_FOR_BLIND_REVIEW_ONLY",
             }
         ),
@@ -2780,29 +3846,25 @@ def build_core_payloads() -> dict[str, bytes]:
         ),
         "verification/package-validation.json": pretty_json_bytes(
             {
-                "schema": "PackageValidationV2",
+                "schema": "PackageValidationResultV2",
                 "package_id": PACKAGE_ID,
-                "status": "PASS",
-                "checks": [
-                    "allowed_write_manifest_exact",
-                    "json_schema_validation",
-                    "full_fixture_structure",
-                    "semantic_locality",
-                    "candidate_record_counts",
-                    "impossible_admitted_state_rejected",
-                    "decoded_secret_privacy",
-                    "coverage_counts",
-                    "consumer_visible_label_absence",
-                ],
-                "counts": {
-                    "allowed_paths": 100,
-                    "fixtures": 21,
-                    "controls": 3,
-                    "mutations": 18,
-                    "records": 29,
-                    "schemas": 19,
-                },
+                "status": "FAIL",
+                "file_count": 100,
+                "fixture_count": 21,
+                "record_count": 29,
+                "schema_count": 19,
+                "checks": [],
+                "errors": ["validator_capture_pending"],
                 "consumers_invoked": 0,
+                "semantic_authority": STRUCTURAL_SEMANTIC_AUTHORITY,
+                "receipt_provenance": {
+                    "captured_by": "tools/build_package.py",
+                    "validator_entrypoint": "tools/validate_package.py",
+                    "validator_sha256": "0" * 64,
+                    "package_lib_sha256": "0" * 64,
+                    "scope": ["pending_actual_validator_capture"],
+                },
+                "stored_receipt_matches": False,
             }
         ),
         "verification/runtime-observation.json": pretty_json_bytes(
@@ -2880,18 +3942,23 @@ def _build_once(root: Path) -> None:
         {"verification/deterministic-regeneration.json": pretty_json_bytes(_determinism_report())},
     )
     actual_before_manifest = _relative_files(root)
-    if "generation-manifest.json" in actual_before_manifest:
-        actual_before_manifest.remove("generation-manifest.json")
-    if len(actual_before_manifest) != 99:
+    for excluded in (
+        "generation-manifest.json",
+        "verification/package-validation.json",
+    ):
+        if excluded in actual_before_manifest:
+            actual_before_manifest.remove(excluded)
+    if len(actual_before_manifest) != 98:
         raise RuntimeError(
-            f"generation manifest expects 99 non-self files, found {len(actual_before_manifest)}"
+            "generation manifest expects 98 files after excluding itself and the "
+            f"validator-captured receipt, found {len(actual_before_manifest)}"
         )
     manifest = {
         "schema": "GenerationManifestV2",
         "package_id": PACKAGE_ID,
         "generated_at": FIXED_CREATED_AT,
         "generator_revision": GENERATOR_REVISION,
-        "artifact_count": 99,
+        "artifact_count": 98,
         "artifacts": [
             {
                 "path": f"{allowed_prefix}{relative}",
@@ -2900,7 +3967,7 @@ def _build_once(root: Path) -> None:
             }
             for relative in actual_before_manifest
         ],
-        "self_digest_rule": "generation-manifest-excludes-itself",
+        "self_digest_rule": ("generation-manifest-excludes-itself-and-validator-captured-receipt"),
     }
     _write_payloads(root, {"generation-manifest.json": pretty_json_bytes(manifest)})
     actual = _relative_files(root)
@@ -2908,6 +3975,17 @@ def _build_once(root: Path) -> None:
         extra = sorted(set(actual) - set(allowed))
         missing = sorted(set(allowed) - set(actual))
         raise RuntimeError(f"allowed-write manifest mismatch; extra={extra}; missing={missing}")
+
+    captured = validate_package(root, jsonschema, verify_stored_receipt=False)
+    _write_payloads(
+        root,
+        {"verification/package-validation.json": pretty_json_bytes(captured)},
+    )
+    if captured["status"] != "PASS":
+        raise RuntimeError(f"actual package validator failed: {captured['errors']}")
+    verified = validate_package(root, jsonschema, verify_stored_receipt=True)
+    if verified != captured:
+        raise RuntimeError("stored package-validation receipt does not match actual validator output")
 
 
 def build_package(root: Path, *, verify_full_regeneration: bool = True) -> dict[str, Any]:
@@ -3110,10 +4188,452 @@ def _schema_instance_pairs(
     return pairs
 
 
-def validate_package(root: Path, jsonschema_module: Any) -> dict[str, Any]:
+def record_semantic_errors(record: Mapping[str, Any], spec_digest: str) -> list[str]:
+    errors: list[str] = []
+    body = record.get("body")
+    if not isinstance(body, dict):
+        errors.append("record_body_not_object")
+    elif record.get("content_sha256") != sha256_bytes(canonical_json_bytes(body)):
+        errors.append("record_content_sha256_mismatch")
+    if record.get("spec_sha256") != spec_digest:
+        errors.append("record_spec_sha256_mismatch")
+
+    reviews = record.get("reviews")
+    if not isinstance(reviews, list):
+        return [*errors, "record_reviews_not_array"]
+    reviewer_ids: list[str] = []
+    review_types: list[str] = []
+    decisions: list[str] = []
+    for review in reviews:
+        if not isinstance(review, dict):
+            errors.append("record_review_not_object")
+            continue
+        reviewer_id = review.get("reviewer_id")
+        review_type = review.get("review_type")
+        decision = review.get("decision")
+        if isinstance(reviewer_id, str):
+            reviewer_ids.append(reviewer_id)
+        if isinstance(review_type, str):
+            review_types.append(review_type)
+        if isinstance(decision, str):
+            decisions.append(decision)
+        if review.get("reviewed_content_sha256") != record.get("content_sha256"):
+            errors.append("record_review_content_sha256_mismatch")
+        if review.get("reviewed_spec_sha256") != spec_digest:
+            errors.append("record_review_spec_sha256_mismatch")
+        if review.get("independent") is not True:
+            errors.append("record_review_not_independent")
+    if len(reviewer_ids) != len(set(reviewer_ids)):
+        errors.append("record_duplicate_reviewer_id")
+
+    candidate_state = record.get("candidate_state")
+    admission_state = record.get("admission_state")
+    prerequisite_state = record.get("prerequisite_state")
+    if admission_state == "ADMITTED":
+        if candidate_state != "TERMINAL_ADMITTED":
+            errors.append("record_admitted_candidate_state_mismatch")
+        if prerequisite_state != "SATISFIED":
+            errors.append("record_admitted_prerequisite_not_satisfied")
+        if len(reviews) != 2 or len(set(reviewer_ids)) != 2:
+            errors.append("record_admitted_independent_reviewer_count")
+        if set(review_types) != {"ORACLE_CONTRACT", "FIXTURE_REPRODUCIBILITY"}:
+            errors.append("record_admitted_review_types")
+        if decisions != ["APPROVE", "APPROVE"]:
+            errors.append("record_admitted_non_approving_review")
+        record_type = record.get("schema")
+        if isinstance(body, dict):
+            if record_type == "FixtureAdmissibilityV1" and (
+                body.get("admitted") is not True or body.get("independent_review") != "COMPLETE"
+            ):
+                errors.append("record_admitted_fixture_body_not_terminal")
+            if record_type == "FreezeReceiptV1":
+                if body.get("independent_review") != "COMPLETE":
+                    errors.append("record_admitted_freeze_body_not_terminal")
+                runtime_prerequisite = body.get("runtime_prerequisite")
+                if body.get("path_id") in {"P1", "P3"} and (
+                    not isinstance(runtime_prerequisite, Mapping)
+                    or runtime_prerequisite.get("status") != "PASS"
+                ):
+                    errors.append("record_admitted_freeze_runtime_prerequisite_not_passed")
+            if record_type == "OracleAdjudicationV1":
+                blind_reviews = body.get("blind_oracle_reviews")
+                if not isinstance(blind_reviews, Mapping) or (
+                    blind_reviews.get("completed") != 2 or blind_reviews.get("status") != "COMPLETE"
+                ):
+                    errors.append("record_admitted_oracle_body_not_terminal")
+            if record_type == "DeterminismProfileV1":
+                second_environment = body.get("second_supported_environment")
+                if not isinstance(second_environment, Mapping) or (
+                    second_environment.get("completed_count") != 1
+                    or second_environment.get("status") != "PASS"
+                ):
+                    errors.append("record_admitted_determinism_body_not_terminal")
+            if record_type == "CoverageDeltaV1":
+                entries = body.get("entries")
+                if not isinstance(entries, list) or any(
+                    not isinstance(entry, Mapping) or entry.get("review_status") != "COMPLETE"
+                    for entry in entries
+                ):
+                    errors.append("record_admitted_coverage_body_not_terminal")
+    elif admission_state == "REJECTED":
+        if candidate_state != "TERMINAL_REJECTED":
+            errors.append("record_rejected_candidate_state_mismatch")
+        if "REJECT" not in decisions:
+            errors.append("record_rejected_without_rejecting_review")
+        if isinstance(body, dict):
+            record_type = record.get("schema")
+            if record_type == "FixtureAdmissibilityV1" and (
+                body.get("admitted") is not False or body.get("independent_review") != "REJECTED"
+            ):
+                errors.append("record_rejected_fixture_body_not_terminal")
+            if record_type == "FreezeReceiptV1" and body.get("independent_review") != "REJECTED":
+                errors.append("record_rejected_freeze_body_not_terminal")
+    else:
+        if candidate_state != "READY_FOR_INDEPENDENT_REVIEW":
+            errors.append("record_nonterminal_state_mismatch")
+        if isinstance(body, dict):
+            record_type = record.get("schema")
+            if record_type == "FixtureAdmissibilityV1" and (
+                body.get("admitted") is not False
+                or body.get("independent_review") != "PENDING_INDEPENDENT_REVIEW"
+            ):
+                errors.append("record_pending_fixture_body_mismatch")
+            if record_type == "FreezeReceiptV1" and (
+                body.get("independent_review") != "PENDING_INDEPENDENT_REVIEW"
+            ):
+                errors.append("record_pending_freeze_body_mismatch")
+    if candidate_state == "TERMINAL_ADMITTED" and admission_state != "ADMITTED":
+        errors.append("record_terminal_admitted_without_admission")
+    if candidate_state == "TERMINAL_REJECTED" and admission_state != "REJECTED":
+        errors.append("record_terminal_rejected_without_rejection")
+    return sorted(set(errors))
+
+
+def ownership_content_sha256(record: Mapping[str, Any]) -> str:
+    mutable_envelope_fields = {
+        "candidate_state",
+        "admission_state",
+        "prerequisite_state",
+        "reviews",
+        "content_sha256",
+    }
+    review_subject = {key: value for key, value in record.items() if key not in mutable_envelope_fields}
+    return sha256_bytes(canonical_json_bytes(review_subject))
+
+
+def ownership_semantic_errors(record: Mapping[str, Any], spec_digest: str) -> list[str]:
+    errors: list[str] = []
+    if record.get("spec_sha256") != spec_digest:
+        errors.append("ownership_spec_sha256_mismatch")
+    if record.get("content_sha256") != ownership_content_sha256(record):
+        errors.append("ownership_content_sha256_mismatch")
+    reviews = record.get("reviews")
+    if not isinstance(reviews, list):
+        return ["ownership_reviews_not_array"]
+    reviewer_ids = [
+        review.get("reviewer_id")
+        for review in reviews
+        if isinstance(review, dict) and isinstance(review.get("reviewer_id"), str)
+    ]
+    review_types: list[str] = []
+    decisions: list[str] = []
+    for review in reviews:
+        if not isinstance(review, dict):
+            errors.append("ownership_review_not_object")
+            continue
+        review_type = review.get("review_type")
+        decision = review.get("decision")
+        if isinstance(review_type, str):
+            review_types.append(review_type)
+        if isinstance(decision, str):
+            decisions.append(decision)
+        if review.get("reviewed_content_sha256") != record.get("content_sha256"):
+            errors.append("ownership_review_content_sha256_mismatch")
+        if review.get("reviewed_spec_sha256") != spec_digest:
+            errors.append("ownership_review_spec_sha256_mismatch")
+        if review.get("independent") is not True:
+            errors.append("ownership_review_not_independent")
+    if len(reviewer_ids) != len(set(reviewer_ids)):
+        errors.append("ownership_duplicate_reviewer_id")
+    candidate_state = record.get("candidate_state")
+    admission_state = record.get("admission_state")
+    review_state = record.get("review")
+    review_status = (
+        review_state.get("independent_review_status") if isinstance(review_state, Mapping) else None
+    )
+    if admission_state == "ADMITTED":
+        if candidate_state != "TERMINAL_ADMITTED" or len(set(reviewer_ids)) != 2:
+            errors.append("ownership_impossible_admitted_state")
+        if set(review_types) != {"ORACLE_CONTRACT", "FIXTURE_REPRODUCIBILITY"}:
+            errors.append("ownership_admitted_review_types")
+        if decisions != ["APPROVE", "APPROVE"]:
+            errors.append("ownership_admitted_non_approving_review")
+        if review_status != "COMPLETE":
+            errors.append("ownership_admitted_review_status_not_complete")
+    elif admission_state == "REJECTED":
+        if candidate_state != "TERMINAL_REJECTED":
+            errors.append("ownership_rejected_state_mismatch")
+        if "REJECT" not in decisions or review_status != "REJECTED":
+            errors.append("ownership_rejected_without_terminal_review")
+    elif candidate_state != "READY_FOR_INDEPENDENT_REVIEW":
+        errors.append("ownership_nonterminal_state_mismatch")
+    elif review_status != "PENDING_INDEPENDENT_REVIEW":
+        errors.append("ownership_pending_review_status_mismatch")
+    return sorted(set(errors))
+
+
+def _parse_spec_matrix(spec_text: str) -> dict[str, dict[str, str]]:
+    matrix: dict[str, dict[str, str]] = {}
+    expression = re.compile(r"^\| (P[123]-(?:C|0[1-6])) \| ([A-Z_]+) \| ([A-Z_]+) \| `([^`]+)` \|$")
+    for line in spec_text.splitlines():
+        matched = expression.match(line)
+        if matched is None:
+            continue
+        case_id, authority, disposition, reason = matched.groups()
+        matrix[case_id] = {
+            "authority": authority,
+            "disposition": disposition,
+            "reason_family": reason,
+        }
+    return matrix
+
+
+def declared_oracle_consistency_errors(
+    fixtures: Mapping[str, Mapping[str, Any]],
+    oracle_matrix: Mapping[str, Any],
+    spec_text: str,
+) -> list[str]:
+    errors: list[str] = []
+    expected_ids = set(ALL_CASE_IDS)
+    if set(fixtures) != expected_ids:
+        errors.append("declared_fixture_case_set_mismatch")
+    if set(oracle_matrix) != expected_ids:
+        errors.append("declared_oracle_case_set_mismatch")
+    spec_matrix = _parse_spec_matrix(spec_text)
+    if set(spec_matrix) != expected_ids:
+        errors.append("declared_spec_case_set_mismatch")
+    for case_id in sorted(expected_ids):
+        fixture = fixtures.get(case_id)
+        oracle = oracle_matrix.get(case_id)
+        spec = spec_matrix.get(case_id)
+        if not isinstance(fixture, Mapping) or not isinstance(oracle, Mapping) or spec is None:
+            continue
+        declared = fixture.get("expected")
+        if not isinstance(declared, Mapping):
+            errors.append(f"declared_fixture_expected_missing:{case_id}")
+            continue
+        fixture_row = {
+            "authority": declared.get("authority_ceiling"),
+            "disposition": declared.get("disposition"),
+            "reason_family": declared.get("reason_family"),
+        }
+        oracle_row = {
+            "authority": oracle.get("authority"),
+            "disposition": oracle.get("disposition"),
+            "reason_family": oracle.get("reason_family"),
+        }
+        if fixture_row != oracle_row:
+            errors.append(f"declared_fixture_oracle_mismatch:{case_id}")
+        if oracle_row != spec:
+            errors.append(f"declared_oracle_spec_mismatch:{case_id}")
+    return errors
+
+
+def frozen_inventory_errors(frozen: Mapping[str, Any]) -> list[str]:
+    errors: list[str] = []
+    repositories = frozen.get("repositories")
+    if not isinstance(repositories, list):
+        return ["frozen_repositories_not_array"]
+    by_name = {
+        row.get("name"): row
+        for row in repositories
+        if isinstance(row, dict) and isinstance(row.get("name"), str)
+    }
+    if set(by_name) != set(FROZEN_REPOSITORIES):
+        errors.append("frozen_repository_set_mismatch")
+    for name, expected in FROZEN_REPOSITORIES.items():
+        row = by_name.get(name)
+        if not isinstance(row, dict):
+            continue
+        repository = str(row.get("repository_path"))
+        revision = str(row.get("commit"))
+        if repository != expected["path"] or revision != expected["commit"]:
+            errors.append(f"frozen_identity_mismatch:{name}")
+            continue
+        observed_tree = subprocess.run(
+            ["git", "-C", repository, "rev-parse", f"{revision}^{{tree}}"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        if observed_tree != row.get("tree") or observed_tree != expected["tree"]:
+            errors.append(f"frozen_tree_mismatch:{name}")
+        root_files = row.get("root_files")
+        bounded_prefixes = row.get("bounded_prefixes")
+        sources = row.get("sources")
+        if (
+            not isinstance(root_files, list)
+            or not isinstance(bounded_prefixes, list)
+            or not isinstance(sources, list)
+        ):
+            errors.append(f"frozen_closure_shape:{name}")
+            continue
+        expected_paths = set(str(path) for path in root_files)
+        for prefix in bounded_prefixes:
+            listed = subprocess.run(
+                ["git", "-C", repository, "ls-tree", "-r", "--name-only", revision, "--", str(prefix)],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.splitlines()
+            expected_paths.update(path for path in listed if path)
+        source_by_path = {
+            source.get("path"): source
+            for source in sources
+            if isinstance(source, dict) and isinstance(source.get("path"), str)
+        }
+        if set(source_by_path) != expected_paths or row.get("source_count") != len(expected_paths):
+            errors.append(f"frozen_bounded_closure_mismatch:{name}")
+            continue
+        for relative, source in source_by_path.items():
+            content = git_bytes(repository, revision, str(relative))
+            blob = subprocess.run(
+                ["git", "-C", repository, "rev-parse", f"{revision}:{relative}"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+            if (
+                source.get("git_blob") != blob
+                or source.get("bytes") != len(content)
+                or source.get("sha256") != sha256_bytes(content)
+            ):
+                errors.append(f"frozen_source_identity_mismatch:{name}:{relative}")
+    if frozen.get("claim_ceiling") != "BOUNDED_REPOSITORY_LOCAL_CLOSURE_ONLY":
+        errors.append("frozen_claim_ceiling_overstated")
+    residuals = frozen.get("residual_unknowns")
+    if not isinstance(residuals, list) or not residuals:
+        errors.append("frozen_residual_unknowns_missing")
+    return errors
+
+
+def admission_summary_semantic_errors(
+    summary: Mapping[str, Any],
+    records: Mapping[str, Mapping[str, Any]],
+    spec_digest: str,
+) -> list[str]:
+    errors: list[str] = []
+    prerequisite = summary.get("prerequisite_records")
+    if isinstance(prerequisite, Mapping):
+        satisfied = sum(record.get("prerequisite_state") == "SATISFIED" for record in records.values())
+        admitted = sum(record.get("admission_state") == "ADMITTED" for record in records.values())
+        if prerequisite.get("required_count") != len(records):
+            errors.append("summary_prerequisite_required_count_mismatch")
+        if prerequisite.get("satisfied_count") != satisfied:
+            errors.append("summary_prerequisite_satisfied_count_mismatch")
+        if prerequisite.get("admitted_count") != admitted:
+            errors.append("summary_prerequisite_admitted_count_mismatch")
+    reviews = summary.get("review_receipts")
+    if not isinstance(reviews, list):
+        return [*errors, "summary_reviews_not_array"]
+    reviewer_ids = [
+        review.get("reviewer_id")
+        for review in reviews
+        if isinstance(review, dict) and isinstance(review.get("reviewer_id"), str)
+    ]
+    if len(reviewer_ids) != len(set(reviewer_ids)):
+        errors.append("summary_duplicate_reviewer_id")
+    for review in reviews:
+        if not isinstance(review, dict):
+            errors.append("summary_review_not_object")
+            continue
+        if review.get("reviewed_spec_sha256") != spec_digest:
+            errors.append("summary_review_spec_sha256_mismatch")
+        if review.get("reviewed_content_sha256") != summary.get("review_subject_sha256"):
+            errors.append("summary_review_content_sha256_mismatch")
+        if review.get("independent") is not True:
+            errors.append("summary_review_not_independent")
+
+    admission_state = summary.get("admission_state")
+    candidate_state = summary.get("candidate_state")
+    if admission_state == "ADMITTED":
+        if candidate_state != "TERMINAL_ADMITTED":
+            errors.append("summary_admitted_candidate_state_mismatch")
+        if len(records) != 29 or any(
+            record.get("admission_state") != "ADMITTED"
+            or record.get("candidate_state") != "TERMINAL_ADMITTED"
+            or record.get("prerequisite_state") != "SATISFIED"
+            for record in records.values()
+        ):
+            errors.append("summary_admitted_prerequisite_records_incomplete")
+        if (
+            len(set(reviewer_ids)) != 2
+            or {review.get("review_type") for review in reviews if isinstance(review, dict)}
+            != {"ORACLE_CONTRACT", "FIXTURE_REPRODUCIBILITY"}
+            or any(not isinstance(review, dict) or review.get("decision") != "APPROVE" for review in reviews)
+        ):
+            errors.append("summary_admitted_reviews_incomplete")
+        independent_review = summary.get("independent_review")
+        if not isinstance(independent_review, Mapping) or (
+            independent_review.get("completed_count") != 2 or independent_review.get("status") != "COMPLETE"
+        ):
+            errors.append("summary_admitted_review_status_incomplete")
+        runtime = summary.get("runtime_execution")
+        if not isinstance(runtime, Mapping) or (
+            runtime.get("authorized") is not True
+            or runtime.get("cases_executed") != 21
+            or runtime.get("completed_case_ids") != list(ALL_CASE_IDS)
+        ):
+            errors.append("summary_admitted_cases_incomplete")
+        if (
+            summary.get("p1_freeze") != "PASS_EXACT_PNPM_11_5_2"
+            or summary.get("p3_posix_environment") != "PASS"
+            or summary.get("claim_ceiling") != "ADMITTED_FOR_AUTHORIZED_BASELINE_ONLY"
+        ):
+            errors.append("summary_admitted_environment_or_claim_incomplete")
+    elif admission_state == "PENDING_INDEPENDENT_REVIEW":
+        if candidate_state != "READY_FOR_INDEPENDENT_REVIEW":
+            errors.append("summary_pending_candidate_state_mismatch")
+    elif admission_state == "REJECTED" and candidate_state != "TERMINAL_REJECTED":
+        errors.append("summary_rejected_candidate_state_mismatch")
+    return sorted(set(errors))
+
+
+def _validation_provenance(root: Path) -> dict[str, Any]:
+    return {
+        "captured_by": "tools/build_package.py",
+        "validator_entrypoint": "tools/validate_package.py",
+        "validator_sha256": sha256_bytes((root / "tools/validate_package.py").read_bytes()),
+        "package_lib_sha256": sha256_bytes((root / "tools/package_lib.py").read_bytes()),
+        "scope": [
+            "schemas",
+            "hashes",
+            "semantic_locality",
+            "declared_oracle_consistency",
+            "candidate_transition_integrity",
+            "bounded_frozen_source_closure",
+            "decoded_privacy",
+        ],
+    }
+
+
+def validate_package(
+    root: Path,
+    jsonschema_module: Any,
+    *,
+    verify_stored_receipt: bool = True,
+) -> dict[str, Any]:
     root = root.resolve()
     errors: list[str] = []
     checks: list[str] = []
+
+    spec_text = (root / "spec/evidence-conservation-v2.md").read_text(encoding="utf-8")
+    spec_digest = sha256_bytes(spec_text.encode("utf-8"))
+    digest_line = (root / "spec/evidence-conservation-v2.sha256").read_text().strip()
+    if digest_line != f"{spec_digest}  evidence-conservation-v2.md":
+        errors.append("spec_digest_binding_mismatch")
+    else:
+        checks.append("spec_digest_binding")
 
     ownership = json.loads((root / "records/ownership-preflight-v1.json").read_text())
     prefix = f"docs/proof-packages/{PACKAGE_ID}/"
@@ -3125,6 +4645,15 @@ def validate_package(root: Path, jsonschema_module: Any) -> dict[str, Any]:
         checks.append("allowed_write_manifest_exact")
     if len(actual) != 100:
         errors.append(f"file_count:{len(actual)}")
+
+    frozen = json.loads((root / "contracts/frozen-contracts-v2.json").read_text())
+    try:
+        frozen_errors = frozen_inventory_errors(frozen)
+        errors.extend(frozen_errors)
+        if not frozen_errors:
+            checks.append("bounded_frozen_source_closure_and_digests")
+    except (OSError, subprocess.CalledProcessError, KeyError, TypeError, ValueError) as exc:
+        errors.append(f"frozen_inventory_validation:{type(exc).__name__}:{exc}")
 
     schema_paths = sorted((root / "schemas").glob("*.schema.json"))
     if len(schema_paths) != 19:
@@ -3165,24 +4694,25 @@ def validate_package(root: Path, jsonschema_module: Any) -> dict[str, Any]:
             errors.append(f"control_coordinate:{case_id}")
         if fixture["kind"] == "primary-mutation" and zeroes != 1:
             errors.append(f"mutation_coordinate:{case_id}")
-        expected = CASE_CEILINGS.get(case_id)
-        if (
-            expected is None
-            or tuple(
-                [
-                    fixture["expected"]["authority_ceiling"],
-                    fixture["expected"]["disposition"],
-                    fixture["expected"]["reason_family"],
-                ]
-            )
-            != expected
-        ):
-            errors.append(f"ceiling_mismatch:{case_id}")
         for encoded in fixture["artifacts"]:
             try:
                 decode_artifact(encoded)
             except (ValueError, TypeError) as exc:
                 errors.append(f"artifact:{case_id}:{exc}")
+
+    try:
+        oracle_record = json.loads((root / "records/oracle-adjudication-v1.json").read_text())
+        oracle_matrix = oracle_record["body"]["sealed_matrix"]
+        declaration_errors = declared_oracle_consistency_errors(
+            fixtures,
+            oracle_matrix,
+            spec_text,
+        )
+        errors.extend(declaration_errors)
+        if not declaration_errors:
+            checks.append("declared_oracle_consistency_not_semantic_correctness")
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        errors.append(f"declared_oracle_validation:{type(exc).__name__}:{exc}")
 
     try:
         required_receipt_keys = {
@@ -3356,7 +4886,17 @@ def validate_package(root: Path, jsonschema_module: Any) -> dict[str, Any]:
             }
             if actual_diffs != expected_diffs:
                 errors.append(f"p2_locality:{case_id}:{sorted(actual_diffs)}")
+        expected_native_discriminators = {
+            "P2-04": f"fresh_scan_binding_mismatch:{P2_RECEIPT_REF}",
+            "P2-05": f"successful_scan_receipt_schema_invalid:{P2_RECEIPT_REF}",
+            "P2-06": f"successful_scan_receipt_mismatch:{P2_RECEIPT_REF}",
+        }
+        for case_id, discriminator in expected_native_discriminators.items():
+            if fixtures[case_id]["expected"]["raw_signal"] != {"error": discriminator}:
+                errors.append(f"p2_native_discriminator:{case_id}")
         checks.append("p2_full_fixture_structure_and_locality")
+        if not any(error.startswith("p2_native_discriminator:") for error in errors):
+            checks.append("p2_native_receipt_qualified_discriminators")
     except Exception as exc:  # noqa: BLE001
         errors.append(f"p2_validation:{type(exc).__name__}:{exc}")
 
@@ -3384,12 +4924,12 @@ def validate_package(root: Path, jsonschema_module: Any) -> dict[str, Any]:
                 continue
             members = tar_members(_binary_artifact(fixtures[case_id], "recovery-anchor.tar"))
             file_members = {name for name, (content, _mode) in members.items() if content is not None}
-            if file_members != {"anchor.json", "anchor.sqlite"}:
+            if file_members != {"manifest.json", "anchor.sqlite"}:
                 errors.append(f"p3_anchor_topology:{case_id}")
             if members.get(".") != (None, 0o700):
                 errors.append(f"p3_anchor_root_mode:{case_id}")
             database, database_mode = members["anchor.sqlite"]
-            manifest_bytes, manifest_mode = members["anchor.json"]
+            manifest_bytes, manifest_mode = members["manifest.json"]
             if database is None or manifest_bytes is None:
                 errors.append(f"p3_anchor_content:{case_id}")
                 continue
@@ -3401,12 +4941,29 @@ def validate_package(root: Path, jsonschema_module: Any) -> dict[str, Any]:
             anchor_observation = sqlite_observation(database)
             if anchor_observation["integrity"] != "ok":
                 errors.append(f"p3_anchor_integrity:{case_id}")
+            manifest_object = json.loads(manifest_bytes)
+            digest_matches = manifest_object.get("sha256") == sha256_bytes(database)
+            size_matches = manifest_object.get("backup_bytes") == len(database)
+            schema_matches_22 = (
+                manifest_object.get("source_schema_version") == 22
+                and anchor_observation["user_version"] == 22
+            )
+            expected_relations = {
+                "P3-C": (True, True, True),
+                "P3-02": (True, True, True),
+                "P3-03": (False, True, True),
+                "P3-04": (True, False, True),
+                "P3-05": (True, True, False),
+                "P3-06": (True, True, True),
+            }
+            if (digest_matches, size_matches, schema_matches_22) != expected_relations[case_id]:
+                errors.append(f"p3_native_discriminator_contaminated:{case_id}")
         if _binary_artifact(fixtures["P3-06"], "source.sqlite") != p3_control_source:
             errors.append("p3_06_source_changed")
         p3_mode_anchor = tar_members(_binary_artifact(fixtures["P3-06"], "recovery-anchor.tar"))
         if p3_control_anchor["anchor.sqlite"][0] != p3_mode_anchor["anchor.sqlite"][0]:
             errors.append("p3_06_database_bytes_changed")
-        if p3_control_anchor["anchor.json"][0] != p3_mode_anchor["anchor.json"][0]:
+        if p3_control_anchor["manifest.json"][0] != p3_mode_anchor["manifest.json"][0]:
             errors.append("p3_06_manifest_changed")
         if (
             p3_control_anchor["anchor.sqlite"][1],
@@ -3415,19 +4972,30 @@ def validate_package(root: Path, jsonschema_module: Any) -> dict[str, Any]:
             errors.append("p3_06_mode_locality")
         if fixtures["P3-06"]["expected"]["raw_signal"].get("source_current") != "ABSENT":
             errors.append("p3_06_source_current_not_absent")
+        p3_stale_anchor = tar_members(_binary_artifact(fixtures["P3-02"], "recovery-anchor.tar"))
+        if p3_stale_anchor["anchor.sqlite"][0] != p3_control_anchor["anchor.sqlite"][0]:
+            errors.append("p3_02_anchor_changed")
+        if _binary_artifact(fixtures["P3-02"], "source.sqlite") == p3_control_source:
+            errors.append("p3_02_source_not_changed")
         checks.append("p3_full_fixture_structure_and_locality")
+        if not any(error.startswith("p3_native_discriminator_contaminated:") for error in errors):
+            checks.append("p3_native_two_file_discriminator_closure")
     except Exception as exc:  # noqa: BLE001
         errors.append(f"p3_validation:{type(exc).__name__}:{exc}")
 
     record_paths = sorted((root / "records").rglob("*.json"))
     record_types: dict[str, int] = {}
+    records_by_id: dict[str, dict[str, Any]] = {}
     for path in record_paths:
         record = json.loads(path.read_text())
         record_types[record["schema"]] = record_types.get(record["schema"], 0) + 1
-        if record.get("admission_state") == "ADMITTED":
-            errors.append(f"unexpected_admitted_record:{path.name}")
-        if path.name != "ownership-preflight-v1.json" and record.get("reviews") != []:
-            errors.append(f"independent_review_not_pending:{path.name}")
+        records_by_id[str(record["record_id"])] = record
+        semantic_errors = (
+            ownership_semantic_errors(record, spec_digest)
+            if record["schema"] == "OwnershipPreflightV1"
+            else record_semantic_errors(record, spec_digest)
+        )
+        errors.extend(f"record_integrity:{path.name}:{error}" for error in semantic_errors)
     expected_records = {
         "BoundaryDecisionV1": 1,
         "FreezeReceiptV1": 3,
@@ -3441,19 +5009,133 @@ def validate_package(root: Path, jsonschema_module: Any) -> dict[str, Any]:
         errors.append(f"record_counts:{record_types}")
     else:
         checks.append("candidate_record_counts")
+    if not any(error.startswith("record_integrity:") for error in errors):
+        checks.append("candidate_record_hash_review_and_transition_integrity")
+
+    summary = json.loads((root / "admission-summary.json").read_text())
+    summary_errors = admission_summary_semantic_errors(summary, records_by_id, spec_digest)
+    errors.extend(f"admission_summary:{error}" for error in summary_errors)
+    if not summary_errors:
+        checks.append("terminal_admission_summary_integrity")
 
     try:
         fixture_record_path = next((root / "records/fixture-admissibility").glob("*.json"))
-        impossible = json.loads(fixture_record_path.read_text())
-        impossible["candidate_state"] = "TERMINAL_ADMITTED"
-        impossible["admission_state"] = "ADMITTED"
-        impossible["prerequisite_state"] = "SATISFIED"
-        schema = json.loads((root / "schemas/fixture-admissibility-v1.schema.json").read_text())
-        impossible_errors = list(jsonschema_module.Draft202012Validator(schema).iter_errors(impossible))
-        if not impossible_errors:
-            errors.append("impossible_admitted_state_accepted")
+        base_record = json.loads(fixture_record_path.read_text())
+        record_schema = json.loads((root / "schemas/fixture-admissibility-v1.schema.json").read_text())
+
+        def schema_rejects(instance: Mapping[str, Any], schema: Mapping[str, Any]) -> bool:
+            return bool(list(jsonschema_module.Draft202012Validator(schema).iter_errors(instance)))
+
+        admitted_record = copy.deepcopy(base_record)
+        admitted_record["body"]["admitted"] = True
+        admitted_record["body"]["independent_review"] = "COMPLETE"
+        admitted_record["content_sha256"] = sha256_bytes(canonical_json_bytes(admitted_record["body"]))
+        admitted_record.update(
+            {
+                "candidate_state": "TERMINAL_ADMITTED",
+                "admission_state": "ADMITTED",
+                "prerequisite_state": "SATISFIED",
+                "reviews": [
+                    {
+                        "receipt_id": "review-adversarial-a",
+                        "reviewer_id": "v2-oracle-reviewer",
+                        "review_type": "ORACLE_CONTRACT",
+                        "decision": "APPROVE",
+                        "reviewed_content_sha256": admitted_record["content_sha256"],
+                        "reviewed_spec_sha256": spec_digest,
+                        "completed_at": FIXED_CREATED_AT,
+                        "independent": True,
+                    },
+                    {
+                        "receipt_id": "review-adversarial-b",
+                        "reviewer_id": "v2-fixture-reviewer",
+                        "review_type": "FIXTURE_REPRODUCIBILITY",
+                        "decision": "APPROVE",
+                        "reviewed_content_sha256": admitted_record["content_sha256"],
+                        "reviewed_spec_sha256": spec_digest,
+                        "completed_at": FIXED_CREATED_AT,
+                        "independent": True,
+                    },
+                ],
+            }
+        )
+        if schema_rejects(admitted_record, record_schema) or record_semantic_errors(
+            admitted_record, spec_digest
+        ):
+            errors.append("honest_terminal_transition_rejected")
+
+        duplicate_reviewers = copy.deepcopy(admitted_record)
+        duplicate_reviewers["reviews"][1]["reviewer_id"] = duplicate_reviewers["reviews"][0]["reviewer_id"]
+        rejecting_review = copy.deepcopy(admitted_record)
+        rejecting_review["reviews"][0]["decision"] = "REJECT"
+        stale_review_hash = copy.deepcopy(admitted_record)
+        stale_review_hash["reviews"][0]["reviewed_content_sha256"] = "0" * 64
+        stale_hash = copy.deepcopy(base_record)
+        stale_hash["body"]["admitted"] = True
+        arbitrary_body = copy.deepcopy(base_record)
+        arbitrary_body["body"] = {"arbitrary": True}
+        malformed_review = copy.deepcopy(admitted_record)
+        malformed_review["reviews"][1]["review_type"] = "NOT_A_REVIEW_TYPE"
+        contradictory = copy.deepcopy(base_record)
+        contradictory["candidate_state"] = "TERMINAL_REJECTED"
+        contradictory_body = copy.deepcopy(admitted_record)
+        contradictory_body["body"]["admitted"] = False
+        contradictory_body["content_sha256"] = sha256_bytes(canonical_json_bytes(contradictory_body["body"]))
+        for review in contradictory_body["reviews"]:
+            review["reviewed_content_sha256"] = contradictory_body["content_sha256"]
+
+        adversarial_rejections = {
+            "duplicate_admitted_reviewers": bool(record_semantic_errors(duplicate_reviewers, spec_digest)),
+            "rejecting_admitted_review": (
+                schema_rejects(rejecting_review, record_schema)
+                or bool(record_semantic_errors(rejecting_review, spec_digest))
+            ),
+            "stale_review_content_sha256": bool(record_semantic_errors(stale_review_hash, spec_digest)),
+            "stale_content_sha256": bool(record_semantic_errors(stale_hash, spec_digest)),
+            "arbitrary_record_body": schema_rejects(arbitrary_body, record_schema),
+            "malformed_review_type": schema_rejects(malformed_review, record_schema),
+            "terminal_state_contradiction": (
+                schema_rejects(contradictory, record_schema)
+                or bool(record_semantic_errors(contradictory, spec_digest))
+            ),
+            "terminal_body_contradiction": (
+                schema_rejects(contradictory_body, record_schema)
+                or bool(record_semantic_errors(contradictory_body, spec_digest))
+            ),
+        }
+
+        admitted_summary = copy.deepcopy(summary)
+        admitted_summary["candidate_state"] = "TERMINAL_ADMITTED"
+        admitted_summary["admission_state"] = "ADMITTED"
+        summary_schema = json.loads((root / "schemas/admission-summary-v2.schema.json").read_text())
+        adversarial_rejections["admitted_summary_without_prerequisites_reviews_or_cases"] = schema_rejects(
+            admitted_summary, summary_schema
+        ) or bool(admission_summary_semantic_errors(admitted_summary, records_by_id, spec_digest))
+
+        p3_schema = json.loads((root / "schemas/p3-full-fixture-v2.schema.json").read_text())
+        path_mutations = {
+            "path_case_id_escape": ("fixture_id", "P1-C"),
+            "path_coordinate_escape": ("evidence_coordinates", {"arbitrary": 1}),
+            "path_reason_escape": ("reason_family", "manufactured"),
+        }
+        for label, (field, value) in path_mutations.items():
+            wrong_path_fixture = copy.deepcopy(fixtures["P3-C"])
+            if field == "reason_family":
+                wrong_path_fixture["expected"][field] = value
+            else:
+                wrong_path_fixture[field] = value
+            adversarial_rejections[label] = schema_rejects(wrong_path_fixture, p3_schema)
+        wrong_artifact = copy.deepcopy(fixtures["P3-C"])
+        wrong_artifact["artifacts"][0]["name"] = "arbitrary.bin"
+        adversarial_rejections["path_artifact_escape"] = schema_rejects(wrong_artifact, p3_schema)
+
+        failed_adversarial = sorted(
+            label for label, rejected in adversarial_rejections.items() if not rejected
+        )
+        if failed_adversarial:
+            errors.append(f"adversarial_admission_bypass:{failed_adversarial}")
         else:
-            checks.append("impossible_admitted_state_rejected")
+            checks.append("adversarial_admission_and_path_schema_bypasses_rejected")
     except Exception as exc:  # noqa: BLE001
         errors.append(f"impossible_state_test:{type(exc).__name__}:{exc}")
 
@@ -3462,8 +5144,52 @@ def validate_package(root: Path, jsonschema_module: Any) -> dict[str, Any]:
         errors.append("coverage_counts")
     else:
         checks.append("coverage_counts")
-    if near_miss_boundaries()["entries"][5]["outside_artifact"]["content_base64"] != b64(b"untracked"):
+    stored_no_op = json.loads((root / "boundaries/no-op-boundaries-v2.json").read_text())
+    stored_near = json.loads((root / "boundaries/near-miss-boundaries-v2.json").read_text())
+    boundary_ids = [
+        entry["boundary_id"] for corpus in (stored_no_op, stored_near) for entry in corpus["entries"]
+    ]
+    if len(boundary_ids) != 12 or len(set(boundary_ids)) != 12 or set(boundary_ids) & set(fixtures):
+        errors.append("boundary_ids_or_primary_duplication")
+    no_op_04 = stored_no_op["entries"][3]
+    required_rebindings = {
+        "MANIFEST.sha256",
+        "refresh-candidate.tar bytes and sha256",
+        "fixture artifact bytes and sha256",
+        "FixtureAdmissibilityV1 artifact_manifest and content_sha256",
+        "generation-manifest bindings for the fixture and record",
+    }
+    if (
+        "MANIFEST.json.created_at" not in no_op_04.get("inside", "")
+        or "MANIFEST.json.created_at" not in no_op_04.get("outside", "")
+        or set(no_op_04.get("required_rebindings", [])) != required_rebindings
+    ):
+        errors.append("noop_04_instant_field_or_rebinding_closure")
+    near_04 = stored_near["entries"][3]
+    if (
+        near_04.get("inside") != "receipt approval is exactly {approval_ref: null}"
+        or "approval.approval_ref" not in near_04.get("outside", "")
+        or near_04.get("outside_reason") != f"successful_scan_receipt_schema_invalid:{P2_RECEIPT_REF}"
+    ):
+        errors.append("near_04_invalid_frozen_boundary")
+    sidecar = stored_near["entries"][5]
+    if (
+        sidecar["outside_artifact"]["content_base64"] != b64(b"untracked")
+        or sidecar["outside_artifact"]["name"] != "anchor.sqlite-wal"
+        or sidecar["outside_reason"] != "anchor_artifact_set_mismatch"
+    ):
         errors.append("near_miss_sidecar")
+    if not any(
+        error
+        in {
+            "boundary_ids_or_primary_duplication",
+            "noop_04_instant_field_or_rebinding_closure",
+            "near_04_invalid_frozen_boundary",
+            "near_miss_sidecar",
+        }
+        for error in errors
+    ):
+        checks.append("six_noop_and_six_near_miss_boundaries")
 
     recomputed_privacy = secret_privacy_report(fixtures)
     if recomputed_privacy["status"] != "PASS":
@@ -3472,7 +5198,7 @@ def validate_package(root: Path, jsonschema_module: Any) -> dict[str, Any]:
         checks.append("decoded_secret_privacy")
 
     manifest = json.loads((root / "generation-manifest.json").read_text())
-    if len(manifest["artifacts"]) != 99:
+    if len(manifest["artifacts"]) != 98:
         errors.append("generation_manifest_count")
     for row in manifest["artifacts"]:
         relative = row["path"].removeprefix(prefix)
@@ -3491,7 +5217,7 @@ def validate_package(root: Path, jsonschema_module: Any) -> dict[str, Any]:
     else:
         checks.append("deterministic_regeneration")
 
-    return {
+    base_result = {
         "schema": "PackageValidationResultV2",
         "package_id": PACKAGE_ID,
         "status": "PASS" if not errors else "FAIL",
@@ -3500,6 +5226,27 @@ def validate_package(root: Path, jsonschema_module: Any) -> dict[str, Any]:
         "record_count": len(record_paths),
         "schema_count": len(schema_paths),
         "checks": sorted(set(checks)),
-        "errors": errors,
+        "errors": sorted(set(errors)),
         "consumers_invoked": 0,
+        "semantic_authority": STRUCTURAL_SEMANTIC_AUTHORITY,
+        "receipt_provenance": _validation_provenance(root),
+        "stored_receipt_matches": True,
+    }
+    if not verify_stored_receipt:
+        return base_result
+    try:
+        stored_receipt = json.loads(
+            (root / "verification/package-validation.json").read_text(encoding="utf-8")
+        )
+    except (OSError, json.JSONDecodeError):
+        stored_receipt = None
+    if stored_receipt == base_result:
+        return base_result
+    base_errors = cast(list[str], base_result["errors"])
+    mismatch_errors = sorted({*base_errors, "stored_validation_receipt_mismatch"})
+    return {
+        **base_result,
+        "status": "FAIL",
+        "errors": mismatch_errors,
+        "stored_receipt_matches": False,
     }

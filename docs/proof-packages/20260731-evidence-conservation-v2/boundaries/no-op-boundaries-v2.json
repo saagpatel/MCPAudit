@@ -25,10 +25,17 @@
     },
     {
       "boundary_id": "NOOP-04",
-      "inside": "UTC offset spelling +00:00",
-      "invariant": "instant and expiry relation unchanged",
-      "outside": "equivalent UTC spelling Z",
-      "path_id": "P2"
+      "inside": "MANIFEST.json.created_at is 2026-07-31T08:00:00+00:00",
+      "invariant": "_parse_utc_datetime instant and expiry relation unchanged",
+      "outside": "MANIFEST.json.created_at is the equivalent instant 2026-07-31T08:00:00Z",
+      "path_id": "P2",
+      "required_rebindings": [
+        "MANIFEST.sha256",
+        "refresh-candidate.tar bytes and sha256",
+        "fixture artifact bytes and sha256",
+        "FixtureAdmissibilityV1 artifact_manifest and content_sha256",
+        "generation-manifest bindings for the fixture and record"
+      ]
     },
     {
       "boundary_id": "NOOP-05",

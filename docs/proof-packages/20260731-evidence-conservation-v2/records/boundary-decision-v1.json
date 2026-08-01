@@ -5,8 +5,26 @@
       "fresh_v2_package_root_writes",
       "single_remote_writer_lease_creation_before_package_edits",
       "single_local_package_commit",
-      "one_terminal_bridgedb_postflight_receipt_and_required_export"
+      "one_terminal_bridgedb_postflight_receipt_and_required_export",
+      "single_bounded_v2_repair_commit_after_blind_review"
     ],
+    "bounded_repair": {
+      "authorization": "single bounded v2 repair on the existing writer branch",
+      "new_branch_or_lease_authorized": false,
+      "publication_authorized": false,
+      "review_contracts": [
+        "019fba52-e027-7240-ae54-a07ac88e8118",
+        "019fba52-dac0-7a82-94d5-7e7ae1c536f4"
+      ],
+      "source_task_id": "019fb643-217f-7971-ac9d-e689aeef3358"
+    },
+    "bridge_postflight": {
+      "attempted_once": true,
+      "markdown_export_run": false,
+      "outcome": "FAILED_PREWRITE_BOUND_CREDENTIAL_NOT_ENROLLED",
+      "receipt_written": false,
+      "retry_authorized": false
+    },
     "decision": "V2_CONTRACT_APPROVED_FOR_EVIDENCE_PACKAGE_REBUILD_ONLY",
     "normative_adjudicator": {
       "task_id": "019fb993-a5c7-7100-aaa2-a0882d3d0724",
@@ -41,7 +59,7 @@
     ]
   },
   "candidate_state": "READY_FOR_INDEPENDENT_REVIEW",
-  "content_sha256": "8ecb39f7ce78960cba3905b4903b5037f0b8b9d3a354c89010382018a27c3685",
+  "content_sha256": "303de7ee69c25e656bda2a21a841f62cdfbcc0e2db6953e39413f5ce3b802a7c",
   "created_at": "2026-07-31T21:27:04Z",
   "package_id": "20260731-evidence-conservation-v2",
   "prerequisite_state": "SATISFIED",
@@ -52,5 +70,5 @@
   "record_id": "boundary-decision-v2-20260731",
   "reviews": [],
   "schema": "BoundaryDecisionV1",
-  "spec_sha256": "1b23e6220d228a170a964c0e889d3d2fecd4ddc9ae4c46a73d8b13f927ed0c74"
+  "spec_sha256": "f6f882740f5f4285fb5910ffd963cb7a74af9d67522375d4eef891f25eaf1121"
 }

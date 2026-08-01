@@ -38,9 +38,9 @@
     "authority_ceiling": "BLOCKED",
     "disposition": "CONTRADICTORY",
     "raw_signal": {
-      "error": "fresh_grade_binding_mismatch"
+      "error": "fresh_scan_binding_mismatch:synthetic-server-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.json"
     },
-    "reason_family": "fresh_grade_binding_mismatch",
+    "reason_family": "fresh_scan_binding_mismatch:synthetic-server-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.json",
     "source": "sealed-contract-adjudication-not-consumer-output"
   },
   "fixture_id": "P2-04",

@@ -1,56 +1,516 @@
 {
   "$id": "https://example.invalid/mcpaudit/20260731-evidence-conservation-v2/P3FullFixtureV2.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "additionalProperties": true,
-  "properties": {
-    "artifacts": {
-      "items": {
-        "additionalProperties": false,
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
         "properties": {
-          "bytes": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "content_base64": {
-            "type": "string"
-          },
-          "encoding": {
-            "const": "base64"
-          },
-          "materialization_mode": {
-            "pattern": "^[0-7]{4}$",
-            "type": "string"
-          },
-          "media_type": {
-            "minLength": 1,
-            "type": "string"
-          },
-          "name": {
-            "minLength": 1,
-            "type": "string"
-          },
-          "sha256": {
-            "pattern": "^[0-9a-f]{64}$",
-            "type": "string"
+          "fixture_id": {
+            "const": "P3-C"
           }
         },
         "required": [
-          "name",
-          "media_type",
-          "encoding",
-          "bytes",
-          "sha256",
-          "materialization_mode",
-          "content_base64"
-        ],
-        "type": "object"
+          "fixture_id"
+        ]
       },
-      "maxItems": 2,
-      "minItems": 1,
-      "type": "array"
+      "then": {
+        "properties": {
+          "evidence_coordinates": {
+            "const": {
+              "consistent": 1,
+              "current": 1,
+              "present": 1,
+              "private": 1,
+              "supported": 1,
+              "visible": 1
+            }
+          },
+          "expected": {
+            "properties": {
+              "authority_ceiling": {
+                "const": "STRONG"
+              },
+              "disposition": {
+                "const": "VALID"
+              },
+              "reason_family": {
+                "const": "verified"
+              }
+            }
+          },
+          "kind": {
+            "const": "control"
+          },
+          "semantic_axis": {
+            "const": "control"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "fixture_id": {
+            "const": "P3-01"
+          }
+        },
+        "required": [
+          "fixture_id"
+        ]
+      },
+      "then": {
+        "properties": {
+          "artifacts": {
+            "items": false,
+            "maxItems": 1,
+            "minItems": 1,
+            "prefixItems": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "bytes": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "content_base64": {
+                    "type": "string"
+                  },
+                  "encoding": {
+                    "const": "base64"
+                  },
+                  "materialization_mode": {
+                    "pattern": "^[0-7]{4}$",
+                    "type": "string"
+                  },
+                  "media_type": {
+                    "const": "application/vnd.sqlite3"
+                  },
+                  "name": {
+                    "const": "source.sqlite"
+                  },
+                  "sha256": {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "media_type",
+                  "encoding",
+                  "bytes",
+                  "sha256",
+                  "materialization_mode",
+                  "content_base64"
+                ],
+                "type": "object"
+              }
+            ],
+            "type": "array"
+          },
+          "evidence_coordinates": {
+            "const": {
+              "consistent": 1,
+              "current": 1,
+              "present": 0,
+              "private": 1,
+              "supported": 1,
+              "visible": 1
+            }
+          },
+          "expected": {
+            "properties": {
+              "authority_ceiling": {
+                "const": "NONAUTHORITATIVE"
+              },
+              "disposition": {
+                "const": "MISSING"
+              },
+              "reason_family": {
+                "const": "anchor_missing"
+              }
+            }
+          },
+          "kind": {
+            "const": "primary-mutation"
+          },
+          "semantic_axis": {
+            "const": "present"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "fixture_id": {
+            "const": "P3-02"
+          }
+        },
+        "required": [
+          "fixture_id"
+        ]
+      },
+      "then": {
+        "properties": {
+          "evidence_coordinates": {
+            "const": {
+              "consistent": 1,
+              "current": 0,
+              "present": 1,
+              "private": 1,
+              "supported": 1,
+              "visible": 1
+            }
+          },
+          "expected": {
+            "properties": {
+              "authority_ceiling": {
+                "const": "NONAUTHORITATIVE"
+              },
+              "disposition": {
+                "const": "STALE"
+              },
+              "reason_family": {
+                "const": "source_changed_since_anchor"
+              }
+            }
+          },
+          "kind": {
+            "const": "primary-mutation"
+          },
+          "semantic_axis": {
+            "const": "current"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "fixture_id": {
+            "const": "P3-03"
+          }
+        },
+        "required": [
+          "fixture_id"
+        ]
+      },
+      "then": {
+        "properties": {
+          "evidence_coordinates": {
+            "const": {
+              "consistent": 1,
+              "current": 1,
+              "present": 1,
+              "private": 1,
+              "supported": 1,
+              "visible": 0
+            }
+          },
+          "expected": {
+            "properties": {
+              "authority_ceiling": {
+                "const": "BLOCKED"
+              },
+              "disposition": {
+                "const": "MASKED"
+              },
+              "reason_family": {
+                "const": "digest_mismatch"
+              }
+            }
+          },
+          "kind": {
+            "const": "primary-mutation"
+          },
+          "semantic_axis": {
+            "const": "visible"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "fixture_id": {
+            "const": "P3-04"
+          }
+        },
+        "required": [
+          "fixture_id"
+        ]
+      },
+      "then": {
+        "properties": {
+          "evidence_coordinates": {
+            "const": {
+              "consistent": 0,
+              "current": 1,
+              "present": 1,
+              "private": 1,
+              "supported": 1,
+              "visible": 1
+            }
+          },
+          "expected": {
+            "properties": {
+              "authority_ceiling": {
+                "const": "BLOCKED"
+              },
+              "disposition": {
+                "const": "CONTRADICTORY"
+              },
+              "reason_family": {
+                "const": "byte_size_mismatch"
+              }
+            }
+          },
+          "kind": {
+            "const": "primary-mutation"
+          },
+          "semantic_axis": {
+            "const": "consistent"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "fixture_id": {
+            "const": "P3-05"
+          }
+        },
+        "required": [
+          "fixture_id"
+        ]
+      },
+      "then": {
+        "properties": {
+          "evidence_coordinates": {
+            "const": {
+              "consistent": 1,
+              "current": 1,
+              "present": 1,
+              "private": 1,
+              "supported": 0,
+              "visible": 1
+            }
+          },
+          "expected": {
+            "properties": {
+              "authority_ceiling": {
+                "const": "BLOCKED"
+              },
+              "disposition": {
+                "const": "UNSUPPORTED"
+              },
+              "reason_family": {
+                "const": "schema_incompatible"
+              }
+            }
+          },
+          "kind": {
+            "const": "primary-mutation"
+          },
+          "semantic_axis": {
+            "const": "supported"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "fixture_id": {
+            "const": "P3-06"
+          }
+        },
+        "required": [
+          "fixture_id"
+        ]
+      },
+      "then": {
+        "properties": {
+          "evidence_coordinates": {
+            "const": {
+              "consistent": 1,
+              "current": 1,
+              "present": 1,
+              "private": 0,
+              "supported": 1,
+              "visible": 1
+            }
+          },
+          "expected": {
+            "properties": {
+              "authority_ceiling": {
+                "const": "BLOCKED"
+              },
+              "disposition": {
+                "const": "NOT_PRIVATE"
+              },
+              "reason_family": {
+                "const": "backup_permissions_not_private"
+              }
+            }
+          },
+          "kind": {
+            "const": "primary-mutation"
+          },
+          "semantic_axis": {
+            "const": "private"
+          }
+        },
+        "required": [
+          "excluded_materialization_effects",
+          "posix_precondition"
+        ]
+      }
+    }
+  ],
+  "properties": {
+    "artifacts": {
+      "oneOf": [
+        {
+          "items": false,
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "bytes": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "content_base64": {
+                  "type": "string"
+                },
+                "encoding": {
+                  "const": "base64"
+                },
+                "materialization_mode": {
+                  "pattern": "^[0-7]{4}$",
+                  "type": "string"
+                },
+                "media_type": {
+                  "const": "application/vnd.sqlite3"
+                },
+                "name": {
+                  "const": "source.sqlite"
+                },
+                "sha256": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "media_type",
+                "encoding",
+                "bytes",
+                "sha256",
+                "materialization_mode",
+                "content_base64"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "bytes": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "content_base64": {
+                  "type": "string"
+                },
+                "encoding": {
+                  "const": "base64"
+                },
+                "materialization_mode": {
+                  "pattern": "^[0-7]{4}$",
+                  "type": "string"
+                },
+                "media_type": {
+                  "const": "application/x-tar"
+                },
+                "name": {
+                  "const": "recovery-anchor.tar"
+                },
+                "sha256": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "media_type",
+                "encoding",
+                "bytes",
+                "sha256",
+                "materialization_mode",
+                "content_base64"
+              ],
+              "type": "object"
+            }
+          ],
+          "type": "array"
+        },
+        {
+          "items": false,
+          "maxItems": 1,
+          "minItems": 1,
+          "prefixItems": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "bytes": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "content_base64": {
+                  "type": "string"
+                },
+                "encoding": {
+                  "const": "base64"
+                },
+                "materialization_mode": {
+                  "pattern": "^[0-7]{4}$",
+                  "type": "string"
+                },
+                "media_type": {
+                  "const": "application/vnd.sqlite3"
+                },
+                "name": {
+                  "const": "source.sqlite"
+                },
+                "sha256": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "media_type",
+                "encoding",
+                "bytes",
+                "sha256",
+                "materialization_mode",
+                "content_base64"
+              ],
+              "type": "object"
+            }
+          ],
+          "type": "array"
+        }
+      ]
     },
     "changed_field_closure": {
       "items": {
+        "minLength": 1,
         "type": "string"
       },
       "type": "array",
@@ -64,15 +524,58 @@
       "type": "string"
     },
     "evidence_coordinates": {
-      "additionalProperties": {
-        "enum": [
-          0,
-          1
-        ]
+      "additionalProperties": false,
+      "properties": {
+        "consistent": {
+          "enum": [
+            0,
+            1
+          ]
+        },
+        "current": {
+          "enum": [
+            0,
+            1
+          ]
+        },
+        "present": {
+          "enum": [
+            0,
+            1
+          ]
+        },
+        "private": {
+          "enum": [
+            0,
+            1
+          ]
+        },
+        "supported": {
+          "enum": [
+            0,
+            1
+          ]
+        },
+        "visible": {
+          "enum": [
+            0,
+            1
+          ]
+        }
       },
-      "maxProperties": 6,
-      "minProperties": 6,
+      "required": [
+        "present",
+        "current",
+        "visible",
+        "consistent",
+        "supported",
+        "private"
+      ],
       "type": "object"
+    },
+    "excluded_materialization_effects": {
+      "minItems": 1,
+      "type": "array"
     },
     "expected": {
       "additionalProperties": false,
@@ -118,8 +621,15 @@
       "type": "object"
     },
     "fixture_id": {
-      "pattern": "^P[123]-(C|0[1-6])$",
-      "type": "string"
+      "enum": [
+        "P3-C",
+        "P3-01",
+        "P3-02",
+        "P3-03",
+        "P3-04",
+        "P3-05",
+        "P3-06"
+      ]
     },
     "kind": {
       "enum": [
@@ -133,12 +643,25 @@
     "path_id": {
       "const": "P3"
     },
+    "posix_precondition": {
+      "type": "object"
+    },
+    "producer_head_behavior": {
+      "const": "NOT_APPLICABLE"
+    },
     "schema": {
-      "pattern": "^(P1|P2|P3)FullFixtureV2$",
-      "type": "string"
+      "const": "P3FullFixtureV2"
     },
     "semantic_axis": {
-      "type": "string"
+      "enum": [
+        "control",
+        "present",
+        "current",
+        "visible",
+        "consistent",
+        "supported",
+        "private"
+      ]
     }
   },
   "required": [
@@ -153,6 +676,7 @@
     "changed_field_closure",
     "artifacts",
     "expected",
+    "producer_head_behavior",
     "consumer_execution"
   ],
   "title": "P3FullFixtureV2",

@@ -1,96 +1,610 @@
 {
   "admission_state": "PENDING_INDEPENDENT_REVIEW",
   "body": {
-    "closure_claim": "schema-22 source and RecoveryAnchorV1 decision closure",
+    "closure_claim": "bounded repository-local source/test closure for schema-22 source and RecoveryAnchorV1 decisions",
+    "closure_claim_ceiling": "BOUNDED_REPOSITORY_LOCAL_CLOSURE_ONLY",
+    "closure_rule": {
+      "deterministic": true,
+      "over_inclusive_within_prefixes": true,
+      "repository_local": true,
+      "rule": "all tracked files under each exact source/test prefix plus named root build-lock-config files at the frozen commit",
+      "schema": "BoundedRepositoryClosureV1"
+    },
     "consumer_invoked": false,
     "independent_review": "PENDING_INDEPENDENT_REVIEW",
     "path_id": "P3",
     "repositories": [
       {
+        "bounded_prefixes": [
+          "src/bridge_db",
+          "tests"
+        ],
         "commit": "b47e5428b0f512c5e4ab87212acdd1d844b365b0",
         "name": "bridge-db",
         "repository_path": "<workspace>/bridge-db",
+        "root_files": [
+          ".python-version",
+          "pyproject.toml",
+          "uv.lock"
+        ],
+        "source_count": 81,
         "sources": [
+          {
+            "bytes": 5,
+            "git_blob": "e4fba2183587225f216eeada4c78dfab6b2e65f5",
+            "path": ".python-version",
+            "role": "build-lock-config",
+            "sha256": "7b55f8e67b5623c4bef3fa691288da9437d79d3aba156de48d481db32ac7d16d"
+          },
           {
             "bytes": 1117,
             "git_blob": "740bed1193e5b2a5eef0e528c44c730672ba1b48",
             "path": "pyproject.toml",
-            "role": "decision-source-closure",
+            "role": "build-lock-config",
             "sha256": "2d2d6fd5128603e2757a6952f21c06b6eb2b7493b8669e325de964f27692a595"
+          },
+          {
+            "bytes": 1018,
+            "git_blob": "3a9232e977a8eaf789d04c10c6199c0bc9b69b79",
+            "path": "src/bridge_db/AGENTS.md",
+            "role": "bounded-source-test-subtree",
+            "sha256": "fd67b59514c579d3a576b790c7d10cd72c0a4d4be92a8643fa53c6684460b2e3"
+          },
+          {
+            "bytes": 74,
+            "git_blob": "120e255fe6710b47ca0a5c5da5db15a932550be8",
+            "path": "src/bridge_db/__init__.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "be2afc4f5e55e7a4747b5c09b66bd4619aaed457cb4ddbadef51ce347c1ae5e4"
+          },
+          {
+            "bytes": 58497,
+            "git_blob": "e56276514f7db94c57388e1e1ef930088a9dc2b2",
+            "path": "src/bridge_db/__main__.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "f0ac8aeed988b5622523612b718b7d3b243cf033cfc684f2950d2322fd368cf2"
+          },
+          {
+            "bytes": 4664,
+            "git_blob": "b72c31485b3b1f661bf0fd070d0fb6bee0204499",
+            "path": "src/bridge_db/audit.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "9c0d29389a2fd015977365ba02ea1a22938d8b88fad5d7c5e1aed40371bca80f"
+          },
+          {
+            "bytes": 13271,
+            "git_blob": "0337f9064e5c5c0ae0b56fdc5b9062dbd0e0e9a4",
+            "path": "src/bridge_db/auth.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "273d75d82ea9e212f86c6073391baf8b439a73b2fd4c7c6b213947be2bba2d99"
+          },
+          {
+            "bytes": 4784,
+            "git_blob": "a1e220374d5209956218dc382699fe3debf61893",
+            "path": "src/bridge_db/canonical_reconcile.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "442af27e7553d4ccb6beb0c92cfe867237b49df017bee8bcf8bd6e1bd0448e3d"
+          },
+          {
+            "bytes": 2197,
+            "git_blob": "5f8c9957f41ccf6c43c6cc6bf4b0786008577f69",
+            "path": "src/bridge_db/capacity.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "ce351c043e0f7ae65ed4a39d0ddd60445800fd34e1edb9a1daf6a639f4341297"
           },
           {
             "bytes": 1091,
             "git_blob": "d0919d668965ea4a57fc4bf71a485f32be5914be",
             "path": "src/bridge_db/clock.py",
-            "role": "decision-source-closure",
+            "role": "bounded-source-test-subtree",
             "sha256": "482d39c77580f6708ba31e0a60554ebfc3a56c5c640e08b431e2512bf5dc331b"
+          },
+          {
+            "bytes": 10845,
+            "git_blob": "4bef732b8e94d3d23aea6e317c649906892026de",
+            "path": "src/bridge_db/codex_seed.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "393225d108f93a2661e306687ad9a4295359272a76e4d4eb0f3ce2e02139423c"
           },
           {
             "bytes": 6790,
             "git_blob": "229811f44726ef768e63c8a0e3387156fab3dd72",
             "path": "src/bridge_db/config.py",
-            "role": "decision-source-closure",
+            "role": "bounded-source-test-subtree",
             "sha256": "5c0b57fd8f684bcbbb34b23deb0552473b07791991eca0fc45bfb7f1d16b8ba5"
           },
           {
             "bytes": 70210,
             "git_blob": "4843a391668c448be924888fed345f0ea7ff1824",
             "path": "src/bridge_db/db.py",
-            "role": "decision-source-closure",
+            "role": "bounded-source-test-subtree",
             "sha256": "96ad93104be0aedf9349ccb8b7ceb25f51cfff03c2ac39e59bc7fc2f32ae76f5"
+          },
+          {
+            "bytes": 13937,
+            "git_blob": "f4fa1eb6c4725ecafcaeef498bdd298dbd34e96b",
+            "path": "src/bridge_db/evidence.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "d2d1f70c2fa2f166449015dca565ab0b82b0b76c745bf2d7fbcf4a709cc96ef6"
+          },
+          {
+            "bytes": 29902,
+            "git_blob": "61218338be464e77226982b731ea9f9a4f94db94",
+            "path": "src/bridge_db/evidence_policy.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "d65b197ec8ab6d0ade05ac80ba5497c6e0e688395be1cfcfd2c8130e7fa1de10"
+          },
+          {
+            "bytes": 1542,
+            "git_blob": "154e20bf20971f5ff0a7b46d3af999001124df8b",
+            "path": "src/bridge_db/instruction_boundary.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "12d645fc96fa343ac6b26dad1c5a4e623c240bafd1c8df72474fc6912d010d64"
+          },
+          {
+            "bytes": 3206,
+            "git_blob": "f0f80629d02ee87cbccac20c76152640d88818fe",
+            "path": "src/bridge_db/invariants.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "6efd6668541b34fa8a4c464e7d918db250c178bf62a53b280aa5f8410408e824"
+          },
+          {
+            "bytes": 13657,
+            "git_blob": "5e5a9ec278b8c3448c4fed02c7e96c73cb0e0cd2",
+            "path": "src/bridge_db/migration.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "e7ee3fa7d8836592dd5dd3cd62f99e253a63a1be3fa6cda1c8cd286faf3102e1"
+          },
+          {
+            "bytes": 3009,
+            "git_blob": "4545adae0b491c15da75d489345007a21900a142",
+            "path": "src/bridge_db/models.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "9404ec808abe0bf970aca394bb6900222edb029ba2eb0dc6a4389013e3bf4c76"
+          },
+          {
+            "bytes": 8672,
+            "git_blob": "27ffec6b3f3a6376de11f8c887ac8e82060bbe65",
+            "path": "src/bridge_db/project_resolver.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "367156ec40cf2696dae5b1e073905904bcc6b71b72b84a4371f00cb69c89d3a3"
           },
           {
             "bytes": 35633,
             "git_blob": "5ee93833ceedf8d914daaf5305fa1b1e14253731",
             "path": "src/bridge_db/recovery.py",
-            "role": "decision-source-closure",
+            "role": "bounded-source-test-subtree",
             "sha256": "4a67339663dfd4f4317c80071f1dd5d25b13f74cf49905cd766d3cf1fd22a356"
+          },
+          {
+            "bytes": 4098,
+            "git_blob": "e146c13aba4ed1517bf66432dffe16fc3f7911ee",
+            "path": "src/bridge_db/server.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "20e6b4b6ab4a0201e37b56c214f635a74c5274d3bd68ee9409af36873db6fc91"
+          },
+          {
+            "bytes": 926,
+            "git_blob": "0648e452cd2c15dab7fdcd175655e3c68bdffead",
+            "path": "src/bridge_db/tools/AGENTS.md",
+            "role": "bounded-source-test-subtree",
+            "sha256": "bd97a01c58e75d3db9ca0f72986368bb630a08e7d22af9f1a14c8c9bea5db38e"
+          },
+          {
+            "bytes": 696,
+            "git_blob": "bcb717471d6d47233131fef5a71a0568751180e6",
+            "path": "src/bridge_db/tools/__init__.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "316b65f8c87916471fdcc9d22715f5d79f00a7b9764c9ca5946306b8638761e3"
+          },
+          {
+            "bytes": 48607,
+            "git_blob": "53132a1e0c212ca420476251eb9a23b9f8bcfb14",
+            "path": "src/bridge_db/tools/activity.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "51660fe35b73e915b7dcd0ecb3e7facd3f0e1be31deffa2ef27edbe61e82b1a2"
+          },
+          {
+            "bytes": 2767,
+            "git_blob": "a6fce48bc4432cc3f54003bc438e76fd6ce52329",
+            "path": "src/bridge_db/tools/audit.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "97319c4c7bccaef95a0c0a57d8f3ecf0459156db66f11d9a02d32871481f2bf4"
+          },
+          {
+            "bytes": 4343,
+            "git_blob": "80836456bf908632ee3518ee7fd7f7e95f739056",
+            "path": "src/bridge_db/tools/conflicts.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "0f44b8482416bf644a3e8c54859f77344d406d52ccc5d53e6c008b9491f00a6d"
+          },
+          {
+            "bytes": 32113,
+            "git_blob": "1d8ea1e6f457e58840496d45932008a5e205abdb",
+            "path": "src/bridge_db/tools/context.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "9f75b0e2fc503fff8700a4365b56be9cd43d6c873db682365769a50b05c9bb7c"
+          },
+          {
+            "bytes": 3668,
+            "git_blob": "02f28a82bba9009253b4a4220e8444346dc1f0f4",
+            "path": "src/bridge_db/tools/cost.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "237516219abea9249e0ccc4995382f336150a38bc0d94dc7644e991bcf8d116f"
+          },
+          {
+            "bytes": 20995,
+            "git_blob": "8867e2e78868f3dd79693eaf54ea6a8b8ea6ad0e",
+            "path": "src/bridge_db/tools/export.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "acd746e5eb41f9af117c5cab73d8a9d524307a1afaf8e71fe7bbfc5e6e681b97"
+          },
+          {
+            "bytes": 25896,
+            "git_blob": "87acde15dbd8db617c2eef3b6130cb7a9f938d3c",
+            "path": "src/bridge_db/tools/handoffs.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "b072dce567125506a9d800ebe2a3cd06ffabba43a4d097e8f0b765dd78513376"
           },
           {
             "bytes": 34570,
             "git_blob": "36c718828e9b7c14d14f292ffca5ded1b3584c8c",
             "path": "src/bridge_db/tools/health.py",
-            "role": "decision-source-closure",
+            "role": "bounded-source-test-subtree",
             "sha256": "565955fcb2b26515646420126e814edeeadbf2a88080fbd1c040bfbd3ee1660b"
+          },
+          {
+            "bytes": 14344,
+            "git_blob": "0e11206a818259f6a0adca8d65df695e52385800",
+            "path": "src/bridge_db/tools/recall.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "3f94bc8713a322c59001144f8d9f9995e012ddd262250b094dda347251fe7d2c"
+          },
+          {
+            "bytes": 10785,
+            "git_blob": "ab6b8e86779c9b508a3b929c42d2de74d7dbe242",
+            "path": "src/bridge_db/tools/snapshots.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "c09d6f4dda8afe8f5865170b3c19f81bab712ef850edfb3476b4dee17659432a"
+          },
+          {
+            "bytes": 4916,
+            "git_blob": "15cb00863afefeb71ab35d0d419e31d268f49514",
+            "path": "tests/conftest.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "474d44c5642fbd60700836184445be527037af031e8b2573f0d74a3be4dba046"
+          },
+          {
+            "bytes": 245,
+            "git_blob": "8b0c95537df066993006bbb1ffc8ad0b7bdc7709",
+            "path": "tests/dst/__init__.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "4a467e82ab784166e804a48b18f25c1e1efcadca04e0b33a1f27ed65ed5e6ece"
+          },
+          {
+            "bytes": 1652,
+            "git_blob": "26b7652be916d39b2339cc29354e6eb357e65a20",
+            "path": "tests/dst/regress_seeds.txt",
+            "role": "bounded-source-test-subtree",
+            "sha256": "e47f110a3e441950d123cbcbe94f3261fea4bcce6227f07833e412699aa4dad7"
+          },
+          {
+            "bytes": 16479,
+            "git_blob": "7053ff3172381b43ee80ee61e3733256fee140dd",
+            "path": "tests/dst/sim.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "6ac71a5cfab0e61e4a8db2db679d0a332505513aa55e9d73581f2a42335477d1"
+          },
+          {
+            "bytes": 11891,
+            "git_blob": "c12b091fcac139dd0828973b3465f85ee6d2c50a",
+            "path": "tests/dst/test_cas_pingpong.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "0e51fa212fe1e939bbc73bea5d049160b6a9b1bbf1549242e06029877a361c19"
+          },
+          {
+            "bytes": 6475,
+            "git_blob": "a1d0d8cf44ec63a77168ef2bd2d9929c14eed2ad",
+            "path": "tests/dst/test_claim_race.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "ae9f25181b3afd5f1c5131d6e29cdf6a22da7d429cb892cb5e6312c14050a28a"
+          },
+          {
+            "bytes": 6316,
+            "git_blob": "d4980bed95c16d09241f11cead03fb6b18ad06d9",
+            "path": "tests/dst/test_clear_race.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "7a0a2b9f423841d0394d318993ec88491169bff88f7086d9808f15d8ca4b9fbe"
+          },
+          {
+            "bytes": 5258,
+            "git_blob": "d7c7b1928d49d19c134dbcd9f44c21af7a79655c",
+            "path": "tests/dst/test_determinism.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "65941e0b219e69529656cafbc224932a47071c88b1e148b581c261d79aeace24"
+          },
+          {
+            "bytes": 11975,
+            "git_blob": "9fd63b646052eb79244be4922ddd237f4ebfa1e1",
+            "path": "tests/dst/test_receipt_crash.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "ee6ba84bfa94e28e9be02e08b4ca73c5ca023715721745530d39c82bc976d660"
+          },
+          {
+            "bytes": 1802,
+            "git_blob": "8e04ccfff127bea6fa25b66847d27671e4b7dfe9",
+            "path": "tests/dst/test_regress_seeds.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "6d605045e9556b1162f24fb9a6fa28255fda00f0b980a4d2a16597b55edbd365"
+          },
+          {
+            "bytes": 3009,
+            "git_blob": "227c0211a3c2a61198cd54ff55ebf63e8e730546",
+            "path": "tests/dst/test_sometimes_coverage.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "de14fab66a7a9ee122fc57a54af5d837a0ce9b90ee510ebe1b5237b15d48fa8e"
+          },
+          {
+            "bytes": 1755,
+            "git_blob": "85791c159c10d2e6ae96c285b9466fe9f644723e",
+            "path": "tests/dst/test_strftime_probe.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "ccba93b775bd1c413a999aa3619c22338405dc8586a2c87df6c6b1eeba582771"
+          },
+          {
+            "bytes": 8048,
+            "git_blob": "7ab0a476819d4252e53eb8db0ba14172674c3006",
+            "path": "tests/dst/test_trust_race.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "a16b24077c47c0f0ec508c06ba6bb6a700a21acb1e5e41c0d1117a71f7df7c59"
+          },
+          {
+            "bytes": 10978,
+            "git_blob": "ca21db38694b26d23b4153c9239f2a5464bc1c91",
+            "path": "tests/dst/test_wal_starvation.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "defe4daf5f9f9002e5e6861c8495f53307d07c26d593d80f69ad0b7a6ffe585c"
+          },
+          {
+            "bytes": 67928,
+            "git_blob": "0f3932402a7df1c31851e15f27e0db8f47b0b8bb",
+            "path": "tests/test_activity.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "38b672a3fe5ded9cb427ca778457d715382d99e3fc350a1d91a129f1441e19f4"
+          },
+          {
+            "bytes": 3210,
+            "git_blob": "46823450c10b7cb3900ec1acc58f8bb68b5ffa77",
+            "path": "tests/test_audit.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "e4eede6a944a6d4a7fba795ea9a52dc621f1061a645abb68a66de5576a1f7113"
+          },
+          {
+            "bytes": 6150,
+            "git_blob": "8bb32a8c5aea8a1b18463af2e4a44cd112c60962",
+            "path": "tests/test_audit_tool.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "cf28e34f612602d116dddd46a165025500e298c5897289307dddaa5e5fdff27c"
+          },
+          {
+            "bytes": 16244,
+            "git_blob": "4984f88e98a8c45191c6aa506f3119d2a5014906",
+            "path": "tests/test_auth.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "6b83adda091320b35d464458525a3ecda83262cf316c3d1b518ed571bfc2fe45"
+          },
+          {
+            "bytes": 4092,
+            "git_blob": "5d64ba3b18e6a6fda5e3fd8976cde1d0a449ae49",
+            "path": "tests/test_canonical_reconcile.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "24a8b52a2fac85a09f4de3eb9d3bbe6a94a8600a8eda6587f06daa5432f3ac79"
+          },
+          {
+            "bytes": 13807,
+            "git_blob": "c91b1409ba486c311bc76140cbe5ee3221001f7a",
+            "path": "tests/test_capacity_policy.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "b0449693180c48fa145dc14880a5c5fbc6cd41dd95502398c68e7e05258aaf9c"
           },
           {
             "bytes": 44358,
             "git_blob": "717532b7ee2466199c722573af3f2a70ea43cd51",
             "path": "tests/test_cli.py",
-            "role": "decision-source-closure",
+            "role": "bounded-source-test-subtree",
             "sha256": "516e79541d8db268b42f39607257a61501357dff500094af0884b70e77aef5ad"
+          },
+          {
+            "bytes": 705,
+            "git_blob": "0727728e35a73f48cc5bbfc1cd221c507b33f671",
+            "path": "tests/test_clock.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "d150605a667c6600d56b3689560967226d86478b5775fa7b716c6d8ec1d49bea"
+          },
+          {
+            "bytes": 2559,
+            "git_blob": "d2faf3d5d4cc9ec9c957bdd61b3c7b45aeaf9f31",
+            "path": "tests/test_clock_seam.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "f6bd9827c7fa181966e17d5a78285fe3005881dab12aa31acca26249aec63a45"
+          },
+          {
+            "bytes": 12266,
+            "git_blob": "45c7a8219b74570deba2d88e7cb4e39bc8f8a0b6",
+            "path": "tests/test_codex_seed.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "a20bbd08b4bb6853cc151235dd0b8ca883b40fef07dcfaa37525995577adda74"
+          },
+          {
+            "bytes": 12587,
+            "git_blob": "6b98aacdb85ea926b2c0d8bccf1389bceee4dd4a",
+            "path": "tests/test_concurrency_cas.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "f8ca283f83483a22602b42f30efcda0e4a50dc8b9ac9ac1e12973184d104f212"
+          },
+          {
+            "bytes": 26847,
+            "git_blob": "608597f204403bdb9ee7d40ae012bd1d8e3a03f1",
+            "path": "tests/test_context.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "ae9c41dcdcc05b62f43d08649944719f73d67d0314d0a103ea8d01b00bc62351"
+          },
+          {
+            "bytes": 6941,
+            "git_blob": "fa378b511a5130ae5791a9b0c37b595c28939966",
+            "path": "tests/test_coordination_visibility.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "654cbd353ab6e08c332e2fc378defa3bc2bd8514e030ded8b8e20ae953373a37"
           },
           {
             "bytes": 61797,
             "git_blob": "069bf796e963e658b5e75a21501fcc50641c8c9a",
             "path": "tests/test_db.py",
-            "role": "decision-source-closure",
+            "role": "bounded-source-test-subtree",
             "sha256": "cb035bf01c055a4099af81b0f234f3dc992139a7eac39f2542210f2c295cf5d0"
+          },
+          {
+            "bytes": 9626,
+            "git_blob": "0c1122f2abf7063b3d20bb926e0923657a6fe2df",
+            "path": "tests/test_evidence.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "150d1e2134880e26b06f70c858df42ae526941e894f4b584a6dd2456c66c137d"
+          },
+          {
+            "bytes": 20257,
+            "git_blob": "86b8c4e9563570a942bb189087cf559e88fa4415",
+            "path": "tests/test_evidence_policy.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "5c91f1d1cd8837a4bd8b2ae099cbc33e28c12d9ddd71329dc28d9e95304b2661"
+          },
+          {
+            "bytes": 34548,
+            "git_blob": "92f4767b8decaa50aca2b5c361620e3b3977ddb2",
+            "path": "tests/test_export.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "27e60f3b7a0ff02379d5d4ecf02672f37cd3392dd27c1e815ff8ea60d6fe5ec9"
+          },
+          {
+            "bytes": 39968,
+            "git_blob": "ba8370847fb40c98981e0eb8d3e97851e3a02eab",
+            "path": "tests/test_handoffs.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "2a12a440d8ef35cb94f16e14da4881c6de26783817f6cdd4819ea60427f7131c"
           },
           {
             "bytes": 51448,
             "git_blob": "fc592e8c1140ded716048330a5208a8be36cc2f8",
             "path": "tests/test_health.py",
-            "role": "decision-source-closure",
+            "role": "bounded-source-test-subtree",
             "sha256": "86126b549fb08934e9a67156baff7ee357c80ad9eb5258299b241dd52dda5271"
+          },
+          {
+            "bytes": 7268,
+            "git_blob": "d214c784afd4c2ff60eeaf31ae52b45090ec309d",
+            "path": "tests/test_invariants.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "68446aa0f3d59df7cde00ef6f4bfb4eeae98ab4ec6f8e46543ae7642ec0712c8"
+          },
+          {
+            "bytes": 11171,
+            "git_blob": "9663d7aed3dd04907120cb801ada2f99bd912bff",
+            "path": "tests/test_migration.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "e2fbaf79186de9e41dad78e19fa6e73e9761e9d9e1c5b5d747b4696b03826916"
+          },
+          {
+            "bytes": 685,
+            "git_blob": "19bcd30d029f94a874b62e5fe02595ec674abca8",
+            "path": "tests/test_models.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "bba5857f94dffd319dd4a4a6a5f8a84d77da10db0cd8766b58f341e5bfd3561e"
+          },
+          {
+            "bytes": 5005,
+            "git_blob": "0e45fc31347e768ecedf5b5e4351fd3ecbcd1b55",
+            "path": "tests/test_observability_parity.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "26611f0b6496c1593db9d48ee716b9ebc5abb76356bd8951bc321b081d8d8734"
+          },
+          {
+            "bytes": 8026,
+            "git_blob": "30231dde0450f23881e1d81ec23cdf02863bb5d3",
+            "path": "tests/test_project_resolver.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "94dd1808e8f90d881375cd7aa7ca8c4db91a8ca29c7e7117b880ecfd211b4d98"
+          },
+          {
+            "bytes": 4977,
+            "git_blob": "0cf1bab875e89195e41f497e456c000ec98adf74",
+            "path": "tests/test_provenance_boundary.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "8b9b779e2c7a1b102034c94f58a1d48a7fbea1bf7ef1bd5fe22eca272a9200eb"
+          },
+          {
+            "bytes": 22923,
+            "git_blob": "166f8af8500745f2b75007b44f74296b9df216a0",
+            "path": "tests/test_recall.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "c63ba02b8aa57212f518eaaf9f10bacd8131d395a907a8dcc56e60e5fcbca7b8"
           },
           {
             "bytes": 31632,
             "git_blob": "da63ab6f6c64436919632b770be1acbf0bba551f",
             "path": "tests/test_recovery.py",
-            "role": "decision-source-closure",
+            "role": "bounded-source-test-subtree",
             "sha256": "e31176ad87d3f717b701429f27687fa746568e159fc7ed70cae0b1ee4d8b7148"
+          },
+          {
+            "bytes": 2842,
+            "git_blob": "21bc90563bbfdebccdec63ae94f5ec2f6e092bac",
+            "path": "tests/test_resolve_on_write.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "71eea136e923596e6cb3d50b76b79b948c0221f4c5f897a322ffb9a2b3043d0b"
+          },
+          {
+            "bytes": 12474,
+            "git_blob": "ccbcdaa0fe6dd6048783698705a5bb0fafb952ae",
+            "path": "tests/test_schema_convergence_concurrency.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "e0a77d364f350143ee63b34bcb3e907acfd1bca225d6f8aafc87f98fea35dbb6"
+          },
+          {
+            "bytes": 12989,
+            "git_blob": "8102aa6f519f3e524d2f8a6170573bb47968a90d",
+            "path": "tests/test_session_costs.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "caa6cc01c9254104355313930bbc1ccfac96498f8a97c1524ecfa76b75804b04"
+          },
+          {
+            "bytes": 19688,
+            "git_blob": "944fcd47ca8599a95200e7e19da6d7b9da2d1fcd",
+            "path": "tests/test_snapshots.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "dcbf7ff17e67d55d2d0342c50173eb4575692d339d85018b6ec735757c2b8d23"
+          },
+          {
+            "bytes": 1170,
+            "git_blob": "465726a712cd341209999e28c2b4a847ed05b174",
+            "path": "tests/test_write_hardening.py",
+            "role": "bounded-source-test-subtree",
+            "sha256": "264c82a9a2959b16abc2c4d4cf1d031f9155a1212ac116888e372743c4d44b55"
           },
           {
             "bytes": 121491,
             "git_blob": "bec0032d57fd5adea4fbcdc0ed0d4c069db72189",
             "path": "uv.lock",
-            "role": "decision-source-closure",
+            "role": "build-lock-config",
             "sha256": "f300fccebaa2a5e68ceb3f98ced5bb115038dd6bfc19c8f93829d64d3c8d736f"
           }
         ],
         "tree": "f7499707fdaebd17155f1d1055abec1e6e1cd1c9"
       }
+    ],
+    "residual_unknowns": [
+      "external_dependency_source_bytes",
+      "dynamic_import_targets_outside_bounded_prefixes",
+      "runtime_environment_and_service_state",
+      "unrelated_repository_subtrees"
     ],
     "runtime_prerequisite": {
       "mode_0600_observed": "0600",
@@ -100,7 +614,7 @@
     }
   },
   "candidate_state": "READY_FOR_INDEPENDENT_REVIEW",
-  "content_sha256": "8ac6611a38e9c38e6d2a14a3062726003a7805a3c64def64d1143cebf99fda2a",
+  "content_sha256": "065f3e7ebeddbd73d816fb7a53febb71c42d6abb828dea14aff59d3cc30e096b",
   "created_at": "2026-07-31T21:27:04Z",
   "package_id": "20260731-evidence-conservation-v2",
   "prerequisite_state": "PENDING",
@@ -111,5 +625,5 @@
   "record_id": "freeze-receipt-p3-v1",
   "reviews": [],
   "schema": "FreezeReceiptV1",
-  "spec_sha256": "1b23e6220d228a170a964c0e889d3d2fecd4ddc9ae4c46a73d8b13f927ed0c74"
+  "spec_sha256": "f6f882740f5f4285fb5910ffd963cb7a74af9d67522375d4eef891f25eaf1121"
 }

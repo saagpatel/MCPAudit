@@ -13,7 +13,7 @@
         "bytes": 184320,
         "media_type": "application/x-tar",
         "name": "recovery-anchor.tar",
-        "sha256": "257940ce1129ef49c07b2b5f386f7c3014967fa100293a0e7eb070c1b24188df"
+        "sha256": "49e94e44287766597cb3cfed638dd49507660daa5fb6827ccf6cbb9d0782f847"
       }
     ],
     "automated_checks": {
@@ -45,7 +45,7 @@
     "semantic_axis": "visible"
   },
   "candidate_state": "READY_FOR_INDEPENDENT_REVIEW",
-  "content_sha256": "4635e2f16b7eb27093e87a966069b21c6f23fa6be994af641f6f2d3299fa6e14",
+  "content_sha256": "1250ca932e1c87a4c729bdd93ddcd21cbf155c3907d7243f2376bb5cb45760e9",
   "created_at": "2026-07-31T21:27:04Z",
   "package_id": "20260731-evidence-conservation-v2",
   "prerequisite_state": "PENDING",
@@ -56,5 +56,5 @@
   "record_id": "fixture-admissibility-p3-03-v1",
   "reviews": [],
   "schema": "FixtureAdmissibilityV1",
-  "spec_sha256": "1b23e6220d228a170a964c0e889d3d2fecd4ddc9ae4c46a73d8b13f927ed0c74"
+  "spec_sha256": "f6f882740f5f4285fb5910ffd963cb7a74af9d67522375d4eef891f25eaf1121"
 }

@@ -38,9 +38,9 @@
     "authority_ceiling": "BLOCKED",
     "disposition": "MISBOUND",
     "raw_signal": {
-      "error": "receipt_scan_binding_mismatch"
+      "error": "successful_scan_receipt_mismatch:synthetic-server-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.json"
     },
-    "reason_family": "receipt_scan_binding_mismatch",
+    "reason_family": "successful_scan_receipt_mismatch:synthetic-server-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.json",
     "source": "sealed-contract-adjudication-not-consumer-output"
   },
   "fixture_id": "P2-06",

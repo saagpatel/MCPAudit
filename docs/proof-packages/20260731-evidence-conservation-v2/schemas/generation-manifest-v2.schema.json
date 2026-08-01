@@ -3,11 +3,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "properties": {
     "artifact_count": {
-      "const": 99
+      "const": 98
     },
     "artifacts": {
-      "maxItems": 99,
-      "minItems": 99,
+      "maxItems": 98,
+      "minItems": 98,
       "type": "array"
     },
     "package_id": {
@@ -17,7 +17,7 @@
       "const": "GenerationManifestV2"
     },
     "self_digest_rule": {
-      "const": "generation-manifest-excludes-itself"
+      "const": "generation-manifest-excludes-itself-and-validator-captured-receipt"
     }
   },
   "required": [

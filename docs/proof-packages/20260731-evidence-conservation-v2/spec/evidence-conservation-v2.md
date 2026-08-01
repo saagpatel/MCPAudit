@@ -30,9 +30,9 @@ path-local; cross-path coordinate comparisons are invalid.
 | P2-01 | NONAUTHORITATIVE | MISSING | `missing-receipt` |
 | P2-02 | NONAUTHORITATIVE | STALE | `candidate_expired` |
 | P2-03 | NONAUTHORITATIVE | MASKED | `masked` |
-| P2-04 | BLOCKED | CONTRADICTORY | `fresh_grade_binding_mismatch` |
+| P2-04 | BLOCKED | CONTRADICTORY | `fresh_scan_binding_mismatch:synthetic-server-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.json` |
 | P2-05 | BLOCKED | UNSUPPORTED | `successful_scan_receipt_schema_invalid` |
-| P2-06 | BLOCKED | MISBOUND | `receipt_scan_binding_mismatch` |
+| P2-06 | BLOCKED | MISBOUND | `successful_scan_receipt_mismatch:synthetic-server-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.json` |
 | P3-C | STRONG | VALID | `verified` |
 | P3-01 | NONAUTHORITATIVE | MISSING | `anchor_missing` |
 | P3-02 | NONAUTHORITATIVE | STALE | `source_changed_since_anchor` |
@@ -52,7 +52,8 @@ set appropriate to its semantic mutation. Global publication, refresh launch,
 deployment, live scanning, and scheduler readiness are excluded.
 
 P3 uses a genuine schema-22 source and the exact two-file `RecoveryAnchorV1`
-bundle. P3-06 changes only actual `anchor.sqlite` mode from `0600` to `0644`.
+bundle `{anchor.sqlite, manifest.json}`. P3-06 changes only actual
+`anchor.sqlite` mode from `0600` to `0644`.
 Its raw result is invalid/not-ready with `permissions=not_private`,
 `recovery_readback=unverified`, only `backup_permissions_not_private`, and no
 `source_current` member. Its ceiling is `(BLOCKED, NOT_PRIVATE)`. The chmod
@@ -67,6 +68,14 @@ There are exactly six no-op boundaries and six near-miss boundaries. The sixth
 P3 near miss adds only `anchor.sqlite-wal` containing fixed bytes `b"untracked"`
 to an otherwise exact two-file bundle; the required reason is
 `anchor_artifact_set_mismatch`. It is not a primary mutation.
+
+`NOOP-04` changes only the instant-parsed `MANIFEST.json.created_at` spelling
+and requires rebinding `MANIFEST.sha256`, the enclosing tar, fixture artifact,
+fixture-admissibility record, and generation-manifest entries. `NEAR-04` uses a
+valid receipt with `approval_ref: null` as its inside state and changes only
+that required value to a non-null reserved reference outside, yielding the
+native receipt-qualified schema-invalid discriminator without duplicating
+P2-05's format-version mutation.
 
 ## Adapters and artifact safety
 
@@ -87,6 +96,31 @@ and at least two independent review receipts exist. All independent-review
 fields in this candidate remain pending. Exact pnpm 11.5.2 remains `UNKNOWN`,
 so P1 freeze admission is blocked. A second supported deterministic environment
 also remains pending.
+
+Terminal envelopes and their record bodies are co-constrained: admitted bodies
+must carry completed review/prerequisite state, recomputed content digests, and
+two distinct approving review types bound to those digests. An admitted summary
+also requires all 29 terminal records and all 21 completed case receipts.
+
+The prior one-shot BridgeDB postflight attempt failed before writing because
+the bound credential was no longer enrolled. No receipt row or Markdown export
+exists, no retry is authorized, and the failure is provenance-only.
+
+## Validation authority
+
+The stored package-validation receipt is captured from the actual structural
+validator by the package orchestrator. Structural validation covers schemas,
+hashes, locality, bounded frozen-source closure, record transition integrity,
+and consistency between independently declared fixture and sealed matrices.
+It does not establish semantic oracle correctness. Fixture declarations and
+the normative spec/oracle are separate sources, and fresh independent review
+remains the only semantic authority.
+
+Frozen-source inventory follows `BoundedRepositoryClosureV1`: every tracked
+file under named source/test prefixes plus named build/lock/config files at the
+exact commits is included. External dependencies, dynamic imports outside the
+bounded prefixes, runtime state, and unrelated repository subtrees remain
+`UNKNOWN`; no complete transitive runtime-closure claim is made.
 
 ## Coverage and claim ceiling
 

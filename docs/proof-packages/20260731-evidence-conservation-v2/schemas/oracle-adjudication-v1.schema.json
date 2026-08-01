@@ -9,7 +9,10 @@
           "admission_state": {
             "const": "ADMITTED"
           }
-        }
+        },
+        "required": [
+          "admission_state"
+        ]
       },
       "then": {
         "properties": {
@@ -20,7 +23,142 @@
             "const": "SATISFIED"
           },
           "reviews": {
-            "minItems": 2
+            "allOf": [
+              {
+                "contains": {
+                  "properties": {
+                    "review_type": {
+                      "const": "ORACLE_CONTRACT"
+                    }
+                  },
+                  "required": [
+                    "review_type"
+                  ]
+                },
+                "maxContains": 1,
+                "minContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "review_type": {
+                      "const": "FIXTURE_REPRODUCIBILITY"
+                    }
+                  },
+                  "required": [
+                    "review_type"
+                  ]
+                },
+                "maxContains": 1,
+                "minContains": 1
+              }
+            ],
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "completed_at": {
+                  "minLength": 10,
+                  "type": "string"
+                },
+                "decision": {
+                  "const": "APPROVE"
+                },
+                "independent": {
+                  "const": true
+                },
+                "receipt_id": {
+                  "pattern": "^review-[a-z0-9-]+$",
+                  "type": "string"
+                },
+                "review_type": {
+                  "enum": [
+                    "ORACLE_CONTRACT",
+                    "FIXTURE_REPRODUCIBILITY"
+                  ]
+                },
+                "reviewed_content_sha256": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "reviewed_spec_sha256": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "reviewer_id": {
+                  "pattern": "^v2-[a-z0-9-]+$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "receipt_id",
+                "reviewer_id",
+                "review_type",
+                "decision",
+                "reviewed_content_sha256",
+                "reviewed_spec_sha256",
+                "completed_at",
+                "independent"
+              ],
+              "type": "object"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array",
+            "uniqueItems": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "admission_state": {
+            "const": "REJECTED"
+          }
+        },
+        "required": [
+          "admission_state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "candidate_state": {
+            "const": "TERMINAL_REJECTED"
+          },
+          "reviews": {
+            "contains": {
+              "properties": {
+                "decision": {
+                  "const": "REJECT"
+                }
+              },
+              "required": [
+                "decision"
+              ]
+            },
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "admission_state": {
+            "enum": [
+              "PENDING_INDEPENDENT_REVIEW",
+              "BLOCKED_PREREQUISITE"
+            ]
+          }
+        },
+        "required": [
+          "admission_state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "candidate_state": {
+            "const": "READY_FOR_INDEPENDENT_REVIEW"
           }
         }
       }
@@ -31,12 +169,136 @@
           "candidate_state": {
             "const": "TERMINAL_ADMITTED"
           }
-        }
+        },
+        "required": [
+          "candidate_state"
+        ]
       },
       "then": {
         "properties": {
           "admission_state": {
             "const": "ADMITTED"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "candidate_state": {
+            "const": "TERMINAL_REJECTED"
+          }
+        },
+        "required": [
+          "candidate_state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "admission_state": {
+            "const": "REJECTED"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "admission_state": {
+            "const": "ADMITTED"
+          },
+          "schema": {
+            "const": "OracleAdjudicationV1"
+          }
+        },
+        "required": [
+          "schema",
+          "admission_state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "properties": {
+              "blind_oracle_reviews": {
+                "properties": {
+                  "completed": {
+                    "const": 2
+                  },
+                  "status": {
+                    "const": "COMPLETE"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "admission_state": {
+            "const": "REJECTED"
+          },
+          "schema": {
+            "const": "OracleAdjudicationV1"
+          }
+        },
+        "required": [
+          "schema",
+          "admission_state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "properties": {
+              "blind_oracle_reviews": {
+                "properties": {
+                  "status": {
+                    "const": "REJECTED"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "admission_state": {
+            "enum": [
+              "PENDING_INDEPENDENT_REVIEW",
+              "BLOCKED_PREREQUISITE"
+            ]
+          },
+          "schema": {
+            "const": "OracleAdjudicationV1"
+          }
+        },
+        "required": [
+          "schema",
+          "admission_state"
+        ]
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "properties": {
+              "blind_oracle_reviews": {
+                "properties": {
+                  "completed": {
+                    "const": 0
+                  },
+                  "status": {
+                    "const": "PENDING_INDEPENDENT_REVIEW"
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -52,6 +314,500 @@
       ]
     },
     "body": {
+      "additionalProperties": false,
+      "properties": {
+        "baseline_execution_authorized": {
+          "const": false
+        },
+        "blind_oracle_reviews": {
+          "additionalProperties": false,
+          "properties": {
+            "completed": {
+              "maximum": 2,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "required": {
+              "const": 2
+            },
+            "status": {
+              "enum": [
+                "PENDING_INDEPENDENT_REVIEW",
+                "COMPLETE",
+                "REJECTED"
+              ]
+            }
+          },
+          "required": [
+            "completed",
+            "required",
+            "status"
+          ],
+          "type": "object"
+        },
+        "consumer_outputs_seen": {
+          "const": false
+        },
+        "contract_adjudication": {
+          "type": "object"
+        },
+        "sealed_matrix": {
+          "additionalProperties": false,
+          "properties": {
+            "P1-01": {
+              "additionalProperties": false,
+              "properties": {
+                "authority": {
+                  "type": "string"
+                },
+                "disposition": {
+                  "type": "string"
+                },
+                "reason_family": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "authority",
+                "disposition",
+                "reason_family"
+              ],
+              "type": "object"
+            },
+            "P1-02": {
+              "additionalProperties": false,
+              "properties": {
+                "authority": {
+                  "type": "string"
+                },
+                "disposition": {
+                  "type": "string"
+                },
+                "reason_family": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "authority",
+                "disposition",
+                "reason_family"
+              ],
+              "type": "object"
+            },
+            "P1-03": {
+              "additionalProperties": false,
+              "properties": {
+                "authority": {
+                  "type": "string"
+                },
+                "disposition": {
+                  "type": "string"
+                },
+                "reason_family": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "authority",
+                "disposition",
+                "reason_family"
+              ],
+              "type": "object"
+            },
+            "P1-04": {
+              "additionalProperties": false,
+              "properties": {
+                "authority": {
+                  "type": "string"
+                },
+                "disposition": {
+                  "type": "string"
+                },
+                "reason_family": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "authority",
+                "disposition",
+                "reason_family"
+              ],
+              "type": "object"
+            },
+            "P1-05": {
+              "additionalProperties": false,
+              "properties": {
+                "authority": {
+                  "type": "string"
+                },
+                "disposition": {
+                  "type": "string"
+                },
+                "reason_family": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "authority",
+                "disposition",
+                "reason_family"
+              ],
+              "type": "object"
+            },
+            "P1-06": {
+              "additionalProperties": false,
+              "properties": {
+                "authority": {
+                  "type": "string"
+                },
+                "disposition": {
+                  "type": "string"
+                },
+                "reason_family": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "authority",
+                "disposition",
+                "reason_family"
+              ],
+              "type": "object"
+            },
+            "P1-C": {
+              "additionalProperties": false,
+              "properties": {
+                "authority": {
+                  "type": "string"
+                },
+                "disposition": {
+                  "type": "string"
+                },
+                "reason_family": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "authority",
+                "disposition",
+                "reason_family"
+              ],
+              "type": "object"
+            },
+            "P2-01": {
+              "additionalProperties": false,
+              "properties": {
+                "authority": {
+                  "type": "string"
+                },
+                "disposition": {
+                  "type": "string"
+                },
+                "reason_family": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "authority",
+                "disposition",
+                "reason_family"
+              ],
+              "type": "object"
+            },
+            "P2-02": {
+              "additionalProperties": false,
+              "properties": {
+                "authority": {
+                  "type": "string"
+                },
+                "disposition": {
+                  "type": "string"
+                },
+                "reason_family": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "authority",
+                "disposition",
+                "reason_family"
+              ],
+              "type": "object"
+            },
+            "P2-03": {
+              "additionalProperties": false,
+              "properties": {
+                "authority": {
+                  "type": "string"
+                },
+                "disposition": {
+                  "type": "string"
+                },
+                "reason_family": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "authority",
+                "disposition",
+                "reason_family"
+              ],
+              "type": "object"
+            },
+            "P2-04": {
+              "additionalProperties": false,
+              "properties": {
+                "authority": {
+                  "type": "string"
+                },
+                "disposition": {
+                  "type": "string"
+                },
+                "reason_family": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "authority",
+                "disposition",
+                "reason_family"
+              ],
+              "type": "object"
+            },
+            "P2-05": {
+              "additionalProperties": false,
+              "properties": {
+                "authority": {
+                  "type": "string"
+                },
+                "disposition": {
+                  "type": "string"
+                },
+                "reason_family": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "authority",
+                "disposition",
+                "reason_family"
+              ],
+              "type": "object"
+            },
+            "P2-06": {
+              "additionalProperties": false,
+              "properties": {
+                "authority": {
+                  "type": "string"
+                },
+                "disposition": {
+                  "type": "string"
+                },
+                "reason_family": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "authority",
+                "disposition",
+                "reason_family"
+              ],
+              "type": "object"
+            },
+            "P2-C": {
+              "additionalProperties": false,
+              "properties": {
+                "authority": {
+                  "type": "string"
+                },
+                "disposition": {
+                  "type": "string"
+                },
+                "reason_family": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "authority",
+                "disposition",
+                "reason_family"
+              ],
+              "type": "object"
+            },
+            "P3-01": {
+              "additionalProperties": false,
+              "properties": {
+                "authority": {
+                  "type": "string"
+                },
+                "disposition": {
+                  "type": "string"
+                },
+                "reason_family": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "authority",
+                "disposition",
+                "reason_family"
+              ],
+              "type": "object"
+            },
+            "P3-02": {
+              "additionalProperties": false,
+              "properties": {
+                "authority": {
+                  "type": "string"
+                },
+                "disposition": {
+                  "type": "string"
+                },
+                "reason_family": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "authority",
+                "disposition",
+                "reason_family"
+              ],
+              "type": "object"
+            },
+            "P3-03": {
+              "additionalProperties": false,
+              "properties": {
+                "authority": {
+                  "type": "string"
+                },
+                "disposition": {
+                  "type": "string"
+                },
+                "reason_family": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "authority",
+                "disposition",
+                "reason_family"
+              ],
+              "type": "object"
+            },
+            "P3-04": {
+              "additionalProperties": false,
+              "properties": {
+                "authority": {
+                  "type": "string"
+                },
+                "disposition": {
+                  "type": "string"
+                },
+                "reason_family": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "authority",
+                "disposition",
+                "reason_family"
+              ],
+              "type": "object"
+            },
+            "P3-05": {
+              "additionalProperties": false,
+              "properties": {
+                "authority": {
+                  "type": "string"
+                },
+                "disposition": {
+                  "type": "string"
+                },
+                "reason_family": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "authority",
+                "disposition",
+                "reason_family"
+              ],
+              "type": "object"
+            },
+            "P3-06": {
+              "additionalProperties": false,
+              "properties": {
+                "authority": {
+                  "type": "string"
+                },
+                "disposition": {
+                  "type": "string"
+                },
+                "reason_family": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "authority",
+                "disposition",
+                "reason_family"
+              ],
+              "type": "object"
+            },
+            "P3-C": {
+              "additionalProperties": false,
+              "properties": {
+                "authority": {
+                  "type": "string"
+                },
+                "disposition": {
+                  "type": "string"
+                },
+                "reason_family": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "authority",
+                "disposition",
+                "reason_family"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "P1-C",
+            "P1-01",
+            "P1-02",
+            "P1-03",
+            "P1-04",
+            "P1-05",
+            "P1-06",
+            "P2-C",
+            "P2-01",
+            "P2-02",
+            "P2-03",
+            "P2-04",
+            "P2-05",
+            "P2-06",
+            "P3-C",
+            "P3-01",
+            "P3-02",
+            "P3-03",
+            "P3-04",
+            "P3-05",
+            "P3-06"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "contract_adjudication",
+        "sealed_matrix",
+        "blind_oracle_reviews",
+        "consumer_outputs_seen",
+        "baseline_execution_authorized"
+      ],
       "type": "object"
     },
     "candidate_state": {
@@ -102,24 +858,58 @@
     },
     "reviews": {
       "items": {
+        "additionalProperties": false,
         "properties": {
+          "completed_at": {
+            "minLength": 10,
+            "type": "string"
+          },
           "decision": {
             "enum": [
               "APPROVE",
               "REJECT"
             ]
           },
+          "independent": {
+            "const": true
+          },
+          "receipt_id": {
+            "pattern": "^review-[a-z0-9-]+$",
+            "type": "string"
+          },
+          "review_type": {
+            "enum": [
+              "ORACLE_CONTRACT",
+              "FIXTURE_REPRODUCIBILITY"
+            ]
+          },
+          "reviewed_content_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "reviewed_spec_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
           "reviewer_id": {
+            "pattern": "^v2-[a-z0-9-]+$",
             "type": "string"
           }
         },
         "required": [
+          "receipt_id",
           "reviewer_id",
-          "decision"
+          "review_type",
+          "decision",
+          "reviewed_content_sha256",
+          "reviewed_spec_sha256",
+          "completed_at",
+          "independent"
         ],
         "type": "object"
       },
-      "type": "array"
+      "type": "array",
+      "uniqueItems": true
     },
     "schema": {
       "const": "OracleAdjudicationV1"

@@ -9,6 +9,9 @@
 3. **Medium:** P3 POSIX materialization capability is `PASS` on this
    environment. Any unproved environment must abort and may not emulate modes.
 4. **Medium:** a second supported deterministic environment is pending.
+5. **Medium:** the previously authorized one-shot BridgeDB postflight attempt
+   failed before any receipt or Markdown export was written. No retry or other
+   Bridge mutation is authorized.
 
 ## Candidate inventory
 
@@ -18,6 +21,8 @@
 - Coverage: 11 COVERED / 6 PARTIAL / 1 CROSS; 3/3 controls covered.
 - Runtime observations: 0/21; all consumer and scanner entrypoints forbidden.
 - Same-environment deterministic regeneration: 100/100 byte-identical.
+- Structural validation proves schema, hash, locality, bounded-closure, and
+  declared-consistency properties only; it does not prove oracle semantics.
 
 ## Admission ceiling
 

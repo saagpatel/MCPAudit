@@ -2,6 +2,230 @@
   "$id": "https://example.invalid/mcpaudit/20260731-evidence-conservation-v2/BoundaryCorpusV2.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "corpus_kind": {
+            "const": "NO_OP"
+          }
+        },
+        "required": [
+          "corpus_kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "entries": {
+            "items": false,
+            "prefixItems": [
+              {
+                "properties": {
+                  "boundary_id": {
+                    "const": "NOOP-01"
+                  },
+                  "path_id": {
+                    "const": "P1"
+                  }
+                },
+                "required": [
+                  "boundary_id",
+                  "path_id"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "boundary_id": {
+                    "const": "NOOP-02"
+                  },
+                  "path_id": {
+                    "const": "P1"
+                  }
+                },
+                "required": [
+                  "boundary_id",
+                  "path_id"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "boundary_id": {
+                    "const": "NOOP-03"
+                  },
+                  "path_id": {
+                    "const": "P2"
+                  }
+                },
+                "required": [
+                  "boundary_id",
+                  "path_id"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "boundary_id": {
+                    "const": "NOOP-04"
+                  },
+                  "path_id": {
+                    "const": "P2"
+                  }
+                },
+                "required": [
+                  "boundary_id",
+                  "path_id"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "boundary_id": {
+                    "const": "NOOP-05"
+                  },
+                  "path_id": {
+                    "const": "P3"
+                  }
+                },
+                "required": [
+                  "boundary_id",
+                  "path_id"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "boundary_id": {
+                    "const": "NOOP-06"
+                  },
+                  "path_id": {
+                    "const": "P3"
+                  }
+                },
+                "required": [
+                  "boundary_id",
+                  "path_id"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "corpus_kind": {
+            "const": "NEAR_MISS"
+          }
+        },
+        "required": [
+          "corpus_kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "entries": {
+            "items": false,
+            "prefixItems": [
+              {
+                "properties": {
+                  "boundary_id": {
+                    "const": "NEAR-01"
+                  },
+                  "path_id": {
+                    "const": "P1"
+                  }
+                },
+                "required": [
+                  "boundary_id",
+                  "path_id"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "boundary_id": {
+                    "const": "NEAR-02"
+                  },
+                  "path_id": {
+                    "const": "P1"
+                  }
+                },
+                "required": [
+                  "boundary_id",
+                  "path_id"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "boundary_id": {
+                    "const": "NEAR-03"
+                  },
+                  "path_id": {
+                    "const": "P2"
+                  }
+                },
+                "required": [
+                  "boundary_id",
+                  "path_id"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "boundary_id": {
+                    "const": "NEAR-04"
+                  },
+                  "path_id": {
+                    "const": "P2"
+                  }
+                },
+                "required": [
+                  "boundary_id",
+                  "path_id"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "boundary_id": {
+                    "const": "NEAR-05"
+                  },
+                  "path_id": {
+                    "const": "P3"
+                  }
+                },
+                "required": [
+                  "boundary_id",
+                  "path_id"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "boundary_id": {
+                    "const": "NEAR-06"
+                  },
+                  "path_id": {
+                    "const": "P3"
+                  }
+                },
+                "required": [
+                  "boundary_id",
+                  "path_id"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
   "properties": {
     "corpus_kind": {
       "enum": [

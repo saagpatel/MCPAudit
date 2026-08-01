@@ -1,34 +1,102 @@
 {
-  "$id": "https://example.invalid/mcpaudit/20260731-evidence-conservation-v2/PackageValidationV2.schema.json",
+  "$id": "https://example.invalid/mcpaudit/20260731-evidence-conservation-v2/PackageValidationResultV2.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
   "properties": {
     "checks": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array",
+      "uniqueItems": true
+    },
+    "consumers_invoked": {
+      "const": 0
+    },
+    "errors": {
+      "items": {
+        "type": "string"
+      },
       "type": "array"
     },
-    "counts": {
-      "type": "object"
+    "file_count": {
+      "const": 100
+    },
+    "fixture_count": {
+      "const": 21
     },
     "package_id": {
       "const": "20260731-evidence-conservation-v2"
     },
+    "receipt_provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "captured_by": {
+          "const": "tools/build_package.py"
+        },
+        "package_lib_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "scope": {
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "validator_entrypoint": {
+          "const": "tools/validate_package.py"
+        },
+        "validator_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "captured_by",
+        "validator_entrypoint",
+        "validator_sha256",
+        "package_lib_sha256",
+        "scope"
+      ],
+      "type": "object"
+    },
+    "record_count": {
+      "const": 29
+    },
     "schema": {
-      "const": "PackageValidationV2"
+      "const": "PackageValidationResultV2"
+    },
+    "schema_count": {
+      "const": 19
+    },
+    "semantic_authority": {
+      "const": "OUTSIDE_STRUCTURAL_VALIDATION_REQUIRES_FRESH_INDEPENDENT_REVIEW"
     },
     "status": {
       "enum": [
         "PASS",
-        "FAIL",
-        "UNKNOWN"
+        "FAIL"
       ]
+    },
+    "stored_receipt_matches": {
+      "type": "boolean"
     }
   },
   "required": [
     "schema",
     "package_id",
     "status",
+    "file_count",
+    "fixture_count",
+    "record_count",
+    "schema_count",
     "checks",
-    "counts"
+    "errors",
+    "consumers_invoked",
+    "semantic_authority",
+    "receipt_provenance",
+    "stored_receipt_matches"
   ],
-  "title": "PackageValidationV2",
+  "title": "PackageValidationResultV2",
   "type": "object"
 }

@@ -1,7 +1,102 @@
 {
   "$id": "https://example.invalid/mcpaudit/20260731-evidence-conservation-v2/EvidenceConservationPathV2.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "path_id": {
+            "const": "P1"
+          }
+        },
+        "required": [
+          "path_id"
+        ]
+      },
+      "then": {
+        "properties": {
+          "coordinates": {
+            "const": [
+              "present",
+              "current",
+              "visible",
+              "consistent",
+              "supported",
+              "bound"
+            ]
+          }
+        },
+        "required": [
+          "producer_head_behavior"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "path_id": {
+            "const": "P2"
+          }
+        },
+        "required": [
+          "path_id"
+        ]
+      },
+      "then": {
+        "properties": {
+          "coordinates": {
+            "const": [
+              "present",
+              "current",
+              "visible",
+              "consistent",
+              "supported",
+              "bound"
+            ]
+          }
+        },
+        "required": [
+          "scope",
+          "excluded"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "path_id": {
+            "const": "P3"
+          }
+        },
+        "required": [
+          "path_id"
+        ]
+      },
+      "then": {
+        "properties": {
+          "coordinates": {
+            "const": [
+              "present",
+              "current",
+              "visible",
+              "consistent",
+              "supported",
+              "private"
+            ]
+          }
+        },
+        "required": [
+          "posix_rule",
+          "ctime_rule"
+        ]
+      }
+    }
+  ],
   "properties": {
+    "consumer": {
+      "type": "string"
+    },
     "consumer_execution": {
       "const": "NOT_AUTHORIZED"
     },
@@ -12,6 +107,18 @@
       "maxItems": 6,
       "minItems": 6,
       "type": "array"
+    },
+    "ctime_rule": {
+      "type": "string"
+    },
+    "decision_surface": {
+      "type": "string"
+    },
+    "excluded": {
+      "type": "array"
+    },
+    "input_contract": {
+      "type": "string"
     },
     "mutation_count": {
       "const": 6
@@ -26,11 +133,23 @@
         "P3"
       ]
     },
+    "posix_rule": {
+      "type": "string"
+    },
     "primary_case_count": {
       "const": 7
     },
+    "producer": {
+      "type": "string"
+    },
+    "producer_head_behavior": {
+      "type": "string"
+    },
     "schema": {
       "const": "EvidenceConservationPathV2"
+    },
+    "scope": {
+      "type": "string"
     }
   },
   "required": [
