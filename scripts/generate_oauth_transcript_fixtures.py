@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel
+
 from mcp_audit.oauth_transcript_models import OAuthTranscriptFixture, OAuthTranscriptReport
 
 ROOT = Path(__file__).parents[1] / "tests" / "fixtures" / "oauth_transcript"
@@ -276,7 +278,7 @@ def main() -> None:
         json.dumps(credential_looking, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-    schemas = {
+    schemas: dict[str, type[BaseModel]] = {
         "oauth-transcript-fixture-v1.schema.json": OAuthTranscriptFixture,
         "oauth-transcript-report-v1.schema.json": OAuthTranscriptReport,
     }

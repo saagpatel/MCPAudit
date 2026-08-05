@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from pydantic import BaseModel
+
 from mcp_audit.authorization_posture_models import (
     AuthorizationPostureReport,
     McpAuthorizationPostureV1,
@@ -13,7 +15,7 @@ from mcp_audit.authorization_posture_models import (
 
 def main() -> None:
     output = Path(__file__).parents[1] / "examples" / "schemas"
-    models = {
+    models: dict[str, type[BaseModel]] = {
         "authorization-posture-input-v1.schema.json": McpAuthorizationPostureV1,
         "authorization-posture-report-v1.schema.json": AuthorizationPostureReport,
     }
