@@ -142,16 +142,6 @@
       "title": "Confidence",
       "type": "string"
     },
-    "ConnectionMode": {
-      "description": "Whether this scan attempted to connect to configured MCP servers.",
-      "enum": [
-        "unknown",
-        "attempted",
-        "skipped"
-      ],
-      "title": "ConnectionMode",
-      "type": "string"
-    },
     "ConfigHealthFinding": {
       "description": "A configuration health warning found before connecting to an MCP server.",
       "properties": {
@@ -206,6 +196,16 @@
         "high"
       ],
       "title": "ConfigHealthSeverity",
+      "type": "string"
+    },
+    "ConnectionMode": {
+      "description": "Whether this scan attempted to connect to configured MCP servers.",
+      "enum": [
+        "unknown",
+        "attempted",
+        "skipped"
+      ],
+      "title": "ConnectionMode",
       "type": "string"
     },
     "DriftFinding": {
@@ -420,6 +420,15 @@
       "title": "EscalationSeverity",
       "type": "string"
     },
+    "FindingSourceTrust": {
+      "description": "Trust label for the material that produced a permission finding.",
+      "enum": [
+        "untrusted_server_metadata",
+        "operator_override"
+      ],
+      "title": "FindingSourceTrust",
+      "type": "string"
+    },
     "InjectionFinding": {
       "description": "A prompt injection threat detected in a tool's description or name.",
       "properties": {
@@ -541,6 +550,83 @@
       ],
       "title": "IntegritySeverity",
       "type": "string"
+    },
+    "LLMAnalysisReasonCode": {
+      "description": "Stable reason vocabulary for optional LLM-analysis coverage.",
+      "enum": [
+        "complete",
+        "no_candidates",
+        "injection_detected",
+        "provider_error",
+        "provider_refusal",
+        "provider_incomplete",
+        "malformed_output",
+        "omitted_tools",
+        "missing_credential",
+        "missing_dependency"
+      ],
+      "title": "LLMAnalysisReasonCode",
+      "type": "string"
+    },
+    "LLMAnalysisStatus": {
+      "description": "Whether optional LLM augmentation produced an admissible result.",
+      "enum": [
+        "complete",
+        "unknown"
+      ],
+      "title": "LLMAnalysisStatus",
+      "type": "string"
+    },
+    "LLMAnalysisSummary": {
+      "description": "Machine-readable status and provenance for one server's LLM pass.\n\nThe model only augments deterministic findings. ``UNKNOWN`` means the LLM\nresult contributed no findings and must not be interpreted as a clean\nclassification.",
+      "properties": {
+        "schema_version": {
+          "default": "mcp-audit.llm-analysis.v1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/LLMAnalysisStatus"
+        },
+        "reason_code": {
+          "$ref": "#/$defs/LLMAnalysisReasonCode"
+        },
+        "source_trust": {
+          "$ref": "#/$defs/FindingSourceTrust",
+          "default": "untrusted_server_metadata"
+        },
+        "analyzer": {
+          "default": "anthropic",
+          "title": "Analyzer",
+          "type": "string"
+        },
+        "model": {
+          "title": "Model",
+          "type": "string"
+        },
+        "candidate_tools": {
+          "default": 0,
+          "title": "Candidate Tools",
+          "type": "integer"
+        },
+        "analyzed_tools": {
+          "default": 0,
+          "title": "Analyzed Tools",
+          "type": "integer"
+        },
+        "findings_added": {
+          "default": 0,
+          "title": "Findings Added",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "status",
+        "reason_code",
+        "model"
+      ],
+      "title": "LLMAnalysisSummary",
+      "type": "object"
     },
     "NonToolRisk": {
       "description": "Additive prompt/resource risk indicator for non-tool MCP capabilities.",
@@ -700,6 +786,31 @@
         "tool_name": {
           "title": "Tool Name",
           "type": "string"
+        },
+        "source_trust": {
+          "$ref": "#/$defs/FindingSourceTrust",
+          "default": "untrusted_server_metadata"
+        },
+        "analyzer": {
+          "default": "mcp-audit.permission-analyzer",
+          "title": "Analyzer",
+          "type": "string"
+        },
+        "analyzer_model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Analyzer Model"
+        },
+        "analysis_status": {
+          "$ref": "#/$defs/LLMAnalysisStatus",
+          "default": "complete"
         }
       },
       "required": [
@@ -1225,6 +1336,17 @@
           },
           "title": "Artifact Verify Findings",
           "type": "array"
+        },
+        "llm_analysis": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LLMAnalysisSummary"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
