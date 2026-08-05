@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Bound optional LLM permission analysis to a structured untrusted-metadata
+  envelope with opaque tool IDs and separate trusted system instructions.
+  Injection indicators, provider errors or refusals, malformed output, and
+  omitted tools now fail closed to an explicit `UNKNOWN` status without
+  admitting model findings; JSON and SARIF preserve source trust and analyzer
+  provenance while deterministic findings remain authoritative.
 - Added stable attempt-evidence receipts for Proof Before Action's four
   documented observer blind spots: transient filesystem writes, no-delta
   SQLite activity, requested network destinations, and Unix-domain sockets.
