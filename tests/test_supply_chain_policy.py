@@ -45,6 +45,14 @@ def test_mcp_runtime_dependency_excludes_known_vulnerable_versions() -> None:
     assert tuple(map(int, match.groups())) >= (1, 28, 1)
 
 
+def test_direct_security_floors_exclude_known_vulnerable_versions() -> None:
+    project = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    requirements = set(project["dependencies"])
+
+    assert "cryptography>=50.0.0,<51.0" in requirements
+    assert "click>=8.3.3,<9.0" in requirements
+
+
 def test_clusterfuzzlite_uses_oss_fuzz_python_builder() -> None:
     build_script = (REPO_ROOT / ".clusterfuzzlite" / "build.sh").read_text(encoding="utf-8")
     dockerfile = (REPO_ROOT / ".clusterfuzzlite" / "Dockerfile").read_text(encoding="utf-8")

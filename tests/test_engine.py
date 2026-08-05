@@ -23,6 +23,9 @@ from mcp_audit.models import (
     AUDIT_REPORT_SCHEMA_VERSION,
     ClientType,
     ConnectionMode,
+    LLMAnalysisReasonCode,
+    LLMAnalysisStatus,
+    LLMAnalysisSummary,
     ServerConfig,
 )
 from tests.conftest import make_server_config
@@ -149,6 +152,53 @@ def test_skipped_check_surfaces_as_structured_warning(monkeypatch: pytest.Monkey
     assert warning.servers == []
     assert "[yellow]" not in warning.message  # plain text, no console markup
     assert report.model_dump(mode="json")["warnings"][0]["code"] == "missing_credential"
+    summary = report.audits[0].llm_analysis
+    assert summary is not None
+    assert summary.status == LLMAnalysisStatus.UNKNOWN
+    assert summary.reason_code == LLMAnalysisReasonCode.MISSING_CREDENTIAL
+    dumped = report.model_dump(mode="json")["audits"][0]["llm_analysis"]
+    assert dumped["source_trust"] == "untrusted_server_metadata"
+    assert dumped["status"] == "unknown"
+
+
+def test_incomplete_llm_result_reaches_machine_output_and_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from mcp_audit import llm_analyzer as llm_module
+
+    monkeypatch.setattr(
+        engine,
+        "discover_all_configs",
+        lambda clients, parse_errors=None: [make_server_config(name="srv")],
+    )
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "synthetic-test-key")
+
+    class FakeLLMAnalyzer:
+        def __init__(self, api_key: str) -> None:
+            assert api_key == "synthetic-test-key"
+
+        async def analyze_server_with_status(
+            self, tools: object, findings: object
+        ) -> llm_module.LLMAnalysisOutcome:
+            return llm_module.LLMAnalysisOutcome(
+                findings=[],
+                summary=LLMAnalysisSummary(
+                    status=LLMAnalysisStatus.UNKNOWN,
+                    reason_code=LLMAnalysisReasonCode.MALFORMED_OUTPUT,
+                    model="synthetic-model",
+                    candidate_tools=1,
+                ),
+            )
+
+    monkeypatch.setattr(llm_module, "LLMAnalyzer", FakeLLMAnalyzer)
+
+    report = anyio.run(run_scan, ScanOptions(skip_connect=True, llm_analysis=True))
+
+    dumped = report.model_dump(mode="json")
+    assert dumped["audits"][0]["llm_analysis"]["status"] == "unknown"
+    assert dumped["audits"][0]["llm_analysis"]["reason_code"] == "malformed_output"
+    [warning] = [item for item in report.warnings if item.code == "llm_analysis_unknown"]
+    assert warning.servers == ["srv"]
 
 
 def test_ignored_option_surfaces_as_structured_warning(monkeypatch: pytest.MonkeyPatch) -> None:

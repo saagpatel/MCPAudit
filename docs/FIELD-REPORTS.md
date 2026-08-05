@@ -1,11 +1,11 @@
 # MCPAudit Field Reports
 
-MCPAudit `2.1.0` has a field-report lane for redacted setup evidence,
-consumer-contract hardening, and external beta-readiness intake. This lane
-remains config-only by default: collect shape and output evidence without
-spawning MCP servers, contacting remote endpoints, or storing credential values.
-Use `--redact` for public reports so hostname, home-path usernames, and server
-names are scrubbed from shared artifacts.
+MCPAudit has a field-report lane for redacted setup evidence, consumer-contract
+hardening, and external beta-readiness intake. This lane remains config-only by
+default: collect shape and output evidence without spawning configured MCP
+servers, contacting their remote endpoints, or storing credential values. Use
+`--redact` for public reports so hostname, home-path usernames, and server names
+are scrubbed from shared artifacts.
 
 Tracked milestone: <https://github.com/saagpatel/MCPAudit/milestone/3>
 External evidence milestone:
@@ -58,13 +58,17 @@ under `tests/fixtures/reports/field/` and load through the current output model.
 External field reports should start with config-only output:
 
 ```bash
-mcp-audit --version
-mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
+uvx --from mcp-audits mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
+uvx --from mcp-audits mcp-audit --version
 ```
 
-This mode avoids spawning stdio servers and avoids contacting remote HTTP/SSE
-endpoints. `--redact` scrubs hostname, home-path usernames, and server names
-from JSON/SARIF/HTML artifacts; contributors still need to review for credential
+The first line is the one-command report path and does not install MCPAudit into
+a project or global environment.
+uvx may contact the configured Python package index and may reuse uv's tool
+cache. The MCPAudit scan itself avoids spawning stdio servers and avoids
+contacting configured remote HTTP/SSE endpoints.
+`--redact` scrubs hostname, home-path usernames, and server names from
+JSON/SARIF/HTML artifacts; contributors still need to review for credential
 values, internal hostnames, private URLs, and proprietary prompt/tool/schema
 text before posting publicly. A useful report includes:
 
@@ -73,6 +77,10 @@ text before posting publicly. A useful report includes:
 - status counts and config-health finding types;
 - whether a JSON, SARIF, dashboard, or CI consumer parsed the report;
 - the smallest redacted report or config snippet that shows the setup shape;
+- discovery channel, first-run status, unassisted completion, elapsed-time
+  band, and any onboarding or redaction friction;
+- intent to repeat and, 7-14 days later, whether another config-only scan
+  occurred;
 - permission to convert the redacted example into a public fixture, or a note
   that private triage is needed first.
 
@@ -86,6 +94,45 @@ The dedicated GitHub template for this path is
 The copy-paste request for contributors lives in
 `docs/EXTERNAL-FIELD-REPORT-REQUEST.md`.
 
+## Activation And Repeat Evidence Contract
+
+This contract keeps distribution, activation, repeat use, and product learning
+separate:
+
+- **Distributed** means a public package or delivery surface exists. Package
+  downloads are a distribution proxy, not proof of a person completing a scan.
+- **Completed** means an external operator generated a config-only report and
+  reviewed it for safe redaction.
+- **Unassisted** means that completion happened without synchronous maintainer
+  help. Clarification or triage after the run does not change that status.
+- **Valid external report** means the report meets the acceptance bar below and
+  comes from outside the maintainer checkout. Self-tests and CI never count.
+- **Repeat** means the same reporter confirms another config-only scan 7-14
+  days later. A second public report is not required.
+- **Product learning** means a valid report produces an accepted fixture,
+  documented product change, or documented no-change decision.
+
+For a separately authorized ten-participant validation cohort, the **pass** bar
+is all of the following within 14 days:
+
+- at least 6 of 10 participants complete safely and unassisted;
+- at least 3 valid external reports cover at least 2 MCP client types;
+- at least 2 participants repeat after 7 days; and
+- at least 2 reports produce an accepted fixture or documented no-change
+  decision.
+
+The **kill or redesign** bar is any of the following:
+
+- fewer than 3 participants complete;
+- fewer than 2 valid external reports arrive;
+- the evidence consists only of maintainer, self-test, or CI activity; or
+- more than 2 participants cannot redact safely.
+
+Recruitment, direct outreach, participant contact, and cohort execution require
+separate authority. Until then, these are readiness and adjudication contracts,
+not evidence that a cohort ran. Keep only aggregate funnel counts; do not add
+visitor tracking or collect raw configs, identities, or private report content.
+
 ## Minimal Public Example
 
 This is an example shape only, not an accepted external field report. It shows
@@ -93,13 +140,17 @@ the level of detail that is useful in a public issue after the report has been
 generated with `--redact` and manually reviewed.
 
 ```text
-MCPAudit version: mcp-audit, version 2.1.0
+MCPAudit version: mcp-audit, version X.Y.Z
 Operating system: macOS / Darwin
 MCP clients included: Claude Desktop and Cursor
 Approximate server count: 3
 Status counts: 3 skipped
 Config-health finding types: remote_endpoint, package_runner_source_review
 Consumer check: dashboard parser loaded the JSON report successfully
+Discovery channel: PyPI
+First run: yes
+Unassisted completion: yes, under 5 minutes
+Seven-day repeat: not due yet
 Fixture permission: yes, a redacted shape may become a public fixture
 ```
 
@@ -165,7 +216,7 @@ The contract is intentionally simple:
 
 ## Current Decision
 
-Keep `2.1.0` stable but pre-beta.
+Keep the current public release stable but pre-beta.
 
 Reason: the scanner, field-report template, redaction path, compatibility
 fixtures, and consumer examples are ready for external validation, but the beta
@@ -175,7 +226,7 @@ current JSON/SARIF contract and downstream consumer path.
 ## Historical Field-Report Decisions
 
 These decisions are kept as an evidence ledger for the `1.5.x` field-report
-work. They do not change the current `2.1.0` pre-beta gate.
+work. They do not change the current public-release pre-beta gate.
 
 Ship `1.5.2` as polish instead of `1.6.0`.
 

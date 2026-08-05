@@ -7,8 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-08-05
+
 ### Security
 
+- Removed the production Agent Governance Toolkit dependency from the synthetic
+  enforcement fixture and replaced it with a repository-owned, fail-closed
+  gateway contract. Raised the direct cryptography floor to 50.0.0 and Click
+  floor to 8.3.3, excluding GHSA-g6cj-pr64-35w5 and GHSA-47fr-3ffg-hgmw from
+  locked and distributed dependency resolution.
+- Bound optional LLM permission analysis to a structured untrusted-metadata
+  envelope with opaque tool IDs and separate trusted system instructions.
+  Injection indicators, provider errors, refusals, non-terminal or unknown stop
+  reasons, malformed output, and omitted tools now fail closed to an explicit
+  `UNKNOWN` status without admitting model findings; JSON and SARIF preserve
+  source trust and analyzer provenance while deterministic findings remain
+  authoritative.
 - Added stable attempt-evidence receipts for Proof Before Action's four
   documented observer blind spots: transient filesystem writes, no-delta
   SQLite activity, requested network destinations, and Unix-domain sockets.
@@ -61,16 +75,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   malformed HTTPS authorities, binds bounded reads to one file descriptor, and
   uses descriptor-bound atomic no-clobber output commit.
 - Added an experimental, fixture-only evidence-to-enforcement workflow pinned
-  to Microsoft Agent Governance Toolkit 4.1.0. It keeps observed evidence,
-  policy recommendation, operator approval, and effective-state proof as
-   separate versioned contracts; supports only exact tool allow, deny, and
-   approval decisions; and fails closed on unsupported constraints, stale or
-   drifted evidence, approval mismatch, runtime mismatch, or verification
-   failure. Program-owned fixture state includes cooperative mutation locking,
-   behavioral negative controls, deterministic no-op verification, and rollback.
+  to repository-owned fixture gateway contract version 1.0.0. It keeps observed
+  evidence, policy recommendation, operator approval, and effective-state proof
+  as separate versioned contracts; supports only exact tool allow, deny, and
+  approval decisions; and fails closed on unsupported constraints, stale or
+  drifted evidence, approval mismatch, runtime mismatch, or verification
+  failure. Program-owned fixture state includes cooperative mutation locking,
+  behavioral negative controls, deterministic no-op verification, and rollback.
 
 ### Changed
 
+- Upgraded the existing external field-report beta lane with a one-command
+  uvx report path, explicit package-resolution and config-only privacy
+  boundaries, unassisted-completion and seven-day-repeat fields, aggregate
+  pass/kill thresholds, and regression checks that prevent download counts,
+  self-tests, or CI activity from being reported as external adoption.
 - Made config-only scan status explicit across terminal, JSON, and HTML reports,
   so zero connected and zero failed servers cannot be mistaken for a clean
   connected scan.
@@ -1063,7 +1082,8 @@ real workstations; API surface may still shift before the `1.0.0` stable cut.
 - Risk score output with pass/warn/fail thresholds
 - `mcp-audit` CLI entry point
 
-[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v2.5.0...HEAD
+[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v2.6.0...HEAD
+[2.6.0]: https://github.com/saagpatel/MCPAudit/compare/v2.5.0...v2.6.0
 [2.5.0]: https://github.com/saagpatel/MCPAudit/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/saagpatel/MCPAudit/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/saagpatel/MCPAudit/compare/v2.2.1...v2.3.0
