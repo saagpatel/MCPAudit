@@ -1,7 +1,7 @@
 """Experimental fixture-only evidence-to-enforcement adapter.
 
-This module intentionally targets one published Agent Governance Toolkit
-runtime. It does not discover, wrap, launch, or reconfigure normal MCP servers.
+This module intentionally targets one repository-owned fixture gateway
+contract. It does not discover, wrap, launch, or reconfigure normal MCP servers.
 """
 
 from __future__ import annotations
@@ -18,10 +18,15 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Any, Final, Literal, TypeVar
 
-from agent_os.integrations.base import GovernancePolicy
-from agent_os.mcp_gateway import ApprovalStatus, GatewayConfig, MCPGateway
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
+from mcp_audit.fixture_gateway import (
+    FIXTURE_GATEWAY_VERSION,
+    ApprovalStatus,
+    FixtureGateway,
+    FixturePolicy,
+    GatewayConfig,
+)
 from mcp_audit.models import AUDIT_REPORT_SCHEMA_VERSION, AuditReport
 
 OBSERVED_EVIDENCE_SCHEMA: Final = "mcpaudit.observed-evidence.v1"
@@ -29,9 +34,9 @@ POLICY_RECOMMENDATION_SCHEMA: Final = "mcpaudit.policy-recommendation.v1"
 APPROVED_POLICY_INTENT_SCHEMA: Final = "mcpaudit.approved-policy-intent.v1"
 EFFECTIVE_STATE_SCHEMA: Final = "mcpaudit.effective-state.v1"
 FIXTURE_STATE_SCHEMA: Final = "mcpaudit.enforcement-fixture-state.v1"
-TARGET_ADAPTER: Final = "microsoft-agt-mcp-gateway"
-TARGET_RUNTIME_DISTRIBUTION: Final = "agent-governance-toolkit-core"
-TARGET_RUNTIME_VERSION: Final = "4.1.0"
+TARGET_ADAPTER: Final = "mcpaudit-fixture-gateway-v1"
+TARGET_RUNTIME_DISTRIBUTION: Final = "mcp-audits"
+TARGET_RUNTIME_VERSION: Final = "1.0.0"
 FIXTURE_TOOLS: Final = ("read_fixture", "write_fixture", "delete_fixture")
 STATE_DIR_PREFIX: Final = "mcpaudit-enforcement-fixture-"
 STATE_OWNER_MARKER: Final = ".mcpaudit-enforcement-fixture-owner"
@@ -163,9 +168,9 @@ class PolicyRecommendationV1(StrictModel):
     expires_at: UtcTimestamp
     provenance: list[str] = Field(min_length=1)
     unknowns: list[str] = Field(default_factory=list)
-    target_adapter: Literal["microsoft-agt-mcp-gateway"]
-    target_runtime_distribution: Literal["agent-governance-toolkit-core"]
-    target_runtime_version: Literal["4.1.0"]
+    target_adapter: Literal["mcpaudit-fixture-gateway-v1"]
+    target_runtime_distribution: Literal["mcp-audits"]
+    target_runtime_version: Literal["1.0.0"]
     pre_state_sha256: Digest
     rollback_id: str = Field(min_length=1)
 
@@ -191,8 +196,8 @@ class ApprovedPolicyIntentV1(StrictModel):
     recommendation_sha256: Digest
     evidence_sha256: Digest
     subject: ServerIdentity
-    target_adapter: Literal["microsoft-agt-mcp-gateway"]
-    target_runtime_version: Literal["4.1.0"]
+    target_adapter: Literal["mcpaudit-fixture-gateway-v1"]
+    target_runtime_version: Literal["1.0.0"]
     pre_state_sha256: Digest
     approved_at: UtcTimestamp
     expires_at: UtcTimestamp
@@ -234,9 +239,9 @@ class GatewayConfigReadback(StrictModel):
 class EffectiveStateV1(StrictModel):
     schema_version: Literal["mcpaudit.effective-state.v1"]
     subject: ServerIdentity
-    target_adapter: Literal["microsoft-agt-mcp-gateway"]
-    target_runtime_distribution: Literal["agent-governance-toolkit-core"]
-    target_runtime_version: Literal["4.1.0"]
+    target_adapter: Literal["mcpaudit-fixture-gateway-v1"]
+    target_runtime_distribution: Literal["mcp-audits"]
+    target_runtime_version: Literal["1.0.0"]
     applied_at: UtcTimestamp
     allowed_tools: list[str]
     denied_tools: list[str]
@@ -307,7 +312,7 @@ class FixturePolicyState(StrictModel):
     allowed_tools: list[str] = Field(default_factory=list)
     denied_tools: list[str] = Field(default_factory=list)
     approval_tools: list[str] = Field(default_factory=list)
-    target_runtime_version: Literal["4.1.0"] = TARGET_RUNTIME_VERSION
+    target_runtime_version: Literal["1.0.0"] = TARGET_RUNTIME_VERSION
 
 
 class RevokedApprovalLedger(StrictModel):
@@ -505,7 +510,7 @@ def compile_policy(recommendation: PolicyRecommendationV1) -> CompiledPolicy:
                 UnsupportedTranslation(
                     code="unsupported_translation",
                     field=field_name,
-                    message="AGT MCPGateway v4.1.0 cannot enforce this restriction exactly",
+                    message="fixture gateway v1 cannot enforce this restriction exactly",
                 )
             )
     for item in recommendation.decisions:
@@ -925,28 +930,23 @@ def probe_effective_state(
     expected: CompiledPolicy,
 ) -> EffectiveStateV1:
     verify_target_runtime()
-    policy = GovernancePolicy(
+    policy = FixturePolicy(
         name="mcpaudit-fixture",
         allowed_tools=state.allowed_tools or ["__mcpaudit_deny_all__"],
     )
-    gateway = MCPGateway(
+    gateway = FixtureGateway(
         policy,
         denied_tools=state.denied_tools,
         sensitive_tools=state.approval_tools,
     )
-    config: GatewayConfig = MCPGateway.wrap_mcp_server(
-        {"fixture": True},
-        policy,
-        denied_tools=state.denied_tools,
-        sensitive_tools=state.approval_tools,
-    )
+    config: GatewayConfig = gateway.configuration()
     probes, counters = _exercise_gateway(gateway)
 
     def failing_callback(agent_id: str, tool_name: str, params: dict[str, Any]) -> ApprovalStatus:
         del agent_id, tool_name, params
         raise RuntimeError("synthetic approval failure")
 
-    failing_gateway = MCPGateway(
+    failing_gateway = FixtureGateway(
         policy,
         denied_tools=state.denied_tools,
         sensitive_tools=state.approval_tools,
@@ -1040,18 +1040,19 @@ def parse_model(path: Path, model: type[T]) -> T:
 
 
 def verify_target_runtime() -> None:
-    """Fail closed unless the exact published compatibility runtime is active."""
+    """Fail closed unless the installed distribution exposes the exact adapter."""
     try:
-        installed = importlib.metadata.version(TARGET_RUNTIME_DISTRIBUTION)
+        importlib.metadata.version(TARGET_RUNTIME_DISTRIBUTION)
     except importlib.metadata.PackageNotFoundError as exc:
         raise PolicyOutcomeError("target runtime distribution is not installed") from exc
-    if installed != TARGET_RUNTIME_VERSION:
+    if FIXTURE_GATEWAY_VERSION != TARGET_RUNTIME_VERSION:
         raise PolicyOutcomeError(
-            f"target runtime version mismatch: expected {TARGET_RUNTIME_VERSION}, found {installed}"
+            "target runtime version mismatch: "
+            f"expected {TARGET_RUNTIME_VERSION}, found {FIXTURE_GATEWAY_VERSION}"
         )
 
 
-def _exercise_gateway(gateway: MCPGateway) -> tuple[list[BehavioralProbe], dict[str, int]]:
+def _exercise_gateway(gateway: FixtureGateway) -> tuple[list[BehavioralProbe], dict[str, int]]:
     counters = {name: 0 for name in (*FIXTURE_TOOLS, "unknown_fixture")}
     handlers = {name: _fixture_handler(name, counters) for name in (*FIXTURE_TOOLS, "unknown_fixture")}
     probes: list[BehavioralProbe] = []

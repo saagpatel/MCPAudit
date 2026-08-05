@@ -1,14 +1,14 @@
-# Experimental AGT Fixture Enforcement
+# Experimental Fixture Enforcement
 
 This is one deliberately narrow evidence-to-enforcement compatibility slice. It
 converts a synthetic connected `AuditReport` schema version `1` into a policy
 recommendation, requires a separate operator approval, compiles only exact tool
-allow/deny/approval decisions, and exercises Microsoft Agent Governance
-Toolkit's published `MCPGateway`.
+allow/deny/approval decisions, and exercises MCPAudit's repository-owned,
+fixture-only gateway.
 
 It is **experimental, fixture-only, and pinned to
-`agent-governance-toolkit-core==4.1.0`**. It does not build a gateway, launch an
-MCP server, inspect normal MCP configuration, or alter any client configuration.
+`mcpaudit-fixture-gateway-v1` contract version `1.0.0`**. It does not launch an MCP
+server, inspect normal MCP configuration, or alter any client configuration.
 The supported state directory basename must start with
 `mcpaudit-enforcement-fixture-`. On first write it must be empty; MCPAudit adds
 an ownership marker and thereafter rejects missing/invalid markers, symlinked
@@ -17,18 +17,19 @@ serialize mutations with a persistent program-owned lock file in that directory.
 
 ## Compatibility target
 
-The adapter imports only the published public interfaces:
+The adapter uses only these repository-owned fixture interfaces:
 
-- `agent_os.integrations.base.GovernancePolicy`
-- `agent_os.mcp_gateway.MCPGateway`
-- `agent_os.mcp_gateway.GatewayConfig`
-- `agent_os.mcp_gateway.ApprovalStatus`
+- `mcp_audit.fixture_gateway.FixturePolicy`
+- `mcp_audit.fixture_gateway.FixtureGateway`
+- `mcp_audit.fixture_gateway.GatewayConfig`
+- `mcp_audit.fixture_gateway.ApprovalStatus`
 
-Startup operations read the installed distribution version and fail closed
-unless it is exactly `4.1.0`. The dependency and lockfile are exact-pinned. A
-different AGT version requires a new adapter version, compatibility probe,
-security review, fixtures, and explicit target-policy update; it must not be
-accepted by relaxing the pin.
+Startup operations require the installed MCPAudit distribution to expose the
+exact adapter contract version `1.0.0`. A different adapter version requires an
+explicit target-policy update and the existing compatibility, security, and
+fixture probes; it must not be accepted by relaxing the pin. The repository also
+carries a direct `cryptography>=50.0.0,<51.0` floor for the MCP transport's
+transitive cryptographic runtime.
 
 ## Trust boundary
 
@@ -51,7 +52,7 @@ API nor CLI accepts a caller-selected application time.
 
 Adapter v1 supports only origin-qualified exact tool decisions:
 
-| Fixture tool | Decision | AGT state |
+| Fixture tool | Decision | Gateway state |
 |---|---|---|
 | `read_fixture` | allow | allow list |
 | `write_fixture` | approval | allow list plus sensitive-tool list |
