@@ -2,8 +2,8 @@
 
 ## Scope and assets
 
-This threat model covers only the experimental, fixture-only AGT adapter. The
-protected assets are approval authority, origin-qualified server/tool/schema
+This threat model covers only the experimental, fixture-only MCPAudit adapter.
+The protected assets are approval authority, origin-qualified server/tool/schema
 identity, deterministic evidence and state digests, program-owned fixture state,
 rollback snapshots, and the negative-control handler canaries.
 
@@ -69,22 +69,23 @@ applied-state digest.
 
 ### Unsupported translation
 
-AGT `MCPGateway` 4.1.0 does not express the requested argument, egress,
+The fixture gateway does not express the requested argument, egress,
 filesystem/resource, or secret-reference constraints. Non-empty constraints
 therefore return structured `unsupported_translation` errors and cannot apply.
 
 ### Runtime failure and false readback
 
-The installed distribution must be exactly
-`agent-governance-toolkit-core==4.1.0`. The adapter uses documented public
-interfaces only. A sensitive-tool approval callback exception is probed and must
-deny. `GatewayConfig` list readback is normalized and compared with the compiled
-intent, then positive and negative tool calls prove handler execution or
-non-execution. After persistence the adapter rereads and re-probes the stored
-state; the receipt uses that readback digest rather than the intended object.
-The program-owned counter changes only inside the selected toy handler.
-Configuration construction or an interception decision alone is never called
-enforcement.
+The installed `mcp-audits` distribution must expose fixture gateway contract
+version `1.0.0`, and the authority-bearing contracts bind
+`mcpaudit-fixture-gateway-v1`. A sensitive-tool approval callback exception is
+probed and must deny. `GatewayConfig` list
+readback is normalized and compared with the compiled intent, then positive and
+negative tool calls prove handler execution or non-execution. Audit entries omit
+request parameters entirely. After persistence the adapter rereads and
+re-probes the stored state; the receipt uses that readback digest rather than
+the intended object. The program-owned counter changes only inside the selected
+toy handler. Configuration construction or an interception decision alone is
+never called enforcement.
 
 ### Partial apply and rollback confusion
 
@@ -108,7 +109,8 @@ and credential stores are never serialized.
 ## Residual limits
 
 - This proves one local compatibility slice, not production gateway readiness.
-- It does not prove AGT versions other than 4.1.0.
+- It does not prove other fixture-gateway contract versions or a production
+  gateway runtime.
 - It does not enforce arguments, network, filesystem, resources, or secrets.
 - Cooperative fixture commands are serialized per state directory. This is not
   a distributed lock and cannot constrain an unrelated process that ignores the

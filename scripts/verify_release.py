@@ -149,6 +149,10 @@ def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object
     dependencies = _project().get("dependencies")
     if not isinstance(dependencies, list) or "mcp>=1.28.1" not in dependencies:
         raise VerificationError("project metadata does not retain the mcp>=1.28.1 security floor")
+    if "cryptography>=50.0.0,<51.0" not in dependencies:
+        raise VerificationError("project metadata does not retain the cryptography>=50.0.0 security floor")
+    if "click>=8.3.3,<9.0" not in dependencies:
+        raise VerificationError("project metadata does not retain the click>=8.3.3 security floor")
     release_notes = ROOT / f"docs/{version.rsplit('.', maxsplit=1)[0]}-RELEASE-NOTES.md"
     if not release_notes.is_file():
         raise VerificationError("versioned release notes are missing")
@@ -213,6 +217,11 @@ def _check_distribution_metadata(raw: bytes, *, version: str, name: str) -> None
     requirements = metadata.get_all("Requires-Dist", [])
     if not any(requirement.replace(" ", "").startswith("mcp>=1.28.1") for requirement in requirements):
         raise VerificationError(f"{name} does not retain the mcp>=1.28.1 security floor")
+    normalized = {requirement.replace(" ", "") for requirement in requirements}
+    if "cryptography>=50.0.0,<51.0" not in normalized:
+        raise VerificationError(f"{name} does not retain the cryptography>=50.0.0 security floor")
+    if "click>=8.3.3,<9.0" not in normalized:
+        raise VerificationError(f"{name} does not retain the click>=8.3.3 security floor")
 
 
 def _check_provenance(raw: bytes, *, commit: str, name: str) -> None:

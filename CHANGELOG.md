@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Removed the production Agent Governance Toolkit dependency from the synthetic
+  enforcement fixture and replaced it with a repository-owned, fail-closed
+  gateway contract. Raised the direct cryptography floor to 50.0.0 and Click
+  floor to 8.3.3, excluding GHSA-g6cj-pr64-35w5 and GHSA-47fr-3ffg-hgmw from
+  locked and distributed dependency resolution.
 - Bound optional LLM permission analysis to a structured untrusted-metadata
   envelope with opaque tool IDs and separate trusted system instructions.
   Injection indicators, provider errors, refusals, non-terminal or unknown stop
@@ -55,13 +60,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   malformed HTTPS authorities, binds bounded reads to one file descriptor, and
   uses descriptor-bound atomic no-clobber output commit.
 - Added an experimental, fixture-only evidence-to-enforcement workflow pinned
-  to Microsoft Agent Governance Toolkit 4.1.0. It keeps observed evidence,
-  policy recommendation, operator approval, and effective-state proof as
-   separate versioned contracts; supports only exact tool allow, deny, and
-   approval decisions; and fails closed on unsupported constraints, stale or
-   drifted evidence, approval mismatch, runtime mismatch, or verification
-   failure. Program-owned fixture state includes cooperative mutation locking,
-   behavioral negative controls, deterministic no-op verification, and rollback.
+  to repository-owned fixture gateway contract version 1.0.0. It keeps observed
+  evidence, policy recommendation, operator approval, and effective-state proof
+  as separate versioned contracts; supports only exact tool allow, deny, and
+  approval decisions; and fails closed on unsupported constraints, stale or
+  drifted evidence, approval mismatch, runtime mismatch, or verification
+  failure. Program-owned fixture state includes cooperative mutation locking,
+  behavioral negative controls, deterministic no-op verification, and rollback.
 
 ### Changed
 

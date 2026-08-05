@@ -4,9 +4,10 @@
 
 The `enforcement-fixture` commands are a program-owned synthetic compatibility
 harness, not a production enforcement gateway. They are exact-pinned to
-`agent-governance-toolkit-core==4.1.0`, reject unsupported translation, and may
-write only to explicitly named fixture-state directories whose basename starts
-with `mcpaudit-enforcement-fixture-` and whose ownership marker is valid.
+the `mcpaudit-fixture-gateway-v1` adapter contract version `1.0.0`, reject
+unsupported translation, and may write only to explicitly named fixture-state
+directories whose basename starts with `mcpaudit-enforcement-fixture-` and
+whose ownership marker is valid.
 Managed state and temporary paths may not be symlinks. Apply and rollback use a
 persistent program-owned fixture lock; processes that ignore that lock remain
 outside the harness guarantee. Do not point these commands at normal MCP

@@ -70,12 +70,12 @@
       "$ref": "#/$defs/ServerIdentity"
     },
     "target_adapter": {
-      "const": "microsoft-agt-mcp-gateway",
+      "const": "mcpaudit-fixture-gateway-v1",
       "title": "Target Adapter",
       "type": "string"
     },
     "target_runtime_version": {
-      "const": "4.1.0",
+      "const": "1.0.0",
       "title": "Target Runtime Version",
       "type": "string"
     }
