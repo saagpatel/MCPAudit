@@ -288,13 +288,14 @@ classification. Deterministic analysis remains authoritative.
 ## Help improve mcp-audit (2 minutes)
 
 Redacted field reports from real MCP configs help calibrate the scanner.
-If you run MCP servers, contributing one stays fully offline — no servers
-spawned, no network:
+If you run MCP servers, contributing one stays config-only: the scan does not
+spawn configured MCP servers or contact their configured remote endpoints.
+`uvx` may contact the configured Python package index and may reuse uv's tool
+cache:
 
 ```bash
-python3 -m pip install --upgrade mcp-audits
-mcp-audit --version
-mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
+uvx --from mcp-audits mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
+uvx --from mcp-audits mcp-audit --version
 ```
 
 `--redact` auto-scrubs the machine hostname, home-path usernames, and server
