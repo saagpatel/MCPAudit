@@ -81,8 +81,9 @@ The report top level also includes:
     `missing_credential` (e.g. `--llm-analysis` without `ANTHROPIC_API_KEY`),
     `missing_dependency` (e.g. the `anthropic` package not installed),
     `llm_analysis_unknown` (a requested server-level LLM pass detected
-    injection, was refused, failed at the provider, omitted a tool, or returned
-    malformed output; no model findings were admitted),
+    injection, was refused, failed or stopped incompletely at the provider,
+    omitted a tool, or returned malformed output; no model findings were
+    admitted),
     `option_ignored` (an option passed without the check that consumes it).
     The vocabulary is additive — consumers must tolerate unknown codes.
   - `message` — plain-text human summary including remediation.

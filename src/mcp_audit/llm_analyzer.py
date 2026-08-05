@@ -229,6 +229,12 @@ class LLMAnalyzer:
         if stop_reason in {"refusal", "safety"}:
             logger.warning("LLM provider refused the metadata classification request")
             return _BatchOutcome([], LLMAnalysisReasonCode.PROVIDER_REFUSAL)
+        if stop_reason != "end_turn":
+            logger.warning(
+                "LLM provider returned a non-terminal or unknown stop reason: %r",
+                stop_reason,
+            )
+            return _BatchOutcome([], LLMAnalysisReasonCode.PROVIDER_INCOMPLETE)
 
         content = getattr(response, "content", None)
         if not isinstance(content, list) or len(content) != 1:

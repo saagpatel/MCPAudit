@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from mcp_audit.llm_analyzer import LLMAnalyzer, _needs_llm
 from mcp_audit.models import (
     Confidence,
@@ -193,6 +195,22 @@ class TestUntrustedMetadataBoundary:
         assert outcome.findings == []
         assert outcome.summary.status == LLMAnalysisStatus.UNKNOWN
         assert outcome.summary.reason_code == LLMAnalysisReasonCode.PROVIDER_REFUSAL
+
+    @pytest.mark.parametrize(
+        "stop_reason",
+        ["max_tokens", "model_context_window_exceeded", "stop_sequence", None],
+    )
+    async def test_non_terminal_or_unknown_stop_reason_fails_closed(self, stop_reason: str | None) -> None:
+        analyzer = _mock_analyzer()
+        response = _make_response([{"tool_id": _tool_id(0), "categories": ["network"]}])
+        response.stop_reason = stop_reason
+        analyzer._client.messages.create.return_value = response
+
+        outcome = await analyzer.analyze_server_with_status([make_tool("ambiguous")], [])
+
+        assert outcome.findings == []
+        assert outcome.summary.status == LLMAnalysisStatus.UNKNOWN
+        assert outcome.summary.reason_code == LLMAnalysisReasonCode.PROVIDER_INCOMPLETE
 
     async def test_provider_error_fails_closed(self) -> None:
         analyzer = _mock_analyzer()

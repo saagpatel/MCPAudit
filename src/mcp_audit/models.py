@@ -68,6 +68,7 @@ class LLMAnalysisReasonCode(StrEnum):
     INJECTION_DETECTED = "injection_detected"
     PROVIDER_ERROR = "provider_error"
     PROVIDER_REFUSAL = "provider_refusal"
+    PROVIDER_INCOMPLETE = "provider_incomplete"
     MALFORMED_OUTPUT = "malformed_output"
     OMITTED_TOOLS = "omitted_tools"
     MISSING_CREDENTIAL = "missing_credential"
