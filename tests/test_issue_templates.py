@@ -11,6 +11,7 @@ FIELD_REPORT_OUTREACH_DOC = Path("docs/EXTERNAL-OUTREACH-MESSAGES.md")
 SHOW_HN_DRAFT_DOC = Path("docs/SHOW-HN-DRAFT.md")
 MCP_TRUST_PACKET_DOC = Path("docs/MCP-TRUST-PACKET.md")
 SOLO_EVIDENCE_DOC = Path("docs/SOLO-EVIDENCE.md")
+README = Path("README.md")
 FIELD_REPORT_COMMAND = (
     "uvx --from mcp-audits mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact"
 )
@@ -94,12 +95,17 @@ def test_field_report_template_preserves_safety_boundary() -> None:
 def test_field_report_docs_pin_activation_and_repeat_claim_boundaries() -> None:
     field_doc = FIELD_REPORT_DOC.read_text()
     request_doc = FIELD_REPORT_REQUEST_DOC.read_text()
+    readme = README.read_text()
     field_contract = " ".join(field_doc.split())
     request_contract = " ".join(request_doc.split())
+    readme_contract = " ".join(readme.split())
 
     assert FIELD_REPORT_COMMAND in field_doc
     assert FIELD_REPORT_COMMAND in request_doc
+    assert FIELD_REPORT_COMMAND in readme
     assert "uvx may contact the configured Python package index" in field_contract
+    assert "may contact the configured Python package index" in readme_contract
+    assert "fully offline" not in readme_contract
     assert "Package downloads are a distribution proxy" in field_contract
     assert "at least 6 of 10 participants complete safely and unassisted" in field_contract
     assert "at least 3 valid external reports" in field_contract
