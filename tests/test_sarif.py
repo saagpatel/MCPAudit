@@ -12,8 +12,10 @@ from mcp_audit.models import (
     Confidence,
     DriftFinding,
     DriftStatus,
+    FindingSourceTrust,
     InjectionFinding,
     InjectionSeverity,
+    LLMAnalysisStatus,
     PermissionCategory,
     PermissionFinding,
     PolicyResult,
@@ -326,6 +328,24 @@ class TestSarifResults:
         assert result["properties"]["target_name"] == "tool1"
         assert result["properties"]["remediation"]
         assert result["partialFingerprints"]["mcpAuditStableId"]
+
+    def test_llm_finding_preserves_trust_and_analyzer_provenance(self) -> None:
+        finding = PermissionFinding(
+            category=PermissionCategory.NETWORK,
+            confidence=Confidence.LLM,
+            evidence=["structured model result"],
+            tool_name="ambiguous",
+            source_trust=FindingSourceTrust.UNTRUSTED_SERVER_METADATA,
+            analyzer="anthropic",
+            analyzer_model="test-model",
+            analysis_status=LLMAnalysisStatus.COMPLETE,
+        )
+        sarif = SarifGenerator().generate(_make_report([_make_audit(findings=[finding])]))
+        properties = sarif["runs"][0]["results"][0]["properties"]
+        assert properties["source_trust"] == "untrusted_server_metadata"
+        assert properties["analyzer"] == "anthropic"
+        assert properties["analyzer_model"] == "test-model"
+        assert properties["analysis_status"] == "complete"
 
     def test_rules_include_full_metadata(self) -> None:
         sarif = SarifGenerator().generate(_make_report([]))

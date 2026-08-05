@@ -92,6 +92,21 @@ MCPAudit parses and displays content from MCP server configs and MCP server meta
 
 When the optional `anthropic` dependency is installed and `--llm-analysis` is used, MCPAudit sends selected tool names, descriptions, and parameter names to the Anthropic API for permission classification. In this mode, content from audited MCP server configs is transmitted over the network to a third-party service. Do not use `--llm-analysis` if your MCP configs contain sensitive information (API keys in args, internal hostnames, etc.).
 
+MCP server metadata remains untrusted at this boundary. Classification
+instructions are sent in the provider's system field; server-controlled names,
+descriptions, and parameter names are encoded as a versioned JSON data envelope
+and addressed by opaque tool IDs. Metadata that trips the deterministic
+injection detector is not sent to the model. A refusal, provider error,
+malformed response, unknown category, duplicate or omitted tool ID, or
+unresolved parse produces an explicit `UNKNOWN` LLM-analysis status and admits
+no model findings. Deterministic findings remain authoritative and are never
+removed by LLM output.
+
+JSON and SARIF permission findings preserve `source_trust`, analyzer/model
+provenance, and `analysis_status`. Each server audit also carries the versioned
+`llm_analysis` summary when the option was requested. Consumers must treat
+`UNKNOWN` as missing coverage, not as a clean result.
+
 ### Proof Before Action
 
 `proof-before-action` compares a declared boundary with observations from a

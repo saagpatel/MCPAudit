@@ -48,6 +48,19 @@ Each audit may include:
 - `drift_findings`
 - `risk_score`
 - `non_tool_risk`
+- `llm_analysis` — present when `--llm-analysis` was requested. This versioned
+  object records `status` (`complete` or `unknown`), a stable `reason_code`,
+  `source_trust`, analyzer/model provenance, candidate/analyzed tool counts,
+  and the number of admitted findings. `unknown` never means clean.
+
+Each permission finding includes additive provenance fields:
+
+- `source_trust` — `untrusted_server_metadata` for MCP-controlled metadata or
+  `operator_override` for an explicit local override;
+- `analyzer` and optional `analyzer_model`;
+- `analysis_status` — currently `complete` for admitted findings. Failed or
+  incomplete LLM output contributes no findings and is represented by the
+  audit-level `llm_analysis.status: unknown` summary.
 
 The report top level also includes:
 
@@ -67,6 +80,9 @@ The report top level also includes:
     this check compares against; named in `servers`),
     `missing_credential` (e.g. `--llm-analysis` without `ANTHROPIC_API_KEY`),
     `missing_dependency` (e.g. the `anthropic` package not installed),
+    `llm_analysis_unknown` (a requested server-level LLM pass detected
+    injection, was refused, failed at the provider, omitted a tool, or returned
+    malformed output; no model findings were admitted),
     `option_ignored` (an option passed without the check that consumes it).
     The vocabulary is additive — consumers must tolerate unknown codes.
   - `message` — plain-text human summary including remediation.

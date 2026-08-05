@@ -34,6 +34,9 @@ from mcp_audit.models import (
     AuditReport,
     ClientType,
     ConnectionMode,
+    LLMAnalysisReasonCode,
+    LLMAnalysisStatus,
+    LLMAnalysisSummary,
     ScanWarning,
     ServerAudit,
     ServerConfig,
@@ -128,9 +131,17 @@ async def run_scan(
 
     # Optional Phase 3 components
     llm_analyzer = None
+    llm_unavailable_summary: LLMAnalysisSummary | None = None
     if opts.llm_analysis:
+        from mcp_audit.llm_analyzer import DEFAULT_MODEL
+
         api_key = os.environ.get("ANTHROPIC_API_KEY", "")
         if not api_key:
+            llm_unavailable_summary = LLMAnalysisSummary(
+                status=LLMAnalysisStatus.UNKNOWN,
+                reason_code=LLMAnalysisReasonCode.MISSING_CREDENTIAL,
+                model=DEFAULT_MODEL,
+            )
             warn(
                 "missing_credential",
                 "--llm-analysis: ANTHROPIC_API_KEY not set, skipping LLM analysis.",
@@ -142,6 +153,11 @@ async def run_scan(
 
                 llm_analyzer = LLMAnalyzer(api_key=api_key)
             except ImportError:
+                llm_unavailable_summary = LLMAnalysisSummary(
+                    status=LLMAnalysisStatus.UNKNOWN,
+                    reason_code=LLMAnalysisReasonCode.MISSING_DEPENDENCY,
+                    model=DEFAULT_MODEL,
+                )
                 warn(
                     "missing_dependency",
                     "--llm-analysis: anthropic package not installed. Run: pip install 'mcp-audits[llm]'",
@@ -294,8 +310,11 @@ async def run_scan(
 
             # Optional LLM augmentation for low-confidence tools
             if llm_analyzer is not None:
-                llm_findings = await llm_analyzer.analyze_server(audit.tools, raw_findings)
-                raw_findings = raw_findings + llm_findings
+                llm_outcome = await llm_analyzer.analyze_server_with_status(audit.tools, raw_findings)
+                audit.llm_analysis = llm_outcome.summary
+                raw_findings = raw_findings + llm_outcome.findings
+            elif opts.llm_analysis and llm_unavailable_summary is not None:
+                audit.llm_analysis = llm_unavailable_summary.model_copy(deep=True)
 
             # Apply user overrides between analysis and scoring
             audit.permissions = applier.apply(srv.name, raw_findings)
@@ -384,6 +403,29 @@ async def run_scan(
         async with anyio.create_task_group() as tg:
             for i, srv in enumerate(servers):
                 tg.start_soon(audit_one_guarded, i, srv)
+
+    # A model omission, refusal, malformed response, provider error, or detected
+    # injection is coverage loss, not a clean empty result. The per-server
+    # summary is authoritative; this additive warning keeps terminal and legacy
+    # warning consumers from overlooking it.
+    setup_reasons = {
+        LLMAnalysisReasonCode.MISSING_CREDENTIAL,
+        LLMAnalysisReasonCode.MISSING_DEPENDENCY,
+    }
+    for audit in audits:
+        summary = audit.llm_analysis
+        if (
+            summary is not None
+            and summary.status == LLMAnalysisStatus.UNKNOWN
+            and summary.reason_code not in setup_reasons
+        ):
+            warn(
+                "llm_analysis_unknown",
+                f"--llm-analysis: result for {audit.server.name} is UNKNOWN "
+                f"({summary.reason_code.value}); no model findings were admitted.",
+                check="llm_analysis",
+                servers=[audit.server.name],
+            )
 
     # Every pin-comparison check needs a baseline; warn if asked for but nothing is pinned.
     if pin_store is not None and not pin_store.pinned_servers():
