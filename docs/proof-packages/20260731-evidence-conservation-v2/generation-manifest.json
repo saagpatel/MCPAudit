@@ -2,9 +2,9 @@
   "artifact_count": 98,
   "artifacts": [
     {
-      "bytes": 802,
+      "bytes": 4825,
       "path": "docs/proof-packages/20260731-evidence-conservation-v2/README.md",
-      "sha256": "a90324be9a04b1cf55d905b7d589ea41dfb9e37adad870e56de9708544a9c9cb"
+      "sha256": "17d2820ce8860e094111b8dfa1101431a67b534ed47a8f95646acfb514b16d26"
     },
     {
       "bytes": 620,
@@ -495,6 +495,42 @@
   "generated_at": "2026-07-31T21:27:04Z",
   "generator_revision": "evidence-conservation-v2-bounded-review-repair",
   "package_id": "20260731-evidence-conservation-v2",
+  "post_generation_amendments": [
+    {
+      "amended_at": "2026-08-04",
+      "amendment_id": "20260804-home-path-redaction",
+      "artifacts_amended": [
+        "docs/proof-packages/20260731-evidence-conservation-v2/contracts/frozen-contracts-v2.json",
+        "docs/proof-packages/20260731-evidence-conservation-v2/records/freeze-receipt-p1-v1.json",
+        "docs/proof-packages/20260731-evidence-conservation-v2/records/freeze-receipt-p2-v1.json",
+        "docs/proof-packages/20260731-evidence-conservation-v2/records/freeze-receipt-p3-v1.json",
+        "docs/proof-packages/20260731-evidence-conservation-v2/records/ownership-preflight-v1.json",
+        "docs/proof-packages/20260731-evidence-conservation-v2/schemas/ownership-preflight-v1.schema.json",
+        "docs/proof-packages/20260731-evidence-conservation-v2/tools/package_lib.py"
+      ],
+      "attestation_scope": "These receipts attest to the AMENDED bytes. They do NOT attest to the bytes frozen on 2026-07-31. Verification proves internal consistency of the amended package; it cannot prove identity with the original freeze, and no artifact in this package can, because the pre-amendment bytes were never published.",
+      "change": "Absolute home-directory prefixes replaced with placeholders: the projects directory became <workspace>/, anything else became <home>/. No other content was modified.",
+      "deliberately_not_repaired": "The 4 record_integrity mismatches (each record's own content_sha256 over its body) are mechanically repairable and were left stale on purpose. Repairing them would re-sign four further attestations over amended content and still not yield PASS, because the frozen-inventory failure is unfixable. The visible mismatch is itself the signal that this package was amended.",
+      "digests_recomputed": [
+        "generation-manifest.json: artifacts[].sha256 and artifacts[].bytes for each amended artifact, and for README.md, which carries the human-readable form of this note",
+        "verification/package-validation.json: receipt_provenance.package_lib_sha256"
+      ],
+      "reason": "Seven indexed artifacts recorded absolute home-directory paths of the machine that generated the package. The branch carrying the package had never been pushed, so the paths were removed before first publication rather than after.",
+      "stored_status_caveat": "The status:PASS in verification/package-validation.json was captured before this amendment, on the generating machine. It describes bytes that were never published and cannot be reproduced from what is in this directory.",
+      "unchanged": "No evidence record, candidate, control, mutation, boundary, fixture, schema, or count was altered. The findings the package records are unchanged; only its ability to prove them mechanically is reduced, in the ways listed here.",
+      "validator_outcome": {
+        "errors_post_amendment": {
+          "frozen_inventory_validation": 1,
+          "record_integrity": 4,
+          "stored_validation_receipt_mismatch": 1
+        },
+        "measured_by": "tools/validate_package.py --root . on a pristine export of each commit",
+        "post_amendment": "FAIL",
+        "pre_amendment": "PASS"
+      },
+      "why_verification_degrades": "frozen_inventory_validation EXECUTES the recorded repository_path (git -C <path> rev-parse ...) rather than merely reading it. Those paths were load-bearing. Once redacted, no placeholder can satisfy the check, so it is unfixable by any amendment. It could only ever have passed on the generating machine with those repositories still at those paths: this package cannot be both publishable and self-verifying, which is a property of its design rather than of this amendment."
+    }
+  ],
   "schema": "GenerationManifestV2",
   "self_digest_rule": "generation-manifest-excludes-itself-and-validator-captured-receipt"
 }
