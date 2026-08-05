@@ -13,9 +13,16 @@ from typing import Any, Literal
 
 from mcp_audit import __version__
 from mcp_audit.proof_models import (
+    ATTEMPT_EVIDENCE_RULE_IDS,
     CAPSULE_INDEX_SCHEMA,
+    CAPSULE_INDEX_SCHEMA_V1,
     CAPSULE_SCHEMA,
+    CAPSULE_SCHEMA_V1,
+    OBSERVATION_SCHEMA,
+    SUPPORTED_CAPSULE_INDEX_SCHEMAS,
+    SUPPORTED_CAPSULE_SCHEMAS,
     ActionDeclaration,
+    AttemptEvidence,
     BillComparison,
     CapsuleIndex,
     CapsuleIntegrity,
@@ -178,6 +185,55 @@ def compare_bill(declaration: ActionDeclaration, observation: Observation) -> Bi
                 message="one or more requested observation surfaces were incomplete",
             )
         )
+    if observation.schema_version == OBSERVATION_SCHEMA:
+        attempt_evidence_by_rule: dict[str, AttemptEvidence] = {
+            item.rule_id: item for item in observation.attempt_evidence
+        }
+        missing_attempt_evidence = [
+            rule_id for rule_id in ATTEMPT_EVIDENCE_RULE_IDS if rule_id not in attempt_evidence_by_rule
+        ]
+        if missing_attempt_evidence:
+            findings.append(
+                ComparisonFinding(
+                    code="attempt_evidence_missing",
+                    severity="unknown",
+                    message="one or more required attempt-evidence receipts were missing",
+                    evidence=missing_attempt_evidence,
+                )
+            )
+        unresolved_attempt_evidence = [
+            rule_id
+            for rule_id in ATTEMPT_EVIDENCE_RULE_IDS
+            if rule_id in attempt_evidence_by_rule
+            and attempt_evidence_by_rule[rule_id].state in {"incomplete", "unknown"}
+        ]
+        if unresolved_attempt_evidence:
+            findings.append(
+                ComparisonFinding(
+                    code="attempt_evidence_unresolved",
+                    severity="unknown",
+                    message="one or more attempt-level observer blind spots remain unresolved",
+                    evidence=unresolved_attempt_evidence,
+                )
+            )
+        unsupported_attempt_claims = [
+            rule_id
+            for rule_id in ATTEMPT_EVIDENCE_RULE_IDS
+            if rule_id in attempt_evidence_by_rule
+            and attempt_evidence_by_rule[rule_id].state in {"observed", "blocked"}
+        ]
+        if unsupported_attempt_claims:
+            findings.append(
+                ComparisonFinding(
+                    code="attempt_evidence_claim_unsupported",
+                    severity="unknown",
+                    message=(
+                        "the v2 comparison contract has no accepted attempt-trace mechanism "
+                        "for observed or blocked claims"
+                    ),
+                    evidence=unsupported_attempt_claims,
+                )
+            )
     surfaces = (
         observation.filesystem,
         observation.database,
@@ -249,6 +305,8 @@ def build_capsule(
     comparison: BillComparison,
     trust_manifest: ReleaseTrustManifest,
 ) -> EvidenceCapsule:
+    if observation.schema_version != OBSERVATION_SCHEMA:
+        raise ValueError("new capsules require the current observation schema")
     subject = observation.subject_snapshot
     if subject is None:
         raise ValueError("new capsules require staged subject snapshot evidence")
@@ -318,7 +376,10 @@ def export_capsule(capsule: EvidenceCapsule, output: Path) -> str:
     if output.exists() and any(output.iterdir()):
         raise ValueError("output directory must be absent or empty")
     output.mkdir(parents=True, exist_ok=True)
-    capsule_bytes = canonical_json_bytes(capsule)
+    capsule_payload = capsule.model_dump(mode="json")
+    if capsule.schema_version == CAPSULE_SCHEMA_V1:
+        capsule_payload["payload"]["observation"].pop("attempt_evidence")
+    capsule_bytes = canonical_json_bytes(capsule_payload)
     html_bytes = render_offline_html(capsule).encode("utf-8")
     if len(capsule_bytes) > _MAX_CAPSULE_BYTES or len(html_bytes) > _MAX_REPORT_BYTES:
         raise ValueError("capsule or offline report exceeds the verification size limit")
@@ -340,7 +401,13 @@ def export_capsule(capsule: EvidenceCapsule, output: Path) -> str:
             logical_role="view",
         ),
     ]
+    index_schema: Literal[
+        "proof-before-action.capsule-index.v1",
+        "proof-before-action.capsule-index.v2",
+    ] = CAPSULE_INDEX_SCHEMA_V1 if capsule.schema_version == CAPSULE_SCHEMA_V1 else CAPSULE_INDEX_SCHEMA
     index = CapsuleIndex(
+        schema_version=index_schema,
+        capsule_schema_version=capsule.schema_version,
         subject_commit=capsule.payload.trust_manifest.repository_commit,
         producer_commit=capsule.payload.producer.commit,
         artifacts=artifacts,
@@ -374,6 +441,27 @@ def render_offline_html(capsule: EvidenceCapsule) -> str:
         or "<tr><td colspan='4'>No MCP dependency was discovered.</td></tr>"
     )
     limitations = "".join(f"<li>{html.escape(item)}</li>" for item in capsule.payload.limitations)
+    attempt_section = ""
+    if capsule.schema_version == CAPSULE_SCHEMA:
+        attempt_rows = (
+            "".join(
+                "<tr>"
+                f"<td><code>{html.escape(item.rule_id)}</code></td>"
+                f"<td>{html.escape(item.surface)}</td>"
+                f"<td>{html.escape(item.state)}</td>"
+                f"<td>{html.escape(item.support)}</td>"
+                f"<td>{html.escape(item.attribution_confidence)}</td>"
+                "</tr>"
+                for item in capsule.payload.observation.attempt_evidence
+            )
+            or "<tr><td colspan='5'>Required attempt evidence is missing.</td></tr>"
+        )
+        attempt_section = (
+            "<h2>Attempt-level evidence</h2>\n"
+            "<table><thead><tr><th>Rule</th><th>Surface</th><th>State</th>"
+            "<th>Support</th><th>Attribution</th></tr></thead>\n"
+            f"<tbody>{attempt_rows}</tbody></table>\n"
+        )
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
@@ -396,7 +484,7 @@ th,td{{border:1px solid #374151;padding:8px;text-align:left}}.muted{{color:#9ca3
 <li>Network attempt observed: {html.escape(str(capsule.payload.observation.network.surface.attempted))}</li>
 </ul>
 <h2>Declaration comparison</h2><ul>{findings}</ul>
-<h2>Release trust manifest</h2>
+{attempt_section}<h2>Release trust manifest</h2>
 <table><thead><tr><th>Config</th><th>Identity</th><th>Evidence state</th><th>Grade</th></tr></thead>
 <tbody>{trust_rows}</tbody></table>
 <h2>Limitations and unknowns</h2><ul>{limitations}</ul>
@@ -451,7 +539,7 @@ def verify_capsule(
                 "message": "capsule index is not canonical JSON",
             }
         )
-    if index.schema_version != CAPSULE_INDEX_SCHEMA:
+    if index.schema_version not in SUPPORTED_CAPSULE_INDEX_SCHEMAS:
         errors.append({"code": "index_schema_unsupported", "message": index.schema_version})
     for artifact in index.artifacts:
         path = root / artifact.path
@@ -468,7 +556,7 @@ def verify_capsule(
     try:
         raw = json.loads(capsule_bytes)
         actual_schema = raw.get("schema_version")
-        if actual_schema != CAPSULE_SCHEMA:
+        if actual_schema not in SUPPORTED_CAPSULE_SCHEMAS:
             errors.append({"code": "capsule_schema_unsupported", "message": str(actual_schema)})
         capsule = EvidenceCapsule.model_validate_json(capsule_bytes, strict=True)
         canonical_capsule_bytes = canonical_json_bytes(raw)
@@ -476,6 +564,13 @@ def verify_capsule(
         errors.append({"code": "capsule_schema_invalid", "message": type(exc).__name__})
         capsule = None
     if capsule is not None:
+        if index.capsule_schema_version != capsule.schema_version:
+            errors.append(
+                {
+                    "code": "index_capsule_schema_mismatch",
+                    "message": "capsule index schema binding does not match the capsule",
+                }
+            )
         if canonical_capsule_bytes != capsule_bytes:
             errors.append(
                 {

@@ -46,6 +46,54 @@ class Confidence(StrEnum):
     LLM = "llm"  # Classified by LLM — treated like HIGH confidence
 
 
+class FindingSourceTrust(StrEnum):
+    """Trust label for the material that produced a permission finding."""
+
+    UNTRUSTED_SERVER_METADATA = "untrusted_server_metadata"
+    OPERATOR_OVERRIDE = "operator_override"
+
+
+class LLMAnalysisStatus(StrEnum):
+    """Whether optional LLM augmentation produced an admissible result."""
+
+    COMPLETE = "complete"
+    UNKNOWN = "unknown"
+
+
+class LLMAnalysisReasonCode(StrEnum):
+    """Stable reason vocabulary for optional LLM-analysis coverage."""
+
+    COMPLETE = "complete"
+    NO_CANDIDATES = "no_candidates"
+    INJECTION_DETECTED = "injection_detected"
+    PROVIDER_ERROR = "provider_error"
+    PROVIDER_REFUSAL = "provider_refusal"
+    PROVIDER_INCOMPLETE = "provider_incomplete"
+    MALFORMED_OUTPUT = "malformed_output"
+    OMITTED_TOOLS = "omitted_tools"
+    MISSING_CREDENTIAL = "missing_credential"
+    MISSING_DEPENDENCY = "missing_dependency"
+
+
+class LLMAnalysisSummary(BaseModel):
+    """Machine-readable status and provenance for one server's LLM pass.
+
+    The model only augments deterministic findings. ``UNKNOWN`` means the LLM
+    result contributed no findings and must not be interpreted as a clean
+    classification.
+    """
+
+    schema_version: str = "mcp-audit.llm-analysis.v1"
+    status: LLMAnalysisStatus
+    reason_code: LLMAnalysisReasonCode
+    source_trust: FindingSourceTrust = FindingSourceTrust.UNTRUSTED_SERVER_METADATA
+    analyzer: str = "anthropic"
+    model: str
+    candidate_tools: int = 0
+    analyzed_tools: int = 0
+    findings_added: int = 0
+
+
 class InjectionSeverity(StrEnum):
     HIGH = "high"  # Clear instruction override attempt
     MEDIUM = "medium"  # Suspicious framing or hidden text
@@ -217,6 +265,10 @@ class PermissionFinding(BaseModel):
     confidence: Confidence
     evidence: list[str]  # What triggered this finding (pattern matches, annotation values)
     tool_name: str
+    source_trust: FindingSourceTrust = FindingSourceTrust.UNTRUSTED_SERVER_METADATA
+    analyzer: str = "mcp-audit.permission-analyzer"
+    analyzer_model: str | None = None
+    analysis_status: LLMAnalysisStatus = LLMAnalysisStatus.COMPLETE
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -854,6 +906,7 @@ class ServerAudit(BaseModel):
     integrity_findings: list[IntegrityFinding] = Field(default_factory=list)
     package_verify_findings: list[PackageVerifyFinding] = Field(default_factory=list)
     artifact_verify_findings: list[ArtifactVerifyFinding] = Field(default_factory=list)
+    llm_analysis: LLMAnalysisSummary | None = None
 
 
 class ShadowingFinding(BaseModel):

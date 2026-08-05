@@ -48,6 +48,19 @@ Each audit may include:
 - `drift_findings`
 - `risk_score`
 - `non_tool_risk`
+- `llm_analysis` — present when `--llm-analysis` was requested. This versioned
+  object records `status` (`complete` or `unknown`), a stable `reason_code`,
+  `source_trust`, analyzer/model provenance, candidate/analyzed tool counts,
+  and the number of admitted findings. `unknown` never means clean.
+
+Each permission finding includes additive provenance fields:
+
+- `source_trust` — `untrusted_server_metadata` for MCP-controlled metadata or
+  `operator_override` for an explicit local override;
+- `analyzer` and optional `analyzer_model`;
+- `analysis_status` — currently `complete` for admitted findings. Failed or
+  incomplete LLM output contributes no findings and is represented by the
+  audit-level `llm_analysis.status: unknown` summary.
 
 The report top level also includes:
 
@@ -67,6 +80,10 @@ The report top level also includes:
     this check compares against; named in `servers`),
     `missing_credential` (e.g. `--llm-analysis` without `ANTHROPIC_API_KEY`),
     `missing_dependency` (e.g. the `anthropic` package not installed),
+    `llm_analysis_unknown` (a requested server-level LLM pass detected
+    injection, was refused, failed or stopped incompletely at the provider,
+    omitted a tool, or returned malformed output; no model findings were
+    admitted),
     `option_ignored` (an option passed without the check that consumes it).
     The vocabulary is additive — consumers must tolerate unknown codes.
   - `message` — plain-text human summary including remediation.
@@ -128,22 +145,36 @@ stdout or stderr; unexpected exceptions also become one fail-closed JSON object.
 See `docs/EVIDENCE-ENFORCEMENT-AGT-FIXTURE.md` for command-specific fields and
 the exact target-version policy.
 
-## Proof Before Action v1
+## Proof Before Action contracts
 
 Proof Before Action is a separate strict evidence contract; it does not change
 `AuditReport` schema version `1`. The five version identifiers are:
 
 - `proof-before-action.declaration.v1`
-- `proof-before-action.observation.v1`
+- `proof-before-action.observation.v2`
 - `proof-before-action.trust-manifest.v1`
-- `proof-before-action.capsule.v1`
-- `proof-before-action.capsule-index.v1`
+- `proof-before-action.capsule.v2`
+- `proof-before-action.capsule-index.v2`
+
+The verifier also supports historical
+`proof-before-action.observation.v1`,
+`proof-before-action.capsule.v1`, and
+`proof-before-action.capsule-index.v1` bundles under their original comparison
+and offline-report projection. Version families cannot be mixed.
 
 The authoritative JSON Schemas are emitted from the live strict Pydantic models
 with `proof-before-action schema CONTRACT`. Unknown fields are rejected.
-Optional additive fields may be added within v1. A removal, rename, retype,
-requiredness change, evidence-semantics change, or canonicalization change
-requires a new contract identifier.
+Optional additive fields may be added within one version. A removal, rename,
+retype, requiredness change, evidence-semantics change, or canonicalization
+change requires a new contract identifier. New inspection/export writes only
+the current versions above; legacy support is verification-only compatibility.
+The observation, capsule, and index schemas include JSON Schema conditionals
+that reject v2 attempt evidence in v1 observations and reject mixed
+capsule/observation or index/capsule version families during offline validation,
+matching the live model validators. The observation schema also binds every
+attempt rule to its stable surface and ordered operations, enforces state,
+support, attribution, provenance, and unknown-reason consistency, and rejects
+duplicate rule IDs.
 
 `capsule.json` is canonical JSON with sorted keys, compact separators, UTF-8, one
 terminal newline, and no floating-point values. Its payload hash covers the
@@ -167,6 +198,43 @@ Schema or canonicalization failures remain structured verifier results.
 Missing staged-subject evidence is always invalid, including parseable legacy-v1
 payloads. A complete observer's transient filesystem or database attempt counts
 as an observed effect even when it leaves no persisted delta.
+
+Observation v2 adds `attempt_evidence`. New observations emit exactly one strict
+receipt for each stable rule:
+
+- `PBA-FS-TRANSIENT-001` / `filesystem.transient_attempt`;
+- `PBA-DB-NO-DELTA-001` / `database.no_delta_attempt`;
+- `PBA-NET-DESTINATION-001` / `network.requested_destination`;
+- `PBA-UNIX-SOCKET-001` / `network.unix_socket`.
+
+Each receipt contains:
+
+- `rule_id` and its fixed `surface`;
+- the fixed `operations` covered by that rule;
+- `state`: `observed`, `blocked`, `incomplete`, or `unknown`;
+- `attribution_confidence`: `high`, `medium`, `low`, or `none`;
+- `platform`, `backend`, and `support`;
+- one or more provenance rows with `kind`, `source`, and
+  `observer_owned`;
+- `unknown_reasons` for every `incomplete` or `unknown` state.
+
+The current Docker backend emits all four as `unknown`, confidence `none`, and
+support `unsupported`. It records final workspace hashes, SQLite semantic/final
+state, available network namespace counter deltas, or the validated observer
+contract as bounded provenance without claiming those mechanisms traced the
+attempt. If counter snapshots are missing, unavailable, or regressed, the
+network-destination receipt uses observer-contract provenance and carries the
+exact counter-degradation limitation instead of claiming deltas were collected.
+Missing or unresolved receipts add an `unknown` comparison finding. V2 also
+adds an `unknown` finding for `observed` or `blocked` receipt claims because no
+accepted attempt-trace mechanism exists in this contract version. The offline
+HTML projection includes the same rule/state/support/attribution matrix.
+
+That last evidence-semantics change is versioned: it is the v2 comparison and
+HTML contract. Historical v1 observations do not accept `attempt_evidence` and
+are recomputed/rendered with the original v1 behavior, so an integrity-anchored
+v1 bundle remains byte-compatible and verifiable. A v1 bundle is historical
+evidence, not a v2 attempt-evidence claim.
 
 `proof-before-action inspect` exits `0` for a passing comparison, `1` for a
 blocked or unknown comparison, and `2` when validation or observation cannot

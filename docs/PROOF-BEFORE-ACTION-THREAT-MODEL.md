@@ -83,11 +83,12 @@ platform.
 | Container, VM, or hypervisor escape | Unknown | Could bypass the container controls. A capsule records containment as `partial`. |
 | Docker engine host or optional VM sharing | Not a proven isolation boundary | The engine layer may expose broader host-adjacent state than the runtime container. A hostile-kernel test should use a fresh mountless VM instead. |
 | macOS Keychain, TCC, XPC, Apple Events, GUI, devices, and host kernel | Unobserved | The Linux fixture cannot justify claims about these surfaces. |
-| Transient create-delete or write-restore | Explicitly incomplete | Final-state hashing can miss an attempt that leaves no persisted delta, so the filesystem surface cannot support `pass`. |
+| Transient create-delete or write-restore | Explicit machine-readable `unknown` (`PBA-FS-TRANSIENT-001`) | Final-state hashing can miss an attempt that leaves no persisted delta, so the filesystem surface cannot support `pass`. |
 | Nested or very short-lived child processes | Final state quiesced; identity attribution incomplete | Surviving descendants are terminated before the final archive, but child executable identities and transient effects are not completely attributed. |
-| SQLite transactions with no final delta | Explicitly incomplete | Semantic comparison proves final content, not every query or transaction attempt, so the database surface cannot support `pass`. |
+| SQLite queries or transactions with no final delta | Explicit machine-readable `unknown` (`PBA-DB-NO-DELTA-001`) | Semantic comparison proves final content, not every query or transaction attempt, so the database surface cannot support `pass`. |
 | Non-SQLite databases | File-level only | Semantic records and remote database effects are unknown. |
-| Network destination and Unix-domain sockets | Unobserved | IPv4/IPv6 IP and UDP counters plus family-agnostic Linux TCP counters reveal some attempts, not the requested hostname, endpoint, or Unix-domain socket activity. The network surface remains incomplete. |
+| Requested network destination or hostname | Explicit machine-readable `unknown` (`PBA-NET-DESTINATION-001`) | IPv4/IPv6 IP and UDP counters plus family-agnostic Linux TCP counters reveal some activity, not the requested IP, port, or hostname. A blocked attempt is not destination observation. |
+| Filesystem and abstract Unix-domain sockets | Explicit machine-readable `unknown` (`PBA-UNIX-SOCKET-001`) | IP counters do not cover AF_UNIX, and no accepted deterministic socket event source exists in v2. |
 | Loopback inside the namespace | Available | A command can contact its own processes; the evidence marks attempts but does not call loopback external contact. |
 | Output links or special files | Fail-closed | Collection stops; the effect is not silently omitted and no completed capsule is issued. |
 | Unknown secret formats or low-entropy secret hashes | Residual risk | Redaction is best effort, and a digest can sometimes be guessed. Review declarations and commands before sharing capsules. |
@@ -109,6 +110,33 @@ filesystem and database attempt surfaces remain incomplete. The schema retains
 `pass` for compatibility with complete observation mechanisms; release
 authority still belongs to the operator and must account for every limitation
 and unknown.
+
+The attempt receipt vocabulary includes `observed` and `blocked` so a versioned
+future observer can distinguish them, but v2 has no accepted attempt-trace
+mechanism. Replacing an `unknown` receipt with either value, or omitting a
+receipt, remains non-passing when comparison is recomputed.
+
+Historical v1 observation/capsule/index bundles are verified with their
+original comparison and HTML projection. They are not reinterpreted as v2
+attempt receipts, and the current observer cannot emit v1 output.
+
+## Attempt-observer mechanism decision
+
+The current backend intentionally does not add a tracer:
+
+- host audit, eBPF, fanotify, or comparable kernel instrumentation requires
+  privileged host or engine access and would widen the isolation boundary;
+- ptrace/syscall tooling cannot be assumed in the independently pinned runtime
+  image, and adding capabilities, relaxing the container profile, installing
+  packages, or trusting a mutable image tool would weaken determinism or
+  isolation;
+- `LD_PRELOAD`, client-library hooks, command-source parsing, and polling are
+  bypassable by static binaries, raw syscalls, alternate SQLite clients, or
+  short-lived activity, so they cannot support trustworthy attribution.
+
+Those mechanisms are rejected rather than used to manufacture detection. The
+four v2 receipts bind the observer's actual final-state/counter provenance and
+fail closed as `UNKNOWN`.
 
 ## Safer high-risk profile
 

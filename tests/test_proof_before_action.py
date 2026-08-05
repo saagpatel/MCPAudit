@@ -28,6 +28,7 @@ from mcp_audit.proof_capsule import (
 )
 from mcp_audit.proof_cli import main
 from mcp_audit.proof_models import (
+    CAPSULE_INDEX_SCHEMA,
     CAPSULE_SCHEMA,
     ActionDeclaration,
     EvidenceCapsule,
@@ -2590,7 +2591,7 @@ def test_capsule_index_rejects_path_expansion() -> None:
     with pytest.raises(ValidationError, match="exactly capsule.json and report.html"):
         CapsuleIndex.model_validate(
             {
-                "schema_version": "proof-before-action.capsule-index.v1",
+                "schema_version": CAPSULE_INDEX_SCHEMA,
                 "capsule_schema_version": CAPSULE_SCHEMA,
                 "subject_commit": None,
                 "producer_commit": None,

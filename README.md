@@ -279,6 +279,12 @@ mcp-audit scan --llm-analysis
 mcp-audit watch
 ```
 
+LLM mode treats all server-provided metadata as untrusted JSON data, keeps
+classification instructions in a separate system message, and reports an
+explicit `UNKNOWN` status without admitting model findings when injection,
+refusal, omission, provider failure, or malformed output prevents a complete
+classification. Deterministic analysis remains authoritative.
+
 ## Help improve mcp-audit (2 minutes)
 
 Redacted field reports from real MCP configs help calibrate the scanner.

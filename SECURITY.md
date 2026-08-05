@@ -92,6 +92,21 @@ MCPAudit parses and displays content from MCP server configs and MCP server meta
 
 When the optional `anthropic` dependency is installed and `--llm-analysis` is used, MCPAudit sends selected tool names, descriptions, and parameter names to the Anthropic API for permission classification. In this mode, content from audited MCP server configs is transmitted over the network to a third-party service. Do not use `--llm-analysis` if your MCP configs contain sensitive information (API keys in args, internal hostnames, etc.).
 
+MCP server metadata remains untrusted at this boundary. Classification
+instructions are sent in the provider's system field; server-controlled names,
+descriptions, and parameter names are encoded as a versioned JSON data envelope
+and addressed by opaque tool IDs. Metadata that trips the deterministic
+injection detector is not sent to the model. A refusal, provider error,
+malformed response, unknown category, duplicate or omitted tool ID, or
+unresolved parse produces an explicit `UNKNOWN` LLM-analysis status and admits
+no model findings. Deterministic findings remain authoritative and are never
+removed by LLM output.
+
+JSON and SARIF permission findings preserve `source_trust`, analyzer/model
+provenance, and `analysis_status`. Each server audit also carries the versioned
+`llm_analysis` summary when the option was requested. Consumers must treat
+`UNKNOWN` as missing coverage, not as a clean result.
+
 ### Proof Before Action
 
 `proof-before-action` compares a declared boundary with observations from a
@@ -104,10 +119,21 @@ sandbox or safety guarantee. Unknown, stale, masked, unmatched, incomplete,
 unobservable, dirty, or authority-unverified evidence remains non-authoritative
 and cannot become a passing safety claim.
 
-The observer does not prove complete Unix-domain socket coverage, host-kernel
-isolation, or safety outside the declared surfaces. A valid capsule also does
-not prove that an operator independently obtained the root hash; callers must
-supply and protect that trust input themselves. See
+The observation-v2 observer emits stable machine-readable `unknown` receipts for transient
+create-delete/write-restore attempts, no-delta SQLite queries or transactions,
+requested network destinations or hostnames, and filesystem or abstract
+Unix-domain sockets. It does not prove those surfaces observed, blocked, or
+safe. Missing or unresolved attempt receipts are non-passing, and v2 does not
+accept a producer's unsupported observed/blocked claim as proof.
+
+Historical observation/capsule/index v1 bundles remain verifiable under their
+original comparison and offline-report semantics. They are not reinterpreted as
+v2 attempt evidence, and new observations cannot emit the v1 contract.
+
+The observer also does not prove host-kernel isolation or safety outside the
+declared surfaces. A valid capsule does not prove that an operator independently
+obtained the root hash; callers must supply and protect that trust input
+themselves. See
 [`docs/SECURITY-REVIEW.md`](docs/SECURITY-REVIEW.md) for the detailed boundary.
 
 ---
