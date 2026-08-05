@@ -19,37 +19,47 @@ tests, and install path agree.
 - Known limitations are documented in release notes and beta/stable readiness
   docs.
 
-## Current 2.5.0 Release
+## Current 2.6.0 Candidate
 
-The 2.5.0 release is a backward-compatible minor release. It adds Proof Before
-Action, ProofOS PostgreSQL verification, SafeForge runtime/pre-install evidence,
-and the security dependency/pinning repairs recorded in the changelog. Existing
-2.x audit-report and SARIF contracts remain additive.
+The 2.6.0 candidate is a backward-compatible minor release. Its primary
+capability groups are the offline Agent UI Contract Auditor, bounded
+nested-schema SSRF detection, and the experimental fixture-only
+evidence-to-enforcement workflow. It also includes the unreleased config-only
+connection-status contract, release-workflow hardening, immutable Action
+refreshes, ClusterFuzzLite integration, and the SA-015 cross-SDK identity
+boundary regression already landed on `main`. Existing 2.x audit-report and
+SARIF contracts remain additive.
 
 Release evidence must establish:
 
-- package, changelog, `docs/release-state.json`, `server.json`, and public
-  Action/pre-commit examples agree on the 2.5.0 public release;
+- package, changelog, versioned release notes, and
+  `docs/release-state.json` agree on the 2.6.0 candidate while `server.json`
+  and public Action/pre-commit examples continue to name the existing 2.5.0
+  release;
 - wheel and sdist metadata require `mcp>=1.28.1` and expose `mcp-audit`,
   `mcp-audits`, and `proof-before-action`;
-- the full quality gate and an installed Proof Before Action workflow pass from
-  an exact clean candidate commit;
+- focused capability tests, output-contract checks, the full quality gate, the
+  release verifier, and wheel/sdist install smokes pass from an exact clean
+  candidate commit;
 - missing, stale, masked, unmatched, incomplete, or unobservable evidence never
   becomes a safety claim;
-- the remaining OpenSSF human-review, fuzzing, and best-practices-badge findings
-  have explicit evidence-backed dispositions.
+- Agent UI evidence remains offline, static, descriptor-bound, and limited to
+  supported fixture contracts;
+- evidence-to-enforcement remains experimental, fixture-only, and does not
+  authorize or prove a production gateway;
+- SSRF evidence remains static and schema-derived and does not prove runtime
+  containment or host safety.
 
-Tagging, publishing, and external registry changes remain separate actions. Tag
-creation no longer triggers publication: the publish workflow requires a manual
-dispatch bound to an exact tag and commit, verifies the release state, and
-exposes artifact hashes before the environment-bound OIDC job. The `pypi`
-environment requires a named maintainer approval and disables administrator
-bypass, but it is explicitly configured for solo-maintainer publishing and does
-not provide independent review. The unresolved human-review, fuzzing, and
-best-practices Scorecard findings are accepted release limitations, and the
-absence of two external redacted field reports remains a limitation: solo
-fixture evidence does not prove downstream adoption or broad environment
-compatibility.
+Merging the candidate PR does not authorize tagging, publication, deployment,
+or external registry updates. A separate reviewed release-state PR must first
+finalize public surfaces and change the candidate to `status: release`; a
+separate exact-commit publication decision is then still required. Tag creation
+does not publish: the manual workflow binds an exact tag and commit, verifies
+release state, and exposes artifact hashes before the environment-bound OIDC
+job. Automated review and fixture coverage do not replace independent human
+review. Missing field reports and other unverifiable external evidence remain
+`UNKNOWN` and do not establish downstream adoption, human effectiveness, or
+broad environment compatibility.
 
 ## Go/No-Go Checklist
 
