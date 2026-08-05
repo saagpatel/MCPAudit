@@ -19,6 +19,7 @@ from rich.console import Console
 
 from mcp_audit.agent_ui_cli import agent_ui
 from mcp_audit.authorization_posture_cli import authorization_posture
+from mcp_audit.cache_contract_cli import cache_contract
 from mcp_audit.confighealth import config_health_findings, duplicate_server_config_counts
 from mcp_audit.discovery import ConfigParseError, discover_all_configs
 from mcp_audit.enforcement_cli import enforcement_fixture
@@ -57,6 +58,7 @@ main.add_command(enforcement_fixture)
 main.add_command(agent_ui)
 main.add_command(oauth_transcript)
 main.add_command(authorization_posture)
+main.add_command(cache_contract)
 
 
 @main.command("safeforge-preinstall")
