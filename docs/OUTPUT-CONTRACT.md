@@ -354,6 +354,41 @@ PKCE correctness, client-authentication strength, IdP integrity, consent,
 real-world authorization, or production security. See
 `docs/OAUTH-TRANSCRIPT-AUDITOR.md`.
 
+## MCP Authorization Posture Adoption v1 (experimental)
+
+The offline `mcp-audit authorization-posture` command group consumes a separate
+portable producer contract and does not change `AuditReport` schema version
+`1`. Its strict identifiers are:
+
+- input: `McpAuthorizationPostureV1`, contract version `1.0.0`;
+- report: `mcpaudit.authorization-posture.report.v1`.
+
+Authoritative schemas are checked in at
+`examples/schemas/authorization-posture-input-v1.schema.json` and
+`examples/schemas/authorization-posture-report-v1.schema.json`, and are emitted
+by `mcp-audit authorization-posture schema input|report`. Unknown fields and
+implicit type coercion are rejected.
+
+The review command validates the declared official-Registry binding, public
+metadata state, bounded fetch shape, GET-only credential-free capability
+boundary, no-authority claim ceiling, and cross-field resource/issuer
+consistency. It never re-fetches a URL. A valid `metadata-ready` producer input
+becomes `disposition=policy-review-only`; a valid `unknown` input remains
+`disposition=blocked`. Stable finding `MCPPOSTURE001` is advisory and
+`MCPPOSTURE000` is unknown. Exit `0` means policy-review-only, exit `1` means
+blocked, and exit `2` means invalid input or output.
+
+Reports use sorted compact canonical JSON with one terminal newline and bind
+the input bytes by SHA-256. They omit producer fetch records and authorization
+or token endpoints. `input_provenance=unverified`,
+`input_freshness=unverified`, and
+`remote_observation_authority=producer-asserted` are invariant. Metadata state
+is explicitly `producer-declared-ready|producer-declared-unknown`; schema
+validation does not authenticate the producer, timestamp, Registry export,
+remote responses, or current applicability. The consumer cannot contact an MCP
+endpoint, use credentials, run OAuth, authorize a scan, or change a trust grade. See
+`docs/AUTHORIZATION-POSTURE-ADOPTION.md`.
+
 ## SafeForge Manifest v0
 
 SafeForge uses a separate, additive evidence-envelope contract; it does not

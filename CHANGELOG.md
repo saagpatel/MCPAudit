@@ -55,6 +55,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added an offline `mcp-audit authorization-posture` consumer for the portable
+  `McpAuthorizationPostureV1` version `1.0.0` contract. It validates strict
+  Registry binding, metadata, capability, claim-ceiling, and cross-field state
+  invariants; emits only policy-review or blocked advisory JSON; and has no
+  network, credential, OAuth, endpoint-session, scan, grade, or mutation path.
+  Producer provenance, saved-artifact freshness, and remote observations remain
+  explicitly unverified or producer-asserted.
 - Added experimental `mcp-audit oauth-transcript` JSON and SARIF commands with
   strict v1 fixture/report schemas, stable `MCPOAUTH000`–`MCPOAUTH007` findings,
   and vulnerable/negative/near-miss fixture triplets. The rules are pinned to

@@ -354,6 +354,16 @@ authoritative and optional SARIF uses the existing compatibility shape. See
 [`docs/OAUTH-TRANSCRIPT-AUDITOR.md`](docs/OAUTH-TRANSCRIPT-AUDITOR.md) for the
 specification pins, strict schema, fixture corpus, and claim ceiling.
 
+The experimental `mcp-audit authorization-posture` group consumes one saved
+`McpAuthorizationPostureV1` public-metadata artifact entirely offline. It
+validates the producer's exact version, Registry binding, capability boundary,
+claim ceiling, and cross-field metadata state, then emits only
+`policy-review-only` or `blocked`. It does not authenticate producer provenance
+or current freshness, repeat network fetches, contact the MCP endpoint, handle
+credentials, run OAuth, authorize a scan, or change a trust grade. See
+[`docs/AUTHORIZATION-POSTURE-ADOPTION.md`](docs/AUTHORIZATION-POSTURE-ADOPTION.md)
+for the authority flow, strict schemas, exit contract, and claim ceiling.
+
 ### Local Policy Gates
 
 Policies are local YAML files evaluated after a scan. A failing policy exits with code `2` after terminal, JSON, or SARIF output is written.
