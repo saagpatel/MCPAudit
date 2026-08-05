@@ -131,6 +131,18 @@ def test_required_named_security_scenarios_are_covered() -> None:
     ]
 
 
+def test_discovery_resource_comparison_normalizes_scheme_and_host_case(tmp_path: Path) -> None:
+    payload = _payload("mcpoauth001-negative.json")
+    payload["fixture_id"] = "discovery-resource-host-case"
+    payload["observations"][0]["request_url"] = "https://MCP.EXAMPLE/mcp"
+    path = tmp_path / "host-case.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    report = scan_oauth_transcript_path(path)
+    assert report.verdict == "pass"
+    assert not any(item.rule_id == "MCPOAUTH001" for item in report.findings)
+
+
 def test_valid_multi_resource_subset_and_wrong_audience_rejection_are_safe() -> None:
     multi_resource = scan_oauth_transcript_path(_fixture("mcpoauth002-near_miss.json"))
     rejected = scan_oauth_transcript_path(_fixture("wrong-audience-rejected-special.json"))

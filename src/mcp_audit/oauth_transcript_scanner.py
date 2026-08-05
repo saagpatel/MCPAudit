@@ -586,9 +586,9 @@ def _evaluate_discovery(fixture: OAuthTranscriptFixture, flow: Flow) -> list[OAu
         else:
             if metadata.resource is None:
                 unknown_evidence.append("protected-resource metadata omits the resource identifier")
-            elif metadata.resource != challenge.request_url:
+            elif not _resource_equal(metadata.resource, challenge.request_url):
                 violations.append(
-                    "protected-resource metadata resource does not exactly match the challenged URL"
+                    "protected-resource metadata resource does not match the challenged resource"
                 )
             if not metadata.authorization_servers:
                 unknown_evidence.append("protected-resource metadata has no authorization server")
