@@ -7,22 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.6.0] - 2026-08-05
-
 ### Security
 
-- Removed the production Agent Governance Toolkit dependency from the synthetic
-  enforcement fixture and replaced it with a repository-owned, fail-closed
-  gateway contract. Raised the direct cryptography floor to 50.0.0 and Click
-  floor to 8.3.3, excluding GHSA-g6cj-pr64-35w5 and GHSA-47fr-3ffg-hgmw from
-  locked and distributed dependency resolution.
-- Bound optional LLM permission analysis to a structured untrusted-metadata
-  envelope with opaque tool IDs and separate trusted system instructions.
-  Injection indicators, provider errors, refusals, non-terminal or unknown stop
-  reasons, malformed output, and omitted tools now fail closed to an explicit
-  `UNKNOWN` status without admitting model findings; JSON and SARIF preserve
-  source trust and analyzer provenance while deterministic findings remain
-  authoritative.
 - Added a strict, redacted, fixture-first MCP OAuth transcript auditor for
   observable discovery, issuer, RFC 8707 resource/audience, registration,
   issuer-bound credential, and protected-resource scope bindings. The analyzer
@@ -33,25 +19,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the supplied synthetic transcript and excludes token signature validation,
   PKCE correctness, IdP integrity, consent, live authorization, and production
   security.
-- Added stable attempt-evidence receipts for Proof Before Action's four
-  documented observer blind spots: transient filesystem writes, no-delta
-  SQLite activity, requested network destinations, and Unix-domain sockets.
-  New output uses versioned observation/capsule/index v2 contracts; historical
-  v1 capsules retain their original comparison and offline-report verification
-  semantics, and generated JSON Schemas encode the same version-family and
-  per-receipt invariants for offline consumers. The current Docker backend
-  reports each as machine-readable
-  `unknown`/`unsupported` with bounded provenance. Missing receipts, unresolved
-  receipts, or unaccepted observed/blocked claims remain non-passing; no
-  tracing privilege, host instrumentation, mount, socket, or network authority
-  was added. Network-destination receipts claim counter provenance only when
-  deltas were collected; timeout, missing, or regressed counters retain their
-  exact degradation reason under observer-contract provenance.
-- Detect URL- and host-shaped parameters throughout nested MCP tool schemas,
-  including object, array-item, composition, and reachable local-reference
-  branches. The walker ignores unused definition registries and non-schema
-  metadata, terminates safely on cycles, and reports bounded-traversal or
-  unresolved-reference gaps as visible fail-closed findings.
 
 ### Added
 
@@ -76,6 +43,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   token-stage scope widening or dropping, unrequested accepted audiences,
   CIMD/persisted-credential contradictions, unavailable pre-registration,
   secret-bearing exception chains, and recommendation/deprecation output drift.
+
+## [2.6.0] - 2026-08-05
+
+### Security
+
+- Removed the production Agent Governance Toolkit dependency from the synthetic
+  enforcement fixture and replaced it with a repository-owned, fail-closed
+  gateway contract. Raised the direct cryptography floor to 50.0.0 and Click
+  floor to 8.3.3, excluding GHSA-g6cj-pr64-35w5 and GHSA-47fr-3ffg-hgmw from
+  locked and distributed dependency resolution.
+- Bound optional LLM permission analysis to a structured untrusted-metadata
+  envelope with opaque tool IDs and separate trusted system instructions.
+  Injection indicators, provider errors, refusals, non-terminal or unknown stop
+  reasons, malformed output, and omitted tools now fail closed to an explicit
+  `UNKNOWN` status without admitting model findings; JSON and SARIF preserve
+  source trust and analyzer provenance while deterministic findings remain
+  authoritative.
+- Added stable attempt-evidence receipts for Proof Before Action's four
+  documented observer blind spots: transient filesystem writes, no-delta
+  SQLite activity, requested network destinations, and Unix-domain sockets.
+  New output uses versioned observation/capsule/index v2 contracts; historical
+  v1 capsules retain their original comparison and offline-report verification
+  semantics, and generated JSON Schemas encode the same version-family and
+  per-receipt invariants for offline consumers. The current Docker backend
+  reports each as machine-readable
+  `unknown`/`unsupported` with bounded provenance. Missing receipts, unresolved
+  receipts, or unaccepted observed/blocked claims remain non-passing; no
+  tracing privilege, host instrumentation, mount, socket, or network authority
+  was added. Network-destination receipts claim counter provenance only when
+  deltas were collected; timeout, missing, or regressed counters retain their
+  exact degradation reason under observer-contract provenance.
+- Detect URL- and host-shaped parameters throughout nested MCP tool schemas,
+  including object, array-item, composition, and reachable local-reference
+  branches. The walker ignores unused definition registries and non-schema
+  metadata, terminates safely on cycles, and reports bounded-traversal or
+  unresolved-reference gaps as visible fail-closed findings.
+
+### Added
+
 - Added an experimental, fixture-first `mcp-audit agent-ui` static scanner for
   program-owned MCP Apps/OpenAI metadata and A2UI v0.9 JSONL. Six stable
   authority/state/disclosure/provenance/evidence/egress rules emit deterministic
