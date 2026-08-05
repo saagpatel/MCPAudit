@@ -11,7 +11,9 @@ FIELD_REPORT_OUTREACH_DOC = Path("docs/EXTERNAL-OUTREACH-MESSAGES.md")
 SHOW_HN_DRAFT_DOC = Path("docs/SHOW-HN-DRAFT.md")
 MCP_TRUST_PACKET_DOC = Path("docs/MCP-TRUST-PACKET.md")
 SOLO_EVIDENCE_DOC = Path("docs/SOLO-EVIDENCE.md")
-FIELD_REPORT_COMMAND = "mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact"
+FIELD_REPORT_COMMAND = (
+    "uvx --from mcp-audits mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact"
+)
 
 
 def test_feedback_template_collects_fixture_ready_context() -> None:
@@ -69,6 +71,10 @@ def test_field_report_template_collects_config_only_external_evidence() -> None:
     assert "JSON/SARIF consumer compatibility check" in text
     assert "Dashboard or CI ingestion check" in text
     assert "docs/FIELD-REPORTS.md#minimal-public-example" in text
+    assert "## Activation path" in text
+    assert "without synchronous maintainer help" in text
+    assert "Approximate minutes" in text
+    assert "## Seven-day repeat readback" in text
     assert "## Expected fixture value" in text
     assert "Beta-readiness evidence only" in text
 
@@ -83,3 +89,25 @@ def test_field_report_template_preserves_safety_boundary() -> None:
     assert "internal hostnames" in text
     assert "private disclosure" in text
     assert "SECURITY.md" in text
+
+
+def test_field_report_docs_pin_activation_and_repeat_claim_boundaries() -> None:
+    field_doc = FIELD_REPORT_DOC.read_text()
+    request_doc = FIELD_REPORT_REQUEST_DOC.read_text()
+    field_contract = " ".join(field_doc.split())
+    request_contract = " ".join(request_doc.split())
+
+    assert FIELD_REPORT_COMMAND in field_doc
+    assert FIELD_REPORT_COMMAND in request_doc
+    assert "uvx may contact the configured Python package index" in field_contract
+    assert "Package downloads are a distribution proxy" in field_contract
+    assert "at least 6 of 10 participants complete safely and unassisted" in field_contract
+    assert "at least 3 valid external reports" in field_contract
+    assert "at least 2 participants repeat after 7 days" in field_contract
+    assert "fewer than 3 participants complete" in field_contract
+    assert "more than 2 participants cannot redact safely" in field_contract
+    assert "require separate authority" in field_contract
+    assert "Self-tests and CI never count" in field_contract
+    assert "7-14 days" in request_contract
+    assert "download-count proxy for adoption" in request_contract
+    assert "`2.1.0`" not in field_doc

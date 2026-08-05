@@ -70,6 +70,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Upgraded the existing external field-report beta lane with a one-command
+  uvx report path, explicit package-resolution and config-only privacy
+  boundaries, unassisted-completion and seven-day-repeat fields, aggregate
+  pass/kill thresholds, and regression checks that prevent download counts,
+  self-tests, or CI activity from being reported as external adoption.
 - Made config-only scan status explicit across terminal, JSON, and HTML reports,
   so zero connected and zero failed servers cannot be mistaken for a clean
   connected scan.
