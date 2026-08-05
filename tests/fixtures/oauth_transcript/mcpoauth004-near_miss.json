@@ -1,0 +1,145 @@
+{
+  "audience_evidence": {
+    "accepted_for_resource": "https://mcp.example/mcp",
+    "audiences": [
+      "https://mcp.example/mcp"
+    ],
+    "source": "synthetic_introspection",
+    "state": "current",
+    "token_response_exchange_id": "token-response"
+  },
+  "control_kind": "near_miss",
+  "credential_records": [],
+  "fixture_id": "mcpoauth004-near_miss",
+  "intended_authorization_server": "https://auth.example",
+  "intended_resource": "https://mcp.example/mcp",
+  "observations": [
+    {
+      "exchange_id": "resource-challenge",
+      "kind": "protected_resource_challenge",
+      "redirects_followed": 0,
+      "request_url": "https://mcp.example/mcp",
+      "resource_metadata_url": "https://mcp.example/.well-known/oauth-protected-resource/mcp",
+      "response_status": 401,
+      "scopes": [
+        "mcp.read"
+      ],
+      "sequence": 1
+    },
+    {
+      "authorization_servers": [
+        "https://auth.example"
+      ],
+      "document_state": "complete",
+      "exchange_id": "resource-metadata",
+      "kind": "protected_resource_metadata",
+      "redirects_followed": 0,
+      "request_url": "https://mcp.example/.well-known/oauth-protected-resource/mcp",
+      "resource": "https://mcp.example/mcp",
+      "response_status": 200,
+      "scopes_supported": [
+        "mcp.read",
+        "mcp.write"
+      ],
+      "sequence": 2
+    },
+    {
+      "authorization_endpoint": "https://auth.example/authorize",
+      "authorization_response_iss_parameter_supported": true,
+      "client_id_metadata_document_supported": true,
+      "document_state": "complete",
+      "exchange_id": "authorization-metadata",
+      "issuer": "https://auth.example",
+      "kind": "authorization_server_metadata",
+      "metadata_kind": "oauth",
+      "redirects_followed": 0,
+      "registration_endpoint": "https://auth.example/register",
+      "request_url": "https://auth.example/.well-known/oauth-authorization-server",
+      "response_status": 200,
+      "sequence": 3,
+      "token_endpoint": "https://auth.example/token"
+    },
+    {
+      "client_id_kind": "https_metadata_url",
+      "exchange_id": "authorization-request",
+      "kind": "authorization_request",
+      "recorded_issuer": "https://auth.example",
+      "redirect_uri": "http://127.0.0.1:43119/callback",
+      "redirects_followed": 0,
+      "request_url": "https://auth.example/authorize",
+      "resources": [
+        "https://mcp.example/mcp"
+      ],
+      "scopes": [
+        "mcp.read"
+      ],
+      "sequence": 4
+    },
+    {
+      "code_marker": "<redacted>",
+      "exchange_id": "authorization-response",
+      "handling": "accepted",
+      "issuer": "https://auth.example",
+      "kind": "authorization_response",
+      "redirect_uri": "http://127.0.0.1:43119/callback",
+      "redirects_followed": 1,
+      "response_status": 302,
+      "sequence": 5
+    },
+    {
+      "code_marker": "<redacted>",
+      "credential_record_id": null,
+      "exchange_id": "token-request",
+      "grant_type": "authorization_code",
+      "kind": "token_request",
+      "redirect_uri": "http://127.0.0.1:43119/callback",
+      "redirects_followed": 0,
+      "request_url": "https://auth.example/token",
+      "resources": [
+        "https://mcp.example/mcp"
+      ],
+      "scopes": [
+        "mcp.read"
+      ],
+      "sequence": 6
+    },
+    {
+      "access_token_marker": "<redacted>",
+      "exchange_id": "token-response",
+      "kind": "token_response",
+      "redirects_followed": 0,
+      "response_status": 200,
+      "scopes": [
+        "mcp.read"
+      ],
+      "sequence": 7
+    },
+    {
+      "authorization_marker": "<redacted>",
+      "exchange_id": "resource-use",
+      "kind": "protected_resource_use",
+      "redirects_followed": 0,
+      "request_url": "https://mcp.example/mcp",
+      "response_status": 200,
+      "sequence": 8
+    }
+  ],
+  "program_owned": true,
+  "registration": {
+    "application_type": null,
+    "client_kind": "native",
+    "issuer": null,
+    "method": "client_id_metadata_document",
+    "pre_registered_available": false,
+    "redirect_uris": [
+      "http://127.0.0.1:43119/callback"
+    ]
+  },
+  "schema_version": "mcpaudit.oauth-transcript.fixture.v1",
+  "scope_context": {
+    "previously_granted_scopes": [],
+    "reauthorization": false
+  },
+  "spec_profile": "mcp-authorization-2025-11-25+draft-2026-07-28",
+  "synthetic": true
+}

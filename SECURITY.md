@@ -35,6 +35,52 @@ static contract. It does not prove host sandboxing, CSP enforcement, transport
 integrity, authorization, renderer behavior, interoperability, or real-workflow
 safety. See `docs/AGENT-UI-CONTRACT-AUDITOR.md`.
 
+## Experimental OAuth transcript audit
+
+The `oauth-transcript` commands accept only strict, program-owned synthetic
+fixtures with conspicuous redaction markers and reserved `.example` URLs. They
+do not read environment files, browser data, OAuth stores, keychains, cookies,
+private logs, raw transcripts, or credential-bearing configuration. They do not
+perform HTTP, DNS, browser, OAuth, MCP, account, token, or authorization
+operations. URLs and redirects in fixtures are never followed.
+
+Secret-bearing fields accept only `<redacted>` and synthetic client markers.
+Credential-looking values and attacker-chosen validation field names are
+rejected without reflection. Duplicate keys,
+symlinks, URL user information, fragments, unsupported hosts, excessive input,
+excessive JSON depth, excessive metadata documents, excessive observations, and
+excessive redirect counts are rejected. Findings contain semantic binding
+summaries rather than input URLs or query/body values.
+
+A passing report proves only that the supplied synthetic transcript satisfies
+the implemented observable bindings. Audience evidence is supplied evidence,
+not signature or introspection validation. The auditor does not prove PKCE,
+client-authentication strength, IdP integrity, consent, live authorization, or
+production security. See `docs/OAUTH-TRANSCRIPT-AUDITOR.md`.
+
+## Experimental authorization posture adoption
+
+The `authorization-posture` commands accept one strict, bounded
+`McpAuthorizationPostureV1` JSON artifact. They do not fetch its URLs, resolve
+DNS, contact the Registry, authorization server, identity provider, or MCP
+endpoint, read credential stores, authenticate, run OAuth, start a scan, or
+change a trust grade. Inputs must preserve the producer's fixed GET-only,
+credential-free, no-proxy, no-redirect, address-pinned, public-address-only,
+no-mutation boundary and its all-false authority claims.
+
+Symlinks, duplicate keys, non-finite values, excessive bytes, nesting or nodes,
+unknown fields, type coercion, malformed HTTPS authorities, incompatible
+versions, widened capability or claim fields, and inconsistent resource,
+issuer, metadata, or state bindings are rejected without reflecting untrusted
+values. Output writes use the existing descriptor-bound atomic no-clobber path.
+
+The input digest proves local byte identity only. Input provenance, freshness,
+and remote authority stay explicitly unverified or producer-asserted. A
+policy-review-only report does not authenticate the producer, establish current
+applicability, prove Registry authority or remote metadata, authorize access,
+provide credentials, prove runtime security, or establish production safety.
+See `docs/AUTHORIZATION-POSTURE-ADOPTION.md`.
+
 MCPAudit is itself a security tool. This document covers two distinct concerns:
 
 1. How to report vulnerabilities **in MCPAudit** (the auditor tool itself)

@@ -301,6 +301,93 @@ OpenAI-specific extensions, AG-UI, and WebMCP remain distinct; the auditor does
 not claim translation or interoperability. See
 `docs/AGENT-UI-CONTRACT-AUDITOR.md`.
 
+## MCP OAuth Transcript Auditor v1 (experimental)
+
+The offline `mcp-audit oauth-transcript` command group is separate from normal
+MCP discovery and connected scans. It does not change `AuditReport` schema
+version `1`. Its strict contract identifiers are:
+
+- `mcpaudit.oauth-transcript.fixture.v1`
+- `mcpaudit.oauth-transcript.report.v1`
+
+Authoritative schemas are checked in at
+`examples/schemas/oauth-transcript-fixture-v1.schema.json` and
+`examples/schemas/oauth-transcript-report-v1.schema.json`, and are emitted by
+`mcp-audit oauth-transcript schema fixture|report`. Unknown fields are rejected.
+The specification profile is pinned to
+`mcp-authorization-2025-11-25+draft-2026-07-28`; the dated draft portion covers
+authorization-response issuer validation, issuer-bound client state, and DCR
+`application_type` behavior.
+
+Reports use sorted compact canonical JSON with one terminal newline and no
+timestamp or input path. Stable finding IDs are `MCPOAUTH001` through
+`MCPOAUTH007`; `MCPOAUTH000` represents missing, malformed, redacted,
+unsupported, or unverifiable evidence. Each finding contains severity,
+`violation|advisory|unknown` outcome, `required|recommended|deprecated|unsupported`
+requirement level, title, semantic target, redacted evidence, remediation,
+primary references, and assumptions.
+
+Report verdicts are:
+
+- `pass`: no violation or unknown finding; deprecated/recommended advisories may remain;
+- `fail`: at least one violation;
+- `unknown`: no violation, but one or more bindings cannot be evaluated.
+
+The scan command exits `0` for `pass`, `1` for `fail` or `unknown`, and `2` for
+an input/output error. `--json` writes the canonical report. `--sarif` writes a
+SARIF 2.1.0 compatibility projection using the existing `mcp-audit` driver and
+stable rule IDs; JSON remains authoritative. Output creation uses the same
+descriptor-bound, atomic, no-clobber path as the Agent UI auditor.
+
+Secret-bearing fields accept only redaction markers. Findings and errors omit
+raw authorization headers, cookies, codes, tokens, secrets, query values,
+arbitrary bodies, and input URLs; sanitized parser and CLI exceptions do not
+retain the source parse/validation exception as a cause or context. Input is
+limited to 1 MiB, 32 JSON levels, 64
+observations, 8 metadata documents, 5 recorded redirects, and 2,048 characters
+per URL. URLs are never fetched, redirects are never followed, and no network,
+browser, OAuth, MCP, account, keychain, or credential-store path exists.
+
+A passing report proves only the implemented binding invariants in the
+supplied synthetic transcript. It does not prove token signature validity,
+PKCE correctness, client-authentication strength, IdP integrity, consent,
+real-world authorization, or production security. See
+`docs/OAUTH-TRANSCRIPT-AUDITOR.md`.
+
+## MCP Authorization Posture Adoption v1 (experimental)
+
+The offline `mcp-audit authorization-posture` command group consumes a separate
+portable producer contract and does not change `AuditReport` schema version
+`1`. Its strict identifiers are:
+
+- input: `McpAuthorizationPostureV1`, contract version `1.0.0`;
+- report: `mcpaudit.authorization-posture.report.v1`.
+
+Authoritative schemas are checked in at
+`examples/schemas/authorization-posture-input-v1.schema.json` and
+`examples/schemas/authorization-posture-report-v1.schema.json`, and are emitted
+by `mcp-audit authorization-posture schema input|report`. Unknown fields and
+implicit type coercion are rejected.
+
+The review command validates the declared official-Registry binding, public
+metadata state, bounded fetch shape, GET-only credential-free capability
+boundary, no-authority claim ceiling, and cross-field resource/issuer
+consistency. It never re-fetches a URL. A valid `metadata-ready` producer input
+becomes `disposition=policy-review-only`; a valid `unknown` input remains
+`disposition=blocked`. Stable finding `MCPPOSTURE001` is advisory and
+`MCPPOSTURE000` is unknown. Exit `0` means policy-review-only, exit `1` means
+blocked, and exit `2` means invalid input or output.
+
+Reports use sorted compact canonical JSON with one terminal newline and bind
+the input bytes by SHA-256. They omit producer fetch records and authorization
+or token endpoints. `input_provenance=unverified`,
+`input_freshness=unverified`, and
+`remote_observation_authority=producer-asserted` are invariant. Metadata state
+is explicitly `producer-declared-ready|producer-declared-unknown`; schema
+validation does not authenticate the producer, timestamp, Registry export,
+remote responses, or current applicability. The consumer cannot contact an MCP
+endpoint, use credentials, run OAuth, authorize a scan, or change a trust grade. See
+`docs/AUTHORIZATION-POSTURE-ADOPTION.md`.
 ## MCP Cache Contract Auditor v1 (experimental)
 
 The offline `mcp-audit cache-contract` command group is separate from connected

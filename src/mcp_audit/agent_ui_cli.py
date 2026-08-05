@@ -238,7 +238,7 @@ def _write_artifacts(
     for index, (path, _) in enumerate(artifacts):
         for other_path, _ in artifacts[index + 1 :]:
             if _same_path(path, other_path):
-                raise ValueError("JSON and HTML outputs must use distinct paths")
+                raise ValueError("report outputs must use distinct paths")
 
     parent_fds: list[int] = []
     staged: list[_StagedArtifact] = []
