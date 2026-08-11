@@ -1,6 +1,6 @@
 # mcp-audit Rule of Two Posture (D2) — Implementation Roadmap
 
-Feature addition to the existing `MCPAudit` repo at `/Users/d/Projects/MCPAudit`
+Feature addition to the existing `MCPAudit` repo at `~/Projects/MCPAudit`
 (`src/mcp_audit/trifecta.py`). **Not greenfield** — it enriches the existing trifecta detector.
 Read `trifecta.py` first; reuse its leg model (`_LEG1_CATEGORIES`, ingestion contributors,
 `_LEG3_CATEGORIES`) and the `TrifectaFinding` type. Static-only, additive, advisory.

@@ -1,7 +1,7 @@
 # mcp-audit Egress Bundle (D3 + D1)
 
 ## Overview
-Feature addition to the existing `MCPAudit` repo (`/Users/d/Projects/MCPAudit`): a
+Feature addition to the existing `MCPAudit` repo (`~/Projects/MCPAudit`): a
 destination-aware egress detector plus a trusted-destination residual (the January 2026 Claude
 Cowork lesson) for mcp-audit. It audits *where* each MCP server may send data — not just whether
 it can exfiltrate. Static-only, opt-in, additive. **Read the existing modules first** and follow
