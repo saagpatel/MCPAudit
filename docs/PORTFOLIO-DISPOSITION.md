@@ -39,7 +39,7 @@ Specifically verified on `origin/main`:
   - `name = "mcp-permission-audit"`
   - `version = "1.5.5"`
   - `Development Status :: 5 - Production/Stable`
-  - Author: `saagpatel <saagarpatel08@gmail.com>`
+  - Author: `saagpatel`
   - Topic classifiers: Security, Software Development :: Libraries
 - Tree on `origin/main`:
   - `src/` (Python source)
