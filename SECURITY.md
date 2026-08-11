@@ -4,9 +4,10 @@
 
 The `enforcement-fixture` commands are a program-owned synthetic compatibility
 harness, not a production enforcement gateway. They are exact-pinned to
-`agent-governance-toolkit-core==4.1.0`, reject unsupported translation, and may
-write only to explicitly named fixture-state directories whose basename starts
-with `mcpaudit-enforcement-fixture-` and whose ownership marker is valid.
+the `mcpaudit-fixture-gateway-v1` adapter contract version `1.0.0`, reject
+unsupported translation, and may write only to explicitly named fixture-state
+directories whose basename starts with `mcpaudit-enforcement-fixture-` and
+whose ownership marker is valid.
 Managed state and temporary paths may not be symlinks. Apply and rollback use a
 persistent program-owned fixture lock; processes that ignore that lock remain
 outside the harness guarantee. Do not point these commands at normal MCP
@@ -33,6 +34,52 @@ A passing fixture report proves only internal consistency for the supported
 static contract. It does not prove host sandboxing, CSP enforcement, transport
 integrity, authorization, renderer behavior, interoperability, or real-workflow
 safety. See `docs/AGENT-UI-CONTRACT-AUDITOR.md`.
+
+## Experimental OAuth transcript audit
+
+The `oauth-transcript` commands accept only strict, program-owned synthetic
+fixtures with conspicuous redaction markers and reserved `.example` URLs. They
+do not read environment files, browser data, OAuth stores, keychains, cookies,
+private logs, raw transcripts, or credential-bearing configuration. They do not
+perform HTTP, DNS, browser, OAuth, MCP, account, token, or authorization
+operations. URLs and redirects in fixtures are never followed.
+
+Secret-bearing fields accept only `<redacted>` and synthetic client markers.
+Credential-looking values and attacker-chosen validation field names are
+rejected without reflection. Duplicate keys,
+symlinks, URL user information, fragments, unsupported hosts, excessive input,
+excessive JSON depth, excessive metadata documents, excessive observations, and
+excessive redirect counts are rejected. Findings contain semantic binding
+summaries rather than input URLs or query/body values.
+
+A passing report proves only that the supplied synthetic transcript satisfies
+the implemented observable bindings. Audience evidence is supplied evidence,
+not signature or introspection validation. The auditor does not prove PKCE,
+client-authentication strength, IdP integrity, consent, live authorization, or
+production security. See `docs/OAUTH-TRANSCRIPT-AUDITOR.md`.
+
+## Experimental authorization posture adoption
+
+The `authorization-posture` commands accept one strict, bounded
+`McpAuthorizationPostureV1` JSON artifact. They do not fetch its URLs, resolve
+DNS, contact the Registry, authorization server, identity provider, or MCP
+endpoint, read credential stores, authenticate, run OAuth, start a scan, or
+change a trust grade. Inputs must preserve the producer's fixed GET-only,
+credential-free, no-proxy, no-redirect, address-pinned, public-address-only,
+no-mutation boundary and its all-false authority claims.
+
+Symlinks, duplicate keys, non-finite values, excessive bytes, nesting or nodes,
+unknown fields, type coercion, malformed HTTPS authorities, incompatible
+versions, widened capability or claim fields, and inconsistent resource,
+issuer, metadata, or state bindings are rejected without reflecting untrusted
+values. Output writes use the existing descriptor-bound atomic no-clobber path.
+
+The input digest proves local byte identity only. Input provenance, freshness,
+and remote authority stay explicitly unverified or producer-asserted. A
+policy-review-only report does not authenticate the producer, establish current
+applicability, prove Registry authority or remote metadata, authorize access,
+provide credentials, prove runtime security, or establish production safety.
+See `docs/AUTHORIZATION-POSTURE-ADOPTION.md`.
 
 MCPAudit is itself a security tool. This document covers two distinct concerns:
 
@@ -91,6 +138,21 @@ MCPAudit parses and displays content from MCP server configs and MCP server meta
 ### LLM mode (`--llm-analysis`)
 
 When the optional `anthropic` dependency is installed and `--llm-analysis` is used, MCPAudit sends selected tool names, descriptions, and parameter names to the Anthropic API for permission classification. In this mode, content from audited MCP server configs is transmitted over the network to a third-party service. Do not use `--llm-analysis` if your MCP configs contain sensitive information (API keys in args, internal hostnames, etc.).
+
+MCP server metadata remains untrusted at this boundary. Classification
+instructions are sent in the provider's system field; server-controlled names,
+descriptions, and parameter names are encoded as a versioned JSON data envelope
+and addressed by opaque tool IDs. Metadata that trips the deterministic
+injection detector is not sent to the model. A refusal, provider error,
+malformed response, unknown category, duplicate or omitted tool ID, or
+unresolved parse produces an explicit `UNKNOWN` LLM-analysis status and admits
+no model findings. Deterministic findings remain authoritative and are never
+removed by LLM output.
+
+JSON and SARIF permission findings preserve `source_trust`, analyzer/model
+provenance, and `analysis_status`. Each server audit also carries the versioned
+`llm_analysis` summary when the option was requested. Consumers must treat
+`UNKNOWN` as missing coverage, not as a clean result.
 
 ### Proof Before Action
 

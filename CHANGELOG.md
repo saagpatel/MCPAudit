@@ -9,6 +9,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Added a strict, redacted, fixture-first MCP OAuth transcript auditor for
+  observable discovery, issuer, RFC 8707 resource/audience, registration,
+  issuer-bound credential, and protected-resource scope bindings. The analyzer
+  has no network, browser, OAuth, MCP, keychain, account, token, or credential
+  path; rejects credential-looking values without reflection; bounds input,
+  nesting, URLs, documents, observations, redirects, and traversal; and keeps
+  incomplete or malformed evidence `UNKNOWN`. Its supported claim is limited to
+  the supplied synthetic transcript and excludes token signature validation,
+  PKCE correctness, IdP integrity, consent, live authorization, and production
+  security.
+
+### Added
+
+- Added an offline `mcp-audit authorization-posture` consumer for the portable
+  `McpAuthorizationPostureV1` version `1.0.0` contract. It validates strict
+  Registry binding, metadata, capability, claim-ceiling, and cross-field state
+  invariants; emits only policy-review or blocked advisory JSON; and has no
+  network, credential, OAuth, endpoint-session, scan, grade, or mutation path.
+  Producer provenance, saved-artifact freshness, and remote observations remain
+  explicitly unverified or producer-asserted.
+- Added experimental `mcp-audit oauth-transcript` JSON and SARIF commands with
+  strict v1 fixture/report schemas, stable `MCPOAUTH000`–`MCPOAUTH007` findings,
+  and vulnerable/negative/near-miss fixture triplets. The rules are pinned to
+  MCP Authorization 2025-11-25 plus the current-draft snapshot retrieved
+  2026-07-28 and distinguish required, recommended, deprecated, and unsupported
+  checks. Valid multi-resource behavior and deprecated DCR fallback remain
+  supported; wrong-resource, issuer-mix-up, changed-issuer credential reuse,
+  scope mismatch, redirect mismatch, stale discovery, malformed metadata,
+  credential-looking input, and missing evidence have dedicated controls.
+- Hardened the OAuth transcript auditor against seven locally reproduced
+  correctness defects: registration/request/response/redemption redirect drift,
+  token-stage scope widening or dropping, unrequested accepted audiences,
+  CIMD/persisted-credential contradictions, unavailable pre-registration,
+  secret-bearing exception chains, and recommendation/deprecation output drift.
+- Added an experimental, fixture-first `mcp-audit cache-contract` analyzer for
+  program-owned MCP `2026-07-28` list/read cache traces. A bounded logical-clock
+  state machine checks required `ttlMs`/`cacheScope`, exact request keys,
+  private authorization partitions, expiry/refresh behavior, validated change
+  events, linked page scope, deterministic tools ordering, and non-cacheable
+  multi-round-trip results under stable `MCPCACHE000`–`MCPCACHE009` findings.
+  Canonical reports are independent of wall clock and event-array
+  serialization order; unsupported, malformed, ambiguous, and truncated
+  evidence—including non-string pagination cursors—stays explicitly `UNKNOWN`.
+  Trace descriptors use `O_NONBLOCK` where available before type and identity
+  validation so a raced FIFO replacement cannot stall the offline scan, and
+  conflicting principal labels inside one asserted authorization partition
+  become `UNKNOWN` before private ordering is compared. Unsupported-version
+  events stop at incomplete coverage instead of being graded against
+  current-version cache keys.
+
+## [2.6.0] - 2026-08-05
+
+### Security
+
+- Removed the production Agent Governance Toolkit dependency from the synthetic
+  enforcement fixture and replaced it with a repository-owned, fail-closed
+  gateway contract. Raised the direct cryptography floor to 50.0.0 and Click
+  floor to 8.3.3, excluding GHSA-g6cj-pr64-35w5 and GHSA-47fr-3ffg-hgmw from
+  locked and distributed dependency resolution.
+- Bound optional LLM permission analysis to a structured untrusted-metadata
+  envelope with opaque tool IDs and separate trusted system instructions.
+  Injection indicators, provider errors, refusals, non-terminal or unknown stop
+  reasons, malformed output, and omitted tools now fail closed to an explicit
+  `UNKNOWN` status without admitting model findings; JSON and SARIF preserve
+  source trust and analyzer provenance while deterministic findings remain
+  authoritative.
 - Added stable attempt-evidence receipts for Proof Before Action's four
   documented observer blind spots: transient filesystem writes, no-delta
   SQLite activity, requested network destinations, and Unix-domain sockets.
@@ -46,16 +112,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   malformed HTTPS authorities, binds bounded reads to one file descriptor, and
   uses descriptor-bound atomic no-clobber output commit.
 - Added an experimental, fixture-only evidence-to-enforcement workflow pinned
-  to Microsoft Agent Governance Toolkit 4.1.0. It keeps observed evidence,
-  policy recommendation, operator approval, and effective-state proof as
-   separate versioned contracts; supports only exact tool allow, deny, and
-   approval decisions; and fails closed on unsupported constraints, stale or
-   drifted evidence, approval mismatch, runtime mismatch, or verification
-   failure. Program-owned fixture state includes cooperative mutation locking,
-   behavioral negative controls, deterministic no-op verification, and rollback.
+  to repository-owned fixture gateway contract version 1.0.0. It keeps observed
+  evidence, policy recommendation, operator approval, and effective-state proof
+  as separate versioned contracts; supports only exact tool allow, deny, and
+  approval decisions; and fails closed on unsupported constraints, stale or
+  drifted evidence, approval mismatch, runtime mismatch, or verification
+  failure. Program-owned fixture state includes cooperative mutation locking,
+  behavioral negative controls, deterministic no-op verification, and rollback.
 
 ### Changed
 
+- Upgraded the existing external field-report beta lane with a one-command
+  uvx report path, explicit package-resolution and config-only privacy
+  boundaries, unassisted-completion and seven-day-repeat fields, aggregate
+  pass/kill thresholds, and regression checks that prevent download counts,
+  self-tests, or CI activity from being reported as external adoption.
 - Made config-only scan status explicit across terminal, JSON, and HTML reports,
   so zero connected and zero failed servers cannot be mistaken for a clean
   connected scan.
@@ -1048,7 +1119,8 @@ real workstations; API surface may still shift before the `1.0.0` stable cut.
 - Risk score output with pass/warn/fail thresholds
 - `mcp-audit` CLI entry point
 
-[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v2.5.0...HEAD
+[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v2.6.0...HEAD
+[2.6.0]: https://github.com/saagpatel/MCPAudit/compare/v2.5.0...v2.6.0
 [2.5.0]: https://github.com/saagpatel/MCPAudit/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/saagpatel/MCPAudit/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/saagpatel/MCPAudit/compare/v2.2.1...v2.3.0

@@ -9,24 +9,24 @@ FULL_COMMIT_SHA = re.compile(r"[0-9a-f]{40}")
 # Resolved from the named releases in each action's owning GitHub repository.
 # Changing any row is an explicit supply-chain review event, not a shape-only update.
 REVIEWED_ACTION_RELEASES = {
-    "actions/checkout": ("9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0", "v7.0.0"),
+    "actions/checkout": ("3d3c42e5aac5ba805825da76410c181273ba90b1", "v7.0.1"),
     "actions/download-artifact": ("3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c", "v8.0.1"),
-    "actions/setup-python": ("ece7cb06caefa5fff74198d8649806c4678c61a1", "v6.3.0"),
+    "actions/setup-python": ("5fda3b95a4ea91299a34e894583c3862153e4b97", "v7.0.0"),
     "actions/upload-artifact": ("043fb46d1a93c77aae656e7c1c64a875d1fc6a0a", "v7.0.1"),
-    "astral-sh/setup-uv": ("11f9893b081a58869d3b5fccaea48c9e9e46f990", "v8.3.2"),
-    "github/codeql-action/analyze": ("7188fc363630916deb702c7fdcf4e481b751f97a", "v4.37.1"),
-    "github/codeql-action/init": ("7188fc363630916deb702c7fdcf4e481b751f97a", "v4.37.1"),
-    "github/codeql-action/upload-sarif": ("7188fc363630916deb702c7fdcf4e481b751f97a", "v4.37.1"),
+    "astral-sh/setup-uv": ("c771a70e6277c0a99b617c7a806ffedaca235ff9", "v9.0.0"),
+    "github/codeql-action/analyze": ("5595ccaf912efad79be6eef63a5619ff05969be3", "v4.37.6"),
+    "github/codeql-action/init": ("5595ccaf912efad79be6eef63a5619ff05969be3", "v4.37.6"),
+    "github/codeql-action/upload-sarif": ("5595ccaf912efad79be6eef63a5619ff05969be3", "v4.37.6"),
     "google/clusterfuzzlite/actions/build_fuzzers": (
-        "82652fb49e77bc29c35da1167bb286e93c6bcc05",
+        "884713a6c30a92e5e8544c39945cd7cb630abcd1",
         "v1",
     ),
     "google/clusterfuzzlite/actions/run_fuzzers": (
-        "82652fb49e77bc29c35da1167bb286e93c6bcc05",
+        "884713a6c30a92e5e8544c39945cd7cb630abcd1",
         "v1",
     ),
-    "ossf/scorecard-action": ("4eaacf0543bb3f2c246792bd56e8cdeffafb205a", "v2.4.3"),
-    "pypa/gh-action-pypi-publish": ("ba38be9e461d3875417946c167d0b5f3d385a247", "v1.14.1"),
+    "ossf/scorecard-action": ("2d1146689b8cda280b9bc96326124645441f03bc", "v2.4.4"),
+    "pypa/gh-action-pypi-publish": ("dc37677b2e1c63e2034f94d8a5b11f265b73ba33", "v1.14.2"),
     "saagpatel/agent-permission-diff-bot": (
         "20bc07d1f8052765d3a65378222a08869a7dd027",
         "v0.5.0",
@@ -43,6 +43,14 @@ def test_mcp_runtime_dependency_excludes_known_vulnerable_versions() -> None:
     match = re.fullmatch(r"mcp>=(\d+)\.(\d+)\.(\d+)", mcp_requirement)
     assert match is not None, "mcp must retain an explicit minimum safe version"
     assert tuple(map(int, match.groups())) >= (1, 28, 1)
+
+
+def test_direct_security_floors_exclude_known_vulnerable_versions() -> None:
+    project = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    requirements = set(project["dependencies"])
+
+    assert "cryptography>=50.0.0,<51.0" in requirements
+    assert "click>=8.3.3,<9.0" in requirements
 
 
 def test_clusterfuzzlite_uses_oss_fuzz_python_builder() -> None:

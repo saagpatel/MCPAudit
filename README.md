@@ -20,6 +20,13 @@ synthetic command in a disposable no-network container, compares observed
 effects with a declaration, joins repository MCP dependencies to local
 mcp-trust evidence, and exports verifiable JSON plus offline HTML.
 
+For MCP `2026-07-28` cache behavior, the experimental
+[Cache Contract Auditor](docs/CACHE-CONTRACT-AUDITOR.md) runs a bounded
+logical-clock simulator over program-owned JSON traces. It checks required
+`ttlMs`/`cacheScope`, private authorization partitions, exact request keys,
+expiry/refresh and validated change-event behavior, linked page scope, and
+deterministic tools ordering without running a client, server, or proxy.
+
 > **🌐 Try it in your browser, no install:** paste any MCP client config at **[mcp-audit.saagarpatel.dev](https://mcp-audit.saagarpatel.dev)** for an instant config-only trust report. It runs this exact engine, never launches configured servers, never contacts configured endpoints, and stores nothing. The CLI below adds the connected deep checks (prompt-injection, SSRF, the lethal trifecta, schema drift, SARIF).
 
 ## ⚡ 60-second start
@@ -77,7 +84,7 @@ mcp-audit scan                            # connected scan of every configured c
 **Drop it into CI in one step** — the composite GitHub Action runs the scan and writes SARIF straight to GitHub code scanning:
 
 ```yaml
-- uses: saagpatel/MCPAudit@v2.5.0        # config-only by default; optional policy gate exits 2
+- uses: saagpatel/MCPAudit@v2.6.0        # config-only by default; optional policy gate exits 2
 ```
 
 SARIF proof from the public fixture scan:
@@ -156,6 +163,7 @@ Every `get_*_findings` tool returns a JSON object with `findings` and `warnings`
 - **Config health diagnostics** — `discover` and `scan` flag duplicate server names, conflicting command or URL definitions, missing stdio commands, missing local command paths, project/global scope conflicts, package-runner launches, deprecated SSE transports, shell-wrapper launches, remote endpoints, and credential-heavy configs before users pin or connect; JSON reports include additive `config_health_findings`
 - **Risk scoring** — composite 0–10 per server as a weighted sum of tool permission categories, with a five-dimension breakdown (file access, network, shell, destructive, exfiltration); prompt/resource findings also produce an additive `non_tool_risk` signal without changing `risk_score.composite`
 - **Stable finding metadata** — permission and prompt-injection findings include stable rule IDs, severity, evidence, and suggested remediation so reports are easier to triage
+- **Fixture-first MCP cache contract audit** — `mcp-audit cache-contract scan TRACE` deterministically evaluates synthetic MCP `2026-07-28` list/read cache traces under stable `MCPCACHE000`–`MCPCACHE009` rules; malformed, unsupported, clock-ambiguous, or truncated evidence is `UNKNOWN`, while real caches, transports, credentials, and logs remain out of scope. See `docs/CACHE-CONTRACT-AUDITOR.md`
 - **Local policy gates** — `scan --policy policy.yaml` evaluates reports against local YAML rules and exits nonzero for CI enforcement
 - **Report redaction** — terminal, JSON, SARIF, and HTML report paths share a redaction layer for likely credential values; `scan --redact` adds an opt-in field-report pass that also scrubs the machine hostname and home-path usernames (`/Users/<name>`, `/home/<name>`, `C:\Users\<name>`) from `--json`/`--sarif`/`--html` output, and replaces server names with stable aliases (`server-01`, …) everywhere they appear — structured fields, free-text summaries, and command basenames — so a config-only report is safe to share (the field-report checklist stays the backstop for any residual free-text specifics)
 - **Prompt injection detection** — `scan --inject-check` scans tool, prompt, and resource text for instruction-override patterns, hidden directives, fake role turns, and adversarial phrasing; pattern-based, no LLM required
@@ -171,9 +179,9 @@ Every `get_*_findings` tool returns a JSON object with `findings` and `warnings`
 - **Byte-level artifact verification** — `scan --download-artifacts` (opt-in, **network**) goes one level deeper than the published-hash compare: it downloads the actual bytes the registry serves, hashes them, and checks them against both the registry's own published hash and a byte-hash captured at pin time (`MCP026`). It catches a CDN/mirror/MITM serving bytes inconsistent with the registry's integrity metadata (`PUBLISHED_MISMATCH`, HIGH) and a pinned file whose bytes changed or vanished (`BASELINE_MISMATCH`, HIGH); a newly-added file on a frozen version is an advisory MEDIUM, not a false alarm. Downloads stream through bounded hashers, never to disk, only to an allowlist of registry/CDN hosts (re-validated on every redirect hop). Network is contacted only under `--download-artifacts`, on both `pin` and `scan`.
 - **Multi-client support** — reads configs from Claude Desktop, Claude Code, Cursor, VSCode, and Windsurf — plus custom paths via `--config`; use `--config-only` for isolated scans of one config file
 - **Structured output** — Rich terminal report plus JSON and SARIF 2.1.0 export for ingestion by GitHub Advanced Security and SARIF-aware SAST pipelines, and a self-contained shareable HTML report via `scan --html report.html` (inline CSS, no JavaScript, redacted and fully HTML-escaped)
-- **Drop-in CI distribution** — a composite GitHub Action (`uses: saagpatel/MCPAudit@v2.5.0`) runs the scan, writes SARIF, and uploads it to code scanning in one step (config-only by default; optional policy gate exits `2`); a `pre-commit` hook (`id: mcp-audit`) audits repo-local `.mcp.json` / `.vscode/mcp.json` on commit. See `docs/ADOPTION-GUIDE.md`
+- **Drop-in CI distribution** — a composite GitHub Action (`uses: saagpatel/MCPAudit@v2.6.0`) runs the scan, writes SARIF, and uploads it to code scanning in one step (config-only by default; optional policy gate exits `2`); a `pre-commit` hook (`id: mcp-audit`) audits repo-local `.mcp.json` / `.vscode/mcp.json` on commit. See `docs/ADOPTION-GUIDE.md`
 - **Documented output contract** — JSON, SARIF rule IDs, and policy exit codes are documented in `docs/OUTPUT-CONTRACT.md`
-- **Experimental fixture enforcement** — a separate, exact-version AGT `MCPGateway` compatibility slice converts one synthetic connected report into explicitly approved fixture-only policy and proves readback, negative controls, idempotency, and rollback; it never changes normal MCP client configuration ([guide](docs/EVIDENCE-ENFORCEMENT-AGT-FIXTURE.md))
+- **Experimental fixture enforcement** — a narrow, repository-owned gateway converts one synthetic connected report into explicitly approved fixture-only policy and proves readback, negative controls, idempotency, and rollback; it never changes normal MCP client configuration ([guide](docs/EVIDENCE-ENFORCEMENT-AGT-FIXTURE.md))
 - **Watch mode** — `mcp-audit watch` re-scans on config file changes via `watchfiles` (optional extra: install with `mcp-audits[watch]`)
 
 ## Quick Start
@@ -279,16 +287,23 @@ mcp-audit scan --llm-analysis
 mcp-audit watch
 ```
 
+LLM mode treats all server-provided metadata as untrusted JSON data, keeps
+classification instructions in a separate system message, and reports an
+explicit `UNKNOWN` status without admitting model findings when injection,
+refusal, omission, provider failure, or malformed output prevents a complete
+classification. Deterministic analysis remains authoritative.
+
 ## Help improve mcp-audit (2 minutes)
 
 Redacted field reports from real MCP configs help calibrate the scanner.
-If you run MCP servers, contributing one stays fully offline — no servers
-spawned, no network:
+If you run MCP servers, contributing one stays config-only: the scan does not
+spawn configured MCP servers or contact their configured remote endpoints.
+`uvx` may contact the configured Python package index and may reuse uv's tool
+cache:
 
 ```bash
-python3 -m pip install --upgrade mcp-audits
-mcp-audit --version
-mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
+uvx --from mcp-audits mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
+uvx --from mcp-audits mcp-audit --version
 ```
 
 `--redact` auto-scrubs the machine hostname, home-path usernames, and server
@@ -333,6 +348,29 @@ atomic no-clobber commit. Supported contradictions cannot be erased by a later
 A2UI replacement or deletion. See
 [`docs/AGENT-UI-CONTRACT-AUDITOR.md`](docs/AGENT-UI-CONTRACT-AUDITOR.md) for the
 exact input profiles, six stable rules, fixtures, and claim ceiling.
+
+The experimental `mcp-audit oauth-transcript` group audits explicitly
+synthetic, redacted MCP OAuth transcripts without opening a network, browser,
+OAuth, MCP, keychain, account, or credential-store path. Stable
+`MCPOAUTH000`–`MCPOAUTH007` findings cover the 401 discovery chain, RFC 8707
+resource and audience binding, authorization-response issuer mix-up,
+issuer-bound client credentials, registration method and `application_type`,
+protected-resource scopes, and redirect URI binding through code redemption.
+Missing or malformed evidence is `UNKNOWN`;
+valid deprecated DCR fallback is advisory rather than forbidden. JSON is
+authoritative and optional SARIF uses the existing compatibility shape. See
+[`docs/OAUTH-TRANSCRIPT-AUDITOR.md`](docs/OAUTH-TRANSCRIPT-AUDITOR.md) for the
+specification pins, strict schema, fixture corpus, and claim ceiling.
+
+The experimental `mcp-audit authorization-posture` group consumes one saved
+`McpAuthorizationPostureV1` public-metadata artifact entirely offline. It
+validates the producer's exact version, Registry binding, capability boundary,
+claim ceiling, and cross-field metadata state, then emits only
+`policy-review-only` or `blocked`. It does not authenticate producer provenance
+or current freshness, repeat network fetches, contact the MCP endpoint, handle
+credentials, run OAuth, authorize a scan, or change a trust grade. See
+[`docs/AUTHORIZATION-POSTURE-ADOPTION.md`](docs/AUTHORIZATION-POSTURE-ADOPTION.md)
+for the authority flow, strict schemas, exit contract, and claim ceiling.
 
 ### Local Policy Gates
 

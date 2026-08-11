@@ -1,0 +1,356 @@
+{
+  "$defs": {
+    "AuthorizationPostureAuthorityFlow": {
+      "additionalProperties": false,
+      "properties": {
+        "consumer_decision_authority": {
+          "const": "operator-policy-review",
+          "title": "Consumer Decision Authority",
+          "type": "string"
+        },
+        "credentials_used": {
+          "const": false,
+          "title": "Credentials Used",
+          "type": "boolean"
+        },
+        "endpoint_session_used": {
+          "const": false,
+          "title": "Endpoint Session Used",
+          "type": "boolean"
+        },
+        "input_freshness": {
+          "const": "unverified",
+          "title": "Input Freshness",
+          "type": "string"
+        },
+        "input_provenance": {
+          "const": "unverified",
+          "title": "Input Provenance",
+          "type": "string"
+        },
+        "network_used": {
+          "const": false,
+          "title": "Network Used",
+          "type": "boolean"
+        },
+        "remote_observation_authority": {
+          "const": "producer-asserted",
+          "title": "Remote Observation Authority",
+          "type": "string"
+        },
+        "scan_authorized": {
+          "const": false,
+          "title": "Scan Authorized",
+          "type": "boolean"
+        },
+        "trust_grade_changed": {
+          "const": false,
+          "title": "Trust Grade Changed",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "input_provenance",
+        "input_freshness",
+        "remote_observation_authority",
+        "consumer_decision_authority",
+        "network_used",
+        "credentials_used",
+        "endpoint_session_used",
+        "scan_authorized",
+        "trust_grade_changed"
+      ],
+      "title": "AuthorizationPostureAuthorityFlow",
+      "type": "object"
+    },
+    "AuthorizationPostureFinding": {
+      "additionalProperties": false,
+      "properties": {
+        "assumptions": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Assumptions",
+          "type": "array"
+        },
+        "evidence": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Evidence",
+          "type": "array"
+        },
+        "outcome": {
+          "enum": [
+            "advisory",
+            "unknown"
+          ],
+          "title": "Outcome",
+          "type": "string"
+        },
+        "references": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "References",
+          "type": "array"
+        },
+        "remediation": {
+          "title": "Remediation",
+          "type": "string"
+        },
+        "rule_id": {
+          "enum": [
+            "MCPPOSTURE000",
+            "MCPPOSTURE001"
+          ],
+          "title": "Rule Id",
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "low",
+            "unknown"
+          ],
+          "title": "Severity",
+          "type": "string"
+        },
+        "target": {
+          "const": "authorization-metadata-posture",
+          "title": "Target",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rule_id",
+        "severity",
+        "outcome",
+        "title",
+        "target",
+        "evidence",
+        "remediation",
+        "references",
+        "assumptions"
+      ],
+      "title": "AuthorizationPostureFinding",
+      "type": "object"
+    },
+    "AuthorizationPostureParserLimits": {
+      "additionalProperties": false,
+      "properties": {
+        "authorization_servers": {
+          "title": "Authorization Servers",
+          "type": "integer"
+        },
+        "fetches": {
+          "title": "Fetches",
+          "type": "integer"
+        },
+        "input_bytes": {
+          "title": "Input Bytes",
+          "type": "integer"
+        },
+        "json_depth": {
+          "title": "Json Depth",
+          "type": "integer"
+        },
+        "json_nodes": {
+          "title": "Json Nodes",
+          "type": "integer"
+        },
+        "url_length": {
+          "title": "Url Length",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "input_bytes",
+        "json_depth",
+        "json_nodes",
+        "authorization_servers",
+        "fetches",
+        "url_length"
+      ],
+      "title": "AuthorizationPostureParserLimits",
+      "type": "object"
+    },
+    "AuthorizationServerSummary": {
+      "additionalProperties": false,
+      "properties": {
+        "declared": {
+          "maximum": 8,
+          "minimum": 0,
+          "title": "Declared",
+          "type": "integer"
+        },
+        "metadata_ready": {
+          "maximum": 8,
+          "minimum": 0,
+          "title": "Metadata Ready",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "declared",
+        "metadata_ready"
+      ],
+      "title": "AuthorizationServerSummary",
+      "type": "object"
+    },
+    "ProducerBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "manifest_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Manifest Sha256",
+          "type": "string"
+        },
+        "resource_url": {
+          "title": "Resource Url",
+          "type": "string"
+        },
+        "source_kind": {
+          "const": "official-mcp-registry-export",
+          "title": "Source Kind",
+          "type": "string"
+        },
+        "stable_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._/@:-]{0,255}$",
+          "title": "Stable Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "stable_id",
+        "resource_url",
+        "manifest_sha256",
+        "source_kind"
+      ],
+      "title": "ProducerBinding",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "authority_flow": {
+      "$ref": "#/$defs/AuthorizationPostureAuthorityFlow"
+    },
+    "authorization_servers": {
+      "$ref": "#/$defs/AuthorizationServerSummary"
+    },
+    "binding": {
+      "$ref": "#/$defs/ProducerBinding"
+    },
+    "claim_ceiling": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Claim Ceiling",
+      "type": "array"
+    },
+    "disposition": {
+      "enum": [
+        "policy-review-only",
+        "blocked"
+      ],
+      "title": "Disposition",
+      "type": "string"
+    },
+    "findings": {
+      "items": {
+        "$ref": "#/$defs/AuthorizationPostureFinding"
+      },
+      "maxItems": 1,
+      "minItems": 1,
+      "title": "Findings",
+      "type": "array"
+    },
+    "input_contract_version": {
+      "const": "1.0.0",
+      "default": "1.0.0",
+      "title": "Input Contract Version",
+      "type": "string"
+    },
+    "input_schema_version": {
+      "const": "McpAuthorizationPostureV1",
+      "default": "McpAuthorizationPostureV1",
+      "title": "Input Schema Version",
+      "type": "string"
+    },
+    "input_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Input Sha256",
+      "type": "string"
+    },
+    "metadata_state": {
+      "enum": [
+        "producer-declared-ready",
+        "producer-declared-unknown"
+      ],
+      "title": "Metadata State",
+      "type": "string"
+    },
+    "observed_at": {
+      "title": "Observed At",
+      "type": "string"
+    },
+    "parser_limits": {
+      "$ref": "#/$defs/AuthorizationPostureParserLimits"
+    },
+    "reason_codes": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Reason Codes",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "mcpaudit.authorization-posture.report.v1",
+      "default": "mcpaudit.authorization-posture.report.v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "supported_inputs": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Supported Inputs",
+      "type": "array"
+    },
+    "unsupported_inputs": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Unsupported Inputs",
+      "type": "array"
+    }
+  },
+  "required": [
+    "input_sha256",
+    "observed_at",
+    "binding",
+    "disposition",
+    "metadata_state",
+    "authorization_servers",
+    "reason_codes",
+    "findings",
+    "authority_flow",
+    "parser_limits",
+    "supported_inputs",
+    "unsupported_inputs",
+    "claim_ceiling"
+  ],
+  "title": "AuthorizationPostureReport",
+  "type": "object"
+}

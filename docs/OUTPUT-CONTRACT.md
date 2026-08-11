@@ -48,6 +48,19 @@ Each audit may include:
 - `drift_findings`
 - `risk_score`
 - `non_tool_risk`
+- `llm_analysis` — present when `--llm-analysis` was requested. This versioned
+  object records `status` (`complete` or `unknown`), a stable `reason_code`,
+  `source_trust`, analyzer/model provenance, candidate/analyzed tool counts,
+  and the number of admitted findings. `unknown` never means clean.
+
+Each permission finding includes additive provenance fields:
+
+- `source_trust` — `untrusted_server_metadata` for MCP-controlled metadata or
+  `operator_override` for an explicit local override;
+- `analyzer` and optional `analyzer_model`;
+- `analysis_status` — currently `complete` for admitted findings. Failed or
+  incomplete LLM output contributes no findings and is represented by the
+  audit-level `llm_analysis.status: unknown` summary.
 
 The report top level also includes:
 
@@ -67,6 +80,10 @@ The report top level also includes:
     this check compares against; named in `servers`),
     `missing_credential` (e.g. `--llm-analysis` without `ANTHROPIC_API_KEY`),
     `missing_dependency` (e.g. the `anthropic` package not installed),
+    `llm_analysis_unknown` (a requested server-level LLM pass detected
+    injection, was refused, failed or stopped incompletely at the provider,
+    omitted a tool, or returned malformed output; no model findings were
+    admitted),
     `option_ignored` (an option passed without the check that consumes it).
     The vocabulary is additive — consumers must tolerate unknown codes.
   - `message` — plain-text human summary including remediation.
@@ -283,6 +300,169 @@ sandboxing, authentication, or any real user workflow. A2UI, MCP Apps,
 OpenAI-specific extensions, AG-UI, and WebMCP remain distinct; the auditor does
 not claim translation or interoperability. See
 `docs/AGENT-UI-CONTRACT-AUDITOR.md`.
+
+## MCP OAuth Transcript Auditor v1 (experimental)
+
+The offline `mcp-audit oauth-transcript` command group is separate from normal
+MCP discovery and connected scans. It does not change `AuditReport` schema
+version `1`. Its strict contract identifiers are:
+
+- `mcpaudit.oauth-transcript.fixture.v1`
+- `mcpaudit.oauth-transcript.report.v1`
+
+Authoritative schemas are checked in at
+`examples/schemas/oauth-transcript-fixture-v1.schema.json` and
+`examples/schemas/oauth-transcript-report-v1.schema.json`, and are emitted by
+`mcp-audit oauth-transcript schema fixture|report`. Unknown fields are rejected.
+The specification profile is pinned to
+`mcp-authorization-2025-11-25+draft-2026-07-28`; the dated draft portion covers
+authorization-response issuer validation, issuer-bound client state, and DCR
+`application_type` behavior.
+
+Reports use sorted compact canonical JSON with one terminal newline and no
+timestamp or input path. Stable finding IDs are `MCPOAUTH001` through
+`MCPOAUTH007`; `MCPOAUTH000` represents missing, malformed, redacted,
+unsupported, or unverifiable evidence. Each finding contains severity,
+`violation|advisory|unknown` outcome, `required|recommended|deprecated|unsupported`
+requirement level, title, semantic target, redacted evidence, remediation,
+primary references, and assumptions.
+
+Report verdicts are:
+
+- `pass`: no violation or unknown finding; deprecated/recommended advisories may remain;
+- `fail`: at least one violation;
+- `unknown`: no violation, but one or more bindings cannot be evaluated.
+
+The scan command exits `0` for `pass`, `1` for `fail` or `unknown`, and `2` for
+an input/output error. `--json` writes the canonical report. `--sarif` writes a
+SARIF 2.1.0 compatibility projection using the existing `mcp-audit` driver and
+stable rule IDs; JSON remains authoritative. Output creation uses the same
+descriptor-bound, atomic, no-clobber path as the Agent UI auditor.
+
+Secret-bearing fields accept only redaction markers. Findings and errors omit
+raw authorization headers, cookies, codes, tokens, secrets, query values,
+arbitrary bodies, and input URLs; sanitized parser and CLI exceptions do not
+retain the source parse/validation exception as a cause or context. Input is
+limited to 1 MiB, 32 JSON levels, 64
+observations, 8 metadata documents, 5 recorded redirects, and 2,048 characters
+per URL. URLs are never fetched, redirects are never followed, and no network,
+browser, OAuth, MCP, account, keychain, or credential-store path exists.
+
+A passing report proves only the implemented binding invariants in the
+supplied synthetic transcript. It does not prove token signature validity,
+PKCE correctness, client-authentication strength, IdP integrity, consent,
+real-world authorization, or production security. See
+`docs/OAUTH-TRANSCRIPT-AUDITOR.md`.
+
+## MCP Authorization Posture Adoption v1 (experimental)
+
+The offline `mcp-audit authorization-posture` command group consumes a separate
+portable producer contract and does not change `AuditReport` schema version
+`1`. Its strict identifiers are:
+
+- input: `McpAuthorizationPostureV1`, contract version `1.0.0`;
+- report: `mcpaudit.authorization-posture.report.v1`.
+
+Authoritative schemas are checked in at
+`examples/schemas/authorization-posture-input-v1.schema.json` and
+`examples/schemas/authorization-posture-report-v1.schema.json`, and are emitted
+by `mcp-audit authorization-posture schema input|report`. Unknown fields and
+implicit type coercion are rejected.
+
+The review command validates the declared official-Registry binding, public
+metadata state, bounded fetch shape, GET-only credential-free capability
+boundary, no-authority claim ceiling, and cross-field resource/issuer
+consistency. It never re-fetches a URL. A valid `metadata-ready` producer input
+becomes `disposition=policy-review-only`; a valid `unknown` input remains
+`disposition=blocked`. Stable finding `MCPPOSTURE001` is advisory and
+`MCPPOSTURE000` is unknown. Exit `0` means policy-review-only, exit `1` means
+blocked, and exit `2` means invalid input or output.
+
+Reports use sorted compact canonical JSON with one terminal newline and bind
+the input bytes by SHA-256. They omit producer fetch records and authorization
+or token endpoints. `input_provenance=unverified`,
+`input_freshness=unverified`, and
+`remote_observation_authority=producer-asserted` are invariant. Metadata state
+is explicitly `producer-declared-ready|producer-declared-unknown`; schema
+validation does not authenticate the producer, timestamp, Registry export,
+remote responses, or current applicability. The consumer cannot contact an MCP
+endpoint, use credentials, run OAuth, authorize a scan, or change a trust grade. See
+`docs/AUTHORIZATION-POSTURE-ADOPTION.md`.
+## MCP Cache Contract Auditor v1 (experimental)
+
+The offline `mcp-audit cache-contract` command group is separate from connected
+MCP scans and does not change `AuditReport` schema version `1`. Its strict
+contract identifiers are:
+
+- `mcpaudit.cache-contract.trace.v1`;
+- `mcpaudit.cache-contract.report.v1`.
+
+Authoritative JSON Schemas are emitted with `mcp-audit cache-contract schema
+trace|report`. Unknown fields are rejected. The trace binds every event to
+explicit sequence and logical-millisecond values, a protocol version,
+principal, asserted authorization-context `cache_partition`, method, complete
+result-affecting parameters, and response/use/refresh/change-event evidence.
+Conflicting principal labels inside one asserted `cache_partition` produce
+incomplete `MCPCACHE000` coverage before private cache ordering evidence is
+compared.
+
+Reports use sorted compact canonical JSON with one terminal newline and no
+timestamp, hostname, platform, duration, random ID, or absolute input path.
+The trace digest is computed after sorting events by explicit sequence, so
+serialization order does not change output when causal order is unchanged.
+Stable finding IDs are `MCPCACHE001` through `MCPCACHE009`; `MCPCACHE000`
+records malformed, unsupported, ambiguous, truncated, or bounded-out evidence
+with severity `unknown`. Each finding includes severity, requirement level,
+title, generated event target, fixed evidence code, remediation, protocol
+version, event sequence numbers, and explicit assumptions. Trace-controlled
+principal/partition labels, parameter values, URIs, and response bodies are not
+reflected into findings.
+
+Report verdicts:
+
+- `pass`: supported list/read checks are complete and no contradiction remains;
+- `fail`: at least one non-unknown rule fired;
+- `unknown`: only malformed, unsupported, ambiguous, or incomplete coverage
+  remains.
+
+If the 2,048-finding bound is exceeded, an
+`MCPCACHE000`/`finding_limit_exceeded` marker is emitted and at least one
+observed non-unknown finding is retained, preventing output truncation from
+downgrading a `fail` verdict to `unknown`.
+
+The scan command exits `0` for `pass`, `1` for `fail` or `unknown`, and `2` for
+a file-system input failure. Malformed JSON and strict-contract failures emit
+one structured `unknown` report before exit `1`. A stable regular file larger
+than 1 MiB is bounded to an inspected 1 MiB plus one sentinel byte and emits
+structured `unknown` before exit `1`; its trace digest binds only that inspected
+prefix. The input must be a regular non-symlink file and is read through one
+identity-checked descriptor. Where the platform exposes `O_NONBLOCK`, the
+descriptor uses it so a raced FIFO replacement cannot stall before type
+validation.
+
+The analyzer supports MCP `2026-07-28` complete results for `tools/list`,
+`prompts/list`, `resources/list`, `resources/templates/list`, and
+`resources/read`. It checks required `ttlMs`/`cacheScope`, exact request-key
+reuse, private authorization partitioning, explicit TTL/refresh behavior,
+validated list/resource notifications, linked page scope, deterministic
+unpaginated tools ordering, string-shaped opaque pagination cursors, and
+non-cacheable multi-round-trip results. Present non-string `cursor` or
+`nextCursor` values produce incomplete `MCPCACHE000` coverage instead of a
+passing ordering result; an empty string remains a valid cursor.
+`server/discover`, older/future revisions, URI alias/prefix invalidation,
+notification delivery to other cache instances, and ordering of other lists
+remain explicitly unsupported. An event carrying an unsupported protocol
+version produces incomplete `MCPCACHE000` coverage and is not subsequently
+graded against current-version cache keys or freshness rules.
+
+`MCPCACHE005` is a SHOULD-level freshness finding, not a claim that MCP always
+forbids stale use. A causal exact-key `refresh_error` preserves the protocol's
+permission to serve stale data after a failed re-fetch when the error follows
+observable expiry or a validated invalidation, only until a later valid
+successful refresh supersedes that failed attempt. A passing fixture report
+does not prove HTTP caching, performance, server/client/proxy behavior,
+authorization, confidentiality, notification delivery, or any production
+cache. See `docs/CACHE-CONTRACT-AUDITOR.md`.
 
 ## SafeForge Manifest v0
 

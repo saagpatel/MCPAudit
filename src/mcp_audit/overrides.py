@@ -8,7 +8,12 @@ from typing import Any
 import yaml
 from pydantic import BaseModel
 
-from mcp_audit.models import Confidence, PermissionCategory, PermissionFinding
+from mcp_audit.models import (
+    Confidence,
+    FindingSourceTrust,
+    PermissionCategory,
+    PermissionFinding,
+)
 
 # Default path for user override config
 DEFAULT_OVERRIDE_PATH = Path.home() / ".mcp-audit.yaml"
@@ -105,6 +110,8 @@ class OverrideApplier:
                                     confidence=Confidence.MANUAL,
                                     evidence=[evidence],
                                     tool_name=tool_name,
+                                    source_trust=FindingSourceTrust.OPERATOR_OVERRIDE,
+                                    analyzer="mcp-audit.operator-override",
                                 )
                             )
 

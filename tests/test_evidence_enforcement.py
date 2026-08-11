@@ -16,6 +16,7 @@ from pydantic import ValidationError
 import mcp_audit.evidence_enforcement as enforcement
 from mcp_audit import cli
 from mcp_audit.evidence_enforcement import (
+    TARGET_RUNTIME_VERSION,
     ApprovalBindingError,
     ApprovedPolicyIntentV1,
     ArgumentConstraints,
@@ -41,6 +42,7 @@ from mcp_audit.evidence_enforcement import (
     state_digest,
     verify_target_runtime,
 )
+from mcp_audit.fixture_gateway import FIXTURE_GATEWAY_VERSION
 from mcp_audit.models import (
     AUDIT_REPORT_SCHEMA_VERSION,
     AuditReport,
@@ -503,7 +505,7 @@ def _replace_tool(
             ),
         ),
         lambda value: value.model_copy(update={"evidence_sha256": "sha256:" + "b" * 64}),
-        lambda value: value.model_copy(update={"target_runtime_version": "4.1.1"}),
+        lambda value: value.model_copy(update={"target_runtime_version": "1.0.1"}),
     ],
     ids=["source", "launch", "schema", "evidence", "runtime"],
 )
@@ -571,13 +573,17 @@ def test_state_drift_blocks_application(tmp_path: Path) -> None:
 def test_runtime_version_is_exactly_pinned() -> None:
     import importlib.metadata
 
-    assert importlib.metadata.version("agent-governance-toolkit-core") == "4.1.0"
+    assert importlib.metadata.version("mcp-audits")
+    assert importlib.metadata.version("cryptography").startswith("50.")
+    assert FIXTURE_GATEWAY_VERSION == TARGET_RUNTIME_VERSION == "1.0.0"
+    requirements = importlib.metadata.requires("mcp-audits") or []
+    assert all("agent-governance-toolkit-core" not in value for value in requirements)
 
 
 def test_runtime_version_drift_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "mcp_audit.evidence_enforcement.importlib.metadata.version",
-        lambda distribution: "4.1.1",
+        "mcp_audit.evidence_enforcement.FIXTURE_GATEWAY_VERSION",
+        "1.0.1",
     )
 
     with pytest.raises(PolicyOutcomeError, match="version mismatch"):

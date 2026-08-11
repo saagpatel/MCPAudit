@@ -1,6 +1,6 @@
 [project]
 name = "mcp-audits"
-version = "2.5.0"
+version = "2.6.0"
 description = "MCP Permission Auditor — scan, enumerate, and risk-score all locally configured MCP servers"
 readme = "README.md"
 license = "MIT"
@@ -33,12 +33,12 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Application Frameworks",
 ]
 dependencies = [
-    "agent-governance-toolkit-core==4.1.0",
-    "click>=8.0",
+    "click>=8.3.3,<9.0",
     "rich>=15.0.0",
     "anyio>=4.0",
     "json5>=0.10",
     "mcp>=1.28.1",
+    "cryptography>=50.0.0,<51.0",
     "pydantic>=2.0",
     "pyyaml>=6.0",
 ]
