@@ -1,6 +1,6 @@
 # mcp-audit Egress Bundle (D3 + D1) — Implementation Roadmap
 
-Feature addition to the existing `MCPAudit` repo at `/Users/d/Projects/MCPAudit`
+Feature addition to the existing `MCPAudit` repo at `~/Projects/MCPAudit`
 (`src/mcp_audit/`). **Not greenfield** — read the existing modules first and follow their
 patterns: opt-in detector flags (`--trifecta-check`), additive finding types
 (`SsrfFinding`, `TrifectaFinding`), static-only analysis, never read credential values.

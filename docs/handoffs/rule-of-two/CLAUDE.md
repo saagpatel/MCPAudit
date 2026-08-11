@@ -1,7 +1,7 @@
 # mcp-audit Rule of Two Posture (D2)
 
 ## Overview
-Feature addition to the existing `MCPAudit` repo (`/Users/d/Projects/MCPAudit`): enrich the
+Feature addition to the existing `MCPAudit` repo (`~/Projects/MCPAudit`): enrich the
 trifecta detector so every finding carries a Rule of Two remediation — which leg to drop and the
 concrete action (Meta's Oct 2025 framework). **Read `src/mcp_audit/trifecta.py` first.**
 Static-only, additive, advisory.
