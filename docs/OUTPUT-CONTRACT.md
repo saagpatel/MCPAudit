@@ -483,7 +483,8 @@ Results use sorted compact canonical JSON with one terminal newline. They carry
 the `2026-07-28` protocol profile, final SEP-2663 source revision, as-of date,
 scenario digest, null seed, full transition explanations, bounded final task
 state, coverage, assumptions, and stable findings `MCPTASK000` through
-`MCPTASK008`. Arbitrary task result and JSON-RPC error payloads are not reflected.
+`MCPTASK008`. JSON-RPC error `data` accepts any bounded JSON value, including
+scalars and arrays; arbitrary task result and error payloads are not reflected.
 
 Verdicts are:
 
@@ -500,8 +501,9 @@ scenario's lifecycle consistency, not task success.
 
 The simulator covers task creation, polling cadence, local retry/backoff,
 input-required round trips, cooperative cancellation races, expiry, completion,
-JSON-RPC failure, duplicate delivery, stale observations, and terminal-state
-immutability. Retry policy and `work_started` are local fixture semantics.
+JSON-RPC failure, duplicate delivery, stale or impossible future observations,
+and terminal-state immutability. Retry policy and `work_started` are local
+fixture semantics.
 Initial `working` and terminal immutability are disclosed design choices where
 SEP-2663 is not an exhaustive transition matrix. Expiry remains `UNKNOWN` unless
 the scenario explicitly selects a local `mark_failed` or `delete` policy.

@@ -274,6 +274,27 @@ def _apply_poll(machine: _Machine, event: PollEvent, before: str) -> None:
                 event.sequence,
             )
     machine.last_poll_ms = event.at_ms
+    if event.observed_version is not None and event.observed_version > machine.version:
+        _finding(
+            machine,
+            "MCPTASK003",
+            FindingSeverity.HIGH,
+            RequirementLevel.LOCAL_FIXTURE,
+            "Impossible future task state was claimed",
+            "The poll observed a state version newer than the current simulated task version.",
+            "Return the current state version or advance the task through explicit causal events first.",
+            event.sequence,
+            "state_version is a local monotonic observation aid, not an MCP field.",
+        )
+        _transition(
+            machine,
+            event,
+            before,
+            "rejected",
+            TransitionAuthority.LOCAL_FIXTURE_POLICY,
+            "A poll cannot observe a future local state version without causal transition evidence.",
+        )
+        return
     if event.observed_version is not None and event.observed_version < machine.version:
         _finding(
             machine,

@@ -95,7 +95,7 @@ stateDiagram-v2
 |---|---|---|
 | The server must durably create a task before returning its handle. | SEP-2663 `MUST` | Events before `create` fail `MCPTASK001`. |
 | A created task is initially `working`. | Local fixture default | SEP-2663 says `working` is typical, not necessary; other initial states remain unsupported. |
-| `tasks/get` returns the current status-specific shape. | SEP-2663 `MUST` | A stale local observation version fails `MCPTASK003`. |
+| `tasks/get` returns the current status-specific shape. | SEP-2663 `MUST` | A stale local observation or an impossible future version fails `MCPTASK003`. |
 | Clients honor `pollIntervalMs`. | SEP-2663 `SHOULD` | Too-early polling fails `MCPTASK003` with `protocol_should`. |
 | `input_required` exposes task-lifetime-unique request keys. | SEP-2663 `MUST` | Reused keys fail `MCPTASK008`; update acknowledgement does not immediately force status. |
 | Cancellation is acknowledged but cooperative and eventually consistent. | SEP-2663 `MUST`/`MAY` | `cancel_requested` does not change status; either completion or `cancel_applied` may win. |
