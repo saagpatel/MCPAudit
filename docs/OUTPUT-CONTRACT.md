@@ -506,7 +506,9 @@ and terminal-state immutability. Retry policy and `work_started` are local
 fixture semantics.
 Initial `working` and terminal immutability are disclosed design choices where
 SEP-2663 is not an exhaustive transition matrix. Expiry remains `UNKNOWN` unless
-the scenario explicitly selects a local `mark_failed` or `delete` policy.
+the scenario explicitly selects a local `mark_failed` or `delete` policy. Once
+`delete` is applied, the task ID is unavailable and every later observation or
+state-changing event is rejected.
 
 The pure engine performs no file, environment, credential, wall-clock, or
 network reads. The CLI reads only the exact regular non-symlink fixture path or

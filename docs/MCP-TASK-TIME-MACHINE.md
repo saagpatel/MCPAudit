@@ -100,7 +100,7 @@ stateDiagram-v2
 | `input_required` exposes task-lifetime-unique request keys. | SEP-2663 `MUST` | Reused keys fail `MCPTASK008`; update acknowledgement does not immediately force status. |
 | Cancellation is acknowledged but cooperative and eventually consistent. | SEP-2663 `MUST`/`MAY` | `cancel_requested` does not change status; either completion or `cancel_applied` may win. |
 | `completed`, `failed`, and `cancelled` never transition. | Design inference | Official overview calls them terminal, but SEP-2663 has no exhaustive normative matrix. Post-terminal mutations fail `MCPTASK002` and disclose the assumption. |
-| After `ttlMs`, a task may fail, be deleted, or be treated unusable. | SEP-2663 `MAY`; underspecified choice | `expiry_policy` must be `mark_failed`, `delete`, or `unknown`; `unknown` emits `MCPTASK007`. |
+| After `ttlMs`, a task may fail, be deleted, or be treated unusable. | SEP-2663 `MAY`; underspecified choice | `expiry_policy` must be `mark_failed`, `delete`, or `unknown`; `unknown` emits `MCPTASK007`. Once `delete` is applied, every later observation or transition for that task ID is rejected as unavailable. |
 | Retry/backoff and attempt exhaustion. | Local fixture policy | Deterministic integer exponential backoff; no claim that MCP requires this policy. |
 
 `failed` is reserved for JSON-RPC execution errors. A tool result with

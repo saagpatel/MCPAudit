@@ -295,6 +295,62 @@ def test_future_poll_version_is_rejected_as_impossible_evidence() -> None:
 
 
 @pytest.mark.parametrize(
+    "post_delete_event",
+    [
+        {"type": "work_started"},
+        {"type": "poll"},
+        {"type": "retryable_error"},
+        {"type": "retry"},
+        {"type": "input_required", "request_key": "late-input"},
+        {"type": "input_submitted", "request_key": "late-input"},
+        {"type": "resume_working"},
+        {"type": "cancel_requested"},
+        {"type": "cancel_applied"},
+        {"type": "complete", "result": {}},
+        {
+            "type": "fail",
+            "error": {"code": -32603, "message": "late failure", "data": None},
+        },
+        {"type": "expire"},
+    ],
+    ids=lambda event: str(event["type"]),
+)
+def test_deleted_task_rejects_every_later_event(post_delete_event: dict[str, object]) -> None:
+    payload = builtin_scenarios()["happy-path"].model_dump(mode="json")
+    payload.update(
+        {
+            "scenario_id": "deleted-task-is-unavailable",
+            "task_id": "task-deleted",
+            "ttl_ms": 10,
+            "expiry_policy": "delete",
+            "events": [
+                {"event_id": "create", "sequence": 1, "at_ms": 0, "type": "create"},
+                {"event_id": "expire", "sequence": 2, "at_ms": 10, "type": "expire"},
+                {
+                    "event_id": "post-delete",
+                    "sequence": 3,
+                    "at_ms": 11,
+                    **post_delete_event,
+                },
+            ],
+        }
+    )
+
+    result = simulate_scenario(TaskScenario.model_validate(payload))
+
+    assert result.verdict == "fail"
+    assert result.final_task is not None
+    assert result.final_task.status == "working"
+    assert result.final_task.availability == "deleted"
+    assert result.final_task.state_version == 1
+    assert result.final_task.result_present is False
+    assert result.final_task.error_present is False
+    assert result.final_task.cancel_requested is False
+    assert {finding.rule_id for finding in result.findings} == {"MCPTASK007"}
+    assert result.transitions[-1].disposition == "rejected"
+
+
+@pytest.mark.parametrize(
     "error_data",
     [
         "scalar detail",
