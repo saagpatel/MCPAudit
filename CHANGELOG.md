@@ -22,6 +22,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added `mcp-audit task-time-machine`, an offline deterministic MCP Tasks
+  lifecycle simulator with strict scenario/result schemas, virtual logical
+  time, stable `MCPTASK000`-`MCPTASK008` explanations, bounded JSON-RPC error
+  data, and fail-closed handling for malformed, stale, future, or unsupported
+  evidence.
+- Added `mcp-audit result-parcel`, an offline result-delivery comparison lab
+  covering inline payloads, resource references, provider/local chunk and
+  progress extensions, and negotiated Tasks results across confidentiality,
+  integrity, retrieval, redaction, expiry, cleanup, and UNKNOWN evidence.
 - Added `mcp-audit session-resume`, an offline deterministic fault-injection
   lab for MCP Streamable HTTP session establishment, interruption, replay,
   expiry, restart, migration, concurrent reconnect, cancellation, and ambiguous
