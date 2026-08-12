@@ -11,7 +11,7 @@ import json
 from enum import StrEnum
 from typing import Annotated, Any, Final, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 SCENARIO_SCHEMA: Final = "mcpaudit.task-time-machine.scenario.v1"
 RESULT_SCHEMA: Final = "mcpaudit.task-time-machine.result.v1"
@@ -67,7 +67,7 @@ class RetryPolicy(StrictModel):
 class JsonRpcError(StrictModel):
     code: int
     message: str = Field(min_length=1, max_length=1_024)
-    data: dict[str, Any] | None = None
+    data: JsonValue = None
 
 
 class BaseEvent(StrictModel):

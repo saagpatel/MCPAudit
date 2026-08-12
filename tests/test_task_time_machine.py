@@ -265,3 +265,74 @@ def test_cli_requires_exactly_one_input() -> None:
     result = CliRunner().invoke(main, ["task-time-machine", "run"])
     assert result.exit_code == 2
     assert "exactly one" in result.output
+
+
+def test_future_poll_version_is_rejected_as_impossible_evidence() -> None:
+    payload = builtin_scenarios()["happy-path"].model_dump(mode="json")
+    payload.update(
+        {
+            "scenario_id": "future-poll-version",
+            "task_id": "task-future-poll",
+            "events": [
+                {"event_id": "create", "sequence": 1, "at_ms": 0, "type": "create"},
+                {
+                    "event_id": "poll",
+                    "sequence": 2,
+                    "at_ms": 1_000,
+                    "type": "poll",
+                    "observed_version": 999,
+                },
+            ],
+        }
+    )
+
+    result = simulate_scenario(TaskScenario.model_validate(payload))
+
+    assert result.verdict == "fail"
+    assert {finding.rule_id for finding in result.findings} == {"MCPTASK003"}
+    assert result.transitions[-1].disposition == "rejected"
+    assert "newer than" in result.findings[0].evidence
+
+
+@pytest.mark.parametrize(
+    "error_data",
+    [
+        "scalar detail",
+        7,
+        False,
+        ["bounded", {"nested": [1, None]}],
+        {"bounded": "object"},
+        None,
+    ],
+)
+def test_json_rpc_error_data_accepts_every_bounded_json_shape(error_data: object) -> None:
+    payload = builtin_scenarios()["happy-path"].model_dump(mode="json")
+    payload.update(
+        {
+            "scenario_id": "json-rpc-error-data",
+            "task_id": "task-json-rpc-error",
+            "events": [
+                {"event_id": "create", "sequence": 1, "at_ms": 0, "type": "create"},
+                {
+                    "event_id": "fail",
+                    "sequence": 2,
+                    "at_ms": 1,
+                    "type": "fail",
+                    "error": {
+                        "code": -32603,
+                        "message": "synthetic failure",
+                        "data": error_data,
+                    },
+                },
+            ],
+        }
+    )
+
+    parsed = parse_scenario_bytes(json.dumps(payload).encode())
+
+    assert isinstance(parsed, TaskScenario)
+    result = simulate_scenario(parsed)
+    assert result.verdict == "pass"
+    assert result.final_task is not None
+    assert result.final_task.status == "failed"
+    assert result_json_bytes(result).find(b"scalar detail") == -1
