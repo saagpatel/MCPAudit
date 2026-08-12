@@ -464,6 +464,55 @@ does not prove HTTP caching, performance, server/client/proxy behavior,
 authorization, confidentiality, notification delivery, or any production
 cache. See `docs/CACHE-CONTRACT-AUDITOR.md`.
 
+## MCP Task Time Machine v1 (experimental)
+
+The offline `mcp-audit task-time-machine` command group is separate from
+connected MCP scans and does not change `AuditReport` schema version `1`. Its
+strict contract identifiers are:
+
+- `mcpaudit.task-time-machine.scenario.v1`;
+- `mcpaudit.task-time-machine.result.v1`.
+
+Authoritative strict JSON Schemas are emitted by `mcp-audit task-time-machine
+schema scenario|result`. Unknown fields and implicit type coercion are rejected.
+Scenario execution is seed-free and ordered by explicit `(at_ms, sequence)`
+coordinates; sequence values must be unique. Duplicate event IDs remain valid
+test input, but only the first event is applied and later copies are flagged.
+
+Results use sorted compact canonical JSON with one terminal newline. They carry
+the `2026-07-28` protocol profile, final SEP-2663 source revision, as-of date,
+scenario digest, null seed, full transition explanations, bounded final task
+state, coverage, assumptions, and stable findings `MCPTASK000` through
+`MCPTASK008`. Arbitrary task result and JSON-RPC error payloads are not reflected.
+
+Verdicts are:
+
+- `pass`: supported lifecycle invariants are not contradicted;
+- `fail`: at least one supported protocol, design-inference, or local-fixture
+  invariant is contradicted;
+- `unknown`: only malformed, unsupported, or ambiguous semantics remain.
+
+`task-time-machine run` emits human-readable output by default and canonical
+JSON with `--json`. It exits `0` for `pass`, `1` for `fail` or `unknown`, and
+`2` for invalid input selection or a filesystem boundary error. A task ending
+in `failed` can still produce simulator verdict `pass`; the verdict grades the
+scenario's lifecycle consistency, not task success.
+
+The simulator covers task creation, polling cadence, local retry/backoff,
+input-required round trips, cooperative cancellation races, expiry, completion,
+JSON-RPC failure, duplicate delivery, stale observations, and terminal-state
+immutability. Retry policy and `work_started` are local fixture semantics.
+Initial `working` and terminal immutability are disclosed design choices where
+SEP-2663 is not an exhaustive transition matrix. Expiry remains `UNKNOWN` unless
+the scenario explicitly selects a local `mark_failed` or `delete` policy.
+
+The pure engine performs no file, environment, credential, wall-clock, or
+network reads. The CLI reads only the exact regular non-symlink fixture path or
+uses an in-memory built-in. A passing report proves only supported invariants in
+the supplied synthetic scenario; it does not prove live MCP, SDK, host,
+persistence, authorization, notification, adoption, interoperability, or
+production behavior. See `docs/MCP-TASK-TIME-MACHINE.md`.
+
 ## SafeForge Manifest v0
 
 SafeForge uses a separate, additive evidence-envelope contract; it does not

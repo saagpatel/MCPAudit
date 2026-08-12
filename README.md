@@ -27,6 +27,13 @@ logical-clock simulator over program-owned JSON traces. It checks required
 expiry/refresh and validated change-event behavior, linked page scope, and
 deterministic tools ordering without running a client, server, or proxy.
 
+For the experimental MCP Tasks extension, the
+[MCP Task Time Machine](docs/MCP-TASK-TIME-MACHINE.md) runs seed-free synthetic
+lifecycles on a virtual clock. It explains creation, polling, input, retry,
+cooperative cancellation races, expiry, success, failure, duplicates, stale
+observations, and forbidden terminal transitions without discovering or
+contacting an MCP server or reading credentials.
+
 > **🌐 Try it in your browser, no install:** paste any MCP client config at **[mcp-audit.saagarpatel.dev](https://mcp-audit.saagarpatel.dev)** for an instant config-only trust report. It runs this exact engine, never launches configured servers, never contacts configured endpoints, and stores nothing. The CLI below adds the connected deep checks (prompt-injection, SSRF, the lethal trifecta, schema drift, SARIF).
 
 ## ⚡ 60-second start
@@ -164,6 +171,7 @@ Every `get_*_findings` tool returns a JSON object with `findings` and `warnings`
 - **Risk scoring** — composite 0–10 per server as a weighted sum of tool permission categories, with a five-dimension breakdown (file access, network, shell, destructive, exfiltration); prompt/resource findings also produce an additive `non_tool_risk` signal without changing `risk_score.composite`
 - **Stable finding metadata** — permission and prompt-injection findings include stable rule IDs, severity, evidence, and suggested remediation so reports are easier to triage
 - **Fixture-first MCP cache contract audit** — `mcp-audit cache-contract scan TRACE` deterministically evaluates synthetic MCP `2026-07-28` list/read cache traces under stable `MCPCACHE000`–`MCPCACHE009` rules; malformed, unsupported, clock-ambiguous, or truncated evidence is `UNKNOWN`, while real caches, transports, credentials, and logs remain out of scope. See `docs/CACHE-CONTRACT-AUDITOR.md`
+- **Offline MCP Tasks state-machine lab** — `mcp-audit task-time-machine run --builtin happy-path` executes strict versioned scenarios in `(at_ms, sequence)` order, emits human or canonical JSON explanations under stable `MCPTASK000`–`MCPTASK008` rules, and preserves experimental or underspecified semantics as `UNKNOWN`. See `docs/MCP-TASK-TIME-MACHINE.md`
 - **Local policy gates** — `scan --policy policy.yaml` evaluates reports against local YAML rules and exits nonzero for CI enforcement
 - **Report redaction** — terminal, JSON, SARIF, and HTML report paths share a redaction layer for likely credential values; `scan --redact` adds an opt-in field-report pass that also scrubs the machine hostname and home-path usernames (`/Users/<name>`, `/home/<name>`, `C:\Users\<name>`) from `--json`/`--sarif`/`--html` output, and replaces server names with stable aliases (`server-01`, …) everywhere they appear — structured fields, free-text summaries, and command basenames — so a config-only report is safe to share (the field-report checklist stays the backstop for any residual free-text specifics)
 - **Prompt injection detection** — `scan --inject-check` scans tool, prompt, and resource text for instruction-override patterns, hidden directives, fake role turns, and adversarial phrasing; pattern-based, no LLM required
