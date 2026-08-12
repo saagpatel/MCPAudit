@@ -190,6 +190,7 @@ Every `get_*_findings` tool returns a JSON object with `findings` and `warnings`
 - **Drop-in CI distribution** — a composite GitHub Action (`uses: saagpatel/MCPAudit@v2.6.0`) runs the scan, writes SARIF, and uploads it to code scanning in one step (config-only by default; optional policy gate exits `2`); a `pre-commit` hook (`id: mcp-audit`) audits repo-local `.mcp.json` / `.vscode/mcp.json` on commit. See `docs/ADOPTION-GUIDE.md`
 - **Documented output contract** — JSON, SARIF rule IDs, and policy exit codes are documented in `docs/OUTPUT-CONTRACT.md`
 - **Experimental fixture enforcement** — a narrow, repository-owned gateway converts one synthetic connected report into explicitly approved fixture-only policy and proves readback, negative controls, idempotency, and rollback; it never changes normal MCP client configuration ([guide](docs/EVIDENCE-ENFORCEMENT-AGT-FIXTURE.md))
+- **MCP session/resume fault lab** — `mcp-audit session-resume` replays strict synthetic Streamable HTTP session, disconnect, replay, migration, and cancellation scenarios against a deterministic virtual transport. It supports legacy session-bearing protocol profiles and fails visibly when legacy resume behavior is applied to the stateless `2026-07-28` transport; no network, credential, server, scheduler, or live MCP dependency is used. See [the lab guide](docs/SESSION-RESUME-FAULT-LAB.md)
 - **Watch mode** — `mcp-audit watch` re-scans on config file changes via `watchfiles` (optional extra: install with `mcp-audits[watch]`)
 
 ## Quick Start
@@ -293,6 +294,11 @@ mcp-audit scan --llm-analysis
 
 # Watch mode — re-scan on config change; use --skip-connect for config-only watching
 mcp-audit watch
+
+# Replay one built-in transport-session fault, or the complete offline corpus
+mcp-audit session-resume list
+mcp-audit session-resume run disconnect-after-acceptance-before-response
+mcp-audit session-resume run --all --format json
 ```
 
 LLM mode treats all server-provided metadata as untrusted JSON data, keeps
