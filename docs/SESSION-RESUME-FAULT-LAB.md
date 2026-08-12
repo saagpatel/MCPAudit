@@ -77,7 +77,8 @@ Scenario input is bounded to 1 MiB, 32 JSON levels, 256 ordered steps, and 32
 reconnect attempts. Unknown fields, scalar coercion, duplicate JSON keys,
 duplicate step identities, decreasing logical times, symlinks, non-regular
 files, raced file identities, unsupported step shapes, and excessive input are
-rejected with exit `2`.
+rejected with exit `2`. The loader compares device, inode, size, and nanosecond
+modification time before and after its bounded descriptor read.
 
 Every step declares `at_ms`; array order breaks ties, so concurrent logical-time
 events still have one exact transcript order. Reports contain no wall-clock
@@ -123,11 +124,15 @@ deliberately absent.
 Each report independently classifies:
 
 - `at_most_once`: supported, contradicted, or unknown from modeled accept/delivery counts;
-- `at_least_once`: supported, contradicted, or unknown from modeled completion evidence;
+- `at_least_once`: supported only when every accepted request has modeled
+  completion evidence; one complete-trace omission contradicts it and
+  ambiguous or incomplete evidence remains unknown;
 - `duplicate_risk`: observed, not observed, or unknown, counted per request
   even when duplicate results use distinct event IDs;
 - `lost_result_risk`: observed, not observed, or unknown, correlated per
-  request so unrelated duplicate deliveries cannot offset a missing result; and
+  request so unrelated duplicate deliveries cannot offset a missing completion
+  or result; a provisional drop is cleared only after the same result event is
+  successfully delivered or replayed; and
 - `unknown`: included whenever a required acceptance, completion, deduplication, replay, or cancellation fact is unavailable.
 
 Seeing both at-most-once and at-least-once in one complete local trace does not
