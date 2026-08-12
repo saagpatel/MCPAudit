@@ -1,0 +1,22 @@
+{
+  "schema_version": "mcpaudit.task-time-machine.scenario.v1",
+  "scenario_id": "malformed",
+  "description": "Unknown fields are not accepted.",
+  "protocol_version": "2026-07-28",
+  "spec_profile": "mcp-tasks-extension-sep-2663",
+  "task_id": "task-malformed",
+  "initial_clock_ms": 0,
+  "ttl_ms": 1000,
+  "poll_interval_ms": 100,
+  "retry_policy": {
+    "max_attempts": 1,
+    "initial_backoff_ms": 0,
+    "multiplier": 1,
+    "max_backoff_ms": 0
+  },
+  "expiry_policy": "unknown",
+  "assumptions": [],
+  "events": [
+    {"event_id": "e1", "sequence": 1, "at_ms": 0, "type": "create", "unexpected": true}
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "schema_version": "mcpaudit.task-time-machine.scenario.v1",
+  "scenario_id": "input-required",
+  "description": "Round-trip input through eventual status update.",
+  "protocol_version": "2026-07-28",
+  "spec_profile": "mcp-tasks-extension-sep-2663",
+  "task_id": "task-input-required",
+  "initial_clock_ms": 0,
+  "ttl_ms": 60000,
+  "poll_interval_ms": 1000,
+  "retry_policy": {
+    "max_attempts": 3,
+    "initial_backoff_ms": 1000,
+    "multiplier": 2,
+    "max_backoff_ms": 8000
+  },
+  "expiry_policy": "unknown",
+  "assumptions": [],
+  "events": [
+    {"event_id": "e1", "sequence": 1, "at_ms": 0, "type": "create"},
+    {"event_id": "e2", "sequence": 2, "at_ms": 1, "type": "work_started"},
+    {"event_id": "e3", "sequence": 3, "at_ms": 100, "type": "input_required", "request_key": "approval"},
+    {"event_id": "e4", "sequence": 4, "at_ms": 200, "type": "input_submitted", "request_key": "approval"},
+    {"event_id": "e5", "sequence": 5, "at_ms": 300, "type": "resume_working"},
+    {"event_id": "e6", "sequence": 6, "at_ms": 400, "type": "complete", "result": {"ok": true}}
+  ]
+}
