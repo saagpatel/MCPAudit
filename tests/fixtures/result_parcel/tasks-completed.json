@@ -1,0 +1,56 @@
+{
+  "schema_version": "mcpaudit.result-parcel.scenario.v1",
+  "scenario_id": "tasks-completed",
+  "title": "Completed negotiated Tasks extension",
+  "protocol_version": "2026-07-28",
+  "payload": {
+    "payload_class": "text",
+    "sensitivity": "internal",
+    "size_bytes": 1024,
+    "content_type": "text/plain",
+    "synthetic": true
+  },
+  "retention": {
+    "retained": true,
+    "ttl_ms": 3600000,
+    "created_at_ms": 0,
+    "observed_at_ms": 1000,
+    "cleanup_owner": "server",
+    "delete_supported": "unsupported"
+  },
+  "integrity": {
+    "algorithm": "sha256",
+    "expected_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "observed_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "declared_content_type": "text/plain",
+    "observed_content_type": "text/plain"
+  },
+  "retrieval_authority": {
+    "required": false,
+    "enforcement": "not_enforced",
+    "principal_bound": false,
+    "outcome": "allowed"
+  },
+  "redaction": {
+    "required": false,
+    "stage": "none",
+    "raw_payload_retained": false
+  },
+  "delivery": {
+    "mode": "tasks_extension",
+    "semantics": "mcp_extension",
+    "extension_id": "io.modelcontextprotocol/tasks",
+    "host_support": "supported",
+    "task_status": "completed",
+    "final_result_present": true
+  },
+  "evidence_provenance": [
+    {
+      "evidence_class": "extension",
+      "title": "MCP Tasks extension",
+      "url": "https://tasks.extensions.modelcontextprotocol.io/specification/draft/tasks",
+      "version": "as-of-2026-08-11",
+      "commit": "2c1425d9a288b9b1f489430fe1e00bb392b47e48"
+    }
+  ]
+}

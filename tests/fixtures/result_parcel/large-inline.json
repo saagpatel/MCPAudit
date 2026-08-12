@@ -1,0 +1,54 @@
+{
+  "schema_version": "mcpaudit.result-parcel.scenario.v1",
+  "scenario_id": "large-inline",
+  "title": "Large complete inline result",
+  "protocol_version": "2026-07-28",
+  "payload": {
+    "payload_class": "text",
+    "sensitivity": "internal",
+    "size_bytes": 8388608,
+    "content_type": "text/plain",
+    "synthetic": true
+  },
+  "retention": {
+    "retained": false,
+    "ttl_ms": null,
+    "created_at_ms": 0,
+    "observed_at_ms": 1000,
+    "cleanup_owner": "none",
+    "delete_supported": "unsupported"
+  },
+  "integrity": {
+    "algorithm": "sha256",
+    "expected_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "observed_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "declared_content_type": "text/plain",
+    "observed_content_type": "text/plain"
+  },
+  "retrieval_authority": {
+    "required": false,
+    "enforcement": "not_enforced",
+    "principal_bound": false,
+    "outcome": "allowed"
+  },
+  "redaction": {
+    "required": false,
+    "stage": "none",
+    "raw_payload_retained": false
+  },
+  "delivery": {
+    "mode": "inline",
+    "semantics": "mcp_core",
+    "host_support": "supported",
+    "result_complete": true
+  },
+  "evidence_provenance": [
+    {
+      "evidence_class": "standard",
+      "title": "MCP 2026-07-28 tool result semantics",
+      "url": "https://modelcontextprotocol.io/specification/2026-07-28/server/tools",
+      "version": "2026-07-28",
+      "commit": "5f5440bb26a62e2cf3440b92da5a667efa03b267"
+    }
+  ]
+}

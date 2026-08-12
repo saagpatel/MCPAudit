@@ -172,6 +172,7 @@ Every `get_*_findings` tool returns a JSON object with `findings` and `warnings`
 - **Stable finding metadata** — permission and prompt-injection findings include stable rule IDs, severity, evidence, and suggested remediation so reports are easier to triage
 - **Fixture-first MCP cache contract audit** — `mcp-audit cache-contract scan TRACE` deterministically evaluates synthetic MCP `2026-07-28` list/read cache traces under stable `MCPCACHE000`–`MCPCACHE009` rules; malformed, unsupported, clock-ambiguous, or truncated evidence is `UNKNOWN`, while real caches, transports, credentials, and logs remain out of scope. See `docs/CACHE-CONTRACT-AUDITOR.md`
 - **Offline MCP Tasks state-machine lab** — `mcp-audit task-time-machine run --builtin happy-path` executes strict versioned scenarios in `(at_ms, sequence)` order, emits human or canonical JSON explanations under stable `MCPTASK000`–`MCPTASK008` rules, and preserves experimental or underspecified semantics as `UNKNOWN`. See `docs/MCP-TASK-TIME-MACHINE.md`
+- **Offline MCP result parcel lab** — `mcp-audit result-parcel analyze` compares inline, provider/local chunk or progress extensions, core resource links, and the negotiated Tasks extension against size, expiry, authorization, redaction, integrity, and retrieval faults. Explanations bind to named inputs; no payload, MCP server, network, credential, or object store is read. See `docs/RESULT-PARCEL-LAB.md`
 - **Local policy gates** — `scan --policy policy.yaml` evaluates reports against local YAML rules and exits nonzero for CI enforcement
 - **Report redaction** — terminal, JSON, SARIF, and HTML report paths share a redaction layer for likely credential values; `scan --redact` adds an opt-in field-report pass that also scrubs the machine hostname and home-path usernames (`/Users/<name>`, `/home/<name>`, `C:\Users\<name>`) from `--json`/`--sarif`/`--html` output, and replaces server names with stable aliases (`server-01`, …) everywhere they appear — structured fields, free-text summaries, and command basenames — so a config-only report is safe to share (the field-report checklist stays the backstop for any residual free-text specifics)
 - **Prompt injection detection** — `scan --inject-check` scans tool, prompt, and resource text for instruction-override patterns, hidden directives, fake role turns, and adversarial phrasing; pattern-based, no LLM required
@@ -385,6 +386,16 @@ or current freshness, repeat network fetches, contact the MCP endpoint, handle
 credentials, run OAuth, authorize a scan, or change a trust grade. See
 [`docs/AUTHORIZATION-POSTURE-ADOPTION.md`](docs/AUTHORIZATION-POSTURE-ADOPTION.md)
 for the authority flow, strict schemas, exit contract, and claim ceiling.
+
+The experimental `mcp-audit result-parcel` group evaluates versioned,
+synthetic result-delivery scenarios entirely offline. It distinguishes current
+MCP core result and resource semantics from separately negotiated Tasks and
+provider/local chunk or progress patterns, and reports suitability, exposure,
+durability, retry/idempotency risk, cleanup burden, and UNKNOWNs without an
+opaque score. See
+[`docs/RESULT-PARCEL-LAB.md`](docs/RESULT-PARCEL-LAB.md) for the current
+primary-source map, comparison table, threat boundaries, fixtures, and
+five-minute demo.
 
 ### Local Policy Gates
 

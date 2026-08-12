@@ -1,0 +1,60 @@
+{
+  "schema_version": "mcpaudit.result-parcel.scenario.v1",
+  "scenario_id": "progress-payload-conflation",
+  "title": "Progress incorrectly used as result byte stream",
+  "protocol_version": "2026-07-28",
+  "payload": {
+    "payload_class": "text",
+    "sensitivity": "internal",
+    "size_bytes": 1024,
+    "content_type": "text/plain",
+    "synthetic": true
+  },
+  "retention": {
+    "retained": false,
+    "ttl_ms": null,
+    "created_at_ms": 0,
+    "observed_at_ms": 1000,
+    "cleanup_owner": "none",
+    "delete_supported": "unsupported"
+  },
+  "integrity": {
+    "algorithm": "sha256",
+    "expected_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "observed_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "declared_content_type": "text/plain",
+    "observed_content_type": "text/plain"
+  },
+  "retrieval_authority": {
+    "required": false,
+    "enforcement": "not_enforced",
+    "principal_bound": false,
+    "outcome": "allowed"
+  },
+  "redaction": {
+    "required": false,
+    "stage": "none",
+    "raw_payload_retained": false
+  },
+  "delivery": {
+    "mode": "progress_extension",
+    "semantics": "provider_extension",
+    "host_support": "supported",
+    "progress_values": [
+      0,
+      50,
+      100
+    ],
+    "carries_result_payload": true,
+    "final_result_present": false
+  },
+  "evidence_provenance": [
+    {
+      "evidence_class": "design_inference",
+      "title": "Progress used as status, not result bytes",
+      "url": "https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/progress",
+      "version": "2025-11-25",
+      "commit": null
+    }
+  ]
+}

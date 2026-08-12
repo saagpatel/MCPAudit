@@ -545,6 +545,34 @@ the supplied synthetic scenario; it does not prove live MCP, SDK, host,
 persistence, authorization, notification, adoption, interoperability, or
 production behavior. See `docs/MCP-TASK-TIME-MACHINE.md`.
 
+## MCP Result Parcel Lab v1 (experimental)
+
+The offline `mcp-audit result-parcel` group is separate from `AuditReport`
+schema version `1`. Its strict contract identifiers are:
+
+- scenario: `mcpaudit.result-parcel.scenario.v1`;
+- report: `mcpaudit.result-parcel.report.v1`.
+
+`mcp-audit result-parcel schema scenario|report` emits the authoritative
+closed JSON Schemas. `analyze` accepts exactly one regular non-symlink JSON
+file or one install-safe `--builtin`, renders human output by default, and
+emits deterministic canonical JSON with `--format json`. It exits `0` for a
+passing suitable or conditional recommendation, `1` for a failed or UNKNOWN
+recommendation, and `2` for file-boundary or CLI misuse.
+
+Stable `MCPPARCEL000` records malformed, unsupported, or bounded-out evidence.
+`MCPPARCEL001`–`MCPPARCEL013` cover host capability, inline completeness and
+size, reference expiry/availability, retrieval authority, content type and
+integrity, chunk ordering/completeness/idempotency, progress/result
+conflation, partial retrieval, retained cleanup, Tasks final results, and
+redaction timing. Every finding names the scenario fields that explain it.
+
+The lab profiles MCP `2026-07-28`: inline complete results and resource links
+are core; `io.modelcontextprotocol/tasks` is a separately negotiated
+extension; chunk streams and progress-as-delivery accept only provider/local
+extension classifications. No result, transport, host, credential, remote
+resource, or object store is inspected. See `docs/RESULT-PARCEL-LAB.md`.
+
 ## SafeForge Manifest v0
 
 SafeForge uses a separate, additive evidence-envelope contract; it does not
