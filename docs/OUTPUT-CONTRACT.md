@@ -14,6 +14,32 @@ with a release-note deprecation window and a breaking-version boundary.
 - `1`: command setup failed, such as invalid client or policy config.
 - `2`: scan completed and report artifacts were written, but `--policy` failed.
 
+Subcommands with standalone experimental contracts document their own exit
+codes below; they do not change the stable scan exit contract.
+
+## Session Resume Fault Lab v1 (experimental)
+
+`mcp-audit session-resume` is separate from `AuditReport`. Its strict contract
+identifiers are:
+
+- `mcpaudit.session-resume.scenario.v1`;
+- `mcpaudit.session-resume.transcript.v1`;
+- `mcpaudit.session-resume.report.v1`; and
+- `mcpaudit.session-resume.suite-report.v1`.
+
+Authoritative schemas are emitted by `session-resume schema scenario`,
+`transcript`, `report`, and `suite-report`. Canonical JSON is UTF-8, compact,
+key-sorted, and terminated by one newline. It contains the scenario SHA-256,
+protocol profile, exact logical-time transcript, assumption provenance,
+actionable `MCPSR000`–`MCPSR009` findings, independent delivery-safety states,
+and the fixed claim ceiling
+`local_model_observations_only_exactly_once_unproven`.
+
+`session-resume run` exits `0` for a valid replay, including an intentionally
+faulty scenario, and `2` for selection or input-contract failure. It has no
+network or output-file mutation path; readable or JSON reports go to stdout.
+The standalone contract does not add fields to the stable scan JSON schema.
+
 ## JSON Report
 
 The JSON report is the serialized `AuditReport` model. Consumers should treat

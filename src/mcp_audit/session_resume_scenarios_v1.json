@@ -1,0 +1,319 @@
+{
+  "schema_version": "mcpaudit.session-resume.builtin-corpus.v1",
+  "scenarios": [
+    {
+      "schema_version": "mcpaudit.session-resume.scenario.v1",
+      "scenario_id": "successful-resume-control",
+      "title": "Negative control: one interrupted result resumes once",
+      "description": "A legacy session replays one undelivered result after the last acknowledged event.",
+      "protocol_version": "2025-11-25",
+      "trace_complete": true,
+      "server_policy": {"session_mode": "required", "replay_mode": "supported", "duplicate_suppression": "proven", "retry_limit": 3},
+      "assumptions": [{"assumption_id": "legacy-resume-contract", "source": "standard_requirement", "statement": "Legacy Streamable HTTP permits per-stream SSE replay after Last-Event-ID.", "references": ["https://modelcontextprotocol.io/specification/2025-11-25/basic/transports"]}],
+      "steps": [
+        {"step_id": "init", "at_ms": 0, "type": "initialize", "session_id": "session-control"},
+        {"step_id": "send", "at_ms": 10, "type": "send_request", "request_id": "req-control", "session_id": "session-control"},
+        {"step_id": "accept", "at_ms": 20, "type": "accept_request", "request_id": "req-control", "server_instance": "server-a"},
+        {"step_id": "prime", "at_ms": 30, "type": "emit_event", "request_id": "req-control", "event_id": "control:0", "event_kind": "prime"},
+        {"step_id": "prime-deliver", "at_ms": 40, "type": "deliver_event", "event_id": "control:0"},
+        {"step_id": "complete", "at_ms": 50, "type": "complete_request", "request_id": "req-control", "result_marker": "<synthetic-result>"},
+        {"step_id": "result", "at_ms": 60, "type": "emit_event", "request_id": "req-control", "event_id": "control:1", "event_kind": "result"},
+        {"step_id": "disconnect", "at_ms": 70, "type": "disconnect", "request_id": "req-control", "phase": "after_event"},
+        {"step_id": "reconnect", "at_ms": 80, "type": "reconnect", "request_id": "req-control", "attempt": 1, "session_id": "session-control", "last_event_id": "control:0"},
+        {"step_id": "replay", "at_ms": 90, "type": "replay", "request_id": "req-control", "event_ids": ["control:1"]}
+      ]
+    },
+    {
+      "schema_version": "mcpaudit.session-resume.scenario.v1",
+      "scenario_id": "disconnect-before-acceptance",
+      "title": "Disconnect before server acceptance",
+      "description": "The client cannot tell whether the operation crossed the server acceptance boundary.",
+      "protocol_version": "2025-11-25",
+      "trace_complete": false,
+      "server_policy": {"session_mode": "required", "replay_mode": "implementation_defined", "duplicate_suppression": "unknown", "retry_limit": 3},
+      "assumptions": [{"assumption_id": "acceptance-observation", "source": "design_inference", "statement": "A link disconnect before an observable server transition leaves acceptance unknown.", "references": ["https://www.rfc-editor.org/rfc/rfc9110.html"]}],
+      "steps": [
+        {"step_id": "init", "at_ms": 0, "type": "initialize", "session_id": "session-before"},
+        {"step_id": "send", "at_ms": 10, "type": "send_request", "request_id": "req-before", "session_id": "session-before"},
+        {"step_id": "disconnect", "at_ms": 20, "type": "disconnect", "request_id": "req-before", "phase": "before_acceptance"}
+      ]
+    },
+    {
+      "schema_version": "mcpaudit.session-resume.scenario.v1",
+      "scenario_id": "disconnect-after-acceptance-before-response",
+      "title": "Disconnect after acceptance but before response",
+      "description": "The server completes work but its result is lost after an acceptance-observable disconnect.",
+      "protocol_version": "2025-11-25",
+      "trace_complete": true,
+      "server_policy": {"session_mode": "required", "replay_mode": "unsupported", "duplicate_suppression": "unknown", "retry_limit": 3},
+      "assumptions": [{"assumption_id": "accepted-not-delivered", "source": "design_inference", "statement": "Acceptance and result delivery are separate virtual transport transitions.", "references": ["https://www.rfc-editor.org/rfc/rfc9110.html", "https://modelcontextprotocol.io/specification/2025-11-25/basic/transports"]}],
+      "steps": [
+        {"step_id": "init", "at_ms": 0, "type": "initialize", "session_id": "session-after"},
+        {"step_id": "send", "at_ms": 10, "type": "send_request", "request_id": "req-after", "session_id": "session-after"},
+        {"step_id": "accept", "at_ms": 20, "type": "accept_request", "request_id": "req-after", "server_instance": "server-a"},
+        {"step_id": "disconnect", "at_ms": 30, "type": "disconnect", "request_id": "req-after", "phase": "after_acceptance_before_response"},
+        {"step_id": "complete", "at_ms": 40, "type": "complete_request", "request_id": "req-after", "result_marker": "<synthetic-result>"},
+        {"step_id": "result", "at_ms": 50, "type": "emit_event", "request_id": "req-after", "event_id": "after:1", "event_kind": "result"},
+        {"step_id": "drop", "at_ms": 60, "type": "drop_event", "event_id": "after:1"}
+      ]
+    },
+    {
+      "schema_version": "mcpaudit.session-resume.scenario.v1",
+      "scenario_id": "dropped-event",
+      "title": "Dropped result event",
+      "description": "A completed response event disappears on the virtual link.",
+      "protocol_version": "2025-11-25",
+      "trace_complete": true,
+      "server_policy": {"session_mode": "required", "replay_mode": "unsupported", "duplicate_suppression": "proven", "retry_limit": 3},
+      "assumptions": [{"assumption_id": "link-drop", "source": "fixture_behavior", "statement": "The virtual link drops the named event and performs no implicit retry.", "references": ["https://modelcontextprotocol.io/specification/2025-11-25/basic/transports"]}],
+      "steps": [
+        {"step_id": "init", "at_ms": 0, "type": "initialize", "session_id": "session-drop"},
+        {"step_id": "send", "at_ms": 10, "type": "send_request", "request_id": "req-drop", "session_id": "session-drop"},
+        {"step_id": "accept", "at_ms": 20, "type": "accept_request", "request_id": "req-drop", "server_instance": "server-a"},
+        {"step_id": "complete", "at_ms": 30, "type": "complete_request", "request_id": "req-drop", "result_marker": "<synthetic-result>"},
+        {"step_id": "emit", "at_ms": 40, "type": "emit_event", "request_id": "req-drop", "event_id": "drop:1", "event_kind": "result"},
+        {"step_id": "drop", "at_ms": 50, "type": "drop_event", "event_id": "drop:1"}
+      ]
+    },
+    {
+      "schema_version": "mcpaudit.session-resume.scenario.v1",
+      "scenario_id": "duplicated-event",
+      "title": "Duplicated result event",
+      "description": "The same result event reaches the virtual client more than once.",
+      "protocol_version": "2025-11-25",
+      "trace_complete": true,
+      "server_policy": {"session_mode": "required", "replay_mode": "supported", "duplicate_suppression": "absent", "retry_limit": 3},
+      "assumptions": [{"assumption_id": "link-duplicate", "source": "fixture_behavior", "statement": "The virtual link may duplicate one emitted event without changing its event ID.", "references": ["https://html.spec.whatwg.org/multipage/server-sent-events.html"]}],
+      "steps": [
+        {"step_id": "init", "at_ms": 0, "type": "initialize", "session_id": "session-duplicate"},
+        {"step_id": "send", "at_ms": 10, "type": "send_request", "request_id": "req-duplicate", "session_id": "session-duplicate"},
+        {"step_id": "accept", "at_ms": 20, "type": "accept_request", "request_id": "req-duplicate", "server_instance": "server-a"},
+        {"step_id": "complete", "at_ms": 30, "type": "complete_request", "request_id": "req-duplicate", "result_marker": "<synthetic-result>"},
+        {"step_id": "emit", "at_ms": 40, "type": "emit_event", "request_id": "req-duplicate", "event_id": "duplicate:1", "event_kind": "result"},
+        {"step_id": "deliver", "at_ms": 50, "type": "deliver_event", "event_id": "duplicate:1"},
+        {"step_id": "duplicate", "at_ms": 60, "type": "duplicate_event", "event_id": "duplicate:1", "copies": 2}
+      ]
+    },
+    {
+      "schema_version": "mcpaudit.session-resume.scenario.v1",
+      "scenario_id": "stale-last-event-id",
+      "title": "Stale Last-Event-ID after replay-log loss",
+      "description": "A known cursor survives at the client after the server loses its replay log.",
+      "protocol_version": "2025-11-25",
+      "trace_complete": true,
+      "server_policy": {"session_mode": "required", "replay_mode": "supported", "duplicate_suppression": "unknown", "retry_limit": 3},
+      "assumptions": [{"assumption_id": "stale-cursor-policy", "source": "design_inference", "statement": "Legacy MCP does not prescribe stale cursor retention or recovery behavior.", "references": ["https://modelcontextprotocol.io/specification/2025-11-25/basic/transports"]}],
+      "steps": [
+        {"step_id": "init", "at_ms": 0, "type": "initialize", "session_id": "session-stale"},
+        {"step_id": "send", "at_ms": 10, "type": "send_request", "request_id": "req-stale", "session_id": "session-stale"},
+        {"step_id": "accept", "at_ms": 20, "type": "accept_request", "request_id": "req-stale", "server_instance": "server-a"},
+        {"step_id": "complete", "at_ms": 30, "type": "complete_request", "request_id": "req-stale", "result_marker": "<synthetic-result>"},
+        {"step_id": "emit", "at_ms": 40, "type": "emit_event", "request_id": "req-stale", "event_id": "stale:1", "event_kind": "result"},
+        {"step_id": "restart", "at_ms": 50, "type": "restart_server", "new_instance": "server-b", "preserves_sessions": true, "preserves_replay_log": false},
+        {"step_id": "reconnect", "at_ms": 60, "type": "reconnect", "request_id": "req-stale", "attempt": 1, "session_id": "session-stale", "last_event_id": "stale:1"},
+        {"step_id": "replay", "at_ms": 70, "type": "replay", "request_id": "req-stale", "event_ids": ["stale:1"]}
+      ]
+    },
+    {
+      "schema_version": "mcpaudit.session-resume.scenario.v1",
+      "scenario_id": "unknown-last-event-id",
+      "title": "Unknown Last-Event-ID",
+      "description": "A reconnect presents a cursor never issued by the modeled server.",
+      "protocol_version": "2025-11-25",
+      "trace_complete": false,
+      "server_policy": {"session_mode": "required", "replay_mode": "implementation_defined", "duplicate_suppression": "unknown", "retry_limit": 3},
+      "assumptions": [{"assumption_id": "unknown-cursor-policy", "source": "design_inference", "statement": "Legacy MCP does not define the response for an unknown Last-Event-ID.", "references": ["https://modelcontextprotocol.io/specification/2025-11-25/basic/transports"]}],
+      "steps": [
+        {"step_id": "init", "at_ms": 0, "type": "initialize", "session_id": "session-unknown-cursor"},
+        {"step_id": "send", "at_ms": 10, "type": "send_request", "request_id": "req-unknown-cursor", "session_id": "session-unknown-cursor"},
+        {"step_id": "reconnect", "at_ms": 20, "type": "reconnect", "request_id": "req-unknown-cursor", "attempt": 1, "session_id": "session-unknown-cursor", "last_event_id": "never-issued:99"}
+      ]
+    },
+    {
+      "schema_version": "mcpaudit.session-resume.scenario.v1",
+      "scenario_id": "missing-session-id",
+      "title": "Missing required MCP-Session-Id",
+      "description": "A post-initialization request omits the required legacy session identifier.",
+      "protocol_version": "2025-06-18",
+      "trace_complete": true,
+      "server_policy": {"session_mode": "required", "replay_mode": "unsupported", "duplicate_suppression": "proven", "retry_limit": 3},
+      "assumptions": [{"assumption_id": "missing-session-status", "source": "standard_requirement", "statement": "A legacy server that requires sessions should return 400 when the session header is missing.", "references": ["https://modelcontextprotocol.io/specification/2025-06-18/basic/transports"]}],
+      "steps": [
+        {"step_id": "init", "at_ms": 0, "type": "initialize", "session_id": "session-required"},
+        {"step_id": "send", "at_ms": 10, "type": "send_request", "request_id": "req-missing", "session_id": null},
+        {"step_id": "reject", "at_ms": 20, "type": "reject", "request_id": "req-missing", "status": 400, "reason": "missing MCP-Session-Id"}
+      ]
+    },
+    {
+      "schema_version": "mcpaudit.session-resume.scenario.v1",
+      "scenario_id": "invalid-session-id",
+      "title": "Unknown or invalid MCP-Session-Id",
+      "description": "A request uses a session identifier the server cannot bind.",
+      "protocol_version": "2025-06-18",
+      "trace_complete": true,
+      "server_policy": {"session_mode": "required", "replay_mode": "unsupported", "duplicate_suppression": "proven", "retry_limit": 3},
+      "assumptions": [{"assumption_id": "unknown-session-status", "source": "design_inference", "statement": "Legacy MCP mandates 404 after termination but does not distinguish malformed from never-issued session IDs.", "references": ["https://modelcontextprotocol.io/specification/2025-06-18/basic/transports"]}],
+      "steps": [
+        {"step_id": "init", "at_ms": 0, "type": "initialize", "session_id": "session-valid"},
+        {"step_id": "send", "at_ms": 10, "type": "send_request", "request_id": "req-invalid", "session_id": "session-never-issued"},
+        {"step_id": "reject", "at_ms": 20, "type": "reject", "request_id": "req-invalid", "status": 404, "reason": "unknown session"}
+      ]
+    },
+    {
+      "schema_version": "mcpaudit.session-resume.scenario.v1",
+      "scenario_id": "session-expiry",
+      "title": "Session expires before reconnect",
+      "description": "A legacy session expires and the reconnect receives the required terminal 404 behavior.",
+      "protocol_version": "2025-11-25",
+      "trace_complete": true,
+      "server_policy": {"session_mode": "required", "replay_mode": "supported", "duplicate_suppression": "unknown", "retry_limit": 3},
+      "assumptions": [{"assumption_id": "session-expiry-status", "source": "standard_requirement", "statement": "After session termination, legacy requests carrying that session ID must receive 404 and reinitialize.", "references": ["https://modelcontextprotocol.io/specification/2025-11-25/basic/transports"]}],
+      "steps": [
+        {"step_id": "init", "at_ms": 0, "type": "initialize", "session_id": "session-expiring"},
+        {"step_id": "terminate", "at_ms": 10, "type": "terminate_session", "session_id": "session-expiring", "reason": "expiry"},
+        {"step_id": "reconnect", "at_ms": 20, "type": "reconnect", "request_id": "req-expiry", "attempt": 1, "session_id": "session-expiring", "last_event_id": "expiry:0"},
+        {"step_id": "reject", "at_ms": 30, "type": "reject", "request_id": "req-expiry", "status": 404, "reason": "session expired"}
+      ]
+    },
+    {
+      "schema_version": "mcpaudit.session-resume.scenario.v1",
+      "scenario_id": "session-termination",
+      "title": "Client terminates then reuses a session",
+      "description": "The client explicitly deletes a legacy session and later sends with the retired ID.",
+      "protocol_version": "2025-11-25",
+      "trace_complete": true,
+      "server_policy": {"session_mode": "required", "replay_mode": "unsupported", "duplicate_suppression": "proven", "retry_limit": 3},
+      "assumptions": [{"assumption_id": "client-delete", "source": "standard_requirement", "statement": "Legacy clients should DELETE unused sessions; servers may reject DELETE with 405.", "references": ["https://modelcontextprotocol.io/specification/2025-11-25/basic/transports"]}],
+      "steps": [
+        {"step_id": "init", "at_ms": 0, "type": "initialize", "session_id": "session-delete"},
+        {"step_id": "terminate", "at_ms": 10, "type": "terminate_session", "session_id": "session-delete", "reason": "client_delete"},
+        {"step_id": "send", "at_ms": 20, "type": "send_request", "request_id": "req-after-delete", "session_id": "session-delete"},
+        {"step_id": "reject", "at_ms": 30, "type": "reject", "request_id": "req-after-delete", "status": 404, "reason": "session terminated"}
+      ]
+    },
+    {
+      "schema_version": "mcpaudit.session-resume.scenario.v1",
+      "scenario_id": "server-restart",
+      "title": "Server restart loses session and replay state",
+      "description": "A new server instance cannot bind the old session or replay its completed result.",
+      "protocol_version": "2025-11-25",
+      "trace_complete": true,
+      "server_policy": {"session_mode": "required", "replay_mode": "supported", "duplicate_suppression": "unknown", "retry_limit": 3},
+      "assumptions": [{"assumption_id": "restart-durability", "source": "design_inference", "statement": "MCP does not prescribe session or replay-log durability across server restart or migration.", "references": ["https://modelcontextprotocol.io/specification/2025-11-25/basic/transports"]}],
+      "steps": [
+        {"step_id": "init", "at_ms": 0, "type": "initialize", "session_id": "session-restart"},
+        {"step_id": "send", "at_ms": 10, "type": "send_request", "request_id": "req-restart", "session_id": "session-restart"},
+        {"step_id": "accept", "at_ms": 20, "type": "accept_request", "request_id": "req-restart", "server_instance": "server-a"},
+        {"step_id": "complete", "at_ms": 30, "type": "complete_request", "request_id": "req-restart", "result_marker": "<synthetic-result>"},
+        {"step_id": "emit", "at_ms": 40, "type": "emit_event", "request_id": "req-restart", "event_id": "restart:1", "event_kind": "result"},
+        {"step_id": "restart", "at_ms": 50, "type": "restart_server", "new_instance": "server-b", "preserves_sessions": false, "preserves_replay_log": false},
+        {"step_id": "reconnect", "at_ms": 60, "type": "reconnect", "request_id": "req-restart", "attempt": 1, "session_id": "session-restart", "last_event_id": "restart:1"},
+        {"step_id": "replay", "at_ms": 70, "type": "replay", "request_id": "req-restart", "event_ids": ["restart:1"]}
+      ]
+    },
+    {
+      "schema_version": "mcpaudit.session-resume.scenario.v1",
+      "scenario_id": "session-rotation-migration",
+      "title": "Session rotation without a migration contract",
+      "description": "The server rotates a legacy session ID and the client reconnects with the retired identifier.",
+      "protocol_version": "2025-11-25",
+      "trace_complete": false,
+      "server_policy": {"session_mode": "required", "replay_mode": "implementation_defined", "duplicate_suppression": "unknown", "retry_limit": 3},
+      "assumptions": [{"assumption_id": "rotation-gap", "source": "design_inference", "statement": "Legacy MCP defines creation and termination but no session rotation or migration protocol.", "references": ["https://modelcontextprotocol.io/specification/2025-11-25/basic/transports"]}],
+      "steps": [
+        {"step_id": "init", "at_ms": 0, "type": "initialize", "session_id": "session-old"},
+        {"step_id": "rotate", "at_ms": 10, "type": "rotate_session", "old_session_id": "session-old", "new_session_id": "session-new", "migration_declared": false},
+        {"step_id": "reconnect", "at_ms": 20, "type": "reconnect", "request_id": "req-rotate", "attempt": 1, "session_id": "session-old", "last_event_id": "rotate:0"}
+      ]
+    },
+    {
+      "schema_version": "mcpaudit.session-resume.scenario.v1",
+      "scenario_id": "concurrent-reconnects",
+      "title": "Concurrent reconnects race one replay cursor",
+      "description": "Two client reconnect attempts remain open for the same interrupted stream.",
+      "protocol_version": "2025-11-25",
+      "trace_complete": true,
+      "server_policy": {"session_mode": "required", "replay_mode": "supported", "duplicate_suppression": "unknown", "retry_limit": 3},
+      "assumptions": [{"assumption_id": "reconnect-arbitration", "source": "design_inference", "statement": "Legacy MCP permits multiple streams but does not define concurrent reconnect ownership or arbitration.", "references": ["https://modelcontextprotocol.io/specification/2025-11-25/basic/transports"]}],
+      "steps": [
+        {"step_id": "init", "at_ms": 0, "type": "initialize", "session_id": "session-race"},
+        {"step_id": "send", "at_ms": 10, "type": "send_request", "request_id": "req-race", "session_id": "session-race"},
+        {"step_id": "accept", "at_ms": 20, "type": "accept_request", "request_id": "req-race", "server_instance": "server-a"},
+        {"step_id": "complete", "at_ms": 30, "type": "complete_request", "request_id": "req-race", "result_marker": "<synthetic-result>"},
+        {"step_id": "emit", "at_ms": 40, "type": "emit_event", "request_id": "req-race", "event_id": "race:1", "event_kind": "result"},
+        {"step_id": "reconnect-a", "at_ms": 50, "type": "reconnect", "request_id": "req-race", "attempt": 1, "session_id": "session-race", "last_event_id": "race:1"},
+        {"step_id": "reconnect-b", "at_ms": 50, "type": "reconnect", "request_id": "req-race", "attempt": 2, "session_id": "session-race", "last_event_id": "race:1"},
+        {"step_id": "replay", "at_ms": 60, "type": "replay", "request_id": "req-race", "event_ids": ["race:1"]}
+      ]
+    },
+    {
+      "schema_version": "mcpaudit.session-resume.scenario.v1",
+      "scenario_id": "replay-gap",
+      "title": "Replay gap after result completion",
+      "description": "The requested result event is outside the server's retained replay window.",
+      "protocol_version": "2025-11-25",
+      "trace_complete": true,
+      "server_policy": {"session_mode": "required", "replay_mode": "supported", "duplicate_suppression": "proven", "retry_limit": 3},
+      "assumptions": [{"assumption_id": "replay-retention", "source": "design_inference", "statement": "Legacy MCP allows replay but does not prescribe retention windows or gap responses.", "references": ["https://modelcontextprotocol.io/specification/2025-11-25/basic/transports"]}],
+      "steps": [
+        {"step_id": "init", "at_ms": 0, "type": "initialize", "session_id": "session-gap"},
+        {"step_id": "send", "at_ms": 10, "type": "send_request", "request_id": "req-gap", "session_id": "session-gap"},
+        {"step_id": "accept", "at_ms": 20, "type": "accept_request", "request_id": "req-gap", "server_instance": "server-a"},
+        {"step_id": "complete", "at_ms": 30, "type": "complete_request", "request_id": "req-gap", "result_marker": "<synthetic-result>"},
+        {"step_id": "emit", "at_ms": 40, "type": "emit_event", "request_id": "req-gap", "event_id": "gap:1", "event_kind": "result"},
+        {"step_id": "restart", "at_ms": 50, "type": "restart_server", "new_instance": "server-b", "preserves_sessions": true, "preserves_replay_log": false},
+        {"step_id": "reconnect", "at_ms": 60, "type": "reconnect", "request_id": "req-gap", "attempt": 1, "session_id": "session-gap", "last_event_id": "gap:1"},
+        {"step_id": "replay", "at_ms": 70, "type": "replay", "request_id": "req-gap", "event_ids": ["gap:1"]}
+      ]
+    },
+    {
+      "schema_version": "mcpaudit.session-resume.scenario.v1",
+      "scenario_id": "cancellation-after-disconnect",
+      "title": "Cancellation after disconnect",
+      "description": "A legacy cancellation notification is attempted after the request stream is already disconnected.",
+      "protocol_version": "2025-11-25",
+      "trace_complete": false,
+      "server_policy": {"session_mode": "required", "replay_mode": "implementation_defined", "duplicate_suppression": "unknown", "retry_limit": 3},
+      "assumptions": [{"assumption_id": "legacy-cancellation", "source": "standard_requirement", "statement": "Under legacy Streamable HTTP, disconnect is not cancellation and clients should send CancelledNotification.", "references": ["https://modelcontextprotocol.io/specification/2025-11-25/basic/transports"]}],
+      "steps": [
+        {"step_id": "init", "at_ms": 0, "type": "initialize", "session_id": "session-cancel"},
+        {"step_id": "send", "at_ms": 10, "type": "send_request", "request_id": "req-cancel", "session_id": "session-cancel"},
+        {"step_id": "accept", "at_ms": 20, "type": "accept_request", "request_id": "req-cancel", "server_instance": "server-a"},
+        {"step_id": "disconnect", "at_ms": 30, "type": "disconnect", "request_id": "req-cancel", "phase": "after_acceptance_before_response"},
+        {"step_id": "cancel", "at_ms": 40, "type": "cancel", "request_id": "req-cancel", "mode": "notification"}
+      ]
+    },
+    {
+      "schema_version": "mcpaudit.session-resume.scenario.v1",
+      "scenario_id": "retry-bound-exceeded",
+      "title": "Reconnect retry bound exceeded",
+      "description": "The client exceeds the declared deterministic reconnect limit.",
+      "protocol_version": "2025-11-25",
+      "trace_complete": false,
+      "server_policy": {"session_mode": "required", "replay_mode": "implementation_defined", "duplicate_suppression": "unknown", "retry_limit": 2},
+      "assumptions": [{"assumption_id": "retry-bound", "source": "fixture_behavior", "statement": "The fixture bounds reconnect attempts at two to prevent unbounded retry loops.", "references": ["https://html.spec.whatwg.org/multipage/server-sent-events.html"]}],
+      "steps": [
+        {"step_id": "init", "at_ms": 0, "type": "initialize", "session_id": "session-retry"},
+        {"step_id": "send", "at_ms": 10, "type": "send_request", "request_id": "req-retry", "session_id": "session-retry"},
+        {"step_id": "reconnect-1", "at_ms": 20, "type": "reconnect", "request_id": "req-retry", "attempt": 1, "session_id": "session-retry", "last_event_id": "retry:0"},
+        {"step_id": "reconnect-2", "at_ms": 30, "type": "reconnect", "request_id": "req-retry", "attempt": 2, "session_id": "session-retry", "last_event_id": "retry:0"},
+        {"step_id": "reconnect-3", "at_ms": 40, "type": "reconnect", "request_id": "req-retry", "attempt": 3, "session_id": "session-retry", "last_event_id": "retry:0"}
+      ]
+    },
+    {
+      "schema_version": "mcpaudit.session-resume.scenario.v1",
+      "scenario_id": "current-profile-resume-unsupported",
+      "title": "2026-07-28 rejects protocol sessions and Last-Event-ID resume",
+      "description": "A compatibility adapter incorrectly applies legacy session and resume behavior to the current stateless protocol.",
+      "protocol_version": "2026-07-28",
+      "trace_complete": true,
+      "server_policy": {"session_mode": "none", "replay_mode": "unsupported", "duplicate_suppression": "proven", "retry_limit": 0},
+      "assumptions": [{"assumption_id": "current-stateless-transport", "source": "standard_requirement", "statement": "MCP 2026-07-28 removed protocol sessions, the GET stream endpoint, and Last-Event-ID resumability.", "references": ["https://github.com/modelcontextprotocol/modelcontextprotocol/blob/0cb6c6a31768cbb16129b35e6b569a31fecfe1b6/docs/specification/2026-07-28/basic/transports/streamable-http.mdx"]}],
+      "steps": [
+        {"step_id": "legacy-init", "at_ms": 0, "type": "initialize", "session_id": "forbidden-session"},
+        {"step_id": "send", "at_ms": 10, "type": "send_request", "request_id": "req-current", "session_id": "forbidden-session"},
+        {"step_id": "reconnect", "at_ms": 20, "type": "reconnect", "request_id": "req-current", "attempt": 1, "session_id": "forbidden-session", "last_event_id": "forbidden:1"}
+      ]
+    }
+  ]
+}

@@ -22,6 +22,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added `mcp-audit session-resume`, an offline deterministic fault-injection
+  lab for MCP Streamable HTTP session establishment, interruption, replay,
+  expiry, restart, migration, concurrent reconnect, cancellation, and ambiguous
+  delivery behavior. Strict versioned scenario/transcript/report contracts,
+  virtual logical time, packaged synthetic fixtures, readable and canonical
+  JSON output, and fail-closed malformed-input handling cover legacy
+  session-bearing profiles through `2025-11-25` plus the stateless
+  `2026-07-28` compatibility boundary. Safety output separates at-most-once,
+  at-least-once, duplicate risk, lost-result risk, and `UNKNOWN`; exactly-once
+  remains explicitly unproven.
 - Added an offline `mcp-audit authorization-posture` consumer for the portable
   `McpAuthorizationPostureV1` version `1.0.0` contract. It validates strict
   Registry binding, metadata, capability, claim-ceiling, and cross-field state
