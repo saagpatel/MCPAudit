@@ -254,6 +254,35 @@ def test_path_open_uses_nonblocking_flag_after_regular_file_precheck(
         load_scenario_path(path)
 
 
+def test_path_revalidates_descriptor_after_in_place_read_race(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = tmp_path / "scenario.json"
+    path.write_bytes(scenario_json_bytes(load_builtin_scenarios()["successful-resume-control"]))
+    original_read = os.read
+    before = path.stat()
+    raced = False
+
+    def read_then_overwrite(descriptor: int, limit: int) -> bytes:
+        nonlocal raced
+        chunk = original_read(descriptor, limit)
+        if chunk and not raced:
+            raced = True
+            with path.open("r+b") as raced_file:
+                raced_file.write(b" ")
+            os.utime(
+                path,
+                ns=(before.st_atime_ns, before.st_mtime_ns + 1_000_000_000),
+            )
+        return chunk
+
+    monkeypatch.setattr(os, "read", read_then_overwrite)
+
+    with pytest.raises(SessionResumeInputError, match="identity changed during bounded read"):
+        load_scenario_path(path)
+
+
 def test_distinct_result_event_ids_are_counted_as_duplicates_per_request() -> None:
     report = run_scenario(
         _scenario_with_steps(
@@ -307,6 +336,139 @@ def test_distinct_result_event_ids_are_counted_as_duplicates_per_request() -> No
     assert report.safety.at_most_once == "contradicted"
     assert DeliveryClassification.DUPLICATE_RISK in report.safety.classifications
     assert report.verdict == "risk"
+
+
+def test_every_accepted_request_requires_completion_evidence() -> None:
+    report = run_scenario(
+        _scenario_with_steps(
+            "per-request-completion-evidence",
+            [
+                {"step_id": "init", "at_ms": 0, "type": "initialize", "session_id": "session-a"},
+                {
+                    "step_id": "send-a",
+                    "at_ms": 1,
+                    "type": "send_request",
+                    "request_id": "req-a",
+                    "session_id": "session-a",
+                },
+                {
+                    "step_id": "accept-a",
+                    "at_ms": 2,
+                    "type": "accept_request",
+                    "request_id": "req-a",
+                    "server_instance": "server-a",
+                },
+                {
+                    "step_id": "complete-a",
+                    "at_ms": 3,
+                    "type": "complete_request",
+                    "request_id": "req-a",
+                    "result_marker": "<synthetic-result>",
+                },
+                {
+                    "step_id": "emit-a",
+                    "at_ms": 4,
+                    "type": "emit_event",
+                    "request_id": "req-a",
+                    "event_id": "result:a",
+                    "event_kind": "result",
+                },
+                {"step_id": "deliver-a", "at_ms": 5, "type": "deliver_event", "event_id": "result:a"},
+                {
+                    "step_id": "send-b",
+                    "at_ms": 6,
+                    "type": "send_request",
+                    "request_id": "req-b",
+                    "session_id": "session-a",
+                },
+                {
+                    "step_id": "accept-b",
+                    "at_ms": 7,
+                    "type": "accept_request",
+                    "request_id": "req-b",
+                    "server_instance": "server-a",
+                },
+            ],
+        )
+    )
+
+    assert report.safety.at_least_once == "contradicted"
+    assert report.safety.lost_result_risk == "observed"
+    assert DeliveryClassification.AT_LEAST_ONCE not in report.safety.classifications
+    assert DeliveryClassification.LOST_RESULT_RISK in report.safety.classifications
+    assert "accepted requests without completion=1" in report.safety.rationale
+    assert report.verdict == "risk"
+
+
+def test_successful_replay_resolves_a_provisional_result_drop() -> None:
+    report = run_scenario(
+        _scenario_with_steps(
+            "replay-recovers-dropped-result",
+            [
+                {"step_id": "init", "at_ms": 0, "type": "initialize", "session_id": "session-a"},
+                {
+                    "step_id": "send",
+                    "at_ms": 1,
+                    "type": "send_request",
+                    "request_id": "req-a",
+                    "session_id": "session-a",
+                },
+                {
+                    "step_id": "accept",
+                    "at_ms": 2,
+                    "type": "accept_request",
+                    "request_id": "req-a",
+                    "server_instance": "server-a",
+                },
+                {
+                    "step_id": "complete",
+                    "at_ms": 3,
+                    "type": "complete_request",
+                    "request_id": "req-a",
+                    "result_marker": "<synthetic-result>",
+                },
+                {
+                    "step_id": "emit",
+                    "at_ms": 4,
+                    "type": "emit_event",
+                    "request_id": "req-a",
+                    "event_id": "result:a",
+                    "event_kind": "result",
+                },
+                {"step_id": "drop", "at_ms": 5, "type": "drop_event", "event_id": "result:a"},
+                {
+                    "step_id": "disconnect",
+                    "at_ms": 6,
+                    "type": "disconnect",
+                    "request_id": "req-a",
+                    "phase": "after_event",
+                },
+                {
+                    "step_id": "reconnect",
+                    "at_ms": 7,
+                    "type": "reconnect",
+                    "request_id": "req-a",
+                    "attempt": 1,
+                    "session_id": "session-a",
+                },
+                {
+                    "step_id": "replay",
+                    "at_ms": 8,
+                    "type": "replay",
+                    "request_id": "req-a",
+                    "event_ids": ["result:a"],
+                },
+            ],
+        )
+    )
+
+    assert report.safety.lost_result_risk == "not_observed"
+    assert report.safety.classifications == [
+        DeliveryClassification.AT_MOST_ONCE,
+        DeliveryClassification.AT_LEAST_ONCE,
+    ]
+    assert "MCPSR006" not in {finding.rule_id for finding in report.findings}
+    assert report.verdict == "pass"
 
 
 def test_lost_result_risk_is_correlated_per_request() -> None:

@@ -37,7 +37,11 @@ and the fixed claim ceiling
 Supplied session identifiers are bearer-like input and are serialized only as
 deterministic report-local pseudonyms (`session-ref-001`, ...). Result delivery
 counts are correlated per request across distinct event IDs, so one request's
-duplicates cannot mask another request's missing result.
+duplicates cannot mask another request's missing result. At-least-once support
+requires completion evidence for every accepted request, and a dropped result
+remains provisional when a later valid replay delivers that same event. Supplied
+files are revalidated by device, inode, size, and nanosecond modification time
+after the bounded descriptor read.
 
 `session-resume run` exits `0` for a valid replay, including an intentionally
 faulty scenario, and `2` for selection or input-contract failure. It has no

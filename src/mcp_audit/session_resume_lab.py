@@ -91,6 +91,7 @@ class _EventState:
     kind: str
     deliveries: int = 0
     dropped: bool = False
+    drop_step_ids: list[str] = field(default_factory=list)
     replay_available: bool = True
 
 
@@ -159,6 +160,21 @@ def load_scenario_path(path: Path) -> SessionResumeScenario:
                 chunks.append(chunk)
                 remaining -= len(chunk)
             raw = b"".join(chunks)
+            after = os.fstat(descriptor)
+            opened_identity = (
+                opened.st_dev,
+                opened.st_ino,
+                opened.st_size,
+                opened.st_mtime_ns,
+            )
+            after_identity = (
+                after.st_dev,
+                after.st_ino,
+                after.st_size,
+                after.st_mtime_ns,
+            )
+            if opened_identity != after_identity or len(raw) != opened.st_size:
+                raise SessionResumeInputError("scenario identity changed during bounded read")
         finally:
             os.close(descriptor)
     except SessionResumeInputError:
@@ -313,8 +329,18 @@ class VirtualSessionTransport:
         for step in self.scenario.steps:
             self._apply(step)
         safety = self._classify_safety()
+        recovered_drop_step_ids = {
+            step_id
+            for event in self.events.values()
+            if event.kind == "result" and event.dropped and event.deliveries > 0
+            for step_id in event.drop_step_ids
+        }
         findings = sorted(
-            self.findings,
+            (
+                item
+                for item in self.findings
+                if not (item.rule_id == "MCPSR006" and recovered_drop_step_ids.intersection(item.step_ids))
+            ),
             key=lambda item: (item.step_ids[0] if item.step_ids else "", item.rule_id, item.target),
         )
         observed_delivery_risk = (
@@ -545,6 +571,7 @@ class VirtualSessionTransport:
                 )
             else:
                 event.dropped = True
+                event.drop_step_ids.append(step.step_id)
                 self._entry(
                     step,
                     "link",
@@ -910,17 +937,34 @@ class VirtualSessionTransport:
         completed = sum(item.completed for item in requests)
         accepted = sum(item.accepted for item in requests)
         delivered_results = sum(item.deliveries for item in events if item.kind == "result")
-        dropped_result = any(item.kind == "result" and item.dropped for item in events)
+        incomplete = not self.scenario.trace_complete
+        accepted_request_ids = {
+            request_id for request_id, request in self.requests.items() if request.accepted > 0
+        }
+        accepted_without_completion = {
+            request_id for request_id in accepted_request_ids if self.requests[request_id].completed == 0
+        }
+        completion_unknown_requests = {
+            request_id
+            for request_id in accepted_without_completion
+            if incomplete or self.requests[request_id].completion_ambiguous
+        }
+        completion_missing_requests = accepted_without_completion - completion_unknown_requests
+        dropped_result = any(
+            item.kind == "result" and item.dropped and item.deliveries == 0 for item in events
+        )
         missing_result_requests = {
             request_id
             for request_id, request in self.requests.items()
             if request.completed > 0 and result_deliveries_by_request.get(request_id, 0) == 0
         }
-        lost_observed = bool(missing_result_requests) or dropped_result or self._replay_gap
-        incomplete = not self.scenario.trace_complete
-        lost_unknown = not lost_observed and (
-            incomplete or any(item.completion_ambiguous for item in requests)
+        lost_observed = (
+            bool(missing_result_requests)
+            or bool(completion_missing_requests)
+            or dropped_result
+            or self._replay_gap
         )
+        lost_unknown = not lost_observed and (incomplete or bool(completion_unknown_requests))
 
         if duplicate_observed:
             at_most_once = ProofState.CONTRADICTED
@@ -929,9 +973,11 @@ class VirtualSessionTransport:
         else:
             at_most_once = ProofState.SUPPORTED
 
-        if completed > 0:
+        if accepted_request_ids and not accepted_without_completion:
             at_least_once = ProofState.SUPPORTED
-        elif incomplete or acceptance_ambiguous or accepted > 0:
+        elif completion_missing_requests:
+            at_least_once = ProofState.CONTRADICTED
+        elif accepted_without_completion or incomplete or acceptance_ambiguous:
             at_least_once = ProofState.UNKNOWN
         else:
             at_least_once = ProofState.CONTRADICTED
@@ -976,6 +1022,7 @@ class VirtualSessionTransport:
             rationale=[
                 f"modeled requests accepted={accepted}, completed={completed}",
                 f"modeled result deliveries={delivered_results}, reconnects={reconnects}",
+                f"accepted requests without completion={len(accepted_without_completion)}",
                 f"completed requests without a result delivery={len(missing_result_requests)}",
                 "Exactly-once is never inferred from these local observations.",
             ],
