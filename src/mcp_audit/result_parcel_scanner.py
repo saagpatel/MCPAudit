@@ -445,7 +445,9 @@ def analyze_scenario(scenario: ParcelScenario) -> ParcelAnalysisReport:
         reasons.append("the negotiated Tasks extension provides durable polling and deferred final results")
         if delivery.extension_id != TASKS_EXTENSION:
             raise AssertionError("strict model admitted an unexpected task extension")
-        if delivery.task_status != "completed" or not delivery.final_result_present:
+        if delivery.task_status == "unknown":
+            unknowns.append("task result availability is unknown because task status is unknown")
+        elif delivery.task_status != "completed" or not delivery.final_result_present:
             findings.append(
                 _finding(
                     "MCPPARCEL012",
@@ -468,8 +470,11 @@ def analyze_scenario(scenario: ParcelScenario) -> ParcelAnalysisReport:
                 )
             )
 
-    if scenario.retrieval_authority.required:
-        authority = scenario.retrieval_authority
+    authority = scenario.retrieval_authority
+    principal_binding_required = authority.required or (
+        isinstance(delivery, ReferenceDelivery) and payload.sensitivity in {"confidential", "secret"}
+    )
+    if principal_binding_required:
         if authority.enforcement == "unknown" or authority.outcome == "unknown":
             unknowns.append("retrieval authorization enforcement or outcome is unknown")
         elif authority.enforcement != "enforced" or authority.principal_bound is not True:
@@ -496,10 +501,9 @@ def analyze_scenario(scenario: ParcelScenario) -> ParcelAnalysisReport:
             )
 
     integrity = scenario.integrity
-    if (
-        integrity.observed_content_type is not None
-        and integrity.observed_content_type != integrity.declared_content_type
-    ):
+    if integrity.observed_content_type is None:
+        unknowns.append("content type cannot be verified because the observation is absent")
+    elif integrity.observed_content_type != integrity.declared_content_type:
         findings.append(
             _finding(
                 "MCPPARCEL006",
@@ -539,7 +543,9 @@ def analyze_scenario(scenario: ParcelScenario) -> ParcelAnalysisReport:
         unknowns.append("parcel integrity mechanism is unknown")
 
     sensitive = payload.sensitivity in {"confidential", "secret"}
-    if scenario.redaction.required and scenario.redaction.stage != "before_packaging":
+    if scenario.redaction.required and scenario.redaction.stage == "unknown":
+        unknowns.append("required redaction stage is unknown")
+    elif scenario.redaction.required and scenario.redaction.stage != "before_packaging":
         findings.append(
             _finding(
                 "MCPPARCEL013",
@@ -577,6 +583,8 @@ def analyze_scenario(scenario: ParcelScenario) -> ParcelAnalysisReport:
         else "low"
     )
     if payload.sensitivity == "unknown":
+        exposure_state = "unknown"
+    if scenario.redaction.required and scenario.redaction.stage == "unknown":
         exposure_state = "unknown"
     durability_state = "high" if isinstance(delivery, (ReferenceDelivery, TaskDelivery)) else "moderate"
     if isinstance(delivery, ReferenceDelivery) and delivery.retrieval_status != "available":

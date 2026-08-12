@@ -485,6 +485,10 @@ size, reference expiry/availability, retrieval authority, content type and
 integrity, chunk ordering/completeness/idempotency, progress/result
 conflation, partial retrieval, retained cleanup, Tasks final results, and
 redaction timing. Every finding names the scenario fields that explain it.
+Confidential resource links require enforced principal binding even when the
+scenario declares retrieval authorization unnecessary. Unknown task status,
+unknown required-redaction stage, and absent observed content type remain
+`UNKNOWN`; none can yield a complete suitable recommendation.
 
 The lab profiles MCP `2026-07-28`: inline complete results and resource links
 are core; `io.modelcontextprotocol/tasks` is a separately negotiated

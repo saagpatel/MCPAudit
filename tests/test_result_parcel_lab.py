@@ -310,3 +310,60 @@ def test_report_is_deterministic_and_explainable_from_named_inputs() -> None:
     assert finding.input_fields == ["redaction.required", "redaction.stage"]
     assert first.dimensions is not None
     assert first.dimensions.information_exposure.state == "high"
+
+
+def test_confidential_resource_link_cannot_disable_principal_binding() -> None:
+    scenario = json.loads((FIXTURES / "redaction-before.json").read_text())
+    scenario["retrieval_authority"] = {
+        "required": False,
+        "enforcement": "not_enforced",
+        "principal_bound": False,
+        "outcome": "allowed",
+    }
+
+    report = scan_scenario_bytes(json.dumps(scenario).encode())
+
+    assert report.verdict == "fail"
+    assert report.recommendation is not None
+    assert report.recommendation.suitability == "unsuitable"
+    assert "retrieval_authority_unbound" in {finding.evidence_code for finding in report.findings}
+
+
+def test_unknown_task_status_preserves_unknown_instead_of_inventing_failure() -> None:
+    scenario = json.loads((FIXTURES / "tasks-completed.json").read_text())
+    scenario["delivery"]["task_status"] = "unknown"
+    scenario["delivery"]["final_result_present"] = False
+
+    report = scan_scenario_bytes(json.dumps(scenario).encode())
+
+    assert report.verdict == "unknown"
+    assert report.recommendation is not None
+    assert report.recommendation.suitability == "unknown"
+    assert "task_result_unavailable" not in {finding.evidence_code for finding in report.findings}
+    assert "task result availability is unknown because task status is unknown" in report.unknowns
+
+
+def test_unknown_redaction_stage_preserves_unknown_instead_of_inventing_failure() -> None:
+    scenario = json.loads((FIXTURES / "redaction-after.json").read_text())
+    scenario["redaction"]["stage"] = "unknown"
+
+    report = scan_scenario_bytes(json.dumps(scenario).encode())
+
+    assert report.verdict == "unknown"
+    assert "redaction_after_packaging" not in {finding.evidence_code for finding in report.findings}
+    assert "required redaction stage is unknown" in report.unknowns
+    assert report.dimensions is not None
+    assert report.dimensions.information_exposure.state == "unknown"
+
+
+def test_missing_observed_content_type_prevents_complete_suitable_result() -> None:
+    scenario = builtin_scenarios()["small-inline"].model_dump(mode="json")
+    scenario["integrity"]["observed_content_type"] = None
+
+    report = scan_scenario_bytes(json.dumps(scenario).encode())
+
+    assert report.verdict == "unknown"
+    assert report.coverage.state == "unknown"
+    assert report.recommendation is not None
+    assert report.recommendation.suitability == "unknown"
+    assert "content type cannot be verified because the observation is absent" in report.unknowns

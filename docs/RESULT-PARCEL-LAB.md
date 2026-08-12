@@ -65,6 +65,10 @@ synthetic provenance, retention and virtual TTL, integrity metadata, retrieval
 authority, redaction stage, delivery semantics, host support, and evidence
 provenance. Unknown fields, implicit coercion, duplicate JSON keys, non-finite
 numbers, excess depth, oversized keys, and inputs above 2 MiB are rejected.
+For confidential resource links, a declaration that authorization is not
+required cannot bypass enforced principal binding. Unknown task status,
+required-redaction stage, or observed content type produces an `UNKNOWN`
+recommendation rather than an invented failure or complete pass.
 
 Emit the authoritative machine-readable schemas:
 
