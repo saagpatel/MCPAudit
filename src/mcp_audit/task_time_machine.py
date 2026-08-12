@@ -200,6 +200,27 @@ def _require_created(machine: _Machine, event: TaskEvent, before: str) -> bool:
     return False
 
 
+def _deleted_rejection(machine: _Machine, event: TaskEvent, before: str) -> None:
+    _finding(
+        machine,
+        "MCPTASK007",
+        FindingSeverity.MEDIUM,
+        RequirementLevel.PROTOCOL_MUST,
+        "Deleted task received a later event",
+        "The selected expiry policy deleted the task before this event.",
+        "Treat the task ID as unavailable and create a distinct task for later work.",
+        event.sequence,
+    )
+    _transition(
+        machine,
+        event,
+        before,
+        "rejected",
+        TransitionAuthority.PROTOCOL_REQUIREMENT,
+        "Deletion made the task unavailable for every later observation or transition.",
+    )
+
+
 def _apply_create(machine: _Machine, event: CreateEvent, before: str) -> None:
     if machine.status is not None:
         _finding(
@@ -357,6 +378,9 @@ def _apply_event(machine: _Machine, event: TaskEvent) -> None:
         _apply_poll(machine, event, before)
         return
     if not _require_created(machine, event, before):
+        return
+    if machine.availability == "deleted":
+        _deleted_rejection(machine, event, before)
         return
 
     if isinstance(event, WorkStartedEvent):
