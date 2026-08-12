@@ -73,7 +73,7 @@ class _DuplicateKeyError(ValueError):
 
 @dataclass
 class _RequestState:
-    sent: int = 0
+    successful_sends: int = 0
     accepted: int = 0
     completed: int = 0
     acceptance_ambiguous: bool = False
@@ -140,6 +140,8 @@ def load_scenario_path(path: Path) -> SessionResumeScenario:
         flags = os.O_RDONLY
         if hasattr(os, "O_NOFOLLOW"):
             flags |= os.O_NOFOLLOW
+        if hasattr(os, "O_NONBLOCK"):
+            flags |= os.O_NONBLOCK
         descriptor = os.open(path, flags)
         try:
             opened = os.fstat(descriptor)
@@ -205,6 +207,7 @@ class VirtualSessionTransport:
         self.entries: list[TranscriptEntry] = []
         self.findings: list[SessionResumeFinding] = []
         self._finding_keys: set[tuple[str, str, str, tuple[str, ...]]] = set()
+        self._session_aliases: dict[str, str] = {}
         self.server_instance = "server-a"
         self._replay_gap = False
 
@@ -218,6 +221,17 @@ class VirtualSessionTransport:
             state = _RequestState()
             self.requests[request_id] = state
         return state
+
+    def _session_alias(self, session_id: str | None) -> str | None:
+        """Return a deterministic report-local pseudonym for a bearer-like ID."""
+
+        if session_id is None:
+            return None
+        alias = self._session_aliases.get(session_id)
+        if alias is None:
+            alias = f"session-ref-{len(self._session_aliases) + 1:03d}"
+            self._session_aliases[session_id] = alias
+        return alias
 
     def _entry(
         self,
@@ -239,7 +253,7 @@ class VirtualSessionTransport:
                 action=step.type,
                 outcome=outcome,
                 request_id=request_id,
-                session_id=session_id,
+                session_id=self._session_alias(session_id),
                 event_id=event_id,
                 detail=detail,
             )
@@ -303,8 +317,13 @@ class VirtualSessionTransport:
             self.findings,
             key=lambda item: (item.step_ids[0] if item.step_ids else "", item.rule_id, item.target),
         )
+        observed_delivery_risk = (
+            safety.duplicate_risk == RiskState.OBSERVED or safety.lost_result_risk == RiskState.OBSERVED
+        )
         verdict: ReportVerdict = (
-            "risk" if any(item.severity != FindingSeverity.UNKNOWN for item in findings) else "pass"
+            "risk"
+            if observed_delivery_risk or any(item.severity != FindingSeverity.UNKNOWN for item in findings)
+            else "pass"
         )
         if any(item.severity == FindingSeverity.UNKNOWN for item in findings) or (
             DeliveryClassification.UNKNOWN in safety.classifications
@@ -356,7 +375,6 @@ class VirtualSessionTransport:
 
         if isinstance(step, SendRequestStep):
             request = self._request(step.request_id)
-            request.sent += 1
             request.step_ids.append(step.step_id)
             if not self._legacy and step.session_id is not None:
                 self._entry(
@@ -401,6 +419,7 @@ class VirtualSessionTransport:
                     [MCP_2025_11_TRANSPORT],
                 )
             else:
+                request.successful_sends += 1
                 self._entry(
                     step,
                     "client",
@@ -413,7 +432,7 @@ class VirtualSessionTransport:
 
         if isinstance(step, AcceptRequestStep):
             request = self._request(step.request_id)
-            if request.sent == 0:
+            if request.successful_sends == 0:
                 self._unknown_transition(
                     step, step.request_id, "Server acceptance has no modeled client send."
                 )
@@ -824,7 +843,7 @@ class VirtualSessionTransport:
                     FindingSeverity.UNKNOWN,
                     RequirementLevel.DESIGN_INFERENCE,
                     "Session rotation has no protocol contract",
-                    step.old_session_id,
+                    self._session_alias(step.old_session_id) or "session-ref-redacted",
                     "The fixture rotates a legacy session without a declared migration mapping.",
                     "Expose an explicit adapter-level migration contract or force clean reinitialization.",
                     [step.step_id],
@@ -874,8 +893,16 @@ class VirtualSessionTransport:
         events = list(self.events.values())
         acceptance_ambiguous = any(item.acceptance_ambiguous for item in requests)
         reconnects = sum(item.reconnects for item in requests)
-        duplicate_observed = any(item.accepted > 1 for item in requests) or any(
-            item.deliveries > 1 for item in events
+        result_deliveries_by_request = {request_id: 0 for request_id in self.requests}
+        for event in events:
+            if event.kind == "result":
+                result_deliveries_by_request[event.request_id] = (
+                    result_deliveries_by_request.get(event.request_id, 0) + event.deliveries
+                )
+        duplicate_observed = (
+            any(item.accepted > 1 or item.completed > 1 for item in requests)
+            or any(item.deliveries > 1 for item in events)
+            or any(deliveries > 1 for deliveries in result_deliveries_by_request.values())
         )
         duplicate_unknown = acceptance_ambiguous or (
             reconnects > 0 and self.scenario.server_policy.duplicate_suppression == "unknown"
@@ -884,7 +911,12 @@ class VirtualSessionTransport:
         accepted = sum(item.accepted for item in requests)
         delivered_results = sum(item.deliveries for item in events if item.kind == "result")
         dropped_result = any(item.kind == "result" and item.dropped for item in events)
-        lost_observed = completed > delivered_results or dropped_result or self._replay_gap
+        missing_result_requests = {
+            request_id
+            for request_id, request in self.requests.items()
+            if request.completed > 0 and result_deliveries_by_request.get(request_id, 0) == 0
+        }
+        lost_observed = bool(missing_result_requests) or dropped_result or self._replay_gap
         incomplete = not self.scenario.trace_complete
         lost_unknown = not lost_observed and (
             incomplete or any(item.completion_ambiguous for item in requests)
@@ -944,6 +976,7 @@ class VirtualSessionTransport:
             rationale=[
                 f"modeled requests accepted={accepted}, completed={completed}",
                 f"modeled result deliveries={delivered_results}, reconnects={reconnects}",
+                f"completed requests without a result delivery={len(missing_result_requests)}",
                 "Exactly-once is never inferred from these local observations.",
             ],
         )

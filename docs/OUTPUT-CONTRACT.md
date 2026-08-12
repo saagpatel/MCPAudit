@@ -34,6 +34,10 @@ protocol profile, exact logical-time transcript, assumption provenance,
 actionable `MCPSR000`–`MCPSR009` findings, independent delivery-safety states,
 and the fixed claim ceiling
 `local_model_observations_only_exactly_once_unproven`.
+Supplied session identifiers are bearer-like input and are serialized only as
+deterministic report-local pseudonyms (`session-ref-001`, ...). Result delivery
+counts are correlated per request across distinct event IDs, so one request's
+duplicates cannot mask another request's missing result.
 
 `session-resume run` exits `0` for a valid replay, including an intentionally
 faulty scenario, and `2` for selection or input-contract failure. It has no

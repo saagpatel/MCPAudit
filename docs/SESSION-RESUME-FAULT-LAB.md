@@ -81,7 +81,9 @@ rejected with exit `2`.
 
 Every step declares `at_ms`; array order breaks ties, so concurrent logical-time
 events still have one exact transcript order. Reports contain no wall-clock
-timestamp, host path, random value, credential, or network-derived data. Each
+timestamp, host path, random value, credential, or network-derived data.
+Scenario session IDs are treated as bearer-like and appear only as deterministic
+report-local `session-ref-NNN` pseudonyms. Each
 scenario carries assumption provenance classified as:
 
 - `standard_requirement` — text directly modeled from a pinned primary source;
@@ -122,8 +124,10 @@ Each report independently classifies:
 
 - `at_most_once`: supported, contradicted, or unknown from modeled accept/delivery counts;
 - `at_least_once`: supported, contradicted, or unknown from modeled completion evidence;
-- `duplicate_risk`: observed, not observed, or unknown;
-- `lost_result_risk`: observed, not observed, or unknown; and
+- `duplicate_risk`: observed, not observed, or unknown, counted per request
+  even when duplicate results use distinct event IDs;
+- `lost_result_risk`: observed, not observed, or unknown, correlated per
+  request so unrelated duplicate deliveries cannot offset a missing result; and
 - `unknown`: included whenever a required acceptance, completion, deduplication, replay, or cancellation fact is unavailable.
 
 Seeing both at-most-once and at-least-once in one complete local trace does not

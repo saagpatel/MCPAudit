@@ -259,7 +259,10 @@ class TranscriptEntry(StrictModel):
     action: str
     outcome: TranscriptOutcome
     request_id: str | None = None
-    session_id: str | None = None
+    session_id: str | None = Field(
+        default=None,
+        description="Deterministic report-local pseudonym; supplied session IDs are never serialized.",
+    )
     event_id: str | None = None
     detail: str = Field(min_length=1, max_length=512)
 
