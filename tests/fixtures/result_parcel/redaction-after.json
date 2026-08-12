@@ -1,0 +1,56 @@
+{
+  "schema_version": "mcpaudit.result-parcel.scenario.v1",
+  "scenario_id": "redaction-after",
+  "title": "Redaction after resource packaging",
+  "protocol_version": "2026-07-28",
+  "payload": {
+    "payload_class": "binary",
+    "sensitivity": "confidential",
+    "size_bytes": 4096,
+    "content_type": "application/octet-stream",
+    "synthetic": true
+  },
+  "retention": {
+    "retained": true,
+    "ttl_ms": 60000,
+    "created_at_ms": 0,
+    "observed_at_ms": 1000,
+    "cleanup_owner": "server",
+    "delete_supported": "supported"
+  },
+  "integrity": {
+    "algorithm": "sha256",
+    "expected_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "observed_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "declared_content_type": "application/octet-stream",
+    "observed_content_type": "application/octet-stream"
+  },
+  "retrieval_authority": {
+    "required": true,
+    "enforcement": "enforced",
+    "principal_bound": true,
+    "outcome": "allowed"
+  },
+  "redaction": {
+    "required": true,
+    "stage": "after_packaging",
+    "raw_payload_retained": true
+  },
+  "delivery": {
+    "mode": "resource_link",
+    "semantics": "mcp_core",
+    "host_support": "supported",
+    "uri": "parcel://fixture/redaction-after",
+    "retrieval_status": "available",
+    "bytes_retrieved": 4096
+  },
+  "evidence_provenance": [
+    {
+      "evidence_class": "standard",
+      "title": "MCP 2026-07-28 tool result semantics",
+      "url": "https://modelcontextprotocol.io/specification/2026-07-28/server/tools",
+      "version": "2026-07-28",
+      "commit": "5f5440bb26a62e2cf3440b92da5a667efa03b267"
+    }
+  ]
+}
