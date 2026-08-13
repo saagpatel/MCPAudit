@@ -29,6 +29,51 @@ uv run mcp-audit --help
 
 ### Running tests
 
+Run tests from a real Git checkout. A passing broad suite can contain expected
+skips, so it verifies only the tests that ran. Use the smallest lane that proves
+your change, then run the full suite before opening a pull request.
+
+The current lane selections are:
+
+| Lane | Command | Current expected result | Prerequisite and claim boundary |
+| --- | --- | --- | --- |
+| Portable behavior | `uv run pytest -p no:cacheprovider -q -m 'not skipif' --ignore=tests/test_repo_hygiene.py tests/` | 1,590 selected; 0 skipped | Python 3.11–3.13 and a writable test root. This excludes tests that declare host, service, platform, or Git prerequisites. |
+| Proof Before Action pre-runtime rejection | `uv run pytest -p no:cacheprovider -q tests/test_proof_before_action.py::test_sensitive_repository_input_is_blocked_before_execution tests/test_proof_before_action.py::test_literal_config_secret_and_sensitive_argv_are_redacted_or_blocked` | 5 passed; 0 skipped | Does not need Docker. It proves only that sensitive inputs are rejected before runtime inspection. |
+| Proof Before Action Docker execution | `uv run pytest -p no:cacheprovider -q -m skipif tests/test_proof_before_action.py tests/test_proof_attempt_evidence.py` | 24 passed when ready | Requires a reachable Docker daemon and the exact local `node:24-slim` image. Twenty-four skips mean the optional prerequisite is unavailable, not verified. Do not pull the image merely to turn a local result green. |
+| ProofOS PostgreSQL | `uv run pytest -p no:cacheprovider -q -m skipif tests/test_proofos_postgres.py` | 6 passed when ready | Requires PostgreSQL 16 server binaries and a writable socket-capable temporary root. Six skips mean the optional prerequisite is unavailable. The tests manage only disposable local processes; they do not prove production database safety. |
+| Repository hygiene | `uv run pytest -p no:cacheprovider -q tests/test_repo_hygiene.py` | 3 passed; 0 skipped | Requires a real Git checkout. Failure because `.git` is absent in a source archive is an invalid harness, not a repository defect. |
+| Portable SafeForge | `uv run pytest -p no:cacheprovider -q -m 'not skipif' tests/test_safeforge.py tests/test_safeforge_consumer.py tests/test_safeforge_coordinator.py tests/test_safeforge_runtime.py` | 61 selected; 0 skipped | Proves portable models, consumer, coordinator, and pre-kernel runtime behavior. It does not prove macOS Seatbelt enforcement. |
+| Full supported local suite | `uv run pytest -p no:cacheprovider -q tests/` | All collected tests complete; prerequisite skips are reported | Requires a real Git checkout. A zero exit does not verify Docker, PostgreSQL, Node, macOS, or another capability whose tests skipped. Use the named lane to claim that capability. |
+
+The macOS SafeForge acceptance lane has a stricter host contract. On an arm64
+macOS host with `/usr/bin/sandbox-exec`, use a unique direct `/private/tmp` root:
+
+```bash
+test_root="$(mktemp -d /private/tmp/mcpaudit-safeforge.XXXXXX)"
+uv run pytest -p no:cacheprovider -q --basetemp="$test_root/pytest" \
+  tests/test_safeforge_runtime.py::test_supervisor_kills_hanging_shutdown_resistant_process_group \
+  tests/test_safeforge_runtime.py::test_supervisor_enforces_process_count \
+  tests/test_safeforge_runtime.py::test_supervisor_enforces_memory_and_disk \
+  tests/test_safeforge_runtime.py::test_kernel_denies_artifact_root_escape_and_network \
+  tests/test_safeforge_runtime.py::test_generated_code_profile_kernel_denies_child_processes
+find "$test_root" -depth -delete
+```
+
+This lane is verified only by exactly 5 passes and 0 skips. The
+[`macOS SafeForge` workflow](.github/workflows/macos-safeforge.yml) enforces
+that collection and result guard mechanically. A non-macOS host is unsupported
+for this lane; a temporary root beneath the user home is a host-policy mismatch.
+The supported boundary and limits are documented in
+[`docs/SAFEFORGE-RUNTIME-THREAT-MODEL.md`](docs/SAFEFORGE-RUNTIME-THREAT-MODEL.md).
+
+For every lane, a missing named node, collection error, failure, error, or
+unexpected skip is not a pass. Classify unavailable prerequisites separately;
+do not add a skip or weaken an assertion to manufacture a green result. The
+selection counts above are revision-bound and must be updated when tests are
+intentionally added or removed.
+
+The broad command remains useful for ordinary development:
+
 ```bash
 uv run pytest tests/ -v
 ```
