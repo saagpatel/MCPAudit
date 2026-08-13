@@ -1,0 +1,118 @@
+name: macOS SafeForge
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-safeforge-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  safeforge-macos:
+    runs-on: macos-15
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Install locked dependencies
+        run: uv sync --dev --locked
+
+      - name: Report and verify the runner boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = "Darwin"
+          test "$(uname -m)" = "arm64"
+          test -x /usr/bin/sandbox-exec
+          test -d /private/tmp
+          sw_vers
+          uname -m
+          uv run python --version
+          /opt/homebrew/bin/python3 --version
+          printf 'ImageOS=%s\n' "${ImageOS:-UNKNOWN}"
+          printf 'ImageVersion=%s\n' "${ImageVersion:-UNKNOWN}"
+
+      - name: Run the non-vacuous SafeForge acceptance slice
+        shell: bash
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          set -euo pipefail
+          test_root="$(mktemp -d /private/tmp/mcpaudit-safeforge.XXXXXX)"
+          cleanup() {
+            case "$test_root" in
+              /private/tmp/mcpaudit-safeforge.*)
+                /usr/bin/find "$test_root" -depth -delete
+                ;;
+              *)
+                return 1
+                ;;
+            esac
+          }
+          trap cleanup EXIT
+
+          nodes=(
+            tests/test_safeforge_runtime.py::test_supervisor_kills_hanging_shutdown_resistant_process_group
+            tests/test_safeforge_runtime.py::test_supervisor_enforces_process_count
+            tests/test_safeforge_runtime.py::test_supervisor_enforces_memory_and_disk
+            tests/test_safeforge_runtime.py::test_kernel_denies_artifact_root_escape_and_network
+            tests/test_safeforge_runtime.py::test_generated_code_profile_kernel_denies_child_processes
+          )
+
+          uv run pytest -p no:cacheprovider --collect-only -q "${nodes[@]}" \
+            > "$test_root/collection.txt"
+          COLLECTION_PATH="$test_root/collection.txt" uv run python - <<'PY'
+          import os
+          from pathlib import Path
+
+          expected = [
+              "tests/test_safeforge_runtime.py::test_supervisor_kills_hanging_shutdown_resistant_process_group",
+              "tests/test_safeforge_runtime.py::test_supervisor_enforces_process_count",
+              "tests/test_safeforge_runtime.py::test_supervisor_enforces_memory_and_disk",
+              "tests/test_safeforge_runtime.py::test_kernel_denies_artifact_root_escape_and_network",
+              "tests/test_safeforge_runtime.py::test_generated_code_profile_kernel_denies_child_processes",
+          ]
+          observed = [
+              line
+              for line in Path(os.environ["COLLECTION_PATH"]).read_text().splitlines()
+              if line.startswith("tests/")
+          ]
+          if observed != expected:
+              raise SystemExit(f"expected exact five-node collection, observed {len(observed)}")
+          print("collection_guard=5/5")
+          PY
+
+          uv run pytest -p no:cacheprovider -q \
+            --basetemp="$test_root/pytest" \
+            --junitxml="$test_root/results.xml" \
+            "${nodes[@]}"
+          RESULTS_PATH="$test_root/results.xml" uv run python - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse(os.environ["RESULTS_PATH"]).getroot()
+          suites = [root] if root.tag == "testsuite" else root.findall("testsuite")
+          counts = {
+              name: sum(int(suite.attrib.get(name, "0")) for suite in suites)
+              for name in ("tests", "failures", "errors", "skipped")
+          }
+          if counts != {"tests": 5, "failures": 0, "errors": 0, "skipped": 0}:
+              raise SystemExit(f"inadmissible pytest result: {counts}")
+          print("result_guard=5_passed_0_skipped")
+          PY
+
+          cleanup
+          trap - EXIT
+          test ! -e "$test_root"
+          echo "cleanup_guard=passed"

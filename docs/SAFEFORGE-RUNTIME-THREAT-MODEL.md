@@ -16,6 +16,29 @@ macOS Seatbelt has not been proven here to enforce redirect-safe DNS hostname
 allowlists, so declared-network fixtures fail closed rather than weakening the
 network policy.
 
+## Supported verification hosts
+
+The portable manifest, receipt, coordinator, and fail-closed unit paths support
+the repository's declared Python 3.11–3.13 range. The five kernel and supervisor
+acceptance tests are narrower: they require macOS, `/usr/bin/sandbox-exec`, a
+system Python outside `/Users`, and a unique test-owned root directly beneath
+`/private/tmp`. A root beneath `/Users` is an expected negative harness control,
+not a supported execution boundary.
+
+CI exercises those five tests on the exact `macos-15` image reported by the
+job, using Python 3.11 as the test driver. The job fails if any node is missing
+or skipped. One green image proves only that revision, reported image, and
+system-temporary-root boundary; it does not prove every macOS release or
+production safety. The local manual page marks `sandbox-exec` deprecated, so a
+missing or changed runner facility is a failed prerequisite, never a reason to
+weaken the profile.
+
+Other full-suite prerequisites remain separate. Repository-hygiene tests need a
+real Git checkout. ProofOS runtime tests need PostgreSQL 16 binaries. Proof
+Before Action execution tests need a reachable Docker daemon and the exact
+local image identity; its pre-runtime sensitive-input rejection tests do not.
+A skipped test is unavailable evidence, not a passing host claim.
+
 ## Assets and trust boundary
 
 Protected host assets include:

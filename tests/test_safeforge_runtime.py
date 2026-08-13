@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import os
+import pwd
+import socket
 import sys
+import tempfile
 from copy import deepcopy
 from pathlib import Path
 
@@ -327,25 +331,48 @@ def test_supervisor_enforces_memory_and_disk(tmp_path: Path, monkeypatch: pytest
 def test_kernel_denies_artifact_root_escape_and_network(tmp_path: Path) -> None:
     for name in ("home", "cache", "tmp", "evidence", "artifact"):
         (tmp_path / name).mkdir()
-    code = """import socket
+    host_home = Path(pwd.getpwuid(os.getuid()).pw_dir).resolve()
+    host_entry = next(host_home.iterdir())
+    assert os.access(host_home, os.W_OK)
+    outside_fd, outside_name = tempfile.mkstemp(prefix="mcpaudit-safeforge-outside-", dir="/private/tmp")
+    os.close(outside_fd)
+    outside_path = Path(outside_name)
+    outside_path.write_text("before")
+    escape_path = host_home / ".safeforge-escape"
+    assert not escape_path.exists()
+    try:
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            listener.listen()
+            listener.settimeout(1)
+            with socket.create_connection(listener.getsockname(), timeout=1):
+                accepted, _ = listener.accept()
+                accepted.close()
+            address = listener.getsockname()
+            code = f"""import socket
 from pathlib import Path
 blocked = 0
 for action in (
-    lambda: Path("/Users/d/.ssh/config").read_bytes(),
-    lambda: Path("/Users/d/.safeforge-escape").write_text("x"),
-    lambda: socket.create_connection(("127.0.0.1", 9), timeout=0.1),
+    lambda: Path({str(host_entry)!r}).stat(),
+    lambda: Path({str(escape_path)!r}).write_text("x"),
+    lambda: Path({str(outside_path)!r}).write_text("after"),
+    lambda: socket.create_connection({address!r}, timeout=0.1),
 ):
     try:
         action()
     except OSError:
         blocked += 1
-raise SystemExit(0 if blocked == 3 else 1)"""
-    result = _run_sandboxed(
-        [_sandbox_python(), "-c", code],
-        tmp_path,
-        tmp_path / "artifact",
-        deny_network=True,
-    )
+raise SystemExit(0 if blocked == 4 else 1)"""
+            result = _run_sandboxed(
+                [_sandbox_python(), "-c", code],
+                tmp_path,
+                tmp_path / "artifact",
+                deny_network=True,
+            )
+        assert outside_path.read_text() == "before"
+    finally:
+        outside_path.unlink(missing_ok=True)
+        escape_path.unlink(missing_ok=True)
     assert result.returncode == 0
     assert result.termination is None
 
