@@ -49,14 +49,39 @@ The macOS SafeForge acceptance lane has a stricter host contract. On an arm64
 macOS host with `/usr/bin/sandbox-exec`, use a unique direct `/private/tmp` root:
 
 ```bash
+set -euo pipefail
 test_root="$(mktemp -d /private/tmp/mcpaudit-safeforge.XXXXXX)"
+cleanup() {
+  case "$test_root" in
+    /private/tmp/mcpaudit-safeforge.*)
+      /usr/bin/find "$test_root" -depth -delete
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+finish() {
+  status=$?
+  trap - EXIT HUP INT TERM
+  cleanup_status=0
+  cleanup || cleanup_status=$?
+  if (( status != 0 )); then
+    exit "$status"
+  fi
+  exit "$cleanup_status"
+}
+trap finish EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 uv run pytest -p no:cacheprovider -q --basetemp="$test_root/pytest" \
   tests/test_safeforge_runtime.py::test_supervisor_kills_hanging_shutdown_resistant_process_group \
   tests/test_safeforge_runtime.py::test_supervisor_enforces_process_count \
   tests/test_safeforge_runtime.py::test_supervisor_enforces_memory_and_disk \
   tests/test_safeforge_runtime.py::test_kernel_denies_artifact_root_escape_and_network \
   tests/test_safeforge_runtime.py::test_generated_code_profile_kernel_denies_child_processes
-find "$test_root" -depth -delete
 ```
 
 This lane is verified only by exactly 5 passes and 0 skips. The
