@@ -47,9 +47,16 @@ def _no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
+def _reject_non_finite(value: str) -> None:
+    raise DeliveryEvidenceInputError(f"non-finite JSON number is unsupported: {value}")
+
+
 def _read_file(path: Path) -> bytes:
-    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
-    flags |= getattr(os, "O_NONBLOCK", 0)
+    no_follow = getattr(os, "O_NOFOLLOW", 0)
+    non_blocking = getattr(os, "O_NONBLOCK", 0)
+    if not no_follow or not non_blocking:
+        raise DeliveryEvidenceInputError("safe regular-file open flags are unavailable")
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | no_follow | non_blocking
     try:
         descriptor = os.open(path, flags)
     except OSError as exc:
@@ -357,6 +364,7 @@ def validate(document: Any) -> dict[str, Any]:
     if not isinstance(claims, list) or not 1 <= len(claims) <= len(BOUNDARIES):
         raise DeliveryEvidenceInputError("claims must contain 1..8 entries")
     seen_boundaries: set[str] = set()
+    claim_statuses: dict[str, str] = {}
     for index, raw_claim in enumerate(claims):
         claim = _object(
             raw_claim,
@@ -373,7 +381,7 @@ def validate(document: Any) -> dict[str, Any]:
         if boundary not in BOUNDARIES or boundary in seen_boundaries:
             raise DeliveryEvidenceInputError("claim boundaries must be supported and unique")
         seen_boundaries.add(boundary)
-        _status(claim["status"], f"claims[{index}].status")
+        claim_statuses[boundary] = _status(claim["status"], f"claims[{index}].status")
         supports = claim["evidence_boundaries"]
         if not isinstance(supports, list) or not supports or any(item not in BOUNDARIES for item in supports):
             raise DeliveryEvidenceInputError("claim evidence_boundaries must be non-empty and supported")
@@ -397,7 +405,22 @@ def validate(document: Any) -> dict[str, Any]:
         elif observed_at is not None:
             _timestamp(observed_at, f"claims[{index}].observed_at")
 
-    claim_ceiling = _text(root["claim_ceiling"], "claim_ceiling")
+    claim_ceiling = _object(
+        root["claim_ceiling"],
+        "claim_ceiling",
+        {"proven_boundaries", "unproven_boundaries", "statement"},
+    )
+    expected_proven = [boundary for boundary in BOUNDARIES if claim_statuses.get(boundary) == "PASS"]
+    expected_unproven = [boundary for boundary in BOUNDARIES if boundary not in expected_proven]
+    if claim_ceiling["proven_boundaries"] != expected_proven:
+        findings.append(
+            _finding("MCPDELIVERY013", "FAIL", "claim ceiling proven boundaries differ from claims")
+        )
+    if claim_ceiling["unproven_boundaries"] != expected_unproven:
+        findings.append(
+            _finding("MCPDELIVERY013", "FAIL", "claim ceiling unproven boundaries differ from claims")
+        )
+    _text(claim_ceiling["statement"], "claim_ceiling.statement")
     findings.sort(key=lambda item: (item["code"], item["severity"], item["message"]))
     severities = {item["severity"] for item in findings}
     verdict = "FAIL" if "FAIL" in severities else "UNKNOWN" if "UNKNOWN" in severities else "PASS"
@@ -413,8 +436,12 @@ def validate(document: Any) -> dict[str, Any]:
 def load_and_validate(path: Path) -> dict[str, Any]:
     raw = _read_file(path)
     try:
-        document = json.loads(raw, object_pairs_hook=_no_duplicates)
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        document = json.loads(
+            raw,
+            object_pairs_hook=_no_duplicates,
+            parse_constant=_reject_non_finite,
+        )
+    except (UnicodeDecodeError, ValueError, RecursionError) as exc:
         raise DeliveryEvidenceInputError("input must be valid UTF-8 JSON") from exc
     result = validate(document)
     result["input_sha256"] = "sha256:" + hashlib.sha256(_canonical(document)).hexdigest()

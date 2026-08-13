@@ -86,7 +86,18 @@ def _document() -> dict[str, Any]:
                 "observed_at": "2026-08-13T22:58:00Z",
             },
         ],
-        "claim_ceiling": "source and exact-SHA CI only",
+        "claim_ceiling": {
+            "proven_boundaries": ["source", "ci"],
+            "unproven_boundaries": [
+                "local",
+                "runtime",
+                "publication",
+                "deployment",
+                "adoption",
+                "human_acceptance",
+            ],
+            "statement": "source and exact-SHA CI only",
+        },
     }
 
 
@@ -180,6 +191,15 @@ def test_stale_current_state_claim_fails() -> None:
     assert "MCPDELIVERY009" in _codes(result)
 
 
+def test_claim_ceiling_must_exactly_match_passing_boundaries() -> None:
+    document = _document()
+    document["claim_ceiling"]["proven_boundaries"].append("runtime")
+    document["claim_ceiling"]["unproven_boundaries"].remove("runtime")
+    result = validator.validate(document)
+    assert result["verdict"] == "FAIL"
+    assert "MCPDELIVERY013" in _codes(result)
+
+
 @pytest.mark.parametrize("boundary", ["runtime", "publication", "deployment", "adoption", "human_acceptance"])
 def test_higher_boundary_cannot_be_inferred_from_source_or_ci(boundary: str) -> None:
     document = _document()
@@ -206,13 +226,23 @@ def test_output_is_deterministic(tmp_path: Path) -> None:
     assert first.stdout == second.stdout
 
 
-@pytest.mark.parametrize("raw", [b"{not json}", b'{"schema_version":"one","schema_version":"two"}'])
+@pytest.mark.parametrize(
+    "raw",
+    [
+        b"{not json}",
+        b'{"schema_version":"one","schema_version":"two"}',
+        (b"[" * 2_000) + b"0" + (b"]" * 2_000),
+        b'{"number":' + (b"9" * 5_000) + b"}",
+        b'{"number":NaN}',
+    ],
+)
 def test_malformed_or_duplicate_key_input_fails_closed(tmp_path: Path, raw: bytes) -> None:
     path = tmp_path / "bad.json"
     path.write_bytes(raw)
     result = subprocess.run([sys.executable, str(SCRIPT), str(path)], check=False, capture_output=True)
     assert result.returncode == 2
     assert json.loads(result.stdout)["verdict"] == "FAIL"
+    assert result.stderr == b""
 
 
 def test_symlink_input_is_rejected(tmp_path: Path) -> None:

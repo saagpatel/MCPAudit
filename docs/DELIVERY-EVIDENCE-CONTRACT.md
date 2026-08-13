@@ -32,8 +32,9 @@ target revision.
 Proof boundaries are independent: `source`, `local`, `ci`, `runtime`, `publication`, `deployment`,
 `adoption`, and `human_acceptance`. A passing lower boundary is not evidence for a higher one. Each
 claim records its own status, supporting boundaries, whether it describes current state, and an
-observation time when applicable. `claim_ceiling` is descriptive and never raises the validator's
-result.
+observation time when applicable. `claim_ceiling.proven_boundaries` must exactly match the ordered
+set of passing claims and `unproven_boundaries` must contain every other boundary. Its bounded
+`statement` is descriptive and cannot raise the mechanically checked ceiling.
 
 Historical receipt production (`producer.produced_at`) is separate from the caller-supplied
 `freshness.as_of`. Current branch and current-state claim observations must fall within
@@ -66,6 +67,7 @@ lifecycle; it does not prove current completion. Completion still needs fresh ex
 | `MCPDELIVERY010` | Required retention contradicts automatic deletion. |
 | `MCPDELIVERY011` | Required retention lacks fresh exact live-ref completion evidence. |
 | `MCPDELIVERY012` | A higher proof boundary is inferred only from source, local, or CI evidence. |
+| `MCPDELIVERY013` | The stated claim ceiling differs from the mechanically derived boundaries. |
 
 `FAIL` outranks `UNKNOWN`; `UNKNOWN` outranks `PASS`. Findings are sorted by code, severity, and
 message. Equivalent JSON objects therefore produce byte-identical output and the same canonical
