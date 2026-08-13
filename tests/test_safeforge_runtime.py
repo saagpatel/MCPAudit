@@ -333,6 +333,7 @@ def test_kernel_denies_artifact_root_escape_and_network(tmp_path: Path) -> None:
         (tmp_path / name).mkdir()
     host_home = Path(pwd.getpwuid(os.getuid()).pw_dir).resolve()
     host_entry = next(host_home.iterdir())
+    host_entry.stat()
     assert os.access(host_home, os.W_OK)
     outside_fd, outside_name = tempfile.mkstemp(prefix="mcpaudit-safeforge-outside-", dir="/private/tmp")
     os.close(outside_fd)
