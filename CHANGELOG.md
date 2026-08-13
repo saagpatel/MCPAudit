@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added a bounded, deterministic repository delivery-evidence contract and stdlib-only validator
+  that separates immutable integration receipts from mutable branch pointers, rejects cross-revision
+  or cross-source reuse and retention-policy contradictions, and preserves independent source, local,
+  CI, runtime, publication, deployment, adoption, and human-acceptance claim ceilings.
+
 - Added `mcp-audit task-time-machine`, an offline deterministic MCP Tasks
   lifecycle simulator with strict scenario/result schemas, virtual logical
   time, stable `MCPTASK000`-`MCPTASK008` explanations, bounded JSON-RPC error

@@ -33,6 +33,11 @@ Run tests from a real Git checkout. A passing broad suite can contain expected
 skips, so it verifies only the tests that ran. Use the smallest lane that proves
 your change, then run the full suite before opening a pull request.
 
+Repository delivery receipts must follow the bounded
+[Delivery Evidence Contract](docs/DELIVERY-EVIDENCE-CONTRACT.md). Exact revisions, source and
+environment digests, CI and security bindings, mutable branch state, and independent proof ceilings
+are validated separately; a branch pointer is never immutable delivery proof.
+
 The current lane selections are:
 
 | Lane | Command | Current expected result | Prerequisite and claim boundary |
