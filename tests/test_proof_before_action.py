@@ -67,6 +67,7 @@ DOCKER_READY = (
 requires_docker = pytest.mark.skipif(
     not DOCKER_READY, reason="local node:24-slim image and Docker are required"
 )
+_UNREACHED_IMAGE_ID = "sha256:" + "0" * 64
 
 
 def _declaration(**updates: object) -> ActionDeclaration:
@@ -2236,7 +2237,7 @@ def test_sensitive_repository_input_is_blocked_before_execution(tmp_path: Path) 
             repo,
             ["node", "-e", "process.exit(0)"],
             image="node:24-slim",
-            expected_image_id=_node_image_id(),
+            expected_image_id=_UNREACHED_IMAGE_ID,
         )
 
 
@@ -2543,7 +2544,7 @@ def test_literal_config_secret_and_sensitive_argv_are_redacted_or_blocked(
             repo,
             ["node", "-e", "process.exit(0)"],
             image="node:24-slim",
-            expected_image_id=_node_image_id(),
+            expected_image_id=_UNREACHED_IMAGE_ID,
         )
     assert _redact_argv(
         [
