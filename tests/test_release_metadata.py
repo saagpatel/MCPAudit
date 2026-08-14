@@ -439,7 +439,15 @@ def test_registry_publication_is_manual_pypi_first_and_oidc_confined() -> None:
     assert "workflow_dispatch:" in trigger
     assert "\n  push:" not in trigger
     assert "pull_request_target" not in workflow
+    assert "actions: read" in validate_job
     assert "id-token: write" not in validate_job
+    assert "Checkout trusted release controls" in validate_job
+    assert "Checkout exact release source" in validate_job
+    assert "path: release-controls" in validate_job
+    assert "path: release-source" in validate_job
+    assert "../release-controls/scripts/verify_release.py" in validate_job
+    assert "--root ." in validate_job
+    assert "working-directory: release-source" in validate_job
     assert "https://pypi.org/pypi/mcp-audits/$release_version/json" in validate_job
     assert "environments/$RELEASE_ENVIRONMENT" in validate_job
     assert 'mcp-publisher" validate server.json' in validate_job
@@ -448,6 +456,7 @@ def test_registry_publication_is_manual_pypi_first_and_oidc_confined() -> None:
     assert "id-token: write" in publish_job
     assert "login github-oidc" in publish_job
     assert 'mcp-publisher" publish server.json' in publish_job
+    assert 'test "$(git rev-parse HEAD)" = "$RELEASE_COMMIT"' in publish_job
     assert "/versions/$selector" in publish_job
     assert "isLatest == true" in publish_job
 

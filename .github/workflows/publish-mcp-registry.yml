@@ -13,6 +13,7 @@ on:
         type: string
 
 permissions:
+  actions: read
   contents: read
 
 env:
@@ -30,11 +31,18 @@ jobs:
           DISPATCH_REF: ${{ github.ref }}
         run: test "$DISPATCH_REF" = "refs/heads/main"
 
+      - name: Checkout trusted release controls
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: release-controls
+
       - name: Checkout exact release source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.commit }}
           fetch-depth: 0
+          path: release-source
 
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
@@ -55,9 +63,11 @@ jobs:
         env:
           RELEASE_COMMIT: ${{ inputs.commit }}
           RELEASE_TAG: ${{ inputs.tag }}
+        working-directory: release-source
         run: |
           git fetch --force --tags origin main
-          uv run python scripts/verify_release.py \
+          uv run python ../release-controls/scripts/verify_release.py \
+            --root . \
             --tag "$RELEASE_TAG" \
             --commit "$RELEASE_COMMIT" \
             --environment-json "$RUNNER_TEMP/pypi-environment.json" \
@@ -99,6 +109,7 @@ jobs:
           ' "$RUNNER_TEMP/release-environment.json"
 
       - name: Download and verify pinned MCP publisher
+        working-directory: release-source
         run: |
           curl -q --fail --location --silent --show-error \
             "https://github.com/modelcontextprotocol/registry/releases/download/$MCP_PUBLISHER_VERSION/mcp-publisher_linux_amd64.tar.gz" \
@@ -120,6 +131,11 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.commit }}
+
+      - name: Reassert exact checked-out release commit
+        env:
+          RELEASE_COMMIT: ${{ inputs.commit }}
+        run: test "$(git rev-parse HEAD)" = "$RELEASE_COMMIT"
 
       - name: Download and verify pinned MCP publisher
         run: |
