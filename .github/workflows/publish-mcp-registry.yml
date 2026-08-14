@@ -1,0 +1,167 @@
+name: Publish to MCP Registry
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Exact published release tag (for example, v2.7.0)
+        required: true
+        type: string
+      commit:
+        description: Exact 40-character commit already published to PyPI
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  MCP_PUBLISHER_VERSION: v1.8.1
+  MCP_PUBLISHER_SHA256: a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc
+  RELEASE_ENVIRONMENT: pypi
+
+jobs:
+  validate:
+    name: Verify exact published release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require workflow dispatch from main
+        env:
+          DISPATCH_REF: ${{ github.ref }}
+        run: test "$DISPATCH_REF" = "refs/heads/main"
+
+      - name: Checkout exact release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit }}
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Read back protected PyPI environment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          curl -q --fail --location --silent --show-error \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header "X-GitHub-Api-Version: 2026-03-10" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/environments/pypi" \
+            --output "$RUNNER_TEMP/pypi-environment.json"
+
+      - name: Verify tag, commit, main, and release metadata
+        env:
+          RELEASE_COMMIT: ${{ inputs.commit }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          git fetch --force --tags origin main
+          uv run python scripts/verify_release.py \
+            --tag "$RELEASE_TAG" \
+            --commit "$RELEASE_COMMIT" \
+            --environment-json "$RUNNER_TEMP/pypi-environment.json" \
+            --require-publishable
+
+      - name: Require exact PyPI release before Registry publication
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          release_version="${RELEASE_TAG#v}"
+          curl -q --fail --location --silent --show-error \
+            "https://pypi.org/pypi/mcp-audits/$release_version/json" \
+            --output "$RUNNER_TEMP/pypi-release.json"
+          jq --exit-status --arg version "$release_version" '
+            .info.name == "mcp-audits"
+            and .info.version == $version
+            and ([.urls[] | select(.packagetype == "bdist_wheel")] | length == 1)
+            and ([.urls[] | select(.packagetype == "sdist")] | length == 1)
+          ' \
+            "$RUNNER_TEMP/pypi-release.json"
+
+      - name: Refuse an absent or unprotected release environment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          curl -q --fail --location --silent --show-error \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            --header "X-GitHub-Api-Version: 2026-03-10" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/environments/$RELEASE_ENVIRONMENT" \
+            --output "$RUNNER_TEMP/release-environment.json"
+          jq --exit-status '
+            .can_admins_bypass == false
+            and any(
+              .protection_rules[];
+              .type == "required_reviewers"
+              and (.reviewers | length) > 0
+            )
+          ' "$RUNNER_TEMP/release-environment.json"
+
+      - name: Download and verify pinned MCP publisher
+        run: |
+          curl -q --fail --location --silent --show-error \
+            "https://github.com/modelcontextprotocol/registry/releases/download/$MCP_PUBLISHER_VERSION/mcp-publisher_linux_amd64.tar.gz" \
+            --output "$RUNNER_TEMP/mcp-publisher.tar.gz"
+          echo "$MCP_PUBLISHER_SHA256  $RUNNER_TEMP/mcp-publisher.tar.gz" | sha256sum --check
+          tar --extract --gzip --file "$RUNNER_TEMP/mcp-publisher.tar.gz" --directory "$RUNNER_TEMP" mcp-publisher
+          "$RUNNER_TEMP/mcp-publisher" validate server.json
+
+  publish:
+    name: Publish approved descriptor
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout exact release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit }}
+
+      - name: Download and verify pinned MCP publisher
+        run: |
+          curl -q --fail --location --silent --show-error \
+            "https://github.com/modelcontextprotocol/registry/releases/download/$MCP_PUBLISHER_VERSION/mcp-publisher_linux_amd64.tar.gz" \
+            --output "$RUNNER_TEMP/mcp-publisher.tar.gz"
+          echo "$MCP_PUBLISHER_SHA256  $RUNNER_TEMP/mcp-publisher.tar.gz" | sha256sum --check
+          tar --extract --gzip --file "$RUNNER_TEMP/mcp-publisher.tar.gz" --directory "$RUNNER_TEMP" mcp-publisher
+
+      - name: Publish through GitHub OIDC
+        run: |
+          "$RUNNER_TEMP/mcp-publisher" login github-oidc
+          "$RUNNER_TEMP/mcp-publisher" publish server.json
+
+      - name: Verify exact and latest official Registry identities
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          SERVER_NAME: io.github.saagpatel/mcp-audit
+        run: |
+          release_version="${RELEASE_TAG#v}"
+          encoded_name="io.github.saagpatel%2Fmcp-audit"
+          for selector in "$release_version" latest; do
+            curl -q --fail --location --silent --show-error \
+              "https://registry.modelcontextprotocol.io/v0.1/servers/$encoded_name/versions/$selector" \
+              --output "$RUNNER_TEMP/registry-$selector.json"
+            jq --exit-status \
+              --arg name "$SERVER_NAME" \
+              --arg version "$release_version" '
+                .server.name == $name
+                and .server.version == $version
+                and .server.repository.url == "https://github.com/saagpatel/MCPAudit"
+                and .server.repository.source == "github"
+                and ([.server.packages[] | select(
+                  .registryType == "pypi"
+                  and .registryBaseUrl == "https://pypi.org"
+                  and .identifier == "mcp-audits"
+                  and .version == $version
+                  and .runtimeHint == "uvx"
+                  and .transport.type == "stdio"
+                  and any(.packageArguments[]; .type == "positional" and .value == "serve")
+                )] | length == 1)
+                and ._meta."io.modelcontextprotocol.registry/official".status == "active"
+                and ._meta."io.modelcontextprotocol.registry/official".isLatest == true
+              ' "$RUNNER_TEMP/registry-$selector.json"
+          done
