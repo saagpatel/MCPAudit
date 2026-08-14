@@ -19,22 +19,21 @@ tests, and install path agree.
 - Known limitations are documented in release notes and beta/stable readiness
   docs.
 
-## Current 2.6.0 Candidate
+## Current 2.7.0 Candidate
 
-The 2.6.0 candidate is a backward-compatible minor release. Its primary
-capability groups are the offline Agent UI Contract Auditor, bounded
-nested-schema SSRF detection, and the experimental fixture-only
-evidence-to-enforcement workflow. It also includes the unreleased config-only
-connection-status contract, release-workflow hardening, immutable Action
-refreshes, ClusterFuzzLite integration, and the SA-015 cross-SDK identity
-boundary regression already landed on `main`. Existing 2.x audit-report and
-SARIF contracts remain additive.
+The 2.7.0 candidate is a backward-compatible minor release built after the
+published 2.6.0 tag. Its primary capability groups are offline cache-contract,
+authorization-posture, OAuth-transcript, task-lifecycle, result-parcel, and
+session-resume laboratories plus deterministic delivery-evidence validation.
+Existing 2.x audit-report and SARIF contracts remain additive. The candidate is
+source state only: 2.6.0 remains the latest published package, Action ref, and
+Registry package identity until a separately authorized release occurs.
 
 Release evidence must establish:
 
-- package, changelog, versioned release notes, and
-  `docs/release-state.json` agree on the 2.6.0 candidate while `server.json`
-  and public Action/pre-commit examples continue to name the existing 2.5.0
+- package, lock metadata, changelog, versioned release notes, and
+  `docs/release-state.json` agree on the 2.7.0 candidate while `server.json`
+  and public Action/pre-commit examples continue to name the published 2.6.0
   release;
 - wheel and sdist metadata require `mcp>=1.28.1` and expose `mcp-audit`,
   `mcp-audits`, and `proof-before-action`;

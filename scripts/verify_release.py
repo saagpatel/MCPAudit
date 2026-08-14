@@ -56,6 +56,16 @@ def _version() -> str:
     return version
 
 
+def _locked_project_version() -> str:
+    lock = tomllib.loads(_read_text("uv.lock"))
+    for package in lock.get("package", []):
+        if isinstance(package, dict) and package.get("name") == "mcp-audits":
+            version = package.get("version")
+            if isinstance(version, str) and VERSION_RE.fullmatch(version):
+                return version
+    raise VerificationError("uv.lock is missing the mcp-audits project version")
+
+
 def _run_git(*args: str) -> str:
     result = subprocess.run(
         ["git", "-C", str(ROOT), *args],
@@ -125,6 +135,8 @@ def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object
         raise VerificationError("release-state.json schema is unsupported")
     if state.get("candidate_version") != version:
         raise VerificationError("candidate version does not match project.version")
+    if _locked_project_version() != version:
+        raise VerificationError("uv.lock project version does not match project.version")
     published = state.get("published_version")
     if not isinstance(published, str) or VERSION_RE.fullmatch(published) is None:
         raise VerificationError("published version is invalid")
@@ -134,6 +146,10 @@ def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object
     status = status_value
     if status == "release" and published != version:
         raise VerificationError("release status requires published_version to equal the candidate")
+    if status == "candidate" and published == version:
+        raise VerificationError("candidate version must differ from the published version")
+    if status == "candidate" and state.get("previous_version") != published:
+        raise VerificationError("candidate previous_version must equal the published version")
     public_version = version if status == "release" else published
     if (
         server.get("version") != public_version
@@ -161,9 +177,14 @@ def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object
         version=version,
         status=status,
     )
+    if status == "candidate" and f"mcp-audits=={published}" not in release_notes.read_text(encoding="utf-8"):
+        raise VerificationError("candidate release notes do not retain the published rollback pin")
     if status == "candidate":
         if f"## [{version}] - Unreleased" not in changelog:
             raise VerificationError("candidate changelog section is not explicitly unreleased")
+        expected_link = f"[{version}]: https://github.com/saagpatel/MCPAudit/compare/v{published}...HEAD"
+        if expected_link not in changelog:
+            raise VerificationError("candidate comparison link is not based on the published tag")
     else:
         if (
             re.search(
