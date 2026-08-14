@@ -35,15 +35,60 @@ class DeliveryEvidenceInputError(ValueError):
 
 
 def _canonical(value: Any) -> bytes:
-    return (json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n").encode()
+    normalized = _normalize_unicode(value)
+    return (json.dumps(normalized, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n").encode()
+
+
+def _normalize_text_unicode(value: str, field: str) -> str:
+    """Decode valid surrogate pairs and reject every unpaired surrogate."""
+    normalized: list[str] = []
+    index = 0
+    while index < len(value):
+        codepoint = ord(value[index])
+        if 0xD800 <= codepoint <= 0xDBFF:
+            if index + 1 >= len(value):
+                raise DeliveryEvidenceInputError(f"{field} contains an unpaired Unicode surrogate")
+            low = ord(value[index + 1])
+            if not 0xDC00 <= low <= 0xDFFF:
+                raise DeliveryEvidenceInputError(f"{field} contains an unpaired Unicode surrogate")
+            normalized.append(chr(0x10000 + ((codepoint - 0xD800) << 10) + low - 0xDC00))
+            index += 2
+            continue
+        if 0xDC00 <= codepoint <= 0xDFFF:
+            raise DeliveryEvidenceInputError(f"{field} contains an unpaired Unicode surrogate")
+        normalized.append(value[index])
+        index += 1
+    return "".join(normalized)
+
+
+def _normalize_unicode(value: Any, field: str = "document") -> Any:
+    """Return a JSON-like value with Unicode scalar strings throughout."""
+    if isinstance(value, str):
+        return _normalize_text_unicode(value, field)
+    if isinstance(value, list):
+        return [_normalize_unicode(item, f"{field}[{index}]") for index, item in enumerate(value)]
+    if isinstance(value, dict):
+        normalized: dict[str, Any] = {}
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise DeliveryEvidenceInputError(f"{field} keys must be strings")
+            normalized_key = _normalize_text_unicode(key, f"{field} key")
+            if normalized_key in normalized:
+                raise DeliveryEvidenceInputError(
+                    f"{field} contains keys that duplicate after Unicode normalization"
+                )
+            normalized[normalized_key] = _normalize_unicode(item, f"{field}.{normalized_key}")
+        return normalized
+    return value
 
 
 def _no_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for key, value in pairs:
-        if key in result:
-            raise DeliveryEvidenceInputError(f"duplicate JSON key: {key}")
-        result[key] = value
+        normalized_key = _normalize_text_unicode(key, "JSON object key")
+        if normalized_key in result:
+            raise DeliveryEvidenceInputError("duplicate JSON key")
+        result[normalized_key] = value
     return result
 
 
@@ -120,6 +165,18 @@ def _object(value: Any, field: str, keys: set[str]) -> dict[str, Any]:
 def _text(value: Any, field: str) -> str:
     if not isinstance(value, str) or not value or len(value) > 512:
         raise DeliveryEvidenceInputError(f"{field} must be a non-empty bounded string")
+    return _normalize_text_unicode(value, field)
+
+
+def _boundary_list(value: Any, field: str) -> list[str]:
+    if not isinstance(value, list):
+        raise DeliveryEvidenceInputError(f"{field} must be a list")
+    if any(not isinstance(item, str) or item not in BOUNDARIES for item in value):
+        raise DeliveryEvidenceInputError(f"{field} must contain only supported boundaries")
+    if len(set(value)) != len(value):
+        raise DeliveryEvidenceInputError(f"{field} boundaries must be unique")
+    if value != [boundary for boundary in BOUNDARIES if boundary in value]:
+        raise DeliveryEvidenceInputError(f"{field} must use canonical boundary order")
     return value
 
 
@@ -160,6 +217,7 @@ def _finding(code: str, severity: str, message: str) -> dict[str, str]:
 
 
 def validate(document: Any) -> dict[str, Any]:
+    document = _normalize_unicode(document)
     root = _object(
         document,
         "document",
@@ -397,6 +455,7 @@ def validate(document: Any) -> dict[str, Any]:
         raise DeliveryEvidenceInputError("claims must contain 1..8 entries")
     seen_boundaries: set[str] = set()
     claim_statuses: dict[str, str] = {}
+    claim_evidence_valid: dict[str, bool] = {}
     for index, raw_claim in enumerate(claims):
         claim = _object(
             raw_claim,
@@ -415,10 +474,12 @@ def validate(document: Any) -> dict[str, Any]:
         seen_boundaries.add(boundary)
         claim_status = _status(claim["status"], f"claims[{index}].status")
         claim_statuses[boundary] = claim_status
+        claim_evidence_valid[boundary] = True
         supports = claim["evidence_boundaries"]
         if not isinstance(supports, list) or not supports or any(item not in BOUNDARIES for item in supports):
             raise DeliveryEvidenceInputError("claim evidence_boundaries must be non-empty and supported")
         if claim_status == "PASS" and boundary not in supports:
+            claim_evidence_valid[boundary] = False
             findings.append(
                 _finding(
                     "MCPDELIVERY012",
@@ -432,12 +493,14 @@ def validate(document: Any) -> dict[str, Any]:
         if claim["current_state"]:
             observed = _timestamp(observed_at, f"claims[{index}].observed_at")
             if observed > as_of or (as_of - observed).total_seconds() > max_age:
+                claim_evidence_valid[boundary] = False
                 findings.append(
                     _finding("MCPDELIVERY009", "FAIL", f"current {boundary} claim is stale or future-dated")
                 )
         elif observed_at is not None:
             observed = _timestamp(observed_at, f"claims[{index}].observed_at")
             if observed > as_of:
+                claim_evidence_valid[boundary] = False
                 findings.append(
                     _finding("MCPDELIVERY009", "FAIL", f"historical {boundary} claim is future-dated")
                 )
@@ -447,20 +510,26 @@ def validate(document: Any) -> dict[str, Any]:
         "claim_ceiling",
         {"proven_boundaries", "unproven_boundaries", "statement"},
     )
+    ceiling_proven = _boundary_list(claim_ceiling["proven_boundaries"], "claim_ceiling.proven_boundaries")
+    ceiling_unproven = _boundary_list(
+        claim_ceiling["unproven_boundaries"], "claim_ceiling.unproven_boundaries"
+    )
     declared_proven = [boundary for boundary in BOUNDARIES if claim_statuses.get(boundary) == "PASS"]
     declared_unproven = [boundary for boundary in BOUNDARIES if boundary not in declared_proven]
-    if claim_ceiling["proven_boundaries"] != declared_proven:
+    if ceiling_proven != declared_proven:
         findings.append(
             _finding("MCPDELIVERY013", "FAIL", "claim ceiling proven boundaries differ from claims")
         )
-    if claim_ceiling["unproven_boundaries"] != declared_unproven:
+    if ceiling_unproven != declared_unproven:
         findings.append(
             _finding("MCPDELIVERY013", "FAIL", "claim ceiling unproven boundaries differ from claims")
         )
     effective_proven = [
         boundary
         for boundary in BOUNDARIES
-        if claim_statuses.get(boundary) == "PASS" and (boundary != "ci" or ci_evidence_proven)
+        if claim_statuses.get(boundary) == "PASS"
+        and claim_evidence_valid.get(boundary, False)
+        and (boundary != "ci" or ci_evidence_proven)
     ]
     effective_unproven = [boundary for boundary in BOUNDARIES if boundary not in effective_proven]
     statement = _text(claim_ceiling["statement"], "claim_ceiling.statement")
@@ -491,8 +560,11 @@ def load_and_validate(path: Path) -> dict[str, Any]:
         )
     except (UnicodeDecodeError, ValueError, RecursionError) as exc:
         raise DeliveryEvidenceInputError("input must be valid UTF-8 JSON") from exc
-    result = validate(document)
-    result["input_sha256"] = "sha256:" + hashlib.sha256(_canonical(document)).hexdigest()
+    try:
+        result = validate(document)
+        result["input_sha256"] = "sha256:" + hashlib.sha256(_canonical(document)).hexdigest()
+    except RecursionError as exc:
+        raise DeliveryEvidenceInputError("input JSON nesting is too deep") from exc
     return result
 
 

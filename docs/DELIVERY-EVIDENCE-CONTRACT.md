@@ -16,8 +16,10 @@ The validator emits canonical JSON. Exit `0` is `PASS`, exit `1` is a validated 
 1 MiB regular non-symlink JSON file. The validator verifies the pre-open and opened identity and
 rejects size or modification-time changes during the bounded read; no-follow and non-blocking flags
 are added where the host exposes them. Duplicate keys, non-UTF-8 data, unexpected fields, unsafe
-file types, and malformed bindings fail closed. Values in the receipt are data only: the validator
-does not interpret file paths, execute commands, read credentials, or contact GitHub.
+file types, unpaired Unicode surrogates, and malformed bindings fail closed. Valid escaped surrogate
+pairs are normalized to their Unicode scalar before canonical hashing, so escaped and decoded forms
+have one digest. Values in the receipt are data only: the validator does not interpret file paths,
+execute commands, read credentials, or contact GitHub.
 
 ## Evidence classes and boundaries
 
@@ -36,10 +38,12 @@ Proof boundaries are independent: `source`, `local`, `ci`, `runtime`, `publicati
 evidence from any other boundary cannot substitute for it. Each claim records its own status,
 supporting boundaries, whether it describes current state, and an observation time when applicable.
 `claim_ceiling.proven_boundaries` must exactly match the ordered set of passing claims whose direct
-evidence remains valid, and `unproven_boundaries` must contain every other boundary. A failed,
-unknown, wrong-revision, or wrongly bound CI receipt removes `ci` from the emitted proven boundaries
-even when the input claim says `PASS`. The bounded `statement` is descriptive and cannot raise the
-mechanically checked ceiling.
+evidence is declared, and `unproven_boundaries` must contain every other boundary. The emitted
+effective ceiling is stricter: a stale, future-dated, or wrongly supported passing claim is moved to
+`unproven_boundaries` without removing independent valid claims. A failed, unknown, wrong-revision,
+or wrongly bound CI receipt likewise removes `ci` from the emitted proven boundaries even when the
+input claim says `PASS`. Both ceiling arrays accept only unique supported boundaries in canonical
+order. The bounded `statement` is descriptive and cannot raise the mechanically checked ceiling.
 
 Historical receipt production (`producer.produced_at`) is separate from the caller-supplied
 `freshness.as_of`. Current branch and current-state claim observations must fall within

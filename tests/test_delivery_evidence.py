@@ -236,6 +236,8 @@ def test_stale_current_state_claim_fails() -> None:
     result = validator.validate(document)
     assert result["verdict"] == "FAIL"
     assert "MCPDELIVERY009" in _codes(result)
+    assert "publication" not in result["claim_ceiling"]["proven_boundaries"]
+    assert "publication" in result["claim_ceiling"]["unproven_boundaries"]
 
 
 def test_future_historical_claim_fails() -> None:
@@ -244,6 +246,8 @@ def test_future_historical_claim_fails() -> None:
     result = validator.validate(document)
     assert result["verdict"] == "FAIL"
     assert "MCPDELIVERY009" in _codes(result)
+    assert "source" not in result["claim_ceiling"]["proven_boundaries"]
+    assert "source" in result["claim_ceiling"]["unproven_boundaries"]
 
 
 @pytest.mark.parametrize(
@@ -290,6 +294,8 @@ def test_passing_claim_requires_evidence_from_its_own_boundary(boundary: str, su
     result = validator.validate(document)
     assert result["verdict"] == "FAIL"
     assert "MCPDELIVERY012" in _codes(result)
+    assert boundary not in result["claim_ceiling"]["proven_boundaries"]
+    assert boundary in result["claim_ceiling"]["unproven_boundaries"]
 
 
 @pytest.mark.parametrize("boundary", ["runtime", "publication", "deployment", "adoption", "human_acceptance"])
@@ -307,6 +313,47 @@ def test_higher_boundary_cannot_be_inferred_from_source_or_ci(boundary: str) -> 
     result = validator.validate(document)
     assert result["verdict"] == "FAIL"
     assert "MCPDELIVERY012" in _codes(result)
+
+
+def test_invalid_claim_does_not_remove_independent_valid_claims() -> None:
+    document = _document()
+    document["claims"].append(
+        {
+            "boundary": "runtime",
+            "status": "PASS",
+            "evidence_boundaries": ["publication"],
+            "current_state": False,
+            "observed_at": None,
+        }
+    )
+    document["claim_ceiling"]["proven_boundaries"].append("runtime")
+    document["claim_ceiling"]["unproven_boundaries"].remove("runtime")
+    result = validator.validate(document)
+    assert result["verdict"] == "FAIL"
+    assert result["claim_ceiling"]["proven_boundaries"] == ["source", "ci"]
+    assert "runtime" in result["claim_ceiling"]["unproven_boundaries"]
+
+
+def test_every_valid_boundary_can_remain_in_effective_ceiling() -> None:
+    document = _document()
+    for boundary in validator.BOUNDARIES:
+        if boundary in {"source", "ci"}:
+            continue
+        document["claims"].append(
+            {
+                "boundary": boundary,
+                "status": "PASS",
+                "evidence_boundaries": [boundary],
+                "current_state": False,
+                "observed_at": None,
+            }
+        )
+    document["claim_ceiling"]["proven_boundaries"] = list(validator.BOUNDARIES)
+    document["claim_ceiling"]["unproven_boundaries"] = []
+    result = validator.validate(document)
+    assert result["verdict"] == "PASS"
+    assert result["claim_ceiling"]["proven_boundaries"] == list(validator.BOUNDARIES)
+    assert result["claim_ceiling"]["unproven_boundaries"] == []
 
 
 @pytest.mark.parametrize("ci_status", ["FAIL", "UNKNOWN"])
@@ -363,6 +410,75 @@ def test_malformed_or_duplicate_key_input_fails_closed(tmp_path: Path, raw: byte
     assert result.returncode == 2
     assert json.loads(result.stdout)["verdict"] == "FAIL"
     assert result.stderr == b""
+
+
+@pytest.mark.parametrize("value", ["\ud800", "\udc00", "\udc00\ud800"])
+def test_unpaired_or_reversed_surrogates_fail_structurally_without_traceback(
+    tmp_path: Path, value: str
+) -> None:
+    document = _document()
+    document["producer"]["name"] = value
+    path = tmp_path / "bad-surrogate.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    result = subprocess.run([sys.executable, str(SCRIPT), str(path)], check=False, capture_output=True)
+    assert result.returncode == 2
+    assert json.loads(result.stdout)["verdict"] == "FAIL"
+    assert result.stderr == b""
+    assert b"Traceback" not in result.stdout + result.stderr
+
+
+def test_surrogate_in_nested_boundary_array_fails_structurally(tmp_path: Path) -> None:
+    document = _document()
+    document["claim_ceiling"]["proven_boundaries"][0] = "\ud800"
+    path = tmp_path / "nested-surrogate.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    result = subprocess.run([sys.executable, str(SCRIPT), str(path)], check=False, capture_output=True)
+    assert result.returncode == 2
+    assert json.loads(result.stdout)["verdict"] == "FAIL"
+    assert result.stderr == b""
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        b'{"\\ud800": 1}',
+        b'{"\\ud800": 1, "\\ud800": 2}',
+        b'{"\\ud83d\\ude80": 1, "\xf0\x9f\x9a\x80": 2}',
+    ],
+)
+def test_surrogate_object_keys_fail_structurally_without_traceback(tmp_path: Path, raw: bytes) -> None:
+    path = tmp_path / "surrogate-key.json"
+    path.write_bytes(raw)
+    result = subprocess.run([sys.executable, str(SCRIPT), str(path)], check=False, capture_output=True)
+    assert result.returncode == 2
+    assert json.loads(result.stdout)["verdict"] == "FAIL"
+    assert result.stderr == b""
+    assert b"Traceback" not in result.stdout + result.stderr
+
+
+def test_valid_surrogate_pair_and_decoded_non_bmp_are_canonically_equivalent(tmp_path: Path) -> None:
+    digests: list[str] = []
+    for index, value in enumerate(("\ud83d\ude80", "🚀")):
+        document = _document()
+        document["producer"]["name"] = value
+        path = tmp_path / f"valid-unicode-{index}.json"
+        path.write_text(json.dumps(document, ensure_ascii=index == 0), encoding="utf-8")
+        result = subprocess.run([sys.executable, str(SCRIPT), str(path)], check=False, capture_output=True)
+        assert result.returncode == 0
+        assert result.stderr == b""
+        digests.append(json.loads(result.stdout)["input_sha256"])
+    assert digests[0] == digests[1]
+
+
+def test_valid_multilingual_unicode_is_preserved(tmp_path: Path) -> None:
+    document = _document()
+    document["producer"]["name"] = "検証-مرحبا-🚀"
+    path = tmp_path / "valid-multilingual.json"
+    path.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+    result = subprocess.run([sys.executable, str(SCRIPT), str(path)], check=False, capture_output=True)
+    assert result.returncode == 0
+    assert result.stderr == b""
+    assert json.loads(result.stdout)["verdict"] == "PASS"
 
 
 def test_symlink_input_is_rejected(tmp_path: Path) -> None:

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Made the delivery-evidence validator lower only the affected effective claim-ceiling boundary
+  when a passing claim has stale, future-dated, or wrong-boundary evidence, while preserving
+  independent valid claims. It now also rejects unpaired Unicode surrogates structurally and
+  canonicalizes valid surrogate pairs to the same digest as their decoded non-BMP form.
+
 ### Security
 
 - Added a strict, redacted, fixture-first MCP OAuth transcript auditor for
