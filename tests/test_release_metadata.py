@@ -378,12 +378,15 @@ def test_publication_requires_a_separate_manual_dispatch() -> None:
 def test_publish_gate_prepares_proof_before_action_test_image() -> None:
     workflow = Path(".github/workflows/publish.yml").read_text(encoding="utf-8")
     build_job, _publish_job = workflow.split("\n  publish:\n", maxsplit=1)
+    pre_trust = build_job.split("Install locked dependencies", maxsplit=1)[0]
 
     assert "Checkout release controls" in build_job
     assert "Checkout exact release source" in build_job
     assert "path: release-controls" in build_job
     assert "path: release-source" in build_job
     assert "../release-controls/scripts/verify_release.py" in build_job
+    assert "python ../release-controls/scripts/verify_release.py" in pre_trust
+    assert "uv run python ../release-controls/scripts/verify_release.py" not in pre_trust
     assert "--root ." in build_job
     assert "working-directory: release-source" in build_job
     assert "Prepare Proof Before Action test image" in build_job
@@ -446,6 +449,8 @@ def test_registry_publication_is_manual_pypi_first_and_oidc_confined() -> None:
     assert "path: release-controls" in validate_job
     assert "path: release-source" in validate_job
     assert "../release-controls/scripts/verify_release.py" in validate_job
+    assert "python ../release-controls/scripts/verify_release.py" in validate_job
+    assert "uv run python ../release-controls/scripts/verify_release.py" not in validate_job
     assert "--root ." in validate_job
     assert "working-directory: release-source" in validate_job
     assert "https://pypi.org/pypi/mcp-audits/$release_version/json" in validate_job

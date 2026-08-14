@@ -68,7 +68,7 @@ jobs:
         working-directory: release-source
         run: |
           git fetch --force --tags origin main
-          uv run python ../release-controls/scripts/verify_release.py \
+          python ../release-controls/scripts/verify_release.py \
             --root . \
             --tag "$RELEASE_TAG" \
             --commit "$RELEASE_COMMIT" \
