@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Made the delivery-evidence validator lower only the affected effective claim-ceiling boundary
+  when a passing claim has stale, future-dated, or wrong-boundary evidence, while preserving
+  independent valid claims. It now also rejects unpaired Unicode surrogates structurally and
+  canonicalizes valid surrogate pairs to the same digest as their decoded non-BMP form. Branch-state
+  and retention-exception enums now reject every non-string JSON value through the same canonical
+  structural-error path instead of allowing unhashable containers to escape with a traceback.
+  Rejected or unknown exact-source security evidence now also removes only `source` from the emitted
+  effective claim ceiling, preventing rejected evidence from remaining mechanically proven.
+
 ### Security
 
 - Added a strict, redacted, fixture-first MCP OAuth transcript auditor for
@@ -21,6 +32,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   security.
 
 ### Added
+
+- Hardened the delivery-evidence validator so protected-main reachability accepts only real
+  booleans or null, passing claims require evidence from their own boundary, unknown branch state
+  remains `UNKNOWN`, and rejected CI receipts mechanically lower the emitted claim ceiling.
+
+- Added a bounded, deterministic repository delivery-evidence contract and stdlib-only validator
+  that separates immutable integration receipts from mutable branch pointers, rejects cross-revision
+  or cross-source reuse and retention-policy contradictions, and preserves independent source, local,
+  CI, runtime, publication, deployment, adoption, and human-acceptance claim ceilings.
 
 - Added `mcp-audit task-time-machine`, an offline deterministic MCP Tasks
   lifecycle simulator with strict scenario/result schemas, virtual logical
