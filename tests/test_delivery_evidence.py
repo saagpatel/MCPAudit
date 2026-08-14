@@ -190,6 +190,70 @@ def test_required_retention_with_unknown_branch_state_stays_unknown() -> None:
 
 
 @pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("branch.state", []),
+        ("branch.state", {}),
+        ("branch.state", None),
+        ("branch.state", False),
+        ("branch.state", 0),
+        ("branch.state", [{"nested": "value"}]),
+        ("retention.exception_path", []),
+        ("retention.exception_path", {}),
+        ("retention.exception_path", None),
+        ("retention.exception_path", False),
+        ("retention.exception_path", 0),
+        ("retention.exception_path", [{"nested": "value"}]),
+    ],
+)
+def test_enum_fields_reject_non_strings_canonically_without_traceback(
+    tmp_path: Path, field: str, value: Any
+) -> None:
+    document = _document()
+    if field == "branch.state":
+        document["branch"]["state"] = value
+    else:
+        document["retention"]["exception_path"] = value
+    path = tmp_path / "invalid-enum.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    first = subprocess.run([sys.executable, str(SCRIPT), str(path)], check=False, capture_output=True)
+    second = subprocess.run([sys.executable, str(SCRIPT), str(path)], check=False, capture_output=True)
+
+    assert first.returncode == second.returncode == 2
+    assert first.stdout == second.stdout
+    assert json.loads(first.stdout)["verdict"] == "FAIL"
+    assert first.stderr == second.stderr == b""
+    assert b"Traceback" not in first.stdout + first.stderr
+
+
+@pytest.mark.parametrize(
+    ("state", "revision", "verdict"),
+    [
+        ("absent", None, "PASS"),
+        ("present", REVISION, "PASS"),
+        ("unknown", None, "UNKNOWN"),
+    ],
+)
+def test_branch_state_valid_enum_strings_preserve_behavior(
+    state: str, revision: str | None, verdict: str
+) -> None:
+    document = _document()
+    document["branch"].update(state=state, revision=revision)
+    assert validator.validate(document)["verdict"] == verdict
+
+
+@pytest.mark.parametrize(
+    "exception",
+    ["repository_setting_exception", "bounded_post_merge_restoration"],
+)
+def test_retention_exception_valid_enum_strings_preserve_behavior(exception: str) -> None:
+    document = _document()
+    _require_retention(document, exception)
+    assert validator.validate(document)["verdict"] == "UNKNOWN"
+
+
+@pytest.mark.parametrize(
     ("field", "value", "code"),
     [
         ("revision", "d" * 40, "MCPDELIVERY002"),

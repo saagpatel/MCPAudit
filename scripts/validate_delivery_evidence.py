@@ -398,17 +398,18 @@ def validate(document: Any) -> dict[str, Any]:
     if branch["evidence_class"] != "mutable_convenience":
         raise DeliveryEvidenceInputError("branch.evidence_class must be mutable_convenience")
     _text(branch["ref"], "branch.ref")
-    if branch["state"] not in {"present", "absent", "unknown"}:
+    branch_state = branch["state"]
+    if not isinstance(branch_state, str) or branch_state not in {"present", "absent", "unknown"}:
         raise DeliveryEvidenceInputError("branch.state must be present, absent, or unknown")
     branch_observed = _timestamp(branch["observed_at"], "branch.observed_at")
     branch_revision = branch["revision"]
-    if branch["state"] == "present":
+    if branch_state == "present":
         branch_revision = _digest(branch_revision, "branch.revision")
         if branch_revision != revision:
             findings.append(_finding("MCPDELIVERY001", "FAIL", "live branch revision differs from target"))
     elif branch_revision is not None:
         raise DeliveryEvidenceInputError("branch.revision must be null unless branch.state is present")
-    if branch["state"] == "unknown":
+    if branch_state == "unknown":
         findings.append(_finding("MCPDELIVERY014", "UNKNOWN", "live branch state is unknown"))
     if branch_observed > as_of or (as_of - branch_observed).total_seconds() > max_age:
         findings.append(
@@ -431,7 +432,11 @@ def validate(document: Any) -> dict[str, Any]:
     if not isinstance(retention["required"], bool):
         raise DeliveryEvidenceInputError("retention.required must be boolean")
     exception = retention["exception_path"]
-    if exception not in {"none", "repository_setting_exception", "bounded_post_merge_restoration"}:
+    if not isinstance(exception, str) or exception not in {
+        "none",
+        "repository_setting_exception",
+        "bounded_post_merge_restoration",
+    }:
         raise DeliveryEvidenceInputError("retention.exception_path is unsupported")
     details = ("reason", "consumer", "lifecycle", "mutation_authority", "deletion_policy")
     if retention["required"]:
@@ -441,7 +446,7 @@ def validate(document: Any) -> dict[str, Any]:
             findings.append(
                 _finding("MCPDELIVERY010", "FAIL", "retention contradicts automatic post-merge deletion")
             )
-        if branch["state"] != "present" or branch_revision != revision:
+        if branch_state != "present" or branch_revision != revision:
             findings.append(
                 _finding(
                     "MCPDELIVERY011", "UNKNOWN", "retention completion requires fresh exact live-ref readback"

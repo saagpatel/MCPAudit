@@ -12,7 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Made the delivery-evidence validator lower only the affected effective claim-ceiling boundary
   when a passing claim has stale, future-dated, or wrong-boundary evidence, while preserving
   independent valid claims. It now also rejects unpaired Unicode surrogates structurally and
-  canonicalizes valid surrogate pairs to the same digest as their decoded non-BMP form.
+  canonicalizes valid surrogate pairs to the same digest as their decoded non-BMP form. Branch-state
+  and retention-exception enums now reject every non-string JSON value through the same canonical
+  structural-error path instead of allowing unhashable containers to escape with a traceback.
 
 ### Security
 
