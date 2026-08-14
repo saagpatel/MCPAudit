@@ -19,6 +19,12 @@ ROOT = Path(__file__).resolve().parents[1]
 RELEASE_STATE_PATH = ROOT / "docs/release-state.json"
 VERSION_RE = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 COMMIT_RE = re.compile(r"[0-9a-f]{40}")
+DISTRIBUTION_NAME = "mcp-audits"
+EXPECTED_SCRIPTS = {
+    "mcp-audit": "mcp_audit.cli:main",
+    "mcp-audits": "mcp_audit.cli:main",
+    "proof-before-action": "mcp_audit.proof_cli:main",
+}
 
 
 class VerificationError(RuntimeError):
@@ -54,6 +60,16 @@ def _version() -> str:
     if not isinstance(version, str) or VERSION_RE.fullmatch(version) is None:
         raise VerificationError("project.version must be a stable semantic version")
     return version
+
+
+def _locked_project_version() -> str:
+    lock = tomllib.loads(_read_text("uv.lock"))
+    for package in lock.get("package", []):
+        if isinstance(package, dict) and package.get("name") == "mcp-audits":
+            version = package.get("version")
+            if isinstance(version, str) and VERSION_RE.fullmatch(version):
+                return version
+    raise VerificationError("uv.lock is missing the mcp-audits project version")
 
 
 def _run_git(*args: str) -> str:
@@ -114,6 +130,7 @@ def verify_environment_protection(raw: object) -> None:
 
 
 def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object]]:
+    project = _project()
     version = _version()
     state = _release_state()
     server = json.loads(_read_text("server.json"))
@@ -121,10 +138,17 @@ def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object
     readme = _read_text("README.md")
     adoption = _read_text("docs/ADOPTION-GUIDE.md")
 
+    if project.get("name") != DISTRIBUTION_NAME:
+        raise VerificationError("project metadata has the wrong distribution name")
+    if project.get("scripts") != EXPECTED_SCRIPTS:
+        raise VerificationError("project metadata has the wrong console entry points")
+
     if state.get("schema_version") != "mcp-audit.release-state.v1":
         raise VerificationError("release-state.json schema is unsupported")
     if state.get("candidate_version") != version:
         raise VerificationError("candidate version does not match project.version")
+    if _locked_project_version() != version:
+        raise VerificationError("uv.lock project version does not match project.version")
     published = state.get("published_version")
     if not isinstance(published, str) or VERSION_RE.fullmatch(published) is None:
         raise VerificationError("published version is invalid")
@@ -134,19 +158,23 @@ def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object
     status = status_value
     if status == "release" and published != version:
         raise VerificationError("release status requires published_version to equal the candidate")
+    if status == "candidate" and published == version:
+        raise VerificationError("candidate version must differ from the published version")
+    if status == "candidate" and state.get("previous_version") != published:
+        raise VerificationError("candidate previous_version must equal the published version")
     public_version = version if status == "release" else published
     if (
         server.get("version") != public_version
         or server.get("packages", [{}])[0].get("version") != public_version
     ):
-        raise VerificationError("server.json does not reference the usable public release")
+        raise VerificationError("server.json does not reference the release-state public package version")
     for path, content in (("README.md", readme), ("docs/ADOPTION-GUIDE.md", adoption)):
         if f"saagpatel/MCPAudit@v{public_version}" not in content:
             raise VerificationError(f"{path} does not reference the usable public release")
     if f"rev: v{public_version}" not in adoption:
         raise VerificationError("pre-commit example does not reference the usable public release")
 
-    dependencies = _project().get("dependencies")
+    dependencies = project.get("dependencies")
     if not isinstance(dependencies, list) or "mcp>=1.28.1" not in dependencies:
         raise VerificationError("project metadata does not retain the mcp>=1.28.1 security floor")
     if "cryptography>=50.0.0,<51.0" not in dependencies:
@@ -161,9 +189,14 @@ def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object
         version=version,
         status=status,
     )
+    if status == "candidate" and f"mcp-audits=={published}" not in release_notes.read_text(encoding="utf-8"):
+        raise VerificationError("candidate release notes do not retain the published rollback pin")
     if status == "candidate":
         if f"## [{version}] - Unreleased" not in changelog:
             raise VerificationError("candidate changelog section is not explicitly unreleased")
+        expected_link = f"[{version}]: https://github.com/saagpatel/MCPAudit/compare/v{published}...HEAD"
+        if expected_link not in changelog:
+            raise VerificationError("candidate comparison link is not based on the published tag")
     else:
         if (
             re.search(
@@ -210,7 +243,7 @@ def _parse_metadata(raw: bytes) -> email.message.Message:
 
 def _check_distribution_metadata(raw: bytes, *, version: str, name: str) -> None:
     metadata = _parse_metadata(raw)
-    if metadata.get("Name") != "mcp-audits":
+    if metadata.get("Name") != DISTRIBUTION_NAME:
         raise VerificationError(f"{name} has the wrong distribution name")
     if metadata.get("Version") != version:
         raise VerificationError(f"{name} has the wrong version")
@@ -231,11 +264,6 @@ def _check_provenance(raw: bytes, *, commit: str, name: str) -> None:
 
 
 def _check_entry_points(raw: bytes, *, name: str) -> None:
-    expected = {
-        "mcp-audit": "mcp_audit.cli:main",
-        "mcp-audits": "mcp_audit.cli:main",
-        "proof-before-action": "mcp_audit.proof_cli:main",
-    }
     observed: dict[str, str] = {}
     in_console_scripts = False
     for line in raw.decode("utf-8").splitlines():
@@ -245,7 +273,7 @@ def _check_entry_points(raw: bytes, *, name: str) -> None:
         if in_console_scripts and "=" in line:
             command, target = line.split("=", maxsplit=1)
             observed[command.strip()] = target.strip()
-    if observed != expected:
+    if observed != EXPECTED_SCRIPTS:
         raise VerificationError(f"{name} console entry points do not match the release contract")
 
 

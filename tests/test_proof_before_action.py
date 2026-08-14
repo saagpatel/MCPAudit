@@ -19,6 +19,7 @@ from click.testing import CliRunner
 
 import mcp_audit.proof_capsule as proof_capsule_module
 import mcp_audit_build_backend as build_backend
+from mcp_audit import __version__
 from mcp_audit.proof_capsule import (
     build_capsule,
     compare_bill,
@@ -2581,7 +2582,7 @@ def test_cli_version_reports_installed_distribution_version() -> None:
     result = CliRunner().invoke(main, ["--version"])
 
     assert result.exit_code == 0
-    assert "proof-before-action, version 2.6.0" in result.output
+    assert f"proof-before-action, version {__version__}" in result.output
 
 
 def test_capsule_index_rejects_path_expansion() -> None:

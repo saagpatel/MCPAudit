@@ -6,6 +6,7 @@ import json
 import re
 import runpy
 import subprocess
+import sys
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -25,7 +26,7 @@ def _project_version() -> str:
     return version
 
 
-def test_released_version_is_consistent_across_release_surfaces() -> None:
+def test_candidate_and_published_versions_are_consistent_across_surfaces() -> None:
     version = _project_version()
     state = json.loads(Path("docs/release-state.json").read_text(encoding="utf-8"))
     server = json.loads(Path("server.json").read_text(encoding="utf-8"))
@@ -36,23 +37,18 @@ def test_released_version_is_consistent_across_release_surfaces() -> None:
     assert state == {
         "schema_version": "mcp-audit.release-state.v1",
         "candidate_version": version,
-        "published_version": version,
-        "previous_version": "2.5.0",
-        "status": "release",
+        "published_version": "2.6.0",
+        "previous_version": "2.6.0",
+        "status": "candidate",
     }
     assert server["version"] == state["published_version"]
     assert server["packages"][0]["version"] == state["published_version"]
-    assert re.search(
-        rf"^## \[{re.escape(version)}\] - \d{{4}}-\d{{2}}-\d{{2}}$",
-        changelog,
-        re.MULTILINE,
-    )
-    assert f"## [{version}] - Unreleased" not in changelog
-    assert f"[{version}]: https://github.com/saagpatel/MCPAudit/compare/v2.5.0...v{version}" in changelog
-    assert f"[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v{version}...HEAD" in changelog
-    assert f"saagpatel/MCPAudit@v{version}" in readme
-    assert f"saagpatel/MCPAudit@v{version}" in adoption
-    assert f"rev: v{version}" in adoption
+    assert version != state["published_version"]
+    assert f"## [{version}] - Unreleased" in changelog
+    assert f"[{version}]: https://github.com/saagpatel/MCPAudit/compare/v2.6.0...HEAD" in changelog
+    assert f"saagpatel/MCPAudit@v{state['published_version']}" in readme
+    assert f"saagpatel/MCPAudit@v{state['published_version']}" in adoption
+    assert f"rev: v{state['published_version']}" in adoption
 
 
 def test_release_version_is_a_stable_semantic_version() -> None:
@@ -61,49 +57,34 @@ def test_release_version_is_a_stable_semantic_version() -> None:
 
 def test_release_metadata_verifier_passes() -> None:
     result = subprocess.run(
-        ["uv", "run", "python", "scripts/verify_release.py"],
+        [sys.executable, "scripts/verify_release.py"],
         check=False,
         capture_output=True,
         text=True,
         timeout=30,
     )
     assert result.returncode == 0, result.stderr
-    assert "release metadata verified for 2.6.0" in result.stdout
+    assert "release metadata verified for 2.7.0" in result.stdout
 
 
 @pytest.mark.parametrize(
-    ("arguments", "message"),
+    "arguments",
     [
-        (["--require-publishable"], "publish verification requires --tag and --commit"),
-        (
-            ["--require-publishable", "--tag", "v2.6.0"],
-            "--tag requires --commit",
-        ),
-        (
-            [
-                "--require-publishable",
-                "--tag",
-                "v2.6.0",
-                "--commit",
-                "0" * 40,
-            ],
-            "publish verification requires live PyPI environment state",
-        ),
+        ["--require-publishable"],
+        ["--require-publishable", "--tag", "v2.7.0"],
+        ["--require-publishable", "--tag", "v2.7.0", "--commit", "0" * 40],
     ],
 )
-def test_publishable_metadata_verifier_requires_exact_binding(
-    arguments: list[str],
-    message: str,
-) -> None:
+def test_candidate_metadata_verifier_refuses_publishability(arguments: list[str]) -> None:
     result = subprocess.run(
-        ["uv", "run", "python", "scripts/verify_release.py", *arguments],
+        [sys.executable, "scripts/verify_release.py", *arguments],
         check=False,
         capture_output=True,
         text=True,
         timeout=30,
     )
     assert result.returncode == 1
-    assert message in result.stderr
+    assert "candidate state is intentionally non-publishable" in result.stderr
 
 
 def test_release_state_cannot_keep_a_stale_published_version(
@@ -114,9 +95,9 @@ def test_release_state_cannot_keep_a_stale_published_version(
         "_release_state",
         lambda: {
             "schema_version": "mcp-audit.release-state.v1",
-            "candidate_version": "2.6.0",
-            "published_version": "2.5.0",
-            "previous_version": "2.5.0",
+            "candidate_version": "2.7.0",
+            "published_version": "2.6.0",
+            "previous_version": "2.6.0",
             "status": "release",
         },
     )
@@ -126,6 +107,27 @@ def test_release_state_cannot_keep_a_stale_published_version(
         match="published_version to equal the candidate",
     ):
         RELEASE_VERIFIER["verify_metadata"](require_publishable=True)
+
+
+def test_candidate_version_cannot_equal_published_version(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(
+        RELEASE_VERIFIER["verify_metadata"].__globals__,
+        "_release_state",
+        lambda: {
+            "schema_version": "mcp-audit.release-state.v1",
+            "candidate_version": "2.7.0",
+            "published_version": "2.7.0",
+            "previous_version": "2.7.0",
+            "status": "candidate",
+        },
+    )
+    with pytest.raises(
+        RELEASE_VERIFIER["VerificationError"],
+        match="candidate version must differ from the published version",
+    ):
+        RELEASE_VERIFIER["verify_metadata"](require_publishable=False)
 
 
 def test_candidate_state_is_never_publishable(tmp_path: Path) -> None:
@@ -138,8 +140,15 @@ def test_candidate_state_is_never_publishable(tmp_path: Path) -> None:
     """
     (tmp_path / "docs").mkdir()
     (tmp_path / "pyproject.toml").write_text(
-        '[project]\nversion = "2.6.0"\n'
-        'dependencies = ["mcp>=1.28.1", "cryptography>=50.0.0,<51.0", "click>=8.3.3,<9.0"]\n',
+        '[project]\nname = "mcp-audits"\nversion = "2.6.0"\n'
+        'dependencies = ["mcp>=1.28.1", "cryptography>=50.0.0,<51.0", "click>=8.3.3,<9.0"]\n'
+        '[project.scripts]\nmcp-audit = "mcp_audit.cli:main"\n'
+        'mcp-audits = "mcp_audit.cli:main"\n'
+        'proof-before-action = "mcp_audit.proof_cli:main"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "uv.lock").write_text(
+        'version = 1\n\n[[package]]\nname = "mcp-audits"\nversion = "2.6.0"\n',
         encoding="utf-8",
     )
     (tmp_path / "docs/release-state.json").write_text(
@@ -158,13 +167,17 @@ def test_candidate_state_is_never_publishable(tmp_path: Path) -> None:
         json.dumps({"version": "2.5.0", "packages": [{"version": "2.5.0"}]}),
         encoding="utf-8",
     )
-    (tmp_path / "CHANGELOG.md").write_text("## [2.6.0] - Unreleased\n", encoding="utf-8")
+    (tmp_path / "CHANGELOG.md").write_text(
+        "## [2.6.0] - Unreleased\n\n[2.6.0]: https://github.com/saagpatel/MCPAudit/compare/v2.5.0...HEAD\n",
+        encoding="utf-8",
+    )
     (tmp_path / "README.md").write_text("uses: saagpatel/MCPAudit@v2.5.0\n", encoding="utf-8")
     (tmp_path / "docs/ADOPTION-GUIDE.md").write_text(
         "uses: saagpatel/MCPAudit@v2.5.0\nrev: v2.5.0\n", encoding="utf-8"
     )
     (tmp_path / "docs/2.6-RELEASE-NOTES.md").write_text(
-        "# MCPAudit 2.6.0\n\nRelease status: candidate\nPublication decision: NO-GO\n",
+        "# MCPAudit 2.6.0\n\nRelease status: candidate\nPublication decision: NO-GO\n\n"
+        "Retain mcp-audits==2.5.0.\n",
         encoding="utf-8",
     )
 
@@ -198,6 +211,35 @@ proof-before-action = mcp_audit.proof_cli:main
             b"[console_scripts]\nmcp-audit = mcp_audit.cli:main\n",
             name="fixture.whl",
         )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("name", "wrong-distribution", "distribution name"),
+        (
+            "scripts",
+            {"mcp-audit": "mcp_audit.cli:main"},
+            "console entry points",
+        ),
+    ],
+)
+def test_source_project_identity_is_exact(
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    value: object,
+    message: str,
+) -> None:
+    original_project = RELEASE_VERIFIER["_project"]()
+    changed_project = {**original_project, field: value}
+    monkeypatch.setitem(
+        RELEASE_VERIFIER["verify_metadata"].__globals__,
+        "_project",
+        lambda: changed_project,
+    )
+
+    with pytest.raises(RELEASE_VERIFIER["VerificationError"], match=message):
+        RELEASE_VERIFIER["verify_metadata"](require_publishable=False)
 
 
 def test_release_notes_must_be_finalized_before_publication() -> None:
