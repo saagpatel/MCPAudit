@@ -7,6 +7,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -175,6 +176,15 @@ def test_missing_required_environment_binding_is_unknown() -> None:
     assert "MCPDELIVERY008" in _codes(result)
 
 
+def test_supplied_optional_environment_mismatch_fails() -> None:
+    document = _document()
+    document["artifact"]["environment_required"] = False
+    document["integration"]["ci"][0]["environment_sha256"] = "sha256:" + "d" * 64
+    result = validator.validate(document)
+    assert result["verdict"] == "FAIL"
+    assert "MCPDELIVERY008" in _codes(result)
+
+
 def test_stale_current_state_claim_fails() -> None:
     document = _document()
     document["claims"].append(
@@ -189,6 +199,25 @@ def test_stale_current_state_claim_fails() -> None:
     result = validator.validate(document)
     assert result["verdict"] == "FAIL"
     assert "MCPDELIVERY009" in _codes(result)
+
+
+def test_future_historical_claim_fails() -> None:
+    document = _document()
+    document["claims"][0]["observed_at"] = "2099-01-01T00:00:00Z"
+    result = validator.validate(document)
+    assert result["verdict"] == "FAIL"
+    assert "MCPDELIVERY009" in _codes(result)
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["2026-W33-4T23:00:00Z", "20260813T230000Z", "2026-08-13 23:00:00Z"],
+)
+def test_non_rfc3339_timestamp_shapes_are_rejected(value: str) -> None:
+    document = _document()
+    document["freshness"]["as_of"] = value
+    with pytest.raises(validator.DeliveryEvidenceInputError):
+        validator.validate(document)
 
 
 def test_claim_ceiling_must_exactly_match_passing_boundaries() -> None:
@@ -253,6 +282,43 @@ def test_symlink_input_is_rejected(tmp_path: Path) -> None:
     result = subprocess.run([sys.executable, str(SCRIPT), str(link)], check=False, capture_output=True)
     assert result.returncode == 2
     assert "non-symlink" in json.loads(result.stdout)["error"]
+
+
+def test_regular_file_is_supported_without_optional_open_flags(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "receipt.json"
+    path.write_text(json.dumps(_document()), encoding="utf-8")
+    monkeypatch.delattr(validator.os, "O_NOFOLLOW", raising=False)
+    monkeypatch.delattr(validator.os, "O_NONBLOCK", raising=False)
+    assert validator.load_and_validate(path)["verdict"] == "PASS"
+
+
+def test_same_inode_metadata_change_during_read_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "receipt.json"
+    path.write_text(json.dumps(_document()), encoding="utf-8")
+    actual_fstat = validator.os.fstat
+    calls = 0
+
+    def changing_fstat(descriptor: int) -> Any:
+        nonlocal calls
+        calls += 1
+        observed = actual_fstat(descriptor)
+        if calls == 1:
+            return observed
+        return SimpleNamespace(
+            st_mode=observed.st_mode,
+            st_dev=observed.st_dev,
+            st_ino=observed.st_ino,
+            st_size=observed.st_size,
+            st_mtime_ns=observed.st_mtime_ns + 1,
+        )
+
+    monkeypatch.setattr(validator.os, "fstat", changing_fstat)
+    with pytest.raises(validator.DeliveryEvidenceInputError, match="changed during read"):
+        validator.load_and_validate(path)
 
 
 def test_contract_document_and_contributor_link_exist() -> None:

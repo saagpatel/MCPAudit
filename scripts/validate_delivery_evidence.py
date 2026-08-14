@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import stat
 import sys
 from datetime import UTC, datetime
@@ -28,6 +29,7 @@ BOUNDARIES: Final = (
 )
 HIGHER: Final = frozenset(BOUNDARIES[3:])
 LOWER: Final = frozenset(BOUNDARIES[:3])
+RFC3339_UTC: Final = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z\Z")
 
 
 class DeliveryEvidenceInputError(ValueError):
@@ -52,11 +54,22 @@ def _reject_non_finite(value: str) -> None:
 
 
 def _read_file(path: Path) -> bytes:
-    no_follow = getattr(os, "O_NOFOLLOW", 0)
-    non_blocking = getattr(os, "O_NONBLOCK", 0)
-    if not no_follow or not non_blocking:
-        raise DeliveryEvidenceInputError("safe regular-file open flags are unavailable")
-    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | no_follow | non_blocking
+    try:
+        metadata = path.lstat()
+    except OSError as exc:
+        raise DeliveryEvidenceInputError("input must be an accessible non-symlink file") from exc
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+        raise DeliveryEvidenceInputError("input must be a regular non-symlink file")
+    if metadata.st_size > MAX_INPUT_BYTES:
+        raise DeliveryEvidenceInputError(f"input exceeds {MAX_INPUT_BYTES} bytes")
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_BINARY", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+    )
+    descriptor: int | None = None
     try:
         descriptor = os.open(path, flags)
     except OSError as exc:
@@ -65,6 +78,8 @@ def _read_file(path: Path) -> bytes:
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode):
             raise DeliveryEvidenceInputError("input must be a regular file")
+        if (metadata.st_dev, metadata.st_ino) != (before.st_dev, before.st_ino):
+            raise DeliveryEvidenceInputError("input identity changed before it was opened")
         if before.st_size > MAX_INPUT_BYTES:
             raise DeliveryEvidenceInputError(f"input exceeds {MAX_INPUT_BYTES} bytes")
         chunks: list[bytes] = []
@@ -77,13 +92,20 @@ def _read_file(path: Path) -> bytes:
             remaining -= len(chunk)
         raw = b"".join(chunks)
         after = os.fstat(descriptor)
-        if (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino):
-            raise DeliveryEvidenceInputError("input identity changed during read")
+
+        def identity(value: os.stat_result) -> tuple[int, int, int, int]:
+            return (value.st_dev, value.st_ino, value.st_size, value.st_mtime_ns)
+
+        if identity(before) != identity(after):
+            raise DeliveryEvidenceInputError("input changed during read")
         if len(raw) > MAX_INPUT_BYTES:
             raise DeliveryEvidenceInputError(f"input exceeds {MAX_INPUT_BYTES} bytes")
         return raw
+    except OSError as exc:
+        raise DeliveryEvidenceInputError("input could not be read safely") from exc
     finally:
-        os.close(descriptor)
+        if descriptor is not None:
+            os.close(descriptor)
 
 
 def _object(value: Any, field: str, keys: set[str]) -> dict[str, Any]:
@@ -118,7 +140,7 @@ def _digest(value: Any, field: str, *, sha256: bool = False) -> str:
 
 
 def _timestamp(value: Any, field: str) -> datetime:
-    if not isinstance(value, str) or not value.endswith("Z"):
+    if not isinstance(value, str) or RFC3339_UTC.fullmatch(value) is None:
         raise DeliveryEvidenceInputError(f"{field} must be an RFC 3339 UTC timestamp ending in Z")
     try:
         parsed = datetime.fromisoformat(value[:-1] + "+00:00")
@@ -297,7 +319,11 @@ def validate(document: Any) -> dict[str, Any]:
             findings.append(
                 _finding("MCPDELIVERY007", ci_status, f"CI receipt {name} is {ci_status.lower()}")
             )
-        if artifact["environment_required"] and ci_environment != environment:
+        if environment is not None and ci_environment is not None and ci_environment != environment:
+            findings.append(
+                _finding("MCPDELIVERY008", "FAIL", f"CI receipt {name} environment differs from target")
+            )
+        elif artifact["environment_required"] and ci_environment != environment:
             findings.append(
                 _finding("MCPDELIVERY008", "UNKNOWN", f"CI receipt {name} lacks exact environment binding")
             )
@@ -403,7 +429,11 @@ def validate(document: Any) -> dict[str, Any]:
                     _finding("MCPDELIVERY009", "FAIL", f"current {boundary} claim is stale or future-dated")
                 )
         elif observed_at is not None:
-            _timestamp(observed_at, f"claims[{index}].observed_at")
+            observed = _timestamp(observed_at, f"claims[{index}].observed_at")
+            if observed > as_of:
+                findings.append(
+                    _finding("MCPDELIVERY009", "FAIL", f"historical {boundary} claim is future-dated")
+                )
 
     claim_ceiling = _object(
         root["claim_ceiling"],

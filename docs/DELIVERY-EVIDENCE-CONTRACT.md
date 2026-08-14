@@ -13,9 +13,11 @@ python scripts/validate_delivery_evidence.py receipt.json
 
 The validator emits canonical JSON. Exit `0` is `PASS`, exit `1` is a validated `FAIL`, exit `3` is
 `UNKNOWN`, and exit `2` means the input was unsafe or structurally invalid. Input is limited to a
-1 MiB regular non-symlink JSON file. Duplicate keys, non-UTF-8 data, unexpected fields, unsafe file
-types, and malformed bindings fail closed. Values in the receipt are data only: the validator does
-not interpret file paths, execute commands, read credentials, or contact GitHub.
+1 MiB regular non-symlink JSON file. The validator verifies the pre-open and opened identity and
+rejects size or modification-time changes during the bounded read; no-follow and non-blocking flags
+are added where the host exposes them. Duplicate keys, non-UTF-8 data, unexpected fields, unsafe
+file types, and malformed bindings fail closed. Values in the receipt are data only: the validator
+does not interpret file paths, execute commands, read credentials, or contact GitHub.
 
 ## Evidence classes and boundaries
 
@@ -38,7 +40,13 @@ set of passing claims and `unproven_boundaries` must contain every other boundar
 
 Historical receipt production (`producer.produced_at`) is separate from the caller-supplied
 `freshness.as_of`. Current branch and current-state claim observations must fall within
-`current_state_max_age_seconds`; the validator never consults wall-clock time.
+`current_state_max_age_seconds`; historical observations may be older but never later than `as_of`.
+Timestamps use the full RFC 3339 UTC date-time form with `T`, optional fractional seconds, and `Z`.
+The validator never consults wall-clock time.
+
+When `environment_required` is false, environment bindings may be absent. If a target and CI
+environment digest are both supplied, they must still match exactly; optionality never admits a
+different environment.
 
 ## Retention policy
 
