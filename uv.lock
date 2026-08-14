@@ -656,7 +656,7 @@ requires-dist = [
     { name = "click", specifier = ">=8.3.3,<9.0" },
     { name = "cryptography", specifier = ">=50.0.0,<51.0" },
     { name = "json5", specifier = ">=0.10" },
-    { name = "mcp", specifier = ">=1.28.1" },
+    { name = "mcp", specifier = ">=1.28.1,<2.0" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "rich", specifier = ">=15.0.0" },

@@ -38,7 +38,7 @@ being uploaded manually.
 - `mcp-audit --version` reports the release version.
 - `mcp-audits` remains the PyPI distribution name and the installed
   `mcp-audit`, `mcp-audits`, and `proof-before-action` commands are present.
-- Wheel and sdist metadata require `mcp>=1.28.1`; their contents contain no
+- Wheel and sdist metadata require `mcp>=1.28.1,<2.0`; their contents contain no
   private paths, development caches, or generated local evidence.
 - Record SHA-256 hashes for the exact wheel and sdist being considered for
   publication.

@@ -135,6 +135,7 @@ jobs:
             test "$("$smoke/bin/mcp-audit" --version)" = "mcp-audit, version $release_version"
             test "$("$smoke/bin/mcp-audits" --version)" = "mcp-audit, version $release_version"
             test "$("$smoke/bin/proof-before-action" --version)" = "proof-before-action, version $release_version"
+            "$smoke/bin/python" -I scripts/smoke_installed_artifact.py
           done
 
       - name: Upload exact candidate artifacts
