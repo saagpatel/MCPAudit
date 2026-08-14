@@ -19,6 +19,12 @@ ROOT = Path(__file__).resolve().parents[1]
 RELEASE_STATE_PATH = ROOT / "docs/release-state.json"
 VERSION_RE = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 COMMIT_RE = re.compile(r"[0-9a-f]{40}")
+DISTRIBUTION_NAME = "mcp-audits"
+EXPECTED_SCRIPTS = {
+    "mcp-audit": "mcp_audit.cli:main",
+    "mcp-audits": "mcp_audit.cli:main",
+    "proof-before-action": "mcp_audit.proof_cli:main",
+}
 
 
 class VerificationError(RuntimeError):
@@ -124,12 +130,18 @@ def verify_environment_protection(raw: object) -> None:
 
 
 def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object]]:
+    project = _project()
     version = _version()
     state = _release_state()
     server = json.loads(_read_text("server.json"))
     changelog = _read_text("CHANGELOG.md")
     readme = _read_text("README.md")
     adoption = _read_text("docs/ADOPTION-GUIDE.md")
+
+    if project.get("name") != DISTRIBUTION_NAME:
+        raise VerificationError("project metadata has the wrong distribution name")
+    if project.get("scripts") != EXPECTED_SCRIPTS:
+        raise VerificationError("project metadata has the wrong console entry points")
 
     if state.get("schema_version") != "mcp-audit.release-state.v1":
         raise VerificationError("release-state.json schema is unsupported")
@@ -162,7 +174,7 @@ def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object
     if f"rev: v{public_version}" not in adoption:
         raise VerificationError("pre-commit example does not reference the usable public release")
 
-    dependencies = _project().get("dependencies")
+    dependencies = project.get("dependencies")
     if not isinstance(dependencies, list) or "mcp>=1.28.1" not in dependencies:
         raise VerificationError("project metadata does not retain the mcp>=1.28.1 security floor")
     if "cryptography>=50.0.0,<51.0" not in dependencies:
@@ -231,7 +243,7 @@ def _parse_metadata(raw: bytes) -> email.message.Message:
 
 def _check_distribution_metadata(raw: bytes, *, version: str, name: str) -> None:
     metadata = _parse_metadata(raw)
-    if metadata.get("Name") != "mcp-audits":
+    if metadata.get("Name") != DISTRIBUTION_NAME:
         raise VerificationError(f"{name} has the wrong distribution name")
     if metadata.get("Version") != version:
         raise VerificationError(f"{name} has the wrong version")
@@ -252,11 +264,6 @@ def _check_provenance(raw: bytes, *, commit: str, name: str) -> None:
 
 
 def _check_entry_points(raw: bytes, *, name: str) -> None:
-    expected = {
-        "mcp-audit": "mcp_audit.cli:main",
-        "mcp-audits": "mcp_audit.cli:main",
-        "proof-before-action": "mcp_audit.proof_cli:main",
-    }
     observed: dict[str, str] = {}
     in_console_scripts = False
     for line in raw.decode("utf-8").splitlines():
@@ -266,7 +273,7 @@ def _check_entry_points(raw: bytes, *, name: str) -> None:
         if in_console_scripts and "=" in line:
             command, target = line.split("=", maxsplit=1)
             observed[command.strip()] = target.strip()
-    if observed != expected:
+    if observed != EXPECTED_SCRIPTS:
         raise VerificationError(f"{name} console entry points do not match the release contract")
 
 

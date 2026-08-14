@@ -140,8 +140,11 @@ def test_candidate_state_is_never_publishable(tmp_path: Path) -> None:
     """
     (tmp_path / "docs").mkdir()
     (tmp_path / "pyproject.toml").write_text(
-        '[project]\nversion = "2.6.0"\n'
-        'dependencies = ["mcp>=1.28.1", "cryptography>=50.0.0,<51.0", "click>=8.3.3,<9.0"]\n',
+        '[project]\nname = "mcp-audits"\nversion = "2.6.0"\n'
+        'dependencies = ["mcp>=1.28.1", "cryptography>=50.0.0,<51.0", "click>=8.3.3,<9.0"]\n'
+        '[project.scripts]\nmcp-audit = "mcp_audit.cli:main"\n'
+        'mcp-audits = "mcp_audit.cli:main"\n'
+        'proof-before-action = "mcp_audit.proof_cli:main"\n',
         encoding="utf-8",
     )
     (tmp_path / "uv.lock").write_text(
@@ -208,6 +211,35 @@ proof-before-action = mcp_audit.proof_cli:main
             b"[console_scripts]\nmcp-audit = mcp_audit.cli:main\n",
             name="fixture.whl",
         )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("name", "wrong-distribution", "distribution name"),
+        (
+            "scripts",
+            {"mcp-audit": "mcp_audit.cli:main"},
+            "console entry points",
+        ),
+    ],
+)
+def test_source_project_identity_is_exact(
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    value: object,
+    message: str,
+) -> None:
+    original_project = RELEASE_VERIFIER["_project"]()
+    changed_project = {**original_project, field: value}
+    monkeypatch.setitem(
+        RELEASE_VERIFIER["verify_metadata"].__globals__,
+        "_project",
+        lambda: changed_project,
+    )
+
+    with pytest.raises(RELEASE_VERIFIER["VerificationError"], match=message):
+        RELEASE_VERIFIER["verify_metadata"](require_publishable=False)
 
 
 def test_release_notes_must_be_finalized_before_publication() -> None:
