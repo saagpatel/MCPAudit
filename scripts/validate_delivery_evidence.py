@@ -27,8 +27,6 @@ BOUNDARIES: Final = (
     "adoption",
     "human_acceptance",
 )
-HIGHER: Final = frozenset(BOUNDARIES[3:])
-LOWER: Final = frozenset(BOUNDARIES[:3])
 RFC3339_UTC: Final = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z\Z")
 
 
@@ -229,7 +227,7 @@ def validate(document: Any) -> dict[str, Any]:
         integration["protected_main"], "integration.protected_main", {"revision", "reachable"}
     )
     protected_revision = _digest(protected["revision"], "integration.protected_main.revision")
-    if protected["reachable"] not in {True, False, None}:
+    if protected["reachable"] is not None and not isinstance(protected["reachable"], bool):
         raise DeliveryEvidenceInputError("integration.protected_main.reachable must be boolean or null")
     pull_request = _object(
         integration["pull_request"],
@@ -298,6 +296,7 @@ def validate(document: Any) -> dict[str, Any]:
     if not isinstance(ci_items, list) or not 1 <= len(ci_items) <= 64:
         raise DeliveryEvidenceInputError("integration.ci must contain 1..64 receipts")
     seen_ci: set[str] = set()
+    ci_evidence_proven = True
     for index, raw_ci in enumerate(ci_items):
         ci = _object(raw_ci, f"integration.ci[{index}]", {"name", "revision", "status", "environment_sha256"})
         name = _text(ci["name"], f"integration.ci[{index}].name")
@@ -312,22 +311,27 @@ def validate(document: Any) -> dict[str, Any]:
                 ci_environment, f"integration.ci[{index}].environment_sha256", sha256=True
             )
         if ci_revision != revision:
+            ci_evidence_proven = False
             findings.append(
                 _finding("MCPDELIVERY002", "FAIL", f"CI receipt {name} revision differs from target")
             )
         if ci_status != "PASS":
+            ci_evidence_proven = False
             findings.append(
                 _finding("MCPDELIVERY007", ci_status, f"CI receipt {name} is {ci_status.lower()}")
             )
         if environment is not None and ci_environment is not None and ci_environment != environment:
+            ci_evidence_proven = False
             findings.append(
                 _finding("MCPDELIVERY008", "FAIL", f"CI receipt {name} environment differs from target")
             )
         elif artifact["environment_required"] and ci_environment != environment:
+            ci_evidence_proven = False
             findings.append(
                 _finding("MCPDELIVERY008", "UNKNOWN", f"CI receipt {name} lacks exact environment binding")
             )
     if artifact["environment_required"] and environment is None:
+        ci_evidence_proven = False
         findings.append(
             _finding("MCPDELIVERY008", "UNKNOWN", "required target environment binding is missing")
         )
@@ -346,6 +350,8 @@ def validate(document: Any) -> dict[str, Any]:
             findings.append(_finding("MCPDELIVERY001", "FAIL", "live branch revision differs from target"))
     elif branch_revision is not None:
         raise DeliveryEvidenceInputError("branch.revision must be null unless branch.state is present")
+    if branch["state"] == "unknown":
+        findings.append(_finding("MCPDELIVERY014", "UNKNOWN", "live branch state is unknown"))
     if branch_observed > as_of or (as_of - branch_observed).total_seconds() > max_age:
         findings.append(
             _finding("MCPDELIVERY009", "FAIL", "current branch observation is stale or future-dated")
@@ -407,16 +413,17 @@ def validate(document: Any) -> dict[str, Any]:
         if boundary not in BOUNDARIES or boundary in seen_boundaries:
             raise DeliveryEvidenceInputError("claim boundaries must be supported and unique")
         seen_boundaries.add(boundary)
-        claim_statuses[boundary] = _status(claim["status"], f"claims[{index}].status")
+        claim_status = _status(claim["status"], f"claims[{index}].status")
+        claim_statuses[boundary] = claim_status
         supports = claim["evidence_boundaries"]
         if not isinstance(supports, list) or not supports or any(item not in BOUNDARIES for item in supports):
             raise DeliveryEvidenceInputError("claim evidence_boundaries must be non-empty and supported")
-        if boundary in HIGHER and set(supports) <= LOWER:
+        if claim_status == "PASS" and boundary not in supports:
             findings.append(
                 _finding(
                     "MCPDELIVERY012",
                     "FAIL",
-                    f"{boundary} claim is inferred only from lower-boundary evidence",
+                    f"{boundary} passing claim lacks evidence from its own boundary",
                 )
             )
         if not isinstance(claim["current_state"], bool):
@@ -440,17 +447,28 @@ def validate(document: Any) -> dict[str, Any]:
         "claim_ceiling",
         {"proven_boundaries", "unproven_boundaries", "statement"},
     )
-    expected_proven = [boundary for boundary in BOUNDARIES if claim_statuses.get(boundary) == "PASS"]
-    expected_unproven = [boundary for boundary in BOUNDARIES if boundary not in expected_proven]
-    if claim_ceiling["proven_boundaries"] != expected_proven:
+    declared_proven = [boundary for boundary in BOUNDARIES if claim_statuses.get(boundary) == "PASS"]
+    declared_unproven = [boundary for boundary in BOUNDARIES if boundary not in declared_proven]
+    if claim_ceiling["proven_boundaries"] != declared_proven:
         findings.append(
             _finding("MCPDELIVERY013", "FAIL", "claim ceiling proven boundaries differ from claims")
         )
-    if claim_ceiling["unproven_boundaries"] != expected_unproven:
+    if claim_ceiling["unproven_boundaries"] != declared_unproven:
         findings.append(
             _finding("MCPDELIVERY013", "FAIL", "claim ceiling unproven boundaries differ from claims")
         )
-    _text(claim_ceiling["statement"], "claim_ceiling.statement")
+    effective_proven = [
+        boundary
+        for boundary in BOUNDARIES
+        if claim_statuses.get(boundary) == "PASS" and (boundary != "ci" or ci_evidence_proven)
+    ]
+    effective_unproven = [boundary for boundary in BOUNDARIES if boundary not in effective_proven]
+    statement = _text(claim_ceiling["statement"], "claim_ceiling.statement")
+    effective_claim_ceiling = {
+        "proven_boundaries": effective_proven,
+        "unproven_boundaries": effective_unproven,
+        "statement": statement,
+    }
     findings.sort(key=lambda item: (item["code"], item["severity"], item["message"]))
     severities = {item["severity"] for item in findings}
     verdict = "FAIL" if "FAIL" in severities else "UNKNOWN" if "UNKNOWN" in severities else "PASS"
@@ -458,7 +476,7 @@ def validate(document: Any) -> dict[str, Any]:
         "schema_version": OUTPUT_SCHEMA,
         "verdict": verdict,
         "artifact": {"repository": repository, "revision": revision, "source_sha256": source},
-        "claim_ceiling": claim_ceiling,
+        "claim_ceiling": effective_claim_ceiling,
         "findings": findings,
     }
 

@@ -116,6 +116,26 @@ def test_exact_live_branch_is_valid_optional_pointer() -> None:
     assert validator.validate(document)["verdict"] == "PASS"
 
 
+@pytest.mark.parametrize("reachable", [0, 1, "false", "true"])
+def test_protected_main_reachability_rejects_non_boolean_values(reachable: Any) -> None:
+    document = _document()
+    document["integration"]["protected_main"]["reachable"] = reachable
+    with pytest.raises(validator.DeliveryEvidenceInputError, match="boolean or null"):
+        validator.validate(document)
+
+
+@pytest.mark.parametrize(
+    ("reachable", "verdict"),
+    [(True, "PASS"), (False, "FAIL"), (None, "UNKNOWN")],
+)
+def test_protected_main_reachability_preserves_tristate_semantics(
+    reachable: bool | None, verdict: str
+) -> None:
+    document = _document()
+    document["integration"]["protected_main"]["reachable"] = reachable
+    assert validator.validate(document)["verdict"] == verdict
+
+
 def test_wrong_live_branch_revision_fails() -> None:
     document = _document()
     document["branch"].update(state="present", revision="d" * 40)
@@ -150,6 +170,23 @@ def test_bounded_restoration_is_structural_but_needs_live_readback() -> None:
     result = validator.validate(document)
     assert result["verdict"] == "UNKNOWN"
     assert _codes(result) == {"MCPDELIVERY011"}
+
+
+def test_optional_unknown_branch_state_stays_unknown() -> None:
+    document = _document()
+    document["branch"]["state"] = "unknown"
+    result = validator.validate(document)
+    assert result["verdict"] == "UNKNOWN"
+    assert _codes(result) == {"MCPDELIVERY014"}
+
+
+def test_required_retention_with_unknown_branch_state_stays_unknown() -> None:
+    document = _document()
+    document["branch"]["state"] = "unknown"
+    _require_retention(document, "bounded_post_merge_restoration")
+    result = validator.validate(document)
+    assert result["verdict"] == "UNKNOWN"
+    assert _codes(result) == {"MCPDELIVERY011", "MCPDELIVERY014"}
 
 
 @pytest.mark.parametrize(
@@ -229,6 +266,32 @@ def test_claim_ceiling_must_exactly_match_passing_boundaries() -> None:
     assert "MCPDELIVERY013" in _codes(result)
 
 
+@pytest.mark.parametrize(
+    ("boundary", "support"),
+    [
+        ("runtime", "publication"),
+        ("publication", "runtime"),
+        ("deployment", "publication"),
+        ("adoption", "deployment"),
+        ("human_acceptance", "adoption"),
+    ],
+)
+def test_passing_claim_requires_evidence_from_its_own_boundary(boundary: str, support: str) -> None:
+    document = _document()
+    document["claims"].append(
+        {
+            "boundary": boundary,
+            "status": "PASS",
+            "evidence_boundaries": [support],
+            "current_state": False,
+            "observed_at": None,
+        }
+    )
+    result = validator.validate(document)
+    assert result["verdict"] == "FAIL"
+    assert "MCPDELIVERY012" in _codes(result)
+
+
 @pytest.mark.parametrize("boundary", ["runtime", "publication", "deployment", "adoption", "human_acceptance"])
 def test_higher_boundary_cannot_be_inferred_from_source_or_ci(boundary: str) -> None:
     document = _document()
@@ -244,6 +307,34 @@ def test_higher_boundary_cannot_be_inferred_from_source_or_ci(boundary: str) -> 
     result = validator.validate(document)
     assert result["verdict"] == "FAIL"
     assert "MCPDELIVERY012" in _codes(result)
+
+
+@pytest.mark.parametrize("ci_status", ["FAIL", "UNKNOWN"])
+def test_nonpassing_ci_receipt_lowers_emitted_claim_ceiling(ci_status: str) -> None:
+    document = _document()
+    document["integration"]["ci"][0]["status"] = ci_status
+    result = validator.validate(document)
+    assert result["verdict"] == ci_status
+    assert "ci" not in result["claim_ceiling"]["proven_boundaries"]
+    assert "ci" in result["claim_ceiling"]["unproven_boundaries"]
+    assert "MCPDELIVERY007" in _codes(result)
+
+
+def test_mixed_ci_receipts_lower_emitted_claim_ceiling() -> None:
+    document = _document()
+    document["integration"]["ci"].append(
+        {
+            "name": "test (3.12)",
+            "revision": REVISION,
+            "status": "FAIL",
+            "environment_sha256": ENVIRONMENT,
+        }
+    )
+    result = validator.validate(document)
+    assert result["verdict"] == "FAIL"
+    assert "ci" not in result["claim_ceiling"]["proven_boundaries"]
+    assert "ci" in result["claim_ceiling"]["unproven_boundaries"]
+    assert "MCPDELIVERY007" in _codes(result)
 
 
 def test_output_is_deterministic(tmp_path: Path) -> None:

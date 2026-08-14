@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Hardened the delivery-evidence validator so protected-main reachability accepts only real
+  booleans or null, passing claims require evidence from their own boundary, unknown branch state
+  remains `UNKNOWN`, and rejected CI receipts mechanically lower the emitted claim ceiling.
+
 - Added a bounded, deterministic repository delivery-evidence contract and stdlib-only validator
   that separates immutable integration receipts from mutable branch pointers, rejects cross-revision
   or cross-source reuse and retention-policy contradictions, and preserves independent source, local,

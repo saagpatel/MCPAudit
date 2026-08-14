@@ -28,15 +28,18 @@ thread count, exact-source security status, and exact-SHA CI receipts. Source an
 
 A branch is always `mutable_convenience`. Its name, remote-tracking ref, and repository UI linkage
 may move or disappear. `absent` does not invalidate correctly bound immutable integration evidence;
-`unknown` stays unknown. `present` is valid only when a fresh live observation resolves to the exact
-target revision.
+`unknown` produces an `UNKNOWN` result. `present` is valid only when a fresh live observation
+resolves to the exact target revision.
 
 Proof boundaries are independent: `source`, `local`, `ci`, `runtime`, `publication`, `deployment`,
-`adoption`, and `human_acceptance`. A passing lower boundary is not evidence for a higher one. Each
-claim records its own status, supporting boundaries, whether it describes current state, and an
-observation time when applicable. `claim_ceiling.proven_boundaries` must exactly match the ordered
-set of passing claims and `unproven_boundaries` must contain every other boundary. Its bounded
-`statement` is descriptive and cannot raise the mechanically checked ceiling.
+`adoption`, and `human_acceptance`. A passing claim must include evidence from its own boundary;
+evidence from any other boundary cannot substitute for it. Each claim records its own status,
+supporting boundaries, whether it describes current state, and an observation time when applicable.
+`claim_ceiling.proven_boundaries` must exactly match the ordered set of passing claims whose direct
+evidence remains valid, and `unproven_boundaries` must contain every other boundary. A failed,
+unknown, wrong-revision, or wrongly bound CI receipt removes `ci` from the emitted proven boundaries
+even when the input claim says `PASS`. The bounded `statement` is descriptive and cannot raise the
+mechanically checked ceiling.
 
 Historical receipt production (`producer.produced_at`) is separate from the caller-supplied
 `freshness.as_of`. Current branch and current-state claim observations must fall within
@@ -74,8 +77,9 @@ lifecycle; it does not prove current completion. Completion still needs fresh ex
 | `MCPDELIVERY009` | A current-state observation is stale or future-dated. |
 | `MCPDELIVERY010` | Required retention contradicts automatic deletion. |
 | `MCPDELIVERY011` | Required retention lacks fresh exact live-ref completion evidence. |
-| `MCPDELIVERY012` | A higher proof boundary is inferred only from source, local, or CI evidence. |
+| `MCPDELIVERY012` | A passing claim lacks evidence from its own proof boundary. |
 | `MCPDELIVERY013` | The stated claim ceiling differs from the mechanically derived boundaries. |
+| `MCPDELIVERY014` | The live branch state is unknown. |
 
 `FAIL` outranks `UNKNOWN`; `UNKNOWN` outranks `PASS`. Findings are sorted by code, severity, and
 message. Equivalent JSON objects therefore produce byte-identical output and the same canonical
