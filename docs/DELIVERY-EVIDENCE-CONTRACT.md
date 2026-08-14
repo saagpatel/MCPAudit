@@ -42,8 +42,10 @@ evidence is declared, and `unproven_boundaries` must contain every other boundar
 effective ceiling is stricter: a stale, future-dated, or wrongly supported passing claim is moved to
 `unproven_boundaries` without removing independent valid claims. A failed, unknown, wrong-revision,
 or wrongly bound CI receipt likewise removes `ci` from the emitted proven boundaries even when the
-input claim says `PASS`. Both ceiling arrays accept only unique supported boundaries in canonical
-order. The bounded `statement` is descriptive and cannot raise the mechanically checked ceiling.
+input claim says `PASS`. A failed, unknown, wrong-revision, or source-digest-mismatched security
+receipt removes `source` without removing independently valid boundaries. Both ceiling arrays accept
+only unique supported boundaries in canonical order. The bounded `statement` is descriptive and
+cannot raise the mechanically checked ceiling.
 
 Historical receipt production (`producer.produced_at`) is separate from the caller-supplied
 `freshness.as_of`. Current branch and current-state claim observations must fall within

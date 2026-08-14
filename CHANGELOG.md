@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   canonicalizes valid surrogate pairs to the same digest as their decoded non-BMP form. Branch-state
   and retention-exception enums now reject every non-string JSON value through the same canonical
   structural-error path instead of allowing unhashable containers to escape with a traceback.
+  Rejected or unknown exact-source security evidence now also removes only `source` from the emitted
+  effective claim ceiling, preventing rejected evidence from remaining mechanically proven.
 
 ### Security
 

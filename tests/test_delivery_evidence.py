@@ -448,6 +448,40 @@ def test_mixed_ci_receipts_lower_emitted_claim_ceiling() -> None:
     assert "MCPDELIVERY007" in _codes(result)
 
 
+@pytest.mark.parametrize("security_status", ["FAIL", "UNKNOWN"])
+def test_nonpassing_security_receipt_lowers_only_source_boundary(security_status: str) -> None:
+    document = _document()
+    document["integration"]["security"]["status"] = security_status
+    result = validator.validate(document)
+    assert result["verdict"] == security_status
+    assert result["claim_ceiling"]["proven_boundaries"] == ["ci"]
+    assert "source" in result["claim_ceiling"]["unproven_boundaries"]
+    assert "MCPDELIVERY006" in _codes(result)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "code"),
+    [
+        ("revision", "d" * 40, "MCPDELIVERY002"),
+        ("source_sha256", "sha256:" + "d" * 64, "MCPDELIVERY003"),
+    ],
+)
+def test_mismatched_security_binding_lowers_only_source_boundary(field: str, value: str, code: str) -> None:
+    document = _document()
+    document["integration"]["security"][field] = value
+    result = validator.validate(document)
+    assert result["verdict"] == "FAIL"
+    assert result["claim_ceiling"]["proven_boundaries"] == ["ci"]
+    assert "source" in result["claim_ceiling"]["unproven_boundaries"]
+    assert code in _codes(result)
+
+
+def test_valid_security_receipt_preserves_source_boundary() -> None:
+    result = validator.validate(_document())
+    assert result["verdict"] == "PASS"
+    assert result["claim_ceiling"]["proven_boundaries"] == ["source", "ci"]
+
+
 def test_output_is_deterministic(tmp_path: Path) -> None:
     path = tmp_path / "receipt.json"
     path.write_text(json.dumps(_document()), encoding="utf-8")

@@ -326,6 +326,9 @@ def validate(document: Any) -> dict[str, Any]:
     security_revision = _digest(security["revision"], "integration.security.revision")
     security_source = _digest(security["source_sha256"], "integration.security.source_sha256", sha256=True)
     security_status = _status(security["status"], "integration.security.status")
+    source_evidence_proven = (
+        security_revision == revision and security_source == source and security_status == "PASS"
+    )
 
     findings: list[dict[str, str]] = []
     if any(
@@ -534,6 +537,7 @@ def validate(document: Any) -> dict[str, Any]:
         for boundary in BOUNDARIES
         if claim_statuses.get(boundary) == "PASS"
         and claim_evidence_valid.get(boundary, False)
+        and (boundary != "source" or source_evidence_proven)
         and (boundary != "ci" or ci_evidence_proven)
     ]
     effective_unproven = [boundary for boundary in BOUNDARIES if boundary not in effective_proven]
