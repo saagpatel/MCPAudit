@@ -40,7 +40,7 @@ def test_mcp_runtime_dependency_excludes_known_vulnerable_versions() -> None:
         requirement for requirement in project["dependencies"] if requirement.startswith("mcp")
     )
 
-    match = re.fullmatch(r"mcp>=(\d+)\.(\d+)\.(\d+)", mcp_requirement)
+    match = re.fullmatch(r"mcp>=(\d+)\.(\d+)\.(\d+),<2\.0", mcp_requirement)
     assert match is not None, "mcp must retain an explicit minimum safe version"
     assert tuple(map(int, match.groups())) >= (1, 28, 1)
 
