@@ -167,7 +167,7 @@ def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object
         server.get("version") != public_version
         or server.get("packages", [{}])[0].get("version") != public_version
     ):
-        raise VerificationError("server.json does not reference the usable public release")
+        raise VerificationError("server.json does not reference the release-state public package version")
     for path, content in (("README.md", readme), ("docs/ADOPTION-GUIDE.md", adoption)):
         if f"saagpatel/MCPAudit@v{public_version}" not in content:
             raise VerificationError(f"{path} does not reference the usable public release")

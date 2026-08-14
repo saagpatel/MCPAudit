@@ -26,15 +26,19 @@ published 2.6.0 tag. Its primary capability groups are offline cache-contract,
 authorization-posture, OAuth-transcript, task-lifecycle, result-parcel, and
 session-resume laboratories plus deterministic delivery-evidence validation.
 Existing 2.x audit-report and SARIF contracts remain additive. The candidate is
-source state only: 2.6.0 remains the latest published package, Action ref, and
-Registry package identity until a separately authorized release occurs.
+source state only: PyPI and the public Action ref are at 2.6.0, the repository's
+Registry descriptor (`server.json`) is prepared at 2.6.0, and the official MCP
+Registry readback was still at 2.5.0 on 2026-08-14. Release evidence must query
+that external surface again; a source descriptor is not proof of Registry
+publication.
 
 Release evidence must establish:
 
 - package, lock metadata, changelog, versioned release notes, and
   `docs/release-state.json` agree on the 2.7.0 candidate while `server.json`
-  and public Action/pre-commit examples continue to name the published 2.6.0
-  release;
+  and public Action/pre-commit examples continue to name 2.6.0; release
+  evidence must report the official Registry entry separately until that
+  descriptor is actually published;
 - wheel and sdist metadata require `mcp>=1.28.1` and expose `mcp-audit`,
   `mcp-audits`, and `proof-before-action`;
 - focused capability tests, output-contract checks, the full quality gate, the
