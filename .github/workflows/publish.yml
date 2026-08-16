@@ -68,7 +68,7 @@ jobs:
         working-directory: release-source
         run: |
           git fetch --force --tags origin main
-          uv run python ../release-controls/scripts/verify_release.py \
+          python ../release-controls/scripts/verify_release.py \
             --root . \
             --tag "$RELEASE_TAG" \
             --commit "$RELEASE_COMMIT" \
@@ -95,6 +95,10 @@ jobs:
           uv lock --check
           git diff --check
 
+      - name: Validate detection corpus
+        working-directory: release-source
+        run: uv run python tests/validation/validate_patterns.py
+
       - name: Build wheel and sdist
         working-directory: release-source
         run: uv build --clear
@@ -113,6 +117,26 @@ jobs:
             --require-publishable \
             --dist-dir dist
           sha256sum dist/* | tee SHA256SUMS
+
+      - name: Smoke-install exact wheel and sdist
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        working-directory: release-source
+        run: |
+          release_version="${RELEASE_TAG#v}"
+          wheel="$(find dist -maxdepth 1 -type f -name 'mcp_audits-*.whl' -print -quit)"
+          sdist="$(find dist -maxdepth 1 -type f -name 'mcp_audits-*.tar.gz' -print -quit)"
+          test -n "$wheel"
+          test -n "$sdist"
+          for package in "$wheel" "$sdist"; do
+            smoke="$RUNNER_TEMP/install-smoke-$(basename "$package")"
+            uv venv "$smoke"
+            uv pip install --python "$smoke/bin/python" "$package"
+            test "$("$smoke/bin/mcp-audit" --version)" = "mcp-audit, version $release_version"
+            test "$("$smoke/bin/mcp-audits" --version)" = "mcp-audit, version $release_version"
+            test "$("$smoke/bin/proof-before-action" --version)" = "proof-before-action, version $release_version"
+            "$smoke/bin/python" -I scripts/smoke_installed_artifact.py
+          done
 
       - name: Upload exact candidate artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

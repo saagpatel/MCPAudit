@@ -38,7 +38,7 @@ being uploaded manually.
 - `mcp-audit --version` reports the release version.
 - `mcp-audits` remains the PyPI distribution name and the installed
   `mcp-audit`, `mcp-audits`, and `proof-before-action` commands are present.
-- Wheel and sdist metadata require `mcp>=1.28.1`; their contents contain no
+- Wheel and sdist metadata require `mcp>=1.28.1,<2.0`; their contents contain no
   private paths, development caches, or generated local evidence.
 - Record SHA-256 hashes for the exact wheel and sdist being considered for
   publication.
@@ -118,6 +118,19 @@ publication.
    verifies its hashes, and only then requests PyPI OIDC authority.
 5. Confirm the PyPI release JSON and simple index include the new version.
 6. Create or update the matching GitHub Release notes.
+7. Confirm the existing protected `pypi` release environment still has required
+   reviewers with administrator bypass disabled. The Registry workflow reuses
+   this gate for a separate post-PyPI approval rather than creating a second,
+   potentially unprotected environment on first use.
+8. From `main`, manually dispatch `Publish to MCP Registry` with the same exact
+   tag and commit only after PyPI and GitHub Release readback. Its validation job
+   proves the PyPI prerequisite, release binding, protected environment, pinned
+   publisher hash, and descriptor validity before the environment-bound OIDC
+   job can run.
+9. Confirm both the exact-version and `latest` official Registry endpoints name
+   `io.github.saagpatel/mcp-audit` version `2.7.0` with the exact PyPI package
+   tuple. Registry metadata does not prove artifact hashes, installation,
+   runtime uptake, adoption, or human effectiveness.
 
 Never re-run or bypass a failed publish gate. Repair the release state through a
 new reviewed commit and obtain a new exact approval.

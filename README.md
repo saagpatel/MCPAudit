@@ -91,7 +91,7 @@ mcp-audit scan                            # connected scan of every configured c
 **Drop it into CI in one step** — the composite GitHub Action runs the scan and writes SARIF straight to GitHub code scanning:
 
 ```yaml
-- uses: saagpatel/MCPAudit@v2.6.0        # config-only by default; optional policy gate exits 2
+- uses: saagpatel/MCPAudit@v2.7.0        # config-only by default; optional policy gate exits 2
 ```
 
 SARIF proof from the public fixture scan:
@@ -188,7 +188,7 @@ Every `get_*_findings` tool returns a JSON object with `findings` and `warnings`
 - **Byte-level artifact verification** — `scan --download-artifacts` (opt-in, **network**) goes one level deeper than the published-hash compare: it downloads the actual bytes the registry serves, hashes them, and checks them against both the registry's own published hash and a byte-hash captured at pin time (`MCP026`). It catches a CDN/mirror/MITM serving bytes inconsistent with the registry's integrity metadata (`PUBLISHED_MISMATCH`, HIGH) and a pinned file whose bytes changed or vanished (`BASELINE_MISMATCH`, HIGH); a newly-added file on a frozen version is an advisory MEDIUM, not a false alarm. Downloads stream through bounded hashers, never to disk, only to an allowlist of registry/CDN hosts (re-validated on every redirect hop). Network is contacted only under `--download-artifacts`, on both `pin` and `scan`.
 - **Multi-client support** — reads configs from Claude Desktop, Claude Code, Cursor, VSCode, and Windsurf — plus custom paths via `--config`; use `--config-only` for isolated scans of one config file
 - **Structured output** — Rich terminal report plus JSON and SARIF 2.1.0 export for ingestion by GitHub Advanced Security and SARIF-aware SAST pipelines, and a self-contained shareable HTML report via `scan --html report.html` (inline CSS, no JavaScript, redacted and fully HTML-escaped)
-- **Drop-in CI distribution** — a composite GitHub Action (`uses: saagpatel/MCPAudit@v2.6.0`) runs the scan, writes SARIF, and uploads it to code scanning in one step (config-only by default; optional policy gate exits `2`); a `pre-commit` hook (`id: mcp-audit`) audits repo-local `.mcp.json` / `.vscode/mcp.json` on commit. See `docs/ADOPTION-GUIDE.md`
+- **Drop-in CI distribution** — a composite GitHub Action (`uses: saagpatel/MCPAudit@v2.7.0`) runs the scan, writes SARIF, and uploads it to code scanning in one step (config-only by default; optional policy gate exits `2`); a `pre-commit` hook (`id: mcp-audit`) audits repo-local `.mcp.json` / `.vscode/mcp.json` on commit. See `docs/ADOPTION-GUIDE.md`
 - **Documented output contract** — JSON, SARIF rule IDs, and policy exit codes are documented in `docs/OUTPUT-CONTRACT.md`
 - **Experimental fixture enforcement** — a narrow, repository-owned gateway converts one synthetic connected report into explicitly approved fixture-only policy and proves readback, negative controls, idempotency, and rollback; it never changes normal MCP client configuration ([guide](docs/EVIDENCE-ENFORCEMENT-AGT-FIXTURE.md))
 - **MCP session/resume fault lab** — `mcp-audit session-resume` replays strict synthetic Streamable HTTP session, disconnect, replay, migration, and cancellation scenarios against a deterministic virtual transport. It supports legacy session-bearing protocol profiles and fails visibly when legacy resume behavior is applied to the stateless `2026-07-28` transport; no network, credential, server, scheduler, or live MCP dependency is used. See [the lab guide](docs/SESSION-RESUME-FAULT-LAB.md)

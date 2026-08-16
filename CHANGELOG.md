@@ -5,9 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.7.0] - Unreleased
+## [2.7.0] - 2026-08-14
 
 ### Fixed
+
+- Capped the MCP SDK dependency below 2.0 after isolated artifact installation
+  proved that the new 2.x server API is incompatible with MCPAudit's connected
+  stdio test server. The supported and tested range is now
+  `mcp>=1.28.1,<2.0`.
 
 - Made the delivery-evidence validator lower only the affected effective claim-ceiling boundary
   when a passing claim has stale, future-dated, or wrong-boundary evidence, while preserving
@@ -1159,7 +1164,7 @@ real workstations; API surface may still shift before the `1.0.0` stable cut.
 - `mcp-audit` CLI entry point
 
 [Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v2.7.0...HEAD
-[2.7.0]: https://github.com/saagpatel/MCPAudit/compare/v2.6.0...HEAD
+[2.7.0]: https://github.com/saagpatel/MCPAudit/compare/v2.6.0...v2.7.0
 [2.6.0]: https://github.com/saagpatel/MCPAudit/compare/v2.5.0...v2.6.0
 [2.5.0]: https://github.com/saagpatel/MCPAudit/compare/v2.4.0...v2.5.0
 [2.4.0]: https://github.com/saagpatel/MCPAudit/compare/v2.3.0...v2.4.0

@@ -19,31 +19,29 @@ tests, and install path agree.
 - Known limitations are documented in release notes and beta/stable readiness
   docs.
 
-## Current 2.7.0 Candidate
+## Current 2.7.0 Release State
 
-The 2.7.0 candidate is a backward-compatible minor release built after the
-published 2.6.0 tag. Its primary capability groups are offline cache-contract,
+The 2.7.0 release state is a backward-compatible minor release built after the
+2.6.0 tag. Its primary capability groups are offline cache-contract,
 authorization-posture, OAuth-transcript, task-lifecycle, result-parcel, and
 session-resume laboratories plus deterministic delivery-evidence validation.
-Existing 2.x audit-report and SARIF contracts remain additive. The candidate is
-source state only: PyPI and the public Action ref are at 2.6.0, the repository's
-Registry descriptor (`server.json`) is prepared at 2.6.0, and the official MCP
-Registry readback was still at 2.5.0 on 2026-08-14. Release evidence must query
-that external surface again; a source descriptor is not proof of Registry
-publication.
+Existing 2.x audit-report and SARIF contracts remain additive. Source metadata,
+the Action examples, and `server.json` are finalized for 2.7.0. That does not
+prove public availability: PyPI was at 2.6.0 and the official MCP Registry was
+at 2.5.0 on the last pre-release readback on 2026-08-14. Release evidence must
+query each external surface again.
 
 Release evidence must establish:
 
-- package, lock metadata, changelog, versioned release notes, and
-  `docs/release-state.json` agree on the 2.7.0 candidate while `server.json`
-  and public Action/pre-commit examples continue to name 2.6.0; release
-  evidence must report the official Registry entry separately until that
-  descriptor is actually published;
-- wheel and sdist metadata require `mcp>=1.28.1` and expose `mcp-audit`,
+- package, lock metadata, changelog, versioned release notes,
+  `docs/release-state.json`, `server.json`, and Action/pre-commit examples agree
+  on 2.7.0; publication evidence must still report PyPI, the GitHub tag, the
+  Action ref, and the official Registry entry separately;
+- wheel and sdist metadata require `mcp>=1.28.1,<2.0` and expose `mcp-audit`,
   `mcp-audits`, and `proof-before-action`;
 - focused capability tests, output-contract checks, the full quality gate, the
   release verifier, and wheel/sdist install smokes pass from an exact clean
-  candidate commit;
+  release commit;
 - missing, stale, masked, unmatched, incomplete, or unobservable evidence never
   becomes a safety claim;
 - Agent UI evidence remains offline, static, descriptor-bound, and limited to
@@ -53,16 +51,14 @@ Release evidence must establish:
 - SSRF evidence remains static and schema-derived and does not prove runtime
   containment or host safety.
 
-Merging the candidate PR does not authorize tagging, publication, deployment,
-or external registry updates. A separate reviewed release-state PR must first
-finalize public surfaces and change the candidate to `status: release`; a
-separate exact-commit publication decision is then still required. Tag creation
-does not publish: the manual workflow binds an exact tag and commit, verifies
-release state, and exposes artifact hashes before the environment-bound OIDC
-job. Automated review and fixture coverage do not replace independent human
-review. Missing field reports and other unverifiable external evidence remain
-`UNKNOWN` and do not establish downstream adoption, human effectiveness, or
-broad environment compatibility.
+Merging the release-state PR does not authorize tagging, publication,
+deployment, or an external Registry update. A separate exact-commit publication
+decision is still required. Tag creation does not publish: the manual workflows
+bind an exact tag and commit, verify release state and public prerequisites, and
+keep OIDC authority inside protected publish jobs. Automated review and fixture
+coverage do not replace independent human review. Missing field reports and
+other unverifiable external evidence remain `UNKNOWN` and do not establish
+downstream adoption, human effectiveness, or broad environment compatibility.
 
 ## Go/No-Go Checklist
 
