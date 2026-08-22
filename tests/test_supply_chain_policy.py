@@ -13,7 +13,7 @@ REVIEWED_ACTION_RELEASES = {
     "actions/download-artifact": ("3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c", "v8.0.1"),
     "actions/setup-python": ("5fda3b95a4ea91299a34e894583c3862153e4b97", "v7.0.0"),
     "actions/upload-artifact": ("043fb46d1a93c77aae656e7c1c64a875d1fc6a0a", "v7.0.1"),
-    "astral-sh/setup-uv": ("c771a70e6277c0a99b617c7a806ffedaca235ff9", "v9.0.0"),
+    "astral-sh/setup-uv": ("20cfd1bf945f4377ade1205e4dbc17946fc9a30d", "v10.0.1"),
     "github/codeql-action/analyze": ("5595ccaf912efad79be6eef63a5619ff05969be3", "v4.37.6"),
     "github/codeql-action/init": ("5595ccaf912efad79be6eef63a5619ff05969be3", "v4.37.6"),
     "github/codeql-action/upload-sarif": ("5595ccaf912efad79be6eef63a5619ff05969be3", "v4.37.6"),
