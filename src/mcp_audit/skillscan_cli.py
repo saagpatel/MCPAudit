@@ -30,10 +30,18 @@ def _write_report(path: Path, payload: bytes) -> None:
             raise SkillscanInputError("cannot inspect JSON output path") from exc
         if stat.S_ISLNK(existing.st_mode) or not stat.S_ISREG(existing.st_mode):
             raise SkillscanInputError("JSON output must be a regular non-symlink file")
+    # O_NOFOLLOW closes the TOCTOU window: if the target is swapped for a symlink
+    # after the lstat above, the open refuses rather than truncating the linked
+    # file. The lstat pre-check stays only to give a clearer message for the
+    # already-a-symlink case.
     try:
         descriptor = os.open(
             path,
-            os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_CLOEXEC", 0),
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_TRUNC
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
             0o600,
         )
         try:
