@@ -155,6 +155,49 @@ The generated JSON Schema for the current model is checked in at
 `examples/schemas/audit-report.schema.json` and is tested against the live
 Pydantic model.
 
+## Skillscan v1 (`skillscan-report/v1`)
+
+The `skillscan` command statically scans an agent skill directory or MCP-server
+bundle (`.mcpb`/`.zip`) offline — it never executes bundle content and never
+touches the network — and, with `--json-out`, emits a `skillscan-report/v1`
+document. The report is designed to be sealed by an external verifier
+(CheckSeal's agent-tooling profile), so its identity and value semantics are
+load-bearing.
+
+Stable top-level fields:
+
+- `schema` — the literal `"skillscan-report/v1"`. Bumped only on a breaking
+  shape change; additive optional fields do not bump it.
+- `scanner` / `scanner_version` — the emitting tool and its version. The version
+  flows into a downstream seal's `check.version`.
+- `ran_at` — ISO-8601 UTC timestamp.
+- `subject` — `{kind, name, digest, media_type}`. `kind` is `skill_bundle`
+  (directory) or `mcp_server` (archive). `digest` is the **identity by bytes**:
+  for a directory it is the sha256 of the canonical content manifest (NFC posix
+  relpaths → per-file sha256, compact sorted JSON; excludes only `.DS_Store`,
+  `.git/`, `__pycache__/`; a bare `.pyc` is included; symlinks are refused); for
+  an archive it is the sha256 of the archive bytes as distributed. `name` is
+  inert display metadata, never identity.
+- `ruleset` — `{config_sha256, rules}`. `config_sha256` is the sha256 of the
+  canonical rule table and pins which ruleset produced every verdict.
+- `checks` — a list of `{id, result, findings, rule_ids, detail}`. `id` is in the
+  `scan/` namespace (`scan/injection-patterns`, `scan/obfuscated-egress`,
+  `scan/dynamic-fetch-presence`, `scan/permission-surface`).
+
+Value semantics (load-bearing for consumers):
+
+- `result` is `pass` (ran, zero findings), `fail` (ran, findings > 0), or `error`
+  (the check itself failed; the reason is in `detail`). A check that does not
+  apply is **absent** from `checks` — never emitted as `skip` or `n/a`, because
+  absence of a check is not a claim.
+- `detail[].excerpt` is credential-redacted (assignments, bearer/basic tokens,
+  URL userinfo, and long opaque tokens) before serialization.
+- Reports are deterministic for a fixed input apart from `ran_at`.
+
+The authoritative cross-tool contract, including how a verifier re-derives the
+subject identity and refuses a report it cannot reproduce, is
+`docs/skillscan-report-v1.md` in the CheckSeal repository.
+
 ## Experimental fixture enforcement contracts
 
 The `enforcement-fixture` command group is separate from read-only scan
