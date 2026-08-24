@@ -41,6 +41,7 @@ from mcp_audit.redaction import redact_text
 from mcp_audit.report import ReportGenerator, error_console, scrub_report_identifiers
 from mcp_audit.result_parcel_cli import result_parcel
 from mcp_audit.session_resume_cli import session_resume
+from mcp_audit.skillscan_cli import skillscan
 from mcp_audit.task_time_machine_cli import task_time_machine
 
 console = Console()
@@ -64,6 +65,7 @@ main.add_command(authorization_posture)
 main.add_command(cache_contract)
 main.add_command(result_parcel)
 main.add_command(session_resume)
+main.add_command(skillscan)
 main.add_command(task_time_machine)
 
 
