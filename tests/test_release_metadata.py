@@ -40,14 +40,15 @@ def test_release_versions_are_consistent_across_surfaces() -> None:
     assert state == {
         "schema_version": "mcp-audit.release-state.v1",
         "candidate_version": version,
-        "published_version": version,
-        "previous_version": "2.6.0",
-        "status": "release",
+        "published_version": "2.7.0",
+        "previous_version": "2.7.0",
+        "status": "candidate",
     }
     assert server["version"] == state["published_version"]
     assert server["packages"][0]["version"] == state["published_version"]
-    assert f"## [{version}] - 2026-08-14" in changelog
-    assert f"[{version}]: https://github.com/saagpatel/MCPAudit/compare/v2.6.0...v{version}" in changelog
+    assert "## [2.7.0] - 2026-08-14" in changelog
+    assert f"## [{version}] - Unreleased" in changelog
+    assert f"[{version}]: https://github.com/saagpatel/MCPAudit/compare/v2.7.0...HEAD" in changelog
     assert f"saagpatel/MCPAudit@v{state['published_version']}" in readme
     assert f"saagpatel/MCPAudit@v{state['published_version']}" in adoption
     assert f"rev: v{state['published_version']}" in adoption
@@ -78,7 +79,7 @@ def test_release_metadata_verifier_passes() -> None:
         timeout=30,
     )
     assert result.returncode == 0, result.stderr
-    assert "release metadata verified for 2.7.0" in result.stdout
+    assert "release metadata verified for 2.8.0" in result.stdout
 
 
 def test_release_state_cannot_keep_a_stale_published_version(
@@ -89,9 +90,9 @@ def test_release_state_cannot_keep_a_stale_published_version(
         "_release_state",
         lambda: {
             "schema_version": "mcp-audit.release-state.v1",
-            "candidate_version": "2.7.0",
-            "published_version": "2.6.0",
-            "previous_version": "2.6.0",
+            "candidate_version": "2.8.0",
+            "published_version": "2.7.0",
+            "previous_version": "2.7.0",
             "status": "release",
         },
     )
@@ -111,9 +112,9 @@ def test_candidate_version_cannot_equal_published_version(
         "_release_state",
         lambda: {
             "schema_version": "mcp-audit.release-state.v1",
-            "candidate_version": "2.7.0",
-            "published_version": "2.7.0",
-            "previous_version": "2.7.0",
+            "candidate_version": "2.8.0",
+            "published_version": "2.8.0",
+            "previous_version": "2.8.0",
             "status": "candidate",
         },
     )
@@ -132,9 +133,9 @@ def test_candidate_previous_version_must_equal_published_version(
         "_release_state",
         lambda: {
             "schema_version": "mcp-audit.release-state.v1",
-            "candidate_version": "2.7.0",
-            "published_version": "2.6.0",
-            "previous_version": "2.5.0",
+            "candidate_version": "2.8.0",
+            "published_version": "2.7.0",
+            "previous_version": "2.6.0",
             "status": "candidate",
         },
     )
@@ -169,7 +170,7 @@ def test_candidate_state_is_never_publishable(tmp_path: Path) -> None:
     (tmp_path / "docs").mkdir()
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "mcp-audits"\nversion = "2.6.0"\n'
-        'dependencies = ["mcp>=1.28.1,<2.0", "cryptography>=50.0.0,<51.0", "click>=8.3.3,<9.0"]\n'
+        'dependencies = ["mcp>=2.0,<3.0", "cryptography>=50.0.0,<51.0", "click>=8.3.3,<9.0"]\n'
         '[project.scripts]\nmcp-audit = "mcp_audit.cli:main"\n'
         'mcp-audits = "mcp_audit.cli:main"\n'
         'proof-before-action = "mcp_audit.proof_cli:main"\n',
@@ -273,8 +274,8 @@ def test_source_project_identity_is_exact(
 def test_mcp_major_bound_is_required(monkeypatch: pytest.MonkeyPatch) -> None:
     original_project = RELEASE_VERIFIER["_project"]()
     dependencies = list(original_project["dependencies"])
-    dependencies.remove("mcp>=1.28.1,<2.0")
-    dependencies.append("mcp>=1.28.1")
+    dependencies.remove("mcp>=2.0,<3.0")
+    dependencies.append("mcp>=2.0")
     monkeypatch.setitem(
         RELEASE_VERIFIER["verify_metadata"].__globals__,
         "_project",

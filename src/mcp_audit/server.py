@@ -91,11 +91,11 @@ def _findings_payload(report: AuditReport, findings: list[dict[str, Any]]) -> st
 
 
 def _build_mcp_server() -> Any:
-    """Build and return the FastMCP server instance with all tools registered."""
-    from mcp.server import FastMCP
-    from mcp.server.fastmcp.exceptions import ToolError
+    """Build and return the MCPServer instance with all tools registered."""
+    from mcp.server import MCPServer
+    from mcp.server.mcpserver.exceptions import ToolError
 
-    app: Any = FastMCP(
+    app: Any = MCPServer(
         name="mcp-audit",
         instructions=(
             "Audit all locally configured MCP servers for permission risks, "

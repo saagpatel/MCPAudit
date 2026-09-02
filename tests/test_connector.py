@@ -10,7 +10,6 @@ import time
 from pathlib import Path
 
 import pytest
-from pydantic import AnyUrl
 
 from mcp_audit.connector import ServerConnector
 from mcp_audit.models import ClientType, Confidence, PermissionCategory, ServerConfig, TransportType
@@ -47,10 +46,10 @@ class TestConvertAnnotations:
 
         sdk_ann = SdkAnn(
             title="My Tool",
-            readOnlyHint=True,
-            destructiveHint=False,
-            idempotentHint=True,
-            openWorldHint=False,
+            read_only_hint=True,
+            destructive_hint=False,
+            idempotent_hint=True,
+            open_world_hint=False,
         )
         result = ServerConnector._convert_annotations(sdk_ann)
         assert result.title == "My Tool"
@@ -72,7 +71,7 @@ class TestConvertTool:
     def test_handles_missing_description(self) -> None:
         from mcp.types import Tool as SdkTool
 
-        sdk_tool = SdkTool(name="mytool", inputSchema={})
+        sdk_tool = SdkTool(name="mytool", input_schema={})
         result = ServerConnector._convert_tool(sdk_tool)
         assert result.name == "mytool"
         assert result.description is None
@@ -82,7 +81,7 @@ class TestConvertTool:
         from mcp.types import Tool as SdkTool
 
         schema = {"type": "object", "properties": {"path": {"type": "string"}}}
-        sdk_tool = SdkTool(name="read_file", inputSchema=schema)
+        sdk_tool = SdkTool(name="read_file", input_schema=schema)
         result = ServerConnector._convert_tool(sdk_tool)
         assert result.input_schema == schema
 
@@ -105,10 +104,10 @@ class TestConvertCapabilities:
         from mcp.types import Resource
 
         sdk_resource = Resource(
-            uri=AnyUrl("file:///tmp/example.txt"),
+            uri="file:///tmp/example.txt",
             name="example",
             description="Example file.",
-            mimeType="text/plain",
+            mime_type="text/plain",
         )
         result = ServerConnector._convert_resource(sdk_resource)
         assert result.uri == "file:///tmp/example.txt"
@@ -426,7 +425,7 @@ async def test_connection_error_is_redacted(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 class _SpawnAborted(Exception):
-    """Raised by the fake stdio_client so no real process is ever spawned."""
+    """Raised by the fake Client so no real process is ever spawned."""
 
 
 async def test_connect_stdio_never_hands_spawned_server_an_environment(
@@ -440,11 +439,12 @@ async def test_connect_stdio_never_hands_spawned_server_an_environment(
     """
     captured: dict[str, object] = {}
 
-    def fake_stdio_client(params: object) -> object:
-        captured["env"] = params.env  # type: ignore[attr-defined]
-        raise _SpawnAborted
+    class FakeClient:
+        def __init__(self, server: object, **_kwargs: object) -> None:
+            captured["env"] = getattr(server, "env", "missing")
+            raise _SpawnAborted
 
-    monkeypatch.setattr("mcp_audit.connector.stdio_client", fake_stdio_client)
+    monkeypatch.setattr("mcp_audit.connector.Client", FakeClient)
 
     connector = ServerConnector(timeout=1.0)
     config = make_server_config(name="srv", env_keys=["GITHUB_TOKEN", "AWS_SECRET_ACCESS_KEY"])

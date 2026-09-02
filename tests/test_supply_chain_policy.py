@@ -40,9 +40,10 @@ def test_mcp_runtime_dependency_excludes_known_vulnerable_versions() -> None:
         requirement for requirement in project["dependencies"] if requirement.startswith("mcp")
     )
 
-    match = re.fullmatch(r"mcp>=(\d+)\.(\d+)\.(\d+),<2\.0", mcp_requirement)
+    match = re.fullmatch(r"mcp>=(\d+)\.(\d+)(?:\.(\d+))?,<3\.0", mcp_requirement)
     assert match is not None, "mcp must retain an explicit minimum safe version"
-    assert tuple(map(int, match.groups())) >= (1, 28, 1)
+    major, minor, patch = int(match.group(1)), int(match.group(2)), int(match.group(3) or 0)
+    assert (major, minor, patch) >= (2, 0, 0)
 
 
 def test_direct_security_floors_exclude_known_vulnerable_versions() -> None:
