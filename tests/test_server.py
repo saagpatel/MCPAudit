@@ -6,6 +6,7 @@ import asyncio
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -20,6 +21,16 @@ from mcp_audit.models import (
 )
 from mcp_audit.server import _MCP_AUDIT_SERVER_ENTRY, _build_mcp_server, _install_to_config
 from tests.conftest import make_server_config
+
+
+def _tool_json(result: object) -> Any:
+    """Decode the stable structured result emitted by an MCPAudit tool."""
+    structured = getattr(result, "structured_content", None)
+    assert isinstance(structured, dict)
+    assert set(structured) == {"result"}
+    raw = structured["result"]
+    assert isinstance(raw, str)
+    return json.loads(raw)
 
 
 class TestInstallToConfig:
@@ -123,9 +134,9 @@ class TestDoInstall:
 
 
 class TestBuildMcpServer:
-    def test_returns_fastmcp_instance(self) -> None:
+    def test_returns_mcpserver_instance(self) -> None:
         app = _build_mcp_server()
-        # FastMCP has list_tools method
+        # MCPServer has list_tools method
         assert callable(getattr(app, "list_tools", None))
 
     def test_registers_expected_tools(self) -> None:
@@ -137,9 +148,17 @@ class TestBuildMcpServer:
             "get_high_risk_servers",
             "check_server",
             "get_injection_findings",
+            "get_ssrf_findings",
+            "get_trifecta_findings",
+            "get_shadowing_findings",
+            "get_escalation_findings",
+            "get_provenance_findings",
+            "get_integrity_findings",
+            "get_package_verify_findings",
+            "get_artifact_verify_findings",
             "list_discovered_servers",
         }
-        assert expected <= tool_names
+        assert tool_names == expected
 
     def test_server_has_correct_name(self) -> None:
         app = _build_mcp_server()
@@ -183,8 +202,7 @@ async def test_get_injection_findings_uses_connected_scan(monkeypatch: pytest.Mo
     monkeypatch.setattr(server_module, "run_scan", fake_run_scan)
 
     app = _build_mcp_server()
-    _content, metadata = await app.call_tool("get_injection_findings", {})
-    payload = json.loads(metadata["result"])
+    payload = _tool_json(await app.call_tool("get_injection_findings", {}))
 
     options = seen["options"]
     assert isinstance(options, ScanOptions)
@@ -260,9 +278,9 @@ async def test_findings_tools_thread_flags_and_wrap_findings_with_warnings(
     seen = _stub_run_scan(monkeypatch, _report_with([]))
 
     app = _build_mcp_server()
-    _content, metadata = await app.call_tool(tool_name, {})
+    payload = _tool_json(await app.call_tool(tool_name, {}))
 
-    assert json.loads(metadata["result"]) == {"findings": [], "warnings": []}
+    assert payload == {"findings": [], "warnings": []}
     options = seen["options"]
     assert getattr(options, flag) is True
     assert options.skip_connect is expect_skip_connect
@@ -279,9 +297,7 @@ async def test_findings_tools_surface_coverage_warnings(monkeypatch: pytest.Monk
     _stub_run_scan(monkeypatch, _report_with([], warnings=[warning]))
 
     app = _build_mcp_server()
-    _content, metadata = await app.call_tool("get_provenance_findings", {})
-
-    payload = json.loads(metadata["result"])
+    payload = _tool_json(await app.call_tool("get_provenance_findings", {}))
     assert payload["findings"] == []
     [emitted] = payload["warnings"]
     assert emitted["code"] == "pin_baseline_missing"
@@ -296,9 +312,7 @@ async def test_scan_mcp_servers_returns_full_report_and_threads_skip_connect(
     seen = _stub_run_scan(monkeypatch, _report_with([]))
 
     app = _build_mcp_server()
-    _content, metadata = await app.call_tool("scan_mcp_servers", {"skip_connect": True})
-
-    payload = json.loads(metadata["result"])
+    payload = _tool_json(await app.call_tool("scan_mcp_servers", {"skip_connect": True}))
     assert payload["schema_version"] == 1
     assert seen["options"].skip_connect is True
 
@@ -331,9 +345,9 @@ async def test_get_high_risk_servers_filters_by_composite(monkeypatch: pytest.Mo
     _stub_run_scan(monkeypatch, _report_with(audits))
 
     app = _build_mcp_server()
-    _content, metadata = await app.call_tool("get_high_risk_servers", {})
+    payload = _tool_json(await app.call_tool("get_high_risk_servers", {}))
 
-    assert json.loads(metadata["result"]) == [{"name": "risky", "score": 9.1}]
+    assert payload == [{"name": "risky", "score": 9.1}]
 
 
 @pytest.mark.anyio
@@ -345,9 +359,7 @@ async def test_check_server_returns_single_audit(monkeypatch: pytest.MonkeyPatch
     _stub_run_scan(monkeypatch, _report_with(audits))
 
     app = _build_mcp_server()
-    _content, metadata = await app.call_tool("check_server", {"name": "srv2"})
-
-    payload = json.loads(metadata["result"])
+    payload = _tool_json(await app.call_tool("check_server", {"name": "srv2"}))
     assert payload["server"]["name"] == "srv2"
 
 
@@ -355,7 +367,7 @@ async def test_check_server_returns_single_audit(monkeypatch: pytest.MonkeyPatch
 async def test_check_server_unknown_name_is_a_tool_error(monkeypatch: pytest.MonkeyPatch) -> None:
     """An unknown server name must surface as an MCP tool error (isError), not a
     successful call whose payload happens to contain an 'error' key."""
-    from mcp.server.fastmcp.exceptions import ToolError
+    from mcp.server.mcpserver.exceptions import ToolError
 
     _stub_run_scan(monkeypatch, _report_with([]))
 
@@ -371,6 +383,6 @@ async def test_list_discovered_servers_lists_configs(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(server_module, "discover_all_configs", lambda clients: [make_server_config(name="a")])
 
     app = _build_mcp_server()
-    _content, metadata = await app.call_tool("list_discovered_servers", {})
+    payload = _tool_json(await app.call_tool("list_discovered_servers", {}))
 
-    assert json.loads(metadata["result"]) == [{"name": "a", "client": "claude_code", "transport": "stdio"}]
+    assert payload == [{"name": "a", "client": "claude_code", "transport": "stdio"}]

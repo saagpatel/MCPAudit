@@ -175,7 +175,7 @@ def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object
         raise VerificationError("pre-commit example does not reference the usable public release")
 
     dependencies = project.get("dependencies")
-    if not isinstance(dependencies, list) or "mcp>=1.28.1,<2.0" not in dependencies:
+    if not isinstance(dependencies, list) or "mcp>=2.0,<3.0" not in dependencies:
         raise VerificationError("project metadata does not retain the tested MCP SDK range")
     if "cryptography>=50.0.0,<51.0" not in dependencies:
         raise VerificationError("project metadata does not retain the cryptography>=50.0.0 security floor")
@@ -249,7 +249,7 @@ def _check_distribution_metadata(raw: bytes, *, version: str, name: str) -> None
         raise VerificationError(f"{name} has the wrong version")
     requirements = metadata.get_all("Requires-Dist", [])
     normalized_requirements = {requirement.replace(" ", "") for requirement in requirements}
-    if not ({"mcp>=1.28.1,<2.0", "mcp<2.0,>=1.28.1"} & normalized_requirements):
+    if not ({"mcp>=2.0,<3.0", "mcp<3.0,>=2.0"} & normalized_requirements):
         raise VerificationError(f"{name} does not retain the tested MCP SDK range")
     normalized = normalized_requirements
     if "cryptography>=50.0.0,<51.0" not in normalized:

@@ -9,10 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Capped the MCP SDK dependency below 2.0 after isolated artifact installation
-  proved that the new 2.x server API is incompatible with MCPAudit's connected
-  stdio test server. The supported and tested range is now
-  `mcp>=1.28.1,<2.0`.
+- Migrated the connected MCP client, in-process MCP server, and stdio test
+  fixture to MCP SDK 2 public APIs. The supported and tested range is now
+  `mcp>=2.0,<3.0`.
 
 - Made the delivery-evidence validator lower only the affected effective claim-ceiling boundary
   when a passing claim has stale, future-dated, or wrong-boundary evidence, while preserving
