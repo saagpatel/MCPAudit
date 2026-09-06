@@ -6,11 +6,9 @@ import logging
 import re
 from dataclasses import dataclass
 from pathlib import PurePath
-from typing import Any
 
 import anyio
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+from mcp import Client, StdioServerParameters
 from mcp.types import Prompt as SdkPrompt
 from mcp.types import Resource as SdkResource
 from mcp.types import Tool as SdkTool
@@ -132,23 +130,17 @@ class ServerConnector:
             args=config.args,
             env=None,
         )
-        async with stdio_client(params) as (read, write):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                return await self._list_capabilities(session, config.name)
+        async with Client(params) as client:
+            return await self._list_capabilities(client, config.name)
 
     async def _connect_http(self, config: ServerConfig) -> _ServerCapabilities:
         if not config.url:
             raise ValueError(f"Server {config.name} has no URL for HTTP transport")
 
-        from mcp.client.streamable_http import streamablehttp_client
+        async with Client(config.url) as client:
+            return await self._list_capabilities(client, config.name)
 
-        async with streamablehttp_client(config.url) as (read, write, _get_session_id):
-            async with ClientSession(read, write) as session:
-                await session.initialize()
-                return await self._list_capabilities(session, config.name)
-
-    async def _list_capabilities(self, session: ClientSession, server_name: str) -> _ServerCapabilities:
+    async def _list_capabilities(self, session: Client, server_name: str) -> _ServerCapabilities:
         tool_result = await session.list_tools()
         prompts: list[PromptInfo] = []
         resources: list[ResourceInfo] = []
@@ -245,19 +237,19 @@ class ServerConnector:
         return ToolInfo(
             name=sdk_tool.name,
             description=sdk_tool.description,
-            input_schema=dict(sdk_tool.inputSchema) if sdk_tool.inputSchema else None,
+            input_schema=dict(sdk_tool.input_schema) if sdk_tool.input_schema else None,
             annotations=annotations,
         )
 
     @staticmethod
     def _convert_annotations(sdk_ann: SdkToolAnnotations) -> ToolAnnotations:
-        """Convert SDK camelCase ToolAnnotations to our snake_case model."""
+        """Convert SDK 2 ToolAnnotations to our model."""
         return ToolAnnotations(
             title=sdk_ann.title,
-            read_only_hint=sdk_ann.readOnlyHint,
-            destructive_hint=sdk_ann.destructiveHint,
-            idempotent_hint=sdk_ann.idempotentHint,
-            open_world_hint=sdk_ann.openWorldHint,
+            read_only_hint=sdk_ann.read_only_hint,
+            destructive_hint=sdk_ann.destructive_hint,
+            idempotent_hint=sdk_ann.idempotent_hint,
+            open_world_hint=sdk_ann.open_world_hint,
         )
 
     @staticmethod
@@ -275,12 +267,11 @@ class ServerConnector:
 
     @staticmethod
     def _convert_resource(sdk_resource: SdkResource) -> ResourceInfo:
-        mime_type = _get_attr(sdk_resource, "mimeType", "mime_type")
         return ResourceInfo(
             uri=str(sdk_resource.uri),
             name=sdk_resource.name,
             description=sdk_resource.description,
-            mime_type=str(mime_type) if mime_type else None,
+            mime_type=sdk_resource.mime_type,
         )
 
 
@@ -308,10 +299,3 @@ def _command_name(command: str | None) -> str:
         return ""
     normalized = command.replace("\\", "/")
     return PurePath(normalized).name.lower()
-
-
-def _get_attr(obj: object, *names: str) -> Any:
-    for name in names:
-        if hasattr(obj, name):
-            return getattr(obj, name)
-    return None
