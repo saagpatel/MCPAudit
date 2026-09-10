@@ -9,6 +9,7 @@ from pathlib import PurePath
 
 import anyio
 from mcp import Client, StdioServerParameters
+from mcp.client.sse import sse_client
 from mcp.types import Prompt as SdkPrompt
 from mcp.types import Resource as SdkResource
 from mcp.types import Tool as SdkTool
@@ -80,13 +81,14 @@ class ServerConnector:
             with anyio.move_on_after(self.timeout) as cancel_scope:
                 if config.transport == TransportType.STDIO:
                     capabilities = await self._connect_stdio(config)
-                elif config.transport in (TransportType.HTTP, TransportType.SSE):
-                    if config.transport == TransportType.SSE:
-                        logger.warning(
-                            "Server %s uses deprecated SSE transport; attempting as StreamableHTTP",
-                            config.name,
-                        )
+                elif config.transport == TransportType.HTTP:
                     capabilities = await self._connect_http(config)
+                elif config.transport == TransportType.SSE:
+                    logger.warning(
+                        "Server %s uses deprecated SSE transport; connecting via legacy SSE",
+                        config.name,
+                    )
+                    capabilities = await self._connect_sse(config)
                 else:
                     return ServerAudit(
                         server=config,
@@ -137,7 +139,16 @@ class ServerConnector:
         if not config.url:
             raise ValueError(f"Server {config.name} has no URL for HTTP transport")
 
+        # mcp 2.1.1 maps Client(str) to streamable_http_client.
         async with Client(config.url) as client:
+            return await self._list_capabilities(client, config.name)
+
+    async def _connect_sse(self, config: ServerConfig) -> _ServerCapabilities:
+        if not config.url:
+            raise ValueError(f"Server {config.name} has no URL for SSE transport")
+
+        # Client(str) is Streamable HTTP; legacy SSE must pass sse_client as Transport.
+        async with Client(sse_client(config.url)) as client:
             return await self._list_capabilities(client, config.name)
 
     async def _list_capabilities(self, session: Client, server_name: str) -> _ServerCapabilities:
