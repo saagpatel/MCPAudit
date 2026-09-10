@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import signal
 import sys
@@ -454,3 +455,132 @@ async def test_connect_stdio_never_hands_spawned_server_an_environment(
 
     assert "env" in captured
     assert captured["env"] is None
+
+
+def _patch_client_and_sse(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    captured: dict[str, object],
+    error: BaseException | None = None,
+) -> object:
+    """Capture Client construction and sse_client selection without opening a network."""
+    sse_sentinel = object()
+
+    def fake_sse_client(url: str, *_args: object, **_kwargs: object) -> object:
+        captured["sse_called"] = True
+        captured["sse_url"] = url
+        return sse_sentinel
+
+    class FakeClient:
+        def __init__(self, server: object, **_kwargs: object) -> None:
+            captured["client_server"] = server
+            raise error if error is not None else _SpawnAborted("no network")
+
+    monkeypatch.setattr("mcp_audit.connector.sse_client", fake_sse_client, raising=False)
+    monkeypatch.setattr("mcp_audit.connector.Client", FakeClient)
+    return sse_sentinel
+
+
+@pytest.mark.anyio
+async def test_sse_connect_uses_legacy_sse_transport_not_url_string(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Regression: mcp 2.1.1 treats Client(str) as Streamable HTTP, so type:sse
+    must pass sse_client(...) as Transport instead of the URL string.
+    """
+    captured: dict[str, object] = {}
+    sse_sentinel = _patch_client_and_sse(monkeypatch, captured=captured)
+    url = "https://user:s3cret-token@example.com/sse"
+    config = ServerConfig(
+        name="legacy-sse",
+        client=ClientType.CLAUDE_CODE,
+        config_path="/tmp/test_config.json",
+        command=None,
+        transport=TransportType.SSE,
+        url=url,
+    )
+    connector = ServerConnector(timeout=1.0)
+
+    with caplog.at_level(logging.WARNING, logger="mcp_audit.connector"):
+        audit = await connector.connect(config)
+
+    assert captured.get("sse_called") is True
+    assert captured.get("sse_url") == url
+    assert captured.get("client_server") is sse_sentinel
+    assert captured.get("client_server") != url
+    assert "deprecated SSE transport" in caplog.text
+    assert "StreamableHTTP" not in caplog.text
+    assert "s3cret-token" not in caplog.text
+    assert audit.connection_status == "failed"
+    assert audit.connection_error is not None
+    assert "s3cret-token" not in audit.connection_error
+    assert "user:s3cret" not in audit.connection_error
+
+
+@pytest.mark.anyio
+async def test_http_connect_still_passes_url_string_for_streamable_http(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    captured: dict[str, object] = {}
+    _patch_client_and_sse(monkeypatch, captured=captured)
+    url = "https://example.com/mcp"
+    config = ServerConfig(
+        name="remote-http",
+        client=ClientType.CLAUDE_CODE,
+        config_path="/tmp/test_config.json",
+        command=None,
+        transport=TransportType.HTTP,
+        url=url,
+    )
+    connector = ServerConnector(timeout=1.0)
+
+    with caplog.at_level(logging.WARNING, logger="mcp_audit.connector"):
+        audit = await connector.connect(config)
+
+    assert "sse_called" not in captured
+    assert captured.get("client_server") == url
+    assert isinstance(captured.get("client_server"), str)
+    assert "deprecated SSE" not in caplog.text
+    assert audit.connection_status == "failed"
+
+
+@pytest.mark.anyio
+async def test_sse_connection_error_redacts_url_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+    _patch_client_and_sse(
+        monkeypatch,
+        captured=captured,
+        error=RuntimeError("failed with token=abc123 at https://user:pass@example.com/sse"),
+    )
+    config = ServerConfig(
+        name="legacy-sse",
+        client=ClientType.CLAUDE_CODE,
+        config_path="/tmp/test_config.json",
+        command=None,
+        transport=TransportType.SSE,
+        url="https://user:pass@example.com/sse",
+    )
+    connector = ServerConnector(timeout=1.0)
+    audit = await connector.connect(config)
+
+    assert audit.connection_status == "failed"
+    assert audit.connection_error == "failed with token=<redacted> at https://<redacted>@example.com/sse"
+    assert "abc123" not in (audit.connection_error or "")
+    assert "user:pass" not in (audit.connection_error or "")
+
+
+@pytest.mark.anyio
+async def test_sse_without_url_fails_cleanly() -> None:
+    config = ServerConfig(
+        name="bad-sse",
+        client=ClientType.CLAUDE_CODE,
+        config_path="/tmp/test_config.json",
+        transport=TransportType.SSE,
+        url=None,
+    )
+    connector = ServerConnector(timeout=5.0)
+
+    audit = await connector.connect(config)
+    assert audit.connection_status == "failed"
+    assert audit.connection_error is not None
+    assert "no URL" in audit.connection_error
