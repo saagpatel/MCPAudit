@@ -1,0 +1,14 @@
+{
+  "name": "MCPAudit",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "install": "set -eu\ntest \"$(uv --version | awk '{print $2}')\" = \"0.12.12\"\npython -c 'import sys; assert sys.version_info[:2] == (3, 11), sys.version'\nuv sync --dev --locked --python 3.11\nuv run mcp-audit --version\nuv run ruff --version\nuv run pytest --version",
+  "disableAllMcpServers": true,
+  "egressMode": "network_settings_only",
+  "egressAllowlist": [
+    "deb.debian.org",
+    "pypi.org",
+    "files.pythonhosted.org"
+  ]
+}
