@@ -11,9 +11,9 @@ import anyio
 import click
 from rich.console import Console
 
-from mcp_audit.discovery import discover_all_configs
+from mcp_audit.discovery import ConfigParseError, discover_all_configs
 from mcp_audit.engine import ScanOptions, run_scan
-from mcp_audit.models import AuditReport
+from mcp_audit.models import AuditReport, ServerConfig
 from mcp_audit.report import error_console as _error_console
 
 logger = logging.getLogger(__name__)
@@ -65,16 +65,17 @@ def _install_to_config(config_path: Path, server_name: str = "mcp-audit") -> boo
         return False
 
 
-async def _scan(options: ScanOptions) -> AuditReport:
+async def _scan(options: ScanOptions, *, servers: list[ServerConfig] | None = None) -> AuditReport:
     """Run the scan engine with the user's override file loaded.
 
+    Forward an explicit server list unchanged so the engine skips discovery.
     Deliberately passes no console: engine progress/warnings stay silent so
     nothing can leak onto stdout, which carries the MCP stdio protocol frames.
     """
     from mcp_audit.overrides import OverrideApplier, load_override_config
 
     applier = OverrideApplier(load_override_config())
-    return await run_scan(options, override_applier=applier)
+    return await run_scan(options, servers=servers, override_applier=applier)
 
 
 def _findings_payload(report: AuditReport, findings: list[dict[str, Any]]) -> str:
@@ -122,14 +123,25 @@ def _build_mcp_server() -> Any:
 
     @app.tool()  # type: ignore[untyped-decorator]
     async def check_server(name: str) -> str:
-        """Audit a single server by name. Returns JSON audit result."""
-        report = await _scan(ScanOptions())
-        audit = next((a for a in report.audits if a.server.name == name), None)
-        if audit is None:
-            # Raise so MCP clients see isError=true, not a successful call
-            # whose payload smuggles an error they must parse out of band.
+        """Audit one uniquely named server. Returns JSON audit result."""
+        parse_errors: list[ConfigParseError] = []
+        servers = discover_all_configs(None, parse_errors)
+        if parse_errors:
+            raise ToolError(
+                f"Cannot resolve server '{name}': discovery is incomplete "
+                f"({len(parse_errors)} config parse error(s))"
+            )
+
+        matches = [server for server in servers if server.name == name]
+        if not matches:
             raise ToolError(f"Server '{name}' not found")
-        return audit.model_dump_json(indent=2)
+        if len(matches) != 1:
+            raise ToolError(
+                f"Server '{name}' is ambiguous: {len(matches)} discovered entries share this name"
+            )
+
+        report = await _scan(ScanOptions(), servers=[matches[0]])
+        return report.audits[0].model_dump_json(indent=2)
 
     @app.tool()  # type: ignore[untyped-decorator]
     async def get_injection_findings() -> str:
