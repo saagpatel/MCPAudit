@@ -158,8 +158,9 @@ All tools are read-only and take no URL or filesystem path; server discovery is 
 | `get_artifact_verify_findings` | Byte-level artifact verification vs the pin baseline | none |
 
 `check_server` matches the name exactly after reading supported client configurations. It connects only when
-one entry matches and discovery has no collected parse errors. Unknown or duplicate names, and known incomplete
-discovery, return a tool error before connecting. A successful call retains the single-server audit JSON shape.
+one entry matches and discovery has no collected configuration parse errors. Unknown or duplicate names, and
+collected configuration parse errors, return a tool error before connecting. A successful call retains the
+single-server audit JSON shape.
 The selected server may still start a local process or make network requests during connection.
 
 The five drift tools (`get_escalation_findings`, `get_provenance_findings`, `get_integrity_findings`, `get_package_verify_findings`, `get_artifact_verify_findings`) compare against a saved baseline, so run `mcp-audit pin` first.
