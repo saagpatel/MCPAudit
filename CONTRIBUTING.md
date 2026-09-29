@@ -114,6 +114,18 @@ To run a specific test file:
 uv run pytest tests/test_scorer.py -v
 ```
 
+The named-server stdio smoke uses temporary home and working directories,
+synthetic configuration files, and harmless local server fixtures. It checks
+startup counts, wire tool errors, audit compatibility, overrides, and stdout:
+
+```bash
+uv run python scripts/smoke_named_server.py --executable "$PWD/.venv/bin/mcp-audit"
+```
+
+For an installed wheel or sdist, use that environment's Python and absolute
+`mcp-audit` path, with `--expected-commit` naming the clean build revision. The
+smoke then requires installed package identity and matching build provenance.
+
 ### Linting and formatting
 
 ```bash

@@ -503,17 +503,18 @@ async def test_check_server_rejects_ambiguous_name_before_connecting(
     from mcp.server.mcpserver.exceptions import ToolError
 
     first = make_server_config(name="shared")
-    changes = {
+    changes_by_collision: dict[str, dict[str, Any]] = {
         "client": {"client": ClientType.CURSOR},
         "config_path": {"config_path": "/tmp/other_config.json"},
         "project_path": {"project_path": "/synthetic/project"},
-    }[collision]
-    second = first.model_copy(update=changes)
+    }
+    second = first.model_copy(update=changes_by_collision[collision])
     attempts = _record_named_scan(monkeypatch, [first, second])
 
     with pytest.raises(ToolError, match="ambiguous") as excinfo:
         await _build_mcp_server().call_tool("check_server", {"name": "shared"})
     assert attempts == []
+    assert first.command is not None
     assert first.command not in str(excinfo.value)
     assert first.config_path not in str(excinfo.value)
 

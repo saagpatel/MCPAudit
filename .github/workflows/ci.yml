@@ -45,5 +45,8 @@ jobs:
       - name: Integration tests (connector)
         run: uv run pytest tests/test_connector.py -v --cov=mcp_audit --cov-append
 
+      - name: Named-server stdio smoke
+        run: uv run python scripts/smoke_named_server.py --executable "$PWD/.venv/bin/mcp-audit"
+
       - name: Coverage gate
         run: uv run coverage report --fail-under=85
