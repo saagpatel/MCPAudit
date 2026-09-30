@@ -283,11 +283,12 @@ class TestDiscoverAllConfigs:
         with patch.object(
             ClaudeDesktopDiscoverer,
             "config_paths",
-            return_value=[fixtures_dir / "claude_desktop_config.json"],
+            return_value=[fixtures_dir / "claude_desktop_config.json"] * 2,
         ):
             result = discover_all_configs([ClientType.CLAUDE_DESKTOP])
 
         result_names = [s.name for s in result]
+        assert len(result) == len(first)
         assert len(result_names) == len(set(result_names))
 
     def test_returns_empty_when_no_configs_found(self, tmp_path: Path) -> None:

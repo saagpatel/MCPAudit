@@ -144,7 +144,7 @@ All tools are read-only and take no URL or filesystem path; server discovery is 
 | Tool | Purpose | Args |
 |---|---|---|
 | `scan_mcp_servers` | Full audit of every discovered MCP server; returns the JSON report | `skip_connect: bool = false` |
-| `check_server` | Audit a single server by name | `name: str` |
+| `check_server` | Audit one uniquely named discovered server | `name: str` |
 | `get_high_risk_servers` | Servers with a composite risk score of 7.0 or higher | none |
 | `list_discovered_servers` | Names and clients of all discovered servers (config-only, no spawning) | none |
 | `get_injection_findings` | Prompt-injection findings across all servers | none |
@@ -156,6 +156,12 @@ All tools are read-only and take no URL or filesystem path; server discovery is 
 | `get_integrity_findings` | Launch-artifact on-disk hash drift vs the pin baseline | none |
 | `get_package_verify_findings` | Registry package-hash verification vs the pin baseline | none |
 | `get_artifact_verify_findings` | Byte-level artifact verification vs the pin baseline | none |
+
+`check_server` matches the name exactly after reading supported client configurations. It connects only when
+one entry matches and discovery has no collected configuration parse errors. Unknown or duplicate names, and
+collected configuration parse errors, return a tool error before connecting. A successful call retains the
+single-server audit JSON shape.
+The selected server may still start a local process or make network requests during connection.
 
 The five drift tools (`get_escalation_findings`, `get_provenance_findings`, `get_integrity_findings`, `get_package_verify_findings`, `get_artifact_verify_findings`) compare against a saved baseline, so run `mcp-audit pin` first.
 
