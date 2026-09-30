@@ -117,15 +117,31 @@ class WireSession:
         assert self.process.stdin is not None
         self.process.stdin.close()
         try:
-            await asyncio.wait_for(self.process.wait(), timeout=8)
+            await self._wait_for_exit(8)
         except TimeoutError:
-            os.killpg(self.process.pid, signal.SIGKILL)
-            await self.process.wait()
+            try:
+                os.killpg(self.process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            await self._wait_for_exit(2)
             raise RuntimeError("MCPAudit did not shut down within the smoke deadline") from None
         finally:
-            await self.reader
-            await self.stderr
+            try:
+                await asyncio.wait_for(asyncio.gather(self.reader, self.stderr), timeout=2)
+            except TimeoutError:
+                raise RuntimeError("MCPAudit pipes did not close within the smoke deadline") from None
+            finally:
+                for task in (self.reader, self.stderr):
+                    task.cancel()
+                await asyncio.gather(self.reader, self.stderr, return_exceptions=True)
         assert self.process.returncode == 0, self.process.returncode
+
+    async def _wait_for_exit(self, timeout: float) -> None:
+        # Process.wait() can also wait for inherited pipes on asyncio. Keep the
+        # process-exit and pipe-drain deadlines separate for detached fixtures.
+        async with asyncio.timeout(timeout):
+            while self.process.returncode is None:
+                await asyncio.sleep(0.02)
 
 
 def payload(result: dict[str, Any]) -> Any:
@@ -164,16 +180,65 @@ def startup_counts(markers: list[Path]) -> list[int]:
     return [len(path.read_text().splitlines()) if path.exists() else 0 for path in markers]
 
 
-def assert_children_stopped(markers: list[Path]) -> None:
+def fixture_group(pid: int, marker: Path, launcher: Path) -> int | None:
+    """Bind a surviving PID to this case's exact launcher and marker before killing."""
+    try:
+        group = os.getpgid(pid)
+    except ProcessLookupError:
+        return None
+    command = subprocess.run(
+        ["/bin/ps", "-ww", "-p", str(pid), "-o", "stat=", "-o", "args="],
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=1,
+    )
+    if command.returncode == 1:  # Exited between the two observations.
+        return None
+    if command.returncode == 0 and command.stdout.lstrip().startswith("Z"):
+        return None  # A zombie holds no pipes and cannot be terminated again.
+    if command.returncode or str(launcher) not in command.stdout or str(marker) not in command.stdout:
+        raise RuntimeError("refusing cleanup of a process without matching fixture identity")
+    if group != pid:
+        raise RuntimeError("refusing cleanup of a fixture outside its dedicated process group")
+    return group
+
+
+async def ensure_children_stopped(markers: list[Path], launcher: Path) -> None:
+    survivors: list[int] = []
     for marker in markers:
         if not marker.exists():
             continue
         for line in marker.read_text().splitlines():
+            pid = int(line)
+            group = fixture_group(pid, marker, launcher)
+            if group is None:
+                continue
+            survivors.append(pid)
             try:
-                os.kill(int(line), 0)
+                os.killpg(group, signal.SIGTERM)
             except ProcessLookupError:
                 continue
-            raise RuntimeError(f"synthetic fixture process survived: {line}")
+            for _ in range(40):
+                await asyncio.sleep(0.05)
+                if fixture_group(pid, marker, launcher) is None:
+                    break
+            else:
+                # Revalidate identity before escalating; never kill a reused PID.
+                group = fixture_group(pid, marker, launcher)
+                if group is not None:
+                    try:
+                        os.killpg(group, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+            for _ in range(40):
+                if fixture_group(pid, marker, launcher) is None:
+                    break
+                await asyncio.sleep(0.05)
+            else:
+                raise RuntimeError(f"fixture process could not be stopped: {pid}")
+    if survivors:
+        raise RuntimeError(f"fixture processes survived MCPAudit shutdown and were cleaned up: {survivors}")
 
 
 async def run_case(executable: Path, mock: Path, case: str) -> int:
@@ -277,8 +342,10 @@ async def run_case(executable: Path, mock: Path, case: str) -> int:
                 assert isinstance(payload(await session.call("list_discovered_servers", {})), list)
             assert startup_counts(markers) == expected, (case, startup_counts(markers))
         finally:
-            await session.close()
-            assert_children_stopped(markers)
+            try:
+                await session.close()
+            finally:
+                await ensure_children_stopped(markers, launcher)
         assert startup_counts(markers) == expected
         print(f"PASS {case}: starts={expected}, protocol_frames={session.frame_count}")
         return session.frame_count
