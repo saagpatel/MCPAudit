@@ -103,7 +103,8 @@ The report top level also includes:
 - `warnings` — structured coverage warnings (additive in 2.4). Each entry
   records a requested check that was skipped or degraded, so consumers that
   never see console output (JSON pipelines, the MCP server tools) can
-  distinguish "checked, clean" from "check silently skipped". Fields:
+  identify recorded skipped checks. Empty warnings alone do not prove complete
+  coverage; also inspect per-server connection status. Fields:
   - `code` — stable machine key. Current vocabulary:
     `pin_baseline_missing` (check requested but nothing is pinned),
     `pin_baseline_corrupted` (a pin baseline file exists but could not be

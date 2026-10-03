@@ -1,6 +1,6 @@
 # mcp-audit Egress Bundle (D3 + D1) — Implementation Roadmap
 
-Feature addition to the existing `MCPAudit` repo at `~/Projects/MCPAudit`
+Feature addition to the existing `MCPAudit` repo at the repository root
 (`src/mcp_audit/`). **Not greenfield** — read the existing modules first and follow their
 patterns: opt-in detector flags (`--trifecta-check`), additive finding types
 (`SsrfFinding`, `TrifectaFinding`), static-only analysis, never read credential values.
@@ -174,12 +174,12 @@ per-server) without breaking existing policy files.
 ## Phase 3: CLI + report/SARIF/HTML + docs (Week 2–3, ~4h)
 **Objective:** make the detector usable and visible end to end.
 **Tasks:**
-1. Add `--egress-check`, `--egress-allowlist`, `--multi-tenant-hosts` to `cli.py`; invoke the detector in the audit path and attach findings to `ServerAudit`. — Acceptance: `mcp-audit audit --egress-check --egress-allowlist api.anthropic.com` runs and prints egress findings.
+1. Add `--egress-check`, `--egress-allowlist`, `--multi-tenant-hosts` to `cli.py`; invoke the detector in the audit path and attach findings to `ServerAudit`. — Acceptance: `mcp-audit scan --egress-check --egress-allowlist api.anthropic.com` runs and prints egress findings.
 2. Render egress findings in `report.py` (text), `htmlreport.py` (HTML), `sarif.py` (SARIF result with the egress rule id). — Acceptance: each renderer shows ≥1 egress finding on the fixture; `test_report.py` / `test_htmlreport.py` / `test_sarif.py` extended and green.
 3. Write `docs/EGRESS-DETECTION.md` (mirror SSRF/TRIFECTA docs: what it detects, the D1 residual rationale citing the trusted-destination class, config, limits) + link from the README detector list + `CHANGELOG.md` entry. — Acceptance: doc exists and is linked; CHANGELOG has a dated entry.
 4. Add `tests/test_egress_integration.py` (discovery → analyzer → egress findings → policy gate). — Acceptance: integration test green; full `uv run pytest -q` green.
 **Verification checklist:**
-- [ ] `mcp-audit audit --egress-check --egress-allowlist api.anthropic.com` on the fixture fleet prints egress findings
+- [ ] `mcp-audit scan --egress-check --egress-allowlist api.anthropic.com` on the fixture fleet prints egress findings
 - [ ] `uv run pytest -q` → entire suite green (40+ files, zero regressions)
 - [ ] SARIF output validates against the repo's existing SARIF fixture
 **Parallel Dispatch Proposal (≥3 disjoint tasks):**

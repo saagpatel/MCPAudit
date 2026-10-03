@@ -12,7 +12,7 @@
 
 Every MCP server wired into your editor is a process that can read your files, reach the network, or run shell commands on your behalf — frequently launched from a remote `npx`/`uvx` package that can change underneath you. **`mcp-audit`** reads the MCP configs already on your machine and tells you what each server *can do*, how risky it is, whether its tool descriptions hide adversarial instructions, and whether anything changed since you last looked.
 
-Read-only by default: it never edits a config and reports env-var **key names only** (never values). Use `--skip-connect` for a zero-touch config-only pass that does not spawn MCP servers or contact remote endpoints; connected scans, package verification, downloads, and LLM analysis make their extra reach explicit in the command.
+Read-only by default: scans never edit a config and report env-var **key names only** (never values). Use `--skip-connect` for a zero-touch config-only pass that does not spawn MCP servers or contact remote endpoints; connected scans, package verification, downloads, and LLM analysis make their extra reach explicit in the command.
 
 For pre-run behavioral evidence, MCPAudit also includes
 [Proof Before Action](docs/PROOF-BEFORE-ACTION.md): a local-only CLI that runs a
@@ -163,9 +163,9 @@ collected configuration parse errors, return a tool error before connecting. A s
 single-server audit JSON shape.
 The selected server may still start a local process or make network requests during connection.
 
-The five drift tools (`get_escalation_findings`, `get_provenance_findings`, `get_integrity_findings`, `get_package_verify_findings`, `get_artifact_verify_findings`) compare against a saved baseline, so run `mcp-audit pin` first.
+The five drift tools (`get_escalation_findings`, `get_provenance_findings`, `get_integrity_findings`, `get_package_verify_findings`, `get_artifact_verify_findings`) compare against a saved baseline. Run `mcp-audit pin` first for escalation, provenance, and integrity; registry verification requires `mcp-audit pin --verify-artifacts`, and byte-level verification requires `mcp-audit pin --download-artifacts`.
 
-Every `get_*_findings` tool returns a JSON object with `findings` and `warnings` lists. `warnings` names any requested check that was skipped or degraded (for example, a drift tool called with no pin baseline) — so an empty `findings` list with empty `warnings` genuinely means "checked, clean".
+Every `get_*_findings` tool returns a JSON object with `findings` and `warnings` lists. `warnings` records skipped or degraded checks (for example, a drift tool called with no pin baseline) — but empty `findings` and `warnings` lists alone do not prove complete coverage; connection failures are recorded in the full audit report's per-server status.
 
 ---
 
@@ -180,7 +180,7 @@ Every `get_*_findings` tool returns a JSON object with `findings` and `warnings`
 - **Offline MCP Tasks state-machine lab** — `mcp-audit task-time-machine run --builtin happy-path` executes strict versioned scenarios in `(at_ms, sequence)` order, emits human or canonical JSON explanations under stable `MCPTASK000`–`MCPTASK008` rules, and preserves experimental or underspecified semantics as `UNKNOWN`. See `docs/MCP-TASK-TIME-MACHINE.md`
 - **Offline MCP result parcel lab** — `mcp-audit result-parcel analyze` compares inline, provider/local chunk or progress extensions, core resource links, and the negotiated Tasks extension against size, expiry, authorization, redaction, integrity, and retrieval faults. Explanations bind to named inputs; no payload, MCP server, network, credential, or object store is read. See `docs/RESULT-PARCEL-LAB.md`
 - **Local policy gates** — `scan --policy policy.yaml` evaluates reports against local YAML rules and exits nonzero for CI enforcement
-- **Report redaction** — terminal, JSON, SARIF, and HTML report paths share a redaction layer for likely credential values; `scan --redact` adds an opt-in field-report pass that also scrubs the machine hostname and home-path usernames (`/Users/<name>`, `/home/<name>`, `C:\Users\<name>`) from `--json`/`--sarif`/`--html` output, and replaces server names with stable aliases (`server-01`, …) everywhere they appear — structured fields, free-text summaries, and command basenames — so a config-only report is safe to share (the field-report checklist stays the backstop for any residual free-text specifics)
+- **Report redaction** — terminal, JSON, SARIF, and HTML report paths share a redaction layer for likely credential values; `scan --redact` adds an opt-in field-report pass that also scrubs the machine hostname and home-path usernames (`/Users/<name>`, `/home/<name>`, `C:\Users\<name>`) from `--json`/`--sarif`/`--html` output, and replaces matching server-name text in string values with stable aliases (`server-01`, …). Dictionary keys and names that do not match the alias pattern may remain; review the field-report checklist before sharing
 - **Prompt injection detection** — `scan --inject-check` scans tool, prompt, and resource text for instruction-override patterns, hidden directives, fake role turns, and adversarial phrasing; pattern-based, no LLM required
 - **SSRF detection** — `scan --ssrf-check` flags tools and resources whose interface lets a caller steer a server-side request target (including URL/host params nested in object, array-item, or composition schemas, plus caller-templated remote resource hosts); static and schema-derived, never issues a request or reads a credential value
 - **Egress detection** — `scan --egress-check` audits *where* a server may send data: destinations outside `--egress-allowlist` (`MCP040`, MED), unbounded caller-controlled targets (`MCP041`, HIGH), and the trusted-destination residual for allowlisted-but-multi-tenant or credential-bearing hosts (`MCP042`, LOW/MED — the Cowork lesson). Static and schema/URI-derived; gated via `fail_on.egress`. See `docs/EGRESS-DETECTION.md`
@@ -194,7 +194,7 @@ Every `get_*_findings` tool returns a JSON object with `findings` and `warnings`
 - **Byte-level artifact verification** — `scan --download-artifacts` (opt-in, **network**) goes one level deeper than the published-hash compare: it downloads the actual bytes the registry serves, hashes them, and checks them against both the registry's own published hash and a byte-hash captured at pin time (`MCP026`). It catches a CDN/mirror/MITM serving bytes inconsistent with the registry's integrity metadata (`PUBLISHED_MISMATCH`, HIGH) and a pinned file whose bytes changed or vanished (`BASELINE_MISMATCH`, HIGH); a newly-added file on a frozen version is an advisory MEDIUM, not a false alarm. Downloads stream through bounded hashers, never to disk, only to an allowlist of registry/CDN hosts (re-validated on every redirect hop). Network is contacted only under `--download-artifacts`, on both `pin` and `scan`.
 - **Multi-client support** — reads configs from Claude Desktop, Claude Code, Cursor, VSCode, and Windsurf — plus custom paths via `--config`; use `--config-only` for isolated scans of one config file
 - **Structured output** — Rich terminal report plus JSON and SARIF 2.1.0 export for ingestion by GitHub Advanced Security and SARIF-aware SAST pipelines, and a self-contained shareable HTML report via `scan --html report.html` (inline CSS, no JavaScript, redacted and fully HTML-escaped)
-- **Drop-in CI distribution** — a composite GitHub Action (`uses: saagpatel/MCPAudit@v2.7.0`) runs the scan, writes SARIF, and uploads it to code scanning in one step (config-only by default; optional policy gate exits `2`); a `pre-commit` hook (`id: mcp-audit`) audits repo-local `.mcp.json` / `.vscode/mcp.json` on commit. See `docs/ADOPTION-GUIDE.md`
+- **Drop-in CI distribution** — a composite GitHub Action (`uses: saagpatel/MCPAudit@v2.7.0`) runs the scan, writes SARIF, and uploads it to code scanning in one step (config-only by default; optional policy gate exits `2`); a `pre-commit` hook (`id: mcp-audit`) triggers on repo-local `.mcp.json` / `.vscode/mcp.json` changes and scans discovered workstation/project configs without connecting to servers. See `docs/ADOPTION-GUIDE.md`
 - **Documented output contract** — JSON, SARIF rule IDs, and policy exit codes are documented in `docs/OUTPUT-CONTRACT.md`
 - **Experimental fixture enforcement** — a narrow, repository-owned gateway converts one synthetic connected report into explicitly approved fixture-only policy and proves readback, negative controls, idempotency, and rollback; it never changes normal MCP client configuration ([guide](docs/EVIDENCE-ENFORCEMENT-AGT-FIXTURE.md))
 - **MCP session/resume fault lab** — `mcp-audit session-resume` replays strict synthetic Streamable HTTP session, disconnect, replay, migration, and cancellation scenarios against a deterministic virtual transport. It supports legacy session-bearing protocol profiles and fails visibly when legacy resume behavior is applied to the stateless `2026-07-28` transport; no network, credential, server, scheduler, or live MCP dependency is used. See [the lab guide](docs/SESSION-RESUME-FAULT-LAB.md)
@@ -327,8 +327,8 @@ uvx --from mcp-audits mcp-audit scan --skip-connect --json mcp-audit-field-repor
 uvx --from mcp-audits mcp-audit --version
 ```
 
-`--redact` auto-scrubs the machine hostname, home-path usernames, and server
-names for you. Then open a [redacted field report](https://github.com/saagpatel/MCPAudit/issues/new?template=field_report.md)
+`--redact` auto-scrubs the machine hostname, home-path usernames, and matching
+server-name text in string values. Then open a [redacted field report](https://github.com/saagpatel/MCPAudit/issues/new?template=field_report.md)
 — the template walks you through the safe fields. Please still redact credential
 values and any proprietary prompt/tool/schema text; [`docs/EXTERNAL-FIELD-REPORT-REQUEST.md`](docs/EXTERNAL-FIELD-REPORT-REQUEST.md)
 has the full checklist, and
