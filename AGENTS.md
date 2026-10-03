@@ -17,17 +17,33 @@ The repo is an active infrastructure/security project with package metadata, tes
 - GitHub Actions / CodeQL
 - SARIF/JSON/HTML style reporting surfaces
 
-## How To Run
+## Local Verification
 
-Prefer zero-touch or read-only checks first:
+Use the smallest check that exercises the requested change. Commands run from the repository root; use the existing environment. For checks that must avoid dependency resolution or downloads, add `--offline --no-sync` after `uv run`. If the environment is missing, report that prerequisite rather than silently changing dependencies.
 
 ```sh
-uv run pytest -q
-uv run ruff check .
-uv run mcp-audit scan --skip-connect
+# Focused test: replace the path/node with the affected test.
+uv run pytest -p no:cacheprovider -q tests/test_scorer.py
+
+# Lint, formatting, and the CI type-check selection.
+uv run ruff check src/ tests/
+uv run ruff format --check src/ tests/
+uv run mypy .
+
+# CLI entry point.
+uv run mcp-audit --help
+
+# Synthetic config-only smoke: no workstation config discovery or server connections.
+uv run mcp-audit scan \
+  --config examples/sandbox/fixtures/synthetic-mcp-config.json \
+  --config-only --skip-connect --override-config /dev/null
 ```
 
-Only run connected scans when the task explicitly calls for live MCP tool-schema inspection and the boundary is clear.
+`--skip-connect` alone still discovers workstation MCP configs. The explicit fixture, `--config-only`, and empty override above keep this smoke confined to synthetic input. On Windows, replace `/dev/null` with a task-owned empty YAML file. Bare `scan` and `make audit` inspect workstation configs and may connect to servers; use them only when the task calls for that scope.
+
+For broader verification, use `uv run pytest -p no:cacheprovider -q tests/`. The [CONTRIBUTING test lanes](CONTRIBUTING.md#running-tests) define Docker, PostgreSQL, Node, and macOS prerequisites. Tests can launch disposable fixture processes; skipped capabilities remain unverified. Run package/build checks when packaging is affected, using the [release checklist](docs/RELEASE-CHECKLIST.md).
+
+Browser checks apply to HTML report or sandbox changes. For the static synthetic sandbox, run `python3 -m http.server 8765 --bind 127.0.0.1 --directory examples/sandbox` and open `http://127.0.0.1:8765/`; choose another free port if needed and stop the server when finished. Follow [the sandbox guide](examples/sandbox/README.md) for fixture and report checks. Ordinary CLI/library changes do not need a browser.
 
 ## Known Risks
 
@@ -54,7 +70,7 @@ See `CONTRIBUTING.md` for the full contribution guide. Before opening a PR:
 - Run `uv run pytest -q` and confirm all tests pass.
 - Run `uv run ruff check .` and `uv run ruff format --check` (zero findings expected).
 - For new detectors or report fields, add fixture-backed tests and update `docs/OUTPUT-CONTRACT.md`.
-- Prefer config-only (`--skip-connect`) fixtures; connected fixtures require explicit justification.
+- Prefer explicit synthetic configs with `--config-only --skip-connect`; connected fixtures require explicit justification.
 
 <!-- portfolio-context:start -->
 # Portfolio Context
@@ -78,15 +94,7 @@ The repo is an active infrastructure/security project with package metadata, tes
 
 ## How To Run
 
-Prefer zero-touch or read-only checks first:
-
-```sh
-uv run pytest -q
-uv run ruff check .
-uv run mcp-audit scan --skip-connect
-```
-
-Only run connected scans when the task explicitly calls for live MCP tool-schema inspection and the boundary is clear.
+Use the authoritative **Local Verification** section above for focused tests, the isolated synthetic CLI smoke, and conditional browser checks. Use [CONTRIBUTING.md](CONTRIBUTING.md#running-tests) for broader and capability-specific lanes.
 
 ## Known Risks
 
