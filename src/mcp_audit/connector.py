@@ -33,7 +33,16 @@ from mcp_audit.redaction import redact_text
 logger = logging.getLogger(__name__)
 
 _SSE_URL_SUFFIX = re.compile(r"(https?://[^\s?#]+)[?#][^\s]*", re.IGNORECASE)
-_SSE_URL_USERINFO = re.compile(r"(https?://)[^/\s@]+@", re.IGNORECASE)
+_SSE_URL_USERINFO = re.compile(r"(https?://)[^/\s]*@", re.IGNORECASE)
+_SSE_LOGGER_NAMES = (
+    "mcp.client.sse",
+    "httpx2",
+    "httpcore2.connection",
+    "httpcore2.http11",
+    "httpcore2.http2",
+    "httpcore2.proxy",
+    "httpcore2.socks",
+)
 
 
 def _redact_sse_log_text(value: str) -> str:
@@ -44,7 +53,7 @@ def _redact_sse_log_text(value: str) -> str:
 
 class _SseLogFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
-        # The SDK's DEBUG records include raw endpoints and protocol payloads.
+        # Transport DEBUG records include raw endpoints, headers and protocol payloads.
         if record.levelno <= logging.DEBUG:
             return False
         record.msg = _redact_sse_log_text(record.getMessage())
@@ -177,9 +186,10 @@ class ServerConnector:
         if not config.url:
             raise ValueError(f"Server {config.name} has no URL for SSE transport")
 
-        # Keep the filter installed across concurrent connections; only the SDK SSE
-        # logger is affected, and connector diagnostics remain available.
-        logging.getLogger("mcp.client.sse").addFilter(_SSE_LOG_FILTER)
+        # Filters on a parent logger do not cover child records. Bind each emitting
+        # transport logger, retaining the filters across concurrent connections.
+        for name in _SSE_LOGGER_NAMES:
+            logging.getLogger(name).addFilter(_SSE_LOG_FILTER)
         # Client(str) is Streamable HTTP; legacy SSE must pass sse_client as Transport.
         async with Client(sse_client(config.url)) as client:
             return await self._list_capabilities(client, config.name)

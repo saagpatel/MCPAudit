@@ -588,17 +588,28 @@ async def test_sse_without_url_fails_cleanly() -> None:
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("scheme", ["https", "HTTPS"])
+@pytest.mark.parametrize(
+    ("scheme", "userinfo"),
+    [("https", "user:password"), ("HTTPS", "user:password"), ("https", "user:password@tail")],
+)
 async def test_sse_sdk_logger_filters_wire_debug_and_redacts_endpoint_diagnostics(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, scheme: str
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, scheme: str, userinfo: str
 ) -> None:
+    import httpx2
+    from httpcore2._trace import Trace
     from mcp.client.sse import logger as sdk_logger
 
-    monkeypatch.setattr(sdk_logger, "filters", [])
+    from mcp_audit.connector import _SSE_LOGGER_NAMES
+
+    transport_loggers = [logging.getLogger(name) for name in _SSE_LOGGER_NAMES]
     stream = StringIO()
     handler = logging.StreamHandler(stream)
-    sdk_logger.addHandler(handler)
-    endpoint = f"{scheme}://user:password@example.com/messages?sessionId=live-session&opaque=live-value#live-fragment"
+    for transport_logger in transport_loggers:
+        monkeypatch.setattr(transport_logger, "filters", [])
+        transport_logger.addHandler(handler)
+    endpoint = (
+        f"{scheme}://{userinfo}@example.com/messages?sessionId=live-session&opaque=live-value#live-fragment"
+    )
 
     class FakeClient:
         def __init__(self, server: object, **_kwargs: object) -> None:
@@ -616,13 +627,27 @@ async def test_sse_sdk_logger_filters_wire_debug_and_redacts_endpoint_diagnostic
     config = make_server_config(transport=TransportType.SSE, url="https://example.com/sse")
     connector = ServerConnector(timeout=1.0)
     try:
-        with caplog.at_level(logging.DEBUG, logger=sdk_logger.name):
+        with caplog.at_level(logging.DEBUG):
             for _ in range(2):
                 audit = await connector.connect(config)
                 assert audit.connection_status == "failed"
-        assert len(sdk_logger.filters) == 1
+            async with httpx2.AsyncClient(
+                transport=httpx2.MockTransport(lambda request: httpx2.Response(200))
+            ) as client:
+                response = await client.post(endpoint)
+                assert response.status_code == 200
+            for name in _SSE_LOGGER_NAMES:
+                if name.startswith("httpcore2."):
+                    with Trace(
+                        "receive_response_headers",
+                        logging.getLogger(name),
+                        kwargs={"headers": [(b"Authorization", b"Bearer wire-payload-secret")]},
+                    ):
+                        pass
+        assert all(len(transport_logger.filters) == 1 for transport_logger in transport_loggers)
         for output in (stream.getvalue(), caplog.text):
             assert "SSE diagnostic remains available" in output
+            assert "HTTP Request: POST" in output
             assert "Endpoint origin does not match connection origin" in output
             assert (
                 f"RuntimeError: SSE request failed at {scheme}://<redacted>@example.com/messages?<redacted>"
@@ -630,6 +655,7 @@ async def test_sse_sdk_logger_filters_wire_debug_and_redacts_endpoint_diagnostic
             )
             for secret in (
                 "user:password",
+                "@tail",
                 "live-session",
                 "live-value",
                 "live-fragment",
@@ -637,7 +663,8 @@ async def test_sse_sdk_logger_filters_wire_debug_and_redacts_endpoint_diagnostic
             ):
                 assert secret not in output
         assert not any(
-            record.levelno == logging.DEBUG for record in caplog.records if record.name == sdk_logger.name
+            record.levelno == logging.DEBUG for record in caplog.records if record.name in _SSE_LOGGER_NAMES
         )
     finally:
-        sdk_logger.removeHandler(handler)
+        for transport_logger in transport_loggers:
+            transport_logger.removeHandler(handler)
