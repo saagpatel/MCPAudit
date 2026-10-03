@@ -26,7 +26,7 @@ See IMPLEMENTATION-ROADMAP.md for the original phase details.
 | Decision | Choice | Why |
 |----------|--------|-----|
 | Posture home | `rule_of_two` field on `TrifectaFinding`, computed in `TrifectaAnalyzer` | finding-centric; renderers read it like any attribute |
-| Leg-to-drop heuristic | prefer Leg 3 (restrict egress) > leg with fewest contributing tools | lowest functionality loss; Leg 3 is checkable via the egress detector and gateable with `fail_on.egress` |
+| Leg-to-drop heuristic | prefer Leg 3 (restrict egress) > leg with fewest contributing tools | lowest functionality loss; Leg 3 is checkable via the egress detector and gateable with `fail_on.egress` for destinations it derives; permission-only Leg 3 needs `fail_on.trifecta` or removing the tool. |
 | Recommendation shape | one primary + two listed alternatives | actionable without being prescriptive-only |
 | Enforcement | none new — `fail_on.trifecta` already gates | posture is advisory remediation, not a gate |
 
