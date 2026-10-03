@@ -9,11 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Route explicitly configured legacy SSE servers through the MCP SSE transport.
+  HTTP configurations continue using Streamable HTTP. Suppress raw SDK SSE debug
+  payloads and redact session-bearing URLs in other SDK SSE diagnostics.
+
 - Made `check_server` connect only to a uniquely discovered exact-name match.
   Unknown or ambiguous names and collected configuration parse errors now
   return a tool error before any server connection.
 
 ### Changed
+
+- Documented focused agent verification, isolated synthetic configuration scans,
+  and browser checks for HTML report and sandbox changes in `AGENTS.md`.
 
 - Migrated the connected MCP client, in-process MCP server, and stdio test
   fixture to MCP SDK 2 public APIs. The supported and tested range is now
