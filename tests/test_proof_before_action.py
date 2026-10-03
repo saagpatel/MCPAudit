@@ -1729,6 +1729,9 @@ def test_unproven_network_isolation_cannot_be_current_trust_evidence(tmp_path: P
     snapshot = json.loads(snapshot_path.read_text())
     snapshot["servers"][0]["scan_mode"] = "mcpaudit-local-network-unknown"
     snapshot["servers"][0]["sandbox"]["network"] = "unknown"
+    current = datetime.now(UTC).isoformat()
+    snapshot["generated_at"] = current
+    snapshot["servers"][0]["scanned_at"] = current
     snapshot_path.write_text(json.dumps(snapshot), encoding="utf-8")
     _commit_trust_fixture(trust, "network isolation unproven")
 
@@ -1768,6 +1771,9 @@ def test_not_applicable_or_contradictory_network_isolation_is_not_current(
     snapshot = json.loads(snapshot_path.read_text())
     snapshot["servers"][0]["scan_mode"] = scan_mode
     snapshot["servers"][0]["sandbox"] = {"mode": "not_applicable", "network": network}
+    current = datetime.now(UTC).isoformat()
+    snapshot["generated_at"] = current
+    snapshot["servers"][0]["scanned_at"] = current
     snapshot_path.write_text(json.dumps(snapshot), encoding="utf-8")
     _commit_trust_fixture(trust, "network isolation not applicable")
 

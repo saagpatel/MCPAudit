@@ -4,23 +4,28 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from mcp_audit.discovery import ConfigParseError
 from mcp_audit.engine import ScanOptions
 from mcp_audit.models import (
     AuditReport,
+    ClientType,
     InjectionFinding,
     InjectionSeverity,
     RiskScore,
     ScanWarning,
     ServerAudit,
+    ServerConfig,
 )
+from mcp_audit.overrides import OverrideConfig, PermissionOverride, ServerToolOverride
 from mcp_audit.server import _MCP_AUDIT_SERVER_ENTRY, _build_mcp_server, _install_to_config
-from tests.conftest import make_server_config
+from tests.conftest import make_server_config, make_tool
 
 
 def _tool_json(result: object) -> Any:
@@ -318,6 +323,38 @@ async def test_scan_mcp_servers_returns_full_report_and_threads_skip_connect(
 
 
 @pytest.mark.anyio
+async def test_scan_mcp_servers_still_dispatches_all_discovered_entries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import mcp_audit.engine as engine_module
+    import mcp_audit.overrides as overrides_module
+    from mcp_audit.connector import ServerConnector
+
+    servers = [make_server_config(name="first"), make_server_config(name="second")]
+    attempts: list[ServerConfig] = []
+
+    def discover(
+        clients: list[ClientType] | None = None,
+        parse_errors: list[ConfigParseError] | None = None,
+    ) -> list[ServerConfig]:
+        assert clients is None
+        assert parse_errors is not None
+        return servers
+
+    async def record_connect(self: ServerConnector, server: ServerConfig) -> ServerAudit:
+        attempts.append(server)
+        return ServerAudit(server=server, connection_status="connected")
+
+    monkeypatch.setattr(engine_module, "discover_all_configs", discover)
+    monkeypatch.setattr(ServerConnector, "connect", record_connect)
+    monkeypatch.setattr(overrides_module, "load_override_config", lambda: OverrideConfig())
+
+    payload = _tool_json(await _build_mcp_server().call_tool("scan_mcp_servers", {}))
+    assert attempts == servers
+    assert [audit["server"]["name"] for audit in payload["audits"]] == ["first", "second"]
+
+
+@pytest.mark.anyio
 async def test_get_high_risk_servers_filters_by_composite(monkeypatch: pytest.MonkeyPatch) -> None:
     def _score(composite: float) -> RiskScore:
         return RiskScore(
@@ -350,30 +387,198 @@ async def test_get_high_risk_servers_filters_by_composite(monkeypatch: pytest.Mo
     assert payload == [{"name": "risky", "score": 9.1}]
 
 
+def _record_named_scan(
+    monkeypatch: pytest.MonkeyPatch,
+    servers: list[ServerConfig],
+    *,
+    parse_errors: list[ConfigParseError] | None = None,
+    audit_for: Callable[[ServerConfig], ServerAudit] | None = None,
+    overrides: OverrideConfig | None = None,
+) -> list[ServerConfig]:
+    """Exercise the MCP adapter and real engine without reading user configs or connecting."""
+    import mcp_audit.engine as engine_module
+    import mcp_audit.overrides as overrides_module
+    import mcp_audit.server as server_module
+    from mcp_audit.connector import ServerConnector
+
+    def discover(
+        clients: list[ClientType] | None = None,
+        errors: list[ConfigParseError] | None = None,
+    ) -> list[ServerConfig]:
+        assert clients is None
+        if errors is not None:
+            errors.extend(parse_errors or [])
+        return servers
+
+    def unexpected_discovery(*args: object, **kwargs: object) -> list[ServerConfig]:
+        pytest.fail("engine rediscovered the fleet")
+
+    attempts: list[ServerConfig] = []
+
+    async def record_connect(self: ServerConnector, server: ServerConfig) -> ServerAudit:
+        attempts.append(server)
+        if audit_for is not None:
+            return audit_for(server)
+        return ServerAudit(server=server, connection_status="connected")
+
+    monkeypatch.setattr(server_module, "discover_all_configs", discover)
+    monkeypatch.setattr(engine_module, "discover_all_configs", unexpected_discovery)
+    monkeypatch.setattr(ServerConnector, "connect", record_connect)
+    monkeypatch.setattr(overrides_module, "load_override_config", lambda: overrides or OverrideConfig())
+    return attempts
+
+
 @pytest.mark.anyio
-async def test_check_server_returns_single_audit(monkeypatch: pytest.MonkeyPatch) -> None:
-    audits = [
-        ServerAudit(server=make_server_config(name="srv1"), connection_status="connected"),
-        ServerAudit(server=make_server_config(name="srv2"), connection_status="connected"),
-    ]
-    _stub_run_scan(monkeypatch, _report_with(audits))
+async def test_check_server_dispatches_only_unique_exact_target(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import mcp_audit.engine as engine_module
+    import mcp_audit.overrides as overrides_module
+    from mcp_audit.connector import ServerConnector
+    from mcp_audit.discovery import (
+        ClaudeCodeDiscoverer,
+        ClaudeDesktopDiscoverer,
+        CursorDiscoverer,
+        VSCodeDiscoverer,
+        WindsurfDiscoverer,
+    )
 
-    app = _build_mcp_server()
-    payload = _tool_json(await app.call_tool("check_server", {"name": "srv2"}))
-    assert payload["server"]["name"] == "srv2"
+    config = tmp_path / "claude.json"
+    config.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "other-stdio": {"command": "synthetic-stdio"},
+                    "Target": {"command": "synthetic-target"},
+                    "other-http": {"type": "http", "url": "https://example.test/mcp"},
+                }
+            }
+        )
+    )
+    monkeypatch.setattr(ClaudeCodeDiscoverer, "config_paths", lambda self: [config])
+    for discoverer in (ClaudeDesktopDiscoverer, CursorDiscoverer, VSCodeDiscoverer, WindsurfDiscoverer):
+        monkeypatch.setattr(discoverer, "config_paths", lambda self: [tmp_path / "absent.json"])
+
+    def unexpected_discovery(*args: object, **kwargs: object) -> list[ServerConfig]:
+        pytest.fail("engine rediscovered the fleet")
+
+    attempts: list[ServerConfig] = []
+
+    async def record_connect(self: ServerConnector, server: ServerConfig) -> ServerAudit:
+        attempts.append(server)
+        return ServerAudit(server=server, connection_status="connected")
+
+    monkeypatch.setattr(engine_module, "discover_all_configs", unexpected_discovery)
+    monkeypatch.setattr(ServerConnector, "connect", record_connect)
+    monkeypatch.setattr(overrides_module, "load_override_config", lambda: OverrideConfig())
+
+    payload = _tool_json(await _build_mcp_server().call_tool("check_server", {"name": "Target"}))
+
+    assert len(attempts) == 1
+    assert attempts[0].name == "Target"
+    assert attempts[0].config_path == str(config)
+    assert payload["server"]["name"] == "Target"
+    assert payload["connection_status"] == "connected"
+    assert set(payload) == set(ServerAudit(server=attempts[0], connection_status="connected").model_dump())
+    assert capsys.readouterr().out == ""
 
 
 @pytest.mark.anyio
-async def test_check_server_unknown_name_is_a_tool_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    """An unknown server name must surface as an MCP tool error (isError), not a
-    successful call whose payload happens to contain an 'error' key."""
+@pytest.mark.parametrize("name", ["ghost", "target", " Target "])
+async def test_check_server_unknown_name_is_a_tool_error(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
     from mcp.server.mcpserver.exceptions import ToolError
 
-    _stub_run_scan(monkeypatch, _report_with([]))
+    attempts = _record_named_scan(monkeypatch, [make_server_config(name="Target")])
 
-    app = _build_mcp_server()
     with pytest.raises(ToolError, match="not found"):
-        await app.call_tool("check_server", {"name": "ghost"})
+        await _build_mcp_server().call_tool("check_server", {"name": name})
+    assert attempts == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("collision", ["client", "config_path", "project_path"])
+async def test_check_server_rejects_ambiguous_name_before_connecting(
+    monkeypatch: pytest.MonkeyPatch, collision: str
+) -> None:
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    first = make_server_config(name="shared")
+    changes_by_collision: dict[str, dict[str, Any]] = {
+        "client": {"client": ClientType.CURSOR},
+        "config_path": {"config_path": "/tmp/other_config.json"},
+        "project_path": {"project_path": "/synthetic/project"},
+    }
+    second = first.model_copy(update=changes_by_collision[collision])
+    attempts = _record_named_scan(monkeypatch, [first, second])
+
+    with pytest.raises(ToolError, match="ambiguous") as excinfo:
+        await _build_mcp_server().call_tool("check_server", {"name": "shared"})
+    assert attempts == []
+    assert first.command is not None
+    assert first.command not in str(excinfo.value)
+    assert first.config_path not in str(excinfo.value)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("visible_match", [False, True])
+async def test_check_server_rejects_incomplete_discovery_before_connecting(
+    monkeypatch: pytest.MonkeyPatch, visible_match: bool
+) -> None:
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    errors = [ConfigParseError("/tmp/broken.json", ClientType.CURSOR, "SENSITIVE_CANARY")]
+    servers = [make_server_config(name="target")] if visible_match else []
+    attempts = _record_named_scan(monkeypatch, servers, parse_errors=errors)
+
+    with pytest.raises(ToolError, match="discovery is incomplete") as excinfo:
+        await _build_mcp_server().call_tool("check_server", {"name": "target"})
+    assert attempts == []
+    assert "SENSITIVE_CANARY" not in str(excinfo.value)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("status", ["failed", "timeout"])
+async def test_check_server_preserves_selected_connection_failure(
+    monkeypatch: pytest.MonkeyPatch, status: str
+) -> None:
+    target = make_server_config(name="target")
+    attempts = _record_named_scan(
+        monkeypatch,
+        [target, make_server_config(name="other")],
+        audit_for=lambda server: ServerAudit(
+            server=server, connection_status=status, connection_error="synthetic"
+        ),
+    )
+
+    payload = _tool_json(await _build_mcp_server().call_tool("check_server", {"name": "target"}))
+    assert attempts == [target]
+    assert payload["connection_status"] == status
+    assert payload["connection_error"] == "synthetic"
+
+
+@pytest.mark.anyio
+async def test_check_server_keeps_user_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    target = make_server_config(name="target")
+    overrides = OverrideConfig(
+        overrides=[
+            ServerToolOverride(server="target", tool="plain", permissions=PermissionOverride(file_read=True))
+        ]
+    )
+    attempts = _record_named_scan(
+        monkeypatch,
+        [target],
+        audit_for=lambda server: ServerAudit(
+            server=server, connection_status="connected", tools=[make_tool("plain")]
+        ),
+        overrides=overrides,
+    )
+
+    payload = _tool_json(await _build_mcp_server().call_tool("check_server", {"name": "target"}))
+    assert attempts == [target]
+    assert any(
+        finding["category"] == "file_read" and finding["source_trust"] == "operator_override"
+        for finding in payload["permissions"]
+    )
 
 
 @pytest.mark.anyio
