@@ -1,28 +1,28 @@
 # mcp-audit Egress Bundle (D3 + D1)
 
 ## Overview
-Feature addition to the existing `MCPAudit` repo (`~/Projects/MCPAudit`): a
+Feature addition to the existing `MCPAudit` repo (repository root): a
 destination-aware egress detector plus a trusted-destination residual (the January 2026 Claude
 Cowork lesson) for mcp-audit. It audits *where* each MCP server may send data — not just whether
 it can exfiltrate. Static-only, opt-in, additive. **Read the existing modules first** and follow
 their patterns.
 
 ## Tech Stack
-- Python 3.12+ — matches the repo `.python-version`
+- Python 3.11+ — matches the repo `.python-version`
 - `urllib.parse` (stdlib) — reuse `ssrf.py` host primitives, do not reimplement
 - `pyyaml` — existing; policy + examples parsing
 - `pytest` via `uv run pytest` — existing test runner
 
 ## Development Conventions
 - Static analysis only: never make a network call; never read credential values
-- Additive + opt-in: behind `--egress-check`; default output and existing policy files unchanged
+- Additive + opt-in: behind `--egress-check`; detector disabled by default; existing policy files keep parsing
 - Reuse, don't reimplement: consume `ssrf.py` fixed-host/allowlist helpers as the single destination source
-- Match existing patterns: finding dataclass like `SsrfFinding`/`TrifectaFinding`; gate like `fail_on.ssrf`
-- Python: type hints, frozen dataclasses, exact-token matching (no substring); tests before commit
+- Match existing patterns: finding model like `SsrfFinding`/`TrifectaFinding`; gate like `fail_on.ssrf`
+- Python: type hints, Pydantic models, exact-token matching (no substring); tests before commit
 
 ## Current Phase
-**Phase 0: Foundation — model + taxonomy + detector core**
-See IMPLEMENTATION-ROADMAP.md for full phase details.
+**Model, taxonomy, detector, CLI/policy integration, and rendering are implemented.**
+See IMPLEMENTATION-ROADMAP.md for the original phase details.
 
 ## Key Decisions
 | Decision | Choice | Why |

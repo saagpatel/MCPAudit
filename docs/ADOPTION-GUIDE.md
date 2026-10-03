@@ -131,9 +131,9 @@ and preserves the validation, JSON, and SARIF artifacts for review.
 
 ## Pre-commit Hook
 
-Audit repo-local MCP configs on every commit. The hook is config-only (it never
-spawns or connects to servers) and triggers when a repo-root `.mcp.json` or a
-`.vscode/mcp.json` changes:
+The hook triggers when a repo-local `.mcp.json` or `.vscode/mcp.json` changes
+and scans discovered workstation/project configs. It is config-only (it never
+spawns or connects to servers):
 
 ```yaml
 repos:

@@ -1,6 +1,6 @@
 # mcp-audit Rule of Two Posture (D2) — Implementation Roadmap
 
-Feature addition to the existing `MCPAudit` repo at `~/Projects/MCPAudit`
+Feature addition to the existing `MCPAudit` repo at the repository root
 (`src/mcp_audit/trifecta.py`). **Not greenfield** — it enriches the existing trifecta detector.
 Read `trifecta.py` first; reuse its leg model (`_LEG1_CATEGORIES`, ingestion contributors,
 `_LEG3_CATEGORIES`) and the `TrifectaFinding` type. Static-only, additive, advisory.
@@ -168,7 +168,7 @@ attaches a posture to every trifecta finding when it fires. No rendering.
 2. Render in `htmlreport.py` and `sarif.py` (SARIF: result message + a related-location note carrying the action). — Acceptance: HTML shows the posture; the SARIF result carries the recommendation; `test_htmlreport.py` / `test_sarif.py` extended and green.
 3. Update `docs/TRIFECTA-DETECTION.md` with a Rule of Two section citing Meta's Oct 2025 framework + the leg-drop heuristic, and add a `CHANGELOG.md` entry. — Acceptance: doc section exists and is linked; CHANGELOG has a dated entry.
 **Verification checklist:**
-- [ ] `mcp-audit audit --trifecta-check` on the fixture prints the posture in the text report
+- [ ] `mcp-audit scan --trifecta-check` on the fixture prints the posture in the text report
 - [ ] `uv run pytest -q` → entire suite green (zero regressions)
 - [ ] SARIF output validates against the repo's existing SARIF fixture
 **Parallel Dispatch Proposal (≥3 disjoint tasks):**
