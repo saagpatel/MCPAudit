@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import signal
 import sys
 import textwrap
 import time
+from io import StringIO
 from pathlib import Path
 
 import pytest
@@ -454,3 +456,215 @@ async def test_connect_stdio_never_hands_spawned_server_an_environment(
 
     assert "env" in captured
     assert captured["env"] is None
+
+
+def _patch_client_and_sse(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    captured: dict[str, object],
+    error: BaseException | None = None,
+) -> object:
+    """Capture Client construction and sse_client selection without opening a network."""
+    sse_sentinel = object()
+
+    def fake_sse_client(url: str, *_args: object, **_kwargs: object) -> object:
+        captured["sse_called"] = True
+        captured["sse_url"] = url
+        return sse_sentinel
+
+    class FakeClient:
+        def __init__(self, server: object, **_kwargs: object) -> None:
+            captured["client_server"] = server
+            raise error if error is not None else _SpawnAborted("no network")
+
+    monkeypatch.setattr("mcp_audit.connector.sse_client", fake_sse_client, raising=False)
+    monkeypatch.setattr("mcp_audit.connector.Client", FakeClient)
+    return sse_sentinel
+
+
+@pytest.mark.anyio
+async def test_sse_connect_uses_legacy_sse_transport_not_url_string(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Regression: mcp 2.1.1 treats Client(str) as Streamable HTTP, so type:sse
+    must pass sse_client(...) as Transport instead of the URL string.
+    """
+    captured: dict[str, object] = {}
+    sse_sentinel = _patch_client_and_sse(monkeypatch, captured=captured)
+    url = "https://user:s3cret-token@example.com/sse"
+    config = ServerConfig(
+        name="legacy-sse",
+        client=ClientType.CLAUDE_CODE,
+        config_path="/tmp/test_config.json",
+        command=None,
+        transport=TransportType.SSE,
+        url=url,
+    )
+    connector = ServerConnector(timeout=1.0)
+
+    with caplog.at_level(logging.WARNING, logger="mcp_audit.connector"):
+        audit = await connector.connect(config)
+
+    assert captured.get("sse_called") is True
+    assert captured.get("sse_url") == url
+    assert captured.get("client_server") is sse_sentinel
+    assert captured.get("client_server") != url
+    assert "deprecated SSE transport" in caplog.text
+    assert "StreamableHTTP" not in caplog.text
+    assert "s3cret-token" not in caplog.text
+    assert audit.connection_status == "failed"
+    assert audit.connection_error is not None
+    assert "s3cret-token" not in audit.connection_error
+    assert "user:s3cret" not in audit.connection_error
+
+
+@pytest.mark.anyio
+async def test_http_connect_still_passes_url_string_for_streamable_http(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    captured: dict[str, object] = {}
+    _patch_client_and_sse(monkeypatch, captured=captured)
+    url = "https://example.com/mcp"
+    config = ServerConfig(
+        name="remote-http",
+        client=ClientType.CLAUDE_CODE,
+        config_path="/tmp/test_config.json",
+        command=None,
+        transport=TransportType.HTTP,
+        url=url,
+    )
+    connector = ServerConnector(timeout=1.0)
+
+    with caplog.at_level(logging.WARNING, logger="mcp_audit.connector"):
+        audit = await connector.connect(config)
+
+    assert "sse_called" not in captured
+    assert captured.get("client_server") == url
+    assert isinstance(captured.get("client_server"), str)
+    assert "deprecated SSE" not in caplog.text
+    assert audit.connection_status == "failed"
+
+
+@pytest.mark.anyio
+async def test_sse_connection_error_redacts_url_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+    _patch_client_and_sse(
+        monkeypatch,
+        captured=captured,
+        error=RuntimeError("failed with token=abc123 at https://user:pass@example.com/sse"),
+    )
+    config = ServerConfig(
+        name="legacy-sse",
+        client=ClientType.CLAUDE_CODE,
+        config_path="/tmp/test_config.json",
+        command=None,
+        transport=TransportType.SSE,
+        url="https://user:pass@example.com/sse",
+    )
+    connector = ServerConnector(timeout=1.0)
+    audit = await connector.connect(config)
+
+    assert audit.connection_status == "failed"
+    assert audit.connection_error == "failed with token=<redacted> at https://<redacted>@example.com/sse"
+    assert "abc123" not in (audit.connection_error or "")
+    assert "user:pass" not in (audit.connection_error or "")
+
+
+@pytest.mark.anyio
+async def test_sse_without_url_fails_cleanly() -> None:
+    config = ServerConfig(
+        name="bad-sse",
+        client=ClientType.CLAUDE_CODE,
+        config_path="/tmp/test_config.json",
+        transport=TransportType.SSE,
+        url=None,
+    )
+    connector = ServerConnector(timeout=5.0)
+
+    audit = await connector.connect(config)
+    assert audit.connection_status == "failed"
+    assert audit.connection_error is not None
+    assert "no URL" in audit.connection_error
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("scheme", "userinfo"),
+    [("https", "user:password"), ("HTTPS", "user:password"), ("https", "user:password@tail")],
+)
+async def test_sse_sdk_logger_filters_wire_debug_and_redacts_endpoint_diagnostics(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, scheme: str, userinfo: str
+) -> None:
+    import httpx2
+    from httpcore2._trace import Trace
+    from mcp.client.sse import logger as sdk_logger
+
+    from mcp_audit.connector import _SSE_LOGGER_NAMES
+
+    transport_loggers = [logging.getLogger(name) for name in _SSE_LOGGER_NAMES]
+    stream = StringIO()
+    handler = logging.StreamHandler(stream)
+    for transport_logger in transport_loggers:
+        monkeypatch.setattr(transport_logger, "filters", [])
+        transport_logger.addHandler(handler)
+    endpoint = (
+        f"{scheme}://{userinfo}@example.com/messages?sessionId=live-session&opaque=live-value#live-fragment"
+    )
+
+    class FakeClient:
+        def __init__(self, server: object, **_kwargs: object) -> None:
+            sdk_logger.debug("Received endpoint URL: %s", endpoint)
+            sdk_logger.debug("Sending client message: %s", {"secret": "wire-payload-secret"})
+            sdk_logger.warning("SSE diagnostic remains available")
+            sdk_logger.error("Endpoint origin does not match connection origin: %s", endpoint)
+            try:
+                raise RuntimeError(f"SSE request failed at {endpoint}")
+            except RuntimeError:
+                sdk_logger.exception("SSE fixture exception")
+            raise _SpawnAborted("no network")
+
+    monkeypatch.setattr("mcp_audit.connector.Client", FakeClient)
+    config = make_server_config(transport=TransportType.SSE, url="https://example.com/sse")
+    connector = ServerConnector(timeout=1.0)
+    try:
+        with caplog.at_level(logging.DEBUG):
+            for _ in range(2):
+                audit = await connector.connect(config)
+                assert audit.connection_status == "failed"
+            async with httpx2.AsyncClient(
+                transport=httpx2.MockTransport(lambda request: httpx2.Response(200))
+            ) as client:
+                response = await client.post(endpoint)
+                assert response.status_code == 200
+            for name in _SSE_LOGGER_NAMES:
+                if name.startswith("httpcore2."):
+                    with Trace(
+                        "receive_response_headers",
+                        logging.getLogger(name),
+                        kwargs={"headers": [(b"Authorization", b"Bearer wire-payload-secret")]},
+                    ):
+                        pass
+        assert all(len(transport_logger.filters) == 1 for transport_logger in transport_loggers)
+        for output in (stream.getvalue(), caplog.text):
+            assert "SSE diagnostic remains available" in output
+            assert "HTTP Request: POST" in output
+            assert "Endpoint origin does not match connection origin" in output
+            assert (
+                f"RuntimeError: SSE request failed at {scheme}://<redacted>@example.com/messages?<redacted>"
+                in output
+            )
+            for secret in (
+                "user:password",
+                "@tail",
+                "live-session",
+                "live-value",
+                "live-fragment",
+                "wire-payload-secret",
+            ):
+                assert secret not in output
+        assert not any(
+            record.levelno == logging.DEBUG for record in caplog.records if record.name in _SSE_LOGGER_NAMES
+        )
+    finally:
+        for transport_logger in transport_loggers:
+            transport_logger.removeHandler(handler)

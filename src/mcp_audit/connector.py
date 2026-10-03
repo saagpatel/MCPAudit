@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import logging
 import re
+import traceback
 from dataclasses import dataclass
 from pathlib import PurePath
 
 import anyio
 from mcp import Client, StdioServerParameters
+from mcp.client.sse import sse_client
 from mcp.types import Prompt as SdkPrompt
 from mcp.types import Resource as SdkResource
 from mcp.types import Tool as SdkTool
@@ -29,6 +31,44 @@ from mcp_audit.models import (
 from mcp_audit.redaction import redact_text
 
 logger = logging.getLogger(__name__)
+
+_SSE_URL_SUFFIX = re.compile(r"(https?://[^\s?#]+)[?#][^\s]*", re.IGNORECASE)
+_SSE_URL_USERINFO = re.compile(r"(https?://)[^/\s]*@", re.IGNORECASE)
+_SSE_LOGGER_NAMES = (
+    "mcp.client.sse",
+    "httpx2",
+    "httpcore2.connection",
+    "httpcore2.http11",
+    "httpcore2.http2",
+    "httpcore2.proxy",
+    "httpcore2.socks",
+)
+
+
+def _redact_sse_log_text(value: str) -> str:
+    # Negotiated POST endpoints can use arbitrary query keys for session credentials.
+    redacted = _SSE_URL_SUFFIX.sub(r"\1?<redacted>", value)
+    return redact_text(_SSE_URL_USERINFO.sub(r"\1<redacted>@", redacted))
+
+
+class _SseLogFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        # Transport DEBUG records include raw endpoints, headers and protocol payloads.
+        if record.levelno <= logging.DEBUG:
+            return False
+        record.msg = _redact_sse_log_text(record.getMessage())
+        record.args = ()
+        if record.exc_info is not None:
+            record.exc_text = _redact_sse_log_text("".join(traceback.format_exception(*record.exc_info)))
+            record.exc_info = None
+        elif record.exc_text is not None:
+            record.exc_text = _redact_sse_log_text(record.exc_text)
+        if record.stack_info is not None:
+            record.stack_info = _redact_sse_log_text(record.stack_info)
+        return True
+
+
+_SSE_LOG_FILTER = _SseLogFilter()
 
 # Known server command substrings → inferred permission categories (for --skip-connect mode).
 # Checked as substrings of the full command+args string.
@@ -80,13 +120,14 @@ class ServerConnector:
             with anyio.move_on_after(self.timeout) as cancel_scope:
                 if config.transport == TransportType.STDIO:
                     capabilities = await self._connect_stdio(config)
-                elif config.transport in (TransportType.HTTP, TransportType.SSE):
-                    if config.transport == TransportType.SSE:
-                        logger.warning(
-                            "Server %s uses deprecated SSE transport; attempting as StreamableHTTP",
-                            config.name,
-                        )
+                elif config.transport == TransportType.HTTP:
                     capabilities = await self._connect_http(config)
+                elif config.transport == TransportType.SSE:
+                    logger.warning(
+                        "Server %s uses deprecated SSE transport; connecting via legacy SSE",
+                        config.name,
+                    )
+                    capabilities = await self._connect_sse(config)
                 else:
                     return ServerAudit(
                         server=config,
@@ -137,7 +178,20 @@ class ServerConnector:
         if not config.url:
             raise ValueError(f"Server {config.name} has no URL for HTTP transport")
 
+        # mcp 2.1.1 maps Client(str) to streamable_http_client.
         async with Client(config.url) as client:
+            return await self._list_capabilities(client, config.name)
+
+    async def _connect_sse(self, config: ServerConfig) -> _ServerCapabilities:
+        if not config.url:
+            raise ValueError(f"Server {config.name} has no URL for SSE transport")
+
+        # Filters on a parent logger do not cover child records. Bind each emitting
+        # transport logger, retaining the filters across concurrent connections.
+        for name in _SSE_LOGGER_NAMES:
+            logging.getLogger(name).addFilter(_SSE_LOG_FILTER)
+        # Client(str) is Streamable HTTP; legacy SSE must pass sse_client as Transport.
+        async with Client(sse_client(config.url)) as client:
             return await self._list_capabilities(client, config.name)
 
     async def _list_capabilities(self, session: Client, server_name: str) -> _ServerCapabilities:
