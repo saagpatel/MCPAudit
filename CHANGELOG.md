@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Documented focused agent verification, isolated synthetic configuration scans,
+  and browser checks for HTML report and sandbox changes in `AGENTS.md`.
+
 - Migrated the connected MCP client, in-process MCP server, and stdio test
   fixture to MCP SDK 2 public APIs. The supported and tested range is now
   `mcp>=2.0,<3.0`.
