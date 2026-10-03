@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Keep synthetic sandbox scan and report-generation commands independent of
+  workstation permission overrides by selecting an empty override file.
+
 - Documented focused agent verification, isolated synthetic configuration scans,
   and browser checks for HTML report and sandbox changes in `AGENTS.md`.
 
