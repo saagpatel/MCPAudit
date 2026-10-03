@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+import traceback
 from dataclasses import dataclass
 from pathlib import PurePath
 
@@ -30,6 +31,35 @@ from mcp_audit.models import (
 from mcp_audit.redaction import redact_text
 
 logger = logging.getLogger(__name__)
+
+_SSE_URL_SUFFIX = re.compile(r"(https?://[^\s?#]+)[?#][^\s]*", re.IGNORECASE)
+_SSE_URL_USERINFO = re.compile(r"(https?://)[^/\s@]+@", re.IGNORECASE)
+
+
+def _redact_sse_log_text(value: str) -> str:
+    # Negotiated POST endpoints can use arbitrary query keys for session credentials.
+    redacted = _SSE_URL_SUFFIX.sub(r"\1?<redacted>", value)
+    return redact_text(_SSE_URL_USERINFO.sub(r"\1<redacted>@", redacted))
+
+
+class _SseLogFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        # The SDK's DEBUG records include raw endpoints and protocol payloads.
+        if record.levelno <= logging.DEBUG:
+            return False
+        record.msg = _redact_sse_log_text(record.getMessage())
+        record.args = ()
+        if record.exc_info is not None:
+            record.exc_text = _redact_sse_log_text("".join(traceback.format_exception(*record.exc_info)))
+            record.exc_info = None
+        elif record.exc_text is not None:
+            record.exc_text = _redact_sse_log_text(record.exc_text)
+        if record.stack_info is not None:
+            record.stack_info = _redact_sse_log_text(record.stack_info)
+        return True
+
+
+_SSE_LOG_FILTER = _SseLogFilter()
 
 # Known server command substrings → inferred permission categories (for --skip-connect mode).
 # Checked as substrings of the full command+args string.
@@ -147,6 +177,9 @@ class ServerConnector:
         if not config.url:
             raise ValueError(f"Server {config.name} has no URL for SSE transport")
 
+        # Keep the filter installed across concurrent connections; only the SDK SSE
+        # logger is affected, and connector diagnostics remain available.
+        logging.getLogger("mcp.client.sse").addFilter(_SSE_LOG_FILTER)
         # Client(str) is Streamable HTTP; legacy SSE must pass sse_client as Transport.
         async with Client(sse_client(config.url)) as client:
             return await self._list_capabilities(client, config.name)

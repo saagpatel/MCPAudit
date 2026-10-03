@@ -8,6 +8,7 @@ import signal
 import sys
 import textwrap
 import time
+from io import StringIO
 from pathlib import Path
 
 import pytest
@@ -584,3 +585,59 @@ async def test_sse_without_url_fails_cleanly() -> None:
     assert audit.connection_status == "failed"
     assert audit.connection_error is not None
     assert "no URL" in audit.connection_error
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("scheme", ["https", "HTTPS"])
+async def test_sse_sdk_logger_filters_wire_debug_and_redacts_endpoint_diagnostics(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, scheme: str
+) -> None:
+    from mcp.client.sse import logger as sdk_logger
+
+    monkeypatch.setattr(sdk_logger, "filters", [])
+    stream = StringIO()
+    handler = logging.StreamHandler(stream)
+    sdk_logger.addHandler(handler)
+    endpoint = f"{scheme}://user:password@example.com/messages?sessionId=live-session&opaque=live-value#live-fragment"
+
+    class FakeClient:
+        def __init__(self, server: object, **_kwargs: object) -> None:
+            sdk_logger.debug("Received endpoint URL: %s", endpoint)
+            sdk_logger.debug("Sending client message: %s", {"secret": "wire-payload-secret"})
+            sdk_logger.warning("SSE diagnostic remains available")
+            sdk_logger.error("Endpoint origin does not match connection origin: %s", endpoint)
+            try:
+                raise RuntimeError(f"SSE request failed at {endpoint}")
+            except RuntimeError:
+                sdk_logger.exception("SSE fixture exception")
+            raise _SpawnAborted("no network")
+
+    monkeypatch.setattr("mcp_audit.connector.Client", FakeClient)
+    config = make_server_config(transport=TransportType.SSE, url="https://example.com/sse")
+    connector = ServerConnector(timeout=1.0)
+    try:
+        with caplog.at_level(logging.DEBUG, logger=sdk_logger.name):
+            for _ in range(2):
+                audit = await connector.connect(config)
+                assert audit.connection_status == "failed"
+        assert len(sdk_logger.filters) == 1
+        for output in (stream.getvalue(), caplog.text):
+            assert "SSE diagnostic remains available" in output
+            assert "Endpoint origin does not match connection origin" in output
+            assert (
+                f"RuntimeError: SSE request failed at {scheme}://<redacted>@example.com/messages?<redacted>"
+                in output
+            )
+            for secret in (
+                "user:password",
+                "live-session",
+                "live-value",
+                "live-fragment",
+                "wire-payload-secret",
+            ):
+                assert secret not in output
+        assert not any(
+            record.levelno == logging.DEBUG for record in caplog.records if record.name == sdk_logger.name
+        )
+    finally:
+        sdk_logger.removeHandler(handler)
