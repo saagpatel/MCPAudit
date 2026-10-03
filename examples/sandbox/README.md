@@ -45,8 +45,13 @@ Run the real MCPAudit engine against the toy config:
 uv run mcp-audit scan \
   --config examples/sandbox/fixtures/synthetic-mcp-config.json \
   --config-only \
-  --skip-connect
+  --skip-connect \
+  --override-config /dev/null
 ```
+
+The empty override keeps workstation `~/.mcp-audit.yaml` rules out of the toy
+scan and generated report. On Windows, replace `/dev/null` with a task-owned
+empty YAML file.
 
 The config-only scan should infer review-worthy signals such as package runners,
 remote endpoints, remote URL arguments, shell wrapper launch, credential-heavy
@@ -61,6 +66,7 @@ uv run mcp-audit scan \
   --config examples/sandbox/fixtures/synthetic-mcp-config.json \
   --config-only \
   --skip-connect \
+  --override-config /dev/null \
   --json /tmp/mcpaudit-sandbox-report.raw.json
 ```
 
