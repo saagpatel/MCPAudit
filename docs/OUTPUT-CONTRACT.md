@@ -91,7 +91,9 @@ Each audit may include:
 
 `scan --canary-check` uses the existing `AuditReport` contract and scan exit
 codes. Each exercised audit includes `canary` with `requested_calls`,
-`completed_calls`, `baseline_hash` / `current_hash` (captured surface SHA256),
+`completed_calls` (successful protocol `tools/call` responses),
+`prompt_get_calls` (attempted `prompts/get`, including errors),
+`baseline_hash` / `current_hash` (captured surface SHA256),
 `status` (`complete`, `partial`, or `no_safe_tools`), and
 `warnings`. `complete` means the bounded protocol exercise completed; it does
 not establish server safety. Degraded coverage also adds a top-level warning
@@ -109,12 +111,36 @@ and canonical SHA256 `before_hash` / `after_hash`; null means an absent field.
 Raw changed values are withheld. `target_type` follows `surface_type`;
 the retained legacy `tool_name` / `target_name` also identifies prompts and
 resource URIs. `summary` distinguishes `prompts` from `prompt_results`
-(`prompts/get`). Consecutive successful snapshots are compared so a reversion
-is also detected. Unavailable surface categories do not establish removals.
+(`prompts/get`). Each surface retains its last successful observation across
+failed listings, so later changes and reversions remain detectable. A failed
+`prompts/get` retains just that prompt's prior structure while peers are still
+compared. Successful prompt listings establish prompt removals. Prompt results
+compare descriptions and ordered message roles; rendered content is excluded.
+Prompt argument structure is compared through `prompts/list`. Unavailable
+surface categories do not establish removals. Only surfaces advertised during
+initialize are probed. Listings follow `next_cursor` up to 20 pages; exceeding
+the limit is incomplete coverage and no partial page set is admitted.
 
-Tool-result injection findings use existing HIGH rule `MCP007`, with additive
+`--canary-calls` bounds tool exercise requests (K), not metadata reads. The
+documented exercise request budget includes all `prompts/get`: for P eligible
+prompts on each capture, up to K + P × (K + 1) requests, plus gets on tools-list
+failure refreshes. Inspect `completed_calls + prompt_get_calls` for the recorded
+total; initialize and paginated listing requests are additional. The session
+timeout bounds all requests. Failed tool requests can leave `completed_calls`
+below the number attempted; connection failure and partial status record that
+incomplete exercise.
+
+Automatic tool exercise requires `readOnlyHint: true` and no explicit
+`destructiveHint: true`. MCP defaults for absent hints are read-only false and
+destructive true (the latter applies to non-read-only tools). An operator's
+`--canary-safe-tool` mark permits other empty-argument tools, but never overrides
+explicit destructive annotations, dangerous keywords, or injection vetoes.
+
+Tool-result injection findings use existing rule `MCP007`, with additive
 `after_call` and pattern names `result_instruction_override`,
-`result_credential_hunt`, and `result_tool_redirect`. They retain the tool
+`result_credential_hunt` (HIGH), and `result_tool_redirect` (MEDIUM). Redirect
+and credential heuristics require an agent-directed frame; generic credential
+nouns alone are insufficient. They retain the tool
 target type; `matched_text` is a fixed withheld-excerpt notice. No result
 payload is stored in the report. String values in text, embedded results,
 and structured content are scanned; binary blobs are not decoded.
@@ -125,6 +151,12 @@ drift remains `warning`. `fail_on.drift` gates either source; the general
 `fail_on.severity` threshold also includes session drift. Result injection
 uses the existing injection severity gate. No version or schema-version bump
 is required for these additive fields.
+
+Setting `fail_on_drift: false` in the Python policy model (YAML
+`fail_on.drift: false`) disables the drift-specific gate only. Session drift
+can still fail `fail_on.severity: high` (or a lower threshold); saved-pin drift
+is excluded from that general severity gate. Per-server drift overrides have
+the same interaction.
 
 Each permission finding includes additive provenance fields:
 

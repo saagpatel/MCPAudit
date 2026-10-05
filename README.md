@@ -327,7 +327,9 @@ mcp-audit scan --config ./allowed-servers.json --config-only \
 ```
 
 The canary compares tools (including descriptions, schemas, and annotations),
-prompt metadata, empty-argument `prompts/get` responses, and the resources list.
+prompt metadata, empty-argument `prompts/get` descriptions and message roles,
+and the resources list. Rendered prompt content is excluded because timestamps
+and other dynamic text can change normally between reads.
 Mid-session changes are HIGH drift findings with field paths and before/after
 hashes. Tool-result text and structured result strings are checked for
 instruction overrides, credential-hunt requests, and directions to call other
@@ -339,14 +341,25 @@ Calls use `{}` only. Required arguments and complex schemas are skipped rather
 than filled with guessed values. Explicit destructive annotations, dangerous
 capability keywords, and injection hints always veto a call, including when
 `--canary-safe-tool SERVER/TOOL` marks a tool safe. Tools with an explicit
-`readOnlyHint: false` require that mark; other eligible empty-argument tools are
+`readOnlyHint: true` are eligible automatically unless `destructiveHint: true`.
+Absent `readOnlyHint` defaults to false; absent `destructiveHint` defaults to
+true for tools that are not read-only. All other tools require that mark.
+Eligible empty-argument tools are
 selected in server order, round-robin. Eligibility is rechecked after each
 listing. Server annotations are untrusted hints, so this is not a sandbox or a
 guarantee that an apparently benign tool has no side effects.
 
-`--canary-calls` is bounded to 1–100 calls **per server**, default 5. The existing
+`--canary-calls` bounds `tools/call` to 1–100 **per server**, default 5.
+The report counts attempted `prompts/get` requests separately in
+`canary.prompt_get_calls`, including failed requests. The exercise request
+budget is up to K tool calls plus P × (K + 1) prompt gets, where P is the number
+of eligible prompts per listing (if it stays constant). A tools-list failure
+can add one refresh and its prompt gets before the next exercise call; the
+reported total is `completed_calls + prompt_get_calls`. Initialize and listing
+requests are additional. Only advertised surfaces are probed; tools, prompts,
+and resources listings each follow at most 20 pages per capture. The existing
 `--timeout` bounds the whole session, including all calls and listings. Errors,
-timeouts, unsupported or paginated listings, required-argument prompts, and a
+timeouts, page-limit exhaustion, required-argument prompts, and a
 lack of eligible tools produce incomplete-coverage warnings. A clean canary
 only describes this bounded exercise: a server can gate on elapsed time,
 randomness, client identity, another tool or arguments, or call count greater

@@ -318,17 +318,25 @@ class HtmlReportGenerator:
         )
 
     def _drift_table(self, audit: ServerAudit) -> str:
+        has_session = any(f.source == "session" for f in audit.drift_findings)
         rows = [
             self._row(
                 self._esc(f.status.value),
-                self._esc(f.severity),
+                *([self._esc(f.severity)] if has_session else []),
                 self._esc(f.tool_name),
                 self._esc(f.summary),
                 self._esc("; ".join(f.details)),
             )
             for f in audit.drift_findings
         ]
-        return self._table("Schema drift", ["Status", "Severity", "Target", "Summary", "Details"], rows)
+        headers = [
+            "Status",
+            *(["Severity"] if has_session else []),
+            "Target" if has_session else "Tool",
+            "Summary",
+            "Details",
+        ]
+        return self._table("Surface drift" if has_session else "Schema drift", headers, rows)
 
     def _fleet(self, report: AuditReport) -> str:
         fleet_trifecta_rows = [

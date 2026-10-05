@@ -188,3 +188,11 @@ class TestFixtureRendering:
         assert "rugpull-server" in html
         assert "MCP018" in html
         assert "shell_execution" in html
+
+
+def test_pin_only_html_keeps_tool_column_without_severity() -> None:
+    report = AuditReport.model_validate_json(
+        Path("tests/fixtures/reports/sample_audit_report.json").read_text()
+    )
+    table = HtmlReportGenerator()._drift_table(report.audits[0])
+    assert "<th>Tool</th>" in table and "<th>Severity</th>" not in table

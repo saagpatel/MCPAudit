@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Harden runtime canary eligibility with MCP annotation defaults and preserve
+  surface drift across transient listing or individual prompt-get failures.
+  Honor advertised capabilities, follow bounded pagination, exclude dynamic
+  prompt render text, count prompt-get requests, and retain redacted failures.
+  Reduce benign result-injection false positives, expand secret-path and token
+  detection, and classify tool redirects as medium severity. Regenerate the
+  output contracts and preserve the pin-only HTML drift layout.
+
 - Route explicitly configured legacy SSE servers through the MCP SSE transport.
   HTTP configurations continue using Streamable HTTP. Suppress raw SDK SSE debug
   payloads and redact session-bearing URLs in other SDK SSE diagnostics.
