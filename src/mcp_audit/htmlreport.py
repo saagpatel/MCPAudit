@@ -321,13 +321,14 @@ class HtmlReportGenerator:
         rows = [
             self._row(
                 self._esc(f.status.value),
+                self._esc(f.severity),
                 self._esc(f.tool_name),
                 self._esc(f.summary),
                 self._esc("; ".join(f.details)),
             )
             for f in audit.drift_findings
         ]
-        return self._table("Schema drift", ["Status", "Tool", "Summary", "Details"], rows)
+        return self._table("Schema drift", ["Status", "Severity", "Target", "Summary", "Details"], rows)
 
     def _fleet(self, report: AuditReport) -> str:
         fleet_trifecta_rows = [
