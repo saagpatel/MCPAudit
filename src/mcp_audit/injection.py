@@ -205,7 +205,9 @@ class InjectionDetector:
             InjectionFinding(
                 tool_name=tool_name,
                 target_name=tool_name,
-                severity=InjectionSeverity.HIGH,
+                severity=(
+                    InjectionSeverity.MEDIUM if name == "result_tool_redirect" else InjectionSeverity.HIGH
+                ),
                 pattern_name=name,
                 after_call=after_call,
                 matched_text="[tool-result excerpt withheld]",
