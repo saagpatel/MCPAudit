@@ -369,6 +369,7 @@ class InjectionFinding(BaseModel):
     target_name: str | None = None
     severity: InjectionSeverity
     pattern_name: str  # e.g. "ignore_instructions"
+    after_call: int | None = None  # Set for runtime tool-result findings
     matched_text: str  # excerpt (max 200 chars)
     description: str  # human-readable explanation
 
@@ -806,6 +807,25 @@ class ArtifactVerifyFinding(BaseModel):
         return artifact_verify_metadata(self.kind).remediation
 
 
+class SurfaceFieldChange(BaseModel):
+    """A field-level diff retaining hashes rather than untrusted/secret values."""
+
+    path: str  # JSON Pointer within the capability
+    before_hash: str | None = None  # None means absent
+    after_hash: str | None = None
+
+
+class CanarySummary(BaseModel):
+    """Bounded runtime exercise coverage; complete does not mean trustworthy."""
+
+    requested_calls: int
+    completed_calls: int = 0
+    baseline_hash: str | None = None
+    current_hash: str | None = None
+    status: str = "partial"  # complete, partial, or no_safe_tools
+    warnings: list[str] = Field(default_factory=list)
+
+
 class DriftFinding(BaseModel):
     """A change detected between pinned and current tool schema."""
 
@@ -818,11 +838,17 @@ class DriftFinding(BaseModel):
     summary: str = ""
     details: list[str] = Field(default_factory=list)
     remediation: str = ""
+    source: str = "pin"  # pin or session
+    severity: str = "medium"
+    after_call: int | None = None
+    surface_type: CapabilityTarget = CapabilityTarget.TOOL
+    surface: str | None = None  # tools, prompts, prompt_results, or resources for a session
+    field_changes: list[SurfaceFieldChange] = Field(default_factory=list)
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def target_type(self) -> str:
-        return CapabilityTarget.TOOL.value
+        return self.surface_type.value
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -907,6 +933,7 @@ class ServerAudit(BaseModel):
     package_verify_findings: list[PackageVerifyFinding] = Field(default_factory=list)
     artifact_verify_findings: list[ArtifactVerifyFinding] = Field(default_factory=list)
     llm_analysis: LLMAnalysisSummary | None = None
+    canary: CanarySummary | None = None
 
 
 class ShadowingFinding(BaseModel):

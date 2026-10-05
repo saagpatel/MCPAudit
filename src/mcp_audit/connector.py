@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import re
 import traceback
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import PurePath
 
 import anyio
@@ -17,6 +17,7 @@ from mcp.types import Tool as SdkTool
 from mcp.types import ToolAnnotations as SdkToolAnnotations
 
 from mcp_audit.models import (
+    CanarySummary,
     Confidence,
     PermissionCategory,
     PermissionFinding,
@@ -106,6 +107,71 @@ class _ServerCapabilities:
     tools: list[ToolInfo]
     prompts: list[PromptInfo]
     resources: list[ResourceInfo]
+    surface: dict[str, dict[str, object]] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class _CanaryProbe:
+    audit: ServerAudit
+    calls: int
+    safe_tools: frozenset[str]
+
+
+def canary_tool_eligible(tool: ToolInfo, explicitly_safe: bool = False) -> bool:
+    """Only exercise empty-argument tools with no destructive or injection hints.
+
+    Required or complex schemas are skipped rather than inventing arguments.
+    Annotation claims cannot override dangerous keywords or injection patterns.
+    """
+    from mcp_audit.analyzer import PermissionAnalyzer
+    from mcp_audit.injection import InjectionDetector
+
+    schema = tool.input_schema
+    if schema is None or schema.get("type") != "object" or schema.get("required"):
+        return False
+    if "required" in schema and not isinstance(schema["required"], list):
+        return False
+    if any(key in schema for key in ("$ref", "allOf", "anyOf", "oneOf", "not", "if")):
+        return False
+    if schema.get("minProperties", 0) != 0:
+        return False
+    if tool.annotations and tool.annotations.destructive_hint is True:
+        return False
+    if tool.annotations and tool.annotations.read_only_hint is False and not explicitly_safe:
+        return False
+    forbidden = {
+        PermissionCategory.DESTRUCTIVE,
+        PermissionCategory.FILE_WRITE,
+        PermissionCategory.SHELL_EXEC,
+        PermissionCategory.EXFILTRATION,
+    }
+    hazard_tool = tool.model_copy(
+        update={
+            "description": "\n".join(
+                [
+                    tool.description or "",
+                    (tool.annotations.title or "") if tool.annotations else "",
+                    *_result_text(schema),
+                ]
+            )
+        }
+    )
+    if any(f.category in forbidden for f in PermissionAnalyzer().analyze_tool_keywords(hazard_tool)):
+        return False
+    if InjectionDetector().scan_tool(hazard_tool):
+        return False
+    return True
+
+
+def _result_text(value: object) -> list[str]:
+    """Extract text/structured result strings; never resolve resource links or decode blobs."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [text for item in value for text in _result_text(item)]
+    if isinstance(value, dict):
+        return [text for item in value.values() for text in _result_text(item)]
+    return []
 
 
 class ServerConnector:
@@ -114,20 +180,37 @@ class ServerConnector:
     def __init__(self, timeout: float = 10.0) -> None:
         self.timeout = timeout
 
-    async def connect(self, config: ServerConfig) -> ServerAudit:
+    async def connect(
+        self, config: ServerConfig, *, canary_calls: int = 0, safe_tools: frozenset[str] = frozenset()
+    ) -> ServerAudit:
         """Connect to a server and return a ServerAudit with tool list."""
+        audit = ServerAudit(server=config, connection_status="pending")
+        probe = None
+        if canary_calls:
+            if not 1 <= canary_calls <= 100:
+                raise ValueError("Canary calls must be between 1 and 100.")
+            audit.canary = CanarySummary(requested_calls=canary_calls)
+            probe = _CanaryProbe(audit, canary_calls, safe_tools)
         try:
             with anyio.move_on_after(self.timeout) as cancel_scope:
                 if config.transport == TransportType.STDIO:
-                    capabilities = await self._connect_stdio(config)
+                    capabilities = (
+                        await self._connect_stdio(config, probe)
+                        if probe
+                        else await self._connect_stdio(config)
+                    )
                 elif config.transport == TransportType.HTTP:
-                    capabilities = await self._connect_http(config)
+                    capabilities = (
+                        await self._connect_http(config, probe) if probe else await self._connect_http(config)
+                    )
                 elif config.transport == TransportType.SSE:
                     logger.warning(
                         "Server %s uses deprecated SSE transport; connecting via legacy SSE",
                         config.name,
                     )
-                    capabilities = await self._connect_sse(config)
+                    capabilities = (
+                        await self._connect_sse(config, probe) if probe else await self._connect_sse(config)
+                    )
                 else:
                     return ServerAudit(
                         server=config,
@@ -137,17 +220,18 @@ class ServerConnector:
 
             if cancel_scope.cancelled_caught:
                 logger.debug("Timeout connecting to %s", config.name)
-                return ServerAudit(server=config, connection_status="timeout")
+                audit.connection_status = "timeout"
+                if audit.canary:
+                    audit.canary.status = "partial"
+                    audit.canary.warnings.append("Canary session timed out; coverage is incomplete.")
+                return audit
 
             tools = capabilities.tools
             logger.debug("Connected to %s, found %d tools", config.name, len(tools))
-            audit = ServerAudit(
-                server=config,
-                connection_status="connected",
-                tools=tools,
-                prompts=capabilities.prompts,
-                resources=capabilities.resources,
-            )
+            audit.connection_status = "connected"
+            audit.tools = tools
+            audit.prompts = capabilities.prompts
+            audit.resources = capabilities.resources
             audit.has_annotations = any(t.annotations is not None for t in tools)
             if tools:
                 annotated = sum(1 for t in tools if t.annotations is not None)
@@ -155,6 +239,12 @@ class ServerConnector:
             return audit
 
         except Exception as exc:
+            if audit.canary:
+                audit.connection_status = "failed"
+                audit.connection_error = f"Canary session failed ({type(exc).__name__})."
+                audit.canary.status = "partial"
+                audit.canary.warnings.append("Canary session failed; coverage is incomplete.")
+                return audit
             logger.debug("Failed to connect to %s: %s", config.name, redact_text(str(exc)))
             return ServerAudit(
                 server=config,
@@ -162,7 +252,9 @@ class ServerConnector:
                 connection_error=redact_text(str(exc)),
             )
 
-    async def _connect_stdio(self, config: ServerConfig) -> _ServerCapabilities:
+    async def _connect_stdio(
+        self, config: ServerConfig, probe: _CanaryProbe | None = None
+    ) -> _ServerCapabilities:
         if not config.command:
             raise ValueError(f"Server {config.name} has no command for stdio transport")
 
@@ -172,17 +264,21 @@ class ServerConnector:
             env=None,
         )
         async with Client(params) as client:
-            return await self._list_capabilities(client, config.name)
+            return await self._inspect_session(client, config.name, probe)
 
-    async def _connect_http(self, config: ServerConfig) -> _ServerCapabilities:
+    async def _connect_http(
+        self, config: ServerConfig, probe: _CanaryProbe | None = None
+    ) -> _ServerCapabilities:
         if not config.url:
             raise ValueError(f"Server {config.name} has no URL for HTTP transport")
 
         # mcp 2.1.1 maps Client(str) to streamable_http_client.
         async with Client(config.url) as client:
-            return await self._list_capabilities(client, config.name)
+            return await self._inspect_session(client, config.name, probe)
 
-    async def _connect_sse(self, config: ServerConfig) -> _ServerCapabilities:
+    async def _connect_sse(
+        self, config: ServerConfig, probe: _CanaryProbe | None = None
+    ) -> _ServerCapabilities:
         if not config.url:
             raise ValueError(f"Server {config.name} has no URL for SSE transport")
 
@@ -192,30 +288,123 @@ class ServerConnector:
             logging.getLogger(name).addFilter(_SSE_LOG_FILTER)
         # Client(str) is Streamable HTTP; legacy SSE must pass sse_client as Transport.
         async with Client(sse_client(config.url)) as client:
-            return await self._list_capabilities(client, config.name)
+            return await self._inspect_session(client, config.name, probe)
 
-    async def _list_capabilities(self, session: Client, server_name: str) -> _ServerCapabilities:
+    async def _inspect_session(
+        self, session: Client, server_name: str, probe: _CanaryProbe | None
+    ) -> _ServerCapabilities:
+        capabilities = await self._list_capabilities(session, server_name, probe)
+        if probe is None:
+            return capabilities
+        from mcp_audit.escalation import detect_session_drift
+        from mcp_audit.injection import InjectionDetector
+        from mcp_audit.pinning import surface_hash
+
+        summary = probe.audit.canary
+        assert summary is not None
+        probe.audit.tools = capabilities.tools
+        probe.audit.prompts = capabilities.prompts
+        probe.audit.resources = capabilities.resources
+        previous = capabilities.surface
+        summary.baseline_hash = surface_hash(previous)
+        summary.current_hash = summary.baseline_hash
+        for call in range(1, probe.calls + 1):
+            eligible = [t for t in capabilities.tools if canary_tool_eligible(t, t.name in probe.safe_tools)]
+            if not eligible:
+                summary.status = "no_safe_tools" if not summary.completed_calls else "partial"
+                summary.warnings.append("No eligible empty-argument tools remain; exercise stopped.")
+                return capabilities
+            tool = eligible[(call - 1) % len(eligible)]
+            result = await session.call_tool(tool.name, {})
+            summary.completed_calls = call
+            text = "\n".join(_result_text(result.model_dump(mode="json", by_alias=True)))
+            probe.audit.injection_findings.extend(InjectionDetector().scan_result(tool.name, text, call))
+            if result.is_error:
+                summary.warnings.append(
+                    f"Tool call {call} returned an error result; exercise may be ineffective."
+                )
+            capabilities = await self._list_capabilities(session, server_name, probe)
+            probe.audit.drift_findings.extend(
+                detect_session_drift(server_name, previous, capabilities.surface, call)
+            )
+            previous = capabilities.surface
+            summary.current_hash = surface_hash(previous)
+            probe.audit.tools = capabilities.tools
+            probe.audit.prompts = capabilities.prompts
+            probe.audit.resources = capabilities.resources
+        summary.status = "partial" if summary.warnings else "complete"
+        return capabilities
+
+    async def _list_capabilities(
+        self, session: Client, server_name: str, probe: _CanaryProbe | None = None
+    ) -> _ServerCapabilities:
         tool_result = await session.list_tools()
         prompts: list[PromptInfo] = []
         resources: list[ResourceInfo] = []
+        surface: dict[str, dict[str, object]] = {}
+        if probe:
+            surface["tools"] = {t.name: t.model_dump(mode="json", by_alias=True) for t in tool_result.tools}
+            if tool_result.next_cursor:
+                self._canary_warning(probe, "Paginated tool listing; complete surface capture unavailable.")
+                raise ValueError("Canary does not admit incomplete paginated tool listings.")
 
         try:
             prompt_result = await session.list_prompts()
             prompts = [self._convert_prompt(prompt) for prompt in prompt_result.prompts]
+            if probe:
+                if prompt_result.next_cursor:
+                    raise ValueError("Incomplete paginated prompt listing.")
+                surface["prompts"] = {
+                    p.name: p.model_dump(mode="json", by_alias=True) for p in prompt_result.prompts
+                }
+                surface["prompt_results"] = {}
+                for prompt in prompt_result.prompts:
+                    if any(a.required for a in prompt.arguments or []):
+                        self._canary_warning(probe, "Required-argument prompts/get skipped.")
+                        continue
+                    try:
+                        result = await session.get_prompt(prompt.name, {})
+                    except Exception as exc:
+                        surface.pop("prompt_results", None)
+                        self._canary_warning(probe, f"prompts/get incomplete ({type(exc).__name__}).")
+                        break
+                    surface["prompt_results"][prompt.name] = result.model_dump(mode="json", by_alias=True)
         except Exception as exc:
-            logger.debug("Server %s prompt listing unavailable: %s", server_name, redact_text(str(exc)))
+            if probe:
+                surface.pop("prompts", None)
+                surface.pop("prompt_results", None)
+                self._canary_warning(probe, f"Prompt surface incomplete ({type(exc).__name__}).")
+            else:
+                logger.debug("Server %s prompt listing unavailable: %s", server_name, redact_text(str(exc)))
 
         try:
             resource_result = await session.list_resources()
             resources = [self._convert_resource(resource) for resource in resource_result.resources]
+            if probe:
+                if resource_result.next_cursor:
+                    raise ValueError("Incomplete paginated resource listing.")
+                surface["resources"] = {
+                    str(r.uri): r.model_dump(mode="json", by_alias=True) for r in resource_result.resources
+                }
         except Exception as exc:
-            logger.debug("Server %s resource listing unavailable: %s", server_name, redact_text(str(exc)))
+            if probe:
+                surface.pop("resources", None)
+                self._canary_warning(probe, f"Resource surface incomplete ({type(exc).__name__}).")
+            else:
+                logger.debug("Server %s resource listing unavailable: %s", server_name, redact_text(str(exc)))
 
         return _ServerCapabilities(
             tools=[self._convert_tool(t) for t in tool_result.tools],
             prompts=prompts,
             resources=resources,
+            surface=surface,
         )
+
+    @staticmethod
+    def _canary_warning(probe: _CanaryProbe, message: str) -> None:
+        assert probe.audit.canary is not None
+        if message not in probe.audit.canary.warnings:
+            probe.audit.canary.warnings.append(message)
 
     def skip_connect_audit(self, config: ServerConfig) -> ServerAudit:
         """Return a ServerAudit with config-inferred permissions (no connection)."""

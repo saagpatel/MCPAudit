@@ -197,6 +197,24 @@ _PATTERNS: list[_InjectionPattern] = [
 class InjectionDetector:
     """Scans MCP capability names and descriptions for adversarial prompt injection patterns."""
 
+    def scan_result(self, tool_name: str, text: str, after_call: int) -> list[InjectionFinding]:
+        """Scan untrusted result text without echoing possible credential values."""
+        from mcp_audit.rules.result_injection import RESULT_INJECTION_RULES
+
+        return [
+            InjectionFinding(
+                tool_name=tool_name,
+                target_name=tool_name,
+                severity=InjectionSeverity.HIGH,
+                pattern_name=name,
+                after_call=after_call,
+                matched_text="[tool-result excerpt withheld]",
+                description=f"Tool result after canary call {after_call} contains instruction-shaped text.",
+            )
+            for name, pattern in RESULT_INJECTION_RULES.items()
+            if pattern.search(text)
+        ]
+
     def scan_tool(self, tool: ToolInfo) -> list[InjectionFinding]:
         """Return all injection findings for a single tool."""
         # Normalize name: replace underscores/hyphens with spaces for phrase matching
