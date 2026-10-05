@@ -76,6 +76,71 @@
       "title": "ArtifactVerifySeverity",
       "type": "string"
     },
+    "CanarySummary": {
+      "description": "Bounded runtime exercise coverage; complete does not mean trustworthy.",
+      "properties": {
+        "requested_calls": {
+          "title": "Requested Calls",
+          "type": "integer"
+        },
+        "completed_calls": {
+          "default": 0,
+          "title": "Completed Calls",
+          "type": "integer"
+        },
+        "prompt_get_calls": {
+          "default": 0,
+          "title": "Prompt Get Calls",
+          "type": "integer"
+        },
+        "baseline_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Baseline Hash"
+        },
+        "current_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Current Hash"
+        },
+        "status": {
+          "default": "partial",
+          "enum": [
+            "complete",
+            "partial",
+            "no_safe_tools"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "required": [
+        "requested_calls"
+      ],
+      "title": "CanarySummary",
+      "type": "object"
+    },
     "CapabilityFinding": {
       "description": "A permission inference for a non-tool MCP capability.",
       "properties": {
@@ -275,6 +340,60 @@
           "default": "",
           "title": "Remediation",
           "type": "string"
+        },
+        "source": {
+          "default": "pin",
+          "enum": [
+            "pin",
+            "session"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "severity": {
+          "default": "medium",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Severity",
+          "type": "string"
+        },
+        "after_call": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "After Call"
+        },
+        "surface_type": {
+          "$ref": "#/$defs/CapabilityTarget",
+          "default": "tool"
+        },
+        "surface": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Surface"
+        },
+        "field_changes": {
+          "items": {
+            "$ref": "#/$defs/SurfaceFieldChange"
+          },
+          "title": "Field Changes",
+          "type": "array"
         }
       },
       "required": [
@@ -458,6 +577,18 @@
         "pattern_name": {
           "title": "Pattern Name",
           "type": "string"
+        },
+        "after_call": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "After Call"
         },
         "matched_text": {
           "title": "Matched Text",
@@ -1347,6 +1478,17 @@
             }
           ],
           "default": null
+        },
+        "canary": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CanarySummary"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -1551,6 +1693,44 @@
       ],
       "title": "SsrfSeverity",
       "type": "string"
+    },
+    "SurfaceFieldChange": {
+      "description": "A field-level diff retaining hashes rather than untrusted/secret values.",
+      "properties": {
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "before_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Before Hash"
+        },
+        "after_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "After Hash"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "SurfaceFieldChange",
+      "type": "object"
     },
     "ToolAnnotations": {
       "description": "MCP tool annotations (hints about behavior).",

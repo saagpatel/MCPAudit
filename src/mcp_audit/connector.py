@@ -5,12 +5,15 @@ from __future__ import annotations
 import logging
 import re
 import traceback
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import PurePath
+from typing import TypeVar
 
 import anyio
 from mcp import Client, StdioServerParameters
 from mcp.client.sse import sse_client
+from mcp.types import ListPromptsResult, ListResourcesResult, ListToolsResult
 from mcp.types import Prompt as SdkPrompt
 from mcp.types import Resource as SdkResource
 from mcp.types import Tool as SdkTool
@@ -100,6 +103,24 @@ _SHELL_WRAPPERS = {"bash", "sh", "zsh", "fish", "pwsh", "powershell", "cmd", "cm
 _NETWORK_COMMANDS = {"curl", "wget"}
 _PACKAGE_RUNNERS = {"npx", "uvx", "pipx"}
 _DESTRUCTIVE_MARKERS = ("rm -rf", "remove-item -recurse", "del /s", "format ")
+_CANARY_DANGEROUS_ACTION = re.compile(r"\b(?:shutdown|transfer[ _-]+funds)\b", re.IGNORECASE)
+_Page = TypeVar("_Page", ListToolsResult, ListPromptsResult, ListResourcesResult)
+_Item = TypeVar("_Item")
+
+
+async def _list_pages(
+    fetch: Callable[..., Awaitable[_Page]], items: Callable[[_Page], list[_Item]]
+) -> list[_Item]:
+    """Admit a surface only after its complete, bounded pagination succeeds."""
+    collected: list[_Item] = []
+    cursor = None
+    for _ in range(20):
+        page = await fetch(cursor=cursor, cache_mode="bypass")
+        collected.extend(items(page))
+        cursor = page.next_cursor
+        if not cursor:
+            return collected
+    raise ValueError("Listing exceeds the 20-page limit.")
 
 
 @dataclass(frozen=True)
@@ -137,7 +158,11 @@ def canary_tool_eligible(tool: ToolInfo, explicitly_safe: bool = False) -> bool:
         return False
     if tool.annotations and tool.annotations.destructive_hint is True:
         return False
-    if tool.annotations and tool.annotations.read_only_hint is False and not explicitly_safe:
+    if not explicitly_safe and not (
+        tool.annotations
+        and tool.annotations.read_only_hint is True
+        and tool.annotations.destructive_hint is not True
+    ):
         return False
     forbidden = {
         PermissionCategory.DESTRUCTIVE,
@@ -156,6 +181,8 @@ def canary_tool_eligible(tool: ToolInfo, explicitly_safe: bool = False) -> bool:
             )
         }
     )
+    if _CANARY_DANGEROUS_ACTION.search(f"{tool.name}\n{hazard_tool.description}"):
+        return False
     if any(f.category in forbidden for f in PermissionAnalyzer().analyze_tool_keywords(hazard_tool)):
         return False
     if InjectionDetector().scan_tool(hazard_tool):
@@ -239,17 +266,18 @@ class ServerConnector:
             return audit
 
         except Exception as exc:
+            message = redact_text(str(exc))
+            logger.debug("Failed to connect to %s: %s", config.name, message)
             if audit.canary:
                 audit.connection_status = "failed"
-                audit.connection_error = f"Canary session failed ({type(exc).__name__})."
+                audit.connection_error = message
                 audit.canary.status = "partial"
                 audit.canary.warnings.append("Canary session failed; coverage is incomplete.")
                 return audit
-            logger.debug("Failed to connect to %s: %s", config.name, redact_text(str(exc)))
             return ServerAudit(
                 server=config,
                 connection_status="failed",
-                connection_error=redact_text(str(exc)),
+                connection_error=message,
             )
 
     async def _connect_stdio(
@@ -309,6 +337,13 @@ class ServerConnector:
         summary.baseline_hash = surface_hash(previous)
         summary.current_hash = summary.baseline_hash
         for call in range(1, probe.calls + 1):
+            if "tools" not in capabilities.surface:
+                capabilities = await self._list_capabilities(session, server_name, probe, previous)
+                probe.audit.drift_findings.extend(
+                    detect_session_drift(server_name, previous, capabilities.surface, call - 1)
+                )
+                previous = {**previous, **capabilities.surface}
+                summary.current_hash = surface_hash(previous)
             eligible = [t for t in capabilities.tools if canary_tool_eligible(t, t.name in probe.safe_tools)]
             if not eligible:
                 summary.status = "no_safe_tools" if not summary.completed_calls else "partial"
@@ -323,11 +358,11 @@ class ServerConnector:
                 summary.warnings.append(
                     f"Tool call {call} returned an error result; exercise may be ineffective."
                 )
-            capabilities = await self._list_capabilities(session, server_name, probe)
+            capabilities = await self._list_capabilities(session, server_name, probe, previous)
             probe.audit.drift_findings.extend(
                 detect_session_drift(server_name, previous, capabilities.surface, call)
             )
-            previous = capabilities.surface
+            previous = {**previous, **capabilities.surface}
             summary.current_hash = surface_hash(previous)
             probe.audit.tools = capabilities.tools
             probe.audit.prompts = capabilities.prompts
@@ -336,65 +371,83 @@ class ServerConnector:
         return capabilities
 
     async def _list_capabilities(
-        self, session: Client, server_name: str, probe: _CanaryProbe | None = None
+        self,
+        session: Client,
+        server_name: str,
+        probe: _CanaryProbe | None = None,
+        previous: dict[str, dict[str, object]] | None = None,
     ) -> _ServerCapabilities:
-        tool_result = await session.list_tools()
+        tools: list[SdkTool] = []
         prompts: list[PromptInfo] = []
         resources: list[ResourceInfo] = []
         surface: dict[str, dict[str, object]] = {}
-        if probe:
-            surface["tools"] = {t.name: t.model_dump(mode="json", by_alias=True) for t in tool_result.tools}
-            if tool_result.next_cursor:
-                self._canary_warning(probe, "Paginated tool listing; complete surface capture unavailable.")
-                raise ValueError("Canary does not admit incomplete paginated tool listings.")
+        advertised = session.server_capabilities
+        if advertised.tools is not None:
+            try:
+                tools = await _list_pages(session.list_tools, lambda page: page.tools)
+                if probe:
+                    surface["tools"] = {t.name: t.model_dump(mode="json", by_alias=True) for t in tools}
+            except Exception as exc:
+                if not probe:
+                    raise
+                self._canary_warning(probe, f"Tool surface incomplete ({type(exc).__name__}).")
 
-        try:
-            prompt_result = await session.list_prompts()
-            prompts = [self._convert_prompt(prompt) for prompt in prompt_result.prompts]
-            if probe:
-                if prompt_result.next_cursor:
-                    raise ValueError("Incomplete paginated prompt listing.")
-                surface["prompts"] = {
-                    p.name: p.model_dump(mode="json", by_alias=True) for p in prompt_result.prompts
-                }
-                surface["prompt_results"] = {}
-                for prompt in prompt_result.prompts:
-                    if any(a.required for a in prompt.arguments or []):
-                        self._canary_warning(probe, "Required-argument prompts/get skipped.")
-                        continue
-                    try:
-                        result = await session.get_prompt(prompt.name, {})
-                    except Exception as exc:
-                        surface.pop("prompt_results", None)
-                        self._canary_warning(probe, f"prompts/get incomplete ({type(exc).__name__}).")
-                        break
-                    surface["prompt_results"][prompt.name] = result.model_dump(mode="json", by_alias=True)
-        except Exception as exc:
-            if probe:
-                surface.pop("prompts", None)
-                surface.pop("prompt_results", None)
-                self._canary_warning(probe, f"Prompt surface incomplete ({type(exc).__name__}).")
-            else:
-                logger.debug("Server %s prompt listing unavailable: %s", server_name, redact_text(str(exc)))
+        if advertised.prompts is not None:
+            try:
+                prompt_items = await _list_pages(session.list_prompts, lambda page: page.prompts)
+                prompts = [self._convert_prompt(prompt) for prompt in prompt_items]
+                if probe:
+                    surface["prompts"] = {
+                        p.name: p.model_dump(mode="json", by_alias=True) for p in prompt_items
+                    }
+                    # A failed get preserves only that prompt's last known structure.
+                    known_results = (previous or {}).get("prompt_results", {})
+                    surface["prompt_results"] = {
+                        p.name: known_results[p.name] for p in prompt_items if p.name in known_results
+                    }
+                    for prompt in prompt_items:
+                        if any(a.required for a in prompt.arguments or []):
+                            self._canary_warning(probe, "Required-argument prompts/get skipped.")
+                            continue
+                        assert probe.audit.canary is not None
+                        probe.audit.canary.prompt_get_calls += 1
+                        try:
+                            result = await session.get_prompt(prompt.name, {})
+                        except Exception as exc:
+                            self._canary_warning(probe, f"prompts/get incomplete ({type(exc).__name__}).")
+                            continue
+                        surface["prompt_results"][prompt.name] = {
+                            "description": result.description,
+                            "messages": [{"role": m.role} for m in result.messages],
+                        }
+            except Exception as exc:
+                if probe:
+                    surface.pop("prompts", None)
+                    surface.pop("prompt_results", None)
+                    self._canary_warning(probe, f"Prompt surface incomplete ({type(exc).__name__}).")
+                else:
+                    logger.debug(
+                        "Server %s prompt listing unavailable: %s", server_name, redact_text(str(exc))
+                    )
 
-        try:
-            resource_result = await session.list_resources()
-            resources = [self._convert_resource(resource) for resource in resource_result.resources]
-            if probe:
-                if resource_result.next_cursor:
-                    raise ValueError("Incomplete paginated resource listing.")
-                surface["resources"] = {
-                    str(r.uri): r.model_dump(mode="json", by_alias=True) for r in resource_result.resources
-                }
-        except Exception as exc:
-            if probe:
-                surface.pop("resources", None)
-                self._canary_warning(probe, f"Resource surface incomplete ({type(exc).__name__}).")
-            else:
-                logger.debug("Server %s resource listing unavailable: %s", server_name, redact_text(str(exc)))
+        if advertised.resources is not None:
+            try:
+                resource_items = await _list_pages(session.list_resources, lambda page: page.resources)
+                resources = [self._convert_resource(resource) for resource in resource_items]
+                if probe:
+                    surface["resources"] = {
+                        str(r.uri): r.model_dump(mode="json", by_alias=True) for r in resource_items
+                    }
+            except Exception as exc:
+                if probe:
+                    self._canary_warning(probe, f"Resource surface incomplete ({type(exc).__name__}).")
+                else:
+                    logger.debug(
+                        "Server %s resource listing unavailable: %s", server_name, redact_text(str(exc))
+                    )
 
         return _ServerCapabilities(
-            tools=[self._convert_tool(t) for t in tool_result.tools],
+            tools=[self._convert_tool(t) for t in tools],
             prompts=prompts,
             resources=resources,
             surface=surface,

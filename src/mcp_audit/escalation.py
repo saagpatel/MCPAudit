@@ -62,14 +62,25 @@ def detect_session_drift(
     after: dict[str, dict[str, object]],
     after_call: int,
 ) -> list[DriftFinding]:
-    """Detect any mid-session surface transition, including reversions to baseline."""
+    """Compare observed surfaces with their last known successful values.
+
+    The caller retains unavailable categories across failed listings. A failed
+    prompts/get retains only that prompt, rather than losing its peers.
+    """
     from mcp_audit.pinning import surface_field_diff, surface_hash
 
     findings: list[DriftFinding] = []
     # An unavailable listing is a coverage warning, not evidence of removal.
     for surface in sorted(before.keys() & after.keys()):
         old_items, new_items = before.get(surface, {}), after.get(surface, {})
-        for name in sorted(old_items.keys() | new_items.keys()):
+        # A missing individual get is unknown, including in the first capture.
+        # Prompt additions/removals are established by the successful listing.
+        names = (
+            old_items.keys() & new_items.keys()
+            if surface == "prompt_results"
+            else old_items.keys() | new_items.keys()
+        )
+        for name in sorted(names):
             old, new = old_items.get(name), new_items.get(name)
             if old == new:
                 continue

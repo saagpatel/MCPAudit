@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, Field, computed_field
 
@@ -820,9 +821,10 @@ class CanarySummary(BaseModel):
 
     requested_calls: int
     completed_calls: int = 0
+    prompt_get_calls: int = 0
     baseline_hash: str | None = None
     current_hash: str | None = None
-    status: str = "partial"  # complete, partial, or no_safe_tools
+    status: Literal["complete", "partial", "no_safe_tools"] = "partial"
     warnings: list[str] = Field(default_factory=list)
 
 
@@ -838,8 +840,8 @@ class DriftFinding(BaseModel):
     summary: str = ""
     details: list[str] = Field(default_factory=list)
     remediation: str = ""
-    source: str = "pin"  # pin or session
-    severity: str = "medium"
+    source: Literal["pin", "session"] = "pin"
+    severity: Literal["low", "medium", "high"] = "medium"
     after_call: int | None = None
     surface_type: CapabilityTarget = CapabilityTarget.TOOL
     surface: str | None = None  # tools, prompts, prompt_results, or resources for a session

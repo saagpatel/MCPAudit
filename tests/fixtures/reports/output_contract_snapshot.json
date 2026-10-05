@@ -23,6 +23,7 @@
     "audit_keys": [
       "annotation_coverage",
       "artifact_verify_findings",
+      "canary",
       "capability_findings",
       "connection_error",
       "connection_status",
@@ -92,6 +93,7 @@
     "audit_keys": [
       "annotation_coverage",
       "artifact_verify_findings",
+      "canary",
       "capability_findings",
       "connection_error",
       "connection_status",
@@ -154,6 +156,7 @@
     "audit_keys": [
       "annotation_coverage",
       "artifact_verify_findings",
+      "canary",
       "capability_findings",
       "connection_error",
       "connection_status",
@@ -214,6 +217,7 @@
     "audit_keys": [
       "annotation_coverage",
       "artifact_verify_findings",
+      "canary",
       "capability_findings",
       "connection_error",
       "connection_status",
@@ -284,6 +288,7 @@
     "audit_keys": [
       "annotation_coverage",
       "artifact_verify_findings",
+      "canary",
       "capability_findings",
       "connection_error",
       "connection_status",
@@ -365,6 +370,7 @@
     "audit_keys": [
       "annotation_coverage",
       "artifact_verify_findings",
+      "canary",
       "capability_findings",
       "connection_error",
       "connection_status",
@@ -427,6 +433,7 @@
     "audit_keys": [
       "annotation_coverage",
       "artifact_verify_findings",
+      "canary",
       "capability_findings",
       "connection_error",
       "connection_status",
@@ -510,6 +517,7 @@
     "audit_keys": [
       "annotation_coverage",
       "artifact_verify_findings",
+      "canary",
       "capability_findings",
       "connection_error",
       "connection_status",
@@ -573,6 +581,7 @@
     "audit_keys": [
       "annotation_coverage",
       "artifact_verify_findings",
+      "canary",
       "capability_findings",
       "connection_error",
       "connection_status",
@@ -653,6 +662,7 @@
     "audit_keys": [
       "annotation_coverage",
       "artifact_verify_findings",
+      "canary",
       "capability_findings",
       "connection_error",
       "connection_status",
