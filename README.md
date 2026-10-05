@@ -314,6 +314,46 @@ explicit `UNKNOWN` status without admitting model findings when injection,
 refusal, omission, provider failure, or malformed output prevents a complete
 classification. Deterministic analysis remains authoritative.
 
+### Runtime rug-pull canary
+
+For servers you are allowed to exercise, `scan --canary-check` captures an
+in-memory SHA256 surface baseline, makes up to five benign `tools/call`
+requests in the same session, and re-lists after every call. Unlike an ordinary
+scan, this mode **calls tools**. It requires an explicit isolated config:
+
+```bash
+mcp-audit scan --config ./allowed-servers.json --config-only \
+  --canary-check --canary-calls 5 --json canary.json --sarif canary.sarif
+```
+
+The canary compares tools (including descriptions, schemas, and annotations),
+prompt metadata, empty-argument `prompts/get` responses, and the resources list.
+Mid-session changes are HIGH drift findings with field paths and before/after
+hashes. Tool-result text and structured result strings are checked for
+instruction overrides, credential-hunt requests, and directions to call other
+tools. Result excerpts are withheld; no returned instructions are executed,
+resource links followed, or resource contents read. The existing JSON, SARIF,
+terminal, HTML, and policy paths carry these findings; no saved pins are changed.
+
+Calls use `{}` only. Required arguments and complex schemas are skipped rather
+than filled with guessed values. Explicit destructive annotations, dangerous
+capability keywords, and injection hints always veto a call, including when
+`--canary-safe-tool SERVER/TOOL` marks a tool safe. Tools with an explicit
+`readOnlyHint: false` require that mark; other eligible empty-argument tools are
+selected in server order, round-robin. Eligibility is rechecked after each
+listing. Server annotations are untrusted hints, so this is not a sandbox or a
+guarantee that an apparently benign tool has no side effects.
+
+`--canary-calls` is bounded to 1–100 calls **per server**, default 5. The existing
+`--timeout` bounds the whole session, including all calls and listings. Errors,
+timeouts, unsupported or paginated listings, required-argument prompts, and a
+lack of eligible tools produce incomplete-coverage warnings. A clean canary
+only describes this bounded exercise: a server can gate on elapsed time,
+randomness, client identity, another tool or arguments, or call count greater
+than K. It does not establish that a server is safe in later sessions. Tests
+use only a synthetic local stdio server that changes metadata after three calls
+without changing its version, plus a benign control.
+
 ## Help improve mcp-audit (2 minutes)
 
 Redacted field reports from real MCP configs help calibrate the scanner.

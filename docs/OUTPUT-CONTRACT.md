@@ -87,6 +87,45 @@ Each audit may include:
   `source_trust`, analyzer/model provenance, candidate/analyzed tool counts,
   and the number of admitted findings. `unknown` never means clean.
 
+### Runtime canary fields (additive)
+
+`scan --canary-check` uses the existing `AuditReport` contract and scan exit
+codes. Each exercised audit includes `canary` with `requested_calls`,
+`completed_calls`, `baseline_hash` / `current_hash` (captured surface SHA256),
+`status` (`complete`, `partial`, or `no_safe_tools`), and
+`warnings`. `complete` means the bounded protocol exercise completed; it does
+not establish server safety. Degraded coverage also adds a top-level warning
+with `code: canary_incomplete` and `check: canary_check`. Inspect this alongside
+connection status; findings already observed are retained on session failure
+or timeout.
+
+`drift_findings` includes both saved-pin and session comparisons. Additive
+fields are `source` (`pin` by default, `session` for the canary), `severity`
+(`medium` by default, `high` for session changes), `after_call` (1-based, null
+for saved pins), `surface_type` (`tool`, `prompt`, or `resource`), `surface`
+(`tools`, `prompts`, `prompt_results`, or `resources` for sessions), and
+`field_changes`. Each change has a JSON Pointer `path` within the capability
+and canonical SHA256 `before_hash` / `after_hash`; null means an absent field.
+Raw changed values are withheld. `target_type` follows `surface_type`;
+the retained legacy `tool_name` / `target_name` also identifies prompts and
+resource URIs. `summary` distinguishes `prompts` from `prompt_results`
+(`prompts/get`). Consecutive successful snapshots are compared so a reversion
+is also detected. Unavailable surface categories do not establish removals.
+
+Tool-result injection findings use existing HIGH rule `MCP007`, with additive
+`after_call` and pattern names `result_instruction_override`,
+`result_credential_hunt`, and `result_tool_redirect`. They retain the tool
+target type; `matched_text` is a fixed withheld-excerpt notice. No result
+payload is stored in the report. String values in text, embedded results,
+and structured content are scanned; binary blobs are not decoded.
+
+Session drift uses existing `MCP009` at SARIF `error` level, with `source`,
+`severity`, `after_call`, `surface`, and `field_changes` in result properties. Saved-pin
+drift remains `warning`. `fail_on.drift` gates either source; the general
+`fail_on.severity` threshold also includes session drift. Result injection
+uses the existing injection severity gate. No version or schema-version bump
+is required for these additive fields.
+
 Each permission finding includes additive provenance fields:
 
 - `source_trust` — `untrusted_server_metadata` for MCP-controlled metadata or
