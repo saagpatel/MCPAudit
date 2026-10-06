@@ -116,6 +116,28 @@ def test_sync_dict_wrapper_unredacted_keeps_real_host() -> None:
     assert result["hostname"] == socket.gethostname()
 
 
+@pytest.mark.parametrize("redact", [False, True])
+def test_sync_dict_wrapper_always_redacts_credentials(redact: bool) -> None:
+    config = {
+        "mcpServers": {
+            "fixture-server": {
+                "command": "synthetic-server",
+                "args": ["--password=first second&third", "--config", '{"password":"hunter2-SECRET"}'],
+                "url": "https://user:fixture-secret@token.example.test:8443/mcp?mode=admin#fragment",
+            }
+        }
+    }
+    result = scan_config_only_dict(config, redact=redact)
+    server = result["audits"][0]["server"]
+    assert server["args"] == ["--password=<redacted>", "--config", '{"password":<redacted>}']
+    assert server["url"] == "https://<redacted>@token.example.test:8443/mcp?mode=<redacted>#<redacted>"
+    assert result["hostname"] == ("<redacted-host>" if redact else socket.gethostname())
+    assert server["name"] == ("server-01" if redact else "fixture-server")
+    dumped = json.dumps(result)
+    for secret in ("first second&third", "hunter2-SECRET", "fixture-secret", "admin", "fragment"):
+        assert secret not in dumped
+
+
 def test_sync_dict_wrapper_rejects_running_loop() -> None:
     async def _call_from_loop() -> None:
         scan_config_only_dict(_REMOTE_CONFIG)

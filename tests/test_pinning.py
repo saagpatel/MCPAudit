@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
@@ -51,6 +53,50 @@ class TestComputeHash:
 
 
 class TestPinServer:
+    def test_tool_snapshot_redaction_preserves_raw_hash(self, tmp_path: Path) -> None:
+        tool = make_tool(
+            "fixture-tool",
+            description='token=fixture-secret {"password":"hunter2-SECRET"}',
+            input_schema={
+                "type": "object",
+                "properties": {
+                    "password": {
+                        "type": "string",
+                        "default": "hunter2-SECRET",
+                        "examples": ["example-secret"],
+                        "const": "const-secret",
+                    },
+                    "port": {"type": "integer", "default": 8080},
+                },
+            },
+        )
+        raw_canonical = json.dumps(
+            {"name": tool.name, "description": tool.description, "inputSchema": tool.input_schema},
+            sort_keys=True,
+            ensure_ascii=False,
+        )
+        expected_hash = "sha256:" + hashlib.sha256(raw_canonical.encode()).hexdigest()
+        store = _store(tmp_path)
+        assert store.compute_hash(tool) == expected_hash
+        store.pin_server("srv", [tool])
+        stored = (tmp_path / "pins.yaml").read_text()
+        entry = yaml.safe_load(stored)["servers"]["srv"]["tools"][tool.name]
+        assert entry["hash"] == expected_hash
+        assert entry["snapshot"]["input_schema"]["properties"]["password"] == {
+            "type": "string",
+            "default": "<redacted>",
+            "examples": ["<redacted>"],
+            "const": "<redacted>",
+        }
+        assert entry["snapshot"]["input_schema"]["properties"]["port"]["default"] == 8080
+        for secret in ("fixture-secret", "hunter2-SECRET", "example-secret", "const-secret"):
+            assert secret not in stored
+        reloaded = _store(tmp_path)
+        assert reloaded.compute_hash(tool) == expected_hash
+        assert reloaded.check_drift("srv", [tool]) == []
+        changed = tool.model_copy(update={"description": "token=rotated-secret"})
+        assert reloaded.check_drift("srv", [changed])
+
     def test_creates_file_when_not_exists(self, tmp_path: Path) -> None:
         store = _store(tmp_path)
         pin_file = tmp_path / "pins.yaml"

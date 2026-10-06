@@ -500,8 +500,8 @@ class PinStore:
     def _tool_snapshot(self, tool: ToolInfo) -> dict[str, Any]:
         """Return the reviewable tool fields stored alongside the pin hash."""
         return {
-            "description": tool.description,
-            "input_schema": tool.input_schema,
+            "description": redact_data(tool.description),
+            "input_schema": redact_data(tool.input_schema),
         }
 
     def _config_snapshot(self, server_config: ServerConfig, *, redact_args: bool = True) -> dict[str, Any]:
