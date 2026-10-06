@@ -27,6 +27,7 @@ from mcp_audit.models import (
     PermissionFinding,
     PromptInfo,
     ResourceInfo,
+    ScanWarning,
     ServerAudit,
     ServerConfig,
     ToolAnnotations,
@@ -113,6 +114,10 @@ _Page = TypeVar("_Page", ListToolsResult, ListPromptsResult, ListResourcesResult
 _Item = TypeVar("_Item")
 
 
+class _ListingPageLimit(ValueError):
+    """A surface exists, but its complete listing exceeds the capture bound."""
+
+
 async def _list_pages(
     fetch: Callable[..., Awaitable[_Page]], items: Callable[[_Page], list[_Item]]
 ) -> list[_Item]:
@@ -125,7 +130,7 @@ async def _list_pages(
         cursor = page.next_cursor
         if not cursor:
             return collected
-    raise ValueError("Listing exceeds the 20-page limit.")
+    raise _ListingPageLimit("Listing exceeds the 20-page limit.")
 
 
 @dataclass(frozen=True)
@@ -134,6 +139,7 @@ class _ServerCapabilities:
     prompts: list[PromptInfo]
     resources: list[ResourceInfo]
     surface: dict[str, dict[str, object]] = field(default_factory=dict)
+    listing_warnings: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -143,6 +149,7 @@ class _CanaryProbe:
     safe_tools: frozenset[str]
     # prompts/get repeats on every listing; each (prompt, pattern) is reported once.
     prompt_patterns: set[tuple[str, str]] = field(default_factory=set)
+    listing_failures: dict[str, str] = field(default_factory=dict)
 
 
 def canary_tool_eligible(tool: ToolInfo, explicitly_safe: bool = False) -> bool:
@@ -212,6 +219,7 @@ class ServerConnector:
 
     def __init__(self, timeout: float = 10.0) -> None:
         self.timeout = timeout
+        self.scan_warnings: list[ScanWarning] | None = None
 
     async def connect(
         self, config: ServerConfig, *, canary_calls: int = 0, safe_tools: frozenset[str] = frozenset()
@@ -259,12 +267,20 @@ class ServerConnector:
                     audit.canary.warnings.append("Canary session timed out; coverage is incomplete.")
                 return audit
 
-            tools = capabilities.tools
+            tools = audit.tools if probe else capabilities.tools
             logger.debug("Connected to %s, found %d tools", config.name, len(tools))
             audit.connection_status = "connected"
-            audit.tools = tools
-            audit.prompts = capabilities.prompts
-            audit.resources = capabilities.resources
+            if not probe:
+                audit.tools = tools
+                audit.prompts = capabilities.prompts
+                audit.resources = capabilities.resources
+                for message in capabilities.listing_warnings:
+                    if self.scan_warnings is not None:
+                        self.scan_warnings.append(
+                            ScanWarning(
+                                code="surface_listing_incomplete", message=message, servers=[config.name]
+                            )
+                        )
             audit.has_annotations = any(t.annotations is not None for t in tools)
             if tools:
                 annotated = sum(1 for t in tools if t.annotations is not None)
@@ -335,9 +351,6 @@ class ServerConnector:
 
         summary = probe.audit.canary
         assert summary is not None
-        probe.audit.tools = capabilities.tools
-        probe.audit.prompts = capabilities.prompts
-        probe.audit.resources = capabilities.resources
         previous = capabilities.surface
         summary.baseline_hash = surface_hash(previous)
         summary.current_hash = summary.baseline_hash
@@ -369,9 +382,6 @@ class ServerConnector:
             )
             previous = {**previous, **capabilities.surface}
             summary.current_hash = surface_hash(previous)
-            probe.audit.tools = capabilities.tools
-            probe.audit.prompts = capabilities.prompts
-            probe.audit.resources = capabilities.resources
         summary.status = "partial" if summary.warnings else "complete"
         return capabilities
 
@@ -387,10 +397,11 @@ class ServerConnector:
         prompts: list[PromptInfo] = []
         resources: list[ResourceInfo] = []
         surface: dict[str, dict[str, object]] = {}
+        listing_warnings: list[str] = []
         # Every surface is always listed, in both modes: servers can serve surfaces
         # they never advertised, and skipping them would hide them from the static
-        # checks. Only a failure on an advertised surface degrades the canary; an
-        # unadvertised surface that is unavailable is logged at debug level.
+        # checks. Never-observed, unadvertised surfaces may be unsupported;
+        # intermittent availability and page-limit exhaustion degrade coverage.
         advertised = session.server_capabilities
         prompts_advertised = getattr(advertised, "prompts", None) is not None
         resources_advertised = getattr(advertised, "resources", None) is not None
@@ -410,6 +421,8 @@ class ServerConnector:
                 prompt_items = await _list_pages(session.list_prompts, lambda page: page.prompts)
                 prompts = [self._convert_prompt(prompt) for prompt in prompt_items]
                 if probe:
+                    if "prompts" in probe.listing_failures:
+                        self._canary_warning(probe, probe.listing_failures["prompts"])
                     surface["prompts"] = {
                         p.name: p.model_dump(mode="json", by_alias=True) for p in prompt_items
                     }
@@ -441,8 +454,15 @@ class ServerConnector:
                 if probe:
                     surface.pop("prompts", None)
                     surface.pop("prompt_results", None)
-                if probe and prompts_advertised:
-                    self._canary_warning(probe, f"Prompt surface incomplete ({type(exc).__name__}).")
+                message = f"Prompt surface incomplete ({type(exc).__name__})."
+                if probe:
+                    probe.listing_failures["prompts"] = message
+                if probe and (
+                    prompts_advertised or "prompts" in (previous or {}) or isinstance(exc, _ListingPageLimit)
+                ):
+                    self._canary_warning(probe, message)
+                elif not probe and isinstance(exc, _ListingPageLimit):
+                    listing_warnings.append(message)
                 else:
                     logger.debug(
                         "Server %s prompt listing unavailable: %s", server_name, redact_text(str(exc))
@@ -453,22 +473,42 @@ class ServerConnector:
                 resource_items = await _list_pages(session.list_resources, lambda page: page.resources)
                 resources = [self._convert_resource(resource) for resource in resource_items]
                 if probe:
+                    if "resources" in probe.listing_failures:
+                        self._canary_warning(probe, probe.listing_failures["resources"])
                     surface["resources"] = {
                         str(r.uri): r.model_dump(mode="json", by_alias=True) for r in resource_items
                     }
             except Exception as exc:
-                if probe and resources_advertised:
-                    self._canary_warning(probe, f"Resource surface incomplete ({type(exc).__name__}).")
+                message = f"Resource surface incomplete ({type(exc).__name__})."
+                if probe:
+                    probe.listing_failures["resources"] = message
+                if probe and (
+                    resources_advertised
+                    or "resources" in (previous or {})
+                    or isinstance(exc, _ListingPageLimit)
+                ):
+                    self._canary_warning(probe, message)
+                elif not probe and isinstance(exc, _ListingPageLimit):
+                    listing_warnings.append(message)
                 else:
                     logger.debug(
                         "Server %s resource listing unavailable: %s", server_name, redact_text(str(exc))
                     )
 
+        tool_infos = [self._convert_tool(t) for t in tools]
+        if probe:
+            if "tools" in surface:
+                probe.audit.tools = tool_infos
+            if "prompts" in surface:
+                probe.audit.prompts = prompts
+            if "resources" in surface:
+                probe.audit.resources = resources
         return _ServerCapabilities(
-            tools=[self._convert_tool(t) for t in tools],
+            tools=tool_infos,
             prompts=prompts,
             resources=resources,
             surface=surface,
+            listing_warnings=listing_warnings,
         )
 
     @staticmethod

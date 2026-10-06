@@ -135,6 +135,7 @@ async def run_scan(
             servers = extra_servers if opts.config_only else servers + extra_servers
 
     connector = ServerConnector(timeout=float(opts.timeout))
+    connector.scan_warnings = scan_warnings
     analyzer = PermissionAnalyzer()
     scorer = RiskScorer()
 
