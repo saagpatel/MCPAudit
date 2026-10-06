@@ -99,6 +99,7 @@ def _parse_source(
     if (
         not explicit
         and client == ClientType.CLAUDE_CODE
+        and path.name != ".claude.json"
         and not any(key in data for key in ("mcpServers", "projects"))
     ):
         raise ValueError("unsupported config: no MCP server map")
@@ -124,7 +125,7 @@ def _parse_source(
                 raise ValueError("mcp section is not an object")
             if "servers" in section:
                 maps.append(section["servers"])
-        if not maps:
+        if not maps and not (client == ClientType.VSCODE and path.name == "settings.json"):
             raise ValueError("unsupported config: no MCP server map")
         for mapping in maps:
             servers.extend(parse_server_map(mapping, str(path), client, sources.errors))

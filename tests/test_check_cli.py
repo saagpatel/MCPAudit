@@ -14,6 +14,7 @@ from click.testing import CliRunner
 from mcp_audit import cli, engine
 from mcp_audit.check_cli import demo
 from mcp_audit.connector import ServerConnector
+from mcp_audit.discovery.vscode import VSCodeDiscoverer
 from mcp_audit.review_discovery import MAX_CONFIG_BYTES, review_sources
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -31,6 +32,15 @@ def isolated_review(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 def _config(path: Path, name: str = "fixture") -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"mcpServers": {name: {"command": "never-launch-this-fixture"}}}))
+    return path
+
+
+@pytest.fixture(params=["claude", "vscode"])
+def general_settings(request: pytest.FixtureRequest) -> Path:
+    path = (
+        Path.home() / ".claude.json" if request.param == "claude" else VSCodeDiscoverer().config_paths()[-1]
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
     return path
 
 
@@ -190,6 +200,10 @@ def test_connection_requires_unambiguous_explicit_identity(args: list[str]) -> N
 
 
 def test_selected_connection_uses_only_local_fixture(tmp_path: Path) -> None:
+    (Path.home() / ".claude.json").write_text('{"theme":"dark"}')
+    settings = VSCodeDiscoverer().config_paths()[-1]
+    settings.parent.mkdir(parents=True)
+    settings.write_text('{"editor.fontSize":14}')
     config = tmp_path / "local.json"
     config.write_text(
         json.dumps(
@@ -210,6 +224,7 @@ def test_selected_connection_uses_only_local_fixture(tmp_path: Path) -> None:
             "check",
             "--config",
             str(config),
+            "--include-discovered",
             "--connect",
             "--server",
             "claude_code:workstation:selected",
@@ -221,6 +236,68 @@ def test_selected_connection_uses_only_local_fixture(tmp_path: Path) -> None:
     assert payload["servers_discovered"] == payload["servers_connected"] == 1
     assert payload["audits"][0]["server"]["name"] == "selected"
     assert "Configured code may execute" in result.stderr
+
+
+@pytest.mark.parametrize("contents", ["{}", '{"editor.fontSize":14}'])
+def test_discovered_general_settings_without_mcp_are_healthy(
+    tmp_path: Path, general_settings: Path, contents: str
+) -> None:
+    general_settings.write_text(contents)
+    _config(tmp_path / ".mcp.json", "selected")
+    sources = review_sources()
+    assert not sources.errors
+    assert [server.name for server in sources.servers] == ["selected"]
+    assert (str(general_settings), "checked: 0 entries") in sources.paths
+    result = CliRunner().invoke(cli.main, ["check", "--json"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["servers_discovered"] == 1
+    assert not payload["config_health_findings"]
+
+
+@pytest.mark.parametrize("contents", ["{}", '{"editor.fontSize":14}'])
+def test_explicit_general_settings_without_mcp_remain_unsupported(
+    general_settings: Path, contents: str
+) -> None:
+    general_settings.write_text(contents)
+    with pytest.raises(ValueError, match="no server map found"):
+        review_sources(general_settings)
+
+
+@pytest.mark.parametrize("contents", ["{bad json", "[]", " ", '{"mcpServers":null}', '{"mcpServers":[]}'])
+def test_malformed_general_settings_still_block_selection(
+    tmp_path: Path, general_settings: Path, contents: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    general_settings.write_text(contents)
+    config = _config(tmp_path / "selected.json", "selected")
+    assert review_sources().errors
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        raise AssertionError("config diagnostics must block connections")
+
+    monkeypatch.setattr(ServerConnector, "connect", forbidden)
+    result = CliRunner().invoke(
+        cli.main,
+        [
+            "check",
+            "--config",
+            str(config),
+            "--include-discovered",
+            "--connect",
+            "--server",
+            "claude_code:workstation:selected",
+        ],
+    )
+    assert result.exit_code == 1, result.output
+    assert "exactly one server with no config diagnostics" in result.output
+
+
+@pytest.mark.parametrize("path", [".mcp.json", ".vscode/mcp.json", ".cursor/mcp.json"])
+def test_discovered_dedicated_config_without_mcp_remains_unsupported(tmp_path: Path, path: str) -> None:
+    config = tmp_path / path
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text("{}")
+    assert any("no MCP server map" in error.reason for error in review_sources().errors)
 
 
 def test_duplicate_identity_or_diagnostics_reject_before_connection(tmp_path: Path) -> None:
