@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Summarize nested connection and analysis exception groups with redacted leaf
+  causes, bound leaf messages before linear-time URL redaction, withhold entire
+  redirect targets in connection errors and transport diagnostics, and keep
+  canary listing/get warnings limited to exception types. Report a tools-listing
+  failure accurately when a canary stops, and sort report warnings by affected
+  server, code, and message. Audits retain configuration order; per-server drift
+  findings retain observed scan/session order.
 - Render untrusted terminal text literally and remove terminal control sequences
   from terminal and HTML output. Capture stdio server stderr in a bounded 4 KiB
   tail instead of inheriting the terminal; sanitized, redacted tails are available

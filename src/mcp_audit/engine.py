@@ -28,7 +28,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
 from mcp_audit.analyzer import PermissionAnalyzer
 from mcp_audit.confighealth import config_health_findings
-from mcp_audit.connector import ServerConnector
+from mcp_audit.connector import ServerConnector, describe_exception
 from mcp_audit.discovery import ConfigParseError, discover_all_configs
 from mcp_audit.models import (
     AuditReport,
@@ -424,7 +424,7 @@ async def run_scan(
                 audits[idx] = ServerAudit(
                     server=srv,
                     connection_status="failed",
-                    connection_error=redact_text(f"analysis error: {type(exc).__name__}: {exc}"),
+                    connection_error=redact_text(f"analysis error: {describe_exception(exc)}"),
                 )
                 progress.advance(task_id)
 
@@ -593,6 +593,10 @@ async def run_scan(
     shadowing: list[ShadowingFinding] = []
     if shadowing_analyzer is not None:
         shadowing = shadowing_analyzer.analyze_fleet(audits)
+
+    # Server tasks append warnings as they finish; keep only the report field
+    # stable while preserving the console's arrival order.
+    scan_warnings.sort(key=lambda warning: (tuple(sorted(warning.servers)), warning.code, warning.message))
 
     report = AuditReport(
         scan_timestamp=datetime.now(UTC),
