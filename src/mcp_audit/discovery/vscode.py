@@ -44,13 +44,23 @@ class VSCodeDiscoverer(ConfigDiscoverer):
         results: list[ServerConfig] = []
         for key in ("mcpServers", "servers"):
             if key in data:
-                results.extend(parse_server_map(data[key], str(path), ClientType.VSCODE, parse_errors))
+                results.extend(
+                    parse_server_map(
+                        data[key], str(path), ClientType.VSCODE, parse_errors, map_pointer=f"/{key}"
+                    )
+                )
         if "mcp" in data:
             section = data["mcp"]
             if not isinstance(section, dict):
                 raise ConfigParseError(str(path), ClientType.VSCODE, "mcp section is not an object")
             if "servers" in section:
                 results.extend(
-                    parse_server_map(section["servers"], str(path), ClientType.VSCODE, parse_errors)
+                    parse_server_map(
+                        section["servers"],
+                        str(path),
+                        ClientType.VSCODE,
+                        parse_errors,
+                        map_pointer="/mcp/servers",
+                    )
                 )
         return results

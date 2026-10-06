@@ -15,6 +15,7 @@ from rich.console import Console
 
 from mcp_audit.artifact_paths import validate_artifact_paths
 from mcp_audit.engine import ScanOptions, run_scan
+from mcp_audit.finding_display import finding_views, print_finding
 from mcp_audit.report import ReportGenerator
 from mcp_audit.review_discovery import review_sources, server_identity
 from mcp_audit.terminal_text import strip_controls, terminal_safe
@@ -25,7 +26,11 @@ T = TypeVar("T")
 
 def _source_options(command: Callable[P, T]) -> Callable[P, T]:
     for option in (
-        click.option("--config", type=click.Path(path_type=Path), help="Review this file only."),
+        click.option(
+            "--config",
+            type=click.Path(path_type=Path),
+            help="Review this explicit file only; parsed as Claude-style config.",
+        ),
         click.option(
             "--include-discovered", is_flag=True, help="Also read supported client config locations."
         ),
@@ -136,14 +141,12 @@ def check(
                     f"{len(report.config_health_findings)} config warnings"
                 )
                 ReportGenerator(out)._render_coverage(safe_report)
-                for finding in safe_report.config_health_findings:
-                    out.print(terminal_safe(f"{finding.severity.value}: {finding.summary}"))
+                for view in finding_views(safe_report):
+                    print_finding(out, view)
                 for warning in safe_report.warnings:
                     out.print(terminal_safe(warning.message))
                 out.print("All findings: mcp-audit check --details")
             if details:
-                for finding in safe_report.config_health_findings:
-                    out.print(terminal_safe(f"{finding.severity.value}: {finding.summary}"))
                 _print_sources(out, sources.paths)
             if not connect:
                 out.print(
@@ -187,7 +190,9 @@ def inspect(config: Path | None, include_discovered: bool, project: Path | None,
     if sources.errors:
         out.print("PARTIAL: config diagnostics or skipped sources reduce coverage.")
     for server in sources.servers:
-        out.print(terminal_safe(f"{server_identity(server)} | source: {server.config_path}"))
+        out.print(
+            terminal_safe(f"{server_identity(server)} | source: {server.source_label} | {server.config_path}")
+        )
         if details:
             out.print(
                 terminal_safe(
