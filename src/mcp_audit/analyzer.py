@@ -4,6 +4,7 @@ import re
 from functools import cache
 from urllib.parse import urlparse
 
+from mcp_audit.agent_text import agent_visible_text
 from mcp_audit.models import (
     CapabilityFinding,
     CapabilityTarget,
@@ -260,22 +261,14 @@ class PermissionAnalyzer:
         return suppressed
 
     def _keyword_findings(self, tool: ToolInfo) -> list[PermissionFinding]:
-        """Score keyword patterns across tool name, description, and param names."""
-        # Build text sources: (text, weight)
-        sources: list[tuple[str, int]] = [
-            (tool.name, 3),
-            (tool.description or "", 2),
-        ]
-        if tool.input_schema:
-            props = tool.input_schema.get("properties", {})
-            if isinstance(props, dict):
-                for param_name in props:
-                    sources.append((str(param_name), 1))
-
-        scores = self._score_keywords(sources)
+        """Score bounded agent-visible text; added metadata has weight one."""
+        fields = agent_visible_text(tool).fields
+        weights = {"/name": 3, "/description": 2}
+        sources = [(field.text, weights.get(field.path, 1)) for field in fields]
+        scores = self._score_keywords(sources, [field.path for field in fields])
         findings: list[PermissionFinding] = []
 
-        for category, (weighted_score, evidence_list) in scores.items():
+        for category, (weighted_score, evidence_list, field_paths) in scores.items():
             if weighted_score < _LOW_THRESHOLD:
                 continue
             if weighted_score >= _HIGH_THRESHOLD:
@@ -291,31 +284,36 @@ class PermissionAnalyzer:
                     confidence=confidence,
                     evidence=evidence_list,
                     tool_name=tool.name,
+                    field_paths=field_paths,
                 )
             )
 
         return findings
 
     def _score_keywords(
-        self, sources: list[tuple[str, int]]
-    ) -> dict[PermissionCategory, tuple[int, list[str]]]:
-        """Return (weighted_score, evidence) per category."""
-        results: dict[PermissionCategory, tuple[int, list[str]]] = {}
+        self, sources: list[tuple[str, int]], paths: list[str] | None = None
+    ) -> dict[PermissionCategory, tuple[int, list[str], list[str]]]:
+        """Return (weighted_score, evidence, field_paths) per category."""
+        results: dict[PermissionCategory, tuple[int, list[str], list[str]]] = {}
+        normalized = [(_keyword_text(text), weight) for text, weight in sources]
 
         for category, strengths in PERMISSION_PATTERNS.items():
             total_score = 0
             evidence: list[str] = []
+            matched_paths: list[str] = []
 
             for strength, patterns in strengths.items():
                 strength_score = _STRENGTH_SCORES[strength]
                 for pattern in patterns:
-                    for text, source_weight in sources:
-                        if _pattern_regex(pattern).search(_keyword_text(text)):
+                    for index, (text, source_weight) in enumerate(normalized):
+                        if _pattern_regex(pattern).search(text):
                             total_score += strength_score * source_weight
                             if pattern not in evidence:
                                 evidence.append(pattern)
+                            if paths is not None and paths[index] not in matched_paths:
+                                matched_paths.append(paths[index])
 
-            results[category] = (total_score, evidence)
+            results[category] = (total_score, evidence, matched_paths)
 
         return results
 
@@ -328,7 +326,7 @@ class PermissionAnalyzer:
         scores = self._score_keywords(sources)
         findings: list[CapabilityFinding] = []
 
-        for category, (weighted_score, evidence_list) in scores.items():
+        for category, (weighted_score, evidence_list, _) in scores.items():
             if weighted_score < _LOW_THRESHOLD:
                 continue
             if weighted_score >= _HIGH_THRESHOLD:
