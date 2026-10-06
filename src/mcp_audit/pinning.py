@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -14,7 +13,15 @@ from typing import Any
 
 import yaml
 
-from mcp_audit.models import DriftFinding, DriftStatus, ServerConfig, SurfaceFieldChange, ToolInfo
+from mcp_audit.canonical import canonical_json_bytes
+from mcp_audit.models import (
+    DriftFinding,
+    DriftStatus,
+    ScanWarning,
+    ServerConfig,
+    SurfaceFieldChange,
+    ToolInfo,
+)
 from mcp_audit.redaction import redact_data, redact_text
 from mcp_audit.terminal_text import TerminalSafeLogFilter
 
@@ -31,6 +38,48 @@ DEFAULT_PIN_PATH = Path.home() / ".mcp-audit-pins.yaml"
 # The pin file is user-editable; bound what we are willing to parse so a
 # corrupted or hostile file cannot exhaust memory. Real baselines are a few KB.
 _MAX_PIN_FILE_BYTES = 10 * 1024 * 1024
+TOOL_SURFACE_SCHEMA = "mcpaudit.tool-surface.v2"
+
+
+def canonical_tool_surface(tool: ToolInfo) -> dict[str, object]:
+    """Return the v2 tool form, preserving schemas and filling hint defaults."""
+    annotations = tool.annotations
+    hints: dict[str, object] = {}
+    for wire_name, field, default in (
+        ("readOnlyHint", "read_only_hint", False),
+        ("destructiveHint", "destructive_hint", True),
+        ("idempotentHint", "idempotent_hint", False),
+        ("openWorldHint", "open_world_hint", True),
+    ):
+        value = getattr(annotations, field) if annotations is not None else None
+        hints[wire_name] = default if value is None else value
+    if annotations is not None and annotations.title:
+        hints["title"] = annotations.title
+    surface: dict[str, object] = {
+        "name": tool.name,
+        "inputSchema": tool.input_schema,
+        "annotations": hints,
+    }
+    for key, optional in (
+        ("title", tool.title),
+        ("description", tool.description),
+        ("outputSchema", tool.output_schema),
+        ("icons", tool.icons),
+        ("meta", tool.meta),
+    ):
+        if optional is not None and optional != "" and optional != [] and optional != {}:
+            surface[key] = optional
+    if tool.icons:
+        surface["icons"] = [
+            {
+                key: value
+                for key, value in icon.items()
+                if key not in {"mimeType", "sizes", "theme"}
+                or (value is not None and value != "" and value != [])
+            }
+            for icon in tool.icons
+        ]
+    return surface
 
 
 class PinFileError(Exception):
@@ -156,17 +205,39 @@ class PinStore:
 
     def compute_hash(self, tool: ToolInfo) -> str:
         """Return 'sha256:<hex>' hash of the tool's canonical schema."""
-        payload = json.dumps(
-            {
-                "name": tool.name,
-                "description": tool.description,
-                "inputSchema": tool.input_schema,
-            },
-            sort_keys=True,
-            ensure_ascii=False,
-        )
-        digest = hashlib.sha256(payload.encode()).hexdigest()
-        return f"sha256:{digest}"
+        return surface_hash(canonical_tool_surface(tool))
+
+    def legacy_tool_names(self, server_name: str) -> set[str]:
+        """Tools whose pins predate annotation coverage, including mixed files."""
+        entries = self._data.get("servers", {}).get(server_name, {}).get("tools", {})
+        return {name for name, entry in entries.items() if entry.get("pin_schema", 1) == 1}
+
+    def schema_warnings(self, server_name: str) -> list[ScanWarning]:
+        """Expose reduced legacy coverage without changing or re-hashing pins."""
+        if not self.legacy_tool_names(server_name):
+            return []
+        return [
+            ScanWarning(
+                code="pin_schema_outdated",
+                message=(
+                    f"{server_name} has schema v1 pins; annotations, title, outputSchema, icons "
+                    "and meta are not covered. Run "
+                    f"`mcp-audit pin --refresh {server_name} --apply` after review."
+                ),
+                check="pin_check",
+                servers=[server_name],
+            )
+        ]
+
+    def uncovered_field_rows(self, server_name: str, tools: list[ToolInfo]) -> list[dict[str, str]]:
+        """Refresh review rows for fields absent from the old hash contract."""
+        legacy = self.legacy_tool_names(server_name)
+        return [
+            {"tool_name": tool.name, "field": field, "summary": "not previously covered"}
+            for tool in tools
+            if tool.name in legacy
+            for field in ("annotations", "title", "outputSchema", "icons", "meta")
+        ]
 
     def pin_server(
         self,
@@ -185,6 +256,8 @@ class PinStore:
         provenance detector can compare them on later scans. Arguments are
         credential-redacted unless ``redact_args=False``; URLs are always redacted.
         """
+        if len({tool.name for tool in tools}) != len(tools):
+            raise ValueError("Cannot pin duplicate tool names.")
         now = datetime.now(UTC).isoformat()
         with _file_lock(self._path):
             # Re-read under the lock: another process may have written pins
@@ -196,6 +269,8 @@ class PinStore:
             tool_entries: dict[str, Any] = server_entry.setdefault("tools", {})
             for tool in tools:
                 tool_entries[tool.name] = {
+                    "pin_schema": 2,
+                    "canonical_form": TOOL_SURFACE_SCHEMA,
                     "hash": self.compute_hash(tool),
                     "pinned_at": now,
                     "snapshot": self._tool_snapshot(tool),
@@ -225,6 +300,7 @@ class PinStore:
                     snapshot["registry_artifact_hashes"] = prior_snapshot["registry_artifact_hashes"]
                 server_entry["config_snapshot"] = snapshot
             self._data["pinned_at"] = now
+            self._data["pin_schema"] = 2
             self._write()
 
     def check_drift(self, server_name: str, tools: list[ToolInfo]) -> list[DriftFinding]:
@@ -257,7 +333,16 @@ class PinStore:
                 # CHANGED: hash mismatch
                 pin_entry: dict[str, Any] = pinned_tools[tool.name]
                 stored_hash: str = pin_entry.get("hash", "")
-                current_hash = self.compute_hash(tool)
+                snapshot = pin_entry.get("snapshot")
+                current_hash = (
+                    _legacy_tool_hash(
+                        tool,
+                        empty_input_as_none=not isinstance(snapshot, dict)
+                        or snapshot.get("input_schema") is None,
+                    )
+                    if pin_entry.get("pin_schema", 1) == 1
+                    else self.compute_hash(tool)
+                )
                 if stored_hash != current_hash:
                     pinned_at = self._parse_datetime(pin_entry.get("pinned_at"))
                     findings.append(
@@ -318,10 +403,8 @@ class PinStore:
     def baseline_tools(self, server_name: str) -> list[ToolInfo]:
         """Reconstruct pinned tools as ``ToolInfo`` from stored snapshots.
 
-        Returns the description + input_schema captured at pin time so callers can
-        re-derive the baseline capability/injection surface (used by the
-        escalation detector). Annotations are not snapshotted, so reconstructed
-        tools carry ``annotations=None``. Empty list if the server is not pinned.
+        Restores all covered fields, including annotations. Legacy snapshots
+        retain absent fields as None. Empty list if the server is not pinned.
         """
         servers: dict[str, Any] = self._data.get("servers", {})
         pinned_tools: dict[str, Any] = servers.get(server_name, {}).get("tools", {})
@@ -333,6 +416,11 @@ class PinStore:
                     name=name,
                     description=snapshot.get("description"),
                     input_schema=snapshot.get("input_schema"),
+                    annotations=snapshot.get("annotations"),
+                    title=snapshot.get("title"),
+                    output_schema=snapshot.get("output_schema"),
+                    icons=snapshot.get("icons"),
+                    meta=snapshot.get("meta"),
                 )
             )
         return tools
@@ -502,6 +590,11 @@ class PinStore:
         return {
             "description": redact_data(tool.description),
             "input_schema": redact_data(tool.input_schema),
+            "annotations": redact_data(tool.annotations.model_dump() if tool.annotations else None),
+            "title": redact_data(tool.title),
+            "output_schema": redact_data(tool.output_schema),
+            "icons": redact_data(tool.icons),
+            "meta": redact_data(tool.meta),
         }
 
     def _config_snapshot(self, server_config: ServerConfig, *, redact_args: bool = True) -> dict[str, Any]:
@@ -541,11 +634,18 @@ class PinStore:
             return ["pin hash changed; previous schema snapshot unavailable"]
 
         previous = redact_data(previous)
+        if pin_entry.get("pin_schema", 1) == 1 and previous.get("input_schema") is None:
+            if current["input_schema"] == {}:
+                current["input_schema"] = None
         details: list[str] = []
         if previous.get("description") != current["description"]:
             details.append("description changed")
         if previous.get("input_schema") != current["input_schema"]:
             details.append("input schema changed")
+        if pin_entry.get("pin_schema", 1) == 2:
+            for field in ("annotations", "title", "output_schema", "icons", "meta"):
+                if previous.get(field) != current[field]:
+                    details.append(f"{field} changed")
         if not details:
             details.append("tool metadata changed")
         return details
@@ -553,8 +653,17 @@ class PinStore:
 
 def surface_hash(value: object) -> str:
     """Hash a session surface using the pin store's canonical SHA256 convention."""
-    payload = json.dumps(value, sort_keys=True, ensure_ascii=False)
-    return "sha256:" + hashlib.sha256(payload.encode()).hexdigest()
+    if isinstance(value, ToolInfo):
+        value = canonical_tool_surface(value)
+    return "sha256:" + hashlib.sha256(canonical_json_bytes(value)).hexdigest()
+
+
+def _legacy_tool_hash(tool: ToolInfo, *, empty_input_as_none: bool) -> str:
+    # The v1 connector converted served {} schemas to None. Retain that shape
+    # for those snapshots while preserving explicitly stored empty schemas.
+    schema = None if empty_input_as_none and tool.input_schema == {} else tool.input_schema
+    value = {"name": tool.name, "description": tool.description, "inputSchema": schema}
+    return "sha256:" + hashlib.sha256(canonical_json_bytes(value, legacy=True)).hexdigest()
 
 
 def surface_field_diff(before: object, after: object, path: str = "") -> list[SurfaceFieldChange]:

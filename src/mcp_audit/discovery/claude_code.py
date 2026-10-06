@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from mcp_audit.discovery.base import ConfigDiscoverer, ConfigParseError
+from mcp_audit.discovery.base import ConfigDiscoverer, ConfigParseError, is_project_config
 from mcp_audit.models import ClientType, ServerConfig, TransportType
 from mcp_audit.terminal_text import TerminalSafeLogFilter
 
@@ -51,6 +51,9 @@ def _parse_server_entry(
         client=ClientType.CLAUDE_CODE,
         config_path=config_path,
         project_path=project_path,
+        scope="project"
+        if project_path is not None or is_project_config(Path(config_path))
+        else "workstation",
         command=entry.get("command") or None,
         args=[str(a) for a in args],
         env_keys=env_keys,

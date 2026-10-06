@@ -1,6 +1,7 @@
 """Abstract base class for MCP config discoverers."""
 
 import logging
+import os
 from abc import ABC, abstractmethod
 from pathlib import Path
 
@@ -9,6 +10,18 @@ from mcp_audit.terminal_text import TerminalSafeLogFilter
 
 logger = logging.getLogger(__name__)
 logger.addFilter(TerminalSafeLogFilter())
+
+
+def is_project_config(path: Path) -> bool:
+    """Classify project config filenames without resolving symlinks into trusted paths."""
+    path = Path(os.path.abspath(path))
+    if path.name == ".mcp.json":
+        return True
+    return (
+        path.name == "mcp.json"
+        and path.parent.name == ".vscode"
+        and path != Path.home() / ".vscode" / "mcp.json"
+    )
 
 
 class ConfigParseError(Exception):

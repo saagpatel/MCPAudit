@@ -357,12 +357,21 @@ class TestConvertCapabilities:
         sdk_prompt = Prompt(
             name="summarize_file",
             description="Summarize a file.",
-            arguments=[PromptArgument(name="path", required=True)],
+            arguments=[
+                PromptArgument(name="path", description="Selected synthetic file.", required=True),
+                PromptArgument(name="style", required=False),
+                PromptArgument(name="format"),
+            ],
         )
         result = ServerConnector._convert_prompt(sdk_prompt)
         assert result.name == "summarize_file"
         assert result.description == "Summarize a file."
-        assert result.arguments == ["path"]
+        assert result.arguments == ["path", "style", "format"]
+        assert [a.model_dump() for a in result.argument_details] == [
+            {"name": "path", "description": "Selected synthetic file.", "required": True},
+            {"name": "style", "description": None, "required": False},
+            {"name": "format", "description": None, "required": None},
+        ]
 
     def test_converts_resource_metadata(self) -> None:
         from mcp.types import Resource

@@ -264,6 +264,7 @@ def _build_mcp_server() -> Any:
                         "rule_id": f.rule_id,
                         "gained_categories": [c.value for c in f.gained_categories],
                         "gained_patterns": f.gained_patterns,
+                        "annotation_changes": f.annotation_changes,
                         "description": f.description,
                     }
                 )

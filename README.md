@@ -46,7 +46,17 @@ No install required — [`uv`](https://docs.astral.sh/uv/) runs it in a throwawa
 uvx --from mcp-audits mcp-audit scan --skip-connect
 ```
 
-Then run the connected deep check, which launches each configured stdio server and connects to each remote endpoint to read its real tool list, and flags SSRF-shaped tools:
+Project configs (`.mcp.json`, `.vscode/mcp.json` in the current directory, and
+Claude Code per-project entries) are discovered and reported without connecting
+by default. After reviewing their commands, opt in with
+`mcp-audit scan --connect-project-configs` or
+`mcp-audit watch --connect-project-configs`. The
+`project_config_not_connected` warning shows the unspawned command and args,
+with credentials redacted. Workstation configs keep their connecting default;
+`--skip-connect` skips every config. `pin`, pin refresh, and `serve` tools skip
+project connections; the Action and pre-commit hook remain config-only.
+
+Then run the connected deep check, which launches workstation-configured stdio servers and connects to their remote endpoints to read its real tool list, and flags SSRF-shaped tools:
 
 ```bash
 uvx --from mcp-audits mcp-audit scan --ssrf-check
@@ -93,7 +103,7 @@ Install it permanently once you're hooked:
 
 ```bash
 uv tool install mcp-audits                # adds the `mcp-audit` command to your PATH
-mcp-audit scan                            # connected scan of every configured client
+mcp-audit scan                            # connects workstation configs; inventories project configs
 ```
 
 **Drop it into CI in one step** — the composite GitHub Action runs the scan and writes SARIF straight to GitHub code scanning:
@@ -176,7 +186,8 @@ All tools are read-only and take no URL or filesystem path; server discovery is 
 one entry matches and discovery has no collected configuration parse errors. Unknown or duplicate names, and
 collected configuration parse errors, return a tool error before connecting. A successful call retains the
 single-server audit JSON shape.
-The selected server may still start a local process or make network requests during connection.
+A workstation-scope selection may start a local process or make network requests during connection.
+Project-scope selections are reported without connecting, as are project configs in every `serve` tool.
 
 The five drift tools (`get_escalation_findings`, `get_provenance_findings`, `get_integrity_findings`, `get_package_verify_findings`, `get_artifact_verify_findings`) compare against a saved baseline. Run `mcp-audit pin` first for escalation, provenance, and integrity; registry verification requires `mcp-audit pin --verify-artifacts`, and byte-level verification requires `mcp-audit pin --download-artifacts`.
 
@@ -394,10 +405,6 @@ without changing its version, plus a benign control.
 These remain in the 2.8.1 candidate; details are in the
 [2.8.1 candidate notes](docs/2.8-RELEASE-NOTES.md#known-issues).
 
-- `scan`, `pin`, `watch`, and the `serve` tools connect to servers declared in
-  the current directory's `.mcp.json` and `.vscode/mcp.json`. In a checkout you
-  do not trust, add `--skip-connect` to `scan` and `watch`, and do not run `pin`
-  or launch `serve` there (they have no connection-free mode).
 - Annotation-only changes are not detected by `--pin-check` or
   `--escalation-check`. Pins hash tool name, description, and input schema;
   the runtime canary does compare annotations within a session.

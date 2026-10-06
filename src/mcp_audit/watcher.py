@@ -27,6 +27,12 @@ _console = Console()
 @click.option("--json", "json_output", default=None, metavar="PATH", help="Write JSON on each re-scan.")
 @click.option("--sarif", "sarif_output", default=None, metavar="PATH", help="Write SARIF on each re-scan.")
 @click.option("--skip-connect", is_flag=True, default=False, help="Skip server connections.")
+@click.option(
+    "--connect-project-configs",
+    is_flag=True,
+    default=False,
+    help="Connect to project-scope configs too; may execute code from the current checkout.",
+)
 @click.option("--clients", default=None, help="Comma-separated client filter.")
 @click.option("--timeout", default=10, show_default=True, help="Connection timeout in seconds.")
 @click.option("--verbose", is_flag=True, default=False, help="Show per-tool permission details.")
@@ -47,6 +53,7 @@ def watch_command(
     verbose: bool,
     extra_config: str | None,
     override_config_path: str | None,
+    connect_project_configs: bool = False,
 ) -> None:
     """Watch MCP config files and re-scan on changes. Requires mcp-audits[watch]."""
     anyio.run(
@@ -59,6 +66,7 @@ def watch_command(
         verbose,
         extra_config,
         override_config_path,
+        connect_project_configs,
     )
 
 
@@ -71,6 +79,7 @@ async def _watch_loop(
     verbose: bool,
     extra_config: str | None,
     override_config_path: str | None,
+    connect_project_configs: bool = False,
 ) -> None:
     try:
         from watchfiles import awatch  # type: ignore[import-not-found, unused-ignore]
@@ -86,7 +95,11 @@ async def _watch_loop(
     cfg_path = Path(override_config_path) if override_config_path else DEFAULT_OVERRIDE_PATH
     override_applier = OverrideApplier(load_override_config(cfg_path))
     scan_options = ScanOptions(
-        skip_connect=skip_connect, clients=client_list, timeout=timeout, extra_config=extra_config
+        skip_connect=skip_connect,
+        connect_project_configs=connect_project_configs,
+        clients=client_list,
+        timeout=timeout,
+        extra_config=extra_config,
     )
     gen = ReportGenerator(console=_console)
 
