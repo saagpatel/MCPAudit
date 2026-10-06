@@ -162,8 +162,20 @@ server summaries, and collapsed full audit log. Fix now / Worth a look / FYI
 map to high / medium / low severity. Actions merge identical remediation on
 one server identity and overlapping SSRF/egress advice for one target, retaining
 source rules and remediation steps. Original finding rows remain in the log.
-Action grouping and grading precede identifier scrubbing, so `--show-host`
-does not change the grade, action counts, or review estimate.
+Action grouping identities are bound before identifier scrubbing.
+`ServerAudit.presentation_id` is an additive nullable string: null on ordinary
+reports, an opaque report-local ordinal on identifier-redacted copies. It keeps
+distinct client/scope/config-path/name identities separate after their display
+paths collapse, including repeated redaction and JSON round trips; repeated
+rows for the same identity share an ordinal. It is not a cross-scan identifier
+or an authorization key and contains no hash of private identifiers.
+`scan --redact` and `--show-host` do not change the grade, action counts, or
+review estimate; the computed JSON grade uses the same grouping and still
+responds to changes in findings. `schema_version` remains 1.
+Each policy violation is a separate action retaining its rule, message, and
+server/tool target. Policy rows identify targets by name, not full server
+identity, so even identical messages are retained rather than merging
+potentially distinct configurations through their shared remediation.
 Effort is a five-minute-per-action initial-review estimate, not measured repair time.
 Empty tables say "No findings recorded" and refer to coverage, never "None."
 
