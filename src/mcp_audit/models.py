@@ -1130,6 +1130,14 @@ class AuditReport(BaseModel):
     warnings: list[ScanWarning] = Field(default_factory=list)
     coverage: dict[str, CheckCoverage] = Field(default_factory=dict)
 
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def ux_summary(self) -> dict[str, str | None]:
+        """Additive presentation grade; independent of capability exposure scores."""
+        from mcp_audit.ux_summary import grade
+
+        return {"grade": grade(self)}
+
     def redacted(self, *, identifiers: bool = False) -> "AuditReport":
         """Return a credential-redacted copy, optionally scrubbing field-report identifiers."""
         from mcp_audit.redaction import redact_data, redact_identifiers

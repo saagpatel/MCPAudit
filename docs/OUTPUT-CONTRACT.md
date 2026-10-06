@@ -143,6 +143,44 @@ eligibility veto. See [SCORING-MIGRATION.md](SCORING-MIGRATION.md).
 
 ## Report Redaction
 
+### HTML presentation and grade
+
+`AuditReport.ux_summary.grade` is an additive, computed presentation field:
+`A`, `B`, `C`, `D`, `F`, or null. Existing `risk_score` fields retain their
+meaning and values; `schema_version` remains 1. Grades never use numeric scores.
+Config-only, empty, legacy/unknown-mode, and incomplete metadata reports have a
+null grade and show **Preview** in HTML. With completed metadata, F means hidden
+instruction findings, a `secret_in_config` finding, or a shell-wrapper launch;
+D means at least two deduplicated Fix-now actions or a read/fetch/send chain
+with a shell capability; C means one Fix-now action; B means Worth-a-look
+findings only; A means FYI-only or no findings. The caveat "Reach and hygiene,
+not a safety certificate" appears on the result itself. Optional checks and
+their limits remain explicit in coverage; a letter does not certify runtime safety.
+
+HTML orders the summary, Checked strip, Top fixes, Worth a look, FYI, collapsed
+server summaries, and collapsed full audit log. Fix now / Worth a look / FYI
+map to high / medium / low severity. Actions merge identical remediation on
+one server identity and overlapping SSRF/egress advice for one target, retaining
+source rules and remediation steps. Original finding rows remain in the log.
+Effort is a five-minute-per-action initial-review estimate, not measured repair time.
+Empty tables say "No findings recorded" and refer to coverage, never "None."
+
+HTML credential-redacts first, then hides whole-token hostname occurrences in
+free text and home-path usernames, preserving symbolic enum/literal vocabulary,
+server names and path
+shape. `check --show-host` and `scan --show-host` opt into including the host
+(and unsanitized path identifiers) in HTML only; credential redaction still applies.
+`scan --redact` takes precedence: `--show-host` cannot recover scrubbed identifiers.
+JSON/SARIF identifier defaults are unchanged. HTML remains offline with no JavaScript.
+
+`node scripts/check_html_layout.cjs` checks the connected and config-only HTML
+goldens at 1440/390 pixels in light/dark mode, collapsed and expanded. It asserts
+no page-level horizontal overflow and AA muted-text contrast, then writes
+captures to `output/playwright/`. It needs an already installed Playwright and
+browser; `MCPAUDIT_PLAYWRIGHT_MODULE` can select an existing module and
+`MCPAUDIT_BROWSER_CHANNEL=chrome` can select installed Chrome. It does not install
+dependencies or contact configured servers.
+
 Terminal, JSON, SARIF, HTML, and `serve` tool outputs use
 `AuditReport.redacted()` to replace likely credentials with the literal
 `<redacted>` token. This always applies, independently of `scan --redact`.

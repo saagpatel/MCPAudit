@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Present offline HTML reports with a coverage-qualified grade or Preview,
+  deduplicated actions, collapsed server summaries and a full audit log.
+  Add presentation-only JSON `ux_summary.grade` without changing risk scores.
+  Hide the hostname by default in HTML; `check/scan --show-host` includes it.
+  Improve mobile table scrolling, muted-text contrast and dark-mode colors.
+
 - Probe two client identities by default for opt-in stdio canaries, with
   `--canary-identities 1` to disable and `2` to opt in on HTTP/SSE. Identity-conditioned
   surfaces produce HIGH `IDENTITY_CONDITIONED_SURFACE` findings without extra tool

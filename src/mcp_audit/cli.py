@@ -510,11 +510,13 @@ def discover(client_filter: str | None, verbose: bool) -> None:
     default=False,
     help="Field-report mode: scrub hostname and home-path usernames from --json/--sarif/--html output (opt-in).",  # noqa: E501
 )
+@click.option("--show-host", is_flag=True, help="Include the hostname in HTML (hidden by default).")
 def scan(
     json_output: str | None,
     sarif_output: str | None,
     sarif_profile: str,
     html_output: str | None,
+    show_host: bool,
     skip_connect: bool,
     connect_project_configs: bool,
     clients: str | None,
@@ -551,7 +553,7 @@ def scan(
         raise click.ClickException("--config-only requires --config PATH.")
 
     anyio.run(
-        partial(_run_scan, canary_identities=canary_identities),
+        partial(_run_scan, canary_identities=canary_identities, show_host=show_host),
         json_output,
         sarif_output,
         html_output,
@@ -691,6 +693,7 @@ async def _run_scan(
     max_concurrency: int = 32,
     connect_project_configs: bool = False,
     canary_identities: int | None = None,
+    show_host: bool = False,
 ) -> None:
     """CLI scan entrypoint — calls the engine's run_scan then renders output."""
     if config_only and not extra_config:
@@ -828,7 +831,7 @@ async def _run_scan(
         from mcp_audit.htmlreport import HtmlReportGenerator
 
         html_path = Path(html_output)
-        html_path.write_text(HtmlReportGenerator().generate(out_report))
+        html_path.write_text(HtmlReportGenerator().generate(out_report, show_host=show_host))
         written_artifacts.append(html_path.name)
 
     if written_artifacts:
