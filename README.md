@@ -102,8 +102,8 @@ for the boundary between those observations.
 
 Reports can contain configuration shape, tool names, and evidence text. Secret
 redaction is best-effort; do not share a report until you have reviewed it.
-Environment variable values are not read, and the report retains key names for
-context. The [output contract](docs/OUTPUT-CONTRACT.md) lists stable fields and
+Configs are parsed in full, but environment variable values are discarded
+during parsing and never reported; reports keep key names for context. The [output contract](docs/OUTPUT-CONTRACT.md) lists stable fields and
 the limits of these outputs.
 
 ## More documentation

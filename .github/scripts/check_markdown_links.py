@@ -37,7 +37,7 @@ def main() -> int:
         for match in LINK.finditer(text):
             raw = match.group(1) or match.group(0)[1:-1]
             target = raw.split(maxsplit=1)[0].strip("<>\"'")
-            if not target or target.startswith("#"):
+            if not target:
                 continue
             parsed = urlsplit(target)
             if parsed.scheme or parsed.netloc:
