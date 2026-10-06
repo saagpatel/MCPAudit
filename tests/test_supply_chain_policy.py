@@ -43,7 +43,8 @@ def test_mcp_runtime_dependency_excludes_known_vulnerable_versions() -> None:
     match = re.fullmatch(r"mcp>=(\d+)\.(\d+)(?:\.(\d+))?,<3\.0", mcp_requirement)
     assert match is not None, "mcp must retain an explicit minimum safe version"
     major, minor, patch = int(match.group(1)), int(match.group(2)), int(match.group(3) or 0)
-    assert (major, minor, patch) >= (2, 0, 0)
+    # GHSA-rwrf-2pqf-9j8j requires MCP 2.2.0 or newer.
+    assert (major, minor, patch) >= (2, 2, 0)
 
 
 def test_direct_security_floors_exclude_known_vulnerable_versions() -> None:
