@@ -91,14 +91,18 @@ class TestDescribeException:
     def test_redacts_userinfo_query_and_fragment_but_keeps_host_and_path(self) -> None:
         summary = describe_exception(
             RuntimeError(
-                "redirected from https://user:pw@example.test:8443/start "
-                "to https://other.test/next?token=abc123#frag"
+                "request failed at https://user:pw@example.test:8443/start "
+                "and https://other.test/next?token=abc123#frag"
             )
         )
         assert summary == (
-            "RuntimeError: redirected from https://<redacted>@example.test:8443/start "
-            "to https://other.test/next?<redacted>"
+            "RuntimeError: request failed at https://<redacted>@example.test:8443/start "
+            "and https://other.test/next?<redacted>"
         )
+
+    def test_redirect_target_is_withheld(self) -> None:
+        error = RuntimeError("redirected to https://other.test/next?token=abc123#frag")
+        assert describe_exception(error) == "RuntimeError: redirected to <redacted-url>"
 
     def test_bare_origin_is_unchanged(self) -> None:
         assert describe_exception(OSError("connect to http://127.0.0.1:9 failed")) == (
@@ -123,6 +127,14 @@ class TestDescribeException:
             "RuntimeError: request failed"
         )
 
+    @pytest.mark.parametrize("boundary", ["'", '"', "<", ">"])
+    @pytest.mark.parametrize(
+        "url",
+        ["https://user:" + "p" * 3_000 + "@example.test/sse", "https://example.test/" + "s" * 3_000],
+    )
+    def test_keeps_diagnostic_prefix_before_an_unbroken_url(self, boundary: str, url: str) -> None:
+        assert describe_exception(RuntimeError("failed:" + boundary + url)) == "RuntimeError: failed:"
+
     def test_bounds_each_group_leaf_independently(self) -> None:
         error = ExceptionGroup("outer", [ValueError("http://" * 40_000), RuntimeError("second")])
         assert describe_exception(error) == "ValueError; RuntimeError: second"
@@ -138,6 +150,23 @@ def test_sse_log_redaction_is_linear_on_adversarial_urls(suffix: str) -> None:
 
 
 @pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        (
+            'endpoints ["http://a","https://ghp_SECRET@github.com/x"]',
+            'endpoints ["http://a","https://<redacted>@github.com/x"]',
+        ),
+        (
+            "url='https://h',proxy='http://SECRETTOKEN@proxy:8080/'",
+            "url='https://h',proxy='http://<redacted>@proxy:8080/'",
+        ),
+    ],
+)
+def test_sse_log_redaction_examines_userinfo_in_adjacent_urls(text: str, expected: str) -> None:
+    assert _redact_sse_log_text(text) == expected
+
+
+@pytest.mark.parametrize(
     "prefix",
     ["Redirect to ", "Redirect location: '", "LOCATION: ", 'Location: "', '"Location": "', "redirected to "],
 )
@@ -145,6 +174,12 @@ def test_redirect_diagnostics_withhold_the_entire_target(prefix: str) -> None:
     text = prefix + "https://attacker.invalid/oauth/callback/SECRETPATHCODE?opaque=QUERYCODE"
     assert _redact_sse_log_text(text) == prefix + "<redacted-url>"
     assert describe_exception(RuntimeError(text)) == "RuntimeError: " + prefix + "<redacted-url>"
+
+
+def test_redirect_prose_without_a_url_is_unchanged() -> None:
+    text = "redirect to login"
+    assert _redact_sse_log_text(text) == text
+    assert describe_exception(RuntimeError(text)) == "RuntimeError: " + text
 
 
 class TestConvertTool:
@@ -540,18 +575,30 @@ async def test_local_redirect_target_is_redacted(
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("transport", [TransportType.HTTP, TransportType.SSE])
+@pytest.mark.parametrize(
+    ("transport", "target"),
+    [
+        (TransportType.HTTP, "http://localhost:8765/oauth/callback/SECRETPATHCODE?opaque=QUERYCODE"),
+        (TransportType.SSE, "http://localhost:8765/oauth/callback/SECRETPATHCODE?opaque=QUERYCODE"),
+        (TransportType.SSE, "/cb/SECRETPATH?code=abc123"),
+        (TransportType.SSE, "//evil.example/cb/SECRETPATH?code=abc123"),
+        (TransportType.SSE, "myapp://callback/SECRETPATH?code=abc123"),
+        (TransportType.HTTP, "myapp://callback/SECRETPATH?code=abc123"),
+    ],
+)
 async def test_sdk_redirect_target_is_redacted_without_socket_access(
-    monkeypatch: pytest.MonkeyPatch, transport: TransportType, caplog: pytest.LogCaptureFixture
+    monkeypatch: pytest.MonkeyPatch, transport: TransportType, target: str, caplog: pytest.LogCaptureFixture
 ) -> None:
     import httpx2
     from mcp.client.sse import sse_client
 
-    target = "http://localhost:8765/oauth/callback/SECRETPATHCODE?opaque=QUERYCODE"
-
     def client_factory(*args: object, **kwargs: object) -> httpx2.AsyncClient:
+        # Exercise refused-redirect diagnostics without following even same-origin targets.
         return httpx2.AsyncClient(
-            transport=httpx2.MockTransport(lambda request: httpx2.Response(302, headers={"Location": target}))
+            transport=httpx2.MockTransport(
+                lambda request: httpx2.Response(302, headers={"Location": target})
+            ),
+            max_redirects=0,
         )
 
     def mock_sse_client(url: str) -> object:
@@ -565,7 +612,7 @@ async def test_sdk_redirect_target_is_redacted_without_socket_access(
     assert audit.connection_status == "failed"
     assert audit.connection_error is not None and "<redacted-url>" in audit.connection_error
     for output in (audit.connection_error, caplog.text):
-        assert "SECRETPATHCODE" not in output and "QUERYCODE" not in output
+        assert "SECRETPATH" not in output and "abc123" not in output and "QUERYCODE" not in output
         assert "localhost:" not in output and "/oauth/callback" not in output
 
 

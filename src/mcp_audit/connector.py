@@ -39,13 +39,13 @@ from mcp_audit.rules.result_injection import RESULT_SCAN_LIMIT
 
 logger = logging.getLogger(__name__)
 
-# Consume candidates even without a suffix/userinfo, avoiding repeated scans of
+# Consume suffix candidates even without a suffix, avoiding repeated scans of
 # overlapping URL starts in server-controlled text. Possessive runs cannot backtrack.
 _SSE_URL_SUFFIX = re.compile(r"(https?://[^\s?#]++)([?#][^\s]*)?", re.IGNORECASE)
-_SSE_URL_USERINFO = re.compile(r"(https?://)([^/\s]*+)", re.IGNORECASE)
+_SSE_URL_USERINFO = re.compile(r"(https?://)(?:[^/\s@]*+@)++", re.IGNORECASE)
 _REDIRECT_URL = re.compile(
     r"(\b(?:redirect(?:ed)?\s+to|redirect\s+location\s*:|location['\"]?\s*:)\s*['\"]?)"
-    r"https?://[^\s'\"<>]+",
+    r"(?=[^\s'\"<>]*[/:])[^\s'\"<>]+",
     re.IGNORECASE,
 )
 _SSE_LOGGER_NAMES = (
@@ -66,10 +66,7 @@ def _redact_sse_log_text(value: str) -> str:
     redacted = _SSE_URL_SUFFIX.sub(
         lambda match: match[1] + "?<redacted>" if match[2] is not None else match[0], redacted
     )
-    redacted = _SSE_URL_USERINFO.sub(
-        lambda match: match[1] + "<redacted>@" + match[2].rsplit("@", 1)[1] if "@" in match[2] else match[0],
-        redacted,
-    )
+    redacted = _SSE_URL_USERINFO.sub(r"\1<redacted>@", redacted)
     return redact_text(redacted)
 
 
@@ -97,9 +94,11 @@ def describe_exception(exc: BaseException) -> str:
             message = message[:2_000]
             # Drop the cut token before redaction, so partial URL credentials
             # cannot survive. Preserve unbroken alphanumeric diagnostic text.
-            whitespace = next((i for i in range(len(message) - 1, -1, -1) if message[i].isspace()), None)
-            if whitespace is not None:
-                message = message[:whitespace]
+            boundary = next((i for i in range(len(message) - 1, -1, -1) if message[i].isspace()), None)
+            if boundary is None:
+                boundary = next((i for i in range(len(message) - 1, -1, -1) if message[i] in "'\"<>"), None)
+            if boundary is not None:
+                message = message[:boundary]
             elif not message.isalnum():
                 message = ""
         identity = (exception_type, message)
