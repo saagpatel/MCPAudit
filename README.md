@@ -132,6 +132,13 @@ prove.
 
 Full flag and detector reference below.
 
+Connected scans run at most 32 server sessions simultaneously. Set
+`--max-concurrency N` to change that positive limit. `--timeout` is each
+server's session budget in seconds, covering connection and capability listings
+(and canary calls when enabled), excluding time waiting for a session slot.
+Permission keyword analysis and SSRF fetch-verb inspection use at most 256 KiB
+of UTF-8 text per field; `description_truncated` warnings record reduced coverage.
+
 ---
 
 ## Use as an MCP server

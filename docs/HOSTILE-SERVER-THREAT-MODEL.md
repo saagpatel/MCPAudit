@@ -70,6 +70,7 @@ increase a limit to obtain a green run.
 | Case | Baseline ceiling | Cumulative target profile |
 | --- | --- | --- |
 | `scale_500` (500 × 10 tools) | 5.8 s wall, 213 MiB RSS; timeout-2 coverage observed | `p1-9`: ≤ 4 s wall and 500/500 connected at timeout 2 |
+| `scale_2000` (2000 × 10 tools) | P1-9 target added after the historical baseline | ≤ 16 s wall; all 2000 connected |
 | `desc_5mb_x1` | 18.8 s wall, ≤ 18 s permission analysis | `p1-9`: ≤ 1 s permission analysis |
 | `desc_1mb_x20` | 75 s wall, 1282 MiB RSS | `p1-9`: ≤ 3 s wall, < 400 MB RSS |
 | `oversized_50mb` | 191.7 s wall, 3217 MiB RSS; connected with one tool | `p3-7`: < 1 s wall, < 300 MB RSS, failed with frame-size reason |
@@ -85,7 +86,7 @@ Profiles are cumulative: `p3-7` includes `p1-9`, and `p3-8` includes both.
 As each fixing phase lands, promote the default in `tests/conftest.py` and the
 nightly/dispatch defaults in `.github/workflows/hostile-perf.yml`. Tight targets
 can already be selected on demand and fail normally; they are not skipped or
-xfail assertions. The nightly workflow runs all five cases and uploads metrics
-even on failure. This item does not implement the detector/concurrency or
-transport repairs, nor gate the other §5a scenarios (2000 servers, 20k tools,
+xfail assertions. The nightly workflow runs all six cases and uploads metrics
+even on failure. P1-9 adds the detector/concurrency repairs and the 2000-server
+gate; transport repairs and other §5a scenarios remain separate (20k tools,
 100k config-only servers, or the SSRF tokenizer).
