@@ -425,6 +425,43 @@ class PinStore:
             )
         return tools
 
+    def canary_baseline(
+        self, server_name: str, *, warnings: list[ScanWarning] | None = None
+    ) -> dict[str, dict[str, object]] | None:
+        """Use complete v2 pins; warn and fall back when their snapshots are corrupt."""
+        if server_name not in self.pinned_servers() or self.legacy_tool_names(server_name):
+            return None
+        entries = self._data["servers"][server_name].get("tools", {})
+        if any(entry.get("pin_schema") != 2 for entry in entries.values()):
+            return None
+        required_fields = ToolInfo.model_fields.keys() - {"name"}
+        tools: dict[str, object] = {}
+        try:
+            for name, entry in entries.items():
+                snapshot: object = entry.get("snapshot")
+                if not isinstance(snapshot, dict) or not required_fields <= snapshot.keys():
+                    raise ValueError("Incomplete v2 tool snapshot")
+                tool = ToolInfo.model_validate({**snapshot, "name": name}, strict=True)
+                surface = canonical_tool_surface(tool)
+                canonical_json_bytes(surface)
+                tools[name] = surface
+        except (TypeError, ValueError):
+            # Validation errors can include snapshot values; never render them.
+            if warnings is not None:
+                warnings.append(
+                    ScanWarning(
+                        code="pin_baseline_corrupted",
+                        message=(
+                            "--canary-check: saved v2 tool snapshots are invalid or incomplete; "
+                            "using an in-session baseline only."
+                        ),
+                        check="canary_check",
+                        servers=[server_name],
+                    )
+                )
+            return None
+        return {"tools": tools}
+
     def baseline_config(self, server_name: str) -> dict[str, Any] | None:
         """Return the pinned launch-config snapshot for a server, or None.
 

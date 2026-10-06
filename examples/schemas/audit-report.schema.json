@@ -150,6 +150,22 @@
           "title": "Client Identity",
           "type": "string"
         },
+        "client_identities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Client Identities",
+          "type": "array"
+        },
+        "baseline_source": {
+          "default": "session",
+          "enum": [
+            "session",
+            "pin"
+          ],
+          "title": "Baseline Source",
+          "type": "string"
+        },
         "elapsed_seconds": {
           "anyOf": [
             {
@@ -471,6 +487,19 @@
           ],
           "title": "Source",
           "type": "string"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "const": "IDENTITY_CONDITIONED_SURFACE",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kind"
         },
         "severity": {
           "default": "medium",
