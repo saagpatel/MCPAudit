@@ -92,6 +92,9 @@ _WRITE_CONTEXT = re.compile(
 )
 _TRANSFER_CONTEXT = re.compile(
     r"(?<![a-z])(?:url|endpoint|host|webhook|email|smtp|recipient|thread)(?![a-z])"
+    r"|https?://[^\s/]+"
+    r"|(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])"
+    r"|(?<![\w.+-])[\w.+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+(?![\w.-])"
 )
 
 _REMOTE_RESOURCE_SCHEMES = {
@@ -223,10 +226,10 @@ class PermissionAnalyzer:
         return annotation_findings + keyword_findings
 
     def analyze_tool_keywords(
-        self, tool: ToolInfo, *, incomplete_reasons: list[str] | None = None
+        self, tool: ToolInfo, *, incomplete_reasons: list[str] | None = None, contextual: bool = True
     ) -> list[PermissionFinding]:
         """Infer capabilities without allowing server annotations to suppress hints."""
-        return self._keyword_findings(tool, incomplete_reasons=incomplete_reasons)
+        return self._keyword_findings(tool, incomplete_reasons=incomplete_reasons, contextual=contextual)
 
     def _annotation_findings(self, tool: ToolInfo) -> list[PermissionFinding]:
         """Produce capability findings only from explicit positive declarations."""
@@ -334,7 +337,7 @@ class PermissionAnalyzer:
         return contradictions
 
     def _keyword_findings(
-        self, tool: ToolInfo, *, incomplete_reasons: list[str] | None = None
+        self, tool: ToolInfo, *, incomplete_reasons: list[str] | None = None, contextual: bool = True
     ) -> list[PermissionFinding]:
         """Score bounded agent-visible text; added metadata has weight one."""
         fields = agent_visible_text(tool).fields
@@ -362,7 +365,7 @@ class PermissionAnalyzer:
                 paths.append(path)
                 seen_paths.add(path)
                 property_paths.add(path)
-        scores = self._score_keywords(sources, paths, contextual=True)
+        scores = self._score_keywords(sources, paths, contextual=contextual)
         findings: list[PermissionFinding] = []
 
         for category, (weighted_score, evidence_list, field_paths) in scores.items():

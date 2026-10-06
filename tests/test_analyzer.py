@@ -1,5 +1,6 @@
 """Unit tests for PermissionAnalyzer."""
 
+import json
 import re
 from pathlib import Path
 from time import perf_counter
@@ -21,6 +22,19 @@ from mcp_audit.text_limits import MAX_FIELD_BYTES, bounded_text
 from tests.conftest import make_tool
 
 analyzer = PermissionAnalyzer()
+
+
+@pytest.mark.parametrize("index", range(4))
+def test_transfer_destination_literals_supply_context(index: int) -> None:
+    fixture = Path(__file__).parent / "fixtures" / "contextual_tools.json"
+    tool = ToolInfo.model_validate(json.loads(fixture.read_text())["transfer"][index])
+    findings = analyzer.analyze_tool_keywords(tool)
+    transfers = [f for f in findings if f.category == PermissionCategory.EXFILTRATION]
+    assert bool(transfers) is (index < 3)
+    if transfers:
+        assert tool.name in transfers[0].evidence
+        assert transfers[0].confidence == (Confidence.HIGH if index == 0 else Confidence.MEDIUM)
+        assert transfers[0].field_paths == ["/name", "/description"]
 
 
 @pytest.mark.parametrize("placement", ["object", "array", "composition", "reference"])
