@@ -34,10 +34,6 @@ _GAP_REASONS = {
     "base64-encoded-payload": "gap 6: fixed by P1-6",
     "escalation-nested-schema": "gap 22: fixed by P1-12",
     "gate-on-client-name": "gap 12: fixed by P2-7",
-    "gate-on-elapsed-time": "gap 13: fixed by F-1 (not_excluded)",
-    "gate-on-randomness": "gap 14: fixed by F-1 (not_excluded)",
-    "flip-after-more-than-k": "gap 15: fixed by F-1 (not_excluded)",
-    "flip-after-final-listing": "gap 16: fixed by F-1 (not_excluded)",
     "split-across-tools-fields": "gap 3: unplanned cross-field detection",
 }
 
