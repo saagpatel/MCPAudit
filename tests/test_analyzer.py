@@ -1,10 +1,12 @@
 """Unit tests for PermissionAnalyzer."""
 
 import re
+from pathlib import Path
 from time import perf_counter
 
 import pytest
 
+from mcp_audit.agent_text import agent_visible_text
 from mcp_audit.analyzer import PermissionAnalyzer
 from mcp_audit.models import (
     Confidence,
@@ -19,6 +21,146 @@ from mcp_audit.text_limits import MAX_FIELD_BYTES, bounded_text
 from tests.conftest import make_tool
 
 analyzer = PermissionAnalyzer()
+
+
+@pytest.mark.parametrize("placement", ["object", "array", "composition", "reference"])
+def test_nested_property_capabilities_have_weight_one_and_schema_paths(placement: str) -> None:
+    tool = ToolInfo.model_validate_json(Path("tests/fixtures/nested_schema_permissions.json").read_text())
+    assert tool.input_schema is not None
+    properties = tool.input_schema["properties"]
+    assert isinstance(properties, dict)
+    options = properties["options"]
+    if placement == "array":
+        tool.input_schema = {"properties": {"options": {"items": options}}}
+        prefix = "/input_schema/properties/options/items"
+    elif placement == "composition":
+        tool.input_schema = {"anyOf": [options]}
+        prefix = "/input_schema/anyOf/0"
+    elif placement == "reference":
+        tool.input_schema = {"$defs": {"options": options}, "$ref": "#/$defs/options"}
+        prefix = "/input_schema/$defs/options"
+    else:
+        prefix = "/input_schema/properties/options"
+    findings = {f.category: f for f in analyzer.analyze_tool_keywords(tool)}
+    for category, name in (
+        (PermissionCategory.EXFILTRATION, "upload_url"),
+        (PermissionCategory.SHELL_EXEC, "shell_command"),
+    ):
+        finding = findings[category]
+        # upload scores 3; shell + command scores 5. Neither reaches HIGH (6).
+        assert finding.confidence == Confidence.MEDIUM
+        path = f"{prefix}/properties/{name}"
+        assert finding.field_paths == [path]
+        assert f"schema property '{path}'" in finding.evidence
+
+
+@pytest.mark.parametrize(
+    "names,confidence", [(["shell_one"], Confidence.MEDIUM), (["shell_one", "shell_two"], Confidence.HIGH)]
+)
+def test_nested_properties_keep_high_threshold_at_six(names: list[str], confidence: Confidence) -> None:
+    tool = make_tool(
+        "status",
+        input_schema={"properties": {"options": {"properties": {name: {} for name in names}}}},
+    )
+    shell = next(
+        f for f in analyzer.analyze_tool_keywords(tool) if f.category == PermissionCategory.SHELL_EXEC
+    )
+    assert shell.confidence == confidence
+    assert len(shell.field_paths) == len(names)
+
+
+def test_nested_property_paths_escape_pointer_tokens() -> None:
+    tool = make_tool("status", input_schema={"properties": {"a/b~c": {"properties": {"shell": {}}}}})
+    shell = next(
+        f for f in analyzer.analyze_tool_keywords(tool) if f.category == PermissionCategory.SHELL_EXEC
+    )
+    assert shell.field_paths == ["/input_schema/properties/a~1b~0c/properties/shell"]
+
+
+def test_unused_definitions_and_cyclic_references_do_not_manufacture_capabilities() -> None:
+    tool = make_tool(
+        "status",
+        input_schema={"$defs": {"unused": {"properties": {"shell": {}}}}, "$ref": "#"},
+    )
+    assert analyzer.analyze_tool_keywords(tool) == []
+
+
+def test_repeated_local_references_do_not_inflate_property_confidence() -> None:
+    tool = make_tool(
+        "status",
+        input_schema={
+            "$defs": {"detail": {"properties": {"shell": {}}}},
+            "properties": {"first": {"$ref": "#/$defs/detail"}, "second": {"$ref": "#/$defs/detail"}},
+        },
+    )
+    shell = next(
+        f for f in analyzer.analyze_tool_keywords(tool) if f.category == PermissionCategory.SHELL_EXEC
+    )
+    assert shell.confidence == Confidence.MEDIUM
+    assert shell.field_paths == ["/input_schema/$defs/detail/properties/shell"]
+
+
+def test_permission_properties_obey_the_shared_walker_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mcp_audit import ssrf
+
+    monkeypatch.setattr(ssrf, "_MAX_SCHEMA_PROPERTIES", 2)
+    tool = make_tool(
+        "status",
+        input_schema={"properties": {"options": {"properties": {"detail": {}, "shell": {}}}}},
+    )
+    incomplete: list[str] = []
+    assert analyzer.analyze_tool_keywords(tool, incomplete_reasons=incomplete) == []
+    assert incomplete == ["property_budget_exceeded"]
+
+
+def test_repeated_refs_report_incomplete_permissions_with_complete_agent_text() -> None:
+    tool = ToolInfo.model_validate_json(
+        Path("tests/fixtures/repeated_ref_schema_permissions.json").read_text()
+    )
+    assert agent_visible_text(tool).incomplete == []
+    incomplete: list[str] = []
+    assert analyzer.analyze_server([tool, tool], incomplete_reasons=incomplete) == []
+    assert incomplete == ["node_budget_exceeded"]
+
+    partial = tool.model_copy(update={"name": "shell"})
+    incomplete.clear()
+    findings = analyzer.analyze_tool(partial, incomplete_reasons=incomplete)
+    assert {finding.category for finding in findings} == {PermissionCategory.SHELL_EXEC}
+    assert incomplete == ["node_budget_exceeded"]
+
+    assert tool.input_schema is not None
+    del tool.input_schema["allOf"]
+    incomplete.clear()
+    findings = analyzer.analyze_tool(tool, incomplete_reasons=incomplete)
+    assert incomplete == []
+    assert {finding.category for finding in findings} == {PermissionCategory.SHELL_EXEC}
+
+
+@pytest.mark.parametrize(
+    "schema,expected",
+    [
+        ({"$ref": "#/$defs/missing"}, "unresolved_reference"),
+        ({"$ref": "https://example.invalid/untrusted-reference"}, "unresolved_reference"),
+        ({"$dynamicRef": "#untrusted-reference"}, "unsupported_dynamic_reference"),
+        ({"$recursiveRef": "#untrusted-reference"}, "unsupported_dynamic_reference"),
+    ],
+)
+def test_permission_schema_reasons_withhold_reference_text(schema: dict[str, object], expected: str) -> None:
+    incomplete: list[str] = []
+    analyzer.analyze_tool(make_tool("status", input_schema=schema), incomplete_reasons=incomplete)
+    assert incomplete == [expected]
+
+
+def test_permission_schema_reports_depth_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mcp_audit import ssrf
+
+    monkeypatch.setattr(ssrf, "_MAX_SCHEMA_DEPTH", 0)
+    incomplete: list[str] = []
+    analyzer.analyze_tool(
+        make_tool("status", input_schema={"items": {"properties": {"shell": {}}}}),
+        incomplete_reasons=incomplete,
+    )
+    assert incomplete == ["depth_budget_exceeded"]
 
 
 @pytest.mark.parametrize("paths", [None, ["/name", "/description", "/input_schema/title"]])

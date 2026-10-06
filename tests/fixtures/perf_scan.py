@@ -19,12 +19,14 @@ def run() -> None:
     analysis_tool_counts: list[int] = []
     original = PermissionAnalyzer.analyze_server
 
-    def timed(self: PermissionAnalyzer, tools: list[ToolInfo]) -> list[PermissionFinding]:
+    def timed(
+        self: PermissionAnalyzer, tools: list[ToolInfo], *, incomplete_reasons: list[str] | None = None
+    ) -> list[PermissionFinding]:
         nonlocal analysis_seconds
         analysis_tool_counts.append(len(tools))
         start = time.perf_counter()
         try:
-            return original(self, tools)
+            return original(self, tools, incomplete_reasons=incomplete_reasons)
         finally:
             analysis_seconds += time.perf_counter() - start
 

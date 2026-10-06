@@ -17,12 +17,20 @@ from mcp_audit.models import (
     ToolInfo,
 )
 from mcp_audit.rules.patterns import PERMISSION_PATTERNS
+from mcp_audit.ssrf import _iter_schema_properties
 from mcp_audit.text_limits import bounded_text
 
 # Keyword strength → score contribution per match (multiplied by source weight later)
 _STRENGTH_SCORES: dict[str, int] = {"strong": 3, "moderate": 2, "weak": 1}
 _CAMEL_ACRONYM_BOUNDARY = re.compile(r"(?<=[A-Z])(?=[A-Z][a-z])")
 _CAMEL_WORD_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+_SCHEMA_REASON_CODES = {
+    "node budget exceeded": "node_budget_exceeded",
+    "depth budget exceeded": "depth_budget_exceeded",
+    "property budget exceeded": "property_budget_exceeded",
+    "unresolved or external reference": "unresolved_reference",
+    "unsupported dynamic reference": "unsupported_dynamic_reference",
+}
 
 
 def _keyword_text(text: str) -> str:
@@ -91,11 +99,13 @@ _REMOTE_RESOURCE_SCHEMES = {
 class PermissionAnalyzer:
     """Infers permission categories for MCP tools via annotations and keyword patterns."""
 
-    def analyze_server(self, tools: list[ToolInfo]) -> list[PermissionFinding]:
+    def analyze_server(
+        self, tools: list[ToolInfo], *, incomplete_reasons: list[str] | None = None
+    ) -> list[PermissionFinding]:
         """Return all permission findings across all tools on a server."""
         findings: list[PermissionFinding] = []
         for tool in tools:
-            findings.extend(self.analyze_tool(tool))
+            findings.extend(self.analyze_tool(tool, incomplete_reasons=incomplete_reasons))
         return findings
 
     def analyze_capabilities(
@@ -180,20 +190,26 @@ class PermissionAnalyzer:
             )
         return findings
 
-    def analyze_tool(self, tool: ToolInfo) -> list[PermissionFinding]:
-        """Return permission findings for a single tool."""
+    def analyze_tool(
+        self, tool: ToolInfo, *, incomplete_reasons: list[str] | None = None
+    ) -> list[PermissionFinding]:
+        """Return findings and optionally collect sanitized schema coverage reasons."""
         annotation_findings = self._annotation_findings(tool)
         annotation_categories = {f.category for f in annotation_findings}
 
         keyword_findings = [
-            f for f in self._keyword_findings(tool) if f.category not in annotation_categories
+            f
+            for f in self._keyword_findings(tool, incomplete_reasons=incomplete_reasons)
+            if f.category not in annotation_categories
         ]
 
         return annotation_findings + keyword_findings
 
-    def analyze_tool_keywords(self, tool: ToolInfo) -> list[PermissionFinding]:
+    def analyze_tool_keywords(
+        self, tool: ToolInfo, *, incomplete_reasons: list[str] | None = None
+    ) -> list[PermissionFinding]:
         """Infer capabilities without allowing server annotations to suppress hints."""
-        return self._keyword_findings(tool)
+        return self._keyword_findings(tool, incomplete_reasons=incomplete_reasons)
 
     def _annotation_findings(self, tool: ToolInfo) -> list[PermissionFinding]:
         """Produce DECLARED findings from MCP tool annotations and spec defaults."""
@@ -299,12 +315,36 @@ class PermissionAnalyzer:
                 )
         return contradictions
 
-    def _keyword_findings(self, tool: ToolInfo) -> list[PermissionFinding]:
+    def _keyword_findings(
+        self, tool: ToolInfo, *, incomplete_reasons: list[str] | None = None
+    ) -> list[PermissionFinding]:
         """Score bounded agent-visible text; added metadata has weight one."""
         fields = agent_visible_text(tool).fields
         weights = {"/name": 3, "/description": 2}
         sources = [(field.text, weights.get(field.path, 1)) for field in fields]
-        scores = self._score_keywords(sources, [field.path for field in fields])
+        paths = [field.path for field in fields]
+        seen_paths = set(paths)
+        property_paths: set[str] = set()
+        if tool.input_schema is not None:
+            walk = _iter_schema_properties(tool.input_schema, pointer_paths=True)
+            if incomplete_reasons is not None:
+                for reason in walk.incomplete_reasons:
+                    code = next(
+                        (code for prefix, code in _SCHEMA_REASON_CODES.items() if reason.startswith(prefix)),
+                        "schema_traversal_incomplete",
+                    )
+                    if code not in incomplete_reasons:
+                        incomplete_reasons.append(code)
+            for path, name, _schema in walk.properties:
+                path = f"/input_schema{path}"
+                # P1-4 already scores top-level names; count each property once.
+                if path in seen_paths:
+                    continue
+                sources.append((name, 1))
+                paths.append(path)
+                seen_paths.add(path)
+                property_paths.add(path)
+        scores = self._score_keywords(sources, paths)
         findings: list[PermissionFinding] = []
 
         for category, (weighted_score, evidence_list, field_paths) in scores.items():
@@ -321,7 +361,8 @@ class PermissionAnalyzer:
                 PermissionFinding(
                     category=category,
                     confidence=confidence,
-                    evidence=evidence_list,
+                    evidence=evidence_list
+                    + [f"schema property '{path}'" for path in field_paths if path in property_paths],
                     tool_name=tool.name,
                     field_paths=field_paths,
                 )
