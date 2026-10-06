@@ -12,17 +12,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Share MCP server entry parsing across the five config discoverers so Cursor,
   Windsurf, and Claude Desktop recognize HTTP and deprecated SSE transports
   while retaining header key names only.
+- Scan bounded agent-visible tool text, including annotation titles and all
+  input-schema string leaves, for instruction-shaped text and permission
+  keywords. Preserve matched field paths and report incomplete text coverage.
+- Retain prompt argument descriptions and required flags in additive metadata,
+  scan their text, and name required arguments in canary skip warnings.
+- Normalize permission-detector fields once and scan category keywords with
+  overlapping matches that preserve scores and evidence order. Bound detector
+  text to 256 KiB per field and report `description_truncated` coverage warnings.
+- Tokenize SSRF identifiers in linear time and bound fetch-verb text inspection.
+- Limit simultaneous server sessions to 32 by default, configurable with
+  `--max-concurrency`; clarify that `--timeout` is a per-session budget and
+  excludes time waiting for a connection slot.
 
 ### Security
 
-- Share NFKC, invisible-codepoint stripping and curated confusable folding
-  across static injection, runtime text and tool-name shadowing checks. Report
-  MEDIUM `OBFUSCATED_METADATA` for invisible classes or mixed-script confusables
-  with field pointers; preserve source evidence and display invisible characters
-  as codepoint markers in terminal, HTML and SARIF messages. Anchor bounded raw
-  evidence to the detected phrase or gated anomaly so stripped context and
-  benign non-Latin prefixes cannot displace it, including normalized HTML-comment
-  delimiters after long benign prefixes.
+- Preserve keyword capability evidence even when served annotations claim
+  read-only, non-destructive or closed-world behavior. Report explicit
+  declaration/evidence contradictions at MEDIUM-or-better keyword confidence
+  as MCP043 (`annotation_contradiction`), HIGH for destructive evidence and
+  MEDIUM otherwise, in additive JSON findings, SARIF and permission policy
+  gates. Canary eligibility retains its served-annotation veto.
 - Pin tool surfaces with canonical form v2, covering annotations, title, output
   schema, icons and metadata; restore those fields for baseline comparison and
   flag security-relevant annotation changes as HIGH MCP018 deltas. Share the
@@ -37,21 +47,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Reports add `audits[].server.scope` and a `project_config_not_connected`
   warning with the shell-quoted command and arguments (credentials redacted),
   or the skipped remote endpoint.
-
-### Fixed
-
-- Scan bounded agent-visible tool text, including annotation titles and all
-  input-schema string leaves, for instruction-shaped text and permission
-  keywords. Preserve matched field paths and report incomplete text coverage.
-- Retain prompt argument descriptions and required flags in additive metadata,
-  scan their text, and name required arguments in canary skip warnings.
-- Normalize permission-detector fields once and scan category keywords with
-  overlapping matches that preserve scores and evidence order. Bound detector
-  text to 256 KiB per field and report `description_truncated` coverage warnings.
-- Tokenize SSRF identifiers in linear time and bound fetch-verb text inspection.
-- Limit simultaneous server sessions to 32 by default, configurable with
-  `--max-concurrency`; clarify that `--timeout` is a per-session budget and
-  excludes time waiting for a connection slot.
+- Share NFKC, invisible-codepoint stripping and curated confusable folding
+  across static injection, runtime text and tool-name shadowing checks. Report
+  MEDIUM `OBFUSCATED_METADATA` for invisible classes or mixed-script confusables
+  with field pointers; preserve source evidence and display invisible characters
+  as codepoint markers in terminal, HTML and SARIF messages. Anchor bounded raw
+  evidence to the detected phrase or gated anomaly so stripped context and
+  benign non-Latin prefixes cannot displace it, including normalized HTML-comment
+  delimiters after long benign prefixes.
 
 ## [2.8.1] - 2026-10-06
 

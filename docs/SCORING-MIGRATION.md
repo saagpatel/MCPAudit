@@ -1,4 +1,25 @@
-# Prompt And Resource Scoring Migration
+# Scoring Migration
+
+## Annotation evidence in 2.9.0
+
+Served `readOnlyHint=true`, `destructiveHint=false`, and `openWorldHint=false`
+no longer suppress keyword capability evidence. Tools with contradicting
+metadata can therefore score higher using the existing category weights and
+confidence multipliers. Keyword matching and thresholds are unchanged.
+
+Additive `audits[].annotation_findings` reports MCP043 contradictions at keyword
+confidence MEDIUM or better. Destructive contradictions are HIGH (SARIF
+`error`); other contradictions are MEDIUM (`warning`). Existing permission
+severity policy gates also evaluate these findings. Contradictions carry no
+extra numerical score. Honest annotations and null hints produce no
+contradiction findings; absence of a keyword match is not evidence of a lie.
+
+This item changes annotation suppression only. The linked change to honest
+read-only declarations and missing-annotation default scoring is separate;
+their current declared permission findings are retained here. Canary
+eligibility continues to use served annotations as a veto.
+
+## Prompt and resource scoring
 
 MCPAudit should not merge prompt/resource findings directly into
 `risk_score.composite` until users have a migration window. The current path is

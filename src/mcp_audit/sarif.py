@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from mcp_audit.models import (
+    AnnotationFinding,
     ArtifactVerifyFinding,
     ArtifactVerifyKind,
     ArtifactVerifySeverity,
@@ -46,6 +47,7 @@ from mcp_audit.models import (
 )
 from mcp_audit.normalize import render_invisibles
 from mcp_audit.taxonomy import (
+    ANNOTATION_CONTRADICTION,
     ARTIFACT_VERIFY_FINDINGS,
     EGRESS_FINDINGS,
     ESCALATION_FINDINGS,
@@ -388,6 +390,16 @@ class SarifGenerator:
         ]
         return (
             perm_rules
+            + [
+                {
+                    "id": ANNOTATION_CONTRADICTION.rule_id,
+                    "name": "AnnotationContradiction",
+                    "shortDescription": {"text": ANNOTATION_CONTRADICTION.title},
+                    "fullDescription": {"text": ANNOTATION_CONTRADICTION.description},
+                    "help": {"text": ANNOTATION_CONTRADICTION.remediation},
+                    "defaultConfiguration": {"level": "warning"},
+                }
+            ]
             + injection_rules
             + ssrf_rules
             + egress_rules
@@ -407,6 +419,8 @@ class SarifGenerator:
         for audit in report.audits:
             for permission_finding in audit.permissions:
                 results.append(self._make_result(permission_finding, audit))
+            for annotation_finding in audit.annotation_findings:
+                results.append(self._make_annotation_result(annotation_finding, audit))
             for capability_finding in audit.capability_findings:
                 results.append(self._make_capability_result(capability_finding, audit))
             for inj in audit.injection_findings:
@@ -441,6 +455,32 @@ class SarifGenerator:
             if isinstance(message, dict) and isinstance(message.get("text"), str):
                 message["text"] = render_invisibles(message["text"])
         return results
+
+    def _make_annotation_result(self, finding: AnnotationFinding, audit: ServerAudit) -> dict[str, Any]:
+        """Keep declaration/evidence contradictions separate from capability results."""
+        return {
+            "ruleId": finding.rule_id,
+            "level": "error" if finding.severity == "high" else "warning",
+            "message": {
+                "text": (
+                    f"Tool '{finding.tool_name}' on server '{audit.server.name}' declares "
+                    f"{finding.hint}={str(finding.declared_value).lower()}, contradicting "
+                    f"{finding.category.value} keyword evidence ({finding.confidence.value}). "
+                    f"Suggested action: {finding.remediation}"
+                )
+            },
+            "locations": [
+                {"physicalLocation": {"artifactLocation": {"uri": _artifact_uri(audit.server.config_path)}}}
+            ],
+            "partialFingerprints": {
+                "mcpAuditStableId": _stable_fingerprint(
+                    finding.rule_id,
+                    audit.server.name,
+                    f"{finding.tool_name}:{finding.hint}:{finding.category.value}",
+                )
+            },
+            "properties": finding.model_dump(mode="json"),
+        }
 
     def _finding_level(self, finding: PermissionFinding, audit: ServerAudit) -> str:
         """Determine SARIF level based on composite risk score and finding confidence."""

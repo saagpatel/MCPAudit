@@ -37,6 +37,31 @@ redacted endpoint instead. Warnings also appear on the CLI console, but the
 engine remains silent for library/MCP callers without a console. Explicit
 `--skip-connect` never spawns, even with the project opt-in.
 
+## Annotation contradictions
+
+`audits[].annotation_findings` is an additive list, empty by default (including
+when reading older reports). Its entries contain `kind:
+"annotation_contradiction"`, `tool_name`, `hint`, `declared_value`, `category`,
+`confidence`, `severity`, `evidence`, `field_paths`, and computed `rule_id`,
+`title`, and `remediation`. `schema_version` remains `1`; the existing
+permission category and confidence vocabulary is unchanged.
+
+MCP043 compares explicit served hints against existing keyword evidence at
+MEDIUM or HIGH confidence. `readOnlyHint=true` contradicts `file_write` or
+`destructive`; `destructiveHint=false` contradicts `destructive` only when
+`readOnlyHint` is not true; `openWorldHint=false` contradicts `network` or
+`exfiltration`. Each contradicted hint/category pair produces one finding.
+Null hints, LOW keyword evidence, and absence of a keyword capability do not
+produce contradictions. No behavioral, idempotence or intent inference is added.
+
+Severity is HIGH for destructive evidence and MEDIUM otherwise. SARIF maps
+these to `error` and `warning`, respectively, independently of the composite
+score. Existing global `fail_on.severity` and permission `fail_on.permissions`
+thresholds (including server overrides) gate the findings. Contradictions
+appear in JSON and SARIF and add no separate numerical score; the restored
+keyword permissions use existing scoring. Served hints retain their canary
+eligibility veto. See [SCORING-MIGRATION.md](SCORING-MIGRATION.md).
+
 ## Report Redaction
 
 Terminal, JSON, SARIF, HTML, and `serve` tool outputs use
@@ -1120,6 +1145,7 @@ SARIF output uses stable MCP rule IDs:
 - `MCP040`: outbound destination outside the egress allowlist (fixed, non-caller-controlled destination; opt-in `--egress-check`)
 - `MCP041`: unbounded caller-controlled outbound destination (URL/host parameter or templated host authority; opt-in `--egress-check`)
 - `MCP042`: allowlisted destination with residual egress risk (multi-tenant data-bearing API or caller-attachable credentials; opt-in `--egress-check`)
+- `MCP043`: explicit served annotation contradicts MEDIUM-or-better keyword capability evidence (HIGH for destructive evidence, MEDIUM otherwise)
 
 ## Compatibility Fixture
 

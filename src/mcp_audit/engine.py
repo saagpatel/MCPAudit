@@ -418,6 +418,11 @@ async def run_scan(
 
             # Apply user overrides between analysis and scoring
             audit.permissions = applier.apply(srv.name, raw_findings)
+            audit.annotation_findings = [
+                finding
+                for tool in audit.tools
+                for finding in analyzer.analyze_annotation_contradictions(tool)
+            ]
             audit.capability_findings = analyzer.analyze_capabilities(audit.prompts, audit.resources)
             audit.risk_score = scorer.score_server(audit.permissions)
 
