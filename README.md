@@ -337,6 +337,9 @@ instruction overrides, credential-hunt requests, and directions to call other
 tools. Result excerpts are withheld; no returned instructions are executed,
 resource links followed, or resource contents read. The existing JSON, SARIF,
 terminal, HTML, and policy paths carry these findings; no saved pins are changed.
+Runtime result and prompt-body findings are experimental MEDIUM heuristics
+(SARIF `MCP008`, description starting "Experimental heuristic:"), so they never
+fail a HIGH policy gate on their own; mid-session surface drift stays HIGH.
 
 Calls use `{}` only. Required arguments and complex schemas are skipped rather
 than filled with guessed values. Explicit destructive annotations, dangerous
@@ -371,6 +374,26 @@ randomness, client identity, another tool or arguments, or call count greater
 than K. It does not establish that a server is safe in later sessions. Tests
 use only a synthetic local stdio server that changes metadata after three calls
 without changing its version, plus a benign control.
+
+## Known issues in 2.8
+
+These are scheduled for 2.8.1 and 2.9.0; details are in the
+[2.8 release notes](docs/2.8-RELEASE-NOTES.md#known-issues).
+
+- `scan`, `pin`, `watch`, and the `serve` tools connect to servers declared in
+  the current directory's `.mcp.json` and `.vscode/mcp.json`. In a checkout you
+  do not trust, add `--skip-connect`.
+- Server-supplied names are printed to the terminal without stripping control
+  sequences; a name containing Rich markup such as `[/bold]` aborts the
+  terminal report before `--json` output is written.
+- `--redact` and the default credential redaction miss secrets passed as a
+  separate argument value (`--token VALUE`) or in URL query strings, and pin
+  files store launch arguments verbatim.
+- Annotation-only changes are not detected by `--pin-check` or
+  `--escalation-check`.
+- Remote (`url`) servers in Cursor, Windsurf, and Claude Desktop configs are
+  reported as stdio servers with a missing command.
+- `monitor` cannot proxy a real MCP stdio server and will be deprecated.
 
 ## Help improve mcp-audit (2 minutes)
 
