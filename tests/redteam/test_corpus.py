@@ -32,7 +32,7 @@ _GAP_REASONS = {
     "escalation-homoglyph-desc": "gap 23: fixed by P1-5",
     "base64-encoded-payload": "gap 6: fixed by P1-6",
     "escalation-nested-schema": "gap 22: fixed by P1-12",
-    "gate-on-client-name": "gap 12: fixed by P2-7",
+    "gate-on-client-name": "gap 12: statement by F-1 (not_excluded); detection by P2-7",
     "gate-on-elapsed-time": "gap 13: fixed by F-1 (not_excluded)",
     "gate-on-randomness": "gap 14: fixed by F-1 (not_excluded)",
     "flip-after-more-than-k": "gap 15: fixed by F-1 (not_excluded)",
@@ -131,7 +131,7 @@ async def test_detector_gap_corpus(
         if kind == "canary_not_excluded":
             assert audit.canary is not None
             summary = audit.canary.model_dump()
-            assert summary.get("not_excluded")
+            assert detector["limit"] in (summary.get("not_excluded") or [])
         elif kind == "runtime_injection":
             assert any(
                 f.after_call is not None and f.tool_name == detector["tool"] for f in audit.injection_findings
