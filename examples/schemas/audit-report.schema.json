@@ -83,6 +83,34 @@
           "title": "Requested Calls",
           "type": "integer"
         },
+        "client_identity": {
+          "default": "",
+          "title": "Client Identity",
+          "type": "string"
+        },
+        "elapsed_seconds": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Elapsed Seconds"
+        },
+        "call_budget": {
+          "title": "Call Budget",
+          "type": "integer"
+        },
+        "not_excluded": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Not Excluded",
+          "type": "array"
+        },
         "completed_calls": {
           "default": 0,
           "title": "Completed Calls",

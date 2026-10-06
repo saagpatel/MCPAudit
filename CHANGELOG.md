@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add table-driven contracts for permission keywords and static and runtime injection rule vocabularies.
+- Added the synthetic red-team evasion corpus as a parametrized pytest suite,
+  with strict expected-failure cases tracking planned detector gaps.
+- Add canary client identity, elapsed seconds, call budget, and stable
+  `not_excluded` limitations to JSON; show bounded coverage in terminal, HTML,
+  and SARIF invocation properties, including clean exercises.
+
 ### Fixed
 
 - Use singular labels for one server/client or high-risk server, show zero
@@ -30,11 +39,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Put the zero-touch scan first in the README quick start and describe
   instruction-shaped text checks as pattern-based heuristics.
+- Present `mcp-audit` and the installed package version as the explicit MCP
+  client identity for stdio, Streamable HTTP, and SSE scan sessions.
 
-### Added
+### Tests
 
-- Added the synthetic red-team evasion corpus as a parametrized pytest suite,
-  with strict expected-failure cases tracking planned detector gaps.
+- Pin scorer weights, confidence multipliers, and caps with literal golden values;
+  cover policy gate defaults, branches, boundaries, and invalid policy errors.
 
 ## [2.8.0] - 2026-10-06
 

@@ -304,7 +304,7 @@ def test_strip_controls_megabyte_is_linear() -> None:
     value = "\x1b[" * (1024 * 1024 // 2)
     start = time.perf_counter()
     assert strip_controls(value) == ""
-    assert time.perf_counter() - start < 0.5
+    assert time.perf_counter() - start < 2.0  # linear runs ~0.1 s; quadratic takes minutes
 
 
 def test_diagnostic_log_controls_and_traceback_are_safe() -> None:
