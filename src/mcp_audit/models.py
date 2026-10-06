@@ -1030,3 +1030,15 @@ class AuditReport(BaseModel):
     fleet_trifecta_findings: list[TrifectaFinding] = Field(default_factory=list)
     shadowing_findings: list[ShadowingFinding] = Field(default_factory=list)
     warnings: list[ScanWarning] = Field(default_factory=list)
+
+    def redacted(self, *, identifiers: bool = False) -> "AuditReport":
+        """Return a credential-redacted copy, optionally scrubbing field-report identifiers."""
+        from mcp_audit.redaction import redact_data, redact_identifiers
+
+        data = self.model_dump(mode="json")
+        if identifiers:
+            names = {audit.server.name for audit in self.audits if audit.server.name}
+            names.update(f.server_name for f in self.config_health_findings if f.server_name)
+            aliases = {name: f"server-{index:02d}" for index, name in enumerate(sorted(names), start=1)}
+            data = redact_identifiers(data, hostname=self.hostname, name_aliases=aliases)
+        return AuditReport.model_validate(redact_data(data))

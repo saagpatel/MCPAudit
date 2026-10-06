@@ -44,7 +44,6 @@ from mcp_audit.models import (
     TrifectaFinding,
     TrifectaSeverity,
 )
-from mcp_audit.redaction import redact_data
 from mcp_audit.taxonomy import (
     ARTIFACT_VERIFY_FINDINGS,
     EGRESS_FINDINGS,
@@ -184,7 +183,7 @@ class SarifGenerator:
 
     def generate(self, report: AuditReport) -> dict[str, Any]:
         """Return a SARIF 2.1.0 document as a dict. Caller is responsible for writing JSON."""
-        report = AuditReport.model_validate(redact_data(report.model_dump(mode="json")))
+        report = report.redacted()
         try:
             tool_version = pkg_version("mcp-audits")
         except PackageNotFoundError:

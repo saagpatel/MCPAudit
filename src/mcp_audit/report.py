@@ -30,7 +30,6 @@ from mcp_audit.models import (
     SsrfSeverity,
     TrifectaSeverity,
 )
-from mcp_audit.redaction import redact_data, redact_identifiers, redact_text
 from mcp_audit.taxonomy import format_rule_of_two
 from mcp_audit.terminal_text import strip_controls, terminal_safe
 
@@ -52,7 +51,7 @@ class ReportGenerator:
 
     def render_terminal(self, report: AuditReport, verbose: bool = False) -> None:
         """Print the full audit report to the console."""
-        report = _redacted_report(report)
+        report = report.redacted()
         n_clients = len({a.server.client for a in report.audits})
         if report.connection_mode is ConnectionMode.SKIPPED:
             connection_summary = "[cyan]Config-only scan.[/cyan]"
@@ -91,7 +90,7 @@ class ReportGenerator:
             perms = self._top_permissions(audit)
             status_str = audit.connection_status
             if audit.connection_error:
-                status_str = f"{status_str}: {redact_text(audit.connection_error)[:40]}"
+                status_str = f"{status_str}: {audit.connection_error[:40]}"
 
             table.add_row(
                 terminal_safe(audit.server.name),
@@ -573,7 +572,7 @@ class ReportGenerator:
 
     def render_json(self, report: AuditReport, path: Path) -> None:
         """Write full AuditReport as JSON to the given path."""
-        redacted = redact_data(report.model_dump(mode="json"))
+        redacted = report.redacted().model_dump(mode="json")
         path.write_text(json.dumps(redacted, indent=2))
         self._console.print(terminal_safe(f"JSON report written to {path}"), style="green")
 
@@ -653,36 +652,6 @@ class ReportGenerator:
         return buf.getvalue()
 
 
-def _redacted_report(report: AuditReport) -> AuditReport:
-    data = redact_data(report.model_dump(mode="json"))
-    return AuditReport.model_validate(data)
-
-
-def _server_name_aliases(report: AuditReport) -> dict[str, str]:
-    """Map each distinct server name to a stable per-report alias (server-01, …)."""
-    names: set[str] = set()
-    for audit in report.audits:
-        if audit.server.name:
-            names.add(audit.server.name)
-    for finding in report.config_health_findings:
-        if finding.server_name:
-            names.add(finding.server_name)
-    return {name: f"server-{index:02d}" for index, name in enumerate(sorted(names), start=1)}
-
-
 def scrub_report_identifiers(report: AuditReport) -> AuditReport:
-    """Return a copy of the report with host/username/server-name identifiers scrubbed.
-
-    Field-report ("--redact") mode: strips the machine hostname and home-path
-    usernames, and replaces each server name with a stable alias (``server-01``,
-    …) everywhere it appears — structured fields, free-text summaries, and
-    command basenames — so a config-only report is safe to share publicly.
-    Returns a new report; the original is left untouched. Credential-value
-    redaction is applied separately by each renderer and is unaffected.
-    """
-    data = redact_identifiers(
-        report.model_dump(mode="json"),
-        hostname=report.hostname,
-        name_aliases=_server_name_aliases(report),
-    )
-    return AuditReport.model_validate(data)
+    """Compatibility wrapper for the field-report redaction entry point."""
+    return report.redacted(identifiers=True)

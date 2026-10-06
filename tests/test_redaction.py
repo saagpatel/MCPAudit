@@ -1,5 +1,9 @@
 """Tests for centralized output redaction."""
 
+from time import perf_counter
+
+import pytest
+
 from mcp_audit.redaction import redact_data, redact_identifiers, redact_text
 
 
@@ -16,6 +20,12 @@ def test_redacts_bearer_tokens() -> None:
     assert redacted == "Authorization: Bearer <redacted>"
 
 
+def test_redacts_basic_auth_and_preserves_scheme() -> None:
+    redacted = redact_text("Authorization: Basic YWJjOnNlY3JldA==")
+    assert redacted == "Authorization: Basic <redacted>"
+    assert redact_text(redacted) == redacted
+
+
 def test_redacts_url_userinfo() -> None:
     redacted = redact_text("https://user:password@example.com/mcp")
     assert redacted == "https://<redacted>@example.com/mcp"
@@ -25,6 +35,139 @@ def test_redacts_nested_data() -> None:
     data = {"tools": [{"description": "password=super-secret"}]}
     redacted = redact_data(data)
     assert redacted["tools"][0]["description"] == "password=<redacted>"
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "FOO_TOKEN",
+        "token",
+        "api-key",
+        "apikey",
+        "client_secret",
+        "PASSWORD",
+        "passwd",
+        "pwd",
+        "credential",
+        "auth",
+        "AUTH",
+        "x_auth_token",
+        "sig",
+        "signature",
+        "private_key",
+        "access-key",
+        "session",
+        "github-token",
+        "authorization",
+        "authentication",
+        "sessionid",
+        "USERSESSION",
+    ],
+)
+def test_secret_names_in_assignments_and_flags(name: str) -> None:
+    assert redact_text(f"{name}=fixture-secret") == f"{name}=<redacted>"
+    assert redact_text(f"--{name} fixture-secret") == f"--{name} <redacted>"
+    assert redact_data([f"--{name}", "fixture-secret"]) == [f"--{name}", "<redacted>"]
+
+
+@pytest.mark.parametrize(
+    "secret",
+    [
+        *[prefix + "a1B2" * 5 for prefix in ("ghp_", "gho_", "ghu_", "ghs_", "ghr_")],
+        "github_pat_" + "a_1B" * 5,
+        "sk-" + "a1B_" * 4,
+        "sk-proj-" + "a1B_" * 4,
+        "sk-ant-" + "a1B_" * 4,
+        *[prefix + "a1B2-" * 2 for prefix in ("xoxa-", "xoxb-", "xoxp-", "xoxo-", "xoxs-", "xoxr-")],
+        "AKIAABCDEFGHIJKLMNOP",
+        "ASIAABCDEFGHIJKLMNOP",
+        "eyJabcdefgh.abcdefgh.abcdefgh",
+        "glpat-" + "a1B_" * 5,
+        "npm_" + "a1B2" * 9,
+    ],
+)
+def test_bare_secret_shapes_anywhere(secret: str) -> None:
+    assert redact_text(f"before {secret} after") == "before <redacted> after"
+
+
+def test_jwt_is_redacted_before_overlapping_secret_shapes() -> None:
+    assert redact_text("eyJabcdefgh.sk-abcdefghijklmnop.abcdefgh") == "<redacted>"
+
+
+@pytest.mark.parametrize(
+    "url, expected",
+    [
+        (
+            "https://example.test/mcp?a=one&mode=x&sig=two",
+            "https://example.test/mcp?a=<redacted>&mode=<redacted>&sig=<redacted>",
+        ),
+        (
+            "http://user:pass@example.test/?x=a=b#fragment-secret",
+            "http://<redacted>@example.test/?x=<redacted>#<redacted>",
+        ),
+        ("https://example.test/mcp#access_token=fragment-secret", "https://example.test/mcp#<redacted>"),
+        ("https://example.test/mcp?x=&flag&x=two", "https://example.test/mcp?x=<redacted>&flag&x=<redacted>"),
+        ("https://example.test?email=user@example.test", "https://example.test?email=<redacted>"),
+        ("https://user@example.test?mode=x", "https://<redacted>@example.test?mode=<redacted>"),
+    ],
+)
+def test_url_values_and_fragments(url: str, expected: str) -> None:
+    assert redact_text(url) == expected
+    assert redact_text(expected) == expected
+
+
+def test_benign_argument_contract() -> None:
+    # Plural tokens denote a count; session-name is a display label. auth must
+    # be a whole name component rather than the prefix in author/authority/oauth.
+    args = [
+        "--port",
+        "8080",
+        "--model",
+        "gpt-4o",
+        "--author=jane",
+        "--host",
+        "127.0.0.1",
+        "--root",
+        "/data",
+        "--log-level",
+        "debug",
+        "--read-only",
+        "--authority",
+        "https://login.example.test",
+        "--max-tokens",
+        "4096",
+        "--session-name",
+        "demo",
+        "@modelcontextprotocol/server-filesystem@2026.6.1",
+        "/data/file.txt",
+        "https://example.test/mcp",
+        "--timeout",
+        "30",
+        "--verbose",
+        "--cache-dir=/cache",
+        "authority=https://login.example.test",
+        "oauth_callback_port=3000",
+    ]
+    assert len(args) >= 20
+    assert redact_data(args) == args
+    assert redact_text(" ".join(args)) == " ".join(args)
+
+
+def test_flag_value_and_quoted_assignments_are_idempotent() -> None:
+    text = "token=\"two word secret\" --password 'another secret' --api-key=sk-test"
+    expected = "token=<redacted> --password <redacted> --api-key=<redacted>"
+    assert redact_text(text) == expected
+    assert redact_text(expected) == expected
+    args = ["--token", "fixture-secret", "--port", "8080", "--api-key=fixture-secret"]
+    assert redact_data(redact_data(args)) == redact_data(args)
+
+
+@pytest.mark.parametrize("chunk", ["a", "token", "eyJabcdefgh", "token "])
+def test_megabyte_adversarial_input_is_linear(chunk: str) -> None:
+    text = (chunk * (1_048_576 // len(chunk) + 1))[:1_048_576]
+    start = perf_counter()
+    redact_text(text)
+    assert perf_counter() - start < 0.5
 
 
 def test_redact_identifiers_scrubs_hostname() -> None:
