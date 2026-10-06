@@ -155,7 +155,10 @@ evidence, and field text copied into escalation summaries and drift details.
 Permission keyword evidence remains the rule vocabulary, not source excerpts.
 Phrase evidence remains withheld when full-field credential matching detects
 credentials, including after Unicode normalization. Runtime result and prompt
-body excerpts remain withheld. No report field or schema version changes.
+body excerpts remain withheld. All field excerpts are withheld if normalization
+reveals a credential that raw redaction missed; serialized metadata strings use
+the same withholding protection. Raw match indices are clamped to the field
+bounds before redaction and extraction. No report field or schema version changes.
 
 `scan --redact` additionally scrubs hostname, home-path usernames and matching
 server-name text in shared file reports, with the existing stable server
@@ -468,12 +471,14 @@ destructive true (the latter applies to non-read-only tools). An operator's
 `--canary-safe-tool` mark permits other empty-argument tools, but never overrides
 explicit destructive annotations, dangerous keywords, or injection vetoes.
 
-Static free-text matches use the same instruction vocabulary as runtime results,
-including article/whitespace-tolerant overrides, credential hunts, tool redirects,
-role overrides, and prompt-leak requests. They report `pattern_name:
+Static free-text matching retains its independent literal phrase rules for
+instruction overrides, role overrides, prompt leaks and credential harvesting.
+The existing concrete-secret-target summary carve-out also remains. Static/runtime
+vocabulary unification is deferred to the 2.9 structural detection and redaction
+redesign. These findings report `pattern_name:
 "INSTRUCTION_SHAPED_TEXT"`, MEDIUM severity (SARIF `MCP008`), and a description
 starting "Experimental heuristic:". Additive `instruction_pattern` identifies
-the shared pattern and `field_path` is its JSON Pointer, including resource
+the static pattern and `field_path` is its JSON Pointer, including resource
 metadata. `secret_targets` lists concrete targeted paths/names only, never
 values; it defaults to `[]` and `instruction_pattern` defaults to `null` for
 legacy, structural, and runtime findings. Static free-text excerpts retain bounded
@@ -484,7 +489,7 @@ normalized field, before extracting or truncating evidence. These fields also
 appear in SARIF properties and the redacted MCP `get_injection_findings`
 projection (`instruction_pattern`, `secret_targets`, `field_path`), with the same
 defaults for legacy findings. New static instruction-text SARIF fingerprints
-distinguish the shared pattern and field pointer; legacy fingerprints are unchanged.
+distinguish the static pattern and field pointer; legacy fingerprints are unchanged.
 Terminal and HTML summaries mark concrete metadata secret hunts "Fix now"
 without promoting severity or changing policy thresholds or composite risk.
 Static phrase matches alone cannot fail a HIGH injection gate. Pin/session
@@ -494,8 +499,8 @@ surface deltas and capability escalation retain their existing verdicts.
 note level): at least 80 consecutive base64/base64url-alphabet characters with
 Shannon entropy at least 4.5 bits per character. It reports the run length and
 field path, withholds the blob, and never decodes or executes it. HTML comments
-alone are silent; an instruction-shaped match in the field is needed for the
-HTML-comment hidden-content signal. Bidi/zero-width and fake-role structural
+retain main's structural hidden-content signal independently of phrase matches.
+Bidi/zero-width and fake-role structural
 checks retain their existing MEDIUM severity.
 
 Runtime injection findings are experimental free-text heuristics: every one
@@ -503,7 +508,7 @@ is reported at MEDIUM (SARIF `MCP008`) with a description starting
 "Experimental heuristic:", so they never fail a HIGH gate on their own;
 session drift carries the canary's verdict. They add `after_call` and pattern
 names `result_instruction_override`, `result_credential_hunt`,
-`result_tool_redirect`, `result_system_override`, and `result_prompt_leak`.
+`result_tool_redirect`.
 Runtime remediation advises reviewing returned content
 or prompt bodies and server behavior, preventing agents from acting on embedded
 instructions, and considering server removal; static remediation is unchanged.

@@ -79,8 +79,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is replayed locally without launching servers. These fixtures contain no
   nested property-name capability gains; the nested regression fixture covers
   the added detection.
-- Share normalized instruction-text rules between metadata and runtime scans.
-  Report static phrase matches as experimental MEDIUM with pattern and field
+- Report static phrase matches as experimental MEDIUM with pattern and field
   evidence, retain concrete secret targets for "Fix now" summaries, and flag
   high-entropy metadata runs at LOW without decoding them.
   Withhold phrase excerpts after full-field credential redaction, preserve
@@ -89,6 +88,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Build metadata evidence with a shared full-field redaction helper that maps
   match offsets before slicing and rendering invisible codepoints, including
   obfuscation, hidden-directive, schema, SSRF, and escalation evidence.
+  Withhold field evidence when normalization exposes a credential label missed
+  by raw redaction; apply the same protection to serialized metadata. Use
+  original-string case-insensitive offsets and clamp evidence spans to prevent
+  length-changing lowercase text from aborting a server scan.
+- Defer static/runtime instruction vocabulary unification to the 2.9 structural
+  detection and redaction redesign; retain main's independent phrase rules.
 
 ### Security
 
