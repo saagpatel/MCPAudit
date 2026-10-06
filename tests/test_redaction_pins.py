@@ -12,7 +12,7 @@ from click.testing import CliRunner
 
 from mcp_audit import cli, engine
 from mcp_audit.engine import ScanOptions
-from mcp_audit.models import AuditReport, ProvenanceKind
+from mcp_audit.models import AuditReport, ProvenanceKind, ProvenanceSeverity
 from mcp_audit.overrides import OverrideConfig
 from mcp_audit.pinning import PinStore
 from mcp_audit.provenance import ProvenanceAnalyzer
@@ -134,3 +134,57 @@ def test_pin_escape_hatch_only_applies_to_args(tmp_path: Path) -> None:
     assert snapshot is not None
     assert snapshot["args"] == cfg.args
     assert snapshot["url"] == "https://<redacted>@example.test/?mode=<redacted>#<redacted>"
+
+
+@pytest.mark.parametrize("delimiter", ["=", ":"])
+@pytest.mark.parametrize(
+    "value", ["first second&third", "first,second", "first&second", "first\"second'third"]
+)
+def test_inline_argv_secret_pin_snapshot_uses_whole_element(
+    tmp_path: Path, delimiter: str, value: str
+) -> None:
+    cfg = make_server_config(command=None, args=[f"--password{delimiter}{value}", "--port", "8080"])
+    store = PinStore(tmp_path / "pins.yaml")
+    store.pin_server(cfg.name, [], cfg)
+    snapshot = PinStore(tmp_path / "pins.yaml").baseline_config(cfg.name)
+    assert snapshot is not None
+    assert snapshot["args"] == [f"--password{delimiter}<redacted>", "--port", "8080"]
+    assert value not in (tmp_path / "pins.yaml").read_text()
+
+
+@pytest.mark.parametrize("host", ["token", "secret", "auth", "session", "key"])
+@pytest.mark.parametrize("change", ["host", "port", "path"])
+def test_secret_named_url_endpoint_drift_is_preserved(tmp_path: Path, host: str, change: str) -> None:
+    url = f"https://{host}.example.test:8443/mcp"
+    changed_url = {
+        "host": f"https://{host}.other.test:8443/mcp",
+        "port": f"https://{host}.example.test:9443/mcp",
+        "path": f"https://{host}.example.test:8443/admin",
+    }[change]
+    cfg = make_server_config(command=None, args=["--endpoint", url], url=url)
+    store = PinStore(tmp_path / "pins.yaml")
+    store.pin_server(cfg.name, [], cfg)
+    baseline = PinStore(tmp_path / "pins.yaml").baseline_config(cfg.name)
+    assert baseline is not None
+    assert baseline["url"] == url
+    assert ProvenanceAnalyzer().analyze_server(cfg, baseline) == []
+    changed = cfg.model_copy(update={"args": ["--endpoint", changed_url], "url": changed_url})
+    findings = ProvenanceAnalyzer().analyze_server(changed, baseline)
+    assert {finding.kind for finding in findings} == {ProvenanceKind.ARGS, ProvenanceKind.URL}
+    assert all(changed_url in finding.current for finding in findings)
+
+
+def test_flag_in_secret_value_slot_is_reported_as_dangerous_drift(tmp_path: Path) -> None:
+    cfg = make_server_config(command=None, args=["--token", "old", "--port", "8080"])
+    store = PinStore(tmp_path / "pins.yaml")
+    store.pin_server(cfg.name, [], cfg)
+    baseline = PinStore(tmp_path / "pins.yaml").baseline_config(cfg.name)
+    analyzer = ProvenanceAnalyzer()
+    rotated = cfg.model_copy(update={"args": ["--token", "rotated", "--port", "8080"]})
+    assert analyzer.analyze_server(rotated, baseline) == []
+    changed = cfg.model_copy(update={"args": ["--token", "--no-sandbox", "--port", "8080"]})
+    findings = analyzer.analyze_server(changed, baseline)
+    assert [finding.kind for finding in findings] == [ProvenanceKind.ARGS]
+    assert findings[0].severity == ProvenanceSeverity.HIGH
+    assert findings[0].gained_flags == ["--no-sandbox"]
+    assert "--no-sandbox" in findings[0].current

@@ -62,6 +62,8 @@ def test_redacts_nested_data() -> None:
         "authentication",
         "sessionid",
         "USERSESSION",
+        "session_id",
+        "session-name-token",
     ],
 )
 def test_secret_names_in_assignments_and_flags(name: str) -> None:
@@ -138,6 +140,12 @@ def test_benign_argument_contract() -> None:
         "4096",
         "--session-name",
         "demo",
+        "--session_name",
+        "demo",
+        "--client-session_name",
+        "demo",
+        "--tokenizer",
+        "gpt-4o",
         "@modelcontextprotocol/server-filesystem@2026.6.1",
         "/data/file.txt",
         "https://example.test/mcp",
@@ -160,6 +168,102 @@ def test_flag_value_and_quoted_assignments_are_idempotent() -> None:
     assert redact_text(expected) == expected
     args = ["--token", "fixture-secret", "--port", "8080", "--api-key=fixture-secret"]
     assert redact_data(redact_data(args)) == redact_data(args)
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ('{"password":"hunter2-SECRET"}', '{"password":<redacted>}'),
+        ('{"password": "hunter2-SECRET"}', '{"password": <redacted>}'),
+        ("{'password': 'hunter2'}", "{'password': <redacted>}"),
+        ('{"password":"first\\"second"}', '{"password":<redacted>}'),
+    ],
+)
+def test_quoted_secret_keys_in_text(text: str, expected: str) -> None:
+    assert redact_text(text) == expected
+    assert redact_data(["--config", text]) == ["--config", expected]
+    assert redact_text(expected) == expected
+
+
+def test_redaction_marker_prefix_does_not_preserve_secret_suffix() -> None:
+    assert redact_text("password=<redacted>fixture-secret") == "password=<redacted>"
+
+
+def test_secret_dict_values_and_schema_literals_keep_structure() -> None:
+    data = {
+        "password": "hunter2-SECRET",
+        "token": 42,
+        "session": False,
+        "secret": {"port": 8080},
+        "properties": {
+            "password": {
+                "type": "string",
+                "default": "hunter2-SECRET",
+                "examples": ["hunter2-SECRET", {"nested": "another-secret"}, 42, None],
+                "const": "hunter2-SECRET",
+            },
+            "session_id": {"default": "session-secret"},
+            "port": {"type": "integer", "default": 8080, "examples": [9000]},
+            "tokenizer": {"default": "gpt-4o"},
+            "session_name": {"default": "demo"},
+        },
+    }
+    properties = data["properties"]
+    assert isinstance(properties, dict)
+    expected = {
+        **data,
+        "password": "<redacted>",
+        "properties": {
+            **properties,
+            "password": {
+                "type": "string",
+                "default": "<redacted>",
+                "examples": ["<redacted>", {"nested": "<redacted>"}, 42, None],
+                "const": "<redacted>",
+            },
+            "session_id": {"default": "<redacted>"},
+        },
+    }
+    assert redact_data(data) == expected
+    assert redact_data(expected) == expected
+    assert data["password"] == "hunter2-SECRET"
+
+
+@pytest.mark.parametrize(
+    "scheme", ["postgresql", "mysql", "redis", "mongodb+srv", "wss", "custom+v1", "token"]
+)
+def test_non_http_url_credentials_and_endpoint_context(scheme: str) -> None:
+    url = f"{scheme}://app:fixture-secret@token.example.test:5432/app?mode=admin&x=two#fragment"
+    expected = f"{scheme}://<redacted>@token.example.test:5432/app?mode=<redacted>&x=<redacted>#<redacted>"
+    assert redact_text(url) == expected
+    assert redact_text(expected) == expected
+    assert redact_data([url]) == [expected]
+
+
+@pytest.mark.parametrize("host", ["token", "secret", "auth", "session", "key"])
+def test_url_host_port_and_path_survive_named_assignment_pass(host: str) -> None:
+    url = f"https://{host}.example.test:8443/password=value"
+    text = f"token=fixture-secret endpoint={url} password=another-secret"
+    assert redact_text(url) == url
+    assert redact_text(text) == f"token=<redacted> endpoint={url} password=<redacted>"
+
+
+@pytest.mark.parametrize(
+    "prefix, chunk",
+    [
+        ("", "a+.-"),  # long scheme-like text without ://
+        ("postgresql://", "a"),  # long authority without userinfo separator
+        ("mongodb+srv://user:", "a"),  # missing @ after a long userinfo candidate
+        ("wss://host/mcp?x=", "a"),
+        ("redis://host/#", "a"),
+        ('{"password":"', "\\x"),  # unterminated escaped quoted value
+    ],
+)
+def test_megabyte_url_and_quoted_value_inputs_are_linear(prefix: str, chunk: str) -> None:
+    text = prefix + (chunk * (1_048_576 // len(chunk) + 1))[: 1_048_576 - len(prefix)]
+    start = perf_counter()
+    redact_text(text)
+    assert perf_counter() - start < 0.5
 
 
 @pytest.mark.parametrize("chunk", ["a", "token", "eyJabcdefgh", "token "])

@@ -43,6 +43,11 @@ def _fixture_secrets() -> list[str]:
         "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature12345678",
         "QUERYSECRET789",
         "SIGSECRET",
+        "first second&third",
+        "first,second",
+        "first&second",
+        "first\"second'third",
+        "DBSECRET",
     ]
 
 
@@ -106,6 +111,19 @@ def _report_with_secret_finding(
         audits=[audit],
         scan_duration_seconds=0.01,
     )
+
+
+@pytest.mark.parametrize("delimiter", ["=", ":"])
+@pytest.mark.parametrize(
+    "value", ["first second&third", "first,second", "first&second", "first\"second'third"]
+)
+def test_report_redacts_whole_inline_argv_value(delimiter: str, value: str) -> None:
+    config = make_server_config(args=[f"--password{delimiter}{value}", "--port", "8080"])
+    report = _report_with_secret_finding(config, include_finding=False)
+    redacted = report.redacted()
+    assert redacted.audits[0].server.args == [f"--password{delimiter}<redacted>", "--port", "8080"]
+    assert value not in redacted.model_dump_json()
+    assert report.audits[0].server.args == config.args
 
 
 def _tool_payload(result: object) -> Any:

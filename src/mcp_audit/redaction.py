@@ -7,18 +7,22 @@ from typing import Any
 
 _REDACTED = "<redacted>"
 _NAME_TOKEN = re.compile(r"[A-Za-z0-9_.-]+")
+_SESSION_LABEL = re.compile(r"(?<![A-Za-z0-9])session[_-]name(?=$|[_.-])", re.IGNORECASE)
 _SECRET_NAME = re.compile(
-    r"token(?!s(?:$|[_.-]))|api[_-]?key|secret|password|passwd|pwd|credential|"
+    r"token(?!s(?:$|[_.-])|izer(?:$|[_.-]))|api[_-]?key|secret|password|passwd|pwd|credential|"
     r"signature|private[_-]?key|access[_-]?key|session|authorization|authentication|"
     r"(?:^|[_.-])(?:auth|sig)(?:$|[_.-])",
     re.IGNORECASE,
 )
-_ASSIGNMENT_VALUE = re.compile(r"(\s*[:=]\s*)(\"[^\"]*\"|'[^']*'|[^\s,;&\"']+)")
+_ASSIGNMENT_VALUE = re.compile(
+    r"([\"']?\s*[:=]\s*)(<redacted>(?=$|[\s,;&\"'}\]])|"
+    r"\"(?:\\.|[^\"\\])*+\"|'(?:\\.|[^'\\])*+'|[^\s,;&\"']+)"
+)
 _FLAG_VALUE = re.compile(r"(\s+)(\"[^\"]*\"|'[^']*'|[^\s,;&\"']+)")
 _BEARER_TOKEN = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+")
 _BASIC_TOKEN = re.compile(r"(?i)\bBasic\s+[A-Za-z0-9._~+/=-]+")
-_URL = re.compile(r"https?://(?:<redacted>|[^\s\"'<>])+", re.IGNORECASE)
-_URL_USERINFO = re.compile(r"(https?://)[^/?#\s@]+@", re.IGNORECASE)
+_URL = re.compile(r"(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*+://(?:<redacted>|[^\s\"'<>])++")
+_URL_USERINFO = re.compile(r"(^[A-Za-z][A-Za-z0-9+.-]*+://)[^/?#\s@]*+@")
 _QUERY_VALUE = re.compile(r"=([^&;]*)")
 _SECRET_VALUE = re.compile(
     r"gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|"
@@ -38,9 +42,11 @@ _HOST_PLACEHOLDER = "<redacted-host>"
 def _is_secret_name(name: str) -> bool:
     # auth/sig must be whole separator-delimited components: author,
     # authority and oauth_callback_port are harmless. Plural tokens are counts,
-    # and session-name labels a session rather than authenticating it.
+    # tokenizer selects a tokenizer; session_name/session-name components label
+    # a session rather than authenticate it. session_id remains secret-bearing.
     name = name.lstrip("-")
-    return name.lower() != "session-name" and _SECRET_NAME.search(name) is not None
+    name = _SESSION_LABEL.sub("label", name)
+    return _SECRET_NAME.search(name) is not None
 
 
 def _redact_named_values(value: str) -> str:
@@ -97,12 +103,45 @@ def _redact_jwts(value: str) -> str:
 
 def redact_text(value: str) -> str:
     """Redact likely credential values while preserving useful context."""
-    # URLs first: replacing an assignment must not obscure later query values.
-    redacted = _URL.sub(_redact_url, value)
-    redacted = _BEARER_TOKEN.sub("Bearer <redacted>", redacted)
+    redacted = _BEARER_TOKEN.sub("Bearer <redacted>", value)
     redacted = _BASIC_TOKEN.sub("Basic <redacted>", redacted)
-    redacted = _redact_named_values(redacted)
+    # Keep URL spans out of the named-assignment pass: token.example:8443/path
+    # is an endpoint, not a token assignment. The scheme boundary and possessive
+    # repeats prevent retries on long scheme-like strings and URL bodies.
+    pieces: list[str] = []
+    cursor = 0
+    for url in _URL.finditer(redacted):
+        pieces.extend((_redact_named_values(redacted[cursor : url.start()]), _redact_url(url)))
+        cursor = url.end()
+    pieces.append(_redact_named_values(redacted[cursor:]))
+    redacted = "".join(pieces)
     return _SECRET_VALUE.sub(_REDACTED, _redact_jwts(redacted))
+
+
+def _redact_literal_strings(value: object) -> object:
+    """Hide string literals in secret-property defaults/examples/const, retaining shape."""
+    if isinstance(value, str):
+        return _REDACTED
+    if isinstance(value, list):
+        return [_redact_literal_strings(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _redact_literal_strings(item) for key, item in value.items()}
+    return value
+
+
+def _redact_properties(properties: dict[object, object]) -> dict[object, object]:
+    result: dict[object, object] = {}
+    for name, schema in properties.items():
+        if isinstance(name, str) and _is_secret_name(name) and isinstance(schema, dict):
+            result[name] = {
+                key: _redact_literal_strings(item)
+                if key in {"default", "examples", "const"}
+                else redact_data(item)
+                for key, item in schema.items()
+            }
+        else:
+            result[name] = redact_data(schema)
+    return result
 
 
 def redact_data(value: Any) -> Any:
@@ -113,7 +152,23 @@ def redact_data(value: Any) -> Any:
         result = []
         secret_value = False
         for item in value:
-            result.append(_REDACTED if secret_value and isinstance(item, str) else redact_data(item))
+            if isinstance(item, str):
+                name = _NAME_TOKEN.match(item)
+                if secret_value and not item.startswith("-"):
+                    result.append(_REDACTED)
+                elif (
+                    name is not None
+                    and _is_secret_name(name.group())
+                    and item[name.end() :].startswith(("=", ":"))
+                    and _URL.match(item) is None
+                ):
+                    # One argv element has a known boundary, even when its value
+                    # contains spaces, commas, ampersands or embedded quotes.
+                    result.append(item[: name.end() + 1] + _REDACTED)
+                else:
+                    result.append(redact_text(item))
+            else:
+                result.append(redact_data(item))
             secret_value = (
                 isinstance(item, str)
                 and item.startswith("-")
@@ -122,7 +177,14 @@ def redact_data(value: Any) -> Any:
             )
         return result
     if isinstance(value, dict):
-        return {key: redact_data(item) for key, item in value.items()}
+        return {
+            key: _REDACTED
+            if isinstance(key, str) and _is_secret_name(key) and isinstance(item, str)
+            else _redact_properties(item)
+            if key == "properties" and isinstance(item, dict)
+            else redact_data(item)
+            for key, item in value.items()
+        }
     return value
 
 
