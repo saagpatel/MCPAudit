@@ -168,6 +168,9 @@ def _build_mcp_server() -> Any:
                         "tool": f.tool_name,
                         "severity": f.severity,
                         "pattern": f.pattern_name,
+                        "instruction_pattern": f.instruction_pattern,
+                        "secret_targets": f.secret_targets,
+                        "field_path": f.field_path,
                         "description": f.description,
                         "matched_text": f.matched_text,
                     }

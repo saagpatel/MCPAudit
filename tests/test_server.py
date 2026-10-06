@@ -13,6 +13,7 @@ import pytest
 
 from mcp_audit.discovery import ConfigParseError
 from mcp_audit.engine import ScanOptions
+from mcp_audit.injection import InjectionDetector
 from mcp_audit.models import (
     AuditReport,
     ClientType,
@@ -220,12 +221,55 @@ async def test_get_injection_findings_uses_connected_scan(monkeypatch: pytest.Mo
                 "tool": "evil_tool",
                 "severity": "high",
                 "pattern": "ignore_instructions",
+                "instruction_pattern": None,
+                "secret_targets": [],
+                "field_path": None,
                 "description": "Tool description attempts to override AI instructions",
                 "matched_text": "ignore previous instructions",
             }
         ],
         "warnings": [],
     }
+
+
+@pytest.mark.parametrize("redaction_probe", [False, True])
+async def test_get_injection_findings_preserves_redacted_instruction_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+    redaction_probe: bool,
+) -> None:
+    text = json.loads(Path("tests/fixtures/instruction_text.json").read_text())["poisoning"]
+    assert isinstance(text, str)
+    findings = InjectionDetector().scan_tool(make_tool("weather", text))
+    report = AuditReport.model_validate_json(
+        Path("tests/fixtures/reports/sample_audit_report.json").read_text()
+    )
+    report.audits = report.audits[:1]
+    report.audits[0].injection_findings = findings
+    report.audits[0].server.name = "srv"
+    if redaction_probe:
+        # The projection must use report.redacted(), including the new evidence fields.
+        findings[0].secret_targets.append("password=synthetic-value")
+        findings[0].field_path = "/description/password=synthetic-value"
+
+    async def fake_run_scan(options: ScanOptions, **kwargs: object) -> AuditReport:
+        assert options.inject_check
+        return report
+
+    import mcp_audit.server as server_module
+
+    monkeypatch.setattr(server_module, "run_scan", fake_run_scan)
+    payload = _tool_json(await _build_mcp_server().call_tool("get_injection_findings", {}))
+    finding = payload["findings"][0]
+    assert finding["pattern"] == "INSTRUCTION_SHAPED_TEXT"
+    assert finding["severity"] == "medium"
+    assert finding["instruction_pattern"] == "credential_hunt"
+    assert finding["secret_targets"] == (
+        ["~/.ssh/id_rsa", "password=<redacted>"] if redaction_probe else ["~/.ssh/id_rsa"]
+    )
+    assert finding["field_path"] == (
+        "/description/password=<redacted>" if redaction_probe else "/description"
+    )
+    assert "synthetic-value" not in json.dumps(payload)
 
 
 # ---------------------------------------------------------------------------
