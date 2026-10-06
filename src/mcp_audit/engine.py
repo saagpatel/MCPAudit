@@ -101,6 +101,7 @@ async def run_scan(
     options: ScanOptions | None = None,
     *,
     servers: list[ServerConfig] | None = None,
+    parse_errors: list[ConfigParseError] | None = None,
     override_applier: OverrideApplier | None = None,
     console: Console | None = None,
 ) -> AuditReport:
@@ -109,6 +110,8 @@ async def run_scan(
     When ``servers`` is provided (a pre-parsed list, e.g. from the in-memory
     ``mcp_audit.api`` entrypoint), discovery is skipped entirely and that list
     is scanned as-is — no filesystem access for config discovery.
+    ``parse_errors`` carries diagnostics from pre-parsed configs into findings
+    and coverage; the caller's list is not modified.
 
     ``override_applier`` defaults to a no-op applier; the CLI and MCP server
     pass one loaded from the user's override file. ``console`` defaults to a
@@ -138,12 +141,12 @@ async def run_scan(
     start = time.monotonic()
 
     # 1. Discover servers (unless the caller supplied a pre-parsed list).
-    parse_errors: list[ConfigParseError] = []
+    parse_errors = list(parse_errors) if parse_errors is not None else []
     if servers is None:
         servers = [] if opts.config_only else discover_all_configs(opts.clients, parse_errors)
 
         if opts.extra_config:
-            extra_servers = _parse_extra_config(Path(opts.extra_config))
+            extra_servers = _parse_extra_config(Path(opts.extra_config), parse_errors)
             servers = extra_servers if opts.config_only else servers + extra_servers
 
     connector = ServerConnector(timeout=float(opts.timeout))
@@ -778,10 +781,12 @@ async def run_scan(
     return report
 
 
-def _parse_extra_config(path: Path) -> list[ServerConfig]:
+def _parse_extra_config(path: Path, parse_errors: list[ConfigParseError] | None = None) -> list[ServerConfig]:
     """Parse an explicitly named standalone config file.
 
-    Raises ValueError on a missing, unreadable, or unparseable file. Unlike
+    Raises ValueError on a missing, non-regular, unreadable, empty, unparseable,
+    or unsupported config file. Malformed entries and duplicate keys become
+    config-health findings while valid sibling entries are retained. Unlike
     fleet discovery (where a broken config is skipped so one bad file cannot
     void a sweep), the caller named this exact path: failing silently would let
     a typo degrade into a clean zero-finding report — the worst failure mode
@@ -789,13 +794,17 @@ def _parse_extra_config(path: Path) -> list[ServerConfig]:
     :func:`mcp_audit.api.parse_config` so file-based and in-memory scans honor
     identical config-format handling and error semantics.
     """
-    if not path.exists():
-        raise ValueError(f"Config file not found: {path}")
     from mcp_audit.api import parse_config
 
     try:
-        return parse_config(path.read_text(encoding="utf-8"), source=str(path))
+        if not path.exists():
+            raise ValueError(f"Config file not found: {path}")
+        if not path.is_file():
+            raise ValueError(f"Config path is not a regular file: {path}")
+        return parse_config(path.read_text(encoding="utf-8-sig"), source=str(path), parse_errors=parse_errors)
     except OSError as exc:
         raise ValueError(f"Failed to read {path}: {redact_text(str(exc))}") from exc
+    except UnicodeError as exc:
+        raise ValueError(f"Failed to read {path}: invalid UTF-8 encoding") from exc
     except ValueError as exc:
         raise ValueError(f"Failed to parse {path}: {redact_text(str(exc))}") from exc

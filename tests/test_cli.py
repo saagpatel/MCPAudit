@@ -308,7 +308,7 @@ def test_run_scan_config_only_ignores_discovered_configs(monkeypatch: pytest.Mon
     custom = make_server_config(name="custom")
 
     monkeypatch.setattr(engine, "discover_all_configs", lambda clients, parse_errors=None: [discovered])
-    monkeypatch.setattr(engine, "_parse_extra_config", lambda path: [custom])
+    monkeypatch.setattr(engine, "_parse_extra_config", lambda path, parse_errors=None: [custom])
 
     report = anyio.run(
         engine.run_scan,

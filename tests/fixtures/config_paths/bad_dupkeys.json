@@ -1,0 +1,1 @@
+{"mcpServers": {"repeated": {"command": "first"}, "repeated": {"command": "echo"}}, "padding": {"same": 1, "same": 2}}

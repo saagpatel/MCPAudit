@@ -32,10 +32,20 @@ class ConfigParseError(Exception):
     surface collected errors as config-health findings.
     """
 
-    def __init__(self, path: str, client: ClientType, reason: str) -> None:
+    def __init__(
+        self,
+        path: str,
+        client: ClientType,
+        reason: str,
+        *,
+        finding_type: str = "config_parse_failure",
+        server_name: str | None = None,
+    ) -> None:
         self.path = path
         self.client = client
         self.reason = reason
+        self.finding_type = finding_type
+        self.server_name = server_name
         super().__init__(f"could not parse {client.value} config {path}: {reason}")
 
 
@@ -48,11 +58,12 @@ class ConfigDiscoverer(ABC):
         ...
 
     @abstractmethod
-    def parse(self, path: Path) -> list[ServerConfig]:
-        """Parse a config file and return all ServerConfig entries found.
+    def parse(self, path: Path, parse_errors: list[ConfigParseError] | None = None) -> list[ServerConfig]:
+        """Parse a config file and return all valid ServerConfig entries found.
 
         Raises :class:`ConfigParseError` when the file exists but cannot be
-        read or parsed as this client's config format.
+        read or parsed as this client's config format. Entry-level diagnostics
+        are collected into ``parse_errors`` or logged as warnings.
         """
         ...
 
@@ -75,7 +86,7 @@ class ConfigDiscoverer(ABC):
         for path in paths:
             if path.exists():
                 try:
-                    results.extend(self.parse(path))
+                    results.extend(self.parse(path, parse_errors))
                 except ConfigParseError as exc:
                     if parse_errors is not None:
                         parse_errors.append(exc)
