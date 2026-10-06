@@ -573,6 +573,7 @@ def test_schema_version_pins_top_level_field_set() -> None:
         "shadowing_findings",
         "warnings",
         "coverage",
+        "review_summary",
     }
 
 

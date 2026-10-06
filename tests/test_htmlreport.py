@@ -292,7 +292,8 @@ def test_grade_is_additive_and_independent_of_numeric_score() -> None:
     report.policy_result = None
     audit.permissions = []
     audit.capability_findings = []
-    assert report.ux_summary == {"grade": "A"}
+    # Each changed raw report is a new presentation snapshot.
+    assert report.model_copy().ux_summary == {"grade": "A"}
     baseline = audit.risk_score.model_dump() if audit.risk_score else None
     audit.permissions = [
         PermissionFinding(
@@ -302,7 +303,7 @@ def test_grade_is_additive_and_independent_of_numeric_score() -> None:
             tool_name="run",
         )
     ]
-    assert report.ux_summary == {"grade": "C"}
+    assert report.model_copy().ux_summary == {"grade": "C"}
     audit.permissions.append(
         PermissionFinding(
             category=PermissionCategory.DESTRUCTIVE,
@@ -311,7 +312,7 @@ def test_grade_is_additive_and_independent_of_numeric_score() -> None:
             tool_name="delete",
         )
     )
-    assert report.ux_summary == {"grade": "D"}
+    assert report.model_copy().ux_summary == {"grade": "D"}
     audit.permissions = [
         PermissionFinding(
             category=PermissionCategory.NETWORK,
@@ -320,7 +321,7 @@ def test_grade_is_additive_and_independent_of_numeric_score() -> None:
             tool_name="fetch",
         )
     ]
-    assert report.ux_summary == {"grade": "B"}
+    assert report.model_copy().ux_summary == {"grade": "B"}
     report.config_health_findings = [
         ConfigHealthFinding(
             finding_type="shell_wrapper_launch",
@@ -348,7 +349,7 @@ def test_hidden_instructions_and_chain_plus_shell_grade_classes() -> None:
             tool_name="run",
         )
     ]
-    assert report.ux_summary["grade"] == "D"
+    assert report.model_copy().ux_summary["grade"] == "D"
     audit.permissions = []
     audit.capability_findings = [
         CapabilityFinding(
@@ -359,7 +360,7 @@ def test_hidden_instructions_and_chain_plus_shell_grade_classes() -> None:
             evidence=["run"],
         )
     ]
-    assert report.ux_summary["grade"] == "D"
+    assert report.model_copy().ux_summary["grade"] == "D"
     audit.injection_findings = _report_with_findings().audits[0].injection_findings
     assert report.ux_summary["grade"] == "F"
 

@@ -104,12 +104,14 @@ def test_repeated_redaction_preserves_grouping_and_json_grade(identity_report: A
 
 
 @pytest.mark.parametrize("identity_report", ["/Users", "/home"], indirect=True)
-def test_redacted_grade_recomputes_after_findings_change(identity_report: AuditReport) -> None:
+def test_redacted_summary_is_a_snapshot_after_findings_change(identity_report: AuditReport) -> None:
     redacted = identity_report.redacted(identifiers=True)
+    summary = redacted.ensure_review_summary().model_dump()
     redacted.audits[0].permissions = []
-    assert redacted.ux_summary == {"grade": "C"}
     redacted.audits[1].permissions = []
-    assert redacted.ux_summary == {"grade": "A"}
+    assert redacted.ux_summary == {"grade": "D"}
+    assert redacted.ensure_review_summary().model_dump() == summary
+    assert "Top fixes · 2" in HtmlReportGenerator().generate(redacted)
 
 
 @pytest.mark.parametrize("identity_report", ["/Users", "/home"], indirect=True)
