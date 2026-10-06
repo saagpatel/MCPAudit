@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Preserve keyword capability evidence even when served annotations claim
+  read-only, non-destructive or closed-world behavior. Report explicit
+  declaration/evidence contradictions at MEDIUM-or-better keyword confidence
+  as MCP043 (`annotation_contradiction`), HIGH for destructive evidence and
+  MEDIUM otherwise, in additive JSON findings, SARIF and permission policy
+  gates. Canary eligibility retains its served-annotation veto.
 - Pin tool surfaces with canonical form v2, covering annotations, title, output
   schema, icons and metadata; restore those fields for baseline comparison and
   flag security-relevant annotation changes as HIGH MCP018 deltas. Share the
