@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Withhold phrase excerpts after full-field credential redaction, preserve
   instruction evidence in the MCP findings endpoint, restore override phrase
   coverage, and align the synthetic sandbox with the MEDIUM heuristic tier.
+  Build metadata evidence with a shared full-field redaction helper that maps
+  match offsets before slicing and rendering invisible codepoints, including
+  obfuscation, hidden-directive, schema, SSRF, and escalation evidence.
 
 - Recognize VS Code server maps in explicit configs and parse both VS Code
   files as JSONC. Report malformed entries and duplicate keys, reject
@@ -82,8 +85,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   across static injection, runtime text and tool-name shadowing checks. Report
   MEDIUM `OBFUSCATED_METADATA` for invisible classes or mixed-script confusables
   with field pointers; preserve source evidence and display invisible characters
-  as codepoint markers in terminal, HTML and SARIF messages. Anchor bounded raw
-  evidence to the detected phrase or gated anomaly so stripped context and
+  as codepoint markers in evidence, terminal, HTML and SARIF messages. Anchor
+  bounded redacted evidence to the detected phrase or gated anomaly so stripped context and
   benign non-Latin prefixes cannot displace it, including normalized HTML-comment
   delimiters after long benign prefixes.
 

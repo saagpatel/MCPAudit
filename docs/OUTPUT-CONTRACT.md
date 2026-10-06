@@ -107,6 +107,18 @@ and separator-delimited auth/sig components. `author`, `authority`, `oauth_callb
 Environment variable values are never read; env/header key-name
 lists are retained.
 
+Static metadata excerpts redact the complete source field before selecting
+context. Match offsets follow credential replacements; a match inside a
+redacted value includes the replacement token. Invisible codepoints in evidence
+are rendered as `‹U+XXXX›`, including JSON `matched_text`; source metadata and
+finding field paths retain their existing shape. The same helper protects
+credential-target extracts, schema-property evidence, SSRF parameter/authority
+evidence, and field text copied into escalation summaries and drift details.
+Permission keyword evidence remains the rule vocabulary, not source excerpts.
+Phrase evidence remains withheld when full-field credential matching detects
+credentials, including after Unicode normalization. Runtime result and prompt
+body excerpts remain withheld. No report field or schema version changes.
+
 `scan --redact` additionally scrubs hostname, home-path usernames and matching
 server-name text in shared file reports, with the existing stable server
 aliases. Terminal output retains identifiers. Dictionary keys are not scrubbed.
@@ -281,11 +293,12 @@ names, ordinary accented Latin text, and NFKC compatibility changes alone do
 not trigger this anomaly. Runtime findings describe `/body` and retain the
 existing withheld-excerpt marker and null `field_path`.
 
-Static `matched_text` excerpts and source capability fields retain their
-original Unicode codepoints rather than the matching form. Terminal and HTML
-strings and SARIF result messages display invisibles as `‹U+E0020›`-style markers;
-JSON and SARIF structured properties retain source values. No existing field
-is removed or renamed and `schema_version` is unchanged.
+Source capability fields retain their original Unicode codepoints rather than
+the matching form. Static `matched_text` evidence uses full-field credential
+redaction before slicing and displays invisibles as `‹U+E0020›`-style markers
+in JSON as well as terminal, HTML, and SARIF. Other source values in JSON and
+SARIF structured properties retain their existing representation. No existing
+field is removed or renamed and `schema_version` is unchanged.
 
 Property-name evidence points to that property's schema object. Pointer tokens
 escape `~` as `~0` and `/` as `~1`.
@@ -425,7 +438,8 @@ the shared pattern and `field_path` is its JSON Pointer, including resource
 metadata. `secret_targets` lists concrete targeted paths/names only, never
 values; it defaults to `[]` and `instruction_pattern` defaults to `null` for
 legacy, structural, and runtime findings. Static free-text excerpts retain bounded
-raw source evidence after mapping normalized matches back to raw offsets;
+redacted source evidence after mapping normalized matches back to raw offsets
+and rendering invisible codepoints;
 phrase excerpts are withheld whenever redaction changes the complete raw or
 normalized field, before extracting or truncating evidence. These fields also
 appear in SARIF properties and the redacted MCP `get_injection_findings`
