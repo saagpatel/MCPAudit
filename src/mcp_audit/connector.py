@@ -41,7 +41,6 @@ logger = logging.getLogger(__name__)
 
 _SSE_URL_SUFFIX = re.compile(r"(https?://[^\s?#]+)[?#][^\s]*", re.IGNORECASE)
 _SSE_URL_USERINFO = re.compile(r"(https?://)[^/\s]*@", re.IGNORECASE)
-_EXCEPTION_URL = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
 _SSE_LOGGER_NAMES = (
     "mcp.client.sse",
     "httpx2",
@@ -78,9 +77,9 @@ def describe_exception(exc: BaseException) -> str:
 
     collect(exc)
     descriptions = [f"{name}: {message}" if message else name for name, message in leaves]
-    # Exception strings can contain endpoint query values or redirect targets.
-    summary = _EXCEPTION_URL.sub("<redacted-url>", "; ".join(descriptions))
-    summary = redact_text(summary)
+    # Same URL policy as SDK SSE diagnostics: keep scheme, host and path; redact
+    # userinfo and the whole query/fragment (credentials, redirect parameters).
+    summary = _redact_sse_log_text("; ".join(descriptions))
     if len(summary) > 500:
         return summary[:499] + "…"
     return summary

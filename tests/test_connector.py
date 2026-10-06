@@ -85,12 +85,22 @@ class TestDescribeException:
         summary = describe_exception(RuntimeError("x" * 10_000))
         assert len(summary) == 500 and summary.endswith("…")
 
-    def test_hides_endpoint_query_and_redirect_target(self) -> None:
+    def test_redacts_userinfo_query_and_fragment_but_keeps_host_and_path(self) -> None:
         summary = describe_exception(
-            RuntimeError("redirected from https://example.test/start to https://other.test/path?token=abc123")
+            RuntimeError(
+                "redirected from https://user:pw@example.test:8443/start "
+                "to https://other.test/next?token=abc123#frag"
+            )
         )
-        assert "example.test" not in summary and "other.test" not in summary
-        assert "abc123" not in summary and "<redacted-url>" in summary
+        assert summary == (
+            "RuntimeError: redirected from https://<redacted>@example.test:8443/start "
+            "to https://other.test/next?<redacted>"
+        )
+
+    def test_bare_origin_is_unchanged(self) -> None:
+        assert describe_exception(OSError("connect to http://127.0.0.1:9 failed")) == (
+            "OSError: connect to http://127.0.0.1:9 failed"
+        )
 
 
 class TestConvertTool:
