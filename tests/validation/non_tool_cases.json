@@ -135,7 +135,7 @@
 				"target_name": "triage_issue",
 				"severity": "medium",
 				"pattern_name": "INSTRUCTION_SHAPED_TEXT",
-				"instruction_pattern": "credential_hunt"
+				"instruction_pattern": "credential_harvest"
 			}
 		],
 		"expect_non_tool_risk": true,
@@ -589,7 +589,7 @@
 	},
 	{
 		"server_name": "support-macro-library",
-		"description": "Support macro HTML comments alone are not an instruction-text finding.",
+		"description": "Support-macro resource metadata can hide an HTML-comment directive without any permission category.",
 		"prompts": [
 			{
 				"name": "apply_macro",
@@ -606,9 +606,16 @@
 			}
 		],
 		"expected_capabilities": [],
-		"expected_injections": [],
+		"expected_injections": [
+			{
+				"target_type": "resource",
+				"target_name": "macro://library/canned-responses",
+				"severity": "medium",
+				"pattern_name": "hidden_directive"
+			}
+		],
 		"expect_non_tool_risk": true,
-		"expected_non_tool_risk": 3.0
+		"expected_non_tool_risk": 7.0
 	},
 	{
 		"server_name": "newsletter-composer",

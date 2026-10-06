@@ -181,7 +181,15 @@ def _redact_text(value: str, window: _ExcerptWindow | None = None) -> str:
 
 def redact_text(value: str) -> str:
     """Redact likely credential values while preserving useful context."""
-    return _redact_text(value)
+    redacted = _redact_text(value)
+    return "[metadata excerpt withheld]" if _normalization_exposes_secret(redacted) else redacted
+
+
+def _normalization_exposes_secret(redacted: str) -> bool:
+    from mcp_audit.normalize import normalize_text
+
+    normalized = normalize_text(redacted)
+    return _redact_text(normalized) != normalized
 
 
 def redacted_excerpt(
@@ -201,15 +209,18 @@ def redacted_excerpt(
     """
     from mcp_audit.normalize import render_invisibles
 
-    if (
-        not 0 <= start <= end <= len(text)
-        or context_before < 0
-        or context_after < 0
-        or (max_length is not None and max_length < 0)
-    ):
+    if context_before < 0 or context_after < 0 or (max_length is not None and max_length < 0):
         raise ValueError("Invalid excerpt span or context")
+    start = min(len(text), max(0, start))
+    end = min(len(text), max(start, end))
     window = _ExcerptWindow(start, end)
     redacted = _redact_text(text, window)
+    # A label can become recognizable only after Unicode normalization. If
+    # raw-field redaction missed such a value, withhold the field's evidence
+    # altogether rather than copy any raw or normalized part of that value.
+    if _normalization_exposes_secret(redacted):
+        withheld = "[metadata excerpt withheld]"
+        return withheld if max_length is None else withheld[:max_length]
     before = render_invisibles(redacted[max(0, window.start - context_before) : window.start])
     match = render_invisibles(redacted[window.start : window.end])
     after = render_invisibles(redacted[window.end : window.end + context_after])

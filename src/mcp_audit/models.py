@@ -432,7 +432,7 @@ class InjectionFinding(BaseModel):
     description: str  # human-readable explanation
     field_path: str | None = None
 
-    instruction_pattern: str | None = None  # Shared vocabulary name for static free-text matches
+    instruction_pattern: str | None = None  # Static pattern name for free-text matches
     secret_targets: list[str] = Field(default_factory=list)  # Target names/paths, never values
 
     @computed_field  # type: ignore[prop-decorator]
