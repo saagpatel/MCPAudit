@@ -13,6 +13,7 @@ import click
 import yaml
 from rich.console import Console
 
+from mcp_audit.artifact_paths import validate_artifact_paths
 from mcp_audit.engine import ScanOptions, run_scan
 from mcp_audit.report import ReportGenerator
 from mcp_audit.review_discovery import review_sources, server_identity
@@ -74,6 +75,12 @@ def check(
     out = Console(stderr=json_stdout)
     try:
         sources = review_sources(config, include_discovered, project)
+        inputs = [Path(path) for path, status in sources.paths if status != "absent"]
+        if policy is not None:
+            inputs.append(policy)
+        validate_artifact_paths(
+            [("--output-json", output_json), ("--sarif", sarif), ("--html", html)], inputs
+        )
         servers = sources.servers
         if connect:
             selected = [server for server in servers if server_identity(server) == server_id]

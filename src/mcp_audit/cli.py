@@ -19,6 +19,7 @@ from rich.console import Console
 from rich.text import Text
 
 from mcp_audit.agent_ui_cli import agent_ui
+from mcp_audit.artifact_paths import validate_artifact_paths
 from mcp_audit.authorization_posture_cli import authorization_posture
 from mcp_audit.cache_contract_cli import cache_contract
 from mcp_audit.check_cli import check, demo, inspect
@@ -742,12 +743,29 @@ async def _run_scan(
             else None
         ),
     )
+    config_paths: list[Path] = [cfg_path]
+    if policy_path:
+        config_paths.append(Path(policy_path))
     try:
-        report = await run_scan(scan_options, override_applier=override_applier, console=console)
+        report = await run_scan(
+            scan_options,
+            override_applier=override_applier,
+            console=console,
+            config_paths=config_paths if json_output or sarif_output or html_output else None,
+        )
     except ValueError as exc:
         # A caller-supplied --config path that is missing or unparseable must be
         # a hard error, not a silently-empty scan that passes downstream gates.
         raise click.ClickException(strip_controls(str(exc))) from exc
+
+    validate_artifact_paths(
+        [
+            ("--json", Path(json_output) if json_output else None),
+            ("--sarif", Path(sarif_output) if sarif_output else None),
+            ("--html", Path(html_output) if html_output else None),
+        ],
+        config_paths,
+    )
 
     if policy is not None:
         from mcp_audit.policy import evaluate_policy
