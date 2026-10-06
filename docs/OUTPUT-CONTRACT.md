@@ -20,6 +20,8 @@ findings' existing config paths to resolve source identity.
 `ServerConfig.config_pointer` adds a nullable JSON Pointer to the parsed entry,
 escaping `~` and `/` in keys; legacy records default to null. Teaching views
 show client/scope/name identity and explicitly label unavailable pointers.
+Identifier-redacted reports scrub decoded pointer tokens (including project
+home-path usernames and server aliases), then re-escape them as JSON Pointers.
 
 `InjectionFinding.matched_span` is an additive nullable pair of start and
 end-exclusive character offsets into the redacted, rendered `matched_text`.
@@ -30,6 +32,8 @@ delimiters. Terminal teaching views mark the matched span with `⟦…⟧`; HTML
 escapes the text before using `<mark>`. Literal source delimiters are rendered
 as codepoint labels to prevent forged match boundaries. Runtime excerpts remain
 withheld and have null offsets, as do legacy records or oversized matches.
+Unicode evidence includes its codepoint/position prefix and any `repr` escape
+expansion in the length budget, trimming context while preserving the match.
 
 Terminal and offline HTML explanations include the source path, config entry,
 evidence, three possible-consequence steps, manual remediation, initial review

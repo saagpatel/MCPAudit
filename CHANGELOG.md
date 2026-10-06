@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Show config paths and explicit-file source labels in finding explanations;
   align redacted metadata excerpts to word boundaries and mark the actual match
   using additive display offsets without changing plain JSON evidence.
+  Scrub escaped config pointer identifiers in `--redact` reports and bound
+  Unicode evidence after control-character rendering while preserving match offsets.
 
 - Lead terminal reviews with a coverage-qualified Preview or finding-class grade,
   visible totals and up to three manual action cards. `--details` retains the
