@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
@@ -11,8 +10,16 @@ from pathlib import Path
 import pytest
 import yaml
 
+from mcp_audit.canonical import canonical_json_bytes
 from mcp_audit.models import ClientType, DriftStatus, ServerConfig, TransportType
-from mcp_audit.pinning import _MAX_PIN_FILE_BYTES, PinFileError, PinStore, surface_field_diff, surface_hash
+from mcp_audit.pinning import (
+    _MAX_PIN_FILE_BYTES,
+    PinFileError,
+    PinStore,
+    canonical_tool_surface,
+    surface_field_diff,
+    surface_hash,
+)
 from tests.conftest import make_tool
 
 
@@ -81,12 +88,9 @@ class TestPinServer:
                 },
             },
         )
-        raw_canonical = json.dumps(
-            {"name": tool.name, "description": tool.description, "inputSchema": tool.input_schema},
-            sort_keys=True,
-            ensure_ascii=False,
+        expected_hash = (
+            "sha256:" + hashlib.sha256(canonical_json_bytes(canonical_tool_surface(tool))).hexdigest()
         )
-        expected_hash = "sha256:" + hashlib.sha256(raw_canonical.encode()).hexdigest()
         store = _store(tmp_path)
         assert store.compute_hash(tool) == expected_hash
         store.pin_server("srv", [tool])
@@ -391,6 +395,11 @@ class TestAtomicWrite:
         assert raw["servers"]["srv"]["tools"]["tool"]["snapshot"] == {
             "description": None,
             "input_schema": None,
+            "annotations": None,
+            "title": None,
+            "output_schema": None,
+            "icons": None,
+            "meta": None,
         }
 
     def test_changed_finding_includes_pinned_at(self, tmp_path: Path) -> None:

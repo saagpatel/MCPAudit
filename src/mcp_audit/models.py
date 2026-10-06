@@ -139,6 +139,7 @@ class ShadowingSeverity(StrEnum):
 class EscalationKind(StrEnum):
     CAPABILITY = "capability"  # Tool gained a dangerous permission category vs its pin baseline
     DESCRIPTION_INJECTION = "description_injection"  # Description gained injection pattern(s)
+    ANNOTATION_DELTA = "annotation_delta"  # Security-relevant annotation hint flip
 
 
 class EscalationSeverity(StrEnum):
@@ -241,6 +242,18 @@ class ToolInfo(BaseModel):
     description: str | None = None
     input_schema: dict[str, object] | None = None
     annotations: ToolAnnotations | None = None
+    title: str | None = None
+    output_schema: dict[str, object] | None = None
+    icons: list[dict[str, object]] | None = None
+    meta: dict[str, object] | None = None
+
+
+class PromptArgumentInfo(BaseModel):
+    """Agent-visible prompt argument metadata."""
+
+    name: str
+    description: str | None = None
+    required: bool | None = None
 
 
 class PromptInfo(BaseModel):
@@ -249,6 +262,7 @@ class PromptInfo(BaseModel):
     name: str
     description: str | None = None
     arguments: list[str] = Field(default_factory=list)
+    argument_details: list[PromptArgumentInfo] = Field(default_factory=list)
 
 
 class ResourceInfo(BaseModel):
@@ -273,6 +287,7 @@ class PermissionFinding(BaseModel):
     confidence: Confidence
     evidence: list[str]  # What triggered this finding (pattern matches, annotation values)
     tool_name: str
+    field_paths: list[str] = Field(default_factory=list)
     source_trust: FindingSourceTrust = FindingSourceTrust.UNTRUSTED_SERVER_METADATA
     analyzer: str = "mcp-audit.permission-analyzer"
     analyzer_model: str | None = None
@@ -380,6 +395,7 @@ class InjectionFinding(BaseModel):
     after_call: int | None = None  # Set for runtime tool-result findings
     matched_text: str  # excerpt (max 200 chars)
     description: str  # human-readable explanation
+    field_path: str | None = None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -580,6 +596,7 @@ class EscalationFinding(BaseModel):
     tool_name: str
     gained_categories: list[PermissionCategory] = Field(default_factory=list)
     gained_patterns: list[str] = Field(default_factory=list)  # injection pattern names
+    annotation_changes: list[str] = Field(default_factory=list)  # hint names, never raw metadata
     description: str
 
     @computed_field  # type: ignore[prop-decorator]

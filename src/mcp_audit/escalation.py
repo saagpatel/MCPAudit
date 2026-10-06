@@ -137,6 +137,8 @@ class EscalationAnalyzer:
         server_name: str,
         baseline_tools: list[ToolInfo],
         current_tools: list[ToolInfo],
+        *,
+        uncovered_annotations: set[str] | None = None,
     ) -> list[EscalationFinding]:
         """Return escalation findings for one server.
 
@@ -156,6 +158,12 @@ class EscalationAnalyzer:
             # legacy raw snapshots, before re-deriving capability/injection deltas.
             baseline = ToolInfo.model_validate(redact_data(baseline.model_dump()))
             tool = ToolInfo.model_validate(redact_data(tool.model_dump()))
+            if uncovered_annotations is not None and tool.name in uncovered_annotations:
+                # A v1 snapshot never observed hints: do not invent an annotation delta.
+                baseline = baseline.model_copy(update={"annotations": None})
+                tool = tool.model_copy(update={"annotations": None})
+            else:
+                findings.extend(self._annotation_finding(server_name, baseline, tool))
             findings.extend(self._capability_finding(server_name, baseline, tool))
             findings.extend(self._injection_finding(server_name, baseline, tool))
 
@@ -164,6 +172,38 @@ class EscalationAnalyzer:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _annotation_finding(
+        self, server_name: str, baseline: ToolInfo, current: ToolInfo
+    ) -> list[EscalationFinding]:
+        old, new = baseline.annotations, current.annotations
+        changes: list[str] = []
+        if old is not None and old.read_only_hint is True and (new is None or new.read_only_hint is not True):
+            changes.append("readOnlyHint")
+        if (
+            (old is None or old.destructive_hint is not True)
+            and new is not None
+            and new.destructive_hint is True
+        ):
+            changes.append("destructiveHint")
+        if (
+            old is not None
+            and old.open_world_hint is False
+            and (new is None or new.open_world_hint is not False)
+        ):
+            changes.append("openWorldHint")
+        if not changes:
+            return []
+        return [
+            EscalationFinding(
+                kind=EscalationKind.ANNOTATION_DELTA,
+                severity=EscalationSeverity.HIGH,
+                server_name=server_name,
+                tool_name=current.name,
+                annotation_changes=changes,
+                description="Security-relevant annotation hints changed: " + ", ".join(changes) + ".",
+            )
+        ]
 
     def _capability_finding(
         self, server_name: str, baseline: ToolInfo, current: ToolInfo

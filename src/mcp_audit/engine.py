@@ -21,6 +21,7 @@ import socket
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from itertools import chain
 from pathlib import Path
 from typing import cast
 
@@ -28,6 +29,7 @@ import anyio
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
+from mcp_audit.agent_text import agent_visible_text, prompt_visible_text
 from mcp_audit.analyzer import PermissionAnalyzer
 from mcp_audit.confighealth import config_health_findings
 from mcp_audit.connector import ServerConnector, describe_exception
@@ -293,6 +295,8 @@ async def run_scan(
         from mcp_audit.pinning import PinStore
 
         pin_store = PinStore()
+        for server in servers:
+            scan_warnings.extend(pin_store.schema_warnings(server.name))
 
     audits: list[ServerAudit] = [ServerAudit(server=s, connection_status="pending") for s in servers]
 
@@ -350,6 +354,23 @@ async def run_scan(
             else:
                 audit = await connector.connect(srv)
 
+            for target_type, target_name, text in chain(
+                (("tool", tool.name, agent_visible_text(tool)) for tool in audit.tools),
+                (
+                    ("prompt", prompt.name, prompt_visible_text(prompt))
+                    for prompt in audit.prompts
+                    if injection_detector is not None
+                ),
+            ):
+                if text.incomplete:
+                    warn(
+                        "agent_text_incomplete",
+                        f"Agent-visible text scan incomplete for {target_type} {target_name!r}: "
+                        + "; ".join(text.incomplete),
+                        check="agent_visible_text",
+                        servers=[srv.name],
+                    )
+
             # Analyze tool list for new permission findings
             if not skip_connect or not audit.permissions:
                 raw_findings = analyzer.analyze_server(audit.tools)
@@ -398,7 +419,10 @@ async def run_scan(
                 baseline = pin_store.baseline_tools(srv.name)
                 if baseline:
                     audit.escalation_findings = escalation_analyzer.analyze_server(
-                        srv.name, baseline, audit.tools
+                        srv.name,
+                        baseline,
+                        audit.tools,
+                        uncovered_annotations=pin_store.legacy_tool_names(srv.name),
                     )
 
             # Optional provenance / launch-config drift check vs the pin baseline

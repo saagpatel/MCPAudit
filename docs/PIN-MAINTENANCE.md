@@ -3,6 +3,53 @@
 MCPAudit pins are explicit, server-scoped review records. Scans never modify MCP
 client config files, and pin maintenance should stay just as deliberate.
 
+## Tool Surface v2 and Legacy Pins
+
+New tool entries carry `pin_schema: 2` and
+`canonical_form: mcpaudit.tool-surface.v2`. The file also carries `pin_schema: 2`;
+each tool entry's marker determines its hash contract, so mixed files remain
+safe. Entries with no marker or `pin_schema: 1` retain the original v1 hash
+(name, description and input schema). Scans never upgrade or rewrite them.
+When a pin comparison is requested, `pin_schema_outdated` names affected servers
+and explains that the additional fields are not covered. Existing description
+and input-schema drift comparisons continue using the original spaced JSON bytes.
+The old connector stored served empty input schemas as null; v1 comparisons
+retain that representation when its saved snapshot used null, avoiding drift
+caused only by the v2 connector preserving the empty object.
+
+The v2 tool form covers name, title, description, inputSchema, outputSchema,
+annotations, icons and meta (the wire `_meta`). Annotation hints are always
+filled with MCP defaults: readOnlyHint false, destructiveHint true,
+idempotentHint false and openWorldHint true. An omitted annotation object,
+null hints and explicit defaults hash identically. Optional null/empty fields
+are omitted; annotation title is optional too. Input schemas retain their
+served JSON value, including an empty object. Schemas are never dereferenced
+or filled with defaults; finite numbers retain their served JSON representation
+(1.0 differs from 1).
+
+Pins and canary surfaces share one serializer: sorted keys, compact separators,
+unescaped Unicode, no NaN/Infinity, UTF-8 and one trailing newline. V1 comparison
+uses the same serializer's legacy mode with spaces and no newline. This phase
+defines the tool form; signatures and the server/protocol signing envelope
+are separate work.
+
+Snapshots restore annotations and the additional fields for review and
+escalation analysis, with credential redaction retained. Security-relevant hint
+changes emit HIGH `MCP018` findings with kind `annotation_delta`: readOnlyHint
+true to false, destructiveHint false/absent to explicitly true, and openWorldHint
+false to true. Removing readOnlyHint or openWorldHint uses its default when
+comparing. An explicit destructiveHint true after an absent hint is reported
+even though the canonical default already hashes as true. Legacy annotations
+were never reviewed, so they do not establish annotation or hint-derived
+capability deltas; description and schema capability deltas remain checked.
+
+`pin --refresh` shows each v1 tool's additional fields as **not previously
+covered**, including when its v1 hash still matches. JSON refresh previews add
+`uncovered_fields` rows with tool_name, field and summary. Previewing never
+upgrades entries; only explicitly pinning or applying a reviewed refresh writes
+v2 entries for the observed tools. Other legacy entries retain their v1 marker
+or lack of marker.
+
 ## Launch Argument Redaction
 
 `pin` and `pin --refresh ... --apply` redact likely credentials in
