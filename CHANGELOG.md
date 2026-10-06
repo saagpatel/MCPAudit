@@ -41,6 +41,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests
 
+- Count explicit benign-tool false positives in validation precision and F1;
+  gate precision per category, parametrize fixtures by server, and track the six
+  known keyword false positives with strict xfails pending P2-1 tuning.
 - Pin scorer weights, confidence multipliers, and caps with literal golden values;
   cover policy gate defaults, branches, boundaries, and invalid policy errors.
 
