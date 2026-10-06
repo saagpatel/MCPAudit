@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -129,7 +130,7 @@ class TestTerminalRender:
         audits = [_make_audit("s1"), _make_audit("s2")]
         report = _base_report(audits)
         gen.render_terminal(report)
-        output = buf.getvalue()
+        output = re.sub(r"\x1b\[[0-9;]*m", "", buf.getvalue())
         assert "Scanned 2 servers across 1 client." in output
         assert "0 high-risk servers." in output
 
@@ -137,7 +138,7 @@ class TestTerminalRender:
         con, buf = _make_console()
         gen = ReportGenerator(console=con)
         gen.render_terminal(_base_report([_make_audit("only", risk=8.5)]))
-        output = buf.getvalue()
+        output = re.sub(r"\x1b\[[0-9;]*m", "", buf.getvalue())
         assert "Scanned 1 server across 1 client." in output
         assert "1 high-risk server." in output
 

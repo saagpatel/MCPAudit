@@ -42,7 +42,7 @@
     ]
   },
   "non_canary_sha256": {
-    "terminal": "c448d106ca280fdb7e9076cd70474acf7aa0f4536aa67a0fa536dca0066c5721",
+    "terminal": "f004d6d0d6489ae9d636cd1d8c8eeab4b31bb74bb682ace53419a73954dcc7a7",
     "html": "82ff30a6ff090d580b7fb63f4e43223764638b050ca15a1c33d3be9d358692d6",
     "sarif": "2e375b593b996a85a26193592e9b0ded506586db8be850d6a7241a9d5c424feb"
   }
