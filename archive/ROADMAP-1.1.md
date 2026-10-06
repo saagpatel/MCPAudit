@@ -49,7 +49,7 @@ intended audience in `examples/policies/README.md`.
 Done when future team-specific policy requests can be added as small examples
 without changing the policy engine.
 
-The staged adoption path is documented in `docs/GOLDEN-ROLLOUT.md` so teams can
+The staged adoption path is documented in `maintainers/GOLDEN-ROLLOUT.md` so teams can
 move from config-only review to connected scans, pins, and policy gates without
 changing scanner defaults.
 

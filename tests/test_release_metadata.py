@@ -201,19 +201,16 @@ def test_candidate_state_is_never_publishable(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     (tmp_path / "CHANGELOG.md").write_text(
-        "## [2.6.0] - Unreleased\n\n[2.6.0]: https://github.com/saagpatel/MCPAudit/compare/v2.5.0...HEAD\n",
+        "## [2.6.0] - Unreleased\n\n### Release boundary details\n\n"
+        "MCPAudit 2.6.0\nRelease status: candidate\nPublication decision: NO-GO\n"
+        "Retain mcp-audits==2.5.0.\n\n"
+        "[2.6.0]: https://github.com/saagpatel/MCPAudit/compare/v2.5.0...HEAD\n",
         encoding="utf-8",
     )
     (tmp_path / "README.md").write_text("uses: saagpatel/MCPAudit@v2.5.0\n", encoding="utf-8")
     (tmp_path / "docs/ADOPTION-GUIDE.md").write_text(
         "uses: saagpatel/MCPAudit@v2.5.0\nrev: v2.5.0\n", encoding="utf-8"
     )
-    (tmp_path / "docs/2.6-RELEASE-NOTES.md").write_text(
-        "# MCPAudit 2.6.0\n\nRelease status: candidate\nPublication decision: NO-GO\n\n"
-        "Retain mcp-audits==2.5.0.\n",
-        encoding="utf-8",
-    )
-
     original_root = RELEASE_VERIFIER["verify_metadata"].__globals__["ROOT"]
     RELEASE_VERIFIER["_set_root"](tmp_path)
     try:
@@ -482,7 +479,7 @@ def test_registry_publisher_binary_is_version_and_hash_pinned() -> None:
 
 
 def test_candidate_checklist_verifies_exact_built_artifacts_before_install() -> None:
-    checklist = Path("docs/RELEASE-CHECKLIST.md").read_text(encoding="utf-8")
+    checklist = Path("maintainers/RELEASE-CHECKLIST.md").read_text(encoding="utf-8")
 
     build = checklist.index("uv build --clear")
     verify_artifacts = checklist.index("--dist-dir dist")

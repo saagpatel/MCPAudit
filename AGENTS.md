@@ -41,7 +41,7 @@ uv run mcp-audit scan \
 
 `--skip-connect` alone still discovers workstation MCP configs. The explicit fixture, `--config-only`, and empty override above keep this smoke confined to synthetic input. On Windows, replace `/dev/null` with a task-owned empty YAML file. Bare `scan` and `make audit` inspect workstation configs and may connect to servers; use them only when the task calls for that scope.
 
-For broader verification, use `uv run pytest -p no:cacheprovider -q tests/`. The [CONTRIBUTING test lanes](CONTRIBUTING.md#running-tests) define Docker, PostgreSQL, Node, and macOS prerequisites. Tests can launch disposable fixture processes; skipped capabilities remain unverified. Run package/build checks when packaging is affected, using the [release checklist](docs/RELEASE-CHECKLIST.md).
+For broader verification, use `uv run pytest -p no:cacheprovider -q tests/`. The [CONTRIBUTING test lanes](CONTRIBUTING.md#running-tests) define Docker, PostgreSQL, Node, and macOS prerequisites. Tests can launch disposable fixture processes; skipped capabilities remain unverified. Run package/build checks when packaging is affected, using the [release checklist](maintainers/RELEASE-CHECKLIST.md).
 
 Browser checks apply to HTML report or sandbox changes. For the static synthetic sandbox, run `python3 -m http.server 8765 --bind 127.0.0.1 --directory examples/sandbox` and open `http://127.0.0.1:8765/`; choose another free port if needed and stop the server when finished. Follow [the sandbox guide](examples/sandbox/README.md) for fixture and report checks. Ordinary CLI/library changes do not need a browser.
 

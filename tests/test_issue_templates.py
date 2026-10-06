@@ -4,13 +4,13 @@ from pathlib import Path
 
 FEEDBACK_TEMPLATE = Path(".github/ISSUE_TEMPLATE/feedback.md")
 FIELD_REPORT_TEMPLATE = Path(".github/ISSUE_TEMPLATE/field_report.md")
-FEEDBACK_DOC = Path("docs/FEEDBACK-TO-FIXTURES.md")
-FIELD_REPORT_DOC = Path("docs/FIELD-REPORTS.md")
-FIELD_REPORT_REQUEST_DOC = Path("docs/EXTERNAL-FIELD-REPORT-REQUEST.md")
-FIELD_REPORT_OUTREACH_DOC = Path("docs/EXTERNAL-OUTREACH-MESSAGES.md")
+FEEDBACK_DOC = Path("maintainers/FEEDBACK-TO-FIXTURES.md")
+FIELD_REPORT_DOC = Path("maintainers/FIELD-REPORTS.md")
+FIELD_REPORT_REQUEST_DOC = Path("maintainers/EXTERNAL-FIELD-REPORT-REQUEST.md")
+FIELD_REPORT_OUTREACH_DOC = Path("maintainers/EXTERNAL-OUTREACH-MESSAGES.md")
 SHOW_HN_DRAFT_DOC = Path("docs/SHOW-HN-DRAFT.md")
 MCP_TRUST_PACKET_DOC = Path("docs/MCP-TRUST-PACKET.md")
-SOLO_EVIDENCE_DOC = Path("docs/SOLO-EVIDENCE.md")
+SOLO_EVIDENCE_DOC = Path("maintainers/SOLO-EVIDENCE.md")
 README = Path("README.md")
 FIELD_REPORT_COMMAND = (
     "uvx --from mcp-audits mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact"
@@ -47,7 +47,7 @@ def test_feedback_template_preserves_redaction_and_private_disclosure_guidance()
 
 def test_feedback_docs_explain_public_fixture_intake() -> None:
     doc = FEEDBACK_DOC.read_text()
-    readme = Path("README.md").read_text()
+    maintainers = Path("maintainers/README.md").read_text()
 
     assert "The public feedback issue template mirrors this intake path." in doc
     assert "the expected regression assertion" in doc
@@ -57,8 +57,8 @@ def test_feedback_docs_explain_public_fixture_intake() -> None:
     assert "https://github.com/saagpatel/MCPAudit/issues/60" in doc
     assert "https://github.com/saagpatel/MCPAudit/issues/61" in doc
     assert "External Field Reports" in doc
-    assert "docs/FIELD-REPORTS.md" in doc
-    assert "docs/FEEDBACK-TO-FIXTURES.md" in readme
+    assert "maintainers/FIELD-REPORTS.md" in doc
+    assert "Feedback to fixtures" in maintainers
 
 
 def test_field_report_template_collects_config_only_external_evidence() -> None:
@@ -71,7 +71,7 @@ def test_field_report_template_collects_config_only_external_evidence() -> None:
     assert "Approximate server count" in text
     assert "JSON/SARIF consumer compatibility check" in text
     assert "Dashboard or CI ingestion check" in text
-    assert "docs/FIELD-REPORTS.md#minimal-public-example" in text
+    assert "maintainers/FIELD-REPORTS.md#minimal-public-example" in text
     assert "## Activation path" in text
     assert "without synchronous maintainer help" in text
     assert "Approximate minutes" in text
@@ -96,16 +96,15 @@ def test_field_report_docs_pin_activation_and_repeat_claim_boundaries() -> None:
     field_doc = FIELD_REPORT_DOC.read_text()
     request_doc = FIELD_REPORT_REQUEST_DOC.read_text()
     readme = README.read_text()
+    maintainer_index = Path("maintainers/README.md").read_text()
     field_contract = " ".join(field_doc.split())
     request_contract = " ".join(request_doc.split())
-    readme_contract = " ".join(readme.split())
 
     assert FIELD_REPORT_COMMAND in field_doc
     assert FIELD_REPORT_COMMAND in request_doc
-    assert FIELD_REPORT_COMMAND in readme
     assert "uvx may contact the configured Python package index" in field_contract
-    assert "may contact the configured Python package index" in readme_contract
-    assert "fully offline" not in readme_contract
+    assert "maintainers/" in readme
+    assert "Field reports" in maintainer_index
     assert "Package downloads are a distribution proxy" in field_contract
     assert "at least 6 of 10 participants complete safely and unassisted" in field_contract
     assert "at least 3 valid external reports" in field_contract
