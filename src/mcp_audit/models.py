@@ -1108,6 +1108,13 @@ class CheckCoverage(BaseModel):
     reason: str
 
 
+class UxSummary(BaseModel):
+    """Presentation rubric, independent of numeric capability exposure."""
+
+    grade: Literal["A", "B", "C", "D", "F"] | None
+    caveat: str = "reach and hygiene, not a safety certificate"
+
+
 class AuditReport(BaseModel):
     """Top-level audit report containing all server audits."""
 
@@ -1129,6 +1136,13 @@ class AuditReport(BaseModel):
     shadowing_findings: list[ShadowingFinding] = Field(default_factory=list)
     warnings: list[ScanWarning] = Field(default_factory=list)
     coverage: dict[str, CheckCoverage] = Field(default_factory=dict)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def ux_summary(self) -> UxSummary:
+        from mcp_audit.terminal_summary import grade
+
+        return UxSummary(grade=grade(self))
 
     def redacted(self, *, identifiers: bool = False) -> "AuditReport":
         """Return a credential-redacted copy, optionally scrubbing field-report identifiers."""
