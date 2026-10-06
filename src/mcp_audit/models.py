@@ -1007,6 +1007,7 @@ class ServerAudit(BaseModel):
     """Complete audit result for a single MCP server."""
 
     server: ServerConfig
+    presentation_id: str | None = None  # Report-local identity retained through identifier redaction.
     connection_status: str  # "connected", "partial", "failed", "timeout", "skipped"
     connection_error: str | None = None
     tools: list[ToolInfo] = Field(default_factory=list)
@@ -1144,11 +1145,21 @@ class AuditReport(BaseModel):
     def redacted(self, *, identifiers: bool = False) -> "AuditReport":
         """Return a credential-redacted copy, optionally scrubbing field-report identifiers."""
         from mcp_audit.redaction import redact_data, redact_identifiers
+        from mcp_audit.ux_summary import action_owner
 
         data = redact_data(self.model_dump(mode="json"))
         if identifiers:
+            # Bind grouping identities before scrubbing paths, using only opaque
+            # report-local ordinals in artifacts, not hashes of private identifiers.
+            owners: dict[str, str] = {}
+            presentation_ids = [
+                owners.setdefault(action_owner(audit), f"identity-{len(owners) + 1:02d}")
+                for audit in self.audits
+            ]
             names = {audit.server.name for audit in self.audits if audit.server.name}
             names.update(f.server_name for f in self.config_health_findings if f.server_name)
             aliases = {name: f"server-{index:02d}" for index, name in enumerate(sorted(names), start=1)}
             data = redact_identifiers(data, hostname=self.hostname, name_aliases=aliases)
+            for audit_data, presentation_id in zip(data["audits"], presentation_ids, strict=True):
+                audit_data["presentation_id"] = presentation_id
         return AuditReport.model_validate(data)

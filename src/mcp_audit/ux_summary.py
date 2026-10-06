@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
-    from mcp_audit.models import AuditReport
+    from mcp_audit.models import AuditReport, ServerAudit
 
 
 @dataclass
@@ -37,6 +37,12 @@ class _Outbound(_Finding, Protocol):
 
     @property
     def target_name(self) -> str: ...
+
+
+def action_owner(audit: ServerAudit) -> str:
+    """Use the pre-redaction identity when the report carries one."""
+    server = audit.server
+    return audit.presentation_id or f"{server.client.value}:{server.scope}:{server.config_path}:{server.name}"
 
 
 def actions(report: AuditReport) -> list[Action]:
@@ -71,7 +77,7 @@ def actions(report: AuditReport) -> list[Action]:
 
     for audit in report.audits:
         server = audit.server
-        owner = f"{server.client.value}:{server.scope}:{server.config_path}:{server.name}"
+        owner = action_owner(audit)
         where = f"{server.name} ({server.client.value}, {server.config_path})"
         permission_findings: list[_Finding] = [*audit.permissions, *audit.capability_findings]
         for finding in permission_findings:
@@ -150,17 +156,21 @@ def actions(report: AuditReport) -> list[Action]:
     fleet_findings: list[_Finding] = [*report.fleet_trifecta_findings, *report.shadowing_findings]
     for fleet in fleet_findings:
         add("fleet", fleet.rule_id, fleet.severity, fleet.title, fleet.remediation, fleet.rule_id)
+    policy_actions: list[Action] = []
     if report.policy_result:
         for violation in report.policy_result.violations:
-            add(
-                "policy",
-                violation.rule,
-                violation.severity,
-                violation.message,
-                "Review this violation against your selected policy.",
-                violation.rule,
+            targets = [target for target in (violation.server_name, violation.tool_name) if target]
+            # Policy rows carry names, not full server identities; merging even
+            # identical messages could hide violations from different configs.
+            policy_actions.append(
+                Action(
+                    severity=violation.severity,
+                    title=violation.message + (f" ({', '.join(targets)})" if targets else ""),
+                    steps=["Review this violation against your selected policy."],
+                    sources=[violation.rule],
+                )
             )
-    return sorted(grouped.values(), key=lambda action: ranks.get(action.severity, 2))
+    return sorted([*grouped.values(), *policy_actions], key=lambda action: ranks.get(action.severity, 2))
 
 
 def grade(report: AuditReport) -> str | None:

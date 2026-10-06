@@ -1557,6 +1557,18 @@
         "server": {
           "$ref": "#/$defs/ServerConfig"
         },
+        "presentation_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Presentation Id"
+        },
         "connection_status": {
           "title": "Connection Status",
           "type": "string"
