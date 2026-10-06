@@ -35,6 +35,8 @@ hosts, ports and path shape remain visible. Userinfo extends through the last
 each path segment are redacted. Enclosing secret assignments and flag/value
 pairs redact their entire URL value before standalone URL spans are protected
 from generic named-assignment matching, including secret-named hosts.
+Nested `scheme://` URLs within paths are scrubbed independently. A secret-named
+path assignment whose value is a URL redacts that whole value, including its path.
 
 Provenance comparisons redact both sides. Changes confined to query values or
 fragments therefore do not report drift, even for non-secret endpoint options;
@@ -52,6 +54,7 @@ lists are retained.
 `scan --redact` additionally scrubs hostname, home-path usernames and matching
 server-name text in shared file reports, with the existing stable server
 aliases. Terminal output retains identifiers. Dictionary keys are not scrubbed.
+Credentials are redacted before identifier aliases can replace secret flag names.
 Report fields and `schema_version` are unchanged. Credential redaction is
 best-effort pattern matching, not a guarantee that arbitrary or obfuscated
 secrets are removed. Review reports before sharing them.

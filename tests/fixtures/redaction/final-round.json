@@ -48,5 +48,29 @@
   {
     "text": "postgresql://app:p@ssw0rd@db.internal:5432/app?email=user@example.test#x@y",
     "redacted": "postgresql://<redacted>@db.internal:5432/app?email=<redacted>#<redacted>"
+  },
+  {
+    "text": "https://proxy.example/https://user:pw@host/p?q=SECRET",
+    "redacted": "https://proxy.example/https://<redacted>@host/p?q=<redacted>"
+  },
+  {
+    "text": "https://mcp.example.test:8443/postgresql://app:p@ssw0rd@db.internal:5432/app",
+    "redacted": "https://mcp.example.test:8443/postgresql://<redacted>@db.internal:5432/app"
+  },
+  {
+    "text": "https://mcp.example.test:8443/password=https://example.test/my-secret?mode=one&extra=two#fragment",
+    "redacted": "https://mcp.example.test:8443/password=<redacted>"
+  },
+  {
+    "text": "https://proxy.example/https://next.example/redis://user:pw@host/p?q=SECRET#fragment",
+    "redacted": "https://proxy.example/https://next.example/redis://<redacted>@host/p?q=<redacted>#<redacted>"
+  },
+  {
+    "text": "https://proxy.example/?q=https://example.test/my-secret",
+    "redacted": "https://proxy.example/?q=<redacted>"
+  },
+  {
+    "text": "https://proxy.example/#https://example.test/my-secret",
+    "redacted": "https://proxy.example/#<redacted>"
   }
 ]

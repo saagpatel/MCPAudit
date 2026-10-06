@@ -262,6 +262,9 @@ def test_url_host_port_and_path_survive_named_assignment_pass(host: str) -> None
         ("postgresql://app:", "p@ss?"),  # @ after the authority delimiter is not userinfo
         ("https://token.example.test:8443/", "password=x/"),
         ("--password https://example.test/", "a"),
+        ("https://proxy.example/", "https://host/"),  # repeated nested scheme boundaries
+        ("https://proxy.example/", "a+.-/"),  # long scheme-like path runs without ://
+        ("https://proxy.example/", "1https://"),  # invalid nested schemes stay in the path
     ],
 )
 def test_megabyte_url_and_quoted_value_inputs_are_linear(prefix: str, chunk: str) -> None:

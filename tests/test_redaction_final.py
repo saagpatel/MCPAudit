@@ -11,13 +11,15 @@ import pytest
 from mcp_audit.models import AuditReport, ServerAudit, ToolInfo
 from mcp_audit.pinning import PinStore
 from mcp_audit.redaction import redact_data, redact_text
+from mcp_audit.report import ReportGenerator
 from tests.conftest import make_server_config
 
 _CASES = json.loads((Path(__file__).parent / "fixtures/redaction/final-round.json").read_text())
 
 
 @pytest.mark.parametrize("case", _CASES, ids=[f"case-{i}" for i in range(len(_CASES))])
-def test_final_round_text_report_and_pin(case: dict[str, object], tmp_path: Path) -> None:
+@pytest.mark.parametrize("identifiers", [False, True])
+def test_final_round_text_report_and_pin(case: dict[str, object], tmp_path: Path, identifiers: bool) -> None:
     text, expected = case["text"], case["redacted"]
     assert isinstance(text, str) and isinstance(expected, str)
     args = case.get("args", [text])
@@ -47,7 +49,9 @@ def test_final_round_text_report_and_pin(case: dict[str, object], tmp_path: Path
         audits=[ServerAudit(server=config, tools=[tool], connection_status="connected")],
         scan_duration_seconds=0.0,
     )
-    output = json.loads(report.redacted().model_dump_json())
+    report_file = tmp_path / "report.json"
+    ReportGenerator().render_json(report.redacted(identifiers=identifiers), report_file)
+    output = json.loads(report_file.read_text())
     audit = output["audits"][0]
     assert audit["server"]["args"] == expected_args
     assert audit["tools"][0]["description"] == expected

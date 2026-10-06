@@ -14,6 +14,7 @@ _SECRET_NAME = re.compile(
     r"(?:^|[_.-])(?:auth|sig)(?:$|[_.-])",
     re.IGNORECASE,
 )
+_ASSIGNMENT_PREFIX = re.compile(r"[\"']?\s*[:=]\s*")
 _ASSIGNMENT_VALUE = re.compile(
     r"([\"']?\s*[:=]\s*)(<redacted>(?=$|[\s,;&\"'}\]])|"
     r"\"(?:\\.|[^\"\\])*+\"|'(?:\\.|[^'\\])*+'|[^\s,;&\"']+)"
@@ -21,7 +22,16 @@ _ASSIGNMENT_VALUE = re.compile(
 _FLAG_VALUE = re.compile(r"(\s+)(\"[^\"]*\"|'[^']*'|[^\s,;&\"']+)")
 _BEARER_TOKEN = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+")
 _BASIC_TOKEN = re.compile(r"(?i)\bBasic\s+[A-Za-z0-9._~+/=-]+")
-_URL = re.compile(r"(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*+://(?:<redacted>|[^\s\"'<>])++")
+# Consume scheme-like runs once; a nested scheme ends the current path span.
+# Query values and fragments still consume their entire enclosing URL tail.
+_URL = re.compile(
+    r"(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*+://"
+    r"(?:<redacted>|[A-Za-z][A-Za-z0-9+.-]*+(?!://)|"
+    r"[0-9+.-][A-Za-z0-9+.-]*+|[?#](?:<redacted>|[^\s\"'<>])*+|"
+    r"[^\s\"'<>A-Za-z0-9+.?#-])++"
+)
+# Whole secret values include nested URLs; standalone spans stop at each scheme.
+_URL_VALUE = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*+://(?:<redacted>|[^\s\"'<>])++")
 _URL_USERINFO = re.compile(r"(^[A-Za-z][A-Za-z0-9+.-]*+://)(?:[^/?#\s@]*+@)++")
 _QUERY_VALUE = re.compile(r"=([^&;]*)")
 _SECRET_VALUE = re.compile(
@@ -59,14 +69,17 @@ def _redact_named_values(value: str, *, protect_urls: bool = False) -> str:
     for name in _NAME_TOKEN.finditer(value):
         while url is not None and name.start() >= url.end():
             url = next(urls, None)
-        if url is not None and name.start() >= url.start():
-            continue
         if name.start() < cursor or not _is_secret_name(name.group()):
             continue
+        if url is not None and name.start() >= url.start():
+            prefix = _ASSIGNMENT_PREFIX.match(value, name.end())
+            if prefix is None or _URL_VALUE.match(value, prefix.end()) is None:
+                continue
         match = _ASSIGNMENT_VALUE.match(value, name.end())
         if match is None and name.group().startswith("-"):
             match = _FLAG_VALUE.match(value, name.end())
         if match is not None:
+            url_value = _URL_VALUE.match(value, match.start(2))
             # Preserve authentication schemes already scrubbed by the bearer/
             # basic pass, including in Authorization header assignments.
             if match.group(2).lower() in {"bearer", "basic"} and value.startswith(
@@ -76,7 +89,6 @@ def _redact_named_values(value: str, *, protect_urls: bool = False) -> str:
             pieces.extend((value[cursor : match.start(2)], _REDACTED))
             # An unquoted URL value belongs to the enclosing assignment/flag,
             # including query delimiters that normally end an unquoted value.
-            url_value = _URL.match(value, match.start(2))
             cursor = url_value.end() if url_value is not None else match.end(2)
     pieces.append(value[cursor:])
     return "".join(pieces)
