@@ -28,8 +28,16 @@ unless `--include-discovered` is explicit. Saved overrides and remembered
 preferences are not loaded; an explicit policy evaluates evidence without
 enabling extra checks. Connections require `--connect --server CLIENT:SCOPE:NAME`
 and exactly one matching entry with no collected config diagnostics. Setup and
-artifact-write errors exit 1; a failed policy exits 2 after requested artifacts
+artifact-write errors exit 1; artifact path validation errors exit 2 before any
+artifact is written. A failed policy exits 2 after requested artifacts
 and JSON stdout have been written. Exit 0 does not certify security.
+
+Both `check` and legacy `scan` reject artifact destinations that alias any
+encountered configuration or policy input, or another artifact destination.
+Legacy `scan` also protects its override input. Validation covers resolved
+symlinks and hard links, including empty or malformed discovered configs;
+the error names the output flag. Existing distinct artifact files may still
+be overwritten. Report fields and `schema_version` are unchanged.
 
 Discovery reads only supported adapter candidates and the selected project
 (cwd by default, `--project PATH` to select another). It skips symlinks, rejects
@@ -171,7 +179,8 @@ gate requires both server records and the child record. See the
 
 - `0`: scan completed and no configured policy gate failed.
 - `1`: command setup failed, such as invalid client or policy config.
-- `2`: scan completed and report artifacts were written, but `--policy` failed.
+- `2`: artifact path validation failed before any artifact was written, or the
+  scan completed and requested report artifacts were written but `--policy` failed.
 
 Subcommands with standalone experimental contracts document their own exit
 codes below; they do not change the stable scan exit contract.

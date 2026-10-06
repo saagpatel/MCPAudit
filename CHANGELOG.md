@@ -25,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   containers without a supported server map. Treat discovered general VS Code
   and Claude settings without MCP sections as zero entries, allowing unrelated
   valid servers to be selected while retaining malformed-config diagnostics.
+  Reject report destinations that alias config or policy inputs, scan overrides,
+  or another artifact, including symlinks and hard links, before any artifact
+  is written.
 - Share MCP server entry parsing across the five config discoverers so Cursor,
   Windsurf, and Claude Desktop recognize HTTP and deprecated SSE transports
   while retaining header key names only.
