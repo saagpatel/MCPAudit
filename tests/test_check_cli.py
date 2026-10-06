@@ -417,6 +417,78 @@ def test_other_project_requires_explicit_project_selection(tmp_path: Path) -> No
     assert [server.name for server in sources.servers] == ["other"]
 
 
+@pytest.mark.parametrize("relative", [False, True])
+def test_project_dot_components_match_normalized_selection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, relative: bool
+) -> None:
+    project = tmp_path / "selected-project"
+    child = project / "child"
+    child.mkdir(parents=True)
+    (Path.home() / ".claude.json").write_text(
+        json.dumps({"projects": {str(project): {"mcpServers": {"saved": {"command": "fixture"}}}}})
+    )
+    _config(project / ".mcp.json", "shared")
+    _config(project / ".vscode/mcp.json", "vscode")
+    _config(project / ".cursor/mcp.json", "cursor")
+    monkeypatch.chdir(child)
+    selected = Path("..") if relative else child / ".."
+    normalized = review_sources(project=project)
+    sources = review_sources(project=selected)
+    assert not sources.errors
+    assert {server.name for server in sources.servers} == {"saved", "shared", "vscode", "cursor"}
+    assert sources == normalized
+    result = CliRunner().invoke(cli.main, ["inspect", "--project", str(selected)])
+    assert result.exit_code == 0, result.output
+    assert "claude_code:project:saved" in result.output
+
+
+def test_project_dot_normalization_preserves_symlink_rejection(tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    _config(target / ".mcp.json")
+    (target / "child").mkdir()
+    project = tmp_path / "linked-project"
+    project.symlink_to(target, target_is_directory=True)
+    sources = review_sources(project=project / "child" / "..")
+    assert not sources.servers
+    assert any(error.reason.startswith("symlink skipped") for error in sources.errors)
+    assert (str(project / ".mcp.json"), "skipped: symlink skipped; select it explicitly with --config") in (
+        sources.paths
+    )
+
+
+def test_selected_null_project_is_diagnostic_and_blocks_connection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = Path.home() / ".claude.json"
+    config.write_text(json.dumps({"projects": {str(tmp_path): None}}))
+    _config(tmp_path / ".mcp.json", "selected")
+    sources = review_sources()
+    assert [server.name for server in sources.servers] == ["selected"]
+    assert [error.reason for error in sources.errors] == ["project entry is not an object"]
+    assert not any("skipped other project scopes" in status for _, status in sources.paths)
+    result = CliRunner().invoke(cli.main, ["check", "--json"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert any(
+        "project entry is not an object" in finding["summary"]
+        for finding in payload["config_health_findings"]
+    )
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        raise AssertionError("selected null project must block connections")
+
+    monkeypatch.setattr(ServerConnector, "connect", forbidden)
+    result = CliRunner().invoke(cli.main, ["check", "--connect", "--server", "claude_code:project:selected"])
+    assert result.exit_code == 1, result.output
+    assert "exactly one server with no config diagnostics" in result.output
+
+    # A null entry outside the selected scope must still be skipped.
+    config.write_text(json.dumps({"projects": {"/synthetic/unselected-project": None}}))
+    sources = review_sources()
+    assert not sources.errors
+    assert any("skipped other project scopes" in status for _, status in sources.paths)
+
+
 def test_cursor_explicit_format_matches_scan_and_home_stays_workstation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

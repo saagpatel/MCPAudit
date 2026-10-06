@@ -25,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   containers without a supported server map. Treat discovered general VS Code
   and Claude settings without MCP sections as zero entries, allowing unrelated
   valid servers to be selected while retaining malformed-config diagnostics.
+  Normalize selected project dot components without resolving symlinks, and
+  retain malformed null project entries as diagnostics that block connections.
   Reject report destinations that alias config or policy inputs, scan overrides,
   or another artifact, including symlinks and hard links, before any artifact
   is written.

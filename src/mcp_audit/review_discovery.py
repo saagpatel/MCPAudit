@@ -108,10 +108,10 @@ def _parse_source(
         # other project paths recorded in the global client file.
         projects = data.get("projects")
         if isinstance(projects, dict):
-            selected = projects.get(str(project))
-            if len(projects) > (1 if selected is not None else 0):
+            selected = {str(project): projects[str(project)]} if str(project) in projects else {}
+            if len(projects) > len(selected):
                 sources.paths.append((str(path), "skipped other project scopes; use --project PATH"))
-            data["projects"] = {str(project): selected} if selected is not None else {}
+            data["projects"] = selected
     if explicit or client == ClientType.CLAUDE_CODE:
         servers = parse_mapping(data, str(path), sources.errors, sniff_format=explicit)
     else:
@@ -147,7 +147,7 @@ def review_sources(
 ) -> ReviewSources:
     """Read an explicit file only, or the fixed supported-client allowlist."""
     sources = ReviewSources()
-    project = (project or Path.cwd()).absolute()
+    project = Path(os.path.abspath(project or Path.cwd()))
     candidates: list[tuple[Path, ClientType, bool]] = []
     if config is not None:
         candidates.append((config, ClientType.CLAUDE_CODE, True))
