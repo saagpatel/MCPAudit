@@ -13,8 +13,9 @@ import platform
 from pathlib import Path
 from typing import Any
 
+from mcp_audit.discovery._entry import parse_server_entry
 from mcp_audit.discovery.base import ConfigDiscoverer, ConfigParseError, is_project_config
-from mcp_audit.models import ClientType, ServerConfig, TransportType
+from mcp_audit.models import ClientType, ServerConfig
 from mcp_audit.terminal_text import TerminalSafeLogFilter
 
 logger = logging.getLogger(__name__)
@@ -40,35 +41,13 @@ def _parse_mcp_servers_dict(
         if not isinstance(entry, dict):
             continue
         try:
-            raw_env = entry.get("env") or {}
-            env_keys = list(raw_env.keys()) if isinstance(raw_env, dict) else []
-            args = entry.get("args") or []
-            if not isinstance(args, list):
-                args = []
-
-            # VS Code may use "url" for HTTP transport
-            raw_type = entry.get("type", "")
-            if raw_type == "http" or entry.get("url"):
-                transport = TransportType.HTTP
-                raw_headers = entry.get("headers") or {}
-                headers_keys = list(raw_headers.keys()) if isinstance(raw_headers, dict) else []
-            else:
-                transport = TransportType.STDIO
-                headers_keys = []
-
             results.append(
-                ServerConfig(
-                    name=name,
-                    client=ClientType.VSCODE,
-                    config_path=config_path,
-                    project_path=None,
+                parse_server_entry(
+                    name,
+                    entry,
+                    config_path,
+                    ClientType.VSCODE,
                     scope="project" if is_project_config(Path(config_path)) else "workstation",
-                    command=entry.get("command") or None,
-                    args=[str(a) for a in args],
-                    env_keys=env_keys,
-                    transport=transport,
-                    url=entry.get("url") or None,
-                    headers_keys=headers_keys,
                 )
             )
         except Exception:
