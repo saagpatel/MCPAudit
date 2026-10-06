@@ -12,7 +12,7 @@ def _checker(root: Path) -> ModuleType:
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    module.ROOT = root
+    setattr(module, "ROOT", root)  # noqa: B010
     return module
 
 
