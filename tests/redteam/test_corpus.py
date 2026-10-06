@@ -21,7 +21,6 @@ CORPUS_PATH = HERE / "corpus.json"
 CORPUS = cast(list[dict[str, object]], json.loads(CORPUS_PATH.read_text())["cases"])
 
 _GAP_REASONS = {
-    "base64-encoded-payload": "gap 6: fixed by P1-6",
     "escalation-nested-schema": "gap 22: fixed by P1-12",
     "gate-on-client-name": "gap 12: fixed by P2-7",
     "split-across-tools-fields": "gap 3: unplanned cross-field detection",
@@ -135,11 +134,11 @@ async def test_detector_gap_corpus(
             )
         elif kind == "resource_injection":
             patterns = {
-                f.pattern_name
+                f.instruction_pattern or f.pattern_name
                 for f in audit.injection_findings
                 if f.target_type == "resource" and f.target_name == detector["resource"]
             }
-            assert len(patterns) >= 2
+            assert {"instruction_override", "credential_hunt"} <= patterns
         elif kind == "injection_or_coverage":
             assert any(f.tool_name in detector["tools"] for f in audit.injection_findings) or any(
                 "cross_field" in warning.code for warning in report.warnings

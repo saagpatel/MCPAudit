@@ -395,12 +395,39 @@ destructive true (the latter applies to non-read-only tools). An operator's
 `--canary-safe-tool` mark permits other empty-argument tools, but never overrides
 explicit destructive annotations, dangerous keywords, or injection vetoes.
 
+Static free-text matches use the same instruction vocabulary as runtime results,
+including article/whitespace-tolerant overrides, credential hunts, tool redirects,
+role overrides, and prompt-leak requests. They report `pattern_name:
+"INSTRUCTION_SHAPED_TEXT"`, MEDIUM severity (SARIF `MCP008`), and a description
+starting "Experimental heuristic:". Additive `instruction_pattern` identifies
+the shared pattern and `field_path` is its JSON Pointer, including resource
+metadata. `secret_targets` lists concrete targeted paths/names only, never
+values; it defaults to `[]` and `instruction_pattern` defaults to `null` for
+legacy, structural, and runtime findings. Static free-text excerpts retain bounded
+raw source evidence after mapping normalized matches back to raw offsets;
+excerpts containing likely credential values are withheld. These fields also
+appear in SARIF properties. New static instruction-text SARIF fingerprints
+distinguish the shared pattern and field pointer; legacy fingerprints are unchanged.
+Terminal and HTML summaries mark concrete metadata secret hunts "Fix now"
+without promoting severity or changing policy thresholds or composite risk.
+Static phrase matches alone cannot fail a HIGH injection gate. Pin/session
+surface deltas and capability escalation retain their existing verdicts.
+
+`ENCODED_BLOB_IN_METADATA` is a LOW structural heuristic (SARIF `MCP008` at
+note level): at least 80 consecutive base64/base64url-alphabet characters with
+Shannon entropy at least 4.5 bits per character. It reports the run length and
+field path, withholds the blob, and never decodes or executes it. HTML comments
+alone are silent; an instruction-shaped match in the field is needed for the
+HTML-comment hidden-content signal. Bidi/zero-width and fake-role structural
+checks retain their existing MEDIUM severity.
+
 Runtime injection findings are experimental free-text heuristics: every one
 is reported at MEDIUM (SARIF `MCP008`) with a description starting
 "Experimental heuristic:", so they never fail a HIGH gate on their own;
 session drift carries the canary's verdict. They add `after_call` and pattern
-names `result_instruction_override`, `result_credential_hunt`, and
-`result_tool_redirect`. Runtime remediation advises reviewing returned content
+names `result_instruction_override`, `result_credential_hunt`,
+`result_tool_redirect`, `result_system_override`, and `result_prompt_leak`.
+Runtime remediation advises reviewing returned content
 or prompt bodies and server behavior, preventing agents from acting on embedded
 instructions, and considering server removal; static remediation is unchanged.
 Runtime SARIF fingerprints include a runtime marker, target type, and pattern

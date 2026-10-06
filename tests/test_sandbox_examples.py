@@ -191,8 +191,8 @@ def test_sandbox_tool_metadata_matches_injection_detector() -> None:
     ]
 
     assert detector.scan_server(benign_tools) == []
-    pattern_names = {finding.pattern_name for finding in detector.scan_server(risky_tools)}
-    assert {"ignore_instructions", "prompt_leak"} <= pattern_names
+    pattern_names = {finding.instruction_pattern for finding in detector.scan_server(risky_tools)}
+    assert {"instruction_override", "prompt_leak"} <= pattern_names
 
 
 def test_sandbox_expected_findings_are_review_findings_not_claims_of_exploit() -> None:

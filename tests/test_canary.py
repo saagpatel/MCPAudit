@@ -529,7 +529,7 @@ async def test_unadvertised_surface_listing_coverage(surface: str, mode: str) ->
     if mode == "failure":
         assert getattr(audit, surface)
         assert any(
-            f.pattern_name == "ignore_instructions" and f.target_type == surface[:-1]
+            f.instruction_pattern == "instruction_override" and f.target_type == surface[:-1]
             for f in audit.injection_findings
         )
         assert not audit.drift_findings  # missing listings are unknown, not removals

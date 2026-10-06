@@ -739,6 +739,25 @@
           ],
           "default": null,
           "title": "Field Path"
+        },
+        "instruction_pattern": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Instruction Pattern"
+        },
+        "secret_targets": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Secret Targets",
+          "type": "array"
         }
       },
       "required": [

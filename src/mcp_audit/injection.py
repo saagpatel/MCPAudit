@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import math
+import re
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from mcp_audit.agent_text import agent_visible_text, prompt_visible_text
+from mcp_audit.agent_text import AgentText, agent_visible_text, prompt_visible_text
 from mcp_audit.models import (
     CapabilityTarget,
     InjectionFinding,
@@ -15,6 +18,8 @@ from mcp_audit.models import (
     ToolInfo,
 )
 from mcp_audit.normalize import first_obfuscation, normalize_text, obfuscation_classes, raw_excerpt
+from mcp_audit.redaction import redact_text
+from mcp_audit.rules.result_injection import INSTRUCTION_TEXT_RULES, credential_hunt_targets
 
 # Unicode characters used for hidden directives
 _ZERO_WIDTH_CHARS = {"\u200b", "\u200c", "\u200d"}  # ZWSP, ZWNJ, ZWJ
@@ -42,38 +47,6 @@ class _InjectionPattern:
     _extract: Callable[[str, str], str]  # (lowercased_text, original_text) -> matched excerpt
 
 
-@dataclass
-class _PhraseCheck:
-    phrases: list[str]
-
-    def span(self, lower: str) -> tuple[int, int] | None:
-        for phrase in self.phrases:
-            index = lower.find(phrase)
-            if index != -1:
-                return index, index + len(phrase)
-        return None
-
-    def __call__(self, lower: str, _orig: str) -> bool:
-        return self.span(lower) is not None
-
-
-def _phrase_check(phrases: list[str]) -> _PhraseCheck:
-    return _PhraseCheck(phrases)
-
-
-def _phrase_extract(phrases: list[str]) -> Callable[[str, str], str]:
-    def _extract(lower: str, orig: str) -> str:
-        span = _PhraseCheck(phrases).span(lower)
-        if span is not None:
-            start = max(0, span[0] - 20)
-            end = min(len(orig), span[1] + 80)
-            excerpt = orig[start:end]
-            return excerpt[:200]
-        return orig[:200]
-
-    return _extract
-
-
 def _unicode_check(chars: set[str]) -> Callable[[str, str], bool]:
     def _check(_lower: str, orig: str) -> bool:
         return any(c in orig for c in chars)
@@ -95,8 +68,7 @@ def _unicode_extract(chars: set[str]) -> Callable[[str, str], str]:
 
 
 def _role_check(lower: str, _orig: str) -> bool:
-    # Match at start of text or after any newline; scan_* joins the name and
-    # description segments with newlines, so segment starts are line starts.
+    # Each metadata field is scanned separately; role turns begin a line.
     for prefix in _ROLE_PREFIXES:
         clean = prefix.lstrip("\n")
         if lower.startswith(clean):
@@ -118,60 +90,12 @@ def _role_extract(lower: str, orig: str) -> str:
 
 _PATTERNS: list[_InjectionPattern] = [
     _InjectionPattern(
-        name="ignore_instructions",
-        severity=InjectionSeverity.HIGH,
-        check=_phrase_check(
-            [
-                "ignore previous",
-                "disregard all",
-                "disregard previous",
-                "forget everything",
-                "ignore all previous",
-            ]  # noqa: E501
-        ),
-        description="Tool description attempts to override AI instructions",
-        _extract=_phrase_extract(
-            [
-                "ignore previous",
-                "disregard all",
-                "disregard previous",
-                "forget everything",
-                "ignore all previous",
-            ]  # noqa: E501
-        ),
-    ),
-    _InjectionPattern(
-        name="system_override",
-        severity=InjectionSeverity.HIGH,
-        check=_phrase_check(["you are now", "new instructions:", "act as if you", "pretend you are"]),
-        description="Tool description attempts to override AI role or system prompt",
-        _extract=_phrase_extract(["you are now", "new instructions:", "act as if you", "pretend you are"]),
-    ),
-    _InjectionPattern(
-        name="prompt_leak",
-        severity=InjectionSeverity.HIGH,
-        check=_phrase_check(
-            [
-                "repeat your system prompt",
-                "reveal instructions",
-                "show your instructions",
-                "repeat everything above",
-            ]
-        ),
-        description="Tool description attempts to extract the AI system prompt",
-        _extract=_phrase_extract(
-            [
-                "repeat your system prompt",
-                "reveal instructions",
-                "show your instructions",
-                "repeat everything above",
-            ]
-        ),
-    ),
-    _InjectionPattern(
         name="hidden_directive",
         severity=InjectionSeverity.MEDIUM,
-        check=lambda lower, orig: "<!--" in lower or any(c in orig for c in _ZERO_WIDTH_CHARS),
+        check=lambda lower, orig: (
+            any(c in orig for c in _ZERO_WIDTH_CHARS)
+            or ("<!--" in lower and any(rule.check(normalize_text(orig)) for rule in INSTRUCTION_TEXT_RULES))
+        ),
         description="Tool description contains hidden content (HTML comments or zero-width characters)",
         _extract=lambda lower, orig: (
             _unicode_extract(_ZERO_WIDTH_CHARS)(lower, orig)
@@ -192,17 +116,6 @@ _PATTERNS: list[_InjectionPattern] = [
         check=_role_check,
         description="Tool description injects fake conversation turns (role prefixes)",
         _extract=_role_extract,
-    ),
-    _InjectionPattern(
-        name="credential_harvest",
-        severity=InjectionSeverity.LOW,
-        check=_phrase_check(
-            ["include api key", "send credentials", "pass token", "include your token", "send your password"]
-        ),
-        description="Tool description may attempt to harvest credentials",
-        _extract=_phrase_extract(
-            ["include api key", "send credentials", "pass token", "include your token", "send your password"]
-        ),
     ),
 ]
 
@@ -266,80 +179,39 @@ class InjectionDetector:
 
     def scan_tool(self, tool: ToolInfo) -> list[InjectionFinding]:
         """Return all injection findings for a single tool."""
-        fields = agent_visible_text(tool).fields
-        name = fields[0].text.replace("_", " ").replace("-", " ")
-        description = fields[1].text
-        normalized_name = normalize_text(fields[0].text).replace("_", " ").replace("-", " ")
-        normalized_description = normalize_text(description)
-        unicode_changed = (
-            normalize_text(fields[0].text) != fields[0].text or normalized_description != description
-        )
-        evidence_name = fields[0].text if unicode_changed else name
-        # Retain legacy name/description excerpts and Unicode offsets. Additional
-        # fields are scanned separately so their evidence has a precise pointer.
-        findings = self._scan_text(
-            CapabilityTarget.TOOL,
-            tool.name,
-            f"{evidence_name}\n{description}",
-            tool.name,
-            structural=False,
-            normalized=f"{normalized_name}\n{normalized_description}",
-        )
-        for finding in findings:
-            pattern = next(p for p in _PATTERNS if p.name == finding.pattern_name)
-            name_matches = self._matches(pattern, name, normalized_name)
-            description_matches = self._matches(pattern, description, normalized_description)
-            finding.field_path = "/name" if name_matches else "/description"
-            # Phrase/character priority can pick a different source in a combined
-            # excerpt. Resolve ambiguous matches locally; role extractors can
-            # also select a non-anchored substring in the other field.
-            if (name_matches and description_matches) or pattern.name == "role_injection":
-                source = evidence_name if name_matches else description
-                matching_text = normalized_name if name_matches else normalized_description
-                finding.matched_text = self._excerpt(pattern, source, matching_text)
-        for field in fields[:2]:
-            findings.extend(
-                self._obfuscation_findings(
-                    CapabilityTarget.TOOL, tool.name, field.text, tool.name, field.path
-                )
-            )
-        for field in fields[2:]:
-            text = field.text
-            findings.extend(self._scan_text(CapabilityTarget.TOOL, tool.name, text, tool.name, field.path))
-        return findings
+        return self._scan_fields(CapabilityTarget.TOOL, tool.name, agent_visible_text(tool))
 
     def scan_prompt(self, prompt: PromptInfo) -> list[InjectionFinding]:
         """Return all injection findings for a single prompt."""
-        findings: list[InjectionFinding] = []
-        for field in prompt_visible_text(prompt).fields:
-            text = field.text.replace("_", " ").replace("-", " ") if field.path == "/name" else field.text
-            normalized = normalize_text(field.text)
-            if field.path == "/name":
-                if normalized != field.text:
-                    text = field.text
-                normalized = normalized.replace("_", " ").replace("-", " ")
-            findings.extend(
-                self._scan_text(
-                    CapabilityTarget.PROMPT, prompt.name, text, prompt.name, field.path, normalized=normalized
-                )
-            )
-        return findings
+        return self._scan_fields(CapabilityTarget.PROMPT, prompt.name, prompt_visible_text(prompt))
 
     def scan_resource(self, resource: ResourceInfo) -> list[InjectionFinding]:
         """Return all injection findings for a single resource."""
-        fields = [
+        findings: list[InjectionFinding] = []
+        for path, text in (
             ("/uri", resource.uri),
             ("/name", resource.name or ""),
             ("/description", resource.description or ""),
             ("/mime_type", resource.mime_type or ""),
-        ]
-        combined = "\n".join(text for _, text in fields if text)
-        findings = self._scan_text(
-            CapabilityTarget.RESOURCE, resource.uri, combined, resource.uri, structural=False
-        )
-        for path, text in fields:
+        ):
+            if text:
+                findings.extend(
+                    self._scan_text(CapabilityTarget.RESOURCE, resource.uri, text, resource.uri, path)
+                )
+        return findings
+
+    def _scan_fields(
+        self, target_type: CapabilityTarget, target_name: str, fields: AgentText
+    ) -> list[InjectionFinding]:
+        findings: list[InjectionFinding] = []
+        for field in fields.fields:
+            normalized = normalize_text(field.text)
+            if field.path == "/name":
+                normalized = normalized.replace("_", " ").replace("-", " ")
             findings.extend(
-                self._obfuscation_findings(CapabilityTarget.RESOURCE, resource.uri, text, resource.uri, path)
+                self._scan_text(
+                    target_type, target_name, field.text, target_name, field.path, normalized=normalized
+                )
             )
         return findings
 
@@ -357,11 +229,7 @@ class InjectionDetector:
         ):
             return pattern._extract(raw.lower(), raw)
         excerpt = pattern._extract(normalized.lower(), normalized)
-        if isinstance(pattern.check, _PhraseCheck):
-            span = pattern.check.span(normalized.lower())
-            if span is None:
-                return raw[:200]
-        elif pattern.name == "hidden_directive":
+        if pattern.name == "hidden_directive":
             start = normalized.find("<!--")
             span = (start, start + len("<!--"))
         else:
@@ -404,16 +272,67 @@ class InjectionDetector:
         legacy_tool_name: str,
         field_path: str | None = None,
         *,
-        structural: bool = True,
         normalized: str | None = None,
     ) -> list[InjectionFinding]:
         """Return all injection findings for one normalized capability text blob."""
         if normalized is None:
             normalized = normalize_text(combined)
         findings: list[InjectionFinding] = []
+        for rule in INSTRUCTION_TEXT_RULES:
+            span = rule.span(normalized)
+            if span is None:
+                continue
+            targets = (
+                credential_hunt_targets(normalized, concrete_only=True)
+                if rule.name == "credential_hunt"
+                else []
+            )
+            excerpt = normalized[max(0, span[0] - 20) : span[1] + 80]
+            raw_evidence = raw_excerpt(combined, normalized, excerpt, span)
+            evidence = (
+                "[metadata excerpt withheld]"
+                if redact_text(normalize_text(raw_evidence)) != normalize_text(raw_evidence)
+                else redact_text(raw_evidence)
+            )
+            findings.append(
+                InjectionFinding(
+                    tool_name=legacy_tool_name,
+                    target_type=target_type,
+                    target_name=target_name,
+                    severity=InjectionSeverity.MEDIUM,
+                    pattern_name="INSTRUCTION_SHAPED_TEXT",
+                    instruction_pattern=rule.name,
+                    secret_targets=targets,
+                    matched_text=evidence[:200],
+                    description=(
+                        f"Experimental heuristic: metadata contains instruction-shaped text "
+                        f"({rule.name}) at {field_path or '/'}."
+                        + (f" Secret targets: {', '.join(targets)}." if targets else "")
+                    ),
+                    field_path=field_path,
+                )
+            )
+        for blob in re.finditer(r"[A-Za-z0-9+/_=-]{80,}", normalized):
+            counts = Counter(blob.group())
+            length = len(blob.group())
+            entropy = -sum((count / length) * math.log2(count / length) for count in counts.values())
+            if entropy >= 4.5:
+                findings.append(
+                    InjectionFinding(
+                        tool_name=legacy_tool_name,
+                        target_type=target_type,
+                        target_name=target_name,
+                        severity=InjectionSeverity.LOW,
+                        pattern_name="ENCODED_BLOB_IN_METADATA",
+                        matched_text=f"[{length}-character high-entropy run; content withheld]",
+                        description="Structural heuristic: high-entropy run; never decoded or executed.",
+                        field_path=field_path,
+                    )
+                )
+                break
         for pattern in _PATTERNS:
             if self._matches(pattern, combined, normalized):
-                matched = self._excerpt(pattern, combined, normalized)
+                matched = redact_text(self._excerpt(pattern, combined, normalized))[:200]
                 findings.append(
                     InjectionFinding(
                         tool_name=legacy_tool_name,
@@ -426,10 +345,9 @@ class InjectionDetector:
                         field_path=field_path,
                     )
                 )
-        if structural:
-            findings.extend(
-                self._obfuscation_findings(target_type, target_name, combined, legacy_tool_name, field_path)
-            )
+        findings.extend(
+            self._obfuscation_findings(target_type, target_name, combined, legacy_tool_name, field_path)
+        )
         return findings
 
     def scan_server(

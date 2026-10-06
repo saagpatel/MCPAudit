@@ -234,8 +234,8 @@ class EscalationAnalyzer:
     def _injection_finding(
         self, server_name: str, baseline: ToolInfo, current: ToolInfo
     ) -> list[EscalationFinding]:
-        old_patterns = {f.pattern_name for f in self._injection.scan_tool(baseline)}
-        new_patterns = {f.pattern_name for f in self._injection.scan_tool(current)}
+        old_patterns = {f.instruction_pattern or f.pattern_name for f in self._injection.scan_tool(baseline)}
+        new_patterns = {f.instruction_pattern or f.pattern_name for f in self._injection.scan_tool(current)}
         gained = new_patterns - old_patterns
         if not gained:
             return []
