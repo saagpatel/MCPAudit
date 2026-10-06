@@ -34,7 +34,7 @@ AUDIT_FIELDS = set(
     "artifact_verify_findings llm_analysis canary".split()
 )
 SERVER_FIELDS = set(
-    "name client config_path project_path command args env_keys transport url headers_keys".split()
+    "name client config_path project_path scope command args env_keys transport url headers_keys".split()
 )
 
 
