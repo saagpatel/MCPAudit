@@ -117,9 +117,11 @@ connecting to a server. Experimental fixture-based work is grouped under
 ## Learn more
 
 - [Pinning and drift checks](docs/guides/pinning.md)
-- [Trust packet walkthrough](docs/guides/trust-packet.md)
+- [Trust packet walkthrough](docs/guides/trust-packet.md) and the
+  [MCP trust packet](docs/MCP-TRUST-PACKET.md)
 - [Adjusting permission findings](docs/guides/suppressing.md)
-- [Sandbox walkthrough](docs/guides/sandbox.md)
+- [Sandbox walkthrough](docs/guides/sandbox.md) using the
+  [`examples/sandbox/`](examples/sandbox/) fixtures
 - [Output contract](docs/OUTPUT-CONTRACT.md)
 - [Documentation index](docs/README.md)
 
