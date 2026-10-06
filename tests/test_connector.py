@@ -8,12 +8,15 @@ import signal
 import sys
 import textwrap
 import time
+from collections.abc import Iterator
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from io import StringIO
 from pathlib import Path
+from threading import Thread
 
 import pytest
 
-from mcp_audit.connector import ServerConnector, describe_exception
+from mcp_audit.connector import ServerConnector, _redact_sse_log_text, describe_exception
 from mcp_audit.models import ClientType, Confidence, PermissionCategory, ServerConfig, TransportType
 from tests.conftest import make_server_config
 
@@ -101,6 +104,47 @@ class TestDescribeException:
         assert describe_exception(OSError("connect to http://127.0.0.1:9 failed")) == (
             "OSError: connect to http://127.0.0.1:9 failed"
         )
+
+    @pytest.mark.parametrize("size", [200_000, 1_000_000])
+    def test_adversarial_url_messages_are_bounded_before_redaction(self, size: int) -> None:
+        error = RuntimeError("http://" * (size // 7))
+        started = time.perf_counter()
+        summary = describe_exception(error)
+        assert time.perf_counter() - started < 0.5
+        assert summary == "RuntimeError"
+
+    @pytest.mark.parametrize("whitespace", [" ", "\t", "\n"])
+    @pytest.mark.parametrize(
+        "url",
+        ["https://user:" + "p" * 3_000 + "@example.test/sse", "https://example.test/" + "s" * 3_000],
+    )
+    def test_drops_urls_split_at_the_input_bound(self, whitespace: str, url: str) -> None:
+        assert describe_exception(RuntimeError("request failed" + whitespace + url)) == (
+            "RuntimeError: request failed"
+        )
+
+    def test_bounds_each_group_leaf_independently(self) -> None:
+        error = ExceptionGroup("outer", [ValueError("http://" * 40_000), RuntimeError("second")])
+        assert describe_exception(error) == "ValueError; RuntimeError: second"
+
+
+@pytest.mark.parametrize("suffix", ["", "?opaque=synthetic-value", "@example.test/sse"])
+def test_sse_log_redaction_is_linear_on_adversarial_urls(suffix: str) -> None:
+    text = "http://" * (1_000_000 // 7) + suffix
+    started = time.perf_counter()
+    redacted = _redact_sse_log_text(text)
+    assert time.perf_counter() - started < 0.5
+    assert "synthetic-value" not in redacted
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    ["Redirect to ", "Redirect location: '", "LOCATION: ", 'Location: "', '"Location": "', "redirected to "],
+)
+def test_redirect_diagnostics_withhold_the_entire_target(prefix: str) -> None:
+    text = prefix + "https://attacker.invalid/oauth/callback/SECRETPATHCODE?opaque=QUERYCODE"
+    assert _redact_sse_log_text(text) == prefix + "<redacted-url>"
+    assert describe_exception(RuntimeError(text)) == "RuntimeError: " + prefix + "<redacted-url>"
 
 
 class TestConvertTool:
@@ -448,7 +492,103 @@ async def test_stdio_server_exit_before_handshake_reports_cause() -> None:
     assert audit.connection_error is not None
     assert "TaskGroup" not in audit.connection_error
     assert "sub-exception" not in audit.connection_error
-    assert any(cause in audit.connection_error for cause in ("McpError", "closed", "EOF", "exited"))
+    assert any(cause in audit.connection_error for cause in ("MCPError", "closed", "EOF", "exited"))
+
+
+@pytest.fixture
+def redirect_server_url() -> Iterator[str]:
+    class RedirectHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            self.send_response(302)
+            self.send_header(
+                "Location",
+                f"http://localhost:{server.server_port}/oauth/callback/SECRETPATHCODE?opaque=QUERYCODE",
+            )
+            self.end_headers()
+
+        def do_POST(self) -> None:
+            self.do_GET()
+
+        def log_message(self, format: str, *args: object) -> None:
+            pass
+
+    with HTTPServer(("127.0.0.1", 0), RedirectHandler) as server:
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            yield f"http://127.0.0.1:{server.server_port}/mcp"
+        finally:
+            server.shutdown()
+            thread.join(timeout=5)
+            assert not thread.is_alive()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("transport", [TransportType.HTTP, TransportType.SSE])
+async def test_local_redirect_target_is_redacted(
+    redirect_server_url: str, transport: TransportType, caplog: pytest.LogCaptureFixture
+) -> None:
+    config = make_server_config(transport=transport, url=redirect_server_url)
+    with caplog.at_level(logging.WARNING):
+        audit = await ServerConnector(timeout=5).connect(config)
+    assert audit.connection_status == "failed"
+    assert audit.connection_error is not None
+    assert "<redacted-url>" in audit.connection_error
+    for output in (audit.connection_error, caplog.text):
+        for secret in ("SECRETPATHCODE", "QUERYCODE", "/oauth/callback", "localhost:"):
+            assert secret not in output
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("transport", [TransportType.HTTP, TransportType.SSE])
+async def test_sdk_redirect_target_is_redacted_without_socket_access(
+    monkeypatch: pytest.MonkeyPatch, transport: TransportType, caplog: pytest.LogCaptureFixture
+) -> None:
+    import httpx2
+    from mcp.client.sse import sse_client
+
+    target = "http://localhost:8765/oauth/callback/SECRETPATHCODE?opaque=QUERYCODE"
+
+    def client_factory(*args: object, **kwargs: object) -> httpx2.AsyncClient:
+        return httpx2.AsyncClient(
+            transport=httpx2.MockTransport(lambda request: httpx2.Response(302, headers={"Location": target}))
+        )
+
+    def mock_sse_client(url: str) -> object:
+        return sse_client(url, httpx_client_factory=client_factory)
+
+    monkeypatch.setattr("mcp.client.streamable_http.create_mcp_http_client", client_factory)
+    monkeypatch.setattr("mcp_audit.connector.sse_client", mock_sse_client)
+    config = make_server_config(transport=transport, url="http://127.0.0.1:8765/mcp")
+    with caplog.at_level(logging.WARNING):
+        audit = await ServerConnector(timeout=5).connect(config)
+    assert audit.connection_status == "failed"
+    assert audit.connection_error is not None and "<redacted-url>" in audit.connection_error
+    for output in (audit.connection_error, caplog.text):
+        assert "SECRETPATHCODE" not in output and "QUERYCODE" not in output
+        assert "localhost:" not in output and "/oauth/callback" not in output
+
+
+@pytest.mark.anyio
+async def test_unavailable_listing_descriptions_are_not_computed_with_debug_disabled(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    from mcp import Client
+
+    async def fail(self: Client, *args: object, **kwargs: object) -> None:
+        raise ValueError("http://" * 160_000)
+
+    def unexpected_description(exc: BaseException) -> str:
+        raise AssertionError("Disabled DEBUG logging must not describe listing failures")
+
+    monkeypatch.setattr(Client, "list_prompts", fail)
+    monkeypatch.setattr(Client, "list_resources", fail)
+    monkeypatch.setattr("mcp_audit.connector.describe_exception", unexpected_description)
+    config = make_server_config(command=sys.executable, args=[MOCK_SERVER])
+    with caplog.at_level(logging.INFO, logger="mcp_audit.connector"):
+        audit = await ServerConnector(timeout=5).connect(config)
+    assert audit.connection_status == "connected"
+    assert audit.tools
 
 
 @pytest.mark.anyio

@@ -403,6 +403,8 @@ async def test_canary_report_warnings_and_json_are_stable_across_server_completi
     reports: list[str] = []
     for _ in range(5):
         report = await run_scan(ScanOptions(canary_check=True, canary_calls=2, timeout=15), servers=configs)
+        assert len(report.warnings) == 6
+        assert all(warning.code == "canary_incomplete" for warning in report.warnings)
         payload = report.model_dump(mode="json")
         payload["scan_timestamp"] = "<normalized>"
         payload["scan_duration_seconds"] = 0
@@ -412,6 +414,47 @@ async def test_canary_report_warnings_and_json_are_stable_across_server_completi
         assert warning_servers == [[name] for name in sorted_names]
 
     assert all(payload == reports[0] for payload in reports[1:])
+
+
+@pytest.mark.anyio
+async def test_successful_listing_with_required_argument_tools_keeps_eligibility_warning() -> None:
+    config = make_server_config(command=sys.executable, args=[SURFACES_FIXTURE, "required_arguments"])
+    audit = await ServerConnector(timeout=15).connect(config, canary_calls=2)
+    assert audit.connection_status == "connected"
+    assert len(audit.tools) == 1
+    assert audit.tools[0].input_schema is not None
+    assert audit.tools[0].input_schema["required"] == ["detail"]
+    assert audit.canary is not None and audit.canary.status == "no_safe_tools"
+    assert audit.canary.completed_calls == 0
+    assert audit.canary.warnings == ["No eligible empty-argument tools remain; exercise stopped."]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("method", ["list_tools", "list_prompts", "list_resources", "get_prompt"])
+async def test_canary_grouped_failures_withhold_server_text(
+    monkeypatch: pytest.MonkeyPatch, method: str
+) -> None:
+    from mcp import Client
+    from mcp.shared.exceptions import MCPError
+
+    async def fail(self: Client, *args: object, **kwargs: object) -> None:
+        raise ExceptionGroup(
+            "GROUP-SERVER-TEXT",
+            [
+                MCPError(code=-32603, message="LEAF-SERVER-TEXT"),
+                ExceptionGroup("NESTED-SERVER-TEXT", [ValueError("OTHER-SERVER-TEXT")]),
+            ],
+        )
+
+    monkeypatch.setattr(Client, method, fail)
+    config = make_server_config(command=sys.executable, args=[SURFACES_FIXTURE, "dynamic"])
+    audit = await ServerConnector(timeout=15).connect(config, canary_calls=1)
+    assert audit.connection_status == "connected"
+    assert audit.canary is not None
+    label = {"list_tools": "Tool", "list_prompts": "Prompt", "list_resources": "Resource"}.get(method)
+    message = f"{label} surface incomplete" if label else "prompts/get incomplete"
+    assert f"{message} (MCPError; ValueError)." in audit.canary.warnings
+    assert "SERVER-TEXT" not in audit.model_dump_json()
 
 
 @pytest.mark.anyio

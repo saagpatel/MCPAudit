@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import re
 import traceback
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import PurePath
 from typing import TypeVar
@@ -39,10 +39,18 @@ from mcp_audit.rules.result_injection import RESULT_SCAN_LIMIT
 
 logger = logging.getLogger(__name__)
 
-_SSE_URL_SUFFIX = re.compile(r"(https?://[^\s?#]+)[?#][^\s]*", re.IGNORECASE)
-_SSE_URL_USERINFO = re.compile(r"(https?://)[^/\s]*@", re.IGNORECASE)
+# Consume candidates even without a suffix/userinfo, avoiding repeated scans of
+# overlapping URL starts in server-controlled text. Possessive runs cannot backtrack.
+_SSE_URL_SUFFIX = re.compile(r"(https?://[^\s?#]++)([?#][^\s]*)?", re.IGNORECASE)
+_SSE_URL_USERINFO = re.compile(r"(https?://)([^/\s]*+)", re.IGNORECASE)
+_REDIRECT_URL = re.compile(
+    r"(\b(?:redirect(?:ed)?\s+to|redirect\s+location\s*:|location['\"]?\s*:)\s*['\"]?)"
+    r"https?://[^\s'\"<>]+",
+    re.IGNORECASE,
+)
 _SSE_LOGGER_NAMES = (
     "mcp.client.sse",
+    "mcp.client.streamable_http",
     "httpx2",
     "httpcore2.connection",
     "httpcore2.http11",
@@ -54,8 +62,27 @@ _SSE_LOGGER_NAMES = (
 
 def _redact_sse_log_text(value: str) -> str:
     # Negotiated POST endpoints can use arbitrary query keys for session credentials.
-    redacted = _SSE_URL_SUFFIX.sub(r"\1?<redacted>", value)
-    return redact_text(_SSE_URL_USERINFO.sub(r"\1<redacted>@", redacted))
+    redacted = _REDIRECT_URL.sub(r"\1<redacted-url>", value)
+    redacted = _SSE_URL_SUFFIX.sub(
+        lambda match: match[1] + "?<redacted>" if match[2] is not None else match[0], redacted
+    )
+    redacted = _SSE_URL_USERINFO.sub(
+        lambda match: match[1] + "<redacted>@" + match[2].rsplit("@", 1)[1] if "@" in match[2] else match[0],
+        redacted,
+    )
+    return redact_text(redacted)
+
+
+def _exception_leaves(exc: BaseException) -> Iterator[BaseException]:
+    if isinstance(exc, BaseExceptionGroup):
+        for child in exc.exceptions:
+            yield from _exception_leaves(child)
+    else:
+        yield exc
+
+
+def _exception_type_names(exc: BaseException) -> str:
+    return "; ".join(dict.fromkeys(type(leaf).__name__ for leaf in _exception_leaves(exc)))
 
 
 def describe_exception(exc: BaseException) -> str:
@@ -63,22 +90,25 @@ def describe_exception(exc: BaseException) -> str:
     leaves: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
 
-    def collect(error: BaseException) -> None:
-        if isinstance(error, BaseExceptionGroup):
-            for child in error.exceptions:
-                collect(child)
-            return
+    for error in _exception_leaves(exc):
         exception_type = type(error).__name__
         message = str(error)
+        if len(message) > 2_000:
+            message = message[:2_000]
+            # Drop the cut token before redaction, so partial URL credentials
+            # cannot survive. Preserve unbroken alphanumeric diagnostic text.
+            whitespace = next((i for i in range(len(message) - 1, -1, -1) if message[i].isspace()), None)
+            if whitespace is not None:
+                message = message[:whitespace]
+            elif not message.isalnum():
+                message = ""
         identity = (exception_type, message)
         if identity not in seen:
             seen.add(identity)
             leaves.append(identity)
 
-    collect(exc)
     descriptions = [f"{name}: {message}" if message else name for name, message in leaves]
-    # Same URL policy as SDK SSE diagnostics: keep scheme, host and path; redact
-    # userinfo and the whole query/fragment (credentials, redirect parameters).
+    # Ordinary URLs retain host/path; redirect targets are withheld entirely.
     summary = _redact_sse_log_text("; ".join(descriptions))
     if len(summary) > 500:
         return summary[:499] + "…"
@@ -148,7 +178,7 @@ class _ListingPageLimit(ValueError):
 def _listing_failure_message(label: str, exc: Exception) -> str:
     if isinstance(exc, _ListingPageLimit):
         return f"{label} listing exceeds the 20-page limit; coverage is incomplete."
-    reason = describe_exception(exc) if isinstance(exc, BaseExceptionGroup) else type(exc).__name__
+    reason = _exception_type_names(exc)
     return f"{label} surface incomplete ({reason})."
 
 
@@ -368,6 +398,8 @@ class ServerConnector:
         if not config.url:
             raise ValueError(f"Server {config.name} has no URL for HTTP transport")
 
+        for name in _SSE_LOGGER_NAMES:
+            logging.getLogger(name).addFilter(_SSE_LOG_FILTER)
         # mcp 2.1.1 maps Client(str) to streamable_http_client.
         async with Client(config.url) as client:
             return await self._inspect_session(client, config.name, probe)
@@ -491,11 +523,7 @@ class ServerConnector:
                         try:
                             result = await session.get_prompt(prompt.name, {})
                         except Exception as exc:
-                            reason = (
-                                describe_exception(exc)
-                                if isinstance(exc, BaseExceptionGroup)
-                                else type(exc).__name__
-                            )
+                            reason = _exception_type_names(exc)
                             self._canary_warning(probe, f"prompts/get incomplete ({reason}).")
                             continue
                         surface["prompt_results"][prompt.name] = {
@@ -519,7 +547,7 @@ class ServerConnector:
                     self._canary_warning(probe, message)
                 elif not probe and isinstance(exc, _ListingPageLimit):
                     listing_warnings.append(message)
-                else:
+                elif logger.isEnabledFor(logging.DEBUG):
                     logger.debug(
                         "Server %s prompt listing unavailable: %s", server_name, describe_exception(exc)
                     )
@@ -546,7 +574,7 @@ class ServerConnector:
                     self._canary_warning(probe, message)
                 elif not probe and isinstance(exc, _ListingPageLimit):
                     listing_warnings.append(message)
-                else:
+                elif logger.isEnabledFor(logging.DEBUG):
                     logger.debug(
                         "Server %s resource listing unavailable: %s", server_name, describe_exception(exc)
                     )
