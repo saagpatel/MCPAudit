@@ -408,6 +408,9 @@ async def test_canary_report_warnings_and_json_are_stable_across_server_completi
         payload = report.model_dump(mode="json")
         payload["scan_timestamp"] = "<normalized>"
         payload["scan_duration_seconds"] = 0
+        for audit_payload in payload["audits"]:
+            if audit_payload.get("canary"):
+                audit_payload["canary"]["elapsed_seconds"] = 0
         reports.append(json.dumps(payload, sort_keys=True))
         warning_servers = [warning.servers for warning in report.warnings]
         sorted_names = sorted(name for names in warning_servers for name in names)
