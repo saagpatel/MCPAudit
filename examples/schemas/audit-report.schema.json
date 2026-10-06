@@ -753,6 +753,28 @@
           "title": "Matched Text",
           "type": "string"
         },
+        "matched_span": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Matched Span"
+        },
         "description": {
           "title": "Description",
           "type": "string"
@@ -1779,6 +1801,31 @@
         "config_path": {
           "title": "Config Path",
           "type": "string"
+        },
+        "config_source": {
+          "anyOf": [
+            {
+              "const": "explicit file; parsed as Claude-style config",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Config Source"
+        },
+        "config_pointer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Config Pointer"
         },
         "project_path": {
           "anyOf": [

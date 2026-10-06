@@ -203,6 +203,8 @@ def redacted_excerpt(
     context_before: int = 0,
     context_after: int = 0,
     max_length: int | None = None,
+    word_boundaries: bool = False,
+    mark_match: bool = False,
 ) -> str:
     """Redact the whole field, map its raw match span, then slice and render.
 
@@ -224,15 +226,66 @@ def redacted_excerpt(
     if _normalization_exposes_secret(redacted):
         withheld = "[metadata excerpt withheld]"
         return withheld if max_length is None else withheld[:max_length]
-    before = render_invisibles(redacted[max(0, window.start - context_before) : window.start])
-    match = render_invisibles(redacted[window.start : window.end])
-    after = render_invisibles(redacted[window.end : window.end + context_after])
+    left = max(0, window.start - context_before)
+    right = min(len(redacted), window.end + context_after)
+    if word_boundaries:
+        while (
+            context_before > 0
+            and left > 0
+            and not redacted[left - 1].isspace()
+            and not redacted[left].isspace()
+        ):
+            left -= 1
+        while (
+            context_after > 0
+            and right < len(redacted)
+            and not redacted[right - 1].isspace()
+            and not redacted[right].isspace()
+        ):
+            right += 1
+
+    def render(piece: str) -> str:
+        rendered = render_invisibles(piece)
+        # Source text cannot forge the delimiters used to carry match offsets.
+        if mark_match:
+            rendered = rendered.replace("⟦", "‹U+27E6›").replace("⟧", "‹U+27E7›")
+        return rendered
+
+    before = render(redacted[left : window.start])
+    match = render(redacted[window.start : window.end])
+    after = render(redacted[window.end : right])
+    if mark_match and match:
+        match = f"⟦{match}⟧"
+    if word_boundaries and max_length is not None:
+        if len(match) > max_length:
+            return "[match exceeds excerpt limit]"[:max_length]
+        # Keep the entire match; trim context a token at a time, including
+        # rendered invisible markers, rather than cutting through a word.
+        while len(before) + len(match) + len(after) > max_length:
+            if before:
+                before = re.sub(r"^\s*\S+\s*", "", before, count=1)
+            elif after:
+                after = re.sub(r"\s*\S+\s*$", "", after, count=1)
+            else:
+                break
+        return before + match + after
     if max_length is not None:
         # Expanded invisible markers must not push the actual match out of view.
         if len(before) + len(match) > max_length:
             before = ""
         return (before + match + after)[:max_length]
     return before + match + after
+
+
+def marked_excerpt_parts(excerpt: str) -> tuple[str, tuple[int, int] | None]:
+    """Separate helper-owned delimiters into plain evidence and display offsets."""
+    before, delimiter, rest = excerpt.partition("⟦")
+    if not delimiter:
+        return excerpt, None
+    match, delimiter, after = rest.partition("⟧")
+    if not delimiter:
+        raise ValueError("Unclosed match delimiter in redacted excerpt")
+    return before + match + after, (len(before), len(before) + len(match))
 
 
 def _redact_literal_strings(value: object) -> object:

@@ -184,7 +184,14 @@ def test_out_of_range_excerpt_span_is_clamped(span: tuple[int, int]) -> None:
 @pytest.mark.parametrize("kwargs", [{"context_before": -1}, {"context_after": -1}, {"max_length": -1}])
 def test_invalid_excerpt_context_is_rejected(kwargs: dict[str, int]) -> None:
     with pytest.raises(ValueError, match="Invalid excerpt"):
-        redacted_excerpt("text", 0, 4, **kwargs)
+        redacted_excerpt(
+            "text",
+            0,
+            4,
+            context_before=kwargs.get("context_before", 0),
+            context_after=kwargs.get("context_after", 0),
+            max_length=kwargs.get("max_length"),
+        )
 
 
 def test_every_static_injection_finding_has_credential_safe_evidence() -> None:
