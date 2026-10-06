@@ -10,7 +10,7 @@
 
 > ### Audit what your AI agents can actually touch.
 
-Every MCP server wired into your editor is a process that can read your files, reach the network, or run shell commands on your behalf — frequently launched from a remote `npx`/`uvx` package that can change underneath you. **`mcp-audit`** reads the MCP configs already on your machine and tells you what each server *can do*, how risky it is, whether its tool descriptions hide adversarial instructions, and whether anything changed since you last looked.
+Every MCP server wired into your editor is a process that can read your files, reach the network, or run shell commands on your behalf — frequently launched from a remote `npx`/`uvx` package that can change underneath you. **`mcp-audit`** reads the MCP configs already on your machine and tells you what each server *can do*, how risky it is, whether its tool descriptions carry instruction-shaped text, and whether anything changed since you last looked.
 
 Read-only by default: scans never edit a config and report env-var **key names only** (never values). Use `--skip-connect` for a zero-touch config-only pass that does not spawn MCP servers or contact remote endpoints; connected scans, package verification, downloads, and LLM analysis make their extra reach explicit in the command.
 
@@ -40,13 +40,13 @@ The package is `mcp-audits` on PyPI; the command it installs is `mcp-audit`.
 
 ## ⚡ 60-second start
 
-No install required — [`uv`](https://docs.astral.sh/uv/) runs it in a throwaway environment. Start with the zero-touch pass: it reads the MCP configs on your machine and reasons from them; spawns no servers and makes no network calls.
+No install required — [`uv`](https://docs.astral.sh/uv/) runs it in a throwaway environment. Start with the zero-touch pass: it reads the MCP configs on your machine and reasons from them; the scan spawns no servers and contacts no configured endpoints (`uvx` itself may fetch the package from PyPI).
 
 ```bash
 uvx --from mcp-audits mcp-audit scan --skip-connect
 ```
 
-Then run the connected deep check, which launches each configured server to read its real tool list and flags SSRF-shaped tools:
+Then run the connected deep check, which launches each configured stdio server and connects to each remote endpoint to read its real tool list, and flags SSRF-shaped tools:
 
 ```bash
 uvx --from mcp-audits mcp-audit scan --ssrf-check
@@ -189,7 +189,7 @@ Every `get_*_findings` tool returns a JSON object with `findings` and `warnings`
 - **Offline MCP result parcel lab** — `mcp-audit result-parcel analyze` compares inline, provider/local chunk or progress extensions, core resource links, and the negotiated Tasks extension against size, expiry, authorization, redaction, integrity, and retrieval faults. Explanations bind to named inputs; no payload, MCP server, network, credential, or object store is read. See `docs/RESULT-PARCEL-LAB.md`
 - **Local policy gates** — `scan --policy policy.yaml` evaluates reports against local YAML rules and exits nonzero for CI enforcement
 - **Report redaction** — terminal, JSON, SARIF, and HTML report paths share a redaction layer for likely credential values; `scan --redact` adds an opt-in field-report pass that also scrubs the machine hostname and home-path usernames (`/Users/<name>`, `/home/<name>`, `C:\Users\<name>`) from `--json`/`--sarif`/`--html` output, and replaces matching server-name text in string values with stable aliases (`server-01`, …). Dictionary keys and names that do not match the alias pattern may remain; review the field-report checklist before sharing
-- **Instruction-shaped text heuristics** — `scan --inject-check` uses pattern-based heuristics to flag instruction-override phrasing, hidden directives, and fake role turns in tool, prompt, and resource text. Rephrasing or obfuscation can evade them; findings are leads to review, not verdicts.
+- **Instruction-shaped text heuristics** — `scan --inject-check` uses pattern-based heuristics to flag instruction-override phrasing, hidden directives, fake role turns, system-prompt leak requests, credential-harvest phrasing, and bidi or zero-width characters in tool, prompt, and resource text. Rephrasing or obfuscation can evade them; findings are leads to review, not verdicts.
 - **SSRF detection** — `scan --ssrf-check` flags tools and resources whose interface lets a caller steer a server-side request target (including URL/host params nested in object, array-item, or composition schemas, plus caller-templated remote resource hosts); static and schema-derived, never issues a request or reads a credential value
 - **Egress detection** — `scan --egress-check` audits *where* a server may send data: destinations outside `--egress-allowlist` (`MCP040`, MED), unbounded caller-controlled targets (`MCP041`, HIGH), and the trusted-destination residual for allowlisted-but-multi-tenant or credential-bearing hosts (`MCP042`, LOW/MED — the Cowork lesson). Static and schema/URI-derived; gated via `fail_on.egress`. See `docs/EGRESS-DETECTION.md`
 - **Lethal trifecta detection** — `scan --trifecta-check` detects the canonical agent-exfiltration attack surface: per-server (HIGH, `MCP013`) when a single server covers all three legs (file_read + untrusted-content ingestion + exfiltration), and fleet-level advisory (MEDIUM, `MCP014`) when the trifecta assembles only across servers; re-uses inferred permissions, never issues requests or reads credentials
