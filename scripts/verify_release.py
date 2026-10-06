@@ -136,7 +136,7 @@ def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object
     server = json.loads(_read_text("server.json"))
     changelog = _read_text("CHANGELOG.md")
     readme = _read_text("README.md")
-    adoption = _read_text("docs/ADOPTION-GUIDE.md")
+    adoption = _read_text("docs/guides/ci.md")
 
     if project.get("name") != DISTRIBUTION_NAME:
         raise VerificationError("project metadata has the wrong distribution name")
@@ -168,7 +168,7 @@ def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object
         or server.get("packages", [{}])[0].get("version") != public_version
     ):
         raise VerificationError("server.json does not reference the release-state public package version")
-    for path, content in (("README.md", readme), ("docs/ADOPTION-GUIDE.md", adoption)):
+    for path, content in (("README.md", readme), ("docs/guides/ci.md", adoption)):
         if f"saagpatel/MCPAudit@v{public_version}" not in content:
             raise VerificationError(f"{path} does not reference the usable public release")
     if f"rev: v{public_version}" not in adoption:

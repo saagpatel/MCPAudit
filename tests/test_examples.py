@@ -17,9 +17,9 @@ from mcp_audit.models import AuditReport
 CI_EXAMPLES = sorted(Path("examples/ci").glob("*.yml"))
 DOCS_REFERENCING_ADOPTION_EXAMPLES = [
     Path("README.md"),
-    Path("docs/ADOPTION-GUIDE.md"),
+    Path("docs/guides/ci.md"),
     Path("docs/GOLDEN-ROLLOUT.md"),
-    Path("docs/PIN-MAINTENANCE.md"),
+    Path("docs/guides/pinning.md"),
 ]
 CONSUMER_EXAMPLES = sorted(
     path
@@ -42,7 +42,7 @@ CONSUMER_CONTRACT_REPORTS = [
     *LEGACY_REPORTS,
 ]
 SCHEMA_PATH = Path("examples/schemas/audit-report.schema.json")
-MCP_TRUST_PACKET = Path("docs/MCP-TRUST-PACKET.md")
+MCP_TRUST_PACKET = Path("docs/guides/trust-packet.md")
 LAUNCH_POSTS = Path("launch-posts.md")
 CONFIG_ONLY_SCAN_ASSET = Path("docs/assets/mcp-audit-config-only-scan.png")
 HERO_SCAN_GIF = Path("docs/assets/hero-scan.gif")
@@ -51,9 +51,9 @@ HTML_REPORT_ASSET = Path("docs/assets/html-report.png")
 POLICY_GATE_GIF = Path("docs/assets/policy-gate.gif")
 POLICY_GATE_TAPE = Path("docs/assets/policy-gate.tape")
 POLICY_GATE_DEMO_SCRIPT = Path("docs/assets/policy-gate-demo.sh")
-LAUNCH_CONTROL_CARD = Path("docs/LAUNCH-CONTROL-CARD.md")
-LAUNCH_DAY_RUNBOOK = Path("docs/LAUNCH-DAY-RUNBOOK.md")
-LAUNCH_RESPONSE_PLAYBOOK = Path("docs/LAUNCH-RESPONSE-PLAYBOOK.md")
+LAUNCH_CONTROL_CARD = Path("maintainers/launch-control-card.md")
+LAUNCH_DAY_RUNBOOK = Path("maintainers/launch-day-runbook.md")
+LAUNCH_RESPONSE_PLAYBOOK = Path("maintainers/launch-response-playbook.md")
 HERO_DEMO_CONFIG = Path("docs/assets/hero-demo-config.json")
 HERO_TAPE = Path("docs/assets/hero.tape")
 
@@ -123,7 +123,7 @@ def test_mcp_trust_packet_is_discoverable_and_safe() -> None:
     readme = Path("README.md").read_text()
     packet = MCP_TRUST_PACKET.read_text()
 
-    assert "docs/MCP-TRUST-PACKET.md" in readme
+    assert "docs/guides/trust-packet.md" in readme
     assert "uvx --from fastmcp-builder==0.3.3 mcpforge init" in packet
     assert "uvx --from mcp-audits==2.2.0 mcp-audit scan" in packet
     assert "examples/ci/forge-then-audit.yml" in packet
@@ -329,7 +329,7 @@ def test_consumer_examples_are_documented() -> None:
 def test_golden_rollout_doc_is_linked_and_staged() -> None:
     rollout = Path("docs/GOLDEN-ROLLOUT.md").read_text()
     readme = Path("README.md").read_text()
-    adoption = Path("docs/ADOPTION-GUIDE.md").read_text()
+    adoption = Path("docs/guides/ci.md").read_text()
 
     assert "mcp-audit scan --skip-connect" in rollout
     assert "mcp-audit scan --inject-check" in rollout
@@ -342,16 +342,15 @@ def test_golden_rollout_doc_is_linked_and_staged() -> None:
 def test_evidence_intake_doc_tracks_next_milestone() -> None:
     readme = Path("README.md").read_text()
     roadmap = Path("docs/ROADMAP-NEXT.md").read_text()
-    intake = Path("docs/1.5-EVIDENCE-INTAKE.md").read_text()
-    decision = Path("docs/1.5-RELEASE-DECISION.md").read_text()
+    intake = Path("archive/1.5-evidence-intake.md").read_text()
+    decision = Path("archive/1.5-release-decision.md").read_text()
     beta_evidence = Path("docs/BETA-READINESS-EVIDENCE.md").read_text()
     field_reports = Path("docs/FIELD-REPORTS.md").read_text()
 
-    assert "docs/1.5-EVIDENCE-INTAKE.md" in readme
-    assert "docs/BETA-READINESS-EVIDENCE.md" in readme
-    assert "docs/FIELD-REPORTS.md" in readme
-    assert "docs/1.5-EVIDENCE-INTAKE.md" in roadmap
-    assert "docs/1.5-RELEASE-DECISION.md" in roadmap
+    assert "archive/1.5-evidence-intake.md" in readme
+    assert "archive/README.md" in readme
+    assert "archive/1.5-evidence-intake.md" in roadmap
+    assert "archive/1.5-release-decision.md" in roadmap
     assert "docs/BETA-READINESS-EVIDENCE.md" in roadmap
     assert "docs/FIELD-REPORTS.md" in roadmap
     assert "https://github.com/saagpatel/MCPAudit/milestone/1" in intake

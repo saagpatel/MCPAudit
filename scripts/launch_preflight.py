@@ -42,7 +42,7 @@ PUBLIC_URLS = {
 }
 
 REQUIRED_TEXT = {
-    Path("docs/LAUNCH-CONTROL-CARD.md"): [
+    Path("maintainers/launch-control-card.md"): [
         "Tuesday, June 23, 2026",
         "Wednesday, June 24, 2026",
         "Do not launch on a weekend",
@@ -52,7 +52,7 @@ REQUIRED_TEXT = {
         FIELD_REPORT_COMMAND,
         "SECURITY.md",
     ],
-    Path("docs/LAUNCH-RESPONSE-PLAYBOOK.md"): [
+    Path("maintainers/launch-response-playbook.md"): [
         FIELD_REPORT_COMMAND,
         FIELD_REPORT_ISSUE,
         "SECURITY.md",

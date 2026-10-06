@@ -99,7 +99,7 @@ class TestPreCommitHook:
     def test_rev_in_docs_matches_public_release(self) -> None:
         # Candidate metadata may move ahead, but examples must name an existing public tag.
         version_tag = f"v{_public_action_version()}"
-        adoption = Path("docs/ADOPTION-GUIDE.md").read_text(encoding="utf-8")
+        adoption = Path("docs/guides/ci.md").read_text(encoding="utf-8")
         assert f"rev: {version_tag}" in adoption
 
 

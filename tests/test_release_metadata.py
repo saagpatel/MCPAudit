@@ -35,7 +35,7 @@ def test_release_versions_are_consistent_across_surfaces() -> None:
     server = json.loads(Path("server.json").read_text(encoding="utf-8"))
     changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
     readme = Path("README.md").read_text(encoding="utf-8")
-    adoption = Path("docs/ADOPTION-GUIDE.md").read_text(encoding="utf-8")
+    adoption = Path("docs/guides/ci.md").read_text(encoding="utf-8")
 
     assert state == {
         "schema_version": "mcp-audit.release-state.v1",
@@ -201,7 +201,8 @@ def test_candidate_state_is_never_publishable(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     (tmp_path / "README.md").write_text("uses: saagpatel/MCPAudit@v2.5.0\n", encoding="utf-8")
-    (tmp_path / "docs/ADOPTION-GUIDE.md").write_text(
+    (tmp_path / "docs/guides").mkdir(parents=True)
+    (tmp_path / "docs/guides/ci.md").write_text(
         "uses: saagpatel/MCPAudit@v2.5.0\nrev: v2.5.0\n", encoding="utf-8"
     )
     (tmp_path / "docs/2.6-RELEASE-NOTES.md").write_text(
