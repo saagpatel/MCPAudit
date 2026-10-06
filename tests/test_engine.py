@@ -26,6 +26,10 @@ from mcp_audit.models import (
     LLMAnalysisReasonCode,
     LLMAnalysisStatus,
     LLMAnalysisSummary,
+    PromptInfo,
+    ResourceInfo,
+    ScanWarning,
+    ServerAudit,
     ServerConfig,
     ToolInfo,
 )
@@ -37,6 +41,7 @@ def test_scan_options_defaults_mirror_flagless_scan() -> None:
     assert options.skip_connect is False
     assert options.config_only is False
     assert options.timeout == 10
+    assert options.max_concurrency == 32
     assert not any(
         getattr(options, flag)
         for flag in (
@@ -54,6 +59,115 @@ def test_scan_options_defaults_mirror_flagless_scan() -> None:
             "llm_analysis",
         )
     )
+
+
+def test_run_scan_rejects_zero_max_concurrency() -> None:
+    with pytest.raises(ValueError, match="Max concurrency must be at least 1"):
+        anyio.run(partial(run_scan, ScanOptions(max_concurrency=0), servers=[]))
+
+
+@pytest.mark.parametrize("canary_check", [False, True], ids=["ordinary", "canary"])
+def test_run_scan_limits_connector_sessions_and_preserves_server_order(
+    monkeypatch: pytest.MonkeyPatch, canary_check: bool
+) -> None:
+    servers = [make_server_config(name=f"srv{i}") for i in range(5)]
+    active = 0
+    peak_active = 0
+    started: list[str] = []
+    completed: list[str] = []
+
+    class TrackingConnector:
+        def __init__(self, timeout: float) -> None:
+            assert timeout == 10
+            self.scan_warnings: list[ScanWarning] = []
+
+        async def connect(self, server: ServerConfig, **kwargs: object) -> ServerAudit:
+            nonlocal active, peak_active
+            if canary_check:
+                assert kwargs["canary_calls"] == 5
+            else:
+                assert kwargs == {}
+            active += 1
+            peak_active = max(peak_active, active)
+            started.append(server.name)
+            try:
+                # Stagger completion while keeping two sessions active.
+                await anyio.sleep((5 - int(server.name.removeprefix("srv"))) * 0.005)
+                completed.append(server.name)
+                return ServerAudit(server=server, connection_status="connected")
+            finally:
+                active -= 1
+
+    monkeypatch.setattr(engine, "ServerConnector", TrackingConnector)
+    report = anyio.run(
+        partial(run_scan, ScanOptions(max_concurrency=2, canary_check=canary_check), servers=servers)
+    )
+
+    assert peak_active == 2
+    assert len(started) == len(servers)
+    assert completed != [server.name for server in servers]
+    assert [audit.server.name for audit in report.audits] == [server.name for server in servers]
+
+
+def test_run_scan_timeout_budget_starts_after_limiter_wait(monkeypatch: pytest.MonkeyPatch) -> None:
+    servers = [make_server_config(name="queued-timeout"), make_server_config(name="after-queue")]
+    entered: list[str] = []
+
+    class SessionBudgetConnector:
+        def __init__(self, timeout: float) -> None:
+            self.timeout = timeout
+            self.scan_warnings: list[ScanWarning] = []
+
+        async def connect(self, server: ServerConfig, **kwargs: object) -> ServerAudit:
+            assert kwargs == {}
+            entered.append(server.name)
+            with anyio.move_on_after(self.timeout) as scope:
+                if server.name == "queued-timeout":
+                    await anyio.sleep(self.timeout * 2)
+            status = "timeout" if scope.cancel_called else "connected"
+            return ServerAudit(server=server, connection_status=status)
+
+    monkeypatch.setattr(engine, "ServerConnector", SessionBudgetConnector)
+    report = anyio.run(partial(run_scan, ScanOptions(timeout=1, max_concurrency=1), servers=servers))
+
+    assert entered == ["queued-timeout", "after-queue"]
+    assert [audit.connection_status for audit in report.audits] == ["timeout", "connected"]
+
+
+def test_run_scan_warns_for_each_oversized_detector_field_without_truncating_report(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    oversized = "x" * (256 * 1024 + 1)
+    server = make_server_config(name="large-fields")
+
+    class OversizedTextConnector:
+        def __init__(self, timeout: float) -> None:
+            self.scan_warnings: list[ScanWarning] = []
+
+        async def connect(self, _server: ServerConfig) -> ServerAudit:
+            return ServerAudit(
+                server=server,
+                connection_status="connected",
+                tools=[
+                    ToolInfo(
+                        name=oversized,
+                        description=oversized,
+                        input_schema={"properties": {oversized: {}}},
+                    )
+                ],
+                prompts=[PromptInfo(name="prompt", description=oversized, arguments=[oversized])],
+                resources=[ResourceInfo(uri=oversized, name="resource", description=oversized)],
+            )
+
+    monkeypatch.setattr(engine, "ServerConnector", OversizedTextConnector)
+    report = anyio.run(partial(run_scan, ScanOptions(), servers=[server]))
+
+    [warning] = [item for item in report.warnings if item.code == "description_truncated"]
+    assert warning.check == "permission_analysis"
+    assert warning.servers == ["large-fields"]
+    assert "7 field(s) truncated" in warning.message
+    assert oversized not in warning.message
+    assert report.audits[0].tools[0].description == oversized
 
 
 def test_run_scan_is_silent_by_default(

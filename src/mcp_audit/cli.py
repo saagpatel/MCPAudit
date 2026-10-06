@@ -313,7 +313,19 @@ def discover(client_filter: str | None, verbose: bool) -> None:
     help="Mark an empty-argument tool safe; destructive hints still veto calls.",
 )
 @click.option("--clients", default=None, help="Comma-separated list of clients to scan.")
-@click.option("--timeout", default=10, show_default=True, help="Connection timeout in seconds.")
+@click.option(
+    "--timeout",
+    default=10,
+    show_default=True,
+    help="Per-server session budget in seconds (connection and listings; excludes queue wait).",
+)
+@click.option(
+    "--max-concurrency",
+    default=32,
+    type=click.IntRange(min=1),
+    show_default=True,
+    help="Maximum simultaneous server sessions.",
+)
 @click.option("--verbose", is_flag=True, default=False, help="Show per-tool permission details.")
 @click.option("--config", "extra_config", default=None, metavar="PATH", help="Scan a specific config file.")
 @click.option(
@@ -430,6 +442,7 @@ def scan(
     skip_connect: bool,
     clients: str | None,
     timeout: int,
+    max_concurrency: int,
     verbose: bool,
     extra_config: str | None,
     config_only: bool,
@@ -491,6 +504,7 @@ def scan(
         canary_check,
         canary_calls,
         canary_safe_tools,
+        max_concurrency,
     )
 
 
@@ -593,6 +607,7 @@ async def _run_scan(
     canary_check: bool = False,
     canary_calls: int = 5,
     canary_safe_tools: tuple[str, ...] = (),
+    max_concurrency: int = 32,
 ) -> None:
     """CLI scan entrypoint — calls the engine's run_scan then renders output."""
     if config_only and not extra_config:
@@ -619,6 +634,7 @@ async def _run_scan(
             raise SystemExit(1) from exc
 
     scan_options = ScanOptions(
+        max_concurrency=max_concurrency,
         canary_check=canary_check,
         canary_calls=canary_calls,
         canary_safe_tools=canary_safe_tools,

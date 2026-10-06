@@ -47,6 +47,7 @@ from mcp_audit.overrides import OverrideApplier, OverrideConfig
 from mcp_audit.redaction import redact_text
 from mcp_audit.scorer import RiskScorer
 from mcp_audit.terminal_text import terminal_safe
+from mcp_audit.text_limits import MAX_FIELD_BYTES, bounded_text
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,6 +87,7 @@ class ScanOptions:
     egress_allowlist: str | None = None
     multi_tenant_hosts: str | None = None
     egress_server_allowlists: dict[str, list[str]] | None = None
+    max_concurrency: int = 32
 
 
 async def run_scan(
@@ -106,6 +108,8 @@ async def run_scan(
     quiet console — pass a real one to get progress + advisory warnings.
     """
     opts = options if options is not None else ScanOptions()
+    if opts.max_concurrency < 1:
+        raise ValueError("Max concurrency must be at least 1.")
     if opts.canary_check and opts.skip_connect:
         raise ValueError("--canary-check cannot be combined with --skip-connect.")
     if opts.canary_check and not 1 <= opts.canary_calls <= 100:
@@ -137,6 +141,7 @@ async def run_scan(
 
     connector = ServerConnector(timeout=float(opts.timeout))
     connector.scan_warnings = []
+    connection_limiter = anyio.CapacityLimiter(opts.max_concurrency)
     analyzer = PermissionAnalyzer()
     scorer = RiskScorer()
 
@@ -311,15 +316,16 @@ async def run_scan(
             if opts.skip_connect:
                 audit = connector.skip_connect_audit(srv)
             elif opts.canary_check:
-                audit = await connector.connect(
-                    srv,
-                    canary_calls=opts.canary_calls,
-                    safe_tools=frozenset(
-                        mark[len(srv.name) + 1 :]
-                        for mark in opts.canary_safe_tools
-                        if mark.startswith(srv.name + "/")
-                    ),
-                )
+                async with connection_limiter:
+                    audit = await connector.connect(
+                        srv,
+                        canary_calls=opts.canary_calls,
+                        safe_tools=frozenset(
+                            mark[len(srv.name) + 1 :]
+                            for mark in opts.canary_safe_tools
+                            if mark.startswith(srv.name + "/")
+                        ),
+                    )
                 if audit.canary and audit.canary.status != "complete":
                     warn(
                         "canary_incomplete",
@@ -328,7 +334,32 @@ async def run_scan(
                         servers=[srv.name],
                     )
             else:
-                audit = await connector.connect(srv)
+                async with connection_limiter:
+                    audit = await connector.connect(srv)
+
+            # Keep listed surfaces intact for hashing/reporting. Only detector
+            # input is bounded; coverage loss is explicit and contains no text.
+            fields: list[str] = []
+            for tool in audit.tools:
+                fields.extend((tool.name, tool.description or ""))
+                props = tool.input_schema.get("properties", {}) if tool.input_schema else {}
+                if isinstance(props, dict):
+                    fields.extend(str(name) for name in props)
+            for prompt in audit.prompts:
+                fields.extend((prompt.name, prompt.description or "", *prompt.arguments))
+            for resource in audit.resources:
+                fields.extend(
+                    (resource.uri, resource.name or "", resource.description or "", resource.mime_type or "")
+                )
+            truncated = sum(len(bounded_text(text)) < len(text) for text in fields)
+            if truncated:
+                warn(
+                    "description_truncated",
+                    f"Detector text limited to {MAX_FIELD_BYTES} UTF-8 bytes per field; "
+                    f"{truncated} field(s) truncated. Findings may omit suffix evidence.",
+                    check="permission_analysis",
+                    servers=[srv.name],
+                )
 
             # Analyze tool list for new permission findings
             if not opts.skip_connect or not audit.permissions:

@@ -42,6 +42,57 @@ def test_version_option_reports_installed_distribution_version() -> None:
     assert version("mcp-audits") in result.output
 
 
+def test_scan_max_concurrency_reaches_current_run_scan_entrypoint(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    config = tmp_path / "synthetic.json"
+    config.write_text("{}")
+    forwarded: list[object] = []
+
+    async def fake_run_scan(*args: object, **kwargs: object) -> None:
+        forwarded.extend(args)
+
+    async def frozen_core_was_called(*args: object, **kwargs: object) -> None:
+        raise AssertionError("scan must use _run_scan, not the frozen compatibility shim")
+
+    monkeypatch.setattr(cli, "_run_scan", fake_run_scan)
+    monkeypatch.setattr(cli, "_run_scan_core", frozen_core_was_called)
+
+    result = CliRunner().invoke(
+        cli.main,
+        [
+            "scan",
+            "--config",
+            str(config),
+            "--config-only",
+            "--override-config",
+            "/dev/null",
+            "--max-concurrency",
+            "7",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert forwarded[-1] == 7
+
+
+def test_scan_max_concurrency_rejects_zero() -> None:
+    result = CliRunner().invoke(cli.main, ["scan", "--max-concurrency", "0"])
+
+    assert result.exit_code != 0
+    assert "Invalid value for '--max-concurrency'" in result.output
+
+
+def test_scan_help_describes_session_timeout_budget() -> None:
+    result = CliRunner().invoke(cli.main, ["scan", "--help"])
+    help_text = " ".join(result.output.split())
+
+    assert result.exit_code == 0
+    assert "session budget" in help_text
+    assert "excludes queue wait" in help_text
+    assert "--max-concurrency" in help_text
+
+
 def test_error_messages_route_to_stderr_not_stdout() -> None:
     # Machine-parseable stdout (json/sarif pipelines) must never be polluted
     # by human-facing error text.
