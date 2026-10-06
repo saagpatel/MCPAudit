@@ -182,6 +182,46 @@ Each audit may include:
   `source_trust`, analyzer/model provenance, candidate/analyzed tool counts,
   and the number of admitted findings. `unknown` never means clean.
 
+### Agent-visible text and prompt arguments (additive)
+
+`prompts[].arguments` remains the ordered list of argument names. The optional
+`argument_details` list adds `{name, description, required}` for each argument,
+in server order. Description and required are nullable, preserving an omitted
+SDK flag rather than inventing one. Older reports load with empty details;
+static injection checks then fall back to the legacy names.
+
+Static tool injection checks inspect name, description, `annotations.title`,
+and every input-schema string leaf, including nested metadata, definitions,
+defaults, enums, and examples. No references are fetched or decoded. Existing
+top-level property-name keyword checks are retained. Tool name and description
+permission weights remain 3 and 2; property names and the added text have weight
+1. Annotation suppression behavior is unchanged.
+
+`injection_findings[].field_path` is an optional JSON Pointer into the tool or
+prompt's report object (for example `/annotations/title`,
+`/input_schema/properties/options/description`, or
+`/argument_details/0/description`). It is null for older findings, static
+resource findings, and runtime result/body findings. `permissions[].field_paths`
+lists all matching tool field pointers for an aggregated keyword finding;
+annotation findings and legacy reports default to an empty list. Existing
+evidence strings are retained.
+Property-name evidence points to that property's schema object. Pointer tokens
+escape `~` as `~0` and `/` as `~1`.
+
+Each tool admits at most 256 text fields, 16,384 characters per field, and 65,536
+characters in total. Schema traversal visits at most 2,048 nodes, descends at
+most 64 container levels, and limits each field pointer to 2,048 characters.
+Cycles, over-budget branches, and oversized paths are skipped; long fields are
+truncated. Prompt static injection text uses the same field and character caps.
+Exhausted budgets produce `warnings[]` with `code: agent_text_incomplete` and
+`check: agent_visible_text`; findings within the inspected prefix are retained.
+Clean findings under this warning do not establish complete text coverage.
+The canary rejects tools with incomplete text inspection, even when explicitly
+marked safe. Required-argument prompt skip warnings name the prompt and required
+arguments without providing or guessing argument values.
+
+These additions keep `schema_version` unchanged.
+
 ### Runtime canary fields (additive)
 
 `scan --canary-check` uses the existing `AuditReport` contract and scan exit

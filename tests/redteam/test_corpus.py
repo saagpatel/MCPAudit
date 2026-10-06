@@ -21,9 +21,6 @@ CORPUS = cast(list[dict[str, object]], json.loads(CORPUS_PATH.read_text())["case
 
 _GAP_REASONS = {
     "lying-annotations": "gap 9: fixed by P1-3",
-    "schema-text-injection": "gap 1: fixed by P1-4",
-    "annotation-title-injection": "gap 2: fixed by P1-4",
-    "prompt-argument-text": "gap 7: fixed by P1-4",
     "unicode-tag-block": "gap 4: fixed by P1-5",
     "homoglyph-instructions": "gap 5: fixed by P1-5",
     "shadow-fullwidth-zerowidth": "gap 11: fixed by P1-5",

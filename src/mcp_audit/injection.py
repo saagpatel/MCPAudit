@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from mcp_audit.agent_text import agent_visible_text, prompt_visible_text
 from mcp_audit.models import (
     CapabilityTarget,
     InjectionFinding,
@@ -195,7 +196,7 @@ _PATTERNS: list[_InjectionPattern] = [
 
 
 class InjectionDetector:
-    """Scans MCP capability names and descriptions for adversarial prompt injection patterns."""
+    """Scans agent-visible MCP capability text for prompt injection patterns."""
 
     def scan_result(
         self,
@@ -237,25 +238,37 @@ class InjectionDetector:
 
     def scan_tool(self, tool: ToolInfo) -> list[InjectionFinding]:
         """Return all injection findings for a single tool."""
-        # Normalize name: replace underscores/hyphens with spaces for phrase matching
-        normalized_name = tool.name.replace("_", " ").replace("-", " ")
-        # Newline join (matching scan_prompt/scan_resource) so line-anchored
-        # checks see the description start as a line start.
-        combined = f"{normalized_name}\n{tool.description or ''}"
-        return self._scan_text(CapabilityTarget.TOOL, tool.name, combined, tool.name)
+        fields = agent_visible_text(tool).fields
+        name = fields[0].text.replace("_", " ").replace("-", " ")
+        description = fields[1].text
+        # Retain legacy name/description excerpts and Unicode offsets. Additional
+        # fields are scanned separately so their evidence has a precise pointer.
+        findings = self._scan_text(CapabilityTarget.TOOL, tool.name, f"{name}\n{description}", tool.name)
+        for finding in findings:
+            pattern = next(p for p in _PATTERNS if p.name == finding.pattern_name)
+            name_matches = pattern.check(name.lower(), name)
+            description_matches = pattern.check(description.lower(), description)
+            finding.field_path = "/name" if name_matches else "/description"
+            # Phrase/character priority can pick a different source in a combined
+            # excerpt. Resolve ambiguous matches locally; role extractors can
+            # also select a non-anchored substring in the other field.
+            if (name_matches and description_matches) or pattern.name == "role_injection":
+                source = name if name_matches else description
+                finding.matched_text = pattern._extract(source.lower(), source)
+        for field in fields[2:]:
+            text = field.text
+            findings.extend(self._scan_text(CapabilityTarget.TOOL, tool.name, text, tool.name, field.path))
+        return findings
 
     def scan_prompt(self, prompt: PromptInfo) -> list[InjectionFinding]:
         """Return all injection findings for a single prompt."""
-        combined = "\n".join(
-            part
-            for part in [
-                prompt.name.replace("_", " ").replace("-", " "),
-                prompt.description or "",
-                " ".join(prompt.arguments),
-            ]
-            if part
-        )
-        return self._scan_text(CapabilityTarget.PROMPT, prompt.name, combined, prompt.name)
+        findings: list[InjectionFinding] = []
+        for field in prompt_visible_text(prompt).fields:
+            text = field.text.replace("_", " ").replace("-", " ") if field.path == "/name" else field.text
+            findings.extend(
+                self._scan_text(CapabilityTarget.PROMPT, prompt.name, text, prompt.name, field.path)
+            )
+        return findings
 
     def scan_resource(self, resource: ResourceInfo) -> list[InjectionFinding]:
         """Return all injection findings for a single resource."""
@@ -277,6 +290,7 @@ class InjectionDetector:
         target_name: str,
         combined: str,
         legacy_tool_name: str,
+        field_path: str | None = None,
     ) -> list[InjectionFinding]:
         """Return all injection findings for one normalized capability text blob."""
         lower = combined.lower()
@@ -293,6 +307,7 @@ class InjectionDetector:
                         pattern_name=pattern.name,
                         matched_text=matched,
                         description=pattern.description,
+                        field_path=field_path,
                     )
                 )
         return findings

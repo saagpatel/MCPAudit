@@ -633,6 +633,18 @@
         "description": {
           "title": "Description",
           "type": "string"
+        },
+        "field_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Field Path"
         }
       },
       "required": [
@@ -954,6 +966,13 @@
           "title": "Tool Name",
           "type": "string"
         },
+        "field_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Field Paths",
+          "type": "array"
+        },
         "source_trust": {
           "$ref": "#/$defs/FindingSourceTrust",
           "default": "untrusted_server_metadata"
@@ -1058,6 +1077,44 @@
       "title": "PolicyViolation",
       "type": "object"
     },
+    "PromptArgumentInfo": {
+      "description": "Agent-visible prompt argument metadata.",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "required": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Required"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "PromptArgumentInfo",
+      "type": "object"
+    },
     "PromptInfo": {
       "description": "A prompt exposed by an MCP server.",
       "properties": {
@@ -1082,6 +1139,13 @@
             "type": "string"
           },
           "title": "Arguments",
+          "type": "array"
+        },
+        "argument_details": {
+          "items": {
+            "$ref": "#/$defs/PromptArgumentInfo"
+          },
+          "title": "Argument Details",
           "type": "array"
         }
       },

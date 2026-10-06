@@ -241,12 +241,21 @@ class ToolInfo(BaseModel):
     meta: dict[str, object] | None = None
 
 
+class PromptArgumentInfo(BaseModel):
+    """Agent-visible prompt argument metadata."""
+
+    name: str
+    description: str | None = None
+    required: bool | None = None
+
+
 class PromptInfo(BaseModel):
     """A prompt exposed by an MCP server."""
 
     name: str
     description: str | None = None
     arguments: list[str] = Field(default_factory=list)
+    argument_details: list[PromptArgumentInfo] = Field(default_factory=list)
 
 
 class ResourceInfo(BaseModel):
@@ -271,6 +280,7 @@ class PermissionFinding(BaseModel):
     confidence: Confidence
     evidence: list[str]  # What triggered this finding (pattern matches, annotation values)
     tool_name: str
+    field_paths: list[str] = Field(default_factory=list)
     source_trust: FindingSourceTrust = FindingSourceTrust.UNTRUSTED_SERVER_METADATA
     analyzer: str = "mcp-audit.permission-analyzer"
     analyzer_model: str | None = None
@@ -378,6 +388,7 @@ class InjectionFinding(BaseModel):
     after_call: int | None = None  # Set for runtime tool-result findings
     matched_text: str  # excerpt (max 200 chars)
     description: str  # human-readable explanation
+    field_path: str | None = None
 
     @computed_field  # type: ignore[prop-decorator]
     @property

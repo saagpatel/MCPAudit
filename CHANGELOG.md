@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   active without automatic migration, warn about uncovered fields and label
   them in refresh previews before an explicit upgrade.
 
+### Fixed
+
+- Scan bounded agent-visible tool text, including annotation titles and all
+  input-schema string leaves, for instruction-shaped text and permission
+  keywords. Preserve matched field paths and report incomplete text coverage.
+- Retain prompt argument descriptions and required flags in additive metadata,
+  scan their text, and name required arguments in canary skip warnings.
+
 ## [2.8.1] - 2026-10-06
 
 ### Security
