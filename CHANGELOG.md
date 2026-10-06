@@ -25,8 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Raised the minimum `mcp` Python SDK version to 2.2.0 (`mcp>=2.2.0,<3.0`, lock
   2.3.0) for advisory GHSA-rwrf-2pqf-9j8j; the floor also covers
-  GHSA-qx49-fqc8-xw99 and GHSA-84m7-p3x7-pcfv. Users pinning an older 2.x SDK
-  should upgrade.
+  GHSA-qx49-fqc8-xw99, GHSA-84m7-p3x7-pcfv, GHSA-5h93-6whr-6q8j (cross-origin
+  redirects carrying custom headers in HTTP client transports), and
+  GHSA-w4fh-qvv9-3v23. Users pinning an older 2.x SDK should upgrade.
 
 ### Fixed
 
@@ -75,8 +76,10 @@ These predate 2.8.0 unless noted and are scheduled for 2.8.1 or 2.9.0.
 
 - Running `mcp-audit scan` (also `pin`, `watch`, and the `serve` tools) inside a
   repository discovers that repository's `.mcp.json` and `.vscode/mcp.json` and
-  connects to the servers they declare. In a checkout you do not trust, use
-  `--skip-connect`. The GitHub Action already defaults to `skip-connect: true`.
+  connects to the servers they declare. In a checkout you do not trust, add
+  `--skip-connect` to `scan` and `watch`; `pin` and most `serve` tools have no
+  connection-free mode, so do not run `pin` or launch `serve` from an untrusted
+  checkout. The GitHub Action already defaults to `skip-connect: true`.
 - Server, tool, prompt, and resource names are printed to the terminal without
   stripping control sequences, and a name containing Rich markup such as
   `[/bold]` aborts the terminal report before `--json` output is written.

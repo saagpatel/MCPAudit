@@ -382,7 +382,8 @@ These are scheduled for 2.8.1 and 2.9.0; details are in the
 
 - `scan`, `pin`, `watch`, and the `serve` tools connect to servers declared in
   the current directory's `.mcp.json` and `.vscode/mcp.json`. In a checkout you
-  do not trust, add `--skip-connect`.
+  do not trust, add `--skip-connect` to `scan` and `watch`, and do not run `pin`
+  or launch `serve` there (they have no connection-free mode).
 - Server-supplied names are printed to the terminal without stripping control
   sequences; a name containing Rich markup such as `[/bold]` aborts the
   terminal report before `--json` output is written.
