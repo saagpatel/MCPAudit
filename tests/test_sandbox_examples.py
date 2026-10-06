@@ -10,6 +10,8 @@ from typing import Any, cast
 from mcp_audit.api import scan_config_only
 from mcp_audit.injection import InjectionDetector
 from mcp_audit.models import AuditReport, ToolAnnotations, ToolInfo
+from mcp_audit.policy import PolicyConfig, evaluate_policy
+from mcp_audit.sarif import SarifGenerator
 
 SANDBOX_DIR = Path("examples/sandbox")
 SCENARIOS_PATH = SANDBOX_DIR / "scenarios.json"
@@ -191,8 +193,32 @@ def test_sandbox_tool_metadata_matches_injection_detector() -> None:
     ]
 
     assert detector.scan_server(benign_tools) == []
-    pattern_names = {finding.pattern_name for finding in detector.scan_server(risky_tools)}
-    assert {"ignore_instructions", "prompt_leak"} <= pattern_names
+    findings = detector.scan_server(risky_tools)
+    pattern_names = {finding.instruction_pattern for finding in findings}
+    assert {"instruction_override", "prompt_leak"} <= pattern_names
+    report = AuditReport.model_validate_json(REPORT_PATH.read_text(encoding="utf-8"))
+    report.audits[0].injection_findings = findings
+    results = [
+        result
+        for result in SarifGenerator().generate(report)["runs"][0]["results"]
+        if result["properties"].get("pattern") == "INSTRUCTION_SHAPED_TEXT"
+    ]
+    expected = by_kind["malicious-lookalike"]["expected_findings"]
+    assert {
+        (f["rule_id"], f["severity"], f["pattern_name"], f["instruction_pattern"], f["field_path"])
+        for f in expected
+    } == {
+        (
+            result["ruleId"],
+            finding.severity.value,
+            finding.pattern_name,
+            finding.instruction_pattern,
+            finding.field_path,
+        )
+        for result, finding in zip(results, findings, strict=True)
+    }
+    assert evaluate_policy(report, PolicyConfig(fail_on_injection_severity="high")).passed
+    assert not evaluate_policy(report, PolicyConfig(fail_on_injection_severity="medium")).passed
 
 
 def test_sandbox_expected_findings_are_review_findings_not_claims_of_exploit() -> None:

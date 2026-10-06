@@ -25,7 +25,7 @@
       "title": "Tool Description Injection",
       "risk_family": "Prompt injection",
       "why_this_matters": "An AI client may read tool descriptions while deciding which tool to call. A hostile description can try to steer the model, even if the tool name looks useful.",
-      "calibration_note": "A risky-looking capability is not proof of malicious intent. The useful question is whether the tool text matches the server's stated purpose and whether the server is trusted.",
+      "calibration_note": "A risky-looking capability is not proof of malicious intent. Static instruction-shaped text is an experimental MEDIUM heuristic and does not fail a HIGH injection policy gate alone. Review whether the tool text matches the server's stated purpose and whether the server is trusted.",
       "config_only_boundary": "Config-only scans can show the server command, transport, package runner, env key names, and URL shape. They cannot inspect runtime tool descriptions because no server is launched.",
       "connected_boundary": "A connected scan or supplied toy tool manifest can enumerate tool metadata and run the prompt-injection detector against names, descriptions, prompts, and resources.",
       "twins": [
@@ -87,21 +87,25 @@
           ],
           "expected_findings": [
             {
-              "rule_id": "MCP007",
-              "severity": "high",
+              "rule_id": "MCP008",
+              "severity": "medium",
               "target_type": "tool",
               "target_name": "summarize_note",
-              "pattern_name": "ignore_instructions",
+              "pattern_name": "INSTRUCTION_SHAPED_TEXT",
+              "instruction_pattern": "instruction_override",
+              "field_path": "/description",
               "evidence": "Description contains a direct instruction override phrase.",
               "what_mcpaudit_can_prove": "Pattern match in connected or supplied tool metadata. It does not prove the server can access private data.",
               "review_action": "Disable or isolate the server until the description and source are reviewed."
             },
             {
-              "rule_id": "MCP007",
-              "severity": "high",
+              "rule_id": "MCP008",
+              "severity": "medium",
               "target_type": "tool",
               "target_name": "summarize_note",
-              "pattern_name": "prompt_leak",
+              "pattern_name": "INSTRUCTION_SHAPED_TEXT",
+              "instruction_pattern": "prompt_leak",
+              "field_path": "/description",
               "evidence": "Description asks the assistant to reveal instructions.",
               "what_mcpaudit_can_prove": "Pattern match in connected or supplied tool metadata. It does not prove the attempt would succeed.",
               "review_action": "Treat the description as untrusted text and verify the server owner."
