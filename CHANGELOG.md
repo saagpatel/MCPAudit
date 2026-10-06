@@ -40,6 +40,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   excludes time waiting for a connection slot.
 - Mark incomplete metadata listings, including pagination floods, as partial
   connections rather than clean connected rows with zero tools.
+- Infer capabilities from nested input-schema property names using the bounded
+  SSRF schema walker. Property names retain weight 1 and the HIGH confidence
+  threshold remains 6; evidence includes matching schema paths. Nested
+  `upload_url` and `shell_command` gains now produce HIGH MCP018 escalation.
+  Report incomplete property traversal with sanitized reason codes and partial
+  permission, trifecta, and escalation coverage, including pinned schemas used
+  for escalation comparison.
+  The offline examples golden comparison against the pre-change analyzer has
+  no fleet-wide permission finding count change: 12 → 12 across 9 public-config
+  servers, 7 → 7 across 5 sandbox-config servers, and 22 → 22 across 13 stored
+  tool surfaces in the sandbox manifest and synthetic enforcement report.
+  Config runs use config-only/skip-connect with no overrides; stored metadata
+  is replayed locally without launching servers. These fixtures contain no
+  nested property-name capability gains; the nested regression fixture covers
+  the added detection.
 
 ### Security
 

@@ -81,6 +81,7 @@ DEGRADED_CASES = [
         set(),
     ),
     ("agent_text_incomplete", {"permissions", "inject_check", "trifecta_check", "escalation_check"}, set()),
+    ("permission_schema_incomplete", {"permissions", "trifecta_check", "escalation_check"}, set()),
     ("targeted_warning", ALL_CHECKS - {"config_health"}, set()),
     ("missing_baseline", set(), BASELINE_CHECKS),
     ("empty_baseline", set(), BASELINE_CHECKS),
@@ -158,12 +159,21 @@ def test_every_check_requires_all_its_inputs(
     elif condition in {"unexecuted", "analysis_failure"}:
         completed = [set()]
         audit.connection_status = "failed"
-    elif condition in {"description_truncated", "agent_text_incomplete", "targeted_warning"}:
+    elif condition in {
+        "description_truncated",
+        "agent_text_incomplete",
+        "permission_schema_incomplete",
+        "targeted_warning",
+    }:
         warnings = [
             ScanWarning(
                 code=condition,
                 message="fixture warning",
-                check=check if condition == "targeted_warning" else None,
+                check=check
+                if condition == "targeted_warning"
+                else "permission_analysis"
+                if condition == "permission_schema_incomplete"
+                else None,
                 servers=[audit.server.name],
             )
         ]

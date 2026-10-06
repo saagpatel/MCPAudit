@@ -139,6 +139,7 @@ class EscalationAnalyzer:
         current_tools: list[ToolInfo],
         *,
         uncovered_annotations: set[str] | None = None,
+        incomplete_reasons: list[str] | None = None,
     ) -> list[EscalationFinding]:
         """Return escalation findings for one server.
 
@@ -164,7 +165,9 @@ class EscalationAnalyzer:
                 tool = tool.model_copy(update={"annotations": None})
             else:
                 findings.extend(self._annotation_finding(server_name, baseline, tool))
-            findings.extend(self._capability_finding(server_name, baseline, tool))
+            findings.extend(
+                self._capability_finding(server_name, baseline, tool, incomplete_reasons=incomplete_reasons)
+            )
             findings.extend(self._injection_finding(server_name, baseline, tool))
 
         return findings
@@ -206,10 +209,19 @@ class EscalationAnalyzer:
         ]
 
     def _capability_finding(
-        self, server_name: str, baseline: ToolInfo, current: ToolInfo
+        self,
+        server_name: str,
+        baseline: ToolInfo,
+        current: ToolInfo,
+        *,
+        incomplete_reasons: list[str] | None = None,
     ) -> list[EscalationFinding]:
-        old_caps = {f.category for f in self._analyzer.analyze_tool(baseline)}
-        new_caps = {f.category for f in self._analyzer.analyze_tool(current)}
+        old_caps = {
+            f.category for f in self._analyzer.analyze_tool(baseline, incomplete_reasons=incomplete_reasons)
+        }
+        new_caps = {
+            f.category for f in self._analyzer.analyze_tool(current, incomplete_reasons=incomplete_reasons)
+        }
         gained = (new_caps - old_caps) & _DANGEROUS_CATEGORIES
         if not gained:
             return []

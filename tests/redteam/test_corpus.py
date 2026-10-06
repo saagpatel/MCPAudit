@@ -21,7 +21,6 @@ CORPUS_PATH = HERE / "corpus.json"
 CORPUS = cast(list[dict[str, object]], json.loads(CORPUS_PATH.read_text())["cases"])
 
 _GAP_REASONS = {
-    "escalation-nested-schema": "gap 22: fixed by P1-12",
     "gate-on-client-name": "gap 12: fixed by P2-7",
     "split-across-tools-fields": "gap 3: unplanned cross-field detection",
 }
@@ -214,6 +213,15 @@ async def test_detector_gap_corpus(
                 and detector["category"] in {category.value for category in f.gained_categories}
                 for f in audit.escalation_findings
             )
+            if case["id"] == "escalation-nested-schema":
+                assert any(
+                    f.tool_name == "status"
+                    and f.rule_id == "MCP018"
+                    and f.severity.value == "high"
+                    and {category.value for category in f.gained_categories}
+                    == {"exfiltration", "shell_execution"}
+                    for f in audit.escalation_findings
+                )
         elif kind == "escalation_injection":
             assert any(
                 f.tool_name == detector["tool"] and f.kind.value == "description_injection"
