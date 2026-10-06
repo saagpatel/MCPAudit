@@ -9,8 +9,10 @@ from mcp_audit.discovery.cursor import CursorDiscoverer
 from mcp_audit.discovery.vscode import VSCodeDiscoverer
 from mcp_audit.discovery.windsurf import WindsurfDiscoverer
 from mcp_audit.models import ClientType, ServerConfig
+from mcp_audit.terminal_text import TerminalSafeLogFilter
 
 logger = logging.getLogger(__name__)
+logger.addFilter(TerminalSafeLogFilter())
 
 _DISCOVERERS: dict[ClientType, type[ConfigDiscoverer]] = {
     ClientType.CLAUDE_CODE: ClaudeCodeDiscoverer,

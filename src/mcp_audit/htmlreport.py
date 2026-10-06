@@ -20,6 +20,7 @@ from typing import Any
 from mcp_audit.models import AuditReport, ServerAudit
 from mcp_audit.redaction import redact_data
 from mcp_audit.taxonomy import format_rule_of_two
+from mcp_audit.terminal_text import strip_controls
 
 _SEVERITY_CLASS = {
     "high": "sev-high",
@@ -453,4 +454,4 @@ class HtmlReportGenerator:
         return "; ".join(f"{srv}/{tool}" for srv, tool in pairs)
 
     def _esc(self, value: str) -> str:
-        return escape(value, quote=True)
+        return escape(strip_controls(value), quote=True)

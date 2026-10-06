@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 import anyio
 import click
 from rich.console import Console
+from rich.text import Text
 
 from mcp_audit.agent_ui_cli import agent_ui
 from mcp_audit.authorization_posture_cli import authorization_posture
@@ -43,6 +44,7 @@ from mcp_audit.result_parcel_cli import result_parcel
 from mcp_audit.session_resume_cli import session_resume
 from mcp_audit.skillscan_cli import skillscan
 from mcp_audit.task_time_machine_cli import task_time_machine
+from mcp_audit.terminal_text import TerminalSafeLogFilter, strip_controls, terminal_safe
 
 console = Console()
 _MAX_SAFEFORGE_SCHEMA_BYTES = 1_048_576
@@ -56,6 +58,8 @@ def main(debug: bool) -> None:
     """MCP Permission Auditor — scan and risk-score locally configured MCP servers."""
     if debug:
         logging.basicConfig(level=logging.DEBUG)
+        for handler in logging.getLogger().handlers:
+            handler.addFilter(TerminalSafeLogFilter())
 
 
 main.add_command(enforcement_fixture)
@@ -224,7 +228,9 @@ def discover(client_filter: str | None, verbose: bool) -> None:
             clients = [ClientType(client_filter)]
         except ValueError:
             valid = ", ".join(c.value for c in ClientType)
-            error_console.print(f"[red]Unknown client '{client_filter}'. Valid values: {valid}[/red]")
+            error_console.print(
+                terminal_safe(f"Unknown client '{client_filter}'. Valid values: {valid}"), style="red"
+            )
             raise SystemExit(1) from None
 
     parse_errors: list[ConfigParseError] = []
@@ -247,12 +253,12 @@ def discover(client_filter: str | None, verbose: bool) -> None:
 
     for s in servers:
         scope = "global" if s.project_path is None else _truncate(s.project_path, 30)
-        command_or_url = s.url or s.command or "—"
+        command_or_url = terminal_safe(s.url or s.command or "—")
         if s.args and not verbose:
-            command_or_url = f"{command_or_url} [dim](+{len(s.args)} args)[/dim]"
+            command_or_url.append(f" (+{len(s.args)} args)", style="dim")
         elif s.args and verbose:
             args_str = " ".join(s.args)
-            command_or_url = f"{command_or_url} {_truncate(args_str, 40)}"
+            command_or_url.append(terminal_safe(f" {_truncate(args_str, 40)}"))
 
         cred_parts: list[str] = []
         if s.env_keys:
@@ -268,12 +274,12 @@ def discover(client_filter: str | None, verbose: bool) -> None:
         cred_str = "; ".join(cred_parts) if cred_parts else "none"
 
         table.add_row(
-            s.name,
-            s.client.value,
-            scope,
-            s.transport.value,
+            terminal_safe(s.name),
+            terminal_safe(s.client.value),
+            terminal_safe(scope),
+            terminal_safe(s.transport.value),
             command_or_url,
-            cred_str,
+            terminal_safe(cred_str),
         )
 
     console.print(table)
@@ -607,7 +613,9 @@ async def _run_scan(
         try:
             policy = load_policy(Path(policy_path))
         except Exception as exc:
-            error_console.print(f"[red]Failed to load policy {policy_path}: {redact_text(str(exc))}[/red]")
+            error_console.print(
+                terminal_safe(f"Failed to load policy {policy_path}: {redact_text(str(exc))}"), style="red"
+            )
             raise SystemExit(1) from exc
 
     scan_options = ScanOptions(
@@ -649,7 +657,7 @@ async def _run_scan(
     except ValueError as exc:
         # A caller-supplied --config path that is missing or unparseable must be
         # a hard error, not a silently-empty scan that passes downstream gates.
-        raise click.ClickException(str(exc)) from exc
+        raise click.ClickException(strip_controls(str(exc))) from exc
 
     if policy is not None:
         from mcp_audit.policy import evaluate_policy
@@ -715,7 +723,7 @@ def _parse_clients(clients_str: str | None) -> list[ClientType] | None:
             result.append(ClientType(part))
         except ValueError:
             valid = ", ".join(c.value for c in ClientType)
-            error_console.print(f"[red]Unknown client '{part}'. Valid values: {valid}[/red]")
+            error_console.print(terminal_safe(f"Unknown client '{part}'. Valid values: {valid}"), style="red")
             raise SystemExit(1) from None
     return result or None
 
@@ -730,7 +738,7 @@ def _render_config_health_findings(findings: list[ConfigHealthFinding]) -> None:
 
     console.print("[yellow]Config health warnings found.[/yellow]")
     for finding in findings:
-        console.print(f"[yellow]- {finding.summary}[/yellow]")
+        console.print(terminal_safe(f"- {finding.summary}"), style="yellow")
 
 
 # Register watch, monitor, serve, pin subcommands
@@ -851,7 +859,7 @@ def pin_command(
     try:
         if clear_server:
             store.remove_server(clear_server)
-            console.print(f"[green]Removed pins for server '{clear_server}'.[/green]")
+            console.print(terminal_safe(f"Removed pins for server '{clear_server}'."), style="green")
             return
 
         if status:
@@ -883,7 +891,7 @@ def pin_command(
     except PinFileError as exc:
         # Mutations refuse to write through an unparseable pin file — wiping a
         # repairable baseline is worse than failing loudly.
-        error_console.print(f"[red]{exc}. Fix or remove the file, then re-run.[/red]")
+        error_console.print(terminal_safe(f"{exc}. Fix or remove the file, then re-run."), style="red")
         raise SystemExit(1) from exc
 
 
@@ -910,19 +918,22 @@ async def _run_pin(
         matched = True
         if audit.server.name in duplicate_names:
             if audit.server.name not in skipped_ambiguous:
-                console.print(f"[yellow]{_ambiguous_pin_message(audit.server.name)}[/yellow]")
+                console.print(terminal_safe(_ambiguous_pin_message(audit.server.name)), style="yellow")
                 skipped_ambiguous.add(audit.server.name)
             continue
         if audit.connection_status != "connected":
             console.print(
-                f"[yellow]Skipped '{audit.server.name}': connection {audit.connection_status}."
-                " Use scan --skip-connect for config-only review; pins require live tool schemas.[/yellow]"
+                terminal_safe(
+                    f"Skipped '{audit.server.name}': connection {audit.connection_status}."
+                    " Use scan --skip-connect for config-only review; pins require live tool schemas."
+                ),
+                style="yellow",
             )
             continue
         pkg_hashes = await anyio.to_thread.run_sync(verifier.capture, audit.server) if verifier else None
         art_capture = await _capture_artifacts(artifact_verifier, audit.server)
         for warning in art_capture.warnings:
-            console.print(f"[yellow]{warning}[/yellow]")
+            console.print(terminal_safe(warning), style="yellow")
         art_hashes = art_capture.hashes
         store.pin_server(
             audit.server.name,
@@ -936,10 +947,15 @@ async def _run_pin(
             suffix += f" (+{len(pkg_hashes)} registry hash(es))"
         if art_hashes:
             suffix += f" (+{len(art_hashes)} artifact byte-hash(es))"
-        console.print(f"[green]Pinned {len(audit.tools)} tool(s) for '{audit.server.name}'{suffix}.[/green]")
+        console.print(
+            terminal_safe(f"Pinned {len(audit.tools)} tool(s) for '{audit.server.name}'{suffix}."),
+            style="green",
+        )
 
     if server_name and not matched:
-        error_console.print(f"[red]Server '{server_name}' not found — nothing was pinned.[/red]")
+        error_console.print(
+            terminal_safe(f"Server '{server_name}' not found — nothing was pinned."), style="red"
+        )
         raise SystemExit(1)
 
 
@@ -1002,14 +1018,14 @@ async def _run_pin_refresh(
         if json_status:
             click.echo(_pin_refresh_json(server_name, 0, [], applied=False, error="server not found"))
             return
-        console.print(f"[yellow]Server '{server_name}' not found.[/yellow]")
+        console.print(terminal_safe(f"Server '{server_name}' not found."), style="yellow")
         return
     if len(matching_audits) > 1:
         error = _ambiguous_pin_message(server_name)
         if json_status:
             click.echo(_pin_refresh_json(server_name, 0, [], applied=False, error=error))
             return
-        console.print(f"[yellow]{error}[/yellow]")
+        console.print(terminal_safe(error), style="yellow")
         return
 
     audit = matching_audits[0]
@@ -1026,8 +1042,11 @@ async def _run_pin_refresh(
             )
             return
         console.print(
-            f"[yellow]Skipped '{audit.server.name}': connection {audit.connection_status}."
-            " Pin refresh requires live tool schemas.[/yellow]"
+            terminal_safe(
+                f"Skipped '{audit.server.name}': connection {audit.connection_status}."
+                " Pin refresh requires live tool schemas."
+            ),
+            style="yellow",
         )
         return
 
@@ -1067,7 +1086,7 @@ async def _run_pin_refresh(
         return
 
     for warning in art_capture.warnings:
-        console.print(f"[yellow]{warning}[/yellow]")
+        console.print(terminal_safe(warning), style="yellow")
 
     _render_pin_refresh_review(
         audit.server.name, len(audit.tools), findings, escalation_findings, provenance_findings
@@ -1086,7 +1105,9 @@ async def _run_pin_refresh(
         refresh_pkgs or None,
         refresh_artifacts or None,
     )
-    console.print(f"[green]Refreshed {len(audit.tools)} pin(s) for '{audit.server.name}'.[/green]")
+    console.print(
+        terminal_safe(f"Refreshed {len(audit.tools)} pin(s) for '{audit.server.name}'."), style="green"
+    )
 
 
 def _refresh_security_deltas(
@@ -1208,18 +1229,22 @@ def _render_pin_refresh_review(
     for finding in drift_findings:
         counts[finding.status] += 1
 
-    console.print(f"[bold]Pin refresh review:[/bold] {server_name} ({tool_count} current tool(s))")
+    console.print(
+        Text.assemble(
+            ("Pin refresh review:", "bold"), terminal_safe(f" {server_name} ({tool_count} current tool(s))")
+        )
+    )
     if not (drift_findings or escalation_findings or provenance_findings):
         console.print("[green]No drift found. Current tools already match the pin baseline.[/green]")
         return
 
     if drift_findings:
         console.print(
-            "[yellow]"
-            f"{counts[DriftStatus.NEW]} new, "
-            f"{counts[DriftStatus.CHANGED]} changed, "
-            f"{counts[DriftStatus.REMOVED]} removed"
-            "[/yellow]"
+            terminal_safe(
+                f"{counts[DriftStatus.NEW]} new, {counts[DriftStatus.CHANGED]} changed, "
+                f"{counts[DriftStatus.REMOVED]} removed"
+            ),
+            style="yellow",
         )
 
         table = Table(show_header=True)
@@ -1229,9 +1254,9 @@ def _render_pin_refresh_review(
 
         for finding in drift_findings:
             table.add_row(
-                finding.status.value,
-                finding.tool_name,
-                finding.summary or ", ".join(finding.details) or "Review before refreshing.",
+                terminal_safe(finding.status.value),
+                terminal_safe(finding.tool_name),
+                terminal_safe(finding.summary or ", ".join(finding.details) or "Review before refreshing."),
             )
 
         console.print(table)
@@ -1259,14 +1284,18 @@ def _render_refresh_security_section(
         return
     from rich.table import Table
 
-    console.print(f"[bold red]{heading}[/bold red] — review before refreshing the baseline:")
+    console.print(
+        Text.assemble((strip_controls(heading), "bold red"), " — review before refreshing the baseline:")
+    )
     table = Table(show_header=True)
     table.add_column("Rule", style="magenta")
     table.add_column("Severity", style="red")
     table.add_column("Target", style="cyan")
     table.add_column("What changed")
     for rule_id, severity, target, detail in rows:
-        table.add_row(rule_id, severity, target, detail)
+        table.add_row(
+            terminal_safe(rule_id), terminal_safe(severity), terminal_safe(target), terminal_safe(detail)
+        )
     console.print(table)
 
 
@@ -1298,8 +1327,10 @@ def _render_pin_status(store: object, json_status: bool) -> None:
         click.echo(json.dumps(payload, indent=2, sort_keys=True))
         return
 
-    console.print(f"[bold]Pin baseline:[/bold] {len(statuses)} server(s), {total_tools} tool(s)")
-    console.print(f"[dim]Pin file: {store.path}[/dim]")
+    console.print(
+        Text.assemble(("Pin baseline:", "bold"), f" {len(statuses)} server(s), {total_tools} tool(s)")
+    )
+    console.print(terminal_safe(f"Pin file: {store.path}"), style="dim")
 
     if not statuses:
         console.print("[dim]No servers pinned.[/dim]")
@@ -1316,11 +1347,11 @@ def _render_pin_status(store: object, json_status: bool) -> None:
 
     for status in statuses:
         table.add_row(
-            status.server_name,
-            str(status.tool_count),
-            _datetime_or_unknown(status.oldest_pinned_at),
-            _datetime_or_unknown(status.newest_pinned_at),
-            _pin_age(status.newest_pinned_at),
+            terminal_safe(status.server_name),
+            terminal_safe(str(status.tool_count)),
+            terminal_safe(_datetime_or_unknown(status.oldest_pinned_at)),
+            terminal_safe(_datetime_or_unknown(status.newest_pinned_at)),
+            terminal_safe(_pin_age(status.newest_pinned_at)),
         )
 
     console.print(table)
@@ -1358,8 +1389,12 @@ def _render_pin_stale(store: object, json_status: bool) -> None:
         click.echo(json.dumps(payload, indent=2, sort_keys=True))
         return
 
-    console.print(f"[bold]Stale pin baselines:[/bold] {len(stale)} server(s) not found in current configs")
-    console.print(f"[dim]Pin file: {store.path}[/dim]")
+    console.print(
+        Text.assemble(
+            ("Stale pin baselines:", "bold"), f" {len(stale)} server(s) not found in current configs"
+        )
+    )
+    console.print(terminal_safe(f"Pin file: {store.path}"), style="dim")
 
     if not stale:
         console.print("[green]No stale server baselines found.[/green]")
@@ -1376,11 +1411,11 @@ def _render_pin_stale(store: object, json_status: bool) -> None:
 
     for status in stale:
         table.add_row(
-            status.server_name,
-            str(status.tool_count),
-            _datetime_or_unknown(status.newest_pinned_at),
-            _pin_age(status.newest_pinned_at),
-            status.remediation,
+            terminal_safe(status.server_name),
+            terminal_safe(str(status.tool_count)),
+            terminal_safe(_datetime_or_unknown(status.newest_pinned_at)),
+            terminal_safe(_pin_age(status.newest_pinned_at)),
+            terminal_safe(status.remediation),
         )
 
     console.print(table)
@@ -1427,8 +1462,8 @@ def _render_pin_clear_stale(store: object, json_status: bool, apply_clear: bool)
         click.echo(json.dumps(payload, indent=2, sort_keys=True))
         return
 
-    console.print(f"[bold]Stale pin cleanup review:[/bold] {len(stale)} server(s) not found")
-    console.print(f"[dim]Pin file: {store.path}[/dim]")
+    console.print(Text.assemble(("Stale pin cleanup review:", "bold"), f" {len(stale)} server(s) not found"))
+    console.print(terminal_safe(f"Pin file: {store.path}"), style="dim")
 
     if not stale:
         console.print("[green]No stale server baselines found.[/green]")
@@ -1444,10 +1479,10 @@ def _render_pin_clear_stale(store: object, json_status: bool, apply_clear: bool)
 
     for status in stale:
         table.add_row(
-            status.server_name,
-            str(status.tool_count),
-            _datetime_or_unknown(status.newest_pinned_at),
-            _pin_age(status.newest_pinned_at),
+            terminal_safe(status.server_name),
+            terminal_safe(str(status.tool_count)),
+            terminal_safe(_datetime_or_unknown(status.newest_pinned_at)),
+            terminal_safe(_pin_age(status.newest_pinned_at)),
         )
 
     console.print(table)
@@ -1456,7 +1491,7 @@ def _render_pin_clear_stale(store: object, json_status: bool, apply_clear: bool)
         console.print("[yellow]Review complete; no pins were changed. Rerun with --apply to clear.[/yellow]")
         return
 
-    console.print(f"[green]Removed {len(removed_names)} stale server baseline(s).[/green]")
+    console.print(terminal_safe(f"Removed {len(removed_names)} stale server baseline(s)."), style="green")
 
 
 def _datetime_or_none(value: datetime | None) -> str | None:

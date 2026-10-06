@@ -24,8 +24,10 @@ from mcp_audit.models import (
     PermissionFinding,
     ToolInfo,
 )
+from mcp_audit.terminal_text import TerminalSafeLogFilter
 
 logger = logging.getLogger(__name__)
+logger.addFilter(TerminalSafeLogFilter())
 
 DEFAULT_MODEL = "claude-haiku-4-5-20251001"
 _BATCH_SIZE = 20
