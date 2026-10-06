@@ -8,6 +8,8 @@ import traceback
 
 from rich.text import Text
 
+from mcp_audit.normalize import render_invisibles
+
 _CONTROLS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 
 
@@ -47,7 +49,7 @@ def strip_controls(value: str) -> str:
 
 def terminal_safe(value: str) -> Text:
     """Return text that Rich will display literally, never as markup."""
-    return Text(strip_controls(value))
+    return Text(render_invisibles(strip_controls(value)))
 
 
 class TerminalSafeLogFilter(logging.Filter):

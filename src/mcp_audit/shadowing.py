@@ -32,6 +32,7 @@ import re
 from collections import defaultdict
 
 from mcp_audit.models import ServerAudit, ShadowingFinding, ShadowingKind, ShadowingSeverity
+from mcp_audit.normalize import normalize_text
 
 # ---------------------------------------------------------------------------
 # Normalisation helpers
@@ -42,55 +43,12 @@ _SEPARATOR_RE = re.compile(r"[_\-\s]+")
 
 def _normalise(name: str) -> str:
     """Lowercase + strip separators (_  -  whitespace) so read_file == readFile == read-file."""
-    return _SEPARATOR_RE.sub("", name.lower())
-
-
-# ---------------------------------------------------------------------------
-# Homoglyph / confusable-codepoint map
-#
-# A curated set of the most-common non-ASCII confusables mapped to their
-# ASCII equivalents.  Kept small and documented; no external dependency.
-#
-# Sources: Unicode Confusables (tr39) subset — Cyrillic + Greek lookalikes that
-# appear most frequently in published homoglyph-based phishing and toolname
-# spoofing demos.
-# ---------------------------------------------------------------------------
-
-_CONFUSABLE_MAP: dict[str, str] = {
-    # Cyrillic → ASCII
-    "а": "a",  # а → a
-    "е": "e",  # е → e
-    "о": "o",  # о → o
-    "р": "p",  # р → p
-    "с": "c",  # с → c
-    "х": "x",  # х → x
-    "і": "i",  # і → i
-    "у": "y",  # у → y
-    # Greek → ASCII
-    "ο": "o",  # ο → o
-    "α": "a",  # α → a
-    "ε": "e",  # ε → e
-    "ρ": "p",  # ρ → p
-    "ν": "v",  # ν → v
-    # Latin lookalikes
-    "à": "a",  # à → a
-    "á": "a",  # á → a
-    "è": "e",  # è → e
-    "é": "e",  # é → e
-    "ó": "o",  # ó → o
-    "ö": "o",  # ö → o
-    "ü": "u",  # ü → u
-    "í": "i",  # í → i
-}
+    return _SEPARATOR_RE.sub("", normalize_text(name).lower())
 
 
 def _skeleton(name: str) -> str:
-    """Replace confusable codepoints with their ASCII equivalent, then lowercase.
-
-    Only applied to the original bytes (not after normalisation) so separators
-    are preserved for skeleton comparison.
-    """
-    return "".join(_CONFUSABLE_MAP.get(ch, ch) for ch in name).lower()
+    """Shared Unicode normalization with separators preserved for comparison."""
+    return normalize_text(name).lower()
 
 
 def _is_ascii(name: str) -> bool:
@@ -168,6 +126,10 @@ class ShadowingAnalyzer:
             # even when a byte-identical subset already fired an EXACT finding.
             if len({tool for _, tool in collisions}) < 2:
                 continue
+            # Unicode lookalikes retain the HIGH homoglyph tier; sharing a
+            # normalizer must not downgrade existing confusable collisions.
+            if any(normalize_text(tool).lower() != tool.lower() for _, tool in collisions):
+                continue
             # Canonical name = first raw name encountered (first-configured server wins)
             canonical = collisions[0][1]
             findings.append(
@@ -186,7 +148,7 @@ class ShadowingAnalyzer:
         skel_index: dict[str, list[tuple[str, str]]] = defaultdict(list)
         for server_name, tools in server_tools:
             for tool in tools:
-                skel_index[_skeleton(tool)].append((server_name, tool))
+                skel_index[_SEPARATOR_RE.sub("", _skeleton(tool))].append((server_name, tool))
 
         # Track which (server_name, tool_name) pairs we've already reported in
         # exact/normalised so homoglyph doesn't double-report.

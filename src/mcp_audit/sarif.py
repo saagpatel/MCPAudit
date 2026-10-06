@@ -48,6 +48,7 @@ from mcp_audit.models import (
     TrifectaFinding,
     TrifectaSeverity,
 )
+from mcp_audit.normalize import render_invisibles
 from mcp_audit.taxonomy import (
     ANNOTATION_CONTRADICTION,
     ARTIFACT_VERIFY_FINDINGS,
@@ -546,6 +547,10 @@ class SarifGenerator:
             results.extend(
                 self._make_config_health_result(finding) for finding in report.config_health_findings
             )
+        for result in results:
+            message = result.get("message")
+            if isinstance(message, dict) and isinstance(message.get("text"), str):
+                message["text"] = render_invisibles(message["text"])
         return results
 
     def _make_config_health_result(self, finding: ConfigHealthFinding) -> dict[str, Any]:

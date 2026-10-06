@@ -21,12 +21,6 @@ CORPUS_PATH = HERE / "corpus.json"
 CORPUS = cast(list[dict[str, object]], json.loads(CORPUS_PATH.read_text())["cases"])
 
 _GAP_REASONS = {
-    "unicode-tag-block": "gap 4: fixed by P1-5",
-    "homoglyph-instructions": "gap 5: fixed by P1-5",
-    "shadow-fullwidth-zerowidth": "gap 11: fixed by P1-5",
-    "result-unicode-tags": "gap 18: fixed by P1-5",
-    "result-homoglyph": "gap 19: fixed by P1-5",
-    "escalation-homoglyph-desc": "gap 23: fixed by P1-5",
     "base64-encoded-payload": "gap 6: fixed by P1-6",
     "escalation-nested-schema": "gap 22: fixed by P1-12",
     "gate-on-client-name": "gap 12: fixed by P2-7",
