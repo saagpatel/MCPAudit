@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Nightly and on-demand CI retains wall/RSS/process measurements; cumulative
   target profiles support the planned detector and transport fixes. Document
   connected-scan threats and the baseline's known orphan allowance.
+  Require both server records and the child record for orphan-cleanup coverage,
+  and analyzer invocation/tool coverage plus expected description findings.
 
 ### Fixed
 

@@ -49,7 +49,7 @@ uv run --offline --no-sync pytest tests/test_hostile_perf.py -m perf -q -s \
 
 Use a fresh output directory each time. Each case saves wall seconds, scanner
 peak RSS in bytes, permission-analysis seconds, connection/tool counts, status
-and failure reasons, recorded-process counts, leftover processes and groups,
+and failure reasons, recorded-process counts and ledger roles, leftover processes and groups,
 and exit/deadline state. The 500-server case also records a separate timeout-2
 run. RSS is the scanner process high-water mark, not aggregate fixture memory.
 Wall time includes scanner interpreter startup and report rendering; the 5 MB
@@ -57,6 +57,9 @@ target measures permission analysis only. Post-scan process observation has a
 0.5-second grace, matching the original stress runner. A missing measurement,
 nonzero scanner exit, wrong tool count, or regression fails the test. A separate
 hard deadline bounds the runner even if the scanner stalls outside its timeout.
+Description cases also require analyzer invocation and tool-count coverage, plus
+the expected per-tool `file_read` findings. The orphan case requires ledger
+records for both servers and the child before accepting its cleanup measurement.
 
 The approved Phase 0 acceptance is the **baseline** profile. The limits come
 from the published 2.8.0 stress run (14-core macOS, 48 GB RAM); they are absolute
