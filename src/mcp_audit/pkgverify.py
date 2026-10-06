@@ -59,8 +59,10 @@ from mcp_audit.models import (
     PackageVerifySeverity,
     ServerConfig,
 )
+from mcp_audit.terminal_text import TerminalSafeLogFilter
 
 logger = logging.getLogger(__name__)
+logger.addFilter(TerminalSafeLogFilter())
 
 _TIMEOUT = 10
 _USER_AGENT = "mcp-audit (+https://github.com/saagpatel/MCPAudit)"

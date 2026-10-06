@@ -46,6 +46,7 @@ from mcp_audit.models import (
 from mcp_audit.overrides import OverrideApplier, OverrideConfig
 from mcp_audit.redaction import redact_text
 from mcp_audit.scorer import RiskScorer
+from mcp_audit.terminal_text import terminal_safe
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,7 +122,7 @@ async def run_scan(
 
     def warn(code: str, message: str, *, check: str | None = None, servers: list[str] | None = None) -> None:
         scan_warnings.append(ScanWarning(code=code, message=message, check=check, servers=servers or []))
-        out.print(f"[yellow]{message}[/yellow]")
+        out.print(terminal_safe(message), style="yellow")
 
     start = time.monotonic()
 
@@ -576,8 +577,11 @@ async def run_scan(
             ssrf_suppressed += dropped
     if ssrf_suppressed:
         out.print(
-            f"[dim]--ssrf-allowlist: suppressed {ssrf_suppressed} SSRF finding(s) "
-            "with an allowlisted fixed target host.[/dim]"
+            terminal_safe(
+                f"--ssrf-allowlist: suppressed {ssrf_suppressed} SSRF finding(s) "
+                "with an allowlisted fixed target host."
+            ),
+            style="dim",
         )
 
     # Fleet-level trifecta pass — runs once after all servers are audited

@@ -3,6 +3,12 @@
 MCPAudit reports are designed for local review and CI ingestion. Keep this
 contract stable unless a release note calls out a breaking change.
 
+Human-facing terminal text displays untrusted Rich markup literally and removes
+ESC-led sequences and C0/C1 controls, except tabs and newlines. HTML text removes
+the same controls before HTML escaping. Stdio server stderr is captured in a
+bounded 4 KiB tail; debug logging emits the sanitized, redacted tail once after
+the session ends. JSON and SARIF data, fields, and schema versions are unchanged.
+
 For stable `2.x`, compatible minor and patch releases may add optional JSON
 fields. Consumers should ignore unknown fields and should not fail when optional
 fields are present. Existing stable fields should only be removed or renamed

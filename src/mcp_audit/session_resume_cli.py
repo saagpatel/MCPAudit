@@ -10,6 +10,7 @@ import click
 from pydantic import BaseModel
 from rich.console import Console
 from rich.table import Table
+from rich.text import Text
 
 from mcp_audit.session_resume_lab import (
     SessionResumeInputError,
@@ -25,6 +26,7 @@ from mcp_audit.session_resume_models import (
     SessionResumeSuiteReport,
     SessionResumeTranscript,
 )
+from mcp_audit.terminal_text import strip_controls, terminal_safe
 
 console = Console()
 
@@ -63,7 +65,11 @@ def list_command(json_output: bool) -> None:
     table.add_column("Protocol", style="magenta")
     table.add_column("Purpose")
     for item in scenarios.values():
-        table.add_row(item.scenario_id, item.protocol_version.value, item.title)
+        table.add_row(
+            terminal_safe(item.scenario_id),
+            terminal_safe(item.protocol_version.value),
+            terminal_safe(item.title),
+        )
     console.print(table)
 
 
@@ -125,13 +131,23 @@ def schema_command(contract: str) -> None:
 
 
 def _render_report(report: SessionResumeReport) -> None:
-    console.print(f"[bold]{report.scenario_id}[/bold] — protocol {report.protocol_version.value}")
     console.print(
-        f"Verdict: [bold]{report.verdict.upper()}[/bold] | "
-        f"at-most-once={report.safety.at_most_once.value} | "
-        f"at-least-once={report.safety.at_least_once.value} | "
-        f"duplicate-risk={report.safety.duplicate_risk.value} | "
-        f"lost-result-risk={report.safety.lost_result_risk.value}"
+        Text.assemble(
+            (strip_controls(report.scenario_id), "bold"),
+            f" — protocol {report.protocol_version.value}",
+        )
+    )
+    console.print(
+        Text.assemble(
+            "Verdict: ",
+            (strip_controls(report.verdict.upper()), "bold"),
+            terminal_safe(
+                f" | at-most-once={report.safety.at_most_once.value} | "
+                f"at-least-once={report.safety.at_least_once.value} | "
+                f"duplicate-risk={report.safety.duplicate_risk.value} | "
+                f"lost-result-risk={report.safety.lost_result_risk.value}"
+            ),
+        )
     )
     table = Table(title=f"Findings ({len(report.findings)})")
     table.add_column("Rule", no_wrap=True)
@@ -140,15 +156,17 @@ def _render_report(report: SessionResumeReport) -> None:
     table.add_column("Remediation")
     for finding in report.findings:
         table.add_row(
-            finding.rule_id,
-            finding.severity.value,
-            finding.title,
-            finding.remediation,
+            terminal_safe(finding.rule_id),
+            terminal_safe(finding.severity.value),
+            terminal_safe(finding.title),
+            terminal_safe(finding.remediation),
         )
     console.print(table)
     console.print(
-        f"Transcript events: {len(report.transcript.entries)} | "
-        "Claim ceiling: local modeled observations only; exactly-once unproven."
+        terminal_safe(
+            f"Transcript events: {len(report.transcript.entries)} | "
+            "Claim ceiling: local modeled observations only; exactly-once unproven."
+        )
     )
 
 
@@ -161,14 +179,16 @@ def _render_suite(report: SessionResumeSuiteReport) -> None:
     table.add_column("Findings", justify="right")
     for item in report.reports:
         table.add_row(
-            item.scenario_id,
-            item.protocol_version.value,
-            item.verdict,
-            ", ".join(value.value for value in item.safety.classifications),
-            str(len(item.findings)),
+            terminal_safe(item.scenario_id),
+            terminal_safe(item.protocol_version.value),
+            terminal_safe(item.verdict),
+            terminal_safe(", ".join(value.value for value in item.safety.classifications)),
+            terminal_safe(str(len(item.findings))),
         )
     console.print(table)
     console.print(
-        f"Scenarios: {report.scenario_count} | risk={report.risk_count} | "
-        f"unknown={report.unknown_count} | exactly-once unproven"
+        terminal_safe(
+            f"Scenarios: {report.scenario_count} | risk={report.risk_count} | "
+            f"unknown={report.unknown_count} | exactly-once unproven"
+        )
     )
