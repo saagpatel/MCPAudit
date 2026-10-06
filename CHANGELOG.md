@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Discard the leading partial record from truncated tails so truncation cannot
   remove credential prefixes and bypass redaction.
 
+### Changed
+
+- Put the zero-touch scan first in the README quick start and describe
+  instruction-shaped text checks as pattern-based heuristics.
+
 ## [2.8.0] - 2026-10-06
 
 ### Added
