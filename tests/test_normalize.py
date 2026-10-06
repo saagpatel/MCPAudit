@@ -156,3 +156,9 @@ def test_reports_display_invisibles_and_json_retains_source_metadata() -> None:
         assert "‹U+E0020›" in result["message"]["text"]
         assert "\U000e0020" not in result["message"]["text"]
         assert result["properties"]["target_name"] == tool.name
+
+
+def test_normalize_text_is_identity_on_ascii() -> None:
+    # redaction skips its normalization re-check for ASCII text on this basis.
+    ascii_text = "".join(chr(code) for code in range(128))
+    assert normalize_text(ascii_text) == ascii_text

@@ -188,8 +188,11 @@ def redact_text(value: str) -> str:
 def _normalization_exposes_secret(redacted: str) -> bool:
     from mcp_audit.normalize import normalize_text
 
+    # normalize_text is the identity on ASCII (test_normalize_text_is_identity_on_ascii).
+    if redacted.isascii():
+        return False
     normalized = normalize_text(redacted)
-    return _redact_text(normalized) != normalized
+    return normalized != redacted and _redact_text(normalized) != normalized
 
 
 def redacted_excerpt(
