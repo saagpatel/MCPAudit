@@ -465,6 +465,19 @@ transports, shell-wrapper launches, remote endpoints, remote URL arguments,
 missing local command paths, project/global server-name conflicts, conflicting
 server definitions, package-runner source review, and credential-heavy configs.
 These findings do not affect `risk_score.composite`.
+Config decoding also emits HIGH `config_parse_failure` for discovered files
+that are unreadable, non-regular, invalid, or contain wrong-typed server maps;
+HIGH `malformed_server_entry` for rejected individual entries (with
+`server_name` when available); and HIGH `duplicate_config_key` when object
+keys repeat at any depth. Duplicate-key details give the count and explain
+that the last values are retained; earlier definitions were not audited.
+Valid sibling entries remain in the scan when individual entries are malformed.
+Diagnostics never include entry values or parser source excerpts.
+Explicit `--config` files with no supported server map, empty text, invalid
+encoding, or other read/parse failures are hard errors. Supported layouts are
+`mcpServers`, `servers`, `mcp.servers`, and `projects.*.mcpServers`.
+An empty supported map is a valid zero-server scan. These diagnostics use the
+existing finding fields; `schema_version` is unchanged.
 Policies may opt in to failing on this signal with `fail_on.config_health`; the
 default broad `fail_on.severity` shortcut does not include config-health
 findings, so existing policy files keep their previous behavior.

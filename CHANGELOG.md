@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Recognize VS Code server maps in explicit configs and parse both VS Code
+  files as JSONC. Report malformed entries and duplicate keys, reject
+  non-regular config paths before reading, accept UTF-8 BOMs, and distinguish
+  empty server maps from empty, unsupported, and unreadable config files.
 - Share MCP server entry parsing across the five config discoverers so Cursor,
   Windsurf, and Claude Desktop recognize HTTP and deprecated SSE transports
   while retaining header key names only.

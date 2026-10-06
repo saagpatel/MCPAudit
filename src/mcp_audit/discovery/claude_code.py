@@ -1,12 +1,11 @@
 """Claude Code MCP config discoverer (~/.claude.json)."""
 
-import json
 import logging
 from pathlib import Path
-from typing import Any
 
-from mcp_audit.discovery._entry import parse_server_entry
-from mcp_audit.discovery.base import ConfigDiscoverer, ConfigParseError, is_project_config
+from mcp_audit.discovery._config import read_config
+from mcp_audit.discovery._entry import parse_server_map
+from mcp_audit.discovery.base import ConfigDiscoverer, ConfigParseError
 from mcp_audit.models import ClientType, ServerConfig
 from mcp_audit.terminal_text import TerminalSafeLogFilter
 
@@ -14,62 +13,48 @@ logger = logging.getLogger(__name__)
 logger.addFilter(TerminalSafeLogFilter())
 
 
-def _extract_servers(
-    mcp_servers: Any,
+def parse_mapping(
+    data: object,
     config_path: str,
-    project_path: str | None,
+    parse_errors: list[ConfigParseError] | None = None,
+    *,
+    sniff_format: bool = False,
 ) -> list[ServerConfig]:
-    """Extract ServerConfig list from a mcpServers dict."""
-    if not isinstance(mcp_servers, dict):
-        return []
-    results: list[ServerConfig] = []
-    for name, entry in mcp_servers.items():
-        if not isinstance(entry, dict):
-            continue
-        try:
-            results.append(
-                parse_server_entry(
-                    name,
-                    entry,
-                    config_path,
-                    ClientType.CLAUDE_CODE,
-                    project_path,
-                    scope="project"
-                    if project_path is not None or is_project_config(Path(config_path))
-                    else "workstation",
-                )
-            )
-        except Exception:
-            logger.debug("Failed to parse server %r in %s", name, config_path)
-    return results
-
-
-def parse_mapping(data: Any, config_path: str) -> list[ServerConfig]:
-    """Extract ServerConfigs from an already-parsed config mapping.
-
-    Shared by file-based discovery (``ClaudeCodeDiscoverer.parse``) and the
-    in-memory ``mcp_audit.api`` entrypoint, so both honor identical config-format
-    handling: a top-level ``mcpServers`` map plus per-project
-    ``projects.*.mcpServers``. Returns an empty list for any non-mapping input.
-    """
+    """Extract global and project maps; explicit configs also accept VS Code layouts."""
     if not isinstance(data, dict):
         return []
-
     results: list[ServerConfig] = []
-
-    # Global mcpServers (top-level)
-    global_servers = data.get("mcpServers")
-    results.extend(_extract_servers(global_servers, config_path, None))
-
-    # Per-project mcpServers
-    projects = data.get("projects") or {}
-    if isinstance(projects, dict):
+    found = False
+    client = ClientType.CLAUDE_CODE
+    for key in ("mcpServers", "servers") if sniff_format else ("mcpServers",):
+        if key in data:
+            found = True
+            results.extend(parse_server_map(data[key], config_path, client, parse_errors))
+    if sniff_format and "mcp" in data:
+        section = data["mcp"]
+        if not isinstance(section, dict):
+            raise ConfigParseError(config_path, client, "mcp section is not an object")
+        if "servers" in section:
+            found = True
+            results.extend(parse_server_map(section["servers"], config_path, client, parse_errors))
+    if "projects" in data:
+        found = True
+        projects = data["projects"]
+        if not isinstance(projects, dict):
+            raise ConfigParseError(config_path, client, "projects map is not an object")
         for project_path, project_data in projects.items():
             if not isinstance(project_data, dict):
-                continue
-            project_servers = project_data.get("mcpServers")
-            results.extend(_extract_servers(project_servers, config_path, str(project_path)))
-
+                raise ConfigParseError(config_path, client, "project entry is not an object")
+            if "mcpServers" in project_data:
+                results.extend(
+                    parse_server_map(
+                        project_data["mcpServers"], config_path, client, parse_errors, str(project_path)
+                    )
+                )
+    if sniff_format and not found:
+        raise ConfigParseError(
+            config_path, client, f"no server map found in {config_path} (unsupported client config format)"
+        )
     return results
 
 
@@ -83,20 +68,6 @@ class ClaudeCodeDiscoverer(ConfigDiscoverer):
         # repo-local configs are audited in CI and pre-commit runs.
         return [Path.home() / ".claude.json", Path.cwd() / ".mcp.json"]
 
-    def parse(self, path: Path) -> list[ServerConfig]:
-        config_path = str(path)
-        try:
-            data: Any = json.loads(path.read_text(encoding="utf-8"))
-        except Exception as exc:
-            raise ConfigParseError(
-                config_path, ClientType.CLAUDE_CODE, f"{type(exc).__name__}: {exc}"
-            ) from exc
-
-        if not isinstance(data, dict):
-            raise ConfigParseError(
-                config_path, ClientType.CLAUDE_CODE, "top-level structure is not an object"
-            )
-
-        results = parse_mapping(data, config_path)
-        logger.debug("Claude Code: found %d servers in %s", len(results), config_path)
-        return results
+    def parse(self, path: Path, parse_errors: list[ConfigParseError] | None = None) -> list[ServerConfig]:
+        data = read_config(path, ClientType.CLAUDE_CODE, parse_errors)
+        return parse_mapping(data, str(path), parse_errors)

@@ -1,0 +1,1 @@
+{"mcpServers": {"broken": {"command": ["a", "b"]}, "scalar": false, "healthy": {"command": "echo"}}}

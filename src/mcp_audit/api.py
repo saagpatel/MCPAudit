@@ -13,12 +13,12 @@ declared configuration is inferred — the same conservative static analysis as
 from __future__ import annotations
 
 import asyncio
-import json
 from functools import partial
 from typing import Any
 
 import anyio
 
+from mcp_audit.discovery.base import ConfigParseError
 from mcp_audit.models import AuditReport, ServerConfig
 
 # Synthetic ``config_path`` for pasted, file-less configs. Surfaces in findings
@@ -30,27 +30,28 @@ def parse_config(
     config: dict[str, Any] | str | bytes,
     *,
     source: str = _PASTED_SOURCE,
+    parse_errors: list[ConfigParseError] | None = None,
 ) -> list[ServerConfig]:
     """Parse an in-memory MCP client config into :class:`ServerConfig` objects.
 
     Accepts a parsed mapping or raw JSON text/bytes. Performs no filesystem
     access and spawns nothing. Reuses the discovery layer's format handling
-    (top-level ``mcpServers`` plus per-project ``projects.*.mcpServers``) so the
+    (``mcpServers``, ``servers``, ``mcp.servers``, and ``projects.*.mcpServers``) so the
     result matches a file-based scan of the same config exactly.
 
     Raises:
-        ValueError: if the input is not valid JSON or not a JSON object.
+        ValueError: if the input is invalid or has no supported server map.
     """
     if isinstance(config, (bytes, bytearray)):
-        config = config.decode("utf-8")
+        config = config.decode("utf-8-sig")
     if isinstance(config, str):
         try:
-            data: Any = json.loads(config)
-        except (json.JSONDecodeError, RecursionError) as exc:
-            # RecursionError (a RuntimeError, not a ValueError) is reachable on
-            # adversarially deep nesting; normalize it to the documented contract
-            # so an untrusted-input caller only ever has to handle ValueError.
-            raise ValueError(f"config is not valid JSON: {exc}") from exc
+            from mcp_audit.discovery._config import decode_config
+            from mcp_audit.models import ClientType
+
+            data: object = decode_config(config, source, ClientType.CLAUDE_CODE, parse_errors, jsonc=True)
+        except ConfigParseError as exc:
+            raise ValueError(exc.reason) from exc
     else:
         data = config
 
@@ -61,7 +62,10 @@ def parse_config(
     # need the parse/scan entrypoints.
     from mcp_audit.discovery.claude_code import parse_mapping
 
-    return parse_mapping(data, source)
+    try:
+        return parse_mapping(data, source, parse_errors, sniff_format=True)
+    except ConfigParseError as exc:
+        raise ValueError(exc.reason) from exc
 
 
 async def scan_config_only(
@@ -76,13 +80,17 @@ async def scan_config_only(
     declared configuration only. No server process is launched and no network
     request is made.
     """
+    from mcp_audit.confighealth import config_health_findings
     from mcp_audit.engine import ScanOptions, run_scan
 
-    servers = parse_config(config, source=source)
-    return await run_scan(
+    parse_errors: list[ConfigParseError] = []
+    servers = parse_config(config, source=source, parse_errors=parse_errors)
+    report = await run_scan(
         ScanOptions(skip_connect=True, config_only=True),
         servers=servers,
     )
+    report.config_health_findings[0:0] = config_health_findings([], parse_errors)
+    return report
 
 
 def scan_config_only_dict(

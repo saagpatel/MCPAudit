@@ -238,7 +238,11 @@ def discover(client_filter: str | None, verbose: bool) -> None:
 
     if not servers:
         _render_config_health_findings(config_health_findings(servers, parse_errors))
-        console.print("[yellow]No MCP servers found.[/yellow]")
+        console.print(
+            "[yellow]No MCP servers found. See config diagnostics above for incomplete coverage.[/yellow]"
+            if parse_errors
+            else "[yellow]No MCP servers found. Configs are absent or server maps are empty.[/yellow]"
+        )
         return
 
     from rich.table import Table
@@ -702,7 +706,15 @@ async def _run_scan(
         # No servers discovered. Fall through so any requested report files are
         # still written — CI consumers (e.g. SARIF upload) always need an
         # artifact to ingest, even when the scan is empty.
-        console.print("[yellow]No MCP servers found.[/yellow]")
+        console.print(
+            "[yellow]No MCP servers found. See config diagnostics above for incomplete coverage.[/yellow]"
+            if report.config_health_findings
+            else (
+                "[yellow]No MCP servers found. Configured server maps are empty.[/yellow]"
+                if config_only
+                else "[yellow]No MCP servers found. Configs are absent or server maps are empty.[/yellow]"
+            )
+        )
 
     # Field-report mode scrubs host/username identifiers from shared artifacts.
     # Terminal output keeps real values for local readability.

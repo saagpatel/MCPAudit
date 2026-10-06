@@ -1,0 +1,6 @@
+{
+  // VS Code stores comments and trailing commas in both file layouts.
+  "servers": {
+    "jsonc": {"command": "echo",},
+  },
+}
