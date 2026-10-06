@@ -31,6 +31,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   keywords. Preserve matched field paths and report incomplete text coverage.
 - Retain prompt argument descriptions and required flags in additive metadata,
   scan their text, and name required arguments in canary skip warnings.
+- Normalize permission-detector fields once and scan category keywords with
+  overlapping matches that preserve scores and evidence order. Bound detector
+  text to 256 KiB per field and report `description_truncated` coverage warnings.
+- Tokenize SSRF identifiers in linear time and bound fetch-verb text inspection.
+- Limit simultaneous server sessions to 32 by default, configurable with
+  `--max-concurrency`; clarify that `--timeout` is a per-session budget and
+  excludes time waiting for a connection slot.
 
 ## [2.8.1] - 2026-10-06
 

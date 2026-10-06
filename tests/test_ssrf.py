@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+from time import perf_counter
+
 from pytest import MonkeyPatch, mark
 
 import mcp_audit.ssrf as ssrf_module
@@ -18,6 +21,53 @@ from mcp_audit.ssrf import (
     host_in_allowlist,
     parse_host_allowlist,
 )
+from mcp_audit.text_limits import MAX_FIELD_BYTES
+
+
+def test_word_tokenizer_matches_previous_camel_and_acronym_semantics() -> None:
+    camel_boundary = re.compile(r"([a-z0-9])([A-Z])")
+    acronym_boundary = re.compile(r"([A-Z]+)([A-Z][a-z])")
+    word_re = re.compile(r"[a-z0-9]+")
+    samples = (
+        "callbackUrl",
+        "targetURL",
+        "XMLHttpRequest2URL",
+        "fooBARBaz",
+        "HTTPServer",
+        "IPv6Address",
+        "get_http_status",
+        "punctuation://callback-URL_v2",
+        "AAbc ABCd ABc",
+        "déjàVu",
+    )
+
+    for sample in samples:
+        previous = acronym_boundary.sub(r"\1_\2", camel_boundary.sub(r"\1_\2", sample))
+        assert ssrf_module._word_tokens(sample) == word_re.findall(previous.lower())
+
+
+def test_fetch_verb_is_limited_to_first_256_kibibytes_per_text() -> None:
+    cap = MAX_FIELD_BYTES
+    assert ssrf_module._has_fetch_verb("x" * (cap - len("fetch") - 1) + " fetch")
+    assert not ssrf_module._has_fetch_verb("x" * cap + " fetch")
+
+
+def test_fetch_verb_utf8_cap_does_not_split_or_overrun_multibyte_text() -> None:
+    # The first 128 Ki characters consume the full UTF-8 budget.
+    prefix = "é" * (MAX_FIELD_BYTES // 2)
+    assert not ssrf_module._has_fetch_verb(prefix + "fetch")
+    assert ssrf_module._has_fetch_verb("fetch" + prefix)
+
+
+def test_megabyte_description_verb_scan_stays_under_one_second() -> None:
+    # An uppercase run exercised the old acronym regex's quadratic failure.
+    tool = _tool("store_record", "X" * (1024 * 1024), {"url": {"type": "string"}})
+    started = perf_counter()
+    findings = SsrfDetector().scan_tool(tool)
+    assert perf_counter() - started < 1.0
+    assert len(findings) == 1
+    assert findings[0].severity is SsrfSeverity.MEDIUM
+    assert findings[0].pattern_name == "url_param"
 
 
 def _ssrf(target_name: str, target_type: CapabilityTarget = CapabilityTarget.RESOURCE) -> SsrfFinding:

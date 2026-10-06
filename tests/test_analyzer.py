@@ -1,5 +1,10 @@
 """Unit tests for PermissionAnalyzer."""
 
+import re
+from time import perf_counter
+
+import pytest
+
 from mcp_audit.analyzer import PermissionAnalyzer
 from mcp_audit.models import (
     Confidence,
@@ -9,9 +14,80 @@ from mcp_audit.models import (
     ToolAnnotations,
     ToolInfo,
 )
+from mcp_audit.rules.patterns import PERMISSION_PATTERNS
+from mcp_audit.text_limits import MAX_FIELD_BYTES, bounded_text
 from tests.conftest import make_tool
 
 analyzer = PermissionAnalyzer()
+
+
+@pytest.mark.parametrize("paths", [None, ["/name", "/description", "/input_schema/title"]])
+def test_category_matcher_preserves_all_overlapping_pattern_scores_and_evidence(
+    paths: list[str] | None,
+) -> None:
+    # Reference the old independent searches, including multiple strengths,
+    # repeated occurrences and overlaps at the same or different offsets.
+    patterns = [
+        p for strengths in PERMISSION_PATTERNS.values() for group in strengths.values() for p in group
+    ]
+    samples = [*patterns, "_".join(patterns), " read_file read_file working_directory shutdown "]
+    strengths_scores = {"strong": 3, "moderate": 2, "weak": 1}
+    for text in samples:
+        sources = [(text, 3), (text, 2), ("portfolio terms evaluation", 1)]
+        expected: dict[PermissionCategory, tuple[int, list[str], list[str]]] = {}
+        for category, strengths in PERMISSION_PATTERNS.items():
+            score = 0
+            evidence: list[str] = []
+            matched_paths: list[str] = []
+            for strength, group in strengths.items():
+                for pattern in group:
+                    for index, (source, weight) in enumerate(sources):
+                        if re.search(rf"(?<![a-z]){re.escape(pattern)}(?![a-z])", source):
+                            score += strengths_scores[strength] * weight
+                            if pattern not in evidence:
+                                evidence.append(pattern)
+                            if paths is not None and paths[index] not in matched_paths:
+                                matched_paths.append(paths[index])
+            expected[category] = (score, evidence, matched_paths)
+        assert analyzer._score_keywords(sources, paths) == expected, text
+
+
+def test_five_megabyte_description_analysis_stays_under_one_second() -> None:
+    tool = make_tool("status", description="read_file " + "x" * 5_000_000)
+    started = perf_counter()
+    findings = analyzer.analyze_tool_keywords(tool)
+    elapsed = perf_counter() - started
+    assert elapsed < 1.0
+    assert next(f for f in findings if f.category == PermissionCategory.FILE_READ).evidence == [
+        "read_file",
+        "read",
+    ]
+
+
+def test_keyword_fields_are_capped_independently_at_256_kibibytes() -> None:
+    tool = make_tool(
+        "x" * MAX_FIELD_BYTES + " read_file",
+        description="y" * MAX_FIELD_BYTES + " delete_file",
+        input_schema={"properties": {"z" * MAX_FIELD_BYTES + " shell": {"type": "string"}}},
+    )
+    assert analyzer.analyze_tool_keywords(tool) == []
+    tool.description = "read_file " + "x" * MAX_FIELD_BYTES
+    assert {f.category for f in analyzer.analyze_tool_keywords(tool)} == {PermissionCategory.FILE_READ}
+
+
+def test_bounded_text_caps_utf8_bytes_without_splitting_characters() -> None:
+    for character in ("x", "é", "€", "😀"):
+        width = len(character.encode("utf-8"))
+        text = character * (MAX_FIELD_BYTES // width + 1)
+        prefix = bounded_text(text)
+        assert len(prefix.encode("utf-8")) <= MAX_FIELD_BYTES
+        assert text.startswith(prefix)
+        assert 0 < len(text) - len(prefix) <= 1
+
+
+def test_bounded_text_preserves_surrogates_in_untrusted_input() -> None:
+    prefix = "x" * (MAX_FIELD_BYTES - 3) + "\ud800"
+    assert bounded_text(prefix + "suffix") == prefix
 
 
 def _categories(tool: ToolInfo) -> set[PermissionCategory]:
