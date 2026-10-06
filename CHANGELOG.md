@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Share MCP server entry parsing across the five config discoverers so Cursor,
+  Windsurf, and Claude Desktop recognize HTTP and deprecated SSE transports
+  while retaining header key names only.
+
 ### Security
 
 - Pin tool surfaces with canonical form v2, covering annotations, title, output
