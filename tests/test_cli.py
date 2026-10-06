@@ -88,6 +88,7 @@ def test_redact_scrubs_planted_identifiers_across_all_file_formats(
     )
 
     assert result.exit_code == 0
+    assert "Wrote out.json · out.sarif · out.html" in result.output
     for ext, path in outputs.items():
         text = path.read_text()
         assert "alice" not in text, f"{ext} leaked username"

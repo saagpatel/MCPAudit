@@ -25,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Use singular labels for one server/client or high-risk server, show zero
+  high-risk servers in green, cap the terminal server table at 200 rows, and
+  announce each JSON, SARIF, or HTML artifact after it is written.
 - Summarize nested connection and analysis exception groups with redacted leaf
   causes, bound leaf messages before linear-time URL redaction, withhold entire
   redirect targets in connection errors and transport diagnostics, and keep
