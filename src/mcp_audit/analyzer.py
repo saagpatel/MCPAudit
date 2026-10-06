@@ -16,6 +16,7 @@ from mcp_audit.models import (
     ResourceInfo,
     ToolInfo,
 )
+from mcp_audit.redaction import redacted_excerpt
 from mcp_audit.rules.patterns import PERMISSION_PATTERNS
 from mcp_audit.ssrf import _iter_schema_properties
 from mcp_audit.text_limits import bounded_text
@@ -156,7 +157,9 @@ class PermissionAnalyzer:
         if scheme in _REMOTE_RESOURCE_SCHEMES:
             evidence = [f"resource URI scheme '{scheme}'"]
             if host:
-                evidence.append(f"resource host '{host}'")
+                safe_uri = redacted_excerpt(resource.uri, 0, len(resource.uri))
+                safe_host = urlparse(safe_uri).hostname or ""
+                evidence.append(f"resource host '{safe_host}'")
             existing_network = next(
                 (finding for finding in findings if finding.category == PermissionCategory.NETWORK),
                 None,
@@ -362,7 +365,11 @@ class PermissionAnalyzer:
                     category=category,
                     confidence=confidence,
                     evidence=evidence_list
-                    + [f"schema property '{path}'" for path in field_paths if path in property_paths],
+                    + [
+                        f"schema property '{redacted_excerpt(path, 0, len(path))}'"
+                        for path in field_paths
+                        if path in property_paths
+                    ],
                     tool_name=tool.name,
                     field_paths=field_paths,
                 )

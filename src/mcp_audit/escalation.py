@@ -38,7 +38,7 @@ from mcp_audit.models import (
     SurfaceFieldChange,
     ToolInfo,
 )
-from mcp_audit.redaction import redact_data
+from mcp_audit.redaction import redact_data, redacted_excerpt
 
 # Gained categories that make a capability escalation HIGH vs MEDIUM.
 _HIGH_CATEGORIES: frozenset[PermissionCategory] = frozenset(
@@ -118,7 +118,10 @@ def detect_session_drift(
                     ),
                     field_changes=fields,
                     summary=f"{surface} surface changed after canary call {after_call}.",
-                    details=[f"{surface}{field.path or '/'} changed" for field in fields],
+                    details=[
+                        f"{surface}{redacted_excerpt(field.path, 0, len(field.path)) or '/'} changed"
+                        for field in fields
+                    ],
                     remediation="Review the changed surface before exercising this session again.",
                 )
             )
@@ -229,6 +232,8 @@ class EscalationAnalyzer:
         severity = EscalationSeverity.HIGH if gained & _HIGH_CATEGORIES else EscalationSeverity.MEDIUM
         gained_sorted = sorted(gained, key=lambda c: c.value)
         gained_str = ", ".join(c.value for c in gained_sorted)
+        safe_tool_name = redacted_excerpt(current.name, 0, len(current.name))
+        safe_server_name = redacted_excerpt(server_name, 0, len(server_name))
         return [
             EscalationFinding(
                 kind=EscalationKind.CAPABILITY,
@@ -237,7 +242,7 @@ class EscalationAnalyzer:
                 tool_name=current.name,
                 gained_categories=gained_sorted,
                 description=(
-                    f"Tool '{current.name}' on server '{server_name}' gained capability "
+                    f"Tool '{safe_tool_name}' on server '{safe_server_name}' gained capability "
                     f"category(s) [{gained_str}] not present in its pin baseline."
                 ),
             )
@@ -254,6 +259,8 @@ class EscalationAnalyzer:
 
         gained_sorted = sorted(gained)
         gained_str = ", ".join(gained_sorted)
+        safe_tool_name = redacted_excerpt(current.name, 0, len(current.name))
+        safe_server_name = redacted_excerpt(server_name, 0, len(server_name))
         return [
             EscalationFinding(
                 kind=EscalationKind.DESCRIPTION_INJECTION,
@@ -262,7 +269,7 @@ class EscalationAnalyzer:
                 tool_name=current.name,
                 gained_patterns=gained_sorted,
                 description=(
-                    f"Tool '{current.name}' on server '{server_name}' gained prompt-injection "
+                    f"Tool '{safe_tool_name}' on server '{safe_server_name}' gained prompt-injection "
                     f"pattern(s) [{gained_str}] in its description vs the pin baseline."
                 ),
             )

@@ -107,11 +107,23 @@ def _raw_offset(raw: str, position: int, *, start: bool = False) -> int:
     return max(0, low - 1) if start else low
 
 
-def raw_excerpt(raw: str, normalized: str, excerpt: str, match_span: tuple[int, int]) -> str:
-    """Map context and the actual match to raw text, prioritizing the match."""
-    position = normalized.find(excerpt)
-    context_start = _raw_offset(raw, position) if position >= 0 else 0
+def raw_excerpt(
+    raw: str,
+    match_span: tuple[int, int],
+    *,
+    context_before: int = 20,
+    context_after: int = 80,
+) -> str:
+    """Map a normalized match to source offsets, then build redacted evidence."""
+    from mcp_audit.redaction import redacted_excerpt
+
     match_start = _raw_offset(raw, match_span[0], start=True)
-    match_end = _raw_offset(raw, match_span[1])
-    start = max(context_start, match_start - 20, min(match_start, match_end - 200))
-    return raw[start : start + 200]
+    match_end = max(match_start, _raw_offset(raw, match_span[1]))
+    return redacted_excerpt(
+        raw,
+        match_start,
+        match_end,
+        context_before=context_before,
+        context_after=context_after,
+        max_length=200,
+    )

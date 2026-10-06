@@ -15,6 +15,8 @@ import re
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 
+from mcp_audit.redaction import redacted_excerpt
+
 # Scanned text per result is capped; the caller reports the truncation.
 RESULT_SCAN_LIMIT = 64 * 1024
 _LOOKBACK = 160
@@ -153,9 +155,12 @@ def _credential_hunts(text: str, *, concrete_only: bool = False) -> Iterator[re.
 
 def credential_hunt_targets(text: str, *, concrete_only: bool = False) -> list[str]:
     """Return targeted names/paths only, never surrounding credential values."""
+    # Recompute targets on the safe full field once, rather than redacting the
+    # full field separately for every target in attacker-controlled metadata.
+    safe_text = redacted_excerpt(text, 0, len(text))
     return list(
         dict.fromkeys(
-            target.group().rstrip(".") for target in _credential_hunts(text, concrete_only=concrete_only)
+            target.group().rstrip(".") for target in _credential_hunts(safe_text, concrete_only=concrete_only)
         )
     )
 

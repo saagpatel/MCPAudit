@@ -23,6 +23,7 @@ from mcp_audit.models import (
     ServerAudit,
     ToolInfo,
 )
+from mcp_audit.normalize import render_invisibles
 from mcp_audit.policy import PolicyConfig, evaluate_policy
 from mcp_audit.report import ReportGenerator
 from mcp_audit.sarif import SarifGenerator
@@ -181,9 +182,9 @@ def test_bounded_evidence_includes_actual_phrase_or_anomaly(fixtures_dir: Path, 
         == ("instruction_override" if case["pattern"] == "ignore_instructions" else case["pattern"])
     )
     assert finding.field_path == "/description"
-    assert case["evidence"] in finding.matched_text
+    assert render_invisibles(case["evidence"]) in finding.matched_text
     assert len(finding.matched_text) <= 200
-    assert finding.matched_text in f"{tool.name}\n{tool.description}"
+    assert finding.matched_text in render_invisibles(f"{tool.name}\n{tool.description}")
     assert tool.model_dump()["description"] == case["tool"]["description"]
     if "class" in case:
         assert case["class"] in finding.description

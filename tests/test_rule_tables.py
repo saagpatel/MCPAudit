@@ -21,6 +21,7 @@ from mcp_audit.models import (
     ResourceInfo,
     ToolAnnotations,
 )
+from mcp_audit.normalize import render_invisibles
 from mcp_audit.rules.result_injection import (
     _LOOKAHEAD,
     _LOOKBACK,
@@ -242,12 +243,14 @@ def test_each_hidden_unicode_character_is_detected(
 ) -> None:
     text = f"{'x' * 30}{char}{'y' * 100}"
     combined = text
-    expected_excerpt = f"[U+{ord(char):04X} at pos 30]: {combined[20:90]!r}"
+    expected_excerpt = f"[U+{ord(char):04X} at pos 30]: {render_invisibles(combined[20:90])!r}"
     findings = InjectionDetector().scan_tool(make_tool("ordinary_tool", text))
     matching = [f for f in findings if f.pattern_name == pattern_name]
     assert [f.severity for f in matching] == [severity]
     assert matching[0].matched_text == expected_excerpt
-    assert _pattern(pattern_name)._extract(char, char) == f"[U+{ord(char):04X} at pos 0]: {char!r}"
+    assert _pattern(pattern_name)._extract(char, char) == (
+        f"[U+{ord(char):04X} at pos 0]: {render_invisibles(char)!r}"
+    )
 
 
 @pytest.mark.parametrize(

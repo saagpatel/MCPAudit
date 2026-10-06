@@ -18,7 +18,7 @@ from mcp_audit.models import (
     ToolInfo,
 )
 from mcp_audit.normalize import first_obfuscation, normalize_text, obfuscation_classes, raw_excerpt
-from mcp_audit.redaction import redact_text
+from mcp_audit.redaction import redact_text, redacted_excerpt
 from mcp_audit.rules.result_injection import INSTRUCTION_TEXT_RULES, credential_hunt_targets
 
 # Unicode characters used for hidden directives
@@ -59,10 +59,9 @@ def _unicode_extract(chars: set[str]) -> Callable[[str, str], str]:
         for c in chars:
             idx = orig.find(c)
             if idx != -1:
-                start = max(0, idx - 10)
-                end = min(len(orig), idx + 60)
-                return f"[U+{ord(c):04X} at pos {idx}]: {orig[start:end]!r}"[:200]
-        return orig[:200]
+                excerpt = redacted_excerpt(orig, idx, idx + 1, context_before=10, context_after=59)
+                return f"[U+{ord(c):04X} at pos {idx}]: {excerpt!r}"[:200]
+        return redacted_excerpt(orig, 0, 0, context_after=200, max_length=200)
 
     return _extract
 
@@ -83,9 +82,8 @@ def _role_extract(lower: str, orig: str) -> str:
         clean = prefix.lstrip("\n")
         idx = lower.find(clean)
         if idx != -1:
-            start = max(0, idx)
-            return orig[start : start + 200]
-    return orig[:200]
+            return redacted_excerpt(orig, idx, idx, context_after=200, max_length=200)
+    return redacted_excerpt(orig, 0, 0, context_after=200, max_length=200)
 
 
 _PATTERNS: list[_InjectionPattern] = [
@@ -100,7 +98,13 @@ _PATTERNS: list[_InjectionPattern] = [
         _extract=lambda lower, orig: (
             _unicode_extract(_ZERO_WIDTH_CHARS)(lower, orig)
             if any(c in orig for c in _ZERO_WIDTH_CHARS)
-            else orig[max(0, lower.find("<!--")) : max(0, lower.find("<!--")) + 200]
+            else redacted_excerpt(
+                orig,
+                max(0, lower.find("<!--")),
+                max(0, lower.find("<!--")),
+                context_after=200,
+                max_length=200,
+            )
         ),
     ),
     _InjectionPattern(
@@ -228,14 +232,20 @@ class InjectionDetector:
             or (pattern.name == "hidden_directive" and any(c in raw for c in _ZERO_WIDTH_CHARS))
         ):
             return pattern._extract(raw.lower(), raw)
-        excerpt = pattern._extract(normalized.lower(), normalized)
         if pattern.name == "hidden_directive":
             start = normalized.find("<!--")
             span = (start, start + len("<!--"))
         else:
-            start = normalized.find(excerpt)
-            span = (max(0, start), max(0, start) + len(excerpt))
-        return raw_excerpt(raw, normalized, excerpt, span)
+            start = next(
+                (
+                    normalized.lower().find(prefix.lstrip("\n"))
+                    for prefix in _ROLE_PREFIXES
+                    if prefix.lstrip("\n") in normalized.lower()
+                ),
+                0,
+            )
+            span = (start, start)
+        return raw_excerpt(raw, span, context_before=0, context_after=200)
 
     @staticmethod
     def _obfuscation_findings(
@@ -248,7 +258,7 @@ class InjectionDetector:
         classes = obfuscation_classes(raw)
         if not classes:
             return []
-        # Preserve raw source evidence; reports make invisible codepoints visible.
+        # Keep source offsets while redacting the entire field before slicing.
         index = first_obfuscation(raw)
         classes_text = ", ".join(classes)
         return [
@@ -258,7 +268,9 @@ class InjectionDetector:
                 target_name=target_name,
                 severity=InjectionSeverity.MEDIUM,
                 pattern_name="OBFUSCATED_METADATA",
-                matched_text=raw[max(0, index - 20) : max(0, index - 20) + 200],
+                matched_text=redacted_excerpt(
+                    raw, index, index + 1, context_before=20, context_after=179, max_length=200
+                ),
                 description=(f"Agent-facing text contains {classes_text} codepoints at {field_path or '/'}."),
                 field_path=field_path,
             )
@@ -292,8 +304,7 @@ class InjectionDetector:
             if withhold_phrase_evidence:
                 evidence = "[metadata excerpt withheld]"
             else:
-                excerpt = normalized[max(0, span[0] - 20) : span[1] + 80]
-                evidence = raw_excerpt(combined, normalized, excerpt, span)
+                evidence = raw_excerpt(combined, span)
             findings.append(
                 InjectionFinding(
                     tool_name=legacy_tool_name,
@@ -332,7 +343,7 @@ class InjectionDetector:
                 break
         for pattern in _PATTERNS:
             if self._matches(pattern, combined, normalized):
-                matched = redact_text(self._excerpt(pattern, combined, normalized))[:200]
+                matched = self._excerpt(pattern, combined, normalized)[:200]
                 findings.append(
                     InjectionFinding(
                         tool_name=legacy_tool_name,

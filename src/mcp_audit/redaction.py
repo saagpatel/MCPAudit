@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable, Iterator
+from dataclasses import dataclass
 from typing import Any
 
 _REDACTED = "<redacted>"
@@ -59,10 +61,36 @@ def _is_secret_name(name: str) -> bool:
     return _SECRET_NAME.search(name) is not None
 
 
-def _redact_named_values(value: str, *, protect_urls: bool = False) -> str:
+@dataclass
+class _ExcerptWindow:
+    start: int
+    end: int
+
+    def replace(self, start: int, end: int, length: int) -> None:
+        shift = length - (end - start)
+        # Boundaries inside a replacement expand to include the complete token.
+        self.start = self.start + shift if self.start >= end else min(self.start, start)
+        self.end = self.end + shift if self.end >= end else start + length if self.end > start else self.end
+
+
+def _apply_edits(
+    value: str, edits: Iterable[tuple[int, int, str]], window: _ExcerptWindow | None = None
+) -> str:
+    pieces: list[str] = []
+    cursor = shift = 0
+    for start, end, replacement in edits:
+        pieces.extend((value[cursor:start], replacement))
+        if window is not None:
+            window.replace(start + shift, end + shift, len(replacement))
+        shift += len(replacement) - (end - start)
+        cursor = end
+    pieces.append(value[cursor:])
+    return "".join(pieces)
+
+
+def _named_value_edits(value: str, *, protect_urls: bool = False) -> Iterator[tuple[int, int, str]]:
     # Tokenize names first, then match the value at a fixed offset. A pattern
     # like NAME*SECRETNAME* followed by '=' retries quadratically on long names.
-    pieces: list[str] = []
     cursor = 0
     urls = _URL.finditer(value) if protect_urls else iter(())
     url = next(urls, None)
@@ -86,56 +114,111 @@ def _redact_named_values(value: str, *, protect_urls: bool = False) -> str:
                 " <redacted>", match.end(2)
             ):
                 continue
-            pieces.extend((value[cursor : match.start(2)], _REDACTED))
             # An unquoted URL value belongs to the enclosing assignment/flag,
             # including query delimiters that normally end an unquoted value.
             cursor = url_value.end() if url_value is not None else match.end(2)
-    pieces.append(value[cursor:])
-    return "".join(pieces)
+            yield match.start(2), cursor, _REDACTED
 
 
-def _redact_url(match: re.Match[str]) -> str:
-    url = _URL_USERINFO.sub(r"\1<redacted>@", match.group())
-    url, fragment_marker, _fragment = url.partition("#")
-    base, query_marker, query = url.partition("?")
-    scheme, _, remainder = base.partition("://")
-    authority, path_marker, path = remainder.partition("/")
-    url = scheme + "://" + authority
-    if path_marker:
-        url += "/" + "/".join(_redact_named_values(segment) for segment in path.split("/"))
+def _url_edits(value: str) -> Iterator[tuple[int, int, str]]:
+    userinfo = _URL_USERINFO.match(value)
+    if userinfo is not None:
+        yield userinfo.end(1), userinfo.end() - 1, _REDACTED
+    base, fragment_marker, _fragment = value.partition("#")
+    base, query_marker, query = base.partition("?")
+    scheme_end = base.index("://") + 3
+    path_start = base.find("/", scheme_end)
+    if path_start >= 0:
+        offset = path_start + 1
+        for segment in base[offset:].split("/"):
+            for start, end, replacement in _named_value_edits(segment):
+                yield offset + start, offset + end, replacement
+            offset += len(segment) + 1
     if query_marker:
-        url += query_marker + _QUERY_VALUE.sub("=<redacted>", query)
+        offset = len(base) + 1
+        for match in _QUERY_VALUE.finditer(query):
+            yield offset + match.start(1), offset + match.end(1), _REDACTED
     if fragment_marker:
-        url += "#<redacted>"
-    return url
+        yield value.index("#") + 1, len(value), _REDACTED
 
 
-def _redact_jwts(value: str) -> str:
+def _jwt_edits(value: str) -> Iterator[tuple[int, int, str]]:
     # Consume each candidate header once, even when it contains many 'eyJ'
     # prefixes without a dot. An unanchored three-part JWT regex is quadratic
     # on that input. Tail matching starts only at the end of that header.
-    pieces: list[str] = []
     cursor = 0
     for header in _JWT_HEADER.finditer(value):
         if header.start() < cursor or len(header.group()) < 11:
             continue
         tail = _JWT_TAIL.match(value, header.end())
         if tail is not None:
-            pieces.extend((value[cursor : header.start()], _REDACTED))
             cursor = tail.end()
-    pieces.append(value[cursor:])
-    return "".join(pieces)
+            yield header.start(), cursor, _REDACTED
+
+
+def _redact_text(value: str, window: _ExcerptWindow | None = None) -> str:
+    for pattern, replacement in ((_BEARER_TOKEN, "Bearer <redacted>"), (_BASIC_TOKEN, "Basic <redacted>")):
+        value = _apply_edits(
+            value, ((match.start(), match.end(), replacement) for match in pattern.finditer(value)), window
+        )
+    # Enclosing assignments see their complete values before URL protection.
+    # Names within standalone URLs are handled separately, preserving authority.
+    value = _apply_edits(value, _named_value_edits(value, protect_urls=True), window)
+    value = _apply_edits(
+        value,
+        (
+            (match.start() + start, match.start() + end, replacement)
+            for match in _URL.finditer(value)
+            for start, end, replacement in _url_edits(match.group())
+        ),
+        window,
+    )
+    value = _apply_edits(value, _jwt_edits(value), window)
+    return _apply_edits(
+        value, ((match.start(), match.end(), _REDACTED) for match in _SECRET_VALUE.finditer(value)), window
+    )
 
 
 def redact_text(value: str) -> str:
     """Redact likely credential values while preserving useful context."""
-    redacted = _BEARER_TOKEN.sub("Bearer <redacted>", value)
-    redacted = _BASIC_TOKEN.sub("Basic <redacted>", redacted)
-    # Enclosing assignments see their complete values before URL protection.
-    # Names within standalone URLs are handled separately, preserving authority.
-    redacted = _redact_named_values(redacted, protect_urls=True)
-    redacted = _URL.sub(_redact_url, redacted)
-    return _SECRET_VALUE.sub(_REDACTED, _redact_jwts(redacted))
+    return _redact_text(value)
+
+
+def redacted_excerpt(
+    text: str,
+    start: int,
+    end: int,
+    *,
+    context_before: int = 0,
+    context_after: int = 0,
+    max_length: int | None = None,
+) -> str:
+    """Redact the whole field, map its raw match span, then slice and render.
+
+    A match overlapping a credential includes its complete replacement token.
+    Context counts refer to the redacted text, so discarded credential labels
+    cannot leave an unrecognized tail in evidence.
+    """
+    from mcp_audit.normalize import render_invisibles
+
+    if (
+        not 0 <= start <= end <= len(text)
+        or context_before < 0
+        or context_after < 0
+        or (max_length is not None and max_length < 0)
+    ):
+        raise ValueError("Invalid excerpt span or context")
+    window = _ExcerptWindow(start, end)
+    redacted = _redact_text(text, window)
+    before = render_invisibles(redacted[max(0, window.start - context_before) : window.start])
+    match = render_invisibles(redacted[window.start : window.end])
+    after = render_invisibles(redacted[window.end : window.end + context_after])
+    if max_length is not None:
+        # Expanded invisible markers must not push the actual match out of view.
+        if len(before) + len(match) > max_length:
+            before = ""
+        return (before + match + after)[:max_length]
+    return before + match + after
 
 
 def _redact_literal_strings(value: object) -> object:
