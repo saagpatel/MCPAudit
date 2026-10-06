@@ -146,6 +146,7 @@ unknown fields as additive. Important stable top-level fields:
 - `high_risk_servers`
 - `audits`
 - `config_health_findings`
+- `coverage` — additive map of check names to `{state, reason}`; see below.
 - `policy_result`
 
 Each audit may include:
@@ -339,13 +340,59 @@ The report top level also includes:
     omitted a tool, or returned malformed output; no model findings were
     admitted),
     `option_ignored` (an option passed without the check that consumes it),
-    `surface_listing_incomplete` (a connected non-canary prompt/resource
-    listing exceeded the 20-page limit, advertised or not).
+    `surface_listing_incomplete` (an initialized non-canary tool, prompt, or
+    resource listing exceeded the 20-page limit, advertised or not, or an
+    advertised prompt/resource listing was unavailable).
     The vocabulary is additive — consumers must tolerate unknown codes.
   - `message` — plain-text human summary including remediation.
   - `check` — the scan option whose coverage was reduced, or `null`.
   - `servers` — affected server names; empty means the whole scan.
-  An empty list means every requested check ran at full coverage.
+  An empty list alone does not establish that requested checks ran at full coverage.
+
+### Check coverage
+
+`coverage` records bounded completion independently of findings and scores.
+Each entry has `state` (`complete`, `partial`, `not_run`, or `not_requested`)
+and a plain-text `reason`. `complete` means the configured check completed for
+the configured inputs; it does not establish server safety. `partial` means
+some inputs or exercise steps were unavailable, including a mixed fleet of
+completed and skipped checks. `not_run` means no usable check ran, and
+`not_requested` means the operator did not enable that optional check.
+
+Always-recorded keys are `config_health`, `permissions`, `capabilities`, and
+`metadata`. Optional keys match `ScanOptions`: `inject_check`, `ssrf_check`,
+`egress_check`, `pin_check`, `trifecta_check`, `shadow_check`,
+`escalation_check`, `provenance_check`, `integrity_check`, `verify_artifacts`,
+`download_artifacts`, and `llm_analysis`. `runtime_security` records the
+bounded `canary_check` exercise. Consumers must tolerate additional keys.
+Missing keys and absent or empty coverage maps are unknown, never passed.
+Old reports load with an empty map; rendering does not infer completion from
+zero findings or connection counts. `schema_version` remains `1`.
+
+Config-only scans record metadata and metadata-dependent checks as `not_run`
+with reason `connections disabled`; permission inference from configuration
+is `partial`. Baseline-dependent checks record missing per-server baselines
+as `not_run`. No configured servers leaves server-dependent checks `not_run`.
+A canary with no eligible tools has runtime `not_run`; failed or truncated
+listings and incomplete exercises are `partial`. Pagination failures never
+admit an incomplete page set as an empty, successfully checked inventory.
+
+`ServerAudit.connection_status` adds `partial` for an initialized connection
+whose metadata listing was incomplete. Existing `connected`, `failed`,
+`timeout`, and `skipped` meanings are unchanged. `servers_connected` still
+counts established connections, including partial ones; `servers_failed`
+still counts failures and timeouts. Inspect coverage for completion.
+
+Terminal output prints `Runtime security: NOT CHECKED` for disabled or unrun
+runtime checks and `Metadata checks not run: connections disabled` in
+config-only mode. HTML has a Checked strip and an incomplete-coverage banner
+for partial or unrun checks. Legacy reports explicitly display unknown coverage.
+
+Policies may opt in with YAML `fail_on.coverage: true` (a boolean), or Python
+`PolicyConfig(fail_on_coverage=True)`. This fails on `partial`, `not_run`, or
+unknown legacy coverage, independently of severity; `not_requested` checks
+do not fail the gate. Coverage violations use existing SARIF `MCP010` and
+the existing policy exit code `2`. Existing policies retain their behavior.
 
 `risk_score.composite` is tool-centered. `non_tool_risk` is an additive
 prompt/resource triage signal and does not change `risk_score.composite`.
@@ -985,6 +1032,18 @@ Compatibility rules:
   documents a migration.
 
 ## SARIF Report
+
+All profiles include `runs[].properties.mcpAuditCoverage` and invocation
+`toolExecutionNotifications` for partial, unrun, or unknown legacy coverage.
+These notifications describe completion rather than security findings;
+`executionSuccessful` does not imply complete coverage.
+The default `compatibility` profile retains existing rule and result families.
+CLI `--sarif-profile extended` (Python `generate(report, profile="extended")`)
+adds configuration-health results with stable IDs `MCP-CH-{FINDING-TYPE}`:
+the existing `finding_type` is uppercased, and underscores become hyphens
+(for example, `remote_endpoint` becomes `MCP-CH-REMOTE-ENDPOINT`). Findings
+retain their severity, remediation, and configuration location; scores and
+JSON config-health fields are unchanged.
 
 SARIF output uses stable MCP rule IDs:
 

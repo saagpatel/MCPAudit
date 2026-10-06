@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Record per-check completion and reasons in additive report coverage, with
+  terminal and HTML coverage summaries, SARIF invocation notifications and
+  run properties, and an opt-in `fail_on.coverage` policy gate. Legacy reports
+  retain unknown coverage. The extended SARIF profile includes stable
+  configuration-health rule IDs.
+
+### Fixed
+
+- Mark incomplete metadata listings, including pagination floods, as partial
+  connections rather than clean connected rows with zero tools.
+
 ## [2.8.1] - 2026-10-06
 
 ### Security
