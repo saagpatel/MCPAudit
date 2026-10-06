@@ -83,6 +83,48 @@ def test_cli_all_report_surfaces_redact_fixture_credentials(tmp_path: Path, fiel
         assert secret not in result.output, "terminal output leaked fixture credential"
 
 
+@pytest.mark.parametrize("name", ["password", "token", "auth"])
+def test_cli_redact_preserves_credential_redaction_for_secret_named_servers(
+    tmp_path: Path, name: str
+) -> None:
+    config_file = tmp_path / "mcp.json"
+    config_file.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    name: {
+                        "command": "synthetic-server",
+                        "args": [f"--{name}", "fixture-private-value", f"--{name}=fixture-inline-value"],
+                    }
+                }
+            }
+        )
+    )
+    output = tmp_path / "report.json"
+    result = CliRunner().invoke(
+        cli.main,
+        [
+            "scan",
+            "--config",
+            str(config_file),
+            "--config-only",
+            "--skip-connect",
+            "--override-config",
+            "/dev/null",
+            "--redact",
+            "--json",
+            str(output),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    stored = output.read_text()
+    server = json.loads(stored)["audits"][0]["server"]
+    assert server["name"] == "server-01"
+    assert server["args"] == ["--server-01", "<redacted>", "--server-01=<redacted>"]
+    assert "fixture-private-value" not in stored
+    assert "fixture-inline-value" not in stored
+
+
 def _report_with_secret_finding(
     server: ServerConfig | None = None, *, include_finding: bool = True
 ) -> AuditReport:

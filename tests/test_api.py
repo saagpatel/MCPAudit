@@ -138,6 +138,21 @@ def test_sync_dict_wrapper_always_redacts_credentials(redact: bool) -> None:
         assert secret not in dumped
 
 
+@pytest.mark.parametrize("name", ["password", "token", "auth"])
+@pytest.mark.parametrize("redact", [False, True])
+def test_server_names_cannot_disable_credential_redaction(name: str, redact: bool) -> None:
+    args = [f"--{name}", "fixture-private-value", f"--{name}=fixture-inline-value"]
+    config = {"mcpServers": {name: {"command": "synthetic-server", "args": args}}}
+    result = scan_config_only_dict(config, redact=redact)
+    server = result["audits"][0]["server"]
+    label = "server-01" if redact else name
+    assert server["name"] == label
+    assert server["args"] == [f"--{label}", "<redacted>", f"--{label}=<redacted>"]
+    assert "fixture-private-value" not in json.dumps(result)
+    assert "fixture-inline-value" not in json.dumps(result)
+    assert config["mcpServers"][name]["args"] == args
+
+
 def test_sync_dict_wrapper_rejects_running_loop() -> None:
     async def _call_from_loop() -> None:
         scan_config_only_dict(_REMOTE_CONFIG)
