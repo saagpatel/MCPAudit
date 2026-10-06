@@ -135,7 +135,7 @@ async def run_scan(
             servers = extra_servers if opts.config_only else servers + extra_servers
 
     connector = ServerConnector(timeout=float(opts.timeout))
-    connector.scan_warnings = scan_warnings
+    connector.scan_warnings = []
     analyzer = PermissionAnalyzer()
     scorer = RiskScorer()
 
@@ -430,6 +430,9 @@ async def run_scan(
         async with anyio.create_task_group() as tg:
             for i, srv in enumerate(servers):
                 tg.start_soon(audit_one_guarded, i, srv)
+
+    for warning in connector.scan_warnings:
+        warn(warning.code, warning.message, check=warning.check, servers=warning.servers)
 
     # A model omission, refusal, malformed response, provider error, or detected
     # injection is coverage loss, not a clean empty result. The per-server

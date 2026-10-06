@@ -118,6 +118,12 @@ class _ListingPageLimit(ValueError):
     """A surface exists, but its complete listing exceeds the capture bound."""
 
 
+def _listing_failure_message(label: str, exc: Exception) -> str:
+    if isinstance(exc, _ListingPageLimit):
+        return f"{label} listing exceeds the 20-page limit; coverage is incomplete."
+    return f"{label} surface incomplete ({type(exc).__name__})."
+
+
 async def _list_pages(
     fetch: Callable[..., Awaitable[_Page]], items: Callable[[_Page], list[_Item]]
 ) -> list[_Item]:
@@ -278,7 +284,12 @@ class ServerConnector:
                     if self.scan_warnings is not None:
                         self.scan_warnings.append(
                             ScanWarning(
-                                code="surface_listing_incomplete", message=message, servers=[config.name]
+                                code="surface_listing_incomplete",
+                                message=(
+                                    f"Server '{config.name}': {message} "
+                                    "Reduce the listing to at most 20 pages and rerun the scan."
+                                ),
+                                servers=[config.name],
                             )
                         )
             audit.has_annotations = any(t.annotations is not None for t in tools)
@@ -414,7 +425,7 @@ class ServerConnector:
         except Exception as exc:
             if not probe:
                 raise
-            self._canary_warning(probe, f"Tool surface incomplete ({type(exc).__name__}).")
+            self._canary_warning(probe, _listing_failure_message("Tool", exc))
 
         if list_prompts:
             try:
@@ -454,7 +465,7 @@ class ServerConnector:
                 if probe:
                     surface.pop("prompts", None)
                     surface.pop("prompt_results", None)
-                message = f"Prompt surface incomplete ({type(exc).__name__})."
+                message = _listing_failure_message("Prompt", exc)
                 if probe:
                     probe.listing_failures["prompts"] = message
                 if probe and (
@@ -479,7 +490,7 @@ class ServerConnector:
                         str(r.uri): r.model_dump(mode="json", by_alias=True) for r in resource_items
                     }
             except Exception as exc:
-                message = f"Resource surface incomplete ({type(exc).__name__})."
+                message = _listing_failure_message("Resource", exc)
                 if probe:
                     probe.listing_failures["resources"] = message
                 if probe and (

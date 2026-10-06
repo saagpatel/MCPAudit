@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
+from rich.console import Console
 
 from mcp_audit.cli import main
 from mcp_audit.connector import ServerConnector, _result_text, canary_tool_eligible
@@ -54,6 +55,15 @@ async def test_local_stdio_canary(mode: str) -> None:
         "result_tool_redirect",
     }
     assert {f.after_call for f in audit.injection_findings} == {4, 5}
+    assert all(
+        f.remediation
+        == (
+            "Review the tool's returned content or prompt body and the server's behavior. "
+            "Do not let the agent act on instructions found in tool results or prompt bodies. "
+            "Consider removing the server."
+        )
+        for f in audit.injection_findings
+    )
     assert "synthetic-secret" not in report.model_dump_json()
     sarif = SarifGenerator().generate(report)
     results = sarif["runs"][0]["results"]
@@ -295,11 +305,15 @@ async def test_prompt_body_hunt_is_reported_once_without_drift() -> None:
     assert finding.pattern_name == "result_credential_hunt" and finding.severity == "medium"
     assert finding.target_type == "prompt" and finding.target_name == "summary0"
     assert finding.after_call == 3 and "prompts/get" in finding.description
+    assert "prompt body" in finding.remediation
+    assert "Do not let the agent act on instructions" in finding.remediation
+    assert "Consider removing the server." in finding.remediation
+    assert "tool description" not in finding.remediation
     assert "id_rsa" not in audit.model_dump_json()
 
 
 @pytest.mark.anyio
-async def test_unadvertised_tools_are_exercised_and_unadvertised_surfaces_skipped() -> None:
+async def test_unadvertised_tools_are_exercised_and_unsupported_surfaces_stay_quiet() -> None:
     config = make_server_config(command=sys.executable, args=[SURFACES_FIXTURE, "noadvert"])
     audit = await ServerConnector(timeout=15).connect(config, canary_calls=5)
     assert audit.connection_status == "connected"
@@ -340,7 +354,13 @@ async def test_unadvertised_surface_listing_coverage(surface: str, mode: str) ->
     incomplete = mode != "unsupported"
     assert audit.canary.status == ("partial" if incomplete else "complete")
     label = "Prompt" if surface == "prompts" else "Resource"
-    assert bool([w for w in audit.canary.warnings if f"{label} surface incomplete" in w]) == incomplete
+    expected = (
+        f"{label} listing exceeds the 20-page limit; coverage is incomplete."
+        if mode == "page_limit"
+        else f"{label} surface incomplete (MCPError)."
+    )
+    assert (expected in audit.canary.warnings) == incomplete
+    assert "_ListingPageLimit" not in report.model_dump_json()
     assert bool([w for w in report.warnings if w.code == "canary_incomplete"]) == incomplete
     if mode == "failure":
         assert getattr(audit, surface)
@@ -375,7 +395,8 @@ async def test_non_canary_unadvertised_page_limit_is_a_scan_warning(surface: str
     config = make_server_config(
         command=sys.executable, args=[SURFACES_FIXTURE, "unadvertised_page_limit", surface]
     )
-    report = await run_scan(ScanOptions(timeout=15), servers=[config])
+    console = Console(record=True, width=200)
+    report = await run_scan(ScanOptions(timeout=15), servers=[config], console=console)
     audit = report.audits[0]
     assert audit.connection_status == "connected" and audit.connection_error is None
     assert audit.canary is None and not getattr(audit, surface)
@@ -383,7 +404,27 @@ async def test_non_canary_unadvertised_page_limit_is_a_scan_warning(surface: str
     warning = report.warnings[0]
     assert warning.code == "surface_listing_incomplete"
     assert warning.servers == [config.name] and warning.check is None
-    assert ("Prompt" if surface == "prompts" else "Resource") + " surface incomplete" in warning.message
+    label = "Prompt" if surface == "prompts" else "Resource"
+    assert warning.message == (
+        f"Server '{config.name}': {label} listing exceeds the 20-page limit; coverage is incomplete. "
+        "Reduce the listing to at most 20 pages and rerun the scan."
+    )
+    assert warning.message in console.export_text()
+    assert "_ListingPageLimit" not in report.model_dump_json()
+
+
+@pytest.mark.anyio
+async def test_tool_page_limit_has_plain_canary_warning() -> None:
+    config = make_server_config(
+        command=sys.executable, args=[SURFACES_FIXTURE, "unadvertised_page_limit", "tools"]
+    )
+    audit = await ServerConnector(timeout=15).connect(config, canary_calls=2)
+    assert audit.connection_status == "connected"
+    assert audit.canary is not None and audit.canary.status == "no_safe_tools"
+    assert audit.canary.completed_calls == 0
+    assert not audit.tools
+    assert "Tool listing exceeds the 20-page limit; coverage is incomplete." in audit.canary.warnings
+    assert "_ListingPageLimit" not in audit.model_dump_json()
 
 
 @pytest.mark.anyio
