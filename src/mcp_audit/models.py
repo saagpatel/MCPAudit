@@ -959,6 +959,7 @@ class ConfigHealthFinding(BaseModel):
     summary: str
     details: list[str] = Field(default_factory=list)
     remediation: str
+    config_paths: list[str] = Field(default_factory=list)
 
 
 class ServerAudit(BaseModel):

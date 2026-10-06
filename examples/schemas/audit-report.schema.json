@@ -296,6 +296,13 @@
         "remediation": {
           "title": "Remediation",
           "type": "string"
+        },
+        "config_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Config Paths",
+          "type": "array"
         }
       },
       "required": [

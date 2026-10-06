@@ -536,7 +536,7 @@ class SarifGenerator:
 
     def _make_config_health_result(self, finding: ConfigHealthFinding) -> dict[str, Any]:
         rule_id = _config_health_rule_id(finding.finding_type)
-        return {
+        result: dict[str, Any] = {
             "ruleId": rule_id,
             "level": {"high": "error", "medium": "warning", "low": "note"}[finding.severity.value],
             "message": {"text": finding.summary},
@@ -551,6 +551,12 @@ class SarifGenerator:
                 "severity": finding.severity.value,
             },
         }
+        if finding.config_paths:
+            result["locations"] = [
+                {"physicalLocation": {"artifactLocation": {"uri": _artifact_uri(path)}}}
+                for path in finding.config_paths
+            ]
+        return result
 
     def _finding_level(self, finding: PermissionFinding, audit: ServerAudit) -> str:
         """Determine SARIF level based on composite risk score and finding confidence."""
