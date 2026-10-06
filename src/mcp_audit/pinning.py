@@ -425,6 +425,17 @@ class PinStore:
             )
         return tools
 
+    def canary_baseline(self, server_name: str) -> dict[str, dict[str, object]] | None:
+        """Use only complete v2 tool pins; legacy snapshots cannot cover this surface."""
+        if server_name not in self.pinned_servers() or self.legacy_tool_names(server_name):
+            return None
+        entries = self._data["servers"][server_name].get("tools", {})
+        if any(entry.get("pin_schema") != 2 for entry in entries.values()):
+            return None
+        return {
+            "tools": {tool.name: canonical_tool_surface(tool) for tool in self.baseline_tools(server_name)}
+        }
+
     def baseline_config(self, server_name: str) -> dict[str, Any] | None:
         """Return the pinned launch-config snapshot for a server, or None.
 

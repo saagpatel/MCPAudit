@@ -87,6 +87,7 @@ class ScanOptions:
     llm_analysis: bool = False
     canary_check: bool = False
     canary_calls: int = 5
+    canary_identities: int | None = None  # transport default: stdio=2, HTTP/SSE=1
     canary_safe_tools: tuple[str, ...] = ()  # server/tool qualified operator marks
 
     # Check tuning
@@ -127,6 +128,8 @@ async def run_scan(
         raise ValueError("--canary-check cannot be combined with --skip-connect.")
     if opts.canary_check and not 1 <= opts.canary_calls <= 100:
         raise ValueError("Canary calls must be between 1 and 100.")
+    if opts.canary_identities is not None and opts.canary_identities not in (1, 2):
+        raise ValueError("Canary identities must be 1 or 2.")
     if opts.canary_check and servers is None and not (opts.config_only and opts.extra_config):
         raise ValueError("--canary-check requires --config PATH --config-only (no workstation discovery).")
     applier = override_applier if override_applier is not None else OverrideApplier(OverrideConfig())
@@ -300,12 +303,12 @@ async def run_scan(
         if opts.download_artifacts:
             artifact_verifier = ArtifactVerifier(fetch=registry_client.fetch_artifact)
 
-    # --escalation/provenance/integrity-check, --verify-artifacts and
-    # --download-artifacts all imply a pin comparison, so a pin store is needed even
-    # when --pin-check was not passed. Drift output stays gated on pin_check.
+    # Canary first listings and other baseline checks need pins even without
+    # --pin-check. Ordinary saved-pin drift output stays gated on pin_check.
     pin_store = None
     if (
-        opts.pin_check
+        opts.canary_check
+        or opts.pin_check
         or opts.escalation_check
         or opts.provenance_check
         or opts.integrity_check
@@ -317,6 +320,13 @@ async def run_scan(
         pin_store = PinStore()
         for server in servers:
             scan_warnings.extend(pin_store.schema_warnings(server.name))
+        if opts.canary_check and pin_store.read_error:
+            warn(
+                "pin_baseline_corrupted",
+                f"--canary-check: pin baseline could not be parsed ({pin_store.read_error}); "
+                "using an in-session baseline only.",
+                check="canary_check",
+            )
 
     audits: list[ServerAudit] = [ServerAudit(server=s, connection_status="pending") for s in servers]
     completed: list[set[str]] = [set() for _ in servers]
@@ -365,6 +375,8 @@ async def run_scan(
                     audit = await connector.connect(
                         srv,
                         canary_calls=opts.canary_calls,
+                        canary_identities=opts.canary_identities,
+                        canary_baseline=pin_store.canary_baseline(srv.name) if pin_store else None,
                         safe_tools=frozenset(
                             mark[len(srv.name) + 1 :]
                             for mark in opts.canary_safe_tools

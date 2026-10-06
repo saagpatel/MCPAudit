@@ -242,6 +242,14 @@ class SarifGenerator:
                 "completed_calls": audit.canary.completed_calls,
                 "call_budget": audit.canary.call_budget,
                 "client_identity": audit.canary.client_identity,
+                **(
+                    {
+                        "client_identities": audit.canary.client_identities,
+                        "baseline_source": audit.canary.baseline_source,
+                    }
+                    if audit.canary.client_identities
+                    else {}
+                ),
                 "elapsed_seconds": audit.canary.elapsed_seconds,
                 "not_excluded": audit.canary.not_excluded,
                 "not_excluded_descriptions": audit.canary.not_excluded_descriptions,
@@ -1094,6 +1102,8 @@ class SarifGenerator:
             f"schema drift status '{finding.status.value}'. "
             f"Suggested action: {finding.remediation or 'Review before refreshing pins.'}"
         )
+        if finding.kind:
+            msg = f"{finding.summary} {msg}"
         return {
             "ruleId": _DRIFT_RULE_ID,
             "level": _severity_level(finding.severity),
@@ -1103,12 +1113,13 @@ class SarifGenerator:
                 "mcpAuditStableId": _stable_fingerprint(
                     _DRIFT_RULE_ID,
                     audit.server.name,
-                    f"{finding.surface}:{finding.tool_name}"
+                    f"{finding.surface}:{finding.tool_name}" + (f":{finding.kind}" if finding.kind else "")
                     if finding.source == "session"
                     else finding.tool_name,
                 )
             },
             "properties": {
+                **({"kind": finding.kind} if finding.kind else {}),
                 "target_type": finding.target_type,
                 "target_name": finding.tool_name,
                 "status": finding.status.value,
