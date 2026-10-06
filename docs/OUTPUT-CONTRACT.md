@@ -14,6 +14,44 @@ fields. Consumers should ignore unknown fields and should not fail when optional
 fields are present. Existing stable fields should only be removed or renamed
 with a release-note deprecation window and a breaking-version boundary.
 
+## Safe review entry points
+
+`check --json` (and bare `mcp-audit --json`) emits only the existing redacted
+`AuditReport` JSON on stdout. Diagnostics and artifact notices use stderr in
+this mode. `check --output-json FILE` writes the same document; `--sarif FILE`
+and `--html FILE` use the existing generators. No report field or
+`schema_version` changes for these entry points. Legacy `scan --json PATH`
+continues to write a file and retains its existing output behavior.
+
+Bare invocation runs the static `check` path. `--config FILE` excludes discovery
+unless `--include-discovered` is explicit. Saved overrides and remembered
+preferences are not loaded; an explicit policy evaluates evidence without
+enabling extra checks. Connections require `--connect --server CLIENT:SCOPE:NAME`
+and exactly one matching entry with no collected config diagnostics. Setup and
+artifact-write errors exit 1; artifact path validation errors exit 2 before any
+artifact is written. A failed policy exits 2 after requested artifacts
+and JSON stdout have been written. Exit 0 does not certify security.
+
+Both `check` and legacy `scan` reject artifact destinations that alias any
+encountered configuration or policy input, or another artifact destination.
+Legacy `scan` also protects its override input. Validation covers resolved
+symlinks and hard links, including empty or malformed discovered configs;
+the error names the output flag. Existing distinct artifact files may still
+be overwritten. Report fields and `schema_version` are unchanged.
+
+Discovery reads only supported adapter candidates and the selected project
+(cwd by default, `--project PATH` to select another). It skips symlinks, rejects
+special files, and limits each file to 1 MiB, nesting to 64, containers to
+20,000, and the review to 1,000 server entries. Explicit config selection may
+resolve a symlink to a regular file. Skipped/malformed discovered files produce
+config-health findings and partial coverage; an invalid explicit file is a
+setup error. `inspect` lists identities and source statuses without connecting.
+Absent discovered candidates are listed as `absent`, produce no config-health
+finding, and do not reduce coverage. Existing unreadable or malformed files
+remain diagnostic, including a selected Claude project entry that is not an
+object. Config diagnostic summaries retain the redacted reason also in `details`.
+`demo` uses the packaged copy of the synthetic `examples/sandbox` config only.
+
 ## Project config connection coverage
 
 `audits[].server.scope` is an additive `workstation|project` field (default
@@ -157,7 +195,8 @@ gate requires both server records and the child record. See the
 
 - `0`: scan completed and no configured policy gate failed.
 - `1`: command setup failed, such as invalid client or policy config.
-- `2`: scan completed and report artifacts were written, but `--policy` failed.
+- `2`: artifact path validation failed before any artifact was written, or the
+  scan completed and requested report artifacts were written but `--policy` failed.
 
 Subcommands with standalone experimental contracts document their own exit
 codes below; they do not change the stable scan exit contract.

@@ -67,7 +67,11 @@ class ConfigDiscoverer(ABC):
         """
         ...
 
-    def discover(self, parse_errors: list[ConfigParseError] | None = None) -> list[ServerConfig]:
+    def discover(
+        self,
+        parse_errors: list[ConfigParseError] | None = None,
+        config_paths: list[Path] | None = None,
+    ) -> list[ServerConfig]:
         """Run discovery: check each candidate path and parse those that exist.
 
         A file that exists but fails to parse is recorded into ``parse_errors``
@@ -85,6 +89,8 @@ class ConfigDiscoverer(ABC):
         results: list[ServerConfig] = []
         for path in paths:
             if path.exists():
+                if config_paths is not None:
+                    config_paths.append(path)
                 try:
                     results.extend(self.parse(path, parse_errors))
                 except ConfigParseError as exc:

@@ -7,25 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add static-by-default `check`, bare-command configuration review, source
+  inventory with `inspect`, and a bundled config-only `demo`. Explicit configs
+  select only that file unless discovery is requested; connections require one
+  unambiguous client/scope/name identity. New JSON stdout and named artifact
+  options leave the legacy `scan` grammar and reports unchanged.
+- Record per-check completion and reasons in additive report coverage, with
+  terminal and HTML coverage summaries, SARIF invocation notifications and
+  run properties, and an opt-in `fail_on.coverage` policy gate. Legacy reports
+  retain unknown coverage. The extended SARIF profile includes stable
+  configuration-health rule IDs.
+  Apply bounded-text coverage loss to permissions, capabilities and dependent detectors,
+  recognize empty tool pin baselines, and retain project connection warnings
+  in SARIF notifications, full-report, findings and single-server MCP results.
+  Preserve the high-risk tool's legacy JSON list; its description directs
+  callers to full-report and findings tools for coverage warnings.
+  Require execution evidence for completion, mark discovery parse failures
+  as partial coverage, and account for applicable and verified package references.
+  Preserve source configuration locations in extended SARIF, including parse failures.
+
 ### Fixed
 
-- Share normalized instruction-text rules between metadata and runtime scans.
-  Report static phrase matches as experimental MEDIUM with pattern and field
-  evidence, retain concrete secret targets for "Fix now" summaries, and flag
-  high-entropy metadata runs at LOW without decoding them.
-  Withhold phrase excerpts after full-field credential redaction, preserve
-  instruction evidence in the MCP findings endpoint, restore override phrase
-  coverage, and align the synthetic sandbox with the MEDIUM heuristic tier.
-  Build metadata evidence with a shared full-field redaction helper that maps
-  match offsets before slicing and rendering invisible codepoints, including
-  obfuscation, hidden-directive, schema, SSRF, and escalation evidence.
-
+- Classify absent client config candidates before opening them in static review;
+  missing files produce no config-health finding or partial coverage. Retain
+  redacted config diagnostic reasons in summaries, including null project entries,
+  while preserving the connection block for malformed configs.
 - Recognize VS Code server maps in explicit configs and parse both VS Code
   files as JSONC. Report malformed entries and duplicate keys, reject
   non-regular config paths before reading, accept UTF-8 BOMs, and distinguish
   empty server maps from empty, unsupported, and unreadable config files.
   Preserve parsing diagnostics in in-memory scan coverage and reject project
-  containers without a supported server map.
+  containers without a supported server map. Treat discovered general VS Code
+  and Claude settings without MCP sections as zero entries, allowing unrelated
+  valid servers to be selected while retaining malformed-config diagnostics.
+  Normalize selected project dot components without resolving symlinks, and
+  retain malformed null project entries as diagnostics that block connections.
+  Reject report destinations that alias config or policy inputs, scan overrides,
+  or another artifact, including symlinks and hard links, before any artifact
+  is written.
 - Share MCP server entry parsing across the five config discoverers so Cursor,
   Windsurf, and Claude Desktop recognize HTTP and deprecated SSE transports
   while retaining header key names only.
@@ -58,6 +79,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is replayed locally without launching servers. These fixtures contain no
   nested property-name capability gains; the nested regression fixture covers
   the added detection.
+- Share normalized instruction-text rules between metadata and runtime scans.
+  Report static phrase matches as experimental MEDIUM with pattern and field
+  evidence, retain concrete secret targets for "Fix now" summaries, and flag
+  high-entropy metadata runs at LOW without decoding them.
+  Withhold phrase excerpts after full-field credential redaction, preserve
+  instruction evidence in the MCP findings endpoint, restore override phrase
+  coverage, and align the synthetic sandbox with the MEDIUM heuristic tier.
+  Build metadata evidence with a shared full-field redaction helper that maps
+  match offsets before slicing and rendering invisible codepoints, including
+  obfuscation, hidden-directive, schema, SSRF, and escalation evidence.
 
 ### Security
 
@@ -85,26 +116,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   across static injection, runtime text and tool-name shadowing checks. Report
   MEDIUM `OBFUSCATED_METADATA` for invisible classes or mixed-script confusables
   with field pointers; preserve source evidence and display invisible characters
+  as codepoint markers in terminal, HTML and SARIF messages. Anchor bounded raw
+  evidence to the detected phrase or gated anomaly so stripped context and
+  benign non-Latin prefixes cannot displace it, including normalized HTML-comment
+  delimiters after long benign prefixes.
+- Share NFKC, invisible-codepoint stripping and curated confusable folding
+  across static injection, runtime text and tool-name shadowing checks. Report
+  MEDIUM `OBFUSCATED_METADATA` for invisible classes or mixed-script confusables
+  with field pointers; preserve source evidence and display invisible characters
   as codepoint markers in evidence, terminal, HTML and SARIF messages. Anchor
   bounded redacted evidence to the detected phrase or gated anomaly so stripped context and
   benign non-Latin prefixes cannot displace it, including normalized HTML-comment
   delimiters after long benign prefixes.
-
-### Added
-
-- Record per-check completion and reasons in additive report coverage, with
-  terminal and HTML coverage summaries, SARIF invocation notifications and
-  run properties, and an opt-in `fail_on.coverage` policy gate. Legacy reports
-  retain unknown coverage. The extended SARIF profile includes stable
-  configuration-health rule IDs.
-  Apply bounded-text coverage loss to permissions, capabilities and dependent detectors,
-  recognize empty tool pin baselines, and retain project connection warnings
-  in SARIF notifications, full-report, findings and single-server MCP results.
-  Preserve the high-risk tool's legacy JSON list; its description directs
-  callers to full-report and findings tools for coverage warnings.
-  Require execution evidence for completion, mark discovery parse failures
-  as partial coverage, and account for applicable and verified package references.
-  Preserve source configuration locations in extended SARIF, including parse failures.
 
 ## [2.8.1] - 2026-10-06
 

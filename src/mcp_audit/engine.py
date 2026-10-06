@@ -102,6 +102,7 @@ async def run_scan(
     *,
     servers: list[ServerConfig] | None = None,
     parse_errors: list[ConfigParseError] | None = None,
+    config_paths: list[Path] | None = None,
     override_applier: OverrideApplier | None = None,
     console: Console | None = None,
 ) -> AuditReport:
@@ -112,6 +113,8 @@ async def run_scan(
     is scanned as-is — no filesystem access for config discovery.
     ``parse_errors`` carries diagnostics from pre-parsed configs into findings
     and coverage; the caller's list is not modified.
+    ``config_paths`` optionally collects encountered filesystem configs, including
+    empty and malformed files, for CLI artifact destination protection.
 
     ``override_applier`` defaults to a no-op applier; the CLI and MCP server
     pass one loaded from the user's override file. ``console`` defaults to a
@@ -143,9 +146,16 @@ async def run_scan(
     # 1. Discover servers (unless the caller supplied a pre-parsed list).
     parse_errors = list(parse_errors) if parse_errors is not None else []
     if servers is None:
-        servers = [] if opts.config_only else discover_all_configs(opts.clients, parse_errors)
+        if opts.config_only:
+            servers = []
+        elif config_paths is None:
+            servers = discover_all_configs(opts.clients, parse_errors)
+        else:
+            servers = discover_all_configs(opts.clients, parse_errors, config_paths)
 
         if opts.extra_config:
+            if config_paths is not None:
+                config_paths.append(Path(opts.extra_config))
             extra_servers = _parse_extra_config(Path(opts.extra_config), parse_errors)
             servers = extra_servers if opts.config_only else servers + extra_servers
 
