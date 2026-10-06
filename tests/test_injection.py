@@ -68,6 +68,43 @@ def test_h3_fixture_is_silent_in_static_and_runtime_scans() -> None:
         assert _detector().scan_result("status", text, 1) == []
 
 
+def test_override_fixture_has_static_runtime_parity() -> None:
+    rows = _instruction_fixture()["override_regressions"]
+    assert isinstance(rows, list) and rows
+    for text in rows:
+        assert isinstance(text, str)
+        static = _detector().scan_tool(make_tool("status", text))
+        runtime = _detector().scan_result("status", text, 1)
+        assert any(f.instruction_pattern == "instruction_override" for f in static)
+        assert any(f.pattern_name == "result_instruction_override" for f in runtime)
+        assert all(f.severity == InjectionSeverity.MEDIUM for f in [*static, *runtime])
+
+
+def test_credential_assignment_crossing_excerpt_boundary_is_withheld() -> None:
+    rows = _instruction_fixture()["credential_boundary_regressions"]
+    assert isinstance(rows, list) and rows
+    report = AuditReport.model_validate_json(
+        Path("tests/fixtures/reports/sample_audit_report.json").read_text()
+    )
+    report.audits = report.audits[:1]
+    report.audits[0].tools = []
+    for text in rows:
+        assert isinstance(text, str)
+        findings = _detector().scan_tool(make_tool("status", text))
+        hunt = next(f for f in findings if f.instruction_pattern == "credential_hunt")
+        assert hunt.matched_text == "[metadata excerpt withheld]"
+        assert hunt.secret_targets == ["~/.ssh/id_rsa"]
+        report.audits[0].injection_findings = findings
+        redacted = report.redacted()
+        outputs = [
+            json.dumps([f.model_dump(mode="json") for f in findings]),
+            redacted.model_dump_json(),
+            json.dumps(SarifGenerator().generate(redacted)),
+            HtmlReportGenerator().generate(redacted),
+        ]
+        assert all("vwxyz0123456789" not in output for output in outputs)
+
+
 def test_encoded_fixture_is_low_structural_and_never_decoded() -> None:
     text = str(_instruction_fixture()["encoded"])
     findings = _detector().scan_tool(make_tool("status", text))

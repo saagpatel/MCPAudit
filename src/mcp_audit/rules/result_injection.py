@@ -85,9 +85,10 @@ _REDIRECT = (
     r"(?:(?:[\w.-]+\s+)?tools?\b|function\s+named\s+[\w.-]+\b|shell_exec\b)"
     r"|\btools/call\b"
 )
+# Match override prefixes broadly, excluding benign artifact-version references.
 _INSTRUCTION_OVERRIDE = re.compile(
     r"\b(?:ignore|disregard|forget)\s+(?:(?:all|any|the|your)\s+)?(?:previous|prior|above)"
-    r"\b(?:\s+(?:instructions?|directions?|context|rules?|prompts?|and)\b|(?=\s*(?:[.!?;:]|$)))",
+    r"\b(?!\s+versions?\b)",
     re.IGNORECASE,
 )
 _SYSTEM_OVERRIDE = re.compile(

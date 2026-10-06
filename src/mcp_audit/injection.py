@@ -277,6 +277,8 @@ class InjectionDetector:
         """Return all injection findings for one normalized capability text blob."""
         if normalized is None:
             normalized = normalize_text(combined)
+        # Redact complete fields before excerpt boundaries can discard a credential label.
+        withhold_phrase_evidence = redact_text(combined) != combined or redact_text(normalized) != normalized
         findings: list[InjectionFinding] = []
         for rule in INSTRUCTION_TEXT_RULES:
             span = rule.span(normalized)
@@ -287,13 +289,11 @@ class InjectionDetector:
                 if rule.name == "credential_hunt"
                 else []
             )
-            excerpt = normalized[max(0, span[0] - 20) : span[1] + 80]
-            raw_evidence = raw_excerpt(combined, normalized, excerpt, span)
-            evidence = (
-                "[metadata excerpt withheld]"
-                if redact_text(normalize_text(raw_evidence)) != normalize_text(raw_evidence)
-                else redact_text(raw_evidence)
-            )
+            if withhold_phrase_evidence:
+                evidence = "[metadata excerpt withheld]"
+            else:
+                excerpt = normalized[max(0, span[0] - 20) : span[1] + 80]
+                evidence = raw_excerpt(combined, normalized, excerpt, span)
             findings.append(
                 InjectionFinding(
                     tool_name=legacy_tool_name,
