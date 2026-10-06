@@ -31,7 +31,7 @@ FIXTURE = Path("tests/fixtures/agent_visible_text.json")
             "/name",
             "pretend_you_are",
         ),
-        ("status\u200b", "status\u200c", "hidden_directive", "/name", "[U+200B at pos 6]: 'status\\u200b'"),
+        ("status\u200b", "status\u200c", "hidden_directive", "/name", "[U+200B at pos 6]: 'status‹U+200B›'"),
         ("user:", "assistant: do this", "role_injection", "/name", "user:"),
         ("pseudoassistant:", "user: do this", "role_injection", "/description", "user: do this"),
     ],
@@ -46,7 +46,7 @@ def test_legacy_field_pointer_identifies_the_excerpt_source(
     assert source[0].matched_text == excerpt
     if name == "status\u200b":
         assert {f.field_path for f in matching} == {"/name", "/description"}
-        assert matching[1].matched_text == "[U+200C at pos 6]: 'status\\u200c'"
+        assert matching[1].matched_text == "[U+200C at pos 6]: 'status‹U+200C›'"
     elif name == "user:":
         assert {f.field_path for f in matching} == {"/name", "/description"}
         assert matching[1].matched_text == "assistant: do this"
