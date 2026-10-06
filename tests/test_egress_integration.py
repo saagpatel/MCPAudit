@@ -133,7 +133,10 @@ class TestTerminal:
         fixed = next(
             f for f in _audit().egress_findings if f.kind is EgressKind.DESTINATION_OUTSIDE_ALLOWLIST
         )
-        assert ReportGenerator._egress_destination_label(fixed) == "evil.example (https://evil.example/data)"
+        assert (
+            ReportGenerator._egress_destination_label(fixed).plain
+            == "evil.example (https://evil.example/data)"
+        )
 
 
 class TestHtml:
