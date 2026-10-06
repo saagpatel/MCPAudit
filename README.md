@@ -34,17 +34,25 @@ cooperative cancellation races, expiry, success, failure, duplicates, stale
 observations, and forbidden terminal transitions without discovering or
 contacting an MCP server or reading credentials.
 
-> **🌐 Try it in your browser, no install:** paste any MCP client config at **[mcp-audit.saagarpatel.dev](https://mcp-audit.saagarpatel.dev)** for an instant config-only trust report. It runs this exact engine, never launches configured servers, never contacts configured endpoints, and stores nothing. The CLI below adds the connected deep checks (prompt-injection, SSRF, the lethal trifecta, schema drift, SARIF).
+> **🌐 Try it in your browser, no install:** paste any MCP client config at **[mcp-audit.saagarpatel.dev](https://mcp-audit.saagarpatel.dev)** for an instant config-only trust report. It runs this exact engine, never launches configured servers, never contacts configured endpoints, and stores nothing. The CLI below adds connected deep checks (instruction-shaped text, SSRF, the lethal trifecta, schema drift, SARIF).
+
+The package is `mcp-audits` on PyPI; the command it installs is `mcp-audit`.
 
 ## ⚡ 60-second start
 
-No install required — [`uv`](https://docs.astral.sh/uv/) runs it in a throwaway environment. This reads the MCP configs already on your machine, connects to each configured server to read its real tool schemas, and flags SSRF-shaped tools:
+No install required — [`uv`](https://docs.astral.sh/uv/) runs it in a throwaway environment. Start with the zero-touch pass: it reads the MCP configs on your machine and reasons from them; spawns no servers and makes no network calls.
+
+```bash
+uvx --from mcp-audits mcp-audit scan --skip-connect
+```
+
+Then run the connected deep check, which launches each configured server to read its real tool list and flags SSRF-shaped tools:
 
 ```bash
 uvx --from mcp-audits mcp-audit scan --ssrf-check
 ```
 
-It stays read-only the whole time — it never edits a config and reports env-var **key names only**, never values. Sample output:
+The connected scan stays read-only — it never edits a config and reports env-var **key names only**, never values. Sample output from the connected scan:
 
 ```text
 ╭───────────────────── mcp-audit scan ─────────────────────╮
@@ -71,7 +79,7 @@ It stays read-only the whole time — it never edits a config and reports env-va
 └────────┴──────┴─────────┴──────────┴─────────────────┴───────────────────┴──────────────────────┘
 ```
 
-> *Sample output with illustrative public server names. Higher risk = a broader surface to sandbox, **not** "malicious." Want a zero-touch pass first? Add `--skip-connect` to reason purely from your config — no servers spawned, no network calls. Stack `--trifecta-check` or `--shadow-check` alongside `--ssrf-check` to hunt more attack surfaces, and `--json` / `--sarif` / `--html` to pipe results into CI or a dashboard.*
+> *Sample output with illustrative public server names. Higher risk = a broader surface to sandbox, **not** "malicious." Stack `--trifecta-check` or `--shadow-check` alongside `--ssrf-check` to hunt more attack surfaces, and `--json` / `--sarif` / `--html` to pipe results into CI or a dashboard.*
 
 Connected public-fixture demo (`fetch`, `sequential-thinking`, `time`; no auth tokens or workstation configs):
 
@@ -112,7 +120,7 @@ malicious-lookalike tool descriptions, a static config-only MCPAudit report, and
 a connected-tool manifest that demonstrates what config-only mode can and cannot
 prove.
 
-PyPI package: [`mcp-audits`](https://pypi.org/project/mcp-audits/) · installed command: `mcp-audit` · full flag and detector reference below.
+Full flag and detector reference below.
 
 ---
 
@@ -147,7 +155,7 @@ All tools are read-only and take no URL or filesystem path; server discovery is 
 | `check_server` | Audit one uniquely named discovered server | `name: str` |
 | `get_high_risk_servers` | Servers with a composite risk score of 7.0 or higher | none |
 | `list_discovered_servers` | Names and clients of all discovered servers (config-only, no spawning) | none |
-| `get_injection_findings` | Prompt-injection findings across all servers | none |
+| `get_injection_findings` | Instruction-shaped text heuristic findings across all servers | none |
 | `get_ssrf_findings` | SSRF-shaped tools and resources across all servers | none |
 | `get_trifecta_findings` | Lethal-trifecta findings (per-server and fleet-level) | none |
 | `get_shadowing_findings` | Cross-server tool-name shadowing collisions | none |
@@ -175,19 +183,19 @@ Every `get_*_findings` tool returns a JSON object with `findings` and `warnings`
 - **Config-only inference** — `scan --skip-connect` infers conservative risks from declared commands, transports, credential key names, package runners, and remote URLs
 - **Config health diagnostics** — `discover` and `scan` flag duplicate server names, conflicting command or URL definitions, missing stdio commands, missing local command paths, project/global scope conflicts, package-runner launches, deprecated SSE transports, shell-wrapper launches, remote endpoints, and credential-heavy configs before users pin or connect; JSON reports include additive `config_health_findings`
 - **Risk scoring** — composite 0–10 per server as a weighted sum of tool permission categories, with a five-dimension breakdown (file access, network, shell, destructive, exfiltration); prompt/resource findings also produce an additive `non_tool_risk` signal without changing `risk_score.composite`
-- **Stable finding metadata** — permission and prompt-injection findings include stable rule IDs, severity, evidence, and suggested remediation so reports are easier to triage
+- **Stable finding metadata** — permission and instruction-shaped text heuristic findings include stable rule IDs, severity, evidence, and suggested remediation so reports are easier to triage
 - **Fixture-first MCP cache contract audit** — `mcp-audit cache-contract scan TRACE` deterministically evaluates synthetic MCP `2026-07-28` list/read cache traces under stable `MCPCACHE000`–`MCPCACHE009` rules; malformed, unsupported, clock-ambiguous, or truncated evidence is `UNKNOWN`, while real caches, transports, credentials, and logs remain out of scope. See `docs/CACHE-CONTRACT-AUDITOR.md`
 - **Offline MCP Tasks state-machine lab** — `mcp-audit task-time-machine run --builtin happy-path` executes strict versioned scenarios in `(at_ms, sequence)` order, emits human or canonical JSON explanations under stable `MCPTASK000`–`MCPTASK008` rules, and preserves experimental or underspecified semantics as `UNKNOWN`. See `docs/MCP-TASK-TIME-MACHINE.md`
 - **Offline MCP result parcel lab** — `mcp-audit result-parcel analyze` compares inline, provider/local chunk or progress extensions, core resource links, and the negotiated Tasks extension against size, expiry, authorization, redaction, integrity, and retrieval faults. Explanations bind to named inputs; no payload, MCP server, network, credential, or object store is read. See `docs/RESULT-PARCEL-LAB.md`
 - **Local policy gates** — `scan --policy policy.yaml` evaluates reports against local YAML rules and exits nonzero for CI enforcement
 - **Report redaction** — terminal, JSON, SARIF, and HTML report paths share a redaction layer for likely credential values; `scan --redact` adds an opt-in field-report pass that also scrubs the machine hostname and home-path usernames (`/Users/<name>`, `/home/<name>`, `C:\Users\<name>`) from `--json`/`--sarif`/`--html` output, and replaces matching server-name text in string values with stable aliases (`server-01`, …). Dictionary keys and names that do not match the alias pattern may remain; review the field-report checklist before sharing
-- **Prompt injection detection** — `scan --inject-check` scans tool, prompt, and resource text for instruction-override patterns, hidden directives, fake role turns, and adversarial phrasing; pattern-based, no LLM required
+- **Instruction-shaped text heuristics** — `scan --inject-check` uses pattern-based heuristics to flag instruction-override phrasing, hidden directives, and fake role turns in tool, prompt, and resource text. Rephrasing or obfuscation can evade them; findings are leads to review, not verdicts.
 - **SSRF detection** — `scan --ssrf-check` flags tools and resources whose interface lets a caller steer a server-side request target (including URL/host params nested in object, array-item, or composition schemas, plus caller-templated remote resource hosts); static and schema-derived, never issues a request or reads a credential value
 - **Egress detection** — `scan --egress-check` audits *where* a server may send data: destinations outside `--egress-allowlist` (`MCP040`, MED), unbounded caller-controlled targets (`MCP041`, HIGH), and the trusted-destination residual for allowlisted-but-multi-tenant or credential-bearing hosts (`MCP042`, LOW/MED — the Cowork lesson). Static and schema/URI-derived; gated via `fail_on.egress`. See `docs/EGRESS-DETECTION.md`
 - **Lethal trifecta detection** — `scan --trifecta-check` detects the canonical agent-exfiltration attack surface: per-server (HIGH, `MCP013`) when a single server covers all three legs (file_read + untrusted-content ingestion + exfiltration), and fleet-level advisory (MEDIUM, `MCP014`) when the trifecta assembles only across servers; re-uses inferred permissions, never issues requests or reads credentials
 - **Tool-name shadowing detection** — `scan --shadow-check` flags cross-server tool-name collisions that could trick an AI agent into routing a call to the wrong server: exact matches (HIGH, `MCP015`), case/separator-normalised collisions (MEDIUM, `MCP016`), and homoglyph spoofing via non-ASCII confusable codepoints (HIGH, `MCP017`); offline, deterministic, no new dependencies
 - **Schema drift tracking** — `mcp-audit pin` connects to servers and snapshots current tool schemas; subsequent `scan --pin-check` flags added, removed, and changed tools with plain-language summaries, changed-field hints, suggested actions, and a dry-run refresh workflow for reviewed upgrades. `pin --refresh <server>` additionally surfaces capability-escalation (`MCP018`/`MCP019`) and launch-config/provenance (`MCP020`–`MCP023`) deltas in the same preview — unconditionally, so a rug-pull or launch swap can't slip through a baseline refresh
-- **Capability-escalation ("rug pull") detection** — `scan --escalation-check` compares each tool against its pin baseline and flags security-significant escalations over time: a tool that gained a dangerous capability (`MCP018` — HIGH for exfiltration/shell/destructive, MEDIUM for file_write/network) or whose description gained prompt-injection patterns (`MCP019`, HIGH); pure delta vs the approved baseline, so findings stay scoped to reviewed baseline deltas. See `docs/ESCALATION-DETECTION.md`
+- **Capability-escalation ("rug pull") detection** — `scan --escalation-check` compares each tool against its pin baseline and flags security-significant escalations over time: a tool that gained a dangerous capability (`MCP018` — HIGH for exfiltration/shell/destructive, MEDIUM for file_write/network) or whose description gained instruction-shaped text heuristic matches (`MCP019`, HIGH); pattern matches can be evaded with rephrasing or obfuscation and are leads to review, not verdicts. Findings stay scoped to reviewed baseline deltas. See `docs/ESCALATION-DETECTION.md`
 - **Provenance / launch-config drift detection** — `scan --provenance-check` compares a server's launch configuration against its pin baseline to catch supply-chain changes the schema check can't see: command/transport swap (`MCP020`, HIGH), argument/version drift with dangerous-flag escalation (`MCP021`, MED/HIGH), HTTP endpoint change (`MCP022`, HIGH), and credential **key-name** set changes (`MCP023`, MEDIUM — key names only, never values). See `docs/PROVENANCE-DETECTION.md`
 - **Launch-artifact integrity detection** — `scan --integrity-check` hashes the on-disk artifact a server launches (the resolved command binary + local script args) and flags drift vs the pin baseline (`MCP024` — HIGH when the SHA-256 changed, MEDIUM when the file is gone). The command string can stay byte-identical while the file it runs is swapped underneath you; this catches that. Offline and deterministic — only local bytes are hashed, nothing is fetched. Package-runner (`npx`/`uvx`) launches hash the runner, not the remote package (see registry verification below). See `docs/INTEGRITY-DETECTION.md`
 - **Registry package verification** — `scan --verify-artifacts` (opt-in, **network**) covers the package-runner case the on-disk check can't: it compares the registry-published hash (npm `dist.integrity`, PyPI sha256) for the exact pinned `package@version` against the hash captured at pin time (`MCP025` — HIGH on a changed published hash, a republish/tampering signal; MEDIUM when unverifiable). Network is contacted only under `--verify-artifacts`, on both `pin` (to capture) and `scan` (to compare). Covers npm + PyPI. See `docs/PACKAGE-VERIFICATION.md`
@@ -236,7 +244,7 @@ mcp-audit scan --clients claude_desktop,cursor
 # Scan only one explicit MCP config file
 mcp-audit scan --config ./mcp.json --config-only
 
-# Check tools, prompts, and resources for prompt-injection patterns
+# Review instruction-shaped text heuristic findings in tools, prompts, and resources
 mcp-audit scan --inject-check
 
 # Flag SSRF-prone tools/resources (caller-controlled server-side fetch targets)
