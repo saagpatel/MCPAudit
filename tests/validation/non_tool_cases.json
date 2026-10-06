@@ -41,8 +41,9 @@
 			{
 				"target_type": "prompt",
 				"target_name": "review_code",
-				"severity": "high",
-				"pattern_name": "ignore_instructions"
+				"severity": "medium",
+				"pattern_name": "INSTRUCTION_SHAPED_TEXT",
+				"instruction_pattern": "instruction_override"
 			},
 			{
 				"target_type": "prompt",
@@ -52,7 +53,7 @@
 			}
 		],
 		"expect_non_tool_risk": true,
-		"expected_non_tool_risk": 8.95
+		"expected_non_tool_risk": 5.95
 	},
 	{
 		"server_name": "local-file-resource",
@@ -132,12 +133,13 @@
 			{
 				"target_type": "prompt",
 				"target_name": "triage_issue",
-				"severity": "low",
-				"pattern_name": "credential_harvest"
+				"severity": "medium",
+				"pattern_name": "INSTRUCTION_SHAPED_TEXT",
+				"instruction_pattern": "credential_harvest"
 			}
 		],
 		"expect_non_tool_risk": true,
-		"expected_non_tool_risk": 2.35
+		"expected_non_tool_risk": 5.35
 	},
 	{
 		"server_name": "postgres-analytics",
@@ -354,18 +356,20 @@
 			{
 				"target_type": "prompt",
 				"target_name": "rotate_secret",
-				"severity": "high",
-				"pattern_name": "ignore_instructions"
+				"severity": "medium",
+				"pattern_name": "INSTRUCTION_SHAPED_TEXT",
+				"instruction_pattern": "instruction_override"
 			},
 			{
 				"target_type": "prompt",
 				"target_name": "rotate_secret",
-				"severity": "high",
-				"pattern_name": "prompt_leak"
+				"severity": "medium",
+				"pattern_name": "INSTRUCTION_SHAPED_TEXT",
+				"instruction_pattern": "prompt_leak"
 			}
 		],
 		"expect_non_tool_risk": true,
-		"expected_non_tool_risk": 8.95
+		"expected_non_tool_risk": 5.95
 	},
 	{
 		"server_name": "benign-glossary",
@@ -524,14 +528,16 @@
 			{
 				"target_type": "resource",
 				"target_name": "catalog://approved/entries",
-				"severity": "high",
-				"pattern_name": "ignore_instructions"
+				"severity": "medium",
+				"pattern_name": "INSTRUCTION_SHAPED_TEXT",
+				"instruction_pattern": "instruction_override"
 			},
 			{
 				"target_type": "resource",
 				"target_name": "catalog://approved/entries",
-				"severity": "high",
-				"pattern_name": "prompt_leak"
+				"severity": "medium",
+				"pattern_name": "INSTRUCTION_SHAPED_TEXT",
+				"instruction_pattern": "prompt_leak"
 			},
 			{
 				"target_type": "resource",
@@ -541,7 +547,7 @@
 			}
 		],
 		"expect_non_tool_risk": true,
-		"expected_non_tool_risk": 7.0
+		"expected_non_tool_risk": 4.0
 	},
 	{
 		"server_name": "feature-flag-admin",
@@ -573,12 +579,13 @@
 			{
 				"target_type": "prompt",
 				"target_name": "rollout_plan",
-				"severity": "high",
-				"pattern_name": "system_override"
+				"severity": "medium",
+				"pattern_name": "INSTRUCTION_SHAPED_TEXT",
+				"instruction_pattern": "system_override"
 			}
 		],
 		"expect_non_tool_risk": true,
-		"expected_non_tool_risk": 8.35
+		"expected_non_tool_risk": 5.35
 	},
 	{
 		"server_name": "support-macro-library",

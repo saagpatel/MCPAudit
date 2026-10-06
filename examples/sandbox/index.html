@@ -681,6 +681,8 @@
           </div>
           <div class="meta-grid">
             <div class="meta-row"><span>Target</span><span>${finding.target_type}: ${finding.target_name}</span></div>
+            ${finding.instruction_pattern ? `<div class="meta-row"><span>Pattern</span><span>${finding.pattern_name} / ${finding.instruction_pattern}</span></div>` : ""}
+            ${finding.field_path ? `<div class="meta-row"><span>Field</span><span>${finding.field_path}</span></div>` : ""}
             <div class="meta-row"><span>Evidence</span><span>${finding.evidence}</span></div>
             <div class="meta-row"><span>Proof</span><span>${finding.what_mcpaudit_can_prove}</span></div>
             <div class="meta-row"><span>Action</span><span>${finding.review_action}</span></div>

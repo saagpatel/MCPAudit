@@ -74,6 +74,10 @@ class ReportGenerator:
         )
         self._console.print(Panel(summary, title="mcp-audit scan", expand=False))
 
+        target_hunts = sum(bool(f.hunt_targets) for a in report.audits for f in a.injection_findings)
+        if target_hunts:
+            self._console.print(f"[bold red]Fix now:[/bold red] {target_hunts} metadata secret-target hunts.")
+
         self._render_coverage(report)
 
         if not report.audits:
