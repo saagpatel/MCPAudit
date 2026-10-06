@@ -295,6 +295,16 @@ once. The shared property walker visits at most 2,048 schema nodes, descends at
 most 64 levels, and admits at most 4,096 properties; external references are
 never fetched. Existing fields and `schema_version` are unchanged.
 
+Incomplete property traversal produces `warnings[]` with
+`code: permission_schema_incomplete` and `check: permission_analysis`.
+Messages contain only fixed reason codes: `node_budget_exceeded`,
+`depth_budget_exceeded`, `property_budget_exceeded`, `unresolved_reference`,
+`unsupported_dynamic_reference`, or the fallback `schema_traversal_incomplete`.
+Reference text is not copied into these warnings. Findings from the inspected
+portion are retained. Escalation comparison collects the same status from both
+current and pinned tool schemas and emits the warning with
+`check: escalation_check` when either traversal is incomplete.
+
 The separate agent-visible text extractor admits at most 256 text fields per
 tool, 16,384 characters per field, and 65,536 characters in total. Its schema
 traversal visits at most 2,048 nodes, descends at
@@ -537,6 +547,12 @@ trifecta, and escalation checks `partial` for the affected server, including
 checks that consume bounded permission or injection findings. Inventory and
 checks that use full metadata are unaffected by this text budget. A pinned
 server with an empty tool baseline still has an available `pin_check` baseline.
+`permission_schema_incomplete` with `check: permission_analysis` makes permissions
+and requested trifecta and escalation checks `partial` for the affected server.
+With `check: escalation_check`, only escalation coverage is affected; incomplete
+pinned schemas do not degrade current permission coverage. Separate agent-visible
+text inspection, metadata inventory, and configuration health are unaffected by
+property traversal limits. Checks without an available baseline remain `not_run`.
 `description_truncated` makes permissions, capabilities, and requested SSRF,
 egress, trifecta, and escalation checks `partial` for the affected server.
 This is conservative per-server coverage because the warning does not identify

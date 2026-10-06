@@ -36,6 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   SSRF schema walker. Property names retain weight 1 and the HIGH confidence
   threshold remains 6; evidence includes matching schema paths. Nested
   `upload_url` and `shell_command` gains now produce HIGH MCP018 escalation.
+  Report incomplete property traversal with sanitized reason codes and partial
+  permission, trifecta, and escalation coverage, including pinned schemas used
+  for escalation comparison.
   The offline examples golden comparison against the pre-change analyzer has
   no fleet-wide permission finding count change: 12 → 12 across 9 public-config
   servers, 7 → 7 across 5 sandbox-config servers, and 22 → 22 across 13 stored
