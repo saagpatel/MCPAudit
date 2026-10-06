@@ -1,5 +1,5 @@
 {
-	"_comment": "Publishable sample config of popular PUBLIC open-source MCP servers, used for config-only field-scan evidence (see docs/SOLO-EVIDENCE.md). Contains only public package names, an example.com placeholder remote, and credential KEY NAMES (never values). Versions pinned to the releases current at 2026-06-02. Safe to run config-only, spawns nothing: `mcp-audit scan --config examples/configs/popular-public-servers.json --config-only --skip-connect`.",
+	"_comment": "Publishable sample config of popular PUBLIC open-source MCP servers, used for config-only field-scan evidence (see maintainers/SOLO-EVIDENCE.md). Contains only public package names, an example.com placeholder remote, and credential KEY NAMES (never values). Versions pinned to the releases current at 2026-06-02. Safe to run config-only, spawns nothing: `mcp-audit scan --config examples/configs/popular-public-servers.json --config-only --skip-connect`.",
 	"mcpServers": {
 		"filesystem": {
 			"command": "npx",

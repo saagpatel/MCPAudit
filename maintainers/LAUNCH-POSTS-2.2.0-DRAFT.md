@@ -189,7 +189,7 @@ These are tracked in issues [#83](https://github.com/saagpatel/MCPAudit/issues/8
 outside users running it on their own setups. The Show HN copy above stays
 pre-beta until both land. Outreach below leads with the zero-install browser
 hook (5 seconds, no commitment), then asks for the redacted CLI report as the
-actual contribution. Builds on `docs/EXTERNAL-OUTREACH-MESSAGES.md`.
+actual contribution. Builds on `maintainers/EXTERNAL-OUTREACH-MESSAGES.md`.
 
 ### Message 1: warm DM (someone you know who runs MCP servers)
 
