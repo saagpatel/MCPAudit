@@ -395,6 +395,26 @@ Additive, optional fields for compatibility with older reports:
   MCPAudit presents this explicit identity on stdio, Streamable HTTP, and SSE,
   in canary and ordinary connected scans. Older reports load with an empty string
   (identity unrecorded), not the current package identity.
+- `client_identities`: names/versions whose sessions reached the initial listing,
+  in probe order; defaults to an empty list for older reports. The original
+  `client_identity` continues to describe the primary session. Stdio canaries
+  use two identities by default; HTTP/SSE use one unless `--canary-identities 2`
+  is requested. `--canary-identities 1` disables the differential probe. The
+  supported count is 1–2. The alternate client advertises roots support whose
+  callback returns no roots, without granting filesystem access or sampling.
+- `baseline_source`: `pin` when a complete v2 saved tool snapshot is used,
+  otherwise `session` (also the default for older reports). V1 pins are not
+  promoted. Saved tool snapshots are compared against the initial listing at
+  `after_call: 0`, so pre-session changes are HIGH findings even without
+  `--pin-check`. Prompt/resource baselines remain the initial session capture.
+  Saved credential-redacted snapshots are compared with redacted tool metadata
+  at call zero only; subsequent session and identity comparisons retain raw
+  surface hashes. A pin-based `baseline_hash` incorporates reconstructed,
+  credential-redacted snapshots; `current_hash` retains the live capture hash.
+  Pins are never written by the canary. V2 snapshots must contain every persisted
+  tool field, including explicit nulls for absent optional metadata. Malformed
+  or incomplete snapshots invalidate the saved baseline for that server. Corrupt
+  pins produce `pin_baseline_corrupted` and an explicit fallback to the in-session baseline.
 - `elapsed_seconds`: wall duration measured with a monotonic clock, from connection
   through session teardown, including failure or timeout; null when unrecorded.
 - `call_budget`: K, equal to the unchanged `requested_calls`; older reports infer
@@ -416,22 +436,39 @@ Terminal and HTML show status, completed tool calls / budget, and the human
 limitations beside the server verdict. SARIF adds exercised-server summaries
 to `runs[0].invocations[0].properties.mcpAuditCanary`, including `server`,
 `status`, `completed_calls`, `call_budget`, `client_identity`, `elapsed_seconds`,
-`not_excluded`, and the corresponding `not_excluded_descriptions`. No rule IDs
-or result-level fields change; non-canary rendering is unchanged. The SARIF
-invocation's required `executionSuccessful: true` denotes completed scan/report
+`not_excluded`, and the corresponding `not_excluded_descriptions`. New sessions
+also include `client_identities` and `baseline_source`. Existing rule IDs remain
+unchanged; differential results add the optional `kind` property described below.
+Non-canary rendering is unchanged. The SARIF invocation's required
+`executionSuccessful: true` denotes completed scan/report
 execution, not a clean security verdict.
 
 `drift_findings` includes both saved-pin and session comparisons. Additive
 fields are `source` (`pin` by default, `session` for the canary), `severity`
 (`medium` by default, `high` for session changes), `after_call` (1-based, null
-for saved pins), `surface_type` (`tool`, `prompt`, or `resource`), `surface`
+for saved pins; 0 for initial comparisons), `surface_type` (`tool`, `prompt`, or
+`resource`), `surface`
 (`tools`, `prompts`, `prompt_results`, or `resources` for sessions), and
 `field_changes`. Each change has a JSON Pointer `path` within the capability
 and canonical SHA256 `before_hash` / `after_hash`; null means an absent field.
 Raw changed values are withheld. `target_type` follows `surface_type`;
 the retained legacy `tool_name` / `target_name` also identifies prompts and
-resource URIs. `summary` distinguishes `prompts` from `prompt_results`
-(`prompts/get`). Each surface retains its last successful observation across
+resource URIs. The optional `kind` is `IDENTITY_CONDITIONED_SURFACE` for a
+difference between the two identities' initial tool/prompt/resource listings
+or empty-argument prompt response descriptions and roles, and null for other
+drift (including older reports). These findings remain
+`source: session`, `severity: high`, and `after_call: 0`; they use SARIF MCP009
+with `properties.kind` and a distinct fingerprint. Terminal, HTML, and SARIF
+messages name the identity-conditioned difference. Policy drift and HIGH
+severity gates both apply. The alternate session lists metadata and gets each
+eligible empty-argument prompt once: no `tools/call`, no resource reads, and no
+changes to the primary session inventory or hashes. Failed listings are
+coverage loss, not removals.
+Two selected identities cannot rule out all other identities, so
+`not_excluded` retains `client_identity`. The comparison is observational;
+legitimate per-client surfaces may also differ. `summary` distinguishes
+`prompts` from `prompt_results` (`prompts/get`). Each surface retains its last
+successful observation across
 failed listings, so later changes and reversions remain detectable. A failed
 `prompts/get` retains just that prompt's prior structure while peers are still
 compared. Successful prompt listings establish prompt removals. Prompt results
@@ -458,11 +495,12 @@ to the console. Other canary listing errors retain their exception type.
 
 `--canary-calls` bounds tool exercise requests (K), not metadata reads. The
 documented exercise request budget includes all `prompts/get`: for P eligible
-prompts on each capture, up to K + P × (K + 1) requests, plus gets on tools-list
-failure refreshes. Inspect `completed_calls + prompt_get_calls` for the recorded
-total; initialize and paginated listing requests are additional. The session
-timeout bounds all requests. Failed tool requests can leave `completed_calls`
-below the number attempted; connection failure and partial status record that
+prompts on each capture and I identities, up to K + P × (K + I) requests, plus
+gets on tools-list failure refreshes. Inspect `completed_calls + prompt_get_calls`
+for the recorded total; initialize and paginated listing requests are additional.
+The session timeout bounds all requests across both identities. Failed tool
+requests can leave `completed_calls` below the number attempted;
+connection failure and partial status record that
 incomplete exercise.
 
 Automatic tool exercise requires `readOnlyHint: true` and no explicit
@@ -574,9 +612,12 @@ The report top level also includes:
     title, outputSchema, icons and meta were not covered; original v1 drift
     comparisons remain active, and refresh review is required for v2 coverage),
     `pin_baseline_corrupted` (a pin baseline file exists but could not be
-    parsed — materially different from "missing", since it can mask a wiped
-    or tampered baseline; the message names the file and parse error, and
-    pin mutations refuse to overwrite such a file),
+    parsed, or saved v2 canary tool snapshots are invalid or incomplete — materially
+    different from "missing", since it can mask a wiped or tampered baseline.
+    Parse failures name the file and sanitized error; pin mutations refuse to
+    overwrite unparseable files. Invalid or incomplete
+    v2 snapshots produce a sanitized per-server canary warning and use the
+    in-session baseline without modifying the pin file),
     `pin_baseline_stale` (pinned servers whose baseline predates the capture
     this check compares against; named in `servers`),
     `missing_credential` (e.g. `--llm-analysis` without `ANTHROPIC_API_KEY`),

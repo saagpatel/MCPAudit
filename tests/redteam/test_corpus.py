@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import cast
 
@@ -21,7 +21,6 @@ CORPUS_PATH = HERE / "corpus.json"
 CORPUS = cast(list[dict[str, object]], json.loads(CORPUS_PATH.read_text())["cases"])
 
 _GAP_REASONS = {
-    "gate-on-client-name": "gap 12: fixed by P2-7",
     "split-across-tools-fields": "gap 3: unplanned cross-field detection",
 }
 
@@ -44,20 +43,6 @@ def _server(case: Mapping[str, object], name: str | None = None, stage: str = "c
         command=sys.executable,
         args=["-I", str(FIXTURE), str(case["mode"]), stage],
     )
-
-
-def _finding_labels(audit: ServerAudit, fields: set[str]) -> Iterator[str]:
-    for name, findings in audit.model_dump(mode="json").items():
-        if name not in {"permissions", "capability_findings"} and not name.endswith("_findings"):
-            continue
-        if not isinstance(findings, list):
-            continue
-        for finding in findings:
-            if isinstance(finding, dict):
-                for field in fields:
-                    value = finding.get(field)
-                    if isinstance(value, str):
-                        yield value.casefold()
 
 
 @pytest.fixture
@@ -179,10 +164,9 @@ async def test_detector_gap_corpus(
             summary = audit.canary.model_dump()
             assert detector["limit"] in (summary.get("not_excluded") or [])
         elif kind == "drift_or_identity":
-            # The fixture gates on literal "mcp". When F-1 sends "mcp-audit",
-            # update it to gate on that identity (or on "not mcp-audit").
-            assert any(f.source == "session" for f in audit.drift_findings) or any(
-                "identity" in label for label in _finding_labels(audit, {"code", "kind"})
+            assert any(
+                f.kind == "IDENTITY_CONDITIONED_SURFACE" and f.severity == "high"
+                for f in audit.drift_findings
             )
         elif kind == "runtime_injection":
             patterns = {

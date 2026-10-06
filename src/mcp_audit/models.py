@@ -900,6 +900,8 @@ class CanarySummary(BaseModel):
 
     requested_calls: int
     client_identity: str = ""  # Older reports did not record the presented identity.
+    client_identities: list[str] = Field(default_factory=list)
+    baseline_source: Literal["session", "pin"] = "session"
     elapsed_seconds: float | None = None
     call_budget: int = Field(default_factory=lambda data: data["requested_calls"])
     not_excluded: list[str] = Field(default_factory=lambda: list(CANARY_NOT_EXCLUDED))
@@ -931,6 +933,7 @@ class DriftFinding(BaseModel):
     details: list[str] = Field(default_factory=list)
     remediation: str = ""
     source: Literal["pin", "session"] = "pin"
+    kind: Literal["IDENTITY_CONDITIONED_SURFACE"] | None = None
     severity: Literal["low", "medium", "high"] = "medium"
     after_call: int | None = None
     surface_type: CapabilityTarget = CapabilityTarget.TOOL

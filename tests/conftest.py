@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from mcp_audit.models import ClientType, ServerConfig, ToolAnnotations, ToolInfo, TransportType
+from mcp_audit.pinning import PinStore
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -21,6 +22,29 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 def anyio_backend() -> str:
     """Use asyncio backend for all async tests."""
     return "asyncio"
+
+
+@pytest.fixture(autouse=True)
+def isolated_canary_pins(request: pytest.FixtureRequest) -> None:
+    """Canary lanes must not read the workstation's saved pin snapshots."""
+    if request.node.path.name not in {
+        "test_agent_text.py",
+        "test_canary.py",
+        "test_canary_contract.py",
+        "test_canary_identity.py",
+        "test_coverage.py",
+    }:
+        return
+    from mcp_audit import pinning
+
+    tmp_path: Path = request.getfixturevalue("tmp_path")
+    monkeypatch: pytest.MonkeyPatch = request.getfixturevalue("monkeypatch")
+
+    class LocalPinStore(PinStore):
+        def __init__(self, path: Path = tmp_path / "pins.yaml") -> None:
+            super().__init__(path=path)
+
+    monkeypatch.setattr(pinning, "PinStore", LocalPinStore)
 
 
 @pytest.fixture
