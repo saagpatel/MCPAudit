@@ -1599,6 +1599,11 @@
           "title": "Annotation Coverage",
           "type": "number"
         },
+        "annotations_missing": {
+          "default": false,
+          "title": "Annotations Missing",
+          "type": "boolean"
+        },
         "injection_findings": {
           "items": {
             "$ref": "#/$defs/InjectionFinding"

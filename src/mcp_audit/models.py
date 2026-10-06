@@ -1013,6 +1013,7 @@ class ServerAudit(BaseModel):
     non_tool_risk: NonToolRisk | None = None
     has_annotations: bool = False
     annotation_coverage: float = 0.0  # Percentage of tools with annotations
+    annotations_missing: bool = False  # Informational; missing hints are not capability evidence.
     injection_findings: list[InjectionFinding] = Field(default_factory=list)
     ssrf_findings: list[SsrfFinding] = Field(default_factory=list)
     egress_findings: list[EgressFinding] = Field(default_factory=list)

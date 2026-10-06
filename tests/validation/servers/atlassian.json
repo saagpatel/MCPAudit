@@ -1,6 +1,7 @@
 {
   "server_name": "server-atlassian",
   "description": "Atlassian MCP server — Jira and Confluence search, issue updates, and page publishing",
+  "tool_annotations": {"open_world_hint": true},
   "tools": [
     {
       "name": "jira_search_issues",

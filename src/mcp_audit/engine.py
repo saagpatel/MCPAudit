@@ -447,6 +447,7 @@ async def run_scan(
 
             # Apply user overrides between analysis and scoring
             audit.permissions = applier.apply(srv.name, raw_findings)
+            audit.annotations_missing = analyzer.annotations_missing(audit.tools)
             audit.annotation_findings = [
                 finding
                 for tool in audit.tools

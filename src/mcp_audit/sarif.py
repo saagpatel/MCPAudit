@@ -510,8 +510,11 @@ class SarifGenerator:
         """One result per (server, tool, category) triple, plus injection findings."""
         results: list[dict[str, Any]] = []
         for audit in report.audits:
+            alert_score = self._permission_alert_score(audit)
+            if audit.annotations_missing:
+                results.append(self._make_annotations_missing_result(audit))
             for permission_finding in audit.permissions:
-                results.append(self._make_result(permission_finding, audit))
+                results.append(self._make_result(permission_finding, audit, alert_score=alert_score))
             for annotation_finding in audit.annotation_findings:
                 results.append(self._make_annotation_result(annotation_finding, audit))
             for capability_finding in audit.capability_findings:
@@ -603,9 +606,43 @@ class SarifGenerator:
             "properties": finding.model_dump(mode="json"),
         }
 
-    def _finding_level(self, finding: PermissionFinding, audit: ServerAudit) -> str:
-        """Determine SARIF level based on composite risk score and finding confidence."""
+    def _permission_alert_score(self, audit: ServerAudit) -> float:
+        """Retain capability alert levels across the numerical scoring migration."""
         composite = audit.risk_score.composite if audit.risk_score else 0.0
+        if audit.risk_score and audit.tools:
+            # Keep capability alert levels compatible when annotation-only
+            # contributions leave the numerical score. The FYI is always a note.
+            annotations = [tool.annotations for tool in audit.tools]
+            score = audit.risk_score
+            composite = min(
+                10.0,
+                max(
+                    score.file_access,
+                    1.0 if any(a and a.read_only_hint is True for a in annotations) else 0.0,
+                )
+                + max(
+                    score.network_access,
+                    1.5 if any(a is None or a.open_world_hint is None for a in annotations) else 0.0,
+                )
+                + max(
+                    score.destructive,
+                    2.0
+                    if any(
+                        a is None or (a.read_only_hint is not True and a.destructive_hint is None)
+                        for a in annotations
+                    )
+                    else 0.0,
+                )
+                + score.shell_execution
+                + score.exfiltration,
+            )
+        return composite
+
+    def _finding_level(
+        self, finding: PermissionFinding, audit: ServerAudit, *, alert_score: float | None = None
+    ) -> str:
+        """Determine a compatible SARIF level from score and confidence."""
+        composite = self._permission_alert_score(audit) if alert_score is None else alert_score
         if composite >= 7.0:
             return "error"
         if composite >= 3.0 or finding.confidence in _HIGH_CONFIDENCE:
@@ -737,10 +774,33 @@ class SarifGenerator:
             },
         }
 
-    def _make_result(self, finding: PermissionFinding, audit: ServerAudit) -> dict[str, Any]:
+    def _make_annotations_missing_result(self, audit: ServerAudit) -> dict[str, object]:
+        """Keep default annotation uncertainty separate from scored capabilities."""
+        rule_id = _RULE_IDS[PermissionCategory.DESTRUCTIVE]
+        return {
+            "ruleId": rule_id,
+            "level": "note",
+            "message": {
+                "text": f"Server '{audit.server.name}' has tools with missing open-world or applicable "
+                "destructive hints. Missing annotations do not establish capabilities."
+            },
+            "locations": [
+                {"physicalLocation": {"artifactLocation": {"uri": _artifact_uri(audit.server.config_path)}}}
+            ],
+            "partialFingerprints": {
+                "mcpAuditStableId": _stable_fingerprint(
+                    f"{rule_id}/annotations_missing", audit.server.name, ""
+                )
+            },
+            "properties": {"kind": "annotations_missing", "target_type": "server", "severity": "low"},
+        }
+
+    def _make_result(
+        self, finding: PermissionFinding, audit: ServerAudit, *, alert_score: float | None = None
+    ) -> dict[str, Any]:
         """Build a single SARIF result object."""
         rule_id = finding.rule_id
-        level = self._finding_level(finding, audit)
+        level = self._finding_level(finding, audit, alert_score=alert_score)
 
         config_path = audit.server.config_path
         uri = _artifact_uri(config_path)

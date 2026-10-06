@@ -19,7 +19,7 @@ from typing import NotRequired, TypedDict, cast
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
 from mcp_audit.analyzer import PermissionAnalyzer
-from mcp_audit.models import PermissionFinding, ToolInfo
+from mcp_audit.models import PermissionFinding, ToolAnnotations, ToolInfo
 
 SERVERS_DIR = Path(__file__).parent / "servers"
 BENIGN_PATH = Path(__file__).parent / "benign_tools.json"
@@ -27,12 +27,11 @@ BENIGN_PATH = Path(__file__).parent / "benign_tools.json"
 _CONFIDENCE_ORDER = ["low", "medium", "high", "declared", "llm"]
 MIN_RECALL = 0.8
 MIN_EXPECTED_FOR_RECALL_GATE = 3
-# Fixed corpus baselines: 19 TP / 1 FP, 30 TP / 2 FP, and 5 TP / 3 FP.
-# Other categories have no known keyword FPs. Strict xfails track each gap.
+# The P2-1 calibration requires zero false positives on explicit negative rows.
 MIN_PRECISION = {
-    "file_read": 19 / 20,
-    "file_write": 30 / 32,
-    "exfiltration": 5 / 8,
+    "file_read": 1.0,
+    "file_write": 1.0,
+    "exfiltration": 1.0,
     "network": 1.0,
     "destructive": 1.0,
     "shell_execution": 1.0,
@@ -56,6 +55,7 @@ class Fixture(TypedDict):
     tools: list[ToolFixture]
     expected_findings: list[ExpectedFinding]
     keyword_only: NotRequired[bool]
+    tool_annotations: NotRequired[dict[str, bool]]
 
 
 @dataclass
@@ -100,7 +100,9 @@ def build_tool_infos(fixture: Fixture) -> list[ToolInfo]:
             name=tool["name"],
             description=tool.get("description", ""),
             input_schema=tool.get("input_schema", {}),
-            annotations=None,
+            annotations=ToolAnnotations.model_validate(fixture["tool_annotations"])
+            if "tool_annotations" in fixture
+            else None,
         )
         for tool in fixture["tools"]
     ]
