@@ -157,7 +157,7 @@ def test_strict_policy_example_exits_two() -> None:
     )
 
     assert result.returncode == 2
-    assert "Policy Gate Failed" in result.stdout
+    assert "Policy Gate: FAILED" in result.stdout
 
 
 def test_stale_pin_review_examples_are_read_only() -> None:

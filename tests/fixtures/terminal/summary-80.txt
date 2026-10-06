@@ -1,0 +1,50 @@
+MCPAudit · Preview
+Your MCP setup has findings to review before you enable these entries.
+reach and hygiene, not a safety certificate
+CONFIG REVIEW ONLY | 5 entries in 1 explicit file; client not asserted | 7
+config warnings
+Totals: 14 findings (1 Fix now, 12 Worth a look, 1 FYI); 0 scan warnings; 0
+tools; 0 high-risk servers (capability exposure)
+Coverage: config health: COMPLETE (configuration inspected) | metadata: NOT RUN
+(connections disabled) | permissions: PARTIAL (configuration-derived permissions
+only; metadata not checked) | capabilities: NOT RUN (connections disabled) |
+Runtime security: NOT CHECKED
+
+1. ▲ Fix now · Replace the shell wrapper
+   toy-shell-exporter / client not asserted (workstation)
+   Source: examples/sandbox/fixtures/synthetic-mcp-config.json
+   Why: A shell wrapper can run more than a single server command.
+   Manual step: In this source, replace the wrapper with a reviewed executable
+and separate args.
+   Recheck:
+     mcp-audit check --config \
+     examples/sandbox/fixtures/synthetic-mcp-config.json
+   +3 related findings in --details (included in totals).
+
+2. ◆ Worth a look · Review and pin the package source
+   toy-filesystem-wide / client not asserted (workstation)
+   Source: examples/sandbox/fixtures/synthetic-mcp-config.json
+   Why: A package runner can fetch code that changes between launches.
+   Manual step: In this source, pin a version or digest you have reviewed; do
+not choose an unreviewed latest.
+   Recheck:
+     mcp-audit check --config \
+     examples/sandbox/fixtures/synthetic-mcp-config.json
+   +3 related findings in --details (included in totals).
+
+3. ◆ Worth a look · Review the credential access
+   toy-weather-lookalike / client not asserted (workstation)
+   Source: examples/sandbox/fixtures/synthetic-mcp-config.json
+   Why: This entry references several credential keys; no credential values were
+used.
+   Manual step: Disable this entry in the client while reviewing access; remove
+unused credential keys.
+   Recheck:
+     mcp-audit check --config \
+     examples/sandbox/fixtures/synthetic-mcp-config.json
+   +3 related findings in --details (included in totals).
+
+What happened: Reviewed configuration evidence; started no servers and contacted
+no MCP endpoints. Tools were not fully inspected; canary tool calls: 0; auditor
+changed no settings.
+All findings, evidence and capability exposure: --details
