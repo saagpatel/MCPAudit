@@ -681,9 +681,12 @@ async def _run_scan(
     # Field-report mode scrubs host/username identifiers from shared artifacts.
     # Terminal output keeps real values for local readability.
     out_report = report.redacted(identifiers=True) if redact else report
+    written_artifacts: list[str] = []
 
     if json_output:
-        gen.render_json(out_report, Path(json_output))
+        json_path = Path(json_output)
+        gen.render_json(out_report, json_path)
+        written_artifacts.append(json_path.name)
 
     if sarif_output:
         import json as _json
@@ -691,12 +694,19 @@ async def _run_scan(
         from mcp_audit.sarif import SarifGenerator
 
         sarif_doc = SarifGenerator().generate(out_report)
-        Path(sarif_output).write_text(_json.dumps(sarif_doc, indent=2))
+        sarif_path = Path(sarif_output)
+        sarif_path.write_text(_json.dumps(sarif_doc, indent=2))
+        written_artifacts.append(sarif_path.name)
 
     if html_output:
         from mcp_audit.htmlreport import HtmlReportGenerator
 
-        Path(html_output).write_text(HtmlReportGenerator().generate(out_report))
+        html_path = Path(html_output)
+        html_path.write_text(HtmlReportGenerator().generate(out_report))
+        written_artifacts.append(html_path.name)
+
+    if written_artifacts:
+        console.print(terminal_safe(f"Wrote {' · '.join(written_artifacts)}"))
 
     if report.policy_result is not None and not report.policy_result.passed:
         raise SystemExit(2)

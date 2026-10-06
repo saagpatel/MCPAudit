@@ -53,6 +53,10 @@ class ReportGenerator:
         """Print the full audit report to the console."""
         report = report.redacted()
         n_clients = len({a.server.client for a in report.audits})
+        server_label = "server" if report.servers_discovered == 1 else "servers"
+        client_label = "client" if n_clients == 1 else "clients"
+        risk_label = "high-risk server" if report.high_risk_servers == 1 else "high-risk servers"
+        risk_style = "green bold" if report.high_risk_servers == 0 else "red bold"
         if report.connection_mode is ConnectionMode.SKIPPED:
             connection_summary = "[cyan]Config-only scan.[/cyan]"
         elif report.connection_mode is ConnectionMode.ATTEMPTED:
@@ -61,9 +65,9 @@ class ReportGenerator:
             connection_summary = "[yellow]Connection mode unknown.[/yellow]"
 
         summary = (
-            f"Scanned [bold]{report.servers_discovered}[/bold] servers across "
-            f"[bold]{n_clients}[/bold] clients. "
-            f"[red bold]{report.high_risk_servers} high-risk.[/red bold] "
+            f"Scanned [bold]{report.servers_discovered}[/bold] {server_label} across "
+            f"[bold]{n_clients}[/bold] {client_label}. "
+            f"[{risk_style}]{report.high_risk_servers} {risk_label}.[/{risk_style}] "
             f"{connection_summary} "
             f"({report.scan_duration_seconds:.1f}s)"
         )
@@ -84,7 +88,8 @@ class ReportGenerator:
         table.add_column("Top Permissions", overflow="fold")
         table.add_column("Status", style="dim")
 
-        for audit in report.audits:
+        visible_audits = report.audits[:200]
+        for audit in visible_audits:
             risk_text = self._risk_text(audit)
             non_tool_risk_text = self._non_tool_risk_text(audit)
             perms = self._top_permissions(audit)
@@ -105,6 +110,9 @@ class ReportGenerator:
             )
 
         self._console.print(table)
+        remaining = len(report.audits) - len(visible_audits)
+        if remaining:
+            self._console.print(f"[dim](+{remaining} more; see --json)[/dim]")
 
         for audit in report.audits:
             if audit.canary is not None:

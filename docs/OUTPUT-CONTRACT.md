@@ -69,6 +69,22 @@ Pin launch snapshots apply the same argv and URL rules by default. See
 [`PIN-MAINTENANCE.md`](PIN-MAINTENANCE.md) for the raw-argument escape hatch
 and provenance comparison semantics.
 
+## Synthetic performance measurements
+
+The hostile-server test harness writes separate `timing.json` and `metrics.json`
+artifacts; these are not `AuditReport` fields and do not change `schema_version`.
+Alongside existing timing and process totals, additive coverage fields are:
+
+- `analysis_invocations` and `analysis_tool_counts`: the number of permission
+  analyzer calls and the tool count passed to each call, in invocation order.
+- `process_roles`: the `server` or `child` role from each recorded PID ledger.
+- `file_read_tools`: tool names with `file_read` findings, grouped by audit in
+  report order.
+
+Description gates require analyzer coverage and expected findings; the orphan
+gate requires both server records and the child record. See the
+[hostile-server threat model](HOSTILE-SERVER-THREAT-MODEL.md) for limits.
+
 ## Exit Codes
 
 - `0`: scan completed and no configured policy gate failed.

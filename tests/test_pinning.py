@@ -12,7 +12,7 @@ import pytest
 import yaml
 
 from mcp_audit.models import ClientType, DriftStatus, ServerConfig, TransportType
-from mcp_audit.pinning import _MAX_PIN_FILE_BYTES, PinFileError, PinStore
+from mcp_audit.pinning import _MAX_PIN_FILE_BYTES, PinFileError, PinStore, surface_field_diff, surface_hash
 from tests.conftest import make_tool
 
 
@@ -27,7 +27,18 @@ def _hash_store() -> PinStore:
     return store
 
 
+def test_same_length_list_diff_identifies_changed_index() -> None:
+    (change,) = surface_field_diff([1, 2], [1, 3])
+    assert change.path == "/1"
+    assert change.before_hash == surface_hash(2)
+    assert change.after_hash == surface_hash(3)
+
+
 class TestComputeHash:
+    def test_tool_name_is_part_of_hash(self) -> None:
+        store = _hash_store()
+        assert store.compute_hash(make_tool("status")) != store.compute_hash(make_tool("health"))
+
     def test_deterministic_for_same_tool(self) -> None:
         store = _hash_store()
         tool = make_tool("read_file", description="Read a file", input_schema={"type": "object"})
@@ -178,6 +189,73 @@ servers:
 
 
 class TestCheckDrift:
+    @pytest.mark.parametrize(
+        ("description", "schema", "details"),
+        [
+            ("v2", {"type": "object"}, ["description changed"]),
+            ("v1", {"type": "object", "required": ["detail"]}, ["input schema changed"]),
+            (
+                "v2",
+                {"type": "object", "required": ["detail"]},
+                ["description changed", "input schema changed"],
+            ),
+        ],
+    )
+    def test_changed_details_and_hashes(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        description: str,
+        schema: dict[str, object],
+        details: list[str],
+    ) -> None:
+        monkeypatch.setenv("HOME", str(tmp_path))
+        before = make_tool("status", description="v1", input_schema={"type": "object"})
+        after = make_tool("status", description=description, input_schema=schema)
+        store = _store(tmp_path)
+        store.pin_server("fixture", [before])
+        (finding,) = _store(tmp_path).check_drift("fixture", [after])
+        assert finding.status == DriftStatus.CHANGED
+        assert finding.details == details
+        assert finding.stored_hash == store.compute_hash(before)
+        assert finding.current_hash == store.compute_hash(after)
+        assert finding.stored_hash != finding.current_hash
+
+    @pytest.mark.parametrize(
+        ("description", "schema", "details"),
+        [
+            (None, None, ["not previously pinned"]),
+            ("Status.", None, ["not previously pinned", "description present"]),
+            (None, {"type": "object"}, ["not previously pinned", "input schema present"]),
+            (
+                "Status.",
+                {"type": "object"},
+                ["not previously pinned", "description present", "input schema present"],
+            ),
+        ],
+    )
+    def test_new_and_removed_details_and_hashes(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        description: str | None,
+        schema: dict[str, object] | None,
+        details: list[str],
+    ) -> None:
+        monkeypatch.setenv("HOME", str(tmp_path))
+        before = make_tool("old", description="Old status.", input_schema={"type": "object"})
+        after = make_tool("new", description=description, input_schema=schema)
+        store = _store(tmp_path)
+        store.pin_server("fixture", [before])
+        findings = {finding.status: finding for finding in _store(tmp_path).check_drift("fixture", [after])}
+        assert set(findings) == {DriftStatus.NEW, DriftStatus.REMOVED}
+        new = findings[DriftStatus.NEW]
+        assert new.details == details
+        assert new.stored_hash is None and new.current_hash == store.compute_hash(after)
+        removed = findings[DriftStatus.REMOVED]
+        assert removed.details == ["tool missing from current scan"]
+        assert removed.stored_hash == store.compute_hash(before) and removed.current_hash is None
+
     def test_returns_empty_for_matching_hashes(self, tmp_path: Path) -> None:
         store = _store(tmp_path)
         tool = make_tool("read_file", description="Read a file")

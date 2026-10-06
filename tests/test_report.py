@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -129,8 +130,32 @@ class TestTerminalRender:
         audits = [_make_audit("s1"), _make_audit("s2")]
         report = _base_report(audits)
         gen.render_terminal(report)
+        output = re.sub(r"\x1b\[[0-9;]*m", "", buf.getvalue())
+        assert "Scanned 2 servers across 1 client." in output
+        assert "0 high-risk servers." in output
+
+    def test_summary_colors_zero_high_risk_green_and_singularizes_one(self) -> None:
+        con, buf = _make_console()
+        gen = ReportGenerator(console=con)
+        gen.render_terminal(_base_report([_make_audit("only", risk=8.5)]))
+        output = re.sub(r"\x1b\[[0-9;]*m", "", buf.getvalue())
+        assert "Scanned 1 server across 1 client." in output
+        assert "1 high-risk server." in output
+
+        buf = io.StringIO()
+        con = Console(file=buf, force_terminal=True, no_color=False, width=120, highlight=False)
+        report = _base_report([_make_audit("safe", risk=0.0)])
+        ReportGenerator(console=con).render_terminal(report)
+        assert "\x1b[1;32m0 high-risk servers." in buf.getvalue()
+
+    def test_server_table_is_capped_at_200_rows(self) -> None:
+        con, buf = _make_console()
+        audits = [_make_audit(f"srv-{index:03}") for index in range(205)]
+        ReportGenerator(console=con).render_terminal(_base_report(audits))
         output = buf.getvalue()
-        assert "2" in output  # servers_discovered
+        assert "srv-199" in output
+        assert "srv-200" not in output
+        assert "(+5 more; see --json)" in output
 
     def test_summary_names_config_only_mode_without_implying_connection_success(self) -> None:
         con, buf = _make_console()

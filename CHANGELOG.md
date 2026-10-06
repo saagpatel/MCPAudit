@@ -9,15 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add regression tests for canary eligibility, operator safe-tool marks, error
+  results, pagination and rotation, command-artifact integrity boundaries, and
+  pin/session drift details and hashes using synthetic fixtures and temporary pins.
 - Add table-driven contracts for permission keywords and static and runtime injection rule vocabularies.
 - Added the synthetic red-team evasion corpus as a parametrized pytest suite,
   with strict expected-failure cases tracking planned detector gaps.
 - Add canary client identity, elapsed seconds, call budget, and stable
   `not_excluded` limitations to JSON; show bounded coverage in terminal, HTML,
   and SARIF invocation properties, including clean exercises.
+- Isolated hostile stdio fixtures and an opt-in `perf` regression gate for
+  500 servers, large descriptions, oversized frames, and orphan children.
+  Nightly and on-demand CI retains wall/RSS/process measurements; cumulative
+  target profiles support the planned detector and transport fixes. Document
+  connected-scan threats and the baseline's known orphan allowance.
+  Require both server records and the child record for orphan-cleanup coverage,
+  and analyzer invocation/tool coverage plus expected description findings.
 
 ### Fixed
 
+- Use singular labels for one server/client or high-risk server, show zero
+  high-risk servers in green, cap the terminal server table at 200 rows, and
+  announce each JSON, SARIF, or HTML artifact after it is written.
 - Summarize nested connection and analysis exception groups with redacted leaf
   causes, bound leaf messages before linear-time URL redaction, withhold entire
   redirect targets in connection errors and transport diagnostics, and keep
@@ -43,6 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests
 
+- Count explicit benign-tool false positives in validation precision and F1;
+  gate precision per category, parametrize fixtures by server, and track the six
+  known keyword false positives with strict xfails pending P2-1 tuning.
 - Pin scorer weights, confidence multipliers, and caps with literal golden values;
   cover policy gate defaults, branches, boundaries, and invalid policy errors.
 
