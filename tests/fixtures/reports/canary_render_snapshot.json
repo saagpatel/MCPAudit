@@ -1,0 +1,49 @@
+{
+  "canary": {
+    "terminal": [
+      "Canary fixture: complete, 5/5 calls",
+      "Not ruled out: elapsed time, randomness, more than 5 calls, client identity, other arguments, other call sequences, later sessions."
+    ],
+    "html": "<p>Canary: complete, 5/5 calls. Not ruled out: elapsed time, randomness, more than 5 calls, client identity, other arguments, other call sequences, later sessions.</p>",
+    "sarif": [
+      {
+        "executionSuccessful": true,
+        "properties": {
+          "mcpAuditCanary": [
+            {
+              "server": "fixture",
+              "status": "complete",
+              "completed_calls": 5,
+              "call_budget": 5,
+              "client_identity": "",
+              "elapsed_seconds": null,
+              "not_excluded": [
+                "time",
+                "randomness",
+                "call_count_gt_budget",
+                "client_identity",
+                "arguments",
+                "other_tool_sequences",
+                "later_sessions"
+              ],
+              "not_excluded_descriptions": [
+                "elapsed time",
+                "randomness",
+                "more than 5 calls",
+                "client identity",
+                "other arguments",
+                "other call sequences",
+                "later sessions"
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "non_canary_sha256": {
+    "terminal": "c448d106ca280fdb7e9076cd70474acf7aa0f4536aa67a0fa536dca0066c5721",
+    "html": "82ff30a6ff090d580b7fb63f4e43223764638b050ca15a1c33d3be9d358692d6",
+    "sarif": "2e375b593b996a85a26193592e9b0ded506586db8be850d6a7241a9d5c424feb"
+  }
+}

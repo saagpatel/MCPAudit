@@ -143,6 +143,13 @@ class HtmlReportGenerator:
             "</div>"
         )
         body = [head]
+        if audit.canary is not None:
+            summary = audit.canary
+            body.append(
+                f"<p>Canary: {self._esc(summary.status)}, "
+                f"{summary.completed_calls}/{summary.call_budget} calls. "
+                f"Not ruled out: {self._esc(', '.join(summary.not_excluded_descriptions))}.</p>"
+            )
         if audit.connection_error:
             body.append(f'<p class="muted">Error: {self._esc(audit.connection_error)}</p>')
 
