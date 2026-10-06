@@ -194,10 +194,23 @@ def test_every_permission_keyword_yields_its_category_and_tier_confidence(
     category: PermissionCategory, tier: str, keyword: str
 ) -> None:
     # read_file also matches the moderate "read" token; its actual result stays HIGH.
-    # Exercise the name-pattern stage directly: open_world_hint=False correctly
-    # suppresses network/exfiltration in analyze_tool, so those keyword rows
-    # cannot be observed from the combined annotation-aware result.
-    findings = PermissionAnalyzer()._keyword_findings(make_tool(keyword, annotations=_NEUTRAL_ANNOTATIONS))
+    # P2-1 requires context for ambiguous verbs; standalone matches stay silent.
+    contexts = {
+        PermissionCategory.FILE_READ: {"open": "file", "list": "file", "describe": "file"},
+        PermissionCategory.FILE_WRITE: {"commit": "file", "set": "file", "add": "file"},
+        PermissionCategory.EXFILTRATION: {
+            "export": "recipient",
+            "forward": "recipient",
+            "reply": "recipient",
+        },
+    }
+    analyzer = PermissionAnalyzer()
+    tool = make_tool(keyword, annotations=_NEUTRAL_ANNOTATIONS)
+    context = contexts.get(category, {}).get(keyword)
+    if context is not None:
+        assert not any(f.category == category for f in analyzer.analyze_tool_keywords(tool))
+        tool.description = context
+    findings = analyzer.analyze_tool_keywords(tool)
     matches = [finding for finding in findings if finding.category == category]
 
     assert [finding.confidence for finding in matches] == [_TIER_CONFIDENCE[tier]]

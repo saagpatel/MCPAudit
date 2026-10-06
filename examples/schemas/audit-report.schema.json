@@ -1626,6 +1626,20 @@
           ],
           "default": null
         },
+        "permission_alert_score": {
+          "anyOf": [
+            {
+              "maximum": 10,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Permission Alert Score"
+        },
         "non_tool_risk": {
           "anyOf": [
             {
@@ -1646,6 +1660,11 @@
           "default": 0.0,
           "title": "Annotation Coverage",
           "type": "number"
+        },
+        "annotations_missing": {
+          "default": false,
+          "title": "Annotations Missing",
+          "type": "boolean"
         },
         "injection_findings": {
           "items": {

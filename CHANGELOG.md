@@ -36,6 +36,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Stop scoring read-only declarations as file access and absent tool hints as
+  destructive/network capabilities. Consolidate missing hints into one
+  per-server `annotations_missing` FYI (SARIF `MCP005` note), retaining genuine
+  capability rule IDs, fingerprints, and alert levels with operator overrides
+  applied to legacy annotation contributions, including declared-confidence
+  warnings for retained schema-only file evidence. Keep canary keyword vetoes
+  non-contextual; recognize literal URLs, IPv4 addresses, and email destinations
+  as outbound context. Require context for
+  ambiguous set/add/commit/reply/forward/export and open/list/describe keywords;
+  promote all six precision-corpus regressions and raise precision floors to 100%.
 - Classify absent client config candidates before opening them in static review;
   missing files produce no config-health finding or partial coverage. Retain
   redacted config diagnostic reasons in summaries, including null project entries,

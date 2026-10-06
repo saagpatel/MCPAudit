@@ -122,6 +122,14 @@ class ReportGenerator:
             self._console.print(f"[dim](+{remaining} more; see --json)[/dim]")
 
         for audit in report.audits:
+            if audit.annotations_missing:
+                self._console.print(
+                    terminal_safe(
+                        f"FYI {audit.server.name}: annotations_missing — tools omit open-world or "
+                        "applicable destructive hints; missing hints do not establish capabilities."
+                    ),
+                    style="dim",
+                )
             if audit.canary is not None:
                 canary = audit.canary
                 self._console.print(
@@ -232,7 +240,8 @@ class ReportGenerator:
                     )
                     action_str = terminal_safe(" ".join(f.remediation for f in tool_findings))
                 else:
-                    perm_str = Text("none", style="dim")
+                    read_only = tool.annotations is not None and tool.annotations.read_only_hint is True
+                    perm_str = Text("read-only (says so itself)" if read_only else "none", style="dim")
                     action_str = Text("none", style="dim")
                 sub.add_row(terminal_safe(tool.name), perm_str, action_str)
 

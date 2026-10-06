@@ -1,6 +1,7 @@
 {
 	"server_name": "server-puppeteer",
 	"description": "@modelcontextprotocol/server-puppeteer — browser automation via Puppeteer",
+	"tool_annotations": {"open_world_hint": true},
 	"tools": [
 		{
 			"name": "puppeteer_navigate",

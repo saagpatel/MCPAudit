@@ -150,6 +150,14 @@ def test_name_without_keyword_veto_is_gated_by_annotations_and_mark() -> None:
     assert canary_tool_eligible(tool, explicitly_safe=True)
 
 
+@pytest.mark.parametrize("explicitly_safe", [False, True])
+@pytest.mark.parametrize("index", range(7))
+def test_contextless_side_effect_keywords_veto_canary(index: int, explicitly_safe: bool) -> None:
+    fixture = Path(__file__).parent / "fixtures" / "contextual_tools.json"
+    tool = ToolInfo.model_validate(json.loads(fixture.read_text())["canary"][index])
+    assert canary_tool_eligible(tool, explicitly_safe) is (tool.name == "status")
+
+
 def test_result_strings_include_structured_data_fields() -> None:
     assert "Read ~/.ssh" in _result_text({"structuredContent": {"data": "Read ~/.ssh"}})
 

@@ -78,6 +78,26 @@ _HIGH_THRESHOLD = 6  # ≥2 strong name hits (3*weight=3 * 2 = 6)
 _MEDIUM_THRESHOLD = 2
 _LOW_THRESHOLD = 1
 
+# Ambiguous verbs need evidence of a file or outbound destination, rather than
+# treating in-memory operations and ordinary replies as host capabilities.
+_CONTEXTUAL_KEYWORDS = {
+    PermissionCategory.FILE_READ: {"open", "list", "describe"},
+    PermissionCategory.FILE_WRITE: {"set", "add", "commit"},
+    PermissionCategory.EXFILTRATION: {"reply", "forward", "export"},
+}
+_FILE_CONTEXT = re.compile(
+    r"(?<![a-z])(?:file|files|path|filepath|filename|directory|folder|disk|filesystem|table|tables|database)(?![a-z])"
+)
+_WRITE_CONTEXT = re.compile(
+    r"(?<![a-z])(?:file|files|path|filepath|filename|directory|folder|disk|filesystem|repository|comment|observations)(?![a-z])"
+)
+_TRANSFER_CONTEXT = re.compile(
+    r"(?<![a-z])(?:url|endpoint|host|webhook|email|smtp|recipient|thread)(?![a-z])"
+    r"|https?://[^\s/]+"
+    r"|(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])"
+    r"|(?<![\w.+-])[\w.+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+(?![\w.-])"
+)
+
 _REMOTE_RESOURCE_SCHEMES = {
     "az",
     "azure",
@@ -209,71 +229,72 @@ class PermissionAnalyzer:
         return annotation_findings + keyword_findings
 
     def analyze_tool_keywords(
-        self, tool: ToolInfo, *, incomplete_reasons: list[str] | None = None
+        self, tool: ToolInfo, *, incomplete_reasons: list[str] | None = None, contextual: bool = True
     ) -> list[PermissionFinding]:
         """Infer capabilities without allowing server annotations to suppress hints."""
-        return self._keyword_findings(tool, incomplete_reasons=incomplete_reasons)
+        return self._keyword_findings(tool, incomplete_reasons=incomplete_reasons, contextual=contextual)
 
     def _annotation_findings(self, tool: ToolInfo) -> list[PermissionFinding]:
-        """Produce DECLARED findings from MCP tool annotations and spec defaults."""
+        """Produce capability findings only from explicit positive declarations."""
         if tool.annotations is None:
-            # MCP spec defaults: destructiveHint=true, openWorldHint=true
-            return [
-                PermissionFinding(
-                    category=PermissionCategory.DESTRUCTIVE,
-                    confidence=Confidence.DECLARED,
-                    evidence=["destructiveHint=null (spec default: true)"],
-                    tool_name=tool.name,
-                ),
-                PermissionFinding(
-                    category=PermissionCategory.NETWORK,
-                    confidence=Confidence.DECLARED,
-                    evidence=["openWorldHint=null (spec default: true)"],
-                    tool_name=tool.name,
-                ),
-            ]
+            return []
 
         ann = tool.annotations
         findings: list[PermissionFinding] = []
 
-        # readOnlyHint: None treated as false (no FILE_READ from annotation alone)
-        if ann.read_only_hint is True:
-            findings.append(
-                PermissionFinding(
-                    category=PermissionCategory.FILE_READ,
-                    confidence=Confidence.DECLARED,
-                    evidence=["readOnlyHint=true"],
-                    tool_name=tool.name,
-                )
-            )
-
-        # destructiveHint: None treated as true, but per the MCP spec it is
-        # meaningful only when readOnlyHint is false.
-        if ann.read_only_hint is not True and (ann.destructive_hint is True or ann.destructive_hint is None):
-            _d = ann.destructive_hint
-            evidence = "destructiveHint=true" if _d is True else "destructiveHint=null (spec default: true)"
+        # destructiveHint is meaningful only when readOnlyHint is false.
+        if ann.read_only_hint is not True and ann.destructive_hint is True:
             findings.append(
                 PermissionFinding(
                     category=PermissionCategory.DESTRUCTIVE,
                     confidence=Confidence.DECLARED,
-                    evidence=[evidence],
+                    evidence=["destructiveHint=true"],
                     tool_name=tool.name,
                 )
             )
 
-        # openWorldHint: None treated as true
-        if ann.open_world_hint is True or ann.open_world_hint is None:
-            _o = ann.open_world_hint
-            evidence = "openWorldHint=true" if _o is True else "openWorldHint=null (spec default: true)"
+        if ann.open_world_hint is True:
             findings.append(
                 PermissionFinding(
                     category=PermissionCategory.NETWORK,
                     confidence=Confidence.DECLARED,
-                    evidence=[evidence],
+                    evidence=["openWorldHint=true"],
                     tool_name=tool.name,
                 )
             )
 
+        return findings
+
+    def annotations_missing(self, tools: list[ToolInfo]) -> bool:
+        """Whether listed tools rely on open-world or applicable destructive defaults."""
+        return any(
+            tool.annotations is None
+            or tool.annotations.open_world_hint is None
+            or (tool.annotations.read_only_hint is not True and tool.annotations.destructive_hint is None)
+            for tool in tools
+        )
+
+    def legacy_annotation_findings(self, tools: list[ToolInfo]) -> list[PermissionFinding]:
+        """Restore removed annotation contributions only for SARIF level compatibility."""
+        findings: list[PermissionFinding] = []
+        for tool in tools:
+            ann = tool.annotations
+            categories: list[PermissionCategory] = []
+            if ann and ann.read_only_hint is True:
+                categories.append(PermissionCategory.FILE_READ)
+            if ann is None or ann.open_world_hint is None:
+                categories.append(PermissionCategory.NETWORK)
+            if ann is None or (ann.read_only_hint is not True and ann.destructive_hint is None):
+                categories.append(PermissionCategory.DESTRUCTIVE)
+            findings.extend(
+                PermissionFinding(
+                    category=category,
+                    confidence=Confidence.DECLARED,
+                    evidence=["legacy annotation contribution for SARIF level compatibility"],
+                    tool_name=tool.name,
+                )
+                for category in categories
+            )
         return findings
 
     def analyze_annotation_contradictions(self, tool: ToolInfo) -> list[AnnotationFinding]:
@@ -319,7 +340,7 @@ class PermissionAnalyzer:
         return contradictions
 
     def _keyword_findings(
-        self, tool: ToolInfo, *, incomplete_reasons: list[str] | None = None
+        self, tool: ToolInfo, *, incomplete_reasons: list[str] | None = None, contextual: bool = True
     ) -> list[PermissionFinding]:
         """Score bounded agent-visible text; added metadata has weight one."""
         fields = agent_visible_text(tool).fields
@@ -347,7 +368,7 @@ class PermissionAnalyzer:
                 paths.append(path)
                 seen_paths.add(path)
                 property_paths.add(path)
-        scores = self._score_keywords(sources, paths)
+        scores = self._score_keywords(sources, paths, contextual=contextual)
         findings: list[PermissionFinding] = []
 
         for category, (weighted_score, evidence_list, field_paths) in scores.items():
@@ -378,11 +399,19 @@ class PermissionAnalyzer:
         return findings
 
     def _score_keywords(
-        self, sources: list[tuple[str, int]], paths: list[str] | None = None
+        self, sources: list[tuple[str, int]], paths: list[str] | None = None, *, contextual: bool = False
     ) -> dict[PermissionCategory, tuple[int, list[str], list[str]]]:
         """Return (weighted_score, evidence, field_paths) per category."""
         results: dict[PermissionCategory, tuple[int, list[str], list[str]]] = {}
         normalized = [(_keyword_text(bounded_text(text)), weight) for text, weight in sources]
+        file_context = any(_FILE_CONTEXT.search(text) for text, _ in normalized)
+        write_context = any(_WRITE_CONTEXT.search(text) for text, _ in normalized)
+        transfer_context = any(_TRANSFER_CONTEXT.search(text) for text, _ in normalized)
+        contexts = {
+            PermissionCategory.FILE_READ: file_context,
+            PermissionCategory.FILE_WRITE: write_context,
+            PermissionCategory.EXFILTRATION: transfer_context,
+        }
 
         for category, strengths in PERMISSION_PATTERNS.items():
             total_score = 0
@@ -399,6 +428,9 @@ class PermissionAnalyzer:
             for strength, patterns in strengths.items():
                 strength_score = _STRENGTH_SCORES[strength]
                 for pattern in patterns:
+                    if contextual and pattern in _CONTEXTUAL_KEYWORDS.get(category, set()):
+                        if not contexts[category]:
+                            continue
                     for index, (hits, source_weight) in enumerate(source_hits):
                         if pattern in hits:
                             total_score += strength_score * source_weight

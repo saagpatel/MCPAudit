@@ -1,5 +1,6 @@
 """Unit tests for PermissionAnalyzer."""
 
+import json
 import re
 from pathlib import Path
 from time import perf_counter
@@ -21,6 +22,19 @@ from mcp_audit.text_limits import MAX_FIELD_BYTES, bounded_text
 from tests.conftest import make_tool
 
 analyzer = PermissionAnalyzer()
+
+
+@pytest.mark.parametrize("index", range(4))
+def test_transfer_destination_literals_supply_context(index: int) -> None:
+    fixture = Path(__file__).parent / "fixtures" / "contextual_tools.json"
+    tool = ToolInfo.model_validate(json.loads(fixture.read_text())["transfer"][index])
+    findings = analyzer.analyze_tool_keywords(tool)
+    transfers = [f for f in findings if f.category == PermissionCategory.EXFILTRATION]
+    assert bool(transfers) is (index < 3)
+    if transfers:
+        assert tool.name in transfers[0].evidence
+        assert transfers[0].confidence == (Confidence.HIGH if index == 0 else Confidence.MEDIUM)
+        assert transfers[0].field_paths == ["/name", "/description"]
 
 
 @pytest.mark.parametrize("placement", ["object", "array", "composition", "reference"])
@@ -246,13 +260,11 @@ def _confidences(tool: ToolInfo, category: PermissionCategory) -> set[Confidence
 
 
 class TestAnnotationFindings:
-    def test_read_only_hint_true_yields_file_read_declared(self) -> None:
+    def test_read_only_hint_true_is_not_file_read_evidence(self) -> None:
         tool = make_tool("mytool", annotations=ToolAnnotations(read_only_hint=True))
         findings = analyzer.analyze_tool(tool)
         cats = {f.category for f in findings}
-        confs = {f.confidence for f in findings if f.category == PermissionCategory.FILE_READ}
-        assert PermissionCategory.FILE_READ in cats
-        assert Confidence.DECLARED in confs
+        assert PermissionCategory.FILE_READ not in cats
 
     def test_read_only_hint_true_with_destructive_hint_unset_suppresses_destructive(self) -> None:
         # Per the MCP spec, destructiveHint is meaningful only when
@@ -290,26 +302,23 @@ class TestAnnotationFindings:
         assert PermissionCategory.NETWORK in cats
         assert PermissionCategory.EXFILTRATION not in cats
 
-    def test_destructive_hint_none_defaults_to_declared_destructive(self) -> None:
-        """MCP spec: destructiveHint=null means true."""
+    def test_destructive_hint_none_is_not_capability_evidence(self) -> None:
         tool = make_tool("some_tool", annotations=ToolAnnotations())
         cats = _categories(tool)
-        confs = _confidences(tool, PermissionCategory.DESTRUCTIVE)
-        assert PermissionCategory.DESTRUCTIVE in cats
-        assert Confidence.DECLARED in confs
+        assert PermissionCategory.DESTRUCTIVE not in cats
+        assert analyzer.annotations_missing([tool])
 
-    def test_open_world_hint_none_defaults_to_declared_network(self) -> None:
-        """MCP spec: openWorldHint=null means true."""
+    def test_open_world_hint_none_is_not_capability_evidence(self) -> None:
         tool = make_tool("some_tool", annotations=ToolAnnotations())
         cats = _categories(tool)
-        assert PermissionCategory.NETWORK in cats
+        assert PermissionCategory.NETWORK not in cats
+        assert analyzer.annotations_missing([tool])
 
-    def test_no_annotations_produces_spec_defaults(self) -> None:
-        """No annotations → destructiveHint=true + openWorldHint=true by spec."""
+    def test_no_annotations_produces_information_only(self) -> None:
         tool = make_tool("plain_tool")
         cats = _categories(tool)
-        assert PermissionCategory.DESTRUCTIVE in cats
-        assert PermissionCategory.NETWORK in cats
+        assert cats == set()
+        assert analyzer.annotations_missing([tool])
 
     def test_annotation_wins_over_keyword(self) -> None:
         """If annotation covers a category, keyword finding for that category is skipped."""
@@ -341,7 +350,7 @@ class TestKeywordFindings:
     def test_delete_file_name_yields_destructive_high(self) -> None:
         tool = make_tool("delete_file")
         confs = _confidences(tool, PermissionCategory.DESTRUCTIVE)
-        assert confs == {Confidence.DECLARED}
+        assert confs == {Confidence.HIGH}
 
     def test_send_email_yields_exfiltration_high(self) -> None:
         tool = make_tool("send_email", description="Send an email message to a recipient")
