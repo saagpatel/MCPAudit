@@ -27,6 +27,9 @@ jobs:
       - name: Install dependencies
         run: uv sync --dev --locked
 
+      - name: Install PostgreSQL 16 server binaries
+        run: sudo apt-get install -y postgresql-16
+
       - name: Lint (ruff check)
         run: uv run ruff check src/ tests/
 
@@ -40,10 +43,41 @@ jobs:
         run: docker pull node:24-slim
 
       - name: Unit tests
-        run: uv run pytest tests/ -v --ignore=tests/test_connector.py --cov=mcp_audit
+        shell: bash
+        run: |
+          set -o pipefail
+          uv run pytest tests/ -v --ignore=tests/test_connector.py --cov=mcp_audit --cov-branch \
+            --junitxml="$RUNNER_TEMP/unit-results.xml" 2>&1 | tee "$RUNNER_TEMP/unit-pytest.log"
+          grep -Eq '^=+ .* (passed|failed|error|skipped|xfailed|xpassed)(,| )' "$RUNNER_TEMP/unit-pytest.log"
+          RESULTS_PATH="$RUNNER_TEMP/unit-results.xml" uv run python - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse(os.environ["RESULTS_PATH"]).getroot()
+          module = "tests.test_proofos_postgres"
+          proof_cases = [
+              case for case in root.iter("testcase")
+              if case.attrib.get("classname", "") == module
+              or case.attrib.get("classname", "").startswith(module + ".")
+          ]
+          if not proof_cases:
+              raise SystemExit("ProofOS PostgreSQL test cases missing from pytest results")
+          counts = {
+              "tests": len(proof_cases),
+              "skipped": sum(case.find("skipped") is not None for case in proof_cases),
+          }
+          if counts["skipped"] != 0:
+              raise SystemExit(f"inadmissible ProofOS PostgreSQL result: {counts}")
+          print(f"proofos_postgres_guard={counts['tests']}_tests_0_skipped")
+          PY
 
       - name: Integration tests (connector)
-        run: uv run pytest tests/test_connector.py -v --cov=mcp_audit --cov-append
+        shell: bash
+        run: |
+          set -o pipefail
+          uv run pytest tests/test_connector.py -v --cov=mcp_audit --cov-append --cov-branch \
+            2>&1 | tee "$RUNNER_TEMP/connector-pytest.log"
+          grep -Eq '^=+ .* (passed|failed|error|skipped|xfailed|xpassed)(,| )' "$RUNNER_TEMP/connector-pytest.log"
 
       - name: Named-server stdio smoke
         run: uv run python scripts/smoke_named_server.py --executable "$PWD/.venv/bin/mcp-audit"
