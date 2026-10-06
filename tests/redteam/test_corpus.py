@@ -4,14 +4,15 @@ from __future__ import annotations
 
 import json
 import sys
-from collections.abc import Mapping
+from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
 from typing import cast
 
 import pytest
 
 from mcp_audit.engine import ScanOptions, run_scan
-from mcp_audit.models import ClientType, ServerConfig
+from mcp_audit.models import ClientType, ServerAudit, ServerConfig
+from mcp_audit.pinning import PinStore
 
 HERE = Path(__file__).resolve().parent
 FIXTURE = HERE.parent / "fixtures" / "evasion_server.py"
@@ -32,7 +33,7 @@ _GAP_REASONS = {
     "escalation-homoglyph-desc": "gap 23: fixed by P1-5",
     "base64-encoded-payload": "gap 6: fixed by P1-6",
     "escalation-nested-schema": "gap 22: fixed by P1-12",
-    "gate-on-client-name": "gap 12: statement by F-1 (not_excluded); detection by P2-7",
+    "gate-on-client-name": "gap 12: fixed by P2-7",
     "gate-on-elapsed-time": "gap 13: fixed by F-1 (not_excluded)",
     "gate-on-randomness": "gap 14: fixed by F-1 (not_excluded)",
     "flip-after-more-than-k": "gap 15: fixed by F-1 (not_excluded)",
@@ -46,7 +47,7 @@ def _parametrize_cases() -> list[object]:
     for case in CORPUS:
         case_id = str(case["id"])
         reason = _GAP_REASONS.get(case_id)
-        marks = pytest.mark.xfail(strict=True, reason=reason) if reason else ()
+        marks = pytest.mark.xfail(strict=True, raises=AssertionError, reason=reason) if reason else ()
         parameters.append(pytest.param(case, id=case_id, marks=marks))
     return parameters
 
@@ -61,16 +62,63 @@ def _server(case: Mapping[str, object], name: str | None = None, stage: str = "c
     )
 
 
+def _finding_labels(audit: ServerAudit, fields: set[str]) -> Iterator[str]:
+    for name, findings in audit.model_dump(mode="json").items():
+        if name not in {"permissions", "capability_findings"} and not name.endswith("_findings"):
+            continue
+        if not isinstance(findings, list):
+            continue
+        for finding in findings:
+            if isinstance(finding, dict):
+                for field in fields:
+                    value = finding.get(field)
+                    if isinstance(value, str):
+                        yield value.casefold()
+
+
+@pytest.fixture
+def isolated_pin_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Callable[..., PinStore]:
+    from mcp_audit import pinning
+
+    pin_path = tmp_path / ".mcp-audit-pins.yaml"
+    real_pin_store = pinning.PinStore
+    monkeypatch.setattr(pinning, "DEFAULT_PIN_PATH", pin_path)
+    monkeypatch.setattr(pinning, "PinStore", lambda *a, **k: real_pin_store(path=pin_path))
+    return pinning.PinStore
+
+
+async def _scan_pinned_case(case: Mapping[str, object], pin_store: Callable[..., PinStore]) -> ServerAudit:
+    baseline = await run_scan(
+        ScanOptions(config_only=True, timeout=60), servers=[_server(case, stage="baseline")]
+    )
+    baseline_audit = baseline.audits[0]
+    if baseline_audit.connection_status != "connected" or not baseline_audit.tools:
+        raise RuntimeError("Pin baseline fixture did not connect and list tools")
+    store = pin_store()
+    store.pin_server(str(case["id"]), baseline_audit.tools)
+    if not store.path.exists() or str(case["id"]) not in pin_store().pinned_servers():
+        raise RuntimeError("Pin baseline was not written")
+    report = await run_scan(
+        ScanOptions(config_only=True, inject_check=True, pin_check=True, escalation_check=True, timeout=60),
+        servers=[_server(case, stage="current")],
+    )
+    audit = report.audits[0]
+    if audit.connection_status != "connected" or not audit.tools:
+        raise RuntimeError("Current pin fixture did not connect and list tools")
+    return audit
+
+
 @pytest.mark.redteam
 @pytest.mark.anyio
 @pytest.mark.parametrize("case", _parametrize_cases())
 async def test_detector_gap_corpus(
-    case: dict[str, object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    case: dict[str, object], isolated_pin_store: Callable[..., PinStore]
 ) -> None:
     """Exercise each corpus mode through run_scan and assert its detector contract."""
     phase = str(case["phase"])
     detector = case["detector"]
-    assert isinstance(detector, dict)
+    if not isinstance(detector, dict):
+        raise TypeError("Corpus detector contract must be an object")
     kind = str(detector["kind"])
     if phase == "static":
         servers = [_server(case)]
@@ -90,6 +138,8 @@ async def test_detector_gap_corpus(
             servers=servers,
         )
         audit = next(audit for audit in report.audits if audit.server.name == str(case["id"]))
+        if audit.connection_status != "connected":
+            raise RuntimeError("Static corpus fixture did not connect")
         if kind == "injection":
             assert any(f.tool_name == detector["tool"] for f in audit.injection_findings)
         elif kind == "prompt_injection":
@@ -98,10 +148,12 @@ async def test_detector_gap_corpus(
                 for f in audit.injection_findings
             )
         elif kind == "resource_injection":
-            assert any(
-                f.target_type == "resource" and f.target_name == detector["resource"]
+            patterns = {
+                f.pattern_name
                 for f in audit.injection_findings
-            )
+                if f.target_type == "resource" and f.target_name == detector["resource"]
+            }
+            assert len(patterns) >= 2
         elif kind == "injection_or_coverage":
             assert any(f.tool_name in detector["tools"] for f in audit.injection_findings) or any(
                 "cross_field" in warning.code for warning in report.warnings
@@ -109,7 +161,10 @@ async def test_detector_gap_corpus(
         elif kind == "annotation_contradiction":
             categories = {finding.category.value for finding in audit.permissions}
             assert "destructive" in categories or "file_write" in categories
-            assert any("annotation" in warning.code for warning in report.warnings)
+            # P1-3 should tighten this to the exact annotation-contradiction field.
+            assert "annotation_contradiction" in set(
+                _finding_labels(audit, {"category", "kind", "rule", "rule_name", "pattern_name"})
+            )
         elif kind == "ssrf_and_egress":
             assert any(f.target_name == detector["tool"] for f in audit.ssrf_findings)
             assert any(f.target_name == detector["tool"] for f in audit.egress_findings)
@@ -119,7 +174,7 @@ async def test_detector_gap_corpus(
                 for finding in report.shadowing_findings
             )
         else:
-            raise AssertionError(f"Unknown static detector contract: {kind}")
+            raise RuntimeError(f"Unknown static detector contract: {kind}")
         return
 
     if phase == "canary":
@@ -128,45 +183,36 @@ async def test_detector_gap_corpus(
             servers=[_server(case)],
         )
         audit = report.audits[0]
+        if audit.connection_status != "connected":
+            raise RuntimeError("Canary corpus fixture did not connect")
         if kind == "canary_not_excluded":
-            assert audit.canary is not None
+            if audit.canary is None:
+                raise RuntimeError("Canary corpus fixture did not produce a summary")
             summary = audit.canary.model_dump()
             assert detector["limit"] in (summary.get("not_excluded") or [])
-        elif kind == "runtime_injection":
-            assert any(
-                f.after_call is not None and f.tool_name == detector["tool"] for f in audit.injection_findings
+        elif kind == "drift_or_identity":
+            # The fixture gates on literal "mcp". When F-1 sends "mcp-audit",
+            # update it to gate on that identity (or on "not mcp-audit").
+            assert any(f.source == "session" for f in audit.drift_findings) or any(
+                "identity" in label for label in _finding_labels(audit, {"code", "kind"})
             )
+        elif kind == "runtime_injection":
+            patterns = {
+                f.pattern_name
+                for f in audit.injection_findings
+                if f.after_call is not None and f.tool_name == detector["tool"]
+            }
+            assert len(patterns) >= (2 if case["id"] == "result-plain-control" else 1)
         elif kind == "canary_warning":
-            # Since 2.8.0 the page-limit failure is surfaced as a coverage warning;
+            # As of 2.8.0 the page-limit failure is surfaced as a coverage warning;
             # assert its stable code, not the implementation-specific warning text.
             assert any(warning.code == detector["code"] for warning in report.warnings)
         else:
-            raise AssertionError(f"Unknown canary detector contract: {kind}")
+            raise RuntimeError(f"Unknown canary detector contract: {kind}")
         return
 
     if phase == "pin":
-        from mcp_audit import pinning
-
-        monkeypatch.setenv("HOME", str(tmp_path))
-        pin_path = tmp_path / ".mcp-audit-pins.yaml"
-        real_pin_store = pinning.PinStore
-        monkeypatch.setattr(pinning, "PinStore", lambda: real_pin_store(path=pin_path))
-
-        baseline = await run_scan(
-            ScanOptions(config_only=True, timeout=60), servers=[_server(case, stage="baseline")]
-        )
-        real_pin_store(path=pin_path).pin_server(str(case["id"]), baseline.audits[0].tools)
-        report = await run_scan(
-            ScanOptions(
-                config_only=True,
-                inject_check=True,
-                pin_check=True,
-                escalation_check=True,
-                timeout=60,
-            ),
-            servers=[_server(case, stage="current")],
-        )
-        audit = report.audits[0]
+        audit = await _scan_pinned_case(case, isolated_pin_store)
         if kind == "drift_or_escalation":
             assert any(
                 f.status.value == "changed" and f.tool_name == detector["tool"] for f in audit.drift_findings
@@ -184,33 +230,37 @@ async def test_detector_gap_corpus(
                 for f in audit.escalation_findings
             )
         else:
-            raise AssertionError(f"Unknown pin detector contract: {kind}")
+            raise RuntimeError(f"Unknown pin detector contract: {kind}")
         return
 
-    raise AssertionError(f"Unknown corpus phase: {phase}")
+    raise RuntimeError(f"Unknown corpus phase: {phase}")
 
 
 @pytest.mark.redteam
 @pytest.mark.anyio
-@pytest.mark.xfail(strict=True, reason="gap 21: fixed by P1-2")
-async def test_annotation_flip_is_drift_and_escalation(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Pin v2 must retain annotations and report both drift and capability gain."""
+async def test_pin_drift_control(isolated_pin_store: Callable[..., PinStore]) -> None:
+    """A schema change proves the isolated pin comparison is active."""
     from mcp_audit import pinning
 
-    case = {"id": "annotation-flip-acceptance", "mode": "esc_annotations"}
-    monkeypatch.setenv("HOME", str(tmp_path))
-    pin_path = tmp_path / ".mcp-audit-pins.yaml"
-    real_pin_store = pinning.PinStore
-    monkeypatch.setattr(pinning, "PinStore", lambda: real_pin_store(path=pin_path))
+    case = {"id": "pin-drift-control", "mode": "esc_nested_schema"}
+    audit = await _scan_pinned_case(case, isolated_pin_store)
+    pin_path = isolated_pin_store().path
+    assert pin_path.exists()
+    assert any(f.status.value == "changed" and f.tool_name == "status" for f in audit.drift_findings)
+    # Both the default and explicit-path constructors stay on the isolated store.
+    assert pinning.DEFAULT_PIN_PATH == pin_path
+    assert pinning.PinStore().path == pin_path
+    assert pinning.PinStore(path=pin_path).path == pin_path
 
-    baseline = await run_scan(ScanOptions(config_only=True), servers=[_server(case, stage="baseline")])
-    real_pin_store(path=pin_path).pin_server(str(case["id"]), baseline.audits[0].tools)
-    current = await run_scan(
-        ScanOptions(config_only=True, pin_check=True, escalation_check=True),
-        servers=[_server(case, stage="current")],
-    )
-    audit = current.audits[0]
+
+@pytest.mark.redteam
+@pytest.mark.anyio
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason="gap 21: fixed by P1-2")
+async def test_annotation_flip_is_drift_and_escalation(
+    isolated_pin_store: Callable[..., PinStore],
+) -> None:
+    """Pin v2 must retain annotations and report both drift and capability gain."""
+    case = {"id": "annotation-flip-acceptance", "mode": "esc_annotations"}
+    audit = await _scan_pinned_case(case, isolated_pin_store)
     assert any(f.status.value == "changed" for f in audit.drift_findings)
     assert any(f.kind.value == "capability" for f in audit.escalation_findings)
