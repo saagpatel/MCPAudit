@@ -140,6 +140,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   benign non-Latin prefixes cannot displace it, including normalized HTML-comment
   delimiters after long benign prefixes.
 
+### Known issues
+
+- Redaction can still miss a hostile secret disguised with Unicode: a
+  zero-width character splitting a bearer or basic token leaves the tail in
+  JSON and HTML evidence; secret-shaped `input_schema`/`output_schema`/`meta`
+  property keys are copied unredacted; and terminal output prints raw tool
+  names. Structural redaction is planned for a later release.
+
 ## [2.8.1] - 2026-10-06
 
 ### Security
