@@ -1,5 +1,8 @@
 """Unit tests for RiskScorer."""
 
+import pytest
+
+import mcp_audit.scorer as scorer_module
 from mcp_audit.models import (
     CapabilityFinding,
     CapabilityTarget,
@@ -9,7 +12,6 @@ from mcp_audit.models import (
     PermissionCategory,
     PermissionFinding,
 )
-from mcp_audit.rules.weights import CATEGORY_WEIGHTS, CONFIDENCE_MULTIPLIERS
 from mcp_audit.scorer import RiskScorer
 
 scorer = RiskScorer()
@@ -54,12 +56,6 @@ def injection(
 
 
 class TestDimScore:
-    def test_shell_exec_high_confidence(self) -> None:
-        f = [finding(PermissionCategory.SHELL_EXEC, Confidence.HIGH)]
-        score = scorer._dim_score(f, PermissionCategory.SHELL_EXEC)
-        expected = CATEGORY_WEIGHTS[PermissionCategory.SHELL_EXEC] * CONFIDENCE_MULTIPLIERS[Confidence.HIGH]
-        assert abs(score - expected) < 0.001
-
     def test_missing_category_returns_zero(self) -> None:
         assert scorer._dim_score([], PermissionCategory.SHELL_EXEC) == 0.0
 
@@ -69,8 +65,7 @@ class TestDimScore:
             finding(PermissionCategory.NETWORK, Confidence.HIGH),
         ]
         score = scorer._dim_score(findings, PermissionCategory.NETWORK)
-        expected = CATEGORY_WEIGHTS[PermissionCategory.NETWORK] * CONFIDENCE_MULTIPLIERS[Confidence.HIGH]
-        assert abs(score - expected) < 0.001
+        assert score == 1.35
 
     def test_llm_confidence_scores_like_high(self) -> None:
         high_score = scorer._dim_score(
@@ -85,6 +80,39 @@ class TestDimScore:
 
 
 class TestScoreServer:
+    @pytest.mark.parametrize(
+        ("findings", "composite"),
+        [
+            ([finding(PermissionCategory.SHELL_EXEC, Confidence.HIGH)], 2.7),
+            (
+                [
+                    finding(PermissionCategory.FILE_WRITE, Confidence.DECLARED),
+                    finding(PermissionCategory.NETWORK, Confidence.DECLARED),
+                    finding(PermissionCategory.DESTRUCTIVE, Confidence.DECLARED),
+                ],
+                5.5,
+            ),
+            ([finding(category, Confidence.DECLARED) for category in PermissionCategory], 10.0),
+            ([finding(PermissionCategory.NETWORK, Confidence.LOW)], 0.45),
+            ([finding(PermissionCategory.FILE_READ, Confidence.DECLARED)], 1.0),
+            ([finding(PermissionCategory.EXFILTRATION, Confidence.DECLARED)], 2.5),
+            ([finding(PermissionCategory.FILE_READ, Confidence.MANUAL)], 1.0),
+        ],
+        ids=[
+            "shell-high",
+            "write-network-destructive",
+            "all-categories-cap",
+            "network-low",
+            "read-declared",
+            "exfiltration-declared",
+            "manual",
+        ],
+    )
+    def test_literal_composite_golden_table(
+        self, findings: list[PermissionFinding], composite: float
+    ) -> None:
+        assert scorer.score_server(findings).composite == pytest.approx(composite, abs=1e-9)
+
     def test_no_findings_all_zeros(self) -> None:
         score = scorer.score_server([])
         assert score.composite == 0.0
@@ -103,9 +131,7 @@ class TestScoreServer:
             finding(PermissionCategory.FILE_WRITE, Confidence.HIGH),
         ]
         score = scorer.score_server(findings)
-        w = CATEGORY_WEIGHTS[PermissionCategory.FILE_WRITE]
-        write_score = w * CONFIDENCE_MULTIPLIERS[Confidence.HIGH]
-        assert abs(score.file_access - write_score) < 0.001
+        assert score.file_access == 1.8
 
     def test_read_only_server_low_composite(self) -> None:
         score = scorer.score_server([finding(PermissionCategory.FILE_READ, Confidence.MEDIUM)])
@@ -114,13 +140,18 @@ class TestScoreServer:
     def test_composite_capped_at_ten(self) -> None:
         all_findings = [finding(cat, Confidence.DECLARED) for cat in PermissionCategory]
         score = scorer.score_server(all_findings)
-        assert score.composite <= 10.0
+        assert score.composite == 10.0
 
-    def test_all_dimensions_capped_at_ten(self) -> None:
-        # Add many findings for one category
-        findings = [finding(PermissionCategory.SHELL_EXEC, Confidence.DECLARED)] * 100
-        score = scorer.score_server(findings)
-        assert score.shell_execution <= 10.0
+    def test_each_dimension_and_composite_are_capped_at_ten(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(scorer, "_category_score", lambda findings, category: 20.0)
+        score = scorer.score_server([])
+
+        assert score.file_access == 10.0
+        assert score.network_access == 10.0
+        assert score.shell_execution == 10.0
+        assert score.destructive == 10.0
+        assert score.exfiltration == 10.0
+        assert score.composite == 10.0
 
     def test_declared_confidence_higher_than_low(self) -> None:
         low_score = scorer.score_server([finding(PermissionCategory.NETWORK, Confidence.LOW)])
@@ -159,11 +190,38 @@ class TestScoreNonTool:
 
         assert server_score.composite == 0.0
         assert non_tool_score is not None
-        assert abs(non_tool_score.capability_score - 1.95) < 0.001
+        assert non_tool_score.capability_score == pytest.approx(1.95, abs=1e-9)
         assert non_tool_score.injection_score == 4.0
-        assert abs(non_tool_score.composite - 5.95) < 0.001
+        assert non_tool_score.composite == 5.95
         assert non_tool_score.prompt_findings == 2
         assert non_tool_score.resource_findings == 1
+
+    def test_prompt_resource_counts_are_asymmetric(self) -> None:
+        non_tool_score = scorer.score_non_tool(
+            [
+                capability(PermissionCategory.FILE_READ, CapabilityTarget.PROMPT),
+                capability(PermissionCategory.NETWORK, CapabilityTarget.PROMPT),
+                capability(PermissionCategory.FILE_WRITE, CapabilityTarget.RESOURCE),
+            ],
+            [],
+        )
+
+        assert non_tool_score is not None
+        assert non_tool_score.prompt_findings == 2
+        assert non_tool_score.resource_findings == 1
+
+    def test_non_tool_scores_are_capped_at_ten(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(scorer, "_category_score", lambda findings, category: 2.0)
+        monkeypatch.setitem(scorer_module._INJECTION_SCORES, InjectionSeverity.HIGH, 20.0)
+        result = scorer.score_non_tool(
+            [capability(category) for category in PermissionCategory],
+            [injection(CapabilityTarget.PROMPT, InjectionSeverity.HIGH)],
+        )
+
+        assert result is not None
+        assert result.capability_score == 10.0
+        assert result.injection_score == 10.0
+        assert result.composite == 10.0
 
     def test_ignores_tool_injection_for_non_tool_score(self) -> None:
         non_tool_score = scorer.score_non_tool([], [injection(CapabilityTarget.TOOL)])
