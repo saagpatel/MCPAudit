@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Scan bounded agent-visible tool text, including annotation titles and all
+  input-schema string leaves, for instruction-shaped text and permission
+  keywords. Preserve matched field paths and report incomplete text coverage.
+- Retain prompt argument descriptions and required flags in additive metadata,
+  scan their text, and name required arguments in canary skip warnings.
+
 ## [2.8.1] - 2026-10-06
 
 ### Security
