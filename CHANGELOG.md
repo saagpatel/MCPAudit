@@ -11,11 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Present offline HTML reports with a coverage-qualified grade or Preview,
   deduplicated actions, collapsed server summaries and a full audit log.
-  Add presentation-only JSON `ux_summary.grade` without changing risk scores.
+  Add presentation-only JSON `ux_summary.grade` and a stored `review_summary`
+  without changing risk scores. Compute all grouped actions, counts, grades and
+  review estimates once before credential or identifier redaction; retain the
+  snapshot through repeated redaction and JSON reloads.
   Hide the hostname by default in HTML; `check/scan --show-host` includes it.
-  Preserve distinct server actions and grades in HTML and JSON with `scan --redact`,
+  Preserve distinct server and config-health actions and grades in HTML, terminal
+  summaries and JSON with `scan --redact`,
   including either `--show-host` setting. Retain distinct policy violations and targets
-  instead of merging their shared remediation.
+  while grouping policy advice per affected server identity.
   Improve mobile table scrolling, muted-text contrast and dark-mode colors.
 
 - Probe two client identities by default for opt-in stdio canaries, with

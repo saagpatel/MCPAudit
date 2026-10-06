@@ -22,12 +22,12 @@ from typing import Literal, get_args, get_origin
 from pydantic import BaseModel
 
 from mcp_audit.coverage import missing_checks
-from mcp_audit.models import AuditReport, PermissionCategory, ServerAudit
+from mcp_audit.models import AuditReport, PermissionCategory, ReviewSummary, ServerAudit
 from mcp_audit.normalize import render_invisibles
 from mcp_audit.redaction import redact_identifiers
 from mcp_audit.taxonomy import format_rule_of_two
 from mcp_audit.terminal_text import strip_controls
-from mcp_audit.ux_summary import Action, actions
+from mcp_audit.ux_summary import Action
 
 _SEVERITY_CLASS = {
     "high": "sev-high",
@@ -56,7 +56,17 @@ def _hide_identifiers(value: object, hostname: str) -> object:
                 name: _hide_identifiers(getattr(value, name), hostname)
                 for name, field in type(value).model_fields.items()
                 if not _has_literal(field.annotation)
-                and name not in {"severity", "connection_status", "finding_type", "code", "check"}
+                and name
+                not in {
+                    "identity",
+                    "owner",
+                    "grade",
+                    "severity",
+                    "connection_status",
+                    "finding_type",
+                    "code",
+                    "check",
+                }
             }
         )
     if isinstance(value, str) and not isinstance(value, Enum):
@@ -142,12 +152,13 @@ class HtmlReportGenerator:
     def generate(self, report: AuditReport, *, show_host: bool = False) -> str:
         """Return the full HTML document. Caller writes it to disk."""
         report = report.redacted()
-        # Group and grade before display redaction can collapse distinct identities.
-        findings = actions(report)
-        grade = report.ux_summary["grade"]
+        summary = report.ensure_review_summary()
+        findings = summary.actions
         if not show_host:
             findings = [
                 Action(
+                    identity=action.identity,
+                    owner=action.owner,
                     severity=action.severity,
                     title=_hide_text(action.title, report.hostname),
                     steps=[_hide_text(step, report.hostname) for step in action.steps],
@@ -172,9 +183,9 @@ class HtmlReportGenerator:
                 f"{self._esc(report.scan_timestamp.isoformat())} · "
                 f"{report.scan_duration_seconds:.2f}s</p>"
             ),
-            self._hero(grade, findings),
+            self._hero(summary),
             self._coverage(report),
-            self._actions(findings),
+            self._actions(findings, summary.action_counts),
             "<h2>Your servers</h2>",
         ]
         for audit in report.audits:
@@ -203,19 +214,20 @@ class HtmlReportGenerator:
     # Sections
     # ------------------------------------------------------------------
 
-    def _hero(self, grade: str | None, findings: list[Action]) -> str:
-        fixes = sum(action.severity == "high" for action in findings)
+    def _hero(self, summary: ReviewSummary) -> str:
+        fixes = summary.action_counts["high"]
         if fixes:
             headline = f"{fixes} action{'s' if fixes != 1 else ''} need your review before use."
-        elif findings:
+        elif summary.action_count:
             headline = "Review the reach and hygiene findings below."
         else:
             headline = "No findings recorded within the checks shown below."
         effort = (
-            f"Estimated initial review: {len(findings) * 5} minutes; remediation time varies."
-            if findings
+            f"Estimated initial review: {summary.review_minutes} minutes; remediation time varies."
+            if summary.action_count
             else "No fixes proposed; review coverage before relying on this result."
         )
+        grade = summary.grade
         label = f"Grade {grade}" if grade else "Preview"
         cls = "grade" if grade else "grade preview"
         return (
@@ -226,11 +238,11 @@ class HtmlReportGenerator:
             "</div></section>"
         )
 
-    def _actions(self, findings: list[Action]) -> str:
+    def _actions(self, findings: list[Action], counts: dict[str, int]) -> str:
         out: list[str] = []
         for severity, label in (("high", "Top fixes"), ("medium", "Worth a look"), ("low", "FYI")):
             entries = [action for action in findings if action.severity == severity]
-            out.append(f"<section><h2>{label} · {len(entries)}</h2>")
+            out.append(f"<section><h2>{label} · {counts[severity]}</h2>")
             if not entries:
                 out.append('<p class="empty">No actions proposed in this category.</p>')
             for action in entries:

@@ -15,6 +15,7 @@ from mcp_audit.models import (
     PermissionCategory,
     PolicyResult,
     PolicyViolation,
+    ServerAudit,
 )
 
 _SEVERITY_RANK = {"low": 1, "medium": 2, "high": 3}
@@ -166,7 +167,8 @@ def evaluate_policy(
 
         resolved_pin_store = PinStore()
 
-    for audit in report.audits:
+    for audit_index, audit in enumerate(report.audits):
+        first_violation = len(violations)
         server_name = audit.server.name
         server_rule = policy.server_rules.get(server_name, ServerPolicyConfig())
 
@@ -486,6 +488,9 @@ def evaluate_policy(
                     )
                 )
 
+        for violation in violations[first_violation:]:
+            violation.audit_index = audit_index
+
     # Fleet-level trifecta gate
     if policy.fail_on_trifecta:
         for fleet_finding in report.fleet_trifecta_findings:
@@ -517,7 +522,7 @@ def evaluate_policy(
                 )
             )
 
-    violations.extend(_config_health_violations(report.config_health_findings, policy))
+    violations.extend(_config_health_violations(report.config_health_findings, policy, report.audits))
 
     return PolicyResult(passed=not violations, violations=violations)
 
@@ -576,6 +581,7 @@ def _pin_tool_count(pin_store: object | None, server_name: str) -> int:
 def _config_health_violations(
     findings: list[ConfigHealthFinding],
     policy: PolicyConfig,
+    audits: list[ServerAudit],
 ) -> list[PolicyViolation]:
     violations: list[PolicyViolation] = []
     for finding in findings:
@@ -592,11 +598,17 @@ def _config_health_violations(
             continue
         if _SEVERITY_RANK[finding.severity.value] < _SEVERITY_RANK[threshold_name]:
             continue
+        matches = [
+            index
+            for index, audit in enumerate(audits)
+            if audit.server.name == finding.server_name and audit.server.config_path in finding.config_paths
+        ]
         violations.append(
             PolicyViolation(
                 rule="fail_on.config_health",
                 server_name=finding.server_name,
                 severity=finding.severity.value,
+                audit_index=matches[0] if len(matches) == 1 else None,
                 message=(
                     f"Config health finding '{finding.finding_type}' is "
                     f"{finding.severity.value} severity: {finding.summary}"

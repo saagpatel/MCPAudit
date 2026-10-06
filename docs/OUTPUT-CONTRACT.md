@@ -145,7 +145,8 @@ eligibility veto. See [SCORING-MIGRATION.md](SCORING-MIGRATION.md).
 
 ### HTML presentation and grade
 
-`AuditReport.ux_summary.grade` is an additive, computed presentation field:
+`AuditReport.ux_summary.grade` is an additive compatibility view of the stored
+`AuditReport.review_summary.grade` presentation field:
 `A`, `B`, `C`, `D`, `F`, or null. Existing `risk_score` fields retain their
 meaning and values; `schema_version` remains 1. Grades never use numeric scores.
 Config-only, empty, legacy/unknown-mode, and incomplete metadata reports have a
@@ -162,20 +163,30 @@ server summaries, and collapsed full audit log. Fix now / Worth a look / FYI
 map to high / medium / low severity. Actions merge identical remediation on
 one server identity and overlapping SSRF/egress advice for one target, retaining
 source rules and remediation steps. Original finding rows remain in the log.
-Action grouping identities are bound before identifier scrubbing.
-`ServerAudit.presentation_id` is an additive nullable string: null on ordinary
-reports, an opaque report-local ordinal on identifier-redacted copies. It keeps
-distinct client/scope/config-path/name identities separate after their display
-paths collapse, including repeated redaction and JSON round trips; repeated
-rows for the same identity share an ordinal. It is not a cross-scan identifier
-or an authorization key and contains no hash of private identifiers.
+`AuditReport.review_summary` is additive stored data, computed exactly once on
+first presentation, redaction or serialization, after scan and policy evaluation.
+It contains `actions` (each with opaque `identity` and `owner`, `severity`, display
+`title`, `steps`, and `sources`), `action_counts` (high/medium/low), `action_count`,
+`grade`, and `review_minutes`. All summary inputs participate: permissions,
+capabilities, injection, SSRF/egress, annotations and missing labels, drift,
+trifecta, escalation, provenance, integrity, package/artifact verification,
+config health, fleet/shadowing, and policy. Identities are report-local ordinals
+assigned using raw identities, never encodings or hashes of private identifiers.
+Redaction rewrites only display text; decisions and identities stay fixed.
+Renderers consume this snapshot, including after JSON reload or repeat redaction.
+The snapshot does not track later edits to findings; construct a new report for
+a new review. Legacy reports without a snapshot compute one from their available
+data; previously lost identities in legacy redacted reports cannot be recovered.
+`ServerAudit.presentation_id` remains an additive nullable compatibility field;
+new reports leave it null. Grouping no longer reads or populates it.
 `scan --redact` and `--show-host` do not change the grade, action counts, or
-review estimate; the computed JSON grade uses the same grouping and still
-responds to changes in findings. `schema_version` remains 1.
-Each policy violation is a separate action retaining its rule, message, and
-server/tool target. Policy rows identify targets by name, not full server
-identity, so even identical messages are retained rather than merging
-potentially distinct configurations through their shared remediation.
+review estimate. `schema_version` remains 1.
+`PolicyViolation.audit_index` is an additive nullable nonnegative integer pointing
+to its source row in `AuditReport.audits`; policy evaluation fills it for per-server
+violations. It contains no raw identifier. Policy advice groups per affected
+server identity, retains every distinct message, rule and server/tool target in
+steps/sources, and takes the highest severity. Legacy name-only rows bind only
+when the name identifies one audit; ambiguous/unbound rows remain separate actions.
 Effort is a five-minute-per-action initial-review estimate, not measured repair time.
 Empty tables say "No findings recorded" and refer to coverage, never "None."
 

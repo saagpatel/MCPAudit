@@ -2,19 +2,15 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
+
+from mcp_audit.models import ReviewAction as Action
+from mcp_audit.models import ReviewGrade, ReviewSummary
+
+__all__ = ["Action", "actions", "grade"]
 
 if TYPE_CHECKING:
     from mcp_audit.models import AuditReport, ServerAudit
-
-
-@dataclass
-class Action:
-    severity: str
-    title: str
-    steps: list[str] = field(default_factory=list)
-    sources: list[str] = field(default_factory=list)
 
 
 class _Finding(Protocol):
@@ -39,13 +35,21 @@ class _Outbound(_Finding, Protocol):
     def target_name(self) -> str: ...
 
 
-def action_owner(audit: ServerAudit) -> str:
-    """Use the pre-redaction identity when the report carries one."""
+def action_owner(audit: ServerAudit) -> tuple[str, str, str, str]:
+    """Raw identity used only while computing the unredacted snapshot."""
     server = audit.server
-    return audit.presentation_id or f"{server.client.value}:{server.scope}:{server.config_path}:{server.name}"
+    return server.client.value, server.scope, server.config_path, server.name
 
 
 def actions(report: AuditReport) -> list[Action]:
+    return report.ensure_review_summary().actions
+
+
+def grade(report: AuditReport) -> str | None:
+    return report.ensure_review_summary().grade
+
+
+def compute_summary(report: AuditReport) -> ReviewSummary:
     """Merge overlapping detector advice by server identity and action family.
 
     All source rules and remediation steps survive deduplication. The audit log
@@ -53,10 +57,14 @@ def actions(report: AuditReport) -> list[Action]:
     """
     grouped: dict[tuple[str, str], Action] = {}
     ranks = {"high": 0, "medium": 1, "low": 2}
+    owners: dict[tuple[str, ...], str] = {}
+
+    def owner_id(identity: tuple[str, ...]) -> str:
+        return owners.setdefault(identity, f"owner-{len(owners) + 1:04d}")
 
     def add(owner: str, family: str, severity: str, title: str, step: str, source: str) -> None:
         key = (owner, family)
-        if key not in grouped and step:
+        if key not in grouped and step and family != "policy":
             key = next(
                 (
                     existing
@@ -66,7 +74,12 @@ def actions(report: AuditReport) -> list[Action]:
                 key,
             )
         if key not in grouped:
-            grouped[key] = Action(severity, title)
+            grouped[key] = Action(
+                identity=f"action-{len(grouped) + 1:04d}",
+                owner=owner,
+                severity=severity,
+                title=title,
+            )
         action = grouped[key]
         if ranks.get(severity, 2) < ranks.get(action.severity, 2):
             action.severity = severity
@@ -77,7 +90,7 @@ def actions(report: AuditReport) -> list[Action]:
 
     for audit in report.audits:
         server = audit.server
-        owner = action_owner(audit)
+        owner = owner_id(("server", *action_owner(audit)))
         where = f"{server.name} ({server.client.value}, {server.config_path})"
         permission_findings: list[_Finding] = [*audit.permissions, *audit.capability_findings]
         for finding in permission_findings:
@@ -146,7 +159,7 @@ def actions(report: AuditReport) -> list[Action]:
             )
     for health in report.config_health_findings:
         add(
-            "|".join(health.config_paths),
+            owner_id(("config", health.server_name or "", *health.config_paths)),
             f"{health.server_name}:{health.finding_type}",
             health.severity.value,
             health.summary,
@@ -155,25 +168,46 @@ def actions(report: AuditReport) -> list[Action]:
         )
     fleet_findings: list[_Finding] = [*report.fleet_trifecta_findings, *report.shadowing_findings]
     for fleet in fleet_findings:
-        add("fleet", fleet.rule_id, fleet.severity, fleet.title, fleet.remediation, fleet.rule_id)
-    policy_actions: list[Action] = []
+        add(
+            owner_id(("fleet",)), fleet.rule_id, fleet.severity, fleet.title, fleet.remediation, fleet.rule_id
+        )
     if report.policy_result:
-        for violation in report.policy_result.violations:
+        for index, violation in enumerate(report.policy_result.violations):
             targets = [target for target in (violation.server_name, violation.tool_name) if target]
-            # Policy rows carry names, not full server identities; merging even
-            # identical messages could hide violations from different configs.
-            policy_actions.append(
-                Action(
-                    severity=violation.severity,
-                    title=violation.message + (f" ({', '.join(targets)})" if targets else ""),
-                    steps=["Review this violation against your selected policy."],
-                    sources=[violation.rule],
-                )
+            audit_index = violation.audit_index
+            matches = [
+                i for i, audit in enumerate(report.audits) if audit.server.name == violation.server_name
+            ]
+            if audit_index is None and len(matches) == 1:
+                audit_index = matches[0]
+            if audit_index is not None and 0 <= audit_index < len(report.audits):
+                owner = owner_id(("server", *action_owner(report.audits[audit_index])))
+            else:
+                # Legacy/ambiguous rows have no source identity: preserve each.
+                owner = owner_id(("policy-row", str(index)))
+            message = violation.message + (f" ({', '.join(targets)})" if targets else "")
+            add(
+                owner,
+                "policy",
+                violation.severity,
+                message,
+                message + " Review this violation against your selected policy.",
+                violation.rule,
             )
-    return sorted([*grouped.values(), *policy_actions], key=lambda action: ranks.get(action.severity, 2))
+    findings = sorted(grouped.values(), key=lambda action: ranks.get(action.severity, 2))
+    for index, action in enumerate(findings, start=1):
+        action.identity = f"action-{index:04d}"
+    counts = {severity: sum(action.severity == severity for action in findings) for severity in ranks}
+    return ReviewSummary(
+        actions=findings,
+        action_counts=counts,
+        action_count=len(findings),
+        grade=_compute_grade(report, findings),
+        review_minutes=len(findings) * 5,
+    )
 
 
-def grade(report: AuditReport) -> str | None:
+def _compute_grade(report: AuditReport, findings: list[Action]) -> ReviewGrade | None:
     """D6 rubric, qualified by metadata completion; never read a risk score.
 
     Incomplete/legacy reports get no letter. Confirmed shell launch means a
@@ -189,7 +223,7 @@ def grade(report: AuditReport) -> str | None:
         for finding in report.config_health_findings
     ):
         return "F"
-    fixes = sum(action.severity == "high" for action in actions(report))
+    fixes = sum(action.severity == "high" for action in findings)
     chain_and_shell = any(
         audit.trifecta_findings
         and (
@@ -202,6 +236,6 @@ def grade(report: AuditReport) -> str | None:
         return "D"
     if fixes == 1:
         return "C"
-    if any(action.severity == "medium" for action in actions(report)):
+    if any(action.severity == "medium" for action in findings):
         return "B"
     return "A"

@@ -1210,6 +1210,19 @@
           "default": "high",
           "title": "Severity",
           "type": "string"
+        },
+        "audit_index": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Audit Index"
         }
       },
       "required": [
@@ -1407,6 +1420,105 @@
         "uri"
       ],
       "title": "ResourceInfo",
+      "type": "object"
+    },
+    "ReviewAction": {
+      "description": "One pre-grouped action; identities are report-local ordinals, never identifiers.",
+      "properties": {
+        "identity": {
+          "pattern": "^action-[0-9]{4,}$",
+          "title": "Identity",
+          "type": "string"
+        },
+        "owner": {
+          "pattern": "^owner-[0-9]{4,}$",
+          "title": "Owner",
+          "type": "string"
+        },
+        "severity": {
+          "title": "Severity",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "steps": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Steps",
+          "type": "array"
+        },
+        "sources": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Sources",
+          "type": "array"
+        }
+      },
+      "required": [
+        "identity",
+        "owner",
+        "severity",
+        "title"
+      ],
+      "title": "ReviewAction",
+      "type": "object"
+    },
+    "ReviewSummary": {
+      "description": "Snapshot of review decisions made before any display redaction.",
+      "properties": {
+        "actions": {
+          "items": {
+            "$ref": "#/$defs/ReviewAction"
+          },
+          "title": "Actions",
+          "type": "array"
+        },
+        "action_counts": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Action Counts",
+          "type": "object"
+        },
+        "action_count": {
+          "title": "Action Count",
+          "type": "integer"
+        },
+        "grade": {
+          "anyOf": [
+            {
+              "enum": [
+                "A",
+                "B",
+                "C",
+                "D",
+                "F"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Grade"
+        },
+        "review_minutes": {
+          "title": "Review Minutes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "actions",
+        "action_counts",
+        "action_count",
+        "grade",
+        "review_minutes"
+      ],
+      "title": "ReviewSummary",
       "type": "object"
     },
     "RiskScore": {
@@ -2398,6 +2510,17 @@
       },
       "title": "Coverage",
       "type": "object"
+    },
+    "review_summary": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ReviewSummary"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     }
   },
   "required": [
