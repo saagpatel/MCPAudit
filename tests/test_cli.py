@@ -73,7 +73,7 @@ def test_scan_max_concurrency_reaches_current_run_scan_entrypoint(
     )
 
     assert result.exit_code == 0, result.output
-    assert forwarded[-1] == 7
+    assert forwarded[-2:] == [7, False]  # max_concurrency, connect_project_configs
 
 
 def test_scan_max_concurrency_rejects_zero() -> None:
