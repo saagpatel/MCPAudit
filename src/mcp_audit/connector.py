@@ -50,7 +50,7 @@ logger.addFilter(TerminalSafeLogFilter())
 _SSE_URL_SUFFIX = re.compile(r"(https?://[^\s?#]++)([?#][^\s]*)?", re.IGNORECASE)
 _SSE_URL_USERINFO = re.compile(r"(https?://)(?:[^/\s@]*+@)++", re.IGNORECASE)
 _REDIRECT_URL = re.compile(
-    r"(\b(?:redirect(?:ed)?\s+to|redirect\s+location\s*:|location['\"]?\s*:)\s*['\"]?)"
+    r"(\b(?:redirect(?:ed|ing)?\s*(?:to|target|->)|redirect\s+location|location['\"]?)\s*[:=]?\s*['\"<]?)"
     # Any token after a redirect phrase is server-chosen and may be an opaque
     # credential, so it is always withheld.
     r"[^\s'\"<>]+",

@@ -313,7 +313,17 @@ class TestRelativeRedirectTargets:
         assert "<redacted-url>" in summary
 
     @pytest.mark.parametrize(
-        "text", ["Redirect location: 'SECRETCODE123'", "Redirect to SECRETCODE123 not followed"]
+        "text",
+        [
+            "Redirect location: 'SECRETCODE123'",
+            "Redirect to SECRETCODE123 not followed",
+            "Redirect to: SECRETCODE123",
+            "redirected to <SECRETCODE123>",
+            "redirecting to SECRETCODE123",
+            "Redirect target: SECRETCODE123",
+            "Redirect -> SECRETCODE123",
+            "Location=SECRETCODE123",
+        ],
     )
     def test_opaque_relative_targets_are_withheld(self, text: str) -> None:
         summary = describe_exception(RuntimeError(text))
