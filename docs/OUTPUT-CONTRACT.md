@@ -36,6 +36,14 @@ with credential values redacted before quoting. Remote entries show their
 redacted endpoint instead. Warnings also appear on the CLI console, but the
 engine remains silent for library/MCP callers without a console. Explicit
 `--skip-connect` never spawns, even with the project opt-in.
+All SARIF profiles retain this warning as an invocation notification with
+descriptor ID `MCP-PROJECT-CONFIG-NOT-CONNECTED`, its redacted message, and
+the warning fields in `properties`. Coverage warnings, including
+`project_config_not_connected`, are returned by `scan_mcp_servers` and the
+`get_*_findings` tools' `warnings` key. `get_high_risk_servers` retains its
+legacy JSON list of `name`/`score` objects and does not return warnings; callers
+needing coverage information must use those warning-bearing tools.
+`check_server` retains its audit fields and adds `warnings`.
 
 ## Annotation contradictions
 
@@ -194,6 +202,7 @@ unknown fields as additive. Important stable top-level fields:
 - `high_risk_servers`
 - `audits`
 - `config_health_findings`
+- `coverage` — additive map of check names to `{state, reason}`; see below.
 - `policy_result`
 
 Tool entries retain all existing fields and add nullable `title`, `output_schema`,
@@ -468,15 +477,88 @@ The report top level also includes:
     omitted a tool, or returned malformed output; no model findings were
     admitted),
     `option_ignored` (an option passed without the check that consumes it),
-    `surface_listing_incomplete` (a connected non-canary prompt/resource
-    listing exceeded the 20-page limit, advertised or not),
+    `surface_listing_incomplete` (an initialized non-canary tool, prompt, or
+    resource listing exceeded the 20-page limit, advertised or not, or an
+    advertised prompt/resource listing was unavailable),
     `description_truncated` (permission keyword or SSRF fetch-verb input
     exceeded the 256 KiB UTF-8 per-field limit; suffix evidence was not inspected).
     The vocabulary is additive — consumers must tolerate unknown codes.
   - `message` — plain-text human summary including remediation.
   - `check` — the scan option whose coverage was reduced, or `null`.
   - `servers` — affected server names; empty means the whole scan.
-  An empty list means every requested check ran at full coverage.
+  An empty list alone does not establish that requested checks ran at full coverage.
+
+### Check coverage
+
+`coverage` records bounded completion independently of findings and scores.
+Each entry has `state` (`complete`, `partial`, `not_run`, or `not_requested`)
+and a plain-text `reason`. `complete` means the configured check completed for
+the configured inputs; it does not establish server safety. `partial` means
+some inputs or exercise steps were unavailable, including a mixed fleet of
+completed and skipped checks. `not_run` means no usable check ran, and
+`not_requested` means the operator did not enable that optional check.
+
+Always-recorded keys are `config_health`, `permissions`, `capabilities`, and
+`metadata`. Optional keys match `ScanOptions`: `inject_check`, `ssrf_check`,
+`egress_check`, `pin_check`, `trifecta_check`, `shadow_check`,
+`escalation_check`, `provenance_check`, `integrity_check`, `verify_artifacts`,
+`download_artifacts`, and `llm_analysis`. `runtime_security` records the
+bounded `canary_check` exercise. Consumers must tolerate additional keys.
+Missing keys and absent or empty coverage maps are unknown, never passed.
+Old reports load with an empty map; rendering does not infer completion from
+zero findings or connection counts. `schema_version` remains `1`.
+
+Completion requires evidence that the check executed over every applicable
+input. A collected configuration parse failure makes every enabled check
+`partial`, including configuration health and fleet checks: servers in the
+unparseable file are unknown inputs, even if all discovered servers connected.
+Optional checks that were not enabled remain `not_requested`.
+
+Config-only scans record metadata and metadata-dependent checks as `not_run`
+with reason `connections disabled`; permission inference from configuration
+is `partial`. Baseline-dependent checks record missing per-server baselines
+as `not_run`. No configured servers leaves server-dependent checks `not_run`.
+A canary with no eligible tools has runtime `not_run`; failed or truncated
+listings and incomplete exercises are `partial`. Pagination failures never
+admit an incomplete page set as an empty, successfully checked inventory.
+An `agent_text_incomplete` warning makes permissions and requested injection,
+trifecta, and escalation checks `partial` for the affected server, including
+checks that consume bounded permission or injection findings. Inventory and
+checks that use full metadata are unaffected by this text budget. A pinned
+server with an empty tool baseline still has an available `pin_check` baseline.
+`description_truncated` makes permissions, capabilities, and requested SSRF,
+egress, trifecta, and escalation checks `partial` for the affected server.
+This is conservative per-server coverage because the warning does not identify
+individual surfaces. Metadata and configuration-health coverage remain complete
+when their inspection completed; truncation alone does not reduce coverage for
+checks that use full metadata.
+
+Package verification requires current package references with usable baselines
+for the exact configured package/version and successful registry hash or byte
+verification for every reference. A removed, changed, or floated version with
+no applicable baseline is `not_run`; mixed applicability or an unavailable
+fetch is `partial`. A nonempty old baseline and an empty findings list do not
+prove verification ran. Integrity checks are `partial` when a pinned artifact
+cannot be hashed. Runtime completion also requires complete metadata, no
+exercise warnings, and completion of the bounded call budget. LLM completion
+requires an admissible summary accounting for every candidate tool.
+
+`ServerAudit.connection_status` adds `partial` for an initialized connection
+whose metadata listing was incomplete. Existing `connected`, `failed`,
+`timeout`, and `skipped` meanings are unchanged. `servers_connected` still
+counts established connections, including partial ones; `servers_failed`
+still counts failures and timeouts. Inspect coverage for completion.
+
+Terminal output prints `Runtime security: NOT CHECKED` for disabled or unrun
+runtime checks and `Metadata checks not run: connections disabled` in
+config-only mode. HTML has a Checked strip and an incomplete-coverage banner
+for partial or unrun checks. Legacy reports explicitly display unknown coverage.
+
+Policies may opt in with YAML `fail_on.coverage: true` (a boolean), or Python
+`PolicyConfig(fail_on_coverage=True)`. This fails on `partial`, `not_run`, or
+unknown legacy coverage, independently of severity; `not_requested` checks
+do not fail the gate. Coverage violations use existing SARIF `MCP010` and
+the existing policy exit code `2`. Existing policies retain their behavior.
 
 `description_truncated` warnings use `check: "permission_analysis"`, name the
 affected server, and give a count of truncated fields without including their
@@ -504,7 +586,11 @@ their previous behavior.
 
 `config_health_findings` is an additive top-level list for pre-connection config
 diagnostics. Findings include `finding_type`, `severity`, optional
-`server_name`, `summary`, `details`, and `remediation`. Current finding types
+`server_name`, `summary`, `details`, and `remediation`. Additive `config_paths`
+lists the source configuration paths, including the path of an unparseable
+configuration. Grouped duplicate/conflicting-name findings retain every
+applicable source; individual findings retain their own source. Old reports
+default to an empty list when source locations are unavailable. Current finding types
 include duplicate server names, missing stdio commands, deprecated SSE
 transports, shell-wrapper launches, remote endpoints, remote URL arguments,
 missing local command paths, project/global server-name conflicts, conflicting
@@ -1126,6 +1212,21 @@ Compatibility rules:
   documents a migration.
 
 ## SARIF Report
+
+All profiles include `runs[].properties.mcpAuditCoverage` and invocation
+`toolExecutionNotifications` for partial, unrun, or unknown legacy coverage.
+These notifications describe completion rather than security findings;
+`executionSuccessful` does not imply complete coverage.
+The default `compatibility` profile retains existing rule and result families.
+CLI `--sarif-profile extended` (Python `generate(report, profile="extended")`)
+adds configuration-health results with stable IDs `MCP-CH-{FINDING-TYPE}`:
+the existing `finding_type` is uppercased, and underscores become hyphens
+(for example, `remote_endpoint` becomes `MCP-CH-REMOTE-ENDPOINT`). Findings
+retain their severity and remediation. Applicable `config_paths` are emitted
+as `locations[].physicalLocation.artifactLocation.uri`, including parse failures
+with no parsed server. Results from old reports without source paths omit
+locations rather than inventing them. Scores and existing JSON config-health
+fields are unchanged.
 
 SARIF output uses stable MCP rule IDs:
 

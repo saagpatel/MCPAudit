@@ -994,13 +994,14 @@ class ConfigHealthFinding(BaseModel):
     summary: str
     details: list[str] = Field(default_factory=list)
     remediation: str
+    config_paths: list[str] = Field(default_factory=list)
 
 
 class ServerAudit(BaseModel):
     """Complete audit result for a single MCP server."""
 
     server: ServerConfig
-    connection_status: str  # "connected", "failed", "timeout", "skipped"
+    connection_status: str  # "connected", "partial", "failed", "timeout", "skipped"
     connection_error: str | None = None
     tools: list[ToolInfo] = Field(default_factory=list)
     prompts: list[PromptInfo] = Field(default_factory=list)
@@ -1092,6 +1093,16 @@ failing on attribute access. Additive fields do NOT bump this.
 """
 
 
+CoverageState = Literal["complete", "partial", "not_run", "not_requested"]
+
+
+class CheckCoverage(BaseModel):
+    """Completion of a bounded check, independent of whether it found a risk."""
+
+    state: CoverageState
+    reason: str
+
+
 class AuditReport(BaseModel):
     """Top-level audit report containing all server audits."""
 
@@ -1112,6 +1123,7 @@ class AuditReport(BaseModel):
     fleet_trifecta_findings: list[TrifectaFinding] = Field(default_factory=list)
     shadowing_findings: list[ShadowingFinding] = Field(default_factory=list)
     warnings: list[ScanWarning] = Field(default_factory=list)
+    coverage: dict[str, CheckCoverage] = Field(default_factory=dict)
 
     def redacted(self, *, identifiers: bool = False) -> "AuditReport":
         """Return a credential-redacted copy, optionally scrubbing field-report identifiers."""

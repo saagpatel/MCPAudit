@@ -11,6 +11,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from mcp_audit.coverage import missing_checks
 from mcp_audit.models import (
     ArtifactVerifySeverity,
     AuditReport,
@@ -72,6 +73,8 @@ class ReportGenerator:
             f"({report.scan_duration_seconds:.1f}s)"
         )
         self._console.print(Panel(summary, title="mcp-audit scan", expand=False))
+
+        self._render_coverage(report)
 
         if not report.audits:
             self._console.print("[dim]No servers found.[/dim]")
@@ -143,6 +146,60 @@ class ReportGenerator:
         self._render_capability_warnings(report)
         self._render_drift_warnings(report)
         self._render_policy_result(report)
+
+    def _render_coverage(self, report: AuditReport) -> None:
+        """Show which checks ran, including checks omitted by older reports."""
+        coverage = report.coverage
+        if not coverage:
+            self._console.print("[yellow]Coverage unknown: checks were not recorded.[/yellow]")
+            self._console.print("[yellow]Runtime security: UNKNOWN (coverage not recorded)[/yellow]")
+            return
+
+        labels = {
+            "config_health": "Config health",
+            "permissions": "Permissions",
+            "capabilities": "Capabilities",
+            "metadata": "Metadata",
+            "runtime_security": "Runtime security",
+        }
+        completed = [
+            labels.get(key, key.replace("_", " ").title())
+            for key, value in coverage.items()
+            if value.state == "complete"
+        ]
+        if completed:
+            self._console.print(terminal_safe("Checked: " + ", ".join(completed)))
+
+        incomplete = [
+            (key, value)
+            for key, value in coverage.items()
+            if value.state in {"partial", "not_run"}
+            or (key == "runtime_security" and value.state == "not_requested")
+        ]
+        for key, value in incomplete:
+            label = labels.get(key, key.replace("_", " ").title())
+            state = value.state
+            reason = value.reason
+            if key == "runtime_security" and state in {"not_run", "not_requested"}:
+                message = "Runtime security: NOT CHECKED"
+                if reason:
+                    message += f" ({reason})"
+            elif key == "metadata" and state == "not_run" and reason == "connections disabled":
+                message = "Metadata checks not run: connections disabled"
+            else:
+                message = f"{label}: {state.replace('_', ' ').upper()}"
+                if reason:
+                    message += f" — {reason}"
+            self._console.print(terminal_safe(message))
+
+        if any(value.state in {"partial", "not_run"} for _, value in incomplete):
+            self._console.print("[yellow]Audit coverage is incomplete.[/yellow]")
+
+        missing = missing_checks(coverage)
+        if missing:
+            self._console.print(terminal_safe("Coverage unknown: checks not recorded: " + ", ".join(missing)))
+            if "runtime_security" in missing:
+                self._console.print("[yellow]Runtime security: UNKNOWN (coverage not recorded)[/yellow]")
 
     def _render_verbose(self, report: AuditReport) -> None:
         """Print per-tool permission breakdown for each server."""

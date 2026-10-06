@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Limit simultaneous server sessions to 32 by default, configurable with
   `--max-concurrency`; clarify that `--timeout` is a per-session budget and
   excludes time waiting for a connection slot.
+- Mark incomplete metadata listings, including pagination floods, as partial
+  connections rather than clean connected rows with zero tools.
 
 ### Security
 
@@ -55,6 +57,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   evidence to the detected phrase or gated anomaly so stripped context and
   benign non-Latin prefixes cannot displace it, including normalized HTML-comment
   delimiters after long benign prefixes.
+
+### Added
+
+- Record per-check completion and reasons in additive report coverage, with
+  terminal and HTML coverage summaries, SARIF invocation notifications and
+  run properties, and an opt-in `fail_on.coverage` policy gate. Legacy reports
+  retain unknown coverage. The extended SARIF profile includes stable
+  configuration-health rule IDs.
+  Apply bounded-text coverage loss to permissions, capabilities and dependent detectors,
+  recognize empty tool pin baselines, and retain project connection warnings
+  in SARIF notifications, full-report, findings and single-server MCP results.
+  Preserve the high-risk tool's legacy JSON list; its description directs
+  callers to full-report and findings tools for coverage warnings.
+  Require execution evidence for completion, mark discovery parse failures
+  as partial coverage, and account for applicable and verified package references.
+  Preserve source configuration locations in extended SARIF, including parse failures.
 
 ## [2.8.1] - 2026-10-06
 

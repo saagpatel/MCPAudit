@@ -17,6 +17,7 @@ from __future__ import annotations
 from html import escape
 from typing import Any
 
+from mcp_audit.coverage import missing_checks
 from mcp_audit.models import AuditReport, ServerAudit
 from mcp_audit.normalize import render_invisibles
 from mcp_audit.taxonomy import format_rule_of_two
@@ -28,6 +29,7 @@ _SEVERITY_CLASS = {
     "low": "sev-low",
 }
 
+
 _STYLE = """
 :root { color-scheme: light dark; }
 * { box-sizing: border-box; }
@@ -38,6 +40,11 @@ h2 { font-size: 1.2rem; margin: 2rem 0 0.75rem; border-bottom: 2px solid #e0e0e0
 h3 { font-size: 1.0rem; margin: 1.25rem 0 0.5rem; }
 .subtitle { color: #666; margin: 0 0 1.5rem; font-size: 0.9rem; }
 .summary { display: flex; flex-wrap: wrap; gap: 1rem; margin: 1rem 0; }
+.checked-strip { margin: 1rem 0; padding: 0.65rem 0.85rem; border: 1px solid #b8d8c0;
+                 border-radius: 6px; background: #eef8f0; }
+.coverage-incomplete { margin: 1rem 0; padding: 0.65rem 0.85rem; border: 1px solid #d8a33b;
+                       border-radius: 6px; background: #fff5df; color: #684600; }
+.coverage-item { margin: 0.2rem 0; }
 .stat { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 0.75rem 1rem;
         min-width: 7rem; }
 .stat .num { font-size: 1.5rem; font-weight: 700; }
@@ -90,6 +97,7 @@ class HtmlReportGenerator:
                 f"{report.scan_duration_seconds:.2f}s</p>"
             ),
             self._summary(report),
+            self._coverage(report),
             self._policy(report),
             self._config_health(report),
         ]
@@ -127,6 +135,78 @@ class HtmlReportGenerator:
             for label, value in stats
         )
         return f'<div class="summary">{cells}</div>'
+
+    def _coverage(self, report: AuditReport) -> str:
+        """Render recorded coverage without treating absent legacy data as success."""
+        coverage = report.coverage
+        if not coverage:
+            return (
+                '<section class="coverage-incomplete" aria-label="Coverage unknown">'
+                "<strong>Coverage unknown:</strong> this report did not record which checks ran. "
+                "Runtime security: UNKNOWN.</section>"
+            )
+
+        labels = {
+            "config_health": "Config health",
+            "permissions": "Permissions",
+            "capabilities": "Capabilities",
+            "metadata": "Metadata",
+            "runtime_security": "Runtime security",
+        }
+        complete = [
+            labels.get(key, key.replace("_", " ").title())
+            for key, value in coverage.items()
+            if value.state == "complete"
+        ]
+        checked = "<strong>Checked:</strong> " + (
+            ", ".join(self._esc(label) for label in complete) if complete else "None recorded."
+        )
+        strip = f'<div class="checked-strip" aria-label="Checked">{checked}</div>'
+
+        incomplete = [
+            (key, value)
+            for key, value in coverage.items()
+            if value.state in {"partial", "not_run"}
+            or (key == "runtime_security" and value.state == "not_requested")
+        ]
+        details: list[str] = []
+        needs_banner = False
+        for key, value in incomplete:
+            state = value.state
+            reason = value.reason
+            label = labels.get(key, key.replace("_", " ").title())
+            if key == "runtime_security" and state in {"not_run", "not_requested"}:
+                text = "Runtime security: NOT CHECKED"
+                if reason:
+                    text += f" ({reason})"
+            elif key == "metadata" and state == "not_run" and reason == "connections disabled":
+                text = "Metadata checks not run: connections disabled"
+            else:
+                text = f"{label}: {state.replace('_', ' ').upper()}"
+                if reason:
+                    text += f" — {reason}"
+            details.append(f'<div class="coverage-item">{self._esc(text)}</div>')
+            needs_banner = needs_banner or state in {"partial", "not_run"}
+
+        rendered_details = "".join(details)
+        if needs_banner:
+            rendered_details = (
+                '<section class="coverage-incomplete" aria-label="Incomplete coverage">'
+                "<strong>Audit coverage is incomplete.</strong>" + rendered_details + "</section>"
+            )
+
+        missing = missing_checks(coverage)
+        if missing:
+            missing_text = "Coverage unknown: checks not recorded: " + ", ".join(missing)
+            if "runtime_security" in missing:
+                missing_text += ". Runtime security: UNKNOWN."
+            unknown_banner = (
+                '<section class="coverage-incomplete" aria-label="Coverage unknown">'
+                f"{self._esc(missing_text)}</section>"
+            )
+        else:
+            unknown_banner = ""
+        return strip + rendered_details + unknown_banner
 
     def _server(self, audit: ServerAudit) -> str:
         srv = audit.server

@@ -13,6 +13,7 @@ import pytest
 from mcp_audit.engine import ScanOptions, run_scan
 from mcp_audit.models import ClientType, ServerAudit, ServerConfig
 from mcp_audit.pinning import PinStore
+from mcp_audit.policy import PolicyConfig, evaluate_policy
 
 HERE = Path(__file__).resolve().parent
 FIXTURE = HERE.parent / "fixtures" / "evasion_server.py"
@@ -172,7 +173,7 @@ async def test_detector_gap_corpus(
             servers=[_server(case)],
         )
         audit = report.audits[0]
-        if audit.connection_status != "connected":
+        if audit.connection_status != ("partial" if kind == "canary_warning" else "connected"):
             raise RuntimeError("Canary corpus fixture did not connect")
         if kind == "canary_not_excluded":
             if audit.canary is None:
@@ -193,9 +194,10 @@ async def test_detector_gap_corpus(
             }
             assert len(patterns) >= (2 if case["id"] == "result-plain-control" else 1)
         elif kind == "canary_warning":
-            # As of 2.8.0 the page-limit failure is surfaced as a coverage warning;
-            # assert its stable code, not the implementation-specific warning text.
             assert any(warning.code == detector["code"] for warning in report.warnings)
+            assert report.coverage["metadata"].state == "partial"
+            assert report.coverage["runtime_security"].state == "partial"
+            assert not evaluate_policy(report, PolicyConfig(fail_on_coverage=True)).passed
         else:
             raise RuntimeError(f"Unknown canary detector contract: {kind}")
         return

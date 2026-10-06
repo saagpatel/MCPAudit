@@ -15,6 +15,7 @@ from mcp_audit.connector import ServerConnector, canary_tool_eligible
 from mcp_audit.engine import ScanOptions, run_scan
 from mcp_audit.injection import InjectionDetector
 from mcp_audit.models import AuditReport, Confidence, PermissionCategory, ServerAudit, ServerConfig, ToolInfo
+from mcp_audit.policy import PolicyConfig, evaluate_policy
 from tests.conftest import make_server_config, make_tool
 
 FIXTURE = Path("tests/fixtures/agent_visible_text.json")
@@ -201,21 +202,79 @@ def test_depth_cycles_and_oversized_paths_are_bounded() -> None:
 
 
 @pytest.mark.anyio
-async def test_truncation_is_visible_in_scan_warnings(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("surface", ["tool", "prompt", "prompt_argument"])
+async def test_truncation_is_visible_in_scan_warnings_and_coverage(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, surface: str
+) -> None:
+    from mcp_audit import pinning
+
+    tool = ToolInfo.model_validate_json(FIXTURE.read_text())
+    prompt = ServerConnector._convert_prompt(
+        Prompt(name="summary", arguments=[PromptArgument(name="detail", description="Status")])
+    )
+    oversized = "x" * (agent_text.MAX_FIELD_CHARS + 1)
+    if surface == "tool":
+        tool.description = oversized
+    elif surface == "prompt":
+        prompt.description = oversized
+    else:
+        prompt.argument_details[0].description = oversized
+    store = pinning.PinStore(path=tmp_path / "pins.yaml")
+    store.pin_server("test-server", [tool])
+    monkeypatch.setattr(pinning, "PinStore", lambda: store)
+
     async def connect(self: ServerConnector, config: ServerConfig) -> ServerAudit:
         return ServerAudit(
             server=config,
             connection_status="connected",
-            tools=[make_tool("status", description="x" * (agent_text.MAX_FIELD_CHARS + 1))],
+            tools=[tool],
+            prompts=[prompt],
         )
 
     monkeypatch.setattr(ServerConnector, "connect", connect)
-    report = await run_scan(ScanOptions(config_only=True, inject_check=True), servers=[make_server_config()])
+    report = await run_scan(
+        ScanOptions(
+            config_only=True,
+            inject_check=True,
+            trifecta_check=True,
+            escalation_check=True,
+            pin_check=True,
+            shadow_check=True,
+        ),
+        servers=[make_server_config()],
+    )
     warnings = [w for w in report.warnings if w.code == "agent_text_incomplete"]
     assert len(warnings) == 1
     assert warnings[0].check == "agent_visible_text"
     assert warnings[0].servers == ["test-server"]
     assert "field text truncated" in warnings[0].message
+    for check in ("permissions", "inject_check", "trifecta_check", "escalation_check"):
+        assert report.coverage[check].state == "partial"
+        assert report.coverage[check].reason == "agent_text_incomplete"
+    for check in ("metadata", "capabilities", "pin_check", "shadow_check"):
+        assert report.coverage[check].state == "complete"
+    assert not evaluate_policy(report, PolicyConfig(fail_on_coverage=True)).passed
+
+
+@pytest.mark.anyio
+async def test_tool_truncation_fails_default_scan_coverage_in_a_mixed_fleet(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def connect(self: ServerConnector, config: ServerConfig) -> ServerAudit:
+        description = "x" * (agent_text.MAX_FIELD_CHARS + 1) if config.name == "truncated" else "Status"
+        return ServerAudit(
+            server=config, connection_status="connected", tools=[make_tool("status", description)]
+        )
+
+    monkeypatch.setattr(ServerConnector, "connect", connect)
+    report = await run_scan(
+        ScanOptions(), servers=[make_server_config(name="truncated"), make_server_config()]
+    )
+    assert report.coverage["metadata"].state == "complete"
+    assert report.coverage["permissions"].state == "partial"
+    for check in ("inject_check", "trifecta_check", "escalation_check"):
+        assert report.coverage[check].state == "not_requested"
+    assert not evaluate_policy(report, PolicyConfig(fail_on_coverage=True)).passed
 
 
 @pytest.mark.anyio
