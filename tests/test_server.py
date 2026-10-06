@@ -355,7 +355,10 @@ async def test_scan_mcp_servers_still_dispatches_all_discovered_entries(
 
 
 @pytest.mark.anyio
-async def test_get_high_risk_servers_filters_by_composite(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("with_warning", [False, True])
+async def test_get_high_risk_servers_filters_by_composite_and_retains_list_contract(
+    monkeypatch: pytest.MonkeyPatch, with_warning: bool
+) -> None:
     def _score(composite: float) -> RiskScore:
         return RiskScore(
             composite=composite,
@@ -379,12 +382,35 @@ async def test_get_high_risk_servers_filters_by_composite(monkeypatch: pytest.Mo
         ),
         ServerAudit(server=make_server_config(name="unscored"), connection_status="failed"),
     ]
-    _stub_run_scan(monkeypatch, _report_with(audits))
+    warnings = (
+        [ScanWarning(code="project_config_not_connected", message="Synthetic project config not connected.")]
+        if with_warning
+        else []
+    )
+    _stub_run_scan(monkeypatch, _report_with(audits, warnings=warnings))
 
     app = _build_mcp_server()
     payload = _tool_json(await app.call_tool("get_high_risk_servers", {}))
 
-    assert payload == {"findings": [{"name": "risky", "score": 9.1}], "warnings": []}
+    assert isinstance(payload, list)
+    assert payload == [{"name": "risky", "score": 9.1}]
+    assert payload[0]["name"] == "risky"
+
+
+@pytest.mark.anyio
+async def test_get_high_risk_servers_returns_empty_list_with_coverage_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    warning = ScanWarning(
+        code="project_config_not_connected", message="Synthetic project config not connected."
+    )
+    _stub_run_scan(monkeypatch, _report_with([], warnings=[warning]))
+    app = _build_mcp_server()
+    assert _tool_json(await app.call_tool("get_high_risk_servers", {})) == []
+    tool = next(tool for tool in await app.list_tools() if tool.name == "get_high_risk_servers")
+    assert "project_config_not_connected" in tool.description
+    assert "scan_mcp_servers" in tool.description
+    assert "get_*_findings" in tool.description
 
 
 @pytest.mark.anyio
@@ -393,7 +419,6 @@ async def test_get_high_risk_servers_filters_by_composite(monkeypatch: pytest.Mo
     [
         "scan_mcp_servers",
         "check_server",
-        "get_high_risk_servers",
         "get_injection_findings",
         "get_ssrf_findings",
         "get_trifecta_findings",

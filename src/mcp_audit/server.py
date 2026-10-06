@@ -115,7 +115,11 @@ def _build_mcp_server() -> Any:
 
     @app.tool()  # type: ignore[untyped-decorator]
     async def get_high_risk_servers() -> str:
-        """Return servers with composite risk score ≥ 7.0. Returns JSON `{findings, warnings}`."""
+        """Return servers with composite risk score ≥ 7.0 as a JSON list of name/score objects.
+
+        Coverage warnings, including project_config_not_connected, are returned
+        by scan_mcp_servers and the get_*_findings tools' warnings key.
+        """
         report = await _scan(ScanOptions())
         report = report.redacted()
         high_risk = [
@@ -123,7 +127,7 @@ def _build_mcp_server() -> Any:
             for a in report.audits
             if a.risk_score is not None and a.risk_score.composite >= 7.0
         ]
-        return _findings_payload(report, high_risk)
+        return json.dumps(high_risk, indent=2)
 
     @app.tool()  # type: ignore[untyped-decorator]
     async def check_server(name: str) -> str:
