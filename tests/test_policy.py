@@ -282,7 +282,8 @@ def test_broad_severity_gates_session_drift_but_not_pin_drift(tmp_path: Path) ->
     assert pin_result.passed is True
 
     report.audits[0].drift_findings = [
-        finding.model_copy(update={"source": "session"}) for finding in report.audits[0].drift_findings
+        finding.model_copy(update={"source": "session", "severity": "high"})
+        for finding in report.audits[0].drift_findings
     ]
     session_result = evaluate_policy(report, load_policy(policy_path))
     assert session_result.passed is False

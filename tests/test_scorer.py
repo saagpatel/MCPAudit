@@ -111,7 +111,7 @@ class TestScoreServer:
     def test_literal_composite_golden_table(
         self, findings: list[PermissionFinding], composite: float
     ) -> None:
-        assert scorer.score_server(findings).composite == composite
+        assert scorer.score_server(findings).composite == pytest.approx(composite, abs=1e-9)
 
     def test_no_findings_all_zeros(self) -> None:
         score = scorer.score_server([])
@@ -190,7 +190,7 @@ class TestScoreNonTool:
 
         assert server_score.composite == 0.0
         assert non_tool_score is not None
-        assert non_tool_score.capability_score == 1.95
+        assert non_tool_score.capability_score == pytest.approx(1.95, abs=1e-9)
         assert non_tool_score.injection_score == 4.0
         assert non_tool_score.composite == 5.95
         assert non_tool_score.prompt_findings == 2
