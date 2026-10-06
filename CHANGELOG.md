@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from terminal and HTML output. Capture stdio server stderr in a bounded 4 KiB
   tail instead of inheriting the terminal; sanitized, redacted tails are available
   only in debug logging, with cleanup on completion, timeout, and cancellation.
+  Discard the leading partial record from truncated tails so truncation cannot
+  remove credential prefixes and bypass redaction.
 
 ## [2.8.0] - 2026-10-06
 

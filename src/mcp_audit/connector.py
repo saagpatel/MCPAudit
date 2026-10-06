@@ -94,18 +94,22 @@ def _capture_stderr(server_name: str) -> Iterator[TextIO]:
     """
     read_fd, write_fd = os.pipe()
     tail = bytearray()
+    truncated = False
     stopping = threading.Event()
     marker = b"\x00" + os.urandom(32) + b"\x00"
     failures: list[OSError] = []
 
     def drain() -> None:
+        nonlocal truncated
         try:
             while chunk := os.read(read_fd, 4096):
                 data = tail + chunk
                 position = data.find(marker) if stopping.is_set() else -1
                 if position >= 0:
+                    truncated = truncated or position > 4096
                     tail[:] = data[:position][-4096:]
                     return
+                truncated = truncated or len(data) > 4096
                 tail[:] = data[-4096:]
         except OSError as exc:
             failures.append(exc)
@@ -137,10 +141,17 @@ def _capture_stderr(server_name: str) -> Iterator[TextIO]:
         if failures:
             raise failures[0]
         if tail and logger.isEnabledFor(logging.DEBUG):
+            text = tail.decode("utf-8", errors="replace")
+            if truncated:
+                # The retained prefix may have lost the anchor needed for redaction.
+                _, newline, text = text.partition("\n")
+                if not newline:
+                    text = "<stderr truncated; last record exceeded 4 KiB>"
+                text = "…[truncated] " + text
             logger.debug(
                 "Server %s stderr tail: %s",
                 redact_text(strip_controls(server_name)),
-                redact_text(strip_controls(tail.decode("utf-8", errors="replace"))),
+                redact_text(strip_controls(text)),
             )
 
 
