@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- Discover and report project-scope MCP configs without spawning their commands
+  or contacting their endpoints by default. `scan` and `watch` require
+  `--connect-project-configs` to connect them; `pin` (including refresh) and
+  `serve` tools also skip them. Workstation configs retain their connection
+  default, and the Action and pre-commit hook remain config-only by default.
+  Reports add `audits[].server.scope` and a `project_config_not_connected`
+  warning with the shell-quoted command and arguments (credentials redacted),
+  or the skipped remote endpoint.
+
 ## [2.8.1] - 2026-10-06
 
 ### Security

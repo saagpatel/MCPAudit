@@ -14,6 +14,29 @@ fields. Consumers should ignore unknown fields and should not fail when optional
 fields are present. Existing stable fields should only be removed or renamed
 with a release-note deprecation window and a breaking-version boundary.
 
+## Project config connection coverage
+
+`audits[].server.scope` is an additive `workstation|project` field (default
+`workstation` for older entries without project metadata). Cwd `.mcp.json`, cwd
+`.vscode/mcp.json`, and Claude Code `projects.*.mcpServers` entries are tagged
+`project`. Existing `project_path` values and `schema_version = 1` are unchanged.
+
+Project entries retain config-inferred permissions and `connection_status:
+"skipped"` unless `ScanOptions.connect_project_configs` is true. CLI `scan` and
+`watch` expose this as `--connect-project-configs`; `--skip-connect` takes
+precedence over the opt-in. `pin`, pin refresh, and all `serve` tools use the
+same project-skipping default. Workstation entries still connect by default.
+A project-only scan that skips all entries has `connection_mode: "skipped"`;
+a mixed scan that attempts workstation connections has `"attempted"`.
+
+Each project entry withheld by the scope guard emits a structured warning with
+`code: "project_config_not_connected"`, `check: "connection"`, and its name in
+`servers`. Its message includes the exact unspawned command/args, shell-quoted
+with credential values redacted before quoting. Remote entries show their
+redacted endpoint instead. Warnings also appear on the CLI console, but the
+engine remains silent for library/MCP callers without a console. Explicit
+`--skip-connect` never spawns, even with the project opt-in.
+
 ## Report Redaction
 
 Terminal, JSON, SARIF, HTML, and `serve` tool outputs use
