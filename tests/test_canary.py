@@ -386,7 +386,32 @@ async def test_failed_tools_relisting_retains_static_inventory_without_stale_cal
     assert audit.canary is not None and audit.canary.status == "partial"
     assert audit.canary.completed_calls == 1
     assert any("Tool surface incomplete" in w for w in audit.canary.warnings)
+    assert "Tool listing failed; exercise stopped." in audit.canary.warnings
     assert not audit.drift_findings
+
+
+@pytest.mark.anyio
+async def test_canary_report_warnings_and_json_are_stable_across_server_completion_order() -> None:
+    configs = [
+        make_server_config(
+            name=name,
+            command=sys.executable,
+            args=[SURFACES_FIXTURE, "listing_failure", "tools"],
+        )
+        for name in ("foxtrot", "alpha", "echo", "bravo", "delta", "charlie")
+    ]
+    reports: list[str] = []
+    for _ in range(5):
+        report = await run_scan(ScanOptions(canary_check=True, canary_calls=2, timeout=15), servers=configs)
+        payload = report.model_dump(mode="json")
+        payload["scan_timestamp"] = "<normalized>"
+        payload["scan_duration_seconds"] = 0
+        reports.append(json.dumps(payload, sort_keys=True))
+        warning_servers = [warning.servers for warning in report.warnings]
+        sorted_names = sorted(name for names in warning_servers for name in names)
+        assert warning_servers == [[name] for name in sorted_names]
+
+    assert all(payload == reports[0] for payload in reports[1:])
 
 
 @pytest.mark.anyio

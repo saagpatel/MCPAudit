@@ -41,6 +41,7 @@ logger = logging.getLogger(__name__)
 
 _SSE_URL_SUFFIX = re.compile(r"(https?://[^\s?#]+)[?#][^\s]*", re.IGNORECASE)
 _SSE_URL_USERINFO = re.compile(r"(https?://)[^/\s]*@", re.IGNORECASE)
+_EXCEPTION_URL = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
 _SSE_LOGGER_NAMES = (
     "mcp.client.sse",
     "httpx2",
@@ -56,6 +57,33 @@ def _redact_sse_log_text(value: str) -> str:
     # Negotiated POST endpoints can use arbitrary query keys for session credentials.
     redacted = _SSE_URL_SUFFIX.sub(r"\1?<redacted>", value)
     return redact_text(_SSE_URL_USERINFO.sub(r"\1<redacted>@", redacted))
+
+
+def describe_exception(exc: BaseException) -> str:
+    """Return a bounded, redacted summary of an exception and any grouped causes."""
+    leaves: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def collect(error: BaseException) -> None:
+        if isinstance(error, BaseExceptionGroup):
+            for child in error.exceptions:
+                collect(child)
+            return
+        exception_type = type(error).__name__
+        message = str(error)
+        identity = (exception_type, message)
+        if identity not in seen:
+            seen.add(identity)
+            leaves.append(identity)
+
+    collect(exc)
+    descriptions = [f"{name}: {message}" if message else name for name, message in leaves]
+    # Exception strings can contain endpoint query values or redirect targets.
+    summary = _EXCEPTION_URL.sub("<redacted-url>", "; ".join(descriptions))
+    summary = redact_text(summary)
+    if len(summary) > 500:
+        return summary[:499] + "…"
+    return summary
 
 
 class _SseLogFilter(logging.Filter):
@@ -121,7 +149,8 @@ class _ListingPageLimit(ValueError):
 def _listing_failure_message(label: str, exc: Exception) -> str:
     if isinstance(exc, _ListingPageLimit):
         return f"{label} listing exceeds the 20-page limit; coverage is incomplete."
-    return f"{label} surface incomplete ({type(exc).__name__})."
+    reason = describe_exception(exc) if isinstance(exc, BaseExceptionGroup) else type(exc).__name__
+    return f"{label} surface incomplete ({reason})."
 
 
 async def _list_pages(
@@ -300,7 +329,13 @@ class ServerConnector:
             return audit
 
         except Exception as exc:
-            message = redact_text(str(exc))
+            message = describe_exception(exc)
+            if not isinstance(exc, BaseExceptionGroup):
+                # Keep established plain-exception wording while still using
+                # the helper's URL and credential redaction.
+                prefix = f"{type(exc).__name__}: "
+                if message.startswith(prefix):
+                    message = message[len(prefix) :]
             logger.debug("Failed to connect to %s: %s", config.name, message)
             if audit.canary:
                 audit.connection_status = "failed"
@@ -377,7 +412,12 @@ class ServerConnector:
             eligible = [t for t in capabilities.tools if canary_tool_eligible(t, t.name in probe.safe_tools)]
             if not eligible:
                 summary.status = "no_safe_tools" if not summary.completed_calls else "partial"
-                summary.warnings.append("No eligible empty-argument tools remain; exercise stopped.")
+                stop_message = (
+                    "Tool listing failed; exercise stopped."
+                    if "tools" not in capabilities.surface
+                    else "No eligible empty-argument tools remain; exercise stopped."
+                )
+                summary.warnings.append(stop_message)
                 return capabilities
             tool = eligible[(call - 1) % len(eligible)]
             result = await session.call_tool(tool.name, {})
@@ -452,7 +492,12 @@ class ServerConnector:
                         try:
                             result = await session.get_prompt(prompt.name, {})
                         except Exception as exc:
-                            self._canary_warning(probe, f"prompts/get incomplete ({type(exc).__name__}).")
+                            reason = (
+                                describe_exception(exc)
+                                if isinstance(exc, BaseExceptionGroup)
+                                else type(exc).__name__
+                            )
+                            self._canary_warning(probe, f"prompts/get incomplete ({reason}).")
                             continue
                         surface["prompt_results"][prompt.name] = {
                             "description": result.description,
@@ -477,7 +522,7 @@ class ServerConnector:
                     listing_warnings.append(message)
                 else:
                     logger.debug(
-                        "Server %s prompt listing unavailable: %s", server_name, redact_text(str(exc))
+                        "Server %s prompt listing unavailable: %s", server_name, describe_exception(exc)
                     )
 
         if list_resources:
@@ -504,7 +549,7 @@ class ServerConnector:
                     listing_warnings.append(message)
                 else:
                     logger.debug(
-                        "Server %s resource listing unavailable: %s", server_name, redact_text(str(exc))
+                        "Server %s resource listing unavailable: %s", server_name, describe_exception(exc)
                     )
 
         tool_infos = [self._convert_tool(t) for t in tools]

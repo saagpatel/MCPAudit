@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from mcp_audit.connector import ServerConnector
+from mcp_audit.connector import ServerConnector, describe_exception
 from mcp_audit.models import ClientType, Confidence, PermissionCategory, ServerConfig, TransportType
 from tests.conftest import make_server_config
 
@@ -67,6 +67,30 @@ class TestConvertAnnotations:
         result = ServerConnector._convert_annotations(sdk_ann)
         assert result.read_only_hint is None
         assert result.destructive_hint is None
+
+
+class TestDescribeException:
+    def test_flattens_nested_groups_and_deduplicates_leaves(self) -> None:
+        error = ExceptionGroup(
+            "outer",
+            [ValueError("first"), ExceptionGroup("inner", [RuntimeError("second"), ValueError("first")])],
+        )
+        assert describe_exception(error) == "ValueError: first; RuntimeError: second"
+
+    def test_empty_message_uses_type_name(self) -> None:
+        assert describe_exception(ValueError()) == "ValueError"
+
+    def test_redacts_secrets_and_caps_long_messages(self) -> None:
+        assert describe_exception(RuntimeError("token=abc123")) == "RuntimeError: token=<redacted>"
+        summary = describe_exception(RuntimeError("x" * 10_000))
+        assert len(summary) == 500 and summary.endswith("…")
+
+    def test_hides_endpoint_query_and_redirect_target(self) -> None:
+        summary = describe_exception(
+            RuntimeError("redirected from https://example.test/start to https://other.test/path?token=abc123")
+        )
+        assert "example.test" not in summary and "other.test" not in summary
+        assert "abc123" not in summary and "<redacted-url>" in summary
 
 
 class TestConvertTool:
@@ -403,6 +427,18 @@ async def test_missing_command_returns_failed() -> None:
     audit = await connector.connect(config)
     assert audit.connection_status == "failed"
     assert audit.connection_error is not None
+
+
+@pytest.mark.anyio
+async def test_stdio_server_exit_before_handshake_reports_cause() -> None:
+    fixture = str(Path(__file__).parent / "fixtures" / "early_exit_server.py")
+    config = make_server_config(name="early-exit", command=sys.executable, args=[fixture])
+    audit = await ServerConnector(timeout=5.0).connect(config)
+    assert audit.connection_status == "failed"
+    assert audit.connection_error is not None
+    assert "TaskGroup" not in audit.connection_error
+    assert "sub-exception" not in audit.connection_error
+    assert any(cause in audit.connection_error for cause in ("McpError", "closed", "EOF", "exited"))
 
 
 @pytest.mark.anyio
