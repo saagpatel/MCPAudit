@@ -883,6 +883,8 @@ class SarifGenerator:
         gained = (
             ", ".join(c.value for c in finding.gained_categories)
             if finding.kind == EscalationKind.CAPABILITY
+            else ", ".join(finding.annotation_changes)
+            if finding.kind == EscalationKind.ANNOTATION_DELTA
             else ", ".join(finding.gained_patterns)
         )
         msg = (
@@ -904,6 +906,7 @@ class SarifGenerator:
                 "tool_name": finding.tool_name,
                 "gained_categories": [c.value for c in finding.gained_categories],
                 "gained_patterns": finding.gained_patterns,
+                "annotation_changes": finding.annotation_changes,
                 "remediation": finding.remediation,
             },
         }

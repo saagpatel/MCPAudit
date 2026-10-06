@@ -395,6 +395,9 @@ ESCALATION_FINDINGS: dict[EscalationKind, FindingMetadata] = {
 }
 
 
+ESCALATION_FINDINGS[EscalationKind.ANNOTATION_DELTA] = ESCALATION_FINDINGS[EscalationKind.CAPABILITY]
+
+
 def escalation_metadata(kind: EscalationKind) -> FindingMetadata:
     """Return stable metadata for a capability-escalation kind."""
     return ESCALATION_FINDINGS[kind]

@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Pin tool surfaces with canonical form v2, covering annotations, title, output
+  schema, icons and metadata; restore those fields for baseline comparison and
+  flag security-relevant annotation changes as HIGH MCP018 deltas. Share the
+  compact canonical serializer with canary surfaces. Keep legacy v1 hashes
+  active without automatic migration, warn about uncovered fields and label
+  them in refresh previews before an explicit upgrade.
+- Discover and report project-scope MCP configs without spawning their commands
+  or contacting their endpoints by default. `scan` and `watch` require
+  `--connect-project-configs` to connect them; `pin` (including refresh) and
+  `serve` tools also skip them. Workstation configs retain their connection
+  default, and the Action and pre-commit hook remain config-only by default.
+  Reports add `audits[].server.scope` and a `project_config_not_connected`
+  warning with the shell-quoted command and arguments (credentials redacted),
+  or the skipped remote endpoint.
+
+### Fixed
+
+- Scan bounded agent-visible tool text, including annotation titles and all
+  input-schema string leaves, for instruction-shaped text and permission
+  keywords. Preserve matched field paths and report incomplete text coverage.
+- Retain prompt argument descriptions and required flags in additive metadata,
+  scan their text, and name required arguments in canary skip warnings.
+- Mark incomplete metadata listings, including pagination floods, as partial
+  connections rather than clean connected rows with zero tools.
+
 ### Added
 
 - Record per-check completion and reasons in additive report coverage, with
@@ -14,11 +41,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   run properties, and an opt-in `fail_on.coverage` policy gate. Legacy reports
   retain unknown coverage. The extended SARIF profile includes stable
   configuration-health rule IDs.
-
-### Fixed
-
-- Mark incomplete metadata listings, including pagination floods, as partial
-  connections rather than clean connected rows with zero tools.
 
 ## [2.8.1] - 2026-10-06
 

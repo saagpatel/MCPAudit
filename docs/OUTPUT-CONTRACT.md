@@ -14,6 +14,29 @@ fields. Consumers should ignore unknown fields and should not fail when optional
 fields are present. Existing stable fields should only be removed or renamed
 with a release-note deprecation window and a breaking-version boundary.
 
+## Project config connection coverage
+
+`audits[].server.scope` is an additive `workstation|project` field (default
+`workstation` for older entries without project metadata). Cwd `.mcp.json`, cwd
+`.vscode/mcp.json`, and Claude Code `projects.*.mcpServers` entries are tagged
+`project`. Existing `project_path` values and `schema_version = 1` are unchanged.
+
+Project entries retain config-inferred permissions and `connection_status:
+"skipped"` unless `ScanOptions.connect_project_configs` is true. CLI `scan` and
+`watch` expose this as `--connect-project-configs`; `--skip-connect` takes
+precedence over the opt-in. `pin`, pin refresh, and all `serve` tools use the
+same project-skipping default. Workstation entries still connect by default.
+A project-only scan that skips all entries has `connection_mode: "skipped"`;
+a mixed scan that attempts workstation connections has `"attempted"`.
+
+Each project entry withheld by the scope guard emits a structured warning with
+`code: "project_config_not_connected"`, `check: "connection"`, and its name in
+`servers`. Its message includes the exact unspawned command/args, shell-quoted
+with credential values redacted before quoting. Remote entries show their
+redacted endpoint instead. Warnings also appear on the CLI console, but the
+engine remains silent for library/MCP callers without a console. Explicit
+`--skip-connect` never spawns, even with the project opt-in.
+
 ## Report Redaction
 
 Terminal, JSON, SARIF, HTML, and `serve` tool outputs use
@@ -149,6 +172,24 @@ unknown fields as additive. Important stable top-level fields:
 - `coverage` — additive map of check names to `{state, reason}`; see below.
 - `policy_result`
 
+Tool entries retain all existing fields and add nullable `title`, `output_schema`,
+`icons` (a list of JSON icon objects), and `meta` (the served `_meta` object).
+`schema_version` remains 1. Pin hashes use `mcpaudit.tool-surface.v2`: default-filled
+annotations, omitted null/empty optional fields, served schemas, sorted compact
+UTF-8 JSON with a trailing newline and rejected NaN/Infinity. Canary tool
+comparisons use the same normalized tool form and serializer. Legacy pins still
+compare only name, description and input schema with their original v1 bytes;
+scans never upgrade them. See [Pin Maintenance](PIN-MAINTENANCE.md) for migration.
+
+Escalation findings add `kind: annotation_delta` and an `annotation_changes`
+list of hint names (empty for other kinds). This is HIGH `MCP018` for
+readOnlyHint true→false, destructiveHint false/absent→explicitly true, or
+openWorldHint false→true. Hint removal uses MCP defaults. Uncovered legacy
+annotations do not establish deltas. These hint names also appear in terminal,
+HTML, SARIF result properties and `get_escalation_findings` output.
+`pin --refresh --json` adds `uncovered_fields` rows with `tool_name`, `field`
+and `summary: "not previously covered"` for each newly covered v1 tool field.
+
 Each audit may include:
 
 - `tools`, `prompts`, and `resources`
@@ -164,6 +205,46 @@ Each audit may include:
   object records `status` (`complete` or `unknown`), a stable `reason_code`,
   `source_trust`, analyzer/model provenance, candidate/analyzed tool counts,
   and the number of admitted findings. `unknown` never means clean.
+
+### Agent-visible text and prompt arguments (additive)
+
+`prompts[].arguments` remains the ordered list of argument names. The optional
+`argument_details` list adds `{name, description, required}` for each argument,
+in server order. Description and required are nullable, preserving an omitted
+SDK flag rather than inventing one. Older reports load with empty details;
+static injection checks then fall back to the legacy names.
+
+Static tool injection checks inspect name, description, `annotations.title`,
+and every input-schema string leaf, including nested metadata, definitions,
+defaults, enums, and examples. No references are fetched or decoded. Existing
+top-level property-name keyword checks are retained. Tool name and description
+permission weights remain 3 and 2; property names and the added text have weight
+1. Annotation suppression behavior is unchanged.
+
+`injection_findings[].field_path` is an optional JSON Pointer into the tool or
+prompt's report object (for example `/annotations/title`,
+`/input_schema/properties/options/description`, or
+`/argument_details/0/description`). It is null for older findings, static
+resource findings, and runtime result/body findings. `permissions[].field_paths`
+lists all matching tool field pointers for an aggregated keyword finding;
+annotation findings and legacy reports default to an empty list. Existing
+evidence strings are retained.
+Property-name evidence points to that property's schema object. Pointer tokens
+escape `~` as `~0` and `/` as `~1`.
+
+Each tool admits at most 256 text fields, 16,384 characters per field, and 65,536
+characters in total. Schema traversal visits at most 2,048 nodes, descends at
+most 64 container levels, and limits each field pointer to 2,048 characters.
+Cycles, over-budget branches, and oversized paths are skipped; long fields are
+truncated. Prompt static injection text uses the same field and character caps.
+Exhausted budgets produce `warnings[]` with `code: agent_text_incomplete` and
+`check: agent_visible_text`; findings within the inspected prefix are retained.
+Clean findings under this warning do not establish complete text coverage.
+The canary rejects tools with incomplete text inspection, even when explicitly
+marked safe. Required-argument prompt skip warnings name the prompt and required
+arguments without providing or guessing argument values.
+
+These additions keep `schema_version` unchanged.
 
 ### Runtime canary fields (additive)
 
@@ -327,6 +408,9 @@ The report top level also includes:
   in scan/session observation order. Fields:
   - `code` — stable machine key. Current vocabulary:
     `pin_baseline_missing` (check requested but nothing is pinned),
+    `pin_schema_outdated` (a compared server has v1 tool entries; annotations,
+    title, outputSchema, icons and meta were not covered; original v1 drift
+    comparisons remain active, and refresh review is required for v2 coverage),
     `pin_baseline_corrupted` (a pin baseline file exists but could not be
     parsed — materially different from "missing", since it can mask a wiped
     or tampered baseline; the message names the file and parse error, and

@@ -330,7 +330,11 @@ class HtmlReportGenerator:
                 self._esc(f.rule_id),
                 self._esc(f.kind.value),
                 self._esc(f.tool_name),
-                self._esc(", ".join(c.value for c in f.gained_categories) or ", ".join(f.gained_patterns)),
+                self._esc(
+                    ", ".join(c.value for c in f.gained_categories)
+                    or ", ".join(f.gained_patterns)
+                    or ", ".join(f.annotation_changes)
+                ),
             )
             for f in audit.escalation_findings
         ]

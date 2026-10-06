@@ -441,6 +441,8 @@ class ReportGenerator:
             gained = (
                 ", ".join(c.value for c in f.gained_categories)
                 if f.kind == EscalationKind.CAPABILITY
+                else ", ".join(f.annotation_changes)
+                if f.kind == EscalationKind.ANNOTATION_DELTA
                 else ", ".join(f.gained_patterns)
             )
             tbl.add_row(

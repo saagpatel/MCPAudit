@@ -314,6 +314,9 @@ def test_stale_pin_baseline_names_affected_servers(monkeypatch: pytest.MonkeyPat
     from mcp_audit import pinning
 
     class _StalePinStore:
+        def schema_warnings(self, name: str) -> list[object]:
+            return []
+
         def pinned_servers(self) -> list[str]:
             return ["srv"]
 

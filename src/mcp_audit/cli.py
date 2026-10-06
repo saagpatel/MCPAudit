@@ -302,6 +302,12 @@ def discover(client_filter: str | None, verbose: bool) -> None:
 )  # noqa: E501
 @click.option("--skip-connect", is_flag=True, default=False, help="Skip server connections, config only.")
 @click.option(
+    "--connect-project-configs",
+    is_flag=True,
+    default=False,
+    help="Connect to project-scope configs too; may execute code from the current checkout.",
+)
+@click.option(
     "--canary-check", is_flag=True, help="Exercise an explicit config in-session for runtime drift."
 )
 @click.option(
@@ -435,6 +441,7 @@ def scan(
     sarif_profile: str,
     html_output: str | None,
     skip_connect: bool,
+    connect_project_configs: bool,
     clients: str | None,
     timeout: int,
     verbose: bool,
@@ -499,6 +506,7 @@ def scan(
         canary_calls,
         canary_safe_tools,
         sarif_profile,
+        connect_project_configs,
     )
 
 
@@ -602,6 +610,7 @@ async def _run_scan(
     canary_calls: int = 5,
     canary_safe_tools: tuple[str, ...] = (),
     sarif_profile: str = "compatibility",
+    connect_project_configs: bool = False,
 ) -> None:
     """CLI scan entrypoint — calls the engine's run_scan then renders output."""
     if config_only and not extra_config:
@@ -632,6 +641,7 @@ async def _run_scan(
         canary_calls=canary_calls,
         canary_safe_tools=canary_safe_tools,
         skip_connect=skip_connect,
+        connect_project_configs=connect_project_configs,
         config_only=config_only,
         clients=client_list,
         timeout=timeout,
@@ -1081,6 +1091,7 @@ async def _run_pin_refresh(
         return
 
     findings = store.check_drift(audit.server.name, audit.tools)
+    uncovered_fields = store.uncovered_field_rows(audit.server.name, audit.tools)
     escalation_findings, provenance_findings = _refresh_security_deltas(store, audit)
     # Capture registry hashes only when we will actually re-pin (network call,
     # offloaded to a thread so it doesn't block the event loop).
@@ -1112,6 +1123,7 @@ async def _run_pin_refresh(
                 provenance_findings,
                 applied=apply_refresh,
                 artifact_warnings=art_capture.warnings,
+                uncovered_fields=uncovered_fields,
             )
         )
         return
@@ -1122,6 +1134,13 @@ async def _run_pin_refresh(
     _render_pin_refresh_review(
         audit.server.name, len(audit.tools), findings, escalation_findings, provenance_findings
     )
+    if uncovered_fields:
+        from rich.table import Table
+
+        table = Table("Tool", "Field", "Review note")
+        for row in uncovered_fields:
+            table.add_row(terminal_safe(row["tool_name"]), row["field"], row["summary"])
+        console.print(table)
 
     if not apply_refresh:
         console.print(
@@ -1164,7 +1183,10 @@ def _refresh_security_deltas(
     baseline_tools = store.baseline_tools(audit.server.name)
     if baseline_tools:
         escalation_findings = EscalationAnalyzer().analyze_server(
-            audit.server.name, baseline_tools, audit.tools
+            audit.server.name,
+            baseline_tools,
+            audit.tools,
+            uncovered_annotations=store.legacy_tool_names(audit.server.name),
         )
 
     baseline_config = store.baseline_config(audit.server.name)
@@ -1195,6 +1217,7 @@ def _pin_refresh_json(
     applied: bool,
     error: str | None = None,
     artifact_warnings: list[str] | None = None,
+    uncovered_fields: list[dict[str, str]] | None = None,
 ) -> str:
     import json
 
@@ -1242,6 +1265,7 @@ def _pin_refresh_json(
             for finding in provenance_findings
         ],
         "artifact_warnings": artifact_warnings,
+        "uncovered_fields": uncovered_fields or [],
     }
     return json.dumps(payload, indent=2, sort_keys=True)
 

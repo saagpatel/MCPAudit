@@ -16,16 +16,20 @@ from __future__ import annotations
 
 import os
 import platform
+import shlex
 import socket
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from itertools import chain
 from pathlib import Path
+from typing import cast
 
 import anyio
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
+from mcp_audit.agent_text import agent_visible_text, prompt_visible_text
 from mcp_audit.analyzer import PermissionAnalyzer
 from mcp_audit.confighealth import config_health_findings
 from mcp_audit.connector import ServerConnector, describe_exception
@@ -45,7 +49,7 @@ from mcp_audit.models import (
     TrifectaFinding,
 )
 from mcp_audit.overrides import OverrideApplier, OverrideConfig
-from mcp_audit.redaction import redact_text
+from mcp_audit.redaction import redact_data, redact_text
 from mcp_audit.scorer import RiskScorer
 from mcp_audit.terminal_text import terminal_safe
 
@@ -55,11 +59,12 @@ class ScanOptions:
     """Configuration for one :func:`run_scan` invocation.
 
     Defaults mirror ``mcp-audit scan`` with no flags: discover everything,
-    connect, run only the always-on permission analysis + risk scoring.
+    connect to workstation configs, run only the always-on permission analysis + risk scoring.
     """
 
     # Scan shape
     skip_connect: bool = False
+    connect_project_configs: bool = False
     config_only: bool = False
     clients: list[ClientType] | None = None
     timeout: int = 10
@@ -291,6 +296,8 @@ async def run_scan(
         from mcp_audit.pinning import PinStore
 
         pin_store = PinStore()
+        for server in servers:
+            scan_warnings.extend(pin_store.schema_warnings(server.name))
 
     audits: list[ServerAudit] = [ServerAudit(server=s, connection_status="pending") for s in servers]
 
@@ -309,7 +316,24 @@ async def run_scan(
         task_id = progress.add_task(f"Auditing {len(servers)} server(s)...", total=len(servers))
 
         async def audit_one(idx: int, srv: ServerConfig) -> None:
-            if opts.skip_connect:
+            project_skipped = (
+                srv.scope == "project" or srv.project_path is not None
+            ) and not opts.connect_project_configs
+            skip_connect = opts.skip_connect or project_skipped
+            if project_skipped:
+                launch = (
+                    shlex.join(cast(list[str], redact_data([srv.command, *srv.args])))
+                    if srv.command
+                    else redact_text(srv.url or "(no command or endpoint)")
+                )
+                warn(
+                    "project_config_not_connected",
+                    f"Project config '{redact_text(srv.name)}' not connected: {launch}. "
+                    "Use --connect-project-configs to opt in (unless --skip-connect).",
+                    check="connection",
+                    servers=[srv.name],
+                )
+            if skip_connect:
                 audit = connector.skip_connect_audit(srv)
             elif opts.canary_check:
                 audit = await connector.connect(
@@ -331,8 +355,25 @@ async def run_scan(
             else:
                 audit = await connector.connect(srv)
 
+            for target_type, target_name, text in chain(
+                (("tool", tool.name, agent_visible_text(tool)) for tool in audit.tools),
+                (
+                    ("prompt", prompt.name, prompt_visible_text(prompt))
+                    for prompt in audit.prompts
+                    if injection_detector is not None
+                ),
+            ):
+                if text.incomplete:
+                    warn(
+                        "agent_text_incomplete",
+                        f"Agent-visible text scan incomplete for {target_type} {target_name!r}: "
+                        + "; ".join(text.incomplete),
+                        check="agent_visible_text",
+                        servers=[srv.name],
+                    )
+
             # Analyze tool list for new permission findings
-            if not opts.skip_connect or not audit.permissions:
+            if not skip_connect or not audit.permissions:
                 raw_findings = analyzer.analyze_server(audit.tools)
             else:
                 raw_findings = list(audit.permissions)
@@ -379,7 +420,10 @@ async def run_scan(
                 baseline = pin_store.baseline_tools(srv.name)
                 if baseline:
                     audit.escalation_findings = escalation_analyzer.analyze_server(
-                        srv.name, baseline, audit.tools
+                        srv.name,
+                        baseline,
+                        audit.tools,
+                        uncovered_annotations=pin_store.legacy_tool_names(srv.name),
                     )
 
             # Optional provenance / launch-config drift check vs the pin baseline
@@ -603,7 +647,11 @@ async def run_scan(
         scan_timestamp=datetime.now(UTC),
         hostname=socket.gethostname(),
         os_platform=platform.system(),
-        connection_mode=ConnectionMode.SKIPPED if opts.skip_connect else ConnectionMode.ATTEMPTED,
+        connection_mode=(
+            ConnectionMode.SKIPPED
+            if opts.skip_connect or (audits and all(a.connection_status == "skipped" for a in audits))
+            else ConnectionMode.ATTEMPTED
+        ),
         servers_discovered=len(servers),
         servers_connected=sum(1 for a in audits if a.connection_status in ("connected", "partial")),
         servers_failed=sum(1 for a in audits if a.connection_status in ("failed", "timeout")),

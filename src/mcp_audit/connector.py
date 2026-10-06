@@ -25,12 +25,14 @@ from mcp.types import Tool as SdkTool
 from mcp.types import ToolAnnotations as SdkToolAnnotations
 
 from mcp_audit import __version__
+from mcp_audit.agent_text import agent_visible_text
 from mcp_audit.models import (
     CanarySummary,
     CapabilityTarget,
     Confidence,
     PermissionCategory,
     PermissionFinding,
+    PromptArgumentInfo,
     PromptInfo,
     ResourceInfo,
     ScanWarning,
@@ -332,20 +334,11 @@ def canary_tool_eligible(tool: ToolInfo, explicitly_safe: bool = False) -> bool:
         PermissionCategory.SHELL_EXEC,
         PermissionCategory.EXFILTRATION,
     }
-    hazard_tool = tool.model_copy(
-        update={
-            "description": "\n".join(
-                [
-                    tool.description or "",
-                    (tool.annotations.title or "") if tool.annotations else "",
-                    *_result_text(schema),
-                ]
-            )
-        }
-    )
-    if any(f.category in forbidden for f in PermissionAnalyzer().analyze_tool_keywords(hazard_tool)):
+    if agent_visible_text(tool).incomplete:
         return False
-    if InjectionDetector().scan_tool(hazard_tool):
+    if any(f.category in forbidden for f in PermissionAnalyzer().analyze_tool_keywords(tool)):
+        return False
+    if InjectionDetector().scan_tool(tool):
         return False
     return True
 
@@ -595,7 +588,9 @@ class ServerConnector:
         try:
             tools = await _list_pages(session.list_tools, lambda page: page.tools)
             if probe:
-                surface["tools"] = {t.name: t.model_dump(mode="json", by_alias=True) for t in tools}
+                from mcp_audit.pinning import canonical_tool_surface
+
+                surface["tools"] = {t.name: canonical_tool_surface(self._convert_tool(t)) for t in tools}
         except Exception as exc:
             if not probe and not isinstance(exc, _ListingPageLimit):
                 raise
@@ -620,8 +615,13 @@ class ServerConnector:
                         p.name: known_results[p.name] for p in prompt_items if p.name in known_results
                     }
                     for prompt in prompt_items:
-                        if any(a.required for a in prompt.arguments or []):
-                            self._canary_warning(probe, "Required-argument prompts/get skipped.")
+                        required = [a.name for a in prompt.arguments or [] if a.required]
+                        if required:
+                            self._canary_warning(
+                                probe,
+                                f"Required-argument prompts/get skipped for {prompt.name!r}: "
+                                f"arguments {', '.join(repr(name) for name in required)}.",
+                            )
                             continue
                         assert probe.audit.canary is not None
                         probe.audit.canary.prompt_get_calls += 1
@@ -800,8 +800,14 @@ class ServerConnector:
         return ToolInfo(
             name=sdk_tool.name,
             description=sdk_tool.description,
-            input_schema=dict(sdk_tool.input_schema) if sdk_tool.input_schema else None,
+            input_schema=dict(sdk_tool.input_schema),
             annotations=annotations,
+            title=sdk_tool.title,
+            output_schema=dict(sdk_tool.output_schema) if sdk_tool.output_schema is not None else None,
+            icons=[icon.model_dump(mode="json", by_alias=True, exclude_none=True) for icon in sdk_tool.icons]
+            if sdk_tool.icons is not None
+            else None,
+            meta=dict(sdk_tool.meta) if sdk_tool.meta is not None else None,
         )
 
     @staticmethod
@@ -817,15 +823,15 @@ class ServerConnector:
 
     @staticmethod
     def _convert_prompt(sdk_prompt: SdkPrompt) -> PromptInfo:
-        arguments: list[str] = []
-        for argument in sdk_prompt.arguments or []:
-            name = getattr(argument, "name", None)
-            if name:
-                arguments.append(str(name))
+        details = [
+            PromptArgumentInfo(name=a.name, description=a.description, required=a.required)
+            for a in sdk_prompt.arguments or []
+        ]
         return PromptInfo(
             name=sdk_prompt.name,
             description=sdk_prompt.description,
-            arguments=arguments,
+            arguments=[argument.name for argument in details],
+            argument_details=details,
         )
 
     @staticmethod

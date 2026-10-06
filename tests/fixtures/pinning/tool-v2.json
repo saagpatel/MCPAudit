@@ -1,0 +1,10 @@
+{
+  "name": "status",
+  "title": "État",
+  "description": "Report synthetic status.",
+  "input_schema": {"type": "object", "properties": {"scale": {"type": "number", "default": 1.0}}},
+  "output_schema": {"type": "object"},
+  "annotations": {"title": "Status", "read_only_hint": true, "destructive_hint": false, "open_world_hint": false},
+  "icons": [{"src": "https://example.test/icon.png", "mimeType": "image/png"}],
+  "meta": {"fixture": "synthetic"}
+}
