@@ -48,10 +48,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   run properties, and an opt-in `fail_on.coverage` policy gate. Legacy reports
   retain unknown coverage. The extended SARIF profile includes stable
   configuration-health rule IDs.
-  Apply bounded-text coverage loss to permissions and dependent detectors,
+  Apply bounded-text coverage loss to permissions, capabilities and dependent detectors,
   recognize empty tool pin baselines, and retain project connection warnings
-  in SARIF notifications and every audit-result MCP tool, including high-risk
-  and single-server results.
+  in SARIF notifications, full-report, findings and single-server MCP results.
+  Preserve the high-risk tool's legacy JSON list; its description directs
+  callers to full-report and findings tools for coverage warnings.
 
 ## [2.8.1] - 2026-10-06
 

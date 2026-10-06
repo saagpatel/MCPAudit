@@ -38,10 +38,12 @@ engine remains silent for library/MCP callers without a console. Explicit
 `--skip-connect` never spawns, even with the project opt-in.
 All SARIF profiles retain this warning as an invocation notification with
 descriptor ID `MCP-PROJECT-CONFIG-NOT-CONNECTED`, its redacted message, and
-the warning fields in `properties`. Every findings tool retains report
-`warnings`; `get_high_risk_servers` uses `{findings, warnings}`, retaining each
-row's `name` and `score`. `check_server` retains its audit fields and adds
-`warnings`. Full-report tools retain the existing top-level `warnings`.
+the warning fields in `properties`. Coverage warnings, including
+`project_config_not_connected`, are returned by `scan_mcp_servers` and the
+`get_*_findings` tools' `warnings` key. `get_high_risk_servers` retains its
+legacy JSON list of `name`/`score` objects and does not return warnings; callers
+needing coverage information must use those warning-bearing tools.
+`check_server` retains its audit fields and adds `warnings`.
 
 ## Report Redaction
 
@@ -473,6 +475,12 @@ trifecta, and escalation checks `partial` for the affected server, including
 checks that consume bounded permission or injection findings. Inventory and
 checks that use full metadata are unaffected by this text budget. A pinned
 server with an empty tool baseline still has an available `pin_check` baseline.
+`description_truncated` makes permissions, capabilities, and requested SSRF,
+egress, trifecta, and escalation checks `partial` for the affected server.
+This is conservative per-server coverage because the warning does not identify
+individual surfaces. Metadata and configuration-health coverage remain complete
+when their inspection completed; truncation alone does not reduce coverage for
+checks that use full metadata.
 
 `ServerAudit.connection_status` adds `partial` for an initialized connection
 whose metadata listing was incomplete. Existing `connected`, `failed`,
