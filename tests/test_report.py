@@ -8,8 +8,10 @@ import re
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
 from rich.console import Console
 
+from mcp_audit.discovery.claude_code import ClaudeCodeDiscoverer
 from mcp_audit.models import (
     AuditReport,
     CapabilityFinding,
@@ -430,6 +432,48 @@ def test_scrub_report_identifiers_preserves_counts_and_platform() -> None:
     assert scrubbed.os_platform == report.os_platform
     assert scrubbed.servers_discovered == report.servers_discovered
     assert scrubbed.high_risk_servers == report.high_risk_servers
+
+
+@pytest.mark.parametrize(
+    "project_path, server_name, redacted_project",
+    [
+        ("/Users/syntheticperson/work", "synthetic/private", "/Users/<redacted>/work"),
+        (
+            "/Users/synthetic~person/work~1/project",
+            "synthetic~private/name",
+            "/Users/<redacted>/work~1/project",
+        ),
+        ("/home/synthetic~person/work", "synthetic/~private", "/home/<redacted>/work"),
+    ],
+)
+def test_identifier_redaction_scrubs_escaped_config_pointers(
+    tmp_path: Path, project_path: str, server_name: str, redacted_project: str
+) -> None:
+    config_path = tmp_path / "synthetic-config.json"
+    config_path.write_text(
+        json.dumps({"projects": {project_path: {"mcpServers": {server_name: {"command": "fixture"}}}}})
+    )
+    (server,) = ClaudeCodeDiscoverer().parse(config_path)
+    report = _base_report([ServerAudit(server=server, connection_status="skipped")])
+
+    def escape(token: str) -> str:
+        return token.replace("~", "~0").replace("/", "~1")
+
+    original_pointer = f"/projects/{escape(project_path)}/mcpServers/{escape(server_name)}"
+    assert server.config_pointer == original_pointer
+    assert report.redacted().audits[0].server.config_pointer == original_pointer
+    redacted = report.redacted(identifiers=True)
+    assert redacted.schema_version == report.schema_version
+    assert redacted.audits[0].server.config_pointer == (
+        f"/projects/{escape(redacted_project)}/mcpServers/server-01"
+    )
+    assert redacted.audits[0].server.project_path == redacted_project
+    assert server.config_pointer == original_pointer
+    serialized = redacted.model_dump_json()
+    assert "syntheticperson" not in serialized
+    assert "synthetic~person" not in serialized
+    assert "synthetic~0person" not in serialized
+    assert escape(server_name) not in serialized
 
 
 def test_render_json_from_scrubbed_report_is_clean(tmp_path: Path) -> None:

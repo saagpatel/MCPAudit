@@ -419,6 +419,31 @@ def _walk_identifiers(
         return [_walk_identifiers(item, hostname, name_aliases, alias_pattern) for item in value]
     if isinstance(value, dict):
         return {
-            key: _walk_identifiers(item, hostname, name_aliases, alias_pattern) for key, item in value.items()
+            key: _scrub_config_pointer(item, hostname, name_aliases, alias_pattern)
+            if key == "config_pointer" and isinstance(item, str)
+            else _walk_identifiers(item, hostname, name_aliases, alias_pattern)
+            for key, item in value.items()
         }
     return value
+
+
+def _scrub_config_pointer(
+    pointer: str,
+    hostname: str | None,
+    name_aliases: dict[str, str] | None,
+    alias_pattern: re.Pattern[str] | None,
+) -> str:
+    tokens = pointer.split("/")
+    for index, token in enumerate(tokens):
+        # Map keys are structural; only the final name and project path carry identifiers.
+        if index != len(tokens) - 1 and not (index == 2 and tokens[1] == "projects"):
+            continue
+        # Decode in this order so a literal ~1 (encoded as ~01) stays literal.
+        decoded = token.replace("~1", "/").replace("~0", "~")
+        scrubbed = (
+            name_aliases[decoded]
+            if name_aliases is not None and decoded in name_aliases
+            else _scrub_identifier_text(decoded, hostname, name_aliases, alias_pattern)
+        )
+        tokens[index] = scrubbed.replace("~", "~0").replace("/", "~1")
+    return "/".join(tokens)

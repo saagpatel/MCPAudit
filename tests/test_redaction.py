@@ -328,6 +328,29 @@ def test_redact_identifiers_recurses_lists_and_dicts() -> None:
     assert out["audits"][0]["server"]["config_path"] == "/Users/<redacted>/x.json"
 
 
+@pytest.mark.parametrize("name", ["synthetic/private", "synthetic~private/name", "~synthetic/private~"])
+def test_redact_identifiers_decodes_pointer_tokens_once(name: str) -> None:
+    escaped_name = name.replace("~", "~0").replace("/", "~1")
+    pointer = f"/projects/~1Users~1synthetic~0person~1work~01/mcpServers/{escaped_name}"
+    server = {"config_pointer": pointer}
+    data = {"audits": [{"server": server}], "legacy": {"config_pointer": None}}
+    out = redact_identifiers(data, name_aliases={name: "server-01"})
+    assert out["audits"][0]["server"]["config_pointer"] == (
+        "/projects/~1Users~1<redacted>~1work~01/mcpServers/server-01"
+    )
+    assert out["legacy"]["config_pointer"] is None
+    assert server["config_pointer"] == pointer
+
+
+@pytest.mark.parametrize(
+    "map_pointer", ["/mcpServers", "/servers", "/mcp/servers", "/projects/work/mcpServers"]
+)
+@pytest.mark.parametrize("name", ["mcpServers", "projects", "mcp", "servers"])
+def test_redact_identifiers_preserves_structural_pointer_tokens(map_pointer: str, name: str) -> None:
+    out = redact_identifiers({"config_pointer": f"{map_pointer}/{name}"}, name_aliases={name: "server-01"})
+    assert out["config_pointer"] == f"{map_pointer}/server-01"
+
+
 def test_redact_identifiers_aliases_server_names() -> None:
     data = {
         "name": "personal-ops",
