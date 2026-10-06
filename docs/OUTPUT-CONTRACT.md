@@ -22,15 +22,23 @@ Terminal, JSON, SARIF, HTML, and `serve` tool outputs use
 It covers secret-name assignments (including env-style names), secret
 flag/value pairs in argv and text, bearer/basic credentials, and common
 GitHub, OpenAI/Anthropic, Slack, AWS access-key, JWT, GitLab and npm token
-shapes. In HTTP(S) URLs, userinfo, every query parameter value (including
+shapes. Quoted JSON/dict assignments inside strings are covered, as are string
+dictionary values under secret-named keys and string literals in a secret schema
+property's `default`, `examples`, and `const`; non-string values and structure
+are retained. Inline secret argv assignments redact the whole remainder of the
+element. A secret flag does not consume the following argv element when that
+element starts with `-`, so gained flags remain visible to provenance checks.
+In any `scheme://` URL, userinfo, every query parameter value (including
 non-secret parameters), and the entire fragment are redacted; query names,
-hosts and paths remain visible.
+hosts, ports and paths remain visible. Recognized URL spans are excluded from
+generic named-assignment matching, including secret-named hosts.
 
 Secret-name matching recognizes token, API key, secret, password/passwd/pwd,
 credential, signature, private/access key, session, authorization/authentication
 and separator-delimited auth/sig components. `author`, `authority`, `oauth_callback_port`, plural
-`tokens` (such as `--max-tokens`) and the exact label `--session-name` remain
-visible. Environment variable values are never read; env/header key-name
+`tokens` (such as `--max-tokens`), `tokenizer` components, and separator-delimited
+`session-name`/`session_name` labels remain visible; `session_id` stays secret.
+Environment variable values are never read; env/header key-name
 lists are retained.
 
 `scan --redact` additionally scrubs hostname, home-path usernames and matching
@@ -40,6 +48,9 @@ Report fields and `schema_version` are unchanged. Credential redaction is
 best-effort pattern matching, not a guarantee that arbitrary or obfuscated
 secrets are removed. Review reports before sharing them.
 
+The config-only dictionary API always redacts credentials; its `redact=False`
+option skips only identifier scrubbing. Pin tool snapshots redact credentials
+while retaining hashes computed over the raw canonical tool metadata.
 Pin launch snapshots apply the same argv and URL rules by default. See
 [`PIN-MAINTENANCE.md`](PIN-MAINTENANCE.md) for the raw-argument escape hatch
 and provenance comparison semantics.
