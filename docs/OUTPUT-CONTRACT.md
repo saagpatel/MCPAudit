@@ -248,7 +248,11 @@ The report top level also includes:
   records a requested check that was skipped or degraded, so consumers that
   never see console output (JSON pipelines, the MCP server tools) can
   identify recorded skipped checks. Empty warnings alone do not prove complete
-  coverage; also inspect per-server connection status. Fields:
+  coverage; also inspect per-server connection status. The report list is
+  stably sorted by `(tuple(sorted(servers)), code, message)`; warnings with no
+  affected servers come first. Console warnings may remain in completion order.
+  Audits stay in input configuration order, and per-server drift findings stay
+  in scan/session observation order. Fields:
   - `code` — stable machine key. Current vocabulary:
     `pin_baseline_missing` (check requested but nothing is pinned),
     `pin_baseline_corrupted` (a pin baseline file exists but could not be
