@@ -19,6 +19,7 @@ from mcp_audit.models import (
     SsrfSeverity,
     ToolInfo,
 )
+from mcp_audit.text_limits import bounded_text
 
 # Schemes where a caller-controlled host means the server reaches out over the
 # network — i.e. a templated host is a genuine SSRF target. Kept aligned with
@@ -72,11 +73,6 @@ _FETCH_VERB_ROOTS = (
 )
 
 _WORD_RE = re.compile(r"[a-z0-9]+")
-# camelCase / acronym boundaries, so "callbackUrl" and "targetURL" tokenize as
-# {callback, url} / {target, url} instead of one merged token. MCP tool schemas
-# are predominantly camelCase, so without this every camelCase URL param is missed.
-_CAMEL_BOUNDARY = re.compile(r"([a-z0-9])([A-Z])")
-_ACRONYM_BOUNDARY = re.compile(r"([A-Z]+)([A-Z][a-z])")
 
 # Input schemas are untrusted. These limits are deliberately well above normal
 # MCP schemas while keeping traversal deterministic under schema amplification.
@@ -92,8 +88,27 @@ class _SchemaWalkResult:
 
 
 def _word_tokens(text: str) -> list[str]:
-    spaced = _ACRONYM_BOUNDARY.sub(r"\1_\2", _CAMEL_BOUNDARY.sub(r"\1_\2", text))
-    return _WORD_RE.findall(spaced.lower())
+    """Split words and camel/acronym boundaries in one linear pass."""
+    spaced: list[str] = []
+    for index, char in enumerate(text):
+        if index:
+            previous = text[index - 1]
+            following = text[index + 1] if index + 1 < len(text) else ""
+            camel_boundary = (previous.isascii() and (previous.islower() or previous.isdigit())) and (
+                char.isascii() and char.isupper()
+            )
+            acronym_boundary = (
+                previous.isascii()
+                and previous.isupper()
+                and char.isascii()
+                and char.isupper()
+                and following.isascii()
+                and following.islower()
+            )
+            if camel_boundary or acronym_boundary:
+                spaced.append("_")
+        spaced.append(char)
+    return _WORD_RE.findall("".join(spaced).lower())
 
 
 def _tokens(text: str) -> list[str]:
@@ -122,7 +137,7 @@ def _has_fetch_verb(*texts: str | None) -> bool:
     for text in texts:
         if not text:
             continue
-        for token in _tokens(text):
+        for token in _tokens(bounded_text(text)):
             if any(token.startswith(root) for root in _FETCH_VERB_ROOTS):
                 return True
     return False
