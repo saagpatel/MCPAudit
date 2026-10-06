@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Isolated hostile stdio fixtures and an opt-in `perf` regression gate for
+  500 servers, large descriptions, oversized frames, and orphan children.
+  Nightly and on-demand CI retains wall/RSS/process measurements; cumulative
+  target profiles support the planned detector and transport fixes. Document
+  connected-scan threats and the baseline's known orphan allowance.
+
 ### Fixed
 
 - Summarize nested connection and analysis exception groups with redacted leaf
