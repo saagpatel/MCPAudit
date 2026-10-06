@@ -62,6 +62,7 @@ async def test_stdio_stderr_is_bounded_sanitized_and_cleaned_up(
         assert records == []
     else:
         assert len(records) == 1
+        assert "stderr tail: …[truncated] stderr-tail[/bold]\nBearer <redacted>\n" in records[0]
         assert "stderr-tail[/bold]" in records[0]
         assert "Bearer <redacted>" in records[0]
         assert "fixture-sensitive-marker" not in records[0]
@@ -70,6 +71,40 @@ async def test_stdio_stderr_is_bounded_sanitized_and_cleaned_up(
     assert set(threading.enumerate()) == baseline_threads
     if baseline_fds is not None:
         assert len(list(fd_root.iterdir())) == baseline_fds
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("prefix", ["bearer", "token"])
+@pytest.mark.parametrize("newline", [False, True])
+async def test_stdio_stderr_truncation_discards_unanchored_secrets(
+    prefix: str, newline: bool, caplog: pytest.LogCaptureFixture
+) -> None:
+    args = ["-m", "tests.fixtures.noisy_stderr_server", f"boundary-{prefix}"]
+    if newline:
+        args.append("newline")
+    config = make_server_config(name="stderr-fixture", command=sys.executable, args=args)
+    caplog.set_level(logging.DEBUG, logger="mcp_audit.connector")
+    audit = await ServerConnector(timeout=5).connect(config)
+    assert audit.connection_status == "connected"
+    assert "fixture-boundary-marker" not in caplog.text
+    records = [r.getMessage() for r in caplog.records if "stderr tail:" in r.getMessage()]
+    suffix = "stderr-whole-tail\n" if newline else "<stderr truncated; last record exceeded 4 KiB>"
+    assert records == [f"Server stderr-fixture stderr tail: …[truncated] {suffix}"]
+
+
+@pytest.mark.anyio
+async def test_stdio_short_stderr_preserves_redacted_line(caplog: pytest.LogCaptureFixture) -> None:
+    config = make_server_config(
+        name="stderr-fixture",
+        command=sys.executable,
+        args=["-m", "tests.fixtures.noisy_stderr_server", "short"],
+    )
+    caplog.set_level(logging.DEBUG, logger="mcp_audit.connector")
+    audit = await ServerConnector(timeout=5).connect(config)
+    assert audit.connection_status == "connected"
+    records = [r.getMessage() for r in caplog.records if "stderr tail:" in r.getMessage()]
+    assert records == ["Server stderr-fixture stderr tail: before token=<redacted> after\n"]
+    assert "abc123" not in caplog.text
 
 
 def test_stderr_capture_closes_reader_even_when_a_writer_is_retained() -> None:
