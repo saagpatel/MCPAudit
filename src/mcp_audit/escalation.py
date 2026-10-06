@@ -38,6 +38,7 @@ from mcp_audit.models import (
     SurfaceFieldChange,
     ToolInfo,
 )
+from mcp_audit.redaction import redact_data
 
 # Gained categories that make a capability escalation HIGH vs MEDIUM.
 _HIGH_CATEGORIES: frozenset[PermissionCategory] = frozenset(
@@ -151,6 +152,10 @@ class EscalationAnalyzer:
             if baseline is None:
                 continue  # new tool — covered by drift NEW, not an escalation
 
+            # Pins store redacted metadata; normalize both sides, including
+            # legacy raw snapshots, before re-deriving capability/injection deltas.
+            baseline = ToolInfo.model_validate(redact_data(baseline.model_dump()))
+            tool = ToolInfo.model_validate(redact_data(tool.model_dump()))
             findings.extend(self._capability_finding(server_name, baseline, tool))
             findings.extend(self._injection_finding(server_name, baseline, tool))
 

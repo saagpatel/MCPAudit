@@ -15,6 +15,7 @@ from typing import Any
 import yaml
 
 from mcp_audit.models import DriftFinding, DriftStatus, ServerConfig, SurfaceFieldChange, ToolInfo
+from mcp_audit.redaction import redact_data, redact_text
 from mcp_audit.terminal_text import TerminalSafeLogFilter
 
 try:
@@ -174,12 +175,15 @@ class PinStore:
         server_config: ServerConfig | None = None,
         package_hashes: dict[str, str] | None = None,
         artifact_hashes: dict[str, str] | None = None,
+        *,
+        redact_args: bool = True,
     ) -> None:
         """Upsert pin entries for all tools on a server. Writes atomically.
 
         When ``server_config`` is provided, its launch fields (command, args, url,
         transport, and env/header KEY NAMES — never values) are snapshotted so the
-        provenance detector can compare them on later scans.
+        provenance detector can compare them on later scans. Arguments are
+        credential-redacted unless ``redact_args=False``; URLs are always redacted.
         """
         now = datetime.now(UTC).isoformat()
         with _file_lock(self._path):
@@ -197,7 +201,7 @@ class PinStore:
                     "snapshot": self._tool_snapshot(tool),
                 }
             if server_config is not None:
-                snapshot = self._config_snapshot(server_config)
+                snapshot = self._config_snapshot(server_config, redact_args=redact_args)
                 prior = server_entry.get("config_snapshot")
                 prior_snapshot = prior if isinstance(prior, dict) else {}
                 if package_hashes:
@@ -496,11 +500,11 @@ class PinStore:
     def _tool_snapshot(self, tool: ToolInfo) -> dict[str, Any]:
         """Return the reviewable tool fields stored alongside the pin hash."""
         return {
-            "description": tool.description,
-            "input_schema": tool.input_schema,
+            "description": redact_data(tool.description),
+            "input_schema": redact_data(tool.input_schema),
         }
 
-    def _config_snapshot(self, server_config: ServerConfig) -> dict[str, Any]:
+    def _config_snapshot(self, server_config: ServerConfig, *, redact_args: bool = True) -> dict[str, Any]:
         """Return the launch-config fields stored for provenance comparison.
 
         Credential surface is recorded by KEY NAME only (env_keys / headers_keys);
@@ -513,8 +517,8 @@ class PinStore:
 
         return {
             "command": server_config.command,
-            "args": list(server_config.args),
-            "url": server_config.url,
+            "args": redact_data(server_config.args) if redact_args else list(server_config.args),
+            "url": redact_text(server_config.url) if server_config.url is not None else None,
             "transport": server_config.transport.value,
             "env_keys": sorted(server_config.env_keys),
             "headers_keys": sorted(server_config.headers_keys),
@@ -536,6 +540,7 @@ class PinStore:
         if not isinstance(previous, dict):
             return ["pin hash changed; previous schema snapshot unavailable"]
 
+        previous = redact_data(previous)
         details: list[str] = []
         if previous.get("description") != current["description"]:
             details.append("description changed")

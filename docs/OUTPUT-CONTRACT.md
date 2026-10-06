@@ -14,6 +14,61 @@ fields. Consumers should ignore unknown fields and should not fail when optional
 fields are present. Existing stable fields should only be removed or renamed
 with a release-note deprecation window and a breaking-version boundary.
 
+## Report Redaction
+
+Terminal, JSON, SARIF, HTML, and `serve` tool outputs use
+`AuditReport.redacted()` to replace likely credentials with the literal
+`<redacted>` token. This always applies, independently of `scan --redact`.
+It covers secret-name assignments (including env-style names), secret
+flag/value pairs in argv and text, bearer/basic credentials, and common
+GitHub, OpenAI/Anthropic, Slack, AWS access-key, JWT, GitLab and npm token
+shapes. Quoted JSON/dict assignments inside strings are covered, as are string
+dictionary values under secret-named keys and string literals in a secret schema
+property's `default`, `examples`, and `const`; non-string values and structure
+are retained. Inline secret argv assignments redact the whole remainder of the
+element. A secret flag does not consume the following argv element when that
+element starts with `-`, so gained flags remain visible to provenance checks.
+In any `scheme://` URL, userinfo, every query parameter value (including
+non-secret parameters), and the entire fragment are redacted; query names,
+hosts, ports and path shape remain visible. Userinfo extends through the last
+`@` before a path, query or fragment boundary. Secret-named assignments within
+each path segment are redacted. Enclosing secret assignments and flag/value
+pairs redact their entire URL value before standalone URL spans are protected
+from generic named-assignment matching, including secret-named hosts.
+Nested `scheme://` URLs within paths are scrubbed independently. A secret-named
+path assignment whose value is a URL redacts that whole value, including its path.
+
+Provenance comparisons redact both sides. Changes confined to query values or
+fragments therefore do not report drift, even for non-secret endpoint options;
+this is an accepted limitation, like secret rotation. Query-name, host, port
+and unredacted path changes remain distinguishable.
+
+Secret-name matching recognizes token, API key, secret, password/passwd/pwd,
+credential, signature, private/access key, session, authorization/authentication
+and separator-delimited auth/sig components. `author`, `authority`, `oauth_callback_port`, plural
+`tokens` (such as `--max-tokens`), `tokenizer` components, and separator-delimited
+`session-name`/`session_name` labels remain visible; `session_id` stays secret.
+Environment variable values are never read; env/header key-name
+lists are retained.
+
+`scan --redact` additionally scrubs hostname, home-path usernames and matching
+server-name text in shared file reports, with the existing stable server
+aliases. Terminal output retains identifiers. Dictionary keys are not scrubbed.
+Credentials are redacted before identifier aliases can replace secret flag names.
+Report fields and `schema_version` are unchanged. Credential redaction is
+best-effort pattern matching, not a guarantee that arbitrary or obfuscated
+secrets are removed. Review reports before sharing them.
+
+The config-only dictionary API always redacts credentials; its `redact=False`
+option skips only identifier scrubbing. Pin tool snapshots redact credentials
+while retaining hashes computed over the raw canonical tool metadata.
+Escalation compares credential-redacted descriptions and schemas on both sides,
+including legacy raw snapshots, so changes confined to redacted spans do not
+produce escalation findings. Raw tool-schema hashes still detect metadata drift.
+Pin launch snapshots apply the same argv and URL rules by default. See
+[`PIN-MAINTENANCE.md`](PIN-MAINTENANCE.md) for the raw-argument escape hatch
+and provenance comparison semantics.
+
 ## Synthetic performance measurements
 
 The hostile-server test harness writes separate `timing.json` and `metrics.json`

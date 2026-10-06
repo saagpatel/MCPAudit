@@ -32,6 +32,7 @@ from mcp_audit.models import (
     ProvenanceSeverity,
     ServerConfig,
 )
+from mcp_audit.redaction import redact_data, redact_text
 
 # Flag prefixes that mark a launch argument as security-relevant. A newly gained
 # arg whose token starts with any of these escalates an ARGS change to HIGH.
@@ -123,8 +124,10 @@ class ProvenanceAnalyzer:
     def _args_finding(
         self, name: str, cfg: ServerConfig, baseline: dict[str, Any]
     ) -> list[ProvenanceFinding]:
-        base_args = [str(a) for a in baseline.get("args", [])]
-        cur_args = list(cfg.args)
+        # Normalize legacy raw pins as well as current arguments. Secret
+        # rotation is deliberately excluded from launch-configuration drift.
+        base_args = redact_data([str(a) for a in baseline.get("args", [])])
+        cur_args = redact_data(cfg.args)
         if base_args == cur_args:
             return []
 
@@ -148,16 +151,18 @@ class ProvenanceAnalyzer:
 
     def _url_finding(self, name: str, cfg: ServerConfig, baseline: dict[str, Any]) -> list[ProvenanceFinding]:
         base_url = baseline.get("url")
-        if cfg.url == base_url:
+        base_url = redact_text(base_url) if isinstance(base_url, str) else base_url
+        cur_url = redact_text(cfg.url) if cfg.url is not None else None
+        if cur_url == base_url:
             return []
         return [
             ProvenanceFinding(
                 kind=ProvenanceKind.URL,
                 severity=ProvenanceSeverity.HIGH,
                 server_name=name,
-                summary=(f"HTTP endpoint for '{name}' changed since pin: {base_url!r}→{cfg.url!r}."),
+                summary=(f"HTTP endpoint for '{name}' changed since pin: {base_url!r}→{cur_url!r}."),
                 baseline=_disp(base_url),
-                current=_disp(cfg.url),
+                current=_disp(cur_url),
             )
         ]
 

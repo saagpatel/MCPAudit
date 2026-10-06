@@ -39,7 +39,7 @@ from mcp_audit.models import (
 from mcp_audit.oauth_transcript_cli import oauth_transcript
 from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
 from mcp_audit.redaction import redact_text
-from mcp_audit.report import ReportGenerator, error_console, scrub_report_identifiers
+from mcp_audit.report import ReportGenerator, error_console
 from mcp_audit.result_parcel_cli import result_parcel
 from mcp_audit.session_resume_cli import session_resume
 from mcp_audit.skillscan_cli import skillscan
@@ -668,7 +668,7 @@ async def _run_scan(
 
     # Render config-health warnings from the report itself so parse failures
     # surface even when they left nothing to audit.
-    _render_config_health_findings(report.config_health_findings)
+    _render_config_health_findings(report.redacted().config_health_findings)
 
     if report.audits:
         gen.render_terminal(report, verbose=verbose)
@@ -680,7 +680,7 @@ async def _run_scan(
 
     # Field-report mode scrubs host/username identifiers from shared artifacts.
     # Terminal output keeps real values for local readability.
-    out_report = scrub_report_identifiers(report) if redact else report
+    out_report = report.redacted(identifiers=True) if redact else report
     written_artifacts: list[str] = []
 
     if json_output:
@@ -824,6 +824,12 @@ main.add_command(serve_command)
     default=False,
     help="Network: also download artifact bytes and capture their byte-hash into the baseline (for scan --download-artifacts).",  # noqa: E501
 )
+@click.option(
+    "--no-redact-args",
+    is_flag=True,
+    default=False,
+    help="Store raw launch arguments, including secrets, in the pin file.",
+)
 def pin_command(
     server_name: str | None,
     clear_server: str | None,
@@ -836,6 +842,7 @@ def pin_command(
     pin_file: str | None,
     verify_artifacts: bool,
     download_artifacts: bool,
+    no_redact_args: bool,
 ) -> None:
     """Pin tool schemas for drift detection on subsequent scans."""
     from mcp_audit.pinning import DEFAULT_PIN_PATH, PinFileError, PinStore
@@ -893,11 +900,12 @@ def pin_command(
                 json_status,
                 verify_artifacts,
                 download_artifacts,
+                not no_redact_args,
             )
             return
 
         # Pin servers
-        anyio.run(_run_pin, server_name, store, verify_artifacts, download_artifacts)
+        anyio.run(_run_pin, server_name, store, verify_artifacts, download_artifacts, not no_redact_args)
     except PinFileError as exc:
         # Mutations refuse to write through an unparseable pin file — wiping a
         # repairable baseline is worse than failing loudly.
@@ -910,6 +918,7 @@ async def _run_pin(
     store: object,
     verify_artifacts: bool = False,
     download_artifacts: bool = False,
+    redact_args: bool = True,
 ) -> None:
     from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
     from mcp_audit.pinning import PinStore as PS
@@ -951,6 +960,7 @@ async def _run_pin(
             audit.server,
             pkg_hashes or None,
             art_hashes or None,
+            redact_args=redact_args,
         )
         suffix = ""
         if pkg_hashes:
@@ -1012,6 +1022,7 @@ async def _run_pin_refresh(
     json_status: bool = False,
     verify_artifacts: bool = False,
     download_artifacts: bool = False,
+    redact_args: bool = True,
 ) -> None:
     """Review drift for one server and optionally refresh its pin baseline."""
     from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
@@ -1081,6 +1092,7 @@ async def _run_pin_refresh(
                 audit.server,
                 refresh_pkgs or None,
                 refresh_artifacts or None,
+                redact_args=redact_args,
             )
         click.echo(
             _pin_refresh_json(
@@ -1114,6 +1126,7 @@ async def _run_pin_refresh(
         audit.server,
         refresh_pkgs or None,
         refresh_artifacts or None,
+        redact_args=redact_args,
     )
     console.print(
         terminal_safe(f"Refreshed {len(audit.tools)} pin(s) for '{audit.server.name}'."), style="green"

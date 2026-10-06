@@ -110,12 +110,14 @@ def _build_mcp_server() -> Any:
     async def scan_mcp_servers(skip_connect: bool = False) -> str:
         """Run a full audit of all discovered MCP servers. Returns JSON report."""
         report = await _scan(ScanOptions(skip_connect=skip_connect))
+        report = report.redacted()
         return report.model_dump_json(indent=2)
 
     @app.tool()  # type: ignore[untyped-decorator]
     async def get_high_risk_servers() -> str:
         """Return servers with composite risk score ≥ 7.0. Returns JSON list."""
         report = await _scan(ScanOptions())
+        report = report.redacted()
         high_risk = [
             {"name": a.server.name, "score": a.risk_score.composite if a.risk_score else 0.0}
             for a in report.audits
@@ -143,12 +145,14 @@ def _build_mcp_server() -> Any:
             )
 
         report = await _scan(ScanOptions(), servers=[matches[0]])
+        report = report.redacted()
         return report.audits[0].model_dump_json(indent=2)
 
     @app.tool()  # type: ignore[untyped-decorator]
     async def get_injection_findings() -> str:
         """Return all prompt injection findings across all servers. Returns JSON `{findings, warnings}`."""
         report = await _scan(ScanOptions(inject_check=True))
+        report = report.redacted()
         all_findings = []
         for audit in report.audits:
             for f in audit.injection_findings:
@@ -168,6 +172,7 @@ def _build_mcp_server() -> Any:
     async def get_ssrf_findings() -> str:
         """Return all SSRF findings across all servers. Returns JSON `{findings, warnings}`."""
         report = await _scan(ScanOptions(ssrf_check=True))
+        report = report.redacted()
         all_findings = []
         for audit in report.audits:
             for f in audit.ssrf_findings:
@@ -188,6 +193,7 @@ def _build_mcp_server() -> Any:
     async def get_trifecta_findings() -> str:
         """Return per-server and fleet-level lethal-trifecta findings. Returns JSON `{findings, warnings}`."""
         report = await _scan(ScanOptions(trifecta_check=True))
+        report = report.redacted()
         all_findings = []
         for audit in report.audits:
             for f in audit.trifecta_findings:
@@ -222,6 +228,7 @@ def _build_mcp_server() -> Any:
     async def get_shadowing_findings() -> str:
         """Return all cross-server tool-name shadowing findings. Returns JSON `{findings, warnings}`."""
         report = await _scan(ScanOptions(shadow_check=True))
+        report = report.redacted()
         all_findings = []
         for f in report.shadowing_findings:
             all_findings.append(
@@ -244,6 +251,7 @@ def _build_mcp_server() -> Any:
         empty and `warnings` carries a `pin_baseline_missing` entry explaining why.
         """
         report = await _scan(ScanOptions(escalation_check=True))
+        report = report.redacted()
         all_findings = []
         for audit in report.audits:
             for f in audit.escalation_findings:
@@ -270,6 +278,7 @@ def _build_mcp_server() -> Any:
         `pin_baseline_stale` entry explaining why.
         """
         report = await _scan(ScanOptions(provenance_check=True))
+        report = report.redacted()
         all_findings = []
         for audit in report.audits:
             for f in audit.provenance_findings:
@@ -297,6 +306,7 @@ def _build_mcp_server() -> Any:
         # Integrity is purely offline (re-hashing on-disk artifacts vs the pin
         # store), so skip spawning/connecting to servers entirely.
         report = await _scan(ScanOptions(skip_connect=True, integrity_check=True))
+        report = report.redacted()
         all_findings = []
         for audit in report.audits:
             for f in audit.integrity_findings:
@@ -323,6 +333,7 @@ def _build_mcp_server() -> Any:
         explains why. Does not connect to the audited MCP servers (skip_connect).
         """
         report = await _scan(ScanOptions(skip_connect=True, verify_artifacts=True))
+        report = report.redacted()
         all_findings = []
         for audit in report.audits:
             for f in audit.package_verify_findings:
@@ -351,6 +362,7 @@ def _build_mcp_server() -> Any:
         and `warnings` explains why. Does not connect to the audited MCP servers (skip_connect).
         """
         report = await _scan(ScanOptions(skip_connect=True, download_artifacts=True))
+        report = report.redacted()
         all_findings = []
         for audit in report.audits:
             for f in audit.artifact_verify_findings:
@@ -371,11 +383,19 @@ def _build_mcp_server() -> Any:
         return _findings_payload(report, all_findings)
 
     @app.tool()  # type: ignore[untyped-decorator]
-    def list_discovered_servers() -> str:
+    async def list_discovered_servers() -> str:
         """Return names and clients of all discovered MCP servers. Returns JSON list."""
         servers = discover_all_configs(None)
+        report = (await run_scan(ScanOptions(skip_connect=True), servers=servers)).redacted()
         return json.dumps(
-            [{"name": s.name, "client": s.client.value, "transport": s.transport.value} for s in servers],
+            [
+                {
+                    "name": a.server.name,
+                    "client": a.server.client.value,
+                    "transport": a.server.transport.value,
+                }
+                for a in report.audits
+            ],
             indent=2,
         )
 

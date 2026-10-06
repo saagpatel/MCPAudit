@@ -5,8 +5,8 @@ inline CSS, no JavaScript, no external resources, so it renders offline and can
 be emailed or attached to a ticket as-is.
 
 Security notes:
-  * The report is built from a redacted copy of the audit (``redact_data``), so
-    no credential value can leak even if one reached the model layer.
+  * The report is built from a redacted copy of the audit (``AuditReport.redacted``), so
+    likely credential values are removed by best-effort pattern matching.
   * EVERY dynamic value is HTML-escaped via ``html.escape``. Tool descriptions
     are attacker-influenceable and may contain ``<script>`` or other markup; the
     report must never become an XSS vector when opened in a browser.
@@ -18,7 +18,6 @@ from html import escape
 from typing import Any
 
 from mcp_audit.models import AuditReport, ServerAudit
-from mcp_audit.redaction import redact_data
 from mcp_audit.taxonomy import format_rule_of_two
 from mcp_audit.terminal_text import strip_controls
 
@@ -74,7 +73,7 @@ class HtmlReportGenerator:
 
     def generate(self, report: AuditReport) -> str:
         """Return the full HTML document. Caller writes it to disk."""
-        report = AuditReport.model_validate(redact_data(report.model_dump(mode="json")))
+        report = report.redacted()
         parts: list[str] = [
             "<!DOCTYPE html>",
             '<html lang="en"><head><meta charset="utf-8">',

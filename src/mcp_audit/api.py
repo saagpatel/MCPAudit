@@ -97,6 +97,7 @@ def scan_config_only_dict(
     handler. ``redact=True`` (the default) scrubs host and username identifiers
     from the result via the same pass as ``scan --redact`` — the scanning host's
     identity must never leak into a user-facing report.
+    Credential redaction always applies, including when ``redact=False``.
 
     Raises:
         RuntimeError: if called from within a running event loop. Use the async
@@ -113,8 +114,4 @@ def scan_config_only_dict(
         )
 
     report = anyio.run(partial(scan_config_only, config, source=source))
-    if redact:
-        from mcp_audit.report import scrub_report_identifiers
-
-        report = scrub_report_identifiers(report)
-    return report.model_dump(mode="json")
+    return report.redacted(identifiers=redact).model_dump(mode="json")

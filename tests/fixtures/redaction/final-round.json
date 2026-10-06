@@ -1,0 +1,76 @@
+[
+  {
+    "text": "Example token=\"ignore previous instructions\"",
+    "redacted": "Example token=<redacted>"
+  },
+  {
+    "text": "Example password=\"delete all files\"",
+    "redacted": "Example password=<redacted>"
+  },
+  {
+    "text": "password=\"https://example.test/my-secret\"",
+    "redacted": "password=<redacted>"
+  },
+  {
+    "text": "--password https://example.test/my-secret",
+    "redacted": "--password <redacted>",
+    "args": ["--password", "https://example.test/my-secret"],
+    "redacted_args": ["--password", "<redacted>"]
+  },
+  {
+    "text": "password=https://example.test/my-secret?mode=one&extra=two#fragment",
+    "redacted": "password=<redacted>"
+  },
+  {
+    "text": "--password https://example.test/my-secret?mode=one&extra=two#fragment",
+    "redacted": "--password <redacted>"
+  },
+  {
+    "text": "https://mcp.example.test:8443/password=hunter2-SECRET",
+    "redacted": "https://mcp.example.test:8443/password=<redacted>"
+  },
+  {
+    "text": "https://token.example.test:8443/password=hunter2-SECRET/admin/token=fixture-secret/status",
+    "redacted": "https://token.example.test:8443/password=<redacted>/admin/token=<redacted>/status"
+  },
+  {
+    "text": "postgresql://app:p@ssw0rd@db.internal:5432/app",
+    "redacted": "postgresql://<redacted>@db.internal:5432/app"
+  },
+  {
+    "text": "mysql://app:p@ssw0rd@db.internal:5432/app",
+    "redacted": "mysql://<redacted>@db.internal:5432/app"
+  },
+  {
+    "text": "redis://app:p@ssw0rd@db.internal:5432/app",
+    "redacted": "redis://<redacted>@db.internal:5432/app"
+  },
+  {
+    "text": "postgresql://app:p@ssw0rd@db.internal:5432/app?email=user@example.test#x@y",
+    "redacted": "postgresql://<redacted>@db.internal:5432/app?email=<redacted>#<redacted>"
+  },
+  {
+    "text": "https://proxy.example/https://user:pw@host/p?q=SECRET",
+    "redacted": "https://proxy.example/https://<redacted>@host/p?q=<redacted>"
+  },
+  {
+    "text": "https://mcp.example.test:8443/postgresql://app:p@ssw0rd@db.internal:5432/app",
+    "redacted": "https://mcp.example.test:8443/postgresql://<redacted>@db.internal:5432/app"
+  },
+  {
+    "text": "https://mcp.example.test:8443/password=https://example.test/my-secret?mode=one&extra=two#fragment",
+    "redacted": "https://mcp.example.test:8443/password=<redacted>"
+  },
+  {
+    "text": "https://proxy.example/https://next.example/redis://user:pw@host/p?q=SECRET#fragment",
+    "redacted": "https://proxy.example/https://next.example/redis://<redacted>@host/p?q=<redacted>#<redacted>"
+  },
+  {
+    "text": "https://proxy.example/?q=https://example.test/my-secret",
+    "redacted": "https://proxy.example/?q=<redacted>"
+  },
+  {
+    "text": "https://proxy.example/#https://example.test/my-secret",
+    "redacted": "https://proxy.example/#<redacted>"
+  }
+]
