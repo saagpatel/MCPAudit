@@ -27,6 +27,7 @@ from mcp_audit.models import (
     LLMAnalysisStatus,
     LLMAnalysisSummary,
     ServerConfig,
+    ToolInfo,
 )
 from tests.conftest import make_server_config
 
@@ -442,3 +443,26 @@ async def test_one_failing_server_does_not_kill_the_scan(monkeypatch: pytest.Mon
     assert by_name["boom"].connection_status == "failed"
     assert "kaboom" in (by_name["boom"].connection_error or "")
     assert by_name["ok"].connection_status == "skipped"
+
+
+@pytest.mark.anyio
+async def test_analyzer_exception_group_reports_redacted_leaf_causes(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mcp_audit.analyzer import PermissionAnalyzer
+    from mcp_audit.models import PermissionFinding
+
+    def exploding(self: PermissionAnalyzer, tools: list[ToolInfo]) -> list[PermissionFinding]:
+        raise ExceptionGroup(
+            "outer server text",
+            [
+                ValueError("first token=synthetic-value"),
+                ExceptionGroup("inner server text", [RuntimeError("second")]),
+            ],
+        )
+
+    monkeypatch.setattr(PermissionAnalyzer, "analyze_server", exploding)
+    config = make_server_config(command=None)
+    report = await run_scan(ScanOptions(skip_connect=True), servers=[config])
+    assert report.audits[0].connection_status == "failed"
+    assert report.audits[0].connection_error == (
+        "analysis error: ValueError: first token=<redacted>; RuntimeError: second"
+    )
