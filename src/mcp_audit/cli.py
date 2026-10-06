@@ -425,7 +425,7 @@ def discover(client_filter: str | None, verbose: bool) -> None:
     "--inject-check",
     is_flag=True,
     default=False,
-    help="Scan for prompt injection in tool, prompt, and resource text.",
+    help="Scan metadata for experimental MEDIUM instruction-shaped text and structural hints.",
 )
 @click.option(
     "--ssrf-check",

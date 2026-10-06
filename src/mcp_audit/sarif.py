@@ -739,6 +739,10 @@ class SarifGenerator:
         fingerprint_target = finding.target_name or finding.tool_name
         if finding.after_call is not None:
             fingerprint_target += f"\0runtime\0{target_label}\0{finding.pattern_name}"
+        elif finding.instruction_pattern is not None:
+            fingerprint_target += (
+                f"\0metadata\0{target_label}\0{finding.instruction_pattern}\0{finding.field_path or '/'}"
+            )
         msg = (
             f"Prompt injection pattern '{finding.pattern_name}' detected in {target_label} "
             f"'{finding.target_name or finding.tool_name}' on server '{audit.server.name}': "
@@ -755,6 +759,9 @@ class SarifGenerator:
             },
             "properties": {
                 "pattern": finding.pattern_name,
+                "instruction_pattern": finding.instruction_pattern,
+                "hunt_targets": finding.hunt_targets,
+                "field_path": finding.field_path,
                 "after_call": finding.after_call,
                 "target_type": finding.target_type.value,
                 "target_name": finding.target_name or finding.tool_name,

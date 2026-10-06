@@ -26,6 +26,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   select only that file unless discovery is requested; connections require one
   unambiguous client/scope/name identity. New JSON stdout and named artifact
   options leave the legacy `scan` grammar and reports unchanged.
+- Record per-check completion and reasons in additive report coverage, with
+  terminal and HTML coverage summaries, SARIF invocation notifications and
+  run properties, and an opt-in `fail_on.coverage` policy gate. Legacy reports
+  retain unknown coverage. The extended SARIF profile includes stable
+  configuration-health rule IDs.
+  Apply bounded-text coverage loss to permissions, capabilities and dependent detectors,
+  recognize empty tool pin baselines, and retain project connection warnings
+  in SARIF notifications, full-report, findings and single-server MCP results.
+  Preserve the high-risk tool's legacy JSON list; its description directs
+  callers to full-report and findings tools for coverage warnings.
+  Require execution evidence for completion, mark discovery parse failures
+  as partial coverage, and account for applicable and verified package references.
+  Preserve source configuration locations in extended SARIF, including parse failures.
 
 ### Fixed
 
@@ -88,6 +101,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is replayed locally without launching servers. These fixtures contain no
   nested property-name capability gains; the nested regression fixture covers
   the added detection.
+- Report static phrase matches as experimental MEDIUM with pattern and field
+  evidence, retain concrete secret targets for "Fix now" summaries, and flag
+  high-entropy metadata runs at LOW without decoding them.
+  Withhold phrase excerpts after full-field credential redaction, preserve
+  instruction evidence in the MCP findings endpoint, restore override phrase
+  coverage, and align the synthetic sandbox with the MEDIUM heuristic tier.
+  Build metadata evidence with a shared full-field redaction helper that maps
+  match offsets before slicing and rendering invisible codepoints, including
+  obfuscation, hidden-directive, schema, SSRF, and escalation evidence.
+  Withhold field evidence when normalization exposes a credential label missed
+  by raw redaction; apply the same protection to serialized metadata. Use
+  original-string case-insensitive offsets and clamp evidence spans to prevent
+  length-changing lowercase text from aborting a server scan.
+- Defer static/runtime instruction vocabulary unification to the 2.9 structural
+  detection and redaction redesign; retain main's independent phrase rules.
 
 ### Security
 
@@ -119,22 +147,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   evidence to the detected phrase or gated anomaly so stripped context and
   benign non-Latin prefixes cannot displace it, including normalized HTML-comment
   delimiters after long benign prefixes.
+- Share NFKC, invisible-codepoint stripping and curated confusable folding
+  across static injection, runtime text and tool-name shadowing checks. Report
+  MEDIUM `OBFUSCATED_METADATA` for invisible classes or mixed-script confusables
+  with field pointers; preserve source evidence and display invisible characters
+  as codepoint markers in evidence, terminal, HTML and SARIF messages. Anchor
+  bounded redacted evidence to the detected phrase or gated anomaly so stripped context and
+  benign non-Latin prefixes cannot displace it, including normalized HTML-comment
+  delimiters after long benign prefixes.
 
-### Added
+### Known issues
 
-- Record per-check completion and reasons in additive report coverage, with
-  terminal and HTML coverage summaries, SARIF invocation notifications and
-  run properties, and an opt-in `fail_on.coverage` policy gate. Legacy reports
-  retain unknown coverage. The extended SARIF profile includes stable
-  configuration-health rule IDs.
-  Apply bounded-text coverage loss to permissions, capabilities and dependent detectors,
-  recognize empty tool pin baselines, and retain project connection warnings
-  in SARIF notifications, full-report, findings and single-server MCP results.
-  Preserve the high-risk tool's legacy JSON list; its description directs
-  callers to full-report and findings tools for coverage warnings.
-  Require execution evidence for completion, mark discovery parse failures
-  as partial coverage, and account for applicable and verified package references.
-  Preserve source configuration locations in extended SARIF, including parse failures.
+- Redaction can still miss a hostile secret disguised with Unicode: a
+  zero-width character splitting a bearer or basic token leaves the tail in
+  JSON and HTML evidence; secret-shaped `input_schema`/`output_schema`/`meta`
+  property keys are copied unredacted; and terminal output prints raw tool
+  names. Structural redaction is planned for a later release.
 
 ## [2.8.1] - 2026-10-06
 

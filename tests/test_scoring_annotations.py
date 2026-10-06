@@ -101,10 +101,10 @@ async def test_risky_fixture_keeps_injection_and_chain_findings(monkeypatch: pyt
     report = await _scan("risky", monkeypatch)
     audit = report.audits[0]
     assert audit.annotations_missing
-    assert any(f.tool_name == "read_file" and f.rule_id == "MCP007" for f in audit.injection_findings)
+    assert any(f.tool_name == "read_file" and f.rule_id == "MCP008" for f in audit.injection_findings)
     assert audit.trifecta_findings
     results = SarifGenerator().generate(report)["runs"][0]["results"]
-    assert any(r["ruleId"] == "MCP007" and r["level"] == "error" for r in results)
+    assert any(r["ruleId"] == "MCP008" and r["level"] == "warning" for r in results)
     assert sum(r["properties"].get("kind") == "annotations_missing" for r in results) == 1
 
 

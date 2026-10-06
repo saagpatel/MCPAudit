@@ -66,6 +66,10 @@ def _has_injection(findings: list[Any], expected: dict[str, str]) -> bool:
         and finding.target_name == expected["target_name"]
         and finding.severity.value == expected["severity"]
         and finding.pattern_name == expected["pattern_name"]
+        and (
+            "instruction_pattern" not in expected
+            or finding.instruction_pattern == expected["instruction_pattern"]
+        )
         for finding in findings
     )
 
