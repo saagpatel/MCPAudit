@@ -5,26 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.8.1] - Unreleased
 
-### Added
+### Security
 
-- Add regression tests for canary eligibility, operator safe-tool marks, error
-  results, pagination and rotation, command-artifact integrity boundaries, and
-  pin/session drift details and hashes using synthetic fixtures and temporary pins.
-- Add table-driven contracts for permission keywords and static and runtime injection rule vocabularies.
-- Added the synthetic red-team evasion corpus as a parametrized pytest suite,
-  with strict expected-failure cases tracking planned detector gaps.
-- Add canary client identity, elapsed seconds, call budget, and stable
-  `not_excluded` limitations to JSON; show bounded coverage in terminal, HTML,
-  and SARIF invocation properties, including clean exercises.
-- Isolated hostile stdio fixtures and an opt-in `perf` regression gate for
-  500 servers, large descriptions, oversized frames, and orphan children.
-  Nightly and on-demand CI retains wall/RSS/process measurements; cumulative
-  target profiles support the planned detector and transport fixes. Document
-  connected-scan threats and the baseline's known orphan allowance.
-  Require both server records and the child record for orphan-cleanup coverage,
-  and analyzer invocation/tool coverage plus expected description findings.
+- Centralize credential redaction for terminal, JSON, SARIF, HTML, and MCP
+  tool outputs and the config-only dictionary API, even with `redact=False`.
+  Cover whole inline argv values, quoted secret assignments, secret dictionary
+  values and schema literals, URL-valued secrets, and common token shapes.
+  Redact complete userinfo, secret-named path values, query values and fragments
+  in any `scheme://` URL while preserving unredacted endpoint drift. Query-value
+  and fragment changes remain invisible to provenance comparisons.
+  Redact pin tool snapshots without changing raw schema hashes, and pin launch
+  arguments and URLs by default; compare redacted escalation and provenance baselines,
+  including legacy raw pins, so secret rotation stays silent while gained flags
+  remain detectable. Preserve tokenizer and session-name labels.
+  `pin --no-redact-args` explicitly stores raw arguments, including secrets.
 
 ### Fixed
 
@@ -60,7 +56,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Present `mcp-audit` and the installed package version as the explicit MCP
   client identity for stdio, Streamable HTTP, and SSE scan sessions.
 
-### Tests
+### Added
+
+- Add regression tests for canary eligibility, operator safe-tool marks, error
+  results, pagination and rotation, command-artifact integrity boundaries, and
+  pin/session drift details and hashes using synthetic fixtures and temporary pins.
+- Add table-driven contracts for permission keywords and static and runtime injection rule vocabularies.
+- Added the synthetic red-team evasion corpus as a parametrized pytest suite,
+  with strict expected-failure cases tracking planned detector gaps.
+- Add canary client identity, elapsed seconds, call budget, and stable
+  `not_excluded` limitations to JSON; show bounded coverage in terminal, HTML,
+  and SARIF invocation properties, including clean exercises.
+- Isolated hostile stdio fixtures and an opt-in `perf` regression gate for
+  500 servers, large descriptions, oversized frames, and orphan children.
+  Nightly and on-demand CI retains wall/RSS/process measurements; cumulative
+  target profiles support the planned detector and transport fixes. Document
+  connected-scan threats and the baseline's known orphan allowance.
+  Require both server records and the child record for orphan-cleanup coverage,
+  and analyzer invocation/tool coverage plus expected description findings.
 
 - Count explicit benign-tool false positives in validation precision and F1;
   gate precision per category, parametrize fixtures by server, and track the six
@@ -68,20 +81,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pin scorer weights, confidence multipliers, and caps with literal golden values;
   cover policy gate defaults, branches, boundaries, and invalid policy errors.
 
-### Security
+### Known issues
 
-- Centralize credential redaction for terminal, JSON, SARIF, HTML, and MCP
-  tool outputs and the config-only dictionary API, even with `redact=False`.
-  Cover whole inline argv values, quoted secret assignments, secret dictionary
-  values and schema literals, URL-valued secrets, and common token shapes.
-  Redact complete userinfo, secret-named path values, query values and fragments
-  in any `scheme://` URL while preserving unredacted endpoint drift. Query-value
-  and fragment changes remain invisible to provenance comparisons.
-  Redact pin tool snapshots without changing raw schema hashes, and pin launch
-  arguments and URLs by default; compare redacted escalation and provenance baselines,
-  including legacy raw pins, so secret rotation stays silent while gained flags
-  remain detectable. Preserve tokenizer and session-name labels.
-  `pin --no-redact-args` explicitly stores raw arguments, including secrets.
+- `scan`, `pin`, `watch`, and the `serve` tools connect to servers declared in
+  the current directory's `.mcp.json` and `.vscode/mcp.json`. In a checkout you
+  do not trust, add `--skip-connect` to `scan` and `watch`, and do not run `pin`
+  or launch `serve` there (they have no connection-free mode).
+- Annotation-only changes are not detected by `--pin-check` or
+  `--escalation-check`. Pins hash tool name, description, and input schema;
+  the runtime canary does compare annotations within a session.
+- Remote (`url`) servers in Cursor, Windsurf, and Claude Desktop configs are
+  reported as stdio servers with a missing command.
+- `monitor` cannot proxy a real MCP stdio server and will be deprecated in 2.9.0.
+- Credential redaction can leak the remainder of a quoted secret value that
+  contains an escaped quote (for example `--password \"abc\\\"rest\"`); a
+  structural redesign is planned for 2.9.0. Review field reports before sharing.
 
 ## [2.8.0] - 2026-10-06
 
@@ -1334,6 +1348,7 @@ real workstations; API surface may still shift before the `1.0.0` stable cut.
 - `mcp-audit` CLI entry point
 
 [Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v2.8.0...HEAD
+[2.8.1]: https://github.com/saagpatel/MCPAudit/compare/v2.8.0...HEAD
 [2.8.0]: https://github.com/saagpatel/MCPAudit/compare/v2.7.0...v2.8.0
 [2.7.0]: https://github.com/saagpatel/MCPAudit/compare/v2.6.0...v2.7.0
 [2.6.0]: https://github.com/saagpatel/MCPAudit/compare/v2.5.0...v2.6.0
