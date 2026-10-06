@@ -12,10 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Centralize credential redaction for terminal, JSON, SARIF, HTML, and MCP
   tool outputs and the config-only dictionary API, even with `redact=False`.
   Cover whole inline argv values, quoted secret assignments, secret dictionary
-  values and schema literals, and common token shapes. Redact userinfo, query
-  values and fragments in any `scheme://` URL while preserving endpoint drift.
+  values and schema literals, URL-valued secrets, and common token shapes.
+  Redact complete userinfo, secret-named path values, query values and fragments
+  in any `scheme://` URL while preserving unredacted endpoint drift. Query-value
+  and fragment changes remain invisible to provenance comparisons.
   Redact pin tool snapshots without changing raw schema hashes, and pin launch
-  arguments and URLs by default; compare redacted provenance baselines,
+  arguments and URLs by default; compare redacted escalation and provenance baselines,
   including legacy raw pins, so secret rotation stays silent while gained flags
   remain detectable. Preserve tokenizer and session-name labels.
   `pin --no-redact-args` explicitly stores raw arguments, including secrets.

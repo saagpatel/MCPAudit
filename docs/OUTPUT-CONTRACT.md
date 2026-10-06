@@ -30,8 +30,16 @@ element. A secret flag does not consume the following argv element when that
 element starts with `-`, so gained flags remain visible to provenance checks.
 In any `scheme://` URL, userinfo, every query parameter value (including
 non-secret parameters), and the entire fragment are redacted; query names,
-hosts, ports and paths remain visible. Recognized URL spans are excluded from
-generic named-assignment matching, including secret-named hosts.
+hosts, ports and path shape remain visible. Userinfo extends through the last
+`@` before a path, query or fragment boundary. Secret-named assignments within
+each path segment are redacted. Enclosing secret assignments and flag/value
+pairs redact their entire URL value before standalone URL spans are protected
+from generic named-assignment matching, including secret-named hosts.
+
+Provenance comparisons redact both sides. Changes confined to query values or
+fragments therefore do not report drift, even for non-secret endpoint options;
+this is an accepted limitation, like secret rotation. Query-name, host, port
+and unredacted path changes remain distinguishable.
 
 Secret-name matching recognizes token, API key, secret, password/passwd/pwd,
 credential, signature, private/access key, session, authorization/authentication
@@ -51,6 +59,9 @@ secrets are removed. Review reports before sharing them.
 The config-only dictionary API always redacts credentials; its `redact=False`
 option skips only identifier scrubbing. Pin tool snapshots redact credentials
 while retaining hashes computed over the raw canonical tool metadata.
+Escalation compares credential-redacted descriptions and schemas on both sides,
+including legacy raw snapshots, so changes confined to redacted spans do not
+produce escalation findings. Raw tool-schema hashes still detect metadata drift.
 Pin launch snapshots apply the same argv and URL rules by default. See
 [`PIN-MAINTENANCE.md`](PIN-MAINTENANCE.md) for the raw-argument escape hatch
 and provenance comparison semantics.

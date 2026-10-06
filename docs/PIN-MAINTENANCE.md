@@ -8,10 +8,12 @@ client config files, and pin maintenance should stay just as deliberate.
 `pin` and `pin --refresh ... --apply` redact likely credentials in
 `config_snapshot.args` by default, using the same rules as report output.
 This includes separate flag/value pairs such as `--token VALUE`, secret-name
-assignments and recognizable bare tokens. HTTP(S) snapshot URLs redact
-userinfo, every query value and the entire fragment, retaining parameter
-names, host and path. The replacement token is `<redacted>`; matching is
-best-effort, so review pin files before sharing them.
+assignments (including URL-valued secrets) and recognizable bare tokens.
+Snapshot URLs in any `scheme://` form redact userinfo, every query value and
+the entire fragment, retaining parameter
+names, host, port and path shape. Secret-named assignments within individual
+path segments are redacted too. The replacement token is `<redacted>`;
+matching is best-effort, so review pin files before sharing them.
 
 `pin --no-redact-args` is the explicit escape hatch: it **stores raw launch
 arguments, including secrets, in the pin file**. It also applies to a refresh
@@ -20,10 +22,18 @@ with `--apply`. It does not disable URL or report redaction.
 Provenance checks compare redacted arguments and URLs on both sides,
 including existing pins with raw launch fields. Rotating a matched secret
 does not report arguments drift. Changing only URL query values or fragments
-also does not report endpoint drift; changing query parameter names, host or
-path still does. Ordinary arguments and newly gained dangerous flags remain
-subject to drift checks. Existing pin files are not rewritten by scans;
+also does not report endpoint drift, even for non-secret values such as
+`sslmode=verify-full` changing to `sslmode=disable`. This is an accepted
+limitation of redacted-to-redacted provenance comparisons, like secret rotation.
+Changing query parameter names, host, port or unredacted path text still does.
+Ordinary arguments and newly gained dangerous flags remain subject to drift
+checks. Existing pin files are not rewritten by scans;
 refresh a reviewed baseline to remove stored raw launch secrets.
+
+Escalation checks also redact both baseline and current tool descriptions and
+schemas, including legacy raw snapshots, before comparing inferred capabilities
+and injection patterns. Changes confined to redacted spans cannot produce
+escalation findings. Tool-schema drift still compares hashes of raw metadata.
 
 ## Reviewed Server Upgrades
 
