@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
+from mcp_audit.confighealth import config_health_findings
 from mcp_audit.discovery import ConfigDiscoverer, ConfigParseError, discover_all_configs
 from mcp_audit.discovery.claude_code import ClaudeCodeDiscoverer
 from mcp_audit.discovery.claude_desktop import ClaudeDesktopDiscoverer
@@ -112,6 +113,54 @@ class TestClaudeCodeDiscoverer:
         assert repo_fs.client == ClientType.CLAUDE_CODE
         assert repo_fs.command == "npx"
         assert repo_fs.project_path is None
+
+
+# ---------------------------------------------------------------------------
+# Shared server entry parsing
+# ---------------------------------------------------------------------------
+
+
+class TestSharedEntryParsing:
+    @pytest.mark.parametrize(
+        ("discoverer_type", "client"),
+        [
+            (CursorDiscoverer, ClientType.CURSOR),
+            (WindsurfDiscoverer, ClientType.WINDSURF),
+            (ClaudeDesktopDiscoverer, ClientType.CLAUDE_DESKTOP),
+        ],
+    )
+    def test_parses_shared_remote_transport_fixture(
+        self,
+        fixtures_dir: Path,
+        discoverer_type: type[ConfigDiscoverer],
+        client: ClientType,
+    ) -> None:
+        config = fixtures_dir / "discovery" / "remote_transports.json"
+        servers = discoverer_type().parse(config)
+        by_name = {server.name: server for server in servers}
+
+        legacy = by_name["legacy-events"]
+        assert legacy.client == client
+        assert legacy.transport == TransportType.SSE
+        assert legacy.url == "https://example.invalid/events"
+        assert set(legacy.headers_keys) == {"Authorization", "X-Client-Tag"}
+        assert "deprecated_sse_transport" in {
+            finding.finding_type for finding in config_health_findings([legacy])
+        }
+
+        http = by_name["streamable-http"]
+        assert http.transport == TransportType.HTTP
+        assert http.url == "https://example.invalid/mcp"
+        assert set(http.headers_keys) == {"Authorization", "X-Client-Tag"}
+        assert "deprecated_sse_transport" not in {
+            finding.finding_type for finding in config_health_findings([http])
+        }
+
+        stdio = by_name["local-stdio"]
+        assert stdio.transport == TransportType.STDIO
+        assert stdio.command == "python"
+        assert stdio.args == ["-m", "example_server"]
+        assert stdio.headers_keys == []
 
 
 # ---------------------------------------------------------------------------
