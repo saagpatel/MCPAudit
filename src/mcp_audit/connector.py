@@ -6,6 +6,7 @@ import logging
 import os
 import re
 import threading
+import time
 import traceback
 from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
@@ -17,12 +18,13 @@ import anyio
 from mcp import Client, StdioServerParameters
 from mcp.client.sse import sse_client
 from mcp.client.stdio import stdio_client
-from mcp.types import ListPromptsResult, ListResourcesResult, ListToolsResult
+from mcp.types import Implementation, ListPromptsResult, ListResourcesResult, ListToolsResult
 from mcp.types import Prompt as SdkPrompt
 from mcp.types import Resource as SdkResource
 from mcp.types import Tool as SdkTool
 from mcp.types import ToolAnnotations as SdkToolAnnotations
 
+from mcp_audit import __version__
 from mcp_audit.models import (
     CanarySummary,
     CapabilityTarget,
@@ -44,6 +46,8 @@ from mcp_audit.terminal_text import TerminalSafeLogFilter, strip_controls
 
 logger = logging.getLogger(__name__)
 logger.addFilter(TerminalSafeLogFilter())
+
+_CLIENT_INFO = Implementation(name="mcp-audit", version=__version__)
 
 _SSE_URL_SUFFIX = re.compile(r"(https?://[^\s?#]+)[?#][^\s]*", re.IGNORECASE)
 _SSE_URL_USERINFO = re.compile(r"(https?://)[^/\s]*@", re.IGNORECASE)
@@ -314,8 +318,13 @@ class ServerConnector:
         if canary_calls:
             if not 1 <= canary_calls <= 100:
                 raise ValueError("Canary calls must be between 1 and 100.")
-            audit.canary = CanarySummary(requested_calls=canary_calls)
+            audit.canary = CanarySummary(
+                requested_calls=canary_calls,
+                call_budget=canary_calls,
+                client_identity=f"{_CLIENT_INFO.name}/{_CLIENT_INFO.version}",
+            )
             probe = _CanaryProbe(audit, canary_calls, safe_tools)
+        started = time.monotonic()
         try:
             with anyio.move_on_after(self.timeout) as cancel_scope:
                 if config.transport == TransportType.STDIO:
@@ -391,6 +400,9 @@ class ServerConnector:
                 connection_status="failed",
                 connection_error=message,
             )
+        finally:
+            if audit.canary:
+                audit.canary.elapsed_seconds = time.monotonic() - started
 
     async def _connect_stdio(
         self, config: ServerConfig, probe: _CanaryProbe | None = None
@@ -404,7 +416,7 @@ class ServerConnector:
             env=None,
         )
         with _capture_stderr(config.name) as errlog:
-            async with Client(stdio_client(params, errlog=errlog)) as client:
+            async with Client(stdio_client(params, errlog=errlog), client_info=_CLIENT_INFO) as client:
                 return await self._inspect_session(client, config.name, probe)
 
     async def _connect_http(
@@ -414,7 +426,7 @@ class ServerConnector:
             raise ValueError(f"Server {config.name} has no URL for HTTP transport")
 
         # mcp 2.1.1 maps Client(str) to streamable_http_client.
-        async with Client(config.url) as client:
+        async with Client(config.url, client_info=_CLIENT_INFO) as client:
             return await self._inspect_session(client, config.name, probe)
 
     async def _connect_sse(
@@ -428,7 +440,7 @@ class ServerConnector:
         for name in _SSE_LOGGER_NAMES:
             logging.getLogger(name).addFilter(_SSE_LOG_FILTER)
         # Client(str) is Streamable HTTP; legacy SSE must pass sse_client as Transport.
-        async with Client(sse_client(config.url)) as client:
+        async with Client(sse_client(config.url), client_info=_CLIENT_INFO) as client:
             return await self._inspect_session(client, config.name, probe)
 
     async def _inspect_session(

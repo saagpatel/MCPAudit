@@ -190,7 +190,7 @@ class SarifGenerator:
         except PackageNotFoundError:
             tool_version = "0.0.0"
 
-        return {
+        document: dict[str, Any] = {
             "version": "2.1.0",
             "$schema": _SARIF_SCHEMA,
             "runs": [
@@ -207,6 +207,25 @@ class SarifGenerator:
                 }
             ],
         }
+        canaries = [
+            {
+                "server": audit.server.name,
+                "status": audit.canary.status,
+                "completed_calls": audit.canary.completed_calls,
+                "call_budget": audit.canary.call_budget,
+                "client_identity": audit.canary.client_identity,
+                "elapsed_seconds": audit.canary.elapsed_seconds,
+                "not_excluded": audit.canary.not_excluded,
+                "not_excluded_descriptions": audit.canary.not_excluded_descriptions,
+            }
+            for audit in report.audits
+            if audit.canary is not None
+        ]
+        if canaries:
+            document["runs"][0]["invocations"] = [
+                {"executionSuccessful": True, "properties": {"mcpAuditCanary": canaries}}
+            ]
+        return document
 
     def _make_rules(self) -> list[dict[str, Any]]:
         """One driver rule per PermissionCategory plus injection rules MCP007/MCP008."""
