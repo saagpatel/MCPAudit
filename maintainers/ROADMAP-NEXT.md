@@ -8,14 +8,14 @@ dashboard examples. The field-report intake path has a dedicated public issue
 template. The next line should collect external reports before using a beta
 label or changing scoring semantics.
 
-Tracked `1.5` evidence-intake work lives in `docs/1.5-EVIDENCE-INTAKE.md`,
-with the release decision in `docs/1.5-RELEASE-DECISION.md`.
-Beta-readiness evidence lives in `docs/BETA-READINESS-EVIDENCE.md`.
-Field-report evidence lives in `docs/FIELD-REPORTS.md`.
+Tracked `1.5` evidence-intake work lives in `archive/1.5-EVIDENCE-INTAKE.md`,
+with the release decision in `archive/1.5-RELEASE-DECISION.md`.
+Beta-readiness evidence lives in `maintainers/BETA-READINESS-EVIDENCE.md`.
+Field-report evidence lives in `maintainers/FIELD-REPORTS.md`.
 External beta-evidence tracking lives in
 <https://github.com/saagpatel/MCPAudit/milestone/4>.
 The contributor request packet lives in
-`docs/EXTERNAL-FIELD-REPORT-REQUEST.md`.
+`maintainers/EXTERNAL-FIELD-REPORT-REQUEST.md`.
 
 ## 1. Config Health Depth
 

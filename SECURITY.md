@@ -12,7 +12,7 @@ Managed state and temporary paths may not be symlinks. Apply and rollback use a
 persistent program-owned fixture lock; processes that ignore that lock remain
 outside the harness guarantee. Do not point these commands at normal MCP
 configuration or treat their proof as authority for a real server. See
-`docs/EVIDENCE-ENFORCEMENT-THREAT-MODEL.md`.
+`docs/labs/EVIDENCE-ENFORCEMENT-THREAT-MODEL.md`.
 
 ## Experimental Agent UI contract audit
 
@@ -33,7 +33,7 @@ cannot be erased by replacement or surface deletion.
 A passing fixture report proves only internal consistency for the supported
 static contract. It does not prove host sandboxing, CSP enforcement, transport
 integrity, authorization, renderer behavior, interoperability, or real-workflow
-safety. See `docs/AGENT-UI-CONTRACT-AUDITOR.md`.
+safety. See `docs/labs/AGENT-UI-CONTRACT-AUDITOR.md`.
 
 ## Experimental OAuth transcript audit
 
@@ -56,7 +56,7 @@ A passing report proves only that the supplied synthetic transcript satisfies
 the implemented observable bindings. Audience evidence is supplied evidence,
 not signature or introspection validation. The auditor does not prove PKCE,
 client-authentication strength, IdP integrity, consent, live authorization, or
-production security. See `docs/OAUTH-TRANSCRIPT-AUDITOR.md`.
+production security. See `docs/labs/OAUTH-TRANSCRIPT-AUDITOR.md`.
 
 ## Experimental authorization posture adoption
 
@@ -79,7 +79,7 @@ and remote authority stay explicitly unverified or producer-asserted. A
 policy-review-only report does not authenticate the producer, establish current
 applicability, prove Registry authority or remote metadata, authorize access,
 provide credentials, prove runtime security, or establish production safety.
-See `docs/AUTHORIZATION-POSTURE-ADOPTION.md`.
+See `docs/labs/AUTHORIZATION-POSTURE-ADOPTION.md`.
 
 MCPAudit is itself a security tool. This document covers two distinct concerns:
 
@@ -181,7 +181,7 @@ The observer also does not prove host-kernel isolation or safety outside the
 declared surfaces. A valid capsule does not prove that an operator independently
 obtained the root hash; callers must supply and protect that trust input
 themselves. See
-[`docs/SECURITY-REVIEW.md`](docs/SECURITY-REVIEW.md) for the detailed boundary.
+[`maintainers/SECURITY-REVIEW.md`](maintainers/SECURITY-REVIEW.md) for the detailed boundary.
 
 ---
 

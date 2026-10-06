@@ -55,4 +55,4 @@ places where untrusted MCP metadata can affect reports.
 
 Repeat this review before future releases that change config parsing,
 connection lifecycle, redaction, scoring, SARIF generation, or LLM behavior.
-Track the release gate in `docs/STABLE-READINESS.md`.
+Track the release gate in `maintainers/STABLE-READINESS.md`.

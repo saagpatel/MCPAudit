@@ -208,7 +208,7 @@ Escalation compares credential-redacted descriptions and schemas on both sides,
 including legacy raw snapshots, so changes confined to redacted spans do not
 produce escalation findings. Raw tool-schema hashes still detect metadata drift.
 Pin launch snapshots apply the same argv and URL rules by default. See
-[`PIN-MAINTENANCE.md`](PIN-MAINTENANCE.md) for the raw-argument escape hatch
+[`PIN-MAINTENANCE.md`](../maintainers/PIN-MAINTENANCE.md) for the raw-argument escape hatch
 and provenance comparison semantics.
 
 ## Synthetic performance measurements
@@ -299,7 +299,7 @@ annotations, omitted null/empty optional fields, served schemas, sorted compact
 UTF-8 JSON with a trailing newline and rejected NaN/Infinity. Canary tool
 comparisons use the same normalized tool form and serializer. Legacy pins still
 compare only name, description and input schema with their original v1 bytes;
-scans never upgrade them. See [Pin Maintenance](PIN-MAINTENANCE.md) for migration.
+scans never upgrade them. See [Pin Maintenance](../maintainers/PIN-MAINTENANCE.md) for migration.
 
 Escalation findings add `kind: annotation_delta` and an `annotation_changes`
 list of hint names (empty for other kinds). This is HIGH `MCP018` for
@@ -874,7 +874,7 @@ Diagnostics use stderr. Exit `0` means verified success or verified no-op, exit
 `1` means a fail-closed policy/runtime result, and exit `2` means invalid input.
 Invalid-input messages are generic so rejected values are not reflected into
 stdout or stderr; unexpected exceptions also become one fail-closed JSON object.
-See `docs/EVIDENCE-ENFORCEMENT-AGT-FIXTURE.md` for command-specific fields and
+See `docs/labs/EVIDENCE-ENFORCEMENT-AGT-FIXTURE.md` for command-specific fields and
 the exact target-version policy.
 
 ## Proof Before Action contracts
@@ -1031,7 +1031,7 @@ host consent, CSP enforcement, server authorization, transport ordering,
 sandboxing, authentication, or any real user workflow. A2UI, MCP Apps,
 OpenAI-specific extensions, AG-UI, and WebMCP remain distinct; the auditor does
 not claim translation or interoperability. See
-`docs/AGENT-UI-CONTRACT-AUDITOR.md`.
+`docs/labs/AGENT-UI-CONTRACT-AUDITOR.md`.
 
 ## MCP OAuth Transcript Auditor v1 (experimental)
 
@@ -1084,7 +1084,7 @@ A passing report proves only the implemented binding invariants in the
 supplied synthetic transcript. It does not prove token signature validity,
 PKCE correctness, client-authentication strength, IdP integrity, consent,
 real-world authorization, or production security. See
-`docs/OAUTH-TRANSCRIPT-AUDITOR.md`.
+`docs/labs/OAUTH-TRANSCRIPT-AUDITOR.md`.
 
 ## MCP Authorization Posture Adoption v1 (experimental)
 
@@ -1119,7 +1119,7 @@ is explicitly `producer-declared-ready|producer-declared-unknown`; schema
 validation does not authenticate the producer, timestamp, Registry export,
 remote responses, or current applicability. The consumer cannot contact an MCP
 endpoint, use credentials, run OAuth, authorize a scan, or change a trust grade. See
-`docs/AUTHORIZATION-POSTURE-ADOPTION.md`.
+`docs/labs/AUTHORIZATION-POSTURE-ADOPTION.md`.
 ## MCP Cache Contract Auditor v1 (experimental)
 
 The offline `mcp-audit cache-contract` command group is separate from connected
@@ -1194,7 +1194,7 @@ observable expiry or a validated invalidation, only until a later valid
 successful refresh supersedes that failed attempt. A passing fixture report
 does not prove HTTP caching, performance, server/client/proxy behavior,
 authorization, confidentiality, notification delivery, or any production
-cache. See `docs/CACHE-CONTRACT-AUDITOR.md`.
+cache. See `docs/labs/CACHE-CONTRACT-AUDITOR.md`.
 
 ## MCP Task Time Machine v1 (experimental)
 
@@ -1247,7 +1247,7 @@ network reads. The CLI reads only the exact regular non-symlink fixture path or
 uses an in-memory built-in. A passing report proves only supported invariants in
 the supplied synthetic scenario; it does not prove live MCP, SDK, host,
 persistence, authorization, notification, adoption, interoperability, or
-production behavior. See `docs/MCP-TASK-TIME-MACHINE.md`.
+production behavior. See `docs/labs/MCP-TASK-TIME-MACHINE.md`.
 
 ## MCP Result Parcel Lab v1 (experimental)
 
@@ -1279,7 +1279,7 @@ The lab profiles MCP `2026-07-28`: inline complete results and resource links
 are core; `io.modelcontextprotocol/tasks` is a separately negotiated
 extension; chunk streams and progress-as-delivery accept only provider/local
 extension classifications. No result, transport, host, credential, remote
-resource, or object store is inspected. See `docs/RESULT-PARCEL-LAB.md`.
+resource, or object store is inspected. See `docs/labs/RESULT-PARCEL-LAB.md`.
 
 ## SafeForge Manifest v0
 

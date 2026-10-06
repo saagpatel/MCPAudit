@@ -92,7 +92,7 @@ policy failed.
 ## 5. Keep The Loop Calibrated
 
 When MCPAudit misses something or reports too much, turn the smallest redacted
-example into a fixture. Use `docs/FEEDBACK-TO-FIXTURES.md` for the intake path.
+example into a fixture. Use `maintainers/FEEDBACK-TO-FIXTURES.md` for the intake path.
 
 Do not change scoring defaults from one anecdote. Prefer several fixtures that
 show the same false positive, false negative, output-shape issue, or policy gap.
