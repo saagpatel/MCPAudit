@@ -31,7 +31,8 @@ AUDIT_FIELDS = set(
     "capability_findings risk_score non_tool_risk has_annotations annotation_coverage "
     "injection_findings ssrf_findings egress_findings drift_findings trifecta_findings "
     "escalation_findings provenance_findings integrity_findings package_verify_findings "
-    "artifact_verify_findings llm_analysis canary".split()
+    "artifact_verify_findings llm_analysis canary"
+    " warnings".split()  # check_server adds report warnings additively (P1-11)
 )
 SERVER_FIELDS = set(
     "name client config_path project_path scope command args env_keys transport url headers_keys".split()
@@ -157,7 +158,7 @@ def payload(result: dict[str, Any]) -> Any:
 
 
 def audit_contract(audit: dict[str, Any], status: str = "connected") -> None:
-    assert set(audit) == AUDIT_FIELDS
+    assert set(audit) == AUDIT_FIELDS, sorted(set(audit) ^ AUDIT_FIELDS)
     assert set(audit["server"]) == SERVER_FIELDS
     assert audit["server"]["name"] == "Target"
     assert audit["connection_status"] == status
