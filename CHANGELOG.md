@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add canary client identity, elapsed seconds, call budget, and stable
   `not_excluded` limitations to JSON; show bounded coverage in terminal, HTML,
   and SARIF invocation properties, including clean exercises.
+- Isolated hostile stdio fixtures and an opt-in `perf` regression gate for
+  500 servers, large descriptions, oversized frames, and orphan children.
+  Nightly and on-demand CI retains wall/RSS/process measurements; cumulative
+  target profiles support the planned detector and transport fixes. Document
+  connected-scan threats and the baseline's known orphan allowance.
+  Require both server records and the child record for orphan-cleanup coverage,
+  and analyzer invocation/tool coverage plus expected description findings.
 
 ### Fixed
 
