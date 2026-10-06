@@ -142,7 +142,8 @@ class TestTerminalRender:
         assert "Scanned 1 server across 1 client." in output
         assert "1 high-risk server." in output
 
-        con, buf = _make_console()
+        buf = io.StringIO()
+        con = Console(file=buf, force_terminal=True, no_color=False, width=120, highlight=False)
         report = _base_report([_make_audit("safe", risk=0.0)])
         ReportGenerator(console=con).render_terminal(report)
         assert "\x1b[1;32m0 high-risk servers." in buf.getvalue()
