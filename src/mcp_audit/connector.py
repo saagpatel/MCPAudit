@@ -287,7 +287,8 @@ class ServerConnector:
                                 code="surface_listing_incomplete",
                                 message=(
                                     f"Server '{config.name}': {message} "
-                                    "Reduce the listing to at most 20 pages and rerun the scan."
+                                    "A listing this large, or one that never ends, can hide surfaces; "
+                                    "review the server before trusting this result."
                                 ),
                                 servers=[config.name],
                             )

@@ -133,7 +133,7 @@ admitted. In non-canary scans, prompt/resource page-limit exhaustion adds
 non-canary listing-failure behavior is unchanged. Page-limit warnings use
 plain surface labels (for example, "Prompt listing exceeds the 20-page limit;
 coverage is incomplete."). The non-canary scan warning also names the server,
-advises reducing the listing to at most 20 pages and rerunning, and is printed
+advises reviewing the server before trusting the result, and is printed
 to the console. Other canary listing errors retain their exception type.
 
 `--canary-calls` bounds tool exercise requests (K), not metadata reads. The

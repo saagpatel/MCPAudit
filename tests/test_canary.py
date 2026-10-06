@@ -407,9 +407,10 @@ async def test_non_canary_unadvertised_page_limit_is_a_scan_warning(surface: str
     label = "Prompt" if surface == "prompts" else "Resource"
     assert warning.message == (
         f"Server '{config.name}': {label} listing exceeds the 20-page limit; coverage is incomplete. "
-        "Reduce the listing to at most 20 pages and rerun the scan."
+        "A listing this large, or one that never ends, can hide surfaces; "
+        "review the server before trusting this result."
     )
-    assert warning.message in console.export_text()
+    assert warning.message in " ".join(console.export_text().split())
     assert "_ListingPageLimit" not in report.model_dump_json()
 
 
