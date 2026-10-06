@@ -59,6 +59,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in SARIF notifications, full-report, findings and single-server MCP results.
   Preserve the high-risk tool's legacy JSON list; its description directs
   callers to full-report and findings tools for coverage warnings.
+  Require execution evidence for completion, mark discovery parse failures
+  as partial coverage, and account for applicable and verified package references.
+  Preserve source configuration locations in extended SARIF, including parse failures.
 
 ## [2.8.1] - 2026-10-06
 

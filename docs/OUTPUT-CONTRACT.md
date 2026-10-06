@@ -463,6 +463,12 @@ Missing keys and absent or empty coverage maps are unknown, never passed.
 Old reports load with an empty map; rendering does not infer completion from
 zero findings or connection counts. `schema_version` remains `1`.
 
+Completion requires evidence that the check executed over every applicable
+input. A collected configuration parse failure makes every enabled check
+`partial`, including configuration health and fleet checks: servers in the
+unparseable file are unknown inputs, even if all discovered servers connected.
+Optional checks that were not enabled remain `not_requested`.
+
 Config-only scans record metadata and metadata-dependent checks as `not_run`
 with reason `connections disabled`; permission inference from configuration
 is `partial`. Baseline-dependent checks record missing per-server baselines
@@ -481,6 +487,16 @@ This is conservative per-server coverage because the warning does not identify
 individual surfaces. Metadata and configuration-health coverage remain complete
 when their inspection completed; truncation alone does not reduce coverage for
 checks that use full metadata.
+
+Package verification requires current package references with usable baselines
+for the exact configured package/version and successful registry hash or byte
+verification for every reference. A removed, changed, or floated version with
+no applicable baseline is `not_run`; mixed applicability or an unavailable
+fetch is `partial`. A nonempty old baseline and an empty findings list do not
+prove verification ran. Integrity checks are `partial` when a pinned artifact
+cannot be hashed. Runtime completion also requires complete metadata, no
+exercise warnings, and completion of the bounded call budget. LLM completion
+requires an admissible summary accounting for every candidate tool.
 
 `ServerAudit.connection_status` adds `partial` for an initialized connection
 whose metadata listing was incomplete. Existing `connected`, `failed`,
@@ -525,7 +541,11 @@ their previous behavior.
 
 `config_health_findings` is an additive top-level list for pre-connection config
 diagnostics. Findings include `finding_type`, `severity`, optional
-`server_name`, `summary`, `details`, and `remediation`. Current finding types
+`server_name`, `summary`, `details`, and `remediation`. Additive `config_paths`
+lists the source configuration paths, including the path of an unparseable
+configuration. Grouped duplicate/conflicting-name findings retain every
+applicable source; individual findings retain their own source. Old reports
+default to an empty list when source locations are unavailable. Current finding types
 include duplicate server names, missing stdio commands, deprecated SSE
 transports, shell-wrapper launches, remote endpoints, remote URL arguments,
 missing local command paths, project/global server-name conflicts, conflicting
@@ -1157,8 +1177,11 @@ CLI `--sarif-profile extended` (Python `generate(report, profile="extended")`)
 adds configuration-health results with stable IDs `MCP-CH-{FINDING-TYPE}`:
 the existing `finding_type` is uppercased, and underscores become hyphens
 (for example, `remote_endpoint` becomes `MCP-CH-REMOTE-ENDPOINT`). Findings
-retain their severity, remediation, and configuration location; scores and
-JSON config-health fields are unchanged.
+retain their severity and remediation. Applicable `config_paths` are emitted
+as `locations[].physicalLocation.artifactLocation.uri`, including parse failures
+with no parsed server. Results from old reports without source paths omit
+locations rather than inventing them. Scores and existing JSON config-health
+fields are unchanged.
 
 SARIF output uses stable MCP rule IDs:
 
