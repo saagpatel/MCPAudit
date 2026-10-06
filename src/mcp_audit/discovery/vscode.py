@@ -13,7 +13,7 @@ import platform
 from pathlib import Path
 from typing import Any
 
-from mcp_audit.discovery.base import ConfigDiscoverer, ConfigParseError
+from mcp_audit.discovery.base import ConfigDiscoverer, ConfigParseError, is_project_config
 from mcp_audit.models import ClientType, ServerConfig, TransportType
 from mcp_audit.terminal_text import TerminalSafeLogFilter
 
@@ -62,6 +62,7 @@ def _parse_mcp_servers_dict(
                     client=ClientType.VSCODE,
                     config_path=config_path,
                     project_path=None,
+                    scope="project" if is_project_config(Path(config_path)) else "workstation",
                     command=entry.get("command") or None,
                     args=[str(a) for a in args],
                     env_keys=env_keys,

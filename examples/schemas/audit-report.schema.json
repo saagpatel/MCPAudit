@@ -1624,6 +1624,15 @@
           "default": null,
           "title": "Project Path"
         },
+        "scope": {
+          "default": "workstation",
+          "enum": [
+            "workstation",
+            "project"
+          ],
+          "title": "Scope",
+          "type": "string"
+        },
         "command": {
           "anyOf": [
             {

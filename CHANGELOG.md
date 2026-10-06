@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   compact canonical serializer with canary surfaces. Keep legacy v1 hashes
   active without automatic migration, warn about uncovered fields and label
   them in refresh previews before an explicit upgrade.
+- Discover and report project-scope MCP configs without spawning their commands
+  or contacting their endpoints by default. `scan` and `watch` require
+  `--connect-project-configs` to connect them; `pin` (including refresh) and
+  `serve` tools also skip them. Workstation configs retain their connection
+  default, and the Action and pre-commit hook remain config-only by default.
+  Reports add `audits[].server.scope` and a `project_config_not_connected`
+  warning with the shell-quoted command and arguments (credentials redacted),
+  or the skipped remote endpoint.
 
 ### Fixed
 
