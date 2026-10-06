@@ -3,6 +3,8 @@
 import re
 from time import perf_counter
 
+import pytest
+
 from mcp_audit.analyzer import PermissionAnalyzer
 from mcp_audit.models import (
     Confidence,
@@ -19,7 +21,10 @@ from tests.conftest import make_tool
 analyzer = PermissionAnalyzer()
 
 
-def test_category_matcher_preserves_all_overlapping_pattern_scores_and_evidence() -> None:
+@pytest.mark.parametrize("paths", [None, ["/name", "/description", "/input_schema/title"]])
+def test_category_matcher_preserves_all_overlapping_pattern_scores_and_evidence(
+    paths: list[str] | None,
+) -> None:
     # Reference the old independent searches, including multiple strengths,
     # repeated occurrences and overlaps at the same or different offsets.
     patterns = [
@@ -29,19 +34,22 @@ def test_category_matcher_preserves_all_overlapping_pattern_scores_and_evidence(
     strengths_scores = {"strong": 3, "moderate": 2, "weak": 1}
     for text in samples:
         sources = [(text, 3), (text, 2), ("portfolio terms evaluation", 1)]
-        expected: dict[PermissionCategory, tuple[int, list[str]]] = {}
+        expected: dict[PermissionCategory, tuple[int, list[str], list[str]]] = {}
         for category, strengths in PERMISSION_PATTERNS.items():
             score = 0
             evidence: list[str] = []
+            matched_paths: list[str] = []
             for strength, group in strengths.items():
                 for pattern in group:
-                    for source, weight in sources:
+                    for index, (source, weight) in enumerate(sources):
                         if re.search(rf"(?<![a-z]){re.escape(pattern)}(?![a-z])", source):
                             score += strengths_scores[strength] * weight
                             if pattern not in evidence:
                                 evidence.append(pattern)
-            expected[category] = (score, evidence)
-        assert analyzer._score_keywords(sources) == expected, text
+                            if paths is not None and paths[index] not in matched_paths:
+                                matched_paths.append(paths[index])
+            expected[category] = (score, evidence, matched_paths)
+        assert analyzer._score_keywords(sources, paths) == expected, text
 
 
 def test_five_megabyte_description_analysis_stays_under_one_second() -> None:
