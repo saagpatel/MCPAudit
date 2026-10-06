@@ -333,4 +333,6 @@ def test_benign_non_tty_output_is_unchanged(no_color: bool) -> None:
     console = Console(file=io.StringIO(), force_terminal=False, no_color=no_color, width=120, highlight=False)
     ReportGenerator(console).render_terminal(report, verbose=True)
     assert isinstance(console.file, io.StringIO)
-    assert console.file.getvalue() == Path("tests/fixtures/reports/benign_terminal.txt").read_text()
+    output = console.file.getvalue()
+    assert output.count("Policy Gate Failed") == 1
+    assert output == Path("tests/fixtures/reports/benign_terminal.txt").read_text()
