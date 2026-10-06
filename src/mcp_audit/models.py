@@ -139,6 +139,7 @@ class ShadowingSeverity(StrEnum):
 class EscalationKind(StrEnum):
     CAPABILITY = "capability"  # Tool gained a dangerous permission category vs its pin baseline
     DESCRIPTION_INJECTION = "description_injection"  # Description gained injection pattern(s)
+    ANNOTATION_DELTA = "annotation_delta"  # Security-relevant annotation hint flip
 
 
 class EscalationSeverity(StrEnum):
@@ -234,6 +235,10 @@ class ToolInfo(BaseModel):
     description: str | None = None
     input_schema: dict[str, object] | None = None
     annotations: ToolAnnotations | None = None
+    title: str | None = None
+    output_schema: dict[str, object] | None = None
+    icons: list[dict[str, object]] | None = None
+    meta: dict[str, object] | None = None
 
 
 class PromptArgumentInfo(BaseModel):
@@ -584,6 +589,7 @@ class EscalationFinding(BaseModel):
     tool_name: str
     gained_categories: list[PermissionCategory] = Field(default_factory=list)
     gained_patterns: list[str] = Field(default_factory=list)  # injection pattern names
+    annotation_changes: list[str] = Field(default_factory=list)  # hint names, never raw metadata
     description: str
 
     @computed_field  # type: ignore[prop-decorator]

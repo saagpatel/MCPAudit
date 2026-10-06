@@ -20,7 +20,6 @@ CORPUS_PATH = HERE / "corpus.json"
 CORPUS = cast(list[dict[str, object]], json.loads(CORPUS_PATH.read_text())["cases"])
 
 _GAP_REASONS = {
-    "escalation-annotations-only": "gap 21: fixed by P1-2",
     "lying-annotations": "gap 9: fixed by P1-3",
     "unicode-tag-block": "gap 4: fixed by P1-5",
     "homoglyph-instructions": "gap 5: fixed by P1-5",
@@ -248,7 +247,6 @@ async def test_pin_drift_control(isolated_pin_store: Callable[..., PinStore]) ->
 
 @pytest.mark.redteam
 @pytest.mark.anyio
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="gap 21: fixed by P1-2")
 async def test_annotation_flip_is_drift_and_escalation(
     isolated_pin_store: Callable[..., PinStore],
 ) -> None:
@@ -257,3 +255,6 @@ async def test_annotation_flip_is_drift_and_escalation(
     audit = await _scan_pinned_case(case, isolated_pin_store)
     assert any(f.status.value == "changed" for f in audit.drift_findings)
     assert any(f.kind.value == "capability" for f in audit.escalation_findings)
+    assert any(
+        f.kind.value == "annotation_delta" and f.severity.value == "high" for f in audit.escalation_findings
+    )

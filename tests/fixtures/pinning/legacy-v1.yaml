@@ -1,0 +1,10 @@
+servers:
+  fixture:
+    tools:
+      status:
+        hash: sha256:f875330d79c3925e1dec0e0b46aad06aa24f60ac4967358d28bc4a09c1678a11
+        pinned_at: '2026-01-01T00:00:00+00:00'
+        snapshot:
+          description: Report synthetic status.
+          input_schema:
+            type: object

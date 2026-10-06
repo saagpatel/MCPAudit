@@ -536,6 +536,13 @@
           "title": "Gained Patterns",
           "type": "array"
         },
+        "annotation_changes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Annotation Changes",
+          "type": "array"
+        },
         "description": {
           "title": "Description",
           "type": "string"
@@ -554,7 +561,8 @@
     "EscalationKind": {
       "enum": [
         "capability",
-        "description_injection"
+        "description_injection",
+        "annotation_delta"
       ],
       "title": "EscalationKind",
       "type": "string"
@@ -1933,6 +1941,60 @@
             }
           ],
           "default": null
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        },
+        "output_schema": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Schema"
+        },
+        "icons": {
+          "anyOf": [
+            {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Icons"
+        },
+        "meta": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Meta"
         }
       },
       "required": [
