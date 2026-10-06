@@ -19,6 +19,7 @@ from typing import Any
 
 from mcp_audit.coverage import missing_checks
 from mcp_audit.models import AuditReport, ServerAudit
+from mcp_audit.normalize import render_invisibles
 from mcp_audit.taxonomy import format_rule_of_two
 from mcp_audit.terminal_text import strip_controls
 
@@ -544,4 +545,4 @@ class HtmlReportGenerator:
         return "; ".join(f"{srv}/{tool}" for srv, tool in pairs)
 
     def _esc(self, value: str) -> str:
-        return escape(strip_controls(value), quote=True)
+        return escape(render_invisibles(strip_controls(value)), quote=True)

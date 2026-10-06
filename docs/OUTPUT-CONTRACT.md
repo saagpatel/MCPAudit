@@ -259,14 +259,34 @@ Tool name and description permission weights remain 3 and 2; property names
 and the added text have weight 1. HIGH confidence still requires a score of 6.
 Annotation suppression behavior is unchanged.
 
-`injection_findings[].field_path` is an optional JSON Pointer into the tool or
-prompt's report object (for example `/annotations/title`,
+`injection_findings[].field_path` is an optional JSON Pointer into the report
+object for a tool, prompt or resource (for example `/annotations/title`,
 `/input_schema/properties/options/description`, or
-`/argument_details/0/description`). It is null for older findings, static
-resource findings, and runtime result/body findings. `permissions[].field_paths`
+`/argument_details/0/description`). It is null for older findings, legacy
+resource phrase findings, and runtime result/body findings. `permissions[].field_paths`
 lists all matching tool field pointers for an aggregated keyword finding;
 annotation findings and legacy reports default to an empty list. Existing
 evidence strings are retained.
+
+Text matching for static injection, runtime result/body rules and shadowing
+uses shared NFKC, removal of `Cf` format characters, Unicode tag-block characters
+(U+E0000–U+E007F) and variation selectors (U+FE00–U+FE0F, U+E0100–U+E01EF),
+then a curated confusable fold. This does not decode tag payloads.
+
+`OBFUSCATED_METADATA` is a MEDIUM structural injection finding (SARIF `MCP008`).
+Its description names the codepoint classes and source field pointer.
+Invisible classes trigger independently of phrase matches; curated Greek or
+Cyrillic confusables trigger when mixed into a Latin-shaped word. Pure non-Latin
+names, ordinary accented Latin text, and NFKC compatibility changes alone do
+not trigger this anomaly. Runtime findings describe `/body` and retain the
+existing withheld-excerpt marker and null `field_path`.
+
+Static `matched_text` excerpts and source capability fields retain their
+original Unicode codepoints rather than the matching form. Terminal and HTML
+strings and SARIF result messages display invisibles as `‹U+E0020›`-style markers;
+JSON and SARIF structured properties retain source values. No existing field
+is removed or renamed and `schema_version` is unchanged.
+
 Property-name evidence points to that property's schema object. Pointer tokens
 escape `~` as `~0` and `/` as `~1`.
 Nested property-name matches also add `schema property '<pointer>'` to existing
@@ -587,6 +607,23 @@ transports, shell-wrapper launches, remote endpoints, remote URL arguments,
 missing local command paths, project/global server-name conflicts, conflicting
 server definitions, package-runner source review, and credential-heavy configs.
 These findings do not affect `risk_score.composite`.
+Config decoding also emits HIGH `config_parse_failure` for discovered files
+that are unreadable, non-regular, invalid, or contain wrong-typed server maps;
+HIGH `malformed_server_entry` for rejected individual entries (with
+`server_name` when available); and HIGH `duplicate_config_key` when object
+keys repeat at any depth. Duplicate-key details give the count and explain
+that the last values are retained; earlier definitions were not audited.
+Valid sibling entries remain in the scan when individual entries are malformed.
+In-memory config-only scans retain the same parsing diagnostics and coverage as
+file-based scans, including partial coverage for malformed entries and duplicate keys.
+Diagnostics never include entry values or parser source excerpts.
+Explicit `--config` files with no supported server map, empty text, invalid
+encoding, or other read/parse failures are hard errors. Supported layouts are
+`mcpServers`, `servers`, `mcp.servers`, and `projects.*.mcpServers`.
+An empty supported map is a valid zero-server scan. These diagnostics use the
+existing finding fields; `schema_version` is unchanged.
+The presence of `projects` alone is insufficient: at least one project must
+contain `mcpServers` when no other supported server map exists.
 Policies may opt in to failing on this signal with `fail_on.config_health`; the
 default broad `fail_on.severity` shortcut does not include config-health
 findings, so existing policy files keep their previous behavior.

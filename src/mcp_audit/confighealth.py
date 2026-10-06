@@ -66,12 +66,14 @@ def config_health_findings(
     for error in parse_errors:
         findings.append(
             ConfigHealthFinding(
-                finding_type="config_parse_failure",
+                finding_type=error.finding_type,
                 severity=ConfigHealthSeverity.HIGH,
-                server_name=None,
+                server_name=error.server_name,
                 summary=(
                     f"Could not parse {error.client.value} config at {error.path}; "
                     "servers defined there were not audited."
+                    if error.finding_type == "config_parse_failure"
+                    else f"Config diagnostic in {error.client.value} config at {error.path}."
                 ),
                 details=[redact_text(error.reason)],
                 remediation="Repair or restore this config file, then re-run the scan.",

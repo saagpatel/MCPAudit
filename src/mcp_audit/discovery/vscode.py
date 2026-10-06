@@ -7,14 +7,13 @@ Checks (in order):
 4. ~/.config/Code/User/settings.json (Linux, mcp.servers key)
 """
 
-import json
 import logging
 import platform
 from pathlib import Path
-from typing import Any
 
-from mcp_audit.discovery._entry import parse_server_entry
-from mcp_audit.discovery.base import ConfigDiscoverer, ConfigParseError, is_project_config
+from mcp_audit.discovery._config import read_config
+from mcp_audit.discovery._entry import parse_server_map
+from mcp_audit.discovery.base import ConfigDiscoverer, ConfigParseError
 from mcp_audit.models import ClientType, ServerConfig
 from mcp_audit.terminal_text import TerminalSafeLogFilter
 
@@ -29,32 +28,6 @@ def _settings_paths() -> list[Path]:
     return [Path.home() / ".config" / "Code" / "User" / "settings.json"]
 
 
-def _parse_mcp_servers_dict(
-    mcp_servers: Any,
-    config_path: str,
-) -> list[ServerConfig]:
-    """Parse a standard mcpServers dict into ServerConfig list."""
-    if not isinstance(mcp_servers, dict):
-        return []
-    results: list[ServerConfig] = []
-    for name, entry in mcp_servers.items():
-        if not isinstance(entry, dict):
-            continue
-        try:
-            results.append(
-                parse_server_entry(
-                    name,
-                    entry,
-                    config_path,
-                    ClientType.VSCODE,
-                    scope="project" if is_project_config(Path(config_path)) else "workstation",
-                )
-            )
-        except Exception:
-            logger.debug("Failed to parse server %r in %s", name, config_path)
-    return results
-
-
 class VSCodeDiscoverer(ConfigDiscoverer):
     """Discovers MCP servers from VS Code config files."""
 
@@ -66,28 +39,18 @@ class VSCodeDiscoverer(ConfigDiscoverer):
         paths.extend(_settings_paths())
         return paths
 
-    def parse(self, path: Path) -> list[ServerConfig]:
-        config_path = str(path)
-        try:
-            data: Any = json.loads(path.read_text(encoding="utf-8"))
-        except Exception as exc:
-            raise ConfigParseError(config_path, ClientType.VSCODE, f"{type(exc).__name__}: {exc}") from exc
-
-        if not isinstance(data, dict):
-            raise ConfigParseError(config_path, ClientType.VSCODE, "top-level structure is not an object")
-
-        # Standalone mcp.json: top-level mcpServers key
-        if "mcpServers" in data:
-            results = _parse_mcp_servers_dict(data["mcpServers"], config_path)
-            logger.debug("VS Code: found %d servers in %s", len(results), config_path)
-            return results
-
-        # settings.json: mcp.servers key (VS Code's embedded MCP config)
-        mcp_section = data.get("mcp") or {}
-        if isinstance(mcp_section, dict) and "servers" in mcp_section:
-            results = _parse_mcp_servers_dict(mcp_section["servers"], config_path)
-            logger.debug("VS Code: found %d servers in settings %s", len(results), config_path)
-            return results
-
-        logger.debug("VS Code: no MCP servers found in %s", config_path)
-        return []
+    def parse(self, path: Path, parse_errors: list[ConfigParseError] | None = None) -> list[ServerConfig]:
+        data = read_config(path, ClientType.VSCODE, parse_errors, jsonc=True)
+        results: list[ServerConfig] = []
+        for key in ("mcpServers", "servers"):
+            if key in data:
+                results.extend(parse_server_map(data[key], str(path), ClientType.VSCODE, parse_errors))
+        if "mcp" in data:
+            section = data["mcp"]
+            if not isinstance(section, dict):
+                raise ConfigParseError(str(path), ClientType.VSCODE, "mcp section is not an object")
+            if "servers" in section:
+                results.extend(
+                    parse_server_map(section["servers"], str(path), ClientType.VSCODE, parse_errors)
+                )
+        return results

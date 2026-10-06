@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Recognize VS Code server maps in explicit configs and parse both VS Code
+  files as JSONC. Report malformed entries and duplicate keys, reject
+  non-regular config paths before reading, accept UTF-8 BOMs, and distinguish
+  empty server maps from empty, unsupported, and unreadable config files.
+  Preserve parsing diagnostics in in-memory scan coverage and reject project
+  containers without a supported server map.
+- Share MCP server entry parsing across the five config discoverers so Cursor,
+  Windsurf, and Claude Desktop recognize HTTP and deprecated SSE transports
+  while retaining header key names only.
+- Scan bounded agent-visible tool text, including annotation titles and all
+  input-schema string leaves, for instruction-shaped text and permission
+  keywords. Preserve matched field paths and report incomplete text coverage.
+- Retain prompt argument descriptions and required flags in additive metadata,
+  scan their text, and name required arguments in canary skip warnings.
+- Normalize permission-detector fields once and scan category keywords with
+  overlapping matches that preserve scores and evidence order. Bound detector
+  text to 256 KiB per field and report `description_truncated` coverage warnings.
+- Tokenize SSRF identifiers in linear time and bound fetch-verb text inspection.
+- Limit simultaneous server sessions to 32 by default, configurable with
+  `--max-concurrency`; clarify that `--timeout` is a per-session budget and
+  excludes time waiting for a connection slot.
+- Mark incomplete metadata listings, including pagination floods, as partial
+  connections rather than clean connected rows with zero tools.
 - Infer capabilities from nested input-schema property names using the bounded
   SSRF schema walker. Property names retain weight 1 and the HIGH confidence
   threshold remains 6; evidence includes matching schema paths. Nested
@@ -21,10 +44,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is replayed locally without launching servers. These fixtures contain no
   nested property-name capability gains; the nested regression fixture covers
   the added detection.
-
-- Share MCP server entry parsing across the five config discoverers so Cursor,
-  Windsurf, and Claude Desktop recognize HTTP and deprecated SSE transports
-  while retaining header key names only.
 
 ### Security
 
@@ -48,23 +67,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Reports add `audits[].server.scope` and a `project_config_not_connected`
   warning with the shell-quoted command and arguments (credentials redacted),
   or the skipped remote endpoint.
-
-### Fixed
-
-- Scan bounded agent-visible tool text, including annotation titles and all
-  input-schema string leaves, for instruction-shaped text and permission
-  keywords. Preserve matched field paths and report incomplete text coverage.
-- Retain prompt argument descriptions and required flags in additive metadata,
-  scan their text, and name required arguments in canary skip warnings.
-- Normalize permission-detector fields once and scan category keywords with
-  overlapping matches that preserve scores and evidence order. Bound detector
-  text to 256 KiB per field and report `description_truncated` coverage warnings.
-- Tokenize SSRF identifiers in linear time and bound fetch-verb text inspection.
-- Limit simultaneous server sessions to 32 by default, configurable with
-  `--max-concurrency`; clarify that `--timeout` is a per-session budget and
-  excludes time waiting for a connection slot.
-- Mark incomplete metadata listings, including pagination floods, as partial
-  connections rather than clean connected rows with zero tools.
+- Share NFKC, invisible-codepoint stripping and curated confusable folding
+  across static injection, runtime text and tool-name shadowing checks. Report
+  MEDIUM `OBFUSCATED_METADATA` for invisible classes or mixed-script confusables
+  with field pointers; preserve source evidence and display invisible characters
+  as codepoint markers in terminal, HTML and SARIF messages. Anchor bounded raw
+  evidence to the detected phrase or gated anomaly so stripped context and
+  benign non-Latin prefixes cannot displace it, including normalized HTML-comment
+  delimiters after long benign prefixes.
 
 ### Added
 

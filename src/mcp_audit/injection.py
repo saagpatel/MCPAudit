@@ -14,6 +14,7 @@ from mcp_audit.models import (
     ResourceInfo,
     ToolInfo,
 )
+from mcp_audit.normalize import first_obfuscation, normalize_text, obfuscation_classes, raw_excerpt
 
 # Unicode characters used for hidden directives
 _ZERO_WIDTH_CHARS = {"\u200b", "\u200c", "\u200d"}  # ZWSP, ZWNJ, ZWJ
@@ -41,22 +42,33 @@ class _InjectionPattern:
     _extract: Callable[[str, str], str]  # (lowercased_text, original_text) -> matched excerpt
 
 
-def _phrase_check(phrases: list[str]) -> Callable[[str, str], bool]:
-    def _check(lower: str, _orig: str) -> bool:
-        return any(p in lower for p in phrases)
+@dataclass
+class _PhraseCheck:
+    phrases: list[str]
 
-    return _check
+    def span(self, lower: str) -> tuple[int, int] | None:
+        for phrase in self.phrases:
+            index = lower.find(phrase)
+            if index != -1:
+                return index, index + len(phrase)
+        return None
+
+    def __call__(self, lower: str, _orig: str) -> bool:
+        return self.span(lower) is not None
+
+
+def _phrase_check(phrases: list[str]) -> _PhraseCheck:
+    return _PhraseCheck(phrases)
 
 
 def _phrase_extract(phrases: list[str]) -> Callable[[str, str], str]:
     def _extract(lower: str, orig: str) -> str:
-        for phrase in phrases:
-            idx = lower.find(phrase)
-            if idx != -1:
-                start = max(0, idx - 20)
-                end = min(len(orig), idx + len(phrase) + 80)
-                excerpt = orig[start:end]
-                return excerpt[:200]
+        span = _PhraseCheck(phrases).span(lower)
+        if span is not None:
+            start = max(0, span[0] - 20)
+            end = min(len(orig), span[1] + 80)
+            excerpt = orig[start:end]
+            return excerpt[:200]
         return orig[:200]
 
     return _extract
@@ -216,7 +228,8 @@ class InjectionDetector:
         prompt_body = target_type is CapabilityTarget.PROMPT
         source = "prompts/get body" if prompt_body else "Tool result"
         withheld = "[prompt-body excerpt withheld]" if prompt_body else "[tool-result excerpt withheld]"
-        return [
+        normalized = normalize_text(text)
+        findings = [
             InjectionFinding(
                 tool_name=tool_name,
                 target_type=target_type,
@@ -233,28 +246,63 @@ class InjectionDetector:
                 ),
             )
             for name, rule in RESULT_INJECTION_RULES.items()
-            if rule(text)
+            if rule(normalized)
         ]
+        classes = obfuscation_classes(text)
+        if classes:
+            findings.append(
+                InjectionFinding(
+                    tool_name=tool_name,
+                    target_type=target_type,
+                    target_name=tool_name,
+                    severity=InjectionSeverity.MEDIUM,
+                    pattern_name="OBFUSCATED_METADATA",
+                    after_call=after_call,
+                    matched_text=withheld,
+                    description=f"{source} contains {', '.join(classes)} codepoints at /body.",
+                )
+            )
+        return findings
 
     def scan_tool(self, tool: ToolInfo) -> list[InjectionFinding]:
         """Return all injection findings for a single tool."""
         fields = agent_visible_text(tool).fields
         name = fields[0].text.replace("_", " ").replace("-", " ")
         description = fields[1].text
+        normalized_name = normalize_text(fields[0].text).replace("_", " ").replace("-", " ")
+        normalized_description = normalize_text(description)
+        unicode_changed = (
+            normalize_text(fields[0].text) != fields[0].text or normalized_description != description
+        )
+        evidence_name = fields[0].text if unicode_changed else name
         # Retain legacy name/description excerpts and Unicode offsets. Additional
         # fields are scanned separately so their evidence has a precise pointer.
-        findings = self._scan_text(CapabilityTarget.TOOL, tool.name, f"{name}\n{description}", tool.name)
+        findings = self._scan_text(
+            CapabilityTarget.TOOL,
+            tool.name,
+            f"{evidence_name}\n{description}",
+            tool.name,
+            structural=False,
+            normalized=f"{normalized_name}\n{normalized_description}",
+        )
         for finding in findings:
             pattern = next(p for p in _PATTERNS if p.name == finding.pattern_name)
-            name_matches = pattern.check(name.lower(), name)
-            description_matches = pattern.check(description.lower(), description)
+            name_matches = self._matches(pattern, name, normalized_name)
+            description_matches = self._matches(pattern, description, normalized_description)
             finding.field_path = "/name" if name_matches else "/description"
             # Phrase/character priority can pick a different source in a combined
             # excerpt. Resolve ambiguous matches locally; role extractors can
             # also select a non-anchored substring in the other field.
             if (name_matches and description_matches) or pattern.name == "role_injection":
-                source = name if name_matches else description
-                finding.matched_text = pattern._extract(source.lower(), source)
+                source = evidence_name if name_matches else description
+                matching_text = normalized_name if name_matches else normalized_description
+                finding.matched_text = self._excerpt(pattern, source, matching_text)
+        for field in fields[:2]:
+            findings.extend(
+                self._obfuscation_findings(
+                    CapabilityTarget.TOOL, tool.name, field.text, tool.name, field.path
+                )
+            )
         for field in fields[2:]:
             text = field.text
             findings.extend(self._scan_text(CapabilityTarget.TOOL, tool.name, text, tool.name, field.path))
@@ -265,24 +313,88 @@ class InjectionDetector:
         findings: list[InjectionFinding] = []
         for field in prompt_visible_text(prompt).fields:
             text = field.text.replace("_", " ").replace("-", " ") if field.path == "/name" else field.text
+            normalized = normalize_text(field.text)
+            if field.path == "/name":
+                if normalized != field.text:
+                    text = field.text
+                normalized = normalized.replace("_", " ").replace("-", " ")
             findings.extend(
-                self._scan_text(CapabilityTarget.PROMPT, prompt.name, text, prompt.name, field.path)
+                self._scan_text(
+                    CapabilityTarget.PROMPT, prompt.name, text, prompt.name, field.path, normalized=normalized
+                )
             )
         return findings
 
     def scan_resource(self, resource: ResourceInfo) -> list[InjectionFinding]:
         """Return all injection findings for a single resource."""
-        combined = "\n".join(
-            part
-            for part in [
-                resource.uri,
-                resource.name or "",
-                resource.description or "",
-                resource.mime_type or "",
-            ]
-            if part
+        fields = [
+            ("/uri", resource.uri),
+            ("/name", resource.name or ""),
+            ("/description", resource.description or ""),
+            ("/mime_type", resource.mime_type or ""),
+        ]
+        combined = "\n".join(text for _, text in fields if text)
+        findings = self._scan_text(
+            CapabilityTarget.RESOURCE, resource.uri, combined, resource.uri, structural=False
         )
-        return self._scan_text(CapabilityTarget.RESOURCE, resource.uri, combined, resource.uri)
+        for path, text in fields:
+            findings.extend(
+                self._obfuscation_findings(CapabilityTarget.RESOURCE, resource.uri, text, resource.uri, path)
+            )
+        return findings
+
+    @staticmethod
+    def _matches(pattern: _InjectionPattern, raw: str, normalized: str) -> bool:
+        original = raw if pattern.name in {"hidden_directive", "unicode_direction"} else normalized
+        return pattern.check(normalized.lower(), original)
+
+    @staticmethod
+    def _excerpt(pattern: _InjectionPattern, raw: str, normalized: str) -> str:
+        if (
+            normalized == raw
+            or pattern.name == "unicode_direction"
+            or (pattern.name == "hidden_directive" and any(c in raw for c in _ZERO_WIDTH_CHARS))
+        ):
+            return pattern._extract(raw.lower(), raw)
+        excerpt = pattern._extract(normalized.lower(), normalized)
+        if isinstance(pattern.check, _PhraseCheck):
+            span = pattern.check.span(normalized.lower())
+            if span is None:
+                return raw[:200]
+        elif pattern.name == "hidden_directive":
+            start = normalized.find("<!--")
+            span = (start, start + len("<!--"))
+        else:
+            start = normalized.find(excerpt)
+            span = (max(0, start), max(0, start) + len(excerpt))
+        return raw_excerpt(raw, normalized, excerpt, span)
+
+    @staticmethod
+    def _obfuscation_findings(
+        target_type: CapabilityTarget,
+        target_name: str,
+        raw: str,
+        legacy_tool_name: str,
+        field_path: str | None,
+    ) -> list[InjectionFinding]:
+        classes = obfuscation_classes(raw)
+        if not classes:
+            return []
+        # Preserve raw source evidence; reports make invisible codepoints visible.
+        index = first_obfuscation(raw)
+        classes_text = ", ".join(classes)
+        return [
+            InjectionFinding(
+                tool_name=legacy_tool_name,
+                target_type=target_type,
+                target_name=target_name,
+                severity=InjectionSeverity.MEDIUM,
+                pattern_name="OBFUSCATED_METADATA",
+                matched_text=raw[max(0, index - 20) : max(0, index - 20) + 200],
+                description=(f"Agent-facing text contains {classes_text} codepoints at {field_path or '/'}."),
+                field_path=field_path,
+            )
+        ]
 
     def _scan_text(
         self,
@@ -291,13 +403,17 @@ class InjectionDetector:
         combined: str,
         legacy_tool_name: str,
         field_path: str | None = None,
+        *,
+        structural: bool = True,
+        normalized: str | None = None,
     ) -> list[InjectionFinding]:
         """Return all injection findings for one normalized capability text blob."""
-        lower = combined.lower()
+        if normalized is None:
+            normalized = normalize_text(combined)
         findings: list[InjectionFinding] = []
         for pattern in _PATTERNS:
-            if pattern.check(lower, combined):
-                matched = pattern._extract(lower, combined)
+            if self._matches(pattern, combined, normalized):
+                matched = self._excerpt(pattern, combined, normalized)
                 findings.append(
                     InjectionFinding(
                         tool_name=legacy_tool_name,
@@ -310,6 +426,10 @@ class InjectionDetector:
                         field_path=field_path,
                     )
                 )
+        if structural:
+            findings.extend(
+                self._obfuscation_findings(target_type, target_name, combined, legacy_tool_name, field_path)
+            )
         return findings
 
     def scan_server(
