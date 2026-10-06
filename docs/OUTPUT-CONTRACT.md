@@ -36,6 +36,12 @@ with credential values redacted before quoting. Remote entries show their
 redacted endpoint instead. Warnings also appear on the CLI console, but the
 engine remains silent for library/MCP callers without a console. Explicit
 `--skip-connect` never spawns, even with the project opt-in.
+All SARIF profiles retain this warning as an invocation notification with
+descriptor ID `MCP-PROJECT-CONFIG-NOT-CONNECTED`, its redacted message, and
+the warning fields in `properties`. Every findings tool retains report
+`warnings`; `get_high_risk_servers` uses `{findings, warnings}`, retaining each
+row's `name` and `score`. `check_server` retains its audit fields and adds
+`warnings`. Full-report tools retain the existing top-level `warnings`.
 
 ## Report Redaction
 
@@ -460,6 +466,11 @@ as `not_run`. No configured servers leaves server-dependent checks `not_run`.
 A canary with no eligible tools has runtime `not_run`; failed or truncated
 listings and incomplete exercises are `partial`. Pagination failures never
 admit an incomplete page set as an empty, successfully checked inventory.
+An `agent_text_incomplete` warning makes permissions and requested injection,
+trifecta, and escalation checks `partial` for the affected server, including
+checks that consume bounded permission or injection findings. Inventory and
+checks that use full metadata are unaffected by this text budget. A pinned
+server with an empty tool baseline still has an available `pin_check` baseline.
 
 `ServerAudit.connection_status` adds `partial` for an initialized connection
 whose metadata listing was incomplete. Existing `connected`, `failed`,
