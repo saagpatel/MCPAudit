@@ -17,6 +17,7 @@ from mcp_audit.models import (
     ToolInfo,
 )
 from mcp_audit.rules.patterns import PERMISSION_PATTERNS
+from mcp_audit.text_limits import bounded_text
 
 # Keyword strength → score contribution per match (multiplied by source weight later)
 _STRENGTH_SCORES: dict[str, int] = {"strong": 3, "moderate": 2, "weak": 1}
@@ -45,6 +46,22 @@ def _pattern_regex(pattern: str) -> re.Pattern[str]:
     tokens: 'url' matches 'download_url' but not 'curl', 'port' never matches
     'portfolio'."""
     return re.compile(rf"(?<![a-z]){re.escape(pattern)}(?![a-z])")
+
+
+@cache
+def _category_regex(
+    category: PermissionCategory,
+) -> tuple[re.Pattern[str], dict[str, set[str]]]:
+    patterns = [pattern for group in PERMISSION_PATTERNS[category].values() for pattern in group]
+    alternatives = "|".join(re.escape(pattern) for pattern in sorted(set(patterns), key=len, reverse=True))
+    # Lookahead retains overlaps such as working_directory / directory. Expand
+    # longest matches to retain same-start hits such as read_file / read too.
+    regex = re.compile(rf"(?=(?<![a-z])({alternatives})(?![a-z]))")
+    contained = {
+        match: {pattern for pattern in patterns if _pattern_regex(pattern).search(match)}
+        for match in patterns
+    }
+    return regex, contained
 
 
 # Weighted score thresholds for confidence levels
@@ -295,18 +312,25 @@ class PermissionAnalyzer:
     ) -> dict[PermissionCategory, tuple[int, list[str], list[str]]]:
         """Return (weighted_score, evidence, field_paths) per category."""
         results: dict[PermissionCategory, tuple[int, list[str], list[str]]] = {}
-        normalized = [(_keyword_text(text), weight) for text, weight in sources]
+        normalized = [(_keyword_text(bounded_text(text)), weight) for text, weight in sources]
 
         for category, strengths in PERMISSION_PATTERNS.items():
             total_score = 0
             evidence: list[str] = []
+            regex, contained = _category_regex(category)
+            source_hits: list[tuple[set[str], int]] = []
+            for text, weight in normalized:
+                hits: set[str] = set()
+                for match in regex.finditer(text):
+                    hits.update(contained[match.group(1)])
+                source_hits.append((hits, weight))
             matched_paths: list[str] = []
 
             for strength, patterns in strengths.items():
                 strength_score = _STRENGTH_SCORES[strength]
                 for pattern in patterns:
-                    for index, (text, source_weight) in enumerate(normalized):
-                        if _pattern_regex(pattern).search(text):
+                    for index, (hits, source_weight) in enumerate(source_hits):
+                        if pattern in hits:
                             total_score += strength_score * source_weight
                             if pattern not in evidence:
                                 evidence.append(pattern)
