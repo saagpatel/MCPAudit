@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add table-driven contracts for permission keywords and static and runtime injection rule vocabularies.
+
 ### Fixed
 
 - Summarize nested connection and analysis exception groups with redacted leaf
