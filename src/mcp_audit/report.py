@@ -32,6 +32,7 @@ from mcp_audit.models import (
 )
 from mcp_audit.redaction import redact_data, redact_identifiers, redact_text
 from mcp_audit.taxonomy import format_rule_of_two
+from mcp_audit.terminal_text import strip_controls, terminal_safe
 
 
 def _default_console() -> Console:
@@ -93,15 +94,15 @@ class ReportGenerator:
                 status_str = f"{status_str}: {redact_text(audit.connection_error)[:40]}"
 
             table.add_row(
-                audit.server.name,
-                audit.server.client.value,
-                str(len(audit.tools)),
-                str(len(audit.prompts)),
-                str(len(audit.resources)),
+                terminal_safe(audit.server.name),
+                terminal_safe(audit.server.client.value),
+                terminal_safe(str(len(audit.tools))),
+                terminal_safe(str(len(audit.prompts))),
+                terminal_safe(str(len(audit.resources))),
                 risk_text,
                 non_tool_risk_text,
                 perms,
-                status_str,
+                terminal_safe(status_str),
             )
 
         self._console.print(table)
@@ -128,7 +129,9 @@ class ReportGenerator:
         for audit in report.audits:
             if not audit.tools:
                 continue
-            self._console.print(f"\n[bold]{audit.server.name}[/bold] — tool details")
+            self._console.print(
+                Text.assemble("\n", (strip_controls(audit.server.name), "bold"), " — tool details")
+            )
             sub = Table(show_lines=False, show_header=True)
             sub.add_column("Tool", style="cyan")
             sub.add_column("Permissions", overflow="fold")
@@ -141,14 +144,16 @@ class ReportGenerator:
             for tool in audit.tools:
                 tool_findings = findings_by_tool.get(tool.name, [])
                 if tool_findings:
-                    perm_str = ", ".join(
-                        f"{f.rule_id} {f.category.value}({f.confidence.value})" for f in tool_findings
+                    perm_str = terminal_safe(
+                        ", ".join(
+                            f"{f.rule_id} {f.category.value}({f.confidence.value})" for f in tool_findings
+                        )
                     )
-                    action_str = " ".join(f.remediation for f in tool_findings)
+                    action_str = terminal_safe(" ".join(f.remediation for f in tool_findings))
                 else:
-                    perm_str = "[dim]none[/dim]"
-                    action_str = "[dim]none[/dim]"
-                sub.add_row(tool.name, perm_str, action_str)
+                    perm_str = Text("none", style="dim")
+                    action_str = Text("none", style="dim")
+                sub.add_row(terminal_safe(tool.name), perm_str, action_str)
 
             self._console.print(sub)
 
@@ -176,13 +181,13 @@ class ReportGenerator:
                 InjectionSeverity.LOW: "dim",
             }.get(f.severity, "")
             tbl.add_row(
-                server_name,
-                f.target_type.value,
-                f.target_name or f.tool_name,
-                f"[{sev_style}]{f.severity.value}[/{sev_style}]",
-                f.pattern_name,
-                f.description,
-                f.remediation,
+                terminal_safe(server_name),
+                terminal_safe(f.target_type.value),
+                terminal_safe(f.target_name or f.tool_name),
+                Text(strip_controls(f.severity.value), style=sev_style),
+                terminal_safe(f.pattern_name),
+                terminal_safe(f.description),
+                terminal_safe(f.remediation),
             )
         self._console.print(tbl)
 
@@ -210,13 +215,13 @@ class ReportGenerator:
                 SsrfSeverity.LOW: "dim",
             }.get(f.severity, "")
             tbl.add_row(
-                server_name,
-                f.target_type.value,
-                f.target_name,
-                f"[{sev_style}]{f.severity.value}[/{sev_style}]",
-                f.pattern_name,
-                "; ".join(f.evidence),
-                f.remediation,
+                terminal_safe(server_name),
+                terminal_safe(f.target_type.value),
+                terminal_safe(f.target_name),
+                Text(strip_controls(f.severity.value), style=sev_style),
+                terminal_safe(f.pattern_name),
+                terminal_safe("; ".join(f.evidence)),
+                terminal_safe(f.remediation),
             )
         self._console.print(tbl)
 
@@ -242,20 +247,20 @@ class ReportGenerator:
                 EgressSeverity.LOW: "dim",
             }.get(f.severity, "")
             tbl.add_row(
-                server_name,
-                f"[{sev_style}]{f.severity.value}[/{sev_style}]",
-                f.rule_id,
+                terminal_safe(server_name),
+                Text(strip_controls(f.severity.value), style=sev_style),
+                terminal_safe(f.rule_id),
                 self._egress_destination_label(f),
-                f"{f.kind.value}: {'; '.join(f.evidence)}",
+                terminal_safe(f"{f.kind.value}: {'; '.join(f.evidence)}"),
             )
         self._console.print(tbl)
 
     @staticmethod
-    def _egress_destination_label(finding: EgressFinding) -> str:
+    def _egress_destination_label(finding: EgressFinding) -> Text:
         destination_host = finding.destination_host
         if destination_host:
-            return f"{destination_host} ({finding.target_name})"
-        return "[dim]caller-controlled[/dim]"
+            return terminal_safe(f"{destination_host} ({finding.target_name})")
+        return Text("caller-controlled", style="dim")
 
     def _render_trifecta_warnings(self, report: AuditReport) -> None:
         """Print lethal-trifecta findings (per-server and fleet-level) if any were found."""
@@ -276,11 +281,11 @@ class ReportGenerator:
             tbl.add_column("Rule of Two", overflow="fold")
             for server_name, f in per_server:
                 tbl.add_row(
-                    server_name,
-                    "; ".join(f"{s}/{t}" for s, t in f.leg1_contributors),
-                    "; ".join(f"{s}/{t}" for s, t in f.leg2_contributors),
-                    "; ".join(f"{s}/{t}" for s, t in f.leg3_contributors),
-                    format_rule_of_two(f.rule_of_two) if f.rule_of_two else f.remediation,
+                    terminal_safe(server_name),
+                    terminal_safe("; ".join(f"{s}/{t}" for s, t in f.leg1_contributors)),
+                    terminal_safe("; ".join(f"{s}/{t}" for s, t in f.leg2_contributors)),
+                    terminal_safe("; ".join(f"{s}/{t}" for s, t in f.leg3_contributors)),
+                    terminal_safe(format_rule_of_two(f.rule_of_two) if f.rule_of_two else f.remediation),
                 )
             self._console.print(tbl)
 
@@ -294,10 +299,10 @@ class ReportGenerator:
                 sev_style = "bold red" if f.severity == TrifectaSeverity.HIGH else "yellow"
                 posture = format_rule_of_two(f.rule_of_two) if f.rule_of_two else f.remediation
                 tbl2.add_row(
-                    "; ".join(f"{s}/{t}" for s, t in f.leg1_contributors),
-                    "; ".join(f"{s}/{t}" for s, t in f.leg2_contributors),
-                    "; ".join(f"{s}/{t}" for s, t in f.leg3_contributors),
-                    f"[{sev_style}]{posture}[/{sev_style}]",
+                    terminal_safe("; ".join(f"{s}/{t}" for s, t in f.leg1_contributors)),
+                    terminal_safe("; ".join(f"{s}/{t}" for s, t in f.leg2_contributors)),
+                    terminal_safe("; ".join(f"{s}/{t}" for s, t in f.leg3_contributors)),
+                    Text(strip_controls(posture), style=sev_style),
                 )
             self._console.print(tbl2)
 
@@ -325,12 +330,12 @@ class ReportGenerator:
             }.get(f.severity, "")
             pairs = "; ".join(f"{srv}/{tool}" for srv, tool in f.collisions)
             tbl.add_row(
-                f.rule_id,
-                f.kind.value,
-                f"[{sev_style}]{f.severity.value}[/{sev_style}]",
-                f.name,
-                pairs,
-                f.remediation,
+                terminal_safe(f.rule_id),
+                terminal_safe(f.kind.value),
+                Text(strip_controls(f.severity.value), style=sev_style),
+                terminal_safe(f.name),
+                terminal_safe(pairs),
+                terminal_safe(f.remediation),
             )
         self._console.print(tbl)
 
@@ -362,13 +367,13 @@ class ReportGenerator:
                 else ", ".join(f.gained_patterns)
             )
             tbl.add_row(
-                f.rule_id,
-                server_name,
-                f.tool_name,
-                f.kind.value,
-                f"[{sev_style}]{f.severity.value}[/{sev_style}]",
-                gained,
-                f.remediation,
+                terminal_safe(f.rule_id),
+                terminal_safe(server_name),
+                terminal_safe(f.tool_name),
+                terminal_safe(f.kind.value),
+                Text(strip_controls(f.severity.value), style=sev_style),
+                terminal_safe(gained),
+                terminal_safe(f.remediation),
             )
         self._console.print(tbl)
 
@@ -393,11 +398,11 @@ class ReportGenerator:
                 ProvenanceSeverity.MEDIUM: "yellow",
             }.get(f.severity, "")
             tbl.add_row(
-                f.rule_id,
-                server_name,
-                f.kind.value,
-                f"[{sev_style}]{f.severity.value}[/{sev_style}]",
-                f.summary,
+                terminal_safe(f.rule_id),
+                terminal_safe(server_name),
+                terminal_safe(f.kind.value),
+                Text(strip_controls(f.severity.value), style=sev_style),
+                terminal_safe(f.summary),
             )
         self._console.print(tbl)
 
@@ -422,11 +427,11 @@ class ReportGenerator:
                 IntegritySeverity.MEDIUM: "yellow",
             }.get(f.severity, "")
             tbl.add_row(
-                f.rule_id,
-                server_name,
-                f"[{sev_style}]{f.severity.value}[/{sev_style}]",
-                f.artifact_path,
-                f.summary,
+                terminal_safe(f.rule_id),
+                terminal_safe(server_name),
+                Text(strip_controls(f.severity.value), style=sev_style),
+                terminal_safe(f.artifact_path),
+                terminal_safe(f.summary),
             )
         self._console.print(tbl)
 
@@ -451,11 +456,11 @@ class ReportGenerator:
                 PackageVerifySeverity.MEDIUM: "yellow",
             }.get(f.severity, "")
             tbl.add_row(
-                f.rule_id,
-                server_name,
-                f"[{sev_style}]{f.severity.value}[/{sev_style}]",
-                f"{f.ecosystem}:{f.package}@{f.version}",
-                f.summary,
+                terminal_safe(f.rule_id),
+                terminal_safe(server_name),
+                Text(strip_controls(f.severity.value), style=sev_style),
+                terminal_safe(f"{f.ecosystem}:{f.package}@{f.version}"),
+                terminal_safe(f.summary),
             )
         self._console.print(tbl)
 
@@ -480,11 +485,11 @@ class ReportGenerator:
                 ArtifactVerifySeverity.MEDIUM: "yellow",
             }.get(f.severity, "")
             tbl.add_row(
-                f.rule_id,
-                server_name,
-                f"[{sev_style}]{f.severity.value}[/{sev_style}]",
-                f"{f.ecosystem}:{f.package}@{f.version}",
-                f.summary,
+                terminal_safe(f.rule_id),
+                terminal_safe(server_name),
+                Text(strip_controls(f.severity.value), style=sev_style),
+                terminal_safe(f"{f.ecosystem}:{f.package}@{f.version}"),
+                terminal_safe(f.summary),
             )
         self._console.print(tbl)
 
@@ -497,7 +502,7 @@ class ReportGenerator:
         self._console.print()
         has_session = any(d.source == "session" for _, d in all_drifts)
         title = "MCP Surface Drift" if has_session else "Tool Schema Drift"
-        self._console.rule(f"[bold yellow]{title}[/bold yellow]")
+        self._console.rule(Text(strip_controls(f"{title}"), style="bold yellow"))
         tbl = Table(show_lines=False)
         tbl.add_column("Server", style="bold cyan", no_wrap=True)
         tbl.add_column("Target" if has_session else "Tool", style="cyan")
@@ -530,12 +535,12 @@ class ReportGenerator:
                 else d.summary or details
             )
             tbl.add_row(
-                server_name,
-                d.tool_name,
-                f"[{status_style}]{d.status.value}[/{status_style}]",
-                *([d.severity] if has_session else []),
-                meaning,
-                d.remediation,
+                terminal_safe(server_name),
+                terminal_safe(d.tool_name),
+                Text(strip_controls(d.status.value), style=status_style),
+                *([terminal_safe(d.severity)] if has_session else []),
+                terminal_safe(meaning),
+                terminal_safe(d.remediation),
             )
         self._console.print(tbl)
 
@@ -557,12 +562,12 @@ class ReportGenerator:
 
         for server_name, finding in all_findings:
             tbl.add_row(
-                server_name,
-                finding.target_type.value,
-                finding.target_name,
-                finding.category.value,
-                finding.severity,
-                finding.remediation,
+                terminal_safe(server_name),
+                terminal_safe(finding.target_type.value),
+                terminal_safe(finding.target_name),
+                terminal_safe(finding.category.value),
+                terminal_safe(finding.severity),
+                terminal_safe(finding.remediation),
             )
         self._console.print(tbl)
 
@@ -570,7 +575,7 @@ class ReportGenerator:
         """Write full AuditReport as JSON to the given path."""
         redacted = redact_data(report.model_dump(mode="json"))
         path.write_text(json.dumps(redacted, indent=2))
-        self._console.print(f"[green]JSON report written to {path}[/green]")
+        self._console.print(terminal_safe(f"JSON report written to {path}"), style="green")
 
     def _render_policy_result(self, report: AuditReport) -> None:
         """Print local policy gate result if a policy was evaluated."""
@@ -592,11 +597,11 @@ class ReportGenerator:
         tbl.add_column("Message", overflow="fold")
         for violation in result.violations:
             tbl.add_row(
-                violation.rule,
-                violation.server_name or "n/a",
-                violation.tool_name or "n/a",
-                violation.severity,
-                violation.message,
+                terminal_safe(violation.rule),
+                terminal_safe(violation.server_name or "n/a"),
+                terminal_safe(violation.tool_name or "n/a"),
+                terminal_safe(violation.severity),
+                terminal_safe(violation.message),
             )
         self._console.print(tbl)
 
@@ -623,9 +628,9 @@ class ReportGenerator:
             return "yellow"
         return "green"
 
-    def _top_permissions(self, audit: ServerAudit) -> str:
+    def _top_permissions(self, audit: ServerAudit) -> Text:
         if not audit.permissions:
-            return "[dim]none[/dim]"
+            return Text("none", style="dim")
         # Deduplicate by category, pick highest confidence
         best: dict[str, str] = {}
         for f in audit.permissions:
@@ -633,7 +638,7 @@ class ReportGenerator:
             conf = f.confidence.value
             if cat not in best:
                 best[cat] = conf
-        return ", ".join(f"{cat}({conf})" for cat, conf in best.items())
+        return terminal_safe(", ".join(f"{cat}({conf})" for cat, conf in best.items()))
 
     def capture_terminal(self, report: AuditReport, verbose: bool = False) -> str:
         """Render to string (useful for testing)."""

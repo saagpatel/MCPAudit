@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Render untrusted terminal text literally and remove terminal control sequences
+  from terminal and HTML output. Capture stdio server stderr in a bounded 4 KiB
+  tail instead of inheriting the terminal; sanitized, redacted tails are available
+  only in debug logging, with cleanup on completion, timeout, and cancellation.
+  Discard the leading partial record from truncated tails so truncation cannot
+  remove credential prefixes and bypass redaction.
+
 ### Changed
 
 - Put the zero-touch scan first in the README quick start and describe

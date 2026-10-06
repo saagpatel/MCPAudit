@@ -9,13 +9,16 @@ from pathlib import Path
 import anyio
 import click
 from rich.console import Console
+from rich.text import Text
 
 from mcp_audit.discovery import discover_all_configs
 from mcp_audit.models import AuditReport
 from mcp_audit.report import ReportGenerator
 from mcp_audit.report import error_console as _error_console
+from mcp_audit.terminal_text import TerminalSafeLogFilter, strip_controls, terminal_safe
 
 logger = logging.getLogger(__name__)
+logger.addFilter(TerminalSafeLogFilter())
 
 _console = Console()
 
@@ -92,13 +95,15 @@ async def _watch_loop(
         _console.print("[yellow]No config files found to watch.[/yellow]")
         return
 
-    _console.print(f"[dim]Watching {len(watch_paths)} config file(s) for changes. Ctrl+C to stop.[/dim]")
+    _console.print(
+        terminal_safe(f"Watching {len(watch_paths)} config file(s) for changes. Ctrl+C to stop."), style="dim"
+    )
 
     # Initial scan
     try:
         report = await run_scan(scan_options, override_applier=override_applier, console=_console)
     except ValueError as exc:
-        _error_console.print(f"[red]{exc}[/red]")
+        _error_console.print(terminal_safe(f"{exc}"), style="red")
         raise SystemExit(1) from exc
     gen.render_terminal(report, verbose=verbose)
     _write_outputs(report, json_output, sarif_output)
@@ -136,9 +141,9 @@ def _render_diff(prev: AuditReport, curr: AuditReport) -> None:
     removed = set(prev_names) - set(curr_names)
 
     for name in sorted(added):
-        _console.print(f"  [green]+ {name}[/green] (new server)")
+        _console.print(Text.assemble("  ", (strip_controls(f"+ {name}"), "green"), " (new server)"))
     for name in sorted(removed):
-        _console.print(f"  [red]- {name}[/red] (removed)")
+        _console.print(Text.assemble("  ", (strip_controls(f"- {name}"), "red"), " (removed)"))
 
     for name in sorted(set(prev_names) & set(curr_names)):
         prev_score = prev_names[name].risk_score
@@ -149,8 +154,16 @@ def _render_diff(prev: AuditReport, curr: AuditReport) -> None:
                 sign = "+" if delta > 0 else ""
                 color = "red" if delta > 0 else "green"
                 _console.print(
-                    f"  [{color}]{name}: {prev_score.composite:.1f} → "
-                    f"{curr_score.composite:.1f} ({sign}{delta:.1f})[/{color}]"
+                    Text.assemble(
+                        "  ",
+                        (
+                            strip_controls(
+                                f"{name}: {prev_score.composite:.1f} → "
+                                f"{curr_score.composite:.1f} ({sign}{delta:.1f})"
+                            ),
+                            color,
+                        ),
+                    )
                 )
 
 

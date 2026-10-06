@@ -34,8 +34,10 @@ from mcp_audit.models import (
     IntegritySeverity,
     ServerConfig,
 )
+from mcp_audit.terminal_text import TerminalSafeLogFilter
 
 logger = logging.getLogger(__name__)
+logger.addFilter(TerminalSafeLogFilter())
 
 # Cap per-file hashing so a pathological arg pointing at a huge file can't stall a
 # scan. Real launch artifacts (binaries, scripts) are far below this.

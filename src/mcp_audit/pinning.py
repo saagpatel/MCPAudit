@@ -15,6 +15,7 @@ from typing import Any
 import yaml
 
 from mcp_audit.models import DriftFinding, DriftStatus, ServerConfig, SurfaceFieldChange, ToolInfo
+from mcp_audit.terminal_text import TerminalSafeLogFilter
 
 try:
     import fcntl
@@ -22,6 +23,7 @@ except ImportError:  # pragma: no cover - Windows: mutations run best-effort unl
     fcntl = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
+logger.addFilter(TerminalSafeLogFilter())
 
 DEFAULT_PIN_PATH = Path.home() / ".mcp-audit-pins.yaml"
 

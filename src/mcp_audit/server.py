@@ -15,8 +15,10 @@ from mcp_audit.discovery import ConfigParseError, discover_all_configs
 from mcp_audit.engine import ScanOptions, run_scan
 from mcp_audit.models import AuditReport, ServerConfig
 from mcp_audit.report import error_console as _error_console
+from mcp_audit.terminal_text import TerminalSafeLogFilter, terminal_safe
 
 logger = logging.getLogger(__name__)
+logger.addFilter(TerminalSafeLogFilter())
 
 _console = Console()
 
@@ -37,31 +39,31 @@ _MCP_AUDIT_SERVER_ENTRY: dict[str, Any] = {
 def _install_to_config(config_path: Path, server_name: str = "mcp-audit") -> bool:
     """Add mcp-audit server entry to a JSON config file. Returns True on success."""
     if not config_path.exists():
-        _console.print(f"[yellow]Config file not found: {config_path}[/yellow]")
+        _console.print(terminal_safe(f"Config file not found: {config_path}"), style="yellow")
         return False
 
     try:
         raw: Any = json.loads(config_path.read_text())
     except (json.JSONDecodeError, OSError) as exc:
-        _error_console.print(f"[red]Could not read {config_path}: {exc}[/red]")
+        _error_console.print(terminal_safe(f"Could not read {config_path}: {exc}"), style="red")
         return False
 
     if not isinstance(raw, dict):
-        _error_console.print(f"[red]Unexpected config format in {config_path}[/red]")
+        _error_console.print(terminal_safe(f"Unexpected config format in {config_path}"), style="red")
         return False
 
     mcp_servers: dict[str, Any] = raw.setdefault("mcpServers", {})
     if server_name in mcp_servers:
-        _console.print(f"[yellow]{server_name} already registered in {config_path}[/yellow]")
+        _console.print(terminal_safe(f"{server_name} already registered in {config_path}"), style="yellow")
         return True
 
     mcp_servers[server_name] = _MCP_AUDIT_SERVER_ENTRY
     try:
         config_path.write_text(json.dumps(raw, indent=2))
-        _console.print(f"[green]Registered {server_name} in {config_path}[/green]")
+        _console.print(terminal_safe(f"Registered {server_name} in {config_path}"), style="green")
         return True
     except OSError as exc:
-        _error_console.print(f"[red]Could not write {config_path}: {exc}[/red]")
+        _error_console.print(terminal_safe(f"Could not write {config_path}: {exc}"), style="red")
         return False
 
 
