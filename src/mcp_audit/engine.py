@@ -37,6 +37,7 @@ from mcp_audit.coverage import OPTIONAL_CHECKS, build_coverage
 from mcp_audit.discovery import ConfigParseError, discover_all_configs
 from mcp_audit.models import (
     AuditReport,
+    CheckCoverage,
     ClientType,
     ConnectionMode,
     LLMAnalysisReasonCode,
@@ -305,6 +306,12 @@ async def run_scan(
             scan_warnings.extend(pin_store.schema_warnings(server.name))
 
     audits: list[ServerAudit] = [ServerAudit(server=s, connection_status="pending") for s in servers]
+    completed: list[set[str]] = [set() for _ in servers]
+    package_coverage = {
+        check: [CheckCoverage(state="not_run", reason="verification execution unavailable") for _ in servers]
+        for check in ("verify_artifacts", "download_artifacts")
+        if getattr(opts, check)
+    }
 
     # 2. Connect / analyze / score each server concurrently.
     # disable= when silent: even a quiet Console pays a refresh thread plus
@@ -473,22 +480,45 @@ async def run_scan(
             # Runs in a worker thread so the synchronous registry I/O never blocks
             # the anyio event loop.
             if package_verifier is not None and pin_store is not None:
+                from mcp_audit.pkgverify import verification_coverage
+
                 baseline_pkgs = pin_store.baseline_package_hashes(srv.name)
+                verified_refs: set[str] = set()
                 if baseline_pkgs:
                     audit.package_verify_findings = await anyio.to_thread.run_sync(
-                        package_verifier.analyze_server, srv.name, srv, baseline_pkgs
+                        package_verifier.analyze_server, srv.name, srv, baseline_pkgs, verified_refs
                     )
+                package_coverage["verify_artifacts"][idx] = verification_coverage(
+                    srv, baseline_pkgs, verified_refs
+                )
 
             # Optional byte-level artifact verification (network) vs the pin baseline.
             # Downloads + hashes off the event loop so blocking I/O never stalls anyio.
             if artifact_verifier is not None and pin_store is not None:
+                from mcp_audit.pkgverify import verification_coverage
+
                 baseline_artifact_pkgs = pin_store.baseline_artifact_hashes(srv.name)
+                verified_artifact_refs: set[str] = set()
                 if baseline_artifact_pkgs:
                     audit.artifact_verify_findings = await anyio.to_thread.run_sync(
-                        artifact_verifier.analyze_server, srv.name, srv, baseline_artifact_pkgs
+                        artifact_verifier.analyze_server,
+                        srv.name,
+                        srv,
+                        baseline_artifact_pkgs,
+                        verified_artifact_refs,
                     )
+                package_coverage["download_artifacts"][idx] = verification_coverage(
+                    srv, baseline_artifact_pkgs, verified_artifact_refs, artifact=True
+                )
 
             audits[idx] = audit
+            completed[idx].update(("metadata", "permissions", "capabilities"))
+            completed[idx].update(
+                check
+                for check in OPTIONAL_CHECKS
+                if getattr(opts, "canary_check" if check == "runtime_security" else check)
+                and check != "shadow_check"
+            )
             progress.advance(task_id)
 
         async def audit_one_guarded(idx: int, srv: ServerConfig) -> None:
@@ -669,6 +699,16 @@ async def run_scan(
     shadowing: list[ShadowingFinding] = []
     if shadowing_analyzer is not None:
         shadowing = shadowing_analyzer.analyze_fleet(audits)
+        for checks in completed:
+            if checks:
+                checks.add("shadow_check")
+
+    # A guarded failure discards its audit; previously fetched package evidence
+    # must not survive as a claim that the discarded check completed.
+    for index, checks in enumerate(completed):
+        if not checks:
+            for entries in package_coverage.values():
+                entries[index] = CheckCoverage(state="not_run", reason="analysis did not complete")
 
     # Server tasks append warnings as they finish; keep only the report field
     # stable while preserving the console's arrival order.
@@ -705,6 +745,10 @@ async def run_scan(
             },
             skip_connect=opts.skip_connect,
             warnings=scan_warnings,
+            completed=completed,
+            package_coverage=package_coverage,
+            discovery_incomplete=bool(parse_errors),
+            config_health_inspected=True,
             baselines={
                 check: [
                     a.server.name in pin_store.pinned_servers()

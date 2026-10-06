@@ -42,6 +42,7 @@ import hashlib
 import http.client
 import json
 import logging
+import re
 import threading
 import urllib.error
 import urllib.request
@@ -54,6 +55,7 @@ from mcp_audit.models import (
     ArtifactVerifyFinding,
     ArtifactVerifyKind,
     ArtifactVerifySeverity,
+    CheckCoverage,
     PackageVerifyFinding,
     PackageVerifyKind,
     PackageVerifySeverity,
@@ -184,7 +186,7 @@ def resolve_package_refs(server_config: ServerConfig) -> list[PackageRef]:
 
 
 def _iter_pinned_refs(
-    server_config: ServerConfig, baseline_hashes: dict[str, str]
+    server_config: ServerConfig, baseline_hashes: dict[str, str], *, artifact: bool = False
 ) -> Iterator[tuple[PackageRef, str]]:
     """Yield ``(ref, baseline_hash)`` for each baseline entry whose exact pinned ref
     still resolves from the current launch config, in deterministic sorted-key order.
@@ -194,11 +196,41 @@ def _iter_pinned_refs(
     is provenance's signal (MCP021), not a verification finding here. Yielded refs
     always carry a version.
     """
-    refs_by_key = {r.key(): r for r in resolve_package_refs(server_config) if r.version}
+    refs_by_key = {
+        ref.key(): ref
+        for ref in resolve_package_refs(server_config)
+        if ref.version
+        and (
+            ref.ecosystem != "npm" or re.fullmatch(r"v?\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?", ref.version)
+        )
+    }
     for key, baseline_hash in sorted(baseline_hashes.items()):
         ref = refs_by_key.get(key)
-        if ref is not None:
+        usable = bool(baseline_hash)
+        if artifact:
+            files = _parse_files(baseline_hash)
+            usable = bool(files) and all(files.values())
+        if ref is not None and usable:
             yield ref, baseline_hash
+
+
+def verification_coverage(
+    server_config: ServerConfig,
+    baseline_hashes: dict[str, str] | None,
+    verified_refs: set[str],
+    *,
+    artifact: bool = False,
+) -> CheckCoverage:
+    """Account for current, applicable and actually fetched package references."""
+    refs = resolve_package_refs(server_config)
+    applicable = {
+        ref.key() for ref, _ in _iter_pinned_refs(server_config, baseline_hashes or {}, artifact=artifact)
+    }
+    if not applicable:
+        return CheckCoverage(state="not_run", reason="no current package reference has a usable baseline")
+    if not refs or len(applicable) != len(refs) or verified_refs != applicable:
+        return CheckCoverage(state="partial", reason="package references not fully verified")
+    return CheckCoverage(state="complete", reason="all current package references verified")
 
 
 class RegistryClient:
@@ -405,6 +437,7 @@ class PackageVerifier:
         server_name: str,
         server_config: ServerConfig,
         baseline_hashes: dict[str, str] | None,
+        verified_refs: set[str] | None = None,
     ) -> list[PackageVerifyFinding]:
         """Compare current registry hashes against the pinned baseline for one server."""
         if not baseline_hashes:
@@ -414,6 +447,8 @@ class PackageVerifier:
         for ref, baseline_hash in _iter_pinned_refs(server_config, baseline_hashes):
             assert ref.version is not None  # keyed refs always carry a version
             current = self._fetch(ref)
+            if current and verified_refs is not None:
+                verified_refs.add(ref.key())
             if current is None:
                 findings.append(
                     PackageVerifyFinding(
@@ -639,15 +674,23 @@ class ArtifactVerifier:
         server_name: str,
         server_config: ServerConfig,
         baseline_hashes: dict[str, str] | None,
+        verified_refs: set[str] | None = None,
     ) -> list[ArtifactVerifyFinding]:
         """Download + hash current bytes and compare against the pinned byte baseline."""
         if not baseline_hashes:
             return []
 
         findings: list[ArtifactVerifyFinding] = []
-        for ref, baseline_hash in _iter_pinned_refs(server_config, baseline_hashes):
+        for ref, baseline_hash in _iter_pinned_refs(server_config, baseline_hashes, artifact=True):
             assert ref.version is not None  # keyed refs always carry a version
             result = self._fetch(ref)
+            if (
+                result is not None
+                and result.files
+                and all(result.files.values())
+                and verified_refs is not None
+            ):
+                verified_refs.add(ref.key())
             if result is None:
                 findings.append(
                     ArtifactVerifyFinding(

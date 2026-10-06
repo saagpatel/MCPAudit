@@ -1,13 +1,6 @@
 """Aggregate bounded check completion without inferring safety from findings."""
 
-from mcp_audit.models import (
-    ArtifactVerifyKind,
-    CheckCoverage,
-    CoverageState,
-    LLMAnalysisStatus,
-    ScanWarning,
-    ServerAudit,
-)
+from mcp_audit.models import CheckCoverage, CoverageState, LLMAnalysisStatus, ScanWarning, ServerAudit
 
 OPTIONAL_CHECKS = (
     "inject_check",
@@ -25,6 +18,7 @@ OPTIONAL_CHECKS = (
     "runtime_security",
 )
 _CONFIG_CHECKS = {"provenance_check", "integrity_check", "verify_artifacts", "download_artifacts"}
+_BASELINE_CHECKS = _CONFIG_CHECKS | {"pin_check", "escalation_check"}
 _AGENT_TEXT_CHECKS = {"permissions", "inject_check", "trifecta_check", "escalation_check"}
 _BOUNDED_TEXT_CHECKS = {
     "permissions",
@@ -75,89 +69,89 @@ def build_coverage(
     skip_connect: bool,
     warnings: list[ScanWarning],
     baselines: dict[str, list[bool]],
+    completed: list[set[str]],
+    package_coverage: dict[str, list[CheckCoverage]],
+    discovery_incomplete: bool,
+    config_health_inspected: bool,
 ) -> dict[str, CheckCoverage]:
-    """Record requested checks, skipped prerequisites, and incomplete inventories.
+    """Require execution evidence and all prerequisites before claiming completion.
 
-    An empty listing that completed is admissible metadata. Failed listings and
-    absent exercise candidates are coverage loss even when findings are empty.
+    An empty listing that completed is admissible metadata. Empty inventories
+    cannot substitute for an absent baseline or an unexecuted check.
     """
-    coverage = {"config_health": CheckCoverage(state="complete", reason="configuration inspected")}
-    metadata_entries: list[CheckCoverage] = []
-    for audit in audits:
-        if skip_connect:
-            metadata_entries.append(CheckCoverage(state="not_run", reason="connections disabled"))
-        elif audit.connection_status == "connected":
-            metadata_entries.append(CheckCoverage(state="complete", reason="metadata listed"))
-        elif audit.connection_status == "partial":
-            metadata_entries.append(CheckCoverage(state="partial", reason="metadata listing incomplete"))
-        else:
-            state: CoverageState = "partial" if audit.tools or audit.prompts or audit.resources else "not_run"
-            metadata_entries.append(
-                CheckCoverage(state=state, reason="connection or analysis did not complete")
-            )
-    metadata = _aggregate(metadata_entries)
-    if skip_connect:
-        metadata = CheckCoverage(state="not_run", reason="connections disabled")
-    coverage["metadata"] = metadata
-    coverage["permissions"] = (
-        CheckCoverage(state="partial", reason="configuration-derived permissions only; metadata not checked")
-        if skip_connect and audits
-        else metadata.model_copy()
-    )
-    for check in ("permissions", "capabilities"):
-        detector_entries: list[CheckCoverage] = []
-        for index, audit in enumerate(audits):
-            entry = metadata_entries[index].model_copy()
-            reasons = _warning_reasons(check, audit, warnings)
-            if reasons and entry.state == "complete":
-                entry = CheckCoverage(state="partial", reason="; ".join(reasons))
-            detector_entries.append(entry)
-        if check != "permissions" or not skip_connect:
-            coverage[check] = _aggregate(detector_entries)
-    if skip_connect:
-        coverage["capabilities"] = metadata.model_copy()
-
-    for check in OPTIONAL_CHECKS:
-        if check not in requested:
+    coverage = {
+        "config_health": CheckCoverage(state="complete", reason="configuration inspected")
+        if config_health_inspected
+        else CheckCoverage(state="not_run", reason="configuration inspection unavailable")
+    }
+    for check in ("metadata", "permissions", "capabilities", *OPTIONAL_CHECKS):
+        if check in OPTIONAL_CHECKS and check not in requested:
             coverage[check] = CheckCoverage(state="not_requested", reason="check not requested")
             continue
         entries: list[CheckCoverage] = []
         for index, audit in enumerate(audits):
-            entry = metadata_entries[index].model_copy()
-            if check in _CONFIG_CHECKS:
+            if check not in completed[index]:
+                entry = CheckCoverage(state="not_run", reason="check execution unavailable")
+            elif check in _CONFIG_CHECKS:
                 entry = CheckCoverage(state="complete", reason="configuration baseline compared")
-                if audit.connection_error and audit.connection_error.startswith("analysis error:"):
-                    entry = CheckCoverage(state="not_run", reason="analysis did not complete")
-            if check in baselines and not baselines[check][index]:
+            elif not skip_connect and audit.connection_status == "connected":
+                entry = CheckCoverage(state="complete", reason="metadata listed and check executed")
+            elif audit.connection_status == "partial":
+                entry = CheckCoverage(state="partial", reason="metadata listing incomplete")
+            else:
+                state: CoverageState = (
+                    "partial" if audit.tools or audit.prompts or audit.resources else "not_run"
+                )
+                entry = CheckCoverage(state=state, reason="connection or analysis did not complete")
+            if skip_connect and check not in _CONFIG_CHECKS:
+                entry = CheckCoverage(state="not_run", reason="connections disabled")
+            if check == "permissions" and (skip_connect or audit.connection_status == "skipped"):
+                entry = CheckCoverage(
+                    state="partial", reason="configuration-derived permissions only; metadata not checked"
+                )
+            if check in _BASELINE_CHECKS and (check not in baselines or not baselines[check][index]):
                 entry = CheckCoverage(state="not_run", reason="required per-server baseline unavailable")
+            if check in package_coverage:
+                entry = package_coverage[check][index].model_copy()
+            if check == "integrity_check" and any(f.current_hash is None for f in audit.integrity_findings):
+                entry = CheckCoverage(state="partial", reason="launch artifact hashing unavailable")
             if check == "runtime_security":
                 summary = audit.canary
                 if summary is None:
                     entry = CheckCoverage(state="not_run", reason="runtime exercise unavailable")
-                elif summary.status == "complete":
-                    entry = CheckCoverage(state="complete", reason="bounded canary exercise completed")
-                else:
+                elif (
+                    summary.status != "complete"
+                    or summary.warnings
+                    or summary.completed_calls < summary.call_budget
+                ):
                     state = "not_run" if summary.status == "no_safe_tools" else "partial"
-                    if metadata_entries[index].state == "partial":
+                    if audit.connection_status == "partial":
                         state = "partial"
                     entry = CheckCoverage(
                         state=state, reason="; ".join(summary.warnings) or "runtime exercise incomplete"
                     )
-            if check == "llm_analysis" and audit.llm_analysis is not None:
+            if check == "llm_analysis":
                 summary_llm = audit.llm_analysis
-                if summary_llm.status == LLMAnalysisStatus.UNKNOWN:
+                if summary_llm is None:
+                    entry = CheckCoverage(state="not_run", reason="LLM execution unavailable")
+                elif summary_llm.status == LLMAnalysisStatus.UNKNOWN:
                     entry = CheckCoverage(state="not_run", reason=summary_llm.reason_code.value)
-            if check == "verify_artifacts" and any(
-                finding.current_hash is None for finding in audit.package_verify_findings
-            ):
-                entry = CheckCoverage(state="partial", reason="registry verification unavailable")
-            if check == "download_artifacts" and any(
-                finding.kind == ArtifactVerifyKind.UNVERIFIED for finding in audit.artifact_verify_findings
-            ):
-                entry = CheckCoverage(state="partial", reason="artifact verification unavailable")
+                elif summary_llm.analyzed_tools < summary_llm.candidate_tools:
+                    entry = CheckCoverage(state="partial", reason="LLM candidates not fully analyzed")
             reasons = _warning_reasons(check, audit, warnings)
             if reasons and entry.state == "complete":
                 entry = CheckCoverage(state="partial", reason="; ".join(reasons))
+            if check not in completed[index]:
+                entry = CheckCoverage(state="not_run", reason="check execution unavailable")
             entries.append(entry)
         coverage[check] = _aggregate(entries)
+        if skip_connect and check == "metadata":
+            coverage[check] = CheckCoverage(state="not_run", reason="connections disabled")
+    if discovery_incomplete:
+        for check, entry in coverage.items():
+            if entry.state != "not_requested":
+                reason = "configuration discovery incomplete: config_parse_failure"
+                if entry.state != "complete":
+                    reason += "; " + entry.reason
+                coverage[check] = CheckCoverage(state="partial", reason=reason)
     return coverage
