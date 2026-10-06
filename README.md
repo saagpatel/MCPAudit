@@ -373,8 +373,9 @@ classification. Deterministic analysis remains authoritative.
 
 ### Runtime rug-pull canary
 
-For servers you are allowed to exercise, `scan --canary-check` captures an
-in-memory SHA256 surface baseline, makes up to five benign `tools/call`
+For servers you are allowed to exercise, `scan --canary-check` uses an existing
+v2 tool pin baseline when available (otherwise an in-memory SHA256 baseline),
+checks the first listing for drift, makes up to five benign `tools/call`
 requests in the same session, and re-lists after every call. Unlike an ordinary
 scan, this mode **calls tools**. It requires an explicit isolated config:
 
@@ -382,6 +383,16 @@ scan, this mode **calls tools**. It requires an explicit isolated config:
 mcp-audit scan --config ./allowed-servers.json --config-only \
   --canary-check --canary-calls 5 --json canary.json --sarif canary.sarif
 ```
+
+For stdio, the canary also starts a second session with a different client name
+and declared capability set (roots support returning an empty list). Initial
+tool, prompt, and resource listings that differ produce HIGH
+`IDENTITY_CONDITIONED_SURFACE` findings. This doubles process spawns without
+adding tool calls. The second listing also gets each eligible empty-argument
+prompt once to compare response descriptions and roles. `--canary-identities 1`
+disables the second session; HTTP/SSE use one identity unless `--canary-identities 2` is
+requested. Both sessions share the per-server timeout. The comparison is a
+signal to review: legitimate client-specific metadata can differ too.
 
 The canary compares tools (including descriptions, schemas, and annotations),
 prompt metadata, empty-argument `prompts/get` descriptions and message roles,
@@ -413,8 +424,9 @@ guarantee that an apparently benign tool has no side effects.
 `--canary-calls` bounds `tools/call` to 1–100 **per server**, default 5.
 The report counts attempted `prompts/get` requests separately in
 `canary.prompt_get_calls`, including failed requests. The exercise request
-budget is up to K tool calls plus P × (K + 1) prompt gets, where P is the number
-of eligible prompts per listing (if it stays constant). A tools-list failure
+budget is up to K tool calls plus P × (K + I) prompt gets, where I is the
+identity count and P is the number of eligible prompts per listing (if it stays
+constant). A tools-list failure
 can add one refresh and its prompt gets before the next exercise call; the
 reported total is `completed_calls + prompt_get_calls`. Initialize and listing
 requests are additional. Tools, prompts and resources are always listed; a
@@ -422,14 +434,14 @@ surface the server never advertised stays debug-only if every listing fails
 with an ordinary error and it is never observed. Intermittent availability
 and page-limit exhaustion produce coverage warnings. Each listing follows at most 20
 pages per capture. Scanned text is capped at 64 KB per tool result or prompt
-body. The existing `--timeout` bounds the whole session, including all calls
+body. The existing `--timeout` bounds both sessions, including all calls
 and listings. Errors, timeouts, page-limit exhaustion, required-argument
 prompts, truncated oversized text, and a lack of eligible tools produce
 incomplete-coverage warnings. A clean canary's `canary.not_excluded` lists what
 it cannot rule out: elapsed time, randomness, more than K calls, client identity,
 other arguments, other call sequences, and later sessions. Tests
-use only a synthetic local stdio server that changes metadata after three calls
-without changing its version, plus a benign control.
+use synthetic local stdio servers, including identity-conditioned listings,
+metadata changes after three calls without a version change, and benign controls.
 
 ## Known issues
 

@@ -388,7 +388,7 @@ async def test_exact_listing_page_limit(pages: int) -> None:
     if pages == 20:
         assert audit.canary.status == "complete" and audit.canary.completed_calls == 1
         assert len(audit.tools) == len(audit.prompts) == len(audit.resources) == 20
-        assert audit.canary.prompt_get_calls == 40
+        assert audit.canary.prompt_get_calls == 60
         assert not audit.canary.warnings and not report.warnings
     else:
         assert audit.canary.status == "no_safe_tools" and audit.canary.completed_calls == 0
@@ -435,7 +435,7 @@ async def test_one_failed_get_preserves_peers_and_last_known_prompt() -> None:
         ("summary0", 4),
     }
     assert all(f.surface == "prompt_results" and f.status.value == "changed" for f in audit.drift_findings)
-    assert audit.canary is not None and audit.canary.prompt_get_calls == 12
+    assert audit.canary is not None and audit.canary.prompt_get_calls == 14
 
 
 @pytest.mark.anyio
@@ -458,10 +458,10 @@ async def test_surface_boundaries_dynamic_content_and_pagination(mode: str) -> N
         assert audit.canary.prompt_get_calls == 0
     if mode == "paginated":
         assert len(audit.tools) == len(audit.prompts) == len(audit.resources) == 2
-        assert audit.canary.prompt_get_calls == 12
+        assert audit.canary.prompt_get_calls == 14
     if mode == "dynamic":
         assert audit.canary.baseline_hash == audit.canary.current_hash
-        assert audit.canary.prompt_get_calls == 6
+        assert audit.canary.prompt_get_calls == 7
 
 
 @pytest.mark.anyio
@@ -469,7 +469,7 @@ async def test_prompt_body_hunt_is_reported_once_without_drift() -> None:
     config = make_server_config(command=sys.executable, args=[SURFACES_FIXTURE, "prompt_body"])
     audit = await ServerConnector(timeout=15).connect(config, canary_calls=5)
     assert audit.canary is not None and audit.canary.status == "complete"
-    assert audit.canary.completed_calls == 5 and audit.canary.prompt_get_calls == 6
+    assert audit.canary.completed_calls == 5 and audit.canary.prompt_get_calls == 7
     assert not audit.drift_findings  # rendered text changes are not drift
     assert len(audit.injection_findings) == 1  # one per (prompt, pattern), not per capture
     finding = audit.injection_findings[0]

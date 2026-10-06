@@ -12,13 +12,13 @@ from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import PurePath
-from typing import TextIO, TypeVar
+from typing import TextIO, TypeVar, cast
 
 import anyio
 from mcp import Client, StdioServerParameters
 from mcp.client.sse import sse_client
 from mcp.client.stdio import stdio_client
-from mcp.types import Implementation, ListPromptsResult, ListResourcesResult, ListToolsResult
+from mcp.types import Implementation, ListPromptsResult, ListResourcesResult, ListRootsResult, ListToolsResult
 from mcp.types import Prompt as SdkPrompt
 from mcp.types import Resource as SdkResource
 from mcp.types import Tool as SdkTool
@@ -42,7 +42,7 @@ from mcp_audit.models import (
     ToolInfo,
     TransportType,
 )
-from mcp_audit.redaction import redact_text
+from mcp_audit.redaction import redact_data, redact_text
 from mcp_audit.rules.result_injection import RESULT_SCAN_LIMIT
 from mcp_audit.terminal_text import TerminalSafeLogFilter, strip_controls
 
@@ -50,6 +50,13 @@ logger = logging.getLogger(__name__)
 logger.addFilter(TerminalSafeLogFilter())
 
 _CLIENT_INFO = Implementation(name="mcp-audit", version=__version__)
+_CANARY_CLIENT_INFO = Implementation(name="canary-client", version=__version__)
+
+
+async def _canary_roots(context: object) -> ListRootsResult:
+    """Vary declared capabilities without exposing paths or granting access."""
+    return ListRootsResult(roots=[])
+
 
 # Consume suffix candidates even without a suffix, avoiding repeated scans of
 # overlapping URL starts in server-controlled text. Possessive runs cannot backtrack.
@@ -296,6 +303,10 @@ class _CanaryProbe:
     audit: ServerAudit
     calls: int
     safe_tools: frozenset[str]
+    client_info: Implementation = field(default_factory=lambda: _CLIENT_INFO)
+    identity_only: bool = False
+    baseline: dict[str, dict[str, object]] | None = None
+    initial_surface: dict[str, dict[str, object]] = field(default_factory=dict)
     # prompts/get repeats on every listing; each (prompt, pattern) is reported once.
     prompt_patterns: set[tuple[str, str]] = field(default_factory=set)
     listing_failures: dict[str, str] = field(default_factory=dict)
@@ -365,11 +376,20 @@ class ServerConnector:
         self.scan_warnings: list[ScanWarning] | None = None
 
     async def connect(
-        self, config: ServerConfig, *, canary_calls: int = 0, safe_tools: frozenset[str] = frozenset()
+        self,
+        config: ServerConfig,
+        *,
+        canary_calls: int = 0,
+        safe_tools: frozenset[str] = frozenset(),
+        canary_identities: int | None = None,
+        canary_baseline: dict[str, dict[str, object]] | None = None,
     ) -> ServerAudit:
         """Connect to a server and return a ServerAudit with tool list."""
         audit = ServerAudit(server=config, connection_status="pending")
         probe = None
+        if canary_identities is not None and canary_identities not in (1, 2):
+            raise ValueError("Canary identities must be 1 or 2.")
+        identities = canary_identities or (2 if config.transport == TransportType.STDIO else 1)
         if canary_calls:
             if not 1 <= canary_calls <= 100:
                 raise ValueError("Canary calls must be between 1 and 100.")
@@ -378,7 +398,7 @@ class ServerConnector:
                 call_budget=canary_calls,
                 client_identity=f"{_CLIENT_INFO.name}/{_CLIENT_INFO.version}",
             )
-            probe = _CanaryProbe(audit, canary_calls, safe_tools)
+            probe = _CanaryProbe(audit, canary_calls, safe_tools, baseline=canary_baseline)
         started = time.monotonic()
         try:
             with anyio.move_on_after(self.timeout) as cancel_scope:
@@ -406,6 +426,41 @@ class ServerConnector:
                         connection_status="failed",
                         connection_error=f"Unknown transport: {config.transport}",
                     )
+
+                if probe and identities == 2:
+                    from mcp_audit.escalation import detect_session_drift
+
+                    identity_probe = _CanaryProbe(
+                        audit,
+                        0,
+                        frozenset(),
+                        client_info=_CANARY_CLIENT_INFO,
+                        identity_only=True,
+                        baseline=canary_baseline,
+                        initial_surface=probe.initial_surface,
+                        prompt_patterns=probe.prompt_patterns,
+                    )
+                    connect = {
+                        TransportType.STDIO: self._connect_stdio,
+                        TransportType.HTTP: self._connect_http,
+                        TransportType.SSE: self._connect_sse,
+                    }[config.transport]
+                    alternate = await connect(config, identity_probe)
+                    # Compare initial listings: exercise-induced changes are not
+                    # evidence of identity conditioning. Failed listings are unknown.
+                    findings = detect_session_drift(config.name, probe.initial_surface, alternate.surface, 0)
+                    for finding in findings:
+                        finding.kind = "IDENTITY_CONDITIONED_SURFACE"
+                        finding.summary = (
+                            "IDENTITY_CONDITIONED_SURFACE: initial listings differ between clients."
+                        )
+                        finding.remediation = (
+                            "Review the identity-conditioned surface before trusting this server."
+                        )
+                    audit.drift_findings.extend(findings)
+                    assert audit.canary is not None
+                    if audit.canary.warnings and audit.canary.status == "complete":
+                        audit.canary.status = "partial"
 
             if cancel_scope.cancelled_caught:
                 logger.debug("Timeout connecting to %s", config.name)
@@ -487,7 +542,11 @@ class ServerConnector:
             env=None,
         )
         with _capture_stderr(config.name) as errlog:
-            async with Client(stdio_client(params, errlog=errlog), client_info=_CLIENT_INFO) as client:
+            async with Client(
+                stdio_client(params, errlog=errlog),
+                client_info=probe.client_info if probe else _CLIENT_INFO,
+                list_roots_callback=_canary_roots if probe and probe.identity_only else None,
+            ) as client:
                 return await self._inspect_session(client, config.name, probe)
 
     async def _connect_http(
@@ -499,7 +558,11 @@ class ServerConnector:
         for name in _SSE_LOGGER_NAMES:
             logging.getLogger(name).addFilter(_SSE_LOG_FILTER)
         # mcp 2.1.1 maps Client(str) to streamable_http_client.
-        async with Client(config.url, client_info=_CLIENT_INFO) as client:
+        async with Client(
+            config.url,
+            client_info=probe.client_info if probe else _CLIENT_INFO,
+            list_roots_callback=_canary_roots if probe and probe.identity_only else None,
+        ) as client:
             return await self._inspect_session(client, config.name, probe)
 
     async def _connect_sse(
@@ -513,13 +576,19 @@ class ServerConnector:
         for name in _SSE_LOGGER_NAMES:
             logging.getLogger(name).addFilter(_SSE_LOG_FILTER)
         # Client(str) is Streamable HTTP; legacy SSE must pass sse_client as Transport.
-        async with Client(sse_client(config.url), client_info=_CLIENT_INFO) as client:
+        async with Client(
+            sse_client(config.url),
+            client_info=probe.client_info if probe else _CLIENT_INFO,
+            list_roots_callback=_canary_roots if probe and probe.identity_only else None,
+        ) as client:
             return await self._inspect_session(client, config.name, probe)
 
     async def _inspect_session(
         self, session: Client, server_name: str, probe: _CanaryProbe | None
     ) -> _ServerCapabilities:
-        capabilities = await self._list_capabilities(session, server_name, probe)
+        capabilities = await self._list_capabilities(
+            session, server_name, probe, probe.initial_surface if probe and probe.identity_only else None
+        )
         if probe is None:
             return capabilities
         from mcp_audit.escalation import detect_session_drift
@@ -527,9 +596,24 @@ class ServerConnector:
 
         summary = probe.audit.canary
         assert summary is not None
+        summary.client_identities.append(f"{probe.client_info.name}/{probe.client_info.version}")
+        if probe.identity_only:
+            return capabilities
+        probe.initial_surface.update(capabilities.surface)
         previous = capabilities.surface
-        summary.baseline_hash = surface_hash(previous)
-        summary.current_hash = summary.baseline_hash
+        baseline = {**previous, **probe.baseline} if probe.baseline is not None else previous
+        summary.baseline_source = "pin" if probe.baseline is not None else "session"
+        summary.baseline_hash = surface_hash(baseline)
+        summary.current_hash = surface_hash(previous)
+        if probe.baseline is not None:
+            # Pin snapshots withhold credentials. Normalize only this comparison;
+            # subsequent session and identity drift still use the full raw surface.
+            pin_current = cast(dict[str, dict[str, object]], redact_data(previous))
+            pin_baseline = cast(dict[str, dict[str, object]], redact_data(probe.baseline))
+            pinned_drift = detect_session_drift(server_name, pin_baseline, pin_current, 0)
+            for finding in pinned_drift:
+                finding.summary = "Tool surface differs from the v2 pin at the first canary listing."
+            probe.audit.drift_findings.extend(pinned_drift)
         for call in range(1, probe.calls + 1):
             if "tools" not in capabilities.surface:
                 capabilities = await self._list_capabilities(session, server_name, probe, previous, call - 1)
@@ -692,7 +776,7 @@ class ServerConnector:
                     )
 
         tool_infos = [self._convert_tool(t) for t in tools]
-        if probe:
+        if probe and not probe.identity_only:
             if "tools" in surface:
                 probe.audit.tools = tool_infos
             if "prompts" in surface:

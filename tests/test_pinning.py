@@ -11,7 +11,7 @@ import pytest
 import yaml
 
 from mcp_audit.canonical import canonical_json_bytes
-from mcp_audit.models import ClientType, DriftStatus, ServerConfig, TransportType
+from mcp_audit.models import ClientType, DriftStatus, ScanWarning, ServerConfig, ToolInfo, TransportType
 from mcp_audit.pinning import (
     _MAX_PIN_FILE_BYTES,
     PinFileError,
@@ -609,3 +609,76 @@ class TestHostileFileBounds:
         text = path.read_text()
         assert "&id" not in text and "*id" not in text
         assert set(PinStore(path=path).pinned_servers()) == {"one", "two"}
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        pytest.param(field, None, id=f"missing-{field}")
+        for field in (
+            "snapshot",
+            "description",
+            "input_schema",
+            "annotations",
+            "title",
+            "output_schema",
+            "icons",
+            "meta",
+        )
+    ]
+    + [
+        pytest.param("snapshot", {}, id="empty-snapshot"),
+        pytest.param("snapshot", "invalid", id="invalid-snapshot"),
+        pytest.param("input_schema", "invalid", id="invalid-input-schema"),
+        pytest.param("description", [], id="invalid-description"),
+        pytest.param("title", {}, id="invalid-title"),
+        pytest.param("output_schema", [], id="invalid-output-schema"),
+        pytest.param("icons", ["invalid"], id="invalid-icons"),
+        pytest.param("meta", "invalid", id="invalid-meta"),
+        pytest.param("annotations", {"read_only_hint": "true"}, id="coercible-annotation"),
+        pytest.param("input_schema", {"default": float("nan")}, id="nonfinite-schema"),
+        pytest.param("input_schema", {"default": {1, 2}}, id="nonjson-schema"),
+    ],
+)
+def test_malformed_v2_snapshots_are_unavailable(tmp_path: Path, field: str, value: object) -> None:
+    store = _store(tmp_path)
+    tool = ToolInfo.model_validate_json(
+        (Path(__file__).parent / "fixtures" / "pinning" / "tool-v2.json").read_text()
+    )
+    store.pin_server("fixture", [tool, tool.model_copy(update={"name": "baseline_only"})])
+    raw = yaml.safe_load(store.path.read_text())
+    entry = raw["servers"]["fixture"]["tools"][tool.name]
+    target = entry if field == "snapshot" else entry["snapshot"]
+    if value is None:
+        del target[field]
+    else:
+        target[field] = value
+    store.path.write_text(yaml.safe_dump(raw))
+    store = PinStore(store.path)
+    before = store.path.read_bytes()
+    warnings: list[ScanWarning] = []
+    assert store.canary_baseline("fixture", warnings=warnings) is None
+    (warning,) = warnings
+    assert warning.code == "pin_baseline_corrupted"
+    assert warning.check == "canary_check" and warning.servers == ["fixture"]
+    assert "using an in-session baseline only" in warning.message
+    assert store.path.read_bytes() == before
+
+
+@pytest.mark.parametrize("empty_optionals", [False, True])
+def test_complete_v2_canary_snapshot_is_available(tmp_path: Path, empty_optionals: bool) -> None:
+    tool = ToolInfo.model_validate_json(
+        (Path(__file__).parent / "fixtures" / "pinning" / "tool-v2.json").read_text()
+    )
+    if empty_optionals:
+        tool = ToolInfo(name=tool.name)
+    store = _store(tmp_path)
+    store.pin_server("fixture", [tool])
+    store = PinStore(store.path)
+    before = store.path.read_bytes()
+    warnings: list[ScanWarning] = []
+    assert store.canary_baseline("fixture", warnings=warnings) == {
+        "tools": {tool.name: canonical_tool_surface(tool)}
+    }
+    assert warnings == []
+    assert store.path.read_bytes() == before

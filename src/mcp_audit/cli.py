@@ -374,6 +374,13 @@ def discover(client_filter: str | None, verbose: bool) -> None:
     help="Maximum benign exercise calls per server with --canary-check.",
 )
 @click.option(
+    "--canary-identities",
+    default=None,
+    type=click.IntRange(1, 2),
+    metavar="N",
+    help="Canary client identities (1 or 2); default 2 for stdio, 1 for HTTP/SSE. No extra tool calls.",
+)
+@click.option(
     "--canary-safe-tool",
     "canary_safe_tools",
     multiple=True,
@@ -536,6 +543,7 @@ def scan(
     redact: bool,
     canary_check: bool,
     canary_calls: int,
+    canary_identities: int | None,
     canary_safe_tools: tuple[str, ...],
 ) -> None:
     """Full audit: discover servers, connect, enumerate tools, score risk, report."""
@@ -543,7 +551,7 @@ def scan(
         raise click.ClickException("--config-only requires --config PATH.")
 
     anyio.run(
-        _run_scan,
+        partial(_run_scan, canary_identities=canary_identities),
         json_output,
         sarif_output,
         html_output,
@@ -682,6 +690,7 @@ async def _run_scan(
     sarif_profile: str = "compatibility",
     max_concurrency: int = 32,
     connect_project_configs: bool = False,
+    canary_identities: int | None = None,
 ) -> None:
     """CLI scan entrypoint — calls the engine's run_scan then renders output."""
     if config_only and not extra_config:
@@ -711,6 +720,7 @@ async def _run_scan(
         max_concurrency=max_concurrency,
         canary_check=canary_check,
         canary_calls=canary_calls,
+        canary_identities=canary_identities,
         canary_safe_tools=canary_safe_tools,
         skip_connect=skip_connect,
         connect_project_configs=connect_project_configs,
