@@ -13,6 +13,7 @@ import pytest
 from mcp_audit.engine import ScanOptions, run_scan
 from mcp_audit.models import ClientType, ServerAudit, ServerConfig
 from mcp_audit.pinning import PinStore
+from mcp_audit.policy import PolicyConfig, evaluate_policy
 
 HERE = Path(__file__).resolve().parent
 FIXTURE = HERE.parent / "fixtures" / "evasion_server.py"
@@ -20,7 +21,6 @@ CORPUS_PATH = HERE / "corpus.json"
 CORPUS = cast(list[dict[str, object]], json.loads(CORPUS_PATH.read_text())["cases"])
 
 _GAP_REASONS = {
-    "lying-annotations": "gap 9: fixed by P1-3",
     "unicode-tag-block": "gap 4: fixed by P1-5",
     "homoglyph-instructions": "gap 5: fixed by P1-5",
     "shadow-fullwidth-zerowidth": "gap 11: fixed by P1-5",
@@ -152,10 +152,14 @@ async def test_detector_gap_corpus(
             )
         elif kind == "annotation_contradiction":
             categories = {finding.category.value for finding in audit.permissions}
-            assert "destructive" in categories or "file_write" in categories
-            # P1-3 should tighten this to the exact annotation-contradiction field.
-            assert "annotation_contradiction" in set(
-                _finding_labels(audit, {"category", "kind", "rule", "rule_name", "pattern_name"})
+            assert {"destructive", "file_write"} <= categories
+            assert any(
+                f.tool_name == detector["tool"]
+                and f.kind == "annotation_contradiction"
+                and f.rule_id == "MCP043"
+                and f.category == "destructive"
+                and f.severity == "high"
+                for f in audit.annotation_findings
             )
         elif kind == "ssrf_and_egress":
             assert any(f.target_name == detector["tool"] for f in audit.ssrf_findings)
@@ -175,7 +179,7 @@ async def test_detector_gap_corpus(
             servers=[_server(case)],
         )
         audit = report.audits[0]
-        if audit.connection_status != "connected":
+        if audit.connection_status != ("partial" if kind == "canary_warning" else "connected"):
             raise RuntimeError("Canary corpus fixture did not connect")
         if kind == "canary_not_excluded":
             if audit.canary is None:
@@ -196,9 +200,10 @@ async def test_detector_gap_corpus(
             }
             assert len(patterns) >= (2 if case["id"] == "result-plain-control" else 1)
         elif kind == "canary_warning":
-            # As of 2.8.0 the page-limit failure is surfaced as a coverage warning;
-            # assert its stable code, not the implementation-specific warning text.
             assert any(warning.code == detector["code"] for warning in report.warnings)
+            assert report.coverage["metadata"].state == "partial"
+            assert report.coverage["runtime_security"].state == "partial"
+            assert not evaluate_policy(report, PolicyConfig(fail_on_coverage=True)).passed
         else:
             raise RuntimeError(f"Unknown canary detector contract: {kind}")
         return

@@ -1,4 +1,4 @@
-"""Frozen pre-P1-9 category/confidence/evidence snapshots for synthetic surfaces."""
+"""Golden category/confidence/evidence snapshots for synthetic surfaces."""
 
 from __future__ import annotations
 
@@ -81,7 +81,7 @@ def signature(
     }
 
 
-def test_examples_and_redteam_detector_findings_match_pre_p1_9() -> None:
+def test_examples_and_redteam_detector_findings_match_golden() -> None:
     expected = json.loads(GOLDEN.read_text())
     actual = {
         name: signature(PermissionAnalyzer(), SsrfDetector(), tools, prompts, resources)

@@ -37,13 +37,24 @@
               ]
             }
           ]
-        }
+        },
+        "toolExecutionNotifications": [
+          {
+            "level": "warning",
+            "message": {
+              "text": "Coverage is unknown because this report predates coverage tracking."
+            },
+            "descriptor": {
+              "id": "MCP-COVERAGE-UNKNOWN"
+            }
+          }
+        ]
       }
     ]
   },
   "non_canary_sha256": {
-    "terminal": "f004d6d0d6489ae9d636cd1d8c8eeab4b31bb74bb682ace53419a73954dcc7a7",
-    "html": "82ff30a6ff090d580b7fb63f4e43223764638b050ca15a1c33d3be9d358692d6",
-    "sarif": "2e375b593b996a85a26193592e9b0ded506586db8be850d6a7241a9d5c424feb"
+    "terminal": "4cbca170bdf6b53f3db0801d60a397084825f620408a98a0076756181ca7c74b",
+    "html": "6aedef50b1f4cdb2042ef8a651f3cc95cf9fb8dd50adfe1ae017b65c82dc0329",
+    "sarif": "28172c627b907fb5a22a065ebd972caa5b360fbc6bdd01256aaa062111ef3236"
   }
 }

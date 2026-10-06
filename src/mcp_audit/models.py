@@ -280,6 +280,41 @@ class CapabilityTarget(StrEnum):
     RESOURCE = "resource"
 
 
+class AnnotationFinding(BaseModel):
+    """An explicit served annotation contradicts keyword capability evidence."""
+
+    kind: Literal["annotation_contradiction"] = "annotation_contradiction"
+    tool_name: str
+    hint: str
+    declared_value: bool
+    category: PermissionCategory
+    confidence: Confidence
+    severity: Literal["medium", "high"]
+    evidence: list[str]
+    field_paths: list[str] = Field(default_factory=list)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def rule_id(self) -> str:
+        from mcp_audit.taxonomy import ANNOTATION_CONTRADICTION
+
+        return ANNOTATION_CONTRADICTION.rule_id
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def title(self) -> str:
+        from mcp_audit.taxonomy import ANNOTATION_CONTRADICTION
+
+        return ANNOTATION_CONTRADICTION.title
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def remediation(self) -> str:
+        from mcp_audit.taxonomy import ANNOTATION_CONTRADICTION
+
+        return ANNOTATION_CONTRADICTION.remediation
+
+
 class PermissionFinding(BaseModel):
     """A single permission inference for a tool."""
 
@@ -959,18 +994,20 @@ class ConfigHealthFinding(BaseModel):
     summary: str
     details: list[str] = Field(default_factory=list)
     remediation: str
+    config_paths: list[str] = Field(default_factory=list)
 
 
 class ServerAudit(BaseModel):
     """Complete audit result for a single MCP server."""
 
     server: ServerConfig
-    connection_status: str  # "connected", "failed", "timeout", "skipped"
+    connection_status: str  # "connected", "partial", "failed", "timeout", "skipped"
     connection_error: str | None = None
     tools: list[ToolInfo] = Field(default_factory=list)
     prompts: list[PromptInfo] = Field(default_factory=list)
     resources: list[ResourceInfo] = Field(default_factory=list)
     permissions: list[PermissionFinding] = Field(default_factory=list)
+    annotation_findings: list[AnnotationFinding] = Field(default_factory=list)
     capability_findings: list[CapabilityFinding] = Field(default_factory=list)
     risk_score: RiskScore | None = None
     non_tool_risk: NonToolRisk | None = None
@@ -1056,6 +1093,16 @@ failing on attribute access. Additive fields do NOT bump this.
 """
 
 
+CoverageState = Literal["complete", "partial", "not_run", "not_requested"]
+
+
+class CheckCoverage(BaseModel):
+    """Completion of a bounded check, independent of whether it found a risk."""
+
+    state: CoverageState
+    reason: str
+
+
 class AuditReport(BaseModel):
     """Top-level audit report containing all server audits."""
 
@@ -1076,6 +1123,7 @@ class AuditReport(BaseModel):
     fleet_trifecta_findings: list[TrifectaFinding] = Field(default_factory=list)
     shadowing_findings: list[ShadowingFinding] = Field(default_factory=list)
     warnings: list[ScanWarning] = Field(default_factory=list)
+    coverage: dict[str, CheckCoverage] = Field(default_factory=dict)
 
     def redacted(self, *, identifiers: bool = False) -> "AuditReport":
         """Return a credential-redacted copy, optionally scrubbing field-report identifiers."""

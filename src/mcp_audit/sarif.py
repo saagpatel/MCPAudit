@@ -8,13 +8,17 @@ from importlib.metadata import version as pkg_version
 from pathlib import Path
 from typing import Any
 
+from mcp_audit.coverage import missing_checks
 from mcp_audit.models import (
+    AnnotationFinding,
     ArtifactVerifyFinding,
     ArtifactVerifyKind,
     ArtifactVerifySeverity,
     AuditReport,
     CapabilityFinding,
+    CheckCoverage,
     Confidence,
+    ConfigHealthFinding,
     DriftFinding,
     EgressFinding,
     EgressKind,
@@ -45,6 +49,7 @@ from mcp_audit.models import (
     TrifectaSeverity,
 )
 from mcp_audit.taxonomy import (
+    ANNOTATION_CONTRADICTION,
     ARTIFACT_VERIFY_FINDINGS,
     EGRESS_FINDINGS,
     ESCALATION_FINDINGS,
@@ -178,11 +183,28 @@ def _artifact_uri(config_path: str | None) -> str:
     return path.as_uri()
 
 
+def _config_health_rule_id(finding_type: str) -> str:
+    """Map each config-health kind to a deterministic SARIF rule identifier."""
+    token = "".join(character.upper() if character.isalnum() else "-" for character in finding_type)
+    return f"MCP-CH-{token.strip('-')}"
+
+
+def _unique_config_health_findings(
+    findings: list[ConfigHealthFinding],
+) -> list[ConfigHealthFinding]:
+    by_type: dict[str, ConfigHealthFinding] = {}
+    for finding in findings:
+        by_type.setdefault(finding.finding_type, finding)
+    return [by_type[finding_type] for finding_type in sorted(by_type)]
+
+
 class SarifGenerator:
     """Converts an AuditReport into a SARIF 2.1.0 document."""
 
-    def generate(self, report: AuditReport) -> dict[str, Any]:
-        """Return a SARIF 2.1.0 document as a dict. Caller is responsible for writing JSON."""
+    def generate(self, report: AuditReport, *, profile: str = "compatibility") -> dict[str, Any]:
+        """Return SARIF, optionally adding config-health findings in the extended profile."""
+        if profile not in {"compatibility", "extended"}:
+            raise ValueError(f"Unknown SARIF profile: {profile}")
         report = report.redacted()
         try:
             tool_version = pkg_version("mcp-audits")
@@ -199,13 +221,19 @@ class SarifGenerator:
                             "name": "mcp-audit",
                             "version": tool_version,
                             "informationUri": "https://github.com/saagpatel/MCPAudit",
-                            "rules": self._make_rules(),
+                            "rules": self._make_rules(
+                                report.config_health_findings if profile == "extended" else []
+                            ),
                         }
                     },
-                    "results": self._make_results(report),
+                    "results": self._make_results(report, include_config_health=profile == "extended"),
                 }
             ],
         }
+        coverage = {
+            check: {"state": value.state, "reason": value.reason} for check, value in report.coverage.items()
+        }
+        document["runs"][0]["properties"] = {"mcpAuditCoverage": coverage}
         canaries = [
             {
                 "server": audit.server.name,
@@ -220,13 +248,65 @@ class SarifGenerator:
             for audit in report.audits
             if audit.canary is not None
         ]
-        if canaries:
-            document["runs"][0]["invocations"] = [
-                {"executionSuccessful": True, "properties": {"mcpAuditCanary": canaries}}
-            ]
+        coverage_notifications = self._coverage_notifications(report.coverage)
+        coverage_notifications.extend(
+            {
+                "level": "warning",
+                "message": {"text": warning.message},
+                "descriptor": {"id": "MCP-PROJECT-CONFIG-NOT-CONNECTED"},
+                "properties": warning.model_dump(),
+            }
+            for warning in report.warnings
+            if warning.code == "project_config_not_connected"
+        )
+        if canaries or coverage_notifications:
+            invocation: dict[str, Any] = {"executionSuccessful": True}
+            if canaries:
+                invocation["properties"] = {"mcpAuditCanary": canaries}
+            if coverage_notifications:
+                invocation["toolExecutionNotifications"] = coverage_notifications
+            document["runs"][0]["invocations"] = [invocation]
         return document
 
-    def _make_rules(self) -> list[dict[str, Any]]:
+    def _coverage_notifications(self, coverage: dict[str, CheckCoverage]) -> list[dict[str, Any]]:
+        if not coverage:
+            return [
+                {
+                    "level": "warning",
+                    "message": {
+                        "text": "Coverage is unknown because this report predates coverage tracking."
+                    },
+                    "descriptor": {"id": "MCP-COVERAGE-UNKNOWN"},
+                }
+            ]
+        notifications: list[dict[str, Any]] = []
+        missing = missing_checks(coverage)
+        if missing:
+            notifications.append(
+                {
+                    "level": "warning",
+                    "message": {
+                        "text": (
+                            f"Coverage is unknown for checks with no recorded state: {', '.join(missing)}."
+                        )
+                    },
+                    "descriptor": {"id": "MCP-COVERAGE-UNKNOWN"},
+                }
+            )
+        for check, value in sorted(coverage.items()):
+            if value.state not in {"partial", "not_run"}:
+                continue
+            reason = f" ({value.reason})" if value.reason else ""
+            notifications.append(
+                {
+                    "level": "warning",
+                    "message": {"text": f"Check '{check}' is {value.state}{reason}."},
+                    "descriptor": {"id": f"MCP-COVERAGE-{value.state.upper()}"},
+                }
+            )
+        return notifications
+
+    def _make_rules(self, config_health: list[ConfigHealthFinding] | None = None) -> list[dict[str, Any]]:
         """One driver rule per PermissionCategory plus injection rules MCP007/MCP008."""
         perm_rules = [
             {
@@ -385,8 +465,30 @@ class SarifGenerator:
             }
             for rule_id, desc in _ARTIFACT_VERIFY_RULE_DESCRIPTIONS.items()
         ]
+        config_health_rules = [
+            {
+                "id": _config_health_rule_id(finding.finding_type),
+                "name": f"ConfigHealth{finding.finding_type.title().replace('_', '')}",
+                "shortDescription": {"text": finding.finding_type.replace("_", " ").title()},
+                "fullDescription": {"text": finding.summary},
+                "help": {"text": finding.remediation},
+                "helpUri": "https://github.com/saagpatel/MCPAudit#readme",
+                "properties": {"category": "config_health", "severity": finding.severity.value},
+            }
+            for finding in _unique_config_health_findings(config_health or [])
+        ]
         return (
             perm_rules
+            + [
+                {
+                    "id": ANNOTATION_CONTRADICTION.rule_id,
+                    "name": "AnnotationContradiction",
+                    "shortDescription": {"text": ANNOTATION_CONTRADICTION.title},
+                    "fullDescription": {"text": ANNOTATION_CONTRADICTION.description},
+                    "help": {"text": ANNOTATION_CONTRADICTION.remediation},
+                    "defaultConfiguration": {"level": "warning"},
+                }
+            ]
             + injection_rules
             + ssrf_rules
             + egress_rules
@@ -398,14 +500,19 @@ class SarifGenerator:
             + package_verify_rules
             + artifact_verify_rules
             + contract_rules
+            + config_health_rules
         )
 
-    def _make_results(self, report: AuditReport) -> list[dict[str, Any]]:
+    def _make_results(
+        self, report: AuditReport, *, include_config_health: bool = False
+    ) -> list[dict[str, Any]]:
         """One result per (server, tool, category) triple, plus injection findings."""
         results: list[dict[str, Any]] = []
         for audit in report.audits:
             for permission_finding in audit.permissions:
                 results.append(self._make_result(permission_finding, audit))
+            for annotation_finding in audit.annotation_findings:
+                results.append(self._make_annotation_result(annotation_finding, audit))
             for capability_finding in audit.capability_findings:
                 results.append(self._make_capability_result(capability_finding, audit))
             for inj in audit.injection_findings:
@@ -435,7 +542,61 @@ class SarifGenerator:
         if report.policy_result is not None:
             for violation in report.policy_result.violations:
                 results.append(self._make_policy_result(violation))
+        if include_config_health:
+            results.extend(
+                self._make_config_health_result(finding) for finding in report.config_health_findings
+            )
         return results
+
+    def _make_config_health_result(self, finding: ConfigHealthFinding) -> dict[str, Any]:
+        rule_id = _config_health_rule_id(finding.finding_type)
+        result: dict[str, Any] = {
+            "ruleId": rule_id,
+            "level": {"high": "error", "medium": "warning", "low": "note"}[finding.severity.value],
+            "message": {"text": finding.summary},
+            "partialFingerprints": {
+                "mcpAuditStableId": _stable_fingerprint(rule_id, finding.server_name or "", finding.summary)
+            },
+            "properties": {
+                "finding_type": finding.finding_type,
+                "server_name": finding.server_name,
+                "details": finding.details,
+                "remediation": finding.remediation,
+                "severity": finding.severity.value,
+            },
+        }
+        if finding.config_paths:
+            result["locations"] = [
+                {"physicalLocation": {"artifactLocation": {"uri": _artifact_uri(path)}}}
+                for path in finding.config_paths
+            ]
+        return result
+
+    def _make_annotation_result(self, finding: AnnotationFinding, audit: ServerAudit) -> dict[str, Any]:
+        """Keep declaration/evidence contradictions separate from capability results."""
+        return {
+            "ruleId": finding.rule_id,
+            "level": "error" if finding.severity == "high" else "warning",
+            "message": {
+                "text": (
+                    f"Tool '{finding.tool_name}' on server '{audit.server.name}' declares "
+                    f"{finding.hint}={str(finding.declared_value).lower()}, contradicting "
+                    f"{finding.category.value} keyword evidence ({finding.confidence.value}). "
+                    f"Suggested action: {finding.remediation}"
+                )
+            },
+            "locations": [
+                {"physicalLocation": {"artifactLocation": {"uri": _artifact_uri(audit.server.config_path)}}}
+            ],
+            "partialFingerprints": {
+                "mcpAuditStableId": _stable_fingerprint(
+                    finding.rule_id,
+                    audit.server.name,
+                    f"{finding.tool_name}:{finding.hint}:{finding.category.value}",
+                )
+            },
+            "properties": finding.model_dump(mode="json"),
+        }
 
     def _finding_level(self, finding: PermissionFinding, audit: ServerAudit) -> str:
         """Determine SARIF level based on composite risk score and finding confidence."""

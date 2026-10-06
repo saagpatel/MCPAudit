@@ -494,6 +494,7 @@ def test_schema_version_pins_top_level_field_set() -> None:
         "fleet_trifecta_findings",
         "shadowing_findings",
         "warnings",
+        "coverage",
     }
 
 

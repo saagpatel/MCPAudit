@@ -77,6 +77,7 @@ def config_health_findings(
                 ),
                 details=[redact_text(error.reason)],
                 remediation="Repair or restore this config file, then re-run the scan.",
+                config_paths=[error.path],
             )
         )
 
@@ -132,7 +133,9 @@ def config_health_findings(
             )
         )
 
+    grouped_finding_count = len(findings)
     for server in servers:
+        first_finding = len(findings)
         if server.transport == TransportType.STDIO and not server.command:
             findings.append(
                 ConfigHealthFinding(
@@ -249,6 +252,18 @@ def config_health_findings(
                 )
             )
 
+        for finding in findings[first_finding:]:
+            finding.config_paths = [server.config_path] if server.config_path else []
+
+    for finding in findings[:grouped_finding_count]:
+        if not finding.config_paths and finding.server_name is not None:
+            finding.config_paths = sorted(
+                {
+                    server.config_path
+                    for server in servers
+                    if server.name == finding.server_name and server.config_path
+                }
+            )
     return findings
 
 
