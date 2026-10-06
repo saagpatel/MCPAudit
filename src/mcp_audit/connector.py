@@ -585,7 +585,9 @@ class ServerConnector:
         try:
             tools = await _list_pages(session.list_tools, lambda page: page.tools)
             if probe:
-                surface["tools"] = {t.name: t.model_dump(mode="json", by_alias=True) for t in tools}
+                from mcp_audit.pinning import canonical_tool_surface
+
+                surface["tools"] = {t.name: canonical_tool_surface(self._convert_tool(t)) for t in tools}
         except Exception as exc:
             if not probe:
                 raise
@@ -783,8 +785,14 @@ class ServerConnector:
         return ToolInfo(
             name=sdk_tool.name,
             description=sdk_tool.description,
-            input_schema=dict(sdk_tool.input_schema) if sdk_tool.input_schema else None,
+            input_schema=dict(sdk_tool.input_schema),
             annotations=annotations,
+            title=sdk_tool.title,
+            output_schema=dict(sdk_tool.output_schema) if sdk_tool.output_schema is not None else None,
+            icons=[icon.model_dump(mode="json", by_alias=True, exclude_none=True) for icon in sdk_tool.icons]
+            if sdk_tool.icons is not None
+            else None,
+            meta=dict(sdk_tool.meta) if sdk_tool.meta is not None else None,
         )
 
     @staticmethod
