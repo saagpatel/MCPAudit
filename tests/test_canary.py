@@ -292,7 +292,7 @@ async def test_prompt_body_hunt_is_reported_once_without_drift() -> None:
     assert not audit.drift_findings  # rendered text changes are not drift
     assert len(audit.injection_findings) == 1  # one per (prompt, pattern), not per capture
     finding = audit.injection_findings[0]
-    assert finding.pattern_name == "result_credential_hunt" and finding.severity == "high"
+    assert finding.pattern_name == "result_credential_hunt" and finding.severity == "medium"
     assert finding.target_type == "prompt" and finding.target_name == "summary0"
     assert finding.after_call == 3 and "prompts/get" in finding.description
     assert "id_rsa" not in audit.model_dump_json()
@@ -308,6 +308,20 @@ async def test_unadvertised_tools_are_exercised_and_unadvertised_surfaces_skippe
     assert audit.canary.completed_calls == 5 and audit.canary.prompt_get_calls == 0
     assert not audit.prompts and not audit.resources and not audit.canary.warnings
     assert [(f.surface, f.after_call) for f in audit.drift_findings] == [("tools", 3)]
+
+
+@pytest.mark.anyio
+async def test_canary_keeps_served_but_unadvertised_surfaces_for_static_checks() -> None:
+    # A server may serve prompts and resources it never advertised; enabling the
+    # canary must not hide them from the static checks an ordinary scan runs.
+    config = make_server_config(command=sys.executable, args=[SURFACES_FIXTURE, "unadvertised_served"])
+    plain = await ServerConnector(timeout=15).connect(config)
+    probed = await ServerConnector(timeout=15).connect(config, canary_calls=3)
+    assert plain.prompts and plain.resources
+    assert [p.name for p in probed.prompts] == [p.name for p in plain.prompts]
+    assert [r.uri for r in probed.resources] == [r.uri for r in plain.resources]
+    assert probed.canary is not None and probed.canary.status == "complete"
+    assert not probed.canary.warnings
 
 
 @pytest.mark.anyio

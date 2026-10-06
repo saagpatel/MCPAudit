@@ -387,14 +387,15 @@ class ServerConnector:
         prompts: list[PromptInfo] = []
         resources: list[ResourceInfo] = []
         surface: dict[str, dict[str, object]] = {}
-        # Tools are always listed: servers serve tools they never advertised, and an
-        # ordinary scan reports what a server actually exposes. The canary probes
-        # only the prompt and resource surfaces advertised at initialize, so an
-        # unadvertised listing is never exercised or counted as drift evidence;
-        # an ordinary scan still tries both and logs an unavailable surface.
+        # Every surface is always listed, in both modes: servers can serve surfaces
+        # they never advertised, and skipping them would hide them from the static
+        # checks. Only a failure on an advertised surface degrades the canary; an
+        # unadvertised surface that is unavailable is logged at debug level.
         advertised = session.server_capabilities
-        list_prompts = probe is None or advertised.prompts is not None
-        list_resources = probe is None or advertised.resources is not None
+        prompts_advertised = getattr(advertised, "prompts", None) is not None
+        resources_advertised = getattr(advertised, "resources", None) is not None
+        list_prompts = True
+        list_resources = True
         try:
             tools = await _list_pages(session.list_tools, lambda page: page.tools)
             if probe:
@@ -440,6 +441,7 @@ class ServerConnector:
                 if probe:
                     surface.pop("prompts", None)
                     surface.pop("prompt_results", None)
+                if probe and prompts_advertised:
                     self._canary_warning(probe, f"Prompt surface incomplete ({type(exc).__name__}).")
                 else:
                     logger.debug(
@@ -455,7 +457,7 @@ class ServerConnector:
                         str(r.uri): r.model_dump(mode="json", by_alias=True) for r in resource_items
                     }
             except Exception as exc:
-                if probe:
+                if probe and resources_advertised:
                     self._canary_warning(probe, f"Resource surface incomplete ({type(exc).__name__}).")
                 else:
                     logger.debug(

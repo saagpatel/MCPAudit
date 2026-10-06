@@ -118,9 +118,10 @@ compared. Successful prompt listings establish prompt removals. Prompt results
 compare descriptions and ordered message roles; rendered content is excluded
 from drift and scanned for result injection instead. Prompt argument structure
 is compared through `prompts/list`. Unavailable surface categories do not
-establish removals. Tools are always listed; prompts and resources are probed
-only when advertised during initialize (an ordinary scan still tries both and
-logs an unavailable surface). Listings follow `next_cursor` up to 20 pages;
+establish removals. Tools, prompts and resources are always listed in both
+modes, so served-but-unadvertised surfaces still reach the static checks; an
+unavailable unadvertised surface is logged at debug level and is not a
+coverage warning. Listings follow `next_cursor` up to 20 pages;
 exceeding the limit is incomplete coverage and no partial page set is admitted.
 
 `--canary-calls` bounds tool exercise requests (K), not metadata reads. The
@@ -138,12 +139,15 @@ destructive true (the latter applies to non-read-only tools). An operator's
 `--canary-safe-tool` mark permits other empty-argument tools, but never overrides
 explicit destructive annotations, dangerous keywords, or injection vetoes.
 
-Runtime injection findings use existing rule `MCP007`, with additive
-`after_call` and pattern names `result_instruction_override`,
-`result_credential_hunt` (HIGH), and `result_tool_redirect` (MEDIUM). A
+Runtime injection findings are experimental free-text heuristics: every one
+is reported at MEDIUM (SARIF `MCP008`) with a description starting
+"Experimental heuristic:", so they never fail a HIGH gate on their own;
+session drift carries the canary's verdict. They add `after_call` and pattern
+names `result_instruction_override`, `result_credential_hunt`, and
+`result_tool_redirect`. A
 concrete secret path or name (for example `~/.ssh`, `~/.aws/credentials`,
 `~/.kube/config`, `~/.netrc`, `~/.git-credentials`, shell history, `id_rsa`,
-`kubeconfig`, well-known token variables) with a directing verb anywhere in
+`kubeconfig`, well-known token variables) with a directing verb earlier in
 the same sentence is a credential hunt. Generic nouns (credentials, API keys,
 secrets, passwords) also need an agent-directed frame or an exfiltration
 destination such as "in your next tool call". Known-benign forms such as

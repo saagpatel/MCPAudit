@@ -220,13 +220,16 @@ class InjectionDetector:
                 tool_name=tool_name,
                 target_type=target_type,
                 target_name=tool_name,
-                severity=(
-                    InjectionSeverity.MEDIUM if name == "result_tool_redirect" else InjectionSeverity.HIGH
-                ),
+                # Free-text heuristics are experimental: they inform at MEDIUM and never
+                # reach a HIGH gate on their own. Session drift carries the canary's verdict.
+                severity=InjectionSeverity.MEDIUM,
                 pattern_name=name,
                 after_call=after_call,
                 matched_text=withheld,
-                description=f"{source} after canary call {after_call} contains instruction-shaped text.",
+                description=(
+                    f"Experimental heuristic: {source} after canary call {after_call} "
+                    "contains instruction-shaped text."
+                ),
             )
             for name, rule in RESULT_INJECTION_RULES.items()
             if rule(text)

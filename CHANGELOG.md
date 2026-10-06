@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   resource probes on advertisement. Cap scanned runtime text at 64 KB per
   result with a coverage warning and scan in linear time. Replace the canary
   name blocklist with destructive host-action keywords in the permission table.
+- Report runtime result and prompt-body injection findings as experimental
+  MEDIUM heuristics so they never fail a HIGH gate alone, and keep
+  served-but-unadvertised prompts and resources in canary scans so enabling the
+  canary never removes static checks.
 
 - Route explicitly configured legacy SSE servers through the MCP SSE transport.
   HTTP configurations continue using Streamable HTTP. Suppress raw SDK SSE debug

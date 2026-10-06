@@ -53,7 +53,7 @@ def main() -> None:
                     "capabilities": {}
                     if mode == "noadvert"
                     else {"tools": {}}
-                    if mode == "tools_only"
+                    if mode in {"tools_only", "unadvertised_served"}
                     else {
                         "tools": {},
                         "prompts": {},
