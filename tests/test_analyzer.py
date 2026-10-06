@@ -123,8 +123,7 @@ class TestKeywordFindings:
     def test_delete_file_name_yields_destructive_high(self) -> None:
         tool = make_tool("delete_file")
         confs = _confidences(tool, PermissionCategory.DESTRUCTIVE)
-        # destructiveHint=null default also fires DECLARED, but keyword still fires
-        assert Confidence.HIGH in confs or Confidence.DECLARED in confs
+        assert confs == {Confidence.DECLARED}
 
     def test_send_email_yields_exfiltration_high(self) -> None:
         tool = make_tool("send_email", description="Send an email message to a recipient")

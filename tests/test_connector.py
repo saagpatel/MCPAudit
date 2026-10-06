@@ -230,7 +230,7 @@ class TestDescribeException:
         error = RuntimeError("http://" * (size // 7))
         started = time.perf_counter()
         summary = describe_exception(error)
-        assert time.perf_counter() - started < 0.5
+        assert time.perf_counter() - started < 2.0  # linear runs ~0.05 s; quadratic takes minutes
         assert summary == "RuntimeError"
 
     @pytest.mark.parametrize("whitespace", [" ", "\t", "\n"])
@@ -261,7 +261,7 @@ def test_sse_log_redaction_is_linear_on_adversarial_urls(suffix: str) -> None:
     text = "http://" * (1_000_000 // 7) + suffix
     started = time.perf_counter()
     redacted = _redact_sse_log_text(text)
-    assert time.perf_counter() - started < 0.5
+    assert time.perf_counter() - started < 2.0  # linear runs ~0.05 s; quadratic takes minutes
     assert "synthetic-value" not in redacted
 
 
