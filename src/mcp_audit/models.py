@@ -2,9 +2,9 @@
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Literal
+from typing import Literal, Self
 
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field, computed_field, model_validator
 
 
 class TransportType(StrEnum):
@@ -209,12 +209,19 @@ class ServerConfig(BaseModel):
     client: ClientType
     config_path: str
     project_path: str | None = None  # None = global scope, str = project-scoped
+    scope: Literal["workstation", "project"] = "workstation"
     command: str | None = None
     args: list[str] = Field(default_factory=list)
     env_keys: list[str] = Field(default_factory=list)  # Key names only, NEVER values
     transport: TransportType = TransportType.STDIO
     url: str | None = None  # For HTTP/SSE transport
     headers_keys: list[str] = Field(default_factory=list)  # Header key names for HTTP, NEVER values
+
+    @model_validator(mode="after")
+    def tag_project_scope(self) -> Self:
+        if self.project_path is not None:
+            self.scope = "project"
+        return self
 
 
 class ToolAnnotations(BaseModel):

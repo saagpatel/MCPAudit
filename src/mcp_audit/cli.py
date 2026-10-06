@@ -296,6 +296,12 @@ def discover(client_filter: str | None, verbose: bool) -> None:
 )  # noqa: E501
 @click.option("--skip-connect", is_flag=True, default=False, help="Skip server connections, config only.")
 @click.option(
+    "--connect-project-configs",
+    is_flag=True,
+    default=False,
+    help="Connect to project-scope configs too; may execute code from the current checkout.",
+)
+@click.option(
     "--canary-check", is_flag=True, help="Exercise an explicit config in-session for runtime drift."
 )
 @click.option(
@@ -428,6 +434,7 @@ def scan(
     sarif_output: str | None,
     html_output: str | None,
     skip_connect: bool,
+    connect_project_configs: bool,
     clients: str | None,
     timeout: int,
     verbose: bool,
@@ -491,6 +498,7 @@ def scan(
         canary_check,
         canary_calls,
         canary_safe_tools,
+        connect_project_configs,
     )
 
 
@@ -593,6 +601,7 @@ async def _run_scan(
     canary_check: bool = False,
     canary_calls: int = 5,
     canary_safe_tools: tuple[str, ...] = (),
+    connect_project_configs: bool = False,
 ) -> None:
     """CLI scan entrypoint — calls the engine's run_scan then renders output."""
     if config_only and not extra_config:
@@ -623,6 +632,7 @@ async def _run_scan(
         canary_calls=canary_calls,
         canary_safe_tools=canary_safe_tools,
         skip_connect=skip_connect,
+        connect_project_configs=connect_project_configs,
         config_only=config_only,
         clients=client_list,
         timeout=timeout,
