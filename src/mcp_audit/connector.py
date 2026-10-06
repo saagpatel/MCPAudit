@@ -51,7 +51,9 @@ _SSE_URL_SUFFIX = re.compile(r"(https?://[^\s?#]++)([?#][^\s]*)?", re.IGNORECASE
 _SSE_URL_USERINFO = re.compile(r"(https?://)(?:[^/\s@]*+@)++", re.IGNORECASE)
 _REDIRECT_URL = re.compile(
     r"(\b(?:redirect(?:ed)?\s+to|redirect\s+location\s*:|location['\"]?\s*:)\s*['\"]?)"
-    r"(?=[^\s'\"<>]*[/:])[^\s'\"<>]+",
+    # A target counts once it carries a path, scheme, query, fragment or
+    # parameter; plain prose such as "redirect to login" is left alone.
+    r"(?=[^\s'\"<>]*[/:?#=&%])[^\s'\"<>]+",
     re.IGNORECASE,
 )
 _SSE_LOGGER_NAMES = (

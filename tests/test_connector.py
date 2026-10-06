@@ -298,6 +298,27 @@ def test_redirect_prose_without_a_url_is_unchanged() -> None:
     assert describe_exception(RuntimeError(text)) == "RuntimeError: " + text
 
 
+class TestRelativeRedirectTargets:
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Redirect location: 'cb?code=SECRETCODE'",
+            "redirected to callback#token=SECRETCODE",
+            "Location: next&sig=SECRETCODE",
+            "Redirect to step%3Fcode%3DSECRETCODE",
+        ],
+    )
+    def test_relative_targets_without_slash_or_colon_are_withheld(self, text: str) -> None:
+        summary = describe_exception(RuntimeError(text))
+        assert "SECRETCODE" not in summary
+        assert "<redacted-url>" in summary
+
+    def test_plain_prose_after_redirect_phrase_is_kept(self) -> None:
+        assert describe_exception(RuntimeError("please redirect to login")) == (
+            "RuntimeError: please redirect to login"
+        )
+
+
 class TestConvertTool:
     def test_handles_missing_description(self) -> None:
         from mcp.types import Tool as SdkTool
