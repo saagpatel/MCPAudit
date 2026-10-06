@@ -26,6 +26,14 @@ OPTIONAL_CHECKS = (
 )
 _CONFIG_CHECKS = {"provenance_check", "integrity_check", "verify_artifacts", "download_artifacts"}
 _AGENT_TEXT_CHECKS = {"permissions", "inject_check", "trifecta_check", "escalation_check"}
+_BOUNDED_TEXT_CHECKS = {
+    "permissions",
+    "capabilities",
+    "ssrf_check",
+    "egress_check",
+    "trifecta_check",
+    "escalation_check",
+}
 
 
 def _warning_reasons(check: str, audit: ServerAudit, warnings: list[ScanWarning]) -> list[str]:
@@ -35,6 +43,7 @@ def _warning_reasons(check: str, audit: ServerAudit, warnings: list[ScanWarning]
         if (
             warning.check == check
             or (warning.code == "agent_text_incomplete" and check in _AGENT_TEXT_CHECKS)
+            or (warning.code == "description_truncated" and check in _BOUNDED_TEXT_CHECKS)
         )
         and warning.code != "option_ignored"
         and (not warning.servers or audit.server.name in warning.servers)
@@ -95,16 +104,18 @@ def build_coverage(
         if skip_connect and audits
         else metadata.model_copy()
     )
-    coverage["capabilities"] = metadata.model_copy()
-    permission_entries = []
-    for index, audit in enumerate(audits):
-        entry = metadata_entries[index].model_copy()
-        reasons = _warning_reasons("permissions", audit, warnings)
-        if reasons and entry.state == "complete":
-            entry = CheckCoverage(state="partial", reason="; ".join(reasons))
-        permission_entries.append(entry)
-    if not skip_connect:
-        coverage["permissions"] = _aggregate(permission_entries)
+    for check in ("permissions", "capabilities"):
+        detector_entries: list[CheckCoverage] = []
+        for index, audit in enumerate(audits):
+            entry = metadata_entries[index].model_copy()
+            reasons = _warning_reasons(check, audit, warnings)
+            if reasons and entry.state == "complete":
+                entry = CheckCoverage(state="partial", reason="; ".join(reasons))
+            detector_entries.append(entry)
+        if check != "permissions" or not skip_connect:
+            coverage[check] = _aggregate(detector_entries)
+    if skip_connect:
+        coverage["capabilities"] = metadata.model_copy()
 
     for check in OPTIONAL_CHECKS:
         if check not in requested:

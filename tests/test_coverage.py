@@ -7,14 +7,90 @@ import pytest
 from click.testing import CliRunner
 
 from mcp_audit.cli import main
+from mcp_audit.connector import ServerConnector
 from mcp_audit.engine import ScanOptions, run_scan
 from mcp_audit.htmlreport import HtmlReportGenerator
-from mcp_audit.models import AuditReport, CheckCoverage, ServerAudit, ServerConfig
+from mcp_audit.models import (
+    AuditReport,
+    CheckCoverage,
+    PermissionCategory,
+    PromptInfo,
+    ResourceInfo,
+    ServerAudit,
+    ServerConfig,
+)
 from mcp_audit.policy import PolicyConfig, evaluate_policy, load_policy
 from mcp_audit.sarif import SarifGenerator
-from tests.conftest import make_server_config
+from mcp_audit.text_limits import MAX_FIELD_BYTES
+from tests.conftest import make_server_config, make_tool
 
 FIXTURES = Path(__file__).parent / "fixtures"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("surface", ["resource", "prompt", "tool"])
+@pytest.mark.parametrize("optional_checks", [False, True])
+async def test_description_truncation_reduces_detector_coverage_but_not_metadata(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, surface: str, optional_checks: bool
+) -> None:
+    from mcp_audit import pinning
+
+    tool = make_tool("status", "Status")
+    prompt = PromptInfo(name="summary", description="Status")
+    resource = ResourceInfo(uri="fixture:status", description="Status")
+    oversized = "x" * MAX_FIELD_BYTES + " read file"
+    if surface == "resource":
+        resource.description = oversized
+    elif surface == "prompt":
+        prompt.description = oversized
+    else:
+        tool.description = oversized
+    config = make_server_config()
+    store = pinning.PinStore(path=tmp_path / "pins.yaml")
+    store.pin_server(config.name, [make_tool("status", "Status")])
+    monkeypatch.setattr(pinning, "PinStore", lambda: store)
+
+    async def connect(self: ServerConnector, server: ServerConfig) -> ServerAudit:
+        return ServerAudit(
+            server=server,
+            connection_status="connected",
+            tools=[tool],
+            prompts=[prompt],
+            resources=[resource],
+        )
+
+    monkeypatch.setattr(ServerConnector, "connect", connect)
+    report = await run_scan(
+        ScanOptions(
+            ssrf_check=optional_checks,
+            egress_check=optional_checks,
+            trifecta_check=optional_checks,
+            escalation_check=optional_checks,
+            pin_check=optional_checks,
+            shadow_check=optional_checks,
+        ),
+        servers=[config],
+    )
+    [warning] = [w for w in report.warnings if w.code == "description_truncated"]
+    assert warning.check == "permission_analysis"
+    assert warning.servers == [config.name]
+    assert report.audits[0].connection_status == "connected"
+    assert all(f.category != PermissionCategory.FILE_READ for f in report.audits[0].permissions)
+    assert report.audits[0].capability_findings == []
+    for check in ("config_health", "metadata"):
+        assert report.coverage[check].state == "complete"
+    for check in ("permissions", "capabilities"):
+        assert report.coverage[check].state == "partial"
+        assert "description_truncated" in report.coverage[check].reason
+    for check in ("ssrf_check", "egress_check", "trifecta_check", "escalation_check"):
+        assert report.coverage[check].state == ("partial" if optional_checks else "not_requested")
+        if optional_checks:
+            assert "description_truncated" in report.coverage[check].reason
+    for check in ("pin_check", "shadow_check"):
+        assert report.coverage[check].state == ("complete" if optional_checks else "not_requested")
+    assert report.coverage["inject_check"].state == "not_requested"
+    assert not evaluate_policy(report, PolicyConfig(fail_on_coverage=True)).passed
+    assert evaluate_policy(report, PolicyConfig()).passed
 
 
 @pytest.mark.anyio
