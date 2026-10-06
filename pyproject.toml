@@ -87,7 +87,11 @@ select = ["B", "E", "F", "I", "UP"]
 [tool.pytest.ini_options]
 anyio_mode = "auto"
 testpaths = ["tests"]
-markers = ["redteam: synthetic MCP detector-gap regression cases"]
+addopts = "-m 'not perf'"
+markers = [
+    "redteam: synthetic MCP detector-gap regression cases",
+    "perf: isolated hostile-server performance gate (select explicitly with -m perf)",
+]
 
 [dependency-groups]
 dev = [

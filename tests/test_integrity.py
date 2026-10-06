@@ -14,11 +14,17 @@ mirroring how the detector runs at scan time.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
 
+import pytest
+
+from mcp_audit import pinning
+from mcp_audit.engine import ScanOptions, run_scan
 from mcp_audit.integrity import (
+    _MAX_ARTIFACT_BYTES,
     IntegrityAnalyzer,
     hash_file,
     resolve_artifact_hashes,
@@ -30,8 +36,60 @@ from mcp_audit.models import (
     ServerConfig,
     TransportType,
 )
+from mcp_audit.pinning import PinStore
+from tests.conftest import make_server_config, make_tool
 
 _analyzer = IntegrityAnalyzer()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("via_path", [False, True], ids=["absolute-command", "path-lookup"])
+async def test_pinned_command_rewrite_is_high_in_run_scan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, via_path: bool
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    binary = tmp_path / "fixture-server"
+    before = b"#!/bin/sh\nexit 0\n"
+    after = b"#!/bin/sh\nexit 1\n"
+    binary.write_bytes(before)
+    binary.chmod(0o700)
+    if via_path:
+        monkeypatch.setenv("PATH", str(tmp_path))
+    config = make_server_config(name="fixture", command=binary.name if via_path else str(binary))
+    # PinStore's default path is bound at import time; redirect the engine's
+    # factory as well as HOME before any store is opened. No command is launched.
+    pin_file = tmp_path / "pins.yaml"
+    monkeypatch.setattr(pinning, "PinStore", lambda: PinStore(path=pin_file))
+    store = PinStore(path=pin_file)
+    store.pin_server(config.name, [make_tool("status")], config)
+    path = str(binary.resolve())
+    assert store.baseline_artifacts(config.name) == {path: hashlib.sha256(before).hexdigest()}
+    clean = await run_scan(ScanOptions(skip_connect=True, integrity_check=True), servers=[config])
+    assert not clean.audits[0].integrity_findings and not clean.warnings
+
+    binary.write_bytes(after)
+    report = await run_scan(ScanOptions(skip_connect=True, integrity_check=True), servers=[config])
+    assert not report.warnings
+    findings = report.audits[0].integrity_findings
+    assert len(findings) == 1
+    finding = findings[0]
+    assert finding.rule_id == "MCP024" and finding.severity == IntegritySeverity.HIGH
+    assert finding.artifact_path == path and path in finding.summary
+    assert finding.baseline_hash == hashlib.sha256(before).hexdigest()
+    assert finding.current_hash == hashlib.sha256(after).hexdigest()
+
+
+def test_artifact_size_cap_exact_boundary(tmp_path: Path) -> None:
+    # Shipped cap is 64 MiB; use literal boundaries to catch constant drift too.
+    assert _MAX_ARTIFACT_BYTES == 67_108_864
+    artifact = tmp_path / "boundary"
+    with artifact.open("wb") as handle:
+        handle.truncate(67_108_864)
+    assert hash_file(artifact) == hashlib.sha256(bytes(67_108_864)).hexdigest()
+    with artifact.open("ab") as handle:
+        handle.write(b"x")
+    assert artifact.stat().st_size == 67_108_865
+    assert hash_file(artifact) is None
 
 
 def _cfg(**kw: Any) -> ServerConfig:

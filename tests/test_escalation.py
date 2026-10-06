@@ -18,16 +18,45 @@ from __future__ import annotations
 
 import json
 
-from mcp_audit.escalation import EscalationAnalyzer
+import pytest
+
+from mcp_audit.escalation import EscalationAnalyzer, detect_session_drift
 from mcp_audit.models import (
+    DriftStatus,
     EscalationFinding,
     EscalationKind,
     EscalationSeverity,
     PermissionCategory,
     ToolInfo,
 )
+from mcp_audit.pinning import surface_hash
 
 _analyzer = EscalationAnalyzer()
+
+
+@pytest.mark.parametrize("surface", ["tools", "prompts", "resources"])
+@pytest.mark.parametrize(
+    ("before", "after", "status", "details"),
+    [
+        ({"description": "v1"}, {"description": "v2"}, DriftStatus.CHANGED, ["/description"]),
+        (None, {"description": "v2"}, DriftStatus.NEW, ["/"]),
+        ({"description": "v1"}, None, DriftStatus.REMOVED, ["/"]),
+    ],
+)
+def test_session_drift_details_and_hashes(
+    surface: str,
+    before: dict[str, object] | None,
+    after: dict[str, object] | None,
+    status: DriftStatus,
+    details: list[str],
+) -> None:
+    old: dict[str, dict[str, object]] = {surface: {"status": before} if before is not None else {}}
+    new: dict[str, dict[str, object]] = {surface: {"status": after} if after is not None else {}}
+    (finding,) = detect_session_drift("fixture", old, new, after_call=3)
+    assert finding.status == status and finding.source == "session" and finding.after_call == 3
+    assert finding.stored_hash == (surface_hash(before) if before is not None else None)
+    assert finding.current_hash == (surface_hash(after) if after is not None else None)
+    assert finding.details == [f"{surface}{path} changed" for path in details]
 
 
 def _tool(name: str, description: str) -> ToolInfo:
