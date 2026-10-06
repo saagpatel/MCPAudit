@@ -2,13 +2,32 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
+import pytest
+
 from mcp_audit.injection import InjectionDetector
-from mcp_audit.models import CapabilityTarget, InjectionSeverity, PromptInfo, ResourceInfo
+from mcp_audit.models import CapabilityTarget, InjectionSeverity, PromptInfo, ResourceInfo, ToolInfo
 from tests.conftest import make_tool
 
 
 def _detector() -> InjectionDetector:
     return InjectionDetector()
+
+
+@pytest.mark.parametrize("index", range(7))
+def test_bounded_evidence_includes_actual_phrase_or_anomaly(fixtures_dir: Path, index: int) -> None:
+    case = json.loads((fixtures_dir / "unicode_metadata.json").read_text())["evidence_tools"][index]
+    tool = ToolInfo.model_validate(case["tool"])
+    finding = next(f for f in _detector().scan_tool(tool) if f.pattern_name == case["pattern"])
+    assert finding.field_path == "/description"
+    assert case["evidence"] in finding.matched_text
+    assert len(finding.matched_text) <= 200
+    assert finding.matched_text in f"{tool.name}\n{tool.description}"
+    assert tool.model_dump()["description"] == case["tool"]["description"]
+    if "class" in case:
+        assert case["class"] in finding.description
 
 
 class TestHighSeverityPatterns:
@@ -44,12 +63,19 @@ class TestMediumSeverityPatterns:
         assert len(matched) == 1
         assert matched[0].severity == InjectionSeverity.MEDIUM
 
-    def test_hidden_directive_zero_width_space_triggers_medium(self) -> None:
-        tool = make_tool("t", description="Search\u200b files safely")
+    @pytest.mark.parametrize("character", ["\u200b", "\u200c", "\u200d"])
+    def test_hidden_directive_zero_width_characters_preserve_raw_evidence(self, character: str) -> None:
+        description = "ordinary text " * 30 + f"＜！－－hidden {character}instruction－－＞"
+        tool = make_tool("t", description=description)
         findings = _detector().scan_tool(tool)
         matched = [f for f in findings if f.pattern_name == "hidden_directive"]
         assert len(matched) == 1
         assert matched[0].severity == InjectionSeverity.MEDIUM
+        assert matched[0].field_path == "/description"
+        position = len(tool.name) + 1 + description.index(character)
+        assert matched[0].matched_text.startswith(f"[U+{ord(character):04X} at pos {position}]:")
+        assert "hidden" in matched[0].matched_text
+        assert len(matched[0].matched_text) <= 200
 
     def test_unicode_direction_rlo_triggers_medium(self) -> None:
         tool = make_tool("t", description="Safe tool \u202e hidden reverse text")
