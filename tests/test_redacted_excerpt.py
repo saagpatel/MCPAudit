@@ -352,3 +352,17 @@ def test_escalation_and_session_drift_descriptions_are_redacted() -> None:
         1,
     )
     assert "SECRETVALUE123" not in str(drift.details)
+
+
+def test_identifier_redaction_drops_offsets_when_matched_text_changes() -> None:
+    from mcp_audit.redaction import redact_identifiers
+
+    text = "synthetic-long-server Ignore previous instructions. ordinary trailing words"
+    finding = {"matched_text": text, "matched_span": [22, 51]}
+    out = redact_identifiers(finding, name_aliases={"synthetic-long-server": "server-01"})
+    assert out["matched_text"].startswith("server-01 ")
+    assert out["matched_span"] is None
+    untouched = redact_identifiers(
+        {"matched_text": "Ignore previous", "matched_span": [0, 6]}, name_aliases={"x": "server-01"}
+    )
+    assert untouched["matched_span"] == [0, 6]

@@ -422,12 +422,18 @@ def _walk_identifiers(
     if isinstance(value, list):
         return [_walk_identifiers(item, hostname, name_aliases, alias_pattern) for item in value]
     if isinstance(value, dict):
-        return {
+        scrubbed = {
             key: _scrub_config_pointer(item, hostname, name_aliases, alias_pattern)
             if key == "config_pointer" and isinstance(item, str)
             else _walk_identifiers(item, hostname, name_aliases, alias_pattern)
             for key, item in value.items()
         }
+        # Offsets index the original matched_text; drop them once its text changes.
+        if scrubbed.get("matched_span") is not None and scrubbed.get("matched_text") != value.get(
+            "matched_text"
+        ):
+            scrubbed["matched_span"] = None
+        return scrubbed
     return value
 
 
