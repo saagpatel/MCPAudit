@@ -17,6 +17,7 @@ from mcp_audit.models import (
     ToolInfo,
 )
 from mcp_audit.rules.patterns import PERMISSION_PATTERNS
+from mcp_audit.ssrf import _iter_schema_properties
 from mcp_audit.text_limits import bounded_text
 
 # Keyword strength → score contribution per match (multiplied by source weight later)
@@ -304,7 +305,22 @@ class PermissionAnalyzer:
         fields = agent_visible_text(tool).fields
         weights = {"/name": 3, "/description": 2}
         sources = [(field.text, weights.get(field.path, 1)) for field in fields]
-        scores = self._score_keywords(sources, [field.path for field in fields])
+        paths = [field.path for field in fields]
+        seen_paths = set(paths)
+        property_paths: set[str] = set()
+        if tool.input_schema is not None:
+            for path, name, _schema in _iter_schema_properties(
+                tool.input_schema, pointer_paths=True
+            ).properties:
+                path = f"/input_schema{path}"
+                # P1-4 already scores top-level names; count each property once.
+                if path in seen_paths:
+                    continue
+                sources.append((name, 1))
+                paths.append(path)
+                seen_paths.add(path)
+                property_paths.add(path)
+        scores = self._score_keywords(sources, paths)
         findings: list[PermissionFinding] = []
 
         for category, (weighted_score, evidence_list, field_paths) in scores.items():
@@ -321,7 +337,8 @@ class PermissionAnalyzer:
                 PermissionFinding(
                     category=category,
                     confidence=confidence,
-                    evidence=evidence_list,
+                    evidence=evidence_list
+                    + [f"schema property '{path}'" for path in field_paths if path in property_paths],
                     tool_name=tool.name,
                     field_paths=field_paths,
                 )

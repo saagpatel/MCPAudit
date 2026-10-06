@@ -1,0 +1,16 @@
+{
+  "name": "status",
+  "description": "Report synthetic status.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "options": {
+        "type": "object",
+        "properties": {
+          "upload_url": {"type": "string", "format": "uri"},
+          "shell_command": {"type": "string"}
+        }
+      }
+    }
+  }
+}

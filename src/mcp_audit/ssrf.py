@@ -161,7 +161,7 @@ def _resolve_local_ref(root: dict[str, object], ref: str) -> dict[str, object] |
     return current if isinstance(current, dict) else None
 
 
-def _iter_schema_properties(schema: dict[str, object]) -> _SchemaWalkResult:
+def _iter_schema_properties(schema: dict[str, object], *, pointer_paths: bool = False) -> _SchemaWalkResult:
     """Return named properties from reachable, bounded JSON Schema branches.
 
     MCP tool inputs routinely nest request targets inside objects, arrays, and
@@ -170,6 +170,8 @@ def _iter_schema_properties(schema: dict[str, object]) -> _SchemaWalkResult:
     are stopped by branch ancestry and explicit node/depth/property budgets.
     Any unresolved reference or exhausted budget is returned to the caller as
     visible incomplete-analysis evidence.
+    ``pointer_paths`` addresses the schema objects with JSON Pointers instead
+    of the logical parameter paths used by SSRF findings.
     """
     found: list[tuple[str, str, object]] = []
     incomplete: set[str] = set()
@@ -178,6 +180,12 @@ def _iter_schema_properties(schema: dict[str, object]) -> _SchemaWalkResult:
     ]
     visited_nodes = 0
     property_count = 0
+
+    def child_path(prefix: str, keyword: str, suffix: str, index: object | None = None) -> str:
+        if pointer_paths:
+            path = f"{prefix}/{keyword}"
+            return f"{path}/{str(index).replace('~', '~0').replace('/', '~1')}" if index is not None else path
+        return f"{prefix}{suffix}"
 
     while stack:
         if visited_nodes >= _MAX_SCHEMA_NODES:
@@ -199,7 +207,7 @@ def _iter_schema_properties(schema: dict[str, object]) -> _SchemaWalkResult:
             if resolved is None:
                 incomplete.add(f"unresolved or external reference: {ref}")
             else:
-                stack.append((resolved, prefix, depth + 1, branch))
+                stack.append((resolved, ref[1:] if pointer_paths else prefix, depth + 1, branch))
 
         for keyword in ("$dynamicRef", "$recursiveRef"):
             dynamic_ref = node.get(keyword)
@@ -218,7 +226,13 @@ def _iter_schema_properties(schema: dict[str, object]) -> _SchemaWalkResult:
                     property_budget_exhausted = True
                     break
                 name = str(raw_name)
-                path = f"{prefix}.{name}" if prefix else name
+                path = (
+                    child_path(prefix, "properties", "", name)
+                    if pointer_paths
+                    else f"{prefix}.{name}"
+                    if prefix
+                    else name
+                )
                 found.append((path, name, property_schema))
                 property_count += 1
                 if isinstance(property_schema, dict):
@@ -235,14 +249,14 @@ def _iter_schema_properties(schema: dict[str, object]) -> _SchemaWalkResult:
         ):
             child = node.get(keyword)
             if isinstance(child, dict):
-                stack.append((child, f"{prefix}{suffix}", depth + 1, branch))
+                stack.append((child, child_path(prefix, keyword, suffix), depth + 1, branch))
 
         items = node.get("items")
         if isinstance(items, dict):
-            stack.append((items, f"{prefix}[]", depth + 1, branch))
+            stack.append((items, child_path(prefix, "items", "[]"), depth + 1, branch))
         elif isinstance(items, list):
             stack.extend(
-                (child, f"{prefix}[{index}]", depth + 1, branch)
+                (child, child_path(prefix, "items", f"[{index}]", index), depth + 1, branch)
                 for index, child in reversed(list(enumerate(items)))
                 if isinstance(child, dict)
             )
@@ -251,15 +265,15 @@ def _iter_schema_properties(schema: dict[str, object]) -> _SchemaWalkResult:
             children = node.get(keyword)
             if isinstance(children, list):
                 stack.extend(
-                    (child, prefix, depth + 1, branch)
-                    for child in reversed(children)
+                    (child, child_path(prefix, keyword, "", index), depth + 1, branch)
+                    for index, child in reversed(list(enumerate(children)))
                     if isinstance(child, dict)
                 )
 
         prefix_items = node.get("prefixItems")
         if isinstance(prefix_items, list):
             stack.extend(
-                (child, f"{prefix}[{index}]", depth + 1, branch)
+                (child, child_path(prefix, "prefixItems", f"[{index}]", index), depth + 1, branch)
                 for index, child in reversed(list(enumerate(prefix_items)))
                 if isinstance(child, dict)
             )
@@ -268,15 +282,15 @@ def _iter_schema_properties(schema: dict[str, object]) -> _SchemaWalkResult:
             children = node.get(keyword)
             if isinstance(children, dict):
                 stack.extend(
-                    (child, f"{prefix}.*", depth + 1, branch)
-                    for child in reversed(list(children.values()))
+                    (child, child_path(prefix, keyword, ".*", key), depth + 1, branch)
+                    for key, child in reversed(list(children.items()))
                     if isinstance(child, dict)
                 )
 
         for keyword in ("else", "if", "not", "then"):
             child = node.get(keyword)
             if isinstance(child, dict):
-                stack.append((child, prefix, depth + 1, branch))
+                stack.append((child, child_path(prefix, keyword, ""), depth + 1, branch))
 
     return _SchemaWalkResult(found, sorted(incomplete))
 

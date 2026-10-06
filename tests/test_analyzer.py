@@ -1,6 +1,7 @@
 """Unit tests for PermissionAnalyzer."""
 
 import re
+from pathlib import Path
 from time import perf_counter
 
 import pytest
@@ -19,6 +20,94 @@ from mcp_audit.text_limits import MAX_FIELD_BYTES, bounded_text
 from tests.conftest import make_tool
 
 analyzer = PermissionAnalyzer()
+
+
+@pytest.mark.parametrize("placement", ["object", "array", "composition", "reference"])
+def test_nested_property_capabilities_have_weight_one_and_schema_paths(placement: str) -> None:
+    tool = ToolInfo.model_validate_json(Path("tests/fixtures/nested_schema_permissions.json").read_text())
+    assert tool.input_schema is not None
+    properties = tool.input_schema["properties"]
+    assert isinstance(properties, dict)
+    options = properties["options"]
+    if placement == "array":
+        tool.input_schema = {"properties": {"options": {"items": options}}}
+        prefix = "/input_schema/properties/options/items"
+    elif placement == "composition":
+        tool.input_schema = {"anyOf": [options]}
+        prefix = "/input_schema/anyOf/0"
+    elif placement == "reference":
+        tool.input_schema = {"$defs": {"options": options}, "$ref": "#/$defs/options"}
+        prefix = "/input_schema/$defs/options"
+    else:
+        prefix = "/input_schema/properties/options"
+    findings = {f.category: f for f in analyzer.analyze_tool_keywords(tool)}
+    for category, name in (
+        (PermissionCategory.EXFILTRATION, "upload_url"),
+        (PermissionCategory.SHELL_EXEC, "shell_command"),
+    ):
+        finding = findings[category]
+        # upload scores 3; shell + command scores 5. Neither reaches HIGH (6).
+        assert finding.confidence == Confidence.MEDIUM
+        path = f"{prefix}/properties/{name}"
+        assert finding.field_paths == [path]
+        assert f"schema property '{path}'" in finding.evidence
+
+
+@pytest.mark.parametrize(
+    "names,confidence", [(["shell_one"], Confidence.MEDIUM), (["shell_one", "shell_two"], Confidence.HIGH)]
+)
+def test_nested_properties_keep_high_threshold_at_six(names: list[str], confidence: Confidence) -> None:
+    tool = make_tool(
+        "status",
+        input_schema={"properties": {"options": {"properties": {name: {} for name in names}}}},
+    )
+    shell = next(
+        f for f in analyzer.analyze_tool_keywords(tool) if f.category == PermissionCategory.SHELL_EXEC
+    )
+    assert shell.confidence == confidence
+    assert len(shell.field_paths) == len(names)
+
+
+def test_nested_property_paths_escape_pointer_tokens() -> None:
+    tool = make_tool("status", input_schema={"properties": {"a/b~c": {"properties": {"shell": {}}}}})
+    shell = next(
+        f for f in analyzer.analyze_tool_keywords(tool) if f.category == PermissionCategory.SHELL_EXEC
+    )
+    assert shell.field_paths == ["/input_schema/properties/a~1b~0c/properties/shell"]
+
+
+def test_unused_definitions_and_cyclic_references_do_not_manufacture_capabilities() -> None:
+    tool = make_tool(
+        "status",
+        input_schema={"$defs": {"unused": {"properties": {"shell": {}}}}, "$ref": "#"},
+    )
+    assert analyzer.analyze_tool_keywords(tool) == []
+
+
+def test_repeated_local_references_do_not_inflate_property_confidence() -> None:
+    tool = make_tool(
+        "status",
+        input_schema={
+            "$defs": {"detail": {"properties": {"shell": {}}}},
+            "properties": {"first": {"$ref": "#/$defs/detail"}, "second": {"$ref": "#/$defs/detail"}},
+        },
+    )
+    shell = next(
+        f for f in analyzer.analyze_tool_keywords(tool) if f.category == PermissionCategory.SHELL_EXEC
+    )
+    assert shell.confidence == Confidence.MEDIUM
+    assert shell.field_paths == ["/input_schema/$defs/detail/properties/shell"]
+
+
+def test_permission_properties_obey_the_shared_walker_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mcp_audit import ssrf
+
+    monkeypatch.setattr(ssrf, "_MAX_SCHEMA_PROPERTIES", 2)
+    tool = make_tool(
+        "status",
+        input_schema={"properties": {"options": {"properties": {"detail": {}, "shell": {}}}}},
+    )
+    assert analyzer.analyze_tool_keywords(tool) == []
 
 
 @pytest.mark.parametrize("paths", [None, ["/name", "/description", "/input_schema/title"]])
