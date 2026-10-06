@@ -5,8 +5,9 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from mcp_audit.discovery._entry import parse_server_entry
 from mcp_audit.discovery.base import ConfigDiscoverer, ConfigParseError
-from mcp_audit.models import ClientType, ServerConfig, TransportType
+from mcp_audit.models import ClientType, ServerConfig
 from mcp_audit.terminal_text import TerminalSafeLogFilter
 
 logger = logging.getLogger(__name__)
@@ -39,23 +40,7 @@ class WindsurfDiscoverer(ConfigDiscoverer):
             if not isinstance(entry, dict):
                 continue
             try:
-                raw_env = entry.get("env") or {}
-                env_keys = list(raw_env.keys()) if isinstance(raw_env, dict) else []
-                args = entry.get("args") or []
-                if not isinstance(args, list):
-                    args = []
-                results.append(
-                    ServerConfig(
-                        name=name,
-                        client=ClientType.WINDSURF,
-                        config_path=config_path,
-                        project_path=None,
-                        command=entry.get("command") or None,
-                        args=[str(a) for a in args],
-                        env_keys=env_keys,
-                        transport=TransportType.STDIO,
-                    )
-                )
+                results.append(parse_server_entry(name, entry, config_path, ClientType.WINDSURF))
             except Exception:
                 logger.debug("Failed to parse server %r in %s", name, config_path)
 
