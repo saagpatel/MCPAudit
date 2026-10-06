@@ -290,6 +290,8 @@ async def run_scan(
         from mcp_audit.pinning import PinStore
 
         pin_store = PinStore()
+        for server in servers:
+            scan_warnings.extend(pin_store.schema_warnings(server.name))
 
     audits: list[ServerAudit] = [ServerAudit(server=s, connection_status="pending") for s in servers]
 
@@ -378,7 +380,10 @@ async def run_scan(
                 baseline = pin_store.baseline_tools(srv.name)
                 if baseline:
                     audit.escalation_findings = escalation_analyzer.analyze_server(
-                        srv.name, baseline, audit.tools
+                        srv.name,
+                        baseline,
+                        audit.tools,
+                        uncovered_annotations=pin_store.legacy_tool_names(srv.name),
                     )
 
             # Optional provenance / launch-config drift check vs the pin baseline
