@@ -18,7 +18,7 @@ from mcp_audit.models import (
     ToolInfo,
 )
 from mcp_audit.normalize import first_obfuscation, normalize_text, obfuscation_classes, raw_excerpt
-from mcp_audit.redaction import marked_excerpt_parts, redact_text, redacted_excerpt
+from mcp_audit.redaction import marked_excerpt_parts, redact_text, redacted_excerpt, trim_excerpt_context
 from mcp_audit.rules.result_injection import (
     _DOTENV_TARGET,
     _EXFIL_VERB_RE,
@@ -166,12 +166,9 @@ def _unicode_extract(chars: set[str]) -> Callable[[str, str], str]:
                 # repr expands controls and backslashes; budget its final form
                 # while trimming only context, keeping the complete match.
                 while len(f"{prefix}{before + '⟦' + match + '⟧' + after!r}") > 200:
-                    if before:
-                        before = re.sub(r"^\s*\S+\s*", "", before, count=1)
-                    elif after:
-                        after = re.sub(r"\s*\S+\s*$", "", after, count=1)
-                    else:
+                    if not before and not after:
                         break
+                    before, after = trim_excerpt_context(before, after)
                 return f"{prefix}{before + '⟦' + match + '⟧' + after!r}"
         return redacted_excerpt(orig, 0, 0, context_after=200, max_length=200)
 

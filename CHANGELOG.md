@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   using additive display offsets without changing plain JSON evidence.
   Scrub escaped config pointer identifiers in `--redact` reports and bound
   Unicode evidence after control-character rendering while preserving match offsets.
+  Ensure whitespace-only context is trimmed so metadata excerpt budgeting cannot stall scans.
 
 - Lead terminal reviews with a coverage-qualified Preview or finding-class grade,
   visible totals and up to three manual action cards. `--details` retains the

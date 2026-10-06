@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import io
 import json
+import subprocess
+import sys
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -15,6 +18,7 @@ from mcp_audit.htmlreport import HtmlReportGenerator
 from mcp_audit.injection import _PATTERNS, InjectionDetector, credential_hunt_targets
 from mcp_audit.models import (
     AuditReport,
+    InjectionFinding,
     PermissionFinding,
     PromptInfo,
     ResourceInfo,
@@ -22,10 +26,72 @@ from mcp_audit.models import (
     ToolAnnotations,
     ToolInfo,
 )
-from mcp_audit.redaction import redact_text, redacted_excerpt
+from mcp_audit.redaction import redact_text, redacted_excerpt, trim_excerpt_context
 from mcp_audit.report import ReportGenerator
 from mcp_audit.sarif import SarifGenerator
 from mcp_audit.ssrf import SsrfDetector
+
+
+@pytest.mark.parametrize(
+    "case",
+    json.loads(Path("tests/fixtures/excerpt_whitespace_context.json").read_text()),
+    ids=lambda case: case["id"],
+)
+def test_whitespace_context_scan_completes_with_bounded_evidence(case: dict[str, object]) -> None:
+    description = case["description"]
+    assert isinstance(description, str)
+    # A subprocess timeout keeps either trimming regression from hanging pytest.
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            textwrap.dedent(
+                """\
+                import json
+                import sys
+                from mcp_audit.injection import InjectionDetector
+                from mcp_audit.models import ToolInfo
+
+                tool = ToolInfo(name="fixture", description=json.load(sys.stdin))
+                findings = InjectionDetector().scan_tool(tool)
+                print(json.dumps([finding.model_dump(mode="json") for finding in findings]))
+                """
+            ),
+        ],
+        input=json.dumps(description),
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=5,
+    )
+    findings = [InjectionFinding.model_validate(item) for item in json.loads(result.stdout)]
+    assert {finding.pattern_name for finding in findings} == {"hidden_directive", "OBFUSCATED_METADATA"}
+    for finding in findings:
+        assert finding.field_path == "/description"
+        assert len(finding.matched_text) <= 200
+        assert finding.matched_span is not None
+        start, end = finding.matched_span
+        assert 0 <= start < end <= len(finding.matched_text)
+        assert finding.matched_text[start:end] == "‹U+200B›"
+        assert "⟦" not in finding.matched_text and "⟧" not in finding.matched_text
+
+
+@pytest.mark.parametrize(
+    "before, after, expected",
+    [
+        (" \t\n", "ordinary", ("", "ordinary")),
+        ("", " \t\n", ("", "")),
+        ("outer inner ", "near far", ("inner ", "near far")),
+        ("", "near far ", ("", "near")),
+        ("‹U+200B› inner", "", ("inner", "")),
+    ],
+)
+def test_context_trimming_makes_progress_without_splitting_tokens(
+    before: str, after: str, expected: tuple[str, str]
+) -> None:
+    trimmed = trim_excerpt_context(before, after)
+    assert trimmed == expected
+    assert len(trimmed[0]) + len(trimmed[1]) < len(before) + len(after)
 
 
 @pytest.mark.parametrize("prefix", ["password=", "token=", "Bearer "])

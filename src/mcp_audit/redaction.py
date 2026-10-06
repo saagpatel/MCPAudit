@@ -195,6 +195,15 @@ def _normalization_exposes_secret(redacted: str) -> bool:
     return normalized != redacted and _redact_text(normalized) != normalized
 
 
+def trim_excerpt_context(before: str, after: str) -> tuple[str, str]:
+    """Remove an outer context token, clearing whitespace-only context too."""
+    if before:
+        before = "" if before.isspace() else re.sub(r"^\s*\S+\s*", "", before, count=1)
+    elif after:
+        after = "" if after.isspace() else re.sub(r"\s*\S+\s*$", "", after, count=1)
+    return before, after
+
+
 def redacted_excerpt(
     text: str,
     start: int,
@@ -262,12 +271,7 @@ def redacted_excerpt(
         # Keep the entire match; trim context a token at a time, including
         # rendered invisible markers, rather than cutting through a word.
         while len(before) + len(match) + len(after) > max_length:
-            if before:
-                before = re.sub(r"^\s*\S+\s*", "", before, count=1)
-            elif after:
-                after = re.sub(r"\s*\S+\s*$", "", after, count=1)
-            else:
-                break
+            before, after = trim_excerpt_context(before, after)
         return before + match + after
     if max_length is not None:
         # Expanded invisible markers must not push the actual match out of view.
