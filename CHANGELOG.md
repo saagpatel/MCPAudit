@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add regression tests for canary eligibility, operator safe-tool marks, error
+  results, pagination and rotation, command-artifact integrity boundaries, and
+  pin/session drift details and hashes using synthetic fixtures and temporary pins.
 - Add table-driven contracts for permission keywords and static and runtime injection rule vocabularies.
 - Added the synthetic red-team evasion corpus as a parametrized pytest suite,
   with strict expected-failure cases tracking planned detector gaps.
