@@ -87,6 +87,7 @@ select = ["B", "E", "F", "I", "UP"]
 [tool.pytest.ini_options]
 anyio_mode = "auto"
 testpaths = ["tests"]
+markers = ["redteam: synthetic MCP detector-gap regression cases"]
 
 [dependency-groups]
 dev = [
