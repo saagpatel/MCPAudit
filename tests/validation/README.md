@@ -13,12 +13,14 @@ unlabeled permission surface. Recall retains its confidence requirement. F1 is
 `2 * TP / (2 * TP + FP + FN)`, rather than a copy of recall.
 
 `benign_tools.json` contains synthetic, in-memory operations. It uses keyword-only
-analysis with absent annotations to reproduce the six M2 keyword false positives;
-it does not test the separate spec-default annotation findings. Existing server
-fixtures retain full annotation-plus-keyword analysis. The six known gaps have
-individual `xfail(strict=True, raises=AssertionError)` tests until P2-1 retunes the
-keywords. Fixing one produces XPASS and requires removing that case's xfail.
-No known false positive is excluded from CLI metrics.
+analysis with absent annotations to guard the six M2 keyword false positives,
+now fixed by P2-1. All six are ordinary passing tests; no false positive is
+excluded from CLI metrics. Server fixtures retain annotation-plus-keyword
+analysis. Their optional `tool_annotations` applies explicit synthetic hints to
+every tool on that fixture server. Network-positive servers whose labels
+previously passed via spec defaults now declare `open_world_hint: true`.
+These labels validate declarations, not independent keyword recall or actual
+network behavior. Missing hints are tested separately by the scoring fixtures.
 
 ## Gates
 
@@ -30,18 +32,14 @@ vacuous ratios do not establish coverage.
 
 | Category | Expected positives | Current TP | Known FP | Precision floor |
 | --- | ---: | ---: | ---: | ---: |
-| file_read | 19 | 19 | 1 | 19/20 = 95% |
-| file_write | 31 | 30 | 2 | 30/32 = 93.75% |
-| exfiltration | 5 | 5 | 3 | 5/8 = 62.5% |
+| file_read | 19 | 19 | 0 | 100% |
+| file_write | 31 | 30 | 0 | 100% |
+| exfiltration | 5 | 5 | 0 | 100% |
 | network | 49 | 49 | 0 | 100% |
 | destructive | 10 | 10 | 0 | 100% |
 | shell_execution | 4 | 4 | 0 | 100% |
 
-These fixed floors bound the existing six failures while detector tuning remains
-out of Phase 0. In the small exfiltration category, each of the three known FPs
-materially changes precision; a generic 80% floor would fail this baseline.
-The file_write baseline includes one existing missed positive. At the recorded TP
-counts, one additional FP fails each category gate. Per-fixture benign checks also
-reject every new FP without relying on aggregate support. As P2-1 fixes gaps,
-raise the affected floors along with removing xfails; do not lower them to admit
-regressions.
+P2-1 raises the affected floors to 100% and removes the xfails. The file_write
+baseline still includes one existing missed positive. Any FP now fails each
+category gate. Per-fixture benign checks also reject every FP without relying
+on aggregate support. The recall threshold and minimum support are unchanged.

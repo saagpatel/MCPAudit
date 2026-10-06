@@ -83,6 +83,39 @@ legacy JSON list of `name`/`score` objects and does not return warnings; callers
 needing coverage information must use those warning-bearing tools.
 `check_server` retains its audit fields and adds `warnings`.
 
+## Missing tool annotations
+
+`audits[].annotations_missing` is an additive boolean, false by default for
+older reports. It is true when a listed tool omits `openWorldHint`, or omits
+`destructiveHint` without declaring `readOnlyHint=true`. No listed tools means
+false; config-only or failed listings do not imply annotation coverage.
+`schema_version` remains 1. Existing annotation coverage fields are unchanged.
+
+Missing hints no longer create permission findings or affect numerical scores
+and policy gates. They produce one per-server terminal FYI and SARIF `MCP005`
+`note` with `properties.kind: "annotations_missing"`, `target_type: "server"`,
+and `severity: "low"`. Its stable fingerprint uses the existing algorithm with
+namespace `MCP005/annotations_missing` and an empty tool target, so it cannot
+collide with a genuine `MCP005` tool finding. The old default rows are consolidated.
+Genuine capability rule IDs, tool-target fingerprints, and SARIF alert levels
+retain compatibility, including the former annotation contribution when
+selecting those levels. Retained tool/category findings also preserve the
+former declared-confidence warning, even when independent keyword evidence
+has lower confidence. Operator-removed findings are not restored. The note
+is always `note`, independent of server risk.
+It is informational metadata, not a reduced-coverage scan warning.
+
+`audits[].permission_alert_score` is an additive nullable score (0–10) used
+only to select genuine permission SARIF levels. The engine calculates it with
+the legacy annotation contributions and the same operator overrides applied
+to permission findings. It does not change `risk_score` or policy gates and
+survives JSON round trips. Older reports default to null; SARIF retains its
+annotation-based compatibility calculation when this score is unavailable.
+
+`readOnlyHint=true` alone creates no `file_read` finding. Independent file
+keyword evidence is retained, as are explicit positive network/destructive
+declarations. A zero score is not a runtime safety claim.
+
 ## Annotation contradictions
 
 `audits[].annotation_findings` is an additive list, empty by default (including

@@ -1,6 +1,7 @@
 {
 	"server_name": "server-playwright",
 	"description": "@modelcontextprotocol/server-playwright — browser automation via Playwright",
+	"tool_annotations": {"open_world_hint": true},
 	"tools": [
 		{
 			"name": "playwright_navigate",

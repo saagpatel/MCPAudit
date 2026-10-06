@@ -204,7 +204,7 @@ async def test_detector_gap_corpus(
                     and f.rule_id == "MCP018"
                     and f.severity.value == "high"
                     and {category.value for category in f.gained_categories}
-                    == {"exfiltration", "shell_execution"}
+                    == {"exfiltration", "shell_execution", "network"}
                     for f in audit.escalation_findings
                 )
         elif kind == "escalation_injection":

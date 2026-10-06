@@ -1,6 +1,7 @@
 {
 	"server_name": "server-github",
 	"description": "@modelcontextprotocol/server-github — GitHub API operations",
+	"tool_annotations": {"open_world_hint": true},
 	"tools": [
 		{
 			"name": "create_or_update_file",
