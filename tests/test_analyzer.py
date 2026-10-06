@@ -6,6 +6,7 @@ from time import perf_counter
 
 import pytest
 
+from mcp_audit.agent_text import agent_visible_text
 from mcp_audit.analyzer import PermissionAnalyzer
 from mcp_audit.models import (
     Confidence,
@@ -107,7 +108,59 @@ def test_permission_properties_obey_the_shared_walker_budget(monkeypatch: pytest
         "status",
         input_schema={"properties": {"options": {"properties": {"detail": {}, "shell": {}}}}},
     )
-    assert analyzer.analyze_tool_keywords(tool) == []
+    incomplete: list[str] = []
+    assert analyzer.analyze_tool_keywords(tool, incomplete_reasons=incomplete) == []
+    assert incomplete == ["property_budget_exceeded"]
+
+
+def test_repeated_refs_report_incomplete_permissions_with_complete_agent_text() -> None:
+    tool = ToolInfo.model_validate_json(
+        Path("tests/fixtures/repeated_ref_schema_permissions.json").read_text()
+    )
+    assert agent_visible_text(tool).incomplete == []
+    incomplete: list[str] = []
+    assert analyzer.analyze_server([tool, tool], incomplete_reasons=incomplete) == []
+    assert incomplete == ["node_budget_exceeded"]
+
+    partial = tool.model_copy(update={"name": "shell"})
+    incomplete.clear()
+    findings = analyzer.analyze_tool(partial, incomplete_reasons=incomplete)
+    assert {finding.category for finding in findings} == {PermissionCategory.SHELL_EXEC}
+    assert incomplete == ["node_budget_exceeded"]
+
+    assert tool.input_schema is not None
+    del tool.input_schema["allOf"]
+    incomplete.clear()
+    findings = analyzer.analyze_tool(tool, incomplete_reasons=incomplete)
+    assert incomplete == []
+    assert {finding.category for finding in findings} == {PermissionCategory.SHELL_EXEC}
+
+
+@pytest.mark.parametrize(
+    "schema,expected",
+    [
+        ({"$ref": "#/$defs/missing"}, "unresolved_reference"),
+        ({"$ref": "https://example.invalid/untrusted-reference"}, "unresolved_reference"),
+        ({"$dynamicRef": "#untrusted-reference"}, "unsupported_dynamic_reference"),
+        ({"$recursiveRef": "#untrusted-reference"}, "unsupported_dynamic_reference"),
+    ],
+)
+def test_permission_schema_reasons_withhold_reference_text(schema: dict[str, object], expected: str) -> None:
+    incomplete: list[str] = []
+    analyzer.analyze_tool(make_tool("status", input_schema=schema), incomplete_reasons=incomplete)
+    assert incomplete == [expected]
+
+
+def test_permission_schema_reports_depth_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mcp_audit import ssrf
+
+    monkeypatch.setattr(ssrf, "_MAX_SCHEMA_DEPTH", 0)
+    incomplete: list[str] = []
+    analyzer.analyze_tool(
+        make_tool("status", input_schema={"items": {"properties": {"shell": {}}}}),
+        incomplete_reasons=incomplete,
+    )
+    assert incomplete == ["depth_budget_exceeded"]
 
 
 @pytest.mark.parametrize("paths", [None, ["/name", "/description", "/input_schema/title"]])

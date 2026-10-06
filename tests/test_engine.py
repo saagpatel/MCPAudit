@@ -17,6 +17,7 @@ import pytest
 from rich.console import Console
 
 from mcp_audit import engine
+from mcp_audit.agent_text import agent_visible_text
 from mcp_audit.discovery import ConfigParseError
 from mcp_audit.engine import ScanOptions, run_scan
 from mcp_audit.models import (
@@ -168,6 +169,83 @@ def test_run_scan_warns_for_each_oversized_detector_field_without_truncating_rep
     assert "7 field(s) truncated" in warning.message
     assert oversized not in warning.message
     assert report.audits[0].tools[0].description == oversized
+
+
+@pytest.mark.parametrize(
+    "incomplete_surface,escalation_check",
+    [("current", False), ("current", True), ("baseline", True), ("neither", True)],
+)
+def test_run_scan_propagates_permission_schema_incompleteness(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, incomplete_surface: str, escalation_check: bool
+) -> None:
+    from mcp_audit import pinning
+
+    amplified = ToolInfo.model_validate_json(
+        Path("tests/fixtures/repeated_ref_schema_permissions.json").read_text()
+    )
+    assert agent_visible_text(amplified).incomplete == []
+    clean = amplified.model_copy(deep=True)
+    assert clean.input_schema is not None
+    del clean.input_schema["allOf"]
+    current = amplified if incomplete_surface == "current" else clean
+    baseline = amplified if incomplete_surface == "baseline" else clean
+    server = make_server_config(name="schema-fixture", command="fixture")
+
+    store = pinning.PinStore(path=tmp_path / "pins.yaml")
+    store.pin_server(server.name, [baseline])
+    monkeypatch.setattr(pinning, "PinStore", lambda: store)
+
+    class FixtureConnector:
+        def __init__(self, timeout: float) -> None:
+            self.scan_warnings: list[ScanWarning] = []
+
+        async def connect(self, _server: ServerConfig) -> ServerAudit:
+            return ServerAudit(server=server, connection_status="connected", tools=[current])
+
+    monkeypatch.setattr(engine, "ServerConnector", FixtureConnector)
+    report = anyio.run(
+        partial(
+            run_scan,
+            ScanOptions(inject_check=True, trifecta_check=True, escalation_check=escalation_check),
+            servers=[server],
+        )
+    )
+    warnings = [warning for warning in report.warnings if warning.code == "permission_schema_incomplete"]
+    expected_checks = (
+        ["permission_analysis", "escalation_check"]
+        if incomplete_surface == "current" and escalation_check
+        else ["permission_analysis"]
+        if incomplete_surface == "current"
+        else ["escalation_check"]
+        if incomplete_surface == "baseline"
+        else []
+    )
+    assert sorted(warning.check for warning in warnings if warning.check is not None) == sorted(
+        expected_checks
+    )
+    for warning in warnings:
+        assert warning.servers == [server.name]
+        assert warning.message in {
+            "Permission schema analysis incomplete: node_budget_exceeded",
+            "Escalation schema analysis incomplete: node_budget_exceeded",
+        }
+    assert not any(warning.code == "agent_text_incomplete" for warning in report.warnings)
+    for check in ("permissions", "trifecta_check"):
+        assert report.coverage[check].state == ("partial" if incomplete_surface == "current" else "complete")
+    assert report.coverage["escalation_check"].state == (
+        "not_requested"
+        if not escalation_check
+        else "complete"
+        if incomplete_surface == "neither"
+        else "partial"
+    )
+    for check in ("metadata", "config_health", "capabilities", "inject_check"):
+        assert report.coverage[check].state == "complete"
+    assert report.coverage["ssrf_check"].state == "not_requested"
+    assert report.schema_version == 1
+    serialized = report.model_dump(mode="json")
+    assert serialized["coverage"]["permissions"]["state"] == report.coverage["permissions"].state
+    assert serialized["warnings"] == [warning.model_dump(mode="json") for warning in report.warnings]
 
 
 def test_run_scan_is_silent_by_default(
@@ -568,7 +646,9 @@ async def test_analyzer_exception_group_reports_redacted_leaf_causes(monkeypatch
     from mcp_audit.analyzer import PermissionAnalyzer
     from mcp_audit.models import PermissionFinding
 
-    def exploding(self: PermissionAnalyzer, tools: list[ToolInfo]) -> list[PermissionFinding]:
+    def exploding(
+        self: PermissionAnalyzer, tools: list[ToolInfo], *, incomplete_reasons: list[str] | None = None
+    ) -> list[PermissionFinding]:
         raise ExceptionGroup(
             "outer server text",
             [

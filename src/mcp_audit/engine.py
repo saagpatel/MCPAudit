@@ -414,10 +414,18 @@ async def run_scan(
                     )
 
             # Analyze tool list for new permission findings
+            schema_incomplete: list[str] = []
             if not skip_connect or not audit.permissions:
-                raw_findings = analyzer.analyze_server(audit.tools)
+                raw_findings = analyzer.analyze_server(audit.tools, incomplete_reasons=schema_incomplete)
             else:
                 raw_findings = list(audit.permissions)
+            if schema_incomplete:
+                warn(
+                    "permission_schema_incomplete",
+                    "Permission schema analysis incomplete: " + "; ".join(schema_incomplete),
+                    check="permission_analysis",
+                    servers=[srv.name],
+                )
 
             # Optional LLM augmentation for low-confidence tools
             if llm_analyzer is not None:
@@ -465,12 +473,21 @@ async def run_scan(
             if escalation_analyzer is not None and pin_store is not None:
                 baseline = pin_store.baseline_tools(srv.name)
                 if baseline:
+                    escalation_incomplete: list[str] = []
                     audit.escalation_findings = escalation_analyzer.analyze_server(
                         srv.name,
                         baseline,
                         audit.tools,
                         uncovered_annotations=pin_store.legacy_tool_names(srv.name),
+                        incomplete_reasons=escalation_incomplete,
                     )
+                    if escalation_incomplete:
+                        warn(
+                            "permission_schema_incomplete",
+                            "Escalation schema analysis incomplete: " + "; ".join(escalation_incomplete),
+                            check="escalation_check",
+                            servers=[srv.name],
+                        )
 
             # Optional provenance / launch-config drift check vs the pin baseline
             if provenance_analyzer is not None and pin_store is not None:

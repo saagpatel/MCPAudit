@@ -36,6 +36,11 @@ def _warning_reasons(check: str, audit: ServerAudit, warnings: list[ScanWarning]
         for warning in warnings
         if (
             warning.check == check
+            or (
+                warning.code == "permission_schema_incomplete"
+                and warning.check == "permission_analysis"
+                and check in {"permissions", "trifecta_check", "escalation_check"}
+            )
             or (warning.code == "agent_text_incomplete" and check in _AGENT_TEXT_CHECKS)
             or (warning.code == "description_truncated" and check in _BOUNDED_TEXT_CHECKS)
         )

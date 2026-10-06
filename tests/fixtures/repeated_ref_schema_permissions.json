@@ -1,0 +1,126 @@
+{
+  "name": "status",
+  "annotations": {
+    "destructive_hint": false,
+    "open_world_hint": false
+  },
+  "input_schema": {
+    "$defs": {
+      "d0": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/d1"
+          },
+          {
+            "$ref": "#/$defs/d1"
+          }
+        ]
+      },
+      "d1": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/d2"
+          },
+          {
+            "$ref": "#/$defs/d2"
+          }
+        ]
+      },
+      "d2": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/d3"
+          },
+          {
+            "$ref": "#/$defs/d3"
+          }
+        ]
+      },
+      "d3": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/d4"
+          },
+          {
+            "$ref": "#/$defs/d4"
+          }
+        ]
+      },
+      "d4": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/d5"
+          },
+          {
+            "$ref": "#/$defs/d5"
+          }
+        ]
+      },
+      "d5": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/d6"
+          },
+          {
+            "$ref": "#/$defs/d6"
+          }
+        ]
+      },
+      "d6": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/d7"
+          },
+          {
+            "$ref": "#/$defs/d7"
+          }
+        ]
+      },
+      "d7": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/d8"
+          },
+          {
+            "$ref": "#/$defs/d8"
+          }
+        ]
+      },
+      "d8": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/d9"
+          },
+          {
+            "$ref": "#/$defs/d9"
+          }
+        ]
+      },
+      "d9": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/d10"
+          },
+          {
+            "$ref": "#/$defs/d10"
+          }
+        ]
+      },
+      "d10": {}
+    },
+    "allOf": [
+      {
+        "$ref": "#/$defs/d0"
+      }
+    ],
+    "properties": {
+      "options": {
+        "properties": {
+          "shell_command": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
