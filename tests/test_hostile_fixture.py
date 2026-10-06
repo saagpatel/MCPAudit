@@ -130,13 +130,80 @@ else:
 
 
 def test_scanner_runner_measures_and_cleans_fixture(tmp_path: Path) -> None:
-    metrics = run_case(tmp_path, Case("smoke", ("normal", "--tools", "1"), 10))
+    metrics = run_case(tmp_path, Case("smoke", ("normal", "--tools", "1", "--desc-bytes", "256"), 10))
     assert metrics["exit_code"] == 0
     assert metrics["connected"] == metrics["total_tools"] == 1
     assert metrics["recorded_processes"] == 1
+    assert metrics["process_roles"] == ["server"]
     assert metrics["leftover_processes"] == metrics["leftover_groups"] == 0
     assert isinstance(metrics["peak_rss_bytes"], int) and metrics["peak_rss_bytes"] > 0
     assert isinstance(metrics["analysis_seconds"], float) and metrics["analysis_seconds"] > 0
+    assert metrics["analysis_invocations"] == 1
+    assert metrics["analysis_tool_counts"] == [1]
+    assert metrics["file_read_tools"] == [["tool_0"]]
+
+
+def test_scanner_runner_records_child_and_both_servers(tmp_path: Path) -> None:
+    case = CASES[4]
+    metrics = run_case(tmp_path, case)
+    assert_limits(metrics, case, "baseline")
+    assert metrics["recorded_processes"] == 3
+    roles = metrics["process_roles"]
+    assert isinstance(roles, list) and sorted(roles) == ["child", "server", "server"]
+
+
+@pytest.mark.parametrize("profile", ["baseline", "p1-9", "p3-7", "p3-8"])
+@pytest.mark.parametrize("roles", [["server", "server"], ["server", "server", "server"], ["server", "child"]])
+def test_orphan_gate_requires_child_and_both_server_records(profile: str, roles: list[str]) -> None:
+    metrics: dict[str, object] = {
+        "deadline_exceeded": False,
+        "exit_code": 0,
+        "wall_seconds": 1.0,
+        "connected": 1,
+        "total_tools": 1,
+        "statuses": ["failed", "connected"],
+        "recorded_processes": 3,
+        "process_roles": ["child", "server", "server"],
+        "leftover_processes": 0,
+        "leftover_groups": 0,
+    }
+    assert_limits(metrics, CASES[4], profile)
+    metrics["process_roles"] = roles
+    metrics["recorded_processes"] = len(roles)
+    with pytest.raises(AssertionError):
+        assert_limits(metrics, CASES[4], profile)
+
+
+@pytest.mark.parametrize("profile", ["baseline", "p1-9", "p3-7", "p3-8"])
+@pytest.mark.parametrize("case", CASES[1:3], ids=lambda case: case.name)
+@pytest.mark.parametrize("regression", ["unexecuted", "empty_tools", "missing_permission"])
+def test_description_gate_requires_analysis_coverage_and_findings(
+    profile: str, case: Case, regression: str
+) -> None:
+    metrics: dict[str, object] = {
+        "deadline_exceeded": False,
+        "exit_code": 0,
+        "wall_seconds": 1.0,
+        "peak_rss_bytes": 1,
+        "connected": 1,
+        "total_tools": case.tools,
+        "recorded_processes": 1,
+        "leftover_processes": 0,
+        "leftover_groups": 0,
+        "analysis_seconds": 0.1,
+        "analysis_invocations": 1,
+        "analysis_tool_counts": [case.tools],
+        "file_read_tools": [[f"tool_{i}" for i in range(case.tools)]],
+    }
+    assert_limits(metrics, case, profile)
+    if regression == "unexecuted":
+        metrics.update(analysis_seconds=0.0, analysis_invocations=0, analysis_tool_counts=[])
+    elif regression == "empty_tools":
+        metrics["analysis_tool_counts"] = [0]
+    else:
+        metrics["file_read_tools"] = [[]]
+    with pytest.raises(AssertionError):
+        assert_limits(metrics, case, profile)
 
 
 @pytest.mark.parametrize("regression", ["wall_seconds", "peak_rss_bytes", "leftover_processes"])

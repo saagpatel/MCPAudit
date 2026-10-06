@@ -16,10 +16,12 @@ from mcp_audit.models import PermissionFinding, ToolInfo
 
 def run() -> None:
     analysis_seconds = 0.0
+    analysis_tool_counts: list[int] = []
     original = PermissionAnalyzer.analyze_server
 
     def timed(self: PermissionAnalyzer, tools: list[ToolInfo]) -> list[PermissionFinding]:
         nonlocal analysis_seconds
+        analysis_tool_counts.append(len(tools))
         start = time.perf_counter()
         try:
             return original(self, tools)
@@ -38,6 +40,8 @@ def run() -> None:
                 {
                     "cli_seconds": time.perf_counter() - start,
                     "analysis_seconds": analysis_seconds,
+                    "analysis_invocations": len(analysis_tool_counts),
+                    "analysis_tool_counts": analysis_tool_counts,
                     "peak_rss_bytes": rss if sys.platform == "darwin" else rss * 1024,
                 }
             )

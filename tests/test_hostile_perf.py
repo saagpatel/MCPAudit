@@ -72,17 +72,21 @@ def process_exists(pid: int, *, group: bool = False) -> bool:
     return True
 
 
-def read_ledger(root: Path) -> tuple[list[int], list[int]]:
+def read_ledger(root: Path) -> tuple[list[int], list[int], list[str]]:
     pids: list[int] = []
     groups: set[int] = set()
+    roles: list[str] = []
     for path in (root / "pids").glob("*.json"):
         value = json.loads(path.read_text())
         pid, pgid = value["pid"], value["pgid"]
         assert isinstance(pid, int) and isinstance(pgid, int)
         assert path.stem == str(pid)
+        role = value["role"]
+        assert role in {"server", "child"}
         pids.append(pid)
         groups.add(pgid)
-    return pids, sorted(groups)
+        roles.append(role)
+    return pids, sorted(groups), roles
 
 
 def cleanup_groups(groups: list[int]) -> None:
@@ -168,10 +172,15 @@ def run_case(root: Path, case: Case, *, timeout: int | None = None) -> dict[str,
             measured["total_tools"] = report["total_tools"]
             measured["statuses"] = [a["connection_status"] for a in report["audits"]]
             measured["errors"] = [a["connection_error"] for a in report["audits"]]
-        pids, groups = read_ledger(root)
+            measured["file_read_tools"] = [
+                [f["tool_name"] for f in a["permissions"] if f["category"] == "file_read"]
+                for a in report["audits"]
+            ]
+        pids, groups, roles = read_ledger(root)
         # Same post-scan observation grace as the original stress runner.
         time.sleep(0.5)
         measured["recorded_processes"] = len(pids)
+        measured["process_roles"] = roles
         measured["leftover_processes"] = sum(process_exists(pid) for pid in pids)
         measured["leftover_groups"] = sum(process_exists(group, group=True) for group in groups)
     finally:
@@ -179,7 +188,7 @@ def run_case(root: Path, case: Case, *, timeout: int | None = None) -> dict[str,
             os.killpg(process.pid, signal.SIGKILL)
             process.wait(timeout=5)
         if not groups:
-            _, groups = read_ledger(root)
+            _, groups, _ = read_ledger(root)
         try:
             cleanup_groups(groups)
         finally:
@@ -194,8 +203,9 @@ def number(metrics: dict[str, object], key: str) -> float:
 
 
 def print_metrics(metrics: dict[str, object]) -> None:
-    # Full status/error arrays remain in the artifact, not the console log.
-    summary = {key: value for key, value in metrics.items() if key not in {"statuses", "errors"}}
+    # Full coverage/status/error arrays remain in the artifact, not the console log.
+    arrays = {"statuses", "errors", "analysis_tool_counts", "process_roles", "file_read_tools"}
+    summary = {key: value for key, value in metrics.items() if key not in arrays}
     print(json.dumps(summary, sort_keys=True))
 
 
@@ -230,8 +240,15 @@ def assert_limits(metrics: dict[str, object], case: Case, profile: str) -> None:
     elif case.name == "spawn_child_exit":
         assert metrics["connected"] == 1 and metrics["total_tools"] == 1, metrics
         assert metrics["statuses"] in (["timeout", "connected"], ["failed", "connected"]), metrics
+        roles = metrics["process_roles"]
+        assert isinstance(roles, list) and sorted(roles) == ["child", "server", "server"], metrics
+        assert number(metrics, "recorded_processes") == 3, metrics
     else:
         assert metrics["connected"] == case.servers and metrics["total_tools"] == case.tools, metrics
+    if case.name in {"desc_5mb_x1", "desc_1mb_x20"}:
+        assert number(metrics, "analysis_invocations") == case.servers, metrics
+        assert metrics["analysis_tool_counts"] == [case.tools], metrics
+        assert metrics["file_read_tools"] == [[f"tool_{i}" for i in range(case.tools)]], metrics
     assert number(metrics, "wall_seconds") <= wall, metrics
     if analysis is not None:
         assert number(metrics, "analysis_seconds") <= analysis, metrics
