@@ -46,7 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Migrated the connected MCP client, in-process MCP server, and stdio test
   fixture to MCP SDK 2 public APIs. The supported and tested range is now
-  `mcp>=2.0,<3.0`.
+  `mcp>=2.2.0,<3.0`.
 
 ## [2.7.0] - 2026-08-14
 
