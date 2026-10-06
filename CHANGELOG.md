@@ -44,6 +44,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only in debug logging, with cleanup on completion, timeout, and cancellation.
   Discard the leading partial record from truncated tails so truncation cannot
   remove credential prefixes and bypass redaction.
+- Keep large result-injection parametrization ids compact so pytest collection
+  and progress output do not duplicate megabyte-sized input strings. CI installs
+  PostgreSQL 16 server binaries without a service container, checks pytest
+  summaries, requires all ProofOS PostgreSQL cases to run without
+  skips by selecting their JUnit testcase classnames rather than the shared
+  pytest suite name, and reports branch coverage.
 
 ### Changed
 

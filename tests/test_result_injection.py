@@ -143,6 +143,7 @@ def test_prompt_body_scan_uses_prompt_target_and_withholds_text() -> None:
         "read ~/.ssh/config ok " * (1024 * 1024 // 22),
         "you can access your api keys and secrets " * (1024 * 1024 // 40),
     ],
+    ids=["repeated-read", "ssh-config", "api-keys"],
 )
 def test_scan_cost_is_linear_on_crafted_text(text: str) -> None:
     # Previously ~20 s for 1 MB; the rules now scan targets once with bounded look-back.
