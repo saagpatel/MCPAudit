@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 
 from mcp_audit.agent_text import agent_visible_text
 from mcp_audit.models import (
+    AnnotationFinding,
     CapabilityFinding,
     CapabilityTarget,
     Confidence,
@@ -13,7 +14,6 @@ from mcp_audit.models import (
     PermissionFinding,
     PromptInfo,
     ResourceInfo,
-    ToolAnnotations,
     ToolInfo,
 )
 from mcp_audit.rules.patterns import PERMISSION_PATTERNS
@@ -185,13 +185,8 @@ class PermissionAnalyzer:
         annotation_findings = self._annotation_findings(tool)
         annotation_categories = {f.category for f in annotation_findings}
 
-        # Determine which categories are suppressed by annotations
-        suppressed = self._suppressed_categories(tool.annotations)
-
         keyword_findings = [
-            f
-            for f in self._keyword_findings(tool)
-            if f.category not in annotation_categories and f.category not in suppressed
+            f for f in self._keyword_findings(tool) if f.category not in annotation_categories
         ]
 
         return annotation_findings + keyword_findings
@@ -262,20 +257,47 @@ class PermissionAnalyzer:
 
         return findings
 
-    def _suppressed_categories(self, ann: ToolAnnotations | None) -> set[PermissionCategory]:
-        """Return categories that should be suppressed by annotation hints."""
+    def analyze_annotation_contradictions(self, tool: ToolInfo) -> list[AnnotationFinding]:
+        """Compare explicit served hints with existing keyword capability evidence."""
+        ann = tool.annotations
         if ann is None:
-            return set()
-        suppressed: set[PermissionCategory] = set()
-        if ann.read_only_hint is True:
-            suppressed.add(PermissionCategory.FILE_WRITE)
-            suppressed.add(PermissionCategory.DESTRUCTIVE)
-        if ann.destructive_hint is False:
-            suppressed.add(PermissionCategory.DESTRUCTIVE)
-        if ann.open_world_hint is False:
-            suppressed.add(PermissionCategory.NETWORK)
-            suppressed.add(PermissionCategory.EXFILTRATION)
-        return suppressed
+            return []
+        contradictions: list[AnnotationFinding] = []
+        for finding in self.analyze_tool_keywords(tool):
+            if finding.confidence not in {Confidence.MEDIUM, Confidence.HIGH}:
+                continue
+            hint: str | None = None
+            declared_value = False
+            if ann.read_only_hint is True and finding.category in {
+                PermissionCategory.FILE_WRITE,
+                PermissionCategory.DESTRUCTIVE,
+            }:
+                hint, declared_value = "readOnlyHint", True
+            elif (
+                ann.read_only_hint is not True
+                and ann.destructive_hint is False
+                and finding.category == PermissionCategory.DESTRUCTIVE
+            ):
+                hint = "destructiveHint"
+            elif ann.open_world_hint is False and finding.category in {
+                PermissionCategory.NETWORK,
+                PermissionCategory.EXFILTRATION,
+            }:
+                hint = "openWorldHint"
+            if hint is not None:
+                contradictions.append(
+                    AnnotationFinding(
+                        tool_name=tool.name,
+                        hint=hint,
+                        declared_value=declared_value,
+                        category=finding.category,
+                        confidence=finding.confidence,
+                        severity="high" if finding.category == PermissionCategory.DESTRUCTIVE else "medium",
+                        evidence=finding.evidence,
+                        field_paths=finding.field_paths,
+                    )
+                )
+        return contradictions
 
     def _keyword_findings(self, tool: ToolInfo) -> list[PermissionFinding]:
         """Score bounded agent-visible text; added metadata has weight one."""
