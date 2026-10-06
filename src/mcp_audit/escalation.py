@@ -28,10 +28,14 @@ from __future__ import annotations
 from mcp_audit.analyzer import PermissionAnalyzer
 from mcp_audit.injection import InjectionDetector
 from mcp_audit.models import (
+    CapabilityTarget,
+    DriftFinding,
+    DriftStatus,
     EscalationFinding,
     EscalationKind,
     EscalationSeverity,
     PermissionCategory,
+    SurfaceFieldChange,
     ToolInfo,
 )
 
@@ -50,6 +54,74 @@ _MEDIUM_CATEGORIES: frozenset[PermissionCategory] = frozenset(
     }
 )
 _DANGEROUS_CATEGORIES: frozenset[PermissionCategory] = _HIGH_CATEGORIES | _MEDIUM_CATEGORIES
+
+
+def detect_session_drift(
+    server_name: str,
+    before: dict[str, dict[str, object]],
+    after: dict[str, dict[str, object]],
+    after_call: int,
+) -> list[DriftFinding]:
+    """Compare observed surfaces with their last known successful values.
+
+    The caller retains unavailable categories across failed listings. A failed
+    prompts/get retains only that prompt, rather than losing its peers.
+    """
+    from mcp_audit.pinning import surface_field_diff, surface_hash
+
+    findings: list[DriftFinding] = []
+    # An unavailable listing is a coverage warning, not evidence of removal.
+    for surface in sorted(before.keys() & after.keys()):
+        old_items, new_items = before.get(surface, {}), after.get(surface, {})
+        # A missing individual get is unknown, including in the first capture.
+        # Prompt additions/removals are established by the successful listing.
+        names = (
+            old_items.keys() & new_items.keys()
+            if surface == "prompt_results"
+            else old_items.keys() | new_items.keys()
+        )
+        for name in sorted(names):
+            old, new = old_items.get(name), new_items.get(name)
+            if old == new:
+                continue
+            status = (
+                DriftStatus.NEW
+                if name not in old_items
+                else DriftStatus.REMOVED
+                if name not in new_items
+                else DriftStatus.CHANGED
+            )
+            if status == DriftStatus.NEW:
+                fields = [SurfaceFieldChange(path="", after_hash=surface_hash(new))]
+            elif status == DriftStatus.REMOVED:
+                fields = [SurfaceFieldChange(path="", before_hash=surface_hash(old))]
+            else:
+                fields = surface_field_diff(old, new)
+            findings.append(
+                DriftFinding(
+                    server_name=server_name,
+                    tool_name=name,
+                    status=status,
+                    stored_hash=surface_hash(old) if name in old_items else None,
+                    current_hash=surface_hash(new) if name in new_items else None,
+                    source="session",
+                    severity="high",
+                    after_call=after_call,
+                    surface=surface,
+                    surface_type=(
+                        CapabilityTarget.TOOL
+                        if surface == "tools"
+                        else CapabilityTarget.RESOURCE
+                        if surface == "resources"
+                        else CapabilityTarget.PROMPT
+                    ),
+                    field_changes=fields,
+                    summary=f"{surface} surface changed after canary call {after_call}.",
+                    details=[f"{surface}{field.path or '/'} changed" for field in fields],
+                    remediation="Review the changed surface before exercising this session again.",
+                )
+            )
+    return findings
 
 
 class EscalationAnalyzer:

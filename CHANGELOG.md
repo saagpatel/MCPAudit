@@ -7,12 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.8.0] - Unreleased
 
+### Added
+
+- Opt-in runtime rug-pull canary (`scan --canary-check`, explicit
+  `--config FILE --config-only` scope only). It captures an in-memory surface
+  baseline, calls up to `--canary-calls` (default 5, 1-100 per server)
+  safe-probe-eligible tools with empty arguments in the same session, and
+  re-lists tools, prompts, and resources after every call. Mid-session surface
+  changes are HIGH drift findings with field paths and before/after hashes.
+  Tool results and rendered prompt bodies are scanned for instruction
+  overrides, credential hunts, and directions to call other tools, as
+  experimental MEDIUM findings (`Experimental heuristic:`, SARIF `MCP008`) that
+  never fail a HIGH gate on their own. Result excerpts are withheld. See the
+  README canary section and `docs/OUTPUT-CONTRACT.md` for the bounds and fields.
+
+### Security
+
+- Raised the minimum `mcp` Python SDK version to 2.2.0 (`mcp>=2.2.0,<3.0`, lock
+  2.3.0) for advisory GHSA-rwrf-2pqf-9j8j; the floor also covers
+  GHSA-qx49-fqc8-xw99, GHSA-84m7-p3x7-pcfv, GHSA-5h93-6whr-6q8j (cross-origin
+  redirects carrying custom headers in HTTP client transports), and
+  GHSA-w4fh-qvv9-3v23. Users pinning an older 2.x SDK should upgrade.
+
 ### Fixed
 
+- Harden runtime canary eligibility with MCP annotation defaults and preserve
+  surface drift across transient listing or individual prompt-get failures.
+  Honor advertised capabilities, follow bounded pagination, exclude dynamic
+  prompt render text, count prompt-get requests, and retain redacted failures.
+  Reduce benign result-injection false positives, expand secret-path and token
+  detection, and classify tool redirects as medium severity. Regenerate the
+  output contracts and preserve the pin-only HTML drift layout.
+- Detect credential hunts by concrete secret target with the directing verb
+  earlier in the same sentence, excluding `~/.ssh/config` and `.env.example`.
+  Scan rendered `prompts/get` bodies with the result-injection rules. Cap
+  scanned runtime text at 64 KB per result with a coverage warning and scan in
+  linear time. Replace the canary name blocklist with destructive host-action
+  keywords in the permission table.
+- List tools, prompts, and resources in canary scans regardless of advertised
+  capabilities, so served-but-unadvertised surfaces still reach the static
+  checks and enabling the canary never removes them.
+- Preserve the canary's last successful static inventories across listing
+  failures, warn on intermittent unadvertised surfaces, and report
+  prompt/resource page-limit exhaustion even when unadvertised, including in
+  ordinary scans (`surface_listing_incomplete`).
+- Give runtime injection findings distinct SARIF fingerprints per pattern and
+  remediation text that fits tool results; static fingerprints are unchanged.
 - Route explicitly configured legacy SSE servers through the MCP SSE transport.
   HTTP configurations continue using Streamable HTTP. Suppress raw SDK SSE debug
   payloads and redact session-bearing URLs in other SDK SSE diagnostics.
-
 - Made `check_server` connect only to a uniquely discovered exact-name match.
   Unknown or ambiguous names and collected configuration parse errors now
   return a tool error before any server connection.
@@ -21,13 +64,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Keep synthetic sandbox scan and report-generation commands independent of
   workstation permission overrides by selecting an empty override file.
-
 - Documented focused agent verification, isolated synthetic configuration scans,
   and browser checks for HTML report and sandbox changes in `AGENTS.md`.
-
 - Migrated the connected MCP client, in-process MCP server, and stdio test
   fixture to MCP SDK 2 public APIs. The supported and tested range is now
-  `mcp>=2.0,<3.0`.
+  `mcp>=2.2.0,<3.0`.
+
+### Known issues
+
+These predate 2.8.0 unless noted and are scheduled for 2.8.1 or 2.9.0.
+
+- Running `mcp-audit scan` (also `pin`, `watch`, and the `serve` tools) inside a
+  repository discovers that repository's `.mcp.json` and `.vscode/mcp.json` and
+  connects to the servers they declare. In a checkout you do not trust, add
+  `--skip-connect` to `scan` and `watch`; `pin` and most `serve` tools have no
+  connection-free mode, so do not run `pin` or launch `serve` from an untrusted
+  checkout. The GitHub Action already defaults to `skip-connect: true`.
+- Server, tool, prompt, and resource names are printed to the terminal without
+  stripping control sequences, and a name containing Rich markup such as
+  `[/bold]` aborts the terminal report before `--json` output is written.
+- Credential redaction (default and `--redact`) does not yet scrub secrets
+  passed as a separate argument value (`--token VALUE`), bare token shapes, or
+  URL query strings (`?access_token=VALUE`), and pin files store launch
+  arguments verbatim.
+  Review field reports by hand before sharing.
+- Annotation-only changes (for example `readOnlyHint` flipping to `false`) are
+  not detected by `--pin-check` or `--escalation-check`, because pins hash tool
+  name, description, and input schema only. The runtime canary does compare
+  annotations within a session.
+- Remote (`url`) servers in Cursor, Windsurf, and Claude Desktop configs are
+  reported as stdio servers with a missing command instead of being connected.
+- A clean canary result does not list what it could not exclude (time,
+  randomness, client identity, call count beyond the budget, later sessions),
+  and the canary uses the SDK's default client identity. New in 2.8.0; the
+  README describes these limits.
+- `monitor` cannot proxy a real MCP stdio server (it uses `Content-Length`
+  framing rather than newline-delimited JSON-RPC) and will be deprecated in
+  2.9.0.
 
 ## [2.7.0] - 2026-08-14
 

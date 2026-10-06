@@ -314,6 +314,88 @@ explicit `UNKNOWN` status without admitting model findings when injection,
 refusal, omission, provider failure, or malformed output prevents a complete
 classification. Deterministic analysis remains authoritative.
 
+### Runtime rug-pull canary
+
+For servers you are allowed to exercise, `scan --canary-check` captures an
+in-memory SHA256 surface baseline, makes up to five benign `tools/call`
+requests in the same session, and re-lists after every call. Unlike an ordinary
+scan, this mode **calls tools**. It requires an explicit isolated config:
+
+```bash
+mcp-audit scan --config ./allowed-servers.json --config-only \
+  --canary-check --canary-calls 5 --json canary.json --sarif canary.sarif
+```
+
+The canary compares tools (including descriptions, schemas, and annotations),
+prompt metadata, empty-argument `prompts/get` descriptions and message roles,
+and the resources list. Rendered prompt content is excluded from drift because
+timestamps and other dynamic text can change normally between reads; it is
+still scanned for instruction-shaped text exactly like a tool result.
+Mid-session changes are HIGH drift findings with field paths and before/after
+hashes. Tool-result text and structured result strings are checked for
+instruction overrides, credential-hunt requests, and directions to call other
+tools. Result excerpts are withheld; no returned instructions are executed,
+resource links followed, or resource contents read. The existing JSON, SARIF,
+terminal, HTML, and policy paths carry these findings; no saved pins are changed.
+Runtime result and prompt-body findings are experimental MEDIUM heuristics
+(SARIF `MCP008`, description starting "Experimental heuristic:"), so they never
+fail a HIGH policy gate on their own; mid-session surface drift stays HIGH.
+
+Calls use `{}` only. Required arguments and complex schemas are skipped rather
+than filled with guessed values. Explicit destructive annotations, dangerous
+capability keywords, and injection hints always veto a call, including when
+`--canary-safe-tool SERVER/TOOL` marks a tool safe. Tools with an explicit
+`readOnlyHint: true` are eligible automatically unless `destructiveHint: true`.
+Absent `readOnlyHint` defaults to false; absent `destructiveHint` defaults to
+true for tools that are not read-only. All other tools require that mark.
+Eligible empty-argument tools are
+selected in server order, round-robin. Eligibility is rechecked after each
+listing. Server annotations are untrusted hints, so this is not a sandbox or a
+guarantee that an apparently benign tool has no side effects.
+
+`--canary-calls` bounds `tools/call` to 1–100 **per server**, default 5.
+The report counts attempted `prompts/get` requests separately in
+`canary.prompt_get_calls`, including failed requests. The exercise request
+budget is up to K tool calls plus P × (K + 1) prompt gets, where P is the number
+of eligible prompts per listing (if it stays constant). A tools-list failure
+can add one refresh and its prompt gets before the next exercise call; the
+reported total is `completed_calls + prompt_get_calls`. Initialize and listing
+requests are additional. Tools, prompts and resources are always listed; a
+surface the server never advertised stays debug-only if every listing fails
+with an ordinary error and it is never observed. Intermittent availability
+and page-limit exhaustion produce coverage warnings. Each listing follows at most 20
+pages per capture. Scanned text is capped at 64 KB per tool result or prompt
+body. The existing `--timeout` bounds the whole session, including all calls
+and listings. Errors, timeouts, page-limit exhaustion, required-argument
+prompts, truncated oversized text, and a lack of eligible tools produce
+incomplete-coverage warnings. A clean canary
+only describes this bounded exercise: a server can gate on elapsed time,
+randomness, client identity, another tool or arguments, or call count greater
+than K. It does not establish that a server is safe in later sessions. Tests
+use only a synthetic local stdio server that changes metadata after three calls
+without changing its version, plus a benign control.
+
+## Known issues in 2.8
+
+These are scheduled for 2.8.1 and 2.9.0; details are in the
+[2.8 release notes](docs/2.8-RELEASE-NOTES.md#known-issues).
+
+- `scan`, `pin`, `watch`, and the `serve` tools connect to servers declared in
+  the current directory's `.mcp.json` and `.vscode/mcp.json`. In a checkout you
+  do not trust, add `--skip-connect` to `scan` and `watch`, and do not run `pin`
+  or launch `serve` there (they have no connection-free mode).
+- Server-supplied names are printed to the terminal without stripping control
+  sequences; a name containing Rich markup such as `[/bold]` aborts the
+  terminal report before `--json` output is written.
+- `--redact` and the default credential redaction miss secrets passed as a
+  separate argument value (`--token VALUE`) or in URL query strings, and pin
+  files store launch arguments verbatim.
+- Annotation-only changes are not detected by `--pin-check` or
+  `--escalation-check`.
+- Remote (`url`) servers in Cursor, Windsurf, and Claude Desktop configs are
+  reported as stdio servers with a missing command.
+- `monitor` cannot proxy a real MCP stdio server and will be deprecated.
+
 ## Help improve mcp-audit (2 minutes)
 
 Redacted field reports from real MCP configs help calibrate the scanner.

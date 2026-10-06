@@ -20,13 +20,13 @@ from typing import Any
 
 from mcp.types import LATEST_PROTOCOL_VERSION, jsonrpc_message_adapter
 
-# Frozen from the unchanged ServerAudit/ServerConfig contract at bb3db7e.
+# Expected ServerAudit/ServerConfig contract, including additive canary coverage.
 AUDIT_FIELDS = set(
     "server connection_status connection_error tools prompts resources permissions "
     "capability_findings risk_score non_tool_risk has_annotations annotation_coverage "
     "injection_findings ssrf_findings egress_findings drift_findings trifecta_findings "
     "escalation_findings provenance_findings integrity_findings package_verify_findings "
-    "artifact_verify_findings llm_analysis".split()
+    "artifact_verify_findings llm_analysis canary".split()
 )
 SERVER_FIELDS = set(
     "name client config_path project_path command args env_keys transport url headers_keys".split()

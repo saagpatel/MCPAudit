@@ -498,10 +498,13 @@ class SarifGenerator:
         config_path = audit.server.config_path
         uri = _artifact_uri(config_path)
         target_label = finding.target_type.value
+        fingerprint_target = finding.target_name or finding.tool_name
+        if finding.after_call is not None:
+            fingerprint_target += f"\0runtime\0{target_label}\0{finding.pattern_name}"
         msg = (
             f"Prompt injection pattern '{finding.pattern_name}' detected in {target_label} "
             f"'{finding.target_name or finding.tool_name}' on server '{audit.server.name}': "
-            f"{finding.description}. "
+            f"{finding.description.removesuffix('.')}. "
             f"Suggested action: {finding.remediation}"
         )
         return {
@@ -510,12 +513,11 @@ class SarifGenerator:
             "message": {"text": msg},
             "locations": [{"physicalLocation": {"artifactLocation": {"uri": uri}}}],
             "partialFingerprints": {
-                "mcpAuditStableId": _stable_fingerprint(
-                    rule_id, audit.server.name, finding.target_name or finding.tool_name
-                )
+                "mcpAuditStableId": _stable_fingerprint(rule_id, audit.server.name, fingerprint_target)
             },
             "properties": {
                 "pattern": finding.pattern_name,
+                "after_call": finding.after_call,
                 "target_type": finding.target_type.value,
                 "target_name": finding.target_name or finding.tool_name,
                 "severity": finding.severity.value,
@@ -901,22 +903,33 @@ class SarifGenerator:
         config_path = audit.server.config_path
         uri = _artifact_uri(config_path)
         msg = (
-            f"Tool '{finding.tool_name}' on server '{audit.server.name}' has "
+            f"{finding.target_type.title()} '{finding.tool_name}' on server '{audit.server.name}' has "
             f"schema drift status '{finding.status.value}'. "
             f"Suggested action: {finding.remediation or 'Review before refreshing pins.'}"
         )
         return {
             "ruleId": _DRIFT_RULE_ID,
-            "level": "warning",
+            "level": _severity_level(finding.severity),
             "message": {"text": msg},
             "locations": [{"physicalLocation": {"artifactLocation": {"uri": uri}}}],
             "partialFingerprints": {
-                "mcpAuditStableId": _stable_fingerprint(_DRIFT_RULE_ID, audit.server.name, finding.tool_name)
+                "mcpAuditStableId": _stable_fingerprint(
+                    _DRIFT_RULE_ID,
+                    audit.server.name,
+                    f"{finding.surface}:{finding.tool_name}"
+                    if finding.source == "session"
+                    else finding.tool_name,
+                )
             },
             "properties": {
-                "target_type": "tool",
+                "target_type": finding.target_type,
                 "target_name": finding.tool_name,
                 "status": finding.status.value,
+                "source": finding.source,
+                "severity": finding.severity,
+                "after_call": finding.after_call,
+                "surface": finding.surface,
+                "field_changes": [change.model_dump() for change in finding.field_changes],
                 "remediation": finding.remediation,
             },
         }

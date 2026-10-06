@@ -5,23 +5,29 @@ from __future__ import annotations
 import logging
 import re
 import traceback
-from dataclasses import dataclass
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
 from pathlib import PurePath
+from typing import TypeVar
 
 import anyio
 from mcp import Client, StdioServerParameters
 from mcp.client.sse import sse_client
+from mcp.types import ListPromptsResult, ListResourcesResult, ListToolsResult
 from mcp.types import Prompt as SdkPrompt
 from mcp.types import Resource as SdkResource
 from mcp.types import Tool as SdkTool
 from mcp.types import ToolAnnotations as SdkToolAnnotations
 
 from mcp_audit.models import (
+    CanarySummary,
+    CapabilityTarget,
     Confidence,
     PermissionCategory,
     PermissionFinding,
     PromptInfo,
     ResourceInfo,
+    ScanWarning,
     ServerAudit,
     ServerConfig,
     ToolAnnotations,
@@ -29,6 +35,7 @@ from mcp_audit.models import (
     TransportType,
 )
 from mcp_audit.redaction import redact_text
+from mcp_audit.rules.result_injection import RESULT_SCAN_LIMIT
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +106,37 @@ _SHELL_WRAPPERS = {"bash", "sh", "zsh", "fish", "pwsh", "powershell", "cmd", "cm
 _NETWORK_COMMANDS = {"curl", "wget"}
 _PACKAGE_RUNNERS = {"npx", "uvx", "pipx"}
 _DESTRUCTIVE_MARKERS = ("rm -rf", "remove-item -recurse", "del /s", "format ")
+_TRUNCATION_WARNING = (
+    f"Runtime text exceeded {RESULT_SCAN_LIMIT // 1024} KB; only the first "
+    f"{RESULT_SCAN_LIMIT // 1024} KB of each oversized result or prompt body was scanned for injection."
+)
+_Page = TypeVar("_Page", ListToolsResult, ListPromptsResult, ListResourcesResult)
+_Item = TypeVar("_Item")
+
+
+class _ListingPageLimit(ValueError):
+    """A surface exists, but its complete listing exceeds the capture bound."""
+
+
+def _listing_failure_message(label: str, exc: Exception) -> str:
+    if isinstance(exc, _ListingPageLimit):
+        return f"{label} listing exceeds the 20-page limit; coverage is incomplete."
+    return f"{label} surface incomplete ({type(exc).__name__})."
+
+
+async def _list_pages(
+    fetch: Callable[..., Awaitable[_Page]], items: Callable[[_Page], list[_Item]]
+) -> list[_Item]:
+    """Admit a surface only after its complete, bounded pagination succeeds."""
+    collected: list[_Item] = []
+    cursor = None
+    for _ in range(20):
+        page = await fetch(cursor=cursor, cache_mode="bypass")
+        collected.extend(items(page))
+        cursor = page.next_cursor
+        if not cursor:
+            return collected
+    raise _ListingPageLimit("Listing exceeds the 20-page limit.")
 
 
 @dataclass(frozen=True)
@@ -106,6 +144,80 @@ class _ServerCapabilities:
     tools: list[ToolInfo]
     prompts: list[PromptInfo]
     resources: list[ResourceInfo]
+    surface: dict[str, dict[str, object]] = field(default_factory=dict)
+    listing_warnings: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class _CanaryProbe:
+    audit: ServerAudit
+    calls: int
+    safe_tools: frozenset[str]
+    # prompts/get repeats on every listing; each (prompt, pattern) is reported once.
+    prompt_patterns: set[tuple[str, str]] = field(default_factory=set)
+    listing_failures: dict[str, str] = field(default_factory=dict)
+
+
+def canary_tool_eligible(tool: ToolInfo, explicitly_safe: bool = False) -> bool:
+    """Only exercise empty-argument tools with no destructive or injection hints.
+
+    Required or complex schemas are skipped rather than inventing arguments.
+    Annotation defaults and the operator mark are the gate; the capability
+    keyword table and injection patterns veto a call regardless of either.
+    """
+    from mcp_audit.analyzer import PermissionAnalyzer
+    from mcp_audit.injection import InjectionDetector
+
+    schema = tool.input_schema
+    if schema is None or schema.get("type") != "object" or schema.get("required"):
+        return False
+    if "required" in schema and not isinstance(schema["required"], list):
+        return False
+    if any(key in schema for key in ("$ref", "allOf", "anyOf", "oneOf", "not", "if")):
+        return False
+    if schema.get("minProperties", 0) != 0:
+        return False
+    if tool.annotations and tool.annotations.destructive_hint is True:
+        return False
+    if not explicitly_safe and not (
+        tool.annotations
+        and tool.annotations.read_only_hint is True
+        and tool.annotations.destructive_hint is not True
+    ):
+        return False
+    forbidden = {
+        PermissionCategory.DESTRUCTIVE,
+        PermissionCategory.FILE_WRITE,
+        PermissionCategory.SHELL_EXEC,
+        PermissionCategory.EXFILTRATION,
+    }
+    hazard_tool = tool.model_copy(
+        update={
+            "description": "\n".join(
+                [
+                    tool.description or "",
+                    (tool.annotations.title or "") if tool.annotations else "",
+                    *_result_text(schema),
+                ]
+            )
+        }
+    )
+    if any(f.category in forbidden for f in PermissionAnalyzer().analyze_tool_keywords(hazard_tool)):
+        return False
+    if InjectionDetector().scan_tool(hazard_tool):
+        return False
+    return True
+
+
+def _result_text(value: object) -> list[str]:
+    """Extract text/structured result strings; never resolve resource links or decode blobs."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [text for item in value for text in _result_text(item)]
+    if isinstance(value, dict):
+        return [text for item in value.values() for text in _result_text(item)]
+    return []
 
 
 class ServerConnector:
@@ -113,21 +225,39 @@ class ServerConnector:
 
     def __init__(self, timeout: float = 10.0) -> None:
         self.timeout = timeout
+        self.scan_warnings: list[ScanWarning] | None = None
 
-    async def connect(self, config: ServerConfig) -> ServerAudit:
+    async def connect(
+        self, config: ServerConfig, *, canary_calls: int = 0, safe_tools: frozenset[str] = frozenset()
+    ) -> ServerAudit:
         """Connect to a server and return a ServerAudit with tool list."""
+        audit = ServerAudit(server=config, connection_status="pending")
+        probe = None
+        if canary_calls:
+            if not 1 <= canary_calls <= 100:
+                raise ValueError("Canary calls must be between 1 and 100.")
+            audit.canary = CanarySummary(requested_calls=canary_calls)
+            probe = _CanaryProbe(audit, canary_calls, safe_tools)
         try:
             with anyio.move_on_after(self.timeout) as cancel_scope:
                 if config.transport == TransportType.STDIO:
-                    capabilities = await self._connect_stdio(config)
+                    capabilities = (
+                        await self._connect_stdio(config, probe)
+                        if probe
+                        else await self._connect_stdio(config)
+                    )
                 elif config.transport == TransportType.HTTP:
-                    capabilities = await self._connect_http(config)
+                    capabilities = (
+                        await self._connect_http(config, probe) if probe else await self._connect_http(config)
+                    )
                 elif config.transport == TransportType.SSE:
                     logger.warning(
                         "Server %s uses deprecated SSE transport; connecting via legacy SSE",
                         config.name,
                     )
-                    capabilities = await self._connect_sse(config)
+                    capabilities = (
+                        await self._connect_sse(config, probe) if probe else await self._connect_sse(config)
+                    )
                 else:
                     return ServerAudit(
                         server=config,
@@ -137,17 +267,32 @@ class ServerConnector:
 
             if cancel_scope.cancelled_caught:
                 logger.debug("Timeout connecting to %s", config.name)
-                return ServerAudit(server=config, connection_status="timeout")
+                audit.connection_status = "timeout"
+                if audit.canary:
+                    audit.canary.status = "partial"
+                    audit.canary.warnings.append("Canary session timed out; coverage is incomplete.")
+                return audit
 
-            tools = capabilities.tools
+            tools = audit.tools if probe else capabilities.tools
             logger.debug("Connected to %s, found %d tools", config.name, len(tools))
-            audit = ServerAudit(
-                server=config,
-                connection_status="connected",
-                tools=tools,
-                prompts=capabilities.prompts,
-                resources=capabilities.resources,
-            )
+            audit.connection_status = "connected"
+            if not probe:
+                audit.tools = tools
+                audit.prompts = capabilities.prompts
+                audit.resources = capabilities.resources
+                for message in capabilities.listing_warnings:
+                    if self.scan_warnings is not None:
+                        self.scan_warnings.append(
+                            ScanWarning(
+                                code="surface_listing_incomplete",
+                                message=(
+                                    f"Server '{config.name}': {message} "
+                                    "A listing this large, or one that never ends, can hide surfaces; "
+                                    "review the server before trusting this result."
+                                ),
+                                servers=[config.name],
+                            )
+                        )
             audit.has_annotations = any(t.annotations is not None for t in tools)
             if tools:
                 annotated = sum(1 for t in tools if t.annotations is not None)
@@ -155,14 +300,23 @@ class ServerConnector:
             return audit
 
         except Exception as exc:
-            logger.debug("Failed to connect to %s: %s", config.name, redact_text(str(exc)))
+            message = redact_text(str(exc))
+            logger.debug("Failed to connect to %s: %s", config.name, message)
+            if audit.canary:
+                audit.connection_status = "failed"
+                audit.connection_error = message
+                audit.canary.status = "partial"
+                audit.canary.warnings.append("Canary session failed; coverage is incomplete.")
+                return audit
             return ServerAudit(
                 server=config,
                 connection_status="failed",
-                connection_error=redact_text(str(exc)),
+                connection_error=message,
             )
 
-    async def _connect_stdio(self, config: ServerConfig) -> _ServerCapabilities:
+    async def _connect_stdio(
+        self, config: ServerConfig, probe: _CanaryProbe | None = None
+    ) -> _ServerCapabilities:
         if not config.command:
             raise ValueError(f"Server {config.name} has no command for stdio transport")
 
@@ -172,17 +326,21 @@ class ServerConnector:
             env=None,
         )
         async with Client(params) as client:
-            return await self._list_capabilities(client, config.name)
+            return await self._inspect_session(client, config.name, probe)
 
-    async def _connect_http(self, config: ServerConfig) -> _ServerCapabilities:
+    async def _connect_http(
+        self, config: ServerConfig, probe: _CanaryProbe | None = None
+    ) -> _ServerCapabilities:
         if not config.url:
             raise ValueError(f"Server {config.name} has no URL for HTTP transport")
 
         # mcp 2.1.1 maps Client(str) to streamable_http_client.
         async with Client(config.url) as client:
-            return await self._list_capabilities(client, config.name)
+            return await self._inspect_session(client, config.name, probe)
 
-    async def _connect_sse(self, config: ServerConfig) -> _ServerCapabilities:
+    async def _connect_sse(
+        self, config: ServerConfig, probe: _CanaryProbe | None = None
+    ) -> _ServerCapabilities:
         if not config.url:
             raise ValueError(f"Server {config.name} has no URL for SSE transport")
 
@@ -192,30 +350,200 @@ class ServerConnector:
             logging.getLogger(name).addFilter(_SSE_LOG_FILTER)
         # Client(str) is Streamable HTTP; legacy SSE must pass sse_client as Transport.
         async with Client(sse_client(config.url)) as client:
-            return await self._list_capabilities(client, config.name)
+            return await self._inspect_session(client, config.name, probe)
 
-    async def _list_capabilities(self, session: Client, server_name: str) -> _ServerCapabilities:
-        tool_result = await session.list_tools()
+    async def _inspect_session(
+        self, session: Client, server_name: str, probe: _CanaryProbe | None
+    ) -> _ServerCapabilities:
+        capabilities = await self._list_capabilities(session, server_name, probe)
+        if probe is None:
+            return capabilities
+        from mcp_audit.escalation import detect_session_drift
+        from mcp_audit.pinning import surface_hash
+
+        summary = probe.audit.canary
+        assert summary is not None
+        previous = capabilities.surface
+        summary.baseline_hash = surface_hash(previous)
+        summary.current_hash = summary.baseline_hash
+        for call in range(1, probe.calls + 1):
+            if "tools" not in capabilities.surface:
+                capabilities = await self._list_capabilities(session, server_name, probe, previous, call - 1)
+                probe.audit.drift_findings.extend(
+                    detect_session_drift(server_name, previous, capabilities.surface, call - 1)
+                )
+                previous = {**previous, **capabilities.surface}
+                summary.current_hash = surface_hash(previous)
+            eligible = [t for t in capabilities.tools if canary_tool_eligible(t, t.name in probe.safe_tools)]
+            if not eligible:
+                summary.status = "no_safe_tools" if not summary.completed_calls else "partial"
+                summary.warnings.append("No eligible empty-argument tools remain; exercise stopped.")
+                return capabilities
+            tool = eligible[(call - 1) % len(eligible)]
+            result = await session.call_tool(tool.name, {})
+            summary.completed_calls = call
+            text = "\n".join(_result_text(result.model_dump(mode="json", by_alias=True)))
+            self._scan_runtime_text(probe, tool.name, text, call, CapabilityTarget.TOOL)
+            if result.is_error:
+                summary.warnings.append(
+                    f"Tool call {call} returned an error result; exercise may be ineffective."
+                )
+            capabilities = await self._list_capabilities(session, server_name, probe, previous, call)
+            probe.audit.drift_findings.extend(
+                detect_session_drift(server_name, previous, capabilities.surface, call)
+            )
+            previous = {**previous, **capabilities.surface}
+            summary.current_hash = surface_hash(previous)
+        summary.status = "partial" if summary.warnings else "complete"
+        return capabilities
+
+    async def _list_capabilities(
+        self,
+        session: Client,
+        server_name: str,
+        probe: _CanaryProbe | None = None,
+        previous: dict[str, dict[str, object]] | None = None,
+        after_call: int = 0,
+    ) -> _ServerCapabilities:
+        tools: list[SdkTool] = []
         prompts: list[PromptInfo] = []
         resources: list[ResourceInfo] = []
-
+        surface: dict[str, dict[str, object]] = {}
+        listing_warnings: list[str] = []
+        # Every surface is always listed, in both modes: servers can serve surfaces
+        # they never advertised, and skipping them would hide them from the static
+        # checks. Never-observed, unadvertised surfaces may be unsupported;
+        # intermittent availability and page-limit exhaustion degrade coverage.
+        advertised = session.server_capabilities
+        prompts_advertised = getattr(advertised, "prompts", None) is not None
+        resources_advertised = getattr(advertised, "resources", None) is not None
+        list_prompts = True
+        list_resources = True
         try:
-            prompt_result = await session.list_prompts()
-            prompts = [self._convert_prompt(prompt) for prompt in prompt_result.prompts]
+            tools = await _list_pages(session.list_tools, lambda page: page.tools)
+            if probe:
+                surface["tools"] = {t.name: t.model_dump(mode="json", by_alias=True) for t in tools}
         except Exception as exc:
-            logger.debug("Server %s prompt listing unavailable: %s", server_name, redact_text(str(exc)))
+            if not probe:
+                raise
+            self._canary_warning(probe, _listing_failure_message("Tool", exc))
 
-        try:
-            resource_result = await session.list_resources()
-            resources = [self._convert_resource(resource) for resource in resource_result.resources]
-        except Exception as exc:
-            logger.debug("Server %s resource listing unavailable: %s", server_name, redact_text(str(exc)))
+        if list_prompts:
+            try:
+                prompt_items = await _list_pages(session.list_prompts, lambda page: page.prompts)
+                prompts = [self._convert_prompt(prompt) for prompt in prompt_items]
+                if probe:
+                    if "prompts" in probe.listing_failures:
+                        self._canary_warning(probe, probe.listing_failures["prompts"])
+                    surface["prompts"] = {
+                        p.name: p.model_dump(mode="json", by_alias=True) for p in prompt_items
+                    }
+                    # A failed get preserves only that prompt's last known structure.
+                    known_results = (previous or {}).get("prompt_results", {})
+                    surface["prompt_results"] = {
+                        p.name: known_results[p.name] for p in prompt_items if p.name in known_results
+                    }
+                    for prompt in prompt_items:
+                        if any(a.required for a in prompt.arguments or []):
+                            self._canary_warning(probe, "Required-argument prompts/get skipped.")
+                            continue
+                        assert probe.audit.canary is not None
+                        probe.audit.canary.prompt_get_calls += 1
+                        try:
+                            result = await session.get_prompt(prompt.name, {})
+                        except Exception as exc:
+                            self._canary_warning(probe, f"prompts/get incomplete ({type(exc).__name__}).")
+                            continue
+                        surface["prompt_results"][prompt.name] = {
+                            "description": result.description,
+                            "messages": [{"role": m.role} for m in result.messages],
+                        }
+                        # Rendered text is excluded from drift (it may change normally)
+                        # but is scanned like a tool result: a hunt can live in a body.
+                        body = "\n".join(_result_text(result.model_dump(mode="json", by_alias=True)))
+                        self._scan_runtime_text(probe, prompt.name, body, after_call, CapabilityTarget.PROMPT)
+            except Exception as exc:
+                if probe:
+                    surface.pop("prompts", None)
+                    surface.pop("prompt_results", None)
+                message = _listing_failure_message("Prompt", exc)
+                if probe:
+                    probe.listing_failures["prompts"] = message
+                if probe and (
+                    prompts_advertised or "prompts" in (previous or {}) or isinstance(exc, _ListingPageLimit)
+                ):
+                    self._canary_warning(probe, message)
+                elif not probe and isinstance(exc, _ListingPageLimit):
+                    listing_warnings.append(message)
+                else:
+                    logger.debug(
+                        "Server %s prompt listing unavailable: %s", server_name, redact_text(str(exc))
+                    )
 
+        if list_resources:
+            try:
+                resource_items = await _list_pages(session.list_resources, lambda page: page.resources)
+                resources = [self._convert_resource(resource) for resource in resource_items]
+                if probe:
+                    if "resources" in probe.listing_failures:
+                        self._canary_warning(probe, probe.listing_failures["resources"])
+                    surface["resources"] = {
+                        str(r.uri): r.model_dump(mode="json", by_alias=True) for r in resource_items
+                    }
+            except Exception as exc:
+                message = _listing_failure_message("Resource", exc)
+                if probe:
+                    probe.listing_failures["resources"] = message
+                if probe and (
+                    resources_advertised
+                    or "resources" in (previous or {})
+                    or isinstance(exc, _ListingPageLimit)
+                ):
+                    self._canary_warning(probe, message)
+                elif not probe and isinstance(exc, _ListingPageLimit):
+                    listing_warnings.append(message)
+                else:
+                    logger.debug(
+                        "Server %s resource listing unavailable: %s", server_name, redact_text(str(exc))
+                    )
+
+        tool_infos = [self._convert_tool(t) for t in tools]
+        if probe:
+            if "tools" in surface:
+                probe.audit.tools = tool_infos
+            if "prompts" in surface:
+                probe.audit.prompts = prompts
+            if "resources" in surface:
+                probe.audit.resources = resources
         return _ServerCapabilities(
-            tools=[self._convert_tool(t) for t in tool_result.tools],
+            tools=tool_infos,
             prompts=prompts,
             resources=resources,
+            surface=surface,
+            listing_warnings=listing_warnings,
         )
+
+    @staticmethod
+    def _canary_warning(probe: _CanaryProbe, message: str) -> None:
+        assert probe.audit.canary is not None
+        if message not in probe.audit.canary.warnings:
+            probe.audit.canary.warnings.append(message)
+
+    def _scan_runtime_text(
+        self, probe: _CanaryProbe, name: str, text: str, after_call: int, target_type: CapabilityTarget
+    ) -> None:
+        """Scan bounded runtime text; truncation is reported as incomplete coverage."""
+        from mcp_audit.injection import InjectionDetector
+
+        if len(text) > RESULT_SCAN_LIMIT:
+            text = text[:RESULT_SCAN_LIMIT]
+            self._canary_warning(probe, _TRUNCATION_WARNING)
+        for finding in InjectionDetector().scan_result(name, text, after_call, target_type):
+            if target_type is CapabilityTarget.PROMPT:
+                if (name, finding.pattern_name) in probe.prompt_patterns:
+                    continue
+                probe.prompt_patterns.add((name, finding.pattern_name))
+            probe.audit.injection_findings.append(finding)
 
     def skip_connect_audit(self, config: ServerConfig) -> ServerAudit:
         """Return a ServerAudit with config-inferred permissions (no connection)."""

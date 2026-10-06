@@ -14,7 +14,7 @@ from typing import Any
 
 import yaml
 
-from mcp_audit.models import DriftFinding, DriftStatus, ServerConfig, ToolInfo
+from mcp_audit.models import DriftFinding, DriftStatus, ServerConfig, SurfaceFieldChange, ToolInfo
 
 try:
     import fcntl
@@ -542,3 +542,33 @@ class PinStore:
         if not details:
             details.append("tool metadata changed")
         return details
+
+
+def surface_hash(value: object) -> str:
+    """Hash a session surface using the pin store's canonical SHA256 convention."""
+    payload = json.dumps(value, sort_keys=True, ensure_ascii=False)
+    return "sha256:" + hashlib.sha256(payload.encode()).hexdigest()
+
+
+def surface_field_diff(before: object, after: object, path: str = "") -> list[SurfaceFieldChange]:
+    """Diff nested fields without copying raw metadata or result values to reports."""
+    if before == after:
+        return []
+    if isinstance(before, dict) and isinstance(after, dict):
+        changes: list[SurfaceFieldChange] = []
+        for key in sorted(before.keys() | after.keys()):
+            pointer = path + "/" + str(key).replace("~", "~0").replace("/", "~1")
+            if key not in before:
+                changes.append(SurfaceFieldChange(path=pointer, after_hash=surface_hash(after[key])))
+            elif key not in after:
+                changes.append(SurfaceFieldChange(path=pointer, before_hash=surface_hash(before[key])))
+            else:
+                changes.extend(surface_field_diff(before[key], after[key], pointer))
+        return changes
+    if isinstance(before, list) and isinstance(after, list) and len(before) == len(after):
+        return [
+            change
+            for i, (old, new) in enumerate(zip(before, after, strict=True))
+            for change in surface_field_diff(old, new, f"{path}/{i}")
+        ]
+    return [SurfaceFieldChange(path=path, before_hash=surface_hash(before), after_hash=surface_hash(after))]

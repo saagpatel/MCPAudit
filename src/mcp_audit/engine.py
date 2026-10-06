@@ -76,6 +76,9 @@ class ScanOptions:
     verify_artifacts: bool = False
     download_artifacts: bool = False
     llm_analysis: bool = False
+    canary_check: bool = False
+    canary_calls: int = 5
+    canary_safe_tools: tuple[str, ...] = ()  # server/tool qualified operator marks
 
     # Check tuning
     ssrf_allowlist: str | None = None
@@ -102,6 +105,12 @@ async def run_scan(
     quiet console — pass a real one to get progress + advisory warnings.
     """
     opts = options if options is not None else ScanOptions()
+    if opts.canary_check and opts.skip_connect:
+        raise ValueError("--canary-check cannot be combined with --skip-connect.")
+    if opts.canary_check and not 1 <= opts.canary_calls <= 100:
+        raise ValueError("Canary calls must be between 1 and 100.")
+    if opts.canary_check and servers is None and not (opts.config_only and opts.extra_config):
+        raise ValueError("--canary-check requires --config PATH --config-only (no workstation discovery).")
     applier = override_applier if override_applier is not None else OverrideApplier(OverrideConfig())
     out = console if console is not None else Console(quiet=True)
 
@@ -126,6 +135,7 @@ async def run_scan(
             servers = extra_servers if opts.config_only else servers + extra_servers
 
     connector = ServerConnector(timeout=float(opts.timeout))
+    connector.scan_warnings = []
     analyzer = PermissionAnalyzer()
     scorer = RiskScorer()
 
@@ -299,6 +309,23 @@ async def run_scan(
         async def audit_one(idx: int, srv: ServerConfig) -> None:
             if opts.skip_connect:
                 audit = connector.skip_connect_audit(srv)
+            elif opts.canary_check:
+                audit = await connector.connect(
+                    srv,
+                    canary_calls=opts.canary_calls,
+                    safe_tools=frozenset(
+                        mark[len(srv.name) + 1 :]
+                        for mark in opts.canary_safe_tools
+                        if mark.startswith(srv.name + "/")
+                    ),
+                )
+                if audit.canary and audit.canary.status != "complete":
+                    warn(
+                        "canary_incomplete",
+                        "; ".join(audit.canary.warnings) or "Canary incomplete.",
+                        check="canary_check",
+                        servers=[srv.name],
+                    )
             else:
                 audit = await connector.connect(srv)
 
@@ -323,8 +350,8 @@ async def run_scan(
 
             # Optional injection detection
             if injection_detector is not None:
-                audit.injection_findings = injection_detector.scan_server(
-                    audit.tools, audit.prompts, audit.resources
+                audit.injection_findings.extend(
+                    injection_detector.scan_server(audit.tools, audit.prompts, audit.resources)
                 )
 
             # Optional SSRF detection (allowlist filtering happens in a post-loop pass)
@@ -339,7 +366,7 @@ async def run_scan(
 
             # Optional pin drift check (gated on --pin-check, not mere store presence)
             if pin_store is not None and opts.pin_check:
-                audit.drift_findings = pin_store.check_drift(srv.name, audit.tools)
+                audit.drift_findings.extend(pin_store.check_drift(srv.name, audit.tools))
 
             # Optional trifecta per-server detection
             if trifecta_analyzer is not None:
@@ -403,6 +430,9 @@ async def run_scan(
         async with anyio.create_task_group() as tg:
             for i, srv in enumerate(servers):
                 tg.start_soon(audit_one_guarded, i, srv)
+
+    for warning in connector.scan_warnings:
+        warn(warning.code, warning.message, check=warning.check, servers=warning.servers)
 
     # A model omission, refusal, malformed response, provider error, or detected
     # injection is coverage loss, not a clean empty result. The per-server

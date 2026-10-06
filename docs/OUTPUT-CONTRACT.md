@@ -87,6 +87,112 @@ Each audit may include:
   `source_trust`, analyzer/model provenance, candidate/analyzed tool counts,
   and the number of admitted findings. `unknown` never means clean.
 
+### Runtime canary fields (additive)
+
+`scan --canary-check` uses the existing `AuditReport` contract and scan exit
+codes. Each exercised audit includes `canary` with `requested_calls`,
+`completed_calls` (successful protocol `tools/call` responses),
+`prompt_get_calls` (attempted `prompts/get`, including errors),
+`baseline_hash` / `current_hash` (captured surface SHA256),
+`status` (`complete`, `partial`, or `no_safe_tools`), and
+`warnings`. `complete` means the bounded protocol exercise completed; it does
+not establish server safety. Degraded coverage also adds a top-level warning
+with `code: canary_incomplete` and `check: canary_check`. Inspect this alongside
+connection status; findings already observed are retained on session failure
+or timeout.
+
+`drift_findings` includes both saved-pin and session comparisons. Additive
+fields are `source` (`pin` by default, `session` for the canary), `severity`
+(`medium` by default, `high` for session changes), `after_call` (1-based, null
+for saved pins), `surface_type` (`tool`, `prompt`, or `resource`), `surface`
+(`tools`, `prompts`, `prompt_results`, or `resources` for sessions), and
+`field_changes`. Each change has a JSON Pointer `path` within the capability
+and canonical SHA256 `before_hash` / `after_hash`; null means an absent field.
+Raw changed values are withheld. `target_type` follows `surface_type`;
+the retained legacy `tool_name` / `target_name` also identifies prompts and
+resource URIs. `summary` distinguishes `prompts` from `prompt_results`
+(`prompts/get`). Each surface retains its last successful observation across
+failed listings, so later changes and reversions remain detectable. A failed
+`prompts/get` retains just that prompt's prior structure while peers are still
+compared. Successful prompt listings establish prompt removals. Prompt results
+compare descriptions and ordered message roles; rendered content is excluded
+from drift and scanned for result injection instead. Prompt argument structure
+is compared through `prompts/list`. Unavailable surface categories do not
+establish removals. Tools, prompts and resources are always listed in both
+modes, so served-but-unadvertised surfaces still reach the static checks; an
+unadvertised surface stays debug-only when every listing fails with an ordinary
+error and it is never observed. An observed surface that later fails, or an
+unavailable surface that later appears, adds a canary coverage warning. Static
+analysis retains each surface's last successfully listed inventory across
+failures; a successful listing, including an empty one, replaces it.
+Listings follow `next_cursor` up to 20 pages; exceeding the limit adds a
+coverage warning regardless of advertisement and no partial page set is
+admitted. In non-canary scans, prompt/resource page-limit exhaustion adds
+`surface_listing_incomplete` to the top-level scan warnings without setting
+`connection_error` (`check: null`, affected server named in `servers`). Other
+non-canary listing-failure behavior is unchanged. Page-limit warnings use
+plain surface labels (for example, "Prompt listing exceeds the 20-page limit;
+coverage is incomplete."). The non-canary scan warning also names the server,
+advises reviewing the server before trusting the result, and is printed
+to the console. Other canary listing errors retain their exception type.
+
+`--canary-calls` bounds tool exercise requests (K), not metadata reads. The
+documented exercise request budget includes all `prompts/get`: for P eligible
+prompts on each capture, up to K + P × (K + 1) requests, plus gets on tools-list
+failure refreshes. Inspect `completed_calls + prompt_get_calls` for the recorded
+total; initialize and paginated listing requests are additional. The session
+timeout bounds all requests. Failed tool requests can leave `completed_calls`
+below the number attempted; connection failure and partial status record that
+incomplete exercise.
+
+Automatic tool exercise requires `readOnlyHint: true` and no explicit
+`destructiveHint: true`. MCP defaults for absent hints are read-only false and
+destructive true (the latter applies to non-read-only tools). An operator's
+`--canary-safe-tool` mark permits other empty-argument tools, but never overrides
+explicit destructive annotations, dangerous keywords, or injection vetoes.
+
+Runtime injection findings are experimental free-text heuristics: every one
+is reported at MEDIUM (SARIF `MCP008`) with a description starting
+"Experimental heuristic:", so they never fail a HIGH gate on their own;
+session drift carries the canary's verdict. They add `after_call` and pattern
+names `result_instruction_override`, `result_credential_hunt`, and
+`result_tool_redirect`. Runtime remediation advises reviewing returned content
+or prompt bodies and server behavior, preventing agents from acting on embedded
+instructions, and considering server removal; static remediation is unchanged.
+Runtime SARIF fingerprints include a runtime marker, target type, and pattern
+name to distinguish patterns and static findings on the same target. Repeated
+captures of the same runtime pattern keep the same fingerprint. Static
+fingerprints remain unchanged. A
+concrete secret path or name (for example `~/.ssh`, `~/.aws/credentials`,
+`~/.kube/config`, `~/.netrc`, `~/.git-credentials`, shell history, `id_rsa`,
+`kubeconfig`, well-known token variables) with a directing verb earlier in
+the same sentence is a credential hunt. Generic nouns (credentials, API keys,
+secrets, passwords) also need an agent-directed frame or an exfiltration
+destination such as "in your next tool call". Known-benign forms such as
+`~/.ssh/config` and `.env.example` are excluded; a bare `.env` needs an
+outbound verb. Redirects require an agent-directed frame. Tool results keep
+the `tool` target type; rendered `prompts/get` bodies are scanned with the same
+rules and use the `prompt` target type with the prompt name, reported once per
+prompt and pattern at the first capture that showed it (`after_call` is that
+capture's preceding call count). `matched_text` is a fixed withheld-excerpt
+notice. No result payload is stored in the report. String values in text,
+embedded results, and structured content are scanned; binary blobs are not
+decoded. Scanned text is capped at 64 KB per result or body; truncation adds a
+canary warning and `partial` status.
+
+Session drift uses existing `MCP009` at SARIF `error` level, with `source`,
+`severity`, `after_call`, `surface`, and `field_changes` in result properties. Saved-pin
+drift remains `warning`. `fail_on.drift` gates either source; the general
+`fail_on.severity` threshold also includes session drift. Result injection
+uses the existing injection severity gate. No version or schema-version bump
+is required for these additive fields.
+
+Setting `fail_on_drift: false` in the Python policy model (YAML
+`fail_on.drift: false`) disables the drift-specific gate only. Session drift
+can still fail `fail_on.severity: high` (or a lower threshold); saved-pin drift
+is excluded from that general severity gate. Per-server drift overrides have
+the same interaction.
+
 Each permission finding includes additive provenance fields:
 
 - `source_trust` — `untrusted_server_metadata` for MCP-controlled metadata or
@@ -119,7 +225,9 @@ The report top level also includes:
     injection, was refused, failed or stopped incompletely at the provider,
     omitted a tool, or returned malformed output; no model findings were
     admitted),
-    `option_ignored` (an option passed without the check that consumes it).
+    `option_ignored` (an option passed without the check that consumes it),
+    `surface_listing_incomplete` (a connected non-canary prompt/resource
+    listing exceeded the 20-page limit, advertised or not).
     The vocabulary is additive — consumers must tolerate unknown codes.
   - `message` — plain-text human summary including remediation.
   - `check` — the scan option whose coverage was reduced, or `null`.

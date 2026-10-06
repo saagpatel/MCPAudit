@@ -495,11 +495,15 @@ class ReportGenerator:
             return
 
         self._console.print()
-        self._console.rule("[bold yellow]Tool Schema Drift[/bold yellow]")
+        has_session = any(d.source == "session" for _, d in all_drifts)
+        title = "MCP Surface Drift" if has_session else "Tool Schema Drift"
+        self._console.rule(f"[bold yellow]{title}[/bold yellow]")
         tbl = Table(show_lines=False)
         tbl.add_column("Server", style="bold cyan", no_wrap=True)
-        tbl.add_column("Tool", style="cyan")
+        tbl.add_column("Target" if has_session else "Tool", style="cyan")
         tbl.add_column("Status")
+        if has_session:
+            tbl.add_column("Severity")
         tbl.add_column("Meaning", overflow="fold")
         tbl.add_column("Suggested Action", overflow="fold")
 
@@ -520,11 +524,16 @@ class ReportGenerator:
                 details = ", ".join(d.details) or "not previously pinned"
             elif d.status == DriftStatus.REMOVED:
                 details = ", ".join(d.details) or "tool no longer present"
-            meaning = d.summary or details
+            meaning = (
+                "; ".join(filter(None, [d.summary, details]))
+                if d.source == "session"
+                else d.summary or details
+            )
             tbl.add_row(
                 server_name,
                 d.tool_name,
                 f"[{status_style}]{d.status.value}[/{status_style}]",
+                *([d.severity] if has_session else []),
                 meaning,
                 d.remediation,
             )

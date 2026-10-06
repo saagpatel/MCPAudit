@@ -275,6 +275,21 @@ async def test_connects_to_mock_stdio_server() -> None:
 
 
 @pytest.mark.anyio
+async def test_unadvertised_capabilities_still_list_tools(caplog: pytest.LogCaptureFixture) -> None:
+    # An ordinary scan reports what a server serves, not what it advertised.
+    fixture = str(Path(__file__).parent / "fixtures" / "canary_surfaces_server.py")
+    config = make_server_config(command=sys.executable, args=[fixture, "noadvert"])
+    with caplog.at_level(logging.DEBUG, logger="mcp_audit.connector"):
+        audit = await ServerConnector(timeout=15.0).connect(config)
+    assert audit.connection_status == "connected"
+    assert [tool.name for tool in audit.tools] == ["status0"]
+    assert audit.prompts == [] and audit.resources == []
+    assert audit.canary is None
+    assert "prompt listing unavailable" in caplog.text
+    assert "resource listing unavailable" in caplog.text
+
+
+@pytest.mark.anyio
 async def test_mock_server_tools_have_correct_annotations() -> None:
     config = ServerConfig(
         name="mock",

@@ -178,6 +178,10 @@ class PermissionAnalyzer:
 
         return annotation_findings + keyword_findings
 
+    def analyze_tool_keywords(self, tool: ToolInfo) -> list[PermissionFinding]:
+        """Infer capabilities without allowing server annotations to suppress hints."""
+        return self._keyword_findings(tool)
+
     def _annotation_findings(self, tool: ToolInfo) -> list[PermissionFinding]:
         """Produce DECLARED findings from MCP tool annotations and spec defaults."""
         if tool.annotations is None:

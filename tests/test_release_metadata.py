@@ -170,7 +170,7 @@ def test_candidate_state_is_never_publishable(tmp_path: Path) -> None:
     (tmp_path / "docs").mkdir()
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "mcp-audits"\nversion = "2.6.0"\n'
-        'dependencies = ["mcp>=2.0,<3.0", "cryptography>=50.0.0,<51.0", "click>=8.3.3,<9.0"]\n'
+        'dependencies = ["mcp>=2.2.0,<3.0", "cryptography>=50.0.0,<51.0", "click>=8.3.3,<9.0"]\n'
         '[project.scripts]\nmcp-audit = "mcp_audit.cli:main"\n'
         'mcp-audits = "mcp_audit.cli:main"\n'
         'proof-before-action = "mcp_audit.proof_cli:main"\n',
@@ -274,8 +274,8 @@ def test_source_project_identity_is_exact(
 def test_mcp_major_bound_is_required(monkeypatch: pytest.MonkeyPatch) -> None:
     original_project = RELEASE_VERIFIER["_project"]()
     dependencies = list(original_project["dependencies"])
-    dependencies.remove("mcp>=2.0,<3.0")
-    dependencies.append("mcp>=2.0")
+    dependencies.remove("mcp>=2.2.0,<3.0")
+    dependencies.append("mcp>=2.2.0")
     monkeypatch.setitem(
         RELEASE_VERIFIER["verify_metadata"].__globals__,
         "_project",

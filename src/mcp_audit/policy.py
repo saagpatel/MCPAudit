@@ -339,14 +339,19 @@ def evaluate_policy(
         fail_on_drift = (
             server_rule.fail_on_drift if server_rule.fail_on_drift is not None else policy.fail_on_drift
         )
-        if fail_on_drift:
-            for drift_finding in audit.drift_findings:
+        for drift_finding in audit.drift_findings:
+            severity_gate = (
+                drift_finding.source == "session"
+                and policy.fail_on_severity is not None
+                and _SEVERITY_RANK[drift_finding.severity] >= _SEVERITY_RANK[policy.fail_on_severity]
+            )
+            if fail_on_drift or severity_gate:
                 violations.append(
                     PolicyViolation(
-                        rule="fail_on.drift",
+                        rule="fail_on.drift" if fail_on_drift else "fail_on.severity",
                         server_name=server_name,
                         tool_name=drift_finding.tool_name,
-                        severity="medium",
+                        severity=drift_finding.severity,
                         message=f"Tool schema drift detected: {drift_finding.status.value}.",
                     )
                 )

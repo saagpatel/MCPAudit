@@ -289,6 +289,23 @@ def discover(client_filter: str | None, verbose: bool) -> None:
     "--html", "html_output", default=None, metavar="PATH", help="Write a self-contained HTML report to PATH."
 )  # noqa: E501
 @click.option("--skip-connect", is_flag=True, default=False, help="Skip server connections, config only.")
+@click.option(
+    "--canary-check", is_flag=True, help="Exercise an explicit config in-session for runtime drift."
+)
+@click.option(
+    "--canary-calls",
+    default=5,
+    type=click.IntRange(1, 100),
+    show_default=True,
+    help="Maximum benign exercise calls per server with --canary-check.",
+)
+@click.option(
+    "--canary-safe-tool",
+    "canary_safe_tools",
+    multiple=True,
+    metavar="SERVER/TOOL",
+    help="Mark an empty-argument tool safe; destructive hints still veto calls.",
+)
 @click.option("--clients", default=None, help="Comma-separated list of clients to scan.")
 @click.option("--timeout", default=10, show_default=True, help="Connection timeout in seconds.")
 @click.option("--verbose", is_flag=True, default=False, help="Show per-tool permission details.")
@@ -428,6 +445,9 @@ def scan(
     download_artifacts: bool,
     llm_analysis: bool,
     redact: bool,
+    canary_check: bool,
+    canary_calls: int,
+    canary_safe_tools: tuple[str, ...],
 ) -> None:
     """Full audit: discover servers, connect, enumerate tools, score risk, report."""
     if config_only and not extra_config:
@@ -462,6 +482,9 @@ def scan(
         llm_analysis,
         config_only,
         redact,
+        canary_check,
+        canary_calls,
+        canary_safe_tools,
     )
 
 
@@ -561,10 +584,15 @@ async def _run_scan(
     llm_analysis: bool = False,
     config_only: bool = False,
     redact: bool = False,
+    canary_check: bool = False,
+    canary_calls: int = 5,
+    canary_safe_tools: tuple[str, ...] = (),
 ) -> None:
     """CLI scan entrypoint — calls the engine's run_scan then renders output."""
     if config_only and not extra_config:
         raise click.ClickException("--config-only requires --config PATH.")
+    if canary_check and (skip_connect or not config_only or not extra_config):
+        raise click.ClickException("--canary-check requires --config PATH --config-only and a connection.")
 
     cfg_path = Path(override_config_path) if override_config_path else DEFAULT_OVERRIDE_PATH
     override_applier = OverrideApplier(load_override_config(cfg_path))
@@ -583,6 +611,9 @@ async def _run_scan(
             raise SystemExit(1) from exc
 
     scan_options = ScanOptions(
+        canary_check=canary_check,
+        canary_calls=canary_calls,
+        canary_safe_tools=canary_safe_tools,
         skip_connect=skip_connect,
         config_only=config_only,
         clients=client_list,
