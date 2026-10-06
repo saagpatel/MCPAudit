@@ -499,12 +499,12 @@ async def run_scan(
 
             # Optional capability-escalation check vs the pin baseline
             if escalation_analyzer is not None and pin_store is not None:
-                baseline = pin_store.baseline_tools(srv.name)
-                if baseline:
+                escalation_baseline = pin_store.baseline_tools(srv.name)
+                if escalation_baseline:
                     escalation_incomplete: list[str] = []
                     audit.escalation_findings = escalation_analyzer.analyze_server(
                         srv.name,
-                        baseline,
+                        escalation_baseline,
                         audit.tools,
                         uncovered_annotations=pin_store.legacy_tool_names(srv.name),
                         incomplete_reasons=escalation_incomplete,
