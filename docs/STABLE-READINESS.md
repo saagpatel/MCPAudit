@@ -19,23 +19,22 @@ tests, and install path agree.
 - Known limitations are documented in release notes and beta/stable readiness
   docs.
 
-## Current 2.7.0 Release State
+## Current 2.8.0 Release State
 
-The 2.7.0 release state is a backward-compatible minor release built after the
-2.6.0 tag. Its primary capability groups are offline cache-contract,
-authorization-posture, OAuth-transcript, task-lifecycle, result-parcel, and
-session-resume laboratories plus deterministic delivery-evidence validation.
-Existing 2.x audit-report and SARIF contracts remain additive. Source metadata,
-the Action examples, and `server.json` are finalized for 2.7.0. That does not
-prove public availability: PyPI was at 2.6.0 and the official MCP Registry was
-at 2.5.0 on the last pre-release readback on 2026-08-14. Release evidence must
-query each external surface again.
+The 2.8.0 release state is a backward-compatible minor release built after the
+2.7.0 tag. Its primary capability group is the opt-in runtime rug-pull canary
+(`scan --canary-check`), alongside the MCP SDK 2 migration with the
+`mcp>=2.2.0,<3.0` security floor. Existing 2.x audit-report and SARIF contracts
+remain additive. Source metadata, the Action examples, and `server.json` are
+finalized for 2.8.0. That does not prove public availability: PyPI and the
+official MCP Registry were both at 2.7.0 on the last pre-release readback on
+2026-10-05. Release evidence must query each external surface again.
 
 Release evidence must establish:
 
 - package, lock metadata, changelog, versioned release notes,
   `docs/release-state.json`, `server.json`, and Action/pre-commit examples agree
-  on 2.7.0; publication evidence must still report PyPI, the GitHub tag, the
+  on 2.8.0; publication evidence must still report PyPI, the GitHub tag, the
   Action ref, and the official Registry entry separately;
 - wheel and sdist metadata require `mcp>=2.2.0,<3.0` and expose `mcp-audit`,
   `mcp-audits`, and `proof-before-action`;
