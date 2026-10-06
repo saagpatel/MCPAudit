@@ -19,8 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Keep large result-injection parametrization ids compact so pytest collection
-  and progress output do not duplicate megabyte-sized input strings. CI now
-  checks pytest summaries, requires all ProofOS PostgreSQL cases to run without
+  and progress output do not duplicate megabyte-sized input strings. CI installs
+  PostgreSQL 16 server binaries without a service container, checks pytest
+  summaries, requires all ProofOS PostgreSQL cases to run without
   skips by selecting their JUnit testcase classnames rather than the shared
   pytest suite name, and reports branch coverage.
 

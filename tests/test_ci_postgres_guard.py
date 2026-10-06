@@ -9,6 +9,27 @@ from pathlib import Path
 from textwrap import dedent
 
 import pytest
+import yaml
+
+
+def test_postgres_ci_uses_local_binaries_without_service_container() -> None:
+    workflow: object = yaml.safe_load(Path(".github/workflows/ci.yml").read_text(encoding="utf-8"))
+    assert isinstance(workflow, dict)
+    jobs = workflow["jobs"]
+    assert isinstance(jobs, dict)
+    job = jobs["test"]
+    assert isinstance(job, dict)
+    assert "services" not in job
+
+    steps = job["steps"]
+    assert isinstance(steps, list)
+    install_steps = [
+        step
+        for step in steps
+        if isinstance(step, dict) and step.get("name") == "Install PostgreSQL 16 server binaries"
+    ]
+    assert len(install_steps) == 1
+    assert install_steps[0]["run"] == "sudo apt-get install -y postgresql-16"
 
 
 @pytest.mark.parametrize("root_tag", ["testsuites", "testsuite"])
