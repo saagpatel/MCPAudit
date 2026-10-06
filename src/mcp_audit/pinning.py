@@ -540,6 +540,7 @@ class PinStore:
         if not isinstance(previous, dict):
             return ["pin hash changed; previous schema snapshot unavailable"]
 
+        previous = redact_data(previous)
         details: list[str] = []
         if previous.get("description") != current["description"]:
             details.append("description changed")
