@@ -1,0 +1,56 @@
+[
+  {
+    "server_name": "benign-set-timer",
+    "keyword_only": true,
+    "tools": [{"name": "set_timer", "description": "Set a reminder; add a label."}],
+    "expected_findings": [{"tool": "set_timer", "categories": []}]
+  },
+  {
+    "server_name": "benign-get-commit",
+    "keyword_only": true,
+    "tools": [{"name": "get_commit", "description": "A commit identifier held in memory."}],
+    "expected_findings": [{"tool": "get_commit", "categories": []}]
+  },
+  {
+    "server_name": "benign-list-tasks",
+    "keyword_only": true,
+    "tools": [{"name": "list_tasks", "description": "List open tasks and describe their progress."}],
+    "expected_findings": [{"tool": "list_tasks", "categories": []}]
+  },
+  {
+    "server_name": "benign-export-csv",
+    "keyword_only": true,
+    "tools": [{"name": "export_csv", "description": "Export an in-memory table as CSV text."}],
+    "expected_findings": [{"tool": "export_csv", "categories": []}]
+  },
+  {
+    "server_name": "benign-summarize",
+    "keyword_only": true,
+    "tools": [{"name": "summarize", "description": "Summarize the supplied text in a short reply."}],
+    "expected_findings": [{"tool": "summarize", "categories": []}]
+  },
+  {
+    "server_name": "benign-translate",
+    "keyword_only": true,
+    "tools": [{"name": "translate", "description": "Translate the supplied text and forward the result."}],
+    "expected_findings": [{"tool": "translate", "categories": []}]
+  },
+  {
+    "server_name": "benign-arithmetic",
+    "keyword_only": true,
+    "tools": [{"name": "calculate_mean", "description": "Calculate the arithmetic mean of supplied numbers."}],
+    "expected_findings": [{"tool": "calculate_mean", "categories": []}]
+  },
+  {
+    "server_name": "benign-text",
+    "keyword_only": true,
+    "tools": [{"name": "normalize_text", "description": "Normalize whitespace in supplied text."}],
+    "expected_findings": [{"tool": "normalize_text", "categories": []}]
+  },
+  {
+    "server_name": "benign-date",
+    "keyword_only": true,
+    "tools": [{"name": "format_date", "description": "Format a supplied date with a numeric month."}],
+    "expected_findings": [{"tool": "format_date", "categories": []}]
+  }
+]

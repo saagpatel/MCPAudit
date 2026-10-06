@@ -1,0 +1,43 @@
+name: Hostile server performance
+
+on:
+  schedule:
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Cumulative target profile (baseline until the planned fixes land)
+        type: choice
+        default: baseline
+        options: [baseline, p1-9, p3-7, p3-8]
+
+permissions:
+  contents: read
+
+jobs:
+  perf:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: uv sync --dev --locked
+      - name: Run all five hostile performance cases
+        env:
+          PERF_PROFILE: ${{ inputs.profile || 'baseline' }}
+        run: >-
+          uv run --offline --no-sync pytest tests/test_hostile_perf.py -m perf -q -s
+          -p no:cacheprovider --perf-profile="$PERF_PROFILE" --perf-output=build/perf
+          --junitxml=build/perf-junit.xml
+      - name: Retain measurements even on a regression
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: hostile-perf
+          path: |
+            build/perf/**/metrics.json
+            build/perf-junit.xml
+          if-no-files-found: error

@@ -1,183 +1,205 @@
-"""Precision/recall validation script for PermissionAnalyzer against real-world server corpus.
+"""Permission corpus precision/recall checks on explicitly labeled tool/category pairs.
 
-Usage:
-    uv run python tests/validation/validate_patterns.py
+Usage: uv run python tests/validation/validate_patterns.py
 
-Exits non-zero if F1 < 0.8 for any expected category that has ≥3 expected positives.
+Positive rows require the listed categories; they are not exhaustive labels.
+Rows with categories: [] require silence and count every detected category as FP.
+See README.md in this directory for category gates and the known FP baseline.
 """
 
 from __future__ import annotations
 
 import json
 import sys
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import NotRequired, TypedDict, cast
 
 # Allow running from repo root
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 
 from mcp_audit.analyzer import PermissionAnalyzer
-from mcp_audit.models import Confidence, ToolInfo
+from mcp_audit.models import PermissionFinding, ToolInfo
 
 SERVERS_DIR = Path(__file__).parent / "servers"
+BENIGN_PATH = Path(__file__).parent / "benign_tools.json"
 
-# Confidence levels that count as "detected" (DECLARED counts as HIGH for validation)
-_COUNTED_CONFIDENCES = {
-    Confidence.DECLARED,
-    Confidence.HIGH,
-    Confidence.MEDIUM,
-    Confidence.LOW,
-    Confidence.LLM,
-}  # noqa: E501
-
-# Minimum confidence level strings (ordered weakest → strongest)
 _CONFIDENCE_ORDER = ["low", "medium", "high", "declared", "llm"]
+MIN_RECALL = 0.8
+MIN_EXPECTED_FOR_RECALL_GATE = 3
+# Fixed corpus baselines: 19 TP / 1 FP, 30 TP / 2 FP, and 5 TP / 3 FP.
+# Other categories have no known keyword FPs. Strict xfails track each gap.
+MIN_PRECISION = {
+    "file_read": 19 / 20,
+    "file_write": 30 / 32,
+    "exfiltration": 5 / 8,
+    "network": 1.0,
+    "destructive": 1.0,
+    "shell_execution": 1.0,
+}
+
+
+class ToolFixture(TypedDict):
+    name: str
+    description: NotRequired[str]
+    input_schema: NotRequired[dict[str, object]]
+
+
+class ExpectedFinding(TypedDict):
+    tool: str
+    categories: list[str]
+    min_confidence: NotRequired[str]
+
+
+class Fixture(TypedDict):
+    server_name: str
+    tools: list[ToolFixture]
+    expected_findings: list[ExpectedFinding]
+    keyword_only: NotRequired[bool]
+
+
+@dataclass
+class CategoryStats:
+    tp: int = 0
+    fp: int = 0
+    fn: int = 0
+
+    @property
+    def precision(self) -> float:
+        return self.tp / (self.tp + self.fp) if self.tp + self.fp else 1.0
+
+    @property
+    def recall(self) -> float:
+        return self.tp / (self.tp + self.fn) if self.tp + self.fn else 1.0
+
+    @property
+    def f1(self) -> float:
+        total = 2 * self.tp + self.fp + self.fn
+        return 2 * self.tp / total if total else 1.0
 
 
 def _confidence_meets_min(actual: str, minimum: str) -> bool:
     """Return True if actual confidence is >= minimum required."""
     try:
-        actual_idx = _CONFIDENCE_ORDER.index(actual.lower())
-        min_idx = _CONFIDENCE_ORDER.index(minimum.lower())
-        return actual_idx >= min_idx
+        return _CONFIDENCE_ORDER.index(actual.lower()) >= _CONFIDENCE_ORDER.index(minimum.lower())
     except ValueError:
         return False
 
 
-def load_fixture(path: Path) -> dict[str, Any]:
-    with path.open() as f:
-        return json.load(f)  # type: ignore[no-any-return]
+def load_fixture(path: Path) -> Fixture:
+    return cast(Fixture, json.loads(path.read_text()))
 
 
-def build_tool_infos(fixture: dict[str, Any]) -> list[ToolInfo]:
-    tools = []
-    for t in fixture.get("tools", []):
-        tools.append(
-            ToolInfo(
-                name=t["name"],
-                description=t.get("description", ""),
-                input_schema=t.get("input_schema", {}),
-                annotations=None,
-            )
+def load_benign_fixtures() -> list[Fixture]:
+    return cast(list[Fixture], json.loads(BENIGN_PATH.read_text()))
+
+
+def build_tool_infos(fixture: Fixture) -> list[ToolInfo]:
+    return [
+        ToolInfo(
+            name=tool["name"],
+            description=tool.get("description", ""),
+            input_schema=tool.get("input_schema", {}),
+            annotations=None,
         )
-    return tools
+        for tool in fixture["tools"]
+    ]
 
 
-def run_validation() -> int:
+def score_findings(fixture: Fixture, findings: list[PermissionFinding]) -> dict[str, CategoryStats]:
+    actual = {(finding.tool_name, finding.category.value): finding.confidence.value for finding in findings}
+    stats: dict[str, CategoryStats] = {}
+    for expected in fixture["expected_findings"]:
+        name = expected["tool"]
+        categories = expected["categories"]
+        if not categories:
+            for tool_name, category in actual:
+                if tool_name == name:
+                    stats.setdefault(category, CategoryStats()).fp += 1
+            continue
+        for category in categories:
+            counts = stats.setdefault(category, CategoryStats())
+            confidence = actual.get((name, category))
+            if confidence is not None and _confidence_meets_min(
+                confidence, expected.get("min_confidence", "low")
+            ):
+                counts.tp += 1
+            else:
+                counts.fn += 1
+    return stats
+
+
+def evaluate_fixture(fixture: Fixture) -> dict[str, CategoryStats]:
     analyzer = PermissionAnalyzer()
-    fixtures = sorted(SERVERS_DIR.glob("*.json"))
+    tools = build_tool_infos(fixture)
+    if fixture.get("keyword_only", False):
+        findings = [finding for tool in tools for finding in analyzer.analyze_tool_keywords(tool)]
+    else:
+        findings = analyzer.analyze_server(tools)
+    return score_findings(fixture, findings)
+
+
+def failed_metrics(stats: dict[str, CategoryStats]) -> list[str]:
+    failures = []
+    for category, counts in sorted(stats.items()):
+        if counts.precision < MIN_PRECISION.get(category, 1.0):
+            failures.append(f"{category} precision {counts.precision:.1%}")
+        if counts.tp + counts.fn >= MIN_EXPECTED_FOR_RECALL_GATE and counts.recall < MIN_RECALL:
+            failures.append(f"{category} recall {counts.recall:.1%}")
+    return failures
+
+
+def run_validation(fixtures: list[Fixture] | None = None) -> int:
+    if fixtures is None:
+        paths = sorted(SERVERS_DIR.glob("*.json"))
+        if not paths:
+            print("No fixture files found in", SERVERS_DIR)
+            return 1
+        fixtures = [load_fixture(path) for path in paths] + load_benign_fixtures()
 
     if not fixtures:
-        print("No fixture files found in", SERVERS_DIR)
+        print("No fixtures supplied")
         return 1
 
-    # Aggregate stats per category
-    # {category: {"tp": int, "fp": int, "fn": int}}
-    stats: dict[str, dict[str, int]] = {}
+    stats: dict[str, CategoryStats] = {}
+    print("\n=== Per-Server Results ===")
+    print(f"{'Server':<40} {'Tools':>5} {'TP':>4} {'FP':>4} {'FN':>4}")
+    print("-" * 65)
+    for fixture in fixtures:
+        server_stats = evaluate_fixture(fixture)
+        for category, counts in server_stats.items():
+            totals = stats.setdefault(category, CategoryStats())
+            totals.tp += counts.tp
+            totals.fp += counts.fp
+            totals.fn += counts.fn
+        tp = sum(counts.tp for counts in server_stats.values())
+        fp = sum(counts.fp for counts in server_stats.values())
+        fn = sum(counts.fn for counts in server_stats.values())
+        print(f"{fixture['server_name']:<40} {len(fixture['tools']):>5} {tp:>4} {fp:>4} {fn:>4}")
 
-    per_server_results: list[dict[str, Any]] = []
-
-    for fixture_path in fixtures:
-        fixture = load_fixture(fixture_path)
-        server_name = fixture.get("server_name", fixture_path.stem)
-        tools = build_tool_infos(fixture)
-        expected_findings = fixture.get("expected_findings", [])
-
-        # Run analyzer
-        actual_findings = analyzer.analyze_server(tools)
-
-        # Build lookup: tool_name -> set of (category, confidence)
-        actual_by_tool: dict[str, set[str]] = {}
-        for f in actual_findings:
-            actual_by_tool.setdefault(f.tool_name, set()).add(f.category.value)
-
-        server_tp = server_fn = 0
-
-        for expected in expected_findings:
-            tool_name = expected["tool"]
-            expected_categories: list[str] = expected["categories"]
-            min_conf: str = expected.get("min_confidence", "low")
-
-            # Check which expected categories were detected
-            actual_cats = actual_by_tool.get(tool_name, set())
-
-            # Also check confidence for detected categories
-            actual_conf_by_cat: dict[str, str] = {}
-            for f in actual_findings:
-                if f.tool_name == tool_name:
-                    actual_conf_by_cat[f.category.value] = f.confidence.value
-
-            for cat in expected_categories:
-                if cat not in stats:
-                    stats[cat] = {"tp": 0, "fp": 0, "fn": 0}
-
-                if cat in actual_cats:
-                    actual_conf = actual_conf_by_cat.get(cat, "low")
-                    if _confidence_meets_min(actual_conf, min_conf):
-                        stats[cat]["tp"] += 1
-                        server_tp += 1
-                    else:
-                        # Detected but confidence too low — treat as FN
-                        stats[cat]["fn"] += 1
-                        server_fn += 1
-                else:
-                    stats[cat]["fn"] += 1
-                    server_fn += 1
-
-        per_server_results.append(
-            {
-                "server": server_name,
-                "tp": server_tp,
-                "fn": server_fn,
-                "tools_analyzed": len(tools),
-            }
+    print("\n=== Per-Category Metrics (explicit labels only) ===")
+    print(f"{'Category':<20} {'TP':>4} {'FP':>4} {'FN':>4} {'Precision':>10} {'Recall':>8} {'F1':>8}  Status")
+    print("-" * 85)
+    for category, counts in sorted(stats.items()):
+        status = "FAIL" if failed_metrics({category: counts}) else "OK"
+        print(
+            f"{category:<20} {counts.tp:>4} {counts.fp:>4} {counts.fn:>4} "
+            f"{counts.precision:>10.1%} {counts.recall:>8.1%} {counts.f1:>8.1%}  {status}"
         )
 
-    # Print per-server summary
-    print("\n=== Per-Server Results ===")
-    print(f"{'Server':<40} {'Tools':>5} {'TP':>4} {'FN':>4}")
-    print("-" * 55)
-    for r in per_server_results:
-        print(f"{r['server']:<40} {r['tools_analyzed']:>5} {r['tp']:>4} {r['fn']:>4}")
-
-    # Print per-category precision/recall/F1
-    print("\n=== Per-Category Metrics (expected positives only) ===")
-    print(f"{'Category':<20} {'TP':>4} {'FN':>4} {'Recall':>8} {'F1':>8}  Status")
-    print("-" * 65)
-
-    failed_categories: list[str] = []
-    MIN_F1 = 0.8
-    MIN_EXPECTED_FOR_GATE = 3  # Only gate categories with enough expected positives
-
-    for cat, s in sorted(stats.items()):
-        tp = s["tp"]
-        fn = s["fn"]
-        total_expected = tp + fn
-
-        recall = tp / total_expected if total_expected > 0 else 0.0
-        # Precision unknown (we don't track FP from non-expected tools), so F1 = recall here
-        f1 = recall
-
-        status = "OK"
-        if total_expected >= MIN_EXPECTED_FOR_GATE and f1 < MIN_F1:
-            status = "FAIL"
-            failed_categories.append(cat)
-
-        print(f"{cat:<20} {tp:>4} {fn:>4} {recall:>8.1%} {f1:>8.1%}  {status}")
-
-    print()
-
-    if failed_categories:
-        print(f"FAILED: F1 < {MIN_F1:.0%} for categories: {', '.join(failed_categories)}")
+    failures = failed_metrics(stats)
+    if failures:
+        print(f"\nFAILED: {', '.join(failures)}")
         return 1
 
-    total_tp = sum(s["tp"] for s in stats.values())
-    total_fn = sum(s["fn"] for s in stats.values())
-    total_expected = total_tp + total_fn
-    overall_recall = total_tp / total_expected if total_expected > 0 else 0.0
+    total = CategoryStats(
+        tp=sum(counts.tp for counts in stats.values()),
+        fp=sum(counts.fp for counts in stats.values()),
+        fn=sum(counts.fn for counts in stats.values()),
+    )
     print(
-        f"PASSED: Overall recall {overall_recall:.1%} "
-        f"({total_tp}/{total_expected} expected findings detected)"
+        f"\nPASSED: Overall precision {total.precision:.1%}, recall {total.recall:.1%}, "
+        f"F1 {total.f1:.1%} ({total.tp} TP, {total.fp} FP, {total.fn} FN)"
     )
     return 0
 
