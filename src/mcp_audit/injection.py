@@ -391,7 +391,7 @@ class InjectionDetector:
                     severity=InjectionSeverity.MEDIUM,
                     pattern_name="INSTRUCTION_SHAPED_TEXT",
                     instruction_pattern=name,
-                    secret_targets=targets,
+                    hunt_targets=targets,
                     matched_text=evidence[:200],
                     description=(
                         f"Experimental heuristic: metadata contains instruction-shaped text "

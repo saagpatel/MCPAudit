@@ -714,7 +714,7 @@ class SarifGenerator:
             "properties": {
                 "pattern": finding.pattern_name,
                 "instruction_pattern": finding.instruction_pattern,
-                "secret_targets": finding.secret_targets,
+                "hunt_targets": finding.hunt_targets,
                 "field_path": finding.field_path,
                 "after_call": finding.after_call,
                 "target_type": finding.target_type.value,

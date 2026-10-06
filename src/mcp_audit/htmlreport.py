@@ -129,9 +129,9 @@ class HtmlReportGenerator:
             ("Tools", report.total_tools),
             ("High-risk servers", report.high_risk_servers),
         ]
-        secret_hunts = sum(bool(f.secret_targets) for a in report.audits for f in a.injection_findings)
-        if secret_hunts:
-            stats.append(("Fix now: metadata secret-target hunts", secret_hunts))
+        target_hunts = sum(bool(f.hunt_targets) for a in report.audits for f in a.injection_findings)
+        if target_hunts:
+            stats.append(("Fix now: metadata secret-target hunts", target_hunts))
         cells = "".join(
             f'<div class="stat"><div class="num">{value}</div>'
             f'<div class="label">{self._esc(label)}</div></div>'
@@ -277,7 +277,7 @@ class HtmlReportGenerator:
                 self._esc(f.matched_text),
                 self._esc(f.instruction_pattern or ""),
                 self._esc(f.field_path or ""),
-                self._esc(", ".join(f.secret_targets)),
+                self._esc(", ".join(f.hunt_targets)),
             )
             for f in audit.injection_findings
         ]

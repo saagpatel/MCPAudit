@@ -517,7 +517,7 @@ redesign. These findings report `pattern_name:
 "INSTRUCTION_SHAPED_TEXT"`, MEDIUM severity (SARIF `MCP008`), and a description
 starting "Experimental heuristic:". Additive `instruction_pattern` identifies
 the static pattern and `field_path` is its JSON Pointer, including resource
-metadata. `secret_targets` lists concrete targeted paths/names only, never
+metadata. `hunt_targets` lists concrete targeted paths/names only, never
 values; it defaults to `[]` and `instruction_pattern` defaults to `null` for
 legacy, structural, and runtime findings. Static free-text excerpts retain bounded
 redacted source evidence after mapping normalized matches back to raw offsets
@@ -525,7 +525,7 @@ and rendering invisible codepoints;
 phrase excerpts are withheld whenever redaction changes the complete raw or
 normalized field, before extracting or truncating evidence. These fields also
 appear in SARIF properties and the redacted MCP `get_injection_findings`
-projection (`instruction_pattern`, `secret_targets`, `field_path`), with the same
+projection (`instruction_pattern`, `hunt_targets`, `field_path`), with the same
 defaults for legacy findings. New static instruction-text SARIF fingerprints
 distinguish the static pattern and field pointer; legacy fingerprints are unchanged.
 Terminal and HTML summaries mark concrete metadata secret hunts "Fix now"

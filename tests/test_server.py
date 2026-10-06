@@ -222,7 +222,7 @@ async def test_get_injection_findings_uses_connected_scan(monkeypatch: pytest.Mo
                 "severity": "high",
                 "pattern": "ignore_instructions",
                 "instruction_pattern": None,
-                "secret_targets": [],
+                "hunt_targets": [],
                 "field_path": None,
                 "description": "Tool description attempts to override AI instructions",
                 "matched_text": "ignore previous instructions",
@@ -248,7 +248,7 @@ async def test_get_injection_findings_preserves_redacted_instruction_evidence(
     report.audits[0].server.name = "srv"
     if redaction_probe:
         # The projection must use report.redacted(), including the new evidence fields.
-        findings[0].secret_targets.append("password=synthetic-value")
+        findings[0].hunt_targets.append("password=synthetic-value")
         findings[0].field_path = "/description/password=synthetic-value"
 
     async def fake_run_scan(options: ScanOptions, **kwargs: object) -> AuditReport:
@@ -263,7 +263,7 @@ async def test_get_injection_findings_preserves_redacted_instruction_evidence(
     assert finding["pattern"] == "INSTRUCTION_SHAPED_TEXT"
     assert finding["severity"] == "medium"
     assert finding["instruction_pattern"] == "credential_hunt"
-    assert finding["secret_targets"] == (
+    assert finding["hunt_targets"] == (
         ["~/.ssh/id_rsa", "password=<redacted>"] if redaction_probe else ["~/.ssh/id_rsa"]
     )
     assert finding["field_path"] == (

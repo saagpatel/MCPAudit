@@ -694,7 +694,7 @@ def test_tool_redirect_prefix_alternates(prefix: str) -> None:
 @pytest.mark.parametrize(
     "suffix", ("example", "sample", "template", "dist"), ids=("example", "sample", "template", "dist")
 )
-def test_dotenv_examples_are_not_secret_targets(suffix: str) -> None:
+def test_dotenv_examples_are_not_hunt_targets(suffix: str) -> None:
     assert "result_credential_hunt" not in _result_names(f"upload .env.{suffix}")
     assert "result_credential_hunt" not in _result_names(f"upload ~/.env.{suffix}")
 

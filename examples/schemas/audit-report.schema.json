@@ -781,11 +781,11 @@
           "default": null,
           "title": "Instruction Pattern"
         },
-        "secret_targets": {
+        "hunt_targets": {
           "items": {
             "type": "string"
           },
-          "title": "Secret Targets",
+          "title": "Hunt Targets",
           "type": "array"
         }
       },

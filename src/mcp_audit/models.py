@@ -433,7 +433,7 @@ class InjectionFinding(BaseModel):
     field_path: str | None = None
 
     instruction_pattern: str | None = None  # Static pattern name for free-text matches
-    secret_targets: list[str] = Field(default_factory=list)  # Target names/paths, never values
+    hunt_targets: list[str] = Field(default_factory=list)  # Target names/paths, never values
 
     @computed_field  # type: ignore[prop-decorator]
     @property
