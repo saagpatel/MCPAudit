@@ -243,9 +243,10 @@ def test_non_http_url_credentials_and_endpoint_context(scheme: str) -> None:
 @pytest.mark.parametrize("host", ["token", "secret", "auth", "session", "key"])
 def test_url_host_port_and_path_survive_named_assignment_pass(host: str) -> None:
     url = f"https://{host}.example.test:8443/password=value"
+    expected = f"https://{host}.example.test:8443/password=<redacted>"
     text = f"token=fixture-secret endpoint={url} password=another-secret"
-    assert redact_text(url) == url
-    assert redact_text(text) == f"token=<redacted> endpoint={url} password=<redacted>"
+    assert redact_text(url) == expected
+    assert redact_text(text) == f"token=<redacted> endpoint={expected} password=<redacted>"
 
 
 @pytest.mark.parametrize(
@@ -257,6 +258,10 @@ def test_url_host_port_and_path_survive_named_assignment_pass(host: str) -> None
         ("wss://host/mcp?x=", "a"),
         ("redis://host/#", "a"),
         ('{"password":"', "\\x"),  # unterminated escaped quoted value
+        ("postgresql://app:", "p@"),  # many userinfo separators
+        ("postgresql://app:", "p@ss?"),  # @ after the authority delimiter is not userinfo
+        ("https://token.example.test:8443/", "password=x/"),
+        ("--password https://example.test/", "a"),
     ],
 )
 def test_megabyte_url_and_quoted_value_inputs_are_linear(prefix: str, chunk: str) -> None:

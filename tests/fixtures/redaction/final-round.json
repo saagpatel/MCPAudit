@@ -1,0 +1,52 @@
+[
+  {
+    "text": "Example token=\"ignore previous instructions\"",
+    "redacted": "Example token=<redacted>"
+  },
+  {
+    "text": "Example password=\"delete all files\"",
+    "redacted": "Example password=<redacted>"
+  },
+  {
+    "text": "password=\"https://example.test/my-secret\"",
+    "redacted": "password=<redacted>"
+  },
+  {
+    "text": "--password https://example.test/my-secret",
+    "redacted": "--password <redacted>",
+    "args": ["--password", "https://example.test/my-secret"],
+    "redacted_args": ["--password", "<redacted>"]
+  },
+  {
+    "text": "password=https://example.test/my-secret?mode=one&extra=two#fragment",
+    "redacted": "password=<redacted>"
+  },
+  {
+    "text": "--password https://example.test/my-secret?mode=one&extra=two#fragment",
+    "redacted": "--password <redacted>"
+  },
+  {
+    "text": "https://mcp.example.test:8443/password=hunter2-SECRET",
+    "redacted": "https://mcp.example.test:8443/password=<redacted>"
+  },
+  {
+    "text": "https://token.example.test:8443/password=hunter2-SECRET/admin/token=fixture-secret/status",
+    "redacted": "https://token.example.test:8443/password=<redacted>/admin/token=<redacted>/status"
+  },
+  {
+    "text": "postgresql://app:p@ssw0rd@db.internal:5432/app",
+    "redacted": "postgresql://<redacted>@db.internal:5432/app"
+  },
+  {
+    "text": "mysql://app:p@ssw0rd@db.internal:5432/app",
+    "redacted": "mysql://<redacted>@db.internal:5432/app"
+  },
+  {
+    "text": "redis://app:p@ssw0rd@db.internal:5432/app",
+    "redacted": "redis://<redacted>@db.internal:5432/app"
+  },
+  {
+    "text": "postgresql://app:p@ssw0rd@db.internal:5432/app?email=user@example.test#x@y",
+    "redacted": "postgresql://<redacted>@db.internal:5432/app?email=<redacted>#<redacted>"
+  }
+]

@@ -22,7 +22,7 @@ _FLAG_VALUE = re.compile(r"(\s+)(\"[^\"]*\"|'[^']*'|[^\s,;&\"']+)")
 _BEARER_TOKEN = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+")
 _BASIC_TOKEN = re.compile(r"(?i)\bBasic\s+[A-Za-z0-9._~+/=-]+")
 _URL = re.compile(r"(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*+://(?:<redacted>|[^\s\"'<>])++")
-_URL_USERINFO = re.compile(r"(^[A-Za-z][A-Za-z0-9+.-]*+://)[^/?#\s@]*+@")
+_URL_USERINFO = re.compile(r"(^[A-Za-z][A-Za-z0-9+.-]*+://)(?:[^/?#\s@]*+@)++")
 _QUERY_VALUE = re.compile(r"=([^&;]*)")
 _SECRET_VALUE = re.compile(
     r"gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|"
@@ -49,12 +49,18 @@ def _is_secret_name(name: str) -> bool:
     return _SECRET_NAME.search(name) is not None
 
 
-def _redact_named_values(value: str) -> str:
+def _redact_named_values(value: str, *, protect_urls: bool = False) -> str:
     # Tokenize names first, then match the value at a fixed offset. A pattern
     # like NAME*SECRETNAME* followed by '=' retries quadratically on long names.
     pieces: list[str] = []
     cursor = 0
+    urls = _URL.finditer(value) if protect_urls else iter(())
+    url = next(urls, None)
     for name in _NAME_TOKEN.finditer(value):
+        while url is not None and name.start() >= url.end():
+            url = next(urls, None)
+        if url is not None and name.start() >= url.start():
+            continue
         if name.start() < cursor or not _is_secret_name(name.group()):
             continue
         match = _ASSIGNMENT_VALUE.match(value, name.end())
@@ -68,7 +74,10 @@ def _redact_named_values(value: str) -> str:
             ):
                 continue
             pieces.extend((value[cursor : match.start(2)], _REDACTED))
-            cursor = match.end(2)
+            # An unquoted URL value belongs to the enclosing assignment/flag,
+            # including query delimiters that normally end an unquoted value.
+            url_value = _URL.match(value, match.start(2))
+            cursor = url_value.end() if url_value is not None else match.end(2)
     pieces.append(value[cursor:])
     return "".join(pieces)
 
@@ -77,8 +86,13 @@ def _redact_url(match: re.Match[str]) -> str:
     url = _URL_USERINFO.sub(r"\1<redacted>@", match.group())
     url, fragment_marker, _fragment = url.partition("#")
     base, query_marker, query = url.partition("?")
+    scheme, _, remainder = base.partition("://")
+    authority, path_marker, path = remainder.partition("/")
+    url = scheme + "://" + authority
+    if path_marker:
+        url += "/" + "/".join(_redact_named_values(segment) for segment in path.split("/"))
     if query_marker:
-        url = base + query_marker + _QUERY_VALUE.sub("=<redacted>", query)
+        url += query_marker + _QUERY_VALUE.sub("=<redacted>", query)
     if fragment_marker:
         url += "#<redacted>"
     return url
@@ -105,16 +119,10 @@ def redact_text(value: str) -> str:
     """Redact likely credential values while preserving useful context."""
     redacted = _BEARER_TOKEN.sub("Bearer <redacted>", value)
     redacted = _BASIC_TOKEN.sub("Basic <redacted>", redacted)
-    # Keep URL spans out of the named-assignment pass: token.example:8443/path
-    # is an endpoint, not a token assignment. The scheme boundary and possessive
-    # repeats prevent retries on long scheme-like strings and URL bodies.
-    pieces: list[str] = []
-    cursor = 0
-    for url in _URL.finditer(redacted):
-        pieces.extend((_redact_named_values(redacted[cursor : url.start()]), _redact_url(url)))
-        cursor = url.end()
-    pieces.append(_redact_named_values(redacted[cursor:]))
-    redacted = "".join(pieces)
+    # Enclosing assignments see their complete values before URL protection.
+    # Names within standalone URLs are handled separately, preserving authority.
+    redacted = _redact_named_values(redacted, protect_urls=True)
+    redacted = _URL.sub(_redact_url, redacted)
     return _SECRET_VALUE.sub(_REDACTED, _redact_jwts(redacted))
 
 
