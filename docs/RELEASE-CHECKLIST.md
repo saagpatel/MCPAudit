@@ -128,7 +128,7 @@ publication.
    publisher hash, and descriptor validity before the environment-bound OIDC
    job can run.
 9. Confirm both the exact-version and `latest` official Registry endpoints name
-   `io.github.saagpatel/mcp-audit` version `2.7.0` with the exact PyPI package
+   `io.github.saagpatel/mcp-audit` at the released version with the exact PyPI package
    tuple. Registry metadata does not prove artifact hashes, installation,
    runtime uptake, adoption, or human effectiveness.
 
