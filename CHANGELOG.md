@@ -12,7 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Probe two client identities by default for opt-in stdio canaries, with
   `--canary-identities 1` to disable and `2` to opt in on HTTP/SSE. Identity-conditioned
   surfaces produce HIGH `IDENTITY_CONDITIONED_SURFACE` findings without extra tool
-  calls. Existing v2 tool pins also detect drift at call zero.
+  calls. Existing v2 tool pins also detect drift at call zero. Invalid or incomplete
+  v2 tool snapshots warn with `pin_baseline_corrupted` and fall back to the
+  in-session canary baseline without preventing the connection.
 - Add static-by-default `check`, bare-command configuration review, source
   inventory with `inspect`, and a bundled config-only `demo`. Explicit configs
   select only that file unless discovery is requested; connections require one

@@ -395,8 +395,10 @@ Additive, optional fields for compatibility with older reports:
   at call zero only; subsequent session and identity comparisons retain raw
   surface hashes. A pin-based `baseline_hash` incorporates reconstructed,
   credential-redacted snapshots; `current_hash` retains the live capture hash.
-  Pins are never written by the canary. Corrupt pins produce
-  `pin_baseline_corrupted` and an explicit fallback to the in-session baseline.
+  Pins are never written by the canary. V2 snapshots must contain every persisted
+  tool field, including explicit nulls for absent optional metadata. Malformed
+  or incomplete snapshots invalidate the saved baseline for that server. Corrupt
+  pins produce `pin_baseline_corrupted` and an explicit fallback to the in-session baseline.
 - `elapsed_seconds`: wall duration measured with a monotonic clock, from connection
   through session teardown, including failure or timeout; null when unrecorded.
 - `call_budget`: K, equal to the unchanged `requested_calls`; older reports infer
@@ -561,9 +563,12 @@ The report top level also includes:
     title, outputSchema, icons and meta were not covered; original v1 drift
     comparisons remain active, and refresh review is required for v2 coverage),
     `pin_baseline_corrupted` (a pin baseline file exists but could not be
-    parsed — materially different from "missing", since it can mask a wiped
-    or tampered baseline; the message names the file and parse error, and
-    pin mutations refuse to overwrite such a file),
+    parsed, or saved v2 canary tool snapshots are invalid or incomplete — materially
+    different from "missing", since it can mask a wiped or tampered baseline.
+    Parse failures name the file and sanitized error; pin mutations refuse to
+    overwrite unparseable files. Invalid or incomplete
+    v2 snapshots produce a sanitized per-server canary warning and use the
+    in-session baseline without modifying the pin file),
     `pin_baseline_stale` (pinned servers whose baseline predates the capture
     this check compares against; named in `servers`),
     `missing_credential` (e.g. `--llm-analysis` without `ANTHROPIC_API_KEY`),
