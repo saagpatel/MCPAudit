@@ -7,10 +7,12 @@ import os
 import signal
 import sys
 import textwrap
+import threading
 import time
 from io import StringIO
 from pathlib import Path
 
+import anyio
 import pytest
 
 from mcp_audit.connector import ServerConnector
@@ -18,6 +20,85 @@ from mcp_audit.models import ClientType, Confidence, PermissionCategory, ServerC
 from tests.conftest import make_server_config
 
 MOCK_SERVER = str(Path(__file__).parent / "fixtures" / "mock_server.py")
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("mode", ["complete", "timeout", "cancel", "fail", "quiet"])
+async def test_stdio_stderr_is_bounded_sanitized_and_cleaned_up(
+    mode: str, capfd: pytest.CaptureFixture[str], caplog: pytest.LogCaptureFixture
+) -> None:
+    # Warm AnyIO's unrelated reusable worker before measuring session cleanup.
+    await anyio.to_thread.run_sync(lambda: None)
+    baseline_threads = set(threading.enumerate())
+    fd_root = Path("/dev/fd") if Path("/dev/fd").exists() else Path("/proc/self/fd")
+    baseline_fds = len(list(fd_root.iterdir())) if fd_root.exists() else None
+    args = ["-m", "tests.fixtures.noisy_stderr_server"]
+    if mode in ("timeout", "cancel"):
+        args.append("hang")
+    elif mode == "fail":
+        args.append("fail")
+    config = make_server_config(name="stderr-fixture", command=sys.executable, args=args)
+    connector = ServerConnector(timeout=0.5 if mode == "timeout" else 5)
+    caplog.set_level(logging.INFO if mode == "quiet" else logging.DEBUG, logger="mcp_audit.connector")
+    if mode == "cancel":
+        with anyio.move_on_after(0.5) as scope:
+            await connector.connect(config)
+        assert scope.cancelled_caught
+    else:
+        audit = await connector.connect(config)
+        expected_status = {
+            "complete": "connected",
+            "quiet": "connected",
+            "fail": "failed",
+            "timeout": "timeout",
+        }
+        assert audit.connection_status == expected_status[mode]
+    captured = capfd.readouterr()
+    assert "stderr-noise" not in captured.err
+    assert "stderr-tail" not in captured.err
+    assert "\x1b" not in captured.err
+    records = [r.getMessage() for r in caplog.records if "stderr tail:" in r.getMessage()]
+    if mode == "quiet":
+        assert records == []
+    else:
+        assert len(records) == 1
+        assert "stderr-tail[/bold]" in records[0]
+        assert "Bearer <redacted>" in records[0]
+        assert "fixture-sensitive-marker" not in records[0]
+        assert "\x1b" not in records[0] and "\x07" not in records[0]
+        assert len(records[0]) <= 4096 + 100
+    assert set(threading.enumerate()) == baseline_threads
+    if baseline_fds is not None:
+        assert len(list(fd_root.iterdir())) == baseline_fds
+
+
+def test_stderr_capture_closes_reader_even_when_a_writer_is_retained() -> None:
+    from mcp_audit.connector import _capture_stderr
+
+    baseline = set(threading.enumerate())
+    retained_fd: int | None = None
+    try:
+        with _capture_stderr("fixture") as errlog:
+            retained_fd = os.dup(errlog.fileno())
+            os.write(retained_fd, b"fixture-tail")
+        assert set(threading.enumerate()) == baseline
+        with pytest.raises(BrokenPipeError):
+            os.write(retained_fd, b"closed-reader")
+    finally:
+        if retained_fd is not None:
+            os.close(retained_fd)
+
+
+@pytest.mark.parametrize("payload", ["\x1b[2J", "\x1b]0;pwned\x07", "\x9b31m"])
+def test_sse_warning_and_traceback_controls_are_stripped(payload: str) -> None:
+    from mcp_audit.connector import _SseLogFilter
+
+    record = logging.LogRecord("mcp.client.sse", logging.WARNING, "fixture", 1, "%s", (payload,), None)
+    record.exc_text = payload
+    record.stack_info = payload
+    assert _SseLogFilter().filter(record)
+    output = logging.Formatter().format(record)
+    assert "\x1b" not in output and "\x07" not in output and "\x9b" not in output
 
 
 def _process_exists(pid: int) -> bool:
@@ -458,10 +539,14 @@ async def test_connect_stdio_never_hands_spawned_server_an_environment(
 
     class FakeClient:
         def __init__(self, server: object, **_kwargs: object) -> None:
-            captured["env"] = getattr(server, "env", "missing")
             raise _SpawnAborted
 
+    def fake_stdio_client(server: object, *, errlog: object) -> object:
+        captured["env"] = getattr(server, "env", "missing")
+        return object()
+
     monkeypatch.setattr("mcp_audit.connector.Client", FakeClient)
+    monkeypatch.setattr("mcp_audit.connector.stdio_client", fake_stdio_client)
 
     connector = ServerConnector(timeout=1.0)
     config = make_server_config(name="srv", env_keys=["GITHUB_TOKEN", "AWS_SECRET_ACCESS_KEY"])

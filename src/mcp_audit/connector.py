@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
+import threading
 import traceback
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import PurePath
-from typing import TypeVar
+from typing import TextIO, TypeVar
 
 import anyio
 from mcp import Client, StdioServerParameters
 from mcp.client.sse import sse_client
+from mcp.client.stdio import stdio_client
 from mcp.types import ListPromptsResult, ListResourcesResult, ListToolsResult
 from mcp.types import Prompt as SdkPrompt
 from mcp.types import Resource as SdkResource
@@ -36,8 +40,10 @@ from mcp_audit.models import (
 )
 from mcp_audit.redaction import redact_text
 from mcp_audit.rules.result_injection import RESULT_SCAN_LIMIT
+from mcp_audit.terminal_text import TerminalSafeLogFilter, strip_controls
 
 logger = logging.getLogger(__name__)
+logger.addFilter(TerminalSafeLogFilter())
 
 _SSE_URL_SUFFIX = re.compile(r"(https?://[^\s?#]+)[?#][^\s]*", re.IGNORECASE)
 _SSE_URL_USERINFO = re.compile(r"(https?://)[^/\s]*@", re.IGNORECASE)
@@ -55,7 +61,7 @@ _SSE_LOGGER_NAMES = (
 def _redact_sse_log_text(value: str) -> str:
     # Negotiated POST endpoints can use arbitrary query keys for session credentials.
     redacted = _SSE_URL_SUFFIX.sub(r"\1?<redacted>", value)
-    return redact_text(_SSE_URL_USERINFO.sub(r"\1<redacted>@", redacted))
+    return strip_controls(redact_text(_SSE_URL_USERINFO.sub(r"\1<redacted>@", redacted)))
 
 
 class _SseLogFilter(logging.Filter):
@@ -76,6 +82,67 @@ class _SseLogFilter(logging.Filter):
 
 
 _SSE_LOG_FILTER = _SseLogFilter()
+
+
+@contextmanager
+def _capture_stderr(server_name: str) -> Iterator[TextIO]:
+    """Drain stderr continuously into a 4 KiB tail, with synchronous cleanup.
+
+    A private wake marker ends the reader even if a descendant retains stderr.
+    Its write is smaller than PIPE_BUF; the reader keeps draining until it sees
+    the marker, so neither a full pipe nor async cancellation can strand it.
+    """
+    read_fd, write_fd = os.pipe()
+    tail = bytearray()
+    stopping = threading.Event()
+    marker = b"\x00" + os.urandom(32) + b"\x00"
+    failures: list[OSError] = []
+
+    def drain() -> None:
+        try:
+            while chunk := os.read(read_fd, 4096):
+                data = tail + chunk
+                position = data.find(marker) if stopping.is_set() else -1
+                if position >= 0:
+                    tail[:] = data[:position][-4096:]
+                    return
+                tail[:] = data[-4096:]
+        except OSError as exc:
+            failures.append(exc)
+        finally:
+            os.close(read_fd)
+
+    try:
+        errlog = os.fdopen(write_fd, "w", encoding="utf-8")
+    except BaseException:
+        os.close(read_fd)
+        os.close(write_fd)
+        raise
+    worker = threading.Thread(target=drain, name="mcp-audit-stderr")
+    try:
+        worker.start()
+    except BaseException:
+        errlog.close()
+        os.close(read_fd)
+        raise
+    try:
+        yield errlog
+    finally:
+        stopping.set()
+        try:
+            os.write(errlog.fileno(), marker)
+        finally:
+            errlog.close()
+            worker.join()
+        if failures:
+            raise failures[0]
+        if tail and logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "Server %s stderr tail: %s",
+                redact_text(strip_controls(server_name)),
+                redact_text(strip_controls(tail.decode("utf-8", errors="replace"))),
+            )
+
 
 # Known server command substrings → inferred permission categories (for --skip-connect mode).
 # Checked as substrings of the full command+args string.
@@ -325,8 +392,9 @@ class ServerConnector:
             args=config.args,
             env=None,
         )
-        async with Client(params) as client:
-            return await self._inspect_session(client, config.name, probe)
+        with _capture_stderr(config.name) as errlog:
+            async with Client(stdio_client(params, errlog=errlog)) as client:
+                return await self._inspect_session(client, config.name, probe)
 
     async def _connect_http(
         self, config: ServerConfig, probe: _CanaryProbe | None = None
