@@ -68,15 +68,19 @@ jobs:
           import xml.etree.ElementTree as ET
 
           root = ET.parse(os.environ["RESULTS_PATH"]).getroot()
-          suites = [root] if root.tag == "testsuite" else root.findall("testsuite")
-          proof_suites = [suite for suite in suites if "test_proofos_postgres" in suite.attrib.get("name", "")]
-          if not proof_suites:
-              raise SystemExit("ProofOS PostgreSQL test suite missing from pytest results")
+          module = "tests.test_proofos_postgres"
+          proof_cases = [
+              case for case in root.iter("testcase")
+              if case.attrib.get("classname", "") == module
+              or case.attrib.get("classname", "").startswith(module + ".")
+          ]
+          if not proof_cases:
+              raise SystemExit("ProofOS PostgreSQL test cases missing from pytest results")
           counts = {
-              key: sum(int(suite.attrib.get(key, "0")) for suite in proof_suites)
-              for key in ("tests", "skipped")
+              "tests": len(proof_cases),
+              "skipped": sum(case.find("skipped") is not None for case in proof_cases),
           }
-          if counts["tests"] == 0 or counts["skipped"] != 0:
+          if counts["skipped"] != 0:
               raise SystemExit(f"inadmissible ProofOS PostgreSQL result: {counts}")
           print(f"proofos_postgres_guard={counts['tests']}_tests_0_skipped")
           PY
