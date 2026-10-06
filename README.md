@@ -382,23 +382,24 @@ other arguments, other call sequences, and later sessions. Tests
 use only a synthetic local stdio server that changes metadata after three calls
 without changing its version, plus a benign control.
 
-## Known issues in 2.8
+## Known issues
 
-These are scheduled for 2.8.1 and 2.9.0; details are in the
-[2.8 release notes](docs/2.8-RELEASE-NOTES.md#known-issues).
+These remain in the 2.8.1 candidate; details are in the
+[2.8.1 candidate notes](docs/2.8-RELEASE-NOTES.md#known-issues).
 
 - `scan`, `pin`, `watch`, and the `serve` tools connect to servers declared in
   the current directory's `.mcp.json` and `.vscode/mcp.json`. In a checkout you
   do not trust, add `--skip-connect` to `scan` and `watch`, and do not run `pin`
   or launch `serve` there (they have no connection-free mode).
-- Server-supplied names are printed to the terminal without stripping control
-  sequences; a name containing Rich markup such as `[/bold]` aborts the
-  terminal report before `--json` output is written.
 - Annotation-only changes are not detected by `--pin-check` or
-  `--escalation-check`.
+  `--escalation-check`. Pins hash tool name, description, and input schema;
+  the runtime canary does compare annotations within a session.
 - Remote (`url`) servers in Cursor, Windsurf, and Claude Desktop configs are
   reported as stdio servers with a missing command.
-- `monitor` cannot proxy a real MCP stdio server and will be deprecated.
+- `monitor` cannot proxy a real MCP stdio server and will be deprecated in 2.9.0.
+- Credential redaction can leak the remainder of a quoted secret value that
+  contains an escaped quote (for example `--password \"abc\\\"rest\"`); a
+  structural redesign is planned for 2.9.0. Review field reports before sharing.
 
 ## Help improve mcp-audit (2 minutes)
 
