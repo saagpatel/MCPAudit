@@ -325,6 +325,68 @@ async def test_canary_keeps_served_but_unadvertised_surfaces_for_static_checks()
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("surface", ["prompts", "resources"])
+@pytest.mark.parametrize("mode", ["failure", "page_limit", "unsupported", "appears"])
+async def test_unadvertised_surface_listing_coverage(surface: str, mode: str) -> None:
+    config = make_server_config(
+        command=sys.executable, args=[SURFACES_FIXTURE, f"unadvertised_{mode}", surface]
+    )
+    report = await run_scan(
+        ScanOptions(canary_check=True, canary_calls=2, inject_check=True, timeout=15), servers=[config]
+    )
+    audit = report.audits[0]
+    assert audit.connection_status == "connected" and audit.connection_error is None
+    assert audit.canary is not None and audit.canary.completed_calls == 2
+    incomplete = mode != "unsupported"
+    assert audit.canary.status == ("partial" if incomplete else "complete")
+    label = "Prompt" if surface == "prompts" else "Resource"
+    assert bool([w for w in audit.canary.warnings if f"{label} surface incomplete" in w]) == incomplete
+    assert bool([w for w in report.warnings if w.code == "canary_incomplete"]) == incomplete
+    if mode == "failure":
+        assert getattr(audit, surface)
+        assert any(
+            f.pattern_name == "ignore_instructions" and f.target_type == surface[:-1]
+            for f in audit.injection_findings
+        )
+        assert not audit.drift_findings  # missing listings are unknown, not removals
+    elif mode == "appears":
+        assert getattr(audit, surface)
+    else:
+        assert not getattr(audit, surface)
+    if not incomplete:
+        assert not audit.canary.warnings and not report.warnings
+
+
+@pytest.mark.anyio
+async def test_failed_tools_relisting_retains_static_inventory_without_stale_calls() -> None:
+    config = make_server_config(command=sys.executable, args=[SURFACES_FIXTURE, "listing_failure", "tools"])
+    audit = await ServerConnector(timeout=15).connect(config, canary_calls=2)
+    assert audit.connection_status == "connected"
+    assert [tool.name for tool in audit.tools] == ["status0"]
+    assert audit.canary is not None and audit.canary.status == "partial"
+    assert audit.canary.completed_calls == 1
+    assert any("Tool surface incomplete" in w for w in audit.canary.warnings)
+    assert not audit.drift_findings
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("surface", ["prompts", "resources"])
+async def test_non_canary_unadvertised_page_limit_is_a_scan_warning(surface: str) -> None:
+    config = make_server_config(
+        command=sys.executable, args=[SURFACES_FIXTURE, "unadvertised_page_limit", surface]
+    )
+    report = await run_scan(ScanOptions(timeout=15), servers=[config])
+    audit = report.audits[0]
+    assert audit.connection_status == "connected" and audit.connection_error is None
+    assert audit.canary is None and not getattr(audit, surface)
+    assert len(report.warnings) == 1
+    warning = report.warnings[0]
+    assert warning.code == "surface_listing_incomplete"
+    assert warning.servers == [config.name] and warning.check is None
+    assert ("Prompt" if surface == "prompts" else "Resource") + " surface incomplete" in warning.message
+
+
+@pytest.mark.anyio
 async def test_oversized_result_is_capped_with_coverage_warning() -> None:
     config = make_server_config(command=sys.executable, args=[SURFACES_FIXTURE, "oversized"])
     audit = await ServerConnector(timeout=15).connect(config, canary_calls=2)
