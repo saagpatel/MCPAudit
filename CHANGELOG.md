@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Infer capabilities from nested input-schema property names using the bounded
+  SSRF schema walker. Property names retain weight 1 and the HIGH confidence
+  threshold remains 6; evidence includes matching schema paths. Nested
+  `upload_url` and `shell_command` gains now produce HIGH MCP018 escalation.
+  The offline examples golden comparison against the pre-change analyzer has
+  no fleet-wide permission finding count change: 12 → 12 across 9 public-config
+  servers, 7 → 7 across 5 sandbox-config servers, and 22 → 22 across 13 stored
+  tool surfaces in the sandbox manifest and synthetic enforcement report.
+  Config runs use config-only/skip-connect with no overrides; stored metadata
+  is replayed locally without launching servers. These fixtures contain no
+  nested property-name capability gains; the nested regression fixture covers
+  the added detection.
+
 - Share MCP server entry parsing across the five config discoverers so Cursor,
   Windsurf, and Claude Desktop recognize HTTP and deprecated SSE transports
   while retaining header key names only.

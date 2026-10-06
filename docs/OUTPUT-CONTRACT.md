@@ -250,9 +250,14 @@ static injection checks then fall back to the legacy names.
 Static tool injection checks inspect name, description, `annotations.title`,
 and every input-schema string leaf, including nested metadata, definitions,
 defaults, enums, and examples. No references are fetched or decoded. Existing
-top-level property-name keyword checks are retained. Tool name and description
-permission weights remain 3 and 2; property names and the added text have weight
-1. Annotation suppression behavior is unchanged.
+top-level property-name keyword checks are retained. Permission inference also
+inspects reachable nested property names through the bounded SSRF schema walker,
+including objects, array items, composition branches, and same-document `$ref`
+targets. Unreferenced definitions do not contribute property-name matches;
+their string leaves remain part of the separate agent-visible text scan.
+Tool name and description permission weights remain 3 and 2; property names
+and the added text have weight 1. HIGH confidence still requires a score of 6.
+Annotation suppression behavior is unchanged.
 
 `injection_findings[].field_path` is an optional JSON Pointer into the tool or
 prompt's report object (for example `/annotations/title`,
@@ -264,9 +269,15 @@ annotation findings and legacy reports default to an empty list. Existing
 evidence strings are retained.
 Property-name evidence points to that property's schema object. Pointer tokens
 escape `~` as `~0` and `/` as `~1`.
+Nested property-name matches also add `schema property '<pointer>'` to existing
+keyword evidence. Repeated references to the same schema property are counted
+once. The shared property walker visits at most 2,048 schema nodes, descends at
+most 64 levels, and admits at most 4,096 properties; external references are
+never fetched. Existing fields and `schema_version` are unchanged.
 
-Each tool admits at most 256 text fields, 16,384 characters per field, and 65,536
-characters in total. Schema traversal visits at most 2,048 nodes, descends at
+The separate agent-visible text extractor admits at most 256 text fields per
+tool, 16,384 characters per field, and 65,536 characters in total. Its schema
+traversal visits at most 2,048 nodes, descends at
 most 64 container levels, and limits each field pointer to 2,048 characters.
 Cycles, over-budget branches, and oversized paths are skipped; long fields are
 truncated. Prompt static injection text uses the same field and character caps.
