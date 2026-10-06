@@ -36,7 +36,9 @@ AUDIT_FIELDS = set(
     " annotation_findings warnings annotations_missing permission_alert_score".split()
 )
 SERVER_FIELDS = set(
-    "name client config_path project_path scope command args env_keys transport url headers_keys".split()
+    "name client config_path project_path scope command args env_keys transport url headers_keys"
+    # Additive: P2-4 source labeling.
+    " config_source config_pointer".split()
 )
 
 
