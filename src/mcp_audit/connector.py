@@ -21,6 +21,7 @@ from mcp.types import ToolAnnotations as SdkToolAnnotations
 
 from mcp_audit.models import (
     CanarySummary,
+    CapabilityTarget,
     Confidence,
     PermissionCategory,
     PermissionFinding,
@@ -33,6 +34,7 @@ from mcp_audit.models import (
     TransportType,
 )
 from mcp_audit.redaction import redact_text
+from mcp_audit.rules.result_injection import RESULT_SCAN_LIMIT
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +105,10 @@ _SHELL_WRAPPERS = {"bash", "sh", "zsh", "fish", "pwsh", "powershell", "cmd", "cm
 _NETWORK_COMMANDS = {"curl", "wget"}
 _PACKAGE_RUNNERS = {"npx", "uvx", "pipx"}
 _DESTRUCTIVE_MARKERS = ("rm -rf", "remove-item -recurse", "del /s", "format ")
-_CANARY_DANGEROUS_ACTION = re.compile(r"\b(?:shutdown|transfer[ _-]+funds)\b", re.IGNORECASE)
+_TRUNCATION_WARNING = (
+    f"Runtime text exceeded {RESULT_SCAN_LIMIT // 1024} KB; only the first "
+    f"{RESULT_SCAN_LIMIT // 1024} KB of each oversized result or prompt body was scanned for injection."
+)
 _Page = TypeVar("_Page", ListToolsResult, ListPromptsResult, ListResourcesResult)
 _Item = TypeVar("_Item")
 
@@ -136,13 +141,16 @@ class _CanaryProbe:
     audit: ServerAudit
     calls: int
     safe_tools: frozenset[str]
+    # prompts/get repeats on every listing; each (prompt, pattern) is reported once.
+    prompt_patterns: set[tuple[str, str]] = field(default_factory=set)
 
 
 def canary_tool_eligible(tool: ToolInfo, explicitly_safe: bool = False) -> bool:
     """Only exercise empty-argument tools with no destructive or injection hints.
 
     Required or complex schemas are skipped rather than inventing arguments.
-    Annotation claims cannot override dangerous keywords or injection patterns.
+    Annotation defaults and the operator mark are the gate; the capability
+    keyword table and injection patterns veto a call regardless of either.
     """
     from mcp_audit.analyzer import PermissionAnalyzer
     from mcp_audit.injection import InjectionDetector
@@ -181,8 +189,6 @@ def canary_tool_eligible(tool: ToolInfo, explicitly_safe: bool = False) -> bool:
             )
         }
     )
-    if _CANARY_DANGEROUS_ACTION.search(f"{tool.name}\n{hazard_tool.description}"):
-        return False
     if any(f.category in forbidden for f in PermissionAnalyzer().analyze_tool_keywords(hazard_tool)):
         return False
     if InjectionDetector().scan_tool(hazard_tool):
@@ -325,7 +331,6 @@ class ServerConnector:
         if probe is None:
             return capabilities
         from mcp_audit.escalation import detect_session_drift
-        from mcp_audit.injection import InjectionDetector
         from mcp_audit.pinning import surface_hash
 
         summary = probe.audit.canary
@@ -338,7 +343,7 @@ class ServerConnector:
         summary.current_hash = summary.baseline_hash
         for call in range(1, probe.calls + 1):
             if "tools" not in capabilities.surface:
-                capabilities = await self._list_capabilities(session, server_name, probe, previous)
+                capabilities = await self._list_capabilities(session, server_name, probe, previous, call - 1)
                 probe.audit.drift_findings.extend(
                     detect_session_drift(server_name, previous, capabilities.surface, call - 1)
                 )
@@ -353,12 +358,12 @@ class ServerConnector:
             result = await session.call_tool(tool.name, {})
             summary.completed_calls = call
             text = "\n".join(_result_text(result.model_dump(mode="json", by_alias=True)))
-            probe.audit.injection_findings.extend(InjectionDetector().scan_result(tool.name, text, call))
+            self._scan_runtime_text(probe, tool.name, text, call, CapabilityTarget.TOOL)
             if result.is_error:
                 summary.warnings.append(
                     f"Tool call {call} returned an error result; exercise may be ineffective."
                 )
-            capabilities = await self._list_capabilities(session, server_name, probe, previous)
+            capabilities = await self._list_capabilities(session, server_name, probe, previous, call)
             probe.audit.drift_findings.extend(
                 detect_session_drift(server_name, previous, capabilities.surface, call)
             )
@@ -376,23 +381,30 @@ class ServerConnector:
         server_name: str,
         probe: _CanaryProbe | None = None,
         previous: dict[str, dict[str, object]] | None = None,
+        after_call: int = 0,
     ) -> _ServerCapabilities:
         tools: list[SdkTool] = []
         prompts: list[PromptInfo] = []
         resources: list[ResourceInfo] = []
         surface: dict[str, dict[str, object]] = {}
+        # Tools are always listed: servers serve tools they never advertised, and an
+        # ordinary scan reports what a server actually exposes. The canary probes
+        # only the prompt and resource surfaces advertised at initialize, so an
+        # unadvertised listing is never exercised or counted as drift evidence;
+        # an ordinary scan still tries both and logs an unavailable surface.
         advertised = session.server_capabilities
-        if advertised.tools is not None:
-            try:
-                tools = await _list_pages(session.list_tools, lambda page: page.tools)
-                if probe:
-                    surface["tools"] = {t.name: t.model_dump(mode="json", by_alias=True) for t in tools}
-            except Exception as exc:
-                if not probe:
-                    raise
-                self._canary_warning(probe, f"Tool surface incomplete ({type(exc).__name__}).")
+        list_prompts = probe is None or advertised.prompts is not None
+        list_resources = probe is None or advertised.resources is not None
+        try:
+            tools = await _list_pages(session.list_tools, lambda page: page.tools)
+            if probe:
+                surface["tools"] = {t.name: t.model_dump(mode="json", by_alias=True) for t in tools}
+        except Exception as exc:
+            if not probe:
+                raise
+            self._canary_warning(probe, f"Tool surface incomplete ({type(exc).__name__}).")
 
-        if advertised.prompts is not None:
+        if list_prompts:
             try:
                 prompt_items = await _list_pages(session.list_prompts, lambda page: page.prompts)
                 prompts = [self._convert_prompt(prompt) for prompt in prompt_items]
@@ -420,6 +432,10 @@ class ServerConnector:
                             "description": result.description,
                             "messages": [{"role": m.role} for m in result.messages],
                         }
+                        # Rendered text is excluded from drift (it may change normally)
+                        # but is scanned like a tool result: a hunt can live in a body.
+                        body = "\n".join(_result_text(result.model_dump(mode="json", by_alias=True)))
+                        self._scan_runtime_text(probe, prompt.name, body, after_call, CapabilityTarget.PROMPT)
             except Exception as exc:
                 if probe:
                     surface.pop("prompts", None)
@@ -430,7 +446,7 @@ class ServerConnector:
                         "Server %s prompt listing unavailable: %s", server_name, redact_text(str(exc))
                     )
 
-        if advertised.resources is not None:
+        if list_resources:
             try:
                 resource_items = await _list_pages(session.list_resources, lambda page: page.resources)
                 resources = [self._convert_resource(resource) for resource in resource_items]
@@ -458,6 +474,22 @@ class ServerConnector:
         assert probe.audit.canary is not None
         if message not in probe.audit.canary.warnings:
             probe.audit.canary.warnings.append(message)
+
+    def _scan_runtime_text(
+        self, probe: _CanaryProbe, name: str, text: str, after_call: int, target_type: CapabilityTarget
+    ) -> None:
+        """Scan bounded runtime text; truncation is reported as incomplete coverage."""
+        from mcp_audit.injection import InjectionDetector
+
+        if len(text) > RESULT_SCAN_LIMIT:
+            text = text[:RESULT_SCAN_LIMIT]
+            self._canary_warning(probe, _TRUNCATION_WARNING)
+        for finding in InjectionDetector().scan_result(name, text, after_call, target_type):
+            if target_type is CapabilityTarget.PROMPT:
+                if (name, finding.pattern_name) in probe.prompt_patterns:
+                    continue
+                probe.prompt_patterns.add((name, finding.pattern_name))
+            probe.audit.injection_findings.append(finding)
 
     def skip_connect_audit(self, config: ServerConfig) -> ServerAudit:
         """Return a ServerAudit with config-inferred permissions (no connection)."""
