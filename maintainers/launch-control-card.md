@@ -3,8 +3,8 @@
 Use this as the single screen during the Hacker News launch window. It is a
 thin operator card over the canonical launch docs:
 
-- full timing and routing: `docs/LAUNCH-DAY-RUNBOOK.md`
-- live reply snippets: `docs/LAUNCH-RESPONSE-PLAYBOOK.md`
+- full timing and routing: `maintainers/launch-day-runbook.md`
+- live reply snippets: `maintainers/launch-response-playbook.md`
 - long-form channel copy: `launch-posts.md`
 
 ## Timing
@@ -55,7 +55,7 @@ mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
   `https://github.com/saagpatel/MCPAudit#readme`
 - Field-report issue template:
   `https://github.com/saagpatel/MCPAudit/issues/new?template=field_report.md`
-- `docs/LAUNCH-RESPONSE-PLAYBOOK.md`
+- `maintainers/launch-response-playbook.md`
 - `docs/EXTERNAL-FIELD-REPORT-REQUEST.md`
 - `docs/FIELD-REPORTS.md#minimal-public-example`
 - `SECURITY.md`

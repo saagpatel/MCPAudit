@@ -1,6 +1,6 @@
 # Launch Day Runbook
 
-Use this only after `docs/LAUNCH-CONTROL-CARD.md` is green. This runbook
+Use this only after `maintainers/launch-control-card.md` is green. This runbook
 coordinates the public post and first response window; it does not replace the
 field-report and security disclosure docs.
 
@@ -39,7 +39,7 @@ No-go if any of these are true:
 3. Paste the printed first comment within about 60 seconds.
 4. Confirm command blocks render correctly.
 5. Open:
-   - `docs/LAUNCH-RESPONSE-PLAYBOOK.md`
+   - `maintainers/launch-response-playbook.md`
    - `docs/EXTERNAL-FIELD-REPORT-REQUEST.md`
    - `docs/FIELD-REPORTS.md#minimal-public-example`
    - `SECURITY.md`
