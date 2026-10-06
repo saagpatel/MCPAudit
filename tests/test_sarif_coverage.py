@@ -134,3 +134,25 @@ def test_extended_profile_emits_stable_config_health_rule_and_result(
 def test_unknown_profile_is_rejected(empty_report: AuditReport) -> None:
     with pytest.raises(ValueError, match="Unknown SARIF profile"):
         SarifGenerator().generate(empty_report, profile="unknown")
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("profile", ["compatibility", "extended"])
+async def test_project_connection_warning_reaches_sarif(profile: str) -> None:
+    from mcp_audit.engine import ScanOptions, run_scan
+    from tests.conftest import make_server_config
+
+    server = make_server_config(command="synthetic-project-server", args=["--fixture"])
+    server.scope = "project"
+    report = await run_scan(ScanOptions(), servers=[server])
+    warning = next(w for w in report.warnings if w.code == "project_config_not_connected")
+    # Coverage notifications must coexist with the exact, redacted skip explanation.
+    run = SarifGenerator().generate(report, profile=profile)["runs"][0]
+    notifications = run["invocations"][0]["toolExecutionNotifications"]
+    notification = next(
+        item for item in notifications if item["descriptor"]["id"] == "MCP-PROJECT-CONFIG-NOT-CONNECTED"
+    )
+    assert notification["message"]["text"] == warning.message
+    assert notification["properties"] == warning.model_dump()
+    assert notification["level"] == "warning"
+    assert any(item["descriptor"]["id"].startswith("MCP-COVERAGE-") for item in notifications)

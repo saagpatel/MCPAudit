@@ -247,6 +247,16 @@ class SarifGenerator:
             if audit.canary is not None
         ]
         coverage_notifications = self._coverage_notifications(report.coverage)
+        coverage_notifications.extend(
+            {
+                "level": "warning",
+                "message": {"text": warning.message},
+                "descriptor": {"id": "MCP-PROJECT-CONFIG-NOT-CONNECTED"},
+                "properties": warning.model_dump(),
+            }
+            for warning in report.warnings
+            if warning.code == "project_config_not_connected"
+        )
         if canaries or coverage_notifications:
             invocation: dict[str, Any] = {"executionSuccessful": True}
             if canaries:

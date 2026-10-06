@@ -115,7 +115,7 @@ def _build_mcp_server() -> Any:
 
     @app.tool()  # type: ignore[untyped-decorator]
     async def get_high_risk_servers() -> str:
-        """Return servers with composite risk score ≥ 7.0. Returns JSON list."""
+        """Return servers with composite risk score ≥ 7.0. Returns JSON `{findings, warnings}`."""
         report = await _scan(ScanOptions())
         report = report.redacted()
         high_risk = [
@@ -123,7 +123,7 @@ def _build_mcp_server() -> Any:
             for a in report.audits
             if a.risk_score is not None and a.risk_score.composite >= 7.0
         ]
-        return json.dumps(high_risk, indent=2)
+        return _findings_payload(report, high_risk)
 
     @app.tool()  # type: ignore[untyped-decorator]
     async def check_server(name: str) -> str:
@@ -146,7 +146,9 @@ def _build_mcp_server() -> Any:
 
         report = await _scan(ScanOptions(), servers=[matches[0]])
         report = report.redacted()
-        return report.audits[0].model_dump_json(indent=2)
+        payload = report.audits[0].model_dump(mode="json")
+        payload["warnings"] = [warning.model_dump() for warning in report.warnings]
+        return json.dumps(payload, indent=2)
 
     @app.tool()  # type: ignore[untyped-decorator]
     async def get_injection_findings() -> str:
