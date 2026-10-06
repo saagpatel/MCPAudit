@@ -19,6 +19,7 @@ from mcp_audit.models import (
     SsrfSeverity,
     ToolInfo,
 )
+from mcp_audit.redaction import redacted_excerpt
 from mcp_audit.text_limits import bounded_text
 
 # Schemes where a caller-controlled host means the server reaches out over the
@@ -326,11 +327,16 @@ class SsrfDetector:
         else:
             severity, pattern = SsrfSeverity.LOW, "host_param"
 
-        evidence = [f"URL-shaped parameter '{name}'" for name in url_params]
-        evidence += [f"host/address parameter '{name}'" for name in host_params]
+        evidence = [f"URL-shaped parameter '{redacted_excerpt(name, 0, len(name))}'" for name in url_params]
+        evidence += [
+            f"host/address parameter '{redacted_excerpt(name, 0, len(name))}'" for name in host_params
+        ]
         if has_verb:
             evidence.append("server-side fetch verb in tool name or description")
-        evidence += [f"schema traversal incomplete: {reason}" for reason in walk.incomplete_reasons]
+        evidence += [
+            f"schema traversal incomplete: {redacted_excerpt(reason, 0, len(reason))}"
+            for reason in walk.incomplete_reasons
+        ]
 
         from mcp_audit.taxonomy import ssrf_metadata
 
@@ -363,9 +369,10 @@ class SsrfDetector:
         host_authority = parsed.netloc.rsplit("@", 1)[-1]
         if "{" in host_authority:
             severity, pattern = SsrfSeverity.HIGH, "remote_uri_host_template"
+            safe_authority = urlparse(redacted_excerpt(uri, 0, len(uri))).netloc
             evidence = [
                 f"remote scheme '{parsed.scheme.lower()}'",
-                f"caller-templated host authority '{parsed.netloc}'",
+                f"caller-templated host authority '{safe_authority}'",
             ]
         elif "{" in parsed.path or "{" in parsed.query:
             severity, pattern = SsrfSeverity.LOW, "remote_uri_path_template"

@@ -18,6 +18,12 @@ Each finding includes a rule identifier, severity, evidence, and suggested
 remediation where supported. Severity ranks the finding for review; it is not a
 probability that an attack happened. Instruction-shaped text rules are
 pattern-based heuristics and can have false positives or miss reworded text.
+Static phrase matches are experimental MEDIUM `INSTRUCTION_SHAPED_TEXT`
+findings with a pattern name and JSON-pointer field path; free text alone never
+fails a HIGH injection gate. A match that hunts for a concrete credential
+target (such as `~/.ssh/id_rsa`) names that target, never a value, and is
+ranked "Fix now" in the terminal and HTML summaries. High-entropy runs produce
+LOW `ENCODED_BLOB_IN_METADATA` findings and are never decoded.
 Annotation contradictions compare explicit server hints with observed keyword
 evidence, not intent.
 

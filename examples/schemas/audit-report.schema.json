@@ -768,6 +768,25 @@
           ],
           "default": null,
           "title": "Field Path"
+        },
+        "instruction_pattern": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Instruction Pattern"
+        },
+        "hunt_targets": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Hunt Targets",
+          "type": "array"
         }
       },
       "required": [
