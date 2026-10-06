@@ -10,7 +10,7 @@ from rich.console import Console
 from mcp_audit.analyzer import PermissionAnalyzer
 from mcp_audit.connector import ServerConnector
 from mcp_audit.engine import ScanOptions, run_scan
-from mcp_audit.models import AuditReport, ServerAudit, ServerConfig, ToolAnnotations, ToolInfo
+from mcp_audit.models import AuditReport, Confidence, ServerAudit, ServerConfig, ToolAnnotations, ToolInfo
 from mcp_audit.overrides import OverrideApplier, OverrideConfig, PermissionOverride, ServerToolOverride
 from mcp_audit.policy import PolicyConfig, evaluate_policy
 from mcp_audit.report import ReportGenerator
@@ -162,6 +162,47 @@ async def test_capability_sarif_levels_and_fingerprints_remain_compatible(
     assert legacy_report.audits[0].permission_alert_score is None
     legacy_results = SarifGenerator().generate(legacy_report)["runs"][0]["results"]
     assert all(r["level"] == "error" for r in legacy_results if r["ruleId"] in {"MCP001", "MCP004"})
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("remove_file_read", [False, True])
+async def test_schema_only_file_read_retains_declared_warning(
+    monkeypatch: pytest.MonkeyPatch, remove_file_read: bool
+) -> None:
+    overrides = (
+        [
+            ServerToolOverride(
+                server="schema_file_read", tool="status", permissions=PermissionOverride(file_read=False)
+            )
+        ]
+        if remove_file_read
+        else []
+    )
+    report = await _scan("schema_file_read", monkeypatch, overrides)
+    audit = report.audits[0]
+    assert audit.risk_score is not None and audit.risk_score.composite == pytest.approx(0.6)
+    assert audit.permission_alert_score == pytest.approx(0.6 if remove_file_read else 1.0)
+    assert all(f.confidence == Confidence.MEDIUM for f in audit.permissions)
+    assert all(f.field_paths == ["/input_schema/properties/content/description"] for f in audit.permissions)
+    payload = report.model_dump(mode="json")
+    legacy_payload = report.model_dump(mode="json")
+    del legacy_payload["audits"][0]["permission_alert_score"]
+    for candidate in [
+        report,
+        AuditReport.model_validate(payload),
+        report.redacted(),
+        AuditReport.model_validate(legacy_payload),
+    ]:
+        results = SarifGenerator().generate(candidate)["runs"][0]["results"]
+        file_results = [r for r in results if r["ruleId"] == "MCP001"]
+        assert len(file_results) == (1 if remove_file_read else 2)
+        for tool_name in ["health"] if remove_file_read else ["status", "health"]:
+            fingerprint = _stable_fingerprint("MCP001", "schema_file_read", tool_name)
+            result = next(
+                r for r in file_results if r["partialFingerprints"]["mcpAuditStableId"] == fingerprint
+            )
+            assert result["level"] == ("warning" if tool_name == "status" else "note")
+            assert result["properties"]["confidence"] == "medium"
 
 
 @pytest.mark.parametrize(

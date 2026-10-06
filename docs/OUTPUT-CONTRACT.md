@@ -99,7 +99,10 @@ namespace `MCP005/annotations_missing` and an empty tool target, so it cannot
 collide with a genuine `MCP005` tool finding. The old default rows are consolidated.
 Genuine capability rule IDs, tool-target fingerprints, and SARIF alert levels
 retain compatibility, including the former annotation contribution when
-selecting those levels. The note is always `note`, independent of server risk.
+selecting those levels. Retained tool/category findings also preserve the
+former declared-confidence warning, even when independent keyword evidence
+has lower confidence. Operator-removed findings are not restored. The note
+is always `note`, independent of server risk.
 It is informational metadata, not a reduced-coverage scan warning.
 
 `audits[].permission_alert_score` is an additive nullable score (0–10) used

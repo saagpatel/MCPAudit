@@ -13,6 +13,10 @@
   "read_file": [
     {"name": "read_file", "annotations": {"read_only_hint": true, "open_world_hint": false}}
   ],
+  "schema_file_read": [
+    {"name": "status", "input_schema": {"type": "object", "properties": {"content": {"description": "Read a file."}}}, "annotations": {"read_only_hint": true, "open_world_hint": false}},
+    {"name": "health", "input_schema": {"type": "object", "properties": {"content": {"description": "Read a file."}}}, "annotations": {"read_only_hint": false, "destructive_hint": false, "open_world_hint": false}}
+  ],
   "capability_levels": [
     {"name": "read_file"},
     {"name": "shell"}

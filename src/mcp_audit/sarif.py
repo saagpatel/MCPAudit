@@ -8,6 +8,7 @@ from importlib.metadata import version as pkg_version
 from pathlib import Path
 from typing import Any
 
+from mcp_audit.analyzer import PermissionAnalyzer
 from mcp_audit.coverage import missing_checks
 from mcp_audit.models import (
     AnnotationFinding,
@@ -647,7 +648,13 @@ class SarifGenerator:
         composite = self._permission_alert_score(audit) if alert_score is None else alert_score
         if composite >= 7.0:
             return "error"
-        if composite >= 3.0 or finding.confidence in _HIGH_CONFIDENCE:
+        # Only retained tool/category findings inherit the former declared warning.
+        # Operator removals have already been applied to audit.permissions.
+        legacy_declared = any(
+            legacy.tool_name == finding.tool_name and legacy.category == finding.category
+            for legacy in PermissionAnalyzer().legacy_annotation_findings(audit.tools)
+        )
+        if composite >= 3.0 or finding.confidence in _HIGH_CONFIDENCE or legacy_declared:
             return "warning"
         return "note"
 
