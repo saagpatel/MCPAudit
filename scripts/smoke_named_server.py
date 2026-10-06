@@ -302,6 +302,7 @@ async def run_case(executable: Path, mock: Path, case: str) -> int:
             env=controlled_environment(home),
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
+            limit=4 * 1024 * 1024,  # full audit JSON lines exceed asyncio's 64 KiB default
             stderr=asyncio.subprocess.PIPE,
             start_new_session=True,
         )
