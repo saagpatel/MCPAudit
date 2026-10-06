@@ -15,10 +15,15 @@ import os
 import signal
 import subprocess
 import tempfile
+import tomllib
 from pathlib import Path
 from typing import Any
 
 from mcp.types import LATEST_PROTOCOL_VERSION, jsonrpc_message_adapter
+
+EXPECTED_VERSION = tomllib.loads((Path(__file__).resolve().parents[1] / "pyproject.toml").read_text())[
+    "project"
+]["version"]
 
 # Expected ServerAudit/ServerConfig contract, including additive canary coverage.
 AUDIT_FIELDS = set(
@@ -372,7 +377,7 @@ def check_identity(executable: Path, expected_commit: str | None) -> None:
             capture_output=True,
         )
         identity = json.loads(result.stdout)
-        assert identity["version"] == "2.8.0"
+        assert identity["version"] == EXPECTED_VERSION
         if expected_commit:
             package = Path(identity["package"])
             assert package.is_relative_to(executable.parent.parent) and "site-packages" in package.parts
@@ -387,7 +392,7 @@ def check_identity(executable: Path, expected_commit: str | None) -> None:
                 text=True,
                 capture_output=True,
             ).stdout
-            assert "2.8.0" in version
+            assert EXPECTED_VERSION in version
         print("PASS identity: " + json.dumps(identity, sort_keys=True))
 
 
