@@ -10,6 +10,9 @@ import pytest
 
 from mcp_audit import cli
 from mcp_audit.models import (
+    ArtifactVerifyFinding,
+    ArtifactVerifyKind,
+    ArtifactVerifySeverity,
     AuditReport,
     CapabilityFinding,
     CapabilityTarget,
@@ -21,14 +24,31 @@ from mcp_audit.models import (
     EgressFinding,
     EgressKind,
     EgressSeverity,
+    EscalationFinding,
+    EscalationKind,
+    EscalationSeverity,
     InjectionFinding,
     InjectionSeverity,
+    IntegrityFinding,
+    IntegrityKind,
+    IntegritySeverity,
+    PackageVerifyFinding,
+    PackageVerifyKind,
+    PackageVerifySeverity,
     PermissionCategory,
     PermissionFinding,
+    ProvenanceFinding,
+    ProvenanceKind,
+    ProvenanceSeverity,
     RiskScore,
     ServerAudit,
+    ShadowingFinding,
+    ShadowingKind,
+    ShadowingSeverity,
     SsrfFinding,
     SsrfSeverity,
+    TrifectaFinding,
+    TrifectaSeverity,
 )
 from mcp_audit.policy import evaluate_policy, load_policy
 from tests.conftest import make_server_config, make_tool
@@ -87,6 +107,206 @@ def _audit_with_shell_finding() -> ServerAudit:
             exfiltration=0.0,
         ),
     )
+
+
+def _policy_gate_report() -> AuditReport:
+    audit = _audit_with_shell_finding()
+    audit.permissions = [
+        PermissionFinding(
+            category=PermissionCategory.SHELL_EXEC,
+            confidence=Confidence.HIGH,
+            evidence=["execute command"],
+            tool_name="run_shell",
+        )
+    ]
+    audit.escalation_findings = [
+        EscalationFinding(
+            kind=EscalationKind.CAPABILITY,
+            severity=EscalationSeverity.HIGH,
+            server_name="srv",
+            tool_name="run_shell",
+            description="Capability was added.",
+        )
+    ]
+    audit.provenance_findings = [
+        ProvenanceFinding(
+            kind=ProvenanceKind.COMMAND,
+            severity=ProvenanceSeverity.HIGH,
+            server_name="srv",
+            summary="Launch command changed.",
+            baseline="python",
+            current="python3",
+        )
+    ]
+    audit.integrity_findings = [
+        IntegrityFinding(
+            kind=IntegrityKind.ARTIFACT_DRIFT,
+            severity=IntegritySeverity.HIGH,
+            server_name="srv",
+            artifact_path="/synthetic/server",
+            baseline_hash="before",
+            current_hash="after",
+            summary="Artifact bytes changed.",
+        )
+    ]
+    audit.package_verify_findings = [
+        PackageVerifyFinding(
+            kind=PackageVerifyKind.REGISTRY_DRIFT,
+            severity=PackageVerifySeverity.HIGH,
+            server_name="srv",
+            ecosystem="npm",
+            package="synthetic-package",
+            version="1.0.0",
+            baseline_hash="before",
+            current_hash="after",
+            summary="Registry hash changed.",
+        )
+    ]
+    audit.artifact_verify_findings = [
+        ArtifactVerifyFinding(
+            kind=ArtifactVerifyKind.BASELINE_MISMATCH,
+            severity=ArtifactVerifySeverity.HIGH,
+            server_name="srv",
+            ecosystem="npm",
+            package="synthetic-package",
+            version="1.0.0",
+            baseline_hash="before",
+            current_hash="after",
+            summary="Artifact bytes differ from baseline.",
+        )
+    ]
+    audit.trifecta_findings = [
+        TrifectaFinding(
+            severity=TrifectaSeverity.HIGH,
+            leg1_contributors=[("srv", "read_file")],
+            leg2_contributors=[("srv", "fetch_url")],
+            leg3_contributors=[("srv", "send_data")],
+            description="Synthetic trifecta finding.",
+        )
+    ]
+    audit.drift_findings = [
+        DriftFinding(server_name="srv", tool_name="run_shell", status=DriftStatus.CHANGED),
+        DriftFinding(
+            server_name="srv",
+            tool_name="run_shell",
+            status=DriftStatus.CHANGED,
+            source="session",
+            severity="high",
+        ),
+    ]
+    report = _audit_report(audit)
+    report.shadowing_findings = [
+        ShadowingFinding(
+            kind=ShadowingKind.EXACT,
+            severity=ShadowingSeverity.HIGH,
+            name="search",
+            collisions=[("srv", "search"), ("other", "search")],
+            description="Synthetic shadowing finding.",
+        )
+    ]
+    return report
+
+
+@pytest.mark.parametrize(
+    ("policy_yaml", "rule"),
+    [
+        ("fail_on:\n  escalation: true\n", "fail_on.escalation"),
+        ("fail_on:\n  provenance: true\n", "fail_on.provenance"),
+        ("fail_on:\n  integrity: true\n", "fail_on.integrity"),
+        ("fail_on:\n  package_verify: true\n", "fail_on.package_verify"),
+        ("fail_on:\n  artifact_verify: true\n", "fail_on.artifact_verify"),
+        ("fail_on:\n  severity: high\n", "fail_on.severity"),
+        ("fail_on:\n  trifecta: true\n", "fail_on.trifecta"),
+        ("fail_on:\n  shadowing: true\n", "fail_on.shadowing"),
+        ("fail_on:\n  drift: true\n", "fail_on.drift"),
+    ],
+)
+def test_opt_in_gates_fail_only_when_enabled(tmp_path: Path, policy_yaml: str, rule: str) -> None:
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text(policy_yaml)
+    enabled = evaluate_policy(_policy_gate_report(), load_policy(policy_path))
+    assert enabled.passed is False
+    assert {violation.rule for violation in enabled.violations} == {rule}
+
+    key = policy_yaml.splitlines()[1].strip().split(":", maxsplit=1)[0]
+    disabled_value = "null" if key == "severity" else "false"
+    policy_path.write_text(f"fail_on:\n  {key}: {disabled_value}\n")
+    disabled = evaluate_policy(_policy_gate_report(), load_policy(policy_path))
+    assert disabled.passed is True
+
+    policy_path.write_text("{}\n")
+    empty = evaluate_policy(_policy_gate_report(), load_policy(policy_path))
+    assert empty.passed is True
+
+
+def test_policy_file_gate_defaults_are_disabled(tmp_path: Path) -> None:
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text("fail_on: {}\n")
+    policy = load_policy(policy_path)
+
+    assert policy.fail_on_severity is None
+    assert policy.fail_on_permission_severity is None
+    assert policy.fail_on_injection_severity is None
+    assert policy.fail_on_ssrf_severity is None
+    assert policy.fail_on_egress_severity is None
+    assert policy.fail_on_capability_severity is None
+    assert policy.fail_on_config_health_severity is None
+    assert policy.fail_on_drift is False
+    assert policy.fail_on_trifecta is False
+    assert policy.fail_on_shadowing is False
+    assert policy.fail_on_escalation is False
+    assert policy.fail_on_provenance is False
+    assert policy.fail_on_integrity is False
+    assert policy.fail_on_package_verify is False
+    assert policy.fail_on_artifact_verify is False
+
+
+def test_max_risk_equal_to_score_fails(tmp_path: Path) -> None:
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text("max_risk: 8.0\n")
+    result = evaluate_policy(_policy_gate_report(), load_policy(policy_path))
+
+    assert result.passed is False
+    assert [violation.rule for violation in result.violations] == ["max_risk"]
+
+
+def test_broad_severity_gates_session_drift_but_not_pin_drift(tmp_path: Path) -> None:
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text("fail_on:\n  severity: high\n")
+    report = _policy_gate_report()
+    report.audits[0].permissions = []
+    report.audits[0].drift_findings = [
+        finding for finding in report.audits[0].drift_findings if finding.source == "pin"
+    ]
+    pin_result = evaluate_policy(report, load_policy(policy_path))
+    assert pin_result.passed is True
+
+    report.audits[0].drift_findings = [
+        finding.model_copy(update={"source": "session"}) for finding in report.audits[0].drift_findings
+    ]
+    session_result = evaluate_policy(report, load_policy(policy_path))
+    assert session_result.passed is False
+    assert {violation.rule for violation in session_result.violations} == {"fail_on.severity"}
+
+
+@pytest.mark.parametrize(
+    ("policy_yaml", "message"),
+    [
+        ("[]\n", "Policy file must contain a YAML mapping."),
+        ("max_risk: 11\n", "max_risk must be between 0 and 10."),
+        ("deny:\n  permissions: shell\n", "deny.permissions must be a YAML list."),
+        (
+            "fail_on:\n  severity: critical\n",
+            "Unknown policy severity 'critical'. Valid values: low, medium, high.",
+        ),
+    ],
+)
+def test_invalid_policy_files_raise_documented_errors(tmp_path: Path, policy_yaml: str, message: str) -> None:
+    policy_path = tmp_path / "policy.yaml"
+    policy_path.write_text(policy_yaml)
+
+    with pytest.raises(ValueError, match=message.replace(".", r"\.")):
+        load_policy(policy_path)
 
 
 def test_policy_fails_on_denied_permission(tmp_path: Path) -> None:

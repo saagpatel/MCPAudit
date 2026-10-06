@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Tests
+
+- Pin scorer weights, confidence multipliers, and caps with literal golden values;
+  cover policy gate defaults, branches, boundaries, and invalid policy errors.
+
 ### Fixed
 
 - Render untrusted terminal text literally and remove terminal control sequences
