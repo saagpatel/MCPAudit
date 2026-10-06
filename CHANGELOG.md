@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Share NFKC, invisible-codepoint stripping and curated confusable folding
+  across static injection, runtime text and tool-name shadowing checks. Report
+  MEDIUM `OBFUSCATED_METADATA` for invisible classes or mixed-script confusables
+  with field pointers; preserve source evidence and display invisible characters
+  as codepoint markers in terminal, HTML and SARIF messages.
 - Pin tool surfaces with canonical form v2, covering annotations, title, output
   schema, icons and metadata; restore those fields for baseline comparison and
   flag security-relevant annotation changes as HIGH MCP018 deltas. Share the

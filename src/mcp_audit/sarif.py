@@ -44,6 +44,7 @@ from mcp_audit.models import (
     TrifectaFinding,
     TrifectaSeverity,
 )
+from mcp_audit.normalize import render_invisibles
 from mcp_audit.taxonomy import (
     ARTIFACT_VERIFY_FINDINGS,
     EGRESS_FINDINGS,
@@ -435,6 +436,10 @@ class SarifGenerator:
         if report.policy_result is not None:
             for violation in report.policy_result.violations:
                 results.append(self._make_policy_result(violation))
+        for result in results:
+            message = result.get("message")
+            if isinstance(message, dict) and isinstance(message.get("text"), str):
+                message["text"] = render_invisibles(message["text"])
         return results
 
     def _finding_level(self, finding: PermissionFinding, audit: ServerAudit) -> str:

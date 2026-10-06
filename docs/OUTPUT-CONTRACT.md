@@ -220,14 +220,34 @@ top-level property-name keyword checks are retained. Tool name and description
 permission weights remain 3 and 2; property names and the added text have weight
 1. Annotation suppression behavior is unchanged.
 
-`injection_findings[].field_path` is an optional JSON Pointer into the tool or
-prompt's report object (for example `/annotations/title`,
+`injection_findings[].field_path` is an optional JSON Pointer into the report
+object for a tool, prompt or resource (for example `/annotations/title`,
 `/input_schema/properties/options/description`, or
-`/argument_details/0/description`). It is null for older findings, static
-resource findings, and runtime result/body findings. `permissions[].field_paths`
+`/argument_details/0/description`). It is null for older findings, legacy
+resource phrase findings, and runtime result/body findings. `permissions[].field_paths`
 lists all matching tool field pointers for an aggregated keyword finding;
 annotation findings and legacy reports default to an empty list. Existing
 evidence strings are retained.
+
+Text matching for static injection, runtime result/body rules and shadowing
+uses shared NFKC, removal of `Cf` format characters, Unicode tag-block characters
+(U+E0000–U+E007F) and variation selectors (U+FE00–U+FE0F, U+E0100–U+E01EF),
+then a curated confusable fold. This does not decode tag payloads.
+
+`OBFUSCATED_METADATA` is a MEDIUM structural injection finding (SARIF `MCP008`).
+Its description names the codepoint classes and source field pointer.
+Invisible classes trigger independently of phrase matches; curated Greek or
+Cyrillic confusables trigger when mixed into a Latin-shaped word. Pure non-Latin
+names, ordinary accented Latin text, and NFKC compatibility changes alone do
+not trigger this anomaly. Runtime findings describe `/body` and retain the
+existing withheld-excerpt marker and null `field_path`.
+
+Static `matched_text` excerpts and source capability fields retain their
+original Unicode codepoints rather than the matching form. Terminal and HTML
+strings and SARIF result messages display invisibles as `‹U+E0020›`-style markers;
+JSON and SARIF structured properties retain source values. No existing field
+is removed or renamed and `schema_version` is unchanged.
+
 Property-name evidence points to that property's schema object. Pointer tokens
 escape `~` as `~0` and `/` as `~1`.
 
