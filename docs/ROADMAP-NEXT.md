@@ -8,8 +8,8 @@ dashboard examples. The field-report intake path has a dedicated public issue
 template. The next line should collect external reports before using a beta
 label or changing scoring semantics.
 
-Tracked `1.5` evidence-intake work lives in `docs/1.5-EVIDENCE-INTAKE.md`,
-with the release decision in `docs/1.5-RELEASE-DECISION.md`.
+Tracked `1.5` evidence-intake work lives in `archive/1.5-evidence-intake.md`,
+with the release decision in `archive/1.5-release-decision.md`.
 Beta-readiness evidence lives in `docs/BETA-READINESS-EVIDENCE.md`.
 Field-report evidence lives in `docs/FIELD-REPORTS.md`.
 External beta-evidence tracking lives in

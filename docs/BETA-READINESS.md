@@ -24,7 +24,7 @@ still not a beta-labeled external-evidence release.
 - Prompt/resource findings are visible and policy-gatable, but do not affect the
   composite server score yet. See `docs/PROMPT-RESOURCE-SCORING.md`.
 - Pin maintenance remains explicit and server-scoped. See
-  `docs/PIN-MAINTENANCE.md`.
+  `docs/guides/pinning.md`.
 - Whole-repo strict typing now passes and the canonical type gate is
   `uv run mypy .`.
 - Output-contract upgrade compatibility is fixture-tested for older report

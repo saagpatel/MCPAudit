@@ -159,7 +159,7 @@ removed from MCP client configuration.
 
 Run `mcp-audit pin --stale` during routine maintenance to find pin baselines for
 servers that are no longer present in discovered MCP configs. See
-`docs/PIN-MAINTENANCE.md` for the local helper script and scheduled CI example.
+`docs/guides/pinning.md` for the local helper script and scheduled CI example.
 
 ## Output Consumers
 
@@ -174,7 +174,7 @@ jq '.audits[] | {
 }' mcp-audit.json
 ```
 
-See historical `docs/1.1-ADOPTION.md` parsing examples from the original
+See historical `archive/1.1-adoption.md` parsing examples from the original
 `non_tool_risk` rollout, and `examples/schemas/audit-report.schema.json`
 for the generated JSON Schema.
 Runnable Python and Node consumer examples live in `examples/consumers/`.

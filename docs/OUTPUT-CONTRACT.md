@@ -539,7 +539,7 @@ observable expiry or a validated invalidation, only until a later valid
 successful refresh supersedes that failed attempt. A passing fixture report
 does not prove HTTP caching, performance, server/client/proxy behavior,
 authorization, confidentiality, notification delivery, or any production
-cache. See `docs/CACHE-CONTRACT-AUDITOR.md`.
+cache. See `docs/labs/cache-contract.md`.
 
 ## MCP Task Time Machine v1 (experimental)
 
@@ -592,7 +592,7 @@ network reads. The CLI reads only the exact regular non-symlink fixture path or
 uses an in-memory built-in. A passing report proves only supported invariants in
 the supplied synthetic scenario; it does not prove live MCP, SDK, host,
 persistence, authorization, notification, adoption, interoperability, or
-production behavior. See `docs/MCP-TASK-TIME-MACHINE.md`.
+production behavior. See `docs/labs/task-time-machine.md`.
 
 ## MCP Result Parcel Lab v1 (experimental)
 
@@ -624,7 +624,7 @@ The lab profiles MCP `2026-07-28`: inline complete results and resource links
 are core; `io.modelcontextprotocol/tasks` is a separately negotiated
 extension; chunk streams and progress-as-delivery accept only provider/local
 extension classifications. No result, transport, host, credential, remote
-resource, or object store is inspected. See `docs/RESULT-PARCEL-LAB.md`.
+resource, or object store is inspected. See `docs/labs/result-parcel.md`.
 
 ## SafeForge Manifest v0
 

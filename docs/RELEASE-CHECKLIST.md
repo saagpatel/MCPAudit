@@ -32,6 +32,8 @@ being uploaded manually.
   README Action examples, and pre-commit examples continue to name the latest
   existing public version/tag. They must not advertise a package or tag that
   does not exist.
+- Keep Action references version-pinned. Check for an accidental floating
+  major reference with `rg -n 'MCPAudit@v2([[:space:]]|$)' README.md docs/guides/ci.md`.
 - `README.md`, `SECURITY.md`, `docs/OUTPUT-CONTRACT.md`,
   `docs/STABLE-READINESS.md`, and the versioned release notes match live CLI
   behavior.
