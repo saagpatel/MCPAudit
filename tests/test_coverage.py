@@ -9,7 +9,7 @@ from click.testing import CliRunner
 from mcp_audit.cli import main
 from mcp_audit.engine import ScanOptions, run_scan
 from mcp_audit.htmlreport import HtmlReportGenerator
-from mcp_audit.models import AuditReport, CheckCoverage
+from mcp_audit.models import AuditReport, CheckCoverage, ServerAudit, ServerConfig
 from mcp_audit.policy import PolicyConfig, evaluate_policy, load_policy
 from mcp_audit.sarif import SarifGenerator
 from tests.conftest import make_server_config
@@ -101,6 +101,30 @@ async def test_mixed_fleet_and_missing_per_server_baseline_are_partial(
     report = await run_scan(ScanOptions(skip_connect=True, provenance_check=True), servers=servers)
     assert report.coverage["provenance_check"].state == "partial"
     assert "baseline unavailable" in report.coverage["provenance_check"].reason
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("pinned", [False, True])
+async def test_empty_tool_pin_baseline_presence(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, pinned: bool
+) -> None:
+    from mcp_audit import pinning
+    from mcp_audit.connector import ServerConnector
+
+    store = pinning.PinStore(path=tmp_path / "pins.yaml")
+    config = make_server_config()
+    if pinned:
+        store.pin_server(config.name, [])
+    monkeypatch.setattr(pinning, "PinStore", lambda: store)
+
+    async def connect(self: ServerConnector, server: ServerConfig) -> ServerAudit:
+        return ServerAudit(server=server, connection_status="connected")
+
+    monkeypatch.setattr(ServerConnector, "connect", connect)
+    report = await run_scan(ScanOptions(pin_check=True), servers=[config])
+    assert report.audits[0].drift_findings == []
+    assert report.coverage["pin_check"].state == ("complete" if pinned else "not_run")
+    assert evaluate_policy(report, PolicyConfig(fail_on_coverage=True)).passed is pinned
 
 
 def test_legacy_unknown_coverage_is_gateable() -> None:

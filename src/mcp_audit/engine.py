@@ -675,7 +675,12 @@ async def run_scan(
             skip_connect=opts.skip_connect,
             warnings=scan_warnings,
             baselines={
-                check: [bool(baseline(a.server.name)) for a in audits]
+                check: [
+                    a.server.name in pin_store.pinned_servers()
+                    if check == "pin_check"
+                    else bool(baseline(a.server.name))
+                    for a in audits
+                ]
                 for check, baseline in (
                     ("pin_check", pin_store.baseline_tools),
                     ("escalation_check", pin_store.baseline_tools),

@@ -25,6 +25,20 @@ OPTIONAL_CHECKS = (
     "runtime_security",
 )
 _CONFIG_CHECKS = {"provenance_check", "integrity_check", "verify_artifacts", "download_artifacts"}
+_AGENT_TEXT_CHECKS = {"permissions", "inject_check", "trifecta_check", "escalation_check"}
+
+
+def _warning_reasons(check: str, audit: ServerAudit, warnings: list[ScanWarning]) -> list[str]:
+    return [
+        warning.code
+        for warning in warnings
+        if (
+            warning.check == check
+            or (warning.code == "agent_text_incomplete" and check in _AGENT_TEXT_CHECKS)
+        )
+        and warning.code != "option_ignored"
+        and (not warning.servers or audit.server.name in warning.servers)
+    ]
 
 
 def missing_checks(coverage: dict[str, CheckCoverage]) -> list[str]:
@@ -82,6 +96,15 @@ def build_coverage(
         else metadata.model_copy()
     )
     coverage["capabilities"] = metadata.model_copy()
+    permission_entries = []
+    for index, audit in enumerate(audits):
+        entry = metadata_entries[index].model_copy()
+        reasons = _warning_reasons("permissions", audit, warnings)
+        if reasons and entry.state == "complete":
+            entry = CheckCoverage(state="partial", reason="; ".join(reasons))
+        permission_entries.append(entry)
+    if not skip_connect:
+        coverage["permissions"] = _aggregate(permission_entries)
 
     for check in OPTIONAL_CHECKS:
         if check not in requested:
@@ -121,15 +144,9 @@ def build_coverage(
                 finding.kind == ArtifactVerifyKind.UNVERIFIED for finding in audit.artifact_verify_findings
             ):
                 entry = CheckCoverage(state="partial", reason="artifact verification unavailable")
-            relevant = [
-                warning
-                for warning in warnings
-                if warning.check == check
-                and warning.code != "option_ignored"
-                and (not warning.servers or audit.server.name in warning.servers)
-            ]
-            if relevant and entry.state == "complete":
-                entry = CheckCoverage(state="partial", reason="; ".join(warning.code for warning in relevant))
+            reasons = _warning_reasons(check, audit, warnings)
+            if reasons and entry.state == "complete":
+                entry = CheckCoverage(state="partial", reason="; ".join(reasons))
             entries.append(entry)
         coverage[check] = _aggregate(entries)
     return coverage
