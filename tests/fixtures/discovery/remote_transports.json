@@ -1,0 +1,27 @@
+{
+  "mcpServers": {
+    "legacy-events": {
+      "type": "sse",
+      "url": "https://example.invalid/events",
+      "headers": {
+        "Authorization": "",
+        "X-Client-Tag": ""
+      }
+    },
+    "streamable-http": {
+      "type": "http",
+      "url": "https://example.invalid/mcp",
+      "headers": {
+        "Authorization": "",
+        "X-Client-Tag": ""
+      }
+    },
+    "local-stdio": {
+      "command": "python",
+      "args": ["-m", "example_server"],
+      "headers": {
+        "Ignored-For-Stdio": ""
+      }
+    }
+  }
+}
