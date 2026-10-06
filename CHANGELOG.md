@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Lead terminal reviews with a coverage-qualified Preview or finding-class grade,
+  visible totals and up to three manual action cards. `--details` retains the
+  legacy tables; `--color auto|always|never` and `NO_COLOR` control presentation.
+  Add `ux_summary.grade` and its reach-and-hygiene caveat to report JSON without
+  changing numeric risk scores or the schema version. Explicit-file finding and
+  scan-warning cards retain client-not-asserted attribution.
 - Probe two client identities by default for opt-in stdio canaries, with
   `--canary-identities 1` to disable and `2` to opt in on HTTP/SSE. Identity-conditioned
   surfaces produce HIGH `IDENTITY_CONDITIONED_SURFACE` findings without extra tool

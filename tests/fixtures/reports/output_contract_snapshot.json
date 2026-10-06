@@ -18,6 +18,7 @@
       "servers_failed",
       "shadowing_findings",
       "total_tools",
+      "ux_summary",
       "warnings"
     ],
     "audit_count": 1,
@@ -92,6 +93,7 @@
       "servers_failed",
       "shadowing_findings",
       "total_tools",
+      "ux_summary",
       "warnings"
     ],
     "audit_count": 1,
@@ -159,6 +161,7 @@
       "servers_failed",
       "shadowing_findings",
       "total_tools",
+      "ux_summary",
       "warnings"
     ],
     "audit_count": 1,
@@ -224,6 +227,7 @@
       "servers_failed",
       "shadowing_findings",
       "total_tools",
+      "ux_summary",
       "warnings"
     ],
     "audit_count": 1,
@@ -299,6 +303,7 @@
       "servers_failed",
       "shadowing_findings",
       "total_tools",
+      "ux_summary",
       "warnings"
     ],
     "audit_count": 1,
@@ -385,6 +390,7 @@
       "servers_failed",
       "shadowing_findings",
       "total_tools",
+      "ux_summary",
       "warnings"
     ],
     "audit_count": 1,
@@ -452,6 +458,7 @@
       "servers_failed",
       "shadowing_findings",
       "total_tools",
+      "ux_summary",
       "warnings"
     ],
     "audit_count": 1,
@@ -540,6 +547,7 @@
       "servers_failed",
       "shadowing_findings",
       "total_tools",
+      "ux_summary",
       "warnings"
     ],
     "audit_count": 2,
@@ -608,6 +616,7 @@
       "servers_failed",
       "shadowing_findings",
       "total_tools",
+      "ux_summary",
       "warnings"
     ],
     "audit_count": 1,
@@ -693,6 +702,7 @@
       "servers_failed",
       "shadowing_findings",
       "total_tools",
+      "ux_summary",
       "warnings"
     ],
     "audit_count": 1,
