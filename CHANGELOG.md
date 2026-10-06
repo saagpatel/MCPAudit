@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Report static phrase matches as experimental MEDIUM with pattern and field
   evidence, retain concrete secret targets for "Fix now" summaries, and flag
   high-entropy metadata runs at LOW without decoding them.
+  Withhold phrase excerpts after full-field credential redaction, preserve
+  instruction evidence in the MCP findings endpoint, restore override phrase
+  coverage, and align the synthetic sandbox with the MEDIUM heuristic tier.
 
 - Recognize VS Code server maps in explicit configs and parse both VS Code
   files as JSONC. Report malformed entries and duplicate keys, reject
