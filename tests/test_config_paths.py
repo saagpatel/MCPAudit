@@ -8,7 +8,7 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner
 
-from mcp_audit.api import scan_config_only
+from mcp_audit.api import parse_config, scan_config_only
 from mcp_audit.cli import main
 from mcp_audit.confighealth import config_health_findings
 from mcp_audit.discovery import ConfigDiscoverer, ConfigParseError
@@ -141,6 +141,41 @@ async def test_in_memory_scan_preserves_same_config_diagnostics(fixture: str) ->
     file = await run_scan(ScanOptions(skip_connect=True, config_only=True, extra_config=str(path)))
     assert memory.config_health_findings == file.config_health_findings
     assert memory.servers_discovered == file.servers_discovered
+    assert memory.coverage == file.coverage
+    assert memory.coverage["config_health"].state == "partial"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        '{"projects": {}}',
+        '{"projects": {"demo": {}}}',
+        '{"projects": {"demo": {"servers": {"missed": {"command": "echo"}}}}}',
+        '{"projects": {"demo": {"mcpServer": {"missed": {"command": "echo"}}}}}',
+        '{"projects": {"demo": {"mcp": {"servers": {"missed": {"command": "echo"}}}}}}',
+    ],
+)
+def test_projects_without_supported_server_maps_are_rejected(tmp_path: Path, text: str) -> None:
+    config = tmp_path / "unsupported-project.json"
+    config.write_text(text)
+    with pytest.raises(ValueError, match="unsupported client config format"):
+        _parse_extra_config(config)
+    for data in (text, json.loads(text)):
+        with pytest.raises(ValueError, match="unsupported client config format"):
+            parse_config(data, parse_errors=[])
+
+
+@pytest.mark.anyio
+async def test_explicit_empty_project_server_map_is_valid(tmp_path: Path) -> None:
+    config = tmp_path / "empty-project.json"
+    text = '{"projects": {"demo": {"mcpServers": {}}}}'
+    config.write_text(text)
+    memory = await scan_config_only(text, source=str(config))
+    file = await run_scan(ScanOptions(skip_connect=True, config_only=True, extra_config=str(config)))
+    assert memory.servers_discovered == file.servers_discovered == 0
+    assert memory.config_health_findings == file.config_health_findings == []
+    assert memory.coverage == file.coverage
+    assert memory.coverage["config_health"].state == "complete"
 
 
 @pytest.mark.parametrize("discoverer_cls", DISCOVERERS)

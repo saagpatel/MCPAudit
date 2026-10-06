@@ -38,7 +38,6 @@ def parse_mapping(
             found = True
             results.extend(parse_server_map(section["servers"], config_path, client, parse_errors))
     if "projects" in data:
-        found = True
         projects = data["projects"]
         if not isinstance(projects, dict):
             raise ConfigParseError(config_path, client, "projects map is not an object")
@@ -46,6 +45,7 @@ def parse_mapping(
             if not isinstance(project_data, dict):
                 raise ConfigParseError(config_path, client, "project entry is not an object")
             if "mcpServers" in project_data:
+                found = True
                 results.extend(
                     parse_server_map(
                         project_data["mcpServers"], config_path, client, parse_errors, str(project_path)

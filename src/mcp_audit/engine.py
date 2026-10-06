@@ -101,6 +101,7 @@ async def run_scan(
     options: ScanOptions | None = None,
     *,
     servers: list[ServerConfig] | None = None,
+    parse_errors: list[ConfigParseError] | None = None,
     override_applier: OverrideApplier | None = None,
     console: Console | None = None,
 ) -> AuditReport:
@@ -109,6 +110,8 @@ async def run_scan(
     When ``servers`` is provided (a pre-parsed list, e.g. from the in-memory
     ``mcp_audit.api`` entrypoint), discovery is skipped entirely and that list
     is scanned as-is — no filesystem access for config discovery.
+    ``parse_errors`` carries diagnostics from pre-parsed configs into findings
+    and coverage; the caller's list is not modified.
 
     ``override_applier`` defaults to a no-op applier; the CLI and MCP server
     pass one loaded from the user's override file. ``console`` defaults to a
@@ -138,7 +141,7 @@ async def run_scan(
     start = time.monotonic()
 
     # 1. Discover servers (unless the caller supplied a pre-parsed list).
-    parse_errors: list[ConfigParseError] = []
+    parse_errors = list(parse_errors) if parse_errors is not None else []
     if servers is None:
         servers = [] if opts.config_only else discover_all_configs(opts.clients, parse_errors)
 

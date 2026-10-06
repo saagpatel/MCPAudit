@@ -583,12 +583,16 @@ HIGH `malformed_server_entry` for rejected individual entries (with
 keys repeat at any depth. Duplicate-key details give the count and explain
 that the last values are retained; earlier definitions were not audited.
 Valid sibling entries remain in the scan when individual entries are malformed.
+In-memory config-only scans retain the same parsing diagnostics and coverage as
+file-based scans, including partial coverage for malformed entries and duplicate keys.
 Diagnostics never include entry values or parser source excerpts.
 Explicit `--config` files with no supported server map, empty text, invalid
 encoding, or other read/parse failures are hard errors. Supported layouts are
 `mcpServers`, `servers`, `mcp.servers`, and `projects.*.mcpServers`.
 An empty supported map is a valid zero-server scan. These diagnostics use the
 existing finding fields; `schema_version` is unchanged.
+The presence of `projects` alone is insufficient: at least one project must
+contain `mcpServers` when no other supported server map exists.
 Policies may opt in to failing on this signal with `fail_on.config_health`; the
 default broad `fail_on.severity` shortcut does not include config-health
 findings, so existing policy files keep their previous behavior.

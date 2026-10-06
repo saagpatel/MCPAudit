@@ -80,17 +80,15 @@ async def scan_config_only(
     declared configuration only. No server process is launched and no network
     request is made.
     """
-    from mcp_audit.confighealth import config_health_findings
     from mcp_audit.engine import ScanOptions, run_scan
 
     parse_errors: list[ConfigParseError] = []
     servers = parse_config(config, source=source, parse_errors=parse_errors)
-    report = await run_scan(
+    return await run_scan(
         ScanOptions(skip_connect=True, config_only=True),
         servers=servers,
+        parse_errors=parse_errors,
     )
-    report.config_health_findings[0:0] = config_health_findings([], parse_errors)
-    return report
 
 
 def scan_config_only_dict(
