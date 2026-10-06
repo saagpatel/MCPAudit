@@ -55,7 +55,7 @@ def test_config_only_metadata_and_unrequested_runtime_are_explicit() -> None:
     assert "Inject Check" not in output
     assert "Metadata checks not run: connections disabled" in html
     assert "Runtime security: NOT CHECKED (canary disabled)" in html
-    assert "Inject Check" not in html
+    assert "Hidden instructions: NOT REQUESTED" in html
 
 
 def test_partial_runtime_coverage_has_incomplete_banner_and_escapes_reason() -> None:
