@@ -271,10 +271,11 @@ def test_warnings_reduce_coverage_without_turning_empty_findings_into_a_pass(
         ScanWarning(code="permission_schema_incomplete", message="Schema not fully inspected.")
     ]
     output = _render(report, width, explicit_config=explicit_config)
-    assert "Restore check coverage" in output and "1 scan warnings" in output
-    assert "Looks fine" not in output
+    flat = " ".join(output.split())
+    assert "Restore check coverage" in flat and "1 scan warnings" in flat
+    assert "Looks fine" not in flat
     identity = "client not asserted" if explicit_config else "claude_code"
-    assert f"synthetic-server / {identity} (workstation)" in " ".join(output.split())
+    assert f"synthetic-server / {identity} (workstation)" in flat
     if explicit_config:
         assert "claude_code" not in output
 
