@@ -42,7 +42,7 @@ The current lane selections are:
 
 | Lane | Command | Current expected result | Prerequisite and claim boundary |
 | --- | --- | --- | --- |
-| Portable behavior | `uv run pytest -p no:cacheprovider -q -m 'not skipif' --ignore=tests/test_repo_hygiene.py tests/` | 1,731 selected; 0 skipped on hosts with a nonzero `os.O_NONBLOCK` | Python 3.11–3.13, Git, a writable test root, and a nonzero `os.O_NONBLOCK` are required for the zero-skip result. Marker-declared host, service, and platform prerequisites are excluded; unmarked Git-dependent tests and two runtime capability guards remain selected. If `os.O_NONBLOCK` is missing, those two guards skip at runtime; a zero-valued constant is unsupported and has no zero-skip claim. |
+| Portable behavior | `uv run pytest -p no:cacheprovider -q -m 'not skipif and not perf' --ignore=tests/test_repo_hygiene.py tests/` | 1,731 selected; 0 skipped on hosts with a nonzero `os.O_NONBLOCK` | Python 3.11–3.13, Git, a writable test root, and a nonzero `os.O_NONBLOCK` are required for the zero-skip result. Marker-declared host, service, and platform prerequisites are excluded; unmarked Git-dependent tests and two runtime capability guards remain selected. If `os.O_NONBLOCK` is missing, those two guards skip at runtime; a zero-valued constant is unsupported and has no zero-skip claim. |
 | Proof Before Action pre-runtime rejection | `uv run pytest -p no:cacheprovider -q tests/test_proof_before_action.py::test_sensitive_repository_input_is_blocked_before_execution tests/test_proof_before_action.py::test_literal_config_secret_and_sensitive_argv_are_redacted_or_blocked` | 5 passed; 0 skipped | Does not need Docker. It proves only that sensitive inputs are rejected before runtime inspection. |
 | Proof Before Action Docker execution | `uv run pytest -p no:cacheprovider -q -m skipif tests/test_proof_before_action.py tests/test_proof_attempt_evidence.py` | 24 passed when ready | Requires a reachable Docker daemon and the exact local `node:24-slim` image. Twenty-four skips mean the optional prerequisite is unavailable, not verified. Do not pull the image merely to turn a local result green. |
 | ProofOS PostgreSQL | `uv run pytest -p no:cacheprovider -q -m skipif tests/test_proofos_postgres.py` | 6 passed when ready | Requires PostgreSQL 16 server binaries and a writable socket-capable temporary root. Six skips mean the optional prerequisite is unavailable. The tests manage only disposable local processes; they do not prove production database safety. |
@@ -113,6 +113,19 @@ To run a specific test file:
 ```bash
 uv run pytest tests/test_scorer.py -v
 ```
+
+The `perf` marker is excluded from ordinary runs and selected explicitly by the
+nightly/on-demand hostile-server workflow. Run it without other CPU-heavy checks:
+
+```bash
+uv run pytest tests/test_hostile_perf.py -m perf -q -s -p no:cacheprovider \
+  --perf-profile=baseline --perf-output=build/perf
+```
+
+Use a fresh output directory. See the
+[hostile-server threat model](docs/HOSTILE-SERVER-THREAT-MODEL.md) for baseline
+limits, retained measurements, fixture isolation, and cumulative target profiles.
+Other explicit marker selections that should exclude this lane need `and not perf`.
 
 The named-server stdio smoke uses temporary home and working directories,
 synthetic configuration files, and harmless local server fixtures. It checks
