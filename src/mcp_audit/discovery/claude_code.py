@@ -7,8 +7,10 @@ from typing import Any
 
 from mcp_audit.discovery.base import ConfigDiscoverer, ConfigParseError
 from mcp_audit.models import ClientType, ServerConfig, TransportType
+from mcp_audit.terminal_text import TerminalSafeLogFilter
 
 logger = logging.getLogger(__name__)
+logger.addFilter(TerminalSafeLogFilter())
 
 
 def _parse_server_entry(

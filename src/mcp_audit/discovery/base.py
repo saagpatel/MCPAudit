@@ -5,8 +5,10 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 
 from mcp_audit.models import ClientType, ServerConfig
+from mcp_audit.terminal_text import TerminalSafeLogFilter
 
 logger = logging.getLogger(__name__)
+logger.addFilter(TerminalSafeLogFilter())
 
 
 class ConfigParseError(Exception):

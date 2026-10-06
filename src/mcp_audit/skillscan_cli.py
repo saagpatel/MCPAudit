@@ -9,9 +9,11 @@ from pathlib import Path
 import click
 from rich.console import Console
 from rich.table import Table
+from rich.text import Text
 
 from mcp_audit.skillscan import SkillscanInputError, scan_path
 from mcp_audit.skillscan_models import SkillscanReport, report_json_bytes
+from mcp_audit.terminal_text import strip_controls, terminal_safe
 
 console = Console()
 
@@ -56,13 +58,17 @@ def _write_report(path: Path, payload: bytes) -> None:
 
 
 def _render_report(report: SkillscanReport) -> None:
-    table = Table(title=f"Skillscan — {report.subject.name}")
+    table = Table(title=terminal_safe(f"Skillscan — {report.subject.name}"))
     table.add_column("Check", style="cyan")
     table.add_column("Result")
     table.add_column("Findings", justify="right")
     for check in report.checks:
         style = {"pass": "green", "fail": "red", "error": "yellow"}[check.result]
-        table.add_row(check.id, f"[{style}]{check.result}[/{style}]", str(check.findings))
+        table.add_row(
+            terminal_safe(check.id),
+            Text(strip_controls(check.result), style=style),
+            terminal_safe(str(check.findings)),
+        )
     console.print(table)
 
 

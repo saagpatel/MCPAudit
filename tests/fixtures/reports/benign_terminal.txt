@@ -1,0 +1,40 @@
+╭───────────────────────────────── mcp-audit scan ─────────────────────────────────╮
+│ Scanned 1 servers across 1 clients. 1 high-risk. Connection mode unknown. (0.1s) │
+╰──────────────────────────────────────────────────────────────────────────────────╯
+┏━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┓
+┃ Server         ┃ Client      ┃ Tools ┃ Prompts ┃ Resources ┃ Risk ┃ Non-Tool ┃ Top Permissions       ┃ Status    ┃
+┡━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━┩
+│ fixture-server │ claude_code │     0 │       0 │         0 │  8.5 │      n/a │ shell_execution(high) │ connected │
+└────────────────┴─────────────┴───────┴─────────┴───────────┴──────┴──────────┴───────────────────────┴───────────┘
+
+────────────────────────────────────────────── Prompt Injection Warnings ───────────────────────────────────────────────
+┏━━━━━━━━━━━━━━━━┳━━━━━━┳━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Server         ┃ Type ┃ Target ┃ Severity ┃ Pattern             ┃ Description ┃ Suggested Action                     ┃
+┡━━━━━━━━━━━━━━━━╇━━━━━━╇━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ fixture-server │ tool │ run    │ high     │ ignore_instructions │ injection   │ Do not pipe this output into an AI   │
+│                │      │        │          │                     │             │ assistant as trusted text; review or │
+│                │      │        │          │                     │             │ disable the server.                  │
+└────────────────┴──────┴────────┴──────────┴─────────────────────┴─────────────┴──────────────────────────────────────┘
+
+─────────────────────────────────────── Capability Escalation (vs pin baseline) ────────────────────────────────────────
+┏━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Rule ID ┃ Server         ┃ Tool ┃ Kind       ┃ Severity ┃ Gained             ┃ Suggested Action                      ┃
+┡━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ MCP018  │ fixture-server │ run  │ capability │ high     │ shell_execution    │ Do NOT refresh the pin until you have │
+│         │                │      │            │          │                    │ reviewed why this tool's capability   │
+│         │                │      │            │          │                    │ surface grew. Inspect the changed     │
+│         │                │      │            │          │                    │ tool metadata, confirm the new        │
+│         │                │      │            │          │                    │ capability is intended and from a     │
+│         │                │      │            │          │                    │ trusted source, and only then run     │
+│         │                │      │            │          │                    │ `mcp-audit pin --refresh <server>`.   │
+│         │                │      │            │          │                    │ If the change is unexpected, disable  │
+│         │                │      │            │          │                    │ the server and report it to the       │
+│         │                │      │            │          │                    │ author.                               │
+└─────────┴────────────────┴──────┴────────────┴──────────┴────────────────────┴───────────────────────────────────────┘
+
+────────────────────────────────────────────────── Policy Gate Failed ──────────────────────────────────────────────────
+┏━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┓
+┃ Rule               ┃ Server      ┃ Tool ┃ Severity ┃ Message            ┃
+┡━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━┩
+│ fail_on.escalation │ evil-server │ run  │ high     │ escalation finding │
+└────────────────────┴─────────────┴──────┴──────────┴────────────────────┘
