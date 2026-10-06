@@ -31,6 +31,17 @@ class FindingMetadata:
     remediation: str
 
 
+ANNOTATION_CONTRADICTION = FindingMetadata(
+    rule_id="MCP043",
+    title="Annotation contradiction",
+    severity="medium",
+    description="An explicit served annotation contradicts keyword capability evidence at MEDIUM or better.",
+    remediation=(
+        "Review the tool metadata and implementation; correct the hint before trusting its declaration."
+    ),
+)
+
+
 PERMISSION_FINDINGS: dict[PermissionCategory, FindingMetadata] = {
     PermissionCategory.FILE_READ: FindingMetadata(
         rule_id="MCP001",

@@ -215,6 +215,22 @@ def evaluate_policy(
         )
         if permission_threshold is not None:
             threshold = _SEVERITY_RANK[permission_threshold]
+            for annotation_finding in audit.annotation_findings:
+                if _SEVERITY_RANK[annotation_finding.severity] >= threshold:
+                    violations.append(
+                        PolicyViolation(
+                            rule=_threshold_rule(
+                                "permissions", policy.fail_on_severity, permission_threshold
+                            ),
+                            server_name=server_name,
+                            tool_name=annotation_finding.tool_name,
+                            severity=annotation_finding.severity,
+                            message=(
+                                f"{annotation_finding.rule_id} annotation_contradiction finding is "
+                                f"{annotation_finding.severity} severity."
+                            ),
+                        )
+                    )
             for permission_finding in audit.permissions:
                 if _SEVERITY_RANK[permission_finding.severity] >= threshold:
                     violations.append(

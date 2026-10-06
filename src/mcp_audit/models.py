@@ -280,6 +280,41 @@ class CapabilityTarget(StrEnum):
     RESOURCE = "resource"
 
 
+class AnnotationFinding(BaseModel):
+    """An explicit served annotation contradicts keyword capability evidence."""
+
+    kind: Literal["annotation_contradiction"] = "annotation_contradiction"
+    tool_name: str
+    hint: str
+    declared_value: bool
+    category: PermissionCategory
+    confidence: Confidence
+    severity: Literal["medium", "high"]
+    evidence: list[str]
+    field_paths: list[str] = Field(default_factory=list)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def rule_id(self) -> str:
+        from mcp_audit.taxonomy import ANNOTATION_CONTRADICTION
+
+        return ANNOTATION_CONTRADICTION.rule_id
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def title(self) -> str:
+        from mcp_audit.taxonomy import ANNOTATION_CONTRADICTION
+
+        return ANNOTATION_CONTRADICTION.title
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def remediation(self) -> str:
+        from mcp_audit.taxonomy import ANNOTATION_CONTRADICTION
+
+        return ANNOTATION_CONTRADICTION.remediation
+
+
 class PermissionFinding(BaseModel):
     """A single permission inference for a tool."""
 
@@ -972,6 +1007,7 @@ class ServerAudit(BaseModel):
     prompts: list[PromptInfo] = Field(default_factory=list)
     resources: list[ResourceInfo] = Field(default_factory=list)
     permissions: list[PermissionFinding] = Field(default_factory=list)
+    annotation_findings: list[AnnotationFinding] = Field(default_factory=list)
     capability_findings: list[CapabilityFinding] = Field(default_factory=list)
     risk_score: RiskScore | None = None
     non_tool_risk: NonToolRisk | None = None

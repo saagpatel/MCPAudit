@@ -243,6 +243,13 @@ uv tool install 'mcp-audits[watch]'
 pip install mcp-audits
 ```
 
+Served tool annotations are evidence for review. They do not suppress keyword
+capability findings. Explicit hints that contradict MEDIUM-or-better keyword
+evidence produce MCP043 `annotation_contradiction` findings in JSON and SARIF,
+and participate in permission severity policy gates. Destructive contradictions
+are HIGH; others are MEDIUM. See [the output contract](docs/OUTPUT-CONTRACT.md#annotation-contradictions)
+and [scoring migration](docs/SCORING-MIGRATION.md).
+
 ### Usage
 ```bash
 mcp-audit --version
