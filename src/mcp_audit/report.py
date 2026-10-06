@@ -1,4 +1,4 @@
-"""Report generators — Rich terminal table and JSON file output."""
+"""Report generators — Rich terminal summaries, detail tables and JSON files."""
 
 from __future__ import annotations
 
@@ -51,9 +51,28 @@ class ReportGenerator:
     def __init__(self, console: Console | None = None) -> None:
         self._console = console or _default_console()
 
-    def render_terminal(self, report: AuditReport, verbose: bool = False) -> None:
-        """Print the full audit report to the console."""
+    def render_terminal(
+        self,
+        report: AuditReport,
+        verbose: bool = False,
+        *,
+        details: bool | None = None,
+        explicit_config: bool = False,
+    ) -> None:
+        """Select summary/details explicitly, preserving legacy library callers."""
         report = report.redacted()
+        from mcp_audit.terminal_summary import render_summary
+
+        if details is not None:
+            render_summary(self._console, report, explicit_config=explicit_config)
+            if not details and not verbose:
+                return
+            self._console.print("Capability exposure (legacy 0–10 scores)")
+            for finding in report.config_health_findings:
+                self._console.print(terminal_safe(f"{finding.severity.value}: {finding.summary}"))
+                for path in finding.config_paths:
+                    self._console.print(terminal_safe(f"Source: {path}"))
+                self._console.print(terminal_safe(f"Manual step: {finding.remediation}"))
         n_clients = len({a.server.client for a in report.audits})
         server_label = "server" if report.servers_discovered == 1 else "servers"
         client_label = "client" if n_clients == 1 else "clients"
@@ -145,8 +164,19 @@ class ReportGenerator:
                     terminal_safe("Not ruled out: " + ", ".join(canary.not_excluded_descriptions) + ".")
                 )
 
-        if verbose:
+        if verbose or details:
             self._render_verbose(report)
+        for audit in report.audits:
+            for annotation in audit.annotation_findings:
+                self._console.print(
+                    terminal_safe(
+                        f"{annotation.severity}: {audit.server.name}/{annotation.tool_name} "
+                        f"{annotation.rule_id} — {annotation.hint} contradicts capability evidence."
+                    )
+                )
+                self._console.print(terminal_safe(f"Source: {audit.server.config_path}"))
+                self._console.print(terminal_safe("Evidence: " + "; ".join(annotation.evidence)))
+                self._console.print(terminal_safe(f"Manual step: {annotation.remediation}"))
 
         self._render_injection_warnings(report)
         self._render_ssrf_warnings(report)
@@ -737,14 +767,16 @@ class ReportGenerator:
                 best[cat] = conf
         return terminal_safe(", ".join(f"{cat}({conf})" for cat, conf in best.items()))
 
-    def capture_terminal(self, report: AuditReport, verbose: bool = False) -> str:
+    def capture_terminal(
+        self, report: AuditReport, verbose: bool = False, *, details: bool | None = None
+    ) -> str:
         """Render to string (useful for testing)."""
         buf = io.StringIO()
         cap_console = Console(file=buf, force_terminal=True, width=120, highlight=False)
         orig = self._console
         self._console = cap_console
         try:
-            self.render_terminal(report, verbose=verbose)
+            self.render_terminal(report, verbose=verbose, details=details)
         finally:
             self._console = orig
         return buf.getvalue()

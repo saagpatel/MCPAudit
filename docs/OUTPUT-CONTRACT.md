@@ -47,7 +47,8 @@ Human-facing terminal text displays untrusted Rich markup literally and removes
 ESC-led sequences and C0/C1 controls, except tabs and newlines. HTML text removes
 the same controls before HTML escaping. Stdio server stderr is captured in a
 bounded 4 KiB tail; debug logging emits the sanitized, redacted tail once after
-the session ends. JSON and SARIF data, fields, and schema versions are unchanged.
+the session ends. Text sanitation does not change JSON/SARIF field meanings or
+schema versions; additive presentation metadata is described below.
 
 For stable `2.x`, compatible minor and patch releases may add optional JSON
 fields. Consumers should ignore unknown fields and should not fail when optional
@@ -56,11 +57,78 @@ with a release-note deprecation window and a breaking-version boundary.
 
 ## Safe review entry points
 
+### Terminal summary and presentation grade
+
+Terminal `check` and `scan` output starts with a summary; `--details` retains
+the legacy tables and complete findings. `--verbose` on `scan` also retains
+the tables and tool breakdown. The summary shows recorded coverage, all finding
+and warning totals, at most three numbered manual action cards, and execution
+disclosure. Cards include server/client attribution, recorded source paths,
+plain-English titles, observations, consequences, manual steps, confidence limits
+and recheck commands from the shared finding reference. Config findings use static
+`check --config`; observed metadata uses bounded connected scans, and optional
+detectors use the corresponding `scan` flags. Connected multi-check rechecks
+require a manually prepared config containing only the listed reviewed entries;
+the renderer does not start them or create that file. Unrecorded allowlists,
+policy files, and canary safe-tool choices must be supplied again by the user.
+An explicit-file summary labels its source "explicit file; parsed as Claude-style
+config" and does not assert that its parser format identifies the client that
+uses it. Paths are shown as recorded; JSON Pointers are not invented.
+Coverage warnings take priority, then severity; the shell-wrapper action leads
+within its severity. Related findings on one identity/source are grouped with
+the highest severity, a manual launch/access action, and their remaining count.
+No finding array, including an empty array, establishes that a check ran.
+Existing library calls that omit the new `details` keyword retain the legacy
+table presentation; CLI entry points select the summary explicitly.
+
+`ux_summary` is additive serialized presentation metadata:
+
+```json
+{"grade": null, "caveat": "reach and hygiene, not a safety certificate"}
+```
+
+`grade` is `A`, `B`, `C`, `D`, `F`, or `null`. Config-only, empty, unknown,
+unrecorded or incomplete requested coverage renders **Preview** and `null`.
+For connected reports with complete recorded coverage, the rubric uses finding
+classes, never `risk_score`: a recorded shell-wrapper launch or hidden/obfuscated
+instruction-text finding is F; two or more high findings, or a toxic-flow finding
+plus shell capability, is D; one high finding is C; medium-only findings are B;
+low-only or no findings are A. The current model records credential **key names**,
+not literal config secrets: credential-heavy configs are review findings, not
+proof of a secret in config. No new secret detector is added by this renderer.
+The caveat is always on a nonempty summary. Existing `risk_score`,
+`high_risk_servers`, all finding arrays and `schema_version: 1` retain their
+meanings. Numeric capability exposure remains in details.
+
+`--color auto` follows terminal detection; `always` forces ANSI and `never`
+disables it. Presence of `NO_COLOR` disables ANSI even with `always`.
+Shapes and words carry severity without color, including non-TTY output.
+Goldens in `tests/fixtures/terminal/` cover 60, 80 and 120 columns using only
+the synthetic sandbox fixture. Manual suggestions never edit files, invent a
+package version, or promise an arbitrary shell expression has an equivalent
+direct launch.
+
+The strings below were reviewed against the approved UX grok section 4 tone
+rules: plain consequence, an immediate manual step, calm limited all-clear,
+and no jokes on D/F (the renderer uses no jokes on any grade).
+
+| String | Purpose and tone |
+| --- | --- |
+| `Preview` | Static or insufficient coverage does not earn a letter. |
+| `▲ Fix now` / `◆ Worth a look` / `● FYI` | Severity remains readable without color. |
+| `✓ Looks fine in the checks completed; no findings need attention.` | All-clear limited to recorded completed checks. |
+| `No findings were reported in the available evidence; checks remain limited.` | Empty findings do not imply completed checks. |
+| `Your server configuration needs review before you connect.` | Shared config-health title; no incident claim. |
+| `If a direct executable and argument list can express the intended launch` | Qualified manual shell-wrapper review; no equivalence promise. |
+| `reach and hygiene, not a safety certificate` | Grade scope stays on the result. |
+
+
 `check --json` (and bare `mcp-audit --json`) emits only the existing redacted
 `AuditReport` JSON on stdout. Diagnostics and artifact notices use stderr in
 this mode. `check --output-json FILE` writes the same document; `--sarif FILE`
-and `--html FILE` use the existing generators. No report field or
-`schema_version` changes for these entry points. Legacy `scan --json PATH`
+and `--html FILE` use the existing generators. These entry points share the
+same report model and `schema_version`, including additive `ux_summary`.
+Legacy `scan --json PATH`
 continues to write a file and retains its existing output behavior.
 
 Bare invocation runs the static `check` path. `--config FILE` excludes discovery

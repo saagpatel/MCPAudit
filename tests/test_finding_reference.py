@@ -150,7 +150,22 @@ async def test_cli_finding_five_before_and_after() -> None:
         lambda: CliRunner().invoke(main, ["check", "--config", str(SYNTHETIC)])
     )
     assert cli.exit_code == 0, cli.output
-    assert "Manual step:" in cli.output and "see:" in cli.output
+    normalized = " ".join(cli.output.split())
+    copy = taxonomy.finding_copy(view.rule_id)
+    assert normalized.startswith("MCPAudit · Preview")
+    assert "CONFIG REVIEW ONLY |" not in normalized
+    for required in (
+        copy.title,
+        copy.how_to_fix,
+        copy.how_sure,
+        finding.summary,
+        SOURCE_LABEL,
+        "Manual step:",
+        "direct executable and argument list",
+        "restart the client",
+        "see:",
+    ):
+        assert required in normalized
 
 
 @pytest.mark.anyio

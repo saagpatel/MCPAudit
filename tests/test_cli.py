@@ -353,7 +353,7 @@ def test_scan_reports_duplicate_server_names(monkeypatch: pytest.MonkeyPatch) ->
     result = CliRunner().invoke(cli.main, ["scan", "--skip-connect"])
 
     assert result.exit_code == 0
-    assert "Config health warnings found" in result.output
+    assert "config warnings" in result.output
     assert "'srv' appears 2 times" in result.output
 
 

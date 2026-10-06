@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import logging
 import warnings
@@ -96,19 +97,20 @@ def _help_all(ctx: click.Context, param: click.Parameter, value: bool) -> None:
 )
 @click.option("--details", is_flag=True, help="Show details for the bare static review.")
 @click.option("--json", "json_stdout", is_flag=True, help="Emit JSON for the bare static review.")
+@click.option("--color", type=click.Choice(["auto", "always", "never"]), default="auto", show_default=True)
 @click.version_option(package_name="mcp-audits", prog_name="mcp-audit")
 @click.pass_context
-def main(ctx: click.Context, debug: bool, details: bool, json_stdout: bool) -> None:
+def main(ctx: click.Context, debug: bool, details: bool, json_stdout: bool, color: str) -> None:
     """Review MCP configs without execution or connections when no command is given."""
     if debug:
         logging.basicConfig(level=logging.DEBUG)
         for handler in logging.getLogger().handlers:
             handler.addFilter(TerminalSafeLogFilter())
     if ctx.invoked_subcommand is None:
-        ctx.invoke(check, details=details, json_stdout=json_stdout)
-    elif details or json_stdout:
+        ctx.invoke(check, details=details, json_stdout=json_stdout, color=color)
+    elif details or json_stdout or color != "auto":
         raise click.UsageError(
-            "Top-level --details/--json require no command; place options after the command."
+            "Top-level --details/--json/--color require no command; place options after the command."
         )
 
 
@@ -418,6 +420,8 @@ def discover(client_filter: str | None, verbose: bool) -> None:
     help="Maximum simultaneous server sessions.",
 )
 @click.option("--verbose", is_flag=True, default=False, help="Show per-tool permission details.")
+@click.option("--details", is_flag=True, help="Show the legacy tables and all findings.")
+@click.option("--color", type=click.Choice(["auto", "always", "never"]), default="auto", show_default=True)
 @click.option(
     "--config",
     "extra_config",
@@ -543,6 +547,8 @@ def scan(
     timeout: int,
     max_concurrency: int,
     verbose: bool,
+    details: bool,
+    color: str,
     extra_config: str | None,
     config_only: bool,
     override_config_path: str | None,
@@ -573,7 +579,7 @@ def scan(
         raise click.ClickException("--config-only requires --config PATH.")
 
     anyio.run(
-        partial(_run_scan, canary_identities=canary_identities),
+        partial(_run_scan, canary_identities=canary_identities, details=details, color=color),
         json_output,
         sarif_output,
         html_output,
@@ -713,8 +719,14 @@ async def _run_scan(
     max_concurrency: int = 32,
     connect_project_configs: bool = False,
     canary_identities: int | None = None,
+    details: bool = False,
+    color: str = "auto",
 ) -> None:
     """CLI scan entrypoint — calls the engine's run_scan then renders output."""
+    from mcp_audit.terminal_summary import summary_console
+
+    out = summary_console(color=color)
+    diagnostics = io.StringIO()
     if config_only and not extra_config:
         raise click.ClickException("--config-only requires --config PATH.")
     if canary_check and (skip_connect or not config_only or not extra_config):
@@ -782,7 +794,7 @@ async def _run_scan(
         report = await run_scan(
             scan_options,
             override_applier=override_applier,
-            console=console,
+            console=Console(file=diagnostics, force_terminal=False),
             config_paths=config_paths if json_output or sarif_output or html_output else None,
         )
     except ValueError as exc:
@@ -804,27 +816,10 @@ async def _run_scan(
 
         report.policy_result = evaluate_policy(report, policy)
 
-    gen = ReportGenerator(console=console)
-
-    # Render config-health warnings from the report itself so parse failures
-    # surface even when they left nothing to audit.
-    _render_config_health_findings(report.redacted().config_health_findings)
-
-    if report.audits:
-        gen.render_terminal(report, verbose=verbose)
-    else:
-        # No servers discovered. Fall through so any requested report files are
-        # still written — CI consumers (e.g. SARIF upload) always need an
-        # artifact to ingest, even when the scan is empty.
-        console.print(
-            "[yellow]No MCP servers found. See config diagnostics above for incomplete coverage.[/yellow]"
-            if report.config_health_findings
-            else (
-                "[yellow]No MCP servers found. Configured server maps are empty.[/yellow]"
-                if config_only
-                else "[yellow]No MCP servers found. Configs are absent or server maps are empty.[/yellow]"
-            )
-        )
+    gen = ReportGenerator(console=out)
+    gen.render_terminal(report, verbose=verbose, details=details, explicit_config=config_only)
+    if diagnostics.getvalue():
+        out.print(terminal_safe(diagnostics.getvalue().rstrip()))
 
     # Field-report mode scrubs host/username identifiers from shared artifacts.
     # Terminal output keeps real values for local readability.
@@ -854,7 +849,7 @@ async def _run_scan(
         written_artifacts.append(html_path.name)
 
     if written_artifacts:
-        console.print(terminal_safe(f"Wrote {' · '.join(written_artifacts)}"))
+        out.print(terminal_safe(f"Wrote {' · '.join(written_artifacts)}"))
 
     if report.policy_result is not None and not report.policy_result.passed:
         raise SystemExit(2)
