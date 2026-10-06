@@ -7,6 +7,16 @@ import pytest
 from mcp_audit.models import ClientType, ServerConfig, ToolAnnotations, ToolInfo, TransportType
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--perf-profile",
+        choices=("baseline", "p1-9", "p3-7", "p3-8"),
+        default="baseline",
+        help="Cumulative performance targets; promote the default as the planned fixes land.",
+    )
+    parser.addoption("--perf-output", type=Path, help="Directory for synthetic performance measurements.")
+
+
 @pytest.fixture
 def anyio_backend() -> str:
     """Use asyncio backend for all async tests."""
