@@ -375,7 +375,7 @@ async def test_exact_listing_page_limit(pages: int) -> None:
     config = make_server_config(command=sys.executable, args=[SURFACES_FIXTURE, f"pages_{pages}"])
     report = await run_scan(ScanOptions(canary_check=True, canary_calls=1, timeout=15), servers=[config])
     audit = report.audits[0]
-    assert audit.connection_status == "connected"
+    assert audit.connection_status == ("connected" if pages == 20 else "partial")
     assert audit.canary is not None
     if pages == 20:
         assert audit.canary.status == "complete" and audit.canary.completed_calls == 1
@@ -438,7 +438,7 @@ async def test_surface_boundaries_dynamic_content_and_pagination(mode: str) -> N
     config = make_server_config(command=sys.executable, args=[SURFACES_FIXTURE, mode])
     audit = await ServerConnector(timeout=15).connect(config, canary_calls=5)
     assert audit.canary is not None and audit.canary.completed_calls == 5
-    assert audit.connection_status == "connected"
+    assert audit.connection_status == ("partial" if mode == "page_limit" else "connected")
     assert audit.canary.status == ("partial" if mode in {"page_limit", "initial_get_failure"} else "complete")
     if mode == "roles":
         assert len(audit.drift_findings) == 1
@@ -512,7 +512,8 @@ async def test_unadvertised_surface_listing_coverage(surface: str, mode: str) ->
         ScanOptions(canary_check=True, canary_calls=2, inject_check=True, timeout=15), servers=[config]
     )
     audit = report.audits[0]
-    assert audit.connection_status == "connected" and audit.connection_error is None
+    assert audit.connection_status == ("connected" if mode == "unsupported" else "partial")
+    assert audit.connection_error is None
     assert audit.canary is not None and audit.canary.completed_calls == 2
     incomplete = mode != "unsupported"
     assert audit.canary.status == ("partial" if incomplete else "complete")
@@ -544,7 +545,7 @@ async def test_unadvertised_surface_listing_coverage(surface: str, mode: str) ->
 async def test_failed_tools_relisting_retains_static_inventory_without_stale_calls() -> None:
     config = make_server_config(command=sys.executable, args=[SURFACES_FIXTURE, "listing_failure", "tools"])
     audit = await ServerConnector(timeout=15).connect(config, canary_calls=2)
-    assert audit.connection_status == "connected"
+    assert audit.connection_status == "partial"
     assert [tool.name for tool in audit.tools] == ["status0"]
     assert audit.canary is not None and audit.canary.status == "partial"
     assert audit.canary.completed_calls == 1
@@ -615,7 +616,7 @@ async def test_canary_grouped_failures_withhold_server_text(
     monkeypatch.setattr(Client, method, fail)
     config = make_server_config(command=sys.executable, args=[SURFACES_FIXTURE, "dynamic"])
     audit = await ServerConnector(timeout=15).connect(config, canary_calls=1)
-    assert audit.connection_status == "connected"
+    assert audit.connection_status == ("connected" if method == "get_prompt" else "partial")
     assert audit.canary is not None
     label = {"list_tools": "Tool", "list_prompts": "Prompt", "list_resources": "Resource"}.get(method)
     message = f"{label} surface incomplete" if label else "prompts/get incomplete"
@@ -632,7 +633,7 @@ async def test_non_canary_unadvertised_page_limit_is_a_scan_warning(surface: str
     console = Console(record=True, width=200)
     report = await run_scan(ScanOptions(timeout=15), servers=[config], console=console)
     audit = report.audits[0]
-    assert audit.connection_status == "connected" and audit.connection_error is None
+    assert audit.connection_status == "partial" and audit.connection_error is None
     assert audit.canary is None and not getattr(audit, surface)
     assert len(report.warnings) == 1
     warning = report.warnings[0]
@@ -654,7 +655,7 @@ async def test_tool_page_limit_has_plain_canary_warning() -> None:
         command=sys.executable, args=[SURFACES_FIXTURE, "unadvertised_page_limit", "tools"]
     )
     audit = await ServerConnector(timeout=15).connect(config, canary_calls=2)
-    assert audit.connection_status == "connected"
+    assert audit.connection_status == "partial"
     assert audit.canary is not None and audit.canary.status == "no_safe_tools"
     assert audit.canary.completed_calls == 0
     assert not audit.tools

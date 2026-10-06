@@ -1,6 +1,8 @@
 ╭─────────────────────────────────── mcp-audit scan ────────────────────────────────────╮
 │ Scanned 1 server across 1 client. 1 high-risk server. Connection mode unknown. (0.1s) │
 ╰───────────────────────────────────────────────────────────────────────────────────────╯
+Coverage unknown: checks were not recorded.
+Runtime security: UNKNOWN (coverage not recorded)
 ┏━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┓
 ┃ Server         ┃ Client      ┃ Tools ┃ Prompts ┃ Resources ┃ Risk ┃ Non-Tool ┃ Top Permissions       ┃ Status    ┃
 ┡━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━┩

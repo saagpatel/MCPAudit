@@ -274,6 +274,31 @@
       "title": "CapabilityTarget",
       "type": "string"
     },
+    "CheckCoverage": {
+      "description": "Completion of a bounded check, independent of whether it found a risk.",
+      "properties": {
+        "state": {
+          "enum": [
+            "complete",
+            "partial",
+            "not_run",
+            "not_requested"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "state",
+        "reason"
+      ],
+      "title": "CheckCoverage",
+      "type": "object"
+    },
     "ClientType": {
       "enum": [
         "claude_desktop",
@@ -333,6 +358,13 @@
         "remediation": {
           "title": "Remediation",
           "type": "string"
+        },
+        "config_paths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Config Paths",
+          "type": "array"
         }
       },
       "required": [
@@ -2280,6 +2312,13 @@
       },
       "title": "Warnings",
       "type": "array"
+    },
+    "coverage": {
+      "additionalProperties": {
+        "$ref": "#/$defs/CheckCoverage"
+      },
+      "title": "Coverage",
+      "type": "object"
     }
   },
   "required": [

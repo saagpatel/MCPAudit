@@ -115,7 +115,11 @@ def _build_mcp_server() -> Any:
 
     @app.tool()  # type: ignore[untyped-decorator]
     async def get_high_risk_servers() -> str:
-        """Return servers with composite risk score ≥ 7.0. Returns JSON list."""
+        """Return servers with composite risk score ≥ 7.0 as a JSON list of name/score objects.
+
+        Coverage warnings, including project_config_not_connected, are returned
+        by scan_mcp_servers and the get_*_findings tools' warnings key.
+        """
         report = await _scan(ScanOptions())
         report = report.redacted()
         high_risk = [
@@ -146,7 +150,9 @@ def _build_mcp_server() -> Any:
 
         report = await _scan(ScanOptions(), servers=[matches[0]])
         report = report.redacted()
-        return report.audits[0].model_dump_json(indent=2)
+        payload = report.audits[0].model_dump(mode="json")
+        payload["warnings"] = [warning.model_dump() for warning in report.warnings]
+        return json.dumps(payload, indent=2)
 
     @app.tool()  # type: ignore[untyped-decorator]
     async def get_injection_findings() -> str:

@@ -32,7 +32,7 @@ AUDIT_FIELDS = set(
     "injection_findings ssrf_findings egress_findings drift_findings trifecta_findings "
     "escalation_findings provenance_findings integrity_findings package_verify_findings "
     "artifact_verify_findings llm_analysis canary"
-    " annotation_findings".split()
+    " annotation_findings warnings".split()  # additive: P1-3 annotation findings, P1-11 check_server warnings
 )
 SERVER_FIELDS = set(
     "name client config_path project_path scope command args env_keys transport url headers_keys".split()
@@ -158,7 +158,7 @@ def payload(result: dict[str, Any]) -> Any:
 
 
 def audit_contract(audit: dict[str, Any], status: str = "connected") -> None:
-    assert set(audit) == AUDIT_FIELDS
+    assert set(audit) == AUDIT_FIELDS, sorted(set(audit) ^ AUDIT_FIELDS)
     assert set(audit["server"]) == SERVER_FIELDS
     assert audit["server"]["name"] == "Target"
     assert audit["connection_status"] == status
@@ -302,6 +302,7 @@ async def run_case(executable: Path, mock: Path, case: str) -> int:
             env=controlled_environment(home),
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
+            limit=4 * 1024 * 1024,  # full audit JSON lines exceed asyncio's 64 KiB default
             stderr=asyncio.subprocess.PIPE,
             start_new_session=True,
         )

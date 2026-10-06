@@ -355,7 +355,10 @@ async def test_scan_mcp_servers_still_dispatches_all_discovered_entries(
 
 
 @pytest.mark.anyio
-async def test_get_high_risk_servers_filters_by_composite(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("with_warning", [False, True])
+async def test_get_high_risk_servers_filters_by_composite_and_retains_list_contract(
+    monkeypatch: pytest.MonkeyPatch, with_warning: bool
+) -> None:
     def _score(composite: float) -> RiskScore:
         return RiskScore(
             composite=composite,
@@ -379,12 +382,79 @@ async def test_get_high_risk_servers_filters_by_composite(monkeypatch: pytest.Mo
         ),
         ServerAudit(server=make_server_config(name="unscored"), connection_status="failed"),
     ]
-    _stub_run_scan(monkeypatch, _report_with(audits))
+    warnings = (
+        [ScanWarning(code="project_config_not_connected", message="Synthetic project config not connected.")]
+        if with_warning
+        else []
+    )
+    _stub_run_scan(monkeypatch, _report_with(audits, warnings=warnings))
 
     app = _build_mcp_server()
     payload = _tool_json(await app.call_tool("get_high_risk_servers", {}))
 
+    assert isinstance(payload, list)
     assert payload == [{"name": "risky", "score": 9.1}]
+    assert payload[0]["name"] == "risky"
+
+
+@pytest.mark.anyio
+async def test_get_high_risk_servers_returns_empty_list_with_coverage_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    warning = ScanWarning(
+        code="project_config_not_connected", message="Synthetic project config not connected."
+    )
+    _stub_run_scan(monkeypatch, _report_with([], warnings=[warning]))
+    app = _build_mcp_server()
+    assert _tool_json(await app.call_tool("get_high_risk_servers", {})) == []
+    tool = next(tool for tool in await app.list_tools() if tool.name == "get_high_risk_servers")
+    assert "project_config_not_connected" in tool.description
+    assert "scan_mcp_servers" in tool.description
+    assert "get_*_findings" in tool.description
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "tool_name",
+    [
+        "scan_mcp_servers",
+        "check_server",
+        "get_injection_findings",
+        "get_ssrf_findings",
+        "get_trifecta_findings",
+        "get_shadowing_findings",
+        "get_escalation_findings",
+        "get_provenance_findings",
+        "get_integrity_findings",
+        "get_package_verify_findings",
+        "get_artifact_verify_findings",
+    ],
+)
+async def test_all_audit_tools_preserve_project_connection_warning(
+    monkeypatch: pytest.MonkeyPatch, tool_name: str
+) -> None:
+    import mcp_audit.server as server_module
+
+    config = make_server_config(command="synthetic-project-server")
+    config.scope = "project"
+    audit = ServerAudit(server=config, connection_status="skipped")
+    warning = ScanWarning(
+        code="project_config_not_connected",
+        message="Project config not connected: synthetic-project-server. Use --connect-project-configs.",
+        check="connection",
+        servers=[config.name],
+    )
+    _stub_run_scan(monkeypatch, _report_with([audit], warnings=[warning]))
+    monkeypatch.setattr(server_module, "discover_all_configs", lambda *args: [config])
+    arguments = {"name": config.name} if tool_name == "check_server" else {}
+    payload = _tool_json(await _build_mcp_server().call_tool(tool_name, arguments))
+    assert payload["warnings"] == [warning.model_dump()]
+    if tool_name == "check_server":
+        assert {key: value for key, value in payload.items() if key != "warnings"} == audit.model_dump(
+            mode="json"
+        )
+    elif tool_name.startswith("get_"):
+        assert payload["findings"] == []
 
 
 def _record_named_scan(
@@ -479,7 +549,11 @@ async def test_check_server_dispatches_only_unique_exact_target(
     assert attempts[0].config_path == str(config)
     assert payload["server"]["name"] == "Target"
     assert payload["connection_status"] == "connected"
-    assert set(payload) == set(ServerAudit(server=attempts[0], connection_status="connected").model_dump())
+    assert set(payload) == {
+        *ServerAudit(server=attempts[0], connection_status="connected").model_dump(),
+        "warnings",
+    }
+    assert payload["warnings"] == []
     assert capsys.readouterr().out == ""
 
 
