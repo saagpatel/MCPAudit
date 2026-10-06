@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add canary client identity, elapsed seconds, call budget, and stable
+  `not_excluded` limitations to JSON; show bounded coverage in terminal, HTML,
+  and SARIF invocation properties, including clean exercises.
+
 ### Fixed
 
 - Render untrusted terminal text literally and remove terminal control sequences
@@ -17,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   remove credential prefixes and bypass redaction.
 
 ### Changed
+
+- Present `mcp-audit` and the installed package version as the explicit MCP
+  client identity for stdio, Streamable HTTP, and SSE scan sessions.
 
 - Put the zero-touch scan first in the README quick start and describe
   instruction-shaped text checks as pattern-based heuristics.
