@@ -22,6 +22,7 @@
     "audit_count": 1,
     "audit_keys": [
       "annotation_coverage",
+      "annotation_findings",
       "artifact_verify_findings",
       "canary",
       "capability_findings",
@@ -92,6 +93,7 @@
     "audit_count": 1,
     "audit_keys": [
       "annotation_coverage",
+      "annotation_findings",
       "artifact_verify_findings",
       "canary",
       "capability_findings",
@@ -155,6 +157,7 @@
     "audit_count": 1,
     "audit_keys": [
       "annotation_coverage",
+      "annotation_findings",
       "artifact_verify_findings",
       "canary",
       "capability_findings",
@@ -216,6 +219,7 @@
     "audit_count": 1,
     "audit_keys": [
       "annotation_coverage",
+      "annotation_findings",
       "artifact_verify_findings",
       "canary",
       "capability_findings",
@@ -287,6 +291,7 @@
     "audit_count": 1,
     "audit_keys": [
       "annotation_coverage",
+      "annotation_findings",
       "artifact_verify_findings",
       "canary",
       "capability_findings",
@@ -369,6 +374,7 @@
     "audit_count": 1,
     "audit_keys": [
       "annotation_coverage",
+      "annotation_findings",
       "artifact_verify_findings",
       "canary",
       "capability_findings",
@@ -432,6 +438,7 @@
     "audit_count": 1,
     "audit_keys": [
       "annotation_coverage",
+      "annotation_findings",
       "artifact_verify_findings",
       "canary",
       "capability_findings",
@@ -516,6 +523,7 @@
     "audit_count": 2,
     "audit_keys": [
       "annotation_coverage",
+      "annotation_findings",
       "artifact_verify_findings",
       "canary",
       "capability_findings",
@@ -580,6 +588,7 @@
     "audit_count": 1,
     "audit_keys": [
       "annotation_coverage",
+      "annotation_findings",
       "artifact_verify_findings",
       "canary",
       "capability_findings",
@@ -661,6 +670,7 @@
     "audit_count": 1,
     "audit_keys": [
       "annotation_coverage",
+      "annotation_findings",
       "artifact_verify_findings",
       "canary",
       "capability_findings",

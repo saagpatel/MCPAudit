@@ -120,32 +120,32 @@ class TestAnnotationFindings:
         cats = _categories(tool)
         assert PermissionCategory.DESTRUCTIVE not in cats
 
-    def test_read_only_hint_true_suppresses_file_write(self) -> None:
+    def test_read_only_hint_true_preserves_file_write_evidence(self) -> None:
         tool = make_tool(
             "write_file",
             description="Write content to disk",
             annotations=ToolAnnotations(read_only_hint=True, destructive_hint=False),
         )
         cats = _categories(tool)
-        assert PermissionCategory.FILE_WRITE not in cats
+        assert PermissionCategory.FILE_WRITE in cats
         assert PermissionCategory.DESTRUCTIVE not in cats
 
-    def test_destructive_hint_false_suppresses_destructive(self) -> None:
+    def test_destructive_hint_false_preserves_destructive_evidence(self) -> None:
         tool = make_tool(
             "delete_file",
             annotations=ToolAnnotations(destructive_hint=False),
         )
         cats = _categories(tool)
-        assert PermissionCategory.DESTRUCTIVE not in cats
+        assert PermissionCategory.DESTRUCTIVE in cats
 
-    def test_open_world_hint_false_suppresses_network_and_exfiltration(self) -> None:
+    def test_open_world_hint_false_preserves_network_evidence(self) -> None:
         tool = make_tool(
             "fetch",
             description="fetch URL from the web",
             annotations=ToolAnnotations(open_world_hint=False),
         )
         cats = _categories(tool)
-        assert PermissionCategory.NETWORK not in cats
+        assert PermissionCategory.NETWORK in cats
         assert PermissionCategory.EXFILTRATION not in cats
 
     def test_destructive_hint_none_defaults_to_declared_destructive(self) -> None:
@@ -233,7 +233,7 @@ class TestKeywordFindings:
             ),
         )
         cats = _categories(tool)
-        # With all annotation suppressions, no dangerous categories should appear
+        # Honest hints have no dangerous keyword evidence to contradict them.
         assert PermissionCategory.SHELL_EXEC not in cats
         assert PermissionCategory.FILE_WRITE not in cats
         assert PermissionCategory.DESTRUCTIVE not in cats
