@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Iterator
 
 # Post-NFKC supplement: common Cyrillic/Greek and accented Latin lookalikes.
 _CONFUSABLE_MAP: dict[str, str] = {
@@ -55,6 +56,19 @@ def normalize_text(text: str) -> str:
     )
 
 
+def _mixed_script_positions(text: str) -> Iterator[int]:
+    visible = "".join(char for char in unicodedata.normalize("NFKC", text) if invisible_class(char) is None)
+    for match in _WORDS.finditer(visible):
+        word = match.group()
+        if any("LATIN" in unicodedata.name(char, "") for char in word):
+            for index, char in enumerate(word):
+                if char.lower() in _CONFUSABLE_MAP and unicodedata.name(char, "").startswith(
+                    ("CYRILLIC", "GREEK")
+                ):
+                    yield match.start() + index
+                    break
+
+
 def obfuscation_classes(text: str) -> list[str]:
     """Flag invisibles and confusables mixed into Latin-shaped words.
 
@@ -62,13 +76,8 @@ def obfuscation_classes(text: str) -> list[str]:
     compatibility changes alone (fullwidth, ligatures, etc.) are not anomalies.
     """
     classes = {kind for char in text if (kind := invisible_class(char)) is not None}
-    visible = "".join(char for char in unicodedata.normalize("NFKC", text) if invisible_class(char) is None)
-    for word in _WORDS.findall(visible):
-        if any("LATIN" in unicodedata.name(char, "") for char in word) and any(
-            char.lower() in _CONFUSABLE_MAP and unicodedata.name(char, "").startswith(("CYRILLIC", "GREEK"))
-            for char in word
-        ):
-            classes.add("confusable (mixed-script)")
+    if next(_mixed_script_positions(text), None) is not None:
+        classes.add("confusable (mixed-script)")
     return sorted(classes)
 
 
@@ -78,31 +87,31 @@ def render_invisibles(text: str) -> str:
 
 
 def first_obfuscation(text: str) -> int:
-    """Locate raw evidence after the class gate has established an anomaly."""
-    return next(
-        (
-            index
-            for index, char in enumerate(text)
-            if invisible_class(char)
-            or (
-                char.lower() in _CONFUSABLE_MAP
-                and unicodedata.name(char, "").startswith(("CYRILLIC", "GREEK"))
-            )
-        ),
-        0,
-    )
+    """Locate the first invisible or gated mixed-script confusable in raw text."""
+    invisible = next((index for index, char in enumerate(text) if invisible_class(char)), len(text))
+    mixed = next(_mixed_script_positions(text), None)
+    index = min(invisible, _raw_offset(text, mixed, start=True) if mixed is not None else len(text))
+    return index if index < len(text) else 0
 
 
-def raw_excerpt(raw: str, normalized: str, excerpt: str) -> str:
-    """Project a normalized excerpt start back to the unchanged source prefix."""
-    position = normalized.find(excerpt)
-    if position < 0:
-        return raw[:200]
+def _raw_offset(raw: str, position: int, *, start: bool = False) -> int:
+    """Map a normalized boundary, excluding stripped text before a match start."""
     low, high = 0, len(raw)
     while low < high:
         middle = (low + high) // 2
-        if len(normalize_text(raw[:middle])) < position:
+        length = len(normalize_text(raw[:middle]))
+        if length < position or (start and length == position):
             low = middle + 1
         else:
             high = middle
-    return raw[low : low + 200]
+    return max(0, low - 1) if start else low
+
+
+def raw_excerpt(raw: str, normalized: str, excerpt: str, match_span: tuple[int, int]) -> str:
+    """Map context and the actual match to raw text, prioritizing the match."""
+    position = normalized.find(excerpt)
+    context_start = _raw_offset(raw, position) if position >= 0 else 0
+    match_start = _raw_offset(raw, match_span[0], start=True)
+    match_end = _raw_offset(raw, match_span[1])
+    start = max(context_start, match_start - 20, min(match_start, match_end - 200))
+    return raw[start : start + 200]

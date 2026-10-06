@@ -42,22 +42,33 @@ class _InjectionPattern:
     _extract: Callable[[str, str], str]  # (lowercased_text, original_text) -> matched excerpt
 
 
-def _phrase_check(phrases: list[str]) -> Callable[[str, str], bool]:
-    def _check(lower: str, _orig: str) -> bool:
-        return any(p in lower for p in phrases)
+@dataclass
+class _PhraseCheck:
+    phrases: list[str]
 
-    return _check
+    def span(self, lower: str) -> tuple[int, int] | None:
+        for phrase in self.phrases:
+            index = lower.find(phrase)
+            if index != -1:
+                return index, index + len(phrase)
+        return None
+
+    def __call__(self, lower: str, _orig: str) -> bool:
+        return self.span(lower) is not None
+
+
+def _phrase_check(phrases: list[str]) -> _PhraseCheck:
+    return _PhraseCheck(phrases)
 
 
 def _phrase_extract(phrases: list[str]) -> Callable[[str, str], str]:
     def _extract(lower: str, orig: str) -> str:
-        for phrase in phrases:
-            idx = lower.find(phrase)
-            if idx != -1:
-                start = max(0, idx - 20)
-                end = min(len(orig), idx + len(phrase) + 80)
-                excerpt = orig[start:end]
-                return excerpt[:200]
+        span = _PhraseCheck(phrases).span(lower)
+        if span is not None:
+            start = max(0, span[0] - 20)
+            end = min(len(orig), span[1] + 80)
+            excerpt = orig[start:end]
+            return excerpt[:200]
         return orig[:200]
 
     return _extract
@@ -342,7 +353,14 @@ class InjectionDetector:
         if normalized == raw or pattern.name in {"hidden_directive", "unicode_direction"}:
             return pattern._extract(raw.lower(), raw)
         excerpt = pattern._extract(normalized.lower(), normalized)
-        return raw_excerpt(raw, normalized, excerpt)
+        if isinstance(pattern.check, _PhraseCheck):
+            span = pattern.check.span(normalized.lower())
+            if span is None:
+                return raw[:200]
+        else:
+            start = normalized.find(excerpt)
+            span = (max(0, start), max(0, start) + len(excerpt))
+        return raw_excerpt(raw, normalized, excerpt, span)
 
     @staticmethod
     def _obfuscation_findings(
