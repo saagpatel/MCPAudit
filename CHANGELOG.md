@@ -7,20 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Security
+### Added
 
-- Centralize credential redaction for terminal, JSON, SARIF, HTML, and MCP
-  tool outputs and the config-only dictionary API, even with `redact=False`.
-  Cover whole inline argv values, quoted secret assignments, secret dictionary
-  values and schema literals, URL-valued secrets, and common token shapes.
-  Redact complete userinfo, secret-named path values, query values and fragments
-  in any `scheme://` URL while preserving unredacted endpoint drift. Query-value
-  and fragment changes remain invisible to provenance comparisons.
-  Redact pin tool snapshots without changing raw schema hashes, and pin launch
-  arguments and URLs by default; compare redacted escalation and provenance baselines,
-  including legacy raw pins, so secret rotation stays silent while gained flags
-  remain detectable. Preserve tokenizer and session-name labels.
-  `pin --no-redact-args` explicitly stores raw arguments, including secrets.
+- Add table-driven contracts for permission keywords and static and runtime injection rule vocabularies.
+- Added the synthetic red-team evasion corpus as a parametrized pytest suite,
+  with strict expected-failure cases tracking planned detector gaps.
+- Add canary client identity, elapsed seconds, call budget, and stable
+  `not_excluded` limitations to JSON; show bounded coverage in terminal, HTML,
+  and SARIF invocation properties, including clean exercises.
 
 ### Fixed
 
@@ -42,11 +36,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Put the zero-touch scan first in the README quick start and describe
   instruction-shaped text checks as pattern-based heuristics.
+- Present `mcp-audit` and the installed package version as the explicit MCP
+  client identity for stdio, Streamable HTTP, and SSE scan sessions.
 
-### Added
+### Tests
 
-- Added the synthetic red-team evasion corpus as a parametrized pytest suite,
-  with strict expected-failure cases tracking planned detector gaps.
+- Pin scorer weights, confidence multipliers, and caps with literal golden values;
+  cover policy gate defaults, branches, boundaries, and invalid policy errors.
+
+### Security
+
+- Centralize credential redaction for terminal, JSON, SARIF, HTML, and MCP
+  tool outputs and the config-only dictionary API, even with `redact=False`.
+  Cover whole inline argv values, quoted secret assignments, secret dictionary
+  values and schema literals, URL-valued secrets, and common token shapes.
+  Redact complete userinfo, secret-named path values, query values and fragments
+  in any `scheme://` URL while preserving unredacted endpoint drift. Query-value
+  and fragment changes remain invisible to provenance comparisons.
+  Redact pin tool snapshots without changing raw schema hashes, and pin launch
+  arguments and URLs by default; compare redacted escalation and provenance baselines,
+  including legacy raw pins, so secret rotation stays silent while gained flags
+  remain detectable. Preserve tokenizer and session-name labels.
+  `pin --no-redact-args` explicitly stores raw arguments, including secrets.
 
 ## [2.8.0] - 2026-10-06
 

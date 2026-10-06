@@ -159,6 +159,38 @@ with `code: canary_incomplete` and `check: canary_check`. Inspect this alongside
 connection status; findings already observed are retained on session failure
 or timeout.
 
+Additive, optional fields for compatibility with older reports:
+
+- `client_identity`: the presented MCP client name/version, e.g. `mcp-audit/2.8.1`;
+  MCPAudit presents this explicit identity on stdio, Streamable HTTP, and SSE,
+  in canary and ordinary connected scans. Older reports load with an empty string
+  (identity unrecorded), not the current package identity.
+- `elapsed_seconds`: wall duration measured with a monotonic clock, from connection
+  through session teardown, including failure or timeout; null when unrecorded.
+- `call_budget`: K, equal to the unchanged `requested_calls`; older reports infer
+  it from `requested_calls`.
+- `not_excluded`: limitations, always populated for new sessions, even when
+  `status` is `complete` and `warnings` is empty. Stable identifiers in order:
+
+| Identifier | Behavior not ruled out |
+| --- | --- |
+| `time` | Activation after elapsed time |
+| `randomness` | Randomly activated behavior |
+| `call_count_gt_budget` | Activation after more than K tool calls |
+| `client_identity` | Different behavior for another client identity |
+| `arguments` | Different behavior for other arguments |
+| `other_tool_sequences` | Activation by other tool call sequences |
+| `later_sessions` | Different behavior in later sessions |
+
+Terminal and HTML show status, completed tool calls / budget, and the human
+limitations beside the server verdict. SARIF adds exercised-server summaries
+to `runs[0].invocations[0].properties.mcpAuditCanary`, including `server`,
+`status`, `completed_calls`, `call_budget`, `client_identity`, `elapsed_seconds`,
+`not_excluded`, and the corresponding `not_excluded_descriptions`. No rule IDs
+or result-level fields change; non-canary rendering is unchanged. The SARIF
+invocation's required `executionSuccessful: true` denotes completed scan/report
+execution, not a clean security verdict.
+
 `drift_findings` includes both saved-pin and session comparisons. Additive
 fields are `source` (`pin` by default, `session` for the canary), `severity`
 (`medium` by default, `high` for session changes), `after_call` (1-based, null

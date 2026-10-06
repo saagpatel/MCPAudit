@@ -822,16 +822,38 @@ class SurfaceFieldChange(BaseModel):
     after_hash: str | None = None
 
 
+CANARY_NOT_EXCLUDED: dict[str, str] = {
+    "time": "elapsed time",
+    "randomness": "randomness",
+    "call_count_gt_budget": "more than {budget} calls",
+    "client_identity": "client identity",
+    "arguments": "other arguments",
+    "other_tool_sequences": "other call sequences",
+    "later_sessions": "later sessions",
+}
+
+
 class CanarySummary(BaseModel):
     """Bounded runtime exercise coverage; complete does not mean trustworthy."""
 
     requested_calls: int
+    client_identity: str = ""  # Older reports did not record the presented identity.
+    elapsed_seconds: float | None = None
+    call_budget: int = Field(default_factory=lambda data: data["requested_calls"])
+    not_excluded: list[str] = Field(default_factory=lambda: list(CANARY_NOT_EXCLUDED))
     completed_calls: int = 0
     prompt_get_calls: int = 0
     baseline_hash: str | None = None
     current_hash: str | None = None
     status: Literal["complete", "partial", "no_safe_tools"] = "partial"
     warnings: list[str] = Field(default_factory=list)
+
+    @property
+    def not_excluded_descriptions(self) -> list[str]:
+        return [
+            CANARY_NOT_EXCLUDED.get(identifier, identifier).replace("{budget}", str(self.call_budget))
+            for identifier in self.not_excluded
+        ]
 
 
 class DriftFinding(BaseModel):

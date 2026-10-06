@@ -376,10 +376,9 @@ pages per capture. Scanned text is capped at 64 KB per tool result or prompt
 body. The existing `--timeout` bounds the whole session, including all calls
 and listings. Errors, timeouts, page-limit exhaustion, required-argument
 prompts, truncated oversized text, and a lack of eligible tools produce
-incomplete-coverage warnings. A clean canary
-only describes this bounded exercise: a server can gate on elapsed time,
-randomness, client identity, another tool or arguments, or call count greater
-than K. It does not establish that a server is safe in later sessions. Tests
+incomplete-coverage warnings. A clean canary's `canary.not_excluded` lists what
+it cannot rule out: elapsed time, randomness, more than K calls, client identity,
+other arguments, other call sequences, and later sessions. Tests
 use only a synthetic local stdio server that changes metadata after three calls
 without changing its version, plus a benign control.
 

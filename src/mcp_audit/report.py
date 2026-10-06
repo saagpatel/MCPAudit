@@ -106,6 +106,19 @@ class ReportGenerator:
 
         self._console.print(table)
 
+        for audit in report.audits:
+            if audit.canary is not None:
+                canary = audit.canary
+                self._console.print(
+                    terminal_safe(
+                        f"Canary {audit.server.name}: {canary.status}, "
+                        f"{canary.completed_calls}/{canary.call_budget} calls"
+                    )
+                )
+                self._console.print(
+                    terminal_safe("Not ruled out: " + ", ".join(canary.not_excluded_descriptions) + ".")
+                )
+
         if verbose:
             self._render_verbose(report)
 
