@@ -32,7 +32,8 @@ AUDIT_FIELDS = set(
     "injection_findings ssrf_findings egress_findings drift_findings trifecta_findings "
     "escalation_findings provenance_findings integrity_findings package_verify_findings "
     "artifact_verify_findings llm_analysis canary"
-    " annotation_findings warnings annotations_missing".split()  # additive: P1-3 annotation findings, P1-11 check_server warnings
+    # Additive: P1-3 annotation findings, P1-11 check_server warnings, P2-1 FYI.
+    " annotation_findings warnings annotations_missing".split()
 )
 SERVER_FIELDS = set(
     "name client config_path project_path scope command args env_keys transport url headers_keys".split()
