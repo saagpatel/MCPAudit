@@ -371,12 +371,18 @@ async def run_scan(
             if skip_connect:
                 audit = connector.skip_connect_audit(srv)
             elif opts.canary_check:
+                baseline_warnings: list[ScanWarning] = []
+                baseline = (
+                    pin_store.canary_baseline(srv.name, warnings=baseline_warnings) if pin_store else None
+                )
+                for warning in baseline_warnings:
+                    warn(warning.code, warning.message, check=warning.check, servers=warning.servers)
                 async with connection_limiter:
                     audit = await connector.connect(
                         srv,
                         canary_calls=opts.canary_calls,
                         canary_identities=opts.canary_identities,
-                        canary_baseline=pin_store.canary_baseline(srv.name) if pin_store else None,
+                        canary_baseline=baseline,
                         safe_tools=frozenset(
                             mark[len(srv.name) + 1 :]
                             for mark in opts.canary_safe_tools

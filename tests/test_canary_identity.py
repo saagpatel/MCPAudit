@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 from click.testing import CliRunner
 from mcp.types import ListRootsResult
 from rich.console import Console
@@ -16,7 +17,7 @@ from mcp_audit.cli import main
 from mcp_audit.connector import ServerConnector, _canary_roots
 from mcp_audit.engine import ScanOptions, run_scan
 from mcp_audit.htmlreport import HtmlReportGenerator
-from mcp_audit.models import TransportType
+from mcp_audit.models import ToolInfo, TransportType
 from mcp_audit.pinning import PinStore
 from mcp_audit.policy import PolicyConfig, evaluate_policy
 from mcp_audit.report import ReportGenerator
@@ -182,6 +183,57 @@ def test_legacy_pins_are_not_used_as_v2_canary_baselines(tmp_path: Path) -> None
     assert store.canary_baseline("unpinned") is None
     assert store.schema_warnings("fixture")[0].code == "pin_schema_outdated"
     assert path.read_bytes() == before
+
+
+def _corrupt_v2_store(tmp_path: Path, field: str, value: object) -> PinStore:
+    store = PinStore(tmp_path / "pins.yaml")
+    tool = ToolInfo.model_validate_json(
+        (Path(__file__).parent / "fixtures" / "pinning" / "tool-v2.json").read_text()
+    )
+    store.pin_server("fixture", [tool, tool.model_copy(update={"name": "baseline_only"})])
+    raw = yaml.safe_load(store.path.read_text())
+    entry = raw["servers"]["fixture"]["tools"][tool.name]
+    target = entry if field == "snapshot" else entry["snapshot"]
+    if value is None:
+        del target[field]
+    else:
+        target[field] = value
+    store.path.write_text(yaml.safe_dump(raw))
+    return PinStore(store.path)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        pytest.param("input_schema", "invalid-snapshot-value", id="invalid-schema"),
+        pytest.param("snapshot", {}, id="empty-snapshot"),
+        pytest.param("snapshot", None, id="missing-snapshot"),
+        pytest.param("annotations", None, id="missing-annotations"),
+    ],
+)
+async def test_corrupt_v2_pins_warn_and_run_session_canary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, field: str, value: object
+) -> None:
+    store = _corrupt_v2_store(tmp_path, field, value)
+    monkeypatch.setattr("mcp_audit.pinning.PinStore", lambda: store)
+    before = store.path.read_bytes()
+    trace = tmp_path / "events.jsonl"
+    config = make_server_config(name="fixture", command=sys.executable, args=[FIXTURE, "stable", str(trace)])
+    report = await run_scan(ScanOptions(canary_check=True, timeout=15), servers=[config])
+    audit = report.audits[0]
+    assert audit.connection_status == "connected"
+    assert report.servers_failed == 0 and report.servers_connected == 1
+    assert audit.canary is not None and audit.canary.baseline_source == "session"
+    assert audit.canary.status == "complete" and audit.canary.completed_calls == 5
+    assert audit.canary.baseline_hash == audit.canary.current_hash
+    assert not audit.drift_findings
+    (warning,) = report.warnings
+    assert warning.code == "pin_baseline_corrupted"
+    assert warning.check == "canary_check" and warning.servers == [config.name]
+    assert "using an in-session baseline only" in warning.message
+    assert "invalid-snapshot-value" not in report.model_dump_json()
+    assert store.path.read_bytes() == before
 
 
 def test_identity_count_cli_validation_and_forwarding(tmp_path: Path) -> None:
