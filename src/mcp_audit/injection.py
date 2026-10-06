@@ -197,24 +197,39 @@ _PATTERNS: list[_InjectionPattern] = [
 class InjectionDetector:
     """Scans MCP capability names and descriptions for adversarial prompt injection patterns."""
 
-    def scan_result(self, tool_name: str, text: str, after_call: int) -> list[InjectionFinding]:
-        """Scan untrusted result text without echoing possible credential values."""
+    def scan_result(
+        self,
+        tool_name: str,
+        text: str,
+        after_call: int,
+        target_type: CapabilityTarget = CapabilityTarget.TOOL,
+    ) -> list[InjectionFinding]:
+        """Scan untrusted runtime text without echoing possible credential values.
+
+        ``target_type`` is TOOL for tools/call results and PROMPT for rendered
+        prompts/get bodies; both are scanned with the same rules. The caller
+        bounds ``text`` (see ``RESULT_SCAN_LIMIT``).
+        """
         from mcp_audit.rules.result_injection import RESULT_INJECTION_RULES
 
+        prompt_body = target_type is CapabilityTarget.PROMPT
+        source = "prompts/get body" if prompt_body else "Tool result"
+        withheld = "[prompt-body excerpt withheld]" if prompt_body else "[tool-result excerpt withheld]"
         return [
             InjectionFinding(
                 tool_name=tool_name,
+                target_type=target_type,
                 target_name=tool_name,
                 severity=(
                     InjectionSeverity.MEDIUM if name == "result_tool_redirect" else InjectionSeverity.HIGH
                 ),
                 pattern_name=name,
                 after_call=after_call,
-                matched_text="[tool-result excerpt withheld]",
-                description=f"Tool result after canary call {after_call} contains instruction-shaped text.",
+                matched_text=withheld,
+                description=f"{source} after canary call {after_call} contains instruction-shaped text.",
             )
-            for name, pattern in RESULT_INJECTION_RULES.items()
-            if pattern.search(text)
+            for name, rule in RESULT_INJECTION_RULES.items()
+            if rule(text)
         ]
 
     def scan_tool(self, tool: ToolInfo) -> list[InjectionFinding]:
