@@ -71,9 +71,12 @@ def config_health_findings(
                 server_name=error.server_name,
                 summary=(
                     f"Could not parse {error.client.value} config at {error.path}; "
-                    "servers defined there were not audited."
+                    f"servers defined there were not audited. {redact_text(error.reason)}"
                     if error.finding_type == "config_parse_failure"
-                    else f"Config diagnostic in {error.client.value} config at {error.path}."
+                    else (
+                        f"Config diagnostic in {error.client.value} config at {error.path}. "
+                        f"{redact_text(error.reason)}"
+                    )
                 ),
                 details=[redact_text(error.reason)],
                 remediation="Repair or restore this config file, then re-run the scan.",

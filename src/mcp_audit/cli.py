@@ -19,8 +19,10 @@ from rich.console import Console
 from rich.text import Text
 
 from mcp_audit.agent_ui_cli import agent_ui
+from mcp_audit.artifact_paths import validate_artifact_paths
 from mcp_audit.authorization_posture_cli import authorization_posture
 from mcp_audit.cache_contract_cli import cache_contract
+from mcp_audit.check_cli import check, demo, inspect
 from mcp_audit.confighealth import config_health_findings, duplicate_server_config_counts
 from mcp_audit.discovery import ConfigParseError, discover_all_configs
 from mcp_audit.enforcement_cli import enforcement_fixture
@@ -51,15 +53,65 @@ _MAX_SAFEFORGE_SCHEMA_BYTES = 1_048_576
 _MAX_SAFEFORGE_RECEIPT_BYTES = 4_194_304
 
 
-@click.group()
+class ReviewGroup(click.Group):
+    """Keep specialist commands reachable while leading help with daily tasks."""
+
+    def format_commands(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
+        groups = {
+            "Everyday": ("check", "inspect", "demo"),
+            "Integrations": ("serve",),
+            "Advanced": tuple(
+                name for name in self.list_commands(ctx) if name not in {"check", "inspect", "demo", "serve"}
+            ),
+        }
+        for heading, names in groups.items():
+            with formatter.section(heading):
+                formatter.write_dl(
+                    [
+                        (name, self.commands[name].get_short_help_str())
+                        for name in names
+                        if name in self.commands
+                    ]
+                )
+
+
+def _help_all(ctx: click.Context, param: click.Parameter, value: bool) -> None:
+    if value and not ctx.resilient_parsing:
+        click.echo(ctx.get_help())
+        ctx.exit()
+
+
+@click.group(cls=ReviewGroup, invoke_without_command=True, no_args_is_help=False)
 @click.option("--debug", is_flag=True, default=False, help="Enable debug logging.")
+@click.option(
+    "--help-all",
+    is_flag=True,
+    is_eager=True,
+    expose_value=False,
+    callback=_help_all,
+    help="Show all command groups.",
+)
+@click.option("--details", is_flag=True, help="Show details for the bare static review.")
+@click.option("--json", "json_stdout", is_flag=True, help="Emit JSON for the bare static review.")
 @click.version_option(package_name="mcp-audits", prog_name="mcp-audit")
-def main(debug: bool) -> None:
-    """MCP Permission Auditor — scan and risk-score locally configured MCP servers."""
+@click.pass_context
+def main(ctx: click.Context, debug: bool, details: bool, json_stdout: bool) -> None:
+    """Review MCP configs without execution or connections when no command is given."""
     if debug:
         logging.basicConfig(level=logging.DEBUG)
         for handler in logging.getLogger().handlers:
             handler.addFilter(TerminalSafeLogFilter())
+    if ctx.invoked_subcommand is None:
+        ctx.invoke(check, details=details, json_stdout=json_stdout)
+    elif details or json_stdout:
+        raise click.UsageError(
+            "Top-level --details/--json require no command; place options after the command."
+        )
+
+
+main.add_command(check)
+main.add_command(inspect)
+main.add_command(demo)
 
 
 main.add_command(enforcement_fixture)
@@ -691,12 +743,29 @@ async def _run_scan(
             else None
         ),
     )
+    config_paths: list[Path] = [cfg_path]
+    if policy_path:
+        config_paths.append(Path(policy_path))
     try:
-        report = await run_scan(scan_options, override_applier=override_applier, console=console)
+        report = await run_scan(
+            scan_options,
+            override_applier=override_applier,
+            console=console,
+            config_paths=config_paths if json_output or sarif_output or html_output else None,
+        )
     except ValueError as exc:
         # A caller-supplied --config path that is missing or unparseable must be
         # a hard error, not a silently-empty scan that passes downstream gates.
         raise click.ClickException(strip_controls(str(exc))) from exc
+
+    validate_artifact_paths(
+        [
+            ("--json", Path(json_output) if json_output else None),
+            ("--sarif", Path(sarif_output) if sarif_output else None),
+            ("--html", Path(html_output) if html_output else None),
+        ],
+        config_paths,
+    )
 
     if policy is not None:
         from mcp_audit.policy import evaluate_policy

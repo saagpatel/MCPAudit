@@ -7,14 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add static-by-default `check`, bare-command configuration review, source
+  inventory with `inspect`, and a bundled config-only `demo`. Explicit configs
+  select only that file unless discovery is requested; connections require one
+  unambiguous client/scope/name identity. New JSON stdout and named artifact
+  options leave the legacy `scan` grammar and reports unchanged.
+
 ### Fixed
 
+- Classify absent client config candidates before opening them in static review;
+  missing files produce no config-health finding or partial coverage. Retain
+  redacted config diagnostic reasons in summaries, including null project entries,
+  while preserving the connection block for malformed configs.
 - Recognize VS Code server maps in explicit configs and parse both VS Code
   files as JSONC. Report malformed entries and duplicate keys, reject
   non-regular config paths before reading, accept UTF-8 BOMs, and distinguish
   empty server maps from empty, unsupported, and unreadable config files.
   Preserve parsing diagnostics in in-memory scan coverage and reject project
-  containers without a supported server map.
+  containers without a supported server map. Treat discovered general VS Code
+  and Claude settings without MCP sections as zero entries, allowing unrelated
+  valid servers to be selected while retaining malformed-config diagnostics.
+  Normalize selected project dot components without resolving symlinks, and
+  retain malformed null project entries as diagnostics that block connections.
+  Reject report destinations that alias config or policy inputs, scan overrides,
+  or another artifact, including symlinks and hard links, before any artifact
+  is written.
 - Share MCP server entry parsing across the five config discoverers so Cursor,
   Windsurf, and Claude Desktop recognize HTTP and deprecated SSE transports
   while retaining header key names only.

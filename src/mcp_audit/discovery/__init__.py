@@ -1,6 +1,7 @@
 """Config discovery — aggregates MCP server configs from all supported clients."""
 
 import logging
+from pathlib import Path
 
 from mcp_audit.discovery.base import ConfigDiscoverer, ConfigParseError
 from mcp_audit.discovery.claude_code import ClaudeCodeDiscoverer
@@ -26,6 +27,7 @@ _DISCOVERERS: dict[ClientType, type[ConfigDiscoverer]] = {
 def discover_all_configs(
     clients: list[ClientType] | None = None,
     parse_errors: list[ConfigParseError] | None = None,
+    config_paths: list[Path] | None = None,
 ) -> list[ServerConfig]:
     """Discover MCP server configs from all (or filtered) clients.
 
@@ -44,7 +46,12 @@ def discover_all_configs(
             logger.debug("No discoverer registered for %s", client_type)
             continue
         discoverer = discoverer_cls()
-        for server in discoverer.discover(parse_errors):
+        discovered = (
+            discoverer.discover(parse_errors)
+            if config_paths is None
+            else discoverer.discover(parse_errors, config_paths)
+        )
+        for server in discovered:
             key = (server.name, server.client.value, server.config_path, server.project_path)
             if key in seen:
                 logger.debug("Skipping duplicate server %r from %s", server.name, server.config_path)
