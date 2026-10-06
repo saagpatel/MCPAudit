@@ -130,7 +130,11 @@ coverage warning regardless of advertisement and no partial page set is
 admitted. In non-canary scans, prompt/resource page-limit exhaustion adds
 `surface_listing_incomplete` to the top-level scan warnings without setting
 `connection_error` (`check: null`, affected server named in `servers`). Other
-non-canary listing-failure behavior is unchanged.
+non-canary listing-failure behavior is unchanged. Page-limit warnings use
+plain surface labels (for example, "Prompt listing exceeds the 20-page limit;
+coverage is incomplete."). The non-canary scan warning also names the server,
+advises reducing the listing to at most 20 pages and rerunning, and is printed
+to the console. Other canary listing errors retain their exception type.
 
 `--canary-calls` bounds tool exercise requests (K), not metadata reads. The
 documented exercise request budget includes all `prompts/get`: for P eligible
@@ -152,7 +156,13 @@ is reported at MEDIUM (SARIF `MCP008`) with a description starting
 "Experimental heuristic:", so they never fail a HIGH gate on their own;
 session drift carries the canary's verdict. They add `after_call` and pattern
 names `result_instruction_override`, `result_credential_hunt`, and
-`result_tool_redirect`. A
+`result_tool_redirect`. Runtime remediation advises reviewing returned content
+or prompt bodies and server behavior, preventing agents from acting on embedded
+instructions, and considering server removal; static remediation is unchanged.
+Runtime SARIF fingerprints include a runtime marker, target type, and pattern
+name to distinguish patterns and static findings on the same target. Repeated
+captures of the same runtime pattern keep the same fingerprint. Static
+fingerprints remain unchanged. A
 concrete secret path or name (for example `~/.ssh`, `~/.aws/credentials`,
 `~/.kube/config`, `~/.netrc`, `~/.git-credentials`, shell history, `id_rsa`,
 `kubeconfig`, well-known token variables) with a directing verb earlier in
