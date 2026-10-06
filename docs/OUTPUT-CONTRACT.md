@@ -432,7 +432,9 @@ The report top level also includes:
     `option_ignored` (an option passed without the check that consumes it),
     `surface_listing_incomplete` (an initialized non-canary tool, prompt, or
     resource listing exceeded the 20-page limit, advertised or not, or an
-    advertised prompt/resource listing was unavailable).
+    advertised prompt/resource listing was unavailable),
+    `description_truncated` (permission keyword or SSRF fetch-verb input
+    exceeded the 256 KiB UTF-8 per-field limit; suffix evidence was not inspected).
     The vocabulary is additive — consumers must tolerate unknown codes.
   - `message` — plain-text human summary including remediation.
   - `check` — the scan option whose coverage was reduced, or `null`.
@@ -488,6 +490,16 @@ Policies may opt in with YAML `fail_on.coverage: true` (a boolean), or Python
 unknown legacy coverage, independently of severity; `not_requested` checks
 do not fail the gate. Coverage violations use existing SARIF `MCP010` and
 the existing policy exit code `2`. Existing policies retain their behavior.
+
+`description_truncated` warnings use `check: "permission_analysis"`, name the
+affected server, and give a count of truncated fields without including their
+contents. The limit applies independently to tool names/descriptions/top-level
+parameter names, prompt names/descriptions/argument names, and resource
+URIs/names/descriptions/MIME types used for keyword scoring. SSRF fetch verbs
+use the same bounded tool-name and description prefixes. Listed metadata stays
+intact for reporting, pins and other checks; this is a detector input limit,
+not a transport limit. Findings retain their existing shape and confidence
+semantics within the inspected prefix; a warning signals reduced coverage.
 
 `risk_score.composite` is tool-centered. `non_tool_risk` is an additive
 prompt/resource triage signal and does not change `risk_score.composite`.

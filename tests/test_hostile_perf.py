@@ -40,6 +40,7 @@ CASES = (
     Case("desc_1mb_x20", ("normal", "--tools", "20", "--desc-bytes", "1000000"), 75, 1282, tools=20),
     Case("oversized_50mb", ("oversized", "--frame-bytes", "50000000"), 191.7, 3217),
     Case("spawn_child_exit", ("spawn-child-exit",), 6.5, timeout=2, leftovers=1),
+    Case("scale_2000", ("normal", "--tools", "10"), 16, servers=2000, tools=20000),
 )
 
 
