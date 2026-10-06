@@ -260,15 +260,23 @@ def test_action_cap_never_hides_totals_and_groups_related_findings() -> None:
     assert len(re.findall(r"^\d\. ▲ Fix now", output, re.MULTILINE)) == 3
 
 
-def test_warnings_reduce_coverage_without_turning_empty_findings_into_a_pass() -> None:
+@pytest.mark.parametrize("width", [60, 80, 120])
+@pytest.mark.parametrize("explicit_config", [False, True])
+def test_warnings_reduce_coverage_without_turning_empty_findings_into_a_pass(
+    width: int, explicit_config: bool
+) -> None:
     report = _connected()
     report.coverage["permissions"] = CheckCoverage(state="partial", reason="schema incomplete")
     report.warnings = [
         ScanWarning(code="permission_schema_incomplete", message="Schema not fully inspected.")
     ]
-    output = _render(report)
+    output = _render(report, width, explicit_config=explicit_config)
     assert "Restore check coverage" in output and "1 scan warnings" in output
     assert "Looks fine" not in output
+    identity = "client not asserted" if explicit_config else "claude_code"
+    assert f"synthetic-server / {identity} (workstation)" in " ".join(output.split())
+    if explicit_config:
+        assert "claude_code" not in output
 
 
 def test_execution_disclosure_connected_and_canary() -> None:

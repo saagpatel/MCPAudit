@@ -61,9 +61,10 @@ def _text(data: dict[str, object], *keys: str) -> str:
     return ""
 
 
-def _identity(audit: ServerAudit) -> str:
+def _identity(audit: ServerAudit, *, explicit_config: bool = False) -> str:
     server = audit.server
-    return f"{server.name} / {server.client.value} ({server.scope})"
+    client = "client not asserted" if explicit_config else server.client.value
+    return f"{server.name} / {client} ({server.scope})"
 
 
 def _action(finding: BaseModel, audits: list[ServerAudit], sources: tuple[str, ...] = ()) -> Action:
@@ -299,9 +300,7 @@ def render_summary(out: Console, report: AuditReport, *, explicit_config: bool =
     """Responsive text cards; no tables or color-dependent meaning."""
     actions = findings(report)
     if explicit_config:
-        identities = {
-            _identity(a): f"{a.server.name} / client not asserted ({a.server.scope})" for a in report.audits
-        }
+        identities = {_identity(a): _identity(a, explicit_config=True) for a in report.audits}
         actions = [replace(a, identities=tuple(identities.get(i, i) for i in a.identities)) for a in actions]
     if not report.audits:
         out.print("No MCP servers found. No security result or score is available.")
@@ -362,7 +361,7 @@ def render_summary(out: Console, report: AuditReport, *, explicit_config: bool =
                 warning.message,
                 "Use --details to review this check's reason and prerequisites before rechecking.",
                 tuple(a.server.config_path for a in affected),
-                tuple(_identity(a) for a in affected),
+                tuple(_identity(a, explicit_config=explicit_config) for a in affected),
                 warning.code,
                 flags=flags,
                 connected=report.connection_mode == ConnectionMode.ATTEMPTED and flag not in _STATIC_FLAGS,
