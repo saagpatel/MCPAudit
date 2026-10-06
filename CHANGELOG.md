@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add offline `explain` and a generated finding reference with plain-English
+  consequences, initial repair estimates, confidence limits and reference links.
+  Show config paths and explicit-file source labels in finding explanations;
+  align redacted metadata excerpts to word boundaries and mark the actual match
+  using additive display offsets without changing plain JSON evidence.
+
 - Probe two client identities by default for opt-in stdio canaries, with
   `--canary-identities 1` to disable and `2` to opt in on HTTP/SSE. Identity-conditioned
   surfaces produce HIGH `IDENTITY_CONDITIONED_SURFACE` findings without extra tool

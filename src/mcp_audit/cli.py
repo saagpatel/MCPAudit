@@ -46,6 +46,7 @@ from mcp_audit.result_parcel_cli import result_parcel
 from mcp_audit.session_resume_cli import session_resume
 from mcp_audit.skillscan_cli import skillscan
 from mcp_audit.task_time_machine_cli import task_time_machine
+from mcp_audit.taxonomy import config_health_rule_id, finding_url, render_finding_reference
 from mcp_audit.terminal_text import TerminalSafeLogFilter, strip_controls, terminal_safe
 
 console = Console()
@@ -58,10 +59,12 @@ class ReviewGroup(click.Group):
 
     def format_commands(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
         groups = {
-            "Everyday": ("check", "inspect", "demo"),
+            "Everyday": ("check", "inspect", "demo", "explain"),
             "Integrations": ("serve",),
             "Advanced": tuple(
-                name for name in self.list_commands(ctx) if name not in {"check", "inspect", "demo", "serve"}
+                name
+                for name in self.list_commands(ctx)
+                if name not in {"check", "inspect", "demo", "explain", "serve"}
             ),
         }
         for heading, names in groups.items():
@@ -112,6 +115,19 @@ def main(ctx: click.Context, debug: bool, details: bool, json_stdout: bool) -> N
 main.add_command(check)
 main.add_command(inspect)
 main.add_command(demo)
+
+
+@main.command()
+@click.argument("rule_id")
+def explain(rule_id: str) -> None:
+    """Explain a finding offline, without reading configs or contacting servers."""
+    try:
+        entry = render_finding_reference(rule_id.upper())
+    except KeyError:
+        raise click.BadParameter(
+            f"Unknown finding rule: {strip_controls(rule_id)}", param_hint="rule_id"
+        ) from None
+    click.echo(entry, nl=False)
 
 
 main.add_command(enforcement_fixture)
@@ -402,7 +418,13 @@ def discover(client_filter: str | None, verbose: bool) -> None:
     help="Maximum simultaneous server sessions.",
 )
 @click.option("--verbose", is_flag=True, default=False, help="Show per-tool permission details.")
-@click.option("--config", "extra_config", default=None, metavar="PATH", help="Scan a specific config file.")
+@click.option(
+    "--config",
+    "extra_config",
+    default=None,
+    metavar="PATH",
+    help="Scan an explicit file; parsed as Claude-style config.",
+)
 @click.option(
     "--config-only",
     is_flag=True,
@@ -875,6 +897,10 @@ def _render_config_health_findings(findings: list[ConfigHealthFinding]) -> None:
     console.print("[yellow]Config health warnings found.[/yellow]")
     for finding in findings:
         console.print(terminal_safe(f"- {finding.summary}"), style="yellow")
+        console.print(terminal_safe(f"  How to fix: {finding.remediation}"))
+        if finding.config_paths:
+            console.print(terminal_safe("  config_path: " + "; ".join(finding.config_paths)))
+        console.print(terminal_safe(f"  see: {finding_url(config_health_rule_id(finding.finding_type))}"))
 
 
 # Register watch, monitor, serve, pin subcommands

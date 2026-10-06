@@ -49,6 +49,7 @@ Codex configuration is currently unsupported.
 mcp-audit demo                            # bundled synthetic sandbox; no discovery
 mcp-audit check --config ./mcp.json       # this file only, without connections
 mcp-audit inspect --details              # identities, sources, checked/skipped paths
+mcp-audit explain MCP007                 # offline finding explanation; no config reads
 mcp-audit check --config ./mcp.json --json # AuditReport JSON only on stdout
 ```
 
@@ -63,6 +64,12 @@ An explicit `--policy FILE` evaluates a local gate without enabling runtime
 checks. Legacy `scan` retains its existing defaults and `--json PATH` grammar.
 Help groups commands under Everyday, Integrations, and Advanced; `--help-all`
 shows the full grouped catalog.
+
+Find a rule's meaning, possible consequences, manual fix and confidence limits
+in the [finding reference](docs/findings/index.md), or read the same entry offline
+with `mcp-audit explain MCP013`. Explicit `--config` sources are labeled
+“explicit file; parsed as Claude-style config”; the parser identity does not
+establish which client uses that file.
 
 No install required — [`uv`](https://docs.astral.sh/uv/) runs it in a throwaway environment. Start with the zero-touch pass: it reads the MCP configs on your machine and reasons from them; the scan spawns no servers and contacts no configured endpoints (`uvx` itself may fetch the package from PyPI).
 
