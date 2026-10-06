@@ -8,6 +8,7 @@ from typing import Any
 
 import yaml
 
+from mcp_audit.coverage import missing_checks
 from mcp_audit.models import (
     AuditReport,
     ConfigHealthFinding,
@@ -30,6 +31,7 @@ class PolicyConfig:
     fail_on_egress_severity: str | None = None
     fail_on_capability_severity: str | None = None
     fail_on_config_health_severity: str | None = None
+    fail_on_coverage: bool = False
     fail_on_drift: bool = False
     fail_on_trifecta: bool = False
     fail_on_shadowing: bool = False
@@ -92,6 +94,9 @@ def load_policy(path: Path) -> PolicyConfig:
     integrity = bool(fail_on.get("integrity", False))
     package_verify = bool(fail_on.get("package_verify", False))
     artifact_verify = bool(fail_on.get("artifact_verify", False))
+    coverage = fail_on.get("coverage", False)
+    if not isinstance(coverage, bool):
+        raise ValueError("fail_on.coverage must be a boolean.")
 
     permissions = [_permission(value) for value in _sequence(deny.get("permissions"), "deny.permissions")]
 
@@ -109,6 +114,7 @@ def load_policy(path: Path) -> PolicyConfig:
         fail_on_egress_severity=egress_severity,
         fail_on_capability_severity=capability_severity,
         fail_on_config_health_severity=config_health_severity,
+        fail_on_coverage=coverage,
         fail_on_drift=bool(fail_on.get("drift", False)),
         fail_on_trifecta=trifecta,
         fail_on_shadowing=shadowing,
@@ -136,6 +142,22 @@ def evaluate_policy(
 ) -> PolicyResult:
     """Evaluate a completed audit report against a local policy."""
     violations: list[PolicyViolation] = []
+    if policy.fail_on_coverage:
+        missing = missing_checks(report.coverage)
+        if missing:
+            violations.append(
+                PolicyViolation(
+                    rule="fail_on.coverage", message=f"Check coverage is unknown: {', '.join(missing)}."
+                )
+            )
+        for check, coverage in report.coverage.items():
+            if coverage.state in {"partial", "not_run"}:
+                violations.append(
+                    PolicyViolation(
+                        rule="fail_on.coverage",
+                        message=f"Check '{check}' is {coverage.state}: {coverage.reason}",
+                    )
+                )
     resolved_pin_store = pin_store
     if (
         policy.required_pin_servers or any(rule.require_pin for rule in policy.server_rules.values())

@@ -29,6 +29,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from mcp_audit.analyzer import PermissionAnalyzer
 from mcp_audit.confighealth import config_health_findings
 from mcp_audit.connector import ServerConnector, describe_exception
+from mcp_audit.coverage import OPTIONAL_CHECKS, build_coverage
 from mcp_audit.discovery import ConfigParseError, discover_all_configs
 from mcp_audit.models import (
     AuditReport,
@@ -604,7 +605,7 @@ async def run_scan(
         os_platform=platform.system(),
         connection_mode=ConnectionMode.SKIPPED if opts.skip_connect else ConnectionMode.ATTEMPTED,
         servers_discovered=len(servers),
-        servers_connected=sum(1 for a in audits if a.connection_status == "connected"),
+        servers_connected=sum(1 for a in audits if a.connection_status in ("connected", "partial")),
         servers_failed=sum(1 for a in audits if a.connection_status in ("failed", "timeout")),
         total_tools=sum(len(a.tools) for a in audits),
         high_risk_servers=sum(
@@ -616,6 +617,30 @@ async def run_scan(
         fleet_trifecta_findings=fleet_trifecta,
         shadowing_findings=shadowing,
         warnings=scan_warnings,
+        coverage=build_coverage(
+            audits,
+            requested={
+                check
+                for check in OPTIONAL_CHECKS
+                if getattr(opts, "canary_check" if check == "runtime_security" else check)
+            },
+            skip_connect=opts.skip_connect,
+            warnings=scan_warnings,
+            baselines={
+                check: [bool(baseline(a.server.name)) for a in audits]
+                for check, baseline in (
+                    ("pin_check", pin_store.baseline_tools),
+                    ("escalation_check", pin_store.baseline_tools),
+                    ("provenance_check", pin_store.baseline_config),
+                    ("integrity_check", pin_store.baseline_artifacts),
+                    ("verify_artifacts", pin_store.baseline_package_hashes),
+                    ("download_artifacts", pin_store.baseline_artifact_hashes),
+                )
+                if getattr(opts, check)
+            }
+            if pin_store is not None
+            else {},
+        ),
     )
     return report
 

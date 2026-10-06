@@ -421,21 +421,31 @@ class ServerConnector:
 
             tools = audit.tools if probe else capabilities.tools
             logger.debug("Connected to %s, found %d tools", config.name, len(tools))
-            audit.connection_status = "connected"
+            listing_incomplete = bool(capabilities.listing_warnings) or bool(
+                audit.canary
+                and any(
+                    "surface incomplete" in message or "listing exceeds" in message
+                    for message in audit.canary.warnings
+                )
+            )
+            audit.connection_status = "partial" if listing_incomplete else "connected"
             if not probe:
                 audit.tools = tools
                 audit.prompts = capabilities.prompts
                 audit.resources = capabilities.resources
                 for message in capabilities.listing_warnings:
                     if self.scan_warnings is not None:
+                        remedy = (
+                            "A listing this large, or one that never ends, can hide surfaces; "
+                            "review the server before trusting this result."
+                            if "20-page limit" in message
+                            else "Advertised metadata could not be listed; "
+                            "review the server before trusting this result."
+                        )
                         self.scan_warnings.append(
                             ScanWarning(
                                 code="surface_listing_incomplete",
-                                message=(
-                                    f"Server '{config.name}': {message} "
-                                    "A listing this large, or one that never ends, can hide surfaces; "
-                                    "review the server before trusting this result."
-                                ),
+                                message=f"Server '{config.name}': {message} {remedy}",
                                 servers=[config.name],
                             )
                         )
@@ -587,9 +597,12 @@ class ServerConnector:
             if probe:
                 surface["tools"] = {t.name: t.model_dump(mode="json", by_alias=True) for t in tools}
         except Exception as exc:
-            if not probe:
+            if not probe and not isinstance(exc, _ListingPageLimit):
                 raise
-            self._canary_warning(probe, _listing_failure_message("Tool", exc))
+            message = _listing_failure_message("Tool", exc)
+            listing_warnings.append(message)
+            if probe:
+                self._canary_warning(probe, message)
 
         if list_prompts:
             try:
@@ -631,14 +644,14 @@ class ServerConnector:
                     surface.pop("prompts", None)
                     surface.pop("prompt_results", None)
                 message = _listing_failure_message("Prompt", exc)
+                if prompts_advertised or "prompts" in (previous or {}) or isinstance(exc, _ListingPageLimit):
+                    listing_warnings.append(message)
                 if probe:
                     probe.listing_failures["prompts"] = message
                 if probe and (
                     prompts_advertised or "prompts" in (previous or {}) or isinstance(exc, _ListingPageLimit)
                 ):
                     self._canary_warning(probe, message)
-                elif not probe and isinstance(exc, _ListingPageLimit):
-                    listing_warnings.append(message)
                 elif logger.isEnabledFor(logging.DEBUG):
                     logger.debug(
                         "Server %s prompt listing unavailable: %s", server_name, describe_exception(exc)
@@ -656,6 +669,12 @@ class ServerConnector:
                     }
             except Exception as exc:
                 message = _listing_failure_message("Resource", exc)
+                if (
+                    resources_advertised
+                    or "resources" in (previous or {})
+                    or isinstance(exc, _ListingPageLimit)
+                ):
+                    listing_warnings.append(message)
                 if probe:
                     probe.listing_failures["resources"] = message
                 if probe and (
@@ -664,8 +683,6 @@ class ServerConnector:
                     or isinstance(exc, _ListingPageLimit)
                 ):
                     self._canary_warning(probe, message)
-                elif not probe and isinstance(exc, _ListingPageLimit):
-                    listing_warnings.append(message)
                 elif logger.isEnabledFor(logging.DEBUG):
                     logger.debug(
                         "Server %s resource listing unavailable: %s", server_name, describe_exception(exc)

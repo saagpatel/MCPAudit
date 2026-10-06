@@ -292,6 +292,12 @@ def discover(client_filter: str | None, verbose: bool) -> None:
     "--sarif", "sarif_output", default=None, metavar="PATH", help="Write SARIF 2.1.0 report to PATH."
 )  # noqa: E501
 @click.option(
+    "--sarif-profile",
+    type=click.Choice(["compatibility", "extended"]),
+    default="compatibility",
+    help="SARIF rule profile; extended includes configuration-health findings.",
+)
+@click.option(
     "--html", "html_output", default=None, metavar="PATH", help="Write a self-contained HTML report to PATH."
 )  # noqa: E501
 @click.option("--skip-connect", is_flag=True, default=False, help="Skip server connections, config only.")
@@ -426,6 +432,7 @@ def discover(client_filter: str | None, verbose: bool) -> None:
 def scan(
     json_output: str | None,
     sarif_output: str | None,
+    sarif_profile: str,
     html_output: str | None,
     skip_connect: bool,
     clients: str | None,
@@ -491,6 +498,7 @@ def scan(
         canary_check,
         canary_calls,
         canary_safe_tools,
+        sarif_profile,
     )
 
 
@@ -593,6 +601,7 @@ async def _run_scan(
     canary_check: bool = False,
     canary_calls: int = 5,
     canary_safe_tools: tuple[str, ...] = (),
+    sarif_profile: str = "compatibility",
 ) -> None:
     """CLI scan entrypoint — calls the engine's run_scan then renders output."""
     if config_only and not extra_config:
@@ -693,7 +702,7 @@ async def _run_scan(
 
         from mcp_audit.sarif import SarifGenerator
 
-        sarif_doc = SarifGenerator().generate(out_report)
+        sarif_doc = SarifGenerator().generate(out_report, profile=sarif_profile)
         sarif_path = Path(sarif_output)
         sarif_path.write_text(_json.dumps(sarif_doc, indent=2))
         written_artifacts.append(sarif_path.name)

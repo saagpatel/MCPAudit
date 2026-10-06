@@ -783,7 +783,7 @@ async def test_unavailable_listing_descriptions_are_not_computed_with_debug_disa
     config = make_server_config(command=sys.executable, args=[MOCK_SERVER])
     with caplog.at_level(logging.INFO, logger="mcp_audit.connector"):
         audit = await ServerConnector(timeout=5).connect(config)
-    assert audit.connection_status == "connected"
+    assert audit.connection_status == "partial"
     assert audit.tools
 
 
