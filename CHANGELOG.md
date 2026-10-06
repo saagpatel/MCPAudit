@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- Pin tool surfaces with canonical form v2, covering annotations, title, output
+  schema, icons and metadata; restore those fields for baseline comparison and
+  flag security-relevant annotation changes as HIGH MCP018 deltas. Share the
+  compact canonical serializer with canary surfaces. Keep legacy v1 hashes
+  active without automatic migration, warn about uncovered fields and label
+  them in refresh previews before an explicit upgrade.
+
 ## [2.8.1] - 2026-10-06
 
 ### Security

@@ -148,6 +148,24 @@ unknown fields as additive. Important stable top-level fields:
 - `config_health_findings`
 - `policy_result`
 
+Tool entries retain all existing fields and add nullable `title`, `output_schema`,
+`icons` (a list of JSON icon objects), and `meta` (the served `_meta` object).
+`schema_version` remains 1. Pin hashes use `mcpaudit.tool-surface.v2`: default-filled
+annotations, omitted null/empty optional fields, served schemas, sorted compact
+UTF-8 JSON with a trailing newline and rejected NaN/Infinity. Canary tool
+comparisons use the same normalized tool form and serializer. Legacy pins still
+compare only name, description and input schema with their original v1 bytes;
+scans never upgrade them. See [Pin Maintenance](PIN-MAINTENANCE.md) for migration.
+
+Escalation findings add `kind: annotation_delta` and an `annotation_changes`
+list of hint names (empty for other kinds). This is HIGH `MCP018` for
+readOnlyHint true→false, destructiveHint false/absent→explicitly true, or
+openWorldHint false→true. Hint removal uses MCP defaults. Uncovered legacy
+annotations do not establish deltas. These hint names also appear in terminal,
+HTML, SARIF result properties and `get_escalation_findings` output.
+`pin --refresh --json` adds `uncovered_fields` rows with `tool_name`, `field`
+and `summary: "not previously covered"` for each newly covered v1 tool field.
+
 Each audit may include:
 
 - `tools`, `prompts`, and `resources`
@@ -326,6 +344,9 @@ The report top level also includes:
   in scan/session observation order. Fields:
   - `code` — stable machine key. Current vocabulary:
     `pin_baseline_missing` (check requested but nothing is pinned),
+    `pin_schema_outdated` (a compared server has v1 tool entries; annotations,
+    title, outputSchema, icons and meta were not covered; original v1 drift
+    comparisons remain active, and refresh review is required for v2 coverage),
     `pin_baseline_corrupted` (a pin baseline file exists but could not be
     parsed — materially different from "missing", since it can mask a wiped
     or tampered baseline; the message names the file and parse error, and
