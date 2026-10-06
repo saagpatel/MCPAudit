@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Add table-driven contracts for permission keywords and static and runtime injection rule vocabularies.
+- Added the synthetic red-team evasion corpus as a parametrized pytest suite,
+  with strict expected-failure cases tracking planned detector gaps.
 
 ### Fixed
 
@@ -32,10 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Put the zero-touch scan first in the README quick start and describe
   instruction-shaped text checks as pattern-based heuristics.
 
-### Added
+### Tests
 
-- Added the synthetic red-team evasion corpus as a parametrized pytest suite,
-  with strict expected-failure cases tracking planned detector gaps.
+- Pin scorer weights, confidence multipliers, and caps with literal golden values;
+  cover policy gate defaults, branches, boundaries, and invalid policy errors.
 
 ## [2.8.0] - 2026-10-06
 
