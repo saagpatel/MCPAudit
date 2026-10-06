@@ -268,10 +268,16 @@ def test_url_host_port_and_path_survive_named_assignment_pass(host: str) -> None
     ],
 )
 def test_megabyte_url_and_quoted_value_inputs_are_linear(prefix: str, chunk: str) -> None:
-    text = prefix + (chunk * (1_048_576 // len(chunk) + 1))[: 1_048_576 - len(prefix)]
-    start = perf_counter()
-    redact_text(text)
-    assert perf_counter() - start < 2.0  # linear is far faster; quadratic takes minutes
+    def elapsed(size: int) -> float:
+        text = prefix + (chunk * (size // len(chunk) + 1))[: size - len(prefix)]
+        start = perf_counter()
+        redact_text(text)
+        return perf_counter() - start
+
+    # Scaling, not wall clock: CI with coverage tracing is ~10x slower than local.
+    # Linear input growth of 4x stays near 4x; quadratic would be near 16x.
+    small, large = elapsed(262_144), elapsed(1_048_576)
+    assert large < 10 * small + 0.05
 
 
 @pytest.mark.parametrize("chunk", ["a", "token", "eyJabcdefgh", "token "])
