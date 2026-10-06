@@ -158,7 +158,21 @@ def _unicode_extract(chars: set[str]) -> Callable[[str, str], str]:
                     word_boundaries=True,
                     mark_match=True,
                 )
-                return f"[U+{ord(c):04X} at pos {idx}]: {excerpt!r}"
+                prefix = f"[U+{ord(c):04X} at pos {idx}]: "
+                evidence, span = marked_excerpt_parts(excerpt)
+                if span is None:
+                    return f"{prefix}{excerpt!r}"
+                before, match, after = evidence[: span[0]], evidence[span[0] : span[1]], evidence[span[1] :]
+                # repr expands controls and backslashes; budget its final form
+                # while trimming only context, keeping the complete match.
+                while len(f"{prefix}{before + '⟦' + match + '⟧' + after!r}") > 200:
+                    if before:
+                        before = re.sub(r"^\s*\S+\s*", "", before, count=1)
+                    elif after:
+                        after = re.sub(r"\s*\S+\s*$", "", after, count=1)
+                    else:
+                        break
+                return f"{prefix}{before + '⟦' + match + '⟧' + after!r}"
         return redacted_excerpt(orig, 0, 0, context_after=200, max_length=200)
 
     return _extract
