@@ -45,10 +45,20 @@ from mcp_audit.terminal_text import TerminalSafeLogFilter, strip_controls
 logger = logging.getLogger(__name__)
 logger.addFilter(TerminalSafeLogFilter())
 
-_SSE_URL_SUFFIX = re.compile(r"(https?://[^\s?#]+)[?#][^\s]*", re.IGNORECASE)
-_SSE_URL_USERINFO = re.compile(r"(https?://)[^/\s]*@", re.IGNORECASE)
+# Consume suffix candidates even without a suffix, avoiding repeated scans of
+# overlapping URL starts in server-controlled text. Possessive runs cannot backtrack.
+_SSE_URL_SUFFIX = re.compile(r"(https?://[^\s?#]++)([?#][^\s]*)?", re.IGNORECASE)
+_SSE_URL_USERINFO = re.compile(r"(https?://)(?:[^/\s@]*+@)++", re.IGNORECASE)
+_REDIRECT_URL = re.compile(
+    r"(\b(?:redirect(?:ed|ing)?\s*(?:to|target|->)|redirect\s+location|location['\"]?)\s*[:=]?\s*['\"<]?)"
+    # Any token after a redirect phrase is server-chosen and may be an opaque
+    # credential, so it is always withheld.
+    r"[^\s'\"<>]+",
+    re.IGNORECASE,
+)
 _SSE_LOGGER_NAMES = (
     "mcp.client.sse",
+    "mcp.client.streamable_http",
     "httpx2",
     "httpcore2.connection",
     "httpcore2.http11",
@@ -60,8 +70,56 @@ _SSE_LOGGER_NAMES = (
 
 def _redact_sse_log_text(value: str) -> str:
     # Negotiated POST endpoints can use arbitrary query keys for session credentials.
-    redacted = _SSE_URL_SUFFIX.sub(r"\1?<redacted>", value)
-    return strip_controls(redact_text(_SSE_URL_USERINFO.sub(r"\1<redacted>@", redacted)))
+    redacted = _REDIRECT_URL.sub(r"\1<redacted-url>", value)
+    redacted = _SSE_URL_SUFFIX.sub(
+        lambda match: match[1] + "?<redacted>" if match[2] is not None else match[0], redacted
+    )
+    redacted = _SSE_URL_USERINFO.sub(r"\1<redacted>@", redacted)
+    return strip_controls(redact_text(redacted))
+
+
+def _exception_leaves(exc: BaseException) -> Iterator[BaseException]:
+    if isinstance(exc, BaseExceptionGroup):
+        for child in exc.exceptions:
+            yield from _exception_leaves(child)
+    else:
+        yield exc
+
+
+def _exception_type_names(exc: BaseException) -> str:
+    return "; ".join(dict.fromkeys(type(leaf).__name__ for leaf in _exception_leaves(exc)))
+
+
+def describe_exception(exc: BaseException) -> str:
+    """Return a bounded, redacted summary of an exception and any grouped causes."""
+    leaves: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    for error in _exception_leaves(exc):
+        exception_type = type(error).__name__
+        message = str(error)
+        if len(message) > 2_000:
+            message = message[:2_000]
+            # Drop the cut token before redaction, so partial URL credentials
+            # cannot survive. Preserve unbroken alphanumeric diagnostic text.
+            boundary = next((i for i in range(len(message) - 1, -1, -1) if message[i].isspace()), None)
+            if boundary is None:
+                boundary = next((i for i in range(len(message) - 1, -1, -1) if message[i] in "'\"<>"), None)
+            if boundary is not None:
+                message = message[:boundary]
+            elif not message.isalnum():
+                message = ""
+        identity = (exception_type, message)
+        if identity not in seen:
+            seen.add(identity)
+            leaves.append(identity)
+
+    descriptions = [f"{name}: {message}" if message else name for name, message in leaves]
+    # Ordinary URLs retain host/path; redirect targets are withheld entirely.
+    summary = _redact_sse_log_text("; ".join(descriptions))
+    if len(summary) > 500:
+        return summary[:499] + "…"
+    return summary
 
 
 class _SseLogFilter(logging.Filter):
@@ -199,7 +257,8 @@ class _ListingPageLimit(ValueError):
 def _listing_failure_message(label: str, exc: Exception) -> str:
     if isinstance(exc, _ListingPageLimit):
         return f"{label} listing exceeds the 20-page limit; coverage is incomplete."
-    return f"{label} surface incomplete ({type(exc).__name__})."
+    reason = _exception_type_names(exc)
+    return f"{label} surface incomplete ({reason})."
 
 
 async def _list_pages(
@@ -378,7 +437,13 @@ class ServerConnector:
             return audit
 
         except Exception as exc:
-            message = redact_text(str(exc))
+            message = describe_exception(exc)
+            if not isinstance(exc, BaseExceptionGroup):
+                # Keep established plain-exception wording while still using
+                # the helper's URL and credential redaction.
+                prefix = f"{type(exc).__name__}: "
+                if message.startswith(prefix):
+                    message = message[len(prefix) :]
             logger.debug("Failed to connect to %s: %s", config.name, message)
             if audit.canary:
                 audit.connection_status = "failed"
@@ -413,6 +478,8 @@ class ServerConnector:
         if not config.url:
             raise ValueError(f"Server {config.name} has no URL for HTTP transport")
 
+        for name in _SSE_LOGGER_NAMES:
+            logging.getLogger(name).addFilter(_SSE_LOG_FILTER)
         # mcp 2.1.1 maps Client(str) to streamable_http_client.
         async with Client(config.url) as client:
             return await self._inspect_session(client, config.name, probe)
@@ -456,7 +523,12 @@ class ServerConnector:
             eligible = [t for t in capabilities.tools if canary_tool_eligible(t, t.name in probe.safe_tools)]
             if not eligible:
                 summary.status = "no_safe_tools" if not summary.completed_calls else "partial"
-                summary.warnings.append("No eligible empty-argument tools remain; exercise stopped.")
+                stop_message = (
+                    "Tool listing failed; exercise stopped."
+                    if "tools" not in capabilities.surface
+                    else "No eligible empty-argument tools remain; exercise stopped."
+                )
+                summary.warnings.append(stop_message)
                 return capabilities
             tool = eligible[(call - 1) % len(eligible)]
             result = await session.call_tool(tool.name, {})
@@ -531,7 +603,8 @@ class ServerConnector:
                         try:
                             result = await session.get_prompt(prompt.name, {})
                         except Exception as exc:
-                            self._canary_warning(probe, f"prompts/get incomplete ({type(exc).__name__}).")
+                            reason = _exception_type_names(exc)
+                            self._canary_warning(probe, f"prompts/get incomplete ({reason}).")
                             continue
                         surface["prompt_results"][prompt.name] = {
                             "description": result.description,
@@ -554,9 +627,9 @@ class ServerConnector:
                     self._canary_warning(probe, message)
                 elif not probe and isinstance(exc, _ListingPageLimit):
                     listing_warnings.append(message)
-                else:
+                elif logger.isEnabledFor(logging.DEBUG):
                     logger.debug(
-                        "Server %s prompt listing unavailable: %s", server_name, redact_text(str(exc))
+                        "Server %s prompt listing unavailable: %s", server_name, describe_exception(exc)
                     )
 
         if list_resources:
@@ -581,9 +654,9 @@ class ServerConnector:
                     self._canary_warning(probe, message)
                 elif not probe and isinstance(exc, _ListingPageLimit):
                     listing_warnings.append(message)
-                else:
+                elif logger.isEnabledFor(logging.DEBUG):
                     logger.debug(
-                        "Server %s resource listing unavailable: %s", server_name, redact_text(str(exc))
+                        "Server %s resource listing unavailable: %s", server_name, describe_exception(exc)
                     )
 
         tool_infos = [self._convert_tool(t) for t in tools]

@@ -95,7 +95,13 @@ def main() -> None:
                             "description": "Updated status."
                             if mode in {"launder_tools", "noadvert"} and changed
                             else "Status.",
-                            "inputSchema": {"type": "object"},
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {"detail": {"type": "string"}},
+                                "required": ["detail"],
+                            }
+                            if mode == "required_arguments"
+                            else {"type": "object"},
                             "annotations": {"readOnlyHint": True, "destructiveHint": False},
                         }
                     ]
