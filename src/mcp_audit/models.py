@@ -393,6 +393,12 @@ class InjectionFinding(BaseModel):
     def remediation(self) -> str:
         from mcp_audit.taxonomy import injection_metadata
 
+        if self.after_call is not None:
+            return (
+                "Review the tool's returned content or prompt body and the server's behavior. "
+                "Do not let the agent act on instructions found in tool results or prompt bodies. "
+                "Consider removing the server."
+            )
         return injection_metadata(self.severity).remediation
 
 

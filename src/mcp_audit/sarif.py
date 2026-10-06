@@ -498,10 +498,13 @@ class SarifGenerator:
         config_path = audit.server.config_path
         uri = _artifact_uri(config_path)
         target_label = finding.target_type.value
+        fingerprint_target = finding.target_name or finding.tool_name
+        if finding.after_call is not None:
+            fingerprint_target += f"\0runtime\0{target_label}\0{finding.pattern_name}"
         msg = (
             f"Prompt injection pattern '{finding.pattern_name}' detected in {target_label} "
             f"'{finding.target_name or finding.tool_name}' on server '{audit.server.name}': "
-            f"{finding.description}. "
+            f"{finding.description.removesuffix('.')}. "
             f"Suggested action: {finding.remediation}"
         )
         return {
@@ -510,9 +513,7 @@ class SarifGenerator:
             "message": {"text": msg},
             "locations": [{"physicalLocation": {"artifactLocation": {"uri": uri}}}],
             "partialFingerprints": {
-                "mcpAuditStableId": _stable_fingerprint(
-                    rule_id, audit.server.name, finding.target_name or finding.tool_name
-                )
+                "mcpAuditStableId": _stable_fingerprint(rule_id, audit.server.name, fingerprint_target)
             },
             "properties": {
                 "pattern": finding.pattern_name,
