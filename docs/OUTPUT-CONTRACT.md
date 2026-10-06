@@ -162,6 +162,8 @@ server summaries, and collapsed full audit log. Fix now / Worth a look / FYI
 map to high / medium / low severity. Actions merge identical remediation on
 one server identity and overlapping SSRF/egress advice for one target, retaining
 source rules and remediation steps. Original finding rows remain in the log.
+Action grouping and grading precede identifier scrubbing, so `--show-host`
+does not change the grade, action counts, or review estimate.
 Effort is a five-minute-per-action initial-review estimate, not measured repair time.
 Empty tables say "No findings recorded" and refer to coverage, never "None."
 

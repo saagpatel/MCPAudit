@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deduplicated actions, collapsed server summaries and a full audit log.
   Add presentation-only JSON `ux_summary.grade` without changing risk scores.
   Hide the hostname by default in HTML; `check/scan --show-host` includes it.
+  Preserve distinct server actions and grades when display identifiers are redacted.
   Improve mobile table scrolling, muted-text contrast and dark-mode colors.
 
 - Probe two client identities by default for opt-in stdio canaries, with

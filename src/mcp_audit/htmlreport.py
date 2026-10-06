@@ -27,7 +27,7 @@ from mcp_audit.normalize import render_invisibles
 from mcp_audit.redaction import redact_identifiers
 from mcp_audit.taxonomy import format_rule_of_two
 from mcp_audit.terminal_text import strip_controls
-from mcp_audit.ux_summary import actions
+from mcp_audit.ux_summary import Action, actions
 
 _SEVERITY_CLASS = {
     "high": "sev-high",
@@ -38,6 +38,14 @@ _SEVERITY_CLASS = {
 
 def _has_literal(annotation: object) -> bool:
     return get_origin(annotation) is Literal or any(_has_literal(member) for member in get_args(annotation))
+
+
+def _hide_text(value: str, hostname: str) -> str:
+    if hostname:
+        value = re.sub(r"(?<![\w-])" + re.escape(hostname) + r"(?![\w-])", "<redacted-host>", value)
+    hidden = redact_identifiers(value)
+    assert isinstance(hidden, str)
+    return hidden
 
 
 def _hide_identifiers(value: object, hostname: str) -> object:
@@ -52,9 +60,7 @@ def _hide_identifiers(value: object, hostname: str) -> object:
             }
         )
     if isinstance(value, str) and not isinstance(value, Enum):
-        if hostname:
-            value = re.sub(r"(?<![\w-])" + re.escape(hostname) + r"(?![\w-])", "<redacted-host>", value)
-        return redact_identifiers(value)
+        return _hide_text(value, hostname)
     if isinstance(value, list):
         return [_hide_identifiers(item, hostname) for item in value]
     if isinstance(value, tuple):
@@ -136,7 +142,19 @@ class HtmlReportGenerator:
     def generate(self, report: AuditReport, *, show_host: bool = False) -> str:
         """Return the full HTML document. Caller writes it to disk."""
         report = report.redacted()
+        # Group and grade before display redaction can collapse distinct identities.
+        findings = actions(report)
+        grade = report.ux_summary["grade"]
         if not show_host:
+            findings = [
+                Action(
+                    severity=action.severity,
+                    title=_hide_text(action.title, report.hostname),
+                    steps=[_hide_text(step, report.hostname) for step in action.steps],
+                    sources=[_hide_text(source, report.hostname) for source in action.sources],
+                )
+                for action in findings
+            ]
             hidden = _hide_identifiers(report, report.hostname)
             assert isinstance(hidden, AuditReport)
             report = hidden
@@ -154,9 +172,9 @@ class HtmlReportGenerator:
                 f"{self._esc(report.scan_timestamp.isoformat())} · "
                 f"{report.scan_duration_seconds:.2f}s</p>"
             ),
-            self._hero(report),
+            self._hero(grade, findings),
             self._coverage(report),
-            self._actions(report),
+            self._actions(findings),
             "<h2>Your servers</h2>",
         ]
         for audit in report.audits:
@@ -185,9 +203,7 @@ class HtmlReportGenerator:
     # Sections
     # ------------------------------------------------------------------
 
-    def _hero(self, report: AuditReport) -> str:
-        grade = report.ux_summary["grade"]
-        findings = actions(report)
+    def _hero(self, grade: str | None, findings: list[Action]) -> str:
         fixes = sum(action.severity == "high" for action in findings)
         if fixes:
             headline = f"{fixes} action{'s' if fixes != 1 else ''} need your review before use."
@@ -210,9 +226,8 @@ class HtmlReportGenerator:
             "</div></section>"
         )
 
-    def _actions(self, report: AuditReport) -> str:
+    def _actions(self, findings: list[Action]) -> str:
         out: list[str] = []
-        findings = actions(report)
         for severity, label in (("high", "Top fixes"), ("medium", "Worth a look"), ("low", "FYI")):
             entries = [action for action in findings if action.severity == severity]
             out.append(f"<section><h2>{label} · {len(entries)}</h2>")
