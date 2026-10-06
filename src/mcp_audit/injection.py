@@ -350,13 +350,20 @@ class InjectionDetector:
 
     @staticmethod
     def _excerpt(pattern: _InjectionPattern, raw: str, normalized: str) -> str:
-        if normalized == raw or pattern.name in {"hidden_directive", "unicode_direction"}:
+        if (
+            normalized == raw
+            or pattern.name == "unicode_direction"
+            or (pattern.name == "hidden_directive" and any(c in raw for c in _ZERO_WIDTH_CHARS))
+        ):
             return pattern._extract(raw.lower(), raw)
         excerpt = pattern._extract(normalized.lower(), normalized)
         if isinstance(pattern.check, _PhraseCheck):
             span = pattern.check.span(normalized.lower())
             if span is None:
                 return raw[:200]
+        elif pattern.name == "hidden_directive":
+            start = normalized.find("<!--")
+            span = (start, start + len("<!--"))
         else:
             start = normalized.find(excerpt)
             span = (max(0, start), max(0, start) + len(excerpt))

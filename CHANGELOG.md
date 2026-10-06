@@ -21,7 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with field pointers; preserve source evidence and display invisible characters
   as codepoint markers in terminal, HTML and SARIF messages. Anchor bounded raw
   evidence to the detected phrase or gated anomaly so stripped context and
-  benign non-Latin prefixes cannot displace it.
+  benign non-Latin prefixes cannot displace it, including normalized HTML-comment
+  delimiters after long benign prefixes.
 - Pin tool surfaces with canonical form v2, covering annotations, title, output
   schema, icons and metadata; restore those fields for baseline comparison and
   flag security-relevant annotation changes as HIGH MCP018 deltas. Share the

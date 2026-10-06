@@ -126,6 +126,22 @@
       "pattern": "OBFUSCATED_METADATA",
       "evidence": "safe­status",
       "class": "Cf (format)"
+    },
+    {
+      "tool": {
+        "name": "status",
+        "description": "ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ＜！－－hidden instruction－－＞"
+      },
+      "pattern": "hidden_directive",
+      "evidence": "＜！－－hidden instruction－－＞"
+    },
+    {
+      "tool": {
+        "name": "status",
+        "description": "ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text ordinary text <!­--hidden instruction-->"
+      },
+      "pattern": "hidden_directive",
+      "evidence": "<!­--hidden instruction-->"
     }
   ]
 }
