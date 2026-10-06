@@ -120,9 +120,17 @@ from drift and scanned for result injection instead. Prompt argument structure
 is compared through `prompts/list`. Unavailable surface categories do not
 establish removals. Tools, prompts and resources are always listed in both
 modes, so served-but-unadvertised surfaces still reach the static checks; an
-unavailable unadvertised surface is logged at debug level and is not a
-coverage warning. Listings follow `next_cursor` up to 20 pages;
-exceeding the limit is incomplete coverage and no partial page set is admitted.
+unadvertised surface stays debug-only when every listing fails with an ordinary
+error and it is never observed. An observed surface that later fails, or an
+unavailable surface that later appears, adds a canary coverage warning. Static
+analysis retains each surface's last successfully listed inventory across
+failures; a successful listing, including an empty one, replaces it.
+Listings follow `next_cursor` up to 20 pages; exceeding the limit adds a
+coverage warning regardless of advertisement and no partial page set is
+admitted. In non-canary scans, prompt/resource page-limit exhaustion adds
+`surface_listing_incomplete` to the top-level scan warnings without setting
+`connection_error` (`check: null`, affected server named in `servers`). Other
+non-canary listing-failure behavior is unchanged.
 
 `--canary-calls` bounds tool exercise requests (K), not metadata reads. The
 documented exercise request budget includes all `prompts/get`: for P eligible
@@ -207,7 +215,9 @@ The report top level also includes:
     injection, was refused, failed or stopped incompletely at the provider,
     omitted a tool, or returned malformed output; no model findings were
     admitted),
-    `option_ignored` (an option passed without the check that consumes it).
+    `option_ignored` (an option passed without the check that consumes it),
+    `surface_listing_incomplete` (a connected non-canary prompt/resource
+    listing exceeded the 20-page limit, advertised or not).
     The vocabulary is additive — consumers must tolerate unknown codes.
   - `message` — plain-text human summary including remediation.
   - `check` — the scan option whose coverage was reduced, or `null`.

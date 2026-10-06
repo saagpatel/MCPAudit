@@ -358,8 +358,9 @@ of eligible prompts per listing (if it stays constant). A tools-list failure
 can add one refresh and its prompt gets before the next exercise call; the
 reported total is `completed_calls + prompt_get_calls`. Initialize and listing
 requests are additional. Tools, prompts and resources are always listed; a
-surface the server never advertised does not degrade coverage when it is
-unavailable. Each listing follows at most 20
+surface the server never advertised stays debug-only if every listing fails
+with an ordinary error and it is never observed. Intermittent availability
+and page-limit exhaustion produce coverage warnings. Each listing follows at most 20
 pages per capture. Scanned text is capped at 64 KB per tool result or prompt
 body. The existing `--timeout` bounds the whole session, including all calls
 and listings. Errors, timeouts, page-limit exhaustion, required-argument

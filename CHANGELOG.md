@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve the canary's last successful static inventories across listing
+  failures, warn on intermittent unadvertised surfaces, and report prompt/resource
+  page-limit exhaustion even when unadvertised, including in ordinary scans.
+
 - Harden runtime canary eligibility with MCP annotation defaults and preserve
   surface drift across transient listing or individual prompt-get failures.
   Honor advertised capabilities, follow bounded pagination, exclude dynamic
