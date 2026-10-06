@@ -1,6 +1,7 @@
 {
   "server_name": "server-linear",
   "description": "Linear MCP server — issue search, creation, comments, and status updates",
+  "tool_annotations": {"open_world_hint": true},
   "tools": [
     {
       "name": "linear_search_issues",

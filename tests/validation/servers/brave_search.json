@@ -1,6 +1,7 @@
 {
 	"server_name": "server-brave-search",
 	"description": "@modelcontextprotocol/server-brave-search — web search via Brave Search API",
+	"tool_annotations": {"open_world_hint": true},
 	"tools": [
 		{
 			"name": "brave_web_search",

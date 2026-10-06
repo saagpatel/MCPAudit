@@ -1,6 +1,7 @@
 {
   "server_name": "server-notion",
   "description": "Notion MCP server — search, read, create, and update workspace content",
+  "tool_annotations": {"open_world_hint": true},
   "tools": [
     {
       "name": "notion_search_pages",

@@ -1,6 +1,7 @@
 {
 	"server_name": "server-postgres",
 	"description": "@modelcontextprotocol/server-postgres — PostgreSQL database operations",
+	"tool_annotations": {"open_world_hint": true},
 	"tools": [
 		{
 			"name": "query",

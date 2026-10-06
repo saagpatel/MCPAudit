@@ -19,14 +19,6 @@ from tests.validation.validate_patterns import (
 
 SERVER_FIXTURES = [load_fixture(path) for path in sorted(SERVERS_DIR.glob("*.json"))]
 BENIGN_FIXTURES = load_benign_fixtures()
-_KNOWN_FPS = {
-    "benign-set-timer": "set/add infer file_write",
-    "benign-get-commit": "commit infers file_write",
-    "benign-list-tasks": "open/list/describe infer file_read",
-    "benign-export-csv": "export infers exfiltration",
-    "benign-summarize": "reply infers exfiltration",
-    "benign-translate": "forward infers exfiltration",
-}
 
 
 @pytest.mark.parametrize("fixture", SERVER_FIXTURES, ids=lambda fixture: fixture["server_name"])
@@ -37,22 +29,8 @@ def test_server_validation_fixture(fixture: Fixture) -> None:
 
 @pytest.mark.parametrize(
     "fixture",
-    [
-        pytest.param(
-            fixture,
-            id=fixture["server_name"],
-            marks=(
-                pytest.mark.xfail(
-                    strict=True,
-                    raises=AssertionError,
-                    reason=f"M2 known FP; P2-1: {_KNOWN_FPS[fixture['server_name']]}",
-                )
-                if fixture["server_name"] in _KNOWN_FPS
-                else ()
-            ),
-        )
-        for fixture in BENIGN_FIXTURES
-    ],
+    BENIGN_FIXTURES,
+    ids=lambda fixture: fixture["server_name"],
 )
 def test_benign_validation_fixture(fixture: Fixture) -> None:
     stats = evaluate_fixture(fixture)
@@ -63,9 +41,9 @@ def test_validation_reports_raw_precision_recall_and_f1(capsys: pytest.CaptureFi
     assert run_validation() == 0
     output = capsys.readouterr().out
     assert "Precision" in output and "Recall" in output and "F1" in output
-    assert "117 TP, 6 FP, 1 FN" in output
+    assert "117 TP, 0 FP, 1 FN" in output
     assert "benign-export-csv" in output
-    assert "62.5%" in output  # Five exfiltration TPs, three known FPs; never excluded.
+    assert "100.0%" in output
 
 
 def test_silent_row_counts_distinct_categories_even_at_low_confidence() -> None:
@@ -104,9 +82,9 @@ def test_insufficient_confidence_is_false_negative() -> None:
 @pytest.mark.parametrize(
     ("category", "tp", "fp"),
     [
-        ("file_read", 19, 1),
-        ("file_write", 30, 2),
-        ("exfiltration", 5, 3),
+        ("file_read", 19, 0),
+        ("file_write", 30, 0),
+        ("exfiltration", 5, 0),
         ("network", 49, 0),
         ("destructive", 10, 0),
         ("shell_execution", 4, 0),
@@ -134,12 +112,12 @@ def test_validation_fails_on_false_positive_without_expected_positives(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     fixture: Fixture = {
-        "server_name": "synthetic-export",
+        "server_name": "synthetic-upload",
         "keyword_only": True,
-        "tools": [{"name": "export_csv"}],
-        "expected_findings": [{"tool": "export_csv", "categories": []}],
+        "tools": [{"name": "upload"}],
+        "expected_findings": [{"tool": "upload", "categories": []}],
     }
     assert run_validation([fixture]) == 1
     output = capsys.readouterr().out
-    assert "synthetic-export" in output
+    assert "synthetic-upload" in output
     assert "FAILED: exfiltration precision 0.0%" in output

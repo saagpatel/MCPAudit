@@ -117,7 +117,9 @@ def test_corpus_capability_evidence_is_restored_without_annotation_discount() ->
         if restored[finding.category].confidence != Confidence.DECLARED:
             assert restored[finding.category] == finding
     assert audit.risk_score is not None
-    assert audit.risk_score.composite >= RiskScorer().score_server(keyword_only).composite
+    assert audit.risk_score.composite == RiskScorer().score_server(keyword_only).composite
+    unannotated = analyzer.analyze_tool(tool.model_copy(update={"annotations": None}))
+    assert audit.risk_score.composite == RiskScorer().score_server(unannotated).composite
     assert {f.severity for f in audit.annotation_findings} == {"medium", "high"}
 
 

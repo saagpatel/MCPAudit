@@ -347,7 +347,10 @@ def canary_tool_eligible(tool: ToolInfo, explicitly_safe: bool = False) -> bool:
     }
     if agent_visible_text(tool).incomplete:
         return False
-    if any(f.category in forbidden for f in PermissionAnalyzer().analyze_tool_keywords(tool)):
+    # Safety vetoes retain every side-effect keyword, even without scoring context.
+    if any(
+        f.category in forbidden for f in PermissionAnalyzer().analyze_tool_keywords(tool, contextual=False)
+    ):
         return False
     if InjectionDetector().scan_tool(tool):
         return False
