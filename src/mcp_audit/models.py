@@ -1010,6 +1010,7 @@ class ServerAudit(BaseModel):
     annotation_findings: list[AnnotationFinding] = Field(default_factory=list)
     capability_findings: list[CapabilityFinding] = Field(default_factory=list)
     risk_score: RiskScore | None = None
+    permission_alert_score: float | None = Field(default=None, ge=0, le=10)
     non_tool_risk: NonToolRisk | None = None
     has_annotations: bool = False
     annotation_coverage: float = 0.0  # Percentage of tools with annotations

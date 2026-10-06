@@ -608,6 +608,8 @@ class SarifGenerator:
 
     def _permission_alert_score(self, audit: ServerAudit) -> float:
         """Retain capability alert levels across the numerical scoring migration."""
+        if audit.permission_alert_score is not None:
+            return audit.permission_alert_score
         composite = audit.risk_score.composite if audit.risk_score else 0.0
         if audit.risk_score and audit.tools:
             # Keep capability alert levels compatible when annotation-only

@@ -11,6 +11,7 @@ from mcp_audit.analyzer import PermissionAnalyzer
 from mcp_audit.connector import ServerConnector
 from mcp_audit.engine import ScanOptions, run_scan
 from mcp_audit.models import AuditReport, ServerAudit, ServerConfig, ToolAnnotations, ToolInfo
+from mcp_audit.overrides import OverrideApplier, OverrideConfig, PermissionOverride, ServerToolOverride
 from mcp_audit.policy import PolicyConfig, evaluate_policy
 from mcp_audit.report import ReportGenerator
 from mcp_audit.sarif import SarifGenerator, _stable_fingerprint
@@ -19,7 +20,9 @@ from tests.conftest import make_server_config, make_tool
 FIXTURE = Path(__file__).parent / "fixtures/scoring_annotations.json"
 
 
-async def _scan(name: str, monkeypatch: pytest.MonkeyPatch) -> AuditReport:
+async def _scan(
+    name: str, monkeypatch: pytest.MonkeyPatch, overrides: list[ServerToolOverride] | None = None
+) -> AuditReport:
     tools = [ToolInfo.model_validate(tool) for tool in json.loads(FIXTURE.read_text())[name]]
 
     async def connect(self: ServerConnector, server: ServerConfig) -> ServerAudit:
@@ -29,26 +32,33 @@ async def _scan(name: str, monkeypatch: pytest.MonkeyPatch) -> AuditReport:
     return await run_scan(
         ScanOptions(config_only=True, inject_check=True, trifecta_check=True),
         servers=[make_server_config(name=name)],
+        override_applier=OverrideApplier(OverrideConfig(overrides=overrides or [])),
     )
 
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    ("name", "composite", "missing", "permissions"),
+    ("name", "composite", "alert_score", "missing", "permissions"),
     [
-        ("clock", 0.0, True, []),
-        ("fully_annotated_clock", 0.0, False, []),
-        ("unlabeled", 0.0, True, []),
-        ("read_file", 0.9, False, ["file_read"]),
+        ("clock", 0.0, 2.5, True, []),
+        ("fully_annotated_clock", 0.0, 1.0, False, []),
+        ("unlabeled", 0.0, 3.5, True, []),
+        ("read_file", 0.9, 1.0, False, ["file_read"]),
     ],
 )
 async def test_scoring_golden_table(
-    name: str, composite: float, missing: bool, permissions: list[str], monkeypatch: pytest.MonkeyPatch
+    name: str,
+    composite: float,
+    alert_score: float,
+    missing: bool,
+    permissions: list[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     report = await _scan(name, monkeypatch)
     audit = report.audits[0]
     assert audit.risk_score is not None
     assert audit.risk_score.composite == pytest.approx(composite)
+    assert audit.permission_alert_score == pytest.approx(alert_score)
     assert audit.annotations_missing is missing
     assert [f.category.value for f in audit.permissions] == permissions
     payload = report.model_dump(mode="json")
@@ -99,19 +109,59 @@ async def test_risky_fixture_keeps_injection_and_chain_findings(monkeypatch: pyt
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("server", "tool", "alert_score", "level"),
+    [
+        (None, None, 7.1, "error"),
+        ("*", "*", 3.6, "warning"),
+        ("capability_levels", "*", 3.6, "warning"),
+        ("capability_levels", "read_file", 7.1, "error"),
+    ],
+)
 async def test_capability_sarif_levels_and_fingerprints_remain_compatible(
+    server: str | None,
+    tool: str | None,
+    alert_score: float,
+    level: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    report = await _scan("capability_levels", monkeypatch)
+    overrides = (
+        [
+            ServerToolOverride(
+                server=server,
+                tool=tool,
+                permissions=PermissionOverride(network=False, destructive=False),
+            )
+        ]
+        if server is not None and tool is not None
+        else []
+    )
+    report = await _scan("capability_levels", monkeypatch, overrides)
     score = report.audits[0].risk_score
     assert score is not None and score.composite == pytest.approx(3.6)
-    results = SarifGenerator().generate(report)["runs"][0]["results"]
-    for rule_id, tool in [("MCP001", "read_file"), ("MCP004", "shell")]:
-        result = next(r for r in results if r["ruleId"] == rule_id)
-        assert result["level"] == "error"  # Prior composite including defaults was 7.1.
-        assert result["partialFingerprints"]["mcpAuditStableId"] == _stable_fingerprint(
-            rule_id, "capability_levels", tool
-        )
+    assert report.audits[0].permission_alert_score == pytest.approx(alert_score)
+    assert {finding.category.value for finding in report.audits[0].permissions} == {
+        "file_read",
+        "shell_execution",
+    }
+    payload = report.model_dump(mode="json")
+    assert payload["schema_version"] == 1
+    for candidate in [report, AuditReport.model_validate(payload), report.redacted()]:
+        results = SarifGenerator().generate(candidate)["runs"][0]["results"]
+        for rule_id, tool_name in [("MCP001", "read_file"), ("MCP004", "shell")]:
+            result = next(r for r in results if r["ruleId"] == rule_id)
+            assert result["level"] == level
+            assert result["partialFingerprints"]["mcpAuditStableId"] == _stable_fingerprint(
+                rule_id, "capability_levels", tool_name
+            )
+        notice = next(r for r in results if r["properties"].get("kind") == "annotations_missing")
+        assert notice["level"] == "note"
+
+    del payload["audits"][0]["permission_alert_score"]
+    legacy_report = AuditReport.model_validate(payload)
+    assert legacy_report.audits[0].permission_alert_score is None
+    legacy_results = SarifGenerator().generate(legacy_report)["runs"][0]["results"]
+    assert all(r["level"] == "error" for r in legacy_results if r["ruleId"] in {"MCP001", "MCP004"})
 
 
 @pytest.mark.parametrize(

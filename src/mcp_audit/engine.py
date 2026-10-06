@@ -455,6 +455,11 @@ async def run_scan(
             ]
             audit.capability_findings = analyzer.analyze_capabilities(audit.prompts, audit.resources)
             audit.risk_score = scorer.score_server(audit.permissions)
+            # Legacy annotation contributions obey the same operator overrides.
+            alert_findings = applier.apply(
+                srv.name, raw_findings + analyzer.legacy_annotation_findings(audit.tools)
+            )
+            audit.permission_alert_score = scorer.score_server(alert_findings).composite
 
             # Optional injection detection
             if injection_detector is not None:

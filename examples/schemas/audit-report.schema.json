@@ -1578,6 +1578,20 @@
           ],
           "default": null
         },
+        "permission_alert_score": {
+          "anyOf": [
+            {
+              "maximum": 10,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Permission Alert Score"
+        },
         "non_tool_risk": {
           "anyOf": [
             {

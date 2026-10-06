@@ -268,6 +268,29 @@ class PermissionAnalyzer:
             for tool in tools
         )
 
+    def legacy_annotation_findings(self, tools: list[ToolInfo]) -> list[PermissionFinding]:
+        """Restore removed annotation contributions only for SARIF level compatibility."""
+        findings: list[PermissionFinding] = []
+        for tool in tools:
+            ann = tool.annotations
+            categories: list[PermissionCategory] = []
+            if ann and ann.read_only_hint is True:
+                categories.append(PermissionCategory.FILE_READ)
+            if ann is None or ann.open_world_hint is None:
+                categories.append(PermissionCategory.NETWORK)
+            if ann is None or (ann.read_only_hint is not True and ann.destructive_hint is None):
+                categories.append(PermissionCategory.DESTRUCTIVE)
+            findings.extend(
+                PermissionFinding(
+                    category=category,
+                    confidence=Confidence.DECLARED,
+                    evidence=["legacy annotation contribution for SARIF level compatibility"],
+                    tool_name=tool.name,
+                )
+                for category in categories
+            )
+        return findings
+
     def analyze_annotation_contradictions(self, tool: ToolInfo) -> list[AnnotationFinding]:
         """Compare explicit served hints with existing keyword capability evidence."""
         ann = tool.annotations

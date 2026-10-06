@@ -102,6 +102,13 @@ retain compatibility, including the former annotation contribution when
 selecting those levels. The note is always `note`, independent of server risk.
 It is informational metadata, not a reduced-coverage scan warning.
 
+`audits[].permission_alert_score` is an additive nullable score (0–10) used
+only to select genuine permission SARIF levels. The engine calculates it with
+the legacy annotation contributions and the same operator overrides applied
+to permission findings. It does not change `risk_score` or policy gates and
+survives JSON round trips. Older reports default to null; SARIF retains its
+annotation-based compatibility calculation when this score is unavailable.
+
 `readOnlyHint=true` alone creates no `file_read` finding. Independent file
 keyword evidence is retained, as are explicit positive network/destructive
 declarations. A zero score is not a runtime safety claim.
