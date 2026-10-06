@@ -40,6 +40,30 @@ The package is `mcp-audits` on PyPI; the command it installs is `mcp-audit`.
 
 ## ⚡ 60-second start
 
+For a static local review, run `mcp-audit` or `mcp-audit check`. Neither starts
+servers, contacts endpoints, loads saved overrides, nor changes settings.
+Only the five supported client adapters and the selected project are reviewed;
+Codex configuration is currently unsupported.
+
+```bash
+mcp-audit demo                            # bundled synthetic sandbox; no discovery
+mcp-audit check --config ./mcp.json       # this file only, without connections
+mcp-audit inspect --details              # identities, sources, checked/skipped paths
+mcp-audit check --config ./mcp.json --json # AuditReport JSON only on stdout
+```
+
+Use `--include-discovered` to add client configs to an explicit-file review,
+and `--project PATH` to select another project scope. Discovery skips symlinks
+and bounds file size, nesting, and entry count; explicit `--config` can select a
+symlink resolving to a regular file. `check --connect --server CLIENT:SCOPE:NAME`
+connects only one uniquely selected identity from `inspect`, and may execute
+configured code with network access. `--details` shows the full report;
+`--output-json FILE`, `--sarif FILE`, and `--html FILE` write named artifacts.
+An explicit `--policy FILE` evaluates a local gate without enabling runtime
+checks. Legacy `scan` retains its existing defaults and `--json PATH` grammar.
+Help groups commands under Everyday, Integrations, and Advanced; `--help-all`
+shows the full grouped catalog.
+
 No install required — [`uv`](https://docs.astral.sh/uv/) runs it in a throwaway environment. Start with the zero-touch pass: it reads the MCP configs on your machine and reasons from them; the scan spawns no servers and contacts no configured endpoints (`uvx` itself may fetch the package from PyPI).
 
 ```bash

@@ -14,6 +14,32 @@ fields. Consumers should ignore unknown fields and should not fail when optional
 fields are present. Existing stable fields should only be removed or renamed
 with a release-note deprecation window and a breaking-version boundary.
 
+## Safe review entry points
+
+`check --json` (and bare `mcp-audit --json`) emits only the existing redacted
+`AuditReport` JSON on stdout. Diagnostics and artifact notices use stderr in
+this mode. `check --output-json FILE` writes the same document; `--sarif FILE`
+and `--html FILE` use the existing generators. No report field or
+`schema_version` changes for these entry points. Legacy `scan --json PATH`
+continues to write a file and retains its existing output behavior.
+
+Bare invocation runs the static `check` path. `--config FILE` excludes discovery
+unless `--include-discovered` is explicit. Saved overrides and remembered
+preferences are not loaded; an explicit policy evaluates evidence without
+enabling extra checks. Connections require `--connect --server CLIENT:SCOPE:NAME`
+and exactly one matching entry with no collected config diagnostics. Setup and
+artifact-write errors exit 1; a failed policy exits 2 after requested artifacts
+and JSON stdout have been written. Exit 0 does not certify security.
+
+Discovery reads only supported adapter candidates and the selected project
+(cwd by default, `--project PATH` to select another). It skips symlinks, rejects
+special files, and limits each file to 1 MiB, nesting to 64, containers to
+20,000, and the review to 1,000 server entries. Explicit config selection may
+resolve a symlink to a regular file. Skipped/malformed discovered files produce
+config-health findings and partial coverage; an invalid explicit file is a
+setup error. `inspect` lists identities and source statuses without connecting.
+`demo` uses the packaged copy of the synthetic `examples/sandbox` config only.
+
 ## Project config connection coverage
 
 `audits[].server.scope` is an additive `workstation|project` field (default

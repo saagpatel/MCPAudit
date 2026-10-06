@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add static-by-default `check`, bare-command configuration review, source
+  inventory with `inspect`, and a bundled config-only `demo`. Explicit configs
+  select only that file unless discovery is requested; connections require one
+  unambiguous client/scope/name identity. New JSON stdout and named artifact
+  options leave the legacy `scan` grammar and reports unchanged.
+
 ### Fixed
 
 - Recognize VS Code server maps in explicit configs and parse both VS Code
