@@ -169,6 +169,9 @@ def review_sources(
             continue
         seen.add(identity)
         try:
+            if not explicit:
+                # Missing adapter candidates are not evidence to open or parse.
+                path.lstat()
             servers = _parse_source(path, client, sources, project, explicit=explicit)
         except FileNotFoundError:
             if explicit:

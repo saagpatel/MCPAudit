@@ -59,11 +59,66 @@ def test_bare_empty_home_spawns_nothing_and_offers_next_commands(monkeypatch: py
     monkeypatch.setattr(ServerConnector, "connect", forbidden)
     result = CliRunner().invoke(cli.main, [])
     assert result.exit_code == 0, result.output
-    assert "No MCP servers found" in result.output
+    assert result.output.startswith("No MCP servers found")
+    assert "PARTIAL" not in result.output
     assert "mcp-audit demo" in result.output
     assert "mcp-audit check --config" in result.output
     assert "NOT CHECKED" in result.output
     assert not (Path.home() / ".mcp-audit-pins.yaml").exists()
+
+
+@pytest.mark.parametrize("args", [["check", "--json"], ["--json"]])
+def test_empty_home_has_no_config_findings_or_partial_coverage(args: list[str]) -> None:
+    sources = review_sources()
+    assert not sources.errors
+    assert sources.paths
+    assert all(status == "absent" for _, status in sources.paths)
+    result = CliRunner().invoke(cli.main, args)
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["servers_discovered"] == 0
+    assert payload["config_health_findings"] == []
+    assert payload["coverage"]["config_health"]["state"] == "complete"
+    assert all(entry["state"] != "partial" for entry in payload["coverage"].values())
+
+
+def test_one_valid_home_config_with_other_clients_absent_is_healthy() -> None:
+    config = _config(Path.home() / ".cursor/mcp.json")
+    sources = review_sources()
+    assert not sources.errors
+    assert (str(config), "checked: 1 entries") in sources.paths
+    assert all(path == str(config) or status == "absent" for path, status in sources.paths)
+    result = CliRunner().invoke(cli.main, ["check", "--json"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["servers_discovered"] == 1
+    assert payload["config_health_findings"] == []
+    assert payload["coverage"]["config_health"]["state"] == "complete"
+
+
+@pytest.mark.parametrize("present", [False, True])
+def test_denied_opens_only_diagnose_existing_configs(monkeypatch: pytest.MonkeyPatch, present: bool) -> None:
+    import os
+
+    if present:
+        _config(Path.home() / ".cursor/mcp.json")
+
+    def denied_open(*args: object, **kwargs: object) -> int:
+        raise PermissionError("synthetic read denial")
+
+    monkeypatch.setattr(os, "open", denied_open)
+    result = CliRunner().invoke(cli.main, ["check", "--json"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    findings = payload["config_health_findings"]
+    if present:
+        assert len(findings) == 1
+        assert findings[0]["finding_type"] == "config_parse_failure"
+        assert findings[0]["details"] == ["unreadable config: PermissionError"]
+        assert payload["coverage"]["config_health"]["state"] == "partial"
+    else:
+        assert findings == []
+        assert payload["coverage"]["config_health"]["state"] == "complete"
 
 
 @pytest.mark.parametrize(

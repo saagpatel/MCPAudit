@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Classify absent client config candidates before opening them in static review;
+  missing files produce no config-health finding or partial coverage. Retain
+  redacted config diagnostic reasons in summaries, including null project entries,
+  while preserving the connection block for malformed configs.
 - Recognize VS Code server maps in explicit configs and parse both VS Code
   files as JSONC. Report malformed entries and duplicate keys, reject
   non-regular config paths before reading, accept UTF-8 BOMs, and distinguish

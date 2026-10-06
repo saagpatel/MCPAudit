@@ -46,6 +46,10 @@ special files, and limits each file to 1 MiB, nesting to 64, containers to
 resolve a symlink to a regular file. Skipped/malformed discovered files produce
 config-health findings and partial coverage; an invalid explicit file is a
 setup error. `inspect` lists identities and source statuses without connecting.
+Absent discovered candidates are listed as `absent`, produce no config-health
+finding, and do not reduce coverage. Existing unreadable or malformed files
+remain diagnostic, including a selected Claude project entry that is not an
+object. Config diagnostic summaries retain the redacted reason also in `details`.
 `demo` uses the packaged copy of the synthetic `examples/sandbox` config only.
 
 ## Project config connection coverage
