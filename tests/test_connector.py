@@ -292,10 +292,9 @@ def test_redirect_diagnostics_withhold_the_entire_target(prefix: str) -> None:
     assert describe_exception(RuntimeError(text)) == "RuntimeError: " + prefix + "<redacted-url>"
 
 
-def test_redirect_prose_without_a_url_is_unchanged() -> None:
-    text = "redirect to login"
-    assert _redact_sse_log_text(text) == text
-    assert describe_exception(RuntimeError(text)) == "RuntimeError: " + text
+def test_any_token_after_a_redirect_phrase_is_withheld() -> None:
+    # Server-chosen redirect targets can be opaque credentials; prose is not spared.
+    assert _redact_sse_log_text("redirect to login") == "redirect to <redacted-url>"
 
 
 class TestRelativeRedirectTargets:
@@ -313,10 +312,13 @@ class TestRelativeRedirectTargets:
         assert "SECRETCODE" not in summary
         assert "<redacted-url>" in summary
 
-    def test_plain_prose_after_redirect_phrase_is_kept(self) -> None:
-        assert describe_exception(RuntimeError("please redirect to login")) == (
-            "RuntimeError: please redirect to login"
-        )
+    @pytest.mark.parametrize(
+        "text", ["Redirect location: 'SECRETCODE123'", "Redirect to SECRETCODE123 not followed"]
+    )
+    def test_opaque_relative_targets_are_withheld(self, text: str) -> None:
+        summary = describe_exception(RuntimeError(text))
+        assert "SECRETCODE123" not in summary
+        assert "<redacted-url>" in summary
 
 
 class TestConvertTool:
