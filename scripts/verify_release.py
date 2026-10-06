@@ -88,7 +88,7 @@ def _run_git(*args: str) -> str:
 
 def _check_release_notes(raw: str, *, version: str, status: str) -> None:
     if f"MCPAudit {version}" not in raw:
-        raise VerificationError("versioned release notes are missing or mismatched")
+        raise VerificationError("versioned changelog section is missing or mismatched")
     expected_status = "candidate" if status == "candidate" else "approved"
     expected_decision = "NO-GO" if status == "candidate" else "GO"
     status_markers = re.findall(
@@ -181,15 +181,19 @@ def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object
         raise VerificationError("project metadata does not retain the cryptography>=50.0.0 security floor")
     if "click>=8.3.3,<9.0" not in dependencies:
         raise VerificationError("project metadata does not retain the click>=8.3.3 security floor")
-    release_notes = ROOT / f"docs/{version.rsplit('.', maxsplit=1)[0]}-RELEASE-NOTES.md"
-    if not release_notes.is_file():
-        raise VerificationError("versioned release notes are missing")
+    release_match = re.search(
+        rf"(?ms)^## \[{re.escape(version)}\][^\n]*\n(.*?)(?=^## \[|\Z)",
+        changelog,
+    )
+    if release_match is None:
+        raise VerificationError("versioned changelog section is missing")
+    release_notes = release_match.group(1)
     _check_release_notes(
-        release_notes.read_text(encoding="utf-8"),
+        release_notes,
         version=version,
         status=status,
     )
-    if status == "candidate" and f"mcp-audits=={published}" not in release_notes.read_text(encoding="utf-8"):
+    if status == "candidate" and f"mcp-audits=={published}" not in release_notes:
         raise VerificationError("candidate release notes do not retain the published rollback pin")
     if status == "candidate":
         if f"## [{version}] - Unreleased" not in changelog:
