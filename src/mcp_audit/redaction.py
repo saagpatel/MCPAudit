@@ -356,10 +356,20 @@ def redact_data(value: Any) -> Any:
             if isinstance(key, str) and _is_secret_name(key) and isinstance(item, str)
             else _redact_properties(item)
             if key == "properties" and isinstance(item, dict)
+            else _redact_config_pointer(item)
+            if key == "config_pointer" and isinstance(item, str)
             else redact_data(item)
             for key, item in value.items()
         }
     return value
+
+
+def _redact_config_pointer(pointer: str) -> str:
+    """Redact credentials inside each JSON Pointer token, which ``~1`` escaping hides."""
+    return "/".join(
+        redact_text(token.replace("~1", "/").replace("~0", "~")).replace("~", "~0").replace("/", "~1")
+        for token in pointer.split("/")
+    )
 
 
 def _compile_alias_pattern(name_aliases: dict[str, str]) -> re.Pattern[str] | None:

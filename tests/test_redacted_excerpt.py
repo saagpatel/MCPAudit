@@ -366,3 +366,45 @@ def test_identifier_redaction_drops_offsets_when_matched_text_changes() -> None:
         {"matched_text": "Ignore previous", "matched_span": [0, 6]}, name_aliases={"x": "server-01"}
     )
     assert untouched["matched_span"] == [0, 6]
+
+
+def test_config_pointer_tokens_are_credential_redacted() -> None:
+    from mcp_audit.redaction import redact_data
+
+    pointer = "/mcpServers/https:~1~1synthetic-user:synthetic-value@host.example"
+    out = redact_data(
+        {"config_pointer": pointer, "name": "https://synthetic-user:synthetic-value@host.example"}
+    )
+    assert "synthetic-value" not in out["config_pointer"]
+    assert "synthetic-value" not in out["name"]
+    assert out["config_pointer"].startswith("/mcpServers/https:~1~1")
+    assert (
+        redact_data({"config_pointer": "/mcpServers/plain~1name"})["config_pointer"]
+        == "/mcpServers/plain~1name"
+    )
+
+
+def test_redacted_report_and_extended_sarif_hide_pointer_credentials() -> None:
+    import json
+    from datetime import UTC, datetime
+
+    from mcp_audit.models import AuditReport, ServerAudit
+    from mcp_audit.sarif import SarifGenerator
+    from tests.conftest import make_server_config
+
+    server = make_server_config(name="https://synthetic-user:synthetic-value@host.example")
+    server.config_pointer = "/mcpServers/https:~1~1synthetic-user:synthetic-value@host.example"
+    report = AuditReport(
+        scan_timestamp=datetime.now(UTC),
+        hostname="test",
+        os_platform="Darwin",
+        servers_discovered=1,
+        servers_connected=1,
+        servers_failed=0,
+        total_tools=0,
+        high_risk_servers=0,
+        audits=[ServerAudit(server=server, connection_status="connected")],
+        scan_duration_seconds=0.1,
+    ).redacted()
+    assert "synthetic-value" not in report.model_dump_json()
+    assert "synthetic-value" not in json.dumps(SarifGenerator().generate(report, profile="extended"))
