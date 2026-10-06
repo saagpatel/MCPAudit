@@ -25,8 +25,8 @@ two external redacted field reports are accepted.
 3. Check the comment rendered with the command blocks intact.
 4. Open the issue-template URL in a separate tab:
    `https://github.com/saagpatel/MCPAudit/issues/new?template=field_report.md`
-5. Keep `docs/EXTERNAL-FIELD-REPORT-REQUEST.md` and
-   `docs/FIELD-REPORTS.md#minimal-public-example` ready for contributor replies.
+5. Keep `maintainers/EXTERNAL-FIELD-REPORT-REQUEST.md` and
+   `maintainers/FIELD-REPORTS.md#minimal-public-example` ready for contributor replies.
 
 ## Common Replies
 

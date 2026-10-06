@@ -62,7 +62,7 @@ anything you do not want to answer.
 
 Paste a small redacted summary of the result. Useful signals include status
 counts, config-health finding types, policy failures, and JSON/SARIF consumer
-friction. See `docs/FIELD-REPORTS.md#minimal-public-example` for a safe example
+friction. See `maintainers/FIELD-REPORTS.md#minimal-public-example` for a safe example
 shape.
 
 ## Minimal redacted report snippet

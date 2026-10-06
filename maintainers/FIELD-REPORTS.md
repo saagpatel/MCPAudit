@@ -32,11 +32,11 @@ External evidence issues:
   <https://github.com/saagpatel/MCPAudit/issues/85>.
 
 Contributor request packet:
-`docs/EXTERNAL-FIELD-REPORT-REQUEST.md`.
+`maintainers/EXTERNAL-FIELD-REPORT-REQUEST.md`.
 Maintainer outreach copy:
-`docs/EXTERNAL-OUTREACH-MESSAGES.md`.
+`maintainers/EXTERNAL-OUTREACH-MESSAGES.md`.
 
-Solo validation is tracked separately in `docs/SOLO-EVIDENCE.md`. It can
+Solo validation is tracked separately in `maintainers/SOLO-EVIDENCE.md`. It can
 exercise published-package installs, clean virtual environments, and config-only
 report parsing, but it does not replace the two external redacted reports
 required for beta.
@@ -92,7 +92,7 @@ private disclosure in `SECURITY.md` instead of a public issue.
 The dedicated GitHub template for this path is
 `.github/ISSUE_TEMPLATE/field_report.md`.
 The copy-paste request for contributors lives in
-`docs/EXTERNAL-FIELD-REPORT-REQUEST.md`.
+`maintainers/EXTERNAL-FIELD-REPORT-REQUEST.md`.
 
 ## Activation And Repeat Evidence Contract
 

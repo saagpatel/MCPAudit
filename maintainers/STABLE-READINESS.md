@@ -32,7 +32,7 @@ readback on 2026-10-06. Release evidence must query each external surface again.
 
 Release evidence must establish:
 
-- package, lock metadata, changelog, versioned release notes,
+- package, lock metadata, changelog release section,
   `docs/release-state.json`, `server.json`, and Action/pre-commit examples agree
   on 2.8.1; publication evidence must still report PyPI, the GitHub tag, the
   Action ref, and the official Registry entry separately;

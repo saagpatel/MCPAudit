@@ -8,604 +8,123 @@
 [![CodeQL](https://img.shields.io/github/actions/workflow/status/saagpatel/MCPAudit/codeql.yml?style=flat-square&logo=github&label=CodeQL)](https://github.com/saagpatel/MCPAudit/actions/workflows/codeql.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 
-> ### Audit what your AI agents can actually touch.
+> **See what your AI tools' MCP servers can reach.**
 
-Every MCP server wired into your editor is a process that can read your files, reach the network, or run shell commands on your behalf — frequently launched from a remote `npx`/`uvx` package that can change underneath you. **`mcp-audit`** reads the MCP configs already on your machine and tells you what each server *can do*, how risky it is, whether its tool descriptions carry instruction-shaped text, and whether anything changed since you last looked.
+MCPAudit reviews MCP server configuration and, when asked, lists the tools a
+server exposes. It highlights declared capabilities, instruction-shaped text
+heuristics, and changes from a saved pin so you can decide what to investigate.
+Findings are review signals: a high score means broader capability exposure,
+not that a server is malicious or unsafe.
 
-Read-only by default: scans never edit a config and report env-var **key names only** (never values). Use `--skip-connect` for a zero-touch config-only pass that does not spawn MCP servers or contact remote endpoints; connected scans, package verification, downloads, and LLM analysis make their extra reach explicit in the command.
+> [!IMPORTANT]
+> The package is `mcp-audits`; the command is `mcp-audit`.
+> The default check is static. `check --connect` and legacy `scan` can start
+> configured local programs or contact configured endpoints. Package
+> verification, downloads, and LLM analysis are separate opt-in operations.
+> MCPAudit does not edit configs, and reports environment variable key names,
+> never their values. Review generated reports before sharing them.
 
-For pre-run behavioral evidence, MCPAudit also includes
-[Proof Before Action](docs/PROOF-BEFORE-ACTION.md): a local-only CLI that runs a
-synthetic command in a disposable no-network container, compares observed
-effects with a declaration, joins repository MCP dependencies to local
-mcp-trust evidence, and exports verifiable JSON plus offline HTML.
+## Try it
 
-For MCP `2026-07-28` cache behavior, the experimental
-[Cache Contract Auditor](docs/CACHE-CONTRACT-AUDITOR.md) runs a bounded
-logical-clock simulator over program-owned JSON traces. It checks required
-`ttlMs`/`cacheScope`, private authorization partitions, exact request keys,
-expiry/refresh and validated change-event behavior, linked page scope, and
-deterministic tools ordering without running a client, server, or proxy.
-
-For the experimental MCP Tasks extension, the
-[MCP Task Time Machine](docs/MCP-TASK-TIME-MACHINE.md) runs seed-free synthetic
-lifecycles on a virtual clock. It explains creation, polling, input, retry,
-cooperative cancellation races, expiry, success, failure, duplicates, stale
-observations, and forbidden terminal transitions without discovering or
-contacting an MCP server or reading credentials.
-
-> **🌐 Try it in your browser, no install:** paste any MCP client config at **[mcp-audit.saagarpatel.dev](https://mcp-audit.saagarpatel.dev)** for an instant config-only trust report. It runs this exact engine, never launches configured servers, never contacts configured endpoints, and stores nothing. The CLI below adds connected deep checks (instruction-shaped text, SSRF, the lethal trifecta, schema drift, SARIF).
-
-The package is `mcp-audits` on PyPI; the command it installs is `mcp-audit`.
-
-## ⚡ 60-second start
-
-For a static local review, run `mcp-audit` or `mcp-audit check`. Neither starts
-servers, contacts endpoints, loads saved overrides, nor changes settings.
-Only the five supported client adapters and the selected project are reviewed;
-Codex configuration is currently unsupported.
-
-```bash
-mcp-audit demo                            # bundled synthetic sandbox; no discovery
-mcp-audit check --config ./mcp.json       # this file only, without connections
-mcp-audit inspect --details              # identities, sources, checked/skipped paths
-mcp-audit check --config ./mcp.json --json # AuditReport JSON only on stdout
+```sh
+mcp-audit                              # static review of supported configs
+mcp-audit check --config ./mcp.json    # review this file only; no connections
+mcp-audit demo                         # see a bundled synthetic example
 ```
 
-Use `--include-discovered` to add client configs to an explicit-file review,
-and `--project PATH` to select another project scope. Discovery skips symlinks
-and bounds file size, nesting, and entry count; explicit `--config` can select a
-symlink resolving to a regular file. `check --connect --server CLIENT:SCOPE:NAME`
-connects only one uniquely selected identity from `inspect`, and may execute
-configured code with network access. `--details` shows the full report;
-`--output-json FILE`, `--sarif FILE`, and `--html FILE` write named artifacts.
-An explicit `--policy FILE` evaluates a local gate without enabling runtime
-checks. Legacy `scan` retains its existing defaults and `--json PATH` grammar.
-Help groups commands under Everyday, Integrations, and Advanced; `--help-all`
-shows the full grouped catalog.
+Install with [uv](https://docs.astral.sh/uv/):
 
-No install required — [`uv`](https://docs.astral.sh/uv/) runs it in a throwaway environment. Start with the zero-touch pass: it reads the MCP configs on your machine and reasons from them; the scan spawns no servers and contacts no configured endpoints (`uvx` itself may fetch the package from PyPI).
-
-```bash
-uvx --from mcp-audits mcp-audit scan --skip-connect
+```sh
+uv tool install mcp-audits
 ```
 
-Project configs (`.mcp.json`, `.vscode/mcp.json` in the current directory, and
-Claude Code per-project entries) are discovered and reported without connecting
-by default. After reviewing their commands, opt in with
-`mcp-audit scan --connect-project-configs` or
-`mcp-audit watch --connect-project-configs`. The
-`project_config_not_connected` warning shows the unspawned command and args,
-with credentials redacted. Workstation configs keep their connecting default;
-`--skip-connect` skips every config. `pin`, pin refresh, and `serve` tools skip
-project connections; the Action and pre-commit hook remain config-only.
+Or run without installing:
 
-Then run the connected deep check, which launches workstation-configured stdio servers and connects to their remote endpoints to read its real tool list, and flags SSRF-shaped tools:
-
-```bash
-uvx --from mcp-audits mcp-audit scan --ssrf-check
+```sh
+uvx --from mcp-audits mcp-audit demo
 ```
 
-The connected scan stays read-only — it never edits a config and reports env-var **key names only**, never values. Sample output from the connected scan:
+## What to do with a finding
+
+Start with the suggested action and inspect the named capability or evidence.
+For example, if a filesystem server can write broadly, restrict its configured
+directory and review the report again. Pattern-based instruction checks can
+miss reworded or obfuscated text and can also need human review. A clean report
+is not a safety certificate.
 
 ```text
-╭───────────────────── mcp-audit scan ─────────────────────╮
-│ Scanned 5 servers across 2 clients. 1 high-risk.         │
-│ 0 failed to connect. (2.4s)                              │
-╰──────────────────────────────────────────────────────────╯
-┏━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━┓
-┃ Server     ┃ Client         ┃ Tools ┃ Prompts ┃ Resources ┃ Risk ┃ Non-Tool ┃ Top Permissions            ┃ Status    ┃
-┡━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━┩
-│ github     │ claude_desktop │    26 │       0 │         0 │  9.4 │ n/a      │ file_write, network, exfil │ connected │
-│ filesystem │ claude_desktop │    12 │       0 │         0 │  6.8 │ n/a      │ file_write, file_read      │ connected │
-│ memory     │ cursor         │     9 │       0 │         0 │  5.3 │ n/a      │ file_write                 │ connected │
-│ fetch      │ cursor         │     1 │       0 │         0 │  3.5 │ n/a      │ network                    │ connected │
-│ time       │ claude_desktop │     2 │       0 │         0 │  1.5 │ n/a      │ none                       │ connected │
-└────────────┴────────────────┴───────┴─────────┴───────────┴──────┴──────────┴────────────────────────────┴───────────┘
-
-──────────────────────────────── SSRF Warnings ────────────────────────────────
-┏━━━━━━━━┳━━━━━━┳━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━┓
-┃ Server ┃ Type ┃ Target  ┃ Severity ┃ Pattern         ┃ Evidence          ┃ Suggested Action     ┃
-┡━━━━━━━━╇━━━━━━╇━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━┩
-│ fetch  │ tool │ fetch   │ medium   │ url param +     │ url: string       │ Restrict to a host   │
-│        │      │         │          │ fetch verb      │ (caller-supplied) │ allowlist; never     │
-│        │      │         │          │ (MCP011)        │                   │ proxy caller URLs    │
-└────────┴──────┴─────────┴──────────┴─────────────────┴───────────────────┴──────────────────────┘
+Review the server's configured access, narrow it if needed, then run the check again.
 ```
 
-> *Sample output with illustrative public server names. Higher risk = a broader surface to sandbox, **not** "malicious." Stack `--trifecta-check` or `--shadow-check` alongside `--ssrf-check` to hunt more attack surfaces, and `--json` / `--sarif` / `--html` to pipe results into CI or a dashboard.*
+Use [Start here](docs/start-here.md) for a guided walkthrough and
+[Reading results](docs/reading-results.md) to interpret scores, findings, and
+coverage. [How it works](docs/how-it-works.md) explains the check boundary.
 
-Connected public-fixture demo (`fetch`, `sequential-thinking`, `time`; no auth tokens or workstation configs):
+## Use in CI
 
-![mcp-audit connected SSRF scan demo](docs/assets/hero-scan.gif)
+MCPAudit can write SARIF and evaluate local policy files. Begin with
+config-only CI, then enable connected checks only where the workflow should
+start those servers. See the [CI guide](docs/guides/ci.md) and
+[policy examples](examples/policies/README.md).
 
-Zero-touch preview against the bundled public fixture:
-
-![mcp-audit config-only scan preview](docs/assets/mcp-audit-config-only-scan.png)
-
-Install it permanently once you're hooked:
-
-```bash
-uv tool install mcp-audits                # adds the `mcp-audit` command to your PATH
-mcp-audit scan                            # connects workstation configs; inventories project configs
-```
-
-**Drop it into CI in one step** — the composite GitHub Action runs the scan and writes SARIF straight to GitHub code scanning:
+For a pinned release example, the composite Action can upload SARIF to GitHub
+code scanning:
 
 ```yaml
-- uses: saagpatel/MCPAudit@v2.8.1        # config-only by default; optional policy gate exits 2
+- uses: saagpatel/MCPAudit@v2.8.1
 ```
 
-SARIF proof from the public fixture scan:
-
-![mcp-audit SARIF findings in GitHub code scanning](docs/assets/ci-sarif.png)
-
-Policy gate demo from the same zero-touch public fixture:
-
-![mcp-audit policy gate exits 2](docs/assets/policy-gate.gif)
-
-Self-contained HTML report preview from a redacted config-only scan:
-
-![mcp-audit self-contained HTML report](docs/assets/html-report.png)
-
-**Teach the risk safely:** [`examples/sandbox/`](examples/sandbox/) is a
-public-safe MCP prompt-injection sandbox with synthetic configs, benign twins,
-malicious-lookalike tool descriptions, a static config-only MCPAudit report, and
-a connected-tool manifest that demonstrates what config-only mode can and cannot
-prove.
-
-Full flag and detector reference below.
-
-Connected scans run at most 32 server sessions simultaneously. Set
-`--max-concurrency N` to change that positive limit. `--timeout` is each
-server's session budget in seconds, covering connection and capability listings
-(and canary calls when enabled), excluding time waiting for a session slot.
-Permission keyword analysis and SSRF fetch-verb inspection use at most 256 KiB
-of UTF-8 text per field; `description_truncated` warnings record reduced coverage.
-
----
-
-## Use as an MCP server
-
-`mcp-audit` is also an MCP server. Point any MCP client (Claude Code, Claude Desktop, Cursor) at it and your agent can audit its own MCP attack surface on demand: enumerate every configured server, risk-score them, and pull injection, SSRF, lethal-trifecta, shadowing, and drift findings without leaving the conversation.
-
-```bash
-uvx --from mcp-audits mcp-audit serve
-```
-
-Add it to a client config (Claude Code shown):
-
-```json
-{
-  "mcpServers": {
-    "mcp-audit": {
-      "command": "uvx",
-      "args": ["--from", "mcp-audits", "mcp-audit", "serve"]
-    }
-  }
-}
-```
-
-**stdio only, by design.** This server reads the MCP configs already on your machine, so it runs locally over stdio and is never offered as a hosted remote. It stays read-only (it never edits a config) and reports env-var **key names only**, never values.
-
-All tools are read-only and take no URL or filesystem path; server discovery is automatic from the standard client config locations.
-
-| Tool | Purpose | Args |
-|---|---|---|
-| `scan_mcp_servers` | Full audit of every discovered MCP server; returns the JSON report | `skip_connect: bool = false` |
-| `check_server` | Audit one uniquely named discovered server | `name: str` |
-| `get_high_risk_servers` | Servers with a composite risk score of 7.0 or higher | none |
-| `list_discovered_servers` | Names and clients of all discovered servers (config-only, no spawning) | none |
-| `get_injection_findings` | Instruction-shaped text heuristic findings across all servers | none |
-| `get_ssrf_findings` | SSRF-shaped tools and resources across all servers | none |
-| `get_trifecta_findings` | Lethal-trifecta findings (per-server and fleet-level) | none |
-| `get_shadowing_findings` | Cross-server tool-name shadowing collisions | none |
-| `get_escalation_findings` | Capability-escalation ("rug pull") deltas vs the pin baseline | none |
-| `get_provenance_findings` | Launch-config and provenance drift vs the pin baseline | none |
-| `get_integrity_findings` | Launch-artifact on-disk hash drift vs the pin baseline | none |
-| `get_package_verify_findings` | Registry package-hash verification vs the pin baseline | none |
-| `get_artifact_verify_findings` | Byte-level artifact verification vs the pin baseline | none |
-
-`check_server` matches the name exactly after reading supported client configurations. It connects only when
-one entry matches and discovery has no collected configuration parse errors. Unknown or duplicate names, and
-collected configuration parse errors, return a tool error before connecting. A successful call retains the
-single-server audit JSON shape.
-A workstation-scope selection may start a local process or make network requests during connection.
-Project-scope selections are reported without connecting, as are project configs in every `serve` tool.
-
-The five drift tools (`get_escalation_findings`, `get_provenance_findings`, `get_integrity_findings`, `get_package_verify_findings`, `get_artifact_verify_findings`) compare against a saved baseline. Run `mcp-audit pin` first for escalation, provenance, and integrity; registry verification requires `mcp-audit pin --verify-artifacts`, and byte-level verification requires `mcp-audit pin --download-artifacts`.
-
-Every `get_*_findings` tool returns a JSON object with `findings` and `warnings` lists. `warnings` records skipped or degraded checks (for example, a drift tool called with no pin baseline) — but empty `findings` and `warnings` lists alone do not prove complete coverage; connection failures are recorded in the full audit report's per-server status.
-
----
-
-## Features
-
-- **Capability inventory** — catalogs server tools, prompts, and resources; tool, prompt, and resource capabilities are classified across six permission categories: `file_read`, `file_write`, `network`, `shell_execution`, `destructive`, `exfiltration`
-- **Config-only inference** — `scan --skip-connect` infers conservative risks from declared commands, transports, credential key names, package runners, and remote URLs
-- **Config health diagnostics** — `discover` and `scan` flag duplicate server names, conflicting command or URL definitions, missing stdio commands, missing local command paths, project/global scope conflicts, package-runner launches, deprecated SSE transports, shell-wrapper launches, remote endpoints, and credential-heavy configs before users pin or connect; JSON reports include additive `config_health_findings`
-- **Risk scoring** — composite 0–10 per server as a weighted sum of tool permission categories, with a five-dimension breakdown (file access, network, shell, destructive, exfiltration); prompt/resource findings also produce an additive `non_tool_risk` signal without changing `risk_score.composite`
-- **Stable finding metadata** — permission and instruction-shaped text heuristic findings include stable rule IDs, severity, evidence, and suggested remediation so reports are easier to triage
-- **Fixture-first MCP cache contract audit** — `mcp-audit cache-contract scan TRACE` deterministically evaluates synthetic MCP `2026-07-28` list/read cache traces under stable `MCPCACHE000`–`MCPCACHE009` rules; malformed, unsupported, clock-ambiguous, or truncated evidence is `UNKNOWN`, while real caches, transports, credentials, and logs remain out of scope. See `docs/CACHE-CONTRACT-AUDITOR.md`
-- **Offline MCP Tasks state-machine lab** — `mcp-audit task-time-machine run --builtin happy-path` executes strict versioned scenarios in `(at_ms, sequence)` order, emits human or canonical JSON explanations under stable `MCPTASK000`–`MCPTASK008` rules, and preserves experimental or underspecified semantics as `UNKNOWN`. See `docs/MCP-TASK-TIME-MACHINE.md`
-- **Offline MCP result parcel lab** — `mcp-audit result-parcel analyze` compares inline, provider/local chunk or progress extensions, core resource links, and the negotiated Tasks extension against size, expiry, authorization, redaction, integrity, and retrieval faults. Explanations bind to named inputs; no payload, MCP server, network, credential, or object store is read. See `docs/RESULT-PARCEL-LAB.md`
-- **Local policy gates** — `scan --policy policy.yaml` evaluates reports against local YAML rules and exits nonzero for CI enforcement
-- **Report redaction** — terminal, JSON, SARIF, HTML, and MCP tool outputs share `AuditReport.redacted()` for best-effort credential matching, including secret flag/value pairs, env-style assignments, common bare token shapes, URL userinfo, all HTTP(S) query values, and fragments; values become `<redacted>`. Pins redact launch arguments and URLs by default (`pin --no-redact-args` explicitly stores raw arguments, including secrets). `scan --redact` additionally scrubs hostname, home-path usernames and matching server-name text in shared file reports using stable aliases (`server-01`, …). Dictionary keys remain; review reports before sharing
-- **Instruction-shaped text heuristics** — `scan --inject-check` uses independent static phrase rules. Static phrase matches are experimental MEDIUM `INSTRUCTION_SHAPED_TEXT` findings with a pattern name and JSON-pointer field path; free text alone never fails a HIGH injection gate. Credential hunts retain secret target names/paths, never values, and receive a “Fix now” terminal/HTML summary. Structural checks flag fake role turns, bidi/zero-width characters, and LOW `ENCODED_BLOB_IN_METADATA` high-entropy runs (never decoded). Rephrasing or obfuscation can evade these heuristics; findings are leads to review, not verdicts.
-- **SSRF detection** — `scan --ssrf-check` flags tools and resources whose interface lets a caller steer a server-side request target (including URL/host params nested in object, array-item, or composition schemas, plus caller-templated remote resource hosts); static and schema-derived, never issues a request or reads a credential value
-- **Egress detection** — `scan --egress-check` audits *where* a server may send data: destinations outside `--egress-allowlist` (`MCP040`, MED), unbounded caller-controlled targets (`MCP041`, HIGH), and the trusted-destination residual for allowlisted-but-multi-tenant or credential-bearing hosts (`MCP042`, LOW/MED — the Cowork lesson). Static and schema/URI-derived; gated via `fail_on.egress`. See `docs/EGRESS-DETECTION.md`
-- **Lethal trifecta detection** — `scan --trifecta-check` detects the canonical agent-exfiltration attack surface: per-server (HIGH, `MCP013`) when a single server covers all three legs (file_read + untrusted-content ingestion + exfiltration), and fleet-level advisory (MEDIUM, `MCP014`) when the trifecta assembles only across servers; re-uses inferred permissions, never issues requests or reads credentials
-- **Tool-name shadowing detection** — `scan --shadow-check` flags cross-server tool-name collisions that could trick an AI agent into routing a call to the wrong server: exact matches (HIGH, `MCP015`), case/separator-normalised collisions (MEDIUM, `MCP016`), and homoglyph spoofing via non-ASCII confusable codepoints (HIGH, `MCP017`); offline, deterministic, no new dependencies
-- **Schema drift tracking** — `mcp-audit pin` connects to servers and snapshots current tool schemas; subsequent `scan --pin-check` flags added, removed, and changed tools with plain-language summaries, changed-field hints, suggested actions, and a dry-run refresh workflow for reviewed upgrades. `pin --refresh <server>` additionally surfaces capability-escalation (`MCP018`/`MCP019`) and launch-config/provenance (`MCP020`–`MCP023`) deltas in the same preview — unconditionally, so a rug-pull or launch swap can't slip through a baseline refresh
-- **Capability-escalation ("rug pull") detection** — `scan --escalation-check` compares each tool against its pin baseline and flags security-significant escalations over time: a tool that gained a dangerous capability (`MCP018` — HIGH for exfiltration/shell/destructive, MEDIUM for file_write/network) or whose description gained instruction-shaped text heuristic matches (`MCP019`, HIGH); pattern matches can be evaded with rephrasing or obfuscation and are leads to review, not verdicts. Findings stay scoped to reviewed baseline deltas. See `docs/ESCALATION-DETECTION.md`
-- **Provenance / launch-config drift detection** — `scan --provenance-check` compares a server's launch configuration against its pin baseline to catch supply-chain changes the schema check can't see: command/transport swap (`MCP020`, HIGH), argument/version drift with dangerous-flag escalation (`MCP021`, MED/HIGH), HTTP endpoint change (`MCP022`, HIGH), and credential **key-name** set changes (`MCP023`, MEDIUM — key names only, never values). See `docs/PROVENANCE-DETECTION.md`
-- **Launch-artifact integrity detection** — `scan --integrity-check` hashes the on-disk artifact a server launches (the resolved command binary + local script args) and flags drift vs the pin baseline (`MCP024` — HIGH when the SHA-256 changed, MEDIUM when the file is gone). The command string can stay byte-identical while the file it runs is swapped underneath you; this catches that. Offline and deterministic — only local bytes are hashed, nothing is fetched. Package-runner (`npx`/`uvx`) launches hash the runner, not the remote package (see registry verification below). See `docs/INTEGRITY-DETECTION.md`
-- **Registry package verification** — `scan --verify-artifacts` (opt-in, **network**) covers the package-runner case the on-disk check can't: it compares the registry-published hash (npm `dist.integrity`, PyPI sha256) for the exact pinned `package@version` against the hash captured at pin time (`MCP025` — HIGH on a changed published hash, a republish/tampering signal; MEDIUM when unverifiable). Network is contacted only under `--verify-artifacts`, on both `pin` (to capture) and `scan` (to compare). Covers npm + PyPI. See `docs/PACKAGE-VERIFICATION.md`
-- **Byte-level artifact verification** — `scan --download-artifacts` (opt-in, **network**) goes one level deeper than the published-hash compare: it downloads the actual bytes the registry serves, hashes them, and checks them against both the registry's own published hash and a byte-hash captured at pin time (`MCP026`). It catches a CDN/mirror/MITM serving bytes inconsistent with the registry's integrity metadata (`PUBLISHED_MISMATCH`, HIGH) and a pinned file whose bytes changed or vanished (`BASELINE_MISMATCH`, HIGH); a newly-added file on a frozen version is an advisory MEDIUM, not a false alarm. Downloads stream through bounded hashers, never to disk, only to an allowlist of registry/CDN hosts (re-validated on every redirect hop). Network is contacted only under `--download-artifacts`, on both `pin` and `scan`.
-- **Multi-client support** — reads configs from Claude Desktop, Claude Code, Cursor, VSCode, and Windsurf — plus custom paths via `--config`; use `--config-only` for isolated scans of one config file
-- **Structured output** — Rich terminal report plus JSON and SARIF 2.1.0 export for ingestion by GitHub Advanced Security and SARIF-aware SAST pipelines, and a self-contained shareable HTML report via `scan --html report.html` (inline CSS, no JavaScript, redacted and fully HTML-escaped)
-- **Drop-in CI distribution** — a composite GitHub Action (`uses: saagpatel/MCPAudit@v2.8.1`) runs the scan, writes SARIF, and uploads it to code scanning in one step (config-only by default; optional policy gate exits `2`); a `pre-commit` hook (`id: mcp-audit`) triggers on repo-local `.mcp.json` / `.vscode/mcp.json` changes and scans discovered workstation/project configs without connecting to servers. See `docs/ADOPTION-GUIDE.md`
-- **Documented output contract** — JSON, SARIF rule IDs, and policy exit codes are documented in `docs/OUTPUT-CONTRACT.md`
-- **Experimental fixture enforcement** — a narrow, repository-owned gateway converts one synthetic connected report into explicitly approved fixture-only policy and proves readback, negative controls, idempotency, and rollback; it never changes normal MCP client configuration ([guide](docs/EVIDENCE-ENFORCEMENT-AGT-FIXTURE.md))
-- **MCP session/resume fault lab** — `mcp-audit session-resume` replays strict synthetic Streamable HTTP session, disconnect, replay, migration, and cancellation scenarios against a deterministic virtual transport. It supports legacy session-bearing protocol profiles and fails visibly when legacy resume behavior is applied to the stateless `2026-07-28` transport; no network, credential, server, scheduler, or live MCP dependency is used. See [the lab guide](docs/SESSION-RESUME-FAULT-LAB.md)
-- **Watch mode** — `mcp-audit watch` re-scans on config file changes via `watchfiles` (optional extra: install with `mcp-audits[watch]`)
-
-## Quick Start
-
-### Prerequisites
-- Python 3.11+
-- `uv` (recommended) or `pip`
-
-### Installation
-```bash
-uvx --from mcp-audits mcp-audit discover
-# or install permanently:
-uv tool install mcp-audits
-# with watch mode support:
-uv tool install 'mcp-audits[watch]'
-# pip fallback:
-pip install mcp-audits
-```
-
-Served tool annotations are evidence for review. They do not suppress keyword
-capability findings. Explicit hints that contradict MEDIUM-or-better keyword
-evidence produce MCP043 `annotation_contradiction` findings in JSON and SARIF,
-and participate in permission severity policy gates. Destructive contradictions
-are HIGH; others are MEDIUM. See [the output contract](docs/OUTPUT-CONTRACT.md#annotation-contradictions)
-and [scoring migration](docs/SCORING-MIGRATION.md).
-
-### Usage
-```bash
-mcp-audit --version
-
-# Discover configured MCP servers without connecting to them
-mcp-audit discover
-
-# Scan all configured MCP servers
-mcp-audit scan
-
-# Config-only scan that does not spawn or connect to servers
-mcp-audit scan --skip-connect
-
-# Filter to specific clients (comma-separated)
-mcp-audit scan --clients claude_desktop,cursor
-
-# Scan only one explicit MCP config file
-mcp-audit scan --config ./mcp.json --config-only
-
-# Review instruction-shaped text heuristic findings in tools, prompts, and resources
-mcp-audit scan --inject-check
-
-# Flag SSRF-prone tools/resources (caller-controlled server-side fetch targets)
-mcp-audit scan --ssrf-check
-
-# Suppress SSRF findings whose fixed target host is trusted (caller-controlled targets are never suppressed)
-mcp-audit scan --ssrf-check --ssrf-allowlist api.github.com,internal.svc
-
-# Audit outbound destinations; hosts outside the allowlist are flagged, trusted multi-tenant hosts raise a residual
-mcp-audit scan --egress-check --egress-allowlist api.anthropic.com,internal.corp.example
-
-# Detect lethal-trifecta / toxic-flow attack surface (per-server and fleet-level)
-mcp-audit scan --trifecta-check
-
-# Detect cross-server tool-name shadowing (exact, normalised, homoglyph collisions)
-mcp-audit scan --shadow-check
-
-# Pin current tool schemas, then detect drift on later scans.
-# Pinning connects to servers so it can capture real tool schemas.
-mcp-audit pin
-mcp-audit pin --status
-mcp-audit pin --status --json
-mcp-audit pin --stale
-mcp-audit pin --stale --json
-mcp-audit scan --pin-check
-
-# Review expected drift for one server before refreshing its baseline.
-mcp-audit pin --refresh github
-mcp-audit pin --refresh github --json
-mcp-audit pin --refresh github --apply
-
-# Detect capability escalation ("rug pull") vs the pin baseline (implies a pin comparison).
-# A tool that gained a dangerous capability, or a description that gained injection patterns.
-mcp-audit scan --escalation-check
-
-# Detect launch-config / provenance drift vs the pin baseline (command, args, URL, credential keys).
-mcp-audit scan --provenance-check
-
-# Detect on-disk launch-artifact (binary/script) hash drift vs the pin baseline.
-mcp-audit scan --integrity-check
-
-# Verify npm/PyPI package@version registry hashes vs the pin baseline (opt-in, network).
-mcp-audit pin --verify-artifacts        # capture registry hashes into the baseline
-mcp-audit scan --verify-artifacts       # compare on later scans
-
-# Download the artifact bytes and verify their hash vs published + baseline (opt-in, network).
-mcp-audit pin --download-artifacts      # capture byte-hashes into the baseline
-mcp-audit scan --download-artifacts     # download + verify on later scans
-
-# Export JSON or SARIF 2.1.0, or a single-file shareable HTML report
-mcp-audit scan --json audit.json --sarif audit.sarif
-mcp-audit scan --html audit.html
-
-# Field-report mode: scrub hostname + home-path usernames from file output (opt-in)
-mcp-audit scan --skip-connect --json field-report.json --redact
-
-# Fail CI on local policy violations
-mcp-audit scan --policy policy.yaml
-
-# Optional LLM-assisted classification (requires ANTHROPIC_API_KEY)
-mcp-audit scan --llm-analysis
-
-# Watch mode — re-scan on config change; use --skip-connect for config-only watching
-mcp-audit watch
-
-# Replay one built-in transport-session fault, or the complete offline corpus
-mcp-audit session-resume list
-mcp-audit session-resume run disconnect-after-acceptance-before-response
-mcp-audit session-resume run --all --format json
-```
-
-LLM mode treats all server-provided metadata as untrusted JSON data, keeps
-classification instructions in a separate system message, and reports an
-explicit `UNKNOWN` status without admitting model findings when injection,
-refusal, omission, provider failure, or malformed output prevents a complete
-classification. Deterministic analysis remains authoritative.
-
-### Runtime rug-pull canary
-
-For servers you are allowed to exercise, `scan --canary-check` uses an existing
-v2 tool pin baseline when available (otherwise an in-memory SHA256 baseline),
-checks the first listing for drift, makes up to five benign `tools/call`
-requests in the same session, and re-lists after every call. Unlike an ordinary
-scan, this mode **calls tools**. It requires an explicit isolated config:
-
-```bash
-mcp-audit scan --config ./allowed-servers.json --config-only \
-  --canary-check --canary-calls 5 --json canary.json --sarif canary.sarif
-```
-
-For stdio, the canary also starts a second session with a different client name
-and declared capability set (roots support returning an empty list). Initial
-tool, prompt, and resource listings that differ produce HIGH
-`IDENTITY_CONDITIONED_SURFACE` findings. This doubles process spawns without
-adding tool calls. The second listing also gets each eligible empty-argument
-prompt once to compare response descriptions and roles. `--canary-identities 1`
-disables the second session; HTTP/SSE use one identity unless `--canary-identities 2` is
-requested. Both sessions share the per-server timeout. The comparison is a
-signal to review: legitimate client-specific metadata can differ too.
-
-The canary compares tools (including descriptions, schemas, and annotations),
-prompt metadata, empty-argument `prompts/get` descriptions and message roles,
-and the resources list. Rendered prompt content is excluded from drift because
-timestamps and other dynamic text can change normally between reads; it is
-still scanned for instruction-shaped text exactly like a tool result.
-Mid-session changes are HIGH drift findings with field paths and before/after
-hashes. Tool-result text and structured result strings are checked for
-instruction overrides, credential-hunt requests, and directions to call other
-tools. Result excerpts are withheld; no returned instructions are executed,
-resource links followed, or resource contents read. The existing JSON, SARIF,
-terminal, HTML, and policy paths carry these findings; no saved pins are changed.
-Runtime result and prompt-body findings are experimental MEDIUM heuristics
-(SARIF `MCP008`, description starting "Experimental heuristic:"), so they never
-fail a HIGH policy gate on their own; mid-session surface drift stays HIGH.
-
-Calls use `{}` only. Required arguments and complex schemas are skipped rather
-than filled with guessed values. Explicit destructive annotations, dangerous
-capability keywords, and injection hints always veto a call, including when
-`--canary-safe-tool SERVER/TOOL` marks a tool safe. Tools with an explicit
-`readOnlyHint: true` are eligible automatically unless `destructiveHint: true`.
-Absent `readOnlyHint` defaults to false; absent `destructiveHint` defaults to
-true for tools that are not read-only. All other tools require that mark.
-Eligible empty-argument tools are
-selected in server order, round-robin. Eligibility is rechecked after each
-listing. Server annotations are untrusted hints, so this is not a sandbox or a
-guarantee that an apparently benign tool has no side effects.
-
-`--canary-calls` bounds `tools/call` to 1–100 **per server**, default 5.
-The report counts attempted `prompts/get` requests separately in
-`canary.prompt_get_calls`, including failed requests. The exercise request
-budget is up to K tool calls plus P × (K + I) prompt gets, where I is the
-identity count and P is the number of eligible prompts per listing (if it stays
-constant). A tools-list failure
-can add one refresh and its prompt gets before the next exercise call; the
-reported total is `completed_calls + prompt_get_calls`. Initialize and listing
-requests are additional. Tools, prompts and resources are always listed; a
-surface the server never advertised stays debug-only if every listing fails
-with an ordinary error and it is never observed. Intermittent availability
-and page-limit exhaustion produce coverage warnings. Each listing follows at most 20
-pages per capture. Scanned text is capped at 64 KB per tool result or prompt
-body. The existing `--timeout` bounds both sessions, including all calls
-and listings. Errors, timeouts, page-limit exhaustion, required-argument
-prompts, truncated oversized text, and a lack of eligible tools produce
-incomplete-coverage warnings. A clean canary's `canary.not_excluded` lists what
-it cannot rule out: elapsed time, randomness, more than K calls, client identity,
-other arguments, other call sequences, and later sessions. Tests
-use synthetic local stdio servers, including identity-conditioned listings,
-metadata changes after three calls without a version change, and benign controls.
-
-## Known issues
-
-These remain in the 2.8.1 candidate; details are in the
-[2.8.1 candidate notes](docs/2.8-RELEASE-NOTES.md#known-issues).
-
-- Annotation-only changes are not detected by `--pin-check` or
-  `--escalation-check`. Pins hash tool name, description, and input schema;
-  the runtime canary does compare annotations within a session.
-- Remote (`url`) servers in Cursor, Windsurf, and Claude Desktop configs are
-  reported as stdio servers with a missing command.
-- `monitor` cannot proxy a real MCP stdio server and will be deprecated in 2.9.0.
-- Credential redaction can leak the remainder of a quoted secret value that
-  contains an escaped quote (for example `--password \"abc\\\"rest\"`); a
-  structural redesign is planned for 2.9.0. Review field reports before sharing.
-
-## Help improve mcp-audit (2 minutes)
-
-Redacted field reports from real MCP configs help calibrate the scanner.
-If you run MCP servers, contributing one stays config-only: the scan does not
-spawn configured MCP servers or contact their configured remote endpoints.
-`uvx` may contact the configured Python package index and may reuse uv's tool
-cache:
-
-```bash
-uvx --from mcp-audits mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
-uvx --from mcp-audits mcp-audit --version
-```
-
-`--redact` auto-scrubs the machine hostname, home-path usernames, and matching
-server-name text in string values. Then open a [redacted field report](https://github.com/saagpatel/MCPAudit/issues/new?template=field_report.md)
-— the template walks you through the safe fields. Please still redact credential
-values and any proprietary prompt/tool/schema text; [`docs/EXTERNAL-FIELD-REPORT-REQUEST.md`](docs/EXTERNAL-FIELD-REPORT-REQUEST.md)
-has the full checklist, and
-[`docs/FIELD-REPORTS.md#minimal-public-example`](docs/FIELD-REPORTS.md#minimal-public-example)
-shows a safe example shape. For a reference of what the scanner reports on real
-software, see the solo field scan in
-[`docs/FIELD-SCAN-POPULAR-SERVERS.md`](docs/FIELD-SCAN-POPULAR-SERVERS.md).
-For an end-to-end generator-to-auditor demo packet, see
-[`docs/MCP-TRUST-PACKET.md`](docs/MCP-TRUST-PACKET.md).
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|------------|
-| Language | Python 3.11+ |
-| CLI | Click 8 |
-| Output | Rich |
-| MCP protocol | `mcp` SDK 2.x |
-| Validation | Pydantic v2 |
-| Config parsing | PyYAML + json5 |
-| Watch mode | `watchfiles` (optional extra) |
-| Optional LLM | Anthropic SDK |
-
-## Architecture
-
-The scanner enumerates MCP client config files, connects to each configured server, and calls `tools/list`, `prompts/list`, and `resources/list` over the MCP protocol when those capabilities are available. Stdio servers are started as subprocesses via `anyio`; HTTP/SSE servers are contacted at their configured URL. Returned tool schemas, prompt arguments, and resource URIs flow into the permission classifier (schema walker + regex ruleset over six permission categories) and the optional injection detector (pattern ruleset for instruction-override, role-switch, and hidden-directive phrasing). The risk scorer composes a per-category weighted sum clamped to 0–10 from tool findings, then separately reports additive `non_tool_risk` for prompt and resource capability or injection findings. `non_tool_risk` is for triage and output consumers; it does not change `risk_score.composite`. Reports render via Rich; JSON and SARIF 2.1.0 export are first-class. The pin store serializes SHA256 schema hashes plus reviewable tool snapshots to `~/.mcp-audit-pins.yaml` for actionable drift detection on subsequent `--pin-check` scans. Use `mcp-audit pin --refresh <server>` to preview expected drift for one reviewed server — including capability-escalation and launch-config/provenance deltas vs the baseline — then rerun with `--apply` to replace that server's pins. Use `mcp-audit pin --stale` to review pinned servers that are no longer present in discovered MCP configs before clearing them explicitly with `mcp-audit pin --clear <server>`.
-
-The experimental `mcp-audit agent-ui` group statically scans program-owned MCP
-Apps/OpenAI UI metadata fixtures and A2UI v0.9 JSONL fixtures. It emits
-deterministic JSON plus inert offline HTML and never loads widget code, connects
-to an MCP server, authenticates, or processes real user data. Unsupported
-protocols, catalogs, host behavior, bindings, malformed component shapes, and
-unbound approval versions remain `UNKNOWN`. Approval provenance inherits only
-from the nearest declared JSON Pointer, dual standard/OpenAI metadata must
-reconcile, malformed HTTPS authorities cannot pass by string equality, fixture
-reads are descriptor-bound and size-capped, and no-force report writes use
-atomic no-clobber commit. Supported contradictions cannot be erased by a later
-A2UI replacement or deletion. See
-[`docs/AGENT-UI-CONTRACT-AUDITOR.md`](docs/AGENT-UI-CONTRACT-AUDITOR.md) for the
-exact input profiles, six stable rules, fixtures, and claim ceiling.
-
-The experimental `mcp-audit oauth-transcript` group audits explicitly
-synthetic, redacted MCP OAuth transcripts without opening a network, browser,
-OAuth, MCP, keychain, account, or credential-store path. Stable
-`MCPOAUTH000`–`MCPOAUTH007` findings cover the 401 discovery chain, RFC 8707
-resource and audience binding, authorization-response issuer mix-up,
-issuer-bound client credentials, registration method and `application_type`,
-protected-resource scopes, and redirect URI binding through code redemption.
-Missing or malformed evidence is `UNKNOWN`;
-valid deprecated DCR fallback is advisory rather than forbidden. JSON is
-authoritative and optional SARIF uses the existing compatibility shape. See
-[`docs/OAUTH-TRANSCRIPT-AUDITOR.md`](docs/OAUTH-TRANSCRIPT-AUDITOR.md) for the
-specification pins, strict schema, fixture corpus, and claim ceiling.
-
-The experimental `mcp-audit authorization-posture` group consumes one saved
-`McpAuthorizationPostureV1` public-metadata artifact entirely offline. It
-validates the producer's exact version, Registry binding, capability boundary,
-claim ceiling, and cross-field metadata state, then emits only
-`policy-review-only` or `blocked`. It does not authenticate producer provenance
-or current freshness, repeat network fetches, contact the MCP endpoint, handle
-credentials, run OAuth, authorize a scan, or change a trust grade. See
-[`docs/AUTHORIZATION-POSTURE-ADOPTION.md`](docs/AUTHORIZATION-POSTURE-ADOPTION.md)
-for the authority flow, strict schemas, exit contract, and claim ceiling.
-
-The experimental `mcp-audit result-parcel` group evaluates versioned,
-synthetic result-delivery scenarios entirely offline. It distinguishes current
-MCP core result and resource semantics from separately negotiated Tasks and
-provider/local chunk or progress patterns, and reports suitability, exposure,
-durability, retry/idempotency risk, cleanup burden, and UNKNOWNs without an
-opaque score. See
-[`docs/RESULT-PARCEL-LAB.md`](docs/RESULT-PARCEL-LAB.md) for the current
-primary-source map, comparison table, threat boundaries, fixtures, and
-five-minute demo.
-
-### Local Policy Gates
-
-Policies are local YAML files evaluated after a scan. A failing policy exits with code `2` after terminal, JSON, or SARIF output is written.
-
-```yaml
-fail_on:
-  severity: high
-  injection: medium
-  capabilities: medium
-  config_health: medium
-  drift: true
-require:
-  pins:
-    servers:
-      - github
-deny:
-  permissions:
-    - shell_execution
-max_risk: 7
-allow_servers:
-  - github
-servers:
-  github:
-    max_risk: 5
-    deny:
-      permissions:
-        - shell_execution
-```
-
-See `docs/ADOPTION-GUIDE.md` for local review, team CI, and GitHub code
-scanning setup paths, `non_tool_risk` parsing examples, and policy selection
-notes, and `examples/consumers/` for runnable JSON consumer examples. See `examples/policies/` for starter policies. See
-`docs/GOLDEN-ROLLOUT.md` for the recommended config-only to policy-gated
-rollout path. See `docs/STABLE-READINESS.md` for the stable-release bar. See
-`docs/PIN-MAINTENANCE.md` for reviewed pin refresh and stale server cleanup
-workflows. See `docs/PROMPT-RESOURCE-SCORING.md` and
-`docs/SCORING-MIGRATION.md` for the current prompt/resource scoring boundary
-and migration path. See `docs/COMPOSITE-SCORING-PROPOSAL.md` for the future
-combined-score proposal. See `examples/ci/pin-stale-review.yml` and
-`examples/maintenance/stale-pin-review.sh` for routine stale pin review flows.
-See `docs/MAINTAINER-WORKFLOWS.md` for Codex-assisted maintainer workflows and
-the boundaries used for security-sensitive triage and release preparation.
-See `docs/FEEDBACK-TO-FIXTURES.md` for turning false positives, missing
-detections, output issues, and pin lifecycle feedback into safe regression
-fixtures. See `docs/FIELD-REPORTS.md` for the redacted field-report evidence
-path, minimal public example shape, public field-report issue template, and
-consumer-contract coverage. See
-`docs/MCP-TRUST-PACKET.md` for the public MCP ecosystem demo path that pairs
-mcpforge scaffolding with MCPAudit review output. See
-`docs/SOLO-EVIDENCE.md` for solo multi-environment evidence that can reduce
-release risk without replacing external reports. See
-`docs/ROADMAP-NEXT.md` for the post-2.2.0 roadmap and
-`docs/1.5-EVIDENCE-INTAKE.md` for the earlier adoption-hardening evidence
-intake. See `docs/BETA-READINESS-EVIDENCE.md` for the beta-readiness evidence
-and release decision. External field-report evidence is tracked in
-<https://github.com/saagpatel/MCPAudit/milestone/4>. See
-`docs/EXTERNAL-FIELD-REPORT-REQUEST.md` for the copy-paste contributor request,
-and `docs/EXTERNAL-OUTREACH-MESSAGES.md` for direct outreach messages.
-
-## License
-
-MIT
+The release checklist calls out Action references so maintainers can update
+examples when a new public release is available. Review the action's permissions
+and inputs before enabling it in a repository.
+
+## Choose a review path
+
+| Goal | Starting point | What it does |
+| --- | --- | --- |
+| Learn the output | `mcp-audit demo` | Uses bundled synthetic input |
+| Review one file | `mcp-audit check --config FILE` | Static check of the selected config |
+| See discovered sources | `mcp-audit inspect` | Lists identities and source status |
+| Inspect one server | `mcp-audit check --connect --server ID` | Connects to one unambiguous identity |
+| Automate a policy | `mcp-audit check --policy FILE` | Evaluates a local policy |
+
+The `ID` for a connected check has the form `CLIENT:SCOPE:NAME`. Use the exact
+identity shown by `inspect`; the command refuses ambiguous selections. A
+connected check can start the configured local command or contact its endpoint.
+
+## Keep the evidence in context
+
+Configuration-based findings describe declared access. A connected listing
+adds the tool metadata the server provides, but does not prove what the server
+will do later. The optional canary is bounded and exercises only eligible
+tools under its documented limits. See [How it works](docs/how-it-works.md)
+for the boundary between those observations.
+
+Reports can contain configuration shape, tool names, and evidence text. Secret
+redaction is best-effort; do not share a report until you have reviewed it.
+Configs are parsed in full, but environment variable values are discarded
+during parsing and never reported; reports keep key names for context. The [output contract](docs/OUTPUT-CONTRACT.md) lists stable fields and
+the limits of these outputs.
+
+## More documentation
+
+The [documentation index](docs/README.md) links current guides and references.
+The [sandbox walkthrough](docs/guides/sandbox.md) is safe to try without
+connecting to a server. Experimental fixture-based work is grouped under
+[labs](docs/labs/README.md); maintainer-only procedures are in
+[`maintainers/`](maintainers/), with older 1.x material in [`archive/`](archive/).
+
+## Learn more
+
+- [Pinning and drift checks](docs/guides/pinning.md)
+- [Trust packet walkthrough](docs/guides/trust-packet.md) and the
+  [MCP trust packet](docs/MCP-TRUST-PACKET.md)
+- [Adjusting permission findings](docs/guides/suppressing.md)
+- [Sandbox walkthrough](docs/guides/sandbox.md) using the
+  [`examples/sandbox/`](examples/sandbox/) fixtures
+- [Output contract](docs/OUTPUT-CONTRACT.md)
+- [Documentation index](docs/README.md)
+
+Experimental, fixture-based tools are documented in [the labs](docs/labs).
+Maintainer procedures and project history live in [`maintainers/`](maintainers/)
+and [`archive/`](archive/).

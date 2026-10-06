@@ -94,7 +94,7 @@ This lane is verified only by exactly 5 passes and 0 skips. The
 that collection and result guard mechanically. A non-macOS host is unsupported
 for this lane; a temporary root beneath the user home is a host-policy mismatch.
 The supported boundary and limits are documented in
-[`docs/SAFEFORGE-RUNTIME-THREAT-MODEL.md`](docs/SAFEFORGE-RUNTIME-THREAT-MODEL.md).
+[`docs/labs/SAFEFORGE-RUNTIME-THREAT-MODEL.md`](docs/labs/SAFEFORGE-RUNTIME-THREAT-MODEL.md).
 
 For every lane, a missing named node, collection error, failure, error, or
 unexpected skip is not a pass. Classify unavailable prerequisites separately;
