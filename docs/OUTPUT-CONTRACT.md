@@ -115,11 +115,13 @@ resource URIs. `summary` distinguishes `prompts` from `prompt_results`
 failed listings, so later changes and reversions remain detectable. A failed
 `prompts/get` retains just that prompt's prior structure while peers are still
 compared. Successful prompt listings establish prompt removals. Prompt results
-compare descriptions and ordered message roles; rendered content is excluded.
-Prompt argument structure is compared through `prompts/list`. Unavailable
-surface categories do not establish removals. Only surfaces advertised during
-initialize are probed. Listings follow `next_cursor` up to 20 pages; exceeding
-the limit is incomplete coverage and no partial page set is admitted.
+compare descriptions and ordered message roles; rendered content is excluded
+from drift and scanned for result injection instead. Prompt argument structure
+is compared through `prompts/list`. Unavailable surface categories do not
+establish removals. Tools are always listed; prompts and resources are probed
+only when advertised during initialize (an ordinary scan still tries both and
+logs an unavailable surface). Listings follow `next_cursor` up to 20 pages;
+exceeding the limit is incomplete coverage and no partial page set is admitted.
 
 `--canary-calls` bounds tool exercise requests (K), not metadata reads. The
 documented exercise request budget includes all `prompts/get`: for P eligible
@@ -136,14 +138,25 @@ destructive true (the latter applies to non-read-only tools). An operator's
 `--canary-safe-tool` mark permits other empty-argument tools, but never overrides
 explicit destructive annotations, dangerous keywords, or injection vetoes.
 
-Tool-result injection findings use existing rule `MCP007`, with additive
+Runtime injection findings use existing rule `MCP007`, with additive
 `after_call` and pattern names `result_instruction_override`,
-`result_credential_hunt` (HIGH), and `result_tool_redirect` (MEDIUM). Redirect
-and credential heuristics require an agent-directed frame; generic credential
-nouns alone are insufficient. They retain the tool
-target type; `matched_text` is a fixed withheld-excerpt notice. No result
-payload is stored in the report. String values in text, embedded results,
-and structured content are scanned; binary blobs are not decoded.
+`result_credential_hunt` (HIGH), and `result_tool_redirect` (MEDIUM). A
+concrete secret path or name (for example `~/.ssh`, `~/.aws/credentials`,
+`~/.kube/config`, `~/.netrc`, `~/.git-credentials`, shell history, `id_rsa`,
+`kubeconfig`, well-known token variables) with a directing verb anywhere in
+the same sentence is a credential hunt. Generic nouns (credentials, API keys,
+secrets, passwords) also need an agent-directed frame or an exfiltration
+destination such as "in your next tool call". Known-benign forms such as
+`~/.ssh/config` and `.env.example` are excluded; a bare `.env` needs an
+outbound verb. Redirects require an agent-directed frame. Tool results keep
+the `tool` target type; rendered `prompts/get` bodies are scanned with the same
+rules and use the `prompt` target type with the prompt name, reported once per
+prompt and pattern at the first capture that showed it (`after_call` is that
+capture's preceding call count). `matched_text` is a fixed withheld-excerpt
+notice. No result payload is stored in the report. String values in text,
+embedded results, and structured content are scanned; binary blobs are not
+decoded. Scanned text is capped at 64 KB per result or body; truncation adds a
+canary warning and `partial` status.
 
 Session drift uses existing `MCP009` at SARIF `error` level, with `source`,
 `severity`, `after_call`, `surface`, and `field_changes` in result properties. Saved-pin

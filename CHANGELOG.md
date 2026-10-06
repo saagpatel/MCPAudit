@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Reduce benign result-injection false positives, expand secret-path and token
   detection, and classify tool redirects as medium severity. Regenerate the
   output contracts and preserve the pin-only HTML drift layout.
+- Detect credential hunts by concrete secret target with the directing verb
+  anywhere in the sentence, excluding `~/.ssh/config` and `.env.example`. Scan
+  rendered `prompts/get` bodies with the result-injection rules. List tools
+  regardless of advertised capabilities and gate only canary prompt and
+  resource probes on advertisement. Cap scanned runtime text at 64 KB per
+  result with a coverage warning and scan in linear time. Replace the canary
+  name blocklist with destructive host-action keywords in the permission table.
 
 - Route explicitly configured legacy SSE servers through the MCP SSE transport.
   HTTP configurations continue using Streamable HTTP. Suppress raw SDK SSE debug

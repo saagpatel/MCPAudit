@@ -328,8 +328,9 @@ mcp-audit scan --config ./allowed-servers.json --config-only \
 
 The canary compares tools (including descriptions, schemas, and annotations),
 prompt metadata, empty-argument `prompts/get` descriptions and message roles,
-and the resources list. Rendered prompt content is excluded because timestamps
-and other dynamic text can change normally between reads.
+and the resources list. Rendered prompt content is excluded from drift because
+timestamps and other dynamic text can change normally between reads; it is
+still scanned for instruction-shaped text exactly like a tool result.
 Mid-session changes are HIGH drift findings with field paths and before/after
 hashes. Tool-result text and structured result strings are checked for
 instruction overrides, credential-hunt requests, and directions to call other
@@ -356,11 +357,13 @@ budget is up to K tool calls plus P × (K + 1) prompt gets, where P is the numbe
 of eligible prompts per listing (if it stays constant). A tools-list failure
 can add one refresh and its prompt gets before the next exercise call; the
 reported total is `completed_calls + prompt_get_calls`. Initialize and listing
-requests are additional. Only advertised surfaces are probed; tools, prompts,
-and resources listings each follow at most 20 pages per capture. The existing
-`--timeout` bounds the whole session, including all calls and listings. Errors,
-timeouts, page-limit exhaustion, required-argument prompts, and a
-lack of eligible tools produce incomplete-coverage warnings. A clean canary
+requests are additional. Tools are always listed; prompts and resources are
+probed only when advertised at initialize. Each listing follows at most 20
+pages per capture. Scanned text is capped at 64 KB per tool result or prompt
+body. The existing `--timeout` bounds the whole session, including all calls
+and listings. Errors, timeouts, page-limit exhaustion, required-argument
+prompts, truncated oversized text, and a lack of eligible tools produce
+incomplete-coverage warnings. A clean canary
 only describes this bounded exercise: a server can gate on elapsed time,
 randomness, client identity, another tool or arguments, or call count greater
 than K. It does not establish that a server is safe in later sessions. Tests
