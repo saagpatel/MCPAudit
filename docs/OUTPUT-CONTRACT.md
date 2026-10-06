@@ -14,6 +14,36 @@ fields. Consumers should ignore unknown fields and should not fail when optional
 fields are present. Existing stable fields should only be removed or renamed
 with a release-note deprecation window and a breaking-version boundary.
 
+## Report Redaction
+
+Terminal, JSON, SARIF, HTML, and `serve` tool outputs use
+`AuditReport.redacted()` to replace likely credentials with the literal
+`<redacted>` token. This always applies, independently of `scan --redact`.
+It covers secret-name assignments (including env-style names), secret
+flag/value pairs in argv and text, bearer/basic credentials, and common
+GitHub, OpenAI/Anthropic, Slack, AWS access-key, JWT, GitLab and npm token
+shapes. In HTTP(S) URLs, userinfo, every query parameter value (including
+non-secret parameters), and the entire fragment are redacted; query names,
+hosts and paths remain visible.
+
+Secret-name matching recognizes token, API key, secret, password/passwd/pwd,
+credential, signature, private/access key, session, authorization/authentication
+and separator-delimited auth/sig components. `author`, `authority`, `oauth_callback_port`, plural
+`tokens` (such as `--max-tokens`) and the exact label `--session-name` remain
+visible. Environment variable values are never read; env/header key-name
+lists are retained.
+
+`scan --redact` additionally scrubs hostname, home-path usernames and matching
+server-name text in shared file reports, with the existing stable server
+aliases. Terminal output retains identifiers. Dictionary keys are not scrubbed.
+Report fields and `schema_version` are unchanged. Credential redaction is
+best-effort pattern matching, not a guarantee that arbitrary or obfuscated
+secrets are removed. Review reports before sharing them.
+
+Pin launch snapshots apply the same argv and URL rules by default. See
+[`PIN-MAINTENANCE.md`](PIN-MAINTENANCE.md) for the raw-argument escape hatch
+and provenance comparison semantics.
+
 ## Exit Codes
 
 - `0`: scan completed and no configured policy gate failed.
