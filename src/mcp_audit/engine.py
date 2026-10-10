@@ -19,6 +19,7 @@ import platform
 import shlex
 import socket
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from itertools import chain
@@ -915,7 +916,7 @@ def _finalize_scan(context: _ScanContext) -> AuditReport:
             for audit in audits
             if audit.server.name in pinned and audit.server.name not in withheld
         ]
-        stale_baseline_checks = [
+        stale_baseline_checks: list[tuple[str, str, Callable[[str], object], str, str]] = [
             (
                 "provenance_check",
                 "--provenance-check",

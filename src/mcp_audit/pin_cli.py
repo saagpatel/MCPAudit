@@ -31,6 +31,11 @@ from mcp_audit.terminal_text import strip_controls, terminal_safe
 
 console = Console()
 
+_UNVERIFIED_LEGACY_NOTE = (
+    "Compared against an unverified legacy (v1) baseline: trusted pin keys exist but nothing "
+    "authenticates this entry. Review before signing."
+)
+
 
 class _PinServerOptions(TypedDict, total=False):
     redact_args: bool
@@ -493,7 +498,11 @@ async def _run_pin_refresh(
             error_console.print(terminal_safe(verification_error), style="red")
         return
 
-    findings = store.check_drift(audit.server.name, audit.tools)
+    # Review must show the comparison even when scans withhold the baseline:
+    # an unauthenticated legacy v1 pin is compared and clearly labeled.
+    unverified_legacy = store.unverified_legacy_baseline(audit.server.name)
+    baseline_note = _UNVERIFIED_LEGACY_NOTE if unverified_legacy else None
+    findings = store.check_drift(audit.server.name, audit.tools, review_unverified_legacy=True)
     uncovered_fields = store.uncovered_field_rows(audit.server.name, audit.tools)
     escalation_findings, provenance_findings = _refresh_security_deltas(store, audit)
     # Capture registry hashes only when we will actually re-pin (network call,
@@ -530,6 +539,7 @@ async def _run_pin_refresh(
                 applied=apply_refresh,
                 artifact_warnings=art_capture.warnings,
                 uncovered_fields=uncovered_fields,
+                baseline_note=baseline_note,
             )
         )
         return
@@ -538,7 +548,12 @@ async def _run_pin_refresh(
         console.print(terminal_safe(warning), style="yellow")
 
     _render_pin_refresh_review(
-        audit.server.name, len(audit.tools), findings, escalation_findings, provenance_findings
+        audit.server.name,
+        len(audit.tools),
+        findings,
+        escalation_findings,
+        provenance_findings,
+        baseline_note=baseline_note,
     )
     if uncovered_fields:
         from rich.table import Table
@@ -589,7 +604,7 @@ def _refresh_security_deltas(
     escalation_findings: list[EscalationFinding] = []
     provenance_findings: list[ProvenanceFinding] = []
 
-    baseline_tools = store.baseline_tools(audit.server.name)
+    baseline_tools = store.baseline_tools(audit.server.name, review_unverified_legacy=True)
     if baseline_tools:
         escalation_findings = EscalationAnalyzer().analyze_server(
             audit.server.name,
@@ -598,7 +613,7 @@ def _refresh_security_deltas(
             uncovered_annotations=store.legacy_tool_names(audit.server.name),
         )
 
-    baseline_config = store.baseline_config(audit.server.name)
+    baseline_config = store.baseline_config(audit.server.name, review_unverified_legacy=True)
     if baseline_config:
         provenance_findings = ProvenanceAnalyzer().analyze_server(audit.server, baseline_config)
 
@@ -627,6 +642,7 @@ def _pin_refresh_json(
     error: str | None = None,
     artifact_warnings: list[str] | None = None,
     uncovered_fields: list[dict[str, str]] | None = None,
+    baseline_note: str | None = None,
 ) -> str:
     import json
 
@@ -675,6 +691,9 @@ def _pin_refresh_json(
         ],
         "artifact_warnings": artifact_warnings,
         "uncovered_fields": uncovered_fields or [],
+        # Additive: false when the compared baseline could not be verified.
+        "baseline_verified": baseline_note is None,
+        "baseline_note": baseline_note,
     }
     return json.dumps(payload, indent=2, sort_keys=True)
 
@@ -685,6 +704,8 @@ def _render_pin_refresh_review(
     drift_findings: list[DriftFinding],
     escalation_findings: list[EscalationFinding] | None = None,
     provenance_findings: list[ProvenanceFinding] | None = None,
+    *,
+    baseline_note: str | None = None,
 ) -> None:
     from rich.table import Table
 
@@ -699,7 +720,15 @@ def _render_pin_refresh_review(
             ("Pin refresh review:", "bold"), terminal_safe(f" {server_name} ({tool_count} current tool(s))")
         )
     )
+    if baseline_note is not None:
+        console.print(terminal_safe(baseline_note), style="bold yellow")
     if not (drift_findings or escalation_findings or provenance_findings):
+        if baseline_note is not None:
+            console.print(
+                "[yellow]The pin baseline could not be verified; no differences from the unverified "
+                "legacy baseline were found. Review the current tools before signing.[/yellow]"
+            )
+            return
         console.print("[green]No drift found. Current tools already match the pin baseline.[/green]")
         return
 
@@ -813,6 +842,7 @@ def _render_pin_status(store: object, json_status: bool) -> None:
     table.add_column("Schema")
     table.add_column("Signed")
     table.add_column("Key ID")
+    table.add_column("Verification")
 
     for status in statuses:
         signing = store.signing_status(status.server_name)
@@ -825,6 +855,7 @@ def _render_pin_status(store: object, json_status: bool) -> None:
             terminal_safe(str(signing.get("schema", "unknown"))),
             terminal_safe(str(signing.get("signed", False))),
             terminal_safe(str(signing.get("kid") or "—")),
+            terminal_safe(_status_verification(signing)),
         )
 
     console.print(table)
@@ -837,6 +868,14 @@ def _render_pin_status(store: object, json_status: bool) -> None:
         ):
             # Plain output keeps a copyable CI key intact on narrow terminals.
             click.echo(f"Trusted public key for {strip_controls(status.server_name)} (CI): {public_key}")
+
+
+def _status_verification(signing: dict[str, object]) -> str:
+    state = signing.get("verification")
+    label = str(state) if state else "none"
+    if signing.get("baseline_usable") is False:
+        label += " (withheld)"
+    return label
 
 
 def _configured_pin_server_names(extra_config: str | None, config_only: bool) -> set[str]:

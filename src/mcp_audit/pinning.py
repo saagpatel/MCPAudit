@@ -378,6 +378,15 @@ class PinStore:
             return True
         return not self._keys_trusted()
 
+    def unverified_legacy_baseline(self, server_name: str) -> bool:
+        """A saved legacy baseline that verifies cleanly but is withheld as unauthenticated."""
+        return self.baseline_trusted(server_name) and not self.baseline_usable(server_name)
+
+    def _review_gate(self, server_name: str, review_unverified_legacy: bool) -> bool:
+        if review_unverified_legacy:
+            return self.baseline_trusted(server_name)
+        return self.baseline_usable(server_name)
+
     def _keys_trusted(self) -> bool:
         from mcp_audit.pin_signing import PinSigningError, has_active_trusted_key
 
@@ -438,6 +447,9 @@ class PinStore:
             "kid": signature.get("kid") if isinstance(signature, dict) else None,
             "public_key": signer.get("public_key") if isinstance(signer, dict) else None,
             "trusted_public_key": trusted_public_key,
+            # Additive: verification evidence, unlike the entry-derived fields above.
+            "verification": str(verified.state) if verified is not None else None,
+            "baseline_usable": self.baseline_usable(server_name),
         }
 
     def _server_document(self, server_name: str, entry: dict[str, Any]) -> dict[str, object]:
@@ -716,9 +728,17 @@ class PinStore:
             if signed:
                 self._record_signed([server_name])
 
-    def check_drift(self, server_name: str, tools: list[ToolInfo]) -> list[DriftFinding]:
-        """Compare current tool hashes against stored pins. Returns drift findings."""
-        if not self.baseline_usable(server_name):
+    def check_drift(
+        self, server_name: str, tools: list[ToolInfo], *, review_unverified_legacy: bool = False
+    ) -> list[DriftFinding]:
+        """Compare current tool hashes against stored pins. Returns drift findings.
+
+        ``review_unverified_legacy`` is for operator refresh review only: it
+        also compares against a withheld (unauthenticated legacy v1) baseline so
+        the operator sees every difference before signing. Integrity failures
+        are never compared.
+        """
+        if not self._review_gate(server_name, review_unverified_legacy):
             return []
         servers: dict[str, Any] = self._data.get("servers", {})
         server_entry: dict[str, Any] = servers.get(server_name, {})
@@ -827,13 +847,13 @@ class PinStore:
         servers: dict[str, Any] = self._data.get("servers", {})
         return len(servers.get(server_name, {}).get("tools", {}))
 
-    def baseline_tools(self, server_name: str) -> list[ToolInfo]:
+    def baseline_tools(self, server_name: str, *, review_unverified_legacy: bool = False) -> list[ToolInfo]:
         """Reconstruct pinned tools as ``ToolInfo`` from stored snapshots.
 
         Restores all covered fields, including annotations. Legacy snapshots
         retain absent fields as None. Empty list if the server is not pinned.
         """
-        if not self.baseline_usable(server_name):
+        if not self._review_gate(server_name, review_unverified_legacy):
             return []
         servers: dict[str, Any] = self._data.get("servers", {})
         pinned_tools: dict[str, Any] = servers.get(server_name, {}).get("tools", {})
@@ -893,14 +913,16 @@ class PinStore:
             return None
         return {"tools": tools}
 
-    def baseline_config(self, server_name: str) -> dict[str, Any] | None:
+    def baseline_config(
+        self, server_name: str, *, review_unverified_legacy: bool = False
+    ) -> dict[str, Any] | None:
         """Return the pinned launch-config snapshot for a server, or None.
 
         None when the server is unpinned OR was pinned before config snapshots
         existed (older baselines) — callers must treat None as "no provenance
         comparison possible" and skip silently.
         """
-        if not self.baseline_usable(server_name):
+        if not self._review_gate(server_name, review_unverified_legacy):
             return None
         servers: dict[str, Any] = self._data.get("servers", {})
         snapshot = servers.get(server_name, {}).get("config_snapshot")
