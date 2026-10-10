@@ -527,13 +527,26 @@ Failed verification skips all saved-baseline comparisons, including the canary's
 first-listing comparison; independent in-session canary comparisons still run.
 The findings reach JSON, terminal/HTML summaries, SARIF, and the opt-in
 `fail_on.pin_integrity: true` policy gate. Existing drift policy semantics and
-report `schema_version` remain unchanged. Unsigned v2 and legacy v1 pins warn
-and remain usable. Verification uses the separate trusted public-key store,
+report `schema_version` remain unchanged. Truly unsigned v2 and legacy v1 pins warn
+and remain usable when the separate trust store has no signing requirement.
+Signing or successful verification records a per-server `signature_required`
+expectation there; existing verified timestamp history also implies it. Missing
+required signatures, remaining signing metadata without a signature, or unreadable
+signing expectations produce `tampered_entry` and HIGH `MCP027`, including when
+tool entries claim v1. An explicit `--unsigned` write can downgrade a verified
+baseline and update the separate expectation. Fresh CI must provision this
+expectation independently of the editable pin file to enforce it on first use.
+Verification uses the separate trusted public-key store,
 never an embedded public key or a private signing key.
 
 `scan --pin-file PATH` selects the saved baseline. `pin --status --json` adds
 `schema`, `signed`, `kid`, and `public_key` per server. These status fields
 describe the saved entry, and are not themselves verification evidence.
+The additive `trusted_public_key` is nullable: it comes from the separate trust
+store only for a verified signature (including a retired key within grace).
+Terminal status prints only this authenticated key for CI; the existing JSON
+`public_key` remains untrusted embedded metadata. Ordinary pin writes, refresh,
+rotation and re-signing refuse failed baseline verification.
 
 Escalation findings add `kind: annotation_delta` and an `annotation_changes`
 list of hint names (empty for other kinds). This is HIGH `MCP018` for

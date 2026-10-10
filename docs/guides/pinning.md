@@ -42,10 +42,18 @@ current user. Pins are signed automatically when a signing key exists.
 `--unsigned` explicitly writes unsigned v2 pins. Without a configured key,
 pins remain unsigned and comparisons emit a warning.
 Overwriting an already signed entry requires a private key or the explicit
-`--unsigned` downgrade.
+`--unsigned` downgrade of a baseline that still passes verification. Signing
+records a per-server `signature_required` expectation in the separate trust
+store; subsequent verification also records it. Removing a signature (even
+along with all signing metadata or by changing tool entries to v1) cannot
+downgrade that expectation. `--unsigned` explicitly clears it after verification.
+Existing verified timestamp history also requires a signature until an explicit
+downgrade. Truly unsigned v1 and v2 baselines without that expectation remain usable.
 
-CI needs only the public key printed by key generation or status. Add it to
-the separate local trust store and verify the committed baseline:
+Provision CI with the public key from key generation through a trusted channel.
+Status prints a CI key only after verification using the separate trust store;
+it cannot bootstrap trust from an embedded key. Add the independently obtained
+key to the separate local trust store and verify the committed baseline:
 
 ```sh
 mcp-audit pin trust-key --add PUBLICHEX
@@ -58,6 +66,14 @@ For a tool-surface comparison, enable connections only to reviewed servers.
 Embedded public keys in the pin file never establish trust. A failed signature
 or untrusted signer produces HIGH `MCP027` and skips saved-baseline comparisons;
 set `fail_on.pin_integrity: true` in policy to fail CI on those findings.
+Fresh CI trust stores must also retain the signing expectation independently:
+in the wrapped trust-store JSON, set `servers.SERVER.signature_required` to
+`true` for each server expected to have signed pins. A public key alone cannot
+distinguish a genuinely unsigned legacy baseline from a completely stripped
+signature on first use. Protect and persist this store separately from pins.
+Ordinary pin writes and refreshes refuse failed verification rather than
+copying and re-signing saved registry hashes. Restore a trusted backup, or
+explicitly clear the server's pin and review a fresh baseline before re-pinning.
 
 `pin --pin-file ./pins.yaml rotate-key` re-verifies signed entries and re-signs
 v2 entries with a new key. The old public key remains trusted for 30 days;

@@ -12,7 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add Ed25519 signed pin baselines with separate trusted public keys, key
   rotation and retired-key grace, rollback warnings, and HIGH `MCP027`
   findings that skip untrusted baseline comparisons and support
-  `fail_on.pin_integrity`. Verification does not require a private key.
+  `fail_on.pin_integrity`. Verification does not require a private key. Persist
+  signing expectations separately to reject stripped signatures, print CI keys
+  only from verified trust records, refuse writes through failed baselines,
+  protect selected pin files from report overwrite, and use them for pin policies.
 - Restrict publication to exactly the versioned wheel and sdist, reject extras
   and symlinks, and bind their SHA-256 values to an approved release manifest
   recording source and workflow revisions. Recheck disposable consumer copies
