@@ -41,6 +41,7 @@ CASES = (
     Case("oversized_50mb", ("oversized", "--frame-bytes", "50000000"), 191.7, 3217),
     Case("spawn_child_exit", ("spawn-child-exit",), 6.5, timeout=2, leftovers=1),
     Case("scale_2000", ("normal", "--tools", "10"), 16, servers=2000, tools=20000),
+    Case("pages_20k", ("normal", "--tools", "20000", "--pages", "20"), 9, tools=20000),
 )
 
 
@@ -148,6 +149,10 @@ def run_case(root: Path, case: Case, *, timeout: int | None = None) -> dict[str,
         "--json",
         str(report_path),
     ]
+    if case.name == "desc_1mb_x20":
+        # This 20 MB frame exercises retained item text and analysis, rather
+        # than the default 16 MiB frame rejection covered by oversized_50mb.
+        command.extend(["--max-frame-bytes", "32000000"])
     start = time.perf_counter()
     measured: dict[str, object] = {"case": case.name, "timeout": case.timeout if timeout is None else timeout}
     process = subprocess.Popen(
@@ -173,6 +178,7 @@ def run_case(root: Path, case: Case, *, timeout: int | None = None) -> dict[str,
             measured["total_tools"] = report["total_tools"]
             measured["statuses"] = [a["connection_status"] for a in report["audits"]]
             measured["errors"] = [a["connection_error"] for a in report["audits"]]
+            measured["warning_codes"] = [warning["code"] for warning in report["warnings"]]
             measured["file_read_tools"] = [
                 [f["tool_name"] for f in a["permissions"] if f["category"] == "file_read"]
                 for a in report["audits"]
@@ -226,7 +232,7 @@ def assert_limits(metrics: dict[str, object], case: Case, profile: str) -> None:
         elif case.name == "desc_1mb_x20":
             wall, rss = 3, None
             assert number(metrics, "peak_rss_bytes") < 400_000_000, metrics
-    if stage >= 2 and case.name == "oversized_50mb":
+    if case.name == "oversized_50mb":
         assert number(metrics, "wall_seconds") < 1, metrics
         assert number(metrics, "peak_rss_bytes") < 300_000_000, metrics
         assert metrics["statuses"] == ["failed"], metrics
@@ -250,6 +256,9 @@ def assert_limits(metrics: dict[str, object], case: Case, profile: str) -> None:
         assert number(metrics, "analysis_invocations") == case.servers, metrics
         assert metrics["analysis_tool_counts"] == [case.tools], metrics
         assert metrics["file_read_tools"] == [[f"tool_{i}" for i in range(case.tools)]], metrics
+    if case.name == "pages_20k":
+        assert metrics["statuses"] == ["connected"] and metrics["warning_codes"] == [], metrics
+        assert number(metrics, "peak_rss_bytes") < 500_000_000, metrics
     assert number(metrics, "wall_seconds") <= wall, metrics
     if analysis is not None:
         assert number(metrics, "analysis_seconds") <= analysis, metrics
