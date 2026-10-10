@@ -287,7 +287,7 @@ class MCPProxyMonitor:
         return table
 
 
-@click.command("monitor")
+@click.command("monitor", hidden=True, deprecated="Scheduled for removal in 3.0.")
 @click.argument("server_name")
 @click.option("--log", "log_path", default=None, metavar="PATH", help="Write JSONL log to PATH.")
 def monitor_command(server_name: str, log_path: str | None) -> None:

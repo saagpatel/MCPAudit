@@ -8,7 +8,7 @@ from pathlib import Path
 import click
 from pydantic import BaseModel
 
-from mcp_audit.agent_ui_cli import _write_artifacts
+from mcp_audit._artifacts import _write_artifacts
 from mcp_audit.authorization_posture_models import (
     AuthorizationPostureReport,
     McpAuthorizationPostureV1,

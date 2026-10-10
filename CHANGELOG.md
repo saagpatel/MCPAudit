@@ -9,13 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Record connected protocol versions, discover evidence, extension identifiers,
-  session-ID presence (never its value), raw cache hints and complete tool order.
-  Add low protocol advisories for legacy HTTP, minted sessions, deprecated logging,
-  missing/inconsistent cache hints, invalid TTLs and observed order changes.
-  Label modern tool-surface session drift as a SEP-2567 protocol requirement;
-  keep unavailable evidence separate from findings and retain partial coverage
-  when the SDK rejects cache metadata.
+- Add a lazy CLI command registry with `lab <topic>`, `safeforge preinstall|run`,
+  `skills scan`, and `baseline pin` families. Keep old spellings as hidden 2.x
+  aliases; completion and `--help-all` list every registered path. Hide and
+  deprecate `monitor` for removal in 3.0. Share the offline artifact writer without
+  importing Agent UI, and move the PostgreSQL exemplar and tests to `research/`
+  outside the wheel.
 - Add local `checkup` / `scan --card FILE` HTML checkup cards with a 1200×630
   counts-only crop, coverage-qualified grade or Preview, date, four vitals and
   a Markdown sticker. Reuse the existing finding-class rubric and caveat without
@@ -79,6 +78,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   including either `--show-host` setting. Retain distinct policy violations and targets
   while grouping policy advice per affected server identity.
   Improve mobile table scrolling, muted-text contrast and dark-mode colors.
+- Record connected protocol versions, discover evidence, extension identifiers,
+  session-ID presence (never its value), raw cache hints and complete tool order.
+  Add low protocol advisories for legacy HTTP, minted sessions, deprecated logging,
+  missing/inconsistent cache hints, invalid TTLs and observed order changes.
+  Label modern tool-surface session drift as a SEP-2567 protocol requirement;
+  keep unavailable evidence separate from findings and retain partial coverage
+  when the SDK rejects cache metadata.
 
 ### Fixed
 

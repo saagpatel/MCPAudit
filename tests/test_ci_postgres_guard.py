@@ -35,8 +35,8 @@ def test_postgres_ci_uses_local_binaries_without_service_container() -> None:
 @pytest.mark.parametrize("root_tag", ["testsuites", "testsuite"])
 def test_postgres_guard_accepts_passing_cases(tmp_path: Path, root_tag: str) -> None:
     cases = """
-        <testcase classname="tests.test_proofos_postgres" name="test_migration" />
-        <testcase classname="tests.test_proofos_postgres.TestMigration" name="test_rollback" />
+        <testcase classname="research.test_proofos_postgres" name="test_migration" />
+        <testcase classname="research.test_proofos_postgres.TestMigration" name="test_rollback" />
         <testcase classname="tests.test_other" name="test_optional"><skipped /></testcase>
     """
     suite = f'<testsuite name="pytest" tests="3" skipped="1">{cases}</testsuite>'
@@ -53,14 +53,14 @@ def test_postgres_guard_accepts_passing_cases(tmp_path: Path, root_tag: str) -> 
     [
         "",
         '<testcase classname="tests.test_other" name="test_other" />',
-        '<testcase classname="tests.test_proofos_postgres_extra" name="test_other" />',
+        '<testcase classname="research.test_proofos_postgres_extra" name="test_other" />',
         '<testcase name="test_migration" />',
     ],
     ids=["empty", "other-module", "module-prefix-lookalike", "missing-classname"],
 )
 def test_postgres_guard_rejects_missing_cases(tmp_path: Path, cases: str) -> None:
     # Even a matching suite name cannot substitute for the module's testcases.
-    report = f'<testsuites><testsuite name="test_proofos_postgres">{cases}</testsuite></testsuites>'
+    report = f'<testsuites><testsuite name="research.test_proofos_postgres">{cases}</testsuite></testsuites>'
 
     result = _run_guard(tmp_path, report)
 
@@ -72,12 +72,12 @@ def test_postgres_guard_rejects_missing_cases(tmp_path: Path, cases: str) -> Non
 @pytest.mark.parametrize("include_passing_case", [False, True], ids=["all-skipped", "partly-skipped"])
 def test_postgres_guard_rejects_skipped_cases(tmp_path: Path, include_passing_case: bool) -> None:
     cases = """
-        <testcase classname="tests.test_proofos_postgres" name="test_migration">
+        <testcase classname="research.test_proofos_postgres" name="test_migration">
             <skipped type="pytest.skip" message="local fixture unavailable" />
         </testcase>
     """
     if include_passing_case:
-        cases += '<testcase classname="tests.test_proofos_postgres" name="test_rollback" />'
+        cases += '<testcase classname="research.test_proofos_postgres" name="test_rollback" />'
     report = f'<testsuites><testsuite name="pytest">{cases}</testsuite></testsuites>'
 
     result = _run_guard(tmp_path, report)

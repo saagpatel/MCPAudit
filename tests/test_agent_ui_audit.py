@@ -10,7 +10,7 @@ import pytest
 from click.testing import CliRunner
 from pydantic import ValidationError
 
-import mcp_audit.agent_ui_cli as agent_ui_cli
+import mcp_audit._artifacts as artifacts
 from mcp_audit.agent_ui_models import (
     A2UIFixtureManifest,
     A2UIMessage,
@@ -775,7 +775,7 @@ def test_cli_rechecks_input_alias_against_opened_output_parent(
         flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_DIRECTORY", 0)
         return os.open(fixture_parent, flags)
 
-    monkeypatch.setattr(agent_ui_cli, "_open_artifact_parent", retarget_output_parent)
+    monkeypatch.setattr(artifacts, "_open_artifact_parent", retarget_output_parent)
     result = CliRunner().invoke(
         main,
         [
@@ -800,13 +800,13 @@ def test_cli_no_force_commit_does_not_clobber_post_preflight_file(
 ) -> None:
     json_path = tmp_path / "race.json"
     html_path = tmp_path / "race.html"
-    real_stage = agent_ui_cli._stage_artifact
+    real_stage = artifacts._stage_artifact
 
     def stage_with_competing_html(
         parent_fd: int,
         path: Path,
         content: bytes,
-    ) -> agent_ui_cli._StagedArtifact:
+    ) -> artifacts._StagedArtifact:
         artifact = real_stage(parent_fd, path, content)
         if path == html_path:
             descriptor = os.open(
@@ -819,7 +819,7 @@ def test_cli_no_force_commit_does_not_clobber_post_preflight_file(
                 handle.write(b"competitor")
         return artifact
 
-    monkeypatch.setattr(agent_ui_cli, "_stage_artifact", stage_with_competing_html)
+    monkeypatch.setattr(artifacts, "_stage_artifact", stage_with_competing_html)
     result = CliRunner().invoke(
         main,
         [
