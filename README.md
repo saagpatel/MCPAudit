@@ -121,7 +121,7 @@ tools under its documented limits. See [How it works](docs/how-it-works.md)
 for the boundary between those observations.
 
 Reports can contain configuration shape, tool names, and evidence text. Secret
-redaction is best-effort; do not share a report until you have reviewed it.
+redaction is best-effort ([known issues](docs/known-issues.md)); review a report before sharing it.
 Configs are parsed in full, but environment variable values are discarded
 during parsing and never reported; reports keep key names for context. The [output contract](docs/OUTPUT-CONTRACT.md) lists stable fields and
 the limits of these outputs.

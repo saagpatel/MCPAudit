@@ -5,9 +5,330 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.9.0] - Unreleased
+
+### Upgrade notes
+
+- Static instruction-text phrase matches are MEDIUM `INSTRUCTION_SHAPED_TEXT`,
+  never HIGH on their own. HIGH injection policy gates no longer fail on
+  phrases alone (D4); review thresholds if you relied on that behavior.
+- Honest `readOnlyHint` tools no longer score `file_read` solely from that hint.
+  Missing hints become one per-server FYI, with SARIF `MCP005` at `note`;
+  genuine capability rows retain compatibility alert levels (D3).
+  See [Scoring migration](docs/SCORING-MIGRATION.md) before comparing scores or alerts.
+- New `check`, `inspect`, `demo`, `explain`, and `checkup` commands support
+  static review. Bare `mcp-audit` runs a static check; legacy `scan` grammar is
+  unchanged. Use explicit connection options when a connected review is intended.
+- Project-scope (cwd) configs are discovered but not connected without
+  `--connect-project-configs` (D1). Review project commands and endpoints before opting in.
+- After `pin keygen` or `pin trust-key --add`, unsigned v2 pins and pin files
+  without a signed manifest report `MCP027`. Re-pin with `pin`, use
+  `pin rotate-key --resign`, or use `pin --clear SERVER` then re-pin after
+  review. Legacy v1 pins warn and their drift baseline is withheld while
+  trusted keys exist.
+- Stderr lines containing terminal control sequences are withheld from reports
+  and `connection_error`; expect a withheld-line marker instead of that evidence.
+- Unusual but legal `WWW-Authenticate` shapes, such as Basic and Bearer on
+  separate header lines, produce an authorization-probe coverage warning
+  instead of a metadata review. Review incomplete coverage before relying on a clean result.
+- Account for new rule IDs `MCP044`–`MCP050` (protocol observations),
+  `MCP051`–`MCP054` (static schema rules), `MCP027` (pin integrity), and
+  `MCPAUTH` rules in downstream filters and policies.
+
+### Known issues
+
+- Credential redaction is pattern-based: a quoted secret flag value containing
+  an escaped quote can leak its suffix; a zero-width character inside a
+  bearer/basic token can leave its tail. Secret-shaped schema property names
+  are not redacted, and terminal output prints tool names without credential
+  redaction (terminal controls are still sanitized). A structural redaction
+  redesign is planned for 2.10. Review field reports before sharing.
+- A fresh CI trust store has no rollback high-water mark until its first
+  verification, so restoring a complete older signed pin file in a one-shot
+  CI job is not detected. Persist the trust store. Deleting it removes trusted
+  keys and signing expectations; expectations are keyed by server name across
+  pin files.
+- Static schema header checks do not follow every composition form. Unsupported
+  or ambiguous cases report incomplete coverage rather than findings.
+- Legacy v1 pins do not cover annotation-only changes, title, output schema,
+  icons, or metadata. Review `pin --refresh` before upgrading to v2; current
+  v2 pins cover these fields, including security-relevant annotation deltas.
+
+### Security
+
+#### Signed pins and drift baselines
+
+- Add Ed25519 signed pin baselines with separate trusted public keys, key
+  rotation and retired-key grace, rollback warnings, and HIGH `MCP027`
+  findings that skip untrusted baseline comparisons and support
+  `fail_on.pin_integrity`. Verification does not require a private key. Persist
+  signing expectations separately to reject stripped signatures, print CI keys
+  only from verified trust records, refuse writes through failed baselines,
+  protect selected pin files from report overwrite, and use them for pin policies.
+
+- Pin tool surfaces with canonical form v2, covering annotations, title, output
+  schema, icons and metadata; restore those fields for baseline comparison and
+  flag security-relevant annotation changes as HIGH MCP018 deltas. Share the
+  compact canonical serializer with canary surfaces. Keep legacy v1 hashes
+  active without automatic migration, warn about uncovered fields and label
+  them in refresh previews before an explicit upgrade.
+
+- Fail closed for signed pins the trust store expects: a deleted, renamed,
+  emptied, unparseable, or substituted entry or pin file now yields HIGH
+  `MCP027`. Failed verification no longer satisfies `require.pins`, and enabled
+  baseline-comparison gates fail instead of passing on a withheld baseline,
+  which is reported as `pin_baseline_withheld` rather than as a legacy pin.
+  Signing expectations are written only after the pin write succeeds, and
+  `pin --clear` removes the expectation as the explicit recovery path. Example CI
+  policies enable `fail_on.pin_integrity`.
+
+- Treat an unsigned v2 pin as tampered (HIGH `MCP027`) whenever the trust store
+  holds a usable trusted key, so public-key-only CI rejects fully stripped
+  signatures; refuse unsigned v2 writes in that state while legacy v1 pins keep
+  warning. Advance the rollback high-water `pinned_at` on every successful signed
+  write so restoring an older signed pin warns `pin_rolled_back`. Suppress legacy
+  refresh guidance for rejected entries, bound retired-key grace to 0-3650 days,
+  and treat invalid persisted grace as an untrusted signer instead of crashing.
+
+- Re-sign signed and mixed v1/v2 entries during key rotation and re-signing so
+  they do not expire with the retired key. Withhold unsigned legacy v1 baselines
+  from comparisons while a key is trusted (`pin_baseline_withheld`, also for
+  `pin_check` and `canary_check`) without raising `MCP027`, and report rollback
+  even when the trust-store high-water update fails.
+
+- Show the full `pin --refresh` comparison against a withheld legacy v1 baseline,
+  labeled as unverified, instead of reporting a clean match; add additive
+  `baseline_verified`/`baseline_note` refresh JSON fields and `verification`/
+  `baseline_usable` status fields with a terminal Verification column.
+
+- Sign a document-level pin manifest of signed servers and their entry digests
+  on every signed write, re-sign, rotation and clear. While a key is trusted, a
+  missing or invalid manifest, a deleted or renamed listed entry, or a spliced
+  signed entry is `MCP027`, closing deletion in public-key-only CI. A trusted
+  mixed v1/v2 entry now keeps its signed v2 rows as the canary baseline.
+
+#### Project connections and metadata evidence
+
+- Discover and report project-scope MCP configs without spawning their commands
+  or contacting their endpoints by default. `scan` and `watch` require
+  `--connect-project-configs` to connect them; `pin` (including refresh) and
+  `serve` tools also skip them. Workstation configs retain their connection
+  default, and the Action and pre-commit hook remain config-only by default.
+  Reports add `audits[].server.scope` and a `project_config_not_connected`
+  warning with the shell-quoted command and arguments (credentials redacted),
+  or the skipped remote endpoint.
+
+- Preserve keyword capability evidence even when served annotations claim
+  read-only, non-destructive or closed-world behavior. Report explicit
+  declaration/evidence contradictions at MEDIUM-or-better keyword confidence
+  as MCP043 (`annotation_contradiction`), HIGH for destructive evidence and
+  MEDIUM otherwise, in additive JSON findings, SARIF and permission policy
+  gates. Canary eligibility retains its served-annotation veto.
+
+- Share NFKC, invisible-codepoint stripping and curated confusable folding
+  across static injection, runtime text and tool-name shadowing checks. Report
+  MEDIUM `OBFUSCATED_METADATA` for invisible classes or mixed-script confusables
+  with field pointers; preserve raw source evidence and display invisible characters
+  as codepoint markers in evidence, terminal, HTML and SARIF messages. Anchor
+  bounded evidence redacted before display to the detected phrase or gated anomaly so stripped context and
+  benign non-Latin prefixes cannot displace it, including normalized HTML-comment
+  delimiters after long benign prefixes.
+
+- Report static phrase matches as experimental MEDIUM with pattern and field
+  evidence, retain concrete secret targets for "Fix now" summaries, and flag
+  high-entropy metadata runs at LOW without decoding them.
+  Withhold phrase excerpts after full-field credential redaction, preserve
+  instruction evidence in the MCP findings endpoint, restore override phrase
+  coverage, and align the synthetic sandbox with the MEDIUM heuristic tier.
+  Build metadata evidence with a shared full-field redaction helper that maps
+  match offsets before slicing and rendering invisible codepoints, including
+  obfuscation, hidden-directive, schema, SSRF, and escalation evidence.
+  Withhold field evidence when normalization exposes a credential label missed
+  by raw redaction; apply the same protection to serialized metadata. Use
+  original-string case-insensitive offsets and clamp evidence spans to prevent
+  length-changing lowercase text from aborting a server scan.
+
+#### Bounded transport and process hygiene
+
+- Terminate stdio process groups even after their leader exits, fail immediately
+  on transport parse errors with a safe protocol reason, and include a bounded,
+  redacted stderr tail in connection errors. Cap HTTP response bodies before
+  buffering, cancel the session even when SDK SSE handlers swallow body-limit
+  errors, and withhold stderr lines containing terminal controls before redacting
+  credential anchors.
+  Apply the remaining per-server wall clock to Python analysis while retaining
+  completed permission analysis when optional verification I/O exceeds it.
+  Report shortened listing text only as `surface_truncated`, without incorrectly
+  claiming the complete item inventory could not be listed.
+
+- Bound stdio frames with a linear bytearray reader (16 MiB default), share a
+  64 MiB serialized-byte budget across listing pages and surfaces, and cap
+  retained per-item text at 256 KiB with `surface_truncated` and partial
+  coverage. Keep the SDK reader behind `--sdk-stdio-fallback` for compatibility;
+  the fallback disables the frame cap but retains listing limits.
+
+- Exclude home dotfiles and additional credential directories from launch-artifact
+  hashing, including existing pin baselines and resolved targets; report partial
+  comparison coverage without exposing excluded hashes. Apply archive-equivalent
+  size and entry limits to skillscan directories,
+  install transport log redaction once for debug CLI runs, and write serve installs
+  atomically while preserving config symlinks and updating their targets. Describe
+  `--timeout` as a per-server session budget.
+
+#### Supply-chain and publication hygiene
+
+- Restrict publication to exactly the versioned wheel and sdist, reject extras
+  and symlinks, and bind their SHA-256 values to an approved release manifest
+  recording source and workflow revisions. Recheck disposable consumer copies
+  after installation and recheck the retained candidates before publication.
+
+- Assert the exact Registry descriptor before OIDC login and on readback; bind
+  non-yanked PyPI filenames and hashes to the approved manifest. Share a main-only,
+  named-reviewer environment check across both publishers, disable release caches,
+  and add a publication dry-run mode without OIDC authority.
+
+- Bind the Action's default install to its own package version and install the
+  checkout's local wheel in self-audit. Raise the AnyIO floor to `>=4.14.2` and
+  include Actions in CodeQL analysis.
+
+- Check locked dependency advisories with a bounded OSV query and explicit
+  unavailable-feed failures. Saved-response tests verify failures and coverage;
+  absence of OSV matches does not replace direct dependency security floors.
+
+### Changed
+
+#### Scoring and session budgets
+
+- Stop scoring read-only declarations as file access and absent tool hints as
+  destructive/network capabilities. Consolidate missing hints into one
+  per-server `annotations_missing` FYI (SARIF `MCP005` note), retaining genuine
+  capability rule IDs, fingerprints, and alert levels with operator overrides
+  applied to legacy annotation contributions, including declared-confidence
+  warnings for retained schema-only file evidence. Keep canary keyword vetoes
+  non-contextual; recognize literal URLs, IPv4 addresses, and email destinations
+  as outbound context. Require context for
+  ambiguous set/add/commit/reply/forward/export and open/list/describe keywords;
+  promote all six precision-corpus regressions and raise precision floors to 100%.
+
+- Limit simultaneous server sessions to 32 by default, configurable with
+  `--max-concurrency`; clarify that `--timeout` is a per-session budget and
+  excludes time waiting for a connection slot.
+
+- Retain independent static/runtime instruction phrase rules; vocabulary
+  unification remains deferred. The structural redaction redesign is planned
+  for 2.10.
+
+#### Internal organization and documentation
+
+- Extract per-scan state, ordered server analysis and fleet finalization from
+  the scan entry point, and separate scan output/policy and pin CLI adapters.
+  Preserve scan behavior and report bytes with normalized fixture parity checks.
+
+- Restructure the README and user documentation around the static quickstart,
+  move experimental labs and maintainer/history material into dedicated
+  directories, and consolidate versioned release-boundary notes here.
 
 ### Added
+
+#### Static review commands and finding guidance
+
+- Add static-by-default `check`, bare-command configuration review, source
+  inventory with `inspect`, and a bundled config-only `demo`. Explicit configs
+  select only that file unless discovery is requested; connections require one
+  unambiguous client/scope/name identity. New JSON stdout and named artifact
+  options leave the legacy `scan` grammar and reports unchanged.
+
+- Align the additive `check`, `checkup`, and `inspect` surface with repeated
+  `--client` filters (hyphen or underscore spellings), JSON stdout/file output,
+  and recovery details for operational errors. Preserve legacy `scan --json`
+  path semantics. Identify post-scan and artifact-write failures by operation;
+  include recovery details for artifact validation errors while retaining exit 2.
+
+- Add a lazy CLI command registry with `lab <topic>`, `safeforge preinstall|run`,
+  `skills scan`, and `baseline pin` families. Keep old spellings as hidden 2.x
+  aliases; completion and `--help-all` list every registered path. Hide and
+  deprecate `monitor` for removal in 3.0. Share the offline artifact writer without
+  importing Agent UI, and move the PostgreSQL exemplar and tests to `research/`
+  outside the wheel.
+
+- Add offline `explain` and a generated finding reference with plain-English
+  consequences, initial repair estimates, confidence limits and reference links.
+  Show config paths and explicit-file source labels in finding explanations;
+  align redacted metadata excerpts to word boundaries and mark the actual match
+  using additive display offsets without changing plain JSON evidence.
+  Scrub escaped config pointer identifiers in `--redact` reports and bound
+  Unicode evidence after control-character rendering while preserving match offsets.
+  Ensure whitespace-only context is trimmed so metadata excerpt budgeting cannot stall scans.
+
+#### Summary reports, share cards, and visible exceptions
+
+- Lead terminal reviews with a coverage-qualified Preview or finding-class grade,
+  visible totals and up to three manual action cards. `--details` retains the
+  legacy tables; `--color auto|always|never` and `NO_COLOR` control presentation.
+  Add `ux_summary.grade` and its reach-and-hygiene caveat to report JSON without
+  changing numeric risk scores or the schema version. Explicit-file finding and
+  scan-warning cards retain client-not-asserted attribution.
+
+- Present offline HTML reports with a coverage-qualified grade or Preview,
+  deduplicated actions, collapsed server summaries and a full audit log.
+  Add presentation-only JSON `ux_summary.grade` and a stored `review_summary`
+  without changing risk scores. Compute all grouped actions, counts, grades and
+  review estimates once before credential or identifier redaction; retain the
+  snapshot through repeated redaction and JSON reloads.
+  Hide the hostname by default in HTML; `check/scan --show-host` includes it.
+  Preserve distinct server and config-health actions and grades in HTML, terminal
+  summaries and JSON with `scan --redact`,
+  including either `--show-host` setting. Retain distinct policy violations and targets
+  while grouping policy advice per affected server identity.
+  Improve mobile table scrolling, muted-text contrast and dark-mode colors.
+
+- Add local `checkup` / `scan --card FILE` HTML checkup cards with a 1200×630
+  counts-only crop, coverage-qualified grade or Preview, date, four vitals and
+  a Markdown sticker. Reuse the existing finding-class rubric and caveat without
+  changing scores or JSON fields. Server names require `--names`; optional
+  `--previous FILE` compares matching earlier local reports without uploading
+  content or keeping automatic history.
+
+- Add reasoned, optionally expiring `ignore:` finding exceptions and one-run
+  `--ignore` / `--ignore-reason` options to `scan` and `check`. Keep original
+  evidence and scores, list exception counts and reasons beside terminal coverage,
+  and add `suppressed[]` to JSON. Policies can forbid exceptions with
+  `allow_ignores: false`; coverage failures remain active and HIGH one-run
+  exceptions require a reason. Exact injection selectors fall back to the tool
+  name when the optional target name is unset or empty.
+
+#### Coverage and bounded canary observations
+
+- Record per-check completion and reasons in additive report coverage, with
+  terminal and HTML coverage summaries, SARIF invocation notifications and
+  run properties, and an opt-in `fail_on.coverage` policy gate. Legacy reports
+  retain unknown coverage. The extended SARIF profile includes stable
+  configuration-health rule IDs.
+  Apply bounded-text coverage loss to permissions, capabilities and dependent detectors,
+  recognize empty tool pin baselines, and retain project connection warnings
+  in SARIF notifications, full-report, findings and single-server MCP results.
+  Preserve the high-risk tool's legacy JSON list; its description directs
+  callers to full-report and findings tools for coverage warnings.
+  Require execution evidence for completion, mark discovery parse failures
+  as partial coverage, and account for applicable and verified package references.
+  Preserve source configuration locations in extended SARIF, including parse failures.
+
+- Probe two client identities by default for opt-in stdio canaries, with
+  `--canary-identities 1` to disable and `2` to opt in on HTTP/SSE. Identity-conditioned
+  surfaces produce HIGH `IDENTITY_CONDITIONED_SURFACE` findings without extra tool
+  calls. Existing v2 tool pins also detect drift at call zero. Invalid or incomplete
+  v2 tool snapshots warn with `pin_baseline_corrupted` and fall back to the
+  in-session canary baseline without preventing the connection.
+
+#### Protocol, authorization, and static schema rules
+
+- Record connected protocol versions, discover evidence, extension identifiers,
+  session-ID presence (never its value), raw cache hints and complete tool order.
+  Add low protocol advisories for legacy HTTP, minted sessions, deprecated logging,
+  missing/inconsistent cache hints, invalid TTLs and observed order changes.
+  Label modern tool-surface session drift as a SEP-2567 protocol requirement;
+  keep unavailable evidence separate from findings and retain partial coverage
+  when the SDK rejects cache metadata.
 
 - Add one credential-free HTTP `server/discover` probe to eligible connected
   scans, retaining redacted challenge parameters, status, session-ID presence,
@@ -26,61 +347,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   notifications while preserving successful SDK enumeration. `--skip-connect`
   disables the probe; `--config-only` alone does not.
 
+- Add static tool-schema findings for `x-mcp-header` declarations, credential parameters mirrored to headers, external `$ref` values, and icon source schemes/origins. These checks inspect served metadata only and never fetch schemas or icons. Traverse schema-bearing branches rather than instance payloads, validate null header declarations, and report exhausted traversal budgets as partial metadata coverage. Resolve local anchors and percent-encoded JSON Pointers; report unresolved local references as incomplete instead of asserting unreachable headers.
+
 ### Fixed
 
-- Fail closed for signed pins the trust store expects: a deleted, renamed,
-  emptied, unparseable, or substituted entry or pin file now yields HIGH
-  `MCP027`. Failed verification no longer satisfies `require.pins`, and enabled
-  baseline-comparison gates fail instead of passing on a withheld baseline,
-  which is reported as `pin_baseline_withheld` rather than as a legacy pin.
-  Signing expectations are written only after the pin write succeeds, and
-  `pin --clear` removes the expectation as the explicit recovery path. Example CI
-  policies enable `fail_on.pin_integrity`.
-- Treat an unsigned v2 pin as tampered (HIGH `MCP027`) whenever the trust store
-  holds a usable trusted key, so public-key-only CI rejects fully stripped
-  signatures; refuse unsigned v2 writes in that state while legacy v1 pins keep
-  warning. Advance the rollback high-water `pinned_at` on every successful signed
-  write so restoring an older signed pin warns `pin_rolled_back`. Suppress legacy
-  refresh guidance for rejected entries, bound retired-key grace to 0-3650 days,
-  and treat invalid persisted grace as an untrusted signer instead of crashing.
-- Re-sign signed and mixed v1/v2 entries during key rotation and re-signing so
-  they do not expire with the retired key. Withhold unsigned legacy v1 baselines
-  from comparisons while a key is trusted (`pin_baseline_withheld`, also for
-  `pin_check` and `canary_check`) without raising `MCP027`, and report rollback
-  even when the trust-store high-water update fails.
-- Show the full `pin --refresh` comparison against a withheld legacy v1 baseline,
-  labeled as unverified, instead of reporting a clean match; add additive
-  `baseline_verified`/`baseline_note` refresh JSON fields and `verification`/
-  `baseline_usable` status fields with a terminal Verification column.
-- Sign a document-level pin manifest of signed servers and their entry digests
-  on every signed write, re-sign, rotation and clear. While a key is trusted, a
-  missing or invalid manifest, a deleted or renamed listed entry, or a spliced
-  signed entry is `MCP027`, closing deletion in public-key-only CI. A trusted
-  mixed v1/v2 entry now keeps its signed v2 rows as the canary baseline.
-- Update signed-pin regression connector doubles for bounded transport options,
-  and retain the required unsigned-pin warning alongside integrity-exclusion
-  warnings in integration assertions.
-- Exclude home dotfiles and additional credential directories from launch-artifact
-  hashing, including existing pin baselines and resolved targets; report partial
-  comparison coverage without exposing excluded hashes. Apply archive-equivalent
-  size and entry limits to skillscan directories,
-  install transport log redaction once for debug CLI runs, and write serve installs
-  atomically while preserving config symlinks and updating their targets. Describe
-  `--timeout` as a per-server session budget.
-- Stop scoring read-only declarations as file access and absent tool hints as
-  destructive/network capabilities. Consolidate missing hints into one
-  per-server `annotations_missing` FYI (SARIF `MCP005` note), retaining genuine
-  capability rule IDs, fingerprints, and alert levels with operator overrides
-  applied to legacy annotation contributions, including declared-confidence
-  warnings for retained schema-only file evidence. Keep canary keyword vetoes
-  non-contextual; recognize literal URLs, IPv4 addresses, and email destinations
-  as outbound context. Require context for
-  ambiguous set/add/commit/reply/forward/export and open/list/describe keywords;
-  promote all six precision-corpus regressions and raise precision floors to 100%.
+#### Configuration discovery and artifact destinations
+
 - Classify absent client config candidates before opening them in static review;
   missing files produce no config-health finding or partial coverage. Retain
   redacted config diagnostic reasons in summaries, including null project entries,
   while preserving the connection block for malformed configs.
+
 - Recognize VS Code server maps in explicit configs and parse both VS Code
   files as JSONC. Report malformed entries and duplicate keys, reject
   non-regular config paths before reading, accept UTF-8 BOMs, and distinguish
@@ -94,23 +371,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Reject report destinations that alias config or policy inputs, scan overrides,
   or another artifact, including symlinks and hard links, before any artifact
   is written.
+
 - Share MCP server entry parsing across the five config discoverers so Cursor,
   Windsurf, and Claude Desktop recognize HTTP and deprecated SSE transports
   while retaining header key names only.
+
+#### Bounded metadata analysis and regression coverage
+
 - Scan bounded agent-visible tool text, including annotation titles and all
   input-schema string leaves, for instruction-shaped text and permission
   keywords. Preserve matched field paths and report incomplete text coverage.
+
 - Retain prompt argument descriptions and required flags in additive metadata,
   scan their text, and name required arguments in canary skip warnings.
+
 - Normalize permission-detector fields once and scan category keywords with
   overlapping matches that preserve scores and evidence order. Bound detector
   text to 256 KiB per field and report `description_truncated` coverage warnings.
+
 - Tokenize SSRF identifiers in linear time and bound fetch-verb text inspection.
-- Limit simultaneous server sessions to 32 by default, configurable with
-  `--max-concurrency`; clarify that `--timeout` is a per-session budget and
-  excludes time waiting for a connection slot.
+
 - Mark incomplete metadata listings, including pagination floods, as partial
   connections rather than clean connected rows with zero tools.
+
 - Infer capabilities from nested input-schema property names using the bounded
   SSRF schema walker. Property names retain weight 1 and the HIGH confidence
   threshold remains 6; evidence includes matching schema paths. Nested
@@ -126,189 +409,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is replayed locally without launching servers. These fixtures contain no
   nested property-name capability gains; the nested regression fixture covers
   the added detection.
-- Report static phrase matches as experimental MEDIUM with pattern and field
-  evidence, retain concrete secret targets for "Fix now" summaries, and flag
-  high-entropy metadata runs at LOW without decoding them.
-  Withhold phrase excerpts after full-field credential redaction, preserve
-  instruction evidence in the MCP findings endpoint, restore override phrase
-  coverage, and align the synthetic sandbox with the MEDIUM heuristic tier.
-  Build metadata evidence with a shared full-field redaction helper that maps
-  match offsets before slicing and rendering invisible codepoints, including
-  obfuscation, hidden-directive, schema, SSRF, and escalation evidence.
-  Withhold field evidence when normalization exposes a credential label missed
-  by raw redaction; apply the same protection to serialized metadata. Use
-  original-string case-insensitive offsets and clamp evidence spans to prevent
-  length-changing lowercase text from aborting a server scan.
-- Defer static/runtime instruction vocabulary unification to the 2.9 structural
-  detection and redaction redesign; retain main's independent phrase rules.
 
-### Security
+- Update signed-pin regression connector doubles for bounded transport options,
+  and retain the required unsigned-pin warning alongside integrity-exclusion
+  warnings in integration assertions.
 
-- Terminate stdio process groups even after their leader exits, fail immediately
-  on transport parse errors with a safe protocol reason, and include a bounded,
-  redacted stderr tail in connection errors. Cap HTTP response bodies before
-  buffering, cancel the session even when SDK SSE handlers swallow body-limit
-  errors, and strip terminal controls before redacting credential anchors.
-  Apply the remaining per-server wall clock to Python analysis while retaining
-  completed permission analysis when optional verification I/O exceeds it.
-  Report shortened listing text only as `surface_truncated`, without incorrectly
-  claiming the complete item inventory could not be listed.
-- Bound stdio frames with a linear bytearray reader (16 MiB default), share a
-  64 MiB serialized-byte budget across listing pages and surfaces, and cap
-  retained per-item text at 256 KiB with `surface_truncated` and partial
-  coverage. Keep the SDK reader behind `--sdk-stdio-fallback` for compatibility;
-  the fallback disables the frame cap but retains listing limits.
-- Restrict publication to exactly the versioned wheel and sdist, reject extras
-  and symlinks, and bind their SHA-256 values to an approved release manifest
-  recording source and workflow revisions. Recheck disposable consumer copies
-  after installation and recheck the retained candidates before publication.
-- Assert the exact Registry descriptor before OIDC login and on readback; bind
-  non-yanked PyPI filenames and hashes to the approved manifest. Share a main-only,
-  named-reviewer environment check across both publishers, disable release caches,
-  and add a publication dry-run mode without OIDC authority.
-- Bind the Action's default install to its own package version and install the
-  checkout's local wheel in self-audit. Raise the AnyIO floor to `>=4.14.2` and
-  include Actions in CodeQL analysis.
-- Check locked dependency advisories with a bounded OSV query and explicit
-  unavailable-feed failures. Saved-response tests verify failures and coverage;
-  absence of OSV matches does not replace direct dependency security floors.
-- Preserve keyword capability evidence even when served annotations claim
-  read-only, non-destructive or closed-world behavior. Report explicit
-  declaration/evidence contradictions at MEDIUM-or-better keyword confidence
-  as MCP043 (`annotation_contradiction`), HIGH for destructive evidence and
-  MEDIUM otherwise, in additive JSON findings, SARIF and permission policy
-  gates. Canary eligibility retains its served-annotation veto.
-- Pin tool surfaces with canonical form v2, covering annotations, title, output
-  schema, icons and metadata; restore those fields for baseline comparison and
-  flag security-relevant annotation changes as HIGH MCP018 deltas. Share the
-  compact canonical serializer with canary surfaces. Keep legacy v1 hashes
-  active without automatic migration, warn about uncovered fields and label
-  them in refresh previews before an explicit upgrade.
-- Discover and report project-scope MCP configs without spawning their commands
-  or contacting their endpoints by default. `scan` and `watch` require
-  `--connect-project-configs` to connect them; `pin` (including refresh) and
-  `serve` tools also skip them. Workstation configs retain their connection
-  default, and the Action and pre-commit hook remain config-only by default.
-  Reports add `audits[].server.scope` and a `project_config_not_connected`
-  warning with the shell-quoted command and arguments (credentials redacted),
-  or the skipped remote endpoint.
-- Share NFKC, invisible-codepoint stripping and curated confusable folding
-  across static injection, runtime text and tool-name shadowing checks. Report
-  MEDIUM `OBFUSCATED_METADATA` for invisible classes or mixed-script confusables
-  with field pointers; preserve source evidence and display invisible characters
-  as codepoint markers in terminal, HTML and SARIF messages. Anchor bounded raw
-  evidence to the detected phrase or gated anomaly so stripped context and
-  benign non-Latin prefixes cannot displace it, including normalized HTML-comment
-  delimiters after long benign prefixes.
-- Share NFKC, invisible-codepoint stripping and curated confusable folding
-  across static injection, runtime text and tool-name shadowing checks. Report
-  MEDIUM `OBFUSCATED_METADATA` for invisible classes or mixed-script confusables
-  with field pointers; preserve source evidence and display invisible characters
-  as codepoint markers in evidence, terminal, HTML and SARIF messages. Anchor
-  bounded redacted evidence to the detected phrase or gated anomaly so stripped context and
-  benign non-Latin prefixes cannot displace it, including normalized HTML-comment
-  delimiters after long benign prefixes.
-- Add Ed25519 signed pin baselines with separate trusted public keys, key
-  rotation and retired-key grace, rollback warnings, and HIGH `MCP027`
-  findings that skip untrusted baseline comparisons and support
-  `fail_on.pin_integrity`. Verification does not require a private key. Persist
-  signing expectations separately to reject stripped signatures, print CI keys
-  only from verified trust records, refuse writes through failed baselines,
-  protect selected pin files from report overwrite, and use them for pin policies.
+### Release boundary details
 
-### Added
+Release status: candidate
+Publication decision: NO-GO
 
-- Align the additive `check`, `checkup`, and `inspect` surface with repeated
-  `--client` filters (hyphen or underscore spellings), JSON stdout/file output,
-  and recovery details for operational errors. Preserve legacy `scan --json`
-  path semantics. Identify post-scan and artifact-write failures by operation;
-  include recovery details for artifact validation errors while retaining exit 2.
-- Add a lazy CLI command registry with `lab <topic>`, `safeforge preinstall|run`,
-  `skills scan`, and `baseline pin` families. Keep old spellings as hidden 2.x
-  aliases; completion and `--help-all` list every registered path. Hide and
-  deprecate `monitor` for removal in 3.0. Share the offline artifact writer without
-  importing Agent UI, and move the PostgreSQL exemplar and tests to `research/`
-  outside the wheel.
-- Add local `checkup` / `scan --card FILE` HTML checkup cards with a 1200×630
-  counts-only crop, coverage-qualified grade or Preview, date, four vitals and
-  a Markdown sticker. Reuse the existing finding-class rubric and caveat without
-  changing scores or JSON fields. Server names require `--names`; optional
-  `--previous FILE` compares matching earlier local reports without uploading
-  content or keeping automatic history.
-- Add reasoned, optionally expiring `ignore:` finding exceptions and one-run
-  `--ignore` / `--ignore-reason` options to `scan` and `check`. Keep original
-  evidence and scores, list exception counts and reasons beside terminal coverage,
-  and add `suppressed[]` to JSON. Policies can forbid exceptions with
-  `allow_ignores: false`; coverage failures remain active and HIGH one-run
-  exceptions require a reason. Exact injection selectors fall back to the tool
-  name when the optional target name is unset or empty.
-- Add offline `explain` and a generated finding reference with plain-English
-  consequences, initial repair estimates, confidence limits and reference links.
-  Show config paths and explicit-file source labels in finding explanations;
-  align redacted metadata excerpts to word boundaries and mark the actual match
-  using additive display offsets without changing plain JSON evidence.
-  Scrub escaped config pointer identifiers in `--redact` reports and bound
-  Unicode evidence after control-character rendering while preserving match offsets.
-  Ensure whitespace-only context is trimmed so metadata excerpt budgeting cannot stall scans.
-- Lead terminal reviews with a coverage-qualified Preview or finding-class grade,
-  visible totals and up to three manual action cards. `--details` retains the
-  legacy tables; `--color auto|always|never` and `NO_COLOR` control presentation.
-  Add `ux_summary.grade` and its reach-and-hygiene caveat to report JSON without
-  changing numeric risk scores or the schema version. Explicit-file finding and
-  scan-warning cards retain client-not-asserted attribution.
-- Probe two client identities by default for opt-in stdio canaries, with
-  `--canary-identities 1` to disable and `2` to opt in on HTTP/SSE. Identity-conditioned
-  surfaces produce HIGH `IDENTITY_CONDITIONED_SURFACE` findings without extra tool
-  calls. Existing v2 tool pins also detect drift at call zero. Invalid or incomplete
-  v2 tool snapshots warn with `pin_baseline_corrupted` and fall back to the
-  in-session canary baseline without preventing the connection.
-- Add static-by-default `check`, bare-command configuration review, source
-  inventory with `inspect`, and a bundled config-only `demo`. Explicit configs
-  select only that file unless discovery is requested; connections require one
-  unambiguous client/scope/name identity. New JSON stdout and named artifact
-  options leave the legacy `scan` grammar and reports unchanged.
-- Record per-check completion and reasons in additive report coverage, with
-  terminal and HTML coverage summaries, SARIF invocation notifications and
-  run properties, and an opt-in `fail_on.coverage` policy gate. Legacy reports
-  retain unknown coverage. The extended SARIF profile includes stable
-  configuration-health rule IDs.
-  Apply bounded-text coverage loss to permissions, capabilities and dependent detectors,
-  recognize empty tool pin baselines, and retain project connection warnings
-  in SARIF notifications, full-report, findings and single-server MCP results.
-  Preserve the high-risk tool's legacy JSON list; its description directs
-  callers to full-report and findings tools for coverage warnings.
-  Require execution evidence for completion, mark discovery parse failures
-  as partial coverage, and account for applicable and verified package references.
-  Preserve source configuration locations in extended SARIF, including parse failures.
-- Present offline HTML reports with a coverage-qualified grade or Preview,
-  deduplicated actions, collapsed server summaries and a full audit log.
-  Add presentation-only JSON `ux_summary.grade` and a stored `review_summary`
-  without changing risk scores. Compute all grouped actions, counts, grades and
-  review estimates once before credential or identifier redaction; retain the
-  snapshot through repeated redaction and JSON reloads.
-  Hide the hostname by default in HTML; `check/scan --show-host` includes it.
-  Preserve distinct server and config-health actions and grades in HTML, terminal
-  summaries and JSON with `scan --redact`,
-  including either `--show-host` setting. Retain distinct policy violations and targets
-  while grouping policy advice per affected server identity.
-  Improve mobile table scrolling, muted-text contrast and dark-mode colors.
-- Record connected protocol versions, discover evidence, extension identifiers,
-  session-ID presence (never its value), raw cache hints and complete tool order.
-  Add low protocol advisories for legacy HTTP, minted sessions, deprecated logging,
-  missing/inconsistent cache hints, invalid TTLs and observed order changes.
-  Label modern tool-surface session drift as a SEP-2567 protocol requirement;
-  keep unavailable evidence separate from findings and retain partial coverage
-  when the SDK rejects cache metadata.
-- Add static tool-schema findings for `x-mcp-header` declarations, credential parameters mirrored to headers, external `$ref` values, and icon source schemes/origins. These checks inspect served metadata only and never fetch schemas or icons. Traverse schema-bearing branches rather than instance payloads, validate null header declarations, and report exhausted traversal budgets as partial metadata coverage. Resolve local anchors and percent-encoded JSON Pointers; report unresolved local references as incomplete instead of asserting unreachable headers.
+MCPAudit 2.9.0 is a candidate for review and CI validation only. This source
+state does not authorize tagging, publication, Registry mutation, deployment,
+or claims of downstream adoption. The release-state flip belongs in a separate
+reviewed PR after the candidate lands.
 
-### Changed
-
-- Extract per-scan state, ordered server analysis and fleet finalization from
-  the scan entry point, and separate scan output/policy and pin CLI adapters.
-  Preserve scan behavior and report bytes with normalized fixture parity checks.
-- Restructure the README and user documentation around the static quickstart,
-  move experimental labs and maintainer/history material into dedicated
-  directories, and consolidate versioned release-boundary notes here.
+Published-version metadata, the Registry descriptor, Action examples, and
+pre-commit examples remain at 2.8.1. Retain `mcp-audits==2.8.1` as the rollback
+pin and verify installed command identity after rollback. Source metadata and
+local tests are not publication readback.
 
 ## [2.8.1] - 2026-10-06
 
@@ -2008,6 +2127,7 @@ real workstations; API surface may still shift before the `1.0.0` stable cut.
 - `mcp-audit` CLI entry point
 
 [Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v2.8.1...HEAD
+[2.9.0]: https://github.com/saagpatel/MCPAudit/compare/v2.8.1...HEAD
 [2.8.1]: https://github.com/saagpatel/MCPAudit/compare/v2.8.0...v2.8.1
 [2.8.0]: https://github.com/saagpatel/MCPAudit/compare/v2.7.0...v2.8.0
 [2.7.0]: https://github.com/saagpatel/MCPAudit/compare/v2.6.0...v2.7.0
