@@ -14,8 +14,11 @@ from click.testing import CliRunner
 from pydantic import ValidationError
 
 from mcp_audit.authorization_posture_models import (
+    SPEC_PROFILE,
+    SPEC_REFERENCES,
     AuthorizationPostureReport,
     McpAuthorizationPostureV1,
+    ProducerSpecification,
 )
 from mcp_audit.authorization_posture_scanner import (
     AuthorizationPostureInputError,
@@ -36,6 +39,20 @@ def _freshness() -> dict[str, Any]:
         "effective_age_seconds": 0.0,
         "policy_freshness_seconds": 60,
     }
+
+
+def test_current_profile_and_reordered_reference_set() -> None:
+    specification = ProducerSpecification(profile=SPEC_PROFILE, references=list(reversed(SPEC_REFERENCES)))
+    assert specification.profile == "mcp-authorization-2026-07-28"
+    payload = _ready_payload()
+    payload["specification"] = specification.model_dump()
+    assert parse_authorization_posture_bytes(json.dumps(payload).encode()).state == "metadata-ready"
+    with pytest.raises(ValidationError):
+        ProducerSpecification(profile=SPEC_PROFILE, references=[SPEC_REFERENCES[0]] * 4)
+    with pytest.raises(ValidationError):
+        ProducerSpecification(
+            profile=SPEC_PROFILE, references=[*SPEC_REFERENCES[:3], "https://untrusted.example/spec"]
+        )
 
 
 def _ready_payload() -> dict[str, Any]:
