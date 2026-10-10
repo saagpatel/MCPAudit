@@ -10,7 +10,7 @@ from click.testing import CliRunner
 from pydantic import ValidationError
 from rich.console import Console
 
-from mcp_audit import ux_summary
+from mcp_audit import scan_cli, ux_summary
 from mcp_audit.coverage import OPTIONAL_CHECKS
 from mcp_audit.htmlreport import HtmlReportGenerator
 from mcp_audit.models import (
@@ -421,7 +421,7 @@ def test_cli_connected_fixture_preserves_config_health_grade(
     async def fake_run_scan(*args: object, **kwargs: object) -> AuditReport:
         return report
 
-    monkeypatch.setattr(cli, "run_scan", fake_run_scan)
+    monkeypatch.setattr(scan_cli, "run_scan", fake_run_scan)
     config = tmp_path / "config.json"
     config.write_text('{"mcpServers":{"fixture":{"command":"synthetic-server"}}}')
     for redact in (False, True):

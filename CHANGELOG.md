@@ -192,6 +192,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Extract per-scan state, ordered server analysis and fleet finalization from
+  the scan entry point, and separate scan output/policy and pin CLI adapters.
+  Preserve scan behavior and report bytes with normalized fixture parity checks.
 - Restructure the README and user documentation around the static quickstart,
   move experimental labs and maintainer/history material into dedicated
   directories, and consolidate versioned release-boundary notes here.

@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from mcp_audit import cli, engine, overrides, pinning, watcher
+from mcp_audit import cli, engine, overrides, pinning, scan_cli, watcher
 from mcp_audit.connector import ServerConnector
 from mcp_audit.discovery import discover_all_configs
 from mcp_audit.engine import ScanOptions, run_scan
@@ -33,7 +33,7 @@ def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     checkout.mkdir()
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
     monkeypatch.chdir(checkout)
-    monkeypatch.setattr(cli, "DEFAULT_OVERRIDE_PATH", home / "overrides.yaml")
+    monkeypatch.setattr(scan_cli, "DEFAULT_OVERRIDE_PATH", home / "overrides.yaml")
     real_load = overrides.load_override_config
     monkeypatch.setattr(
         overrides, "load_override_config", lambda path=home / "overrides.yaml": real_load(path)

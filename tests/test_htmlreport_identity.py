@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from mcp_audit import cli
+from mcp_audit import cli, scan_cli
 from mcp_audit.coverage import OPTIONAL_CHECKS
 from mcp_audit.htmlreport import HtmlReportGenerator
 from mcp_audit.models import (
@@ -143,7 +143,7 @@ def test_scan_redaction_preserves_html_actions_and_json_grade(
     async def fake_run_scan(*args: object, **kwargs: object) -> AuditReport:
         return identity_report
 
-    monkeypatch.setattr(cli, "run_scan", fake_run_scan)
+    monkeypatch.setattr(scan_cli, "run_scan", fake_run_scan)
     config = tmp_path / "config.json"
     config.write_text('{"mcpServers":{"fixture":{"command":"synthetic-server"}}}')
     html_path = tmp_path / "report.html"
