@@ -376,3 +376,37 @@ def test_schema_findings_reach_the_default_summary() -> None:
     assert report.ensure_review_summary().action_count == 1
     output = " ".join(_render(report).split())
     assert "Totals: 1 findings" in output or "Totals: 1 finding" in output
+
+
+def test_header_checks_follow_local_references_per_property_use() -> None:
+    token = ToolInfo(
+        name="t",
+        input_schema={
+            "type": "object",
+            "properties": {"api_token": {"$ref": "#/$defs/token"}},
+            "$defs": {"token": {"type": "string", "x-mcp-header": "Authorization"}},
+        },
+    )
+    findings = scan_tool_schema(token)
+    assert [f.kind for f in findings] == ["credential_header"]
+    assert "api_token" in findings[0].evidence[0]
+    shared = ToolInfo(
+        name="t",
+        input_schema={
+            "type": "object",
+            "properties": {"a": {"$ref": "#/$defs/h"}, "b": {"$ref": "#/$defs/h"}},
+            "$defs": {"h": {"type": "string", "x-mcp-header": "X-Value"}},
+        },
+    )
+    assert [f.kind for f in scan_tool_schema(shared)] == ["header_duplicate"]
+
+
+def test_inline_credential_header_evidence_names_the_parameter() -> None:
+    tool = ToolInfo(
+        name="t",
+        input_schema={
+            "type": "object",
+            "properties": {"api_token": {"type": "string", "x-mcp-header": "Authorization"}},
+        },
+    )
+    assert any("api_token" in f.evidence[0] for f in scan_tool_schema(tool) if f.kind == "credential_header")

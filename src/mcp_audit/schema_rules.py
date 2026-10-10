@@ -103,6 +103,26 @@ def _effective_types(
     return set(), False
 
 
+def _property_header(
+    root: dict[str, object], prop: object, anchors: dict[str, dict[str, object] | None] | None
+) -> object | None:
+    """The x-mcp-header a property declares directly or through a local $ref chain (bounded)."""
+    seen: set[int] = set()
+    current = prop
+    for _ in range(_MAX_REF_HOPS):
+        if not isinstance(current, dict) or id(current) in seen:
+            return None
+        seen.add(id(current))
+        if "x-mcp-header" in current:
+            header: object = current["x-mcp-header"]
+            return header
+        ref = current.get("$ref")
+        if not isinstance(ref, str):
+            return None
+        current = _local_ref(root, ref, anchors)
+    return None
+
+
 def _schema_children(node: dict[str, object], *, include_definitions: bool) -> Iterator[dict[str, object]]:
     maps = _SCHEMA_MAP_KEYWORDS + (("$defs", "definitions") if include_definitions else ())
     for key in maps:
@@ -224,16 +244,6 @@ def _schema_rules(
                     evidence=["x-mcp-header must be an RFC token string"],
                 )
             )
-        elif header.casefold() in headers:
-            findings.append(
-                SchemaFinding(
-                    tool_name=tool.name,
-                    kind="header_duplicate",
-                    evidence=[f"x-mcp-header duplicates {headers[header.casefold()]}"],
-                )
-            )
-        else:
-            headers[header.casefold()] = header
         types, resolved = _effective_types(schema, node, reference_anchors)
         if not resolved:
             reason = "x-mcp-header type could not be resolved through a local $ref"
@@ -256,22 +266,36 @@ def _schema_rules(
                     tool_name=tool.name, kind="external_ref", evidence=["schema contains an external $ref"]
                 )
             )
-    # A credential-looking parameter mapped to a request header duplicates the
-    # credential's transport declaration and can make schema consumers disagree.
+    # Header checks apply per property use: a shared definition reached through a
+    # local $ref counts once for each property that uses it.
     for node in reachable:
         properties = node.get("properties")
         if not isinstance(properties, dict):
             continue
         for name, prop in properties.items():
-            if not isinstance(name, str) or not isinstance(prop, dict) or "x-mcp-header" not in prop:
+            if not isinstance(name, str):
                 continue
-            words = set(re.findall(r"[a-z0-9]+", name.lower()))
-            if words & _CREDENTIAL_WORDS:
+            header = _property_header(schema, prop, reference_anchors)
+            if not isinstance(header, str) or not _HEADER_TOKEN.fullmatch(header):
+                continue
+            if header.casefold() in headers:
+                findings.append(
+                    SchemaFinding(
+                        tool_name=tool.name,
+                        kind="header_duplicate",
+                        evidence=[f"x-mcp-header duplicates {headers[header.casefold()]}"],
+                    )
+                )
+            else:
+                headers[header.casefold()] = header
+            # A credential-looking parameter mapped to a request header duplicates the
+            # credential's transport declaration and can make schema consumers disagree.
+            if set(re.findall(r"[a-z0-9]+", name.lower())) & _CREDENTIAL_WORDS:
                 findings.append(
                     SchemaFinding(
                         tool_name=tool.name,
                         kind="credential_header",
-                        evidence=["credential-looking parameter is mirrored to a header"],
+                        evidence=[f"credential-looking parameter {name} is mirrored to a header"],
                     )
                 )
     return findings
