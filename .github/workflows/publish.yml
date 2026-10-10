@@ -36,7 +36,6 @@ jobs:
     name: Verify and build exact release
     needs: validate-dispatch-ref
     runs-on: ubuntu-latest
-    cache-mode: none
 
     steps:
       - name: Checkout release controls
@@ -164,7 +163,6 @@ jobs:
     name: Smoke disposable copies without candidate write authority
     needs: build
     runs-on: ubuntu-latest
-    cache-mode: none
     permissions:
       contents: read
       actions: read
@@ -225,7 +223,6 @@ jobs:
     if: ${{ !inputs.dry_run }}
     runs-on: ubuntu-latest
     environment: pypi
-    cache-mode: none
     permissions:
       actions: read
       contents: read

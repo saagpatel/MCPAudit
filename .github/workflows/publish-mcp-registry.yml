@@ -29,7 +29,6 @@ jobs:
   validate:
     name: Verify exact published release
     runs-on: ubuntu-latest
-    cache-mode: none
     steps:
       - name: Require workflow dispatch from main
         env:
@@ -121,7 +120,6 @@ jobs:
     name: Publish approved descriptor
     needs: validate
     runs-on: ubuntu-latest
-    cache-mode: none
     environment: pypi
     permissions:
       contents: read
