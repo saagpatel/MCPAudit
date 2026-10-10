@@ -125,6 +125,8 @@ def test_public_key_only_verification_and_rollback(signed_store: PinStore) -> No
     entry = newer["servers"]["fixture"]
     entry["pinned_at"] = "2099-01-01T00:00:00+00:00"
     signed_store._sign_entry("fixture", entry)
+    signed_store._data = newer
+    signed_store._sign_manifest()  # A validly signed newer file carries a matching manifest.
     signed_store.path.write_text(yaml.safe_dump(newer))
     trust = signed_store._trusted_keys_path
     verified = PinStore(signed_store.path, trusted_keys_path=trust).verification("fixture")

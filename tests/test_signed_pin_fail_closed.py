@@ -380,7 +380,7 @@ def test_explicit_clear_is_the_recovery_path_for_a_deleted_entry(
 ) -> None:
     _edit(signed_store.path, lambda d: _servers(d).pop("fixture"))
     store = PinStore(signed_store.path, signing_key=key_path, trusted_keys_path=trust)
-    with pytest.raises(PinSigningError, match="untrusted pin baseline"):
+    with pytest.raises(PinSigningError, match="untrusted pin baseline|listed in the manifest are missing"):
         store.pin_server("fixture", [TOOL])
     store.remove_server("fixture")
     assert not signature_required("fixture", trust)
@@ -457,7 +457,12 @@ def test_public_key_only_ci_rejects_fully_stripped_signature(
 
 
 def test_public_key_only_ci_still_warns_for_genuine_v1(signed_store: PinStore, ci_trust: Path) -> None:
-    _edit(signed_store.path, _legacy_substitute)
+    # A genuine legacy file predates signing: no signed entries and no manifest.
+    def legacy_file(data: dict[str, object]) -> None:
+        _legacy_substitute(data)
+        data.pop("manifest")
+
+    _edit(signed_store.path, legacy_file)
     loaded = PinStore(signed_store.path, trusted_keys_path=ci_trust)
     assert loaded.verification("fixture").state == "schema_outdated"  # type: ignore[union-attr]
     assert loaded.baseline_trusted("fixture")
@@ -603,12 +608,19 @@ def test_rotation_refuses_unbounded_grace_before_touching_keys(
 # --- Round 4: mixed baselines through rotation, v1 rewrites in CI, rollback on write failure.
 
 
-def _signed_mixed_entry(signed_store: PinStore, key_path: Path) -> None:
+def _resign_manifest(store: PinStore, data: dict[str, object], key_path: Path) -> None:
+    """Re-sign the document manifest after a test re-signs an entry by hand."""
+    forger = PinStore(store.path, signing_key=key_path, trusted_keys_path=store._trusted_keys_path)
+    forger._data = data
+    forger._sign_manifest()
+
+
+def _signed_mixed_entry(signed_store: PinStore, key_path: Path, server: str = "fixture") -> None:
     """A signed server entry holding one v2 row and one retained legacy v1 row."""
     from mcp_audit.pin_signing import sign_document
 
     def mix(data: dict[str, object]) -> None:
-        entry = _servers(data)["fixture"]
+        entry = _servers(data)[server]
         for key in ("signature", "signer", "surface_sha256", "canonical_bytes_len"):
             entry.pop(key)
         entry["tools"]["legacy_tool"] = {  # type: ignore[index]
@@ -616,12 +628,13 @@ def _signed_mixed_entry(signed_store: PinStore, key_path: Path) -> None:
             "pinned_at": "2020-01-01T00:00:00+00:00",
             "snapshot": {"description": "Legacy", "input_schema": None},
         }
-        entry.update(sign_document(signed_store._server_document("fixture", entry), key_path))
+        entry.update(sign_document(signed_store._server_document(server, entry), key_path))
+        _resign_manifest(signed_store, data, key_path)
 
     _edit(signed_store.path, mix)
     loaded = PinStore(signed_store.path, trusted_keys_path=signed_store._trusted_keys_path)
-    assert loaded.legacy_tool_names("fixture") == {"legacy_tool"}
-    assert loaded.verification("fixture").state == "verified"  # type: ignore[union-attr]
+    assert loaded.legacy_tool_names(server) == {"legacy_tool"}
+    assert loaded.verification(server).state == "verified"  # type: ignore[union-attr]
 
 
 def test_signed_mixed_entry_survives_rotation_past_grace(
@@ -652,12 +665,14 @@ def test_resign_moves_signed_mixed_entry_to_the_active_key(
     assert entry["tools"]["legacy_tool"]["hash"] == "sha256:" + "1" * 64
 
 
+@pytest.mark.parametrize("strip_manifest", [True, False])
 def test_public_key_only_ci_withholds_a_v1_rewrite_without_mcp027(
     signed_store: PinStore,
     ci_trust: Path,
     config: ServerConfig,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    strip_manifest: bool,
 ) -> None:
     malicious = TOOL.model_copy(update={"description": "Attacker surface"})
 
@@ -670,10 +685,19 @@ def test_public_key_only_ci_withholds_a_v1_rewrite_without_mcp027(
                 }
             }
         }
+        if strip_manifest:
+            data.pop("manifest")
 
     _edit(signed_store.path, rewrite)
     assert not signature_required("fixture", ci_trust)
     loaded = PinStore(signed_store.path, trusted_keys_path=ci_trust)
+    if not strip_manifest:
+        # The signed manifest lists the server: a v1 rewrite is a downgrade (MCP027).
+        assert loaded.verification("fixture").state == "tampered_entry"  # type: ignore[union-attr]
+        assert "does not match the signed manifest" in loaded.verification_message("fixture")
+        report = _scan(monkeypatch, signed_store.path, ci_trust, config, [malicious], pin_check=True)
+        assert [f.rule_id for f in report.audits[0].pin_integrity_findings] == ["MCP027"]
+        return
     assert loaded.verification("fixture").state == "schema_outdated"  # type: ignore[union-attr]
     assert loaded.baseline_trusted("fixture")  # D8: v1 warns, never MCP027
     assert not loaded.baseline_usable("fixture")
@@ -892,3 +916,160 @@ def test_status_reports_verification_and_withheld_baselines(
     monkeypatch.setattr(pin_cli.console, "width", 240)
     result = CliRunner().invoke(cli.main, ["pin", "--status", "--pin-file", str(legacy_pin_with_trusted_key)])
     assert "schema_outdated (withheld)" in result.output
+
+
+# --- Signed document manifest: deleted, renamed, or spliced signed entries in keys-only CI.
+
+
+def _manifest_attack_rename(pins: Path) -> str:
+    _edit(pins, _rename("fixture-old"))
+    return "fixture"
+
+
+def _manifest_attack_empty(pins: Path) -> str:
+    _edit(pins, lambda d: d.update(servers={}))
+    return "fixture"
+
+
+def _manifest_attack_delete_manifest(pins: Path) -> str:
+    _edit(pins, lambda d: d.pop("manifest"))
+    return "fixture"
+
+
+def _manifest_attack_splice(pins: Path) -> str:
+    """Copy a validly signed entry for another server from a different pin file."""
+    other = PinStore(
+        pins.with_name("other-pins.yaml"),
+        signing_key=pins.parent / "keys" / "pin-signing.key",
+        trusted_keys_path=pins.parent / "trusted.json",
+    )
+    other.pin_server("other", [TOOL])
+    spliced = yaml.safe_load(other.path.read_text())["servers"]["other"]
+    _edit(pins, lambda d: _servers(d).update(other=spliced))
+    return "other"
+
+
+@pytest.mark.parametrize(
+    "attack",
+    [
+        _manifest_attack_rename,
+        _manifest_attack_empty,
+        _manifest_attack_delete_manifest,
+        _manifest_attack_splice,
+    ],
+    ids=["renamed", "servers_emptied", "manifest_deleted", "spliced_entry"],
+)
+def test_keys_only_ci_detects_manifest_attacks(
+    signed_store: PinStore,
+    ci_trust: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    attack: Callable[[Path], str],
+) -> None:
+    assert "manifest" in yaml.safe_load(signed_store.path.read_text())
+    target = attack(signed_store.path)
+    assert not signature_required(target, ci_trust)  # keys-only: no per-server expectation
+    loaded = PinStore(signed_store.path, trusted_keys_path=ci_trust)
+    assert loaded.verification(target).state == "tampered_entry"  # type: ignore[union-attr]
+    config = make_server_config(name=target, command=None, args=[str(tmp_path / "server.py")])
+    report = _scan(
+        monkeypatch, signed_store.path, ci_trust, config, [TOOL], skip_connect=True, integrity_check=True
+    )
+    assert [f.rule_id for f in report.audits[0].pin_integrity_findings] == ["MCP027"]
+    result = evaluate_policy(report, load_policy(Path("examples/policies/integrity-aware-ci.yaml")))
+    assert not result.passed
+    assert "fail_on.pin_integrity" in {v.rule for v in result.violations}
+
+
+def test_manifest_lists_signed_entries_with_digests(signed_store: PinStore, ci_trust: Path) -> None:
+    data = yaml.safe_load(signed_store.path.read_text())
+    assert data["manifest"]["servers"] == {"fixture": data["servers"]["fixture"]["surface_sha256"]}
+    assert PinStore(signed_store.path, trusted_keys_path=ci_trust).verification("fixture").state == "verified"  # type: ignore[union-attr]
+    unpinned = PinStore(signed_store.path, trusted_keys_path=ci_trust)
+    assert unpinned.verification("never-pinned") is None
+
+
+def test_clear_re_signs_the_manifest_without_the_server(
+    signed_store: PinStore, ci_trust: Path, key_path: Path, trust: Path
+) -> None:
+    PinStore(signed_store.path, signing_key=key_path, trusted_keys_path=trust).remove_server("fixture")
+    data = yaml.safe_load(signed_store.path.read_text())
+    assert data["manifest"]["servers"] == {}
+    assert PinStore(signed_store.path, trusted_keys_path=ci_trust).verification("fixture") is None
+
+
+def test_clear_without_a_signing_key_is_refused_while_keys_are_trusted(
+    signed_store: PinStore, ci_trust: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mcp_audit import pin_signing
+
+    monkeypatch.setattr(pin_signing, "DEFAULT_SIGNING_KEY_PATH", tmp_path / "ci-host" / "pin-signing.key")
+    before = signed_store.path.read_bytes()
+    with pytest.raises(PinSigningError, match="signing key is required"):
+        PinStore(signed_store.path, trusted_keys_path=ci_trust).remove_server("fixture")
+    assert signed_store.path.read_bytes() == before
+
+
+def test_writes_refuse_a_manifest_listing_a_deleted_entry(
+    signed_store: PinStore, trust: Path, key_path: Path
+) -> None:
+    _edit(signed_store.path, lambda d: _servers(d).pop("fixture"))
+    store = PinStore(signed_store.path, signing_key=key_path, trusted_keys_path=trust)
+    for write in (lambda: store.pin_server("another", [TOOL]), store.resign):
+        with pytest.raises(PinSigningError, match="listed in the manifest are missing: fixture"):
+            write()
+
+
+def test_manifest_is_ignored_without_trusted_keys(tmp_path: Path) -> None:
+    store = PinStore(tmp_path / "pins.yaml", unsigned=True, trusted_keys_path=tmp_path / "no-trust.json")
+    store.pin_server("fixture", [TOOL])
+    assert "manifest" not in yaml.safe_load(store.path.read_text())
+    reopened = PinStore(store.path, trusted_keys_path=tmp_path / "no-trust.json").verification("fixture")
+    assert reopened is not None and reopened.state == "unsigned"
+
+
+# --- Canary: a trusted mixed baseline still compares its signed v2 rows.
+
+
+def test_mixed_entry_canary_baseline_uses_v2_rows(
+    signed_store: PinStore, trust: Path, key_path: Path
+) -> None:
+    from mcp_audit.pinning import CANARY_UNCOVERED_TOOLS_KEY
+
+    _signed_mixed_entry(signed_store, key_path)
+    PinStore(signed_store.path, signing_key=key_path, trusted_keys_path=trust).rotate_key(grace_days=0)
+    loaded = PinStore(signed_store.path, trusted_keys_path=trust)
+    assert loaded.verification("fixture").state == "verified"  # type: ignore[union-attr]
+    baseline = loaded.canary_baseline("fixture")
+    assert baseline is not None
+    assert set(baseline["tools"]) == {"list_items"}
+    assert set(baseline[CANARY_UNCOVERED_TOOLS_KEY]) == {"legacy_tool"}
+
+
+@pytest.mark.anyio
+async def test_canary_detects_changed_v2_row_of_rotated_mixed_entry(
+    tmp_path: Path, trust: Path, key_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import sys
+
+    from mcp_audit.connector import ServerConnector
+
+    fixture = str(Path(__file__).parent / "fixtures" / "identity_canary_server.py")
+    pins = tmp_path / "canary-pins.yaml"
+    trace = tmp_path / "events.jsonl"
+    config = make_server_config(command=sys.executable, args=[fixture, "stable", str(trace)])
+    store = PinStore(pins, signing_key=key_path, trusted_keys_path=trust)
+    listed = await ServerConnector(timeout=15).connect(config)
+    assert listed.connection_status == "connected"
+    store.pin_server(config.name, listed.tools)
+    _signed_mixed_entry(store, key_path, server=config.name)
+    PinStore(pins, signing_key=key_path, trusted_keys_path=trust).rotate_key(grace_days=0)
+    monkeypatch.setattr(pinning, "PinStore", lambda *args, **kwargs: PinStore(pins, trusted_keys_path=trust))
+    config.args[1] = "flipped"
+    report = await run_scan(ScanOptions(canary_check=True, timeout=15), servers=[config])
+    audit = report.audits[0]
+    assert audit.pin_verification is not None and audit.pin_verification.state == "verified"
+    assert audit.canary is not None and audit.canary.baseline_source == "pin"
+    pinned = [f for f in audit.drift_findings if f.after_call == 0]
+    assert pinned and all(f.tool_name != "legacy_tool" for f in pinned)
+    assert any(f.field_changes and f.field_changes[0].path == "/description" for f in pinned)
