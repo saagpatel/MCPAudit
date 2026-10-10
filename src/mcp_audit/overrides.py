@@ -9,11 +9,13 @@ import yaml
 from pydantic import BaseModel
 
 from mcp_audit.models import (
+    AuditReport,
     Confidence,
     FindingSourceTrust,
     PermissionCategory,
     PermissionFinding,
 )
+from mcp_audit.suppressions import IgnoreEntry, apply_suppressions
 
 # Default path for user override config
 DEFAULT_OVERRIDE_PATH = Path.home() / ".mcp-audit.yaml"
@@ -53,6 +55,7 @@ class OverrideConfig(BaseModel):
     """Top-level override configuration loaded from YAML."""
 
     overrides: list[ServerToolOverride] = []
+    ignore: list[IgnoreEntry] = []
 
 
 def load_override_config(path: Path = DEFAULT_OVERRIDE_PATH) -> OverrideConfig:
@@ -68,6 +71,10 @@ class OverrideApplier:
 
     def __init__(self, config: OverrideConfig) -> None:
         self._config = config
+
+    def suppress(self, report: AuditReport) -> None:
+        """Record finding exceptions after every detector has completed."""
+        apply_suppressions(report, self._config.ignore)
 
     def apply(self, server_name: str, findings: list[PermissionFinding]) -> list[PermissionFinding]:
         """Return findings with overrides applied. Does not mutate the input list."""

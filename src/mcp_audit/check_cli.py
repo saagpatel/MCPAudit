@@ -59,6 +59,13 @@ def _print_sources(out: Console, paths: list[tuple[str, str]]) -> None:
 @click.option("--sarif", type=click.Path(path_type=Path), help="Write SARIF to FILE.")
 @click.option("--html", type=click.Path(path_type=Path), help="Write offline HTML to FILE.")
 @click.option("--policy", type=click.Path(path_type=Path), help="Evaluate this explicit local policy.")
+@click.option(
+    "--override-config", type=click.Path(path_type=Path), help="Ignore YAML (default: ~/.mcp-audit.yaml)."
+)
+@click.option(
+    "--ignore", "ignore_rules", multiple=True, metavar="MCP0xx", help="Ignore a finding rule for this run."
+)
+@click.option("--ignore-reason", help="Reason for one-run ignores (required for HIGH findings).")
 @click.option("--color", type=click.Choice(["auto", "always", "never"]), default="auto", show_default=True)
 def check(
     config: Path | None,
@@ -73,6 +80,9 @@ def check(
     html: Path | None,
     policy: Path | None,
     color: str,
+    override_config: Path | None,
+    ignore_rules: tuple[str, ...],
+    ignore_reason: str | None,
 ) -> None:
     """Review configs statically; runtime security is not checked by default."""
     if connect and not server_id:
@@ -81,8 +91,22 @@ def check(
         raise click.ClickException("--server requires --connect; use inspect to review identities.")
     out = summary_console(color=color, stderr=json_stdout)
     try:
+        from mcp_audit.overrides import load_override_config
+        from mcp_audit.suppressions import apply_suppressions, validate_ignore_rule
+
+        for rule in ignore_rules:
+            validate_ignore_rule(rule)
+        ignore_path = override_config
+        if ignore_path is None and (config is None or include_discovered):
+            ignore_path = Path.home() / ".mcp-audit.yaml"
+        try:
+            ignores = load_override_config(ignore_path).ignore if ignore_path is not None else []
+        except (OSError, ValueError, yaml.YAMLError) as exc:
+            raise click.ClickException(f"Cannot load finding overrides: {type(exc).__name__}") from None
         sources = review_sources(config, include_discovered, project)
         inputs = [Path(path) for path, status in sources.paths if status != "absent"]
+        if ignore_path is not None:
+            inputs.append(ignore_path)
         if policy is not None:
             inputs.append(policy)
         validate_artifact_paths(
@@ -120,6 +144,7 @@ def check(
             parse_errors=sources.errors,
         )
         report = anyio.run(operation)
+        apply_suppressions(report, ignores, cli_rules=ignore_rules, cli_reason=ignore_reason)
         if policy_config is not None:
             from mcp_audit.policy import evaluate_policy
 
