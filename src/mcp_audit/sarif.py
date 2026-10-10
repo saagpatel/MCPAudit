@@ -525,10 +525,10 @@ class SarifGenerator:
                 "properties": {"category": "schema_metadata"},
             }
             for rule_id, title in (
-                ("MCP044", "Invalid MCP header declaration"),
-                ("MCP045", "Credential parameter mirrored to a header"),
-                ("MCP046", "External schema reference"),
-                ("MCP047", "Unexpected icon source"),
+                ("MCP051", "Invalid MCP header declaration"),
+                ("MCP052", "Credential parameter mirrored to a header"),
+                ("MCP053", "External schema reference"),
+                ("MCP054", "Unexpected icon source"),
             )
         ]
         return (

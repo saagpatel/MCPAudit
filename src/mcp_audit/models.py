@@ -1046,14 +1046,14 @@ class SchemaFinding(ReferencedFinding):
     @property
     def rule_id(self) -> str:
         return {
-            "header_invalid": "MCP044",
-            "header_duplicate": "MCP044",
-            "header_type": "MCP044",
-            "header_unreachable": "MCP044",
-            "credential_header": "MCP045",
-            "external_ref": "MCP046",
-            "icon_source": "MCP047",
-            "icon_origin": "MCP047",
+            "header_invalid": "MCP051",
+            "header_duplicate": "MCP051",
+            "header_type": "MCP051",
+            "header_unreachable": "MCP051",
+            "credential_header": "MCP052",
+            "external_ref": "MCP053",
+            "icon_source": "MCP054",
+            "icon_origin": "MCP054",
         }[self.kind]
 
     @computed_field  # type: ignore[prop-decorator]

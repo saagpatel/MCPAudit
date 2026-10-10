@@ -988,10 +988,10 @@ request is issued and no credential value is read — and does not affect
 their previous behavior.
 
 `schema_findings` is an additive per-audit list populated during static tool
-metadata analysis. MCP044 covers invalid, duplicate, non-primitive, or
-unreachable `x-mcp-header` declarations; MCP045 flags credential-looking
-property names mapped to headers; MCP046 flags external `$ref` strings; and
-MCP047 flags icon sources that are not HTTPS or `data:` and HTTPS icon origins
+metadata analysis. MCP051 covers invalid, duplicate, non-primitive, or
+unreachable `x-mcp-header` declarations; MCP052 flags credential-looking
+property names mapped to headers; MCP053 flags external `$ref` strings; and
+MCP054 flags icon sources that are not HTTPS or `data:` and HTTPS icon origins
 that differ from the configured MCP endpoint. The checks only inspect strings
 and schema structure: they never fetch a schema or icon. Credential findings
 contain parameter names only, not values. `schema_version` remains unchanged.

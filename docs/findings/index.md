@@ -546,7 +546,7 @@ How sure: A metadata contradiction, not an executed behavior check. Keyword evid
 
 see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp043
 
-## MCP044
+## MCP051
 
 Your tool schema declares an invalid or unusable HTTP header mapping.
 
@@ -562,9 +562,9 @@ How to fix (About 5 minutes to review the schema): Use one RFC token header name
 
 How sure: A static schema check; it does not execute the tool or validate server behavior.
 
-see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp044
+see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp051
 
-## MCP045
+## MCP052
 
 Your tool schema mirrors a credential-looking parameter to a request header.
 
@@ -580,9 +580,9 @@ How to fix (About 5 minutes to review the schema): Review whether the credential
 
 How sure: A name-based signal; the parameter value is never inspected.
 
-see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp045
+see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp052
 
-## MCP046
+## MCP053
 
 Your tool schema refers to an external schema document.
 
@@ -598,9 +598,9 @@ How to fix (About 5 minutes to review the schema): Vendor the schema locally or 
 
 How sure: The reference is reported as text only; no network request is made.
 
-see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp046
+see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp053
 
-## MCP047
+## MCP054
 
 Your tool icon uses a non-HTTPS or cross-origin source.
 
@@ -616,7 +616,7 @@ How to fix (About 5 minutes to review the icon): Use a same-origin HTTPS URL or 
 
 How sure: A static URI comparison; the icon is never requested.
 
-see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp047
+see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp054
 
 ## Configuration health
 

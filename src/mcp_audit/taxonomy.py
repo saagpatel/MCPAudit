@@ -1030,7 +1030,7 @@ FINDING_COPY: dict[str, FindingCopy] = {
         "A metadata contradiction, not an executed behavior check. Keyword evidence and hints can "
         "both be inaccurate.",
     ),
-    "MCP044": FindingCopy(
+    "MCP051": FindingCopy(
         "Your tool schema declares an invalid or unusable HTTP header mapping.",
         "A static schema rule found a malformed, duplicate, non-primitive, or unreachable "
         "x-mcp-header annotation.",
@@ -1043,7 +1043,7 @@ FINDING_COPY: dict[str, FindingCopy] = {
         "About 5 minutes to review the schema",
         "A static schema check; it does not execute the tool or validate server behavior.",
     ),
-    "MCP045": FindingCopy(
+    "MCP052": FindingCopy(
         "Your tool schema mirrors a credential-looking parameter to a request header.",
         "A schema property name suggests credential material and carries x-mcp-header metadata.",
         (
@@ -1055,7 +1055,7 @@ FINDING_COPY: dict[str, FindingCopy] = {
         "About 5 minutes to review the schema",
         "A name-based signal; the parameter value is never inspected.",
     ),
-    "MCP046": FindingCopy(
+    "MCP053": FindingCopy(
         "Your tool schema refers to an external schema document.",
         "An external $ref can make validation depend on remote content.",
         (
@@ -1067,7 +1067,7 @@ FINDING_COPY: dict[str, FindingCopy] = {
         "About 5 minutes to review the schema",
         "The reference is reported as text only; no network request is made.",
     ),
-    "MCP047": FindingCopy(
+    "MCP054": FindingCopy(
         "Your tool icon uses a non-HTTPS or cross-origin source.",
         "The served icon source is not same-origin HTTPS or an embedded data URI.",
         (
