@@ -598,3 +598,150 @@ def test_rotation_refuses_unbounded_grace_before_touching_keys(
     with pytest.raises(ValueError, match="grace_days must be at most"):
         signed_store.rotate_key(grace_days=MAX_GRACE_DAYS + 1)
     assert key_path.read_bytes() == key_before
+
+
+# --- Round 4: mixed baselines through rotation, v1 rewrites in CI, rollback on write failure.
+
+
+def _signed_mixed_entry(signed_store: PinStore, key_path: Path) -> None:
+    """A signed server entry holding one v2 row and one retained legacy v1 row."""
+    from mcp_audit.pin_signing import sign_document
+
+    def mix(data: dict[str, object]) -> None:
+        entry = _servers(data)["fixture"]
+        for key in ("signature", "signer", "surface_sha256", "canonical_bytes_len"):
+            entry.pop(key)
+        entry["tools"]["legacy_tool"] = {  # type: ignore[index]
+            "hash": "sha256:" + "1" * 64,
+            "pinned_at": "2020-01-01T00:00:00+00:00",
+            "snapshot": {"description": "Legacy", "input_schema": None},
+        }
+        entry.update(sign_document(signed_store._server_document("fixture", entry), key_path))
+
+    _edit(signed_store.path, mix)
+    loaded = PinStore(signed_store.path, trusted_keys_path=signed_store._trusted_keys_path)
+    assert loaded.legacy_tool_names("fixture") == {"legacy_tool"}
+    assert loaded.verification("fixture").state == "verified"  # type: ignore[union-attr]
+
+
+def test_signed_mixed_entry_survives_rotation_past_grace(
+    signed_store: PinStore, trust: Path, key_path: Path
+) -> None:
+    _signed_mixed_entry(signed_store, key_path)
+    store = PinStore(signed_store.path, signing_key=key_path, trusted_keys_path=trust)
+    store.rotate_key(grace_days=0)  # the old key is past grace immediately
+    entry = yaml.safe_load(signed_store.path.read_text())["servers"]["fixture"]
+    assert entry["tools"]["legacy_tool"]["hash"] == "sha256:" + "1" * 64
+    assert entry["tools"]["legacy_tool"].get("pin_schema", 1) == 1
+    reopened = PinStore(signed_store.path, trusted_keys_path=trust)
+    assert reopened.verification("fixture").state == "verified"  # type: ignore[union-attr]
+
+
+def test_resign_moves_signed_mixed_entry_to_the_active_key(
+    signed_store: PinStore, trust: Path, key_path: Path, tmp_path: Path
+) -> None:
+    from mcp_audit.pin_signing import trust_key
+
+    _signed_mixed_entry(signed_store, key_path)
+    old_kid = yaml.safe_load(signed_store.path.read_text())["servers"]["fixture"]["signature"]["kid"]
+    replacement = generate_keypair(tmp_path / "replacement-keys", tmp_path / "replacement-trust.json")
+    trust_key(replacement.public_key, trust)
+    PinStore(signed_store.path, signing_key=replacement.private_key_path, trusted_keys_path=trust).resign()
+    entry = yaml.safe_load(signed_store.path.read_text())["servers"]["fixture"]
+    assert entry["signature"]["kid"] == replacement.kid != old_kid
+    assert entry["tools"]["legacy_tool"]["hash"] == "sha256:" + "1" * 64
+
+
+def test_public_key_only_ci_withholds_a_v1_rewrite_without_mcp027(
+    signed_store: PinStore,
+    ci_trust: Path,
+    config: ServerConfig,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    malicious = TOOL.model_copy(update={"description": "Attacker surface"})
+
+    def rewrite(data: dict[str, object]) -> None:
+        _servers(data)["fixture"] = {
+            "tools": {
+                "list_items": {
+                    "hash": signed_store.compute_hash(malicious),
+                    "pinned_at": "2020-01-01T00:00:00+00:00",
+                }
+            }
+        }
+
+    _edit(signed_store.path, rewrite)
+    assert not signature_required("fixture", ci_trust)
+    loaded = PinStore(signed_store.path, trusted_keys_path=ci_trust)
+    assert loaded.verification("fixture").state == "schema_outdated"  # type: ignore[union-attr]
+    assert loaded.baseline_trusted("fixture")  # D8: v1 warns, never MCP027
+    assert not loaded.baseline_usable("fixture")
+    assert loaded.check_drift("fixture", [TOOL]) == []
+    assert loaded.baseline_tools("fixture") == []
+    assert loaded.canary_baseline("fixture") is None
+    assert loaded.tool_count("fixture") == 0
+
+    report = _scan(monkeypatch, signed_store.path, ci_trust, config, [malicious], pin_check=True)
+    audit = report.audits[0]
+    assert audit.pin_integrity_findings == []
+    codes = {(w.code, w.check) for w in report.warnings}
+    assert ("pin_schema_outdated", "pin_check") in codes
+    assert ("pin_baseline_withheld", "pin_check") in codes
+    policy = _policy(tmp_path, "fail_on:\n  drift: true\nrequire:\n  pins:\n    servers: [fixture]\n")
+    result = evaluate_policy(report, policy, pin_store=loaded)  # type: ignore[arg-type]
+    assert not result.passed
+    assert {"require.pins", "fail_on.drift"} <= {v.rule for v in result.violations}
+
+
+def test_v1_entry_with_recorded_high_water_is_a_downgrade(tmp_path: Path) -> None:
+    trust = tmp_path / "history-only-trust.json"
+    trust.write_text(
+        json.dumps({"keys": {}, "servers": {"fixture": {"last_seen_pinned_at": "2026-01-01T00:00:00Z"}}})
+    )
+    trust.chmod(0o600)
+    pins = tmp_path / "pins.yaml"
+    pins.write_text(yaml.safe_dump({"servers": {}}))
+    _edit(pins, _legacy_substitute)
+    loaded = PinStore(pins, trusted_keys_path=trust)
+    assert loaded.verification("fixture").state == "tampered_entry"  # type: ignore[union-attr]
+    assert loaded.schema_warnings("fixture") == []
+
+
+def test_genuine_v1_without_keys_is_unchanged(tmp_path: Path) -> None:
+    pins = tmp_path / "pins.yaml"
+    pins.write_text(yaml.safe_dump({"servers": {}}))
+    _edit(pins, _legacy_substitute)
+    loaded = PinStore(pins, trusted_keys_path=tmp_path / "no-trust.json")
+    assert loaded.verification("fixture").state == "schema_outdated"  # type: ignore[union-attr]
+    assert loaded.baseline_usable("fixture")
+    assert loaded.tool_count("fixture") == 1
+    assert [f.status.value for f in loaded.check_drift("fixture", [TOOL])] == ["changed"]
+    assert [w.code for w in loaded.schema_warnings("fixture")] == ["pin_schema_outdated"]
+
+
+@pytest.mark.parametrize("failure", [OSError, PinSigningError])
+def test_rollback_is_reported_when_the_trust_store_write_fails(
+    signed_store: PinStore,
+    trust: Path,
+    config: ServerConfig,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: type[Exception],
+) -> None:
+    from mcp_audit import pin_signing
+
+    data = json.loads(trust.read_text())
+    data["servers"]["fixture"]["last_seen_pinned_at"] = "2099-01-01T00:00:00Z"
+    trust.write_text(json.dumps(data))
+
+    def fail_write(path: Path, value: object) -> None:
+        raise failure("Synthetic trust-store write failure")
+
+    monkeypatch.setattr(pin_signing, "_write_json", fail_write)
+    loaded = PinStore(signed_store.path, trusted_keys_path=trust)
+    assert loaded.verification("fixture").state == "verified"  # type: ignore[union-attr]
+    codes = [w.code for w in loaded.verification_warnings("fixture")]
+    assert "pin_rolled_back" in codes
+    assert "pin_rollback_tracking_unavailable" in codes
+    report = _scan(monkeypatch, signed_store.path, trust, config, [TOOL], pin_check=True)
+    assert "pin_rolled_back" in {w.code for w in report.warnings}
