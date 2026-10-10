@@ -745,3 +745,150 @@ def test_rollback_is_reported_when_the_trust_store_write_fails(
     assert "pin_rollback_tracking_unavailable" in codes
     report = _scan(monkeypatch, signed_store.path, trust, config, [TOOL], pin_check=True)
     assert "pin_rolled_back" in {w.code for w in report.warnings}
+
+
+# --- Refresh review must never present a withheld or untrusted baseline as a clean match.
+
+
+def _refresh_cli(
+    monkeypatch: pytest.MonkeyPatch, pin_file: Path, tools: list[ToolInfo], *extra: str
+) -> tuple[int, str]:
+    from click.testing import CliRunner
+
+    from mcp_audit import cli, pin_cli
+
+    audit = ServerAudit(server=make_server_config(name="fixture"), connection_status="connected", tools=tools)
+    report = _skipped_report(audit.server).model_copy(update={"audits": [audit]})
+
+    async def fake_run_scan(*args: object, **kwargs: object) -> AuditReport:
+        return report
+
+    monkeypatch.setattr(pin_cli, "run_scan", fake_run_scan)
+    result = CliRunner().invoke(
+        cli.main, ["pin", "--refresh", "fixture", "--pin-file", str(pin_file), *extra]
+    )
+    return result.exit_code, result.output
+
+
+@pytest.fixture
+def legacy_pin_with_trusted_key(tmp_path: Path) -> Path:
+    """A genuine v1 pin for tool ``status`` while the default trust store holds a key."""
+    from mcp_audit import pin_signing
+
+    generate_keypair(pin_signing.DEFAULT_SIGNING_KEY_PATH.parent, pin_signing.DEFAULT_TRUSTED_KEYS_PATH)
+    pins = tmp_path / "legacy-pins.yaml"
+    pins.write_text(
+        yaml.safe_dump(
+            {
+                "servers": {
+                    "fixture": {
+                        "tools": {
+                            "status": {
+                                "hash": "sha256:" + "2" * 64,
+                                "pinned_at": "2020-01-01T00:00:00+00:00",
+                                "snapshot": {"description": "Status", "input_schema": None},
+                            }
+                        }
+                    }
+                }
+            }
+        )
+    )
+    store = PinStore(pins)
+    assert store.unverified_legacy_baseline("fixture")
+    return pins
+
+
+def test_refresh_reviews_withheld_legacy_baseline_instead_of_clean_match(
+    legacy_pin_with_trusted_key: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    live = [ToolInfo(name="status_v2", description="Status v2")]
+    code, output = _refresh_cli(monkeypatch, legacy_pin_with_trusted_key, live)
+    assert code == 0, output
+    assert "No drift found" not in output
+    assert "unverified legacy (v1) baseline" in output
+    assert "1 new, 0 changed, 1 removed" in output
+
+    code, output = _refresh_cli(monkeypatch, legacy_pin_with_trusted_key, live, "--json")
+    payload = json.loads(output)
+    assert payload["drift_counts"]["new"] == 1 and payload["drift_counts"]["removed"] == 1
+    assert payload["baseline_verified"] is False
+    assert "unverified legacy" in payload["baseline_note"]
+    # Scan semantics are unchanged: the baseline is still withheld there.
+    assert PinStore(legacy_pin_with_trusted_key).check_drift("fixture", live) == []
+
+
+def test_refresh_never_claims_a_match_against_an_unverified_baseline(
+    legacy_pin_with_trusted_key: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = PinStore(legacy_pin_with_trusted_key)
+    status = ToolInfo(name="status", description="Status")
+    _edit(
+        legacy_pin_with_trusted_key,
+        lambda d: _servers(d)["fixture"]["tools"]["status"].update(  # type: ignore[index]
+            hash=store.check_drift("fixture", [status], review_unverified_legacy=True)[0].current_hash
+        ),
+    )
+    assert (
+        PinStore(legacy_pin_with_trusted_key).check_drift("fixture", [status], review_unverified_legacy=True)
+        == []
+    )
+    code, output = _refresh_cli(monkeypatch, legacy_pin_with_trusted_key, [status])
+    assert code == 0, output
+    assert "No drift found" not in output
+    assert "could not be verified" in output
+
+
+def test_refresh_apply_replaces_legacy_rows_with_signed_live_surface(
+    legacy_pin_with_trusted_key: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    live = [ToolInfo(name="status_v2", description="Status v2")]
+    code, output = _refresh_cli(monkeypatch, legacy_pin_with_trusted_key, live, "--apply")
+    assert code == 0, output
+    store = PinStore(legacy_pin_with_trusted_key)
+    assert store.verification("fixture").state == "verified"  # type: ignore[union-attr]
+    assert set(yaml.safe_load(legacy_pin_with_trusted_key.read_text())["servers"]["fixture"]["tools"]) == {
+        "status_v2"
+    }
+
+
+def test_refresh_of_tampered_baseline_is_still_refused(
+    signed_store: PinStore, trust: Path, key_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mcp_audit import pin_signing
+
+    monkeypatch.setattr(pin_signing, "DEFAULT_TRUSTED_KEYS_PATH", trust)
+    monkeypatch.setattr(pin_signing, "DEFAULT_SIGNING_KEY_PATH", key_path)
+    _edit(
+        signed_store.path,
+        lambda d: _servers(d)["fixture"]["tools"]["list_items"].update(  # type: ignore[index]
+            hash="sha256:" + "3" * 64
+        ),
+    )
+    before = signed_store.path.read_bytes()
+    code, output = _refresh_cli(monkeypatch, signed_store.path, [TOOL], "--apply")
+    assert "No drift found" not in output
+    assert "fails signature verification" in output
+    assert signed_store.path.read_bytes() == before
+    code, output = _refresh_cli(monkeypatch, signed_store.path, [TOOL], "--json", "--apply")
+    payload = json.loads(output)
+    assert payload["applied"] is False and "fails signature verification" in payload["error"]
+    assert signed_store.path.read_bytes() == before
+
+
+def test_status_reports_verification_and_withheld_baselines(
+    legacy_pin_with_trusted_key: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from click.testing import CliRunner
+
+    from mcp_audit import cli, pin_cli
+
+    result = CliRunner().invoke(
+        cli.main, ["pin", "--status", "--json", "--pin-file", str(legacy_pin_with_trusted_key)]
+    )
+    server = json.loads(result.output)["servers"][0]
+    assert server["verification"] == "schema_outdated"
+    assert server["baseline_usable"] is False
+    monkeypatch.setattr(pin_cli.console, "width", 240)
+    result = CliRunner().invoke(cli.main, ["pin", "--status", "--pin-file", str(legacy_pin_with_trusted_key)])
+    assert "schema_outdated (withheld)" in result.output
