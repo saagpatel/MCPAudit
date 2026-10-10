@@ -14,6 +14,7 @@ import yaml
 from rich.console import Console
 
 from mcp_audit.artifact_paths import validate_artifact_paths
+from mcp_audit.checkup import generate_card, load_previous, sticker
 from mcp_audit.engine import ScanOptions, run_scan
 from mcp_audit.report import ReportGenerator
 from mcp_audit.review_discovery import review_sources, server_identity
@@ -58,6 +59,11 @@ def _print_sources(out: Console, paths: list[tuple[str, str]]) -> None:
 @click.option("--output-json", type=click.Path(path_type=Path), help="Write AuditReport JSON to FILE.")
 @click.option("--sarif", type=click.Path(path_type=Path), help="Write SARIF to FILE.")
 @click.option("--html", type=click.Path(path_type=Path), help="Write offline HTML to FILE.")
+@click.option("--card", type=click.Path(path_type=Path), help="Write a local counts-only HTML checkup card.")
+@click.option("--names", is_flag=True, help="Opt in to server names on the checkup card only.")
+@click.option(
+    "--previous", type=click.Path(path_type=Path), help="Compare the card with this local report JSON."
+)
 @click.option("--show-host", is_flag=True, help="Include the hostname in HTML (hidden by default).")
 @click.option("--policy", type=click.Path(path_type=Path), help="Evaluate this explicit local policy.")
 @click.option(
@@ -85,12 +91,17 @@ def check(
     override_config: Path | None,
     ignore_rules: tuple[str, ...],
     ignore_reason: str | None,
+    card: Path | None,
+    names: bool,
+    previous: Path | None,
 ) -> None:
     """Review configs statically; runtime security is not checked by default."""
     if connect and not server_id:
         raise click.ClickException("--connect requires --server CLIENT:SCOPE:NAME from inspect.")
     if server_id and not connect:
         raise click.ClickException("--server requires --connect; use inspect to review identities.")
+    if (names or previous is not None) and card is None:
+        raise click.UsageError("--names and --previous require --card.")
     out = summary_console(color=color, stderr=json_stdout)
     try:
         from mcp_audit.overrides import load_override_config
@@ -106,13 +117,16 @@ def check(
         except (OSError, ValueError, yaml.YAMLError) as exc:
             raise click.ClickException(f"Cannot load finding overrides: {type(exc).__name__}") from None
         sources = review_sources(config, include_discovered, project)
+        previous_report = load_previous(previous)
         inputs = [Path(path) for path, status in sources.paths if status != "absent"]
         if ignore_path is not None:
             inputs.append(ignore_path)
         if policy is not None:
             inputs.append(policy)
+        if previous is not None:
+            inputs.append(previous)
         validate_artifact_paths(
-            [("--output-json", output_json), ("--sarif", sarif), ("--html", html)], inputs
+            [("--output-json", output_json), ("--sarif", sarif), ("--html", html), ("--card", card)], inputs
         )
         servers = sources.servers
         if connect:
@@ -141,6 +155,9 @@ def check(
                 skip_connect=not connect,
                 connect_project_configs=connect,
                 config_only=config is not None and not include_discovered,
+                inject_check=card is not None and connect,
+                trifecta_check=card is not None and connect,
+                shadow_check=card is not None and connect,
             ),
             servers=servers,
             parse_errors=sources.errors,
@@ -176,7 +193,10 @@ def check(
             html.write_text(
                 HtmlReportGenerator().generate(safe_report, show_host=show_host), encoding="utf-8"
             )
-        for path in (output_json, sarif, html):
+        if card is not None:
+            card.write_text(generate_card(report, names=names, previous=previous_report), encoding="utf-8")
+            out.print(terminal_safe(sticker(report)))
+        for path in (output_json, sarif, html, card):
             if path is not None:
                 out.print(terminal_safe(f"Wrote {path}"))
         if json_stdout:
@@ -185,6 +205,48 @@ def check(
             raise click.exceptions.Exit(2)
     except (OSError, ValueError) as exc:
         raise click.ClickException(strip_controls(str(exc))) from None
+
+
+@click.command()
+@_source_options
+@click.option("--card", type=click.Path(path_type=Path), default=Path("checkup.html"), show_default=True)
+@click.option(
+    "--names", is_flag=True, help="Include redacted server names; no other identifiers or evidence."
+)
+@click.option(
+    "--previous", type=click.Path(path_type=Path), help="Explicit local report JSON for comparison."
+)
+@click.option("--connect", is_flag=True, help="Connect only to the selected server identity, as with check.")
+@click.option("--server", "server_id", metavar="CLIENT:SCOPE:NAME")
+@click.option("--override-config", type=click.Path(path_type=Path))
+@click.pass_context
+def checkup(
+    ctx: click.Context,
+    config: Path | None,
+    include_discovered: bool,
+    project: Path | None,
+    details: bool,
+    card: Path,
+    names: bool,
+    previous: Path | None,
+    connect: bool,
+    server_id: str | None,
+    override_config: Path | None,
+) -> None:
+    """Write a local shareable HTML card; static Preview unless explicitly connected."""
+    ctx.invoke(
+        check,
+        config=config,
+        include_discovered=include_discovered,
+        project=project,
+        details=details,
+        card=card,
+        names=names,
+        previous=previous,
+        connect=connect,
+        server_id=server_id,
+        override_config=override_config,
+    )
 
 
 @click.command()
