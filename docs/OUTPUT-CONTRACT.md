@@ -981,8 +981,8 @@ explicit destructive annotations, dangerous keywords, or injection vetoes.
 Static free-text matching retains its independent literal phrase rules for
 instruction overrides, role overrides, prompt leaks and credential harvesting.
 The existing concrete-secret-target summary carve-out also remains. Static/runtime
-vocabulary unification is deferred to the 2.9 structural detection and redaction
-redesign. These findings report `pattern_name:
+vocabulary unification remains deferred; the structural redaction redesign is
+planned for 2.10. These findings report `pattern_name:
 "INSTRUCTION_SHAPED_TEXT"`, MEDIUM severity (SARIF `MCP008`), and a description
 starting "Experimental heuristic:". Additive `instruction_pattern` identifies
 the static pattern and `field_path` is its JSON Pointer, including resource

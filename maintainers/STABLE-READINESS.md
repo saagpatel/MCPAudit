@@ -19,23 +19,26 @@ tests, and install path agree.
 - Known limitations are documented in release notes and beta/stable readiness
   docs.
 
-## Current 2.8.1 Release State
+## Current 2.9.0 Candidate State
 
-The 2.8.1 release state is a backward-compatible patch release built after the
-2.8.0 tag. Its primary capability groups are terminal safety, redaction v2,
-clearer failure and canary coverage reports, and the test/CI foundation.
+The 2.9.0 source state is a candidate for review and CI validation only.
+Its primary capability groups are static review commands, summary reports,
+structural metadata signals, signed pins, protocol/schema/authorization rules,
+and bounded transport. Upgrade notes and remaining limitations are recorded in
+the changelog and [candidate notes](../docs/2.9-RELEASE-NOTES.md).
 The supported MCP dependency remains `mcp>=2.2.0,<3.0`. Existing 2.x audit-report
-and SARIF contracts remain additive. Source metadata, the Action examples, and
-`server.json` are finalized for 2.8.1. That does not prove public availability:
-PyPI and the official MCP Registry were both at 2.8.0 on the last pre-release
-readback on 2026-10-06. Release evidence must query each external surface again.
+and SARIF contracts remain additive. Package and lock metadata name 2.9.0;
+`server.json`, Action examples, and pre-commit examples retain published 2.8.1.
+Publication remains `NO-GO`; source metadata does not prove public availability.
+Release evidence must query each external surface separately.
 
 Release evidence must establish:
 
-- package, lock metadata, changelog release section,
-  `docs/release-state.json`, `server.json`, and Action/pre-commit examples agree
-  on 2.8.1; publication evidence must still report PyPI, the GitHub tag, the
-  Action ref, and the official Registry entry separately;
+- package, lock metadata, changelog candidate section, and
+  `docs/release-state.json` agree on candidate 2.9.0; `server.json` and
+  Action/pre-commit examples retain published 2.8.1 until a separate reviewed
+  release-state flip. Publication evidence must still report PyPI, the GitHub
+  tag, the Action ref, and the official Registry entry separately;
 - wheel and sdist metadata require `mcp>=2.2.0,<3.0` and expose `mcp-audit`,
   `mcp-audits`, and `proof-before-action`;
 - focused capability tests, output-contract checks, the full quality gate, the
@@ -50,7 +53,7 @@ Release evidence must establish:
 - SSRF evidence remains static and schema-derived and does not prove runtime
   containment or host safety.
 
-Merging the release-state PR does not authorize tagging, publication,
+Merging the candidate or release-state PR does not authorize tagging, publication,
 deployment, or an external Registry update. A separate exact-commit publication
 decision is still required. Tag creation does not publish: the manual workflows
 bind an exact tag and commit, verify release state and public prerequisites, and
