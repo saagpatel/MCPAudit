@@ -196,9 +196,19 @@ def check(
             inputs.append(policy)
         if previous is not None:
             inputs.append(previous)
-        validate_artifact_paths(
-            [("--output-json", output_json), ("--sarif", sarif), ("--html", html), ("--card", card)], inputs
-        )
+        try:
+            validate_artifact_paths(
+                [("--output-json", output_json), ("--sarif", sarif), ("--html", html), ("--card", card)],
+                inputs,
+            )
+        except click.BadParameter as exc:
+            raise _recovery_error(
+                strip_controls(exc.format_message()),
+                "artifact destination validation",
+                "choose verifiable destinations separate from inputs and other artifacts",
+                scanned=False,
+                exit_code=2,
+            ) from None
         servers = sources.servers
         if connect:
             selected = [server for server in servers if server_identity(server) == server_id]
@@ -241,6 +251,7 @@ def check(
         stage = "scan"
         report = anyio.run(operation)
         scanned = True
+        stage = "report post-processing"
         apply_suppressions(report, ignores, cli_rules=ignore_rules, cli_reason=ignore_reason)
         if policy_config is not None:
             from mcp_audit.policy import evaluate_policy
@@ -249,6 +260,7 @@ def check(
         safe_report = report.redacted()
         payload = json.dumps(safe_report.model_dump(mode="json"), indent=2)
         if not json_stdout:
+            stage = "terminal rendering"
             ReportGenerator(out).render_terminal(
                 report,
                 verbose=details,
@@ -260,14 +272,17 @@ def check(
                     out.print(terminal_safe(warning.message))
                 _print_sources(out, sources.paths)
         if output_json:
+            stage = "--output-json destination"
             output_json.write_text(payload, encoding="utf-8")
             written.append(output_json)
         if sarif:
+            stage = "--sarif destination"
             from mcp_audit.sarif import SarifGenerator
 
             sarif.write_text(json.dumps(SarifGenerator().generate(safe_report), indent=2), encoding="utf-8")
             written.append(sarif)
         if html:
+            stage = "--html destination"
             from mcp_audit.htmlreport import HtmlReportGenerator
 
             html.write_text(
@@ -275,9 +290,12 @@ def check(
             )
             written.append(html)
         if card is not None:
+            stage = "--card destination"
             card.write_text(generate_card(report, names=names, previous=previous_report), encoding="utf-8")
             written.append(card)
+            stage = "terminal rendering"
             out.print(terminal_safe(sticker(report)))
+        stage = "output summary"
         for path in (output_json, sarif, html, card):
             if path is not None:
                 out.print(terminal_safe(f"Wrote {path}"))
@@ -392,12 +410,13 @@ def inspect(
                 [("--output-json", output_json)],
                 [Path(path) for path, status in sources.paths if status != "absent"],
             )
-        except (OSError, ValueError) as exc:
+        except click.BadParameter as exc:
             raise _recovery_error(
-                strip_controls(str(exc)),
+                strip_controls(exc.format_message()),
                 "--output-json destination",
-                "choose a destination separate from the reviewed config files",
+                "choose a verifiable destination separate from the reviewed config files",
                 scanned=True,
+                exit_code=2,
             ) from None
         try:
             output_json.write_text(payload, encoding="utf-8")

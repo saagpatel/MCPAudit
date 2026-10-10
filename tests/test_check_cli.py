@@ -11,7 +11,7 @@ from typing import cast
 import pytest
 from click.testing import CliRunner
 
-from mcp_audit import cli, engine, scan_cli
+from mcp_audit import artifact_paths, check_cli, cli, engine, scan_cli, suppressions
 from mcp_audit.check_cli import demo
 from mcp_audit.connector import ServerConnector
 from mcp_audit.discovery.vscode import VSCodeDiscoverer
@@ -259,6 +259,149 @@ def test_check_error_includes_recovery_state_and_option_typo_suggestion() -> Non
     typo = CliRunner().invoke(cli.main, ["check", "--detials"])
     assert typo.exit_code == 2
     assert "Did you mean" in typo.output
+
+
+@pytest.mark.parametrize(
+    ("command", "failed_flag"),
+    [
+        ("check", "--output-json"),
+        ("check", "--sarif"),
+        ("check", "--html"),
+        ("check", "--card"),
+        ("checkup", "--output-json"),
+        ("checkup", "--card"),
+    ],
+)
+def test_artifact_write_failure_identifies_destination_and_prior_writes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: str, failed_flag: str
+) -> None:
+    flags = (
+        ("--output-json", "--sarif", "--html", "--card")
+        if command == "check"
+        else (
+            "--output-json",
+            "--card",
+        )
+    )
+    outputs = {flag: tmp_path / flag.removeprefix("--") for flag in flags}
+    write_text = Path.write_text
+
+    def denied(
+        path: Path,
+        data: str,
+        encoding: str | None = None,
+        errors: str | None = None,
+        newline: str | None = None,
+    ) -> int:
+        if path == outputs[failed_flag]:
+            raise PermissionError("synthetic write denial")
+        return write_text(path, data, encoding=encoding, errors=errors, newline=newline)
+
+    monkeypatch.setattr(Path, "write_text", denied)
+    args = [command, "--config", str(SANDBOX), "--json"]
+    for flag, path in outputs.items():
+        args.extend([flag, str(path)])
+    result = CliRunner().invoke(cli.main, args)
+
+    assert result.exit_code == 1, result.output
+    assert not result.stdout
+    assert "What failed: synthetic write denial" in result.stderr
+    assert f"Where: {failed_flag} destination\n" in result.stderr
+    assert "Recovery:" in result.stderr
+    assert "Scanned: yes" in result.stderr
+    assert "Exit code: 1" in result.stderr
+    prior = list(outputs.values())[: flags.index(failed_flag)]
+    assert f"Written: {', '.join(map(str, prior)) if prior else 'none'}\n" in result.stderr
+    assert all(path.exists() == (path in prior) for path in outputs.values())
+
+
+def test_post_processing_failure_is_not_reported_as_scan(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def invalid(*args: object, **kwargs: object) -> None:
+        raise ValueError("synthetic post-processing failure")
+
+    monkeypatch.setattr(suppressions, "apply_suppressions", invalid)
+    output = tmp_path / "report.json"
+    result = CliRunner().invoke(
+        cli.main, ["check", "--config", str(SANDBOX), "--output-json", str(output), "--json"]
+    )
+    assert result.exit_code == 1, result.output
+    assert "Where: report post-processing\n" in result.stderr
+    assert "Scanned: yes" in result.stderr
+    assert "Written: none" in result.stderr
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("command", ["check", "checkup", "inspect"])
+def test_artifact_input_alias_has_recovery_details_without_modifying_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: str
+) -> None:
+    config = tmp_path / "synthetic.json"
+    before = SANDBOX.read_bytes()
+    config.write_bytes(before)
+    card = tmp_path / "card.html"
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        raise AssertionError("invalid artifact destinations must be rejected before scanning")
+
+    monkeypatch.setattr(check_cli, "run_scan", forbidden)
+    args = [command, "--config", str(config), "--output-json", str(config), "--json"]
+    if command == "checkup":
+        args.extend(["--card", str(card)])
+    result = CliRunner().invoke(cli.main, args)
+
+    assert result.exit_code == 2, result.output
+    assert not result.stdout
+    assert "What failed:" in result.stderr
+    assert "--output-json" in result.stderr
+    assert "aliases an input file" in result.stderr
+    assert "Where:" in result.stderr
+    assert "Recovery:" in result.stderr
+    assert f"Scanned: {'yes' if command == 'inspect' else 'no'}" in result.stderr
+    assert "Written: none" in result.stderr
+    assert "Exit code: 2" in result.stderr
+    assert config.read_bytes() == before
+    assert not card.exists()
+
+
+@pytest.mark.parametrize("command", ["check", "checkup", "inspect"])
+@pytest.mark.parametrize("failed_path", ["input", "output"])
+def test_artifact_path_verification_failure_has_recovery_details(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, command: str, failed_path: str
+) -> None:
+    output = tmp_path / "report.json"
+    card = tmp_path / "card.html"
+    identity = artifact_paths._identity
+
+    def denied(path: Path) -> tuple[Path, tuple[int, int] | None]:
+        if path == (SANDBOX if failed_path == "input" else output):
+            raise PermissionError("synthetic path verification denial")
+        return identity(path)
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        raise AssertionError("unverifiable artifact paths must be rejected before scanning")
+
+    monkeypatch.setattr(artifact_paths, "_identity", denied)
+    monkeypatch.setattr(check_cli, "run_scan", forbidden)
+    args = [command, "--config", str(SANDBOX), "--output-json", str(output), "--json"]
+    if command == "checkup":
+        args.extend(["--card", str(card)])
+    result = CliRunner().invoke(cli.main, args)
+
+    assert result.exit_code == 2, result.output
+    assert not result.stdout
+    expected = "input paths" if failed_path == "input" else "output path"
+    assert f"Cannot verify {expected}: PermissionError" in result.stderr
+    assert "What failed:" in result.stderr
+    assert "--output-json" in result.stderr
+    assert "Where:" in result.stderr
+    assert "Recovery:" in result.stderr
+    assert f"Scanned: {'yes' if command == 'inspect' else 'no'}" in result.stderr
+    assert "Written: none" in result.stderr
+    assert "Exit code: 2" in result.stderr
+    assert not output.exists()
+    assert not card.exists()
 
 
 def test_bare_json_and_details_and_grouped_help() -> None:
