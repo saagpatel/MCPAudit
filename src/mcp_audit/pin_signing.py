@@ -434,6 +434,20 @@ def record_signature_requirement(
         _write_json(trusted_keys_path, data)
 
 
+def forget_server(server_name: str, trusted_keys_path: Path = DEFAULT_TRUSTED_KEYS_PATH) -> None:
+    """Drop a server's signing expectation and rollback history after an explicit clear."""
+    if _read_trust_json(trusted_keys_path) is None:
+        return
+    with _trusted_store_lock(trusted_keys_path):
+        data = _read_trust_data(trusted_keys_path)
+        servers = data.get("servers")
+        if not isinstance(servers, dict):
+            raise PinSigningError("Trusted pin signing state has an invalid format.")
+        if server_name in servers:
+            del servers[server_name]
+            _write_json(trusted_keys_path, data)
+
+
 def _create_keypair(key_dir: Path) -> GeneratedKey:
     _ensure_private_directory(key_dir)
     private_path = key_dir / "pin-signing.key"

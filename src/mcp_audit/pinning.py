@@ -184,7 +184,7 @@ class PinStore:
 
     def __init__(
         self,
-        path: Path = DEFAULT_PIN_PATH,
+        path: Path | None = None,
         *,
         signing_key: Path | None = None,
         unsigned: bool = False,
@@ -192,7 +192,9 @@ class PinStore:
     ) -> None:
         from mcp_audit.pin_signing import DEFAULT_SIGNING_KEY_PATH, DEFAULT_TRUSTED_KEYS_PATH
 
-        self._path = path
+        # Resolved per call so callers and tests that select the default
+        # location never bind a stale import-time path.
+        self._path = path if path is not None else DEFAULT_PIN_PATH
         environment_key = os.environ.get("MCP_AUDIT_PIN_KEY")
         self._explicit_key = signing_key is not None or environment_key is not None
         self._signing_key = signing_key or (
@@ -239,7 +241,24 @@ class PinStore:
             return self._verification[server_name]
         servers = self._data.get("servers", {})
         if server_name not in servers:
-            return None
+            # A deleted, renamed, or never-written entry (including an empty,
+            # missing, or unparseable pin file) must not erase a signing
+            # expectation that lives outside the editable pin file.
+            try:
+                expected_signed = signature_required(server_name, self._trusted_keys_path)
+            except PinSigningError:
+                expected_signed = True
+            if not expected_signed:
+                return None
+            result = PinVerification(state=PinVerificationState.TAMPERED_ENTRY)
+            self._verification[server_name] = result
+            self._verification_messages[server_name] = (
+                f"Pin for {server_name} fails signature verification; the signed baseline required by "
+                "your trusted signing expectations is missing from the pin file, or that expectation "
+                "is unavailable. Restore the pin file from backup, or run "
+                f"`mcp-audit pin --clear {server_name}` and re-review the server before pinning again."
+            )
+            return result
         entry = servers[server_name]
         if not isinstance(entry, dict):
             result = PinVerification(state=PinVerificationState.TAMPERED_ENTRY)
@@ -399,14 +418,21 @@ class PinStore:
             },
         }
 
-    def _sign_entry(self, server_name: str, entry: dict[str, Any]) -> None:
-        from mcp_audit.pin_signing import record_signature_requirement, sign_document, signature_required
+    def _sign_entry(self, server_name: str, entry: dict[str, Any]) -> bool:
+        """Sign ``entry`` in memory; return whether it now carries a signature.
+
+        The trust-store expectation is deliberately NOT written here. Callers
+        record it via :meth:`_record_signed` only after the pin file write
+        succeeds, so a failed write leaves both the old baseline and the old
+        expectation intact.
+        """
+        from mcp_audit.pin_signing import sign_document, signature_required
 
         was_signed = "signature" in entry
         for key in ("signature", "signer", "surface_sha256", "canonical_bytes_len"):
             entry.pop(key, None)
         if self._unsigned:
-            return
+            return False
         if (
             was_signed
             or self._explicit_key
@@ -414,6 +440,14 @@ class PinStore:
             or signature_required(server_name, self._trusted_keys_path)
         ):
             entry.update(sign_document(self._server_document(server_name, entry), self._signing_key))
+            return True
+        return False
+
+    def _record_signed(self, server_names: list[str]) -> None:
+        """Persist signing expectations for entries whose signed write succeeded."""
+        from mcp_audit.pin_signing import record_signature_requirement
+
+        for server_name in server_names:
             record_signature_requirement(server_name, True, self._trusted_keys_path)
 
     def rotate_key(self, grace_days: int = 30) -> str:
@@ -443,11 +477,14 @@ class PinStore:
                 self._signing_key.parent, self._trusted_keys_path, self._signing_key, grace_days=grace_days
             )
             self._signing_key = generated.private_key_path
+            signed: list[str] = []
             for server, entry in self._data.get("servers", {}).items():
                 if self.legacy_tool_names(server):
                     continue
-                self._sign_entry(server, entry)
+                if self._sign_entry(server, entry):
+                    signed.append(server)
             self._write()
+            self._record_signed(signed)
             self._verification.clear()
             self._verification_messages.clear()
             self._rollback_warnings.clear()
@@ -470,10 +507,12 @@ class PinStore:
             metadata = sign_document({}, self._signing_key)
             signer = metadata["signer"]
             assert isinstance(signer, dict) and isinstance(signer["public_key"], str)
+            signed: list[str] = []
             for server, entry in self._data.get("servers", {}).items():
-                if not self.legacy_tool_names(server):
-                    self._sign_entry(server, entry)
+                if not self.legacy_tool_names(server) and self._sign_entry(server, entry):
+                    signed.append(server)
             self._write()
+            self._record_signed(signed)
             self._verification.clear()
             self._verification_messages.clear()
             self._rollback_warnings.clear()
@@ -604,11 +643,13 @@ class PinStore:
             downgrade_signing = self._unsigned and (
                 "signature" in server_entry or signature_required(server_name, self._trusted_keys_path)
             )
-            self._sign_entry(server_name, server_entry)
+            signed = self._sign_entry(server_name, server_entry)
             self._verification.pop(server_name, None)
             self._data["pinned_at"] = now
             self._data["pin_schema"] = 2
             self._write()
+            if signed:
+                self._record_signed([server_name])
             if downgrade_signing:
                 record_signature_requirement(server_name, False, self._trusted_keys_path)
 
@@ -694,13 +735,22 @@ class PinStore:
         return findings
 
     def remove_server(self, server_name: str) -> None:
-        """Remove all pins for a server. No-op if server not pinned."""
+        """Remove all pins for a server and forget its signing expectation.
+
+        An explicit clear is the authorized recovery path for a signed baseline
+        that was deleted or damaged. The separate expectation is dropped only
+        after the pin file write succeeds (or when no entry remains to write),
+        so a failed write never leaves an entry without its expectation.
+        """
+        from mcp_audit.pin_signing import forget_server
+
         with _file_lock(self._path):
             self._data = self._load(strict=True)
             servers: dict[str, Any] = self._data.get("servers", {})
             if server_name in servers:
                 del servers[server_name]
                 self._write()
+            forget_server(server_name, self._trusted_keys_path)
 
     def pinned_servers(self) -> list[str]:
         """Return list of server names that have pins."""
@@ -708,6 +758,9 @@ class PinStore:
 
     def tool_count(self, server_name: str) -> int:
         """Return number of pinned tools for a server."""
+        if not self.baseline_trusted(server_name):
+            # A baseline that failed verification must not satisfy require.pins.
+            return 0
         servers: dict[str, Any] = self._data.get("servers", {})
         return len(servers.get(server_name, {}).get("tools", {}))
 
