@@ -38,13 +38,25 @@ from tests.conftest import make_server_config
 
 
 @pytest.mark.parametrize("surface", ["input_schema", "output_schema"])
-@pytest.mark.parametrize("container", ["properties", "$defs"])
+@pytest.mark.parametrize(
+    ("container", "reason"),
+    [
+        ("properties", "node_budget_exceeded"),
+        ("$defs", "node_budget_exceeded"),
+        ("local_ref", "local_ref_unresolved"),
+    ],
+)
 def test_run_scan_reports_incomplete_tool_schema_metadata(
-    monkeypatch: pytest.MonkeyPatch, surface: str, container: str
+    monkeypatch: pytest.MonkeyPatch, surface: str, container: str, reason: str
 ) -> None:
     branches = {"dangerous": {"$ref": "https://schemas.example.test/unvisited"}}
     branches.update({f"ordinary_{index}": {"type": "string"} for index in range(2050)})
-    tool = ToolInfo.model_validate({"name": "fixture", surface: {container: branches}})
+    schema = (
+        {"$ref": "#missing", "$defs": {"value": {"type": "string", "x-mcp-header": "X-Value"}}}
+        if container == "local_ref"
+        else {container: branches}
+    )
+    tool = ToolInfo.model_validate({"name": "fixture", surface: schema})
     server = make_server_config(name="schema-fixture", command="fixture")
 
     class FixtureConnector:
@@ -61,7 +73,7 @@ def test_run_scan_reports_incomplete_tool_schema_metadata(
     [warning] = [warning for warning in report.warnings if warning.code == "tool_schema_incomplete"]
     assert warning.check == "metadata"
     assert warning.servers == [server.name]
-    assert warning.message == "Tool schema analysis incomplete: node_budget_exceeded"
+    assert warning.message == f"Tool schema analysis incomplete: {reason}"
     assert report.coverage["metadata"].state == "partial"
     assert report.coverage["metadata"].reason == "tool_schema_incomplete"
     assert report.coverage["config_health"].state == "complete"

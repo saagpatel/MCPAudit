@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
 
 from mcp_audit.models import ToolInfo
 from mcp_audit.schema_rules import scan_tool_schema
@@ -127,6 +128,120 @@ def test_definition_schemas_are_inspected_and_local_references_are_reachable(key
         },
     )
     assert [finding.kind for finding in scan_tool_schema(tool)] == ["header_unreachable", "external_ref"]
+
+
+@pytest.mark.parametrize("surface", ["input_schema", "output_schema"])
+@pytest.mark.parametrize(
+    ("ref", "key", "anchor"),
+    [
+        ("#value", "value", "value"),
+        ("#/$defs/a%20b", "a b", None),
+        ("#/%24defs/a%20b", "a b", None),
+        ("#/$defs/a%7E1b%7E0c", "a/b~c", None),
+    ],
+)
+def test_local_anchor_and_encoded_pointer_headers_are_reachable(
+    surface: str, ref: str, key: str, anchor: str | None
+) -> None:
+    target = {"type": "string", "x-mcp-header": "X-Value"}
+    if anchor is not None:
+        target["$anchor"] = anchor
+    definitions: dict[str, object] = {key: target}
+    schema = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {"value": {"$ref": ref}},
+        "$defs": definitions,
+    }
+    Draft202012Validator.check_schema(schema)
+    Draft202012Validator(schema).validate({"value": "fixture"})
+    incomplete: list[str] = []
+    tool = ToolInfo.model_validate({"name": "fixture", surface: schema})
+    assert scan_tool_schema(tool, incomplete_reasons=incomplete) == []
+    assert incomplete == []
+    definitions["unused"] = {"type": "string", "x-mcp-header": "X-Unused"}
+    tool = ToolInfo.model_validate({"name": "fixture", surface: schema})
+    assert [finding.kind for finding in scan_tool_schema(tool, incomplete_reasons=incomplete)] == [
+        "header_unreachable"
+    ]
+    assert incomplete == []
+
+
+@pytest.mark.parametrize(
+    "ref",
+    [
+        "#missing",
+        "#/$defs/missing",
+        "#/$defs/value%",
+        "#/$defs/%FF",
+        "#/$defs/value~2",
+        "#%76alue",
+        "#%2F$defs/value",
+    ],
+)
+def test_unresolved_local_reference_reports_incomplete_reachability(ref: str) -> None:
+    tool = ToolInfo(
+        name="fixture",
+        input_schema={
+            "properties": {
+                "a": {"$ref": ref},
+                "b": {"$ref": ref},
+                "visited": {"type": "string", "x-mcp-header": "Bad Header"},
+            },
+            "$defs": {"value": {"$anchor": "value", "type": "string", "x-mcp-header": "X-Value"}},
+        },
+    )
+    incomplete: list[str] = []
+    assert [finding.kind for finding in scan_tool_schema(tool, incomplete_reasons=incomplete)] == [
+        "header_invalid"
+    ]
+    assert incomplete == ["local_ref_unresolved"]
+
+
+@pytest.mark.parametrize("ambiguous_resource", [False, True])
+def test_ambiguous_anchor_resolution_reports_incomplete_reachability(ambiguous_resource: bool) -> None:
+    target = {"$anchor": "value", "type": "string", "x-mcp-header": "X-Value"}
+    other = {"$anchor": "value", "type": "string"}
+    if ambiguous_resource:
+        other["$id"] = "https://schemas.example.test/embedded"
+    tool = ToolInfo(name="fixture", input_schema={"$ref": "#value", "$defs": {"a": target, "b": other}})
+    incomplete: list[str] = []
+    assert scan_tool_schema(tool, incomplete_reasons=incomplete) == []
+    assert incomplete == ["local_ref_unresolved"]
+
+
+def test_anchor_lookup_ignores_instance_payloads_and_obeys_the_node_budget() -> None:
+    schema: dict[str, object] = {
+        "$ref": "#value",
+        "examples": [{"$anchor": "value", "type": "string", "x-mcp-header": "Bad Header"}],
+    }
+    incomplete: list[str] = []
+    assert (
+        scan_tool_schema(ToolInfo(name="fixture", input_schema=schema), incomplete_reasons=incomplete) == []
+    )
+    assert incomplete == ["local_ref_unresolved"]
+    schema["$defs"] = {f"ordinary_{index}": {"type": "string"} for index in range(2050)}
+    incomplete = []
+    assert (
+        scan_tool_schema(ToolInfo(name="fixture", input_schema=schema), incomplete_reasons=incomplete) == []
+    )
+    assert incomplete == ["node_budget_exceeded"]
+
+
+def test_anchor_cycle_is_finite_and_reachable_headers_are_checked() -> None:
+    tool = ToolInfo(
+        name="fixture",
+        input_schema={
+            "$ref": "#value",
+            "$defs": {"value": {"$anchor": "value", "$ref": "#value", "x-mcp-header": "Bad Header"}},
+        },
+    )
+    incomplete: list[str] = []
+    assert [finding.kind for finding in scan_tool_schema(tool, incomplete_reasons=incomplete)] == [
+        "header_invalid",
+        "header_type",
+    ]
+    assert incomplete == []
 
 
 @pytest.mark.parametrize("keyword", ["examples", "default", "const", "enum", "x-instance-data"])

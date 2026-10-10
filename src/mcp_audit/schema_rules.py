@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterator
-from urllib.parse import ParseResult, urlparse
+from urllib.parse import ParseResult, unquote, urlparse
 
 from mcp_audit.models import SchemaFinding, ToolInfo
 
@@ -40,17 +40,35 @@ _SINGLE_SCHEMA_KEYWORDS = (
 )
 
 
-def _local_ref(root: dict[str, object], ref: str) -> object | None:
-    if ref == "#":
+def _local_ref(
+    root: dict[str, object], ref: str, anchors: dict[str, dict[str, object] | None] | None
+) -> object | None:
+    if not ref.startswith("#") or anchors is None:
+        return None
+    fragment = ref[1:]
+    if not fragment:
         return root
-    if not ref.startswith("#/"):
+    if not fragment.startswith("/"):
+        return anchors.get(fragment)
+    if re.search(r"%(?![0-9A-Fa-f]{2})", fragment):
+        return None
+    try:
+        fragment = unquote(fragment, errors="strict")
+    except UnicodeDecodeError:
         return None
     current: object = root
-    for part in ref[2:].split("/"):
+    for part in fragment[1:].split("/"):
+        if re.search(r"~(?![01])", part):
+            return None
         token = part.replace("~1", "/").replace("~0", "~")
         if isinstance(current, dict):
             current = current.get(token)
-        elif isinstance(current, list) and token.isdigit() and int(token) < len(current):
+        elif (
+            isinstance(current, list)
+            and re.fullmatch(r"0|[1-9][0-9]*", token)
+            and len(token) <= len(str(len(current)))
+            and int(token) < len(current)
+        ):
             current = current[int(token)]
         else:
             return None
@@ -76,7 +94,11 @@ def _schema_children(node: dict[str, object], *, include_definitions: bool) -> I
 
 
 def _walk_nodes(
-    root: dict[str, object], *, include_definitions: bool, incomplete_reasons: list[str]
+    root: dict[str, object],
+    *,
+    include_definitions: bool,
+    incomplete_reasons: list[str],
+    anchors: dict[str, dict[str, object] | None] | None = None,
 ) -> list[dict[str, object]]:
     stack = [root]
     seen: set[int] = set()
@@ -93,9 +115,17 @@ def _walk_nodes(
         nodes.append(node)
         ref = node.get("$ref") if not include_definitions else None
         if isinstance(ref, str):
-            target = _local_ref(root, ref)
+            target = _local_ref(root, ref, anchors)
             if isinstance(target, dict):
                 stack.append(target)
+            elif ref.startswith("#") and not isinstance(target, bool):
+                reason = (
+                    "node_budget_exceeded"
+                    if "node_budget_exceeded" in incomplete_reasons
+                    else "local_ref_unresolved"
+                )
+                if reason not in incomplete_reasons:
+                    incomplete_reasons.append(reason)
         stack.extend(_schema_children(node, include_definitions=include_definitions))
     return nodes
 
@@ -118,19 +148,36 @@ def _schema_rules(
 ) -> list[SchemaFinding]:
     findings: list[SchemaFinding] = []
     reachability_incomplete: list[str] = []
-    reachable = _walk_nodes(schema, include_definitions=False, incomplete_reasons=reachability_incomplete)
+    all_nodes = _walk_nodes(schema, include_definitions=True, incomplete_reasons=reachability_incomplete)
+    anchors: dict[str, dict[str, object] | None] = {}
+    for node in all_nodes:
+        anchor = node.get("$anchor")
+        if isinstance(anchor, str):
+            anchors[anchor] = None if anchor in anchors else node
+    # Embedded resources change reference scope; a partial inventory cannot
+    # establish anchor uniqueness or rule out an unseen resource boundary.
+    reference_anchors = (
+        None
+        if reachability_incomplete or any(node is not schema and "$id" in node for node in all_nodes)
+        else anchors
+    )
+    reachable = _walk_nodes(
+        schema,
+        include_definitions=False,
+        incomplete_reasons=reachability_incomplete,
+        anchors=reference_anchors,
+    )
     for reason in reachability_incomplete:
         if reason not in incomplete_reasons:
             incomplete_reasons.append(reason)
     reachable_ids = {id(node) for node in reachable}
-    all_nodes = _walk_nodes(schema, include_definitions=True, incomplete_reasons=incomplete_reasons)
     headers: dict[str, str] = {}
     for node in all_nodes:
         if "x-mcp-header" not in node:
             continue
         header = node["x-mcp-header"]
         if id(node) not in reachable_ids:
-            # Exhaustion cannot establish that an unvisited branch is unreachable.
+            # Incomplete resolution cannot establish that a branch is unreachable.
             if reachability_incomplete:
                 continue
             findings.append(
@@ -207,7 +254,7 @@ def _schema_rules(
 def scan_tool_schema(
     tool: ToolInfo, *, server_url: str | None = None, incomplete_reasons: list[str] | None = None
 ) -> list[SchemaFinding]:
-    """Inspect metadata offline, recording traversal exhaustion when a collector is supplied."""
+    """Inspect metadata offline, recording incomplete traversal when a collector is supplied."""
     findings: list[SchemaFinding] = []
     reasons = incomplete_reasons if incomplete_reasons is not None else []
     for schema in (tool.input_schema, tool.output_schema):
