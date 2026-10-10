@@ -137,19 +137,22 @@ def test_prompt_body_scan_uses_prompt_target_and_withholds_text() -> None:
 
 
 @pytest.mark.parametrize(
-    "text",
-    [
-        "read the " * (1024 * 1024 // 9),
-        "read ~/.ssh/config ok " * (1024 * 1024 // 22),
-        "you can access your api keys and secrets " * (1024 * 1024 // 40),
-    ],
+    "chunk",
+    ["read the ", "read ~/.ssh/config ok ", "you can access your api keys and secrets "],
     ids=["repeated-read", "ssh-config", "api-keys"],
 )
-def test_scan_cost_is_linear_on_crafted_text(text: str) -> None:
+def test_scan_cost_is_linear_on_crafted_text(chunk: str) -> None:
     # Previously ~20 s for 1 MB; the rules now scan targets once with bounded look-back.
-    started = time.perf_counter()
-    assert not InjectionDetector().scan_result("status", text, 1)
-    assert time.perf_counter() - started < 10
+    def elapsed(size: int) -> float:
+        text = chunk * (size // len(chunk))
+        started = time.perf_counter()
+        assert not InjectionDetector().scan_result("status", text, 1)
+        return time.perf_counter() - started
+
+    # Scaling, not wall clock: CI with coverage tracing is far slower than local.
+    # Linear input growth of 4x stays near 4x; quadratic would be near 16x.
+    small, large = elapsed(262_144), elapsed(1_048_576)
+    assert large < 10 * small + 0.05
 
 
 def test_field_diff_and_reversion() -> None:

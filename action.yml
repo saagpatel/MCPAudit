@@ -11,8 +11,14 @@ branding:
 inputs:
   version:
     description: >-
-      Exact mcp-audits version to install (e.g. "2.0.0"). Defaults to
-      the latest published release.
+      Exact mcp-audits version to install (e.g. "2.0.0"). Defaults to the
+      version declared in this Action's pyproject.toml.
+    required: false
+    default: ""
+  wheel:
+    description: >-
+      Optional local wheel path to install instead of a published package.
+      Intended for repository self-audits of the wheel built by the same run.
     required: false
     default: ""
   args:
@@ -92,12 +98,29 @@ runs:
       shell: bash
       env:
         MCP_AUDIT_VERSION: ${{ inputs.version }}
+        MCP_AUDIT_WHEEL: ${{ inputs.wheel }}
+        MCP_AUDIT_ACTION_PATH: ${{ github.action_path }}
       run: |
         set -euo pipefail
-        if [ -n "${MCP_AUDIT_VERSION}" ]; then
-          python -m pip install --upgrade "mcp-audits==${MCP_AUDIT_VERSION}"
+        if [ -n "${MCP_AUDIT_WHEEL}" ]; then
+          if [ -n "${MCP_AUDIT_VERSION}" ]; then
+            echo "::error::Specify either wheel or version, not both."
+            exit 1
+          fi
+          if [[ "${MCP_AUDIT_WHEEL}" != *.whl || ! -f "${MCP_AUDIT_WHEEL}" || -L "${MCP_AUDIT_WHEEL}" ]]; then
+            echo "::error::wheel must be a path to an existing regular .whl file."
+            exit 1
+          fi
+          python -m pip install --upgrade "${MCP_AUDIT_WHEEL}"
         else
-          python -m pip install --upgrade mcp-audits
+          if [ -z "${MCP_AUDIT_VERSION}" ]; then
+            MCP_AUDIT_VERSION="$(python -c 'import pathlib, sys, tomllib; print(tomllib.loads((pathlib.Path(sys.argv[1]) / "pyproject.toml").read_text())["project"]["version"])' "${MCP_AUDIT_ACTION_PATH}")"
+          fi
+          if [[ ! "${MCP_AUDIT_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::version must be an exact semantic version in MAJOR.MINOR.PATCH form."
+            exit 1
+          fi
+          python -m pip install --upgrade "mcp-audits==${MCP_AUDIT_VERSION}"
         fi
 
     - name: Audit MCP servers
