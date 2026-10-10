@@ -526,14 +526,22 @@ invalid signatures, and modified entries. Each finding includes `state`,
 Failed verification skips all saved-baseline comparisons, including the canary's
 first-listing comparison; independent in-session canary comparisons still run.
 The findings reach JSON, terminal/HTML summaries, SARIF, and the opt-in
-`fail_on.pin_integrity: true` policy gate. Existing drift policy semantics and
-report `schema_version` remain unchanged. Truly unsigned v2 and legacy v1 pins warn
+`fail_on.pin_integrity: true` policy gate. A server with an MCP027 finding never
+satisfies `require.pins`, and enabled baseline-comparison gates (`fail_on.drift`,
+`escalation`, `provenance`, `integrity`, `package_verify`, `artifact_verify`) add a
+HIGH violation stating that their comparison was withheld. When the scan did not
+verify a server (no pin-based check ran), `fail_on.pin_integrity` verifies the
+selected pin store directly. Policies without signed pins, and report
+`schema_version`, are unchanged. Truly unsigned v2 and legacy v1 pins warn
 and remain usable when the separate trust store has no signing requirement.
 Signing or successful verification records a per-server `signature_required`
 expectation there; existing verified timestamp history also implies it. Missing
 required signatures, remaining signing metadata without a signature, or unreadable
 signing expectations produce `tampered_entry` and HIGH `MCP027`, including when
-tool entries claim v1. An explicit `--unsigned` write can downgrade a verified
+tool entries claim v1 and when the whole entry or pin file is missing, renamed,
+empty, or unparseable. The expectation is written only after the signed pin file
+write succeeds. `pin --clear SERVER` is the explicit recovery path: it removes the
+entry and that server's expectation and rollback history. An explicit `--unsigned` write can downgrade a verified
 baseline and update the separate expectation. Fresh CI must provision this
 expectation independently of the editable pin file to enforce it on first use.
 Verification uses the separate trusted public-key store,
@@ -963,6 +971,9 @@ The report top level also includes:
     in-session baseline without modifying the pin file),
     `pin_baseline_stale` (pinned servers whose baseline predates the capture
     this check compares against; named in `servers`),
+    `pin_baseline_withheld` (servers whose pin baseline failed integrity
+    verification, HIGH MCP027, so this baseline comparison was not run; named in
+    `servers` and never also reported as `pin_baseline_stale`),
     `integrity_comparison_incomplete` (with `check: integrity_check`; pinned
     paths excluded by sensitive-path protection or unavailable path resolution.
     The message reports counts, never excluded paths or their saved/current hashes),

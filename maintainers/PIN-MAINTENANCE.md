@@ -74,6 +74,10 @@ listing, `serve check_server`, and each watch rescan verify the loaded entry.
 Failures produce HIGH `MCP027` and withhold saved baselines; in-session canary
 comparisons continue. Unsigned v2 entries and v1 entries remain usable with
 warnings. Enable `fail_on.pin_integrity: true` to gate failures in policy.
+For a server the trust store expects to be signed, a missing entry or pin file
+also fails verification, and a failed baseline never satisfies `require.pins`.
+If it cannot be restored from backup, `pin --clear SERVER` removes the entry and
+its signing expectation so the server can be re-reviewed and pinned again.
 
 Snapshots restore annotations and the additional fields for review and
 escalation analysis, with credential redaction retained. Security-relevant hint

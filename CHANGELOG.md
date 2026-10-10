@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fail closed for signed pins the trust store expects: a deleted, renamed,
+  emptied, unparseable, or substituted entry or pin file now yields HIGH
+  `MCP027`. Failed verification no longer satisfies `require.pins`, and enabled
+  baseline-comparison gates fail instead of passing on a withheld baseline,
+  which is reported as `pin_baseline_withheld` rather than as a legacy pin.
+  Signing expectations are written only after the pin write succeeds, and
+  `pin --clear` removes the expectation as the explicit recovery path. Example CI
+  policies enable `fail_on.pin_integrity`.
 - Update signed-pin regression connector doubles for bounded transport options,
   and retain the required unsigned-pin warning alongside integrity-exclusion
   warnings in integration assertions.
