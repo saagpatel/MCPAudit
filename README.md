@@ -111,6 +111,13 @@ will do later. The optional canary is bounded and exercises only eligible
 tools under its documented limits. See [How it works](docs/how-it-works.md)
 for the boundary between those observations.
 
+Connected stdio listings reject frames larger than 16 MiB before JSON parsing.
+`scan` and `check` accept `--max-frame-bytes` and `--max-surface-bytes` (64 MiB
+across listing pages and surfaces). Retained item text is capped at 256 KiB;
+`surface_truncated` warns that metadata is incomplete. The temporary
+`--sdk-stdio-fallback` flag uses the SDK reader for compatibility and disables
+the frame cap; it retains the listing caps. See the [output contract](docs/OUTPUT-CONTRACT.md).
+
 Reports can contain configuration shape, tool names, and evidence text. Secret
 redaction is best-effort; do not share a report until you have reviewed it.
 Configs are parsed in full, but environment variable values are discarded

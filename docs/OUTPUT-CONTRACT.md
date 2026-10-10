@@ -933,7 +933,10 @@ The report top level also includes:
     `option_ignored` (an option passed without the check that consumes it),
     `surface_listing_incomplete` (an initialized non-canary tool, prompt, or
     resource listing exceeded the 20-page limit, advertised or not, or an
-    advertised prompt/resource listing was unavailable),
+    advertised prompt/resource listing was unavailable, or the cumulative
+    serialized listing byte budget was exceeded),
+    `surface_truncated` (retained listing text exceeded 256 KiB of UTF-8 per
+    item; suffix metadata was omitted before conversion and analysis),
     `description_truncated` (permission keyword or SSRF fetch-verb input
     exceeded the 256 KiB UTF-8 per-field limit; suffix evidence was not inspected).
     The vocabulary is additive — consumers must tolerate unknown codes.
@@ -1029,6 +1032,35 @@ use the same bounded tool-name and description prefixes. Listed metadata stays
 intact for reporting, pins and other checks; this is a detector input limit,
 not a transport limit. Findings retain their existing shape and confidence
 semantics within the inspected prefix; a warning signals reduced coverage.
+
+Connected listings use a default 16 MiB stdio frame cap, checked before
+decoding or JSON parsing. Exceeding it produces `connection_status: failed`
+and a bounded `connection_error` naming the frame-size limit without frame
+contents. `scan` and `check` accept `--max-frame-bytes`. The temporary
+`--sdk-stdio-fallback` compatibility flag selects the SDK reader and disables
+this frame cap; listing caps still apply. This fallback is intended for one
+release. HTTP body limits are outside this stdio change.
+
+`ScanOptions.max_surface_bytes` (default 64 MiB, also `--max-surface-bytes`)
+is one budget shared by tools, prompts and resources across all pages in a
+listing round. Each original SDK response page's UTF-8 JSON serialization
+is charged before truncation, including schema, extra fields and cursors.
+Wire whitespace is not included. Canary relistings receive fresh budgets.
+No partial page set is admitted as a complete inventory; byte-budget
+exhaustion reports `surface_listing_incomplete` and a partial connection.
+
+Each item's retained text, including nested schema and prompt-argument text,
+has an aggregate 256 KiB UTF-8 budget. Keys and `name`/`uri` identifiers are
+preserved and charged first, along with `type`, `format`, `$ref`, `$id`,
+`$schema`, and `mimeType` string values. If those alone exceed the budget, the listing
+is rejected instead of renaming an identity. Other string values retain
+bounded prefixes ending at character boundaries. `surface_truncated` names
+the affected server and the item count, never the omitted text. Unlike the
+detector-only `description_truncated` cap, these listing prefixes are also
+used in reports and pins. Consumers must treat them as incomplete metadata.
+The connection and metadata-dependent check coverage become `partial`, and
+canary tool exercise stops before selection from truncated listings. No
+report fields change shape or meaning and `schema_version` remains `1`.
 
 `risk_score.composite` is tool-centered. `non_tool_risk` is an additive
 prompt/resource triage signal and does not change `risk_score.composite`.

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Bound stdio frames with a linear bytearray reader (16 MiB default), share a
+  64 MiB serialized-byte budget across listing pages and surfaces, and cap
+  retained per-item text at 256 KiB with `surface_truncated` and partial
+  coverage. Keep the SDK reader behind `--sdk-stdio-fallback` for compatibility;
+  the fallback disables the frame cap but retains listing limits.
 - Restrict publication to exactly the versioned wheel and sdist, reject extras
   and symlinks, and bind their SHA-256 values to an approved release manifest
   recording source and workflow revisions. Recheck disposable consumer copies
