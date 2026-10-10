@@ -1232,6 +1232,19 @@
           "default": "high",
           "title": "Severity",
           "type": "string"
+        },
+        "audit_index": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Audit Index"
         }
       },
       "required": [
@@ -1431,6 +1444,222 @@
       "title": "ResourceInfo",
       "type": "object"
     },
+    "ReviewAction": {
+      "description": "One pre-grouped action; identities are report-local ordinals, never identifiers.",
+      "properties": {
+        "identity": {
+          "pattern": "^action-[0-9]{4,}$",
+          "title": "Identity",
+          "type": "string"
+        },
+        "owner": {
+          "pattern": "^owner-[0-9]{4,}$",
+          "title": "Owner",
+          "type": "string"
+        },
+        "severity": {
+          "title": "Severity",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "steps": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Steps",
+          "type": "array"
+        },
+        "sources": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Sources",
+          "type": "array"
+        },
+        "terminal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReviewActionDisplay"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "card_group": {
+          "anyOf": [
+            {
+              "pattern": "^card-[0-9]{4,}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Card Group"
+        }
+      },
+      "required": [
+        "identity",
+        "owner",
+        "severity",
+        "title"
+      ],
+      "title": "ReviewAction",
+      "type": "object"
+    },
+    "ReviewActionDisplay": {
+      "description": "Precomputed terminal copy and reach; contains display text only.",
+      "properties": {
+        "severity": {
+          "title": "Severity",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "consequence": {
+          "title": "Consequence",
+          "type": "string"
+        },
+        "step": {
+          "title": "Step",
+          "type": "string"
+        },
+        "sources": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Sources",
+          "type": "array"
+        },
+        "identities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Identities",
+          "type": "array"
+        },
+        "rule": {
+          "title": "Rule",
+          "type": "string"
+        },
+        "related": {
+          "default": 0,
+          "title": "Related",
+          "type": "integer"
+        },
+        "flags": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Flags",
+          "type": "array"
+        },
+        "connected": {
+          "default": false,
+          "title": "Connected",
+          "type": "boolean"
+        },
+        "observed": {
+          "default": "",
+          "title": "Observed",
+          "type": "string"
+        },
+        "confidence": {
+          "default": "",
+          "title": "Confidence",
+          "type": "string"
+        },
+        "time_to_fix": {
+          "default": "",
+          "title": "Time To Fix",
+          "type": "string"
+        },
+        "manual_step": {
+          "default": "",
+          "title": "Manual Step",
+          "type": "string"
+        },
+        "reference": {
+          "default": "",
+          "title": "Reference",
+          "type": "string"
+        }
+      },
+      "required": [
+        "severity",
+        "title",
+        "consequence",
+        "step",
+        "sources",
+        "identities",
+        "rule"
+      ],
+      "title": "ReviewActionDisplay",
+      "type": "object"
+    },
+    "ReviewSummary": {
+      "description": "Snapshot of review decisions made before any display redaction.",
+      "properties": {
+        "actions": {
+          "items": {
+            "$ref": "#/$defs/ReviewAction"
+          },
+          "title": "Actions",
+          "type": "array"
+        },
+        "action_counts": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "title": "Action Counts",
+          "type": "object"
+        },
+        "action_count": {
+          "title": "Action Count",
+          "type": "integer"
+        },
+        "grade": {
+          "anyOf": [
+            {
+              "enum": [
+                "A",
+                "B",
+                "C",
+                "D",
+                "F"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Grade"
+        },
+        "review_minutes": {
+          "title": "Review Minutes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "actions",
+        "action_counts",
+        "action_count",
+        "grade",
+        "review_minutes"
+      ],
+      "title": "ReviewSummary",
+      "type": "object"
+    },
     "RiskScore": {
       "description": "Multi-dimensional risk score for a server.",
       "properties": {
@@ -1578,6 +1807,18 @@
       "properties": {
         "server": {
           "$ref": "#/$defs/ServerConfig"
+        },
+        "presentation_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Presentation Id"
         },
         "connection_status": {
           "title": "Connection Status",
@@ -2480,6 +2721,17 @@
       },
       "title": "Coverage",
       "type": "object"
+    },
+    "review_summary": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ReviewSummary"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "suppressed": {
       "items": {

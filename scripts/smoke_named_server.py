@@ -32,14 +32,37 @@ AUDIT_FIELDS = set(
     "injection_findings ssrf_findings egress_findings drift_findings trifecta_findings "
     "escalation_findings provenance_findings integrity_findings package_verify_findings "
     "artifact_verify_findings llm_analysis canary"
-    # Additive: P1-3 annotation findings, P1-11 check_server warnings, P2-1 FYI.
-    " annotation_findings warnings annotations_missing permission_alert_score".split()
+    # Additive: P1-3 annotation findings, P1-11 check_server warnings, P2-1 FYI, P2-3 identity.
+    " annotation_findings warnings annotations_missing permission_alert_score presentation_id".split()
 )
 SERVER_FIELDS = set(
     "name client config_path project_path scope command args env_keys transport url headers_keys"
     # Additive: P2-4 source labeling.
     " config_source config_pointer".split()
 )
+UX_FIELDS = {"grade", "caveat"}
+REVIEW_FIELDS = {"actions", "action_counts", "action_count", "grade", "review_minutes"}
+ACTION_FIELDS = {"identity", "owner", "severity", "title", "steps", "sources", "terminal", "card_group"}
+DISPLAY_FIELDS = set(
+    "severity title consequence step sources identities rule related flags connected observed confidence "
+    "time_to_fix manual_step reference".split()
+)
+
+
+def summary_contract(report: dict[str, Any]) -> None:
+    """Pin both summary views without permitting an independent grade or count."""
+    ux = report["ux_summary"]
+    review = report["review_summary"]
+    assert set(ux) == UX_FIELDS and set(review) == REVIEW_FIELDS
+    assert ux["grade"] == review["grade"]
+    assert ux["caveat"] == "reach and hygiene, not a safety certificate"
+    assert review["action_count"] == len(review["actions"]) == sum(review["action_counts"].values())
+    assert review["review_minutes"] == 5 * review["action_count"]
+    for action in review["actions"]:
+        assert set(action) == ACTION_FIELDS
+        if action["terminal"] is not None:
+            assert set(action["terminal"]) == DISPLAY_FIELDS
+            assert action["terminal"]["severity"] == action["severity"]
 
 
 def controlled_environment(home: Path) -> dict[str, str]:
@@ -315,11 +338,13 @@ async def run_case(executable: Path, mock: Path, case: str) -> int:
             await session.initialize()
             if case == "fleet":
                 report = payload(await session.call("scan_mcp_servers", {}))
+                summary_contract(report)
                 assert report["servers_discovered"] == report["servers_connected"] == 2
                 assert {audit["server"]["name"] for audit in report["audits"]} == {"Target", "Other"}
                 expected = [1, 1]
             elif case == "skip-connect":
                 report = payload(await session.call("scan_mcp_servers", {"skip_connect": True}))
+                summary_contract(report)
                 assert report["servers_discovered"] == 2 and report["servers_connected"] == 0
                 assert all(audit["connection_status"] == "skipped" for audit in report["audits"])
             elif case in {"unique", "override", "failed", "timeout"}:

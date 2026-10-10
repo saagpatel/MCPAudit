@@ -92,6 +92,12 @@ class ReportGenerator:
             f"{connection_summary} "
             f"({report.scan_duration_seconds:.1f}s)"
         )
+        review = report.ensure_review_summary()
+        summary += (
+            f"\n{('Grade ' + review.grade) if review.grade else 'Preview'} | "
+            f"{review.action_count} review actions | "
+            f"Estimated initial review: {review.review_minutes} minutes"
+        )
         self._console.print(Panel(summary, title="mcp-audit scan", expand=False))
 
         target_hunts = sum(bool(f.hunt_targets) for a in report.audits for f in a.injection_findings)

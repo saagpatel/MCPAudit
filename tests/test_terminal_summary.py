@@ -137,7 +137,7 @@ def test_grade_uses_finding_classes_not_numeric_score(
     assert report.audits[0].risk_score is not None
     assert report.audits[0].risk_score.composite == 9.8
     assert json.loads(report.model_dump_json())["ux_summary"]["grade"] == expected
-    report.connection_mode = ConnectionMode.SKIPPED
+    report = report.model_copy(update={"connection_mode": ConnectionMode.SKIPPED, "review_summary": None})
     assert report.ux_summary.grade is None
 
 
@@ -255,6 +255,7 @@ def test_action_cap_never_hides_totals_and_groups_related_findings() -> None:
     assert "Totals: 6 findings (6 Fix now" in output
     assert len(re.findall(r"^\d\. ▲ Fix now", output, re.MULTILINE)) == 1
     assert "+5 related findings" in output
+    report = report.model_copy(update={"review_summary": None}, deep=True)
     report.audits = [_make_audit(f"server-{i}") for i in range(6)]
     for i, (audit, finding) in enumerate(zip(report.audits, report.config_health_findings, strict=True)):
         audit.server.config_path = f"synthetic-{i}.json"
@@ -348,3 +349,23 @@ def test_scan_details_and_json_stdout_are_compatible() -> None:
     data = json.loads(result.stdout)
     assert data["schema_version"] == 1 and data["ux_summary"]["grade"] is None
     assert "\x1b" not in result.stdout
+
+
+def test_grade_requires_core_coverage_and_connected_audits() -> None:
+    sparse = _connected()
+    sparse.coverage = {"metadata": CheckCoverage(state="complete", reason="fixture execution completed")}
+    assert sparse.ux_summary.grade is None
+    failed = _connected()
+    failed.audits[0].connection_status = "failed"
+    assert failed.ux_summary.grade is None
+
+
+def test_fleet_chain_with_shell_grades_d() -> None:
+    from mcp_audit.models import PermissionCategory, TrifectaSeverity
+    from tests.test_trifecta_integration import _pf, _trifecta_finding
+
+    report = _connected()
+    report.audits[0].permissions = [_pf(PermissionCategory.SHELL_EXEC, "run")]
+    report.fleet_trifecta_findings = [_trifecta_finding(TrifectaSeverity.MEDIUM, is_fleet=True)]
+    assert report.ux_summary.grade == "D"
+    assert json.loads(report.model_dump_json())["ux_summary"]["grade"] == "D"

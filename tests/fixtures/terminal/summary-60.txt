@@ -114,4 +114,5 @@ What happened: Reviewed configuration evidence; started no
 servers and contacted no MCP endpoints. Tools were not fully
 inspected; canary tool calls: 0; auditor changed no
 settings.
+Estimated initial review: 70 minutes
 All findings, evidence and capability exposure: --details

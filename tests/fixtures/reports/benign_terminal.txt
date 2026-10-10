@@ -1,5 +1,6 @@
 ╭─────────────────────────────────── mcp-audit scan ────────────────────────────────────╮
 │ Scanned 1 server across 1 client. 1 high-risk server. Connection mode unknown. (0.1s) │
+│ Preview | 4 review actions | Estimated initial review: 20 minutes                     │
 ╰───────────────────────────────────────────────────────────────────────────────────────╯
 Coverage unknown: checks were not recorded.
 Runtime security: UNKNOWN (coverage not recorded)

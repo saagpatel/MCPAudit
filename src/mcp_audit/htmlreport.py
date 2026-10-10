@@ -14,15 +14,21 @@ Security notes:
 
 from __future__ import annotations
 
+import re
+from enum import Enum
 from html import escape
-from typing import Any
+from typing import Literal, get_args, get_origin
+
+from pydantic import BaseModel
 
 from mcp_audit.coverage import missing_checks
 from mcp_audit.finding_display import finding_views, render_finding_text
-from mcp_audit.models import AuditReport, ServerAudit
+from mcp_audit.models import AuditReport, PermissionCategory, ReviewSummary, ServerAudit
 from mcp_audit.normalize import render_invisibles
+from mcp_audit.redaction import redact_identifiers
 from mcp_audit.taxonomy import finding_url, format_rule_of_two
 from mcp_audit.terminal_text import strip_controls
+from mcp_audit.ux_summary import Action
 
 _SEVERITY_CLASS = {
     "high": "sev-high",
@@ -31,49 +37,113 @@ _SEVERITY_CLASS = {
 }
 
 
+def _has_literal(annotation: object) -> bool:
+    return get_origin(annotation) is Literal or any(_has_literal(member) for member in get_args(annotation))
+
+
+def _hide_text(value: str, hostname: str) -> str:
+    if hostname:
+        value = re.sub(r"(?<![\w-])" + re.escape(hostname) + r"(?![\w-])", "<redacted-host>", value)
+    hidden = redact_identifiers(value)
+    assert isinstance(hidden, str)
+    return hidden
+
+
+def _hide_identifiers(value: object, hostname: str) -> object:
+    """Scrub free text on a copy, preserving typed enums and literal vocabulary."""
+    if isinstance(value, BaseModel):
+        return value.model_copy(
+            update={
+                name: _hide_identifiers(getattr(value, name), hostname)
+                for name, field in type(value).model_fields.items()
+                if not _has_literal(field.annotation)
+                and name
+                not in {
+                    "identity",
+                    "owner",
+                    "grade",
+                    "severity",
+                    "connection_status",
+                    "finding_type",
+                    "code",
+                    "check",
+                }
+            }
+        )
+    if isinstance(value, str) and not isinstance(value, Enum):
+        return _hide_text(value, hostname)
+    if isinstance(value, list):
+        return [_hide_identifiers(item, hostname) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_hide_identifiers(item, hostname) for item in value)
+    if isinstance(value, dict):
+        return {key: _hide_identifiers(item, hostname) for key, item in value.items()}
+    return value
+
+
 _STYLE = """
-:root { color-scheme: light dark; }
+:root { color-scheme: light dark; --bg: #fafafa; --card: #fff; --ink: #1a1a1a;
+        --muted: #595959; --line: #b8b8b8; --head: #f2f2f2;
+        --high-bg: #fde7e7; --high: #a01313; --medium-bg: #fdf3e0; --medium: #795000;
+        --low-bg: #e8f0fe; --low: #2a51a8; --ok-bg: #e6f5ea; --ok: #17612c; }
 * { box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-       margin: 0; padding: 2rem; line-height: 1.5; color: #1a1a1a; background: #fafafa; }
+       margin: 0 auto; max-width: 1100px; padding: 2rem; line-height: 1.5;
+       color: var(--ink); background: var(--bg); overflow-wrap: anywhere; }
 h1 { font-size: 1.6rem; margin: 0 0 0.25rem; }
-h2 { font-size: 1.2rem; margin: 2rem 0 0.75rem; border-bottom: 2px solid #e0e0e0; padding-bottom: 0.25rem; }
-h3 { font-size: 1.0rem; margin: 1.25rem 0 0.5rem; }
-.subtitle { color: #666; margin: 0 0 1.5rem; font-size: 0.9rem; }
+h2 { font-size: 1.2rem; margin: 2rem 0 0.75rem; border-bottom: 2px solid var(--line);
+     padding-bottom: 0.25rem; }
+h3 { font-size: 1rem; margin: 0.75rem 0 0.5rem; }
+.subtitle, .muted, .empty, footer { color: var(--muted); }
+.subtitle { margin: 0 0 1.5rem; font-size: 0.9rem; }
+.hero { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 1.5rem;
+        align-items: center; padding: 1.5rem; background: var(--card);
+        border: 1px solid var(--line); border-radius: 12px; }
+.grade { font-size: 3rem; font-weight: 800; text-align: center; }
+.grade.preview { font-size: 1.5rem; }
+.caveat { margin-bottom: 0; color: var(--muted); font-size: 0.9rem; }
 .summary { display: flex; flex-wrap: wrap; gap: 1rem; margin: 1rem 0; }
-.checked-strip { margin: 1rem 0; padding: 0.65rem 0.85rem; border: 1px solid #b8d8c0;
-                 border-radius: 6px; background: #eef8f0; }
-.coverage-incomplete { margin: 1rem 0; padding: 0.65rem 0.85rem; border: 1px solid #d8a33b;
-                       border-radius: 6px; background: #fff5df; color: #684600; }
+.checked-strip, .coverage-incomplete { margin: 1rem 0; padding: 0.65rem 0.85rem;
+                 border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
+.coverage-incomplete { background: var(--medium-bg); color: var(--medium); }
 .coverage-item { margin: 0.2rem 0; }
-.stat { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 0.75rem 1rem;
-        min-width: 7rem; }
+.stat { background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+        padding: 0.75rem 1rem; min-width: 0; }
 .stat .num { font-size: 1.5rem; font-weight: 700; }
-.stat .label { font-size: 0.75rem; color: #666; text-transform: uppercase; letter-spacing: 0.03em; }
-table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; background: #fff; font-size: 0.88rem; }
-th, td { text-align: left; padding: 0.45rem 0.6rem; border: 1px solid #e6e6e6; vertical-align: top; }
-th { background: #f2f2f2; font-weight: 600; }
+.stat .label { font-size: 0.75rem; color: var(--muted); }
+.table-scroll { max-width: 100%; overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem;
+        background: var(--card); font-size: 0.88rem; }
+th, td { text-align: left; padding: 0.45rem 0.6rem; border: 1px solid var(--line);
+         vertical-align: top; }
+th { background: var(--head); font-weight: 600; }
 code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.85em; }
-.server { background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; padding: 1rem 1.25rem;
-          margin: 1rem 0; }
+.server, .action, details { background: var(--card); border: 1px solid var(--line);
+          border-radius: 8px; padding: 1rem; margin: 1rem 0; min-width: 0; }
+summary { cursor: pointer; font-weight: 600; }
 .server-head { display: flex; align-items: baseline; gap: 0.75rem; flex-wrap: wrap; }
-.badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px; font-size: 0.72rem;
-         font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
-.sev-high { background: #fde7e7; color: #a01313; }
-.sev-medium { background: #fdf3e0; color: #9a6300; }
-.sev-low { background: #e8f0fe; color: #2a51a8; }
-.ok { background: #e6f5ea; color: #1c7c38; }
-.muted { color: #888; }
-.empty { color: #888; font-style: italic; margin: 0.25rem 0 1rem; }
+.badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px;
+         font-size: 0.8rem; font-weight: 600; }
+.sev-high { background: var(--high-bg); color: var(--high); }
+.sev-medium { background: var(--medium-bg); color: var(--medium); }
+.sev-low { background: var(--low-bg); color: var(--low); }
+.ok { background: var(--ok-bg); color: var(--ok); }
+.empty { font-style: italic; margin: 0.25rem 0 1rem; }
+.policy-pass { color: var(--ok); font-weight: 600; }
+.policy-fail { color: var(--high); font-weight: 600; }
+footer { margin-top: 2.5rem; font-size: 0.85rem; }
+@media (max-width: 640px) {
+  body { padding: 1rem; }
+  .hero { grid-template-columns: minmax(0, 1fr); padding: 1rem; }
+  .grade { text-align: left; }
+  .summary { display: grid; grid-template-columns: minmax(0, 1fr); }
+}
 .finding-explanation { white-space: pre-wrap; overflow-wrap: anywhere; }
-.policy-pass { color: #1c7c38; font-weight: 600; }
-.policy-fail { color: #a01313; font-weight: 600; }
-footer { margin-top: 2.5rem; color: #999; font-size: 0.78rem; }
 @media (prefers-color-scheme: dark) {
-  body { color: #e6e6e6; background: #161616; }
-  .stat, .server, table { background: #1f1f1f; border-color: #333; }
-  th { background: #262626; }
-  h2 { border-color: #333; }
+  :root { --bg: #161616; --card: #1f1f1f; --ink: #e6e6e6; --muted: #b5b5b5;
+          --line: #696969; --head: #262626; --high-bg: #451f24; --high: #ffb4b4;
+          --medium-bg: #3c301d; --medium: #f5cf88; --low-bg: #1e304d; --low: #bad1ff;
+          --ok-bg: #1b3525; --ok: #a2dfb5; }
 }
 """
 
@@ -81,9 +151,36 @@ footer { margin-top: 2.5rem; color: #999; font-size: 0.78rem; }
 class HtmlReportGenerator:
     """Converts an ``AuditReport`` into a single self-contained HTML string."""
 
-    def generate(self, report: AuditReport) -> str:
+    def generate(self, report: AuditReport, *, show_host: bool = False) -> str:
         """Return the full HTML document. Caller writes it to disk."""
         report = report.redacted()
+        summary = report.ensure_review_summary()
+        findings = summary.actions
+        # Explicitly selected source paths retain P2-4's attribution contract.
+        # A caller's identifier-redacted report already contains scrubbed paths.
+        explicit_paths = [
+            audit.server.config_path if audit.server.config_source else None for audit in report.audits
+        ]
+        if not show_host:
+            # Hiding identifiers is the default; only --show-host keeps raw paths.
+            explicit_paths = [
+                _hide_text(path, report.hostname) if path is not None else None for path in explicit_paths
+            ]
+        if not show_host:
+            findings = [
+                Action(
+                    identity=action.identity,
+                    owner=action.owner,
+                    severity=action.severity,
+                    title=_hide_text(action.title, report.hostname),
+                    steps=[_hide_text(step, report.hostname) for step in action.steps],
+                    sources=[_hide_text(source, report.hostname) for source in action.sources],
+                )
+                for action in findings
+            ]
+            hidden = _hide_identifiers(report, report.hostname)
+            assert isinstance(hidden, AuditReport)
+            report = hidden
         parts: list[str] = [
             "<!DOCTYPE html>",
             '<html lang="en"><head><meta charset="utf-8">',
@@ -98,11 +195,21 @@ class HtmlReportGenerator:
                 f"{self._esc(report.scan_timestamp.isoformat())} · "
                 f"{report.scan_duration_seconds:.2f}s</p>"
             ),
-            self._summary(report),
+            self._hero(summary),
             self._coverage(report),
-            self._policy(report),
-            self._config_health(report),
+            self._actions(findings, summary.action_counts),
+            "<h2>Your servers</h2>",
         ]
+        for audit, source_path in zip(report.audits, explicit_paths, strict=True):
+            parts.append(self._server_card(audit, source_path=source_path))
+        parts.extend(
+            [
+                '<details class="audit-log"><summary>Full audit log</summary>',
+                self._summary(report),
+                self._policy(report),
+                self._config_health(report),
+            ]
+        )
         for audit in report.audits:
             parts.append(self._server(audit))
         parts.append(self._fleet(report))
@@ -114,6 +221,8 @@ class HtmlReportGenerator:
                 f'<pre class="finding-explanation">{self._marked(explanation)}</pre>'
                 f'<p>see: <a href="{url}">{url}</a></p>'
             )
+        parts.append(self._warnings(report))
+        parts.append("</details>")
         parts.append(
             "<footer>Generated by mcp-audit. Env var values are never captured; "
             "only key names appear in any output.</footer>"
@@ -124,6 +233,86 @@ class HtmlReportGenerator:
     # ------------------------------------------------------------------
     # Sections
     # ------------------------------------------------------------------
+
+    def _hero(self, summary: ReviewSummary) -> str:
+        fixes = summary.action_counts["high"]
+        if fixes:
+            headline = f"{fixes} action{'s' if fixes != 1 else ''} need your review before use."
+        elif summary.action_count:
+            headline = "Review the reach and hygiene findings below."
+        else:
+            headline = "No findings recorded within the checks shown below."
+        effort = (
+            f"Estimated initial review: {summary.review_minutes} minutes; remediation time varies."
+            if summary.action_count
+            else "No fixes proposed; review coverage before relying on this result."
+        )
+        grade = summary.grade
+        label = f"Grade {grade}" if grade else "Preview"
+        cls = "grade" if grade else "grade preview"
+        return (
+            '<section class="hero" aria-label="Summary">'
+            f'<div class="{cls}" aria-label="{label}">{grade or "Preview"}</div><div>'
+            f"<h2>{self._esc(headline)}</h2><p>{self._esc(effort)}</p>"
+            '<p class="caveat">Reach and hygiene, not a safety certificate.</p>'
+            "</div></section>"
+        )
+
+    def _actions(self, findings: list[Action], counts: dict[str, int]) -> str:
+        out: list[str] = []
+        for severity, label in (("high", "Top fixes"), ("medium", "Worth a look"), ("low", "FYI")):
+            entries = [action for action in findings if action.severity == severity]
+            out.append(f"<section><h2>{label} · {counts[severity]}</h2>")
+            if not entries:
+                out.append('<p class="empty">No actions proposed in this category.</p>')
+            for action in entries:
+                steps = "".join(f"<li>{self._esc(step)}</li>" for step in action.steps)
+                out.append(
+                    '<article class="action">'
+                    f"{self._sev_badge(severity)}<h3>{self._esc(action.title)}</h3>"
+                    f'<ul>{steps}</ul><p class="muted">Found by: '
+                    f"{self._esc('; '.join(action.sources))}</p></article>"
+                )
+            out.append("</section>")
+        return "".join(out)
+
+    def _server_card(self, audit: ServerAudit, *, source_path: str | None = None) -> str:
+        srv = audit.server
+        verbs = {
+            PermissionCategory.FILE_READ: "reads files",
+            PermissionCategory.FILE_WRITE: "writes files",
+            PermissionCategory.NETWORK: "contacts the internet",
+            PermissionCategory.SHELL_EXEC: "runs commands",
+            PermissionCategory.DESTRUCTIVE: "can delete or overwrite data",
+            PermissionCategory.EXFILTRATION: "can send data out",
+        }
+        categories = [f.category for f in audit.permissions] + [f.category for f in audit.capability_findings]
+        capabilities = dict.fromkeys(verbs[category] for category in categories)
+        reach = ", ".join(capabilities) or "No capabilities inferred; see coverage."
+        keys = ", ".join(srv.env_keys) or "No env key names recorded"
+        exposure = f"{audit.risk_score.composite:.1f}/10" if audit.risk_score else "not available"
+        return (
+            '<details class="server-card">'
+            f"<summary>{self._esc(srv.name)} — {self._esc(audit.connection_status)}</summary>"
+            f"<p>{self._esc(reach)}</p><p>{self._esc(srv.source_label)} · "
+            f"<code>{self._esc(source_path if source_path is not None else srv.config_path)}</code> · "
+            f"{self._esc(srv.transport.value)}</p>"
+            f"<p>Env key names only: <code>{self._esc(keys)}</code></p>"
+            f"<p>Capability exposure: {exposure}. Full findings and evidence are in the audit log.</p>"
+            "</details>"
+        )
+
+    def _warnings(self, report: AuditReport) -> str:
+        rows = [
+            self._row(
+                self._esc(w.code),
+                self._esc(w.check or "—"),
+                self._esc(", ".join(w.servers)),
+                self._esc(w.message),
+            )
+            for w in report.warnings
+        ]
+        return self._table("Scan warnings", ["Code", "Check", "Servers", "Message"], rows)
 
     def _summary(self, report: AuditReport) -> str:
         connection_mode = {
@@ -165,6 +354,18 @@ class HtmlReportGenerator:
             "capabilities": "Capabilities",
             "metadata": "Metadata",
             "runtime_security": "Runtime security",
+            "inject_check": "Hidden instructions",
+            "ssrf_check": "Open-ended web requests",
+            "egress_check": "Outbound destinations",
+            "pin_check": "Changes since pinning",
+            "trifecta_check": "Read, fetch and send combinations",
+            "shadow_check": "Lookalike tool names",
+            "escalation_check": "Capability changes",
+            "provenance_check": "Launch configuration changes",
+            "integrity_check": "Launch file changes",
+            "verify_artifacts": "Registry package verification",
+            "download_artifacts": "Downloaded artifact verification",
+            "llm_analysis": "AI-assisted analysis",
         }
         complete = [
             labels.get(key, key.replace("_", " ").title())
@@ -176,12 +377,7 @@ class HtmlReportGenerator:
         )
         strip = f'<div class="checked-strip" aria-label="Checked">{checked}</div>'
 
-        incomplete = [
-            (key, value)
-            for key, value in coverage.items()
-            if value.state in {"partial", "not_run"}
-            or (key == "runtime_security" and value.state == "not_requested")
-        ]
+        incomplete = [(key, value) for key, value in coverage.items() if value.state != "complete"]
         details: list[str] = []
         needs_banner = False
         for key, value in incomplete:
@@ -232,7 +428,7 @@ class HtmlReportGenerator:
             f'<span class="badge muted">{self._esc(srv.transport.value)}</span>'
             f'<span class="badge {self._status_class(audit.connection_status)}">'
             f"{self._esc(audit.connection_status)}</span>"
-            f'<span class="badge {risk_badge}">risk {composite:.1f}</span>'
+            f'<span class="badge {risk_badge}">capability exposure {composite:.1f}/10</span>'
             "</div>"
         )
         body = [
@@ -547,12 +743,18 @@ class HtmlReportGenerator:
         tag = f"h{level}"
         heading = f"<{tag}>{self._esc(title)}</{tag}>"
         if not rows:
-            return f'{heading}<p class="empty">None.</p>'
+            return (
+                f'{heading}<p class="empty">No findings recorded. '
+                "See coverage above for whether this check ran.</p>"
+            )
         return heading + self._table_body(headers, rows)
 
     def _table_body(self, headers: list[str], rows: list[str]) -> str:
         head = "".join(f"<th>{self._esc(h)}</th>" for h in headers)
-        return f"<table><thead><tr>{head}</tr></thead><tbody>{''.join(rows)}</tbody></table>"
+        return (
+            '<div class="table-scroll" tabindex="0" role="region" aria-label="Audit table">'
+            f"<table><thead><tr>{head}</tr></thead><tbody>{''.join(rows)}</tbody></table></div>"
+        )
 
     def _row(self, *cells: str) -> str:
         # Cells are pre-escaped (or trusted badge/markup) by the caller.
@@ -560,7 +762,8 @@ class HtmlReportGenerator:
 
     def _sev_badge(self, severity: str) -> str:
         cls = _SEVERITY_CLASS.get(severity, "muted")
-        return f'<span class="badge {cls}">{self._esc(severity)}</span>'
+        label = {"high": "▲ Fix now", "medium": "◆ Worth a look", "low": "● FYI"}.get(severity, severity)
+        return f'<span class="badge {cls}">{self._esc(label)}</span>'
 
     def _severity_badge_for_score(self, composite: float) -> str:
         if composite >= 7.0:
@@ -572,7 +775,7 @@ class HtmlReportGenerator:
     def _status_class(self, status: str) -> str:
         return "ok" if status == "connected" else "muted"
 
-    def _pairs(self, pairs: list[Any]) -> str:
+    def _pairs(self, pairs: list[tuple[str, str]]) -> str:
         return "; ".join(f"{srv}/{tool}" for srv, tool in pairs)
 
     def _esc(self, value: str) -> str:

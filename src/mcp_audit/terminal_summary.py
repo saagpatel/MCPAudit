@@ -4,21 +4,19 @@ from __future__ import annotations
 
 import os
 import shlex
-from dataclasses import dataclass, replace
-from typing import Literal
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 from rich.console import Console
 
 from mcp_audit.coverage import missing_checks
 from mcp_audit.finding_display import _view
-from mcp_audit.models import AuditReport, ConnectionMode, ServerAudit
+from mcp_audit.models import AuditReport, ConnectionMode, ReviewActionDisplay, ServerAudit
 from mcp_audit.taxonomy import FINDING_COPY, config_health_rule_id, finding_copy, finding_url
 from mcp_audit.terminal_text import terminal_safe
 
 LABELS = {"high": "▲ Fix now", "medium": "◆ Worth a look", "low": "● FYI"}
 STYLES = {"high": "bold red", "medium": "yellow", "low": "dim"}
-_CORE = ("config_health", "metadata", "permissions", "capabilities")
 _FINDING_FLAGS = {
     "InjectionFinding": "--inject-check",
     "SsrfFinding": "--ssrf-check",
@@ -41,23 +39,14 @@ def summary_console(*, color: str = "auto", stderr: bool = False) -> Console:
     return Console(stderr=stderr, force_terminal=force, no_color=disabled)
 
 
-@dataclass(frozen=True)
-class Action:
-    severity: str
-    title: str
-    consequence: str
-    step: str
-    sources: tuple[str, ...]
-    identities: tuple[str, ...]
-    rule: str
-    related: int = 0
-    flags: tuple[str, ...] = ()
-    connected: bool = False
-    observed: str = ""
-    confidence: str = ""
-    time_to_fix: str = ""
-    manual_step: str = ""
-    reference: str = ""
+if TYPE_CHECKING:
+    from mcp_audit.models import ReviewGrade
+
+Action = ReviewActionDisplay
+
+
+def replace(action: Action, **changes: object) -> Action:
+    return action.model_copy(update=changes)
 
 
 def _text(data: dict[str, object], *keys: str) -> str:
@@ -130,88 +119,35 @@ def _action(finding: BaseModel, audits: list[ServerAudit], sources: tuple[str, .
 
 
 def findings(report: AuditReport) -> list[Action]:
-    """Keep all findings in the denominator, even when only three cards fit."""
-    actions: list[Action] = []
-    by_name: dict[str, list[ServerAudit]] = {}
-    by_path: dict[str, list[ServerAudit]] = {}
-    for audit in report.audits:
-        by_name.setdefault(audit.server.name, []).append(audit)
-        by_path.setdefault(audit.server.config_path, []).append(audit)
-    for finding in report.config_health_findings:
-        candidates = report.audits
-        if finding.server_name is not None:
-            candidates = by_name.get(finding.server_name, [])
-        elif finding.config_paths:
-            candidates = [a for path in dict.fromkeys(finding.config_paths) for a in by_path.get(path, [])]
-        audits = [
-            a for a in candidates if not finding.config_paths or a.server.config_path in finding.config_paths
-        ]
-        actions.append(_action(finding, audits, tuple(finding.config_paths)))
-    for audit in report.audits:
-        for group in (
-            audit.permissions,
-            audit.annotation_findings,
-            audit.capability_findings,
-            audit.injection_findings,
-            audit.ssrf_findings,
-            audit.egress_findings,
-            audit.trifecta_findings,
-            audit.escalation_findings,
-            audit.provenance_findings,
-            audit.integrity_findings,
-            audit.package_verify_findings,
-            audit.artifact_verify_findings,
-        ):
-            for item in group:
-                actions.append(_action(item, [audit]))
-        for drift in audit.drift_findings:
-            actions.append(_action(drift, [audit]))
-    for fleet in report.fleet_trifecta_findings:
-        names = {
-            n
-            for leg in (fleet.leg1_contributors, fleet.leg2_contributors, fleet.leg3_contributors)
-            for n, _ in leg
-        }
-        actions.append(_action(fleet, [a for a in report.audits if a.server.name in names]))
-    for shadow in report.shadowing_findings:
-        names = {n for n, _ in shadow.collisions}
-        actions.append(_action(shadow, [a for a in report.audits if a.server.name in names]))
-    return actions
+    """Present the saved action groups; never regroup redacted finding rows."""
+    result = []
+    for action in report.ensure_review_summary().actions:
+        display = action.terminal
+        if display is None:
+            # Older saved summaries have no terminal copy. Preserve their decisions.
+            display = Action(
+                severity=action.severity,
+                title=action.title,
+                consequence="Review the recorded capability before use.",
+                step=" ".join(action.steps),
+                sources=(),
+                identities=(),
+                rule=action.sources[0].split(":", 1)[0] if action.sources else "MCP009",
+            )
+        result.append(
+            replace(
+                display,
+                severity=action.severity,
+                # A public taxonomy link can be rebuilt after URL-fragment redaction.
+                reference=finding_url(display.rule) if display.reference else "",
+            )
+        )
+    return result
 
 
-def grade(report: AuditReport) -> Literal["A", "B", "C", "D", "F"] | None:
-    """D6 rubric; incomplete/legacy/config-only evidence cannot earn a letter."""
-    if report.connection_mode != ConnectionMode.ATTEMPTED or not report.audits:
-        return None
-    if any(report.coverage.get(key) is None or report.coverage[key].state != "complete" for key in _CORE):
-        return None
-    if any(a.connection_status != "connected" for a in report.audits):
-        return None
-    if missing_checks(report.coverage) or any(
-        entry.state in {"partial", "not_run"} for entry in report.coverage.values()
-    ):
-        return None
-    if report.warnings:
-        return None
-    if any(f.finding_type == "shell_wrapper_launch" for f in report.config_health_findings):
-        return "F"
-    if any(
-        f.pattern_name in {"hidden_directive", "unicode_direction", "OBFUSCATED_METADATA"}
-        for a in report.audits
-        for f in a.injection_findings
-    ):
-        return "F"
-    actions = findings(report)
-    high = sum(a.severity == "high" for a in actions)
-    chain = bool(report.fleet_trifecta_findings) or any(a.trifecta_findings for a in report.audits)
-    shell = any(f.category.value == "shell_execution" for a in report.audits for f in a.permissions)
-    if high >= 2 or (chain and shell):
-        return "D"
-    if high:
-        return "C"
-    if any(a.severity == "medium" for a in actions):
-        return "B"
-    return "A"
+def grade(report: AuditReport) -> ReviewGrade | None:
+    """Compatibility entry point for the one precomputed presentation grade."""
+    return report.ensure_review_summary().grade
 
 
 def _coverage(report: AuditReport) -> str:
@@ -313,6 +249,7 @@ def _recheck(action: Action) -> str:
 
 def render_summary(out: Console, report: AuditReport, *, explicit_config: bool = False) -> None:
     """Responsive text cards; no tables or color-dependent meaning."""
+    summary = report.ensure_review_summary()
     actions = findings(report)
     if explicit_config:
         identities = {_identity(a): _identity(a, explicit_config=True) for a in report.audits}
@@ -327,7 +264,7 @@ def render_summary(out: Console, report: AuditReport, *, explicit_config: bool =
         out.print("Or: mcp-audit check --config ./mcp.json")
         out.print("See locations: mcp-audit inspect --details")
     else:
-        letter = report.ux_summary.grade
+        letter = summary.grade
         out.print(f"MCPAudit · {'Grade ' + letter if letter else 'Preview'}", style="bold")
         if actions:
             out.print("Your MCP setup has findings to review before you enable these entries.")
@@ -350,9 +287,9 @@ def render_summary(out: Console, report: AuditReport, *, explicit_config: bool =
     if explicit_config:
         scope = f"{report.servers_discovered} {entry_label} in 1 explicit file; client not asserted"
     out.print(f"{mode}: {scope}; {len(report.config_health_findings)} config warnings")
-    counts = {s: sum(a.severity == s for a in actions) for s in LABELS}
+    counts = summary.action_counts
     out.print(
-        f"Totals: {len(actions)} findings ({counts['high']} Fix now, "
+        f"Totals: {summary.action_count} findings ({counts['high']} Fix now, "
         f"{counts['medium']} Worth a look, {counts['low']} FYI); "
         f"{len(report.warnings)} scan warnings; {report.total_tools} tools; "
         f"{report.high_risk_servers} high-risk servers (capability exposure)"
@@ -371,20 +308,20 @@ def render_summary(out: Console, report: AuditReport, *, explicit_config: bool =
         flags = (flag,) if flag in set(_FINDING_FLAGS.values()) | {"--canary-check", "--llm-analysis"} else ()
         candidates.append(
             Action(
-                "medium",
-                "Restore check coverage",
-                warning.message,
-                "Use --details to review this check's reason and prerequisites before rechecking.",
-                tuple(a.server.config_path for a in affected),
-                tuple(_identity(a, explicit_config=explicit_config) for a in affected),
-                warning.code,
+                severity="medium",
+                title="Restore check coverage",
+                consequence=warning.message,
+                step="Use --details to review this check's reason and prerequisites before rechecking.",
+                sources=tuple(a.server.config_path for a in affected),
+                identities=tuple(_identity(a, explicit_config=explicit_config) for a in affected),
+                rule=warning.code,
                 flags=flags,
                 connected=report.connection_mode == ConnectionMode.ATTEMPTED and flag not in _STATIC_FLAGS,
             )
         )
-    groups: dict[tuple[tuple[str, ...], tuple[str, ...]], list[Action]] = {}
-    for action in actions:
-        groups.setdefault((action.identities, action.sources), []).append(action)
+    groups: dict[str, list[Action]] = {}
+    for saved, action in zip(summary.actions, actions, strict=True):
+        groups.setdefault(saved.card_group or saved.owner, []).append(action)
     for group in groups.values():
         ordered = sorted(
             group,
@@ -394,6 +331,7 @@ def render_summary(out: Console, report: AuditReport, *, explicit_config: bool =
                     config_health_rule_id("credential_heavy_config"): 1,
                 }.get(a.rule, 2),
                 {"high": 0, "medium": 1, "low": 2}.get(a.severity, 1),
+                0 if a.rule.startswith("MCP-CH-") else 1,
             ),
         )
         severity = min(
@@ -420,13 +358,8 @@ def render_summary(out: Console, report: AuditReport, *, explicit_config: bool =
             }.get(a.rule, 3),
         ),
     )
-    seen: set[tuple[tuple[str, ...], str]] = set()
     shown = 0
     for action in candidates:
-        card_key = (action.identities, action.rule)
-        if card_key in seen:
-            continue
-        seen.add(card_key)
         shown += 1
         out.print()
         out.print(
@@ -464,4 +397,5 @@ def render_summary(out: Console, report: AuditReport, *, explicit_config: bool =
         out.print(
             f"Policy Gate: {'passed' if result.passed else 'FAILED'} ({len(result.violations)} violations)"
         )
+    out.print(f"Estimated initial review: {summary.review_minutes} minutes")
     out.print("All findings, evidence and capability exposure: --details")

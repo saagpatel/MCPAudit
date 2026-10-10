@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mcp-audit report</title>
+<style>
+:root { color-scheme: light dark; --bg: #fafafa; --card: #fff; --ink: #1a1a1a;
+        --muted: #595959; --line: #b8b8b8; --head: #f2f2f2;
+        --high-bg: #fde7e7; --high: #a01313; --medium-bg: #fdf3e0; --medium: #795000;
+        --low-bg: #e8f0fe; --low: #2a51a8; --ok-bg: #e6f5ea; --ok: #17612c; }
+* { box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+       margin: 0 auto; max-width: 1100px; padding: 2rem; line-height: 1.5;
+       color: var(--ink); background: var(--bg); overflow-wrap: anywhere; }
+h1 { font-size: 1.6rem; margin: 0 0 0.25rem; }
+h2 { font-size: 1.2rem; margin: 2rem 0 0.75rem; border-bottom: 2px solid var(--line);
+     padding-bottom: 0.25rem; }
+h3 { font-size: 1rem; margin: 0.75rem 0 0.5rem; }
+.subtitle, .muted, .empty, footer { color: var(--muted); }
+.subtitle { margin: 0 0 1.5rem; font-size: 0.9rem; }
+.hero { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 1.5rem;
+        align-items: center; padding: 1.5rem; background: var(--card);
+        border: 1px solid var(--line); border-radius: 12px; }
+.grade { font-size: 3rem; font-weight: 800; text-align: center; }
+.grade.preview { font-size: 1.5rem; }
+.caveat { margin-bottom: 0; color: var(--muted); font-size: 0.9rem; }
+.summary { display: flex; flex-wrap: wrap; gap: 1rem; margin: 1rem 0; }
+.checked-strip, .coverage-incomplete { margin: 1rem 0; padding: 0.65rem 0.85rem;
+                 border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
+.coverage-incomplete { background: var(--medium-bg); color: var(--medium); }
+.coverage-item { margin: 0.2rem 0; }
+.stat { background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+        padding: 0.75rem 1rem; min-width: 0; }
+.stat .num { font-size: 1.5rem; font-weight: 700; }
+.stat .label { font-size: 0.75rem; color: var(--muted); }
+.table-scroll { max-width: 100%; overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem;
+        background: var(--card); font-size: 0.88rem; }
+th, td { text-align: left; padding: 0.45rem 0.6rem; border: 1px solid var(--line);
+         vertical-align: top; }
+th { background: var(--head); font-weight: 600; }
+code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.85em; }
+.server, .action, details { background: var(--card); border: 1px solid var(--line);
+          border-radius: 8px; padding: 1rem; margin: 1rem 0; min-width: 0; }
+summary { cursor: pointer; font-weight: 600; }
+.server-head { display: flex; align-items: baseline; gap: 0.75rem; flex-wrap: wrap; }
+.badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px;
+         font-size: 0.8rem; font-weight: 600; }
+.sev-high { background: var(--high-bg); color: var(--high); }
+.sev-medium { background: var(--medium-bg); color: var(--medium); }
+.sev-low { background: var(--low-bg); color: var(--low); }
+.ok { background: var(--ok-bg); color: var(--ok); }
+.empty { font-style: italic; margin: 0.25rem 0 1rem; }
+.policy-pass { color: var(--ok); font-weight: 600; }
+.policy-fail { color: var(--high); font-weight: 600; }
+footer { margin-top: 2.5rem; font-size: 0.85rem; }
+@media (max-width: 640px) {
+  body { padding: 1rem; }
+  .hero { grid-template-columns: minmax(0, 1fr); padding: 1rem; }
+  .grade { text-align: left; }
+  .summary { display: grid; grid-template-columns: minmax(0, 1fr); }
+}
+.finding-explanation { white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #161616; --card: #1f1f1f; --ink: #e6e6e6; --muted: #b5b5b5;
+          --line: #696969; --head: #262626; --high-bg: #451f24; --high: #ffb4b4;
+          --medium-bg: #3c301d; --medium: #f5cf88; --low-bg: #1e304d; --low: #bad1ff;
+          --ok-bg: #1b3525; --ok: #a2dfb5; }
+}
+</style>
+</head><body>
+<h1>MCP Permission Audit</h1>
+<p class="subtitle">&lt;redacted-host&gt; · Darwin · scanned 2026-05-09T09:00:00+00:00 · 0.25s</p>
+<section class="hero" aria-label="Summary"><div class="grade" aria-label="Grade D">D</div><div><h2>2 actions need your review before use.</h2><p>Estimated initial review: 20 minutes; remediation time varies.</p><p class="caveat">Reach and hygiene, not a safety certificate.</p></div></section>
+<div class="checked-strip" aria-label="Checked"><strong>Checked:</strong> Config health, Permissions, Capabilities, Metadata, Hidden instructions, Open-ended web requests, Outbound destinations, Changes since pinning, Read, fetch and send combinations, Lookalike tool names, Capability changes, Launch configuration changes, Launch file changes, Registry package verification, Downloaded artifact verification, AI-assisted analysis, Runtime security</div>
+<section><h2>Top fixes · 2</h2><article class="action"><span class="badge sev-high">▲ Fix now</span><h3>Review what example can do</h3><ul><li>Disable or isolate this server until you have reviewed the command surface and source.</li></ul><p class="muted">Found by: MCP004: example (claude_code, /tmp/mcp.json)</p></article><article class="action"><span class="badge sev-high">▲ Fix now</span><h3>Server risk score 8.0 meets or exceeds policy limit 7.0. (example)</h3><ul><li>Server risk score 8.0 meets or exceeds policy limit 7.0. (example) Review this violation against your selected policy.</li></ul><p class="muted">Found by: max_risk</p></article></section><section><h2>Worth a look · 1</h2><article class="action"><span class="badge sev-medium">◆ Worth a look</span><h3>Review changes on example</h3><ul><li>Review the changed tool metadata before refreshing the pin baseline.</li></ul><p class="muted">Found by: execute_command: example (claude_code, /tmp/mcp.json)</p></article></section><section><h2>FYI · 1</h2><article class="action"><span class="badge sev-low">● FYI</span><h3>Review what example can do</h3><ul><li>Review the configured paths and only keep this server enabled for trusted projects.</li></ul><p class="muted">Found by: MCP001: example (claude_code, /tmp/mcp.json)</p></article></section>
+<h2>Your servers</h2>
+<details class="server-card"><summary>example — connected</summary><p>runs commands, reads files</p><p>claude_code · <code>/tmp/mcp.json</code> · stdio</p><p>Env key names only: <code>EXAMPLE_TOKEN</code></p><p>Capability exposure: 8.0/10. Full findings and evidence are in the audit log.</p></details>
+<details class="audit-log"><summary>Full audit log</summary>
+<div class="summary"><div class="stat"><div class="num">Connections attempted</div><div class="label">Connection mode</div></div><div class="stat"><div class="num">1</div><div class="label">Discovered</div></div><div class="stat"><div class="num">1</div><div class="label">Connected</div></div><div class="stat"><div class="num">0</div><div class="label">Failed</div></div><div class="stat"><div class="num">1</div><div class="label">Tools</div></div><div class="stat"><div class="num">1</div><div class="label">High-risk servers</div></div></div>
+<h2>Policy: <span class="policy-fail">FAILED</span></h2><div class="table-scroll" tabindex="0" role="region" aria-label="Audit table"><table><thead><tr><th>Severity</th><th>Rule</th><th>Server</th><th>Tool</th><th>Message</th></tr></thead><tbody><tr><td><span class="badge sev-high">▲ Fix now</span></td><td>max_risk</td><td>example</td><td>—</td><td>Server risk score 8.0 meets or exceeds policy limit 7.0.</td></tr></tbody></table></div>
+<h2>Config health</h2><p class="empty">No findings recorded. See coverage above for whether this check ran.</p>
+<div class="server"><div class="server-head"><h3>example</h3><span class="badge muted">claude_code</span><span class="badge muted">stdio</span><span class="badge ok">connected</span><span class="badge sev-high">capability exposure 8.0/10</span></div><p>Source: claude_code | config_path: <code>/tmp/mcp.json</code> | entry: example</p><h2>Permissions</h2><div class="table-scroll" tabindex="0" role="region" aria-label="Audit table"><table><thead><tr><th>Severity</th><th>Rule</th><th>Category</th><th>Tool</th><th>Confidence</th><th>Evidence</th></tr></thead><tbody><tr><td><span class="badge sev-high">▲ Fix now</span></td><td>MCP004</td><td>shell_execution</td><td>execute_command</td><td>high</td><td>execute_command</td></tr></tbody></table></div><h2>Prompt-injection</h2><p class="empty">No findings recorded. See coverage above for whether this check ran.</p><h2>SSRF</h2><p class="empty">No findings recorded. See coverage above for whether this check ran.</p><h2>Egress</h2><p class="empty">No findings recorded. See coverage above for whether this check ran.</p><h2>Lethal trifecta</h2><p class="empty">No findings recorded. See coverage above for whether this check ran.</p><h2>Capability escalation (vs pin baseline)</h2><p class="empty">No findings recorded. See coverage above for whether this check ran.</p><h2>Provenance / launch-config drift (vs pin baseline)</h2><p class="empty">No findings recorded. See coverage above for whether this check ran.</p><h2>Launch-artifact integrity (vs pin baseline)</h2><p class="empty">No findings recorded. See coverage above for whether this check ran.</p><h2>Registry package verification (vs pin baseline)</h2><p class="empty">No findings recorded. See coverage above for whether this check ran.</p><h2>Artifact byte verification (vs pin baseline)</h2><p class="empty">No findings recorded. See coverage above for whether this check ran.</p><h2>Schema drift</h2><div class="table-scroll" tabindex="0" role="region" aria-label="Audit table"><table><thead><tr><th>Status</th><th>Tool</th><th>Summary</th><th>Details</th></tr></thead><tbody><tr><td>changed</td><td>execute_command</td><td>Pinned tool metadata changed since the baseline.</td><td>input schema changed</td></tr></tbody></table></div></div>
+<h2>Fleet-level findings</h2><h3>Fleet lethal trifecta (advisory)</h3><p class="empty">No findings recorded. See coverage above for whether this check ran.</p><h3>Tool-name shadowing</h3><p class="empty">No findings recorded. See coverage above for whether this check ran.</p>
+<h2>Finding explanations</h2>
+<pre class="finding-explanation">MCP004: Your AI may be able to run commands through this server.
+Server/config entry: example
+Source: claude_code | identity: claude_code:workstation:example | config_path: /tmp/mcp.json
+Config entry pointer: unavailable (legacy or unresolved entry)
+Target: execute_command
+What we saw: Tool metadata indicates the server may run shell commands or local processes.
+evidence: [&#x27;execute_command&#x27;]
+Why it matters: 1. You enable a command-running tool. 2. It can use the server process&#x27;s permissions. 3. Files or other local programs could be affected.
+How to fix (About 1 minute to disable; review time varies): Disable or isolate command execution until you have reviewed its arguments and allowed operations.
+Specific action: Disable or isolate this server until you have reviewed the command surface and source.
+Static recheck (runtime not checked): mcp-audit check --config /tmp/mcp.json
+How sure: A capability inference from config or served metadata, not an observed operation. Use the finding&#x27;s confidence and evidence; descriptions and annotations can be inaccurate.</pre><p>see: <a href="https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp004">https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp004</a></p>
+<pre class="finding-explanation">MCP001: Your AI may be able to read files through this server.
+Server/config entry: example
+Source: claude_code | identity: claude_code:workstation:example | config_path: /tmp/mcp.json
+Config entry pointer: unavailable (legacy or unresolved entry)
+Target: file:///tmp/example.txt
+What we saw: Tool metadata indicates the server may read local files or file-like inputs.
+evidence: [&quot;resource URI scheme &#x27;file&#x27;&quot;]
+Why it matters: 1. You enable a file-reading tool. 2. The tool may reach private paths. 3. Those files can enter the AI&#x27;s context.
+How to fix (About 5 minutes to review scope): Limit allowed paths to the project files you need; remove the server if its access is unnecessary.
+Specific action: Review the configured paths and only keep this server enabled for trusted projects.
+Static recheck (runtime not checked): mcp-audit check --config /tmp/mcp.json
+How sure: A capability inference from config or served metadata, not an observed operation. Use the finding&#x27;s confidence and evidence; descriptions and annotations can be inaccurate.</pre><p>see: <a href="https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp001">https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp001</a></p>
+<pre class="finding-explanation">MCP009: Your AI&#x27;s available tools changed since the comparison baseline.
+Server/config entry: example
+Source: claude_code | config_path: /tmp/mcp.json
+Config entry pointer: unavailable (legacy or unresolved entry)
+Target: execute_command
+What we saw: Pinned tool metadata changed since the baseline.
+details: [&#x27;input schema changed&#x27;]
+Why it matters: 1. You reviewed an earlier surface. 2. The current surface differs. 3. Your earlier trust decision may no longer cover it.
+How to fix (About 5 minutes for an initial comparison): Review the recorded changes before refreshing any pin. Disable an unexpected surface pending review.
+Specific action: Review the changed tool metadata before refreshing the pin baseline.
+Static recheck (runtime not checked): mcp-audit check --config /tmp/mcp.json
+How sure: A comparison with the saved baseline, not proof of compromise. Confirm the baseline&#x27;s scope and review the specific delta; an intentional update can also trigger this finding.</pre><p>see: <a href="https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp009">https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp009</a></p>
+<pre class="finding-explanation">MCP010: Your audit did not meet your local policy.
+Server/config entry: example
+What we saw: A reported result or missing coverage violated an explicitly selected policy rule.
+Why it matters: 1. You set a local requirement. 2. This scan did not satisfy it. 3. Accepting the result would bypass that requirement.
+How to fix (Review time depends on the violated rule): Read the named policy violation; repair the configuration or deliberately review the policy before rechecking.
+How sure: A deterministic policy evaluation, not a universal security verdict.</pre><p>see: <a href="https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp010">https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp010</a></p>
+<h2>Scan warnings</h2><p class="empty">No findings recorded. See coverage above for whether this check ran.</p>
+</details>
+<footer>Generated by mcp-audit. Env var values are never captured; only key names appear in any output.</footer>
+</body></html>

@@ -2,9 +2,16 @@
 
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Literal, Self
+from typing import Any, Literal, Self
 
-from pydantic import BaseModel, Field, computed_field, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    SerializerFunctionWrapHandler,
+    computed_field,
+    model_serializer,
+    model_validator,
+)
 
 
 class TransportType(StrEnum):
@@ -1006,6 +1013,7 @@ class PolicyViolation(ReferencedFinding):
     server_name: str | None = None
     tool_name: str | None = None
     severity: str = "high"
+    audit_index: int | None = Field(default=None, ge=0)  # Source row; null for fleet or legacy violations.
 
 
 class PolicyResult(BaseModel):
@@ -1031,6 +1039,7 @@ class ServerAudit(BaseModel):
     """Complete audit result for a single MCP server."""
 
     server: ServerConfig
+    presentation_id: str | None = None  # Compatibility field; review_summary now owns grouping identities.
     connection_status: str  # "connected", "partial", "failed", "timeout", "skipped"
     connection_error: str | None = None
     tools: list[ToolInfo] = Field(default_factory=list)
@@ -1135,6 +1144,52 @@ class CheckCoverage(BaseModel):
     reason: str
 
 
+class ReviewActionDisplay(BaseModel):
+    """Precomputed terminal copy and reach; contains display text only."""
+
+    severity: str
+    title: str
+    consequence: str
+    step: str
+    sources: tuple[str, ...]
+    identities: tuple[str, ...]
+    rule: str
+    related: int = 0
+    flags: tuple[str, ...] = ()
+    connected: bool = False
+    observed: str = ""
+    confidence: str = ""
+    time_to_fix: str = ""
+    manual_step: str = ""
+    reference: str = ""
+
+
+class ReviewAction(BaseModel):
+    """One pre-grouped action; identities are report-local ordinals, never identifiers."""
+
+    identity: str = Field(pattern=r"^action-[0-9]{4,}$")
+    owner: str = Field(pattern=r"^owner-[0-9]{4,}$")
+    severity: str
+    title: str
+    steps: list[str] = Field(default_factory=list)
+    sources: list[str] = Field(default_factory=list)
+    terminal: ReviewActionDisplay | None = None
+    card_group: str | None = Field(default=None, pattern=r"^card-[0-9]{4,}$")
+
+
+ReviewGrade = Literal["A", "B", "C", "D", "F"]
+
+
+class ReviewSummary(BaseModel):
+    """Snapshot of review decisions made before any display redaction."""
+
+    actions: list[ReviewAction]
+    action_counts: dict[str, int]
+    action_count: int
+    grade: ReviewGrade | None
+    review_minutes: int
+
+
 class UxSummary(BaseModel):
     """Presentation rubric, independent of numeric capability exposure."""
 
@@ -1173,14 +1228,28 @@ class AuditReport(BaseModel):
     shadowing_findings: list[ShadowingFinding] = Field(default_factory=list)
     warnings: list[ScanWarning] = Field(default_factory=list)
     coverage: dict[str, CheckCoverage] = Field(default_factory=dict)
+    review_summary: ReviewSummary | None = None
     suppressed: list[SuppressedFinding] = Field(default_factory=list)
 
-    @computed_field  # type: ignore[prop-decorator]
+    def ensure_review_summary(self) -> ReviewSummary:
+        """Freeze once at first presentation/export, after scan and policy evaluation."""
+        if self.review_summary is None:
+            from mcp_audit.ux_summary import compute_summary
+
+            self.review_summary = compute_summary(self)
+        return self.review_summary
+
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        self.ensure_review_summary()
+        result: dict[str, Any] = handler(self)
+        return result
+
+    @computed_field(repr=False)  # type: ignore[prop-decorator]
     @property
     def ux_summary(self) -> UxSummary:
-        from mcp_audit.terminal_summary import grade
-
-        return UxSummary(grade=grade(self))
+        """Main's JSON compatibility view; all decisions come from ReviewSummary."""
+        return UxSummary(grade=self.ensure_review_summary().grade)
 
     def redacted(self, *, identifiers: bool = False) -> "AuditReport":
         """Return a credential-redacted copy, optionally scrubbing field-report identifiers."""
@@ -1190,6 +1259,20 @@ class AuditReport(BaseModel):
         if identifiers:
             names = {audit.server.name for audit in self.audits if audit.server.name}
             names.update(f.server_name for f in self.config_health_findings if f.server_name)
-            aliases = {name: f"server-{index:02d}" for index, name in enumerate(sorted(names), start=1)}
+            width = max(2, len(str(len(names))))  # Keep alias ordering stable across repeated redaction.
+            aliases = {name: f"server-{index:0{width}d}" for index, name in enumerate(sorted(names), start=1)}
             data = redact_identifiers(data, hostname=self.hostname, name_aliases=aliases)
+        # Redaction may change only display text within the saved summary.
+        summary = self.ensure_review_summary()
+        saved = data["review_summary"]
+        saved.update(summary.model_dump(exclude={"actions"}))
+        for action_data, action in zip(saved["actions"], summary.actions, strict=True):
+            action_data.update(
+                identity=action.identity,
+                owner=action.owner,
+                severity=action.severity,
+                card_group=action.card_group,
+            )
+            if action_data["terminal"] is not None:
+                action_data["terminal"]["severity"] = action.severity
         return AuditReport.model_validate(data)

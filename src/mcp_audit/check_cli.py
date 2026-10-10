@@ -58,6 +58,7 @@ def _print_sources(out: Console, paths: list[tuple[str, str]]) -> None:
 @click.option("--output-json", type=click.Path(path_type=Path), help="Write AuditReport JSON to FILE.")
 @click.option("--sarif", type=click.Path(path_type=Path), help="Write SARIF to FILE.")
 @click.option("--html", type=click.Path(path_type=Path), help="Write offline HTML to FILE.")
+@click.option("--show-host", is_flag=True, help="Include the hostname in HTML (hidden by default).")
 @click.option("--policy", type=click.Path(path_type=Path), help="Evaluate this explicit local policy.")
 @click.option(
     "--override-config", type=click.Path(path_type=Path), help="Ignore YAML (default: ~/.mcp-audit.yaml)."
@@ -78,6 +79,7 @@ def check(
     output_json: Path | None,
     sarif: Path | None,
     html: Path | None,
+    show_host: bool,
     policy: Path | None,
     color: str,
     override_config: Path | None,
@@ -171,7 +173,9 @@ def check(
         if html:
             from mcp_audit.htmlreport import HtmlReportGenerator
 
-            html.write_text(HtmlReportGenerator().generate(safe_report), encoding="utf-8")
+            html.write_text(
+                HtmlReportGenerator().generate(safe_report, show_host=show_host), encoding="utf-8"
+            )
         for path in (output_json, sarif, html):
             if path is not None:
                 out.print(terminal_safe(f"Wrote {path}"))

@@ -117,11 +117,11 @@ table presentation; CLI entry points select the summary explicitly.
 
 `grade` is `A`, `B`, `C`, `D`, `F`, or `null`. Config-only, empty, unknown,
 unrecorded or incomplete requested coverage renders **Preview** and `null`.
-For connected reports with complete recorded coverage, the rubric uses finding
-classes, never `risk_score`: a recorded shell-wrapper launch or hidden/obfuscated
-instruction-text finding is F; two or more high findings, or a toxic-flow finding
-plus shell capability, is D; one high finding is C; medium-only findings are B;
-low-only or no findings are A. The current model records credential **key names**,
+The terminal uses the stored `review_summary` rubric described below, including
+its grouped action counts and initial-review estimate. `ux_summary` is a
+compatibility view: its grade always equals `review_summary.grade`, and its
+caveat retains main's existing text. Recorded partial/not-run coverage or scan
+warnings prevent a letter in both renderers. The current model records credential **key names**,
 not literal config secrets: credential-heavy configs are review findings, not
 proof of a secret in config. No new secret detector is added by this renderer.
 The caveat is always on a nonempty summary. Existing `risk_score`,
@@ -278,6 +278,84 @@ keyword permissions use existing scoring. Served hints retain their canary
 eligibility veto. See [SCORING-MIGRATION.md](SCORING-MIGRATION.md).
 
 ## Report Redaction
+
+### Shared HTML and terminal presentation grade
+
+`AuditReport.ux_summary.grade` is an additive compatibility view of the stored
+`AuditReport.review_summary.grade` presentation field:
+`A`, `B`, `C`, `D`, `F`, or null. Existing `risk_score` fields retain their
+meaning and values; `schema_version` remains 1. Grades never use numeric scores.
+Config-only, empty, legacy/unknown-mode, and incomplete metadata reports have a
+null grade and show **Preview**. Recorded partial/not-run checks and scan warnings
+also prevent a letter. With completed metadata, F means hidden
+instruction findings, a `secret_in_config` finding, or a shell-wrapper launch;
+D means at least two distinct Fix-now findings on their raw identities or a read/fetch/send chain
+with a shell capability; C means one Fix-now finding; B means Worth-a-look
+findings only; A means FYI-only or no findings. The caveat "Reach and hygiene,
+not a safety certificate" appears on the result itself. Optional checks and
+their limits remain explicit in coverage; a letter does not certify runtime safety.
+
+HTML orders the summary, Checked strip, Top fixes, Worth a look, FYI, collapsed
+server summaries, and collapsed full audit log. Fix now / Worth a look / FYI
+map to high / medium / low severity. Actions merge identical remediation on
+one server identity and overlapping SSRF/egress advice for one target, retaining
+source rules and remediation steps. Config-health finding families remain separate
+even when their remediation matches; terminal cards can fold them for display.
+Grading counts distinct findings before action grouping. Original finding rows remain in the log.
+Explicit-file server cards show the source label and recorded config path, including
+in the default HTML view. Passing an identifier-redacted report keeps those paths scrubbed.
+`AuditReport.review_summary` is additive stored data, computed exactly once on
+first presentation, redaction or serialization, after scan and policy evaluation.
+It contains `actions` (each with opaque `identity` and `owner`, `severity`, display
+`title`, `steps`, and `sources`, plus nullable `terminal` display data and
+`card_group`), `action_counts` (high/medium/low), `action_count`,
+`grade`, and `review_minutes`. All summary inputs participate: permissions,
+capabilities, injection, SSRF/egress, annotations and missing labels, drift,
+trifecta, escalation, provenance, integrity, package/artifact verification,
+config health, fleet/shadowing, and policy. Identities are report-local ordinals
+assigned using raw identities, never encodings or hashes of private identifiers.
+Redaction rewrites only display text; decisions and identities stay fixed.
+Renderers consume this snapshot, including after JSON reload or repeat redaction.
+`terminal` stores the terminal card's title, consequence, step, source paths,
+identities, rule, related count, recheck flags, connected-recheck disclosure,
+observed evidence, confidence, repair estimate, manual step and reference link.
+Its severity is supplied by the canonical action. Older saved actions default
+to null and render from their stored title and steps without regrouping findings.
+`card_group` is a nullable opaque `card-NNNN` ordinal, assigned before redaction.
+It retains P2-2's visual folding of related actions into up to three cards;
+folding never changes canonical actions, totals, grade or review estimate.
+Only display text is redacted; action/owner/card ordinals and decisions survive.
+The snapshot does not track later edits to findings; construct a new report for
+a new review. Legacy reports without a snapshot compute one from their available
+data; previously lost identities in legacy redacted reports cannot be recovered.
+`ServerAudit.presentation_id` remains an additive nullable compatibility field;
+new reports leave it null. Grouping no longer reads or populates it.
+`scan --redact` and `--show-host` do not change the grade, action counts, or
+review estimate. `schema_version` remains 1.
+`PolicyViolation.audit_index` is an additive nullable nonnegative integer pointing
+to its source row in `AuditReport.audits`; policy evaluation fills it for per-server
+violations. It contains no raw identifier. Policy advice groups per affected
+server identity, retains every distinct message, rule and server/tool target in
+steps/sources, and takes the highest severity. Legacy name-only rows bind only
+when the name identifies one audit; ambiguous/unbound rows remain separate actions.
+Effort is a five-minute-per-action initial-review estimate, not measured repair time.
+Empty tables say "No findings recorded" and refer to coverage, never "None."
+
+HTML credential-redacts first, then hides whole-token hostname occurrences in
+free text and home-path usernames, preserving symbolic enum/literal vocabulary,
+server names and path
+shape. `check --show-host` and `scan --show-host` opt into including the host
+(and unsanitized path identifiers) in HTML only; credential redaction still applies.
+`scan --redact` takes precedence: `--show-host` cannot recover scrubbed identifiers.
+JSON/SARIF identifier defaults are unchanged. HTML remains offline with no JavaScript.
+
+`node scripts/check_html_layout.cjs` checks the connected and config-only HTML
+goldens at 1440/390 pixels in light/dark mode, collapsed and expanded. It asserts
+no page-level horizontal overflow and AA muted-text contrast, then writes
+captures to `output/playwright/`. It needs an already installed Playwright and
+browser; `MCPAUDIT_PLAYWRIGHT_MODULE` can select an existing module and
+`MCPAUDIT_BROWSER_CHANNEL=chrome` can select installed Chrome. It does not install
+dependencies or contact configured servers.
 
 Terminal, JSON, SARIF, HTML, and `serve` tool outputs use
 `AuditReport.redacted()` to replace likely credentials with the literal
