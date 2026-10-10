@@ -1059,8 +1059,9 @@ Each response body has the same byte cap as `max_frame_bytes` (16 MiB by default
 including redirects and SSE streams, regardless of `Content-Length`. Bodies are
 counted before buffering/JSON parsing. Requests advertise identity encoding;
 unsolicited compressed bodies are refused before decompression. Exceeding this
-limit fails the connection with a body-size reason. The stdio compatibility
-flag does not disable HTTP bounds.
+limit fails the connection with a body-size reason and cancels the session,
+including when an SDK SSE handler catches the stream exception. The stdio
+compatibility flag does not disable HTTP bounds.
 
 Transport parse errors fail immediately with a `protocol_error` reason rather
 than waiting for the session timeout. Error summaries retain exception types,
@@ -1068,6 +1069,8 @@ not malformed input. SDK parse tracebacks are suppressed in favor of one safe
 DEBUG diagnostic per session. Stdio failures and timeouts may append a redacted,
 terminal-safe 4 KiB stderr tail to `connection_error`. An incomplete first tail
 record is discarded so a truncated credential anchor cannot defeat redaction.
+Terminal controls are stripped before credential and URL redaction so controls
+interrupting credential anchors cannot expose their values in diagnostics.
 
 On POSIX, shutdown sends SIGTERM and then SIGKILL to the owned process group
 even if the leader exited. ESRCH is harmless; a surviving group or denied
@@ -1077,8 +1080,9 @@ cleanup. `timeout` starts after connection admission; the remaining budget
 covers synchronous Python analysis and asynchronous LLM work. Python loops are
 interrupted cooperatively; native blocking calls are checked when they return,
 not preempted. Fleet-wide finalization and optional package/artifact worker I/O
-are outside this Python-analysis deadline. No completed analysis evidence is
-published after the deadline.
+are outside this Python-analysis deadline. Analysis must finish within the
+deadline; optional verification completing later retains analysis evidence
+that finished within the deadline.
 
 `ScanOptions.max_surface_bytes` (default 64 MiB, also `--max-surface-bytes`)
 is one budget shared by tools, prompts and resources across all pages in a

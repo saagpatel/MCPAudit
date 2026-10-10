@@ -22,7 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Terminate stdio process groups even after their leader exits, fail immediately
   on transport parse errors with a safe protocol reason, and include a bounded,
   redacted stderr tail in connection errors. Cap HTTP response bodies before
-  buffering and apply the remaining per-server wall clock to Python analysis.
+  buffering, cancel the session even when SDK SSE handlers swallow body-limit
+  errors, and strip terminal controls before redacting credential anchors.
+  Apply the remaining per-server wall clock to Python analysis while retaining
+  completed permission analysis when optional verification I/O exceeds it.
   Report shortened listing text only as `surface_truncated`, without incorrectly
   claiming the complete item inventory could not be listed.
 - Bound stdio frames with a linear bytearray reader (16 MiB default), share a
