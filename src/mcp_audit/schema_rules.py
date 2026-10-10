@@ -97,7 +97,8 @@ def _effective_types(
             return {value for value in raw_type if isinstance(value, str)}, True
         ref = current.get("$ref")
         if not isinstance(ref, str):
-            return set(), True
+            # Composition can constrain the type; report incomplete rather than guess.
+            return set(), not any(key in current for key in ("allOf", "anyOf", "oneOf"))
         current = _local_ref(root, ref, anchors)
     return set(), False
 

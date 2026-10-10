@@ -348,3 +348,31 @@ def test_header_type_follows_local_references() -> None:
     reasons: list[str] = []
     assert "header_type" not in [f.kind for f in scan_tool_schema(broken, incomplete_reasons=reasons)]
     assert reasons
+
+
+def test_composed_header_type_is_incomplete_not_flagged() -> None:
+    tool = ToolInfo(
+        name="t",
+        input_schema={
+            "type": "object",
+            "properties": {"value": {"allOf": [{"type": "string"}], "x-mcp-header": "X-Value"}},
+        },
+    )
+    reasons: list[str] = []
+    assert "header_type" not in [f.kind for f in scan_tool_schema(tool, incomplete_reasons=reasons)]
+    assert reasons
+
+
+def test_schema_findings_reach_the_default_summary() -> None:
+    from mcp_audit.models import SchemaFinding
+    from tests.test_terminal_summary import _connected, _render
+
+    report = _connected()
+    report.audits[0].schema_findings = [
+        SchemaFinding(
+            tool_name="t", kind="header_invalid", evidence=["x-mcp-header must be an RFC token string"]
+        )
+    ]
+    assert report.ensure_review_summary().action_count == 1
+    output = " ".join(_render(report).split())
+    assert "Totals: 1 findings" in output or "Totals: 1 finding" in output
