@@ -128,6 +128,7 @@ def finding_views(report: AuditReport) -> Iterator[FindingView]:
             *audit.capability_findings,
             *audit.annotation_findings,
             *audit.injection_findings,
+            *audit.schema_findings,
             *audit.ssrf_findings,
             *audit.egress_findings,
             *audit.trifecta_findings,

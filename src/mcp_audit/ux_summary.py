@@ -193,6 +193,7 @@ def compute_summary(report: AuditReport) -> ReviewSummary:
             )
         other_findings: list[_Finding] = [
             *audit.annotation_findings,
+            *audit.schema_findings,
             *audit.trifecta_findings,
             *audit.escalation_findings,
             *audit.provenance_findings,

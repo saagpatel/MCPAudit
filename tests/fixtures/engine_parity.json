@@ -117,145 +117,145 @@
   "baseline_output_sha256": {
     "engine_reports": {
       "config:examples/configs/popular-public-servers.json": {
-        "json": "1be15686dc638d38b12833d7af13a4347234b3d61f3229db2095977e3ddb508d",
-        "sarif": "24741ad5f90c1f4df8e33fa188150ba6a36f07728700f1b5ced86375045e8923",
-        "html": "8ae868f4fb187d31fb336174a47b92edee937e6abb088777cebc78505bac7a70"
+        "json": "671958d177c1c0e60bfd1ef4db7f5b195cb133f45471dd02447247da61dda133",
+        "sarif": "0434464844aa87515cb98b92d3a1bb53055e30d9a7d7fbcafa0ee05a692d3a5b",
+        "html": "ff55a7612ad05097571316222bb19a46b96ac3e609449051fad908d1793783fa"
       },
       "config:examples/sandbox/fixtures/synthetic-mcp-config.json": {
-        "json": "3a43743b48889ac4350b2a7b7d52e7bc648313a4a8f905e9fadda55917df7551",
-        "sarif": "2a746e838cf18fea03ee5dfaa8bd41dbd156ae3bea2f8e20ae3a3938076f64b6",
-        "html": "e87a34ce904d0f2ddde79b62a8aeb6cf4beeba47e142093f72584fc90e5d6027"
+        "json": "ddfb02b986ac16caa895a2501f256365835553d283361f3e240d12c5b96fbb65",
+        "sarif": "7f8bce0da4f681820da116f43f03d278a0c91585b175dddd218118846612f6de",
+        "html": "6d58f97c5f7c7783976614e847b9cf59d2a8ac19a119e7e5a95165446435bdc1"
       },
       "connected": {
-        "json": "aa17c93a0c993aa4b5ca2c59c1580749cdffb8d4a7cd9f499aaf5f11ffd8a4c7",
-        "sarif": "f9e0510be51292b5f22221d4596a836b834fafcab2c99e244d91e498833e29e6",
-        "html": "e5e4094b3993fd83efb792d571781355dd4cb53c663ace53a04da36be8f2c0f3"
+        "json": "21f171bc846f3a652a2dbcf2ff6636cc604688ad22766e4aedec23329aa759b6",
+        "sarif": "0e35f17ec171fac75ae1bb70ff8773fd22445240d8f569a7c372d85deeb92ceb",
+        "html": "7481af1714e6079707cb770698c42217254c43e5e501b57cc5cf81703267a3fe"
       },
       "connected_error_isolation": {
-        "json": "84c2cf03e50fbbef089fe0b4a03fd4205a0b80d27ae2ce9081e98c3a4e798f8e",
-        "sarif": "e22b236febc84e4c2f419e7870d44e3a8ede9a106eadb1023c255392013facf5",
-        "html": "9ccbfdff430d73ffe842bba10ab8753e97b5148efe16acdb435296b89d2b8327"
+        "json": "e204f6361eaf7e359fc4d39dd19c607d504317d50a7c02f1c3d382a2403c84f6",
+        "sarif": "2cae46911dde3669d28d1f96ec5f0c67dbe6b9bb3154cc91a42cc24f04874b96",
+        "html": "e657b7d6d58c6fadc0db1264500a76d58170eebf36634e5e465cb6d27bea2a12"
       }
     },
     "cli_files": {
       "examples/enforcement-fixture/synthetic-audit-report.json": {
-        "report.json": "bcb518f15c0e81cdbba3420cbcf50e23876605c203e4817cde5cde878dec8f62",
-        "report.sarif": "e02de0864d6c5af57b7bce81d92bce7b9f25529bddfc5932913c5d3bebd51027",
-        "report.html": "12ec633f0d0395ac817120f615dd2e2493b30eebf6df590cab54f172f3b62fb7",
+        "report.json": "0f7f975e7d61e2240246e301625887c7373272d5e7ddcc48f30f5248983540b9",
+        "report.sarif": "81428d29eb176af6412e890131b56c5da196a7c9d2699a41866af6b5aca72f0f",
+        "report.html": "b12687e2040e89a500893ee63a18fccc9677ffa5885055329cbb1dba0219d4af",
         "exit_code": 0
       },
       "examples/sandbox/fixtures/config-only-report.json": {
-        "report.json": "eec3b27404cf82d6c10ea45573b3af9a5eec808d70f627557c7885b4abd1e1c0",
-        "report.sarif": "9f643f9c3ada3c216f2439df25d9b9ffbe09d0e1922c4baccd1b544d9a7904db",
-        "report.html": "91377ab3a8dc22e8244f8a134c83386a8243dc69c9bff1390f3f6bc3ee522c72",
+        "report.json": "4ff8c6a4addc8cd632c5d6f51888f4b2aa7421830672b9f0364d319fd8ab46ad",
+        "report.sarif": "279918e12d0522309b5ba0aebece76e7697d8c607e45f594c010a7bbf8349f06",
+        "report.html": "9c26b943f9c3f2f88e373dbc377095f7b325467c317ccc3167ad7d211d40c0b9",
         "exit_code": 0
       },
       "tests/fixtures/reports/config_only_report.json": {
-        "report.json": "d074710d046cf8c287dc7873d478174bd54f722425ccbcb63fb0de2a93aac62a",
-        "report.sarif": "d13dfc4d0fc81aaf7c255401f869318fc0c11ec5bdd7ee3f5df78ba803d6218e",
-        "report.html": "3e7466495184121a37e790515fd9da1b3637bff0bb606ae69fcc956ab0788522",
+        "report.json": "0e45d5b8de53b017b5deddf62157675f74c02bdb4c1f4f1de3069376e580effe",
+        "report.sarif": "524cfb868e322abe2b9e37a816f2e98747122fa187d7a7ea4af82c5b1244eedd",
+        "report.html": "a7869aadbd689723dfad3e9e0ad3ef7690cb9a6eebee1787941bfafcfef2a110",
         "exit_code": 0
       },
       "tests/fixtures/reports/dashboard_status_report.json": {
-        "report.json": "436a460fa53140f2aa306228e2ed00e7cde5beb8b66a0d9dbb4c6f480190b6f2",
-        "report.sarif": "171aae3d67a2dcfcd844cbe5f1b5062a5426b6216bf33c6833cc1da299d829c6",
-        "report.html": "02aa3caa1e1dddbaa73378de4e3a16d44760b1b7f8574c56746ef9bba6397554",
+        "report.json": "cf05fb6eb07773176d0ca910ff66c9d390eef324aaaf02b93f026f31634e292e",
+        "report.sarif": "ae15a590e84fb4fb8e294a3c6be4166b184b3135b9015e11f7e7c73bae3257f6",
+        "report.html": "47f88df4028cf0991ae1e63cc58437b7049712b00f61fc0dd095c49ecc10a1d2",
         "exit_code": 2
       },
       "tests/fixtures/reports/escalation_report.json": {
-        "report.json": "1890cfaefa2476408fefc2749f732ad008b1c954728b761b72a1ad520505d5c8",
-        "report.sarif": "75a189881a265f4c15a1b30061773ad3047e4724c093e9e77948cc9730982f64",
-        "report.html": "0fdb2351fd4cdc5aa7749ebb24ef80452ae38ccdc5d6b764d5d8597df07c7b8e",
+        "report.json": "e60fbc942eb50cb5fb61fc831d90d4d71c2ffc81f4a9cebb3ceab14b8e606471",
+        "report.sarif": "d848cae4495bc45fffb05a88a8f754231a9ecf04fe93438d9cca8b44dfb005b7",
+        "report.html": "b4d8537112d0b1f291587a266e950b2279173da772d0d8bd97cd338ae1390618",
         "exit_code": 0
       },
       "tests/fixtures/reports/failed_connection_report.json": {
-        "report.json": "3370de8da8bb56f95827afc19059694bbf3a1f4a36e21fc77c43deb8ed41f9ca",
-        "report.sarif": "e02de0864d6c5af57b7bce81d92bce7b9f25529bddfc5932913c5d3bebd51027",
-        "report.html": "225ba545b0d33068af76db7f47a0bae1faadb851ae5cc9e45b47667e5b46a666",
+        "report.json": "4146ea8359c418f808c38cae1293ee893d0cf939f477378b24a93c872a8abb4c",
+        "report.sarif": "81428d29eb176af6412e890131b56c5da196a7c9d2699a41866af6b5aca72f0f",
+        "report.html": "755adbf4179839ef5b527e689b66f716e4bf129cecf04e3b2393142527afeac3",
         "exit_code": 0
       },
       "tests/fixtures/reports/field/mixed_config_report.json": {
-        "report.json": "66fe13c527a365755e013a0f265df464db418687438422d1a501381fe2ef4646",
-        "report.sarif": "e02de0864d6c5af57b7bce81d92bce7b9f25529bddfc5932913c5d3bebd51027",
-        "report.html": "9652cecf32019eebb73704d190964ba739b144a2f4f97816f8d1dff01dec175a",
+        "report.json": "53377571cbf2c8897e33454de72838da5b926f9cdc354a93258764d87fb03d96",
+        "report.sarif": "81428d29eb176af6412e890131b56c5da196a7c9d2699a41866af6b5aca72f0f",
+        "report.html": "e1ff52d373740a5d2ea184a27e89008aefffb8336a304c324d111c0b76170021",
         "exit_code": 0
       },
       "tests/fixtures/reports/field/quiet_desktop_config_report.json": {
-        "report.json": "d7b5f36e677b1ed675edb506bc9e9c4857f7c7189ec3ff73d5b31e66c724786c",
-        "report.sarif": "e02de0864d6c5af57b7bce81d92bce7b9f25529bddfc5932913c5d3bebd51027",
-        "report.html": "5c88eccd572879ac883e8ef812889f6ca8ea373efb2eea5bdc4493d8891a6fc3",
+        "report.json": "197f4e4623cbfa4747aae1883e2e74a4c7a978972660849adaf3e948399fc46b",
+        "report.sarif": "81428d29eb176af6412e890131b56c5da196a7c9d2699a41866af6b5aca72f0f",
+        "report.html": "cec4c0b606495d964b65d789255e69144ba43ce4841a7320cb6ce45463f88a01",
         "exit_code": 0
       },
       "tests/fixtures/reports/field/single_client_config_report.json": {
-        "report.json": "c7c43d85755f66ab8932377bc4bd04a5cdafad8feade371d08176bcba7b6bbe0",
-        "report.sarif": "e02de0864d6c5af57b7bce81d92bce7b9f25529bddfc5932913c5d3bebd51027",
-        "report.html": "a1edb8d72b606826d1ee67b49393af1cc53320385a42d82fee565a837477ac9e",
+        "report.json": "8ae1b56151e5b879d5b1d788be307c176c1ad849bb77f3592f97803bd06a4d31",
+        "report.sarif": "81428d29eb176af6412e890131b56c5da196a7c9d2699a41866af6b5aca72f0f",
+        "report.html": "8dfb2b04bc8326a6bb79fa47c39938e39cb6cebf3f8471abce2cd882ad0ad2ad",
         "exit_code": 0
       },
       "tests/fixtures/reports/legacy/future_additive_report.json": {
-        "report.json": "f12df41a33021a919722562eecac9ff68277b5472b1577bbe97a95da4d2835bd",
-        "report.sarif": "8cc84ca2ac7b0e614f4b7206e3424c15c56275f82ddca885f812809fb640c561",
-        "report.html": "b12375762d78208386d879b70eb146655c305110acb70de921811456264056ec",
+        "report.json": "97798cd7f4301f8aae674d5b4e245358b0c11354ea258ead1b722892f6af2278",
+        "report.sarif": "ca2131b52ca44d65d97134796fa9c4edf3dc33ca80bacb76263c6ebe650926bc",
+        "report.html": "a87ad0fbb0ebf02c95e4ea8a220b0763dc038511d1dda4333a19419cb1509bfe",
         "exit_code": 0
       },
       "tests/fixtures/reports/legacy/v1_0_failed_connection_report.json": {
-        "report.json": "65643dfa1adfe7050146329f11fe56b48caf6fd6d2be4670c151f75dd7cef997",
-        "report.sarif": "e02de0864d6c5af57b7bce81d92bce7b9f25529bddfc5932913c5d3bebd51027",
-        "report.html": "1f34b7ee29e180cfe457a308d266630f9811102fe5e03c724bc3e42069066481",
+        "report.json": "1724c2b548c36b94e5d3aac2f7fb2982d75ad7f649d2cff7a3e7378a065f23fd",
+        "report.sarif": "81428d29eb176af6412e890131b56c5da196a7c9d2699a41866af6b5aca72f0f",
+        "report.html": "e8cdeb68ea86b38e5f56766049905c77e91ac7dd7aac0cb213b6f3cbb8ac6ee2",
         "exit_code": 0
       },
       "tests/fixtures/reports/legacy/v1_0_tool_only_report.json": {
-        "report.json": "dc61820c456c1cfc63cb58fc460ebdeeddc882de6a67bdd27a2c379b7aaac338",
-        "report.sarif": "31e41390a34d163f5fc2468ec3df013d8a668ed9491e596d166e09874a5f94ba",
-        "report.html": "3f93dc18a85da6cd85671d4d861eae8b17011a82de4e495cda61f8279246560c",
+        "report.json": "ca05d380a689c3aa5a8793aa3a6bd8ca943d6fdf1458880adcd7a8c6275f3e8f",
+        "report.sarif": "ace4ae198fa9ff3c85e799eb02c3f10b9fd14736b3d47e35ceb1f9af280e6e3e",
+        "report.html": "2522ae026980f707c70eddca269fdb5e64b611aaa7fdff5ff1995831c84a40b3",
         "exit_code": 0
       },
       "tests/fixtures/reports/legacy_canary_report.json": {
-        "report.json": "869928de0dfba6a2a92fa52fbdbc515693b4ac199d63404da22eb9f1f427a7fb",
-        "report.sarif": "e0a82c0226346311673742cb242429dc565f40d1202e4898ce3a26e2459cc32a",
-        "report.html": "6bf96cdf442786ef8595c191688e23fa958e772ea856ed66fe1499daa1d68f0c",
+        "report.json": "2e840eaf4f1a57122468292dacbcd3890fe12ed95bcdb8ef88b509620c2172d5",
+        "report.sarif": "23ee5a947be9458d6312113fa0781044c88fddd2a8edae5f02913b72ff60d766",
+        "report.html": "87b02d82ed403d3f4dc95b117da8e6aeaba1b802e3ed592523dde71d954003e5",
         "exit_code": 0
       },
       "tests/fixtures/reports/policy_failure_report.json": {
-        "report.json": "442d8a89cb8cd13d29d6622fc40b4044a477abc13be739152a6aaeefc7fea462",
-        "report.sarif": "35554823b75eb6d6de1fc1721c4298bb321de2812dcd8f57fbffc394f953c34b",
-        "report.html": "2759da42f81f04771865aa2e8e4f08848ecbc46d2800498721b66c8ef1dc562e",
+        "report.json": "da1427f8075aa4905df633575691cbaf2122a16ba4b7f82db967c2a98b85c653",
+        "report.sarif": "0f93d016a82c43782039ca5fb8d20c5fcf5f2c12ca26f931ef11ab8cc6e38d7c",
+        "report.html": "013eba8ee9ee8b1656ca7172471e6a90744e342e247ff082bd48b61ee596bf82",
         "exit_code": 2
       },
       "tests/fixtures/reports/prompt_resource_report.json": {
-        "report.json": "66bf32a6155f7b36f04df908eeb0c82971ba5b3c03815f7c669b20f67442a358",
-        "report.sarif": "8a8ba98fa54df24a104e3af1f0c1f9a825bb7f3d774cb183bfb22e05f0cc11f3",
-        "report.html": "8188d5e94cd344e3b8f9807f9c9e323e7452d3586749aa8c296e18216f65faa8",
+        "report.json": "ccb8b6bacc797745b882123072f3be7f98478fddeebf3f29975be37dfab65c47",
+        "report.sarif": "a68cb38a7811bcdba2e5b02b23681d07853dd89b66bce7b9166944c001b137ab",
+        "report.html": "ad30a47c863d8cdfe022261e3b2f82a78f1d4645fb0596583e8e64567f153a40",
         "exit_code": 0
       },
       "tests/fixtures/reports/provenance_report.json": {
-        "report.json": "4e2b89401c56d3665b77f65f140972ed17be6164b23e64ccedaf979e88dd4844",
-        "report.sarif": "4612137e21691a2bbad93e1f6874f698a1762d6dee5e8ec1fc336da9a925b50f",
-        "report.html": "91f8e0f19a0d546bb2abd1e70e3199c383e6b787db1567a888c1ce035550ec7e",
+        "report.json": "9b8276b8ea9affaa8de0e77df2c33a8d39c701b6d4905dd26094260e27536814",
+        "report.sarif": "100bb864c40adaf39f57e79adbf6ded713eadda41f091730245c84f712f1222a",
+        "report.html": "6e5329baa1e8f74aab943fb5938cb5cf8797a7106139890f593df55d2ca6aaf9",
         "exit_code": 0
       },
       "tests/fixtures/reports/sample_audit_report.json": {
-        "report.json": "a5c242fedca752bde47164cde7573aa850360d24ee4010a7764c7acc3eae1a9d",
-        "report.sarif": "69d8b7432e9d1034bc8589a7187a35f7d913691ec57a553e106887618b1bef01",
-        "report.html": "5bf7c1312f717102d9f26846b5328f4b2f5f31b7eb29736ac0ae251cc03332cd",
+        "report.json": "f1468b5b336a0b6b600f0dd086ebb2fcee84409df91eb353c3ef754edb9ce4dd",
+        "report.sarif": "b9a1ed3aa91fdbb0a55e65cc8157d6167d3c8b5ed3f21ec5e2d4ebad72b76775",
+        "report.html": "673666fbe49be65970360db92117b60b67bc2b9ea34f16e062748791fa02e063",
         "exit_code": 2
       },
       "tests/fixtures/reports/shadowing_report.json": {
-        "report.json": "3d7f82ca7cc1cdc0849e310d546675166206fbb58ef282610b69a42e80b9dd75",
-        "report.sarif": "2541d4fa0212813d8190790086478b3d817cab83ef7350833df0730705a4c0c0",
-        "report.html": "d008625774fce71322b346792238010aa9decbadc4037c8965f393cca234350b",
+        "report.json": "fd75b996d213a0698648fe27d5e1ff76d9f443ecf13e95ea05b9ba8fd228e6c8",
+        "report.sarif": "96930f4f131dc1d03f41a684a8f3e3e95e71ce615f9a307239c0861b9f5a68f7",
+        "report.html": "be1f85e4258a747c638dc8b2775befdcf26a7fb5e2aac0eacce47f11ea1c1567",
         "exit_code": 0
       },
       "tests/fixtures/reports/ssrf_report.json": {
-        "report.json": "3433c6a1dd074fbfb48f6241c0c7f30f4e91018ffc07b026fb1eee79e968fbec",
-        "report.sarif": "0cc31a29cc706934a11038c9b10110a0c1d2789c65ff5427d75ffbc0b5b3bafe",
-        "report.html": "1f272ceabc3644d0b94564ef631e62888a1ca059ef1ed72357413077abf1efbf",
+        "report.json": "5fbded5ef9a4587f92e880ba28dcd6dcfeec40fb0243b91f0ab7ee2a8cb30fe4",
+        "report.sarif": "fdaebe3057738c2d1e71a40cf8f3861f060deca3cc79fdaed88cce1893f86f43",
+        "report.html": "ae164a257c517ebfca9cd9c5c18ba637b872b834da2fd2f456583ad81f5eba53",
         "exit_code": 0
       },
       "tests/fixtures/reports/trifecta_report.json": {
-        "report.json": "97546a047597ca901e96df80ff316c34de9b551762fd996276d3cfd60bf658f9",
-        "report.sarif": "978ea09f7ce519e01a4d9f19cc3226e2b8f2633c2b6746576f2a37dc15474326",
-        "report.html": "e141c81bfe8b6df900ca5e324e086687f3a8de44d7d0f5aeacb0f2decbd1f981",
+        "report.json": "4a98cf6b2c122c1e8ed7de7e2436548da20f957f200a943ae88829cfbe40b1f1",
+        "report.sarif": "359b478cc7b4977031f6ef375a5b2f699ce4da993e8f0db158aab605ca2a2ff5",
+        "report.html": "6c2d56c7e3a98dea4eca13aeab1658fa3937250d6da422020c9d899701ffefb7",
         "exit_code": 0
       }
     }
