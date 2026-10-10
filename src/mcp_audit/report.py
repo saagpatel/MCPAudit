@@ -185,6 +185,7 @@ class ReportGenerator:
                 self._console.print(terminal_safe(f"Manual step: {annotation.remediation}"))
 
         self._render_injection_warnings(report)
+        self._render_schema_warnings(report)
         self._render_ssrf_warnings(report)
         self._render_egress_warnings(report)
         self._render_trifecta_warnings(report)
@@ -359,6 +360,31 @@ class ReportGenerator:
                 terminal_safe(f.remediation),
             )
         self._console.print(tbl)
+
+    def _render_schema_warnings(self, report: AuditReport) -> None:
+        """Print static tool-schema findings when present."""
+        findings = [
+            (audit.server.name, finding) for audit in report.audits for finding in audit.schema_findings
+        ]
+        if not findings:
+            return
+        self._console.print()
+        self._console.rule("[bold yellow]Static Schema Findings[/bold yellow]")
+        table = Table(show_lines=False)
+        table.add_column("Server", style="bold cyan", no_wrap=True)
+        table.add_column("Rule", style="cyan")
+        table.add_column("Tool", style="cyan")
+        table.add_column("Severity")
+        table.add_column("Evidence", overflow="fold")
+        for server_name, finding in findings:
+            table.add_row(
+                terminal_safe(server_name),
+                finding.rule_id,
+                terminal_safe(finding.tool_name),
+                finding.severity,
+                terminal_safe("; ".join(finding.evidence)),
+            )
+        self._console.print(table)
 
     def _render_egress_warnings(self, report: AuditReport) -> None:
         """Print egress (outbound-destination) findings section if any were found."""
