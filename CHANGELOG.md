@@ -72,7 +72,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   including either `--show-host` setting. Retain distinct policy violations and targets
   while grouping policy advice per affected server identity.
   Improve mobile table scrolling, muted-text contrast and dark-mode colors.
-- Add static tool-schema findings for `x-mcp-header` declarations, credential parameters mirrored to headers, external `$ref` values, and icon source schemes/origins. These checks inspect served metadata only and never fetch schemas or icons. Traverse schema-bearing branches rather than instance payloads, validate null header declarations, and report exhausted traversal budgets as partial metadata coverage.
+- Add static tool-schema findings for `x-mcp-header` declarations, credential parameters mirrored to headers, external `$ref` values, and icon source schemes/origins. These checks inspect served metadata only and never fetch schemas or icons. Traverse schema-bearing branches rather than instance payloads, validate null header declarations, and report exhausted traversal budgets as partial metadata coverage. Resolve local anchors and percent-encoded JSON Pointers; report unresolved local references as incomplete instead of asserting unreachable headers.
 
 ### Fixed
 
