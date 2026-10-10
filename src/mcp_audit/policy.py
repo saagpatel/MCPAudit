@@ -32,6 +32,7 @@ class PolicyConfig:
     fail_on_capability_severity: str | None = None
     fail_on_config_health_severity: str | None = None
     fail_on_coverage: bool = False
+    allow_ignores: bool = True
     fail_on_drift: bool = False
     fail_on_trifecta: bool = False
     fail_on_shadowing: bool = False
@@ -97,6 +98,9 @@ def load_policy(path: Path) -> PolicyConfig:
     coverage = fail_on.get("coverage", False)
     if not isinstance(coverage, bool):
         raise ValueError("fail_on.coverage must be a boolean.")
+    allow_ignores = raw.get("allow_ignores", True)
+    if not isinstance(allow_ignores, bool):
+        raise ValueError("allow_ignores must be a boolean.")
 
     permissions = [_permission(value) for value in _sequence(deny.get("permissions"), "deny.permissions")]
 
@@ -115,6 +119,7 @@ def load_policy(path: Path) -> PolicyConfig:
         fail_on_capability_severity=capability_severity,
         fail_on_config_health_severity=config_health_severity,
         fail_on_coverage=coverage,
+        allow_ignores=allow_ignores,
         fail_on_drift=bool(fail_on.get("drift", False)),
         fail_on_trifecta=trifecta,
         fail_on_shadowing=shadowing,
@@ -142,6 +147,19 @@ def evaluate_policy(
 ) -> PolicyResult:
     """Evaluate a completed audit report against a local policy."""
     violations: list[PolicyViolation] = []
+    if report.suppressed:
+        if policy.allow_ignores:
+            from mcp_audit.suppressions import unsuppressed_report
+
+            report = unsuppressed_report(report)
+        else:
+            violations.append(
+                PolicyViolation(
+                    rule="allow_ignores",
+                    severity="high",
+                    message=f"Local policy refuses {len(report.suppressed)} finding suppression(s).",
+                )
+            )
     if policy.fail_on_coverage:
         missing = missing_checks(report.coverage)
         if missing:

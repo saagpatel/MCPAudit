@@ -829,6 +829,7 @@ async def run_scan(
             else {},
         ),
     )
+    applier.suppress(report)
     return report
 
 

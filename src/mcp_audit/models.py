@@ -1,6 +1,6 @@
 """All Pydantic data models for mcp-audit."""
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 from typing import Literal, Self
 
@@ -1142,6 +1142,16 @@ class UxSummary(BaseModel):
     caveat: str = "reach and hygiene, not a safety certificate"
 
 
+class SuppressedFinding(BaseModel):
+    """An explicit policy exception; the original finding remains in the report."""
+
+    finding_path: str
+    rule_id: str
+    reason: str = Field(min_length=1)
+    source: Literal["config", "cli"]
+    expires: date | None = None
+
+
 class AuditReport(BaseModel):
     """Top-level audit report containing all server audits."""
 
@@ -1163,6 +1173,7 @@ class AuditReport(BaseModel):
     shadowing_findings: list[ShadowingFinding] = Field(default_factory=list)
     warnings: list[ScanWarning] = Field(default_factory=list)
     coverage: dict[str, CheckCoverage] = Field(default_factory=dict)
+    suppressed: list[SuppressedFinding] = Field(default_factory=list)
 
     @computed_field  # type: ignore[prop-decorator]
     @property

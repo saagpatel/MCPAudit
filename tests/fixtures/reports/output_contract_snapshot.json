@@ -17,6 +17,7 @@
       "servers_discovered",
       "servers_failed",
       "shadowing_findings",
+      "suppressed",
       "total_tools",
       "ux_summary",
       "warnings"
@@ -92,6 +93,7 @@
       "servers_discovered",
       "servers_failed",
       "shadowing_findings",
+      "suppressed",
       "total_tools",
       "ux_summary",
       "warnings"
@@ -160,6 +162,7 @@
       "servers_discovered",
       "servers_failed",
       "shadowing_findings",
+      "suppressed",
       "total_tools",
       "ux_summary",
       "warnings"
@@ -226,6 +229,7 @@
       "servers_discovered",
       "servers_failed",
       "shadowing_findings",
+      "suppressed",
       "total_tools",
       "ux_summary",
       "warnings"
@@ -302,6 +306,7 @@
       "servers_discovered",
       "servers_failed",
       "shadowing_findings",
+      "suppressed",
       "total_tools",
       "ux_summary",
       "warnings"
@@ -389,6 +394,7 @@
       "servers_discovered",
       "servers_failed",
       "shadowing_findings",
+      "suppressed",
       "total_tools",
       "ux_summary",
       "warnings"
@@ -457,6 +463,7 @@
       "servers_discovered",
       "servers_failed",
       "shadowing_findings",
+      "suppressed",
       "total_tools",
       "ux_summary",
       "warnings"
@@ -546,6 +553,7 @@
       "servers_discovered",
       "servers_failed",
       "shadowing_findings",
+      "suppressed",
       "total_tools",
       "ux_summary",
       "warnings"
@@ -615,6 +623,7 @@
       "servers_discovered",
       "servers_failed",
       "shadowing_findings",
+      "suppressed",
       "total_tools",
       "ux_summary",
       "warnings"
@@ -701,6 +710,7 @@
       "servers_discovered",
       "servers_failed",
       "shadowing_findings",
+      "suppressed",
       "total_tools",
       "ux_summary",
       "warnings"
