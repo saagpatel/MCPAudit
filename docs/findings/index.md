@@ -546,6 +546,132 @@ How sure: A metadata contradiction, not an executed behavior check. Keyword evid
 
 see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp043
 
+## MCP044
+
+Your server's protocol needs review: legacy http handshake.
+
+What we saw: The HTTP server negotiated a handshake-era protocol.
+
+Why it matters:
+
+1. The connected server supplies protocol metadata.
+2. The observed behavior can affect client compatibility or caching.
+3. Review the specific evidence before relying on the server's protocol behavior.
+
+How to fix (About 5 minutes for an initial review): Review legacy session behavior; upgrade the server if modern stateless operation is intended.
+
+How sure: An observed protocol advisory; unavailable evidence produces no finding. Low severity does not certify security or full protocol conformance.
+
+see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp044
+
+## MCP045
+
+Your server's protocol needs review: session id minted.
+
+What we saw: An HTTP response included Mcp-Session-Id; its value was withheld.
+
+Why it matters:
+
+1. The connected server supplies protocol metadata.
+2. The observed behavior can affect client compatibility or caching.
+3. Review the specific evidence before relying on the server's protocol behavior.
+
+How to fix (About 5 minutes for an initial review): Review session handling and avoid relying on session IDs as authorization.
+
+How sure: An observed protocol advisory; unavailable evidence produces no finding. Low severity does not certify security or full protocol conformance.
+
+see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp045
+
+## MCP046
+
+Your server's protocol needs review: deprecated logging capability.
+
+What we saw: A modern server advertised logging (SEP-2577).
+
+Why it matters:
+
+1. The connected server supplies protocol metadata.
+2. The observed behavior can affect client compatibility or caching.
+3. Review the specific evidence before relying on the server's protocol behavior.
+
+How to fix (About 5 minutes for an initial review): Remove the deprecated logging capability from the modern server advertisement.
+
+How sure: An observed protocol advisory; unavailable evidence produces no finding. Low severity does not certify security or full protocol conformance.
+
+see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp046
+
+## MCP047
+
+Your server's protocol needs review: required cache hints absent.
+
+What we saw: A completed modern response omitted ttlMs or cacheScope (SEP-2549).
+
+Why it matters:
+
+1. The connected server supplies protocol metadata.
+2. The observed behavior can affect client compatibility or caching.
+3. Review the specific evidence before relying on the server's protocol behavior.
+
+How to fix (About 5 minutes for an initial review): Return explicit ttlMs and cacheScope on every cacheable result.
+
+How sure: An observed protocol advisory; unavailable evidence produces no finding. Low severity does not certify security or full protocol conformance.
+
+see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp047
+
+## MCP048
+
+Your server's protocol needs review: cache scope differs across pages.
+
+What we saw: Pages of one modern listing used different cacheScope values (SEP-2549).
+
+Why it matters:
+
+1. The connected server supplies protocol metadata.
+2. The observed behavior can affect client compatibility or caching.
+3. Review the specific evidence before relying on the server's protocol behavior.
+
+How to fix (About 5 minutes for an initial review): Return the same cacheScope on every page of the listing.
+
+How sure: An observed protocol advisory; unavailable evidence produces no finding. Low severity does not certify security or full protocol conformance.
+
+see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp048
+
+## MCP049
+
+Your server's protocol needs review: invalid cache ttl.
+
+What we saw: A server returned an invalid ttlMs; the SDK may reject or clamp it.
+
+Why it matters:
+
+1. The connected server supplies protocol metadata.
+2. The observed behavior can affect client compatibility or caching.
+3. Review the specific evidence before relying on the server's protocol behavior.
+
+How to fix (About 5 minutes for an initial review): Return an integer ttlMs greater than or equal to zero; repeat the incomplete listing.
+
+How sure: An observed protocol advisory; unavailable evidence produces no finding. Low severity does not certify security or full protocol conformance.
+
+see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp049
+
+## MCP050
+
+Your server's protocol needs review: tool order changed.
+
+What we saw: Two completed tool listings changed order without changing membership.
+
+Why it matters:
+
+1. The connected server supplies protocol metadata.
+2. The observed behavior can affect client compatibility or caching.
+3. Review the specific evidence before relying on the server's protocol behavior.
+
+How to fix (About 5 minutes for an initial review): Return tools in deterministic order to avoid unstable client caches.
+
+How sure: An observed protocol advisory; unavailable evidence produces no finding. Low severity does not certify security or full protocol conformance.
+
+see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp050
+
 ## Configuration health
 
 Your server configuration needs review before you connect.
