@@ -52,6 +52,9 @@ def main(ctx: click.Context, debug: bool, details: bool, json_stdout: bool, colo
         logging.basicConfig(level=logging.DEBUG)
         for handler in logging.getLogger().handlers:
             handler.addFilter(TerminalSafeLogFilter())
+        from mcp_audit.connector import install_transport_log_filters
+
+        install_transport_log_filters()
     if ctx.invoked_subcommand is None:
         command = main.get_command(ctx, "check")
         assert command is not None

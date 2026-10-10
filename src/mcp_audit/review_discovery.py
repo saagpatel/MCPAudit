@@ -149,6 +149,7 @@ def review_sources(
     config: Path | None = None,
     include_discovered: bool = False,
     project: Path | None = None,
+    clients: tuple[ClientType, ...] = (),
 ) -> ReviewSources:
     """Read an explicit file only, or the fixed supported-client allowlist."""
     sources = ReviewSources()
@@ -157,7 +158,10 @@ def review_sources(
     if config is not None:
         candidates.append((config, ClientType.CLAUDE_CODE, True))
     if config is None or include_discovered:
+        selected_clients = clients or tuple(_DISCOVERERS)
         for client, discoverer in _DISCOVERERS.items():
+            if client not in selected_clients:
+                continue
             for path in discoverer().config_paths():
                 if path == Path.cwd() / ".mcp.json":
                     path = project / ".mcp.json"
@@ -165,7 +169,7 @@ def review_sources(
                     path = project / ".vscode" / "mcp.json"
                 candidates.append((path, client, False))
         cursor_project = project / ".cursor" / "mcp.json"
-        if cursor_project != Path.home() / ".cursor" / "mcp.json":
+        if ClientType.CURSOR in selected_clients and cursor_project != Path.home() / ".cursor" / "mcp.json":
             candidates.append((cursor_project, ClientType.CURSOR, False))
     seen: set[Path] = set()
     for path, client, explicit in candidates:

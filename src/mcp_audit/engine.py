@@ -699,7 +699,12 @@ async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) ->
     if integrity_analyzer is not None and pin_store is not None:
         baseline_artifacts = pin_store.baseline_artifacts(srv.name)
         if baseline_artifacts:
-            audit.integrity_findings = integrity_analyzer.analyze_server(srv.name, baseline_artifacts)
+            integrity_warnings: list[ScanWarning] = []
+            audit.integrity_findings = integrity_analyzer.analyze_server(
+                srv.name, baseline_artifacts, warnings=integrity_warnings
+            )
+            for warning in integrity_warnings:
+                warn(warning.code, warning.message, check=warning.check, servers=warning.servers)
 
     # Optional registry package verification (network) vs the pin baseline.
     # Runs in a worker thread so the synchronous registry I/O never blocks

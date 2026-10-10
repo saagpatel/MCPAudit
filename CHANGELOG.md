@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Exclude home dotfiles and additional credential directories from launch-artifact
+  hashing, including existing pin baselines and resolved targets; report partial
+  comparison coverage without exposing excluded hashes. Apply archive-equivalent
+  size and entry limits to skillscan directories,
+  install transport log redaction once for debug CLI runs, and write serve installs
+  atomically while preserving config symlinks and updating their targets. Describe
+  `--timeout` as a per-server session budget.
+
 ### Security
 
 - Bound stdio frames with a linear bytearray reader (16 MiB default), share a
@@ -67,6 +77,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Align the additive `check`, `checkup`, and `inspect` surface with repeated
+  `--client` filters (hyphen or underscore spellings), JSON stdout/file output,
+  and recovery details for operational errors. Preserve legacy `scan --json`
+  path semantics. Identify post-scan and artifact-write failures by operation;
+  include recovery details for artifact validation errors while retaining exit 2.
 - Add a lazy CLI command registry with `lab <topic>`, `safeforge preinstall|run`,
   `skills scan`, and `baseline pin` families. Keep old spellings as hidden 2.x
   aliases; completion and `--help-all` list every registered path. Hide and

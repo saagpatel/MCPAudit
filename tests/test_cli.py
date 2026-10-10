@@ -94,6 +94,22 @@ def test_scan_help_describes_session_timeout_budget() -> None:
     assert "--max-concurrency" in help_text
 
 
+def test_debug_installs_transport_secret_filter_once_at_main(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mcp_audit import connector
+
+    calls = 0
+
+    def install_filters() -> None:
+        nonlocal calls
+        calls += 1
+
+    monkeypatch.setattr(connector, "install_transport_log_filters", install_filters)
+    result = CliRunner().invoke(cli.main, ["--debug", "scan", "--help"])
+
+    assert result.exit_code == 0, result.output
+    assert calls == 1
+
+
 def test_error_messages_route_to_stderr_not_stdout() -> None:
     # Machine-parseable stdout (json/sarif pipelines) must never be polluted
     # by human-facing error text.
