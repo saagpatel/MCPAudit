@@ -56,6 +56,7 @@ from mcp_audit.taxonomy import (
     ARTIFACT_VERIFY_FINDINGS,
     EGRESS_FINDINGS,
     ESCALATION_FINDINGS,
+    FINDING_COPY,
     INJECTION_FINDINGS,
     INTEGRITY_FINDINGS,
     PACKAGE_VERIFY_FINDINGS,
@@ -520,6 +521,7 @@ class SarifGenerator:
                 "name": f"SchemaRule{rule_id}",
                 "shortDescription": {"text": title},
                 "fullDescription": {"text": title},
+                "help": {"text": FINDING_COPY[rule_id].how_to_fix},
                 "properties": {"category": "schema_metadata"},
             }
             for rule_id, title in (

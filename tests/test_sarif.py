@@ -118,7 +118,7 @@ class TestSarifStructure:
             | set(_INTEGRITY_RULE_IDS.values())
             | set(_PACKAGE_VERIFY_RULE_IDS.values())
             | set(_ARTIFACT_VERIFY_RULE_IDS.values())
-            | {"MCP009", "MCP010", "MCP043"}
+            | {"MCP009", "MCP010", "MCP043", "MCP044", "MCP045", "MCP046", "MCP047"}
         )
         assert rule_ids == expected
 
