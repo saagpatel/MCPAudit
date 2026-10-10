@@ -29,14 +29,20 @@ def parse_mapping(
     for key in ("mcpServers", "servers") if sniff_format else ("mcpServers",):
         if key in data:
             found = True
-            results.extend(parse_server_map(data[key], config_path, client, parse_errors))
+            results.extend(
+                parse_server_map(data[key], config_path, client, parse_errors, map_pointer=f"/{key}")
+            )
     if sniff_format and "mcp" in data:
         section = data["mcp"]
         if not isinstance(section, dict):
             raise ConfigParseError(config_path, client, "mcp section is not an object")
         if "servers" in section:
             found = True
-            results.extend(parse_server_map(section["servers"], config_path, client, parse_errors))
+            results.extend(
+                parse_server_map(
+                    section["servers"], config_path, client, parse_errors, map_pointer="/mcp/servers"
+                )
+            )
     if "projects" in data:
         projects = data["projects"]
         if not isinstance(projects, dict):
@@ -46,9 +52,15 @@ def parse_mapping(
                 raise ConfigParseError(config_path, client, "project entry is not an object")
             if "mcpServers" in project_data:
                 found = True
+                project_token = str(project_path).replace("~", "~0").replace("/", "~1")
                 results.extend(
                     parse_server_map(
-                        project_data["mcpServers"], config_path, client, parse_errors, str(project_path)
+                        project_data["mcpServers"],
+                        config_path,
+                        client,
+                        parse_errors,
+                        str(project_path),
+                        map_pointer=f"/projects/{project_token}/mcpServers",
                     )
                 )
     if sniff_format and not found:

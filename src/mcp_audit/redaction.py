@@ -195,6 +195,15 @@ def _normalization_exposes_secret(redacted: str) -> bool:
     return normalized != redacted and _redact_text(normalized) != normalized
 
 
+def trim_excerpt_context(before: str, after: str) -> tuple[str, str]:
+    """Remove an outer context token, clearing whitespace-only context too."""
+    if before:
+        before = "" if before.isspace() else re.sub(r"^\s*\S+\s*", "", before, count=1)
+    elif after:
+        after = "" if after.isspace() else re.sub(r"\s*\S+\s*$", "", after, count=1)
+    return before, after
+
+
 def redacted_excerpt(
     text: str,
     start: int,
@@ -203,6 +212,8 @@ def redacted_excerpt(
     context_before: int = 0,
     context_after: int = 0,
     max_length: int | None = None,
+    word_boundaries: bool = False,
+    mark_match: bool = False,
 ) -> str:
     """Redact the whole field, map its raw match span, then slice and render.
 
@@ -224,15 +235,61 @@ def redacted_excerpt(
     if _normalization_exposes_secret(redacted):
         withheld = "[metadata excerpt withheld]"
         return withheld if max_length is None else withheld[:max_length]
-    before = render_invisibles(redacted[max(0, window.start - context_before) : window.start])
-    match = render_invisibles(redacted[window.start : window.end])
-    after = render_invisibles(redacted[window.end : window.end + context_after])
+    left = max(0, window.start - context_before)
+    right = min(len(redacted), window.end + context_after)
+    if word_boundaries:
+        while (
+            context_before > 0
+            and left > 0
+            and not redacted[left - 1].isspace()
+            and not redacted[left].isspace()
+        ):
+            left -= 1
+        while (
+            context_after > 0
+            and right < len(redacted)
+            and not redacted[right - 1].isspace()
+            and not redacted[right].isspace()
+        ):
+            right += 1
+
+    def render(piece: str) -> str:
+        rendered = render_invisibles(piece)
+        # Source text cannot forge the delimiters used to carry match offsets.
+        if mark_match:
+            rendered = rendered.replace("⟦", "‹U+27E6›").replace("⟧", "‹U+27E7›")
+        return rendered
+
+    before = render(redacted[left : window.start])
+    match = render(redacted[window.start : window.end])
+    after = render(redacted[window.end : right])
+    if mark_match and match:
+        match = f"⟦{match}⟧"
+    if word_boundaries and max_length is not None:
+        if len(match) > max_length:
+            return "[match exceeds excerpt limit]"[:max_length]
+        # Keep the entire match; trim context a token at a time, including
+        # rendered invisible markers, rather than cutting through a word.
+        while len(before) + len(match) + len(after) > max_length:
+            before, after = trim_excerpt_context(before, after)
+        return before + match + after
     if max_length is not None:
         # Expanded invisible markers must not push the actual match out of view.
         if len(before) + len(match) > max_length:
             before = ""
         return (before + match + after)[:max_length]
     return before + match + after
+
+
+def marked_excerpt_parts(excerpt: str) -> tuple[str, tuple[int, int] | None]:
+    """Separate helper-owned delimiters into plain evidence and display offsets."""
+    before, delimiter, rest = excerpt.partition("⟦")
+    if not delimiter:
+        return excerpt, None
+    match, delimiter, after = rest.partition("⟧")
+    if not delimiter:
+        raise ValueError("Unclosed match delimiter in redacted excerpt")
+    return before + match + after, (len(before), len(before) + len(match))
 
 
 def _redact_literal_strings(value: object) -> object:
@@ -299,10 +356,20 @@ def redact_data(value: Any) -> Any:
             if isinstance(key, str) and _is_secret_name(key) and isinstance(item, str)
             else _redact_properties(item)
             if key == "properties" and isinstance(item, dict)
+            else _redact_config_pointer(item)
+            if key == "config_pointer" and isinstance(item, str)
             else redact_data(item)
             for key, item in value.items()
         }
     return value
+
+
+def _redact_config_pointer(pointer: str) -> str:
+    """Redact credentials inside each JSON Pointer token, which ``~1`` escaping hides."""
+    return "/".join(
+        redact_text(token.replace("~1", "/").replace("~0", "~")).replace("~", "~0").replace("/", "~1")
+        for token in pointer.split("/")
+    )
 
 
 def _compile_alias_pattern(name_aliases: dict[str, str]) -> re.Pattern[str] | None:
@@ -365,7 +432,38 @@ def _walk_identifiers(
     if isinstance(value, list):
         return [_walk_identifiers(item, hostname, name_aliases, alias_pattern) for item in value]
     if isinstance(value, dict):
-        return {
-            key: _walk_identifiers(item, hostname, name_aliases, alias_pattern) for key, item in value.items()
+        scrubbed = {
+            key: _scrub_config_pointer(item, hostname, name_aliases, alias_pattern)
+            if key == "config_pointer" and isinstance(item, str)
+            else _walk_identifiers(item, hostname, name_aliases, alias_pattern)
+            for key, item in value.items()
         }
+        # Offsets index the original matched_text; drop them once its text changes.
+        if scrubbed.get("matched_span") is not None and scrubbed.get("matched_text") != value.get(
+            "matched_text"
+        ):
+            scrubbed["matched_span"] = None
+        return scrubbed
     return value
+
+
+def _scrub_config_pointer(
+    pointer: str,
+    hostname: str | None,
+    name_aliases: dict[str, str] | None,
+    alias_pattern: re.Pattern[str] | None,
+) -> str:
+    tokens = pointer.split("/")
+    for index, token in enumerate(tokens):
+        # Map keys are structural; only the final name and project path carry identifiers.
+        if index != len(tokens) - 1 and not (index == 2 and tokens[1] == "projects"):
+            continue
+        # Decode in this order so a literal ~1 (encoded as ~01) stays literal.
+        decoded = token.replace("~1", "/").replace("~0", "~")
+        scrubbed = (
+            name_aliases[decoded]
+            if name_aliases is not None and decoded in name_aliases
+            else _scrub_identifier_text(decoded, hostname, name_aliases, alias_pattern)
+        )
+        tokens[index] = scrubbed.replace("~", "~0").replace("/", "~1")
+    return "/".join(tokens)

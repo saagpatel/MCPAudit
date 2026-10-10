@@ -30,6 +30,7 @@ from mcp_audit.models import (
     ScanWarning,
 )
 from mcp_audit.report import ReportGenerator
+from mcp_audit.taxonomy import config_health_rule_id, finding_copy
 from mcp_audit.terminal_summary import _recheck, findings, what_happened
 from tests.test_report import _base_report, _make_audit
 
@@ -94,6 +95,7 @@ def test_synthetic_summary_golden(synthetic_report: AuditReport, width: int) -> 
     assert output == (GOLDENS / f"summary-{width}.txt").read_text()
     assert max(len(line) for line in output.splitlines()) <= width
     assert output.startswith("MCPAudit · Preview")
+    assert "CONFIG REVIEW ONLY |" not in output
     assert "reach and hygiene, not a safety certificate" in output
     assert len(re.findall(r"^\d\. [▲◆●]", output, re.MULTILINE)) == 3
     assert "7 config warnings" in " ".join(output.split())
@@ -143,8 +145,11 @@ def test_shell_launch_is_f_and_has_plain_manual_action() -> None:
     report = _connected()
     report.config_health_findings = [_finding(kind="shell_wrapper_launch")]
     assert report.ux_summary.grade == "F"
-    output = _render(report)
-    assert "Replace the shell wrapper" in output and "reviewed executable" in output
+    output = " ".join(_render(report).split())
+    copy = finding_copy(config_health_rule_id("shell_wrapper_launch"))
+    assert copy.title in output and copy.how_to_fix in output
+    assert "direct executable and argument list" in output
+    assert "restart the client" in output
     assert "tidy" not in output and "confetti" not in output
 
 
@@ -278,6 +283,7 @@ def test_warnings_reduce_coverage_without_turning_empty_findings_into_a_pass(
     assert f"synthetic-server / {identity} (workstation)" in flat
     if explicit_config:
         assert "claude_code" not in output
+        assert "explicit file; parsed as Claude-style config" in flat
 
 
 def test_execution_disclosure_connected_and_canary() -> None:

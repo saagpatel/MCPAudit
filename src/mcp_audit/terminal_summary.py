@@ -11,7 +11,9 @@ from pydantic import BaseModel
 from rich.console import Console
 
 from mcp_audit.coverage import missing_checks
+from mcp_audit.finding_display import _view
 from mcp_audit.models import AuditReport, ConnectionMode, ServerAudit
+from mcp_audit.taxonomy import FINDING_COPY, config_health_rule_id, finding_copy, finding_url
 from mcp_audit.terminal_text import terminal_safe
 
 LABELS = {"high": "▲ Fix now", "medium": "◆ Worth a look", "low": "● FYI"}
@@ -51,6 +53,11 @@ class Action:
     related: int = 0
     flags: tuple[str, ...] = ()
     connected: bool = False
+    observed: str = ""
+    confidence: str = ""
+    time_to_fix: str = ""
+    manual_step: str = ""
+    reference: str = ""
 
 
 def _text(data: dict[str, object], *keys: str) -> str:
@@ -64,7 +71,9 @@ def _text(data: dict[str, object], *keys: str) -> str:
 def _identity(audit: ServerAudit, *, explicit_config: bool = False) -> str:
     server = audit.server
     client = "client not asserted" if explicit_config else server.client.value
-    return f"{server.name} / {client} ({server.scope})"
+    identity = f"{server.name} / {client} ({server.scope})"
+    source = "explicit file; parsed as Claude-style config" if explicit_config else server.config_source
+    return f"{identity} | {source}" if source else identity
 
 
 def _action(finding: BaseModel, audits: list[ServerAudit], sources: tuple[str, ...] = ()) -> Action:
@@ -73,23 +82,23 @@ def _action(finding: BaseModel, audits: list[ServerAudit], sources: tuple[str, .
     title = _text(data, "title", "summary", "description") or kind.replace("_", " ")
     consequence = _text(data, "description", "summary") or "Review the recorded capability before use."
     step = _text(data, "remediation") or "Review this finding in --details before enabling the entry."
+    rule = _text(data, "rule_id") or (config_health_rule_id(kind) if kind else "MCP009")
+    copy = finding_copy(rule) if rule in FINDING_COPY or rule.startswith("MCP-CH-") else None
+    if copy is not None:
+        title = copy.title
+        consequence = " ".join(copy.why_it_matters)
+        step = copy.how_to_fix
+    observed = _view(finding, rule_id=rule).evidence or (copy.what_we_saw if copy else consequence)
+    manual_step = _text(data, "remediation")
     if kind == "shell_wrapper_launch":
-        title = "Replace the shell wrapper"
-        consequence = "A shell wrapper can run more than a single server command."
-        step = "In this source, replace the wrapper with a reviewed executable and separate args."
-    elif kind == "credential_heavy_config":
-        title = "Review the credential access"
-        consequence = "This entry references several credential keys; no credential values were used."
-        step = "Disable this entry in the client while reviewing access; remove unused credential keys."
-    elif kind == "package_runner_source_review":
-        title = "Review and pin the package source"
-        consequence = "A package runner can fetch code that changes between launches."
-        step = (
-            "In this source, pin a version or digest you have reviewed; do not choose an unreviewed latest."
+        manual_step = (
+            "Inspect this entry's shell arguments. If a direct executable and argument list can express "
+            "the intended launch, use those instead of a shell wrapper. Otherwise remove this entry "
+            "temporarily and restart the client while you review the script."
         )
     target = _text(data, "target_name", "tool_name", "name")
     if target:
-        consequence = f"{target}: {consequence}"
+        observed = f"{target}: {observed}"
     paths = sources or tuple(dict.fromkeys(a.server.config_path for a in audits))
     flag = _FINDING_FLAGS.get(type(finding).__name__)
     if data.get("source") == "session" or data.get("after_call") is not None:
@@ -109,9 +118,14 @@ def _action(finding: BaseModel, audits: list[ServerAudit], sources: tuple[str, .
         step=step,
         sources=paths,
         identities=tuple(_identity(a) for a in audits),
-        rule=_text(data, "rule_id") or kind or "metadata drift",
+        rule=rule,
         flags=flags,
         connected=connected,
+        observed=observed,
+        confidence=copy.how_sure if copy else "",
+        time_to_fix=copy.time_to_fix if copy else "",
+        manual_step=manual_step,
+        reference=finding_url(rule) if copy else "",
     )
 
 
@@ -229,10 +243,7 @@ def what_happened(report: AuditReport, *, explicit_config: bool = False) -> str:
     elif report.connection_mode == ConnectionMode.ATTEMPTED:
         attempted = [a for a in report.audits if a.connection_status != "skipped"]
         contacted = (
-            ", ".join(
-                f"{a.server.name} (client not asserted)" if explicit_config else _identity(a)
-                for a in attempted[:3]
-            )
+            ", ".join(_identity(a, explicit_config=explicit_config) for a in attempted[:3])
             or "no selected servers"
         )
         if len(attempted) > 3:
@@ -334,7 +345,7 @@ def render_summary(out: Console, report: AuditReport, *, explicit_config: bool =
     scope = f"{report.servers_discovered} {entry_label}, {clients} {client_label}"
     if explicit_config:
         scope = f"{report.servers_discovered} {entry_label} in 1 explicit file; client not asserted"
-    out.print(f"{mode} | {scope} | {len(report.config_health_findings)} config warnings")
+    out.print(f"{mode}: {scope}; {len(report.config_health_findings)} config warnings")
     counts = {s: sum(a.severity == s for a in actions) for s in LABELS}
     out.print(
         f"Totals: {len(actions)} findings ({counts['high']} Fix now, "
@@ -374,7 +385,10 @@ def render_summary(out: Console, report: AuditReport, *, explicit_config: bool =
         ordered = sorted(
             group,
             key=lambda a: (
-                {"shell_wrapper_launch": 0, "credential_heavy_config": 1}.get(a.rule, 2),
+                {
+                    config_health_rule_id("shell_wrapper_launch"): 0,
+                    config_health_rule_id("credential_heavy_config"): 1,
+                }.get(a.rule, 2),
                 {"high": 0, "medium": 1, "low": 2}.get(a.severity, 1),
             ),
         )
@@ -395,9 +409,11 @@ def render_summary(out: Console, report: AuditReport, *, explicit_config: bool =
         candidates[warning_count:],
         key=lambda a: (
             {"high": 0, "medium": 1, "low": 2}.get(a.severity, 1),
-            {"shell_wrapper_launch": 0, "package_runner_source_review": 1, "credential_heavy_config": 2}.get(
-                a.rule, 3
-            ),
+            {
+                config_health_rule_id("shell_wrapper_launch"): 0,
+                config_health_rule_id("package_runner_source_review"): 1,
+                config_health_rule_id("credential_heavy_config"): 2,
+            }.get(a.rule, 3),
         ),
     )
     seen: set[tuple[tuple[str, ...], str]] = set()
@@ -419,8 +435,16 @@ def render_summary(out: Console, report: AuditReport, *, explicit_config: bool =
                 "   Source: " + ("; ".join(action.sources) or "not recorded; see inspect --details")
             )
         )
-        out.print(terminal_safe("   Why: " + action.consequence))
-        out.print(terminal_safe("   Manual step: " + action.step))
+        out.print(terminal_safe("   What we saw: " + (action.observed or action.consequence)))
+        out.print(terminal_safe("   Why it matters: " + action.consequence))
+        estimate = f" ({action.time_to_fix})" if action.time_to_fix else ""
+        out.print(terminal_safe(f"   How to fix{estimate}: " + action.step))
+        if action.manual_step:
+            out.print(terminal_safe("   Manual step: " + action.manual_step))
+        if action.confidence:
+            out.print(terminal_safe("   How sure: " + action.confidence))
+        if action.reference:
+            out.print(terminal_safe("   see: " + action.reference))
         if action.connected:
             out.print("   Connected recheck may execute code and access the network; review first.")
             out.print("   Copy only the listed entries into ./reviewed-mcp-config.json before rechecking.")

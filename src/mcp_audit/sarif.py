@@ -63,7 +63,10 @@ from mcp_audit.taxonomy import (
     SHADOWING_FINDINGS,
     SSRF_FINDINGS,
     TRIFECTA_FINDINGS,
+    config_health_rule_id,
+    finding_url,
     format_rule_of_two,
+    render_finding_reference,
 )
 
 _SARIF_SCHEMA = (
@@ -187,8 +190,7 @@ def _artifact_uri(config_path: str | None) -> str:
 
 def _config_health_rule_id(finding_type: str) -> str:
     """Map each config-health kind to a deterministic SARIF rule identifier."""
-    token = "".join(character.upper() if character.isalnum() else "-" for character in finding_type)
-    return f"MCP-CH-{token.strip('-')}"
+    return config_health_rule_id(finding_type)
 
 
 def _unique_config_health_findings(
@@ -232,6 +234,30 @@ class SarifGenerator:
                 }
             ],
         }
+        run = document["runs"][0]
+        for rule in run["tool"]["driver"]["rules"]:
+            rule_id = rule["id"]
+            rule["helpUri"] = finding_url(rule_id)
+            rule["help"]["text"] += f"\nsee: {finding_url(rule_id)}"
+            rule["help"]["markdown"] = render_finding_reference(rule_id)
+        for result in run["results"]:
+            result["message"]["text"] += f"\nsee: {finding_url(result['ruleId'])}"
+            uris = {
+                location["physicalLocation"]["artifactLocation"]["uri"]
+                for location in result.get("locations", [])
+            }
+            sources = [
+                {
+                    "config_path": audit.server.config_path,
+                    "source_label": audit.server.source_label,
+                    "config_pointer": audit.server.config_pointer,
+                    "identity": f"{audit.server.client.value}:{audit.server.scope}:{audit.server.name}",
+                }
+                for audit in report.audits
+                if _artifact_uri(audit.server.config_path) in uris
+            ]
+            if sources:
+                result.setdefault("properties", {})["config_sources"] = sources
         coverage = {
             check: {"state": value.state, "reason": value.reason} for check, value in report.coverage.items()
         }

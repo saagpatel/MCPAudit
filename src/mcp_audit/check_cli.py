@@ -26,7 +26,11 @@ T = TypeVar("T")
 
 def _source_options(command: Callable[P, T]) -> Callable[P, T]:
     for option in (
-        click.option("--config", type=click.Path(path_type=Path), help="Review this file only."),
+        click.option(
+            "--config",
+            type=click.Path(path_type=Path),
+            help="Review this explicit file only; parsed as Claude-style config.",
+        ),
         click.option(
             "--include-discovered", is_flag=True, help="Also read supported client config locations."
         ),
@@ -168,7 +172,9 @@ def inspect(config: Path | None, include_discovered: bool, project: Path | None,
     if sources.errors:
         out.print("PARTIAL: config diagnostics or skipped sources reduce coverage.")
     for server in sources.servers:
-        out.print(terminal_safe(f"{server_identity(server)} | source: {server.config_path}"))
+        out.print(
+            terminal_safe(f"{server_identity(server)} | source: {server.source_label} | {server.config_path}")
+        )
         if details:
             out.print(
                 terminal_safe(

@@ -30,6 +30,7 @@ not that a server is malicious or unsafe.
 mcp-audit                              # static review of supported configs
 mcp-audit check --config ./mcp.json    # review this file only; no connections
 mcp-audit demo                         # see a bundled synthetic example
+mcp-audit explain MCP007               # explain a finding offline; no config reads
 ```
 
 Install with [uv](https://docs.astral.sh/uv/):
@@ -59,6 +60,12 @@ Review the server's configured access, narrow it if needed, then run the check a
 Use [Start here](docs/start-here.md) for a guided walkthrough and
 [Reading results](docs/reading-results.md) to interpret scores, findings, and
 coverage. [How it works](docs/how-it-works.md) explains the check boundary.
+
+Each rule's meaning, possible consequences, manual fix and confidence limits are
+in the [finding reference](docs/findings/index.md); `mcp-audit explain MCP013`
+prints the same entry offline. Explicit `--config` sources are labeled
+"explicit file; parsed as Claude-style config"; the parser identity does not
+establish which client uses that file.
 
 ## Use in CI
 

@@ -852,7 +852,13 @@ def _parse_extra_config(path: Path, parse_errors: list[ConfigParseError] | None 
             raise ValueError(f"Config file not found: {path}")
         if not path.is_file():
             raise ValueError(f"Config path is not a regular file: {path}")
-        return parse_config(path.read_text(encoding="utf-8-sig"), source=str(path), parse_errors=parse_errors)
+        servers = parse_config(
+            path.read_text(encoding="utf-8-sig"), source=str(path), parse_errors=parse_errors
+        )
+        return [
+            server.model_copy(update={"config_source": "explicit file; parsed as Claude-style config"})
+            for server in servers
+        ]
     except OSError as exc:
         raise ValueError(f"Failed to read {path}: {redact_text(str(exc))}") from exc
     except UnicodeError as exc:

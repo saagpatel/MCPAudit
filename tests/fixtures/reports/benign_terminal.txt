@@ -13,9 +13,12 @@ Runtime security: UNKNOWN (coverage not recorded)
 ┏━━━━━━━━━━━━━━━━┳━━━━━━┳━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃ Server         ┃ Type ┃ Target ┃ Severity ┃ Pattern             ┃ Description ┃ Suggested Action                     ┃
 ┡━━━━━━━━━━━━━━━━╇━━━━━━╇━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ fixture-server │ tool │ run    │ high     │ ignore_instructions │ injection   │ Do not pipe this output into an AI   │
-│                │      │        │          │                     │             │ assistant as trusted text; review or │
-│                │      │        │          │                     │             │ disable the server.                  │
+│ fixture-server │ tool │ run    │ high     │ ignore_instructions │ injection   │ Your AI may read this text as part   │
+│                │      │        │          │                     │             │ of using the server. Remove the      │
+│                │      │        │          │                     │             │ server from your config, or remove   │
+│                │      │        │          │                     │             │ the matched instruction if you own   │
+│                │      │        │          │                     │             │ it; restart the client before using  │
+│                │      │        │          │                     │             │ it again.                            │
 └────────────────┴──────┴────────┴──────────┴─────────────────────┴─────────────┴──────────────────────────────────────┘
 
 ─────────────────────────────────────── Capability Escalation (vs pin baseline) ────────────────────────────────────────
@@ -40,3 +43,65 @@ Runtime security: UNKNOWN (coverage not recorded)
 ┡━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━┩
 │ fail_on.escalation │ evil-server │ run  │ high     │ escalation finding │
 └────────────────────┴─────────────┴──────┴──────────┴────────────────────┘
+MCP004: Your AI may be able to run commands through this server.
+Server/config entry: fixture-server
+Source: claude_code | identity: claude_code:workstation:fixture-server | config_path: /tmp/config.json
+Config entry pointer: unavailable (legacy or unresolved entry)
+Target: run
+What we saw: Tool metadata indicates the server may run shell commands or local processes.
+evidence: ['fixture-evidence']
+Why it matters: 1. You enable a command-running tool. 2. It can use the server process's permissions. 3. Files or other
+local programs could be affected.
+How to fix (About 1 minute to disable; review time varies): Disable or isolate command execution until you have reviewed
+its arguments and allowed operations.
+Specific action: Disable or isolate this server until you have reviewed the command surface and source.
+Static recheck (runtime not checked): mcp-audit check --config /tmp/config.json
+How sure: A capability inference from config or served metadata, not an observed operation. Use the finding's confidence
+and evidence; descriptions and annotations can be inaccurate.
+see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp004
+MCP007: This tool's text may give your AI hidden instructions.
+Server/config entry: fixture-server
+Source: claude_code | identity: claude_code:workstation:fixture-server | config_path: /tmp/config.json
+Config entry pointer: unavailable (legacy or unresolved entry)
+Target: run
+What we saw: injection
+Matched text: fixture-text
+Why it matters: 1. Your AI may read the server's text when using it. 2. It could follow the embedded instruction instead
+of your task. 3. Depending on its access, it could reveal private data or take an unwanted action.
+How to fix (About 1 minute to disable; source review varies): Remove the server from the named config entry, or remove
+the matched instruction if you own it. Restart the client. Never treat allowing a finding as removing the instruction
+the AI reads.
+Specific action: Your AI may read this text as part of using the server. Remove the server from your config, or remove
+the matched instruction if you own it; restart the client before using it again.
+Static recheck (runtime not checked): mcp-audit check --config /tmp/config.json
+How sure: A deterministic text or structural heuristic, not AI judgment or proof of an attack. Quoted examples and
+legitimate instructions can match. Static checks do not cover every attack.
+see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp007
+MCP018: Your pinned tool may have gained broader access.
+Server/config entry: fixture-server
+Source: claude_code | identity: claude_code:workstation:fixture-server | config_path: /tmp/config.json
+Config entry pointer: unavailable (legacy or unresolved entry)
+Target: run
+What we saw: escalated
+gained_categories: ['shell_execution']
+Why it matters: 1. You pinned an earlier tool surface. 2. New metadata suggests broader access or changed hints. 3. The
+old review may no longer cover its behavior.
+How to fix (About 5 minutes for an initial comparison): Review the gained categories and annotation changes. Keep the
+old pin until you understand and accept the change.
+Specific action: Do NOT refresh the pin until you have reviewed why this tool's capability surface grew. Inspect the
+changed tool metadata, confirm the new capability is intended and from a trusted source, and only then run `mcp-audit
+pin --refresh <server>`. If the change is unexpected, disable the server and report it to the author.
+Static recheck (runtime not checked): mcp-audit check --config /tmp/config.json
+How sure: A comparison with the saved baseline, not proof of compromise. Confirm the baseline's scope and review the
+specific delta; an intentional update can also trigger this finding.
+see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp018
+MCP010: Your audit did not meet your local policy.
+Server/config entry: evil-server
+Target: run
+What we saw: A reported result or missing coverage violated an explicitly selected policy rule.
+Why it matters: 1. You set a local requirement. 2. This scan did not satisfy it. 3. Accepting the result would bypass
+that requirement.
+How to fix (Review time depends on the violated rule): Read the named policy violation; repair the configuration or
+deliberately review the policy before rechecking.
+How sure: A deterministic policy evaluation, not a universal security verdict.
+see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp010

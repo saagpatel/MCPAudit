@@ -12,6 +12,7 @@ from rich.table import Table
 from rich.text import Text
 
 from mcp_audit.coverage import missing_checks
+from mcp_audit.finding_display import finding_views, print_finding
 from mcp_audit.models import (
     ArtifactVerifySeverity,
     AuditReport,
@@ -101,6 +102,8 @@ class ReportGenerator:
 
         if not report.audits:
             self._console.print("[dim]No servers found.[/dim]")
+            for view in finding_views(report):
+                print_finding(self._console, view)
             return
 
         table = Table(title=None, show_lines=True)
@@ -125,7 +128,7 @@ class ReportGenerator:
 
             table.add_row(
                 terminal_safe(audit.server.name),
-                terminal_safe(audit.server.client.value),
+                terminal_safe(audit.server.source_label),
                 terminal_safe(str(len(audit.tools))),
                 terminal_safe(str(len(audit.prompts))),
                 terminal_safe(str(len(audit.resources))),
@@ -188,6 +191,8 @@ class ReportGenerator:
         self._render_capability_warnings(report)
         self._render_drift_warnings(report)
         self._render_policy_result(report)
+        for view in finding_views(report):
+            print_finding(self._console, view)
 
     def _render_coverage(self, report: AuditReport) -> None:
         """Show which checks ran, including checks omitted by older reports."""
