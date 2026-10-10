@@ -191,6 +191,9 @@ def test_expected_signed_server_never_escapes_mcp027(
     assert [f.rule_id for f in audit.pin_integrity_findings] == ["MCP027"]
     assert audit.pin_integrity_findings[0].severity == "high"
     assert "pin_integrity_failed" in {w.code for w in report.warnings}
+    # A rejected entry gets tampered/withheld guidance only, never legacy refresh advice.
+    assert loaded.schema_warnings("fixture") == []
+    assert "pin_schema_outdated" not in {w.code for w in report.warnings}
 
     policy = _policy(tmp_path, "fail_on:\n  pin_integrity: true\nrequire:\n  pins:\n    servers: [fixture]\n")
     result = evaluate_policy(report, policy, pin_store=loaded)  # type: ignore[arg-type]
@@ -313,47 +316,62 @@ def _fail_write() -> None:
     raise OSError("Synthetic pin replacement failure")
 
 
-def test_failed_signed_upgrade_keeps_old_expectation(
-    tmp_path: Path, trust: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def _unsigned_pins_and_untrusted_key(tmp_path: Path, trust: Path) -> tuple[Path, Path]:
+    """Unsigned v2 pins plus a signing key whose public key this trust store lacks."""
     pins = tmp_path / "pins.yaml"
     PinStore(pins, unsigned=True, trusted_keys_path=trust).pin_server("fixture", [TOOL])
-    before = pins.read_bytes()
-    key = generate_keypair(tmp_path / "keys", trust).private_key_path
-    signer = PinStore(pins, signing_key=key, trusted_keys_path=trust)
-    monkeypatch.setattr(signer, "_write", _fail_write)
-    with pytest.raises(OSError, match="Synthetic"):
-        signer.pin_server("fixture", [TOOL])
-    assert pins.read_bytes() == before
-    assert not signature_required("fixture", trust)
-    reopened = PinStore(pins, trusted_keys_path=trust).verification("fixture")
-    assert reopened is not None and reopened.state == "unsigned"
+    key = generate_keypair(tmp_path / "keys", tmp_path / "staging-trust.json").private_key_path
+    return pins, key
 
 
-@pytest.mark.parametrize("operation", ["resign", "rotate_key"])
-def test_failed_resign_or_rotation_keeps_old_expectation(
+@pytest.mark.parametrize("operation", ["pin_server", "resign"])
+def test_failed_signed_upgrade_keeps_old_expectation(
     tmp_path: Path, trust: Path, monkeypatch: pytest.MonkeyPatch, operation: str
 ) -> None:
-    pins = tmp_path / "pins.yaml"
-    PinStore(pins, unsigned=True, trusted_keys_path=trust).pin_server("fixture", [TOOL])
+    pins, key = _unsigned_pins_and_untrusted_key(tmp_path, trust)
     before = pins.read_bytes()
-    key = generate_keypair(tmp_path / "keys", trust).private_key_path
     signer = PinStore(pins, signing_key=key, trusted_keys_path=trust)
     monkeypatch.setattr(signer, "_write", _fail_write)
     with pytest.raises(OSError, match="Synthetic"):
-        getattr(signer, operation)()
+        if operation == "pin_server":
+            signer.pin_server("fixture", [TOOL])
+        else:
+            signer.resign()
     assert pins.read_bytes() == before
     assert not signature_required("fixture", trust)
     reopened = PinStore(pins, trusted_keys_path=trust).verification("fixture")
     assert reopened is not None and reopened.state == "unsigned"
+
+
+@pytest.mark.parametrize("operation", ["pin_server", "rotate_key"])
+def test_failed_signed_rewrite_keeps_trust_state(
+    signed_store: PinStore, trust: Path, key_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str
+) -> None:
+    pins_before = signed_store.path.read_bytes()
+    servers_before = json.loads(trust.read_text())["servers"]
+    store = PinStore(signed_store.path, signing_key=key_path, trusted_keys_path=trust)
+    monkeypatch.setattr(store, "_write", _fail_write)
+    with pytest.raises(OSError, match="Synthetic"):
+        if operation == "pin_server":
+            store.pin_server("fixture", [TOOL])
+        else:
+            store.rotate_key()
+    assert signed_store.path.read_bytes() == pins_before
+    # Neither the expectation nor the rollback high-water mark moved.
+    assert json.loads(trust.read_text())["servers"] == servers_before
 
 
 def test_successful_resign_records_expectation_after_write(tmp_path: Path, trust: Path) -> None:
-    pins = tmp_path / "pins.yaml"
-    PinStore(pins, unsigned=True, trusted_keys_path=trust).pin_server("fixture", [TOOL])
-    key = generate_keypair(tmp_path / "keys", trust).private_key_path
+    from mcp_audit.pin_signing import trust_key
+
+    pins, key = _unsigned_pins_and_untrusted_key(tmp_path, trust)
     PinStore(pins, signing_key=key, trusted_keys_path=trust).resign()
     assert signature_required("fixture", trust)
+    pinned_at = yaml.safe_load(pins.read_text())["servers"]["fixture"]["pinned_at"]
+    assert json.loads(trust.read_text())["servers"]["fixture"]["last_seen_pinned_at"] == pinned_at.replace(
+        "+00:00", "Z"
+    )
+    trust_key(key.with_suffix(".pub").read_text().strip(), trust)
     assert PinStore(pins, trusted_keys_path=trust).verification("fixture").state == "verified"  # type: ignore[union-attr]
 
 
@@ -393,3 +411,190 @@ def test_policy_opens_default_store_for_pin_integrity_gate(
     report = _skipped_report(config)
     result = evaluate_policy(report, _policy(tmp_path, "fail_on:\n  pin_integrity: true\n"))  # type: ignore[arg-type]
     assert [v.rule for v in result.violations] == ["fail_on.pin_integrity"]
+
+
+# --- Public-key-only CI: a fresh trust store holds only the trusted public key.
+
+
+@pytest.fixture
+def ci_trust(tmp_path: Path, key_path: Path) -> Path:
+    from mcp_audit.pin_signing import trust_key
+
+    path = tmp_path / "ci-trust.json"
+    trust_key(key_path.with_suffix(".pub").read_text().strip(), path)
+    assert not signature_required("fixture", path)
+    return path
+
+
+def test_public_key_only_ci_rejects_fully_stripped_signature(
+    signed_store: PinStore,
+    ci_trust: Path,
+    config: ServerConfig,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    malicious = TOOL.model_copy(update={"description": "Attacker surface"})
+
+    def strip(data: dict[str, object]) -> None:
+        entry = _servers(data)["fixture"]
+        for key in ("signature", "signer", "surface_sha256", "canonical_bytes_len"):
+            entry.pop(key)
+        tool = entry["tools"]["list_items"]  # type: ignore[index]
+        tool["hash"] = signed_store.compute_hash(malicious)
+        tool["snapshot"] = signed_store._tool_snapshot(malicious)
+
+    _edit(signed_store.path, strip)
+    # One-shot CI: no earlier verification ever recorded a per-server expectation.
+    assert not signature_required("fixture", ci_trust)
+    loaded = PinStore(signed_store.path, trusted_keys_path=ci_trust)
+    assert loaded.verification("fixture").state == "tampered_entry"  # type: ignore[union-attr]
+    assert not loaded.baseline_trusted("fixture")
+    report = _scan(monkeypatch, signed_store.path, ci_trust, config, [malicious], pin_check=True)
+    assert [f.rule_id for f in report.audits[0].pin_integrity_findings] == ["MCP027"]
+    assert "pin_unsigned" not in {w.code for w in report.warnings}
+    policy = _policy(tmp_path, "fail_on:\n  pin_integrity: true\n")
+    assert not evaluate_policy(report, policy).passed  # type: ignore[arg-type]
+
+
+def test_public_key_only_ci_still_warns_for_genuine_v1(signed_store: PinStore, ci_trust: Path) -> None:
+    _edit(signed_store.path, _legacy_substitute)
+    loaded = PinStore(signed_store.path, trusted_keys_path=ci_trust)
+    assert loaded.verification("fixture").state == "schema_outdated"  # type: ignore[union-attr]
+    assert loaded.baseline_trusted("fixture")
+    assert [w.code for w in loaded.schema_warnings("fixture")] == ["pin_schema_outdated"]
+
+
+def test_v1_markers_cannot_launder_a_stripped_v2_entry(signed_store: PinStore, ci_trust: Path) -> None:
+    def downgrade(data: dict[str, object]) -> None:
+        entry = _servers(data)["fixture"]
+        for key in ("signature", "signer", "surface_sha256", "canonical_bytes_len"):
+            entry.pop(key)
+        for tool in entry["tools"].values():  # type: ignore[attr-defined]
+            tool["pin_schema"] = 1
+
+    _edit(signed_store.path, downgrade)
+    loaded = PinStore(signed_store.path, trusted_keys_path=ci_trust)
+    assert loaded.verification("fixture").state == "tampered_entry"  # type: ignore[union-attr]
+    assert loaded.schema_warnings("fixture") == []
+
+
+def test_unsigned_v2_still_warns_without_trusted_keys(tmp_path: Path) -> None:
+    trust = tmp_path / "empty-trust.json"
+    store = PinStore(tmp_path / "pins.yaml", unsigned=True, trusted_keys_path=trust)
+    store.pin_server("fixture", [TOOL])
+    assert store.verification("fixture").state == "unsigned"  # type: ignore[union-attr]
+    assert store.baseline_trusted("fixture")
+
+
+def test_keys_retired_past_grace_do_not_require_signatures(
+    tmp_path: Path, trust: Path, key_path: Path
+) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from mcp_audit.pin_signing import has_active_trusted_key
+
+    data = json.loads(trust.read_text())
+    (record,) = data["keys"].values()
+    record["retired_at"] = "2020-01-01T00:00:00Z"
+    record["grace_days"] = 30
+    trust.write_text(json.dumps(data))
+    assert not has_active_trusted_key(trust)
+    assert has_active_trusted_key(trust, now=datetime(2020, 1, 15, tzinfo=UTC))
+    assert not has_active_trusted_key(trust, now=datetime(2020, 1, 1, tzinfo=UTC) + timedelta(days=31))
+
+
+@pytest.mark.parametrize("unsigned", [False, True])
+def test_unsigned_writes_are_refused_while_keys_are_trusted(
+    tmp_path: Path, ci_trust: Path, unsigned: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mcp_audit import pin_signing
+
+    monkeypatch.setattr(pin_signing, "DEFAULT_SIGNING_KEY_PATH", tmp_path / "ci-host" / "pin-signing.key")
+    pins = tmp_path / "ci-pins.yaml"
+    # A CI host holds only the public key; the default private key path is absent.
+    store = PinStore(pins, unsigned=unsigned, trusted_keys_path=ci_trust)
+    with pytest.raises(PinSigningError, match="Trusted pin keys exist"):
+        store.pin_server("fixture", [TOOL])
+    assert not pins.exists()
+
+
+# --- Rollback: the high-water mark advances on every successful signed write.
+
+
+def test_restoring_an_older_signed_pin_after_repin_warns(
+    signed_store: PinStore, trust: Path, key_path: Path, monkeypatch: pytest.MonkeyPatch, config: ServerConfig
+) -> None:
+    older = signed_store.path.read_bytes()
+    first = yaml.safe_load(older)["servers"]["fixture"]["pinned_at"]
+    store = PinStore(signed_store.path, signing_key=key_path, trusted_keys_path=trust)
+    store.pin_server("fixture", [TOOL.model_copy(update={"description": "Tighter surface"})], config)
+    second = yaml.safe_load(signed_store.path.read_text())["servers"]["fixture"]["pinned_at"]
+    assert second > first
+    assert json.loads(trust.read_text())["servers"]["fixture"]["last_seen_pinned_at"] == second.replace(
+        "+00:00", "Z"
+    )
+    # No scan verified the newer pin; restoring the older file must still be noticed.
+    signed_store.path.write_bytes(older)
+    restored = PinStore(signed_store.path, trusted_keys_path=trust)
+    assert restored.verification("fixture").state == "verified"  # type: ignore[union-attr]
+    assert "pin_rolled_back" in {w.code for w in restored.verification_warnings("fixture")}
+    report = _scan(monkeypatch, signed_store.path, trust, config, [TOOL], pin_check=True)
+    assert "pin_rolled_back" in {w.code for w in report.warnings}
+
+
+def test_failed_signed_write_does_not_advance_high_water(
+    signed_store: PinStore, trust: Path, key_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    before = json.loads(trust.read_text())["servers"]["fixture"]["last_seen_pinned_at"]
+    store = PinStore(signed_store.path, signing_key=key_path, trusted_keys_path=trust)
+    monkeypatch.setattr(store, "_write", _fail_write)
+    with pytest.raises(OSError, match="Synthetic"):
+        store.pin_server("fixture", [TOOL])
+    assert json.loads(trust.read_text())["servers"]["fixture"]["last_seen_pinned_at"] == before
+    reopened = PinStore(signed_store.path, trusted_keys_path=trust)
+    assert reopened.verification("fixture").state == "verified"  # type: ignore[union-attr]
+    assert reopened.verification_warnings("fixture") == []
+
+
+# --- Retired-key grace values never crash verification.
+
+
+@pytest.mark.parametrize(
+    ("retired_at", "grace_days"),
+    [
+        ("2026-01-01T00:00:00Z", 3_000_000),
+        ("2026-01-01T00:00:00Z", -1),
+        ("2026-01-01T00:00:00Z", "30"),
+        ("9999-12-31T00:00:00Z", 30),
+    ],
+)
+def test_invalid_retired_key_grace_fails_closed_without_crashing(
+    signed_store: PinStore,
+    trust: Path,
+    config: ServerConfig,
+    monkeypatch: pytest.MonkeyPatch,
+    retired_at: str,
+    grace_days: object,
+) -> None:
+    data = json.loads(trust.read_text())
+    (record,) = data["keys"].values()
+    record["retired_at"] = retired_at
+    record["grace_days"] = grace_days
+    trust.write_text(json.dumps(data))
+    loaded = PinStore(signed_store.path, trusted_keys_path=trust)
+    verification = loaded.verification("fixture")
+    assert verification is not None and verification.state == "untrusted_signer"
+    assert "grace period is invalid" in loaded.verification_message("fixture")
+    report = _scan(monkeypatch, signed_store.path, trust, config, [TOOL], pin_check=True)
+    assert [f.rule_id for f in report.audits[0].pin_integrity_findings] == ["MCP027"]
+
+
+def test_rotation_refuses_unbounded_grace_before_touching_keys(
+    signed_store: PinStore, key_path: Path
+) -> None:
+    from mcp_audit.pin_signing import MAX_GRACE_DAYS
+
+    key_before = key_path.read_bytes()
+    with pytest.raises(ValueError, match="grace_days must be at most"):
+        signed_store.rotate_key(grace_days=MAX_GRACE_DAYS + 1)
+    assert key_path.read_bytes() == key_before
