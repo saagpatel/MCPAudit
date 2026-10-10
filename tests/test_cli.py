@@ -11,6 +11,7 @@ import anyio
 import pytest
 from click.testing import CliRunner
 
+from mcp_audit import _core_cli as core_cli
 from mcp_audit import cli, engine, pin_cli, scan_cli
 from mcp_audit.confighealth import config_health_findings
 from mcp_audit.engine import ScanOptions
@@ -55,8 +56,8 @@ def test_scan_max_concurrency_reaches_current_run_scan_entrypoint(
     async def frozen_core_was_called(*args: object, **kwargs: object) -> None:
         raise AssertionError("scan must use _run_scan, not the frozen compatibility shim")
 
-    monkeypatch.setattr(cli, "_run_scan", fake_run_scan)
-    monkeypatch.setattr(cli, "_run_scan_core", frozen_core_was_called)
+    monkeypatch.setattr(core_cli, "_run_scan", fake_run_scan)
+    monkeypatch.setattr(core_cli, "_run_scan_core", frozen_core_was_called)
 
     result = CliRunner().invoke(
         cli.main,
@@ -191,7 +192,7 @@ def test_discover_reports_duplicate_server_names(monkeypatch: pytest.MonkeyPatch
     first_server = make_server_config(name="srv")
     second_server = first_server.model_copy(update={"config_path": "/tmp/other_config.json"})
     monkeypatch.setattr(
-        cli, "discover_all_configs", lambda clients, parse_errors=None: [first_server, second_server]
+        core_cli, "discover_all_configs", lambda clients, parse_errors=None: [first_server, second_server]
     )
 
     result = CliRunner().invoke(cli.main, ["discover"])
@@ -232,7 +233,7 @@ def test_discover_reports_config_health_warnings(monkeypatch: pytest.MonkeyPatch
         env_keys=["TOKEN", "SECRET"],
     ).model_copy(update={"headers_keys": ["Authorization"]})
     monkeypatch.setattr(
-        cli,
+        core_cli,
         "discover_all_configs",
         lambda clients, parse_errors=None: [
             missing_command,
@@ -270,7 +271,7 @@ def test_discover_reports_global_project_scope_conflicts(monkeypatch: pytest.Mon
         }
     )
     monkeypatch.setattr(
-        cli, "discover_all_configs", lambda clients, parse_errors=None: [global_server, project_server]
+        core_cli, "discover_all_configs", lambda clients, parse_errors=None: [global_server, project_server]
     )
 
     result = CliRunner().invoke(cli.main, ["discover"])
@@ -292,7 +293,7 @@ def test_discover_reports_conflicting_server_definitions(monkeypatch: pytest.Mon
         args=["--from", "example-search-mcp", "search-mcp"],
     ).model_copy(update={"config_path": "/tmp/other_config.json"})
     monkeypatch.setattr(
-        cli, "discover_all_configs", lambda clients, parse_errors=None: [npx_server, uvx_server]
+        core_cli, "discover_all_configs", lambda clients, parse_errors=None: [npx_server, uvx_server]
     )
 
     result = CliRunner().invoke(cli.main, ["discover"])
@@ -781,7 +782,7 @@ def test_pin_stale_reports_removed_server_without_writing(
     store.pin_server("configured", [make_tool("read_file")])
     store.pin_server("removed", [make_tool("write_file")])
     monkeypatch.setattr(
-        cli,
+        core_cli,
         "discover_all_configs",
         lambda clients, parse_errors=None: [make_server_config(name="configured")],
     )
@@ -829,7 +830,7 @@ def test_pin_clear_stale_reviews_removed_servers_without_writing(
     store.pin_server("removed-a", [make_tool("write_file")])
     store.pin_server("removed-b", [make_tool("delete_file")])
     monkeypatch.setattr(
-        cli,
+        core_cli,
         "discover_all_configs",
         lambda clients, parse_errors=None: [make_server_config(name="configured")],
     )

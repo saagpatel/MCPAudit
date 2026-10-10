@@ -6,8 +6,8 @@ local PostgreSQL baseline, and rejected when runtime state contradicts that
 model.
 
 It is not a production migration service, duration predictor, SQL firewall, or
-approval to run against an existing database. The implementation is internal in
-`mcp_audit.proofos_postgres`; it has no public CLI.
+approval to run against an existing database. The implementation is kept under
+`research/proofos_postgres.py`; it has no public CLI.
 
 ## Trust boundary
 
