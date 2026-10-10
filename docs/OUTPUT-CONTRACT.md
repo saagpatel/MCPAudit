@@ -35,10 +35,17 @@ environment, redirects, cookies, or mutations; all DNS addresses must be
 public and a resolved address is pinned while TLS verifies the original host.
 IP literals and localhost metadata hosts are rejected. Limits are 64 KiB per
 body, 32 metadata fetch attempts, and 8 advertised authorization servers per
-probe, within the existing per-server connection deadline. A challenged
-metadata URL must remain on the resource authority, matching the posture
-producer contract. RFC 9728 path/root and RFC 8414/OpenID discovery fallbacks
-are attempted in order; a binding mismatch stops use of that document.
+probe, within the existing per-server connection deadline. The connected
+probe uses at most half the remaining time, capped at five seconds, reserving time
+for SDK enumeration. Completed observations and attempted fetch records survive
+probe or SDK timeouts. A challenged metadata URL must remain on the resource
+authority, matching the posture producer contract. RFC 9728 path/root and
+RFC 8414/OpenID discovery fallbacks are attempted in order; a binding mismatch
+stops use of that document.
+Repeated challenge field lines are parsed as one list, including parameter
+whitespace around `=`. Identical duplicate parameters retain their value;
+conflicting or empty metadata advertisements produce
+`challenge_metadata_ambiguous` without falling back to well-known metadata.
 
 Authorization rules are `MCPAUTH001` (A1, PRM missing, medium), `MCPAUTH002`
 (A2, absent scope guidance, low advisory), `MCPAUTH003` (A3, resource mismatch,
