@@ -89,6 +89,70 @@ class TestInstallToConfig:
             _MCP_AUDIT_SERVER_ENTRY
         )
 
+    @pytest.mark.parametrize("relative_link", [False, True])
+    def test_install_preserves_symlink_and_replaces_target_atomically(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, relative_link: bool
+    ) -> None:
+        managed = tmp_path / "managed"
+        managed.mkdir()
+        target = managed / "config.json"
+        original = '{"mcpServers": {"other-server": {"command": "other"}}, "some": "key"}'
+        target.write_text(original, encoding="utf-8")
+        target.chmod(0o640)
+        cfg = tmp_path / "config.json"
+        link_target = Path("managed/config.json") if relative_link else target
+        cfg.symlink_to(link_target)
+        replace = os.replace
+        observed: list[bool] = []
+
+        def inspect_replace(source: Path, destination: Path) -> None:
+            observed.append(source.parent == target.parent and destination == target)
+            assert cfg.is_symlink()
+            assert target.read_text(encoding="utf-8") == original
+            replace(source, destination)
+
+        monkeypatch.setattr(os, "replace", inspect_replace)
+
+        assert _install_to_config(cfg)
+        assert observed == [True]
+        assert cfg.is_symlink()
+        assert cfg.readlink() == link_target
+        assert json.loads(target.read_text(encoding="utf-8")) == {
+            "mcpServers": {
+                "other-server": {"command": "other"},
+                "mcp-audit": _MCP_AUDIT_SERVER_ENTRY,
+            },
+            "some": "key",
+        }
+        assert cfg.read_bytes() == target.read_bytes()
+        assert target.stat().st_mode & 0o777 == 0o640
+        assert list(managed.iterdir()) == [target]
+
+    def test_failed_install_preserves_symlink_and_target(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        managed = tmp_path / "managed"
+        managed.mkdir()
+        target = managed / "config.json"
+        original = '{"mcpServers": {}}'
+        target.write_text(original, encoding="utf-8")
+        cfg = tmp_path / "config.json"
+        link_target = Path("managed/config.json")
+        cfg.symlink_to(link_target)
+
+        def fail_replace(source: Path, destination: Path) -> None:
+            assert source.parent == target.parent
+            assert destination == target
+            raise OSError("replacement failed")
+
+        monkeypatch.setattr(os, "replace", fail_replace)
+
+        assert _install_to_config(cfg) is False
+        assert cfg.is_symlink()
+        assert cfg.readlink() == link_target
+        assert target.read_text(encoding="utf-8") == original
+        assert list(managed.iterdir()) == [target]
+
     def test_skips_if_already_registered(self, tmp_path: Path) -> None:
         cfg = tmp_path / "config.json"
         existing_entry = {"command": "mcp-audit", "args": ["serve"]}

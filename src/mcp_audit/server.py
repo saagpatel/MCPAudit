@@ -45,7 +45,8 @@ def _install_to_config(config_path: Path, server_name: str = "mcp-audit") -> boo
         return False
 
     try:
-        raw: Any = json.loads(config_path.read_text())
+        target_path = config_path.resolve(strict=True)
+        raw: Any = json.loads(target_path.read_text())
     except (json.JSONDecodeError, OSError) as exc:
         _error_console.print(terminal_safe(f"Could not read {config_path}: {exc}"), style="red")
         return False
@@ -62,15 +63,15 @@ def _install_to_config(config_path: Path, server_name: str = "mcp-audit") -> boo
     mcp_servers[server_name] = _MCP_AUDIT_SERVER_ENTRY
     temporary_path: Path | None = None
     try:
-        mode = config_path.stat().st_mode & 0o777
-        descriptor, temporary_name = tempfile.mkstemp(prefix=f".{config_path.name}.", dir=config_path.parent)
+        mode = target_path.stat().st_mode & 0o777
+        descriptor, temporary_name = tempfile.mkstemp(prefix=f".{target_path.name}.", dir=target_path.parent)
         temporary_path = Path(temporary_name)
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             handle.write(json.dumps(raw, indent=2))
             handle.flush()
             os.fsync(handle.fileno())
         temporary_path.chmod(mode)
-        os.replace(temporary_path, config_path)
+        os.replace(temporary_path, target_path)
         _console.print(terminal_safe(f"Registered {server_name} in {config_path}"), style="green")
         return True
     except OSError as exc:
