@@ -62,6 +62,9 @@ async def _run_scan(
     names: bool = False,
     previous: Path | None = None,
     pin_file: Path | None = None,
+    max_frame_bytes: int = 16 * 1024 * 1024,
+    max_surface_bytes: int = 64 * 1024 * 1024,
+    sdk_stdio_fallback: bool = False,
 ) -> None:
     """CLI scan entrypoint — calls the engine's run_scan then renders output."""
     from mcp_audit.checkup import generate_card, load_previous, sticker
@@ -107,6 +110,9 @@ async def _run_scan(
 
     scan_options = ScanOptions(
         max_concurrency=max_concurrency,
+        max_frame_bytes=max_frame_bytes,
+        max_surface_bytes=max_surface_bytes,
+        sdk_stdio_fallback=sdk_stdio_fallback,
         canary_check=canary_check,
         canary_calls=canary_calls,
         canary_identities=canary_identities,

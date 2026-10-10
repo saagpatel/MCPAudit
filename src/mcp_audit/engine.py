@@ -54,6 +54,7 @@ from mcp_audit.overrides import OverrideApplier, OverrideConfig
 from mcp_audit.redaction import redact_data, redact_text
 from mcp_audit.schema_rules import scan_tool_schema
 from mcp_audit.scorer import RiskScorer
+from mcp_audit.stdio_transport import DEFAULT_MAX_FRAME_BYTES, DEFAULT_MAX_SURFACE_BYTES
 from mcp_audit.terminal_text import terminal_safe
 from mcp_audit.text_limits import MAX_FIELD_BYTES, bounded_text
 
@@ -99,6 +100,9 @@ class ScanOptions:
     multi_tenant_hosts: str | None = None
     egress_server_allowlists: dict[str, list[str]] | None = None
     max_concurrency: int = 32
+    max_frame_bytes: int = DEFAULT_MAX_FRAME_BYTES
+    max_surface_bytes: int = DEFAULT_MAX_SURFACE_BYTES
+    sdk_stdio_fallback: bool = False
 
 
 if TYPE_CHECKING:
@@ -261,7 +265,12 @@ def _prepare_scan(
         scan_warnings.append(ScanWarning(code=code, message=message, check=check, servers=servers or []))
         out.print(terminal_safe(message), style="yellow")
 
-    connector = ServerConnector(timeout=float(opts.timeout))
+    connector = ServerConnector(
+        timeout=float(opts.timeout),
+        max_frame_bytes=opts.max_frame_bytes,
+        max_surface_bytes=opts.max_surface_bytes,
+        sdk_stdio_fallback=opts.sdk_stdio_fallback,
+    )
     connector.scan_warnings = []
     connection_limiter = anyio.CapacityLimiter(opts.max_concurrency)
     analyzer = PermissionAnalyzer()
@@ -711,7 +720,12 @@ async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) ->
     if integrity_analyzer is not None and pin_store is not None:
         baseline_artifacts = pin_store.baseline_artifacts(srv.name)
         if baseline_artifacts:
-            audit.integrity_findings = integrity_analyzer.analyze_server(srv.name, baseline_artifacts)
+            integrity_warnings: list[ScanWarning] = []
+            audit.integrity_findings = integrity_analyzer.analyze_server(
+                srv.name, baseline_artifacts, warnings=integrity_warnings
+            )
+            for warning in integrity_warnings:
+                warn(warning.code, warning.message, check=warning.check, servers=warning.servers)
 
     # Optional registry package verification (network) vs the pin baseline.
     # Runs in a worker thread so the synchronous registry I/O never blocks

@@ -74,11 +74,16 @@ increase a limit to obtain a green run.
 | `desc_5mb_x1` | 18.8 s wall, ≤ 18 s permission analysis | `p1-9`: ≤ 1 s permission analysis |
 | `desc_1mb_x20` | 75 s wall, 1282 MiB RSS | `p1-9`: ≤ 3 s wall, < 400 MB RSS |
 | `oversized_50mb` | 191.7 s wall, 3217 MiB RSS; connected with one tool | `p3-7`: < 1 s wall, < 300 MB RSS, failed with frame-size reason |
+| `pages_20k` | 20 pages of 1,000 tools | ≤ 9 s wall, < 500 MB RSS; all 20,000 tools retained with complete metadata |
 | `spawn_child_exit` (plus healthy sibling) | timeout 2 + 4.5 s wall; at most one leftover process/group | `p3-8`: same wall bound, zero leftovers |
 
 Other cases always require zero leftovers. Baseline timeout-2 permits only
 connected/timeout statuses; it does not certify full coverage. Description and
 frame sizes are decimal bytes (5,000,000; 1,000,000 × 20; 50,000,000).
+The `desc_1mb_x20` analysis lane explicitly uses `--max-frame-bytes 32000000`
+to admit its 20 MB response and preserve its twenty-tool analysis contract.
+The default 16 MiB rejection is tested separately by `oversized_50mb`, now
+enforced in every profile. Listing text caps still apply in the description lane.
 Future memory targets use decimal MB; baseline RSS uses the stress runner's MiB.
 The orphan allowance is an explicit known baseline defect, not a safety claim.
 
@@ -86,7 +91,7 @@ Profiles are cumulative: `p3-7` includes `p1-9`, and `p3-8` includes both.
 As each fixing phase lands, promote the default in `tests/conftest.py` and the
 nightly/dispatch defaults in `.github/workflows/hostile-perf.yml`. Tight targets
 can already be selected on demand and fail normally; they are not skipped or
-xfail assertions. The nightly workflow runs all six cases and uploads metrics
+xfail assertions. The nightly workflow runs all registered cases and uploads metrics
 even on failure. P1-9 adds the detector/concurrency repairs and the 2000-server
-gate; transport repairs and other §5a scenarios remain separate (20k tools,
-100k config-only servers, or the SSRF tokenizer).
+gate; other §5a scenarios remain separate (100k config-only servers or the
+SSRF tokenizer).

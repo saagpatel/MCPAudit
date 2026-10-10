@@ -43,6 +43,7 @@ def _warning_reasons(check: str, audit: ServerAudit, warnings: list[ScanWarning]
             )
             or (warning.code == "agent_text_incomplete" and check in _AGENT_TEXT_CHECKS)
             or (warning.code == "description_truncated" and check in _BOUNDED_TEXT_CHECKS)
+            or (warning.code == "surface_truncated" and check not in _CONFIG_CHECKS)
         )
         # These describe trust or history, not an incomplete drift comparison.
         and warning.code

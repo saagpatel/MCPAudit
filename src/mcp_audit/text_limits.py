@@ -3,15 +3,17 @@
 MAX_FIELD_BYTES = 256 * 1024
 
 
-def bounded_text(text: str) -> str:
-    """Return at most 256 KiB of UTF-8 text, ending at a character boundary."""
-    if len(text) <= MAX_FIELD_BYTES // 4:
+def bounded_text(text: str, max_bytes: int = MAX_FIELD_BYTES) -> str:
+    """Return a bounded UTF-8 prefix, ending at a character boundary."""
+    if max_bytes < 0:
+        raise ValueError("max_bytes must be nonnegative")
+    if len(text) <= max_bytes // 4:
         return text
-    prefix = text[:MAX_FIELD_BYTES]
+    prefix = text[:max_bytes]
     encoded = prefix.encode("utf-8", errors="surrogatepass")
-    if len(encoded) <= MAX_FIELD_BYTES:
+    if len(encoded) <= max_bytes:
         return prefix
-    capped = encoded[:MAX_FIELD_BYTES]
+    capped = encoded[:max_bytes]
     try:
         return capped.decode("utf-8", errors="surrogatepass")
     except UnicodeDecodeError as exc:

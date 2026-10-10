@@ -60,7 +60,7 @@ def test_run_scan_reports_incomplete_tool_schema_metadata(
     server = make_server_config(name="schema-fixture", command="fixture")
 
     class FixtureConnector:
-        def __init__(self, timeout: float) -> None:
+        def __init__(self, timeout: float, **_limits: object) -> None:
             self.scan_warnings: list[ScanWarning] = []
 
         async def connect(self, _server: ServerConfig) -> ServerAudit:
@@ -89,6 +89,9 @@ def test_scan_options_defaults_mirror_flagless_scan() -> None:
     assert options.config_only is False
     assert options.timeout == 10
     assert options.max_concurrency == 32
+    assert options.max_frame_bytes == 16 * 1024 * 1024
+    assert options.max_surface_bytes == 64 * 1024 * 1024
+    assert options.sdk_stdio_fallback is False
     assert not any(
         getattr(options, flag)
         for flag in (
@@ -113,6 +116,27 @@ def test_run_scan_rejects_zero_max_concurrency() -> None:
         anyio.run(partial(run_scan, ScanOptions(max_concurrency=0), servers=[]))
 
 
+def test_run_scan_passes_transport_limits_to_connector(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mcp_audit.connector import ServerConnector
+
+    captured: dict[str, object] = {}
+
+    class ConfiguredConnector(ServerConnector):
+        def __init__(self, timeout: float, **transport_options: object) -> None:
+            captured.update(transport_options)
+            super().__init__(timeout)
+
+    monkeypatch.setattr(engine, "ServerConnector", ConfiguredConnector)
+    anyio.run(
+        partial(
+            run_scan,
+            ScanOptions(max_frame_bytes=1234, max_surface_bytes=5678, sdk_stdio_fallback=True),
+            servers=[],
+        )
+    )
+    assert captured == {"max_frame_bytes": 1234, "max_surface_bytes": 5678, "sdk_stdio_fallback": True}
+
+
 @pytest.mark.parametrize("canary_check", [False, True], ids=["ordinary", "canary"])
 def test_run_scan_limits_connector_sessions_and_preserves_server_order(
     monkeypatch: pytest.MonkeyPatch, canary_check: bool
@@ -124,7 +148,7 @@ def test_run_scan_limits_connector_sessions_and_preserves_server_order(
     completed: list[str] = []
 
     class TrackingConnector:
-        def __init__(self, timeout: float) -> None:
+        def __init__(self, timeout: float, **transport_options: object) -> None:
             assert timeout == 10
             self.scan_warnings: list[ScanWarning] = []
 
@@ -161,7 +185,7 @@ def test_run_scan_timeout_budget_starts_after_limiter_wait(monkeypatch: pytest.M
     entered: list[str] = []
 
     class SessionBudgetConnector:
-        def __init__(self, timeout: float) -> None:
+        def __init__(self, timeout: float, **transport_options: object) -> None:
             self.timeout = timeout
             self.scan_warnings: list[ScanWarning] = []
 
@@ -188,7 +212,7 @@ def test_run_scan_warns_for_each_oversized_detector_field_without_truncating_rep
     server = make_server_config(name="large-fields")
 
     class OversizedTextConnector:
-        def __init__(self, timeout: float) -> None:
+        def __init__(self, timeout: float, **transport_options: object) -> None:
             self.scan_warnings: list[ScanWarning] = []
 
         async def connect(self, _server: ServerConfig) -> ServerAudit:
@@ -242,7 +266,7 @@ def test_run_scan_propagates_permission_schema_incompleteness(
     monkeypatch.setattr(pinning, "PinStore", lambda: store)
 
     class FixtureConnector:
-        def __init__(self, timeout: float) -> None:
+        def __init__(self, timeout: float, **transport_options: object) -> None:
             self.scan_warnings: list[ScanWarning] = []
 
         async def connect(self, _server: ServerConfig) -> ServerAudit:
@@ -693,7 +717,7 @@ async def test_length_changing_lowercase_does_not_fail_server_analysis(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class FixtureConnector:
-        def __init__(self, timeout: float) -> None:
+        def __init__(self, timeout: float, **transport_options: object) -> None:
             self.scan_warnings: list[ScanWarning] = []
 
         async def connect(self, server: ServerConfig, **kwargs: object) -> ServerAudit:
