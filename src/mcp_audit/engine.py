@@ -51,6 +51,7 @@ from mcp_audit.models import (
 )
 from mcp_audit.overrides import OverrideApplier, OverrideConfig
 from mcp_audit.redaction import redact_data, redact_text
+from mcp_audit.schema_rules import scan_tool_schema
 from mcp_audit.scorer import RiskScorer
 from mcp_audit.stdio_transport import DEFAULT_MAX_FRAME_BYTES, DEFAULT_MAX_SURFACE_BYTES
 from mcp_audit.terminal_text import terminal_safe
@@ -626,6 +627,19 @@ async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) ->
         finding for tool in audit.tools for finding in analyzer.analyze_annotation_contradictions(tool)
     ]
     audit.capability_findings = analyzer.analyze_capabilities(audit.prompts, audit.resources)
+    tool_schema_incomplete: list[str] = []
+    audit.schema_findings = [
+        finding
+        for tool in audit.tools
+        for finding in scan_tool_schema(tool, server_url=srv.url, incomplete_reasons=tool_schema_incomplete)
+    ]
+    if tool_schema_incomplete:
+        warn(
+            "tool_schema_incomplete",
+            "Tool schema analysis incomplete: " + "; ".join(tool_schema_incomplete),
+            check="metadata",
+            servers=[srv.name],
+        )
     audit.risk_score = scorer.score_server(audit.permissions)
     # Legacy annotation contributions obey the same operator overrides.
     alert_findings = applier.apply(srv.name, raw_findings + analyzer.legacy_annotation_findings(audit.tools))

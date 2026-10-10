@@ -1079,6 +1079,55 @@ FINDING_COPY: dict[str, FindingCopy] = {
         "A metadata contradiction, not an executed behavior check. Keyword evidence and hints can "
         "both be inaccurate.",
     ),
+    "MCP051": FindingCopy(
+        "Your tool schema declares an invalid or unusable HTTP header mapping.",
+        "A static schema rule found a malformed, duplicate, non-primitive, or unreachable "
+        "x-mcp-header annotation.",
+        (
+            "A consumer interprets the header annotation.",
+            "The declaration is ambiguous or unsupported.",
+            "Consumers may disagree about the request sent.",
+        ),
+        "Use one RFC token header name on a reachable primitive schema property.",
+        "About 5 minutes to review the schema",
+        "A static schema check; it does not execute the tool or validate server behavior.",
+    ),
+    "MCP052": FindingCopy(
+        "Your tool schema mirrors a credential-looking parameter to a request header.",
+        "A schema property name suggests credential material and carries x-mcp-header metadata.",
+        (
+            "The parameter may carry a credential.",
+            "The schema also maps it to a header.",
+            "The credential may be handled inconsistently by consumers.",
+        ),
+        "Review whether the credential should be represented once and whether the server needs it.",
+        "About 5 minutes to review the schema",
+        "A name-based signal; the parameter value is never inspected.",
+    ),
+    "MCP053": FindingCopy(
+        "Your tool schema refers to an external schema document.",
+        "An external $ref can make validation depend on remote content.",
+        (
+            "A schema consumer follows the reference.",
+            "The referenced document can change independently.",
+            "Validation may differ across environments.",
+        ),
+        "Vendor the schema locally or replace the reference with a reviewed local definition.",
+        "About 5 minutes to review the schema",
+        "The reference is reported as text only; no network request is made.",
+    ),
+    "MCP054": FindingCopy(
+        "Your tool icon uses a non-HTTPS or cross-origin source.",
+        "The served icon source is not same-origin HTTPS or an embedded data URI.",
+        (
+            "A client loads the icon source.",
+            "The source is not constrained to the server origin.",
+            "The client may contact or display content from an unexpected host.",
+        ),
+        "Use a same-origin HTTPS URL or an appropriate embedded data URI.",
+        "About 5 minutes to review the icon",
+        "A static URI comparison; the icon is never requested.",
+    ),
 }
 
 

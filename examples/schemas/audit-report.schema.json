@@ -2034,6 +2034,33 @@
       "title": "ScanWarning",
       "type": "object"
     },
+    "SchemaFinding": {
+      "description": "A static finding on a served tool schema or icon declaration.",
+      "properties": {
+        "tool_name": {
+          "title": "Tool Name",
+          "type": "string"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence",
+          "type": "array"
+        }
+      },
+      "required": [
+        "tool_name",
+        "kind",
+        "evidence"
+      ],
+      "title": "SchemaFinding",
+      "type": "object"
+    },
     "ServerAudit": {
       "description": "Complete audit result for a single MCP server.",
       "properties": {
@@ -2184,6 +2211,13 @@
             "$ref": "#/$defs/InjectionFinding"
           },
           "title": "Injection Findings",
+          "type": "array"
+        },
+        "schema_findings": {
+          "items": {
+            "$ref": "#/$defs/SchemaFinding"
+          },
+          "title": "Schema Findings",
           "type": "array"
         },
         "ssrf_findings": {

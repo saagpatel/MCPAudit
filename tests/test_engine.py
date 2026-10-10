@@ -37,6 +37,52 @@ from mcp_audit.models import (
 from tests.conftest import make_server_config
 
 
+@pytest.mark.parametrize("surface", ["input_schema", "output_schema"])
+@pytest.mark.parametrize(
+    ("container", "reason"),
+    [
+        ("properties", "node_budget_exceeded"),
+        ("$defs", "node_budget_exceeded"),
+        ("local_ref", "local_ref_unresolved"),
+    ],
+)
+def test_run_scan_reports_incomplete_tool_schema_metadata(
+    monkeypatch: pytest.MonkeyPatch, surface: str, container: str, reason: str
+) -> None:
+    branches = {"dangerous": {"$ref": "https://schemas.example.test/unvisited"}}
+    branches.update({f"ordinary_{index}": {"type": "string"} for index in range(2050)})
+    schema = (
+        {"$ref": "#missing", "$defs": {"value": {"type": "string", "x-mcp-header": "X-Value"}}}
+        if container == "local_ref"
+        else {container: branches}
+    )
+    tool = ToolInfo.model_validate({"name": "fixture", surface: schema})
+    server = make_server_config(name="schema-fixture", command="fixture")
+
+    class FixtureConnector:
+        def __init__(self, timeout: float) -> None:
+            self.scan_warnings: list[ScanWarning] = []
+
+        async def connect(self, _server: ServerConfig) -> ServerAudit:
+            return ServerAudit(server=server, connection_status="connected", tools=[tool])
+
+    monkeypatch.setattr(engine, "ServerConnector", FixtureConnector)
+    report = anyio.run(partial(run_scan, ScanOptions(), servers=[server]))
+
+    assert report.audits[0].schema_findings == []
+    [warning] = [warning for warning in report.warnings if warning.code == "tool_schema_incomplete"]
+    assert warning.check == "metadata"
+    assert warning.servers == [server.name]
+    assert warning.message == f"Tool schema analysis incomplete: {reason}"
+    assert report.coverage["metadata"].state == "partial"
+    assert report.coverage["metadata"].reason == "tool_schema_incomplete"
+    assert report.coverage["config_health"].state == "complete"
+    assert report.schema_version == 1
+    serialized = report.model_dump(mode="json")
+    assert serialized["coverage"]["metadata"]["state"] == "partial"
+    assert warning.model_dump(mode="json") in serialized["warnings"]
+
+
 def test_scan_options_defaults_mirror_flagless_scan() -> None:
     options = ScanOptions()
     assert options.skip_connect is False
