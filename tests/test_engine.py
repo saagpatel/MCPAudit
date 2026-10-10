@@ -574,6 +574,7 @@ def test_schema_version_pins_top_level_field_set() -> None:
         "warnings",
         "coverage",
         "review_summary",
+        "suppressed",
     }
 
 

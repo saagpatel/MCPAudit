@@ -9,19 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Present offline HTML reports with a coverage-qualified grade or Preview,
-  deduplicated actions, collapsed server summaries and a full audit log.
-  Add presentation-only JSON `ux_summary.grade` and a stored `review_summary`
-  without changing risk scores. Compute all grouped actions, counts, grades and
-  review estimates once before credential or identifier redaction; retain the
-  snapshot through repeated redaction and JSON reloads.
-  Hide the hostname by default in HTML; `check/scan --show-host` includes it.
-  Preserve distinct server and config-health actions and grades in HTML, terminal
-  summaries and JSON with `scan --redact`,
-  including either `--show-host` setting. Retain distinct policy violations and targets
-  while grouping policy advice per affected server identity.
-  Improve mobile table scrolling, muted-text contrast and dark-mode colors.
-
+- Add reasoned, optionally expiring `ignore:` finding exceptions and one-run
+  `--ignore` / `--ignore-reason` options to `scan` and `check`. Keep original
+  evidence and scores, list exception counts and reasons beside terminal coverage,
+  and add `suppressed[]` to JSON. Policies can forbid exceptions with
+  `allow_ignores: false`; coverage failures remain active and HIGH one-run
+  exceptions require a reason. Exact injection selectors fall back to the tool
+  name when the optional target name is unset or empty.
 - Add offline `explain` and a generated finding reference with plain-English
   consequences, initial repair estimates, confidence limits and reference links.
   Show config paths and explicit-file source labels in finding explanations;
@@ -30,7 +24,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Scrub escaped config pointer identifiers in `--redact` reports and bound
   Unicode evidence after control-character rendering while preserving match offsets.
   Ensure whitespace-only context is trimmed so metadata excerpt budgeting cannot stall scans.
-
 - Lead terminal reviews with a coverage-qualified Preview or finding-class grade,
   visible totals and up to three manual action cards. `--details` retains the
   legacy tables; `--color auto|always|never` and `NO_COLOR` control presentation.
@@ -61,6 +54,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Require execution evidence for completion, mark discovery parse failures
   as partial coverage, and account for applicable and verified package references.
   Preserve source configuration locations in extended SARIF, including parse failures.
+- Present offline HTML reports with a coverage-qualified grade or Preview,
+  deduplicated actions, collapsed server summaries and a full audit log.
+  Add presentation-only JSON `ux_summary.grade` and a stored `review_summary`
+  without changing risk scores. Compute all grouped actions, counts, grades and
+  review estimates once before credential or identifier redaction; retain the
+  snapshot through repeated redaction and JSON reloads.
+  Hide the hostname by default in HTML; `check/scan --show-host` includes it.
+  Preserve distinct server and config-health actions and grades in HTML, terminal
+  summaries and JSON with `scan --redact`,
+  including either `--show-host` setting. Retain distinct policy violations and targets
+  while grouping policy advice per affected server identity.
+  Improve mobile table scrolling, muted-text contrast and dark-mode colors.
 
 ### Fixed
 
@@ -177,14 +182,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bounded redacted evidence to the detected phrase or gated anomaly so stripped context and
   benign non-Latin prefixes cannot displace it, including normalized HTML-comment
   delimiters after long benign prefixes.
-
-### Known issues
-
-- Redaction can still miss a hostile secret disguised with Unicode: a
-  zero-width character splitting a bearer or basic token leaves the tail in
-  JSON and HTML evidence; secret-shaped `input_schema`/`output_schema`/`meta`
-  property keys are copied unredacted; and terminal output prints raw tool
-  names. Structural redaction is planned for a later release.
 
 ### Changed
 

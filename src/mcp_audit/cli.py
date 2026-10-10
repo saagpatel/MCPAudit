@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 
 import anyio
 import click
+import yaml
 from rich.console import Console
 from rich.text import Text
 
@@ -444,6 +445,10 @@ def discover(client_filter: str | None, verbose: bool) -> None:
 )
 @click.option("--policy", "policy_path", default=None, metavar="PATH", help="Local policy gate YAML.")
 @click.option(
+    "--ignore", "ignore_rules", multiple=True, metavar="MCP0xx", help="Ignore a finding rule for this run."
+)
+@click.option("--ignore-reason", help="Reason for one-run ignores (required for HIGH findings).")
+@click.option(
     "--inject-check",
     is_flag=True,
     default=False,
@@ -555,6 +560,8 @@ def scan(
     config_only: bool,
     override_config_path: str | None,
     policy_path: str | None,
+    ignore_rules: tuple[str, ...],
+    ignore_reason: str | None,
     inject_check: bool,
     ssrf_check: bool,
     ssrf_allowlist: str | None,
@@ -582,7 +589,13 @@ def scan(
 
     anyio.run(
         partial(
-            _run_scan, canary_identities=canary_identities, show_host=show_host, details=details, color=color
+            _run_scan,
+            canary_identities=canary_identities,
+            show_host=show_host,
+            details=details,
+            color=color,
+            ignore_rules=ignore_rules,
+            ignore_reason=ignore_reason,
         ),
         json_output,
         sarif_output,
@@ -726,6 +739,8 @@ async def _run_scan(
     show_host: bool = False,
     details: bool = False,
     color: str = "auto",
+    ignore_rules: tuple[str, ...] = (),
+    ignore_reason: str | None = None,
 ) -> None:
     """CLI scan entrypoint — calls the engine's run_scan then renders output."""
     from mcp_audit.terminal_summary import summary_console
@@ -738,7 +753,14 @@ async def _run_scan(
         raise click.ClickException("--canary-check requires --config PATH --config-only and a connection.")
 
     cfg_path = Path(override_config_path) if override_config_path else DEFAULT_OVERRIDE_PATH
-    override_applier = OverrideApplier(load_override_config(cfg_path))
+    from mcp_audit.suppressions import apply_suppressions, validate_ignore_rule
+
+    try:
+        for rule in ignore_rules:
+            validate_ignore_rule(rule)
+        override_applier = OverrideApplier(load_override_config(cfg_path))
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        raise click.ClickException(f"Cannot load finding overrides: {type(exc).__name__}") from None
     client_list = _parse_clients(clients)
 
     # Load the policy up front so its egress_allowlist / multi_tenant_hosts can configure
@@ -816,6 +838,7 @@ async def _run_scan(
         config_paths,
     )
 
+    apply_suppressions(report, cli_rules=ignore_rules, cli_reason=ignore_reason)
     if policy is not None:
         from mcp_audit.policy import evaluate_policy
 

@@ -3,6 +3,30 @@
 MCPAudit reports are designed for local review and CI ingestion. Keep this
 contract stable unless a release note calls out a breaking change.
 
+## Visible finding suppressions
+
+`AuditReport.suppressed` is an additive array, defaulting to `[]` on legacy
+reports. Each record contains `finding_path` (an RFC 6901 JSON Pointer into the
+same report), `rule_id`, a redacted nonblank `reason` bounded to 512 characters,
+`source` (`config` or `cli`), and nullable `expires` (ISO date).
+Original finding arrays, evidence, scores, grades, coverage and warnings retain
+their meanings; `schema_version` is unchanged. Total finding counts still include
+suppressed findings. Terminal coverage separately counts and lists exceptions.
+SARIF and HTML continue to report original findings.
+
+Only core MCP finding IDs except MCP010 are eligible. Saved entries require
+exact server/tool selectors (or explicit `"*"`) and a reason. A HIGH one-run
+exception without `--ignore-reason` remains active and emits an
+`ignore_reason_required` scan warning. Expiry is inclusive through the report's
+recorded scan date (normally UTC). Fleet selectors match a single contributor
+pair but suppress the whole finding. Policy excludes applied suppressions from
+finding-based gates unless top-level `allow_ignores: false`, which rejects them
+and evaluates original findings. Coverage, configuration diagnostics, warnings,
+policy violations, numeric risk and required pins cannot be suppressed.
+See [Suppressing findings](guides/suppressing.md).
+Explicit-file `check` and `demo` do not load saved ignore settings unless an
+override file or discovery is explicitly selected.
+
 ## Finding explanations and explicit sources
 
 Core audit finding records add `reference_url`, pointing to the generated

@@ -203,6 +203,10 @@ class ReportGenerator:
     def _render_coverage(self, report: AuditReport) -> None:
         """Show which checks ran, including checks omitted by older reports."""
         coverage = report.coverage
+        if report.suppressed:
+            from mcp_audit.suppressions import suppression_summary
+
+            self._console.print(terminal_safe(suppression_summary(report)))
         if not coverage:
             self._console.print("[yellow]Coverage unknown: checks were not recorded.[/yellow]")
             self._console.print("[yellow]Runtime security: UNKNOWN (coverage not recorded)[/yellow]")

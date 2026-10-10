@@ -163,6 +163,10 @@ def _coverage(report: AuditReport) -> str:
     missing = missing_checks(report.coverage)
     if missing:
         parts.append("UNKNOWN (not recorded): " + ", ".join(missing))
+    if report.suppressed:
+        from mcp_audit.suppressions import suppression_summary
+
+        parts.append(suppression_summary(report))
     return "Coverage: " + " | ".join(parts)
 
 

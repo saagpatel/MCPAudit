@@ -2259,6 +2259,53 @@
       "title": "SsrfSeverity",
       "type": "string"
     },
+    "SuppressedFinding": {
+      "description": "An explicit policy exception; the original finding remains in the report.",
+      "properties": {
+        "finding_path": {
+          "title": "Finding Path",
+          "type": "string"
+        },
+        "rule_id": {
+          "title": "Rule Id",
+          "type": "string"
+        },
+        "reason": {
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "config",
+            "cli"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "expires": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expires"
+        }
+      },
+      "required": [
+        "finding_path",
+        "rule_id",
+        "reason",
+        "source"
+      ],
+      "title": "SuppressedFinding",
+      "type": "object"
+    },
     "SurfaceFieldChange": {
       "description": "A field-level diff retaining hashes rather than untrusted/secret values.",
       "properties": {
@@ -2685,6 +2732,13 @@
         }
       ],
       "default": null
+    },
+    "suppressed": {
+      "items": {
+        "$ref": "#/$defs/SuppressedFinding"
+      },
+      "title": "Suppressed",
+      "type": "array"
     }
   },
   "required": [
