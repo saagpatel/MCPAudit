@@ -873,6 +873,32 @@ def _finalize_scan(context: _ScanContext) -> AuditReport:
                     check=check_field,
                 )
 
+    # A baseline withheld after failed verification (MCP027) is not a legacy
+    # pin: report it as withheld, never as "predates capture, re-pin".
+    withheld: list[str] = []
+    if pin_store is not None:
+        withheld = sorted(
+            {audit.server.name for audit in audits if not pin_store.baseline_trusted(audit.server.name)}
+        )
+    if withheld:
+        for check_field, flag in (
+            ("escalation_check", "--escalation-check"),
+            ("provenance_check", "--provenance-check"),
+            ("integrity_check", "--integrity-check"),
+            ("verify_artifacts", "--verify-artifacts"),
+            ("download_artifacts", "--download-artifacts"),
+        ):
+            if not getattr(opts, check_field):
+                continue
+            warn(
+                "pin_baseline_withheld",
+                f"{flag}: {len(withheld)} server(s) have pin baselines that failed integrity "
+                f"verification (MCP027) and were not compared: {', '.join(withheld)}. "
+                "Restore the pin file from backup, or clear and re-review before re-pinning.",
+                check=check_field,
+                servers=withheld,
+            )
+
     # Per-server staleness: a server IS pinned but its baseline predates the
     # provenance/integrity snapshot, so it is silently skipped. Surface it so the
     # user knows the check ran but found nothing to compare for those servers.
@@ -880,7 +906,11 @@ def _finalize_scan(context: _ScanContext) -> AuditReport:
         opts.provenance_check or opts.integrity_check or opts.verify_artifacts or opts.download_artifacts
     ):
         pinned = set(pin_store.pinned_servers())
-        scanned_pinned = [audit.server.name for audit in audits if audit.server.name in pinned]
+        scanned_pinned = [
+            audit.server.name
+            for audit in audits
+            if audit.server.name in pinned and audit.server.name not in withheld
+        ]
         stale_baseline_checks = [
             (
                 "provenance_check",
