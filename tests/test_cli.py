@@ -939,6 +939,70 @@ def test_scan_without_redact_keeps_identifiers(monkeypatch: pytest.MonkeyPatch, 
     assert "/Users/alice/.claude.json" in out.read_text()
 
 
+@pytest.mark.parametrize("selected_has_pin", [True, False])
+@pytest.mark.parametrize("per_server", [False, True])
+def test_scan_policy_required_pins_uses_selected_pin_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, selected_has_pin: bool, per_server: bool
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    selected_path = tmp_path / "selected-pins.yaml"
+    selected_store = PinStore(path=selected_path)
+    default_path = home / "pins.yaml"
+
+    class LocalPinStore(PinStore):
+        def __init__(self, path: Path = default_path) -> None:
+            super().__init__(path=path)
+
+    monkeypatch.setattr("mcp_audit.pinning.PinStore", LocalPinStore)
+    default_store = LocalPinStore()
+    if selected_has_pin:
+        selected_store.pin_server("srv", [make_tool("read_file")])
+        default_store.path.write_text("servers: {}\n", encoding="utf-8")
+    else:
+        selected_path.write_text("servers: {}\n", encoding="utf-8")
+        default_store.pin_server("srv", [make_tool("read_file")])
+
+    config = tmp_path / "synthetic.json"
+    config.write_text("{}\n", encoding="utf-8")
+    policy = tmp_path / "policy.yaml"
+    policy.write_text(
+        "servers:\n  srv:\n    require_pin: true\n"
+        if per_server
+        else "require:\n  pins:\n    servers: [srv]\n",
+        encoding="utf-8",
+    )
+    audit = ServerAudit(server=make_server_config(name="srv"), connection_status="skipped")
+
+    async def fake_run_scan(*args: object, **kwargs: object) -> AuditReport:
+        return _report([audit])
+
+    monkeypatch.setattr(scan_cli, "run_scan", fake_run_scan)
+    result = CliRunner().invoke(
+        cli.main,
+        [
+            "scan",
+            "--config",
+            str(config),
+            "--config-only",
+            "--skip-connect",
+            "--override-config",
+            "/dev/null",
+            "--policy",
+            str(policy),
+            "--pin-file",
+            str(selected_path),
+        ],
+    )
+
+    assert result.exit_code == (0 if selected_has_pin else 2), result.output
+    if selected_has_pin:
+        assert "required to have a pin baseline" not in result.output
+    else:
+        assert "required to have a pin baseline" in result.output
+
+
 def test_scan_redact_flag_aliases_server_names(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     cfg = make_server_config(name="personal-ops").model_copy(
         update={"command": "/Users/alice/.claude/bin/personal-ops-mcp"}

@@ -31,6 +31,20 @@ class FindingMetadata:
     remediation: str
 
 
+PIN_INTEGRITY_FINDING = FindingMetadata(
+    rule_id="MCP027",
+    title="Signed pin integrity verification failed",
+    severity="high",
+    description=(
+        "A signed tool-surface pin could not be trusted, so drift comparison against that baseline was "
+        "skipped."
+    ),
+    remediation=(
+        "Do not refresh from this pin file. Restore it from backup or review the server and create a new pin."
+    ),
+)
+
+
 ANNOTATION_CONTRADICTION = FindingMetadata(
     rule_id="MCP043",
     title="Annotation contradiction",
@@ -1026,6 +1040,19 @@ FINDING_COPY: dict[str, FindingCopy] = {
         "Review time varies; disabling takes about 1 minute",
         "Byte comparisons establish only the recorded mismatch. New files can be legitimate; "
         "unverified downloads establish no mismatch.",
+    ),
+    "MCP027": FindingCopy(
+        "Your signed pin could not be trusted.",
+        "The pin signature is invalid, its contents changed after signing, or its signer is not trusted.",
+        (
+            "You rely on a signed pin as the reviewed tool-surface baseline.",
+            "MCPAudit could not verify the signature or trusted signer.",
+            "Drift comparison against this baseline was skipped.",
+        ),
+        "Do not refresh from this pin file. Restore it from backup or review the server and create a new "
+        "pin.",
+        "About 5 minutes for an initial review",
+        "The finding establishes a verification failure, not who changed the pin or why.",
     ),
     "MCP040": FindingCopy(
         "Your server may send data to a destination you did not allow.",

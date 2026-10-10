@@ -137,6 +137,7 @@ def finding_views(report: AuditReport) -> Iterator[FindingView]:
             *audit.integrity_findings,
             *audit.package_verify_findings,
             *audit.artifact_verify_findings,
+            *audit.pin_integrity_findings,
             *audit.protocol_findings,
         )
         for record in findings:

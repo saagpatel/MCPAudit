@@ -61,6 +61,7 @@ async def _run_scan(
     card: Path | None = None,
     names: bool = False,
     previous: Path | None = None,
+    pin_file: Path | None = None,
     max_frame_bytes: int = 16 * 1024 * 1024,
     max_surface_bytes: int = 64 * 1024 * 1024,
     sdk_stdio_fallback: bool = False,
@@ -126,6 +127,7 @@ async def _run_scan(
         ssrf_check=ssrf_check,
         egress_check=egress_check,
         pin_check=pin_check,
+        pin_file=pin_file,
         trifecta_check=trifecta_check,
         shadow_check=shadow_check,
         escalation_check=escalation_check,
@@ -152,6 +154,8 @@ async def _run_scan(
         config_paths.append(Path(policy_path))
     if previous is not None:
         config_paths.append(previous)
+    if pin_file is not None:
+        config_paths.append(pin_file)
     try:
         report = await run_scan(
             scan_options,
@@ -178,7 +182,16 @@ async def _run_scan(
     if policy is not None:
         from mcp_audit.policy import evaluate_policy
 
-        report.policy_result = evaluate_policy(report, policy)
+        selected_pin_store = None
+        if (
+            policy.required_pin_servers
+            or policy.fail_on_pin_integrity
+            or any(rule.require_pin for rule in policy.server_rules.values())
+        ):
+            from mcp_audit.pinning import PinStore
+
+            selected_pin_store = PinStore(path=pin_file) if pin_file is not None else PinStore()
+        report.policy_result = evaluate_policy(report, policy, pin_store=selected_pin_store)
 
     gen = ReportGenerator(console=out)
     gen.render_terminal(report, verbose=verbose, details=details, explicit_config=config_only)

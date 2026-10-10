@@ -22,3 +22,6 @@
 
 fail_on:
   integrity: true
+  # A signed pin that fails verification withholds its artifact baseline;
+  # fail on that (HIGH MCP027) instead of silently skipping the comparison.
+  pin_integrity: true
