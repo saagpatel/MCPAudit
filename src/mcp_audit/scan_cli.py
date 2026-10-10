@@ -148,6 +148,8 @@ async def _run_scan(
         config_paths.append(Path(policy_path))
     if previous is not None:
         config_paths.append(previous)
+    if pin_file is not None:
+        config_paths.append(pin_file)
     try:
         report = await run_scan(
             scan_options,
@@ -174,7 +176,12 @@ async def _run_scan(
     if policy is not None:
         from mcp_audit.policy import evaluate_policy
 
-        report.policy_result = evaluate_policy(report, policy)
+        selected_pin_store = None
+        if policy.required_pin_servers or any(rule.require_pin for rule in policy.server_rules.values()):
+            from mcp_audit.pinning import PinStore
+
+            selected_pin_store = PinStore(path=pin_file) if pin_file is not None else PinStore()
+        report.policy_result = evaluate_policy(report, policy, pin_store=selected_pin_store)
 
     gen = ReportGenerator(console=out)
     gen.render_terminal(report, verbose=verbose, details=details, explicit_config=config_only)
