@@ -30,6 +30,7 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
 from mcp_audit.agent_text import agent_visible_text, prompt_visible_text
+from mcp_audit.analysis_budget import AnalysisTimeout, analysis_budget
 from mcp_audit.analyzer import PermissionAnalyzer
 from mcp_audit.confighealth import config_health_findings
 from mcp_audit.connector import ServerConnector, describe_exception
@@ -232,6 +233,20 @@ async def run_scan(
             # An analyzer crash must not cancel sibling audits or retain partial evidence.
             try:
                 await _analyze_server(context, idx, srv)
+                progress.advance(task_id)
+            except TimeoutError:
+                context.audits[idx] = ServerAudit(
+                    server=srv,
+                    connection_status="timeout",
+                    connection_error="Per-server wall-clock budget exhausted; analysis is incomplete.",
+                )
+                context.completed[idx].clear()
+                context.warn(
+                    "analysis_timeout",
+                    "Per-server wall-clock budget exhausted; analysis is incomplete.",
+                    check="permission_analysis",
+                    servers=[srv.name],
+                )
                 progress.advance(task_id)
             except Exception as exc:
                 context.audits[idx] = ServerAudit(
@@ -527,6 +542,7 @@ async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) ->
             check="connection",
             servers=[srv.name],
         )
+    deadline = time.monotonic() + opts.timeout
     if skip_connect:
         audit = connector.skip_connect_audit(srv)
     elif opts.canary_check:
@@ -535,6 +551,7 @@ async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) ->
         for warning in baseline_warnings:
             warn(warning.code, warning.message, check=warning.check, servers=warning.servers)
         async with connection_limiter:
+            deadline = time.monotonic() + opts.timeout
             audit = await connector.connect(
                 srv,
                 canary_calls=opts.canary_calls,
@@ -555,156 +572,168 @@ async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) ->
             )
     else:
         async with connection_limiter:
+            deadline = time.monotonic() + opts.timeout
             audit = await connector.connect(srv)
 
-    # Keep listed surfaces intact for hashing/reporting. Only detector
-    # input is bounded; coverage loss is explicit and contains no text.
-    fields: list[str] = []
-    for tool in audit.tools:
-        fields.extend((tool.name, tool.description or ""))
-        props = tool.input_schema.get("properties", {}) if tool.input_schema else {}
-        if isinstance(props, dict):
-            fields.extend(str(name) for name in props)
-    for prompt in audit.prompts:
-        fields.extend((prompt.name, prompt.description or "", *prompt.arguments))
-    for resource in audit.resources:
-        fields.extend(
-            (resource.uri, resource.name or "", resource.description or "", resource.mime_type or "")
-        )
-    truncated = sum(len(bounded_text(text)) < len(text) for text in fields)
-    if truncated:
-        warn(
-            "description_truncated",
-            f"Detector text limited to {MAX_FIELD_BYTES} UTF-8 bytes per field; "
-            f"{truncated} field(s) truncated. Findings may omit suffix evidence.",
-            check="permission_analysis",
-            servers=[srv.name],
-        )
+    if audit.connection_status in {"failed", "timeout"} and time.monotonic() >= deadline:
+        audits[idx] = audit
+        return
 
-    for target_type, target_name, text in chain(
-        (("tool", tool.name, agent_visible_text(tool)) for tool in audit.tools),
-        (
-            ("prompt", prompt.name, prompt_visible_text(prompt))
-            for prompt in audit.prompts
-            if injection_detector is not None
-        ),
-    ):
-        if text.incomplete:
+    with analysis_budget(deadline):
+        # Keep listed surfaces intact for hashing/reporting. Only detector
+        # input is bounded; coverage loss is explicit and contains no text.
+        fields: list[str] = []
+        for tool in audit.tools:
+            fields.extend((tool.name, tool.description or ""))
+            props = tool.input_schema.get("properties", {}) if tool.input_schema else {}
+            if isinstance(props, dict):
+                fields.extend(str(name) for name in props)
+        for prompt in audit.prompts:
+            fields.extend((prompt.name, prompt.description or "", *prompt.arguments))
+        for resource in audit.resources:
+            fields.extend(
+                (resource.uri, resource.name or "", resource.description or "", resource.mime_type or "")
+            )
+        truncated = sum(len(bounded_text(text)) < len(text) for text in fields)
+        if truncated:
             warn(
-                "agent_text_incomplete",
-                f"Agent-visible text scan incomplete for {target_type} {target_name!r}: "
-                + "; ".join(text.incomplete),
-                check="agent_visible_text",
+                "description_truncated",
+                f"Detector text limited to {MAX_FIELD_BYTES} UTF-8 bytes per field; "
+                f"{truncated} field(s) truncated. Findings may omit suffix evidence.",
+                check="permission_analysis",
                 servers=[srv.name],
             )
 
-    # Analyze tool list for new permission findings
-    schema_incomplete: list[str] = []
-    if not skip_connect or not audit.permissions:
-        raw_findings = analyzer.analyze_server(audit.tools, incomplete_reasons=schema_incomplete)
-    else:
-        raw_findings = list(audit.permissions)
-    if schema_incomplete:
-        warn(
-            "permission_schema_incomplete",
-            "Permission schema analysis incomplete: " + "; ".join(schema_incomplete),
-            check="permission_analysis",
-            servers=[srv.name],
-        )
+        for target_type, target_name, text in chain(
+            (("tool", tool.name, agent_visible_text(tool)) for tool in audit.tools),
+            (
+                ("prompt", prompt.name, prompt_visible_text(prompt))
+                for prompt in audit.prompts
+                if injection_detector is not None
+            ),
+        ):
+            if text.incomplete:
+                warn(
+                    "agent_text_incomplete",
+                    f"Agent-visible text scan incomplete for {target_type} {target_name!r}: "
+                    + "; ".join(text.incomplete),
+                    check="agent_visible_text",
+                    servers=[srv.name],
+                )
+
+        # Analyze tool list for new permission findings
+        schema_incomplete: list[str] = []
+        if not skip_connect or not audit.permissions:
+            raw_findings = analyzer.analyze_server(audit.tools, incomplete_reasons=schema_incomplete)
+        else:
+            raw_findings = list(audit.permissions)
+        if schema_incomplete:
+            warn(
+                "permission_schema_incomplete",
+                "Permission schema analysis incomplete: " + "; ".join(schema_incomplete),
+                check="permission_analysis",
+                servers=[srv.name],
+            )
 
     # Optional LLM augmentation for low-confidence tools
     if llm_analyzer is not None:
-        llm_outcome = await llm_analyzer.analyze_server_with_status(audit.tools, raw_findings)
+        with anyio.fail_after(max(0, deadline - time.monotonic())):
+            llm_outcome = await llm_analyzer.analyze_server_with_status(audit.tools, raw_findings)
         audit.llm_analysis = llm_outcome.summary
         raw_findings = raw_findings + llm_outcome.findings
     elif opts.llm_analysis and llm_unavailable_summary is not None:
         audit.llm_analysis = llm_unavailable_summary.model_copy(deep=True)
 
-    # Apply user overrides between analysis and scoring
-    audit.permissions = applier.apply(srv.name, raw_findings)
-    audit.annotations_missing = analyzer.annotations_missing(audit.tools)
-    audit.annotation_findings = [
-        finding for tool in audit.tools for finding in analyzer.analyze_annotation_contradictions(tool)
-    ]
-    audit.capability_findings = analyzer.analyze_capabilities(audit.prompts, audit.resources)
-    tool_schema_incomplete: list[str] = []
-    audit.schema_findings = [
-        finding
-        for tool in audit.tools
-        for finding in scan_tool_schema(tool, server_url=srv.url, incomplete_reasons=tool_schema_incomplete)
-    ]
-    if tool_schema_incomplete:
-        warn(
-            "tool_schema_incomplete",
-            "Tool schema analysis incomplete: " + "; ".join(tool_schema_incomplete),
-            check="metadata",
-            servers=[srv.name],
-        )
-    audit.risk_score = scorer.score_server(audit.permissions)
-    # Legacy annotation contributions obey the same operator overrides.
-    alert_findings = applier.apply(srv.name, raw_findings + analyzer.legacy_annotation_findings(audit.tools))
-    audit.permission_alert_score = scorer.score_server(alert_findings).composite
-
-    # Optional injection detection
-    if injection_detector is not None:
-        audit.injection_findings.extend(
-            injection_detector.scan_server(audit.tools, audit.prompts, audit.resources)
-        )
-
-    # Optional SSRF detection (allowlist filtering happens in a post-loop pass)
-    if ssrf_detector is not None:
-        audit.ssrf_findings = ssrf_detector.scan_server(audit.tools, audit.resources)
-
-    # Optional egress detection (consumes the SSRF findings just computed + resource URIs)
-    if egress_detector is not None:
-        audit.egress_findings = egress_detector.scan_server(audit, egress_server_allow.get(srv.name))
-
-    audit.non_tool_risk = scorer.score_non_tool(audit.capability_findings, audit.injection_findings)
-
-    # Optional pin drift check (gated on --pin-check, not mere store presence)
-    if pin_store is not None and opts.pin_check:
-        audit.drift_findings.extend(pin_store.check_drift(srv.name, audit.tools))
-
-    # Optional trifecta per-server detection
-    if trifecta_analyzer is not None:
-        audit.trifecta_findings = trifecta_analyzer.analyze_server(audit)
-
-    # Optional capability-escalation check vs the pin baseline
-    if escalation_analyzer is not None and pin_store is not None:
-        escalation_baseline = pin_store.baseline_tools(srv.name)
-        if escalation_baseline:
-            escalation_incomplete: list[str] = []
-            audit.escalation_findings = escalation_analyzer.analyze_server(
-                srv.name,
-                escalation_baseline,
-                audit.tools,
-                uncovered_annotations=pin_store.legacy_tool_names(srv.name),
-                incomplete_reasons=escalation_incomplete,
+    with analysis_budget(deadline):
+        # Apply user overrides between analysis and scoring
+        audit.permissions = applier.apply(srv.name, raw_findings)
+        audit.annotations_missing = analyzer.annotations_missing(audit.tools)
+        audit.annotation_findings = [
+            finding for tool in audit.tools for finding in analyzer.analyze_annotation_contradictions(tool)
+        ]
+        audit.capability_findings = analyzer.analyze_capabilities(audit.prompts, audit.resources)
+        tool_schema_incomplete: list[str] = []
+        audit.schema_findings = [
+            finding
+            for tool in audit.tools
+            for finding in scan_tool_schema(
+                tool, server_url=srv.url, incomplete_reasons=tool_schema_incomplete
             )
-            if escalation_incomplete:
-                warn(
-                    "permission_schema_incomplete",
-                    "Escalation schema analysis incomplete: " + "; ".join(escalation_incomplete),
-                    check="escalation_check",
-                    servers=[srv.name],
+        ]
+        if tool_schema_incomplete:
+            warn(
+                "tool_schema_incomplete",
+                "Tool schema analysis incomplete: " + "; ".join(tool_schema_incomplete),
+                check="metadata",
+                servers=[srv.name],
+            )
+        audit.risk_score = scorer.score_server(audit.permissions)
+        # Legacy annotation contributions obey the same operator overrides.
+        alert_findings = applier.apply(
+            srv.name, raw_findings + analyzer.legacy_annotation_findings(audit.tools)
+        )
+        audit.permission_alert_score = scorer.score_server(alert_findings).composite
+
+        # Optional injection detection
+        if injection_detector is not None:
+            audit.injection_findings.extend(
+                injection_detector.scan_server(audit.tools, audit.prompts, audit.resources)
+            )
+
+        # Optional SSRF detection (allowlist filtering happens in a post-loop pass)
+        if ssrf_detector is not None:
+            audit.ssrf_findings = ssrf_detector.scan_server(audit.tools, audit.resources)
+
+        # Optional egress detection (consumes the SSRF findings just computed + resource URIs)
+        if egress_detector is not None:
+            audit.egress_findings = egress_detector.scan_server(audit, egress_server_allow.get(srv.name))
+
+        audit.non_tool_risk = scorer.score_non_tool(audit.capability_findings, audit.injection_findings)
+
+        # Optional pin drift check (gated on --pin-check, not mere store presence)
+        if pin_store is not None and opts.pin_check:
+            audit.drift_findings.extend(pin_store.check_drift(srv.name, audit.tools))
+
+        # Optional trifecta per-server detection
+        if trifecta_analyzer is not None:
+            audit.trifecta_findings = trifecta_analyzer.analyze_server(audit)
+
+        # Optional capability-escalation check vs the pin baseline
+        if escalation_analyzer is not None and pin_store is not None:
+            escalation_baseline = pin_store.baseline_tools(srv.name)
+            if escalation_baseline:
+                escalation_incomplete: list[str] = []
+                audit.escalation_findings = escalation_analyzer.analyze_server(
+                    srv.name,
+                    escalation_baseline,
+                    audit.tools,
+                    uncovered_annotations=pin_store.legacy_tool_names(srv.name),
+                    incomplete_reasons=escalation_incomplete,
                 )
+                if escalation_incomplete:
+                    warn(
+                        "permission_schema_incomplete",
+                        "Escalation schema analysis incomplete: " + "; ".join(escalation_incomplete),
+                        check="escalation_check",
+                        servers=[srv.name],
+                    )
 
-    # Optional provenance / launch-config drift check vs the pin baseline
-    if provenance_analyzer is not None and pin_store is not None:
-        baseline_config = pin_store.baseline_config(srv.name)
-        if baseline_config:
-            audit.provenance_findings = provenance_analyzer.analyze_server(srv, baseline_config)
+        # Optional provenance / launch-config drift check vs the pin baseline
+        if provenance_analyzer is not None and pin_store is not None:
+            baseline_config = pin_store.baseline_config(srv.name)
+            if baseline_config:
+                audit.provenance_findings = provenance_analyzer.analyze_server(srv, baseline_config)
 
-    # Optional launch-artifact integrity (on-disk hash) check vs the pin baseline
-    if integrity_analyzer is not None and pin_store is not None:
-        baseline_artifacts = pin_store.baseline_artifacts(srv.name)
-        if baseline_artifacts:
-            integrity_warnings: list[ScanWarning] = []
-            audit.integrity_findings = integrity_analyzer.analyze_server(
-                srv.name, baseline_artifacts, warnings=integrity_warnings
-            )
-            for warning in integrity_warnings:
-                warn(warning.code, warning.message, check=warning.check, servers=warning.servers)
+        # Optional launch-artifact integrity (on-disk hash) check vs the pin baseline
+        if integrity_analyzer is not None and pin_store is not None:
+            baseline_artifacts = pin_store.baseline_artifacts(srv.name)
+            if baseline_artifacts:
+                integrity_warnings: list[ScanWarning] = []
+                audit.integrity_findings = integrity_analyzer.analyze_server(
+                    srv.name, baseline_artifacts, warnings=integrity_warnings
+                )
+                for warning in integrity_warnings:
+                    warn(warning.code, warning.message, check=warning.check, servers=warning.servers)
 
     # Optional registry package verification (network) vs the pin baseline.
     # Runs in a worker thread so the synchronous registry I/O never blocks
@@ -739,6 +768,8 @@ async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) ->
             srv, baseline_artifact_pkgs, verified_artifact_refs, artifact=True
         )
 
+    if time.monotonic() >= deadline:
+        raise AnalysisTimeout()
     audits[idx] = audit
     completed[idx].update(("metadata", "permissions", "capabilities"))
     completed[idx].update(

@@ -259,6 +259,7 @@ mcp_audit/agent_text.py
 mcp_audit/agent_ui_cli.py
 mcp_audit/agent_ui_models.py
 mcp_audit/agent_ui_scanner.py
+mcp_audit/analysis_budget.py
 mcp_audit/analyzer.py
 mcp_audit/api.py
 mcp_audit/artifact_paths.py
@@ -293,6 +294,7 @@ mcp_audit/finding_display.py
 mcp_audit/fixture_gateway.py
 mcp_audit/fixtures/demo-mcp-config.json
 mcp_audit/htmlreport.py
+mcp_audit/http_transport.py
 mcp_audit/injection.py
 mcp_audit/integrity.py
 mcp_audit/llm_analyzer.py
