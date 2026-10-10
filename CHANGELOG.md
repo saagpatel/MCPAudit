@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Signing expectations are written only after the pin write succeeds, and
   `pin --clear` removes the expectation as the explicit recovery path. Example CI
   policies enable `fail_on.pin_integrity`.
+- Treat an unsigned v2 pin as tampered (HIGH `MCP027`) whenever the trust store
+  holds a usable trusted key, so public-key-only CI rejects fully stripped
+  signatures; refuse unsigned v2 writes in that state while legacy v1 pins keep
+  warning. Advance the rollback high-water `pinned_at` on every successful signed
+  write so restoring an older signed pin warns `pin_rolled_back`. Suppress legacy
+  refresh guidance for rejected entries, bound retired-key grace to 0-3650 days,
+  and treat invalid persisted grace as an untrusted signer instead of crashing.
 - Update signed-pin regression connector doubles for bounded transport options,
   and retain the required unsigned-pin warning alongside integrity-exclusion
   warnings in integration assertions.

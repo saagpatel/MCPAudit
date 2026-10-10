@@ -49,21 +49,29 @@ length are checked against reconstruction, and `signer` is informational.
 at `pin-signing.pub`, under a 0700 directory. `--signing-key` and
 `MCP_AUDIT_PIN_KEY` select another private key for writes. New writes sign when
 a key exists; missing explicit keys, unreadable keys, wrong ownership and wrong
-permissions refuse signing. `--unsigned` is an explicit downgrade for a write.
+permissions refuse signing. `--unsigned` writes unsigned v2 pins only while no
+trusted key exists; once any key is trusted, unsigned v2 writes are refused
+because they would read back as tampered (`MCP027`). Legacy v1 entries keep the
+`pin_schema_outdated` warning.
 
 Public keys are trusted separately in `~/.mcp-audit/trusted-pin-keys.json`,
 with key IDs `sha256(raw_public_key)[:16]`. Embedded public keys are never
 trust anchors. CI can import the public key with `pin trust-key --add PUBLICHEX`
-and verify without any private key. The trust store also records the newest
-verified `pinned_at` per server for rollback warnings; verification updates
-that local high-water record without modifying the pin baseline. An unwritable
+and verify without any private key. That is enough to fail closed: with a trusted
+key present, a v2 entry whose signature and all signing metadata were deleted is
+`tampered_entry`, even before CI records any per-server expectation. The trust
+store also records the newest `pinned_at` per server for rollback warnings; every
+successful signed write and every verification advance that local high-water
+record without modifying the pin baseline. Restoring an older signed entry warns
+`pin_rolled_back`; it does not fail verification. An unwritable
 trust store leaves signature verification usable but emits
 `pin_rollback_tracking_unavailable`.
 
 `pin --pin-file FILE rotate-key` verifies signed entries before changing keys
 and re-signs v2 entries. It retains old private/public files under their old key
 ID and marks the old trusted public key retired with a 30-day grace period
-(`rotate-key --grace-days N` changes that rotation's grace). During grace,
+(`rotate-key --grace-days N`, 0-3650, changes that rotation's grace). An invalid
+or out-of-range persisted grace makes the retired signer untrusted. During grace,
 verification proceeds with `pin_signed_by_retired_key`; after grace, the signer
 is untrusted and saved-baseline comparisons are skipped. Explicitly re-adding
 the same public key with `trust-key --add` re-trusts it and clears retirement.

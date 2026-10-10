@@ -532,18 +532,26 @@ satisfies `require.pins`, and enabled baseline-comparison gates (`fail_on.drift`
 HIGH violation stating that their comparison was withheld. When the scan did not
 verify a server (no pin-based check ran), `fail_on.pin_integrity` verifies the
 selected pin store directly. Policies without signed pins, and report
-`schema_version`, are unchanged. Truly unsigned v2 and legacy v1 pins warn
-and remain usable when the separate trust store has no signing requirement.
-Signing or successful verification records a per-server `signature_required`
+`schema_version`, are unchanged. Legacy v1 pins always warn (`pin_schema_outdated`)
+and remain usable. Unsigned v2 pins warn (`pin_unsigned`) and remain usable only
+while the separate trust store holds no usable trusted key (active, or retired
+within grace): once any key is trusted, including a public-key-only CI store
+populated by `pin trust-key --add`, an unsigned v2 entry is `tampered_entry` and
+HIGH `MCP027`, and pin writes refuse to produce unsigned v2 entries.
+Successful signed writes and verification record a per-server `signature_required`
 expectation there; existing verified timestamp history also implies it. Missing
 required signatures, remaining signing metadata without a signature, or unreadable
 signing expectations produce `tampered_entry` and HIGH `MCP027`, including when
 tool entries claim v1 and when the whole entry or pin file is missing, renamed,
 empty, or unparseable. The expectation is written only after the signed pin file
 write succeeds. `pin --clear SERVER` is the explicit recovery path: it removes the
-entry and that server's expectation and rollback history. An explicit `--unsigned` write can downgrade a verified
-baseline and update the separate expectation. Fresh CI must provision this
-expectation independently of the editable pin file to enforce it on first use.
+entry and that server's expectation and rollback history. Each successful signed
+write also advances the per-server rollback high-water `pinned_at`, so restoring an
+older validly signed entry warns `pin_rolled_back` (verification stays `verified`)
+even when no scan verified the newer pin; a fresh CI trust store has no high-water
+mark until its first verification. Retired-key grace is bounded to 0-3650 days;
+an invalid or unrepresentable persisted retirement deadline makes that signer
+`untrusted_signer` (HIGH `MCP027`) instead of failing the scan.
 Verification uses the separate trusted public-key store,
 never an embedded public key or a private signing key.
 
