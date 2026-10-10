@@ -759,7 +759,7 @@ async def test_sdk_redirect_target_is_redacted_without_socket_access(
             max_redirects=0,
         )
 
-    def mock_sse_client(url: str) -> object:
+    def mock_sse_client(url: str, **kwargs: object) -> object:
         return sse_client(url, httpx_client_factory=client_factory)
 
     monkeypatch.setattr("mcp.client.streamable_http.create_mcp_http_client", client_factory)
@@ -854,12 +854,11 @@ async def test_connect_stdio_never_hands_spawned_server_an_environment(
         def __init__(self, server: object, **_kwargs: object) -> None:
             raise _SpawnAborted
 
-    def fake_stdio_client(server: object, *, errlog: object, max_frame_bytes: int = 1) -> object:
+    def fake_stdio_client(server: object, *, errlog: object, **kwargs: object) -> object:
         captured["env"] = getattr(server, "env", "missing")
         return object()
 
     monkeypatch.setattr("mcp_audit.connector.Client", FakeClient)
-    monkeypatch.setattr("mcp_audit.connector.stdio_client", fake_stdio_client)
     monkeypatch.setattr("mcp_audit.connector.bounded_stdio_client", fake_stdio_client)
 
     connector = ServerConnector(timeout=1.0, sdk_stdio_fallback=sdk_fallback)

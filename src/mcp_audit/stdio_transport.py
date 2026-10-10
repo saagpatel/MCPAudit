@@ -1,24 +1,32 @@
-"""Bounded newline-delimited stdio; SDK process lifecycle and handshake stay intact."""
+"""Bounded newline-delimited stdio with unconditional owned-group shutdown."""
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+import os
+import signal
+import sys
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from typing import TextIO
 
 import anyio
 from anyio.abc import ByteReceiveStream
+from anyio.streams.text import TextReceiveStream
 from mcp.client._transport import TransportStreams
 from mcp.client.stdio import (
     StdioServerParameters,
     _aclose_all,
+    _close_pipe,
+    _close_subprocess_transport,
     _create_platform_compatible_process,
     _drain_stdout,
     _get_executable_command,
     _parse_line,
     _stop_server_process,
+    _wait_for_process_exit,
     get_default_environment,
 )
+from mcp.os.win32.utilities import ServerProcess
 from mcp.shared.message import SessionMessage
 
 DEFAULT_MAX_FRAME_BYTES = 16 * 1024 * 1024
@@ -27,6 +35,47 @@ DEFAULT_MAX_SURFACE_BYTES = 64 * 1024 * 1024
 
 class FrameSizeError(ValueError):
     """A server exceeded the frame cap before JSON parsing."""
+
+
+async def _stop_process_group(process: ServerProcess, on_orphans: Callable[[str], None]) -> None:
+    """Signal the owned group even after its leader exits; bound every wait."""
+    if sys.platform == "win32":
+        await _stop_server_process(process)
+        return
+    assert process.stdin and process.stdout
+    await _close_pipe(process.stdin)
+    try:
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            try:
+                os.killpg(process.pid, sig)
+            except ProcessLookupError:
+                pass  # ESRCH: the group has already exited.
+            except PermissionError:
+                on_orphans("Process-group shutdown was denied; server processes may remain.")
+            if sig == signal.SIGTERM:
+                await anyio.sleep(0.1)
+        await _wait_for_process_exit(process, 0.5)
+        with anyio.move_on_after(0.3):
+            while True:
+                try:
+                    os.killpg(process.pid, 0)
+                except ProcessLookupError:
+                    break
+                except PermissionError:
+                    on_orphans("Process-group verification was denied; cleanup is unverified.")
+                    break
+                await anyio.sleep(0.01)
+        try:
+            os.killpg(process.pid, 0)
+        except ProcessLookupError:
+            return
+        except PermissionError:
+            on_orphans("Process-group verification was denied; cleanup is unverified.")
+        else:
+            on_orphans("Server process group survived SIGTERM and SIGKILL; processes may remain.")
+    finally:
+        await _close_pipe(process.stdout)
+        _close_subprocess_transport(process)
 
 
 async def read_lines(stream: ByteReceiveStream, max_frame_bytes: int) -> AsyncIterator[bytes]:
@@ -59,9 +108,14 @@ async def read_lines(stream: ByteReceiveStream, max_frame_bytes: int) -> AsyncIt
 
 @asynccontextmanager
 async def bounded_stdio_client(
-    server: StdioServerParameters, *, errlog: TextIO, max_frame_bytes: int = DEFAULT_MAX_FRAME_BYTES
+    server: StdioServerParameters,
+    *,
+    errlog: TextIO,
+    max_frame_bytes: int = DEFAULT_MAX_FRAME_BYTES,
+    sdk_reader: bool = False,
+    on_orphans: Callable[[str], None] = lambda message: None,
 ) -> AsyncIterator[TransportStreams]:
-    """Replace only the SDK reader, keeping its curated env and process helpers.
+    """Keep SDK parsing and curated environment with bounded group cleanup.
 
     These private lifecycle helpers are deliberately shared with the locked
     SDK 2.x family; connector integration tests guard that compatibility seam.
@@ -78,15 +132,29 @@ async def bounded_stdio_client(
     reader_done = anyio.Event()
     shutting_down = False
 
+    async def lines() -> AsyncIterator[str]:
+        assert process.stdout
+        if sdk_reader:
+            # Compatibility buffering only; process hygiene applies to both readers.
+            buffer = ""
+            async for chunk in TextReceiveStream(
+                process.stdout, encoding=server.encoding, errors=server.encoding_error_handler
+            ):
+                parts = (buffer + chunk).split("\n")
+                buffer = parts.pop()
+                for part in parts:
+                    yield part
+        else:
+            async for line in read_lines(process.stdout, max_frame_bytes):
+                yield line.decode(server.encoding, errors=server.encoding_error_handler)
+
     async def reader() -> None:
         assert process.stdout
         try:
             async with read_writer:
-                async for line in read_lines(process.stdout, max_frame_bytes):
+                async for line in lines():
                     try:
-                        await read_writer.send(
-                            _parse_line(line.decode(server.encoding, errors=server.encoding_error_handler))
-                        )
+                        await read_writer.send(_parse_line(line))
                     except (anyio.ClosedResourceError, anyio.BrokenResourceError):
                         return  # The session closed its receiving stream.
         except anyio.ClosedResourceError:
@@ -129,6 +197,6 @@ async def bounded_stdio_client(
                 write.close()
                 with anyio.move_on_after(0.5):
                     await writer_done.wait()
-                await _stop_server_process(process)
+                await _stop_process_group(process, on_orphans)
                 await _aclose_all(read, write, read_writer, write_reader)
             tasks.cancel_scope.cancel()
