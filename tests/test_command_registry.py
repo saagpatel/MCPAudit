@@ -344,6 +344,8 @@ mcp_audit/skillscan.py
 mcp_audit/skillscan_cli.py
 mcp_audit/skillscan_models.py
 mcp_audit/ssrf.py
+mcp_audit/stdio_transport.py
+mcp_audit/surface_limits.py
 mcp_audit/suppressions.py
 mcp_audit/task_time_machine.py
 mcp_audit/task_time_machine_cli.py

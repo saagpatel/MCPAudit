@@ -74,6 +74,25 @@ def _print_sources(out: Console, paths: list[tuple[str, str]]) -> None:
 )
 @click.option("--ignore-reason", help="Reason for one-run ignores (required for HIGH findings).")
 @click.option("--color", type=click.Choice(["auto", "always", "never"]), default="auto", show_default=True)
+@click.option(
+    "--max-frame-bytes",
+    default=16 * 1024 * 1024,
+    type=click.IntRange(min=1),
+    show_default=True,
+    help="Maximum stdio frame bytes before JSON parsing (ignored with --sdk-stdio-fallback).",
+)
+@click.option(
+    "--max-surface-bytes",
+    default=64 * 1024 * 1024,
+    type=click.IntRange(min=1),
+    show_default=True,
+    help="Total serialized listing bytes across surfaces and pages per listing round.",
+)
+@click.option(
+    "--sdk-stdio-fallback",
+    is_flag=True,
+    help="Temporary SDK stdio reader compatibility mode; disables the frame cap.",
+)
 def check(
     config: Path | None,
     include_discovered: bool,
@@ -94,6 +113,9 @@ def check(
     card: Path | None,
     names: bool,
     previous: Path | None,
+    max_frame_bytes: int,
+    max_surface_bytes: int,
+    sdk_stdio_fallback: bool,
 ) -> None:
     """Review configs statically; runtime security is not checked by default."""
     if connect and not server_id:
@@ -153,6 +175,9 @@ def check(
             run_scan,
             ScanOptions(
                 skip_connect=not connect,
+                max_frame_bytes=max_frame_bytes,
+                max_surface_bytes=max_surface_bytes,
+                sdk_stdio_fallback=sdk_stdio_fallback,
                 connect_project_configs=connect,
                 config_only=config is not None and not include_discovered,
                 inject_check=card is not None and connect,

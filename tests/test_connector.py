@@ -837,8 +837,10 @@ class _SpawnAborted(Exception):
     """Raised by the fake Client so no real process is ever spawned."""
 
 
+@pytest.mark.parametrize("sdk_fallback", [False, True])
 async def test_connect_stdio_never_hands_spawned_server_an_environment(
     monkeypatch: pytest.MonkeyPatch,
+    sdk_fallback: bool,
 ) -> None:
     """Pin the load-bearing safety property of connected scans: the spawned
     server gets env=None, which makes the mcp SDK use its curated safe default
@@ -852,14 +854,15 @@ async def test_connect_stdio_never_hands_spawned_server_an_environment(
         def __init__(self, server: object, **_kwargs: object) -> None:
             raise _SpawnAborted
 
-    def fake_stdio_client(server: object, *, errlog: object) -> object:
+    def fake_stdio_client(server: object, *, errlog: object, max_frame_bytes: int = 1) -> object:
         captured["env"] = getattr(server, "env", "missing")
         return object()
 
     monkeypatch.setattr("mcp_audit.connector.Client", FakeClient)
     monkeypatch.setattr("mcp_audit.connector.stdio_client", fake_stdio_client)
+    monkeypatch.setattr("mcp_audit.connector.bounded_stdio_client", fake_stdio_client)
 
-    connector = ServerConnector(timeout=1.0)
+    connector = ServerConnector(timeout=1.0, sdk_stdio_fallback=sdk_fallback)
     config = make_server_config(name="srv", env_keys=["GITHUB_TOKEN", "AWS_SECRET_ACCESS_KEY"])
 
     with pytest.raises(_SpawnAborted):
