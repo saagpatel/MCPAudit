@@ -45,3 +45,12 @@ were skipped or incomplete. JSON fields and SARIF identifiers are described in
 the [output contract](OUTPUT-CONTRACT.md). Findings are heuristics or bounded
 observations, not proof that a server is benign or malicious. A clean static
 check does not establish runtime behavior.
+
+## Listing size limits
+
+Connected stdio listings reject frames larger than 16 MiB before JSON parsing.
+`scan` and `check` accept `--max-frame-bytes` and `--max-surface-bytes` (64 MiB
+across listing pages and surfaces). Retained item text is capped at 256 KiB;
+`surface_truncated` warns that metadata is incomplete. The temporary
+`--sdk-stdio-fallback` flag uses the SDK reader for compatibility and disables
+the frame cap; it retains the listing caps. See the [output contract](OUTPUT-CONTRACT.md).

@@ -60,7 +60,7 @@ def test_run_scan_reports_incomplete_tool_schema_metadata(
     server = make_server_config(name="schema-fixture", command="fixture")
 
     class FixtureConnector:
-        def __init__(self, timeout: float) -> None:
+        def __init__(self, timeout: float, **_limits: object) -> None:
             self.scan_warnings: list[ScanWarning] = []
 
         async def connect(self, _server: ServerConfig) -> ServerAudit:
