@@ -16,6 +16,7 @@ from rich.console import Console
 from mcp_audit.artifact_paths import validate_artifact_paths
 from mcp_audit.checkup import generate_card, load_previous, sticker
 from mcp_audit.engine import ScanOptions, run_scan
+from mcp_audit.models import ClientType
 from mcp_audit.report import ReportGenerator
 from mcp_audit.review_discovery import review_sources, server_identity
 from mcp_audit.terminal_summary import summary_console
@@ -23,6 +24,42 @@ from mcp_audit.terminal_text import strip_controls, terminal_safe
 
 P = ParamSpec("P")
 T = TypeVar("T")
+
+_CLIENT_CHOICES = tuple(
+    dict.fromkeys(
+        spelling for client in ClientType for spelling in (client.value, client.value.replace("_", "-"))
+    )
+)
+
+
+def _parse_client_options(
+    ctx: click.Context, param: click.Parameter, values: tuple[str, ...]
+) -> tuple[ClientType, ...]:
+    del ctx, param
+    return tuple(dict.fromkeys(ClientType(value.replace("-", "_")) for value in values))
+
+
+class _RecoveryError(click.ClickException):
+    def __init__(self, message: str, *, exit_code: int = 1) -> None:
+        super().__init__(message)
+        self.exit_code = exit_code  # type: ignore[misc]  # click declares a ClassVar; per-error codes are intended
+
+
+def _recovery_error(
+    failed: str,
+    where: str,
+    recovery: str,
+    *,
+    scanned: bool,
+    written: tuple[Path, ...] = (),
+    exit_code: int = 1,
+) -> _RecoveryError:
+    written_state = ", ".join(str(path) for path in written) if written else "none"
+    return _RecoveryError(
+        f"What failed: {failed}\nWhere: {where}\nRecovery: {recovery}\n"
+        f"Scanned: {'yes' if scanned else 'no'}\nWritten: {written_state}\nExit code: {exit_code}",
+        exit_code=exit_code,
+    )
 
 
 def _source_options(command: Callable[P, T]) -> Callable[P, T]:
@@ -37,6 +74,14 @@ def _source_options(command: Callable[P, T]) -> Callable[P, T]:
         ),
         click.option(
             "--project", type=click.Path(path_type=Path), help="Select project scope (default: cwd)."
+        ),
+        click.option(
+            "--client",
+            "clients",
+            multiple=True,
+            type=click.Choice(_CLIENT_CHOICES),
+            callback=_parse_client_options,
+            help="Limit discovery to this client; repeat to select more than one.",
         ),
         click.option("--details", is_flag=True, help="Show full findings and source coverage."),
     ):
@@ -78,6 +123,7 @@ def check(
     config: Path | None,
     include_discovered: bool,
     project: Path | None,
+    clients: tuple[ClientType, ...],
     details: bool,
     connect: bool,
     server_id: str | None,
@@ -97,12 +143,31 @@ def check(
 ) -> None:
     """Review configs statically; runtime security is not checked by default."""
     if connect and not server_id:
-        raise click.ClickException("--connect requires --server CLIENT:SCOPE:NAME from inspect.")
+        raise _recovery_error(
+            "--connect requires a selected server identity",
+            "command options",
+            "run mcp-audit inspect, then pass --connect --server CLIENT:SCOPE:NAME",
+            scanned=False,
+        )
     if server_id and not connect:
-        raise click.ClickException("--server requires --connect; use inspect to review identities.")
+        raise _recovery_error(
+            "--server requires --connect",
+            "command options",
+            "run mcp-audit check --connect --server CLIENT:SCOPE:NAME",
+            scanned=False,
+        )
     if (names or previous is not None) and card is None:
-        raise click.UsageError("--names and --previous require --card.")
+        raise _recovery_error(
+            "--names and --previous require --card",
+            "command options",
+            "add --card FILE or remove --names and --previous",
+            scanned=False,
+            exit_code=2,
+        )
     out = summary_console(color=color, stderr=json_stdout)
+    scanned = False
+    written: list[Path] = []
+    stage = "input validation"
     try:
         from mcp_audit.overrides import load_override_config
         from mcp_audit.suppressions import apply_suppressions, validate_ignore_rule
@@ -115,8 +180,14 @@ def check(
         try:
             ignores = load_override_config(ignore_path).ignore if ignore_path is not None else []
         except (OSError, ValueError, yaml.YAMLError) as exc:
-            raise click.ClickException(f"Cannot load finding overrides: {type(exc).__name__}") from None
-        sources = review_sources(config, include_discovered, project)
+            raise _recovery_error(
+                f"cannot load finding overrides ({type(exc).__name__})",
+                "finding override file",
+                "check the selected override file or use --override-config /dev/null",
+                scanned=False,
+            ) from None
+        stage = "config discovery and parsing"
+        sources = review_sources(config, include_discovered, project, clients)
         previous_report = load_previous(previous)
         inputs = [Path(path) for path, status in sources.paths if status != "absent"]
         if ignore_path is not None:
@@ -125,9 +196,19 @@ def check(
             inputs.append(policy)
         if previous is not None:
             inputs.append(previous)
-        validate_artifact_paths(
-            [("--output-json", output_json), ("--sarif", sarif), ("--html", html), ("--card", card)], inputs
-        )
+        try:
+            validate_artifact_paths(
+                [("--output-json", output_json), ("--sarif", sarif), ("--html", html), ("--card", card)],
+                inputs,
+            )
+        except click.BadParameter as exc:
+            raise _recovery_error(
+                strip_controls(exc.format_message()),
+                "artifact destination validation",
+                "choose verifiable destinations separate from inputs and other artifacts",
+                scanned=False,
+                exit_code=2,
+            ) from None
         servers = sources.servers
         if connect:
             selected = [server for server in servers if server_identity(server) == server_id]
@@ -148,7 +229,12 @@ def check(
             try:
                 policy_config = load_policy(policy)
             except (OSError, ValueError, yaml.YAMLError) as exc:
-                raise click.ClickException(f"Cannot load policy: {type(exc).__name__}") from None
+                raise _recovery_error(
+                    f"cannot load policy ({type(exc).__name__})",
+                    "policy file",
+                    "check the policy file and rerun mcp-audit check --policy FILE",
+                    scanned=False,
+                ) from None
         operation = partial(
             run_scan,
             ScanOptions(
@@ -162,7 +248,10 @@ def check(
             servers=servers,
             parse_errors=sources.errors,
         )
+        stage = "scan"
         report = anyio.run(operation)
+        scanned = True
+        stage = "report post-processing"
         apply_suppressions(report, ignores, cli_rules=ignore_rules, cli_reason=ignore_reason)
         if policy_config is not None:
             from mcp_audit.policy import evaluate_policy
@@ -171,6 +260,7 @@ def check(
         safe_report = report.redacted()
         payload = json.dumps(safe_report.model_dump(mode="json"), indent=2)
         if not json_stdout:
+            stage = "terminal rendering"
             ReportGenerator(out).render_terminal(
                 report,
                 verbose=details,
@@ -182,20 +272,30 @@ def check(
                     out.print(terminal_safe(warning.message))
                 _print_sources(out, sources.paths)
         if output_json:
+            stage = "--output-json destination"
             output_json.write_text(payload, encoding="utf-8")
+            written.append(output_json)
         if sarif:
+            stage = "--sarif destination"
             from mcp_audit.sarif import SarifGenerator
 
             sarif.write_text(json.dumps(SarifGenerator().generate(safe_report), indent=2), encoding="utf-8")
+            written.append(sarif)
         if html:
+            stage = "--html destination"
             from mcp_audit.htmlreport import HtmlReportGenerator
 
             html.write_text(
                 HtmlReportGenerator().generate(safe_report, show_host=show_host), encoding="utf-8"
             )
+            written.append(html)
         if card is not None:
+            stage = "--card destination"
             card.write_text(generate_card(report, names=names, previous=previous_report), encoding="utf-8")
+            written.append(card)
+            stage = "terminal rendering"
             out.print(terminal_safe(sticker(report)))
+        stage = "output summary"
         for path in (output_json, sarif, html, card):
             if path is not None:
                 out.print(terminal_safe(f"Wrote {path}"))
@@ -204,7 +304,13 @@ def check(
         if report.policy_result is not None and not report.policy_result.passed:
             raise click.exceptions.Exit(2)
     except (OSError, ValueError) as exc:
-        raise click.ClickException(strip_controls(str(exc))) from None
+        raise _recovery_error(
+            strip_controls(str(exc)),
+            stage,
+            "check the named input or output path, then rerun mcp-audit check",
+            scanned=scanned,
+            written=tuple(written),
+        ) from None
 
 
 @click.command()
@@ -216,6 +322,8 @@ def check(
 @click.option(
     "--previous", type=click.Path(path_type=Path), help="Explicit local report JSON for comparison."
 )
+@click.option("--json", "json_stdout", is_flag=True, help="Emit only AuditReport JSON on stdout.")
+@click.option("--output-json", type=click.Path(path_type=Path), help="Write AuditReport JSON to FILE.")
 @click.option("--connect", is_flag=True, help="Connect only to the selected server identity, as with check.")
 @click.option("--server", "server_id", metavar="CLIENT:SCOPE:NAME")
 @click.option("--override-config", type=click.Path(path_type=Path))
@@ -225,6 +333,7 @@ def checkup(
     config: Path | None,
     include_discovered: bool,
     project: Path | None,
+    clients: tuple[ClientType, ...],
     details: bool,
     card: Path,
     names: bool,
@@ -232,6 +341,8 @@ def checkup(
     connect: bool,
     server_id: str | None,
     override_config: Path | None,
+    json_stdout: bool,
+    output_json: Path | None,
 ) -> None:
     """Write a local shareable HTML card; static Preview unless explicitly connected."""
     ctx.invoke(
@@ -239,6 +350,7 @@ def checkup(
         config=config,
         include_discovered=include_discovered,
         project=project,
+        clients=clients,
         details=details,
         card=card,
         names=names,
@@ -246,18 +358,79 @@ def checkup(
         connect=connect,
         server_id=server_id,
         override_config=override_config,
+        json_stdout=json_stdout,
+        output_json=output_json,
     )
 
 
 @click.command()
 @_source_options
-def inspect(config: Path | None, include_discovered: bool, project: Path | None, details: bool) -> None:
+@click.option("--json", "json_stdout", is_flag=True, help="Emit source identities as JSON on stdout.")
+@click.option(
+    "--output-json", type=click.Path(path_type=Path), help="Write source identities as JSON to FILE."
+)
+def inspect(
+    config: Path | None,
+    include_discovered: bool,
+    project: Path | None,
+    clients: tuple[ClientType, ...],
+    details: bool,
+    json_stdout: bool,
+    output_json: Path | None,
+) -> None:
     """List server identities, sources and discovery coverage without connecting."""
     try:
-        sources = review_sources(config, include_discovered, project)
+        sources = review_sources(config, include_discovered, project, clients)
     except (OSError, ValueError) as exc:
-        raise click.ClickException(strip_controls(str(exc))) from None
-    out = Console()
+        raise _recovery_error(
+            strip_controls(str(exc)),
+            "config discovery and parsing",
+            "check the selected config path, then rerun mcp-audit inspect",
+            scanned=False,
+        ) from None
+    out = Console(stderr=json_stdout)
+    payload = json.dumps(
+        {
+            "servers": [
+                {
+                    "identity": server_identity(server),
+                    "source": server.source_label,
+                    "config_path": server.config_path,
+                }
+                for server in sources.servers
+            ],
+            "sources": [{"path": path, "status": status} for path, status in sources.paths],
+            "diagnostics": len(sources.errors),
+        },
+        indent=2,
+    )
+    if output_json is not None:
+        try:
+            validate_artifact_paths(
+                [("--output-json", output_json)],
+                [Path(path) for path, status in sources.paths if status != "absent"],
+            )
+        except click.BadParameter as exc:
+            raise _recovery_error(
+                strip_controls(exc.format_message()),
+                "--output-json destination",
+                "choose a verifiable destination separate from the reviewed config files",
+                scanned=True,
+                exit_code=2,
+            ) from None
+        try:
+            output_json.write_text(payload, encoding="utf-8")
+        except OSError as exc:
+            raise _recovery_error(
+                f"cannot write JSON output ({type(exc).__name__})",
+                "--output-json destination",
+                "choose a writable --output-json FILE path and rerun mcp-audit inspect",
+                scanned=True,
+            ) from None
+        out.print(terminal_safe(f"Wrote {output_json}"))
+    if json_stdout:
+        click.echo(payload)
+        return
     if not sources.servers:
         out.print("No MCP servers found. Try mcp-audit demo or mcp-audit check --config ./mcp.json.")
     if sources.errors:
