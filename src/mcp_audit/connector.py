@@ -26,6 +26,7 @@ from mcp.types import Prompt as SdkPrompt
 from mcp.types import Resource as SdkResource
 from mcp.types import Tool as SdkTool
 from mcp.types import ToolAnnotations as SdkToolAnnotations
+from pydantic import BaseModel
 
 from mcp_audit import __version__
 from mcp_audit.agent_text import agent_visible_text
@@ -50,7 +51,15 @@ from mcp_audit.models import (
 from mcp_audit.protocol import ProtocolCapture, cache_hint_failure, observe_session, observe_transport
 from mcp_audit.redaction import redact_data, redact_text
 from mcp_audit.rules.result_injection import RESULT_SCAN_LIMIT
+from mcp_audit.stdio_transport import (
+    DEFAULT_MAX_FRAME_BYTES,
+    DEFAULT_MAX_SURFACE_BYTES,
+    FrameSizeError,
+    bounded_stdio_client,
+)
+from mcp_audit.surface_limits import ListingBudget, SurfaceLimitError
 from mcp_audit.terminal_text import TerminalSafeLogFilter, strip_controls
+from mcp_audit.text_limits import MAX_FIELD_BYTES
 
 logger = logging.getLogger(__name__)
 logger.addFilter(TerminalSafeLogFilter())
@@ -280,7 +289,7 @@ _TRUNCATION_WARNING = (
     f"{RESULT_SCAN_LIMIT // 1024} KB of each oversized result or prompt body was scanned for injection."
 )
 _Page = TypeVar("_Page", ListToolsResult, ListPromptsResult, ListResourcesResult)
-_Item = TypeVar("_Item")
+_Item = TypeVar("_Item", bound=BaseModel)
 
 
 class _ListingPageLimit(ValueError):
@@ -290,6 +299,8 @@ class _ListingPageLimit(ValueError):
 def _listing_failure_message(label: str, exc: Exception) -> str:
     if isinstance(exc, _ListingPageLimit):
         return f"{label} listing exceeds the 20-page limit; coverage is incomplete."
+    if isinstance(exc, SurfaceLimitError):
+        return f"{label} surface incomplete: {exc}"
     reason = _exception_type_names(exc)
     return f"{label} surface incomplete ({reason})."
 
@@ -300,6 +311,7 @@ async def _list_pages(
     *,
     capture: ProtocolCapture | None = None,
     method: str = "",
+    budget: ListingBudget | None = None,
 ) -> list[_Item]:
     """Admit a surface only after its complete, bounded pagination succeeds."""
     collected: list[_Item] = []
@@ -308,8 +320,14 @@ async def _list_pages(
         capture.wire_hints.pop(method, None)
     cursor = None
     for _ in range(20):
+        if budget is not None:
+            budget.check_available()
         page = await fetch(cursor=cursor, cache_mode="bypass")
-        collected.extend(items(page))
+        page_items = items(page)
+        if budget is not None:
+            budget.charge(page)
+            page_items[:] = [budget.cap_item(item) for item in page_items]
+        collected.extend(page_items)
         pages.append(page)
         cursor = page.next_cursor
         if not cursor:
@@ -328,6 +346,7 @@ class _ServerCapabilities:
     listing_warnings: list[str] = field(default_factory=list)
     protocol: ProtocolObservation | None = None
     protocol_findings: list[ProtocolFinding] = field(default_factory=list)
+    text_truncated: bool = False
 
 
 @dataclass(frozen=True)
@@ -403,8 +422,20 @@ def _result_text(value: object) -> list[str]:
 class ServerConnector:
     """Connects to MCP servers and enumerates their tools."""
 
-    def __init__(self, timeout: float = 10.0) -> None:
+    def __init__(
+        self,
+        timeout: float = 10.0,
+        *,
+        max_frame_bytes: int = DEFAULT_MAX_FRAME_BYTES,
+        max_surface_bytes: int = DEFAULT_MAX_SURFACE_BYTES,
+        sdk_stdio_fallback: bool = False,
+    ) -> None:
+        if max_frame_bytes < 1 or max_surface_bytes < 1:
+            raise ValueError("Transport byte limits must be positive.")
         self.timeout = timeout
+        self.max_frame_bytes = max_frame_bytes
+        self.max_surface_bytes = max_surface_bytes
+        self.sdk_stdio_fallback = sdk_stdio_fallback
         self.scan_warnings: list[ScanWarning] | None = None
 
     async def connect(
@@ -591,8 +622,13 @@ class ServerConnector:
         )
         with _capture_stderr(config.name) as errlog:
             capture = ProtocolCapture(ProtocolObservation())
+            transport = (
+                stdio_client(params, errlog=errlog)
+                if self.sdk_stdio_fallback
+                else bounded_stdio_client(params, errlog=errlog, max_frame_bytes=self.max_frame_bytes)
+            )
             async with Client(
-                observe_transport(stdio_client(params, errlog=errlog), capture),
+                observe_transport(transport, capture),
                 client_info=probe.client_info if probe else _CLIENT_INFO,
                 list_roots_callback=_canary_roots if probe and probe.identity_only else None,
             ) as client:
@@ -702,6 +738,10 @@ class ServerConnector:
                 )
                 previous = {**previous, **capabilities.surface}
                 summary.current_hash = surface_hash(previous)
+            if capabilities.text_truncated:
+                summary.status = "partial"
+                summary.warnings.append("Listing text truncated; exercise stopped before selecting a tool.")
+                return capabilities
             eligible = [t for t in capabilities.tools if canary_tool_eligible(t, t.name in probe.safe_tools)]
             if not eligible:
                 summary.status = "no_safe_tools" if not summary.completed_calls else "partial"
@@ -747,6 +787,7 @@ class ServerConnector:
         resources: list[ResourceInfo] = []
         surface: dict[str, dict[str, object]] = {}
         listing_warnings: list[str] = []
+        budget = ListingBudget(self.max_surface_bytes)
         # Every surface is always listed, in both modes: servers can serve surfaces
         # they never advertised, and skipping them would hide them from the static
         # checks. Never-observed, unadvertised surfaces may be unsupported;
@@ -758,17 +799,23 @@ class ServerConnector:
         list_resources = True
         try:
             tools = await _list_pages(
-                session.list_tools, lambda page: page.tools, capture=capture, method="tools/list"
+                session.list_tools,
+                lambda page: page.tools,
+                capture=capture,
+                method="tools/list",
+                budget=budget,
             )
             if probe:
                 from mcp_audit.pinning import canonical_tool_surface
 
                 surface["tools"] = {t.name: canonical_tool_surface(self._convert_tool(t)) for t in tools}
         except Exception as exc:
+            if any(isinstance(leaf, FrameSizeError) for leaf in _exception_leaves(exc)):
+                raise
             ttl_error = cache_hint_failure(exc)
             if capture is not None:
                 capture.failed("tools/list", exc)
-            if not probe and not isinstance(exc, _ListingPageLimit) and not ttl_error:
+            if not probe and not isinstance(exc, _ListingPageLimit | SurfaceLimitError) and not ttl_error:
                 raise
             message = _listing_failure_message("Tool", exc)
             listing_warnings.append(message)
@@ -778,7 +825,11 @@ class ServerConnector:
         if list_prompts:
             try:
                 prompt_items = await _list_pages(
-                    session.list_prompts, lambda page: page.prompts, capture=capture, method="prompts/list"
+                    session.list_prompts,
+                    lambda page: page.prompts,
+                    capture=capture,
+                    method="prompts/list",
+                    budget=budget,
                 )
                 prompts = [self._convert_prompt(prompt) for prompt in prompt_items]
                 if probe:
@@ -818,6 +869,8 @@ class ServerConnector:
                         body = "\n".join(_result_text(result.model_dump(mode="json", by_alias=True)))
                         self._scan_runtime_text(probe, prompt.name, body, after_call, CapabilityTarget.PROMPT)
             except Exception as exc:
+                if any(isinstance(leaf, FrameSizeError) for leaf in _exception_leaves(exc)):
+                    raise
                 ttl_error = cache_hint_failure(exc)
                 if capture is not None:
                     capture.failed("prompts/list", exc)
@@ -828,14 +881,16 @@ class ServerConnector:
                 if (
                     prompts_advertised
                     or "prompts" in (previous or {})
-                    or isinstance(exc, _ListingPageLimit)
+                    or isinstance(exc, _ListingPageLimit | SurfaceLimitError)
                     or ttl_error
                 ):
                     listing_warnings.append(message)
                 if probe:
                     probe.listing_failures["prompts"] = message
                 if probe and (
-                    prompts_advertised or "prompts" in (previous or {}) or isinstance(exc, _ListingPageLimit)
+                    prompts_advertised
+                    or "prompts" in (previous or {})
+                    or isinstance(exc, _ListingPageLimit | SurfaceLimitError)
                 ):
                     self._canary_warning(probe, message)
                 elif logger.isEnabledFor(logging.DEBUG):
@@ -850,6 +905,7 @@ class ServerConnector:
                     lambda page: page.resources,
                     capture=capture,
                     method="resources/list",
+                    budget=budget,
                 )
                 resources = [self._convert_resource(resource) for resource in resource_items]
                 if probe:
@@ -859,6 +915,8 @@ class ServerConnector:
                         str(r.uri): r.model_dump(mode="json", by_alias=True) for r in resource_items
                     }
             except Exception as exc:
+                if any(isinstance(leaf, FrameSizeError) for leaf in _exception_leaves(exc)):
+                    raise
                 ttl_error = cache_hint_failure(exc)
                 if capture is not None:
                     capture.failed("resources/list", exc)
@@ -866,7 +924,7 @@ class ServerConnector:
                 if (
                     resources_advertised
                     or "resources" in (previous or {})
-                    or isinstance(exc, _ListingPageLimit)
+                    or isinstance(exc, _ListingPageLimit | SurfaceLimitError)
                     or ttl_error
                 ):
                     listing_warnings.append(message)
@@ -875,7 +933,7 @@ class ServerConnector:
                 if probe and (
                     resources_advertised
                     or "resources" in (previous or {})
-                    or isinstance(exc, _ListingPageLimit)
+                    or isinstance(exc, _ListingPageLimit | SurfaceLimitError)
                 ):
                     self._canary_warning(probe, message)
                 elif logger.isEnabledFor(logging.DEBUG):
@@ -883,6 +941,18 @@ class ServerConnector:
                         "Server %s resource listing unavailable: %s", server_name, describe_exception(exc)
                     )
 
+        if budget.truncated_items:
+            message = (
+                f"Listing text limited to {MAX_FIELD_BYTES} UTF-8 bytes per item; "
+                f"{budget.truncated_items} item(s) truncated. Suffix evidence was not inspected."
+            )
+            listing_warnings.append(message)
+            if self.scan_warnings is not None:
+                self.scan_warnings.append(
+                    ScanWarning(code="surface_truncated", message=message, servers=[server_name])
+                )
+            if probe:
+                self._canary_warning(probe, message)
         tool_infos = [self._convert_tool(t) for t in tools]
         if capture is not None:
             capture.wire_rules()
@@ -901,6 +971,7 @@ class ServerConnector:
             listing_warnings=listing_warnings,
             protocol=capture.observation if capture is not None else None,
             protocol_findings=capture.findings if capture is not None else [],
+            text_truncated=bool(budget.truncated_items),
         )
 
     @staticmethod

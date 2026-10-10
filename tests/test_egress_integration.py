@@ -195,7 +195,7 @@ class TestPerServerAllowlistWiring:
         audit_for = self._fixed_host_audit
 
         class FakeConnector:
-            def __init__(self, timeout: float) -> None: ...
+            def __init__(self, timeout: float, **transport_options: object) -> None: ...
 
             async def connect(self, srv: ServerConfig) -> ServerAudit:
                 return audit_for(srv.name)
@@ -247,7 +247,7 @@ class TestEgressSsrfSubstrate:
         audit_for = self._caller_controlled_audit
 
         class FakeConnector:
-            def __init__(self, timeout: float) -> None: ...
+            def __init__(self, timeout: float, **transport_options: object) -> None: ...
 
             async def connect(self, srv: ServerConfig) -> ServerAudit:
                 return audit_for(srv.name)
