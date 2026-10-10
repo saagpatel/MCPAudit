@@ -201,6 +201,7 @@ def compute_summary(report: AuditReport) -> ReviewSummary:
             *audit.package_verify_findings,
             *audit.artifact_verify_findings,
             *audit.protocol_findings,
+            *audit.authorization_findings,
         ]
         for finding_with_rule in other_findings:
             add(

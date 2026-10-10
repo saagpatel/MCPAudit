@@ -138,6 +138,7 @@ def finding_views(report: AuditReport) -> Iterator[FindingView]:
             *audit.package_verify_findings,
             *audit.artifact_verify_findings,
             *audit.protocol_findings,
+            *audit.authorization_findings,
         )
         for record in findings:
             yield _view(

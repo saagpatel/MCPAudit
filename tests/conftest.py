@@ -1,11 +1,26 @@
 """Shared pytest fixtures for mcp-audit tests."""
 
 from pathlib import Path
+from typing import Literal
+from urllib.parse import urlsplit
 
 import pytest
 
 from mcp_audit.models import ClientType, ServerConfig, ToolAnnotations, ToolInfo, TransportType
 from mcp_audit.pinning import PinStore
+from mcp_audit.probe import _request, _Response
+
+
+@pytest.fixture(autouse=True)
+def local_authorization_probe_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Existing mocked connectors must not cause new public-network probe traffic."""
+
+    async def local_request(url: str, method: Literal["POST", "GET"], timeout: float) -> _Response:
+        if urlsplit(url).hostname not in {"localhost", "127.0.0.1", "::1"}:
+            raise OSError("external probe disabled in tests")
+        return await _request(url, method, timeout)
+
+    monkeypatch.setattr("mcp_audit.probe._request", local_request)
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:

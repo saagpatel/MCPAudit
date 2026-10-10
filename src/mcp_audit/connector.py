@@ -466,6 +466,12 @@ class ServerConnector:
         identity_era: str | None = None
         try:
             with anyio.move_on_after(self.timeout) as cancel_scope:
+                if config.transport == TransportType.HTTP and config.url:
+                    from mcp_audit.probe import probe_authorization
+
+                    audit.authorization_probe, audit.authorization_findings = await probe_authorization(
+                        config.url, timeout=self.timeout
+                    )
                 if config.transport == TransportType.STDIO:
                     capabilities = (
                         await self._connect_stdio(config, probe)
@@ -600,11 +606,9 @@ class ServerConnector:
                 audit.canary.status = "partial"
                 audit.canary.warnings.append("Canary session failed; coverage is incomplete.")
                 return audit
-            return ServerAudit(
-                server=config,
-                connection_status="failed",
-                connection_error=message,
-            )
+            audit.connection_status = "failed"
+            audit.connection_error = message
+            return audit
         finally:
             if audit.canary:
                 audit.canary.elapsed_seconds = time.monotonic() - started

@@ -1137,6 +1137,37 @@ class ProtocolFinding(ReferencedFinding):
     target_name: str = ""
 
 
+class AuthorizationFinding(ReferencedFinding):
+    """Credential-free authorization metadata review signal, not OAuth proof."""
+
+    rule_id: str
+    title: str
+    summary: str
+    remediation: str
+    severity: Literal["low", "medium", "high"]
+    requirement_level: Literal["protocol_must", "protocol_should", "advisory"] = "advisory"
+    target_type: str = "server"
+    target_name: str = ""
+
+
+class AuthorizationFetch(BaseModel):
+    """Bounded metadata fetch result; no response body or raw headers retained."""
+
+    url: str
+    status: int | None = None
+    body_bytes: int | None = None
+    reason: str
+
+
+class AuthorizationProbeObservation(BaseModel):
+    status: int | None = None
+    www_authenticate: list[dict[str, str]] = Field(default_factory=list)
+    session_id_present: bool | None = None
+    jsonrpc_error_code: int | None = None
+    metadata_fetches: list[AuthorizationFetch] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class ServerAudit(BaseModel):
     """Complete audit result for a single MCP server."""
 
@@ -1146,6 +1177,8 @@ class ServerAudit(BaseModel):
     connection_error: str | None = None
     protocol: ProtocolObservation | None = None
     protocol_findings: list[ProtocolFinding] = Field(default_factory=list)
+    authorization_probe: AuthorizationProbeObservation | None = None
+    authorization_findings: list[AuthorizationFinding] = Field(default_factory=list)
     tools: list[ToolInfo] = Field(default_factory=list)
     prompts: list[PromptInfo] = Field(default_factory=list)
     resources: list[ResourceInfo] = Field(default_factory=list)
@@ -1180,6 +1213,10 @@ class ServerAudit(BaseModel):
             data.pop("protocol", None)
         if not self.protocol_findings:
             data.pop("protocol_findings", None)
+        if self.authorization_probe is None:
+            data.pop("authorization_probe", None)
+        if not self.authorization_findings:
+            data.pop("authorization_findings", None)
         return data
 
 

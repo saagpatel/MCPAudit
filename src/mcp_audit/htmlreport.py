@@ -474,6 +474,22 @@ class HtmlReportGenerator:
                 )
             )
         body.append(self._drift_table(audit))
+        if audit.authorization_findings:
+            body.append(
+                self._table(
+                    "Authorization observations",
+                    ["Rule", "Severity", "Observation", "Manual step"],
+                    [
+                        self._row(
+                            self._esc(f.rule_id),
+                            self._esc(f.severity),
+                            self._esc(f.summary),
+                            self._esc(f.remediation),
+                        )
+                        for f in audit.authorization_findings
+                    ],
+                )
+            )
         return f'<div class="server">{"".join(body)}</div>'
 
     def _permissions_table(self, audit: ServerAudit) -> str:

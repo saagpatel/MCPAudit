@@ -16,6 +16,7 @@ from mcp_audit.models import (
     ArtifactVerifyKind,
     ArtifactVerifySeverity,
     AuditReport,
+    AuthorizationFinding,
     CapabilityFinding,
     CheckCoverage,
     Confidence,
@@ -37,6 +38,7 @@ from mcp_audit.models import (
     PackageVerifySeverity,
     PermissionCategory,
     PermissionFinding,
+    ProtocolFinding,
     ProvenanceFinding,
     ProvenanceKind,
     ProvenanceSeverity,
@@ -237,11 +239,11 @@ class SarifGenerator:
             ],
         }
         run = document["runs"][0]
-        from mcp_audit.taxonomy import PROTOCOL_FINDINGS
+        from mcp_audit.taxonomy import AUTHORIZATION_FINDINGS, PROTOCOL_FINDINGS
 
         observed_protocol_rules = {
             finding.rule_id for audit in report.audits for finding in audit.protocol_findings
-        }
+        } | {finding.rule_id for audit in report.audits for finding in audit.authorization_findings}
         run["tool"]["driver"]["rules"].extend(
             {
                 "id": rule_id,
@@ -249,9 +251,15 @@ class SarifGenerator:
                 "shortDescription": {"text": metadata.title},
                 "fullDescription": {"text": metadata.description},
                 "help": {"text": metadata.remediation},
-                "defaultConfiguration": {"level": "note"},
+                "defaultConfiguration": {
+                    "level": "error"
+                    if metadata.severity == "high"
+                    else "warning"
+                    if metadata.severity == "medium"
+                    else "note"
+                },
             }
-            for rule_id, metadata in PROTOCOL_FINDINGS.items()
+            for rule_id, metadata in (PROTOCOL_FINDINGS | AUTHORIZATION_FINDINGS).items()
             if rule_id in observed_protocol_rules
         )
         for rule in run["tool"]["driver"]["rules"]:
@@ -588,11 +596,19 @@ class SarifGenerator:
                 results.append(self._make_result(permission_finding, audit, alert_score=alert_score))
             for annotation_finding in audit.annotation_findings:
                 results.append(self._make_annotation_result(annotation_finding, audit))
-            for protocol in audit.protocol_findings:
+            observed_findings: list[ProtocolFinding | AuthorizationFinding] = [
+                *audit.protocol_findings,
+                *audit.authorization_findings,
+            ]
+            for protocol in observed_findings:
                 results.append(
                     {
                         "ruleId": protocol.rule_id,
-                        "level": "note",
+                        "level": "error"
+                        if protocol.severity == "high"
+                        else "warning"
+                        if protocol.severity == "medium"
+                        else "note",
                         "message": {"text": protocol.summary},
                         "locations": [
                             {

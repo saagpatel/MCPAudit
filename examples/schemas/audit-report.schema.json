@@ -138,6 +138,174 @@
       "title": "ArtifactVerifySeverity",
       "type": "string"
     },
+    "AuthorizationFetch": {
+      "description": "Bounded metadata fetch result; no response body or raw headers retained.",
+      "properties": {
+        "url": {
+          "title": "Url",
+          "type": "string"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "body_bytes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Body Bytes"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "url",
+        "reason"
+      ],
+      "title": "AuthorizationFetch",
+      "type": "object"
+    },
+    "AuthorizationFinding": {
+      "description": "Credential-free authorization metadata review signal, not OAuth proof.",
+      "properties": {
+        "rule_id": {
+          "title": "Rule Id",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "summary": {
+          "title": "Summary",
+          "type": "string"
+        },
+        "remediation": {
+          "title": "Remediation",
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Severity",
+          "type": "string"
+        },
+        "requirement_level": {
+          "default": "advisory",
+          "enum": [
+            "protocol_must",
+            "protocol_should",
+            "advisory"
+          ],
+          "title": "Requirement Level",
+          "type": "string"
+        },
+        "target_type": {
+          "default": "server",
+          "title": "Target Type",
+          "type": "string"
+        },
+        "target_name": {
+          "default": "",
+          "title": "Target Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rule_id",
+        "title",
+        "summary",
+        "remediation",
+        "severity"
+      ],
+      "title": "AuthorizationFinding",
+      "type": "object"
+    },
+    "AuthorizationProbeObservation": {
+      "properties": {
+        "status": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Status"
+        },
+        "www_authenticate": {
+          "items": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "title": "Www Authenticate",
+          "type": "array"
+        },
+        "session_id_present": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id Present"
+        },
+        "jsonrpc_error_code": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Jsonrpc Error Code"
+        },
+        "metadata_fetches": {
+          "items": {
+            "$ref": "#/$defs/AuthorizationFetch"
+          },
+          "title": "Metadata Fetches",
+          "type": "array"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "title": "AuthorizationProbeObservation",
+      "type": "object"
+    },
     "CacheHintObservation": {
       "description": "Wire hints for one page; presence flags distinguish absent from invalid.",
       "properties": {
@@ -2111,6 +2279,24 @@
             "$ref": "#/$defs/ProtocolFinding"
           },
           "title": "Protocol Findings",
+          "type": "array"
+        },
+        "authorization_probe": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AuthorizationProbeObservation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "authorization_findings": {
+          "items": {
+            "$ref": "#/$defs/AuthorizationFinding"
+          },
+          "title": "Authorization Findings",
           "type": "array"
         },
         "tools": {

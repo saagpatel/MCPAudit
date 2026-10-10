@@ -744,6 +744,150 @@ How sure: A static URI comparison; the icon is never requested.
 
 see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp054
 
+## MCPAUTH001
+
+Your server's authorization needs review: protected-resource metadata missing.
+
+What we saw: Credential-free discovery returned 404 or 410 for every protected-resource metadata location.
+
+Why it matters:
+
+1. Credential-free endpoint and public metadata observations need manual review.
+2. Incorrect bindings or missing safeguards can affect OAuth client security.
+3. Metadata advertisements do not prove how the server handles credentials.
+
+How to fix (About 5 minutes for an initial review): Publish RFC 9728 protected-resource metadata and advertise its discovery location.
+
+How sure: Advertisement or transport evidence only; no token, client registration, authorization response, or runtime security was tested.
+
+see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcpauth001
+
+## MCPAUTH002
+
+Your server's authorization needs review: challenge scope guidance absent.
+
+What we saw: The 401 Bearer challenge did not provide scope guidance for this operation.
+
+Why it matters:
+
+1. Credential-free endpoint and public metadata observations need manual review.
+2. Incorrect bindings or missing safeguards can affect OAuth client security.
+3. Metadata advertisements do not prove how the server handles credentials.
+
+How to fix (About 5 minutes for an initial review): Advertise the least-privilege scopes required for this operation in the challenge.
+
+How sure: Advertisement or transport evidence only; no token, client registration, authorization response, or runtime security was tested.
+
+see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcpauth002
+
+## MCPAUTH003
+
+Your server's authorization needs review: resource metadata mismatch.
+
+What we saw: The metadata resource does not exactly match the contacted MCP endpoint.
+
+Why it matters:
+
+1. Credential-free endpoint and public metadata observations need manual review.
+2. Incorrect bindings or missing safeguards can affect OAuth client security.
+3. Metadata advertisements do not prove how the server handles credentials.
+
+How to fix (About 5 minutes for an initial review): Bind protected-resource metadata to the intended resource; review URI canonicalization manually.
+
+How sure: Advertisement or transport evidence only; no token, client registration, authorization response, or runtime security was tested.
+
+see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcpauth003
+
+## MCPAUTH004
+
+Your server's authorization needs review: authorization issuer mismatch.
+
+What we saw: The metadata issuer differs from the issuer used for discovery; this document was not used further.
+
+Why it matters:
+
+1. Credential-free endpoint and public metadata observations need manual review.
+2. Incorrect bindings or missing safeguards can affect OAuth client security.
+3. Metadata advertisements do not prove how the server handles credentials.
+
+How to fix (About 5 minutes for an initial review): Correct the advertised issuer and metadata binding before any OAuth flow.
+
+How sure: Advertisement or transport evidence only; no token, client registration, authorization response, or runtime security was tested.
+
+see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcpauth004
+
+## MCPAUTH005
+
+Your server's authorization needs review: pkce s256 not advertised.
+
+What we saw: Authorization metadata does not advertise PKCE S256.
+
+Why it matters:
+
+1. Credential-free endpoint and public metadata observations need manual review.
+2. Incorrect bindings or missing safeguards can affect OAuth client security.
+3. Metadata advertisements do not prove how the server handles credentials.
+
+How to fix (About 5 minutes for an initial review): Advertise and implement code_challenge_methods_supported including S256.
+
+How sure: Advertisement or transport evidence only; no token, client registration, authorization response, or runtime security was tested.
+
+see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcpauth005
+
+## MCPAUTH006
+
+Your server's authorization needs review: dcr-only registration advertisement.
+
+What we saw: Metadata advertises dynamic registration without Client ID Metadata Document support; pre-registration availability is unknown.
+
+Why it matters:
+
+1. Credential-free endpoint and public metadata observations need manual review.
+2. Incorrect bindings or missing safeguards can affect OAuth client security.
+3. Metadata advertisements do not prove how the server handles credentials.
+
+How to fix (About 5 minutes for an initial review): Support Client ID Metadata Documents or review separately available pre-registration.
+
+How sure: Advertisement or transport evidence only; no token, client registration, authorization response, or runtime security was tested.
+
+see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcpauth006
+
+## MCPAUTH007
+
+Your server's authorization needs review: rfc 9207 not advertised.
+
+What we saw: Authorization metadata does not advertise authorization_response_iss_parameter_supported=true.
+
+Why it matters:
+
+1. Credential-free endpoint and public metadata observations need manual review.
+2. Incorrect bindings or missing safeguards can affect OAuth client security.
+3. Metadata advertisements do not prove how the server handles credentials.
+
+How to fix (About 5 minutes for an initial review): Advertise RFC 9207 issuer response support and include iss in authorization responses.
+
+How sure: Advertisement or transport evidence only; no token, client registration, authorization response, or runtime security was tested.
+
+see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcpauth007
+
+## MCPAUTH012
+
+Your server's authorization needs review: non-https authorization endpoint.
+
+What we saw: A configured or advertised authorization-related endpoint does not use HTTPS.
+
+Why it matters:
+
+1. Credential-free endpoint and public metadata observations need manual review.
+2. Incorrect bindings or missing safeguards can affect OAuth client security.
+3. Metadata advertisements do not prove how the server handles credentials.
+
+How to fix (About 5 minutes for an initial review): Use HTTPS endpoints before sending credentials; review local development exceptions manually.
+
+How sure: Advertisement or transport evidence only; no token, client registration, authorization response, or runtime security was tested.
+
+see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcpauth012
+
 ## Configuration health
 
 Your server configuration needs review before you connect.

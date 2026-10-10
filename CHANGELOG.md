@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add one credential-free HTTP `server/discover` probe to eligible connected
+  scans, retaining redacted challenge parameters, status, session-ID presence,
+  and JSON-RPC error code even when the SDK connection fails. Review public
+  authorization metadata with bounded, address-pinned, credential-free HTTPS
+  GETs and authorization rules A1–A7 and A12. Update authorization lab profiles
+  to the final 2026-07-28 profile while accepting legacy inputs and reordered
+  supported reference sets.
+
 ### Fixed
 
 - Exclude home dotfiles and additional credential directories from launch-artifact
