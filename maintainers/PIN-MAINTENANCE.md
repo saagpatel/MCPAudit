@@ -52,7 +52,10 @@ a key exists; missing explicit keys, unreadable keys, wrong ownership and wrong
 permissions refuse signing. `--unsigned` writes unsigned v2 pins only while no
 trusted key exists; once any key is trusted, unsigned v2 writes are refused
 because they would read back as tampered (`MCP027`). Legacy v1 entries keep the
-`pin_schema_outdated` warning.
+`pin_schema_outdated` warning and never fail verification, but while a key is
+trusted their baseline is withheld (`pin_baseline_withheld`) because nothing
+authenticates it; a reviewed `pin --refresh SERVER --apply` replaces it with a
+fresh signed v2 baseline without carrying over the legacy rows.
 
 Public keys are trusted separately in `~/.mcp-audit/trusted-pin-keys.json`,
 with key IDs `sha256(raw_public_key)[:16]`. Embedded public keys are never
@@ -63,12 +66,15 @@ key present, a v2 entry whose signature and all signing metadata were deleted is
 store also records the newest `pinned_at` per server for rollback warnings; every
 successful signed write and every verification advance that local high-water
 record without modifying the pin baseline. Restoring an older signed entry warns
-`pin_rolled_back`; it does not fail verification. An unwritable
+`pin_rolled_back`; it does not fail verification. Rollback is decided before the
+high-water write, so a trust-store write failure still reports it. An unwritable
 trust store leaves signature verification usable but emits
 `pin_rollback_tracking_unavailable`.
 
 `pin --pin-file FILE rotate-key` verifies signed entries before changing keys
-and re-signs v2 entries. It retains old private/public files under their old key
+and re-signs every signed or v2 entry, including mixed entries that retain legacy
+v1 tool rows (those rows are kept unchanged); only unsigned pure v1 entries are
+left as they are. It retains old private/public files under their old key
 ID and marks the old trusted public key retired with a 30-day grace period
 (`rotate-key --grace-days N`, 0-3650, changes that rotation's grace). An invalid
 or out-of-range persisted grace makes the retired signer untrusted. During grace,

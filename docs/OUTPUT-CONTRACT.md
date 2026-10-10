@@ -533,7 +533,12 @@ HIGH violation stating that their comparison was withheld. When the scan did not
 verify a server (no pin-based check ran), `fail_on.pin_integrity` verifies the
 selected pin store directly. Policies without signed pins, and report
 `schema_version`, are unchanged. Legacy v1 pins always warn (`pin_schema_outdated`)
-and remain usable. Unsigned v2 pins warn (`pin_unsigned`) and remain usable only
+and never produce `MCP027`; they remain the comparison baseline only while no key
+is trusted. With a trusted key they are unauthenticated, so their baseline is
+withheld (`pin_baseline_withheld`, no drift/escalation/canary/provenance
+comparison, `require.pins` unmet, enabled comparison gates fail). A v1 entry for a
+server with a recorded signing expectation or rollback high-water mark is a
+downgrade and is `tampered_entry`. Unsigned v2 pins warn (`pin_unsigned`) and remain usable only
 while the separate trust store holds no usable trusted key (active, or retired
 within grace): once any key is trusted, including a public-key-only CI store
 populated by `pin trust-key --add`, an unsigned v2 entry is `tampered_entry` and
@@ -548,7 +553,9 @@ write succeeds. `pin --clear SERVER` is the explicit recovery path: it removes t
 entry and that server's expectation and rollback history. Each successful signed
 write also advances the per-server rollback high-water `pinned_at`, so restoring an
 older validly signed entry warns `pin_rolled_back` (verification stays `verified`)
-even when no scan verified the newer pin; a fresh CI trust store has no high-water
+even when no scan verified the newer pin. Rollback is decided from a read before
+any trust-store write, so a failed update still warns `pin_rolled_back` alongside
+`pin_rollback_tracking_unavailable`; a fresh CI trust store has no high-water
 mark until its first verification. Retired-key grace is bounded to 0-3650 days;
 an invalid or unrepresentable persisted retirement deadline makes that signer
 `untrusted_signer` (HIGH `MCP027`) instead of failing the scan.
@@ -980,8 +987,10 @@ The report top level also includes:
     `pin_baseline_stale` (pinned servers whose baseline predates the capture
     this check compares against; named in `servers`),
     `pin_baseline_withheld` (servers whose pin baseline failed integrity
-    verification, HIGH MCP027, so this baseline comparison was not run; named in
-    `servers` and never also reported as `pin_baseline_stale`),
+    verification, HIGH MCP027, or is an unsigned legacy v1 pin while trusted keys
+    exist, so this baseline comparison was not run; also emitted for `pin_check`
+    and `canary_check`; named in `servers` and never also reported as
+    `pin_baseline_stale`),
     `integrity_comparison_incomplete` (with `check: integrity_check`; pinned
     paths excluded by sensitive-path protection or unavailable path resolution.
     The message reports counts, never excluded paths or their saved/current hashes),

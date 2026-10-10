@@ -71,7 +71,9 @@ set `fail_on.pin_integrity: true` in policy to fail CI on those findings.
 The trusted public key alone makes CI fail closed: once a key is trusted, a v2
 entry with its signature and all signing metadata deleted is `tampered_entry`
 (HIGH `MCP027`), even on a fresh trust store with no per-server expectation.
-Only genuine legacy v1 entries (v1 tool pins with no v2 markers) still warn.
+Genuine legacy v1 entries (v1 tool pins with no v2 markers) still only warn, but
+with a trusted key their baseline is withheld from comparisons
+(`pin_baseline_withheld`) because nothing authenticates it.
 Rollback detection needs history: a fresh CI trust store has no high-water
 `pinned_at` until its first verification, so persist this store separately from
 pins (or seed `servers.SERVER.last_seen_pinned_at`) to warn on older signed pins.
@@ -80,7 +82,7 @@ copying and re-signing saved registry hashes. Restore a trusted backup, or
 explicitly clear the server's pin and review a fresh baseline before re-pinning.
 
 `pin --pin-file ./pins.yaml rotate-key` re-verifies signed entries and re-signs
-v2 entries with a new key. The old public key remains trusted for 30 days;
+every signed or v2 entry (including mixed entries with legacy v1 rows) with a new key. The old public key remains trusted for 30 days;
 `rotate-key --grace-days N` changes that rotation's grace period. Publish the
 new public key to CI's trust store. Legacy v1 entries remain unchanged until
 an explicit refresh review. Older valid signed baselines produce

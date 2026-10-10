@@ -24,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   write so restoring an older signed pin warns `pin_rolled_back`. Suppress legacy
   refresh guidance for rejected entries, bound retired-key grace to 0-3650 days,
   and treat invalid persisted grace as an untrusted signer instead of crashing.
+- Re-sign signed and mixed v1/v2 entries during key rotation and re-signing so
+  they do not expire with the retired key. Withhold unsigned legacy v1 baselines
+  from comparisons while a key is trusted (`pin_baseline_withheld`, also for
+  `pin_check` and `canary_check`) without raising `MCP027`, and report rollback
+  even when the trust-store high-water update fails.
 - Update signed-pin regression connector doubles for bounded transport options,
   and retain the required unsigned-pin warning alongside integrity-exclusion
   warnings in integration assertions.
