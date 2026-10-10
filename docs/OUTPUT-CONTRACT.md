@@ -1116,6 +1116,12 @@ The report top level also includes:
     serialized listing byte budget was exceeded),
     `surface_truncated` (retained listing text exceeded 256 KiB of UTF-8 per
     item; suffix metadata was omitted before conversion and analysis),
+    `protocol_error` (a transport-level parse fault ended the session immediately;
+    `connection_status` is `failed`, and input contents are withheld),
+    `orphan_processes` (the stdio group survived shutdown signals or cleanup
+    permission was denied; `check: connection`, cleanup remains unverified),
+    `analysis_timeout` (the remaining per-server wall clock expired during analysis;
+    incomplete findings are discarded and the connection status is `timeout`),
     `description_truncated` (permission keyword or SSRF fetch-verb input
     exceeded the 256 KiB UTF-8 per-field limit; suffix evidence was not inspected).
     The vocabulary is additive — consumers must tolerate unknown codes.
@@ -1221,8 +1227,38 @@ decoding or JSON parsing. Exceeding it produces `connection_status: failed`
 and a bounded `connection_error` naming the frame-size limit without frame
 contents. `scan` and `check` accept `--max-frame-bytes`. The temporary
 `--sdk-stdio-fallback` compatibility flag selects the SDK reader and disables
-this frame cap; listing caps still apply. This fallback is intended for one
-release. HTTP body limits are outside this stdio change.
+this frame cap; listing caps and process-group cleanup still apply. This
+fallback is intended for one release.
+
+Streamable HTTP and legacy SSE use a bounded SDK-compatible `httpx2.AsyncClient`.
+Each response body has the same byte cap as `max_frame_bytes` (16 MiB by default),
+including redirects and SSE streams, regardless of `Content-Length`. Bodies are
+counted before buffering/JSON parsing. Requests advertise identity encoding;
+unsolicited compressed bodies are refused before decompression. Exceeding this
+limit fails the connection with a body-size reason and cancels the session,
+including when an SDK SSE handler catches the stream exception. The stdio
+compatibility flag does not disable HTTP bounds.
+
+Transport parse errors fail immediately with a `protocol_error` reason rather
+than waiting for the session timeout. Error summaries retain exception types,
+not malformed input. SDK parse tracebacks are suppressed in favor of one safe
+DEBUG diagnostic per session. Stdio failures and timeouts may append a redacted,
+terminal-safe 4 KiB stderr tail to `connection_error`. An incomplete first tail
+record is discarded so a truncated credential anchor cannot defeat redaction.
+Terminal controls are stripped before credential and URL redaction so controls
+interrupting credential anchors cannot expose their values in diagnostics.
+
+On POSIX, shutdown sends SIGTERM and then SIGKILL to the owned process group
+even if the leader exited. ESRCH is harmless; a surviving group or denied
+cleanup produces `orphan_processes`. Detached descendants that create a new
+session are outside this cleanup guarantee. Windows retains SDK Job Object
+cleanup. `timeout` starts after connection admission; the remaining budget
+covers synchronous Python analysis and asynchronous LLM work. Python loops are
+interrupted cooperatively; native blocking calls are checked when they return,
+not preempted. Fleet-wide finalization and optional package/artifact worker I/O
+are outside this Python-analysis deadline. Analysis must finish within the
+deadline; optional verification completing later retains analysis evidence
+that finished within the deadline.
 
 `ScanOptions.max_surface_bytes` (default 64 MiB, also `--max-surface-bytes`)
 is one budget shared by tools, prompts and resources across all pages in a
@@ -1243,6 +1279,8 @@ detector-only `description_truncated` cap, these listing prefixes are also
 used in reports and pins. Consumers must treat them as incomplete metadata.
 The connection and metadata-dependent check coverage become `partial`, and
 canary tool exercise stops before selection from truncated listings. No
+`surface_listing_incomplete` warning is emitted solely for shortening item text
+when the full item inventory was captured. No
 report fields change shape or meaning and `schema_version` remains `1`.
 
 `risk_score.composite` is tool-centered. `non_tool_risk` is an additive

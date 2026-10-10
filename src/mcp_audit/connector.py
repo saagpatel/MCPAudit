@@ -8,8 +8,9 @@ import re
 import threading
 import time
 import traceback
-from collections.abc import Awaitable, Callable, Iterator
-from contextlib import contextmanager
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from contextlib import asynccontextmanager, contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import PurePath
 from typing import TextIO, TypeVar, cast
@@ -17,10 +18,10 @@ from typing import TextIO, TypeVar, cast
 import anyio
 import httpx2
 from mcp import Client, StdioServerParameters
+from mcp.client.session import IncomingMessage
 from mcp.client.sse import sse_client
-from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
-from mcp.shared._httpx_utils import create_mcp_http_client
+from mcp.shared.exceptions import MCPError
 from mcp.types import Implementation, ListPromptsResult, ListResourcesResult, ListRootsResult, ListToolsResult
 from mcp.types import Prompt as SdkPrompt
 from mcp.types import Resource as SdkResource
@@ -30,6 +31,7 @@ from pydantic import BaseModel
 
 from mcp_audit import __version__
 from mcp_audit.agent_text import agent_visible_text
+from mcp_audit.http_transport import BoundedHttpClient, HttpBodySizeError, create_mcp_http_client
 from mcp_audit.models import (
     AuthorizationProbeObservation,
     CanarySummary,
@@ -69,6 +71,65 @@ _CLIENT_INFO = Implementation(name="mcp-audit", version=__version__)
 _CANARY_CLIENT_INFO = Implementation(name="canary-client", version=__version__)
 
 
+class ProtocolError(ValueError):
+    """A transport fault requires immediate session failure, not a timeout."""
+
+
+@dataclass
+class _ProtocolGuard:
+    server_name: str
+    scope: anyio.CancelScope
+    failure: str | None = None
+
+    def reject(self, error: Exception) -> None:
+        if self.failure is None:
+            # ValidationError strings include untrusted input; retain types only.
+            self.failure = (
+                str(error)
+                if isinstance(error, HttpBodySizeError)
+                else f"Transport rejected a server message ({type(error).__name__})."
+            )
+            logger.debug("Server %s protocol_error: %s", self.server_name, self.failure)
+            self.scope.cancel()
+
+    async def __call__(self, message: IncomingMessage) -> None:
+        if isinstance(message, Exception):
+            self.reject(message)
+
+
+@asynccontextmanager
+async def _protocol_guard(server_name: str) -> AsyncIterator[_ProtocolGuard]:
+    with anyio.CancelScope() as scope:
+        guard = _ProtocolGuard(server_name, scope)
+        yield guard
+    if guard.failure is not None:
+        raise ProtocolError(f"protocol_error: {guard.failure}")
+
+
+class _ParseLogFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        # The message handler emits one safe DEBUG line for this session.
+        return not record.getMessage().startswith(
+            (
+                "Failed to parse JSONRPC message",
+                "Error parsing server message",
+                "Error parsing SSE message",
+                "Error parsing JSON response",
+            )
+        )
+
+
+_PARSE_LOG_FILTER = _ParseLogFilter()
+
+
+@dataclass
+class _StderrTail:
+    text: str = ""
+
+
+_STDERR_TAIL: ContextVar[_StderrTail | None] = ContextVar("mcp_audit_stderr_tail", default=None)
+
+
 async def _canary_roots(context: object) -> ListRootsResult:
     """Vary declared capabilities without exposing paths or granting access."""
     return ListRootsResult(roots=[])
@@ -97,14 +158,30 @@ _SSE_LOGGER_NAMES = (
 )
 
 
+_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+
+
+def _fail_closed_controlled_lines(value: str) -> str:
+    """Withhold every line that carries a terminal control; plain lines pass through unchanged.
+
+    A hostile server controls its own formatting: an escape sequence can split a credential
+    label from its value or hide a URL `@` anchor, on either side of the control. No anchor-based
+    redactor is safe on such a line, so the whole line is withheld.
+    """
+    return "\n".join(
+        "<terminal-formatted line withheld>" if _CONTROL_CHARS.search(line) else line
+        for line in value.split("\n")
+    )
+
+
 def _redact_sse_log_text(value: str) -> str:
     # Negotiated POST endpoints can use arbitrary query keys for session credentials.
-    redacted = _REDIRECT_URL.sub(r"\1<redacted-url>", value)
+    redacted = _REDIRECT_URL.sub(r"\1<redacted-url>", _fail_closed_controlled_lines(value))
     redacted = _SSE_URL_SUFFIX.sub(
         lambda match: match[1] + "?<redacted>" if match[2] is not None else match[0], redacted
     )
     redacted = _SSE_URL_USERINFO.sub(r"\1<redacted>@", redacted)
-    return strip_controls(redact_text(redacted))
+    return redact_text(redacted)
 
 
 def _exception_leaves(exc: BaseException) -> Iterator[BaseException]:
@@ -153,6 +230,8 @@ def describe_exception(exc: BaseException) -> str:
 
 class _SseLogFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
+        if not _PARSE_LOG_FILTER.filter(record):
+            return False
         # Transport DEBUG records include raw endpoints, headers and protocol payloads.
         if record.levelno <= logging.DEBUG:
             return False
@@ -183,10 +262,11 @@ def install_transport_log_filters() -> None:
     """
     for name in _SSE_LOGGER_NAMES:
         logging.getLogger(name).addFilter(_SSE_LOG_FILTER)
+    logging.getLogger("mcp.client.stdio").addFilter(_PARSE_LOG_FILTER)
 
 
 @contextmanager
-def _capture_stderr(server_name: str) -> Iterator[TextIO]:
+def _capture_stderr(server_name: str, captured: _StderrTail | None = None) -> Iterator[TextIO]:
     """Drain stderr continuously into a 4 KiB tail, with synchronous cleanup.
 
     A private wake marker ends the reader even if a descendant retains stderr.
@@ -241,7 +321,7 @@ def _capture_stderr(server_name: str) -> Iterator[TextIO]:
             worker.join()
         if failures:
             raise failures[0]
-        if tail and logger.isEnabledFor(logging.DEBUG):
+        if tail:
             text = tail.decode("utf-8", errors="replace")
             if truncated:
                 # The retained prefix may have lost the anchor needed for redaction.
@@ -249,10 +329,13 @@ def _capture_stderr(server_name: str) -> Iterator[TextIO]:
                 if not newline:
                     text = "<stderr truncated; last record exceeded 4 KiB>"
                 text = "…[truncated] " + text
+            text = _redact_sse_log_text(text)
+            if captured is not None:
+                captured.text = text
             logger.debug(
                 "Server %s stderr tail: %s",
                 redact_text(strip_controls(server_name)),
-                redact_text(strip_controls(text)),
+                text,
             )
 
 
@@ -323,7 +406,12 @@ async def _list_pages(
     for _ in range(20):
         if budget is not None:
             budget.check_available()
-        page = await fetch(cursor=cursor, cache_mode="bypass")
+        try:
+            page = await fetch(cursor=cursor, cache_mode="bypass")
+        except MCPError as exc:
+            if exc.code == -32700:
+                raise ProtocolError("protocol_error: Peer reported a protocol parse error.") from None
+            raise
         page_items = items(page)
         if budget is not None:
             budget.charge(page)
@@ -464,6 +552,8 @@ class ServerConnector:
             )
             probe = _CanaryProbe(audit, canary_calls, safe_tools, baseline=canary_baseline)
         started = time.monotonic()
+        stderr_tail = _StderrTail()
+        stderr_token = _STDERR_TAIL.set(stderr_tail)
         identity_era: str | None = None
         try:
             with anyio.move_on_after(self.timeout) as cancel_scope:
@@ -557,6 +647,8 @@ class ServerConnector:
             if cancel_scope.cancelled_caught:
                 logger.debug("Timeout connecting to %s", config.name)
                 audit.connection_status = "timeout"
+                if stderr_tail.text:
+                    audit.connection_error = f"Session timed out. stderr tail: {stderr_tail.text}"
                 if audit.canary:
                     audit.canary.status = "partial"
                     audit.canary.warnings.append("Canary session timed out; coverage is incomplete.")
@@ -585,7 +677,9 @@ class ServerConnector:
                     for message in audit.canary.warnings
                 )
             )
-            audit.connection_status = "partial" if listing_incomplete else "connected"
+            audit.connection_status = (
+                "partial" if listing_incomplete or capabilities.text_truncated else "connected"
+            )
             if not probe:
                 audit.tools = tools
                 audit.prompts = capabilities.prompts
@@ -613,7 +707,14 @@ class ServerConnector:
             return audit
 
         except Exception as exc:
-            message = describe_exception(exc)
+            sdk_parse_error = any(
+                isinstance(leaf, MCPError) and leaf.code == -32700 for leaf in _exception_leaves(exc)
+            )
+            message = (
+                "protocol_error: Peer reported a protocol parse error."
+                if sdk_parse_error
+                else describe_exception(exc)
+            )
             if not isinstance(exc, BaseExceptionGroup):
                 # Keep established plain-exception wording while still using
                 # the helper's URL and credential redaction.
@@ -621,6 +722,16 @@ class ServerConnector:
                 if message.startswith(prefix):
                     message = message[len(prefix) :]
             logger.debug("Failed to connect to %s: %s", config.name, message)
+            if self.scan_warnings is not None and (
+                sdk_parse_error or any(isinstance(leaf, ProtocolError) for leaf in _exception_leaves(exc))
+            ):
+                self.scan_warnings.append(
+                    ScanWarning(
+                        code="protocol_error", message=message, check="connection", servers=[config.name]
+                    )
+                )
+            if stderr_tail.text:
+                message += f" stderr tail: {stderr_tail.text}"
             if audit.canary:
                 audit.connection_status = "failed"
                 audit.connection_error = message
@@ -631,6 +742,7 @@ class ServerConnector:
             audit.connection_error = message
             return audit
         finally:
+            _STDERR_TAIL.reset(stderr_token)
             if audit.canary:
                 audit.canary.elapsed_seconds = time.monotonic() - started
 
@@ -645,18 +757,38 @@ class ServerConnector:
             args=config.args,
             env=None,
         )
-        with _capture_stderr(config.name) as errlog:
+        install_transport_log_filters()
+
+        def on_orphans(message: str) -> None:
+            if self.scan_warnings is not None and not any(
+                warning.code == "orphan_processes" and warning.servers == [config.name]
+                for warning in self.scan_warnings
+            ):
+                self.scan_warnings.append(
+                    ScanWarning(
+                        code="orphan_processes", message=message, check="connection", servers=[config.name]
+                    )
+                )
+            logger.warning("Server %s: %s", config.name, message)
+
+        with _capture_stderr(config.name, _STDERR_TAIL.get()) as errlog:
             capture = ProtocolCapture(ProtocolObservation())
-            transport = (
-                stdio_client(params, errlog=errlog)
-                if self.sdk_stdio_fallback
-                else bounded_stdio_client(params, errlog=errlog, max_frame_bytes=self.max_frame_bytes)
+            transport = bounded_stdio_client(
+                params,
+                errlog=errlog,
+                max_frame_bytes=self.max_frame_bytes,
+                sdk_reader=self.sdk_stdio_fallback,
+                on_orphans=on_orphans,
             )
-            async with Client(
-                observe_transport(transport, capture),
-                client_info=probe.client_info if probe else _CLIENT_INFO,
-                list_roots_callback=_canary_roots if probe and probe.identity_only else None,
-            ) as client:
+            async with (
+                _protocol_guard(config.name) as message_handler,
+                Client(
+                    observe_transport(transport, capture),
+                    client_info=probe.client_info if probe else _CLIENT_INFO,
+                    list_roots_callback=_canary_roots if probe and probe.identity_only else None,
+                    message_handler=message_handler,
+                ) as client,
+            ):
                 return await self._inspect_session(client, config.name, probe, capture)
 
     async def _connect_http(
@@ -675,14 +807,24 @@ class ServerConnector:
             # Never retain or render the header's credential-bearing value.
             minted = minted is True or "mcp-session-id" in response.headers
 
-        async with create_mcp_http_client() as http_client:
+        async with (
+            _protocol_guard(config.name) as message_handler,
+            create_mcp_http_client() as http_client,
+        ):
+            if isinstance(http_client, BoundedHttpClient):
+                http_client.max_body_bytes = self.max_frame_bytes
+                # SDK SSE handlers may swallow stream errors; cancel our session directly.
+                http_client.on_body_error = message_handler.reject
             http_client.event_hooks["response"].append(observe_response)
             capture = ProtocolCapture(ProtocolObservation())
-            async with Client(
-                observe_transport(streamable_http_client(config.url, http_client=http_client), capture),
-                client_info=probe.client_info if probe else _CLIENT_INFO,
-                list_roots_callback=_canary_roots if probe and probe.identity_only else None,
-            ) as client:
+            async with (
+                Client(
+                    observe_transport(streamable_http_client(config.url, http_client=http_client), capture),
+                    client_info=probe.client_info if probe else _CLIENT_INFO,
+                    list_roots_callback=_canary_roots if probe and probe.identity_only else None,
+                    message_handler=message_handler,
+                ) as client,
+            ):
                 result = await self._inspect_session(client, config.name, probe, capture)
                 if result.protocol is not None:
                     result.protocol.session_id_minted = minted
@@ -699,11 +841,27 @@ class ServerConnector:
 
         # Client(str) is Streamable HTTP; legacy SSE must pass sse_client as Transport.
         capture = ProtocolCapture(ProtocolObservation())
-        async with Client(
-            observe_transport(sse_client(config.url), capture),
-            client_info=probe.client_info if probe else _CLIENT_INFO,
-            list_roots_callback=_canary_roots if probe and probe.identity_only else None,
-        ) as client:
+
+        def http_client_factory(
+            headers: dict[str, str] | None = None,
+            timeout: httpx2.Timeout | None = None,
+            auth: httpx2.Auth | None = None,
+        ) -> httpx2.AsyncClient:
+            client = create_mcp_http_client(headers, timeout, auth)
+            if isinstance(client, BoundedHttpClient):
+                client.max_body_bytes = self.max_frame_bytes
+                client.on_body_error = message_handler.reject
+            return client
+
+        async with (
+            _protocol_guard(config.name) as message_handler,
+            Client(
+                observe_transport(sse_client(config.url, httpx_client_factory=http_client_factory), capture),
+                client_info=probe.client_info if probe else _CLIENT_INFO,
+                list_roots_callback=_canary_roots if probe and probe.identity_only else None,
+                message_handler=message_handler,
+            ) as client,
+        ):
             return await self._inspect_session(client, config.name, probe, capture)
 
     async def _inspect_session(
@@ -845,7 +1003,7 @@ class ServerConnector:
 
                 surface["tools"] = {t.name: canonical_tool_surface(self._convert_tool(t)) for t in tools}
         except Exception as exc:
-            if any(isinstance(leaf, FrameSizeError) for leaf in _exception_leaves(exc)):
+            if any(isinstance(leaf, FrameSizeError | ProtocolError) for leaf in _exception_leaves(exc)):
                 raise
             ttl_error = cache_hint_failure(exc)
             if capture is not None:
@@ -904,7 +1062,7 @@ class ServerConnector:
                         body = "\n".join(_result_text(result.model_dump(mode="json", by_alias=True)))
                         self._scan_runtime_text(probe, prompt.name, body, after_call, CapabilityTarget.PROMPT)
             except Exception as exc:
-                if any(isinstance(leaf, FrameSizeError) for leaf in _exception_leaves(exc)):
+                if any(isinstance(leaf, FrameSizeError | ProtocolError) for leaf in _exception_leaves(exc)):
                     raise
                 ttl_error = cache_hint_failure(exc)
                 if capture is not None:
@@ -950,7 +1108,7 @@ class ServerConnector:
                         str(r.uri): r.model_dump(mode="json", by_alias=True) for r in resource_items
                     }
             except Exception as exc:
-                if any(isinstance(leaf, FrameSizeError) for leaf in _exception_leaves(exc)):
+                if any(isinstance(leaf, FrameSizeError | ProtocolError) for leaf in _exception_leaves(exc)):
                     raise
                 ttl_error = cache_hint_failure(exc)
                 if capture is not None:
@@ -981,7 +1139,6 @@ class ServerConnector:
                 f"Listing text limited to {MAX_FIELD_BYTES} UTF-8 bytes per item; "
                 f"{budget.truncated_items} item(s) truncated. Suffix evidence was not inspected."
             )
-            listing_warnings.append(message)
             if self.scan_warnings is not None:
                 self.scan_warnings.append(
                     ScanWarning(code="surface_truncated", message=message, servers=[server_name])

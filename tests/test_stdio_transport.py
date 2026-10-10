@@ -101,6 +101,7 @@ async def test_connected_listing_text_is_capped_and_coverage_is_partial(surface:
     assert audit.connection_status == "partial"
     assert len(audit.tools) == len(audit.prompts) == len(audit.resources) == 1
     assert any(w.code == "surface_truncated" and w.servers == [server.name] for w in report.warnings)
+    assert not any(w.code == "surface_listing_incomplete" for w in report.warnings)
     assert report.coverage["metadata"].state == "partial"
     assert report.coverage["permissions"].state == "partial"
     if surface == "tools":

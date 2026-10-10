@@ -17,12 +17,17 @@ unterminated lines, ANSI/OSC/Rich/HTML payloads, and surviving child processes.
 Returned file URIs and links are inert metadata; these fixtures never follow them.
 
 Current output protections sanitize terminal controls and render markup literally,
-escape HTML, and capture stderr in a bounded tail. These protections do not impose
-a frame-size or analysis budget. Large descriptions can consume substantial CPU
-after the connection timeout; large protocol frames can amplify memory use.
-Launching hundreds of servers together can exhaust the timeout before responsive
-servers get scheduled. A crashed process leader can leave a child holding its
-pipes. A child that creates a new session escapes process-group cleanup entirely:
+escape HTML, and capture stderr in a bounded, redacted tail attached to connection
+errors. Stdio frames and HTTP response bodies are capped before parsing; listings
+share a byte budget and retained text is capped per item. HTTP compression is
+refused before decoding. Transport parse errors end the session immediately.
+The per-server clock starts after connection admission and its remaining time
+bounds synchronous Python analysis. Python loops are interrupted cooperatively;
+native blocking calls are checked on return, not preempted. Optional artifact
+worker I/O and fleet-wide finalization are outside that Python-analysis deadline.
+POSIX shutdown signals the whole owned group with SIGTERM then SIGKILL even
+after the leader exits; survivors or denied cleanup produce `orphan_processes`.
+A child that creates a new session escapes process-group cleanup entirely:
 detached grandchildren need an OS/container sandbox, not a scanner guarantee.
 Connection success and clean findings do not establish server safety.
 

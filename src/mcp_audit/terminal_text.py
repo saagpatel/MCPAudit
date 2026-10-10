@@ -11,6 +11,7 @@ from rich.text import Text
 from mcp_audit.normalize import render_invisibles
 
 _CONTROLS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+_INTRODUCER = re.compile("[\x1b\x9b\x9d]")
 
 
 def strip_controls(value: str) -> str:
@@ -22,26 +23,29 @@ def strip_controls(value: str) -> str:
     parts: list[str] = []
     start = 0
     length = len(value)
-    while (escape := value.find("\x1b", start)) != -1:
+    # 7-bit (ESC [ / ESC ]) and 8-bit C1 (CSI U+009B / OSC U+009D) introducers.
+    while (match := _INTRODUCER.search(value, start)) is not None:
+        escape = match.start()
         parts.append(value[start:escape])
         end = escape + 1
-        if end < length:
-            leader = value[end]
+        kind = value[escape]
+        if kind == "\x1b" and end < length:
+            kind = {"[": "\x9b", "]": "\x9d"}.get(value[end], "")
             end += 1
-            if leader == "[":
-                while end < length and "\x20" <= value[end] <= "\x3f":
+        if kind == "\x9b":
+            while end < length and "\x20" <= value[end] <= "\x3f":
+                end += 1
+            if end < length and "\x40" <= value[end] <= "\x7e":
+                end += 1
+        elif kind == "\x9d":
+            while end < length:
+                if value[end] in "\x07\x9c":
                     end += 1
-                if end < length and "\x40" <= value[end] <= "\x7e":
-                    end += 1
-            elif leader == "]":
-                while end < length:
-                    if value[end] == "\x07":
-                        end += 1
-                        break
-                    if value.startswith("\x1b\\", end):
-                        end += 2
-                        break
-                    end += 1
+                    break
+                if value.startswith("\x1b\\", end):
+                    end += 2
+                    break
+                end += 1
         start = end
     parts.append(value[start:])
     return _CONTROLS.sub("", "".join(parts))

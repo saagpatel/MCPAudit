@@ -9,7 +9,9 @@ import time
 
 from tests.fixtures.mock_server import main
 
-if "short" in sys.argv:
+if "ansi-anchors" in sys.argv:
+    os.write(2, b"token\x1b[0m=synthetic-secret\nBearer\x1b[0m synthetic-secret\n")
+elif "short" in sys.argv:
     os.write(2, b"before token=abc123 after\n")
 elif "boundary-bearer" in sys.argv or "boundary-token" in sys.argv:
     prefix = b"Bearer " if "boundary-bearer" in sys.argv else b"token="

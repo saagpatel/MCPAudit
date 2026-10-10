@@ -41,10 +41,10 @@ async def test_stdio_stderr_is_bounded_sanitized_and_cleaned_up(
     elif mode == "fail":
         args.append("fail")
     config = make_server_config(name="stderr-fixture", command=sys.executable, args=args)
-    connector = ServerConnector(timeout=0.5 if mode == "timeout" else 5)
+    connector = ServerConnector(timeout=3 if mode == "timeout" else 5)
     caplog.set_level(logging.INFO if mode == "quiet" else logging.DEBUG, logger="mcp_audit.connector")
     if mode == "cancel":
-        with anyio.move_on_after(0.5) as scope:
+        with anyio.move_on_after(3) as scope:
             await connector.connect(config)
         assert scope.cancelled_caught
     else:
@@ -65,8 +65,8 @@ async def test_stdio_stderr_is_bounded_sanitized_and_cleaned_up(
         assert records == []
     else:
         assert len(records) == 1
-        assert "stderr tail: …[truncated] stderr-tail[/bold]\nBearer <redacted>\n" in records[0]
-        assert "stderr-tail[/bold]" in records[0]
+        # Text after a terminal control on a line is withheld (fail closed on hostile formatting).
+        assert "stderr tail: <terminal-formatted line withheld>\nBearer <redacted>\n" in records[0]
         assert "Bearer <redacted>" in records[0]
         assert "fixture-sensitive-marker" not in records[0]
         assert "\x1b" not in records[0] and "\x07" not in records[0]
@@ -93,6 +93,30 @@ async def test_stdio_stderr_truncation_discards_unanchored_secrets(
     records = [r.getMessage() for r in caplog.records if "stderr tail:" in r.getMessage()]
     suffix = "stderr-whole-tail\n" if newline else "<stderr truncated; last record exceeded 4 KiB>"
     assert records == [f"Server stderr-fixture stderr tail: …[truncated] {suffix}"]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("mode", ["complete", "fail", "hang"])
+async def test_stdio_stderr_ansi_separated_credential_anchors_are_redacted(
+    mode: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    config = make_server_config(
+        command=sys.executable,
+        args=["-m", "tests.fixtures.noisy_stderr_server", "ansi-anchors", mode],
+    )
+    caplog.set_level(logging.DEBUG, logger="mcp_audit.connector")
+    audit = await ServerConnector(timeout=3 if mode == "hang" else 5).connect(config)
+    assert audit.connection_status == {"complete": "connected", "fail": "failed", "hang": "timeout"}[mode]
+    records = [r.getMessage() for r in caplog.records if "stderr tail:" in r.getMessage()]
+    assert records
+    for output in (caplog.text, audit.connection_error or ""):
+        assert "synthetic-secret" not in output
+        assert "\x1b" not in output
+    withheld = "<terminal-formatted line withheld>\n<terminal-formatted line withheld>"
+    for record in records:
+        assert withheld in record
+    if mode != "complete":
+        assert audit.connection_error and withheld in audit.connection_error
 
 
 @pytest.mark.anyio
@@ -759,7 +783,7 @@ async def test_sdk_redirect_target_is_redacted_without_socket_access(
             max_redirects=0,
         )
 
-    def mock_sse_client(url: str) -> object:
+    def mock_sse_client(url: str, **kwargs: object) -> object:
         return sse_client(url, httpx_client_factory=client_factory)
 
     monkeypatch.setattr("mcp.client.streamable_http.create_mcp_http_client", client_factory)
@@ -854,12 +878,11 @@ async def test_connect_stdio_never_hands_spawned_server_an_environment(
         def __init__(self, server: object, **_kwargs: object) -> None:
             raise _SpawnAborted
 
-    def fake_stdio_client(server: object, *, errlog: object, max_frame_bytes: int = 1) -> object:
+    def fake_stdio_client(server: object, *, errlog: object, **kwargs: object) -> object:
         captured["env"] = getattr(server, "env", "missing")
         return object()
 
     monkeypatch.setattr("mcp_audit.connector.Client", FakeClient)
-    monkeypatch.setattr("mcp_audit.connector.stdio_client", fake_stdio_client)
     monkeypatch.setattr("mcp_audit.connector.bounded_stdio_client", fake_stdio_client)
 
     connector = ServerConnector(timeout=1.0, sdk_stdio_fallback=sdk_fallback)
