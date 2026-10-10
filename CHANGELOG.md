@@ -26,6 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add a lazy CLI command registry with `lab <topic>`, `safeforge preinstall|run`,
+  `skills scan`, and `baseline pin` families. Keep old spellings as hidden 2.x
+  aliases; completion and `--help-all` list every registered path. Hide and
+  deprecate `monitor` for removal in 3.0. Share the offline artifact writer without
+  importing Agent UI, and move the PostgreSQL exemplar and tests to `research/`
+  outside the wheel.
 - Add local `checkup` / `scan --card FILE` HTML checkup cards with a 1200×630
   counts-only crop, coverage-qualified grade or Preview, date, four vitals and
   a Markdown sticker. Reuse the existing finding-class rubric and caveat without

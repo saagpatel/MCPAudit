@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from mcp_audit.proofos_postgres import (
+from research.proofos_postgres import (
     LockMode,
     PhaseArtifact,
     PostgresBinaries,

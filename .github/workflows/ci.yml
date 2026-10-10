@@ -53,7 +53,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          uv run pytest tests/ -v --ignore=tests/test_connector.py --cov=mcp_audit --cov-branch \
+          uv run pytest tests/ research/test_proofos_postgres.py -v --ignore=tests/test_connector.py --cov=mcp_audit --cov-branch \
             --junitxml="$RUNNER_TEMP/unit-results.xml" 2>&1 | tee "$RUNNER_TEMP/unit-pytest.log"
           grep -Eq '^=+ .* (passed|failed|error|skipped|xfailed|xpassed)(,| )' "$RUNNER_TEMP/unit-pytest.log"
           RESULTS_PATH="$RUNNER_TEMP/unit-results.xml" uv run python - <<'PY'
@@ -61,7 +61,7 @@ jobs:
           import xml.etree.ElementTree as ET
 
           root = ET.parse(os.environ["RESULTS_PATH"]).getroot()
-          module = "tests.test_proofos_postgres"
+          module = "research.test_proofos_postgres"
           proof_cases = [
               case for case in root.iter("testcase")
               if case.attrib.get("classname", "") == module
