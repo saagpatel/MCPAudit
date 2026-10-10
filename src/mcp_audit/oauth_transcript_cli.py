@@ -8,7 +8,7 @@ from pathlib import Path
 import click
 from pydantic import BaseModel
 
-from mcp_audit.agent_ui_cli import _write_artifacts
+from mcp_audit._artifacts import _write_artifacts
 from mcp_audit.oauth_transcript_models import OAuthTranscriptFixture, OAuthTranscriptReport
 from mcp_audit.oauth_transcript_sarif import oauth_report_to_sarif
 from mcp_audit.oauth_transcript_scanner import (
