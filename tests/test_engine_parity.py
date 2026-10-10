@@ -15,7 +15,7 @@ import anyio
 import pytest
 from pydantic import ValidationError
 
-from mcp_audit import engine, scan_cli
+from mcp_audit import __version__, engine, scan_cli
 from mcp_audit.api import parse_config
 from mcp_audit.engine import ScanOptions
 from mcp_audit.htmlreport import HtmlReportGenerator
@@ -50,6 +50,8 @@ def _report_hashes(report: AuditReport) -> dict[str, str]:
 
 def _location_free(output: bytes) -> bytes:
     """Hash outputs independent of the checkout location (SARIF resolves paths to file URIs)."""
+    # The package version changes every release; parity is about engine behavior.
+    output = output.replace(__version__.encode(), b"<VERSION>")
     for root in {ROOT, Path.cwd().resolve()}:
         output = output.replace(root.as_uri().encode(), b"file:///REPO").replace(
             str(root).encode(), b"<REPO>"

@@ -12,6 +12,7 @@
 - [Adjusting permission findings](guides/suppressing.md)
 - [Sandbox](guides/sandbox.md)
 - [Shareable checkup card](guides/checkup.md)
+- [Known issues](known-issues.md)
 - [Output contract](OUTPUT-CONTRACT.md)
 
 ## Reference
