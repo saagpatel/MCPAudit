@@ -13,7 +13,7 @@ import pytest
 from click.testing import CliRunner
 from rich.console import Console
 
-from mcp_audit import cli, watcher
+from mcp_audit import cli, pin_cli, watcher
 from mcp_audit.cli import main
 from mcp_audit.connector import ServerConnector
 from mcp_audit.engine import ScanOptions, run_scan
@@ -207,12 +207,13 @@ def test_discovery_pin_and_watch_sinks_are_safe(payload: str, monkeypatch: pytes
     report = _hostile_report(payload)
     console, buffer = _console()
     monkeypatch.setattr(cli, "console", console)
+    monkeypatch.setattr(pin_cli, "console", console)
     monkeypatch.setattr(watcher, "_console", console)
     monkeypatch.setattr(cli, "discover_all_configs", lambda *_args, **_kwargs: [report.audits[0].server])
     result = CliRunner().invoke(main, ["discover", "--verbose"])
     assert result.exit_code == 0, result.output
-    cli._render_pin_refresh_review(payload, 1, report.audits[0].drift_findings)
-    cli._render_refresh_security_section(payload, [(payload, "high", payload, payload)])
+    pin_cli._render_pin_refresh_review(payload, 1, report.audits[0].drift_findings)
+    pin_cli._render_refresh_security_section(payload, [(payload, "high", payload, payload)])
     watcher._render_diff(report.model_copy(update={"audits": []}), report)
     output = _SGR.sub("", buffer.getvalue())
     assert not _FORBIDDEN.search(output)

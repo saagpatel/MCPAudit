@@ -10,7 +10,7 @@ import pytest
 from click.testing import CliRunner
 from pydantic import ValidationError
 
-from mcp_audit import check_cli, cli
+from mcp_audit import check_cli, scan_cli
 from mcp_audit.cli import main
 from mcp_audit.engine import ScanOptions, run_scan
 from mcp_audit.models import AuditReport, CheckCoverage, InjectionFinding, InjectionSeverity
@@ -259,7 +259,7 @@ def test_cli_shadow_policy_contract(
     async def fixture_scan(*args: object, **kwargs: object) -> AuditReport:
         return _shadow_report()
 
-    monkeypatch.setattr(cli if command == "scan" else check_cli, "run_scan", fixture_scan)
+    monkeypatch.setattr(scan_cli if command == "scan" else check_cli, "run_scan", fixture_scan)
     policy = tmp_path / "policy.yaml"
     policy.write_text(f"allow_ignores: {str(allow).lower()}\nfail_on:\n  shadowing: true\n")
     output = tmp_path / "report.json"
