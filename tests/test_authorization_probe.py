@@ -918,3 +918,12 @@ def test_bearer_challenge_cap_is_incomplete() -> None:
     challenges, incomplete = probe._challenges([", ".join(["Bearer"] * (probe.MAX_BEARER_CHALLENGES + 1))])
     assert incomplete
     assert len(challenges) == probe.MAX_BEARER_CHALLENGES
+
+
+def test_probe_tls_context_refuses_legacy_protocols() -> None:
+    import ssl
+
+    from mcp_audit.probe import _PinnedHTTPSConnection
+
+    connection = _PinnedHTTPSConnection("example.test", 443, "203.0.113.10", timeout=1)
+    assert connection.tls_context.minimum_version == ssl.TLSVersion.TLSv1_2

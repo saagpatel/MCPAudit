@@ -230,6 +230,7 @@ def _post_url(url: str) -> None:
 class _PinnedHTTPSConnection(http.client.HTTPSConnection):
     def __init__(self, host: str, port: int, address: str, timeout: float) -> None:
         self.tls_context = ssl.create_default_context()
+        self.tls_context.minimum_version = ssl.TLSVersion.TLSv1_2
         super().__init__(host, port, timeout=timeout, context=self.tls_context)
         self.address = address
         self.request_timeout = timeout
