@@ -41,19 +41,19 @@ def test_release_versions_are_consistent_across_surfaces() -> None:
     assert state == {
         "schema_version": "mcp-audit.release-state.v1",
         "candidate_version": "2.9.0",
-        "published_version": "2.8.1",
+        "published_version": version,
         "previous_version": "2.8.1",
-        "status": "candidate",
+        "status": "release",
     }
     assert server["version"] == state["published_version"]
     assert server["packages"][0]["version"] == state["published_version"]
     assert "## [2.7.0] - 2026-08-14" in changelog
     assert "## [2.8.0] - 2026-10-06" in changelog
     assert "## [2.8.1] - 2026-10-06" in changelog
-    assert f"## [{version}] - Unreleased" in changelog
-    assert f"## [{version}] - 2026-10-06" not in changelog
-    assert "[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v2.8.1...HEAD" in changelog
-    assert f"[{version}]: https://github.com/saagpatel/MCPAudit/compare/v2.8.1...HEAD" in changelog
+    assert f"## [{version}] - 2026-10-10" in changelog
+    assert f"## [{version}] - Unreleased" not in changelog
+    assert f"[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v{version}...HEAD" in changelog
+    assert f"[{version}]: https://github.com/saagpatel/MCPAudit/compare/v2.8.1...v{version}" in changelog
     assert "[2.8.0]: https://github.com/saagpatel/MCPAudit/compare/v2.7.0...v2.8.0" in changelog
     assert f"saagpatel/MCPAudit@v{state['published_version']}" in readme
     assert f"saagpatel/MCPAudit@v{state['published_version']}" in adoption
