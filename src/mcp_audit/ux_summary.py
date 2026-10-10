@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Protocol
 
 from pydantic import BaseModel
 
+from mcp_audit.coverage import missing_checks
 from mcp_audit.models import ReviewAction as Action
 from mcp_audit.models import (
     ReviewActionDisplay,
@@ -329,6 +330,10 @@ def compute_summary(report: AuditReport) -> ReviewSummary:
     )
 
 
+_CORE = ("config_health", "metadata", "permissions", "capabilities")
+_STRUCTURAL_INJECTION = {"hidden_directive", "unicode_direction", "OBFUSCATED_METADATA"}
+
+
 def _compute_grade(report: AuditReport, severities: list[str]) -> ReviewGrade | None:
     """D6 rubric, qualified by metadata completion; never read a risk score.
 
@@ -337,25 +342,34 @@ def _compute_grade(report: AuditReport, severities: list[str]) -> ReviewGrade | 
     """
     if report.connection_mode.value != "attempted" or not report.audits:
         return None
-    metadata = report.coverage.get("metadata")
-    if metadata is None or metadata.state != "complete":
+    if any(report.coverage.get(key) is None or report.coverage[key].state != "complete" for key in _CORE):
         return None
-    if report.warnings or any(entry.state in {"partial", "not_run"} for entry in report.coverage.values()):
+    if any(audit.connection_status != "connected" for audit in report.audits):
         return None
-    if any(audit.injection_findings for audit in report.audits) or any(
+    if missing_checks(report.coverage) or any(
+        entry.state in {"partial", "not_run"} for entry in report.coverage.values()
+    ):
+        return None
+    if report.warnings:
+        return None
+    # D4: phrase-only instruction text is never decisive; structural patterns are.
+    if any(
+        finding.pattern_name in _STRUCTURAL_INJECTION
+        for audit in report.audits
+        for finding in audit.injection_findings
+    ) or any(
         finding.finding_type in {"secret_in_config", "shell_wrapper_launch"}
         for finding in report.config_health_findings
     ):
         return "F"
     fixes = severities.count("high")
-    chain_and_shell = any(
-        audit.trifecta_findings
-        and (
-            any(f.category.value == "shell_execution" for f in audit.permissions)
-            or any(f.category.value == "shell_execution" for f in audit.capability_findings)
-        )
+    chain = bool(report.fleet_trifecta_findings) or any(audit.trifecta_findings for audit in report.audits)
+    shell = any(
+        any(f.category.value == "shell_execution" for f in audit.permissions)
+        or any(f.category.value == "shell_execution" for f in audit.capability_findings)
         for audit in report.audits
     )
+    chain_and_shell = chain and shell
     if fixes >= 2 or chain_and_shell:
         return "D"
     if fixes == 1:

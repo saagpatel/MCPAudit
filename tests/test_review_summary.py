@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from rich.console import Console
 
 from mcp_audit import ux_summary
+from mcp_audit.coverage import OPTIONAL_CHECKS
 from mcp_audit.htmlreport import HtmlReportGenerator
 from mcp_audit.models import (
     AuditReport,
@@ -162,7 +163,16 @@ def _report(source: str, home: str, count: int) -> AuditReport:
         high_risk_servers=0,
         audits=[],
         scan_duration_seconds=0,
-        coverage={"metadata": CheckCoverage(state="complete", reason="Synthetic metadata")},
+        coverage={
+            **{
+                key: CheckCoverage(state="not_requested", reason="check not requested")
+                for key in OPTIONAL_CHECKS
+            },
+            **{
+                key: CheckCoverage(state="complete", reason="Synthetic check")
+                for key in ("config_health", "metadata", "permissions", "capabilities")
+            },
+        },
     )
     # Validate all synthetic finding shapes through the actual report model.
     data = {field: getattr(report, field) for field in AuditReport.model_fields}

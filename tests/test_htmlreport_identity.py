@@ -7,6 +7,7 @@ import pytest
 from click.testing import CliRunner
 
 from mcp_audit import cli
+from mcp_audit.coverage import OPTIONAL_CHECKS
 from mcp_audit.htmlreport import HtmlReportGenerator
 from mcp_audit.models import (
     AuditReport,
@@ -30,7 +31,10 @@ def identity_report(request: pytest.FixtureRequest) -> AuditReport:
     report = AuditReport.model_validate_json(
         Path("tests/fixtures/reports/sample_audit_report.json").read_text()
     )
-    report.coverage["metadata"] = CheckCoverage(state="complete", reason="synthetic fixture check completed")
+    for key in ("config_health", "metadata", "permissions", "capabilities"):
+        report.coverage[key] = CheckCoverage(state="complete", reason="synthetic fixture check completed")
+    for key in OPTIONAL_CHECKS:
+        report.coverage.setdefault(key, CheckCoverage(state="not_requested", reason="check not requested"))
     report.audits = [
         ServerAudit(
             server=ServerConfig(

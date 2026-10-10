@@ -349,3 +349,23 @@ def test_scan_details_and_json_stdout_are_compatible() -> None:
     data = json.loads(result.stdout)
     assert data["schema_version"] == 1 and data["ux_summary"]["grade"] is None
     assert "\x1b" not in result.stdout
+
+
+def test_grade_requires_core_coverage_and_connected_audits() -> None:
+    sparse = _connected()
+    sparse.coverage = {"metadata": CheckCoverage(state="complete", reason="fixture execution completed")}
+    assert sparse.ux_summary.grade is None
+    failed = _connected()
+    failed.audits[0].connection_status = "failed"
+    assert failed.ux_summary.grade is None
+
+
+def test_fleet_chain_with_shell_grades_d() -> None:
+    from mcp_audit.models import PermissionCategory, TrifectaSeverity
+    from tests.test_trifecta_integration import _pf, _trifecta_finding
+
+    report = _connected()
+    report.audits[0].permissions = [_pf(PermissionCategory.SHELL_EXEC, "run")]
+    report.fleet_trifecta_findings = [_trifecta_finding(TrifectaSeverity.MEDIUM, is_fleet=True)]
+    assert report.ux_summary.grade == "D"
+    assert json.loads(report.model_dump_json())["ux_summary"]["grade"] == "D"

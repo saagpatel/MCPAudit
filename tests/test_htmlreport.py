@@ -362,7 +362,11 @@ def test_hidden_instructions_and_chain_plus_shell_grade_classes() -> None:
         )
     ]
     assert report.model_copy().ux_summary.grade == "D"
-    audit.injection_findings = _report_with_findings().audits[0].injection_findings
+    # D4: a phrase-only match never decides the grade; a structural pattern does.
+    phrase = _report_with_findings().audits[0].injection_findings
+    audit.injection_findings = phrase
+    assert report.model_copy().ux_summary.grade == "D"
+    audit.injection_findings = [phrase[0].model_copy(update={"pattern_name": "hidden_directive"})]
     assert report.ux_summary.grade == "F"
 
 
