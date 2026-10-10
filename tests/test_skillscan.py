@@ -122,6 +122,30 @@ def test_directory_manifest_rejects_empty_included_tree(tmp_path: Path) -> None:
         load_bundle(root)
 
 
+@pytest.mark.parametrize("limit", ["members", "member_bytes", "total_bytes"])
+def test_directory_manifest_uses_archive_caps(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, limit: str
+) -> None:
+    import mcp_audit.skillscan as skillscan
+
+    root = tmp_path / limit
+    _write(root / "SKILL.md", "ok")
+    if limit == "members":
+        _write(root / "second.txt", "x")
+        monkeypatch.setattr(skillscan, "_MAX_ARCHIVE_MEMBERS", 1)
+        match = "entries, exceeding the cap"
+    elif limit == "member_bytes":
+        monkeypatch.setattr(skillscan, "_MAX_MEMBER_BYTES", 1)
+        match = "per-member cap"
+    else:
+        _write(root / "second.txt", "x")
+        monkeypatch.setattr(skillscan, "_MAX_TOTAL_BYTES", 2)
+        match = "total cap"
+
+    with pytest.raises(SkillscanInputError, match=match):
+        load_bundle(root)
+
+
 def test_archive_identity_is_exact_archive_bytes(tmp_path: Path) -> None:
     archive_path = tmp_path / "demo.mcpb"
     with zipfile.ZipFile(archive_path, "w") as archive:

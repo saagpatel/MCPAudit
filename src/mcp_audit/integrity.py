@@ -32,6 +32,7 @@ from mcp_audit.models import (
     IntegrityFinding,
     IntegrityKind,
     IntegritySeverity,
+    ScanWarning,
     ServerConfig,
 )
 from mcp_audit.terminal_text import TerminalSafeLogFilter
@@ -86,15 +87,23 @@ def _is_sensitive_path(path: Path) -> bool:
     land in the pin store or an exported JSON/SARIF report. Mirrors the credential
     directories the workstation treats as never-readable.
     """
-    home = Path.home()
+    home = Path.home().resolve()
     sensitive_dirs = (
         home / ".ssh",
         home / ".aws",
         home / ".gnupg",
         home / ".op",
         home / ".config" / "gcloud",
+        home / ".config" / "gh",
+        home / ".netrc",
     )
-    return any(path == d or d in path.parents for d in sensitive_dirs)
+    if any(path == d or d in path.parents for d in sensitive_dirs):
+        return True
+    try:
+        relative = path.relative_to(home)
+    except ValueError:
+        return False
+    return any(part.startswith(".") for part in relative.parts)
 
 
 def _resolve_command(command: str) -> Path | None:
@@ -155,6 +164,8 @@ class IntegrityAnalyzer:
         self,
         server_name: str,
         baseline_artifacts: dict[str, str] | None,
+        *,
+        warnings: list[ScanWarning] | None = None,
     ) -> list[IntegrityFinding]:
         """Return integrity findings for one server.
 
@@ -162,14 +173,30 @@ class IntegrityAnalyzer:
         ``PinStore.baseline_artifacts``); ``None`` or empty means no comparison is
         possible (unpinned, or pinned before artifact hashes existed) and yields
         ``[]``. Each pinned path is re-hashed now and compared: a differing digest
-        is HIGH, a missing file is MEDIUM.
+        is HIGH, a missing file is MEDIUM. Sensitive paths (including resolved
+        targets) are never hashed or included in findings, even in older pins.
+        Skipped entries add a sanitized comparison warning when requested.
         """
         if not baseline_artifacts:
             return []
 
         findings: list[IntegrityFinding] = []
+        excluded = 0
+        unresolved = 0
         for path_str, baseline_hash in sorted(baseline_artifacts.items()):
-            current_hash = hash_file(Path(path_str))
+            path = Path(path_str).expanduser().absolute()
+            if _is_sensitive_path(path):
+                excluded += 1
+                continue
+            try:
+                resolved = path.resolve()
+            except (OSError, RuntimeError):
+                unresolved += 1
+                continue
+            if _is_sensitive_path(resolved):
+                excluded += 1
+                continue
+            current_hash = hash_file(resolved)
             if current_hash == baseline_hash:
                 continue
             if current_hash is None:
@@ -204,4 +231,17 @@ class IntegrityAnalyzer:
                         ),
                     )
                 )
+        if warnings is not None and (excluded or unresolved):
+            warnings.append(
+                ScanWarning(
+                    code="integrity_comparison_incomplete",
+                    message=(
+                        f"Launch-artifact comparison incomplete: {excluded} sensitive pinned artifact(s) "
+                        f"excluded and {unresolved} pinned path(s) could not be resolved. "
+                        "Review and re-pin only non-sensitive launch artifacts."
+                    ),
+                    check="integrity_check",
+                    servers=[server_name],
+                )
+            )
         return findings

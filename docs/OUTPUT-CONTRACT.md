@@ -924,6 +924,9 @@ The report top level also includes:
     in-session baseline without modifying the pin file),
     `pin_baseline_stale` (pinned servers whose baseline predates the capture
     this check compares against; named in `servers`),
+    `integrity_comparison_incomplete` (with `check: integrity_check`; pinned
+    paths excluded by sensitive-path protection or unavailable path resolution.
+    The message reports counts, never excluded paths or their saved/current hashes),
     `missing_credential` (e.g. `--llm-analysis` without `ANTHROPIC_API_KEY`),
     `missing_dependency` (e.g. the `anthropic` package not installed),
     `llm_analysis_unknown` (a requested server-level LLM pass detected
@@ -999,7 +1002,11 @@ verification for every reference. A removed, changed, or floated version with
 no applicable baseline is `not_run`; mixed applicability or an unavailable
 fetch is `partial`. A nonempty old baseline and an empty findings list do not
 prove verification ran. Integrity checks are `partial` when a pinned artifact
-cannot be hashed. Runtime completion also requires complete metadata, no
+cannot be hashed, is excluded by sensitive-path protection (checking both the
+stored path and its resolved target), or cannot be resolved. Excluded entries
+never contribute integrity findings or hashes, including from older baselines;
+even an entirely excluded baseline records `partial` coverage. Runtime completion
+also requires complete metadata, no
 exercise warnings, and completion of the bounded call budget. LLM completion
 requires an admissible summary accounting for every candidate tool.
 

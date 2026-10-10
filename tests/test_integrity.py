@@ -8,8 +8,8 @@ Covers:
   - Missing artifact -> MCP024 MEDIUM
   - Finding model fields / JSON serialisation
 
-Behaviours are exercised against real files on disk (no mocking of hashing),
-mirroring how the detector runs at scan time.
+Behaviours are exercised against real files on disk. Exclusion regressions
+also guard hashing calls to prove protected files are never read.
 """
 
 from __future__ import annotations
@@ -20,8 +20,9 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 
-from mcp_audit import pinning
+from mcp_audit import integrity, pinning
 from mcp_audit.engine import ScanOptions, run_scan
 from mcp_audit.integrity import (
     _MAX_ARTIFACT_BYTES,
@@ -33,6 +34,7 @@ from mcp_audit.models import (
     ClientType,
     IntegrityKind,
     IntegritySeverity,
+    ScanWarning,
     ServerConfig,
     TransportType,
 )
@@ -77,6 +79,95 @@ async def test_pinned_command_rewrite_is_high_in_run_scan(
     assert finding.artifact_path == path and path in finding.summary
     assert finding.baseline_hash == hashlib.sha256(before).hexdigest()
     assert finding.current_hash == hashlib.sha256(after).hexdigest()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("include_safe", [False, True], ids=["excluded-only", "mixed-baseline"])
+@pytest.mark.parametrize(
+    "path_kind",
+    ["gh", "dotfile", "alias-to-gh", "sensitive-alias-to-public", "missing-gh", "unresolvable"],
+)
+async def test_existing_pin_exclusions_never_hash_or_export_protected_entries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, path_kind: str, include_safe: bool
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    visible = home / "server.py"
+    visible.write_bytes(b"synthetic current artifact")
+    protected = home / ".config" / "gh" / "hosts.yml"
+    protected.parent.mkdir(parents=True)
+    protected.write_bytes(b"synthetic protected fixture")
+    pinned_path = protected
+    if path_kind == "dotfile":
+        pinned_path = home / ".fixture-token"
+        pinned_path.write_bytes(b"synthetic protected fixture")
+    elif path_kind == "alias-to-gh":
+        pinned_path = home / "alias"
+        pinned_path.symlink_to(protected)
+    elif path_kind == "sensitive-alias-to-public":
+        pinned_path = protected.parent / "alias"
+        pinned_path.symlink_to(visible)
+    elif path_kind == "missing-gh":
+        pinned_path = protected.parent / "missing.yml"
+    elif path_kind == "unresolvable":
+        pinned_path = home / "unresolvable"
+        original_resolve = Path.resolve
+
+        def resolve(path: Path, strict: bool = False) -> Path:
+            if path == pinned_path:
+                raise OSError("synthetic resolution failure")
+            return original_resolve(path, strict=strict)
+
+        monkeypatch.setattr(Path, "resolve", resolve)
+
+    protected_baseline_hash = "a" * 64
+    baseline = {str(pinned_path): protected_baseline_hash}
+    if include_safe:
+        baseline[str(visible)] = hashlib.sha256(b"synthetic old artifact").hexdigest()
+    # Model an older on-disk pin captured before these paths were excluded.
+    pin_file = tmp_path / "pins.yaml"
+    pin_file.write_text(
+        yaml.safe_dump(
+            {"servers": {"fixture": {"tools": {}, "config_snapshot": {"artifact_hashes": baseline}}}}
+        ),
+        encoding="utf-8",
+    )
+    saved_pin = pin_file.read_bytes()
+    store = PinStore(path=pin_file)
+    monkeypatch.setattr(pinning, "PinStore", lambda: PinStore(path=pin_file))
+    calls: list[Path] = []
+
+    def guarded_hash(path: Path) -> str | None:
+        assert include_safe and path == visible.resolve()
+        calls.append(path)
+        return hash_file(path)
+
+    monkeypatch.setattr(integrity, "hash_file", guarded_hash)
+    warnings: list[ScanWarning] = []
+    findings = _analyzer.analyze_server("fixture", store.baseline_artifacts("fixture"), warnings=warnings)
+    assert len(findings) == int(include_safe)
+    assert len(warnings) == 1
+    config = make_server_config(name="fixture", command="synthetic-command-not-on-path")
+    report = await run_scan(ScanOptions(skip_connect=True, integrity_check=True), servers=[config])
+    assert report.audits[0].integrity_findings == findings
+    if include_safe:
+        assert findings[0].artifact_path == str(visible)
+        assert findings[0].severity == IntegritySeverity.HIGH
+    assert calls == [visible.resolve()] * (2 * int(include_safe))
+    assert report.warnings == warnings
+    warning = warnings[0]
+    assert warning.code == "integrity_comparison_incomplete"
+    assert warning.check == "integrity_check" and warning.servers == ["fixture"]
+    assert ("0 sensitive" if path_kind == "unresolvable" else "1 sensitive") in warning.message
+    assert ("1 pinned path(s)" if path_kind == "unresolvable" else "0 pinned path(s)") in warning.message
+    assert report.coverage["integrity_check"].state == "partial"
+    assert report.coverage["integrity_check"].reason == warning.code
+    exported = report.model_dump_json()
+    assert str(pinned_path) not in exported
+    assert protected_baseline_hash not in exported
+    assert hashlib.sha256(b"synthetic protected fixture").hexdigest() not in exported
+    assert pin_file.read_bytes() == saved_pin
 
 
 def test_artifact_size_cap_exact_boundary(tmp_path: Path) -> None:
@@ -148,6 +239,23 @@ class TestHashing:
         hashes = resolve_artifact_hashes(cfg)
         assert str(key.resolve()) not in hashes
         assert all(".ssh" not in path for path in hashes)
+
+    def test_home_dotfiles_and_github_credentials_are_not_hashed(
+        self, tmp_path: Path, monkeypatch: Any
+    ) -> None:
+        monkeypatch.setenv("HOME", str(tmp_path))
+        visible = tmp_path / "server.py"
+        env_file = tmp_path / ".env"
+        gh_credentials = tmp_path / ".config" / "gh" / "hosts.yml"
+        for path in (visible, env_file, gh_credentials):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("synthetic fixture", encoding="utf-8")
+        config = _cfg(
+            command="mcp-audit-test-command-not-on-path",
+            args=[str(visible), str(env_file), str(gh_credentials)],
+        )
+
+        assert resolve_artifact_hashes(config) == {str(visible.resolve()): hash_file(visible)}
 
 
 # ---------------------------------------------------------------------------

@@ -166,6 +166,15 @@ class _SseLogFilter(logging.Filter):
 _SSE_LOG_FILTER = _SseLogFilter()
 
 
+def install_transport_log_filters() -> None:
+    """Install credential-safe filters on each transport logger (idempotent: addFilter skips duplicates).
+
+    Filters on a parent logger do not cover child records, so each emitting logger is bound.
+    """
+    for name in _SSE_LOGGER_NAMES:
+        logging.getLogger(name).addFilter(_SSE_LOG_FILTER)
+
+
 @contextmanager
 def _capture_stderr(server_name: str) -> Iterator[TextIO]:
     """Drain stderr continuously into a 4 KiB tail, with synchronous cleanup.
@@ -595,8 +604,9 @@ class ServerConnector:
         if not config.url:
             raise ValueError(f"Server {config.name} has no URL for HTTP transport")
 
-        for name in _SSE_LOGGER_NAMES:
-            logging.getLogger(name).addFilter(_SSE_LOG_FILTER)
+        # Library, serve and test callers do not pass through `main`; install here too (idempotent).
+        install_transport_log_filters()
+
         minted: bool | None = None
 
         async def observe_response(response: httpx2.Response) -> None:
@@ -623,10 +633,9 @@ class ServerConnector:
         if not config.url:
             raise ValueError(f"Server {config.name} has no URL for SSE transport")
 
-        # Filters on a parent logger do not cover child records. Bind each emitting
-        # transport logger, retaining the filters across concurrent connections.
-        for name in _SSE_LOGGER_NAMES:
-            logging.getLogger(name).addFilter(_SSE_LOG_FILTER)
+        # Library, serve and test callers do not pass through `main`; install here too (idempotent).
+        install_transport_log_filters()
+
         # Client(str) is Streamable HTTP; legacy SSE must pass sse_client as Transport.
         capture = ProtocolCapture(ProtocolObservation())
         async with Client(
