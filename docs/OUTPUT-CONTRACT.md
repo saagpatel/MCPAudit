@@ -524,7 +524,8 @@ invalid signatures, and modified entries. Each finding includes `state`,
 `server_name`, nullable `kid`, `summary`, `severity`, `rule_id`, `title`,
 `description`, and `remediation`, plus the standard finding reference fields.
 Failed verification skips all saved-baseline comparisons, including the canary's
-first-listing comparison; independent in-session canary comparisons still run.
+first-listing comparison (a trusted mixed entry still compares its v2 rows there,
+excluding its legacy v1 tool names); independent in-session canary comparisons still run.
 The findings reach JSON, terminal/HTML summaries, SARIF, and the opt-in
 `fail_on.pin_integrity: true` policy gate. A server with an MCP027 finding never
 satisfies `require.pins`, and enabled baseline-comparison gates (`fail_on.drift`,
@@ -559,6 +560,21 @@ any trust-store write, so a failed update still warns `pin_rolled_back` alongsid
 mark until its first verification. Retired-key grace is bounded to 0-3650 days;
 an invalid or unrepresentable persisted retirement deadline makes that signer
 `untrusted_signer` (HIGH `MCP027`) instead of failing the scan.
+While any key is trusted, the pin file must also carry a signed document-level
+`manifest` (`schema: mcpaudit.pin-manifest.v1`, plus the same `signature`,
+`signer`, `surface_sha256` and `canonical_bytes_len` envelope). It maps every
+signed server name to its entry's `surface_sha256` and is re-signed on every
+signed write, re-sign, rotation and `pin --clear`. Verification then fails closed
+with `tampered_entry` (HIGH `MCP027`) when the manifest is missing, invalid or
+signed by an untrusted key (every scanned server except genuine legacy v1
+entries), when a listed server's entry is missing, renamed or does not match its
+digest, or when a signed entry is not listed (spliced in). This covers
+public-key-only CI with no per-server expectation. Writers refuse an invalid
+manifest or one listing missing entries (restore them or `pin --clear` each);
+a file with no manifest yet gets one on its first signed write, so after
+`pin keygen` run `pin rotate-key --resign` (or re-pin) to sign one. Clearing a
+signed server needs the signing key while keys are trusted. Without trusted keys
+the manifest is optional and ignored.
 Verification uses the separate trusted public-key store,
 never an embedded public key or a private signing key.
 

@@ -62,7 +62,15 @@ with key IDs `sha256(raw_public_key)[:16]`. Embedded public keys are never
 trust anchors. CI can import the public key with `pin trust-key --add PUBLICHEX`
 and verify without any private key. That is enough to fail closed: with a trusted
 key present, a v2 entry whose signature and all signing metadata were deleted is
-`tampered_entry`, even before CI records any per-server expectation. The trust
+`tampered_entry`, even before CI records any per-server expectation. A signed
+document manifest (`manifest`, schema `mcpaudit.pin-manifest.v1`) lists every
+signed server with its entry digest and is re-signed by every signed write,
+re-sign, rotation and clear. With a trusted key, a missing or invalid manifest,
+a listed entry that was deleted, renamed or changed, or a signed entry that is
+not listed is `tampered_entry`. Writes refuse a manifest that lists missing
+entries; restore them or `pin --clear` each. Clearing needs the signing key while
+keys are trusted. After `pin keygen`, run `pin rotate-key --resign` to sign the
+first manifest for existing signed entries. The trust
 store also records the newest `pinned_at` per server for rollback warnings; every
 successful signed write and every verification advance that local high-water
 record without modifying the pin baseline. Restoring an older signed entry warns

@@ -71,6 +71,10 @@ set `fail_on.pin_integrity: true` in policy to fail CI on those findings.
 The trusted public key alone makes CI fail closed: once a key is trusted, a v2
 entry with its signature and all signing metadata deleted is `tampered_entry`
 (HIGH `MCP027`), even on a fresh trust store with no per-server expectation.
+The pin file also carries a signed manifest of its signed servers, so deleting or
+renaming a signed entry, emptying `servers`, removing the manifest, or splicing in
+a signed entry from another pin file is `MCP027` there too. Commit the manifest
+with the pins; `pin --clear SERVER` re-signs it.
 Genuine legacy v1 entries (v1 tool pins with no v2 markers) still only warn, but
 with a trusted key their baseline is withheld from comparisons
 (`pin_baseline_withheld`) because nothing authenticates it.

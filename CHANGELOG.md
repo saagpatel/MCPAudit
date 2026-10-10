@@ -33,6 +33,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   labeled as unverified, instead of reporting a clean match; add additive
   `baseline_verified`/`baseline_note` refresh JSON fields and `verification`/
   `baseline_usable` status fields with a terminal Verification column.
+- Sign a document-level pin manifest of signed servers and their entry digests
+  on every signed write, re-sign, rotation and clear. While a key is trusted, a
+  missing or invalid manifest, a deleted or renamed listed entry, or a spliced
+  signed entry is `MCP027`, closing deletion in public-key-only CI. A trusted
+  mixed v1/v2 entry now keeps its signed v2 rows as the canary baseline.
 - Update signed-pin regression connector doubles for bounded transport options,
   and retain the required unsigned-pin warning alongside integrity-exclusion
   warnings in integration assertions.
