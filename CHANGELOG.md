@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Exclude home dotfiles and additional credential directories from launch-artifact
+  hashing, apply archive-equivalent size and entry limits to skillscan directories,
+  install transport log redaction once for debug CLI runs, and write serve installs
+  atomically. Describe `--timeout` as a per-server session budget.
+
 ### Security
 
 - Restrict publication to exactly the versioned wheel and sdist, reject extras

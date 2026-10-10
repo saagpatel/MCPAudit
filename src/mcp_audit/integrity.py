@@ -86,15 +86,23 @@ def _is_sensitive_path(path: Path) -> bool:
     land in the pin store or an exported JSON/SARIF report. Mirrors the credential
     directories the workstation treats as never-readable.
     """
-    home = Path.home()
+    home = Path.home().resolve()
     sensitive_dirs = (
         home / ".ssh",
         home / ".aws",
         home / ".gnupg",
         home / ".op",
         home / ".config" / "gcloud",
+        home / ".config" / "gh",
+        home / ".netrc",
     )
-    return any(path == d or d in path.parents for d in sensitive_dirs)
+    if any(path == d or d in path.parents for d in sensitive_dirs):
+        return True
+    try:
+        relative = path.relative_to(home)
+    except ValueError:
+        return False
+    return any(part.startswith(".") for part in relative.parts)
 
 
 def _resolve_command(command: str) -> Path | None:

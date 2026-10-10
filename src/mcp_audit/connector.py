@@ -164,6 +164,17 @@ class _SseLogFilter(logging.Filter):
 
 
 _SSE_LOG_FILTER = _SseLogFilter()
+_SSE_LOG_FILTERS_INSTALLED = False
+
+
+def install_transport_log_filters() -> None:
+    """Install credential-safe filters on transport loggers once per process."""
+    global _SSE_LOG_FILTERS_INSTALLED
+    if _SSE_LOG_FILTERS_INSTALLED:
+        return
+    for name in _SSE_LOGGER_NAMES:
+        logging.getLogger(name).addFilter(_SSE_LOG_FILTER)
+    _SSE_LOG_FILTERS_INSTALLED = True
 
 
 @contextmanager
@@ -595,8 +606,6 @@ class ServerConnector:
         if not config.url:
             raise ValueError(f"Server {config.name} has no URL for HTTP transport")
 
-        for name in _SSE_LOGGER_NAMES:
-            logging.getLogger(name).addFilter(_SSE_LOG_FILTER)
         minted: bool | None = None
 
         async def observe_response(response: httpx2.Response) -> None:
@@ -623,10 +632,6 @@ class ServerConnector:
         if not config.url:
             raise ValueError(f"Server {config.name} has no URL for SSE transport")
 
-        # Filters on a parent logger do not cover child records. Bind each emitting
-        # transport logger, retaining the filters across concurrent connections.
-        for name in _SSE_LOGGER_NAMES:
-            logging.getLogger(name).addFilter(_SSE_LOG_FILTER)
         # Client(str) is Streamable HTTP; legacy SSE must pass sse_client as Transport.
         capture = ProtocolCapture(ProtocolObservation())
         async with Client(

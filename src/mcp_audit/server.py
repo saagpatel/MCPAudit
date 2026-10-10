@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -58,13 +60,25 @@ def _install_to_config(config_path: Path, server_name: str = "mcp-audit") -> boo
         return True
 
     mcp_servers[server_name] = _MCP_AUDIT_SERVER_ENTRY
+    temporary_path: Path | None = None
     try:
-        config_path.write_text(json.dumps(raw, indent=2))
+        mode = config_path.stat().st_mode & 0o777
+        descriptor, temporary_name = tempfile.mkstemp(prefix=f".{config_path.name}.", dir=config_path.parent)
+        temporary_path = Path(temporary_name)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(raw, indent=2))
+            handle.flush()
+            os.fsync(handle.fileno())
+        temporary_path.chmod(mode)
+        os.replace(temporary_path, config_path)
         _console.print(terminal_safe(f"Registered {server_name} in {config_path}"), style="green")
         return True
     except OSError as exc:
         _error_console.print(terminal_safe(f"Could not write {config_path}: {exc}"), style="red")
         return False
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
 
 
 async def _scan(options: ScanOptions, *, servers: list[ServerConfig] | None = None) -> AuditReport:

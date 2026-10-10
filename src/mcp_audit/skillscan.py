@@ -198,7 +198,7 @@ def canonical_ruleset_bytes() -> bytes:
     ).encode("utf-8")
 
 
-def _read_regular_file(path: Path) -> bytes:
+def _read_regular_file(path: Path, *, max_bytes: int | None = None) -> bytes:
     """Read one regular file without following a final-component symlink."""
     try:
         before = path.lstat()
@@ -219,10 +219,14 @@ def _read_regular_file(path: Path) -> bytes:
         ):
             raise SkillscanInputError(f"input changed while opening: {path.name}")
         chunks: list[bytes] = []
+        total = 0
         while True:
             chunk = os.read(descriptor, 65_536)
             if not chunk:
                 break
+            total += len(chunk)
+            if max_bytes is not None and total > max_bytes:
+                raise SkillscanInputError(f"input file exceeds the {max_bytes}-byte read cap: {path.name}")
             chunks.append(chunk)
         return b"".join(chunks)
     finally:
@@ -232,13 +236,21 @@ def _read_regular_file(path: Path) -> bytes:
 def _directory_files(root: Path) -> tuple[BundleFile, ...]:
     files: list[BundleFile] = []
     normalized_paths: dict[str, str] = {}
+    member_count = 0
+    total_bytes = 0
 
     def visit(directory: Path, parts: tuple[str, ...]) -> None:
+        nonlocal member_count, total_bytes
         try:
             entries = sorted(os.scandir(directory), key=lambda item: item.name)
         except OSError as exc:
             raise SkillscanInputError("cannot enumerate bundle directory") from exc
         for entry in entries:
+            member_count += 1
+            if member_count > _MAX_ARCHIVE_MEMBERS:
+                raise SkillscanInputError(
+                    f"directory has more than {_MAX_ARCHIVE_MEMBERS} entries, exceeding the cap"
+                )
             raw_parts = (*parts, entry.name)
             display_path = "/".join(raw_parts)
             try:
@@ -255,6 +267,13 @@ def _directory_files(root: Path) -> tuple[BundleFile, ...]:
                 continue
             if not stat.S_ISREG(entry_stat.st_mode):
                 raise SkillscanInputError(f"unsupported bundle entry: {display_path}")
+            if entry_stat.st_size > _MAX_MEMBER_BYTES:
+                raise SkillscanInputError(
+                    f"directory file {display_path} exceeds the {_MAX_MEMBER_BYTES}-byte per-member cap"
+                )
+            remaining_bytes = _MAX_TOTAL_BYTES - total_bytes
+            if entry_stat.st_size > remaining_bytes:
+                raise SkillscanInputError(f"directory exceeds the {_MAX_TOTAL_BYTES}-byte total cap")
             normalized = unicodedata.normalize("NFC", display_path)
             previous = normalized_paths.get(normalized)
             if previous is not None and previous != display_path:
@@ -262,7 +281,9 @@ def _directory_files(root: Path) -> tuple[BundleFile, ...]:
                     f"paths collide after NFC normalization: {previous} and {display_path}"
                 )
             normalized_paths[normalized] = display_path
-            files.append(BundleFile(path=normalized, data=_read_regular_file(Path(entry.path))))
+            data = _read_regular_file(Path(entry.path), max_bytes=min(_MAX_MEMBER_BYTES, remaining_bytes))
+            total_bytes += len(data)
+            files.append(BundleFile(path=normalized, data=data))
 
     visit(root, ())
     files.sort(key=lambda item: item.path)
