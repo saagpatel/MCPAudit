@@ -51,7 +51,7 @@ from mcp_audit.models import (
     TransportType,
 )
 from mcp_audit.protocol import ProtocolCapture, cache_hint_failure, observe_session, observe_transport
-from mcp_audit.redaction import redact_data, redact_text
+from mcp_audit.redaction import _SECRET_NAME, redact_data, redact_text
 from mcp_audit.rules.result_injection import RESULT_SCAN_LIMIT
 from mcp_audit.stdio_transport import (
     DEFAULT_MAX_FRAME_BYTES,
@@ -157,9 +157,29 @@ _SSE_LOGGER_NAMES = (
 )
 
 
+_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+_CREDENTIAL_WORD = re.compile(_SECRET_NAME.pattern + r"|bearer|basic", re.IGNORECASE)
+
+
+def _fail_closed_controlled_lines(value: str) -> str:
+    """Strip controls; a line that carried controls and names a credential is cut after the name.
+
+    Escape residue (e.g. a C1 CSI whose final byte is `[`) can split a label from its value
+    so precise matchers miss it; untrusted formatted lines therefore fail closed.
+    """
+    lines = []
+    for line in value.split("\n"):
+        cleaned = strip_controls(line)
+        if _CONTROL_CHARS.search(line) and (word := _CREDENTIAL_WORD.search(cleaned)):
+            separator = re.match(r"\s*[:=]\s*", cleaned[word.end() :])
+            cleaned = cleaned[: word.end()] + (separator[0] if separator else " ") + "<redacted>"
+        lines.append(cleaned)
+    return "\n".join(lines)
+
+
 def _redact_sse_log_text(value: str) -> str:
     # Negotiated POST endpoints can use arbitrary query keys for session credentials.
-    redacted = _REDIRECT_URL.sub(r"\1<redacted-url>", strip_controls(value))
+    redacted = _REDIRECT_URL.sub(r"\1<redacted-url>", _fail_closed_controlled_lines(value))
     redacted = _SSE_URL_SUFFIX.sub(
         lambda match: match[1] + "?<redacted>" if match[2] is not None else match[0], redacted
     )

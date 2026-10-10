@@ -471,3 +471,26 @@ async def test_default_http_body_cap_bounds_isolated_process_rss(tmp_path: Path)
     assert result["error"] == f"HTTP body size exceeds {BODY_LIMIT} bytes."
     assert result["body_bytes"] == BODY_LIMIT + 65_536
     assert result["peak_rss_bytes"] < 300_000_000
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "token\u009b[0m=synthetic-secret",
+        "Bearer\u009b[0m synthetic-secret",
+        "password\u001b[31m: synthetic-secret",
+        "api_key\u009d0;title\u009c=synthetic-secret",
+    ],
+)
+def test_stderr_control_residue_cannot_split_credentials(line: str) -> None:
+    from mcp_audit.connector import _redact_sse_log_text
+
+    assert "synthetic-secret" not in _redact_sse_log_text(line)
+
+
+def test_c1_escape_sequences_are_stripped() -> None:
+    from mcp_audit.terminal_text import strip_controls
+
+    assert strip_controls("a\u009b31mb") == "ab"
+    assert strip_controls("a\u009d0;title\u009cb") == "ab"
+    assert strip_controls("keep\ttab\n") == "keep\ttab\n"
