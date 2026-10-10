@@ -210,12 +210,30 @@ class ConfigHealthSeverity(StrEnum):
     HIGH = "high"
 
 
+class ReferencedFinding(BaseModel):
+    """Core findings carry an offline reference without changing existing fields."""
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def reference_url(self) -> str:
+        from mcp_audit.taxonomy import config_health_rule_id, finding_url
+
+        rule_id = getattr(self, "rule_id", None)
+        if isinstance(rule_id, str):
+            return finding_url(rule_id)
+        if isinstance(self, ConfigHealthFinding):
+            return finding_url(config_health_rule_id(self.finding_type))
+        return finding_url("MCP009" if isinstance(self, DriftFinding) else "MCP010")
+
+
 class ServerConfig(BaseModel):
     """Represents a single MCP server entry from a client config file."""
 
     name: str
     client: ClientType
     config_path: str
+    config_source: Literal["explicit file; parsed as Claude-style config"] | None = None
+    config_pointer: str | None = None  # JSON Pointer to the parsed server entry; null on legacy records
     project_path: str | None = None  # None = global scope, str = project-scoped
     scope: Literal["workstation", "project"] = "workstation"
     command: str | None = None
@@ -224,6 +242,11 @@ class ServerConfig(BaseModel):
     transport: TransportType = TransportType.STDIO
     url: str | None = None  # For HTTP/SSE transport
     headers_keys: list[str] = Field(default_factory=list)  # Header key names for HTTP, NEVER values
+
+    @property
+    def source_label(self) -> str:
+        """Display the selected-file source without changing the legacy client identity."""
+        return self.config_source or self.client.value
 
     @model_validator(mode="after")
     def tag_project_scope(self) -> Self:
@@ -287,7 +310,7 @@ class CapabilityTarget(StrEnum):
     RESOURCE = "resource"
 
 
-class AnnotationFinding(BaseModel):
+class AnnotationFinding(ReferencedFinding):
     """An explicit served annotation contradicts keyword capability evidence."""
 
     kind: Literal["annotation_contradiction"] = "annotation_contradiction"
@@ -322,7 +345,7 @@ class AnnotationFinding(BaseModel):
         return ANNOTATION_CONTRADICTION.remediation
 
 
-class PermissionFinding(BaseModel):
+class PermissionFinding(ReferencedFinding):
     """A single permission inference for a tool."""
 
     category: PermissionCategory
@@ -381,7 +404,7 @@ class PermissionFinding(BaseModel):
         return permission_metadata(self.category).remediation
 
 
-class CapabilityFinding(BaseModel):
+class CapabilityFinding(ReferencedFinding):
     """A permission inference for a non-tool MCP capability."""
 
     target_type: CapabilityTarget
@@ -426,7 +449,7 @@ class CapabilityFinding(BaseModel):
         return permission_metadata(self.category).remediation
 
 
-class InjectionFinding(BaseModel):
+class InjectionFinding(ReferencedFinding):
     """A prompt injection threat detected in a tool's description or name."""
 
     tool_name: str
@@ -436,6 +459,7 @@ class InjectionFinding(BaseModel):
     pattern_name: str  # e.g. "ignore_instructions"
     after_call: int | None = None  # Set for runtime tool-result findings
     matched_text: str  # excerpt (max 200 chars)
+    matched_span: tuple[int, int] | None = None  # Display offsets in redacted matched_text, end-exclusive
     description: str  # human-readable explanation
     field_path: str | None = None
 
@@ -470,7 +494,7 @@ class InjectionFinding(BaseModel):
         return injection_metadata(self.severity).remediation
 
 
-class SsrfFinding(BaseModel):
+class SsrfFinding(ReferencedFinding):
     """A server-side request forgery (SSRF) capability detected in a tool or resource.
 
     Flags interfaces where the server may perform a fetch to a caller-influenceable
@@ -507,7 +531,7 @@ class SsrfFinding(BaseModel):
         return ssrf_metadata(self.severity).remediation
 
 
-class EgressFinding(BaseModel):
+class EgressFinding(ReferencedFinding):
     """An outbound-destination finding: where an MCP server may send data.
 
     Where SSRF asks "can a caller steer where the server connects?", egress asks
@@ -575,7 +599,7 @@ class RuleOfTwoPosture(BaseModel):
     alternatives: list[tuple[int, str]]  # (leg, action) for the other legs
 
 
-class TrifectaFinding(BaseModel):
+class TrifectaFinding(ReferencedFinding):
     """A lethal-trifecta / toxic-flow finding.
 
     Fires when a server (or fleet) covers all three exfiltration legs:
@@ -619,7 +643,7 @@ class TrifectaFinding(BaseModel):
         return trifecta_metadata(self.severity).remediation
 
 
-class EscalationFinding(BaseModel):
+class EscalationFinding(ReferencedFinding):
     """A capability-escalation / rug-pull finding detected against the pin baseline.
 
     Fires only when a tool DIFFERS from its operator-blessed pin baseline in a
@@ -666,7 +690,7 @@ class EscalationFinding(BaseModel):
         return escalation_metadata(self.kind).remediation
 
 
-class ProvenanceFinding(BaseModel):
+class ProvenanceFinding(ReferencedFinding):
     """A launch-config / provenance change detected against the pin baseline.
 
     Fires when a server's LAUNCH configuration changed since it was pinned — a
@@ -720,7 +744,7 @@ class ProvenanceFinding(BaseModel):
         return provenance_metadata(self.kind).remediation
 
 
-class IntegrityFinding(BaseModel):
+class IntegrityFinding(ReferencedFinding):
     """A launch-artifact integrity change detected against the pin baseline.
 
     Fires when the on-disk artifact that a server launches (the resolved command
@@ -774,7 +798,7 @@ class IntegrityFinding(BaseModel):
         return integrity_metadata(self.kind).remediation
 
 
-class PackageVerifyFinding(BaseModel):
+class PackageVerifyFinding(ReferencedFinding):
     """A registry-published package hash change detected against the pin baseline.
 
     The on-disk integrity check (MCP024) hashes local bytes; for package-runner
@@ -829,7 +853,7 @@ class PackageVerifyFinding(BaseModel):
         return package_verify_metadata(self.kind).remediation
 
 
-class ArtifactVerifyFinding(BaseModel):
+class ArtifactVerifyFinding(ReferencedFinding):
     """A byte-level artifact verification result against the pin baseline (MCP026).
 
     MCP025 compares the registry's *published* hash across time; this check
@@ -927,7 +951,7 @@ class CanarySummary(BaseModel):
         ]
 
 
-class DriftFinding(BaseModel):
+class DriftFinding(ReferencedFinding):
     """A change detected between pinned and current tool schema."""
 
     server_name: str
@@ -981,7 +1005,7 @@ class NonToolRisk(BaseModel):
     note: str = "Additive prompt/resource risk indicator; does not affect risk_score.composite."
 
 
-class PolicyViolation(BaseModel):
+class PolicyViolation(ReferencedFinding):
     """A local policy rule violation detected in an audit report."""
 
     rule: str
@@ -999,7 +1023,7 @@ class PolicyResult(BaseModel):
     violations: list[PolicyViolation] = Field(default_factory=list)
 
 
-class ConfigHealthFinding(BaseModel):
+class ConfigHealthFinding(ReferencedFinding):
     """A configuration health warning found before connecting to an MCP server."""
 
     finding_type: str
@@ -1044,7 +1068,7 @@ class ServerAudit(BaseModel):
     canary: CanarySummary | None = None
 
 
-class ShadowingFinding(BaseModel):
+class ShadowingFinding(ReferencedFinding):
     """A cross-server tool-name shadowing finding.
 
     Fires when ≥2 servers expose tools with colliding or confusable names,
@@ -1120,6 +1144,26 @@ class CheckCoverage(BaseModel):
     reason: str
 
 
+class ReviewActionDisplay(BaseModel):
+    """Precomputed terminal copy and reach; contains display text only."""
+
+    severity: str
+    title: str
+    consequence: str
+    step: str
+    sources: tuple[str, ...]
+    identities: tuple[str, ...]
+    rule: str
+    related: int = 0
+    flags: tuple[str, ...] = ()
+    connected: bool = False
+    observed: str = ""
+    confidence: str = ""
+    time_to_fix: str = ""
+    manual_step: str = ""
+    reference: str = ""
+
+
 class ReviewAction(BaseModel):
     """One pre-grouped action; identities are report-local ordinals, never identifiers."""
 
@@ -1129,6 +1173,8 @@ class ReviewAction(BaseModel):
     title: str
     steps: list[str] = Field(default_factory=list)
     sources: list[str] = Field(default_factory=list)
+    terminal: ReviewActionDisplay | None = None
+    card_group: str | None = Field(default=None, pattern=r"^card-[0-9]{4,}$")
 
 
 ReviewGrade = Literal["A", "B", "C", "D", "F"]
@@ -1142,6 +1188,13 @@ class ReviewSummary(BaseModel):
     action_count: int
     grade: ReviewGrade | None
     review_minutes: int
+
+
+class UxSummary(BaseModel):
+    """Presentation rubric, independent of numeric capability exposure."""
+
+    grade: Literal["A", "B", "C", "D", "F"] | None
+    caveat: str = "reach and hygiene, not a safety certificate"
 
 
 class AuditReport(BaseModel):
@@ -1183,9 +1236,9 @@ class AuditReport(BaseModel):
 
     @computed_field(repr=False)  # type: ignore[prop-decorator]
     @property
-    def ux_summary(self) -> dict[str, str | None]:
-        """Additive presentation grade; independent of capability exposure scores."""
-        return {"grade": self.ensure_review_summary().grade}
+    def ux_summary(self) -> UxSummary:
+        """Main's JSON compatibility view; all decisions come from ReviewSummary."""
+        return UxSummary(grade=self.ensure_review_summary().grade)
 
     def redacted(self, *, identifiers: bool = False) -> "AuditReport":
         """Return a credential-redacted copy, optionally scrubbing field-report identifiers."""
@@ -1203,5 +1256,12 @@ class AuditReport(BaseModel):
         saved = data["review_summary"]
         saved.update(summary.model_dump(exclude={"actions"}))
         for action_data, action in zip(saved["actions"], summary.actions, strict=True):
-            action_data.update(identity=action.identity, owner=action.owner, severity=action.severity)
+            action_data.update(
+                identity=action.identity,
+                owner=action.owner,
+                severity=action.severity,
+                card_group=action.card_group,
+            )
+            if action_data["terminal"] is not None:
+                action_data["terminal"]["severity"] = action.severity
         return AuditReport.model_validate(data)

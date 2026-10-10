@@ -8,7 +8,7 @@ field-report fixtures, documents how to collect external redacted field reports
 safely, tracks the remaining external evidence issues, and includes a copy-paste
 request packet for contributors.
 
-Solo multi-environment checks are tracked in `docs/SOLO-EVIDENCE.md`. They can
+Solo multi-environment checks are tracked in `maintainers/SOLO-EVIDENCE.md`. They can
 reduce install and documentation risk, but they do not replace the two external
 redacted reports required before beta.
 
@@ -42,7 +42,7 @@ rather than new diagnostics.
 
 The field-report pass keeps the same scanner boundary and adds redacted fixtures
 for mixed, single-client, and quiet config-only setup shapes. Details live in
-`docs/FIELD-REPORTS.md`.
+`maintainers/FIELD-REPORTS.md`.
 
 ## Output Contract Evidence
 
@@ -76,7 +76,7 @@ The open external evidence issues are:
 - <https://github.com/saagpatel/MCPAudit/issues/84>
 - <https://github.com/saagpatel/MCPAudit/issues/85>
 
-The contributor request packet is `docs/EXTERNAL-FIELD-REPORT-REQUEST.md`.
+The contributor request packet is `maintainers/EXTERNAL-FIELD-REPORT-REQUEST.md`.
 
 ## Historical Evidence Decisions
 

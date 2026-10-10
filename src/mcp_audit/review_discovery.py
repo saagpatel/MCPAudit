@@ -116,19 +116,19 @@ def _parse_source(
         servers = parse_mapping(data, str(path), sources.errors, sniff_format=explicit)
     else:
         servers = []
-        maps: list[object] = []
+        maps: list[tuple[object, str]] = []
         keys = ("mcpServers", "servers") if client == ClientType.VSCODE else ("mcpServers",)
-        maps.extend(data[key] for key in keys if key in data)
+        maps.extend((data[key], f"/{key}") for key in keys if key in data)
         if client == ClientType.VSCODE and "mcp" in data:
             section = data["mcp"]
             if not isinstance(section, dict):
                 raise ValueError("mcp section is not an object")
             if "servers" in section:
-                maps.append(section["servers"])
+                maps.append((section["servers"], "/mcp/servers"))
         if not maps and not (client == ClientType.VSCODE and path.name == "settings.json"):
             raise ValueError("unsupported config: no MCP server map")
-        for mapping in maps:
-            servers.extend(parse_server_map(mapping, str(path), client, sources.errors))
+        for mapping, pointer in maps:
+            servers.extend(parse_server_map(mapping, str(path), client, sources.errors, map_pointer=pointer))
     if (
         client == ClientType.CURSOR
         and path == project / ".cursor" / "mcp.json"
@@ -137,6 +137,11 @@ def _parse_source(
         servers = [server.model_copy(update={"scope": "project"}) for server in servers]
     if len(servers) + len(sources.servers) > MAX_SERVERS:
         raise ValueError("config exceeds 1000-server review limit")
+    if explicit:
+        servers = [
+            server.model_copy(update={"config_source": "explicit file; parsed as Claude-style config"})
+            for server in servers
+        ]
     return servers
 
 
@@ -193,7 +198,8 @@ def review_sources(
             sources.paths.append((str(path), f"skipped: {reason}"))
         else:
             sources.servers.extend(servers)
-            sources.paths.append((str(path), f"checked: {len(servers)} entries"))
+            label = "; explicit file; parsed as Claude-style config" if explicit else ""
+            sources.paths.append((str(path), f"checked: {len(servers)} entries{label}"))
     return sources
 
 

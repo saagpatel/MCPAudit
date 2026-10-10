@@ -18,6 +18,7 @@ from mcp_audit.models import (
     ServerAudit,
     ServerConfig,
     TransportType,
+    UxSummary,
 )
 from mcp_audit.ux_summary import actions
 
@@ -65,7 +66,7 @@ def test_identifier_redaction_preserves_action_identity_and_grade(identity_repor
     home_root = report.audits[0].server.config_path.split("/", 2)[1]
     original = report.model_dump(mode="json")
     assert len(actions(report)) == 2
-    assert report.ux_summary["grade"] == "D"
+    assert report.ux_summary.grade == "D"
 
     for show_host in (False, True):
         html = HtmlReportGenerator().generate(report, show_host=show_host)
@@ -90,12 +91,12 @@ def test_repeated_redaction_preserves_grouping_and_json_grade(identity_report: A
     redacted = identity_report.redacted(identifiers=True)
     for candidate in (redacted, redacted.redacted(), redacted.redacted(identifiers=True)):
         assert len(actions(candidate)) == 2
-        assert candidate.ux_summary == {"grade": "D"}
+        assert candidate.ux_summary == UxSummary(grade="D")
         payload = candidate.model_dump(mode="json")
-        assert payload["ux_summary"] == {"grade": "D"}
+        assert payload["ux_summary"] == UxSummary(grade="D").model_dump()
         assert payload["schema_version"] == 1
         restored = AuditReport.model_validate(payload)
-        assert restored.ux_summary == {"grade": "D"}
+        assert restored.ux_summary == UxSummary(grade="D")
         assert len(actions(restored)) == 2
         shared = json.dumps(payload) + repr(actions(candidate))
         assert "synthetic-user" not in shared
@@ -109,7 +110,7 @@ def test_redacted_summary_is_a_snapshot_after_findings_change(identity_report: A
     summary = redacted.ensure_review_summary().model_dump()
     redacted.audits[0].permissions = []
     redacted.audits[1].permissions = []
-    assert redacted.ux_summary == {"grade": "D"}
+    assert redacted.ux_summary == UxSummary(grade="D")
     assert redacted.ensure_review_summary().model_dump() == summary
     assert "Top fixes · 2" in HtmlReportGenerator().generate(redacted)
 
@@ -121,7 +122,7 @@ def test_redaction_preserves_deduplication_for_one_identity(identity_report: Aud
     assert len(actions(report)) == 1
     redacted = report.redacted(identifiers=True)
     assert len(actions(redacted)) == 1
-    assert redacted.ux_summary == {"grade": "C"}
+    assert redacted.ux_summary == UxSummary(grade="C")
     assert redacted.audits[0].presentation_id == redacted.audits[1].presentation_id
 
 
@@ -171,10 +172,10 @@ def test_scan_redaction_preserves_html_actions_and_json_grade(
     assert "Estimated initial review: 10 minutes" in html
     text = json_path.read_text()
     payload = json.loads(text)
-    assert payload["ux_summary"] == {"grade": "D"}
+    assert payload["ux_summary"] == UxSummary(grade="D").model_dump()
     assert payload["schema_version"] == 1
     assert len(payload["audits"]) == 2
-    assert AuditReport.model_validate(payload).ux_summary == {"grade": "D"}
+    assert AuditReport.model_validate(payload).ux_summary == UxSummary(grade="D")
     for identifier in ("synthetic-user-a", "synthetic-user-b", "shared-server"):
         assert (identifier in text) == (not redact)
     if redact:

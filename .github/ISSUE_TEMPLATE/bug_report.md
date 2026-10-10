@@ -39,7 +39,7 @@ Paste a **redacted** snippet of the relevant config block — remove any API key
 }
 ```
 
-> **Note:** If this issue involves a security-relevant false negative (a threat that MCPAudit missed), consider using [private disclosure](../SECURITY.md) instead of a public issue.
+> **Note:** If this issue involves a security-relevant false negative (a threat that MCPAudit missed), consider using [private disclosure](../../SECURITY.md) instead of a public issue.
 
 ## Command run
 

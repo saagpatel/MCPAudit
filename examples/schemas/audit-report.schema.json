@@ -753,6 +753,28 @@
           "title": "Matched Text",
           "type": "string"
         },
+        "matched_span": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Matched Span"
+        },
         "description": {
           "title": "Description",
           "type": "string"
@@ -1456,6 +1478,30 @@
           },
           "title": "Sources",
           "type": "array"
+        },
+        "terminal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReviewActionDisplay"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "card_group": {
+          "anyOf": [
+            {
+              "pattern": "^card-[0-9]{4,}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Card Group"
         }
       },
       "required": [
@@ -1465,6 +1511,99 @@
         "title"
       ],
       "title": "ReviewAction",
+      "type": "object"
+    },
+    "ReviewActionDisplay": {
+      "description": "Precomputed terminal copy and reach; contains display text only.",
+      "properties": {
+        "severity": {
+          "title": "Severity",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "consequence": {
+          "title": "Consequence",
+          "type": "string"
+        },
+        "step": {
+          "title": "Step",
+          "type": "string"
+        },
+        "sources": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Sources",
+          "type": "array"
+        },
+        "identities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Identities",
+          "type": "array"
+        },
+        "rule": {
+          "title": "Rule",
+          "type": "string"
+        },
+        "related": {
+          "default": 0,
+          "title": "Related",
+          "type": "integer"
+        },
+        "flags": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Flags",
+          "type": "array"
+        },
+        "connected": {
+          "default": false,
+          "title": "Connected",
+          "type": "boolean"
+        },
+        "observed": {
+          "default": "",
+          "title": "Observed",
+          "type": "string"
+        },
+        "confidence": {
+          "default": "",
+          "title": "Confidence",
+          "type": "string"
+        },
+        "time_to_fix": {
+          "default": "",
+          "title": "Time To Fix",
+          "type": "string"
+        },
+        "manual_step": {
+          "default": "",
+          "title": "Manual Step",
+          "type": "string"
+        },
+        "reference": {
+          "default": "",
+          "title": "Reference",
+          "type": "string"
+        }
+      },
+      "required": [
+        "severity",
+        "title",
+        "consequence",
+        "step",
+        "sources",
+        "identities",
+        "rule"
+      ],
+      "title": "ReviewActionDisplay",
       "type": "object"
     },
     "ReviewSummary": {
@@ -1903,6 +2042,31 @@
         "config_path": {
           "title": "Config Path",
           "type": "string"
+        },
+        "config_source": {
+          "anyOf": [
+            {
+              "const": "explicit file; parsed as Claude-style config",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Config Source"
+        },
+        "config_pointer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Config Pointer"
         },
         "project_path": {
           "anyOf": [

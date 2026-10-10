@@ -67,6 +67,8 @@ def parse_server_map(
     client: ClientType,
     parse_errors: list[ConfigParseError] | None = None,
     project_path: str | None = None,
+    *,
+    map_pointer: str = "/mcpServers",
 ) -> list[ServerConfig]:
     """Keep valid sibling entries and report malformed entries without their values."""
     if not isinstance(servers, dict):
@@ -102,6 +104,8 @@ def parse_server_map(
                             else "workstation",
                         )
                     )
+                    token = name.replace("~", "~0").replace("/", "~1")
+                    results[-1] = results[-1].model_copy(update={"config_pointer": f"{map_pointer}/{token}"})
                     continue
                 except ValidationError:
                     reason = "server entry failed validation"

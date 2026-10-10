@@ -1,0 +1,118 @@
+MCPAudit · Preview
+Your MCP setup has findings to review before you enable
+these entries.
+reach and hygiene, not a safety certificate
+CONFIG REVIEW ONLY: 5 entries in 1 explicit file; client not
+asserted; 7 config warnings
+Totals: 14 findings (1 Fix now, 12 Worth a look, 1 FYI); 0
+scan warnings; 0 tools; 0 high-risk servers (capability
+exposure)
+Coverage: config health: COMPLETE (configuration inspected)
+| metadata: NOT RUN (connections disabled) | permissions:
+PARTIAL (configuration-derived permissions only; metadata
+not checked) | capabilities: NOT RUN (connections disabled)
+| Runtime security: NOT CHECKED
+
+1. ▲ Fix now · Your server configuration needs review before
+you connect.
+   toy-shell-exporter / client not asserted (workstation) |
+explicit file; parsed as Claude-style config
+   Source:
+examples/sandbox/fixtures/synthetic-mcp-config.json
+   What we saw: 'toy-shell-exporter' launches through shell
+wrapper 'bash'; review args before connecting.
+details: ['Shell wrappers can hide compound commands in
+arguments.']
+   Why it matters: Your client uses the configured entry.
+The reported concern can change its reach or reduce audit
+coverage. Connecting before review may run unintended code
+or leave part of the config unchecked.
+   How to fix (About 5 minutes for an initial review):
+Follow the finding's manual remediation at the named config
+entry. If intent is unclear, remove that entry temporarily,
+restart the client, and review the command and source before
+restoring it.
+   Manual step: Inspect this entry's shell arguments. If a
+direct executable and argument list can express the intended
+launch, use those instead of a shell wrapper. Otherwise
+remove this entry temporarily and restart the client while
+you review the script.
+   How sure: A static config check; it does not establish
+malicious code or an observed incident.
+   see:
+https://github.com/saagpatel/MCPAudit/blob/main/docs/finding
+s/index.md#configuration-health
+   Recheck:
+     mcp-audit check --config \
+     examples/sandbox/fixtures/synthetic-mcp-config.json
+   +3 related findings in --details (included in totals).
+
+2. ◆ Worth a look · Your server configuration needs review
+before you connect.
+   toy-filesystem-wide / client not asserted (workstation) |
+explicit file; parsed as Claude-style config
+   Source:
+examples/sandbox/fixtures/synthetic-mcp-config.json
+   What we saw: 'toy-filesystem-wide' launches through
+package runner 'npx'; review the package or image source
+before connecting.
+details: ['Source: @modelcontextprotocol/server-filesystem']
+   Why it matters: Your client uses the configured entry.
+The reported concern can change its reach or reduce audit
+coverage. Connecting before review may run unintended code
+or leave part of the config unchecked.
+   How to fix (About 5 minutes for an initial review):
+Follow the finding's manual remediation at the named config
+entry. If intent is unclear, remove that entry temporarily,
+restart the client, and review the command and source before
+restoring it.
+   Manual step: Pin package versions or container digests
+where possible and review the source before running
+connected scans.
+   How sure: A static config check; it does not establish
+malicious code or an observed incident.
+   see:
+https://github.com/saagpatel/MCPAudit/blob/main/docs/finding
+s/index.md#configuration-health
+   Recheck:
+     mcp-audit check --config \
+     examples/sandbox/fixtures/synthetic-mcp-config.json
+   +3 related findings in --details (included in totals).
+
+3. ◆ Worth a look · Your server configuration needs review
+before you connect.
+   toy-weather-lookalike / client not asserted (workstation)
+| explicit file; parsed as Claude-style config
+   Source:
+examples/sandbox/fixtures/synthetic-mcp-config.json
+   What we saw: 'toy-weather-lookalike' references 3
+credential key names; review their access scope.
+details: ['Only credential key names are reported;
+credential values are not stored.']
+   Why it matters: Your client uses the configured entry.
+The reported concern can change its reach or reduce audit
+coverage. Connecting before review may run unintended code
+or leave part of the config unchecked.
+   How to fix (About 5 minutes for an initial review):
+Follow the finding's manual remediation at the named config
+entry. If intent is unclear, remove that entry temporarily,
+restart the client, and review the command and source before
+restoring it.
+   Manual step: Confirm the referenced credentials are
+scoped to the server's purpose.
+   How sure: A static config check; it does not establish
+malicious code or an observed incident.
+   see:
+https://github.com/saagpatel/MCPAudit/blob/main/docs/finding
+s/index.md#configuration-health
+   Recheck:
+     mcp-audit check --config \
+     examples/sandbox/fixtures/synthetic-mcp-config.json
+   +3 related findings in --details (included in totals).
+
+What happened: Reviewed configuration evidence; started no
+servers and contacted no MCP endpoints. Tools were not fully
+inspected; canary tool calls: 0; auditor changed no
+settings.
+Estimated initial review: 70 minutes
+All findings, evidence and capability exposure: --details

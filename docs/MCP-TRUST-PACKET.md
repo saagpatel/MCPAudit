@@ -163,7 +163,7 @@ Then open a redacted field-report issue:
 <https://github.com/saagpatel/MCPAudit/issues/new?template=field_report.md>
 
 Use the safe example shape when deciding what to paste publicly:
-<https://github.com/saagpatel/MCPAudit/blob/main/docs/FIELD-REPORTS.md#minimal-public-example>
+<https://github.com/saagpatel/MCPAudit/blob/main/maintainers/FIELD-REPORTS.md#minimal-public-example>
 
 Two accepted external redacted reports are still the beta bar. Solo demos, generated fixtures, and
 bridge-db dogfood improve confidence, but they do not replace external evidence.

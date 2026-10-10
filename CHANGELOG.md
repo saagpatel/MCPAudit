@@ -22,6 +22,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   while grouping policy advice per affected server identity.
   Improve mobile table scrolling, muted-text contrast and dark-mode colors.
 
+- Add offline `explain` and a generated finding reference with plain-English
+  consequences, initial repair estimates, confidence limits and reference links.
+  Show config paths and explicit-file source labels in finding explanations;
+  align redacted metadata excerpts to word boundaries and mark the actual match
+  using additive display offsets without changing plain JSON evidence.
+  Scrub escaped config pointer identifiers in `--redact` reports and bound
+  Unicode evidence after control-character rendering while preserving match offsets.
+  Ensure whitespace-only context is trimmed so metadata excerpt budgeting cannot stall scans.
+
+- Lead terminal reviews with a coverage-qualified Preview or finding-class grade,
+  visible totals and up to three manual action cards. `--details` retains the
+  legacy tables; `--color auto|always|never` and `NO_COLOR` control presentation.
+  Add `ux_summary.grade` and its reach-and-hygiene caveat to report JSON without
+  changing numeric risk scores or the schema version. Explicit-file finding and
+  scan-warning cards retain client-not-asserted attribution.
 - Probe two client identities by default for opt-in stdio canaries, with
   `--canary-identities 1` to disable and `2` to opt in on HTTP/SSE. Identity-conditioned
   surfaces produce HIGH `IDENTITY_CONDITIONED_SURFACE` findings without extra tool
@@ -171,6 +186,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   property keys are copied unredacted; and terminal output prints raw tool
   names. Structural redaction is planned for a later release.
 
+### Changed
+
+- Restructure the README and user documentation around the static quickstart,
+  move experimental labs and maintainer/history material into dedicated
+  directories, and consolidate versioned release-boundary notes here.
+
 ## [2.8.1] - 2026-10-06
 
 ### Security
@@ -262,6 +283,124 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Credential redaction can leak the remainder of a quoted secret value that
   contains an escaped quote (for example `--password \"abc\\\"rest\"`); a
   structural redesign is planned for 2.9.0. Review field reports before sharing.
+
+### Release boundary details
+
+Release status: approved
+Publication decision: GO
+
+MCPAudit 2.8.1 is a backward-compatible patch release for terminal safety,
+redaction v2, clearer failure and canary coverage reports, and the test/CI
+foundation described below. This document authorizes the exact release-state
+source for review and publication gating; tag, GitHub Release, PyPI, MCP
+Registry, runtime, deployment, adoption, and user-acceptance claims still
+require their own live readbacks.
+
+#### Included capability groups
+
+- Terminal-safe output renders untrusted Rich markup literally and removes
+  control sequences from terminal and HTML text. Server stderr is captured in
+  a bounded 4 KiB tail, sanitized and redacted for debug logging only, with
+  cleanup on completion, timeout, and cancellation. Truncated tails discard
+  their leading partial record to preserve credential-redaction boundaries.
+- Honest failure messages summarize nested connection and analysis exception
+  groups with bounded, redacted leaf causes, withhold redirect targets, and
+  accurately report canary tools-listing failures. Report warnings have stable
+  server/code/message order; audits retain configuration order and per-server
+  drift findings retain observed scan/session order.
+- The canary reports client identity, elapsed seconds, call budget, and stable
+  `not_excluded` limitations in JSON, with bounded coverage also shown in
+  terminal, HTML, and SARIF invocation properties, including clean exercises.
+  Stdio, Streamable HTTP, and SSE sessions present explicit
+  `clientInfo` name `mcp-audit` and the installed version (`mcp-audit/<version>`).
+- Redaction v2 uses a single report entry point, `AuditReport.redacted()`, for
+  terminal, JSON, SARIF, HTML, MCP tool outputs, and the config-only dictionary
+  API, even with `redact=False`. It covers secret flag/value pairs, inline argv
+  values, quoted assignments, secret dictionary values and schema literals,
+  common token shapes, and URL userinfo, secret-named paths, query values, and
+  fragments. Redacted pins retain raw schema hashes; redacted escalation and
+  provenance comparisons include legacy raw pins so secret rotation stays
+  silent while gained flags remain detectable. Query-value and fragment changes
+  remain invisible to provenance comparisons. `pin --no-redact-args` explicitly
+  stores raw arguments, including secrets. Redaction remains best-effort; see
+  Known issues before sharing a report.
+- The README leads with the zero-touch scan and describes instruction-shaped
+  text checks as pattern-based heuristics. Terminal quick wins include singular
+  labels, green zero-high-risk summaries, a 200-row server table cap, and
+  announcements after JSON, SARIF, or HTML artifacts are written.
+- The test/CI foundation includes the synthetic red-team corpus with strict
+  expected failures for planned detector gaps, permission and injection rule
+  tables, policy/scoring golden tables, fixture-backed canary and pin/integrity
+  regressions, and per-category precision gates counting benign false positives.
+  Isolated hostile-server/performance fixtures cover 500 servers, large
+  descriptions, oversized frames, and orphan children; nightly/on-demand CI
+  retains wall/RSS/process measurements with cumulative target profiles and a
+  documented baseline orphan allowance. Coverage requires server and child
+  records plus analyzer/tool invocation and expected description findings.
+  Compact parametrization IDs avoid megabyte-sized pytest output; CI installs
+  PostgreSQL 16 binaries without a service container, requires the ProofOS
+  PostgreSQL cases to run without skips using JUnit testcase classnames, checks
+  pytest summaries, and reports branch coverage.
+
+#### Previously in 2.8.0
+
+2.8.0 introduced the opt-in, bounded runtime rug-pull canary: same-session
+surface drift is HIGH, while runtime result and prompt-body injection checks
+are experimental MEDIUM heuristics. It preserved served-but-unadvertised
+surfaces, routed explicit legacy SSE configurations through SSE, made
+`check_server` require a unique exact-name match, and migrated to MCP SDK 2
+with the supported range `mcp>=2.2.0,<3.0`.
+
+#### Compatibility and package identity
+
+- The distribution remains `mcp-audits`.
+- Installed commands remain `mcp-audit`, `mcp-audits`, and
+  `proof-before-action`.
+- Python 3.11, 3.12, and 3.13 remain supported.
+- The supported MCP dependency remains `mcp>=2.2.0,<3.0`.
+- Canary coverage fields are additive; no stable 2.x audit-report or SARIF
+  field or rule identifier is removed or renamed. `schema_version` is unchanged.
+
+#### Known issues
+
+- `scan`, `pin`, `watch`, and the `serve` tools connect to servers declared in
+  the current directory's `.mcp.json` and `.vscode/mcp.json`. In a checkout you
+  do not trust, add `--skip-connect` to `scan` and `watch`, and do not run `pin`
+  or launch `serve` there (they have no connection-free mode).
+- Annotation-only changes are not detected by `--pin-check` or
+  `--escalation-check`. Pins hash tool name, description, and input schema;
+  the runtime canary does compare annotations within a session.
+- Remote (`url`) servers in Cursor, Windsurf, and Claude Desktop configs are
+  reported as stdio servers with a missing command.
+- `monitor` cannot proxy a real MCP stdio server and will be deprecated in 2.9.0.
+- Credential redaction can leak the remainder of a quoted secret value that
+  contains an escaped quote (for example `--password \"abc\\\"rest\"`); a
+  structural redesign is planned for 2.9.0. Review field reports before sharing.
+
+#### Public-surface boundary
+
+Release metadata, the Registry descriptor, Action examples, pre-commit example,
+and `docs/release-state.json` identify 2.8.1. Until publication completes, those
+source references are proposed release identities rather than proof that any
+public artifact or Registry entry exists. PyPI and the official MCP Registry were
+both at 2.8.0 on the last pre-release readback on 2026-10-06. Every public claim
+must advance only after exact external readback.
+
+#### Rollback
+
+Retain `mcp-audits==2.8.0` as the package rollback pin. If rollback is required,
+install that exact version and verify the resolved package and command identity.
+Preserve evidence with its exact producer version and source revision.
+
+#### Claim ceiling
+
+Release-state source can prove repository consistency and bounded local or CI
+verification only. It cannot by itself prove a tag, published artifact, Registry
+entry, installed runtime, configured invocation, production use, downstream
+adoption, interoperability, or human effectiveness. Missing, stale, masked, or
+unverifiable external evidence remains `UNKNOWN`. A clean canary describes
+only its bounded in-session exercise, not the safety of a server in later
+sessions.
 
 ## [2.8.0] - 2026-10-06
 
@@ -453,6 +592,64 @@ These predate 2.8.0 unless noted and are scheduled for 2.8.1 or 2.9.0.
   events stop at incomplete coverage instead of being graded against
   current-version cache keys.
 
+### Release boundary details
+
+Release status: approved
+Publication decision: GO
+
+MCPAudit 2.7.0 is a backward-compatible minor release for the additive work
+landed after 2.6.0. This document authorizes the exact release-state source for
+review and publication gating; tag, GitHub Release, PyPI, MCP Registry, runtime,
+deployment, adoption, and user-acceptance claims still require their own live
+readbacks.
+
+#### Included capability groups
+
+- Offline cache-contract analysis for bounded MCP list/read traces.
+- Offline authorization-posture review for strict Registry-bound evidence.
+- Fixture-first OAuth transcript analysis with redacted, fail-closed checks.
+- Deterministic task-lifecycle, result-parcel, and session-resume laboratories.
+- Repository delivery-evidence validation that keeps source, CI, runtime,
+  publication, deployment, adoption, and human-acceptance claims separate.
+- Security and correctness hardening for those new experimental surfaces.
+
+#### Compatibility and package identity
+
+- The distribution remains `mcp-audits`.
+- Installed commands remain `mcp-audit`, `mcp-audits`, and
+  `proof-before-action`.
+- Python 3.11, 3.12, and 3.13 remain supported.
+- MCP SDK 1.28.1 through the latest 1.x release is supported. The package
+  excludes MCP SDK 2.x because that major version changes the connected-server
+  API and is not covered by the 2.7 compatibility suite.
+- No stable 2.x audit-report or SARIF field or rule identifier is removed or
+  renamed by this release-identity repair.
+- The new laboratories use separate strict experimental contracts; unsupported
+  or incomplete evidence remains `UNKNOWN`.
+
+#### Public-surface boundary
+
+Release metadata, the Registry descriptor, Action examples, pre-commit example,
+and `docs/release-state.json` identify 2.7.0. Until publication completes, those
+source references are proposed release identities rather than proof that any
+public artifact or Registry entry exists. PyPI was at 2.6.0 and the official MCP
+Registry was at 2.5.0 on the last pre-release readback on 2026-08-14. Every
+public claim must advance only after exact external readback.
+
+#### Rollback
+
+Retain `mcp-audits==2.6.0` as the package rollback pin. If rollback is required,
+install that exact version and verify the resolved package and command identity.
+Preserve evidence with its exact producer version and source revision.
+
+#### Claim ceiling
+
+Release-state source can prove repository consistency and bounded local or CI
+verification only. It cannot by itself prove a tag, published artifact, Registry
+entry, installed runtime, configured invocation, production use, downstream
+adoption, interoperability, or human effectiveness. Missing, stale, masked, or
+unverifiable external evidence remains `UNKNOWN`.
+
 ## [2.6.0] - 2026-08-05
 
 ### Security
@@ -527,6 +724,100 @@ These predate 2.8.0 unless noted and are scheduled for 2.8.1 or 2.9.0.
 - Documented and enforced the solo-maintainer PyPI publication policy: the
   protected environment still requires named maintainer approval and disables
   administrator bypass, but no longer claims independent release review.
+
+### Release boundary details
+
+Release status: approved
+Publication decision: GO
+
+MCPAudit 2.6.0 is a backward-compatible minor release. It packages
+the capabilities and maintenance changes landed on `main` since 2.5.0. It does
+not change the existing 2.x audit-report or SARIF compatibility policy.
+
+#### Included capability groups
+
+- Agent UI Contract Auditor: an experimental, offline static scanner for
+  program-owned MCP Apps/OpenAI metadata and A2UI v0.9 JSONL fixtures. It emits
+  deterministic canonical JSON and inert offline HTML for six supported
+  authority, state, disclosure, provenance, evidence, and egress rules.
+- Nested-schema SSRF detection: bounded static traversal of object,
+  array/tuple-item, composition, and reachable local-reference branches for
+  URL- and host-shaped caller-controlled targets. Unsupported dynamic
+  references and exhausted traversal bounds fail closed as visible findings.
+- Evidence-to-enforcement: an experimental fixture-only workflow pinned to the
+  repository-owned `mcpaudit-fixture-gateway-v1` contract version `1.0.0`.
+  Separate observed-evidence, recommendation, approved-intent, and
+  effective-state contracts support a narrow program-owned synthetic
+  allow/deny/approval compatibility slice.
+
+#### Additional changes
+
+- Config-only connection status is explicit in terminal, JSON, and HTML output
+  so a skipped connection pass cannot be mistaken for a clean connected scan.
+- Release workflow and protected-environment checks retain exact tag/commit,
+  artifact-hash, and OIDC boundaries while documenting the solo-maintainer
+  publication policy.
+- Immutable GitHub Action revisions were refreshed, ClusterFuzzLite PR fuzzing
+  was added, and the SA-015 regression pins cross-SDK identity boundaries.
+- The unused production-governance runtime dependency was removed from the
+  fixture path. Direct `cryptography>=50.0.0,<51.0` and
+  `click>=8.3.3,<9.0` security floors keep the resolved and distributed
+  dependency graph outside the validated vulnerable ranges.
+- The external field-report lane gained an unassisted one-command `uvx` report
+  path, explicit package-resolution and config-only privacy boundaries, and
+  aggregate pass/kill thresholds that exclude downloads, self-tests, and CI
+  from external-adoption counts.
+
+#### Compatibility and migration
+
+- Python 3.11, 3.12, and 3.13 remain supported.
+- The distribution remains `mcp-audits`; installed commands remain
+  `mcp-audit`, `mcp-audits`, and `proof-before-action`.
+- Existing 2.x report consumers may continue to accept additive optional
+  fields. No stable field or SARIF rule identifier is removed or renamed.
+- Agent UI and evidence-to-enforcement outputs use separate strict
+  experimental contracts and do not change `AuditReport` schema version `1`.
+- `server.json`, Action examples, and pre-commit examples reference public
+  version 2.6.0. Those references resolve once the `v2.6.0` tag is created on
+  the landed release commit.
+
+#### Evidence and claim ceilings
+
+Agent UI evidence is offline, static, descriptor-bound, and limited to the
+supported fixture contracts. A passing fixture does not prove widget bytes,
+renderer behavior, CSP enforcement, transport integrity, authentication,
+authorization, host consent, interoperability, sandboxing, or real-user
+workflow safety.
+
+SSRF evidence is static and schema-derived. MCPAudit issues no request and
+reads no credential value for this check. A finding or clean supported schema
+does not prove runtime containment, destination enforcement, or host safety.
+
+Evidence-to-enforcement remains experimental and fixture-only. Its program-owned
+synthetic state, negative controls, readback, no-op verification, and rollback
+do not authorize or establish production gateway behavior. They do not prove
+host authorization integrity or production security.
+
+Missing, stale, masked, or unverifiable external evidence remains `UNKNOWN`.
+Fixture and automated evidence do not establish exhaustive ecosystem coverage,
+human effectiveness, field validation, downstream adoption, or transfer to
+production environments.
+
+#### Rollback
+
+If a package rollback is required after publication, pin `mcp-audits==2.5.0`
+and read back the resolved package version. Retain 2.6.0 evidence artifacts for
+verification with the matching producer rather than silently reinterpreting
+them under 2.5.0.
+
+#### Publication boundary
+
+The release workflow publishes the built wheel and sdist to PyPI only, bound to
+a tag and commit that must already exist and resolve to each other. It does not
+create the tag, cut a GitHub Release, update the MCP Registry entry, move a
+stable Action ref, or deploy anything. Each of those remains a separate manual
+action under its own decision. Before publishing, the workflow still verifies
+the tag, the commit, the artifact hashes, and the protected-environment state.
 
 ## [2.5.0] - 2026-07-19
 
@@ -617,6 +908,91 @@ These predate 2.8.0 unless noted and are scheduled for 2.8.1 or 2.9.0.
   different condition from never having pinned. Extends the strict-write
   honesty from 2.3.0 (`PinFileError` refuses mutations through unparseable
   files) to the read/report path. (#158)
+
+### Release boundary details
+
+Release status: approved
+Publication decision: GO
+
+MCPAudit 2.5.0 is an approved backward-compatible minor release. It packages the
+capabilities added since 2.4.0 and the dependency and workflow hardening already
+landed on `main`. It does not change the existing 2.x audit-report or SARIF
+compatibility policy.
+
+#### Included
+
+- Proof Before Action: declaration, disposable observation, comparison,
+  release-trust manifest, deterministic evidence capsule, offline HTML, and
+  independent verification.
+- ProofOS PostgreSQL verification and SafeForge pre-install/runtime evidence.
+- Structured handling for corrupted pin baselines.
+- Preservation of escalation categories in terminal output.
+- A minimum `mcp` SDK version of 1.28.1 and immutable reviewed GitHub Action
+  revisions.
+
+#### Compatibility and migration
+
+- Python 3.11, 3.12, and 3.13 remain supported.
+- The distribution remains `mcp-audits`; the installed commands are
+  `mcp-audit`, `mcp-audits`, and `proof-before-action`.
+- Existing 2.x report consumers may continue to accept additive optional
+  fields. No stable field or SARIF rule identifier is removed or renamed.
+- Environments that deliberately constrained `mcp<1.28.1` must upgrade that
+  dependency before installing 2.5.0.
+
+#### Security posture
+
+Proof Before Action is local-first and fail-closed at its evidence boundaries.
+Unknown, stale, masked, unmatched, incomplete, unobservable, dirty, or
+authority-unverified evidence does not become a passing safety claim. Capsule
+verification binds the staged subject, producer revision, report projection,
+and an independently supplied root hash.
+
+This evidence is narrower than a general sandbox guarantee. The Docker observer
+does not prove complete Unix-domain socket coverage, host-kernel isolation, or
+safety outside the declared and observed surfaces. Release-trust claims remain
+only as authoritative as their exact producer/subject bindings and independently
+supplied root.
+
+#### Process limitations
+
+- The repository currently has one eligible human collaborator. Automated
+  review, CodeQL, CI, and permission-diff evidence reduce risk but do not replace
+  independent human review.
+- Continuous fuzzing is not yet integrated. Deterministic fixture and
+  adversarial tests cover the shipped boundaries, but they are not a substitute
+  for a maintained fuzzing service.
+- The project is not enrolled in the OpenSSF Best Practices badge program.
+- Two independent redacted field reports have not been collected, so broad
+  downstream environment compatibility remains unproven.
+
+#### Rollback
+
+Prefer reverting the consuming configuration while retaining MCPAudit 2.5.0 and
+the `mcp>=1.28.1` security floor. Do not describe the existing `v2.4.0` Action
+or pre-commit tag as a security-safe rollback: its published dependency metadata
+allows vulnerable MCP SDK versions.
+
+If an emergency package rollback is unavoidable, constrain both packages and
+read back the resolved versions:
+
+```bash
+python -m pip install "mcp-audits==2.4.0" "mcp>=1.28.1"
+python -c 'from importlib.metadata import version; print(version("mcp-audits"), version("mcp"))'
+```
+
+Evidence produced with new Proof Before Action schemas should be retained and
+verified with the matching 2.5.0 producer rather than silently downgraded.
+
+#### Publication boundary
+
+The approved release state records that 2.5.0 is ready for the separately
+authorized public release path. Publication still requires approval bound to the
+exact landed commit and tag. The manual publish workflow builds and exposes the
+exact wheel and sdist hashes before the environment-bound publish job, and the
+`pypi` environment requires named maintainer approval with administrator-bypass
+protection enforced. This release uses an explicit solo-maintainer publication
+policy rather than an independent-review gate.
 
 ## [2.4.0] - 2026-07-03
 

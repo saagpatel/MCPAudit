@@ -4,7 +4,7 @@ MCPAudit `1.2` focuses on adoption depth: make configuration health easier to
 consume in CI and inventory systems without changing tool risk scoring.
 
 This is a historical roadmap for the `1.2` line. The current forward roadmap is
-`docs/ROADMAP-NEXT.md`.
+`maintainers/ROADMAP-NEXT.md`.
 
 ## Goals
 

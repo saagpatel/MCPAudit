@@ -10,7 +10,7 @@ from click.testing import CliRunner
 from pydantic import ValidationError
 from rich.console import Console
 
-from mcp_audit import cli, ux_summary
+from mcp_audit import ux_summary
 from mcp_audit.htmlreport import HtmlReportGenerator
 from mcp_audit.models import (
     AuditReport,
@@ -19,12 +19,15 @@ from mcp_audit.models import (
     PolicyResult,
     PolicyViolation,
     ReviewSummary,
+    ScanWarning,
     ShadowingFinding,
     ShadowingKind,
     ShadowingSeverity,
     TrifectaFinding,
+    UxSummary,
 )
 from mcp_audit.report import ReportGenerator
+from mcp_audit.terminal_summary import findings, grade
 
 # Each audit case is isolated so a missing source cannot hide behind other actions.
 _COMMON = {"server_name": "shared-server", "severity": "high"}
@@ -227,6 +230,7 @@ def test_every_source_survives_redaction_and_roundtrip(source: str, home: str, c
         assert [(a.identity, a.owner, a.severity) for a in summary.actions] == [
             (a.identity, a.owner, a.severity) for a in baseline.actions
         ]
+        assert [a.card_group for a in summary.actions] == [a.card_group for a in baseline.actions]
         for show_host in (False, True):
             html = HtmlReportGenerator().generate(candidate, show_host=show_host)
             assert html.count('<article class="action">') == baseline.action_count
@@ -238,8 +242,12 @@ def test_every_source_survives_redaction_and_roundtrip(source: str, home: str, c
                 for identifier in ("synthetic-user-", "synthetic-host", "shared-server"):
                     assert identifier not in html + candidate.model_dump_json()
         terminal = StringIO()
-        ReportGenerator(Console(file=terminal, width=180)).render_terminal(candidate)
-        assert f"{baseline.action_count} review actions" in terminal.getvalue()
+        ReportGenerator(Console(file=terminal, width=180)).render_terminal(candidate, details=False)
+        assert grade(candidate) == baseline.grade
+        assert len(findings(candidate)) == baseline.action_count
+        assert f"Totals: {baseline.action_count} findings" in terminal.getvalue()
+        assert f"Estimated initial review: {baseline.review_minutes} minutes" in terminal.getvalue()
+        assert f"MCPAudit · Grade {baseline.grade}" in terminal.getvalue()
     assert twice.review_summary == redacted.review_summary == restored.review_summary
 
 
@@ -261,8 +269,9 @@ def test_summary_computed_once_even_across_renderers_and_reload(monkeypatch: pyt
     reloaded = AuditReport.model_validate_json(redacted.model_dump_json())
     HtmlReportGenerator().generate(reloaded)
     ReportGenerator(Console(file=StringIO())).render_terminal(reloaded)
+    ReportGenerator(Console(file=StringIO())).render_terminal(reloaded, details=False)
     assert ux_summary.actions(reloaded) == reloaded.ensure_review_summary().actions
-    assert ux_summary.grade(reloaded) == report.ux_summary["grade"]
+    assert ux_summary.grade(reloaded) == report.ux_summary.grade
     assert calls == 1
 
 
@@ -273,7 +282,10 @@ def test_credential_redaction_cannot_collapse_config_identities() -> None:
     redacted = report.redacted()
     assert redacted.audits[0].server.config_path == redacted.audits[1].server.config_path
     assert redacted.ensure_review_summary().action_count == 2
-    assert redacted.ux_summary == {"grade": "D"}
+    assert redacted.ux_summary == UxSummary(grade="D")
+    terminal = StringIO()
+    ReportGenerator(Console(file=terminal, width=180)).render_terminal(redacted, details=False)
+    assert "1. ▲ Fix now" in terminal.getvalue() and "2. ▲ Fix now" in terminal.getvalue()
     assert "synthetic-secret-" not in redacted.model_dump_json()
 
 
@@ -285,7 +297,18 @@ def test_large_alias_set_keeps_summary_display_idempotent() -> None:
     assert redacted.redacted(identifiers=True).review_summary == redacted.review_summary
 
 
-@pytest.mark.parametrize("field", ["grade", "identity", "owner"])
+def test_terminal_warning_card_preserves_degraded_coverage() -> None:
+    report = _report("permissions", "/Users", 2)
+    report.warnings = [ScanWarning(code="synthetic_incomplete", message="Synthetic coverage unavailable.")]
+    terminal = StringIO()
+    ReportGenerator(Console(file=terminal, width=180)).render_terminal(report, details=False)
+    assert report.ensure_review_summary().grade is None
+    assert "MCPAudit · Preview" in terminal.getvalue()
+    assert "Restore check coverage" in terminal.getvalue()
+    assert "2 findings (2 Fix now" in terminal.getvalue()
+
+
+@pytest.mark.parametrize("field", ["grade", "identity", "owner", "card_group"])
 def test_saved_summary_rejects_untrusted_symbolic_values(field: str) -> None:
     payload = _report("permissions", "/Users", 2).model_dump(mode="json")
     summary = payload["review_summary"]
@@ -297,6 +320,8 @@ def test_saved_summary_rejects_untrusted_symbolic_values(field: str) -> None:
 
 @pytest.mark.parametrize("show_host", [False, True])
 def test_real_config_only_cli_redaction_keeps_summary(tmp_path: Path, show_host: bool) -> None:
+    from mcp_audit import cli
+
     config = tmp_path / "synthetic-config.json"
     config.write_text(
         json.dumps(
@@ -351,6 +376,8 @@ def test_cli_connected_fixture_preserves_config_health_grade(
     tmp_path: Path,
     show_host: bool,
 ) -> None:
+    from mcp_audit import cli
+
     # Inject completed synthetic metadata; no server is launched or contacted.
     report = _report("config_health", "/Users", 2)
 
@@ -383,7 +410,7 @@ def test_cli_connected_fixture_preserves_config_health_grade(
         result = CliRunner().invoke(cli.main, args)
         assert result.exit_code == 0, result.output
         payload = json.loads(json_path.read_text())
-        assert payload["ux_summary"] == {"grade": "D"}
+        assert payload["ux_summary"] == UxSummary(grade="D").model_dump()
         assert payload["review_summary"]["action_count"] == 2
         html = html_path.read_text()
         assert 'aria-label="Grade D"' in html

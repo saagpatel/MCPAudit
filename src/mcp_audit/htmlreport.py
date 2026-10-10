@@ -22,10 +22,11 @@ from typing import Literal, get_args, get_origin
 from pydantic import BaseModel
 
 from mcp_audit.coverage import missing_checks
+from mcp_audit.finding_display import finding_views, render_finding_text
 from mcp_audit.models import AuditReport, PermissionCategory, ReviewSummary, ServerAudit
 from mcp_audit.normalize import render_invisibles
 from mcp_audit.redaction import redact_identifiers
-from mcp_audit.taxonomy import format_rule_of_two
+from mcp_audit.taxonomy import finding_url, format_rule_of_two
 from mcp_audit.terminal_text import strip_controls
 from mcp_audit.ux_summary import Action
 
@@ -137,6 +138,7 @@ footer { margin-top: 2.5rem; font-size: 0.85rem; }
   .grade { text-align: left; }
   .summary { display: grid; grid-template-columns: minmax(0, 1fr); }
 }
+.finding-explanation { white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (prefers-color-scheme: dark) {
   :root { --bg: #161616; --card: #1f1f1f; --ink: #e6e6e6; --muted: #b5b5b5;
           --line: #696969; --head: #262626; --high-bg: #451f24; --high: #ffb4b4;
@@ -201,6 +203,14 @@ class HtmlReportGenerator:
         for audit in report.audits:
             parts.append(self._server(audit))
         parts.append(self._fleet(report))
+        parts.append("<h2>Finding explanations</h2>")
+        for view in finding_views(report):
+            explanation = render_finding_text(view).rsplit("\nsee:", 1)[0]
+            url = self._esc(finding_url(view.rule_id))
+            parts.append(
+                f'<pre class="finding-explanation">{self._marked(explanation)}</pre>'
+                f'<p>see: <a href="{url}">{url}</a></p>'
+            )
         parts.append(self._warnings(report))
         parts.append("</details>")
         parts.append(
@@ -403,14 +413,18 @@ class HtmlReportGenerator:
         head = (
             '<div class="server-head">'
             f"<h3>{self._esc(srv.name)}</h3>"
-            f'<span class="badge muted">{self._esc(srv.client.value)}</span>'
+            f'<span class="badge muted">{self._esc(srv.source_label)}</span>'
             f'<span class="badge muted">{self._esc(srv.transport.value)}</span>'
             f'<span class="badge {self._status_class(audit.connection_status)}">'
             f"{self._esc(audit.connection_status)}</span>"
             f'<span class="badge {risk_badge}">capability exposure {composite:.1f}/10</span>'
             "</div>"
         )
-        body = [head]
+        body = [
+            head,
+            f"<p>Source: {self._esc(srv.source_label)} | config_path: "
+            f"<code>{self._esc(srv.config_path)}</code> | entry: {self._esc(srv.name)}</p>",
+        ]
         if audit.canary is not None:
             summary = audit.canary
             body.append(
@@ -755,3 +769,9 @@ class HtmlReportGenerator:
 
     def _esc(self, value: str) -> str:
         return escape(render_invisibles(strip_controls(value)), quote=True)
+
+    def _marked(self, value: str) -> str:
+        """Escape untrusted text before highlighting the excerpt's match delimiters."""
+        import re
+
+        return re.sub(r"⟦([^⟦⟧]*)⟧", r"<mark>\1</mark>", self._esc(value))

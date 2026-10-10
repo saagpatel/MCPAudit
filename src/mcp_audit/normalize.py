@@ -126,4 +126,6 @@ def raw_excerpt(
         context_before=context_before,
         context_after=context_after,
         max_length=200,
+        word_boundaries=True,
+        mark_match=True,
     )

@@ -33,8 +33,10 @@ being uploaded manually.
   existing public version/tag. They must not advertise a package or tag that
   does not exist.
 - `README.md`, `SECURITY.md`, `docs/OUTPUT-CONTRACT.md`,
-  `docs/STABLE-READINESS.md`, and the versioned release notes match live CLI
+  `maintainers/STABLE-READINESS.md`, and the matching `CHANGELOG.md` section match live CLI
   behavior.
+- Search `README.md` and `docs/guides/ci.md` for `MCPAudit@` references and
+  confirm pinned versions match the public Action release.
 - `mcp-audit --version` reports the release version.
 - `mcp-audits` remains the PyPI distribution name and the installed
   `mcp-audit`, `mcp-audits`, and `proof-before-action` commands are present.
@@ -90,8 +92,9 @@ Use a separate reviewed PR after the candidate has landed:
    `published_version` to the candidate version.
 2. Update `server.json`, README Action examples, and pre-commit examples to the
    new public version/tag.
-3. Change the versioned release-note markers to `Release status: approved` and
-   `Publication decision: GO`; remove candidate-only authorization language.
+3. Change the `CHANGELOG.md` release-boundary markers to
+   `Release status: approved` and `Publication decision: GO`; remove
+   candidate-only authorization language.
 4. Replace `Unreleased` with the release date in `CHANGELOG.md` and finalize its
    comparison links.
 5. Rerun the full local, security, metadata, build, and installed-command gates.

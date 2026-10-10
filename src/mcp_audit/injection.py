@@ -18,7 +18,7 @@ from mcp_audit.models import (
     ToolInfo,
 )
 from mcp_audit.normalize import first_obfuscation, normalize_text, obfuscation_classes, raw_excerpt
-from mcp_audit.redaction import redact_text, redacted_excerpt
+from mcp_audit.redaction import marked_excerpt_parts, redact_text, redacted_excerpt, trim_excerpt_context
 from mcp_audit.rules.result_injection import (
     _DOTENV_TARGET,
     _EXFIL_VERB_RE,
@@ -148,8 +148,28 @@ def _unicode_extract(chars: set[str]) -> Callable[[str, str], str]:
         for c in chars:
             idx = orig.find(c)
             if idx != -1:
-                excerpt = redacted_excerpt(orig, idx, idx + 1, context_before=10, context_after=59)
-                return f"[U+{ord(c):04X} at pos {idx}]: {excerpt!r}"[:200]
+                excerpt = redacted_excerpt(
+                    orig,
+                    idx,
+                    idx + 1,
+                    context_before=20,
+                    context_after=59,
+                    max_length=150,
+                    word_boundaries=True,
+                    mark_match=True,
+                )
+                prefix = f"[U+{ord(c):04X} at pos {idx}]: "
+                evidence, span = marked_excerpt_parts(excerpt)
+                if span is None:
+                    return f"{prefix}{excerpt!r}"
+                before, match, after = evidence[: span[0]], evidence[span[0] : span[1]], evidence[span[1] :]
+                # repr expands controls and backslashes; budget its final form
+                # while trimming only context, keeping the complete match.
+                while len(f"{prefix}{before + '⟦' + match + '⟧' + after!r}") > 200:
+                    if not before and not after:
+                        break
+                    before, after = trim_excerpt_context(before, after)
+                return f"{prefix}{before + '⟦' + match + '⟧' + after!r}"
         return redacted_excerpt(orig, 0, 0, context_after=200, max_length=200)
 
     return _extract
@@ -169,7 +189,15 @@ def _role_check(lower: str, _orig: str) -> bool:
 def _role_extract(_lower: str, orig: str) -> str:
     span = _role_span(orig)
     if span is not None:
-        return redacted_excerpt(orig, span[0], span[0], context_after=200, max_length=200)
+        return redacted_excerpt(
+            orig,
+            span[0],
+            span[1],
+            context_after=180,
+            max_length=200,
+            word_boundaries=True,
+            mark_match=True,
+        )
     return redacted_excerpt(orig, 0, 0, context_after=200, max_length=200)
 
 
@@ -185,9 +213,11 @@ _PATTERNS: list[_InjectionPattern] = [
             else redacted_excerpt(
                 orig,
                 max(0, orig.find("<!--")),
-                max(0, orig.find("<!--")),
+                max(0, orig.find("<!--")) + len("<!--"),
                 context_after=200,
                 max_length=200,
+                word_boundaries=True,
+                mark_match=True,
             )
         ),
     ),
@@ -322,7 +352,7 @@ class InjectionDetector:
         else:
             role_span = _role_span(normalized)
             start = role_span[0] if role_span is not None else 0
-            span = (start, start)
+            span = role_span if role_span is not None else (start, start)
         return raw_excerpt(raw, span, context_before=0, context_after=200)
 
     @staticmethod
@@ -339,6 +369,18 @@ class InjectionDetector:
         # Keep source offsets while redacting the entire field before slicing.
         index = first_obfuscation(raw)
         classes_text = ", ".join(classes)
+        evidence, matched_span = marked_excerpt_parts(
+            redacted_excerpt(
+                raw,
+                index,
+                index + 1,
+                context_before=20,
+                context_after=179,
+                max_length=200,
+                word_boundaries=True,
+                mark_match=True,
+            )
+        )
         return [
             InjectionFinding(
                 tool_name=legacy_tool_name,
@@ -346,9 +388,8 @@ class InjectionDetector:
                 target_name=target_name,
                 severity=InjectionSeverity.MEDIUM,
                 pattern_name="OBFUSCATED_METADATA",
-                matched_text=redacted_excerpt(
-                    raw, index, index + 1, context_before=20, context_after=179, max_length=200
-                ),
+                matched_text=evidence,
+                matched_span=matched_span,
                 description=(f"Agent-facing text contains {classes_text} codepoints at {field_path or '/'}."),
                 field_path=field_path,
             )
@@ -383,6 +424,7 @@ class InjectionDetector:
                 evidence = "[metadata excerpt withheld]"
             else:
                 evidence = raw_excerpt(combined, span)
+            evidence, matched_span = marked_excerpt_parts(evidence)
             findings.append(
                 InjectionFinding(
                     tool_name=legacy_tool_name,
@@ -392,7 +434,8 @@ class InjectionDetector:
                     pattern_name="INSTRUCTION_SHAPED_TEXT",
                     instruction_pattern=name,
                     hunt_targets=targets,
-                    matched_text=evidence[:200],
+                    matched_text=evidence,
+                    matched_span=matched_span,
                     description=(
                         f"Experimental heuristic: metadata contains instruction-shaped text "
                         f"({name}) at {field_path or '/'}."
@@ -421,7 +464,7 @@ class InjectionDetector:
                 break
         for pattern in _PATTERNS:
             if self._matches(pattern, combined, normalized):
-                matched = self._excerpt(pattern, combined, normalized)[:200]
+                matched, matched_span = marked_excerpt_parts(self._excerpt(pattern, combined, normalized))
                 findings.append(
                     InjectionFinding(
                         tool_name=legacy_tool_name,
@@ -430,6 +473,7 @@ class InjectionDetector:
                         severity=pattern.severity,
                         pattern_name=pattern.name,
                         matched_text=matched,
+                        matched_span=matched_span,
                         description=pattern.description,
                         field_path=field_path,
                     )

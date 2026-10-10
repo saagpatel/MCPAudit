@@ -17,6 +17,7 @@ from mcp_audit.artifact_paths import validate_artifact_paths
 from mcp_audit.engine import ScanOptions, run_scan
 from mcp_audit.report import ReportGenerator
 from mcp_audit.review_discovery import review_sources, server_identity
+from mcp_audit.terminal_summary import summary_console
 from mcp_audit.terminal_text import strip_controls, terminal_safe
 
 P = ParamSpec("P")
@@ -25,7 +26,11 @@ T = TypeVar("T")
 
 def _source_options(command: Callable[P, T]) -> Callable[P, T]:
     for option in (
-        click.option("--config", type=click.Path(path_type=Path), help="Review this file only."),
+        click.option(
+            "--config",
+            type=click.Path(path_type=Path),
+            help="Review this explicit file only; parsed as Claude-style config.",
+        ),
         click.option(
             "--include-discovered", is_flag=True, help="Also read supported client config locations."
         ),
@@ -55,6 +60,7 @@ def _print_sources(out: Console, paths: list[tuple[str, str]]) -> None:
 @click.option("--html", type=click.Path(path_type=Path), help="Write offline HTML to FILE.")
 @click.option("--show-host", is_flag=True, help="Include the hostname in HTML (hidden by default).")
 @click.option("--policy", type=click.Path(path_type=Path), help="Evaluate this explicit local policy.")
+@click.option("--color", type=click.Choice(["auto", "always", "never"]), default="auto", show_default=True)
 def check(
     config: Path | None,
     include_discovered: bool,
@@ -68,13 +74,14 @@ def check(
     html: Path | None,
     show_host: bool,
     policy: Path | None,
+    color: str,
 ) -> None:
     """Review configs statically; runtime security is not checked by default."""
     if connect and not server_id:
         raise click.ClickException("--connect requires --server CLIENT:SCOPE:NAME from inspect.")
     if server_id and not connect:
         raise click.ClickException("--server requires --connect; use inspect to review identities.")
-    out = Console(stderr=json_stdout)
+    out = summary_console(color=color, stderr=json_stdout)
     try:
         sources = review_sources(config, include_discovered, project)
         inputs = [Path(path) for path, status in sources.paths if status != "absent"]
@@ -122,38 +129,16 @@ def check(
         safe_report = report.redacted()
         payload = json.dumps(safe_report.model_dump(mode="json"), indent=2)
         if not json_stdout:
-            if sources.errors:
-                out.print("PARTIAL: some configuration evidence could not be reviewed.")
-            if not report.audits:
-                out.print("No MCP servers found. No security result or score is available.")
-                out.print("Try: mcp-audit demo")
-                out.print("Or: mcp-audit check --config ./mcp.json")
-                out.print("See locations: mcp-audit inspect --details")
-            elif details:
-                ReportGenerator(out).render_terminal(report, verbose=True)
-            else:
-                mode = "CONNECTED REVIEW" if connect else "CONFIG REVIEW ONLY"
-                out.print(
-                    f"{mode} | {len(report.audits)} entries | "
-                    f"{len(report.config_health_findings)} config warnings"
-                )
-                ReportGenerator(out)._render_coverage(safe_report)
-                for finding in safe_report.config_health_findings:
-                    out.print(terminal_safe(f"{finding.severity.value}: {finding.summary}"))
+            ReportGenerator(out).render_terminal(
+                report,
+                verbose=details,
+                details=details,
+                explicit_config=config is not None and not include_discovered,
+            )
+            if details:
                 for warning in safe_report.warnings:
                     out.print(terminal_safe(warning.message))
-                out.print("All findings: mcp-audit check --details")
-            if details:
-                for finding in safe_report.config_health_findings:
-                    out.print(terminal_safe(f"{finding.severity.value}: {finding.summary}"))
                 _print_sources(out, sources.paths)
-            if not connect:
-                out.print(
-                    "Started no servers, contacted no endpoints, changed no settings. "
-                    "Runtime security: NOT CHECKED."
-                )
-            if report.policy_result is not None:
-                out.print("Policy Gate: passed" if report.policy_result.passed else "Policy Gate: FAILED")
         if output_json:
             output_json.write_text(payload, encoding="utf-8")
         if sarif:
@@ -191,7 +176,9 @@ def inspect(config: Path | None, include_discovered: bool, project: Path | None,
     if sources.errors:
         out.print("PARTIAL: config diagnostics or skipped sources reduce coverage.")
     for server in sources.servers:
-        out.print(terminal_safe(f"{server_identity(server)} | source: {server.config_path}"))
+        out.print(
+            terminal_safe(f"{server_identity(server)} | source: {server.source_label} | {server.config_path}")
+        )
         if details:
             out.print(
                 terminal_safe(
@@ -206,5 +193,5 @@ def inspect(config: Path | None, include_discovered: bool, project: Path | None,
 @click.pass_context
 def demo(ctx: click.Context) -> None:
     """Review the bundled examples/sandbox synthetic fixture, config-only."""
-    click.echo("Demo: bundled examples/sandbox synthetic fixture; config-only, no discovery or connections.")
     ctx.invoke(check, config=Path(__file__).parent / "fixtures" / "demo-mcp-config.json")
+    click.echo("Demo: bundled examples/sandbox synthetic fixture; config-only, no discovery or connections.")

@@ -285,13 +285,16 @@ def test_each_hidden_unicode_character_is_detected(
 ) -> None:
     text = f"{'x' * 30}{char}{'y' * 100}"
     combined = text
-    expected_excerpt = f"[U+{ord(char):04X} at pos 30]: {render_invisibles(combined[20:90])!r}"
+    expected_excerpt = f"[U+{ord(char):04X} at pos 30]: {render_invisibles(combined)!r}"
     findings = InjectionDetector().scan_tool(make_tool("ordinary_tool", text))
     matching = [f for f in findings if f.pattern_name == pattern_name]
     assert [f.severity for f in matching] == [severity]
     assert matching[0].matched_text == expected_excerpt
+    assert matching[0].matched_span is not None
+    start, end = matching[0].matched_span
+    assert matching[0].matched_text[start:end] == render_invisibles(char)
     assert _pattern(pattern_name)._extract(char, char) == (
-        f"[U+{ord(char):04X} at pos 0]: {render_invisibles(char)!r}"
+        f"[U+{ord(char):04X} at pos 0]: {'⟦' + render_invisibles(char) + '⟧'!r}"
     )
 
 
@@ -307,19 +310,19 @@ def test_each_role_prefix_is_detected(prefix: str) -> None:
         f.pattern_name == "role_injection" and f.severity == InjectionSeverity.MEDIUM for f in findings
     )
     assert _role_check(prefix.lower(), prefix)
-    assert _role_extract(prefix.lower(), prefix) == prefix.lstrip("\n")
+    assert _role_extract(prefix.lower(), prefix) == f"⟦{prefix.lstrip(chr(10))}⟧"
     long_role_text = f"{prefix.lstrip(chr(10))}{'x' * 250}"
-    assert _role_extract(long_role_text.lower(), long_role_text) == long_role_text[:200]
+    assert _role_extract(long_role_text.lower(), long_role_text) == f"⟦{prefix.lstrip(chr(10))}⟧"
 
 
 def test_hidden_html_comment_rule_and_excerpt_are_detected() -> None:
     description = f"{'x' * 30}<!-- directive -->{'y' * 250}"
     findings = InjectionDetector().scan_tool(make_tool("ordinary_tool", description))
     matching = [finding for finding in findings if finding.pattern_name == "hidden_directive"]
-    combined = description
 
     assert [finding.severity for finding in matching] == [InjectionSeverity.MEDIUM]
-    assert matching[0].matched_text == combined[30:230]
+    assert matching[0].matched_text == "<!-- directive"
+    assert matching[0].matched_span == (0, 4)
 
 
 def test_static_rules_cover_tool_prompt_resource_and_server_scans() -> None:

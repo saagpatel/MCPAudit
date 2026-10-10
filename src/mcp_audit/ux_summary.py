@@ -4,8 +4,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol
 
+from pydantic import BaseModel
+
 from mcp_audit.models import ReviewAction as Action
-from mcp_audit.models import ReviewGrade, ReviewSummary
+from mcp_audit.models import (
+    ReviewActionDisplay,
+    ReviewGrade,
+    ReviewSummary,
+    ShadowingFinding,
+    TrifectaFinding,
+)
 
 __all__ = ["Action", "actions", "grade"]
 
@@ -49,6 +57,29 @@ def grade(report: AuditReport) -> str | None:
     return report.ensure_review_summary().grade
 
 
+def _display(
+    finding: object, audits: list[ServerAudit], sources: tuple[str, ...] = ()
+) -> ReviewActionDisplay:
+    from mcp_audit.terminal_summary import _action
+
+    assert isinstance(finding, BaseModel)
+    return _action(finding, audits, sources)
+
+
+def _manual_display(title: str, step: str, rule: str, audits: list[ServerAudit]) -> ReviewActionDisplay:
+    from mcp_audit.terminal_summary import _identity
+
+    return ReviewActionDisplay(
+        severity="low",  # The canonical action supplies severity when rendered.
+        title=title,
+        consequence="Review the recorded finding before use.",
+        step=step,
+        sources=tuple(dict.fromkeys(a.server.config_path for a in audits)),
+        identities=tuple(_identity(a) for a in audits),
+        rule=rule,
+    )
+
+
 def compute_summary(report: AuditReport) -> ReviewSummary:
     """Merge overlapping detector advice by server identity and action family.
 
@@ -62,7 +93,15 @@ def compute_summary(report: AuditReport) -> ReviewSummary:
     def owner_id(identity: tuple[str, ...]) -> str:
         return owners.setdefault(identity, f"owner-{len(owners) + 1:04d}")
 
-    def add(owner: str, family: str, severity: str, title: str, step: str, source: str) -> None:
+    def add(
+        owner: str,
+        family: str,
+        severity: str,
+        title: str,
+        step: str,
+        source: str,
+        display: ReviewActionDisplay | None = None,
+    ) -> None:
         key = (owner, family)
         if key not in grouped and step and family != "policy":
             key = next(
@@ -79,6 +118,7 @@ def compute_summary(report: AuditReport) -> ReviewSummary:
                 owner=owner,
                 severity=severity,
                 title=title,
+                terminal=display,
             )
         action = grouped[key]
         if ranks.get(severity, 2) < ranks.get(action.severity, 2):
@@ -87,6 +127,16 @@ def compute_summary(report: AuditReport) -> ReviewSummary:
             action.steps.append(step)
         if source and source not in action.sources:
             action.sources.append(source)
+        if display is not None and action.terminal is not None:
+            current = action.terminal
+            action.terminal = current.model_copy(
+                update={
+                    "severity": action.severity,
+                    "flags": tuple(dict.fromkeys((*current.flags, *display.flags))),
+                    "connected": current.connected or display.connected,
+                    "step": " ".join(dict.fromkeys((current.step, display.step))),
+                }
+            )
 
     for audit in report.audits:
         server = audit.server
@@ -101,6 +151,7 @@ def compute_summary(report: AuditReport) -> ReviewSummary:
                 f"Review what {server.name} can do",
                 finding.remediation,
                 f"{finding.rule_id}: {where}",
+                _display(finding, [audit]),
             )
         for injection in audit.injection_findings:
             add(
@@ -110,6 +161,7 @@ def compute_summary(report: AuditReport) -> ReviewSummary:
                 f"Review hidden instructions on {server.name}",
                 injection.remediation,
                 f"{injection.rule_id}: {where}",
+                _display(injection, [audit]),
             )
         outbound_findings: list[_Outbound] = [*audit.ssrf_findings, *audit.egress_findings]
         for outbound in outbound_findings:
@@ -120,6 +172,7 @@ def compute_summary(report: AuditReport) -> ReviewSummary:
                 f"Restrict where {server.name} can send requests",
                 outbound.remediation,
                 f"{outbound.rule_id}: {where}",
+                _display(outbound, [audit]),
             )
         other_findings: list[_Finding] = [
             *audit.annotation_findings,
@@ -138,6 +191,7 @@ def compute_summary(report: AuditReport) -> ReviewSummary:
                 f"{finding_with_rule.title}: {server.name}",
                 finding_with_rule.remediation,
                 f"{finding_with_rule.rule_id}: {where}",
+                _display(finding_with_rule, [audit]),
             )
         for drift in audit.drift_findings:
             add(
@@ -147,6 +201,7 @@ def compute_summary(report: AuditReport) -> ReviewSummary:
                 f"Review changes on {server.name}",
                 drift.remediation or "Compare the changed surface with your reviewed baseline.",
                 f"{drift.target_name}: {where}",
+                _display(drift, [audit]),
             )
         if audit.annotations_missing:
             add(
@@ -156,6 +211,12 @@ def compute_summary(report: AuditReport) -> ReviewSummary:
                 f"{server.name} has missing tool labels",
                 "Ask the server author to describe read-only and destructive behavior.",
                 where,
+                _manual_display(
+                    f"{server.name} has missing tool labels",
+                    "Ask the server author to describe read-only and destructive behavior.",
+                    "MCP005",
+                    [audit],
+                ),
             )
     for health in report.config_health_findings:
         add(
@@ -165,11 +226,36 @@ def compute_summary(report: AuditReport) -> ReviewSummary:
             health.summary,
             health.remediation,
             ", ".join(health.config_paths),
+            _display(
+                health,
+                [
+                    audit
+                    for audit in report.audits
+                    if (health.server_name is None or audit.server.name == health.server_name)
+                    and (not health.config_paths or audit.server.config_path in health.config_paths)
+                ],
+                tuple(health.config_paths),
+            ),
         )
     fleet_findings: list[_Finding] = [*report.fleet_trifecta_findings, *report.shadowing_findings]
     for fleet in fleet_findings:
+        if isinstance(fleet, TrifectaFinding):
+            names = {
+                name
+                for leg in (fleet.leg1_contributors, fleet.leg2_contributors, fleet.leg3_contributors)
+                for name, _ in leg
+            }
+        else:
+            assert isinstance(fleet, ShadowingFinding)
+            names = {name for name, _ in fleet.collisions}
         add(
-            owner_id(("fleet",)), fleet.rule_id, fleet.severity, fleet.title, fleet.remediation, fleet.rule_id
+            owner_id(("fleet",)),
+            fleet.rule_id,
+            fleet.severity,
+            fleet.title,
+            fleet.remediation,
+            fleet.rule_id,
+            _display(fleet, [audit for audit in report.audits if audit.server.name in names]),
         )
     if report.policy_result:
         for index, violation in enumerate(report.policy_result.violations):
@@ -193,10 +279,24 @@ def compute_summary(report: AuditReport) -> ReviewSummary:
                 message,
                 message + " Review this violation against your selected policy.",
                 violation.rule,
+                _manual_display(
+                    message,
+                    message + " Review this violation against your selected policy.",
+                    violation.rule,
+                    [report.audits[audit_index]]
+                    if audit_index is not None and 0 <= audit_index < len(report.audits)
+                    else [],
+                ),
             )
     findings = sorted(grouped.values(), key=lambda action: ranks.get(action.severity, 2))
+    cards: dict[tuple[tuple[str, ...], tuple[str, ...]], str] = {}
     for index, action in enumerate(findings, start=1):
         action.identity = f"action-{index:04d}"
+        if action.terminal is not None:
+            action.terminal = action.terminal.model_copy(update={"severity": action.severity})
+            key = (action.terminal.identities, action.terminal.sources)
+            # Preserve P2-2's visual card folding, bound before identifiers can collide.
+            action.card_group = cards.setdefault(key, f"card-{len(cards) + 1:04d}")
     counts = {severity: sum(action.severity == severity for action in findings) for severity in ranks}
     return ReviewSummary(
         actions=findings,
@@ -217,6 +317,8 @@ def _compute_grade(report: AuditReport, findings: list[Action]) -> ReviewGrade |
         return None
     metadata = report.coverage.get("metadata")
     if metadata is None or metadata.state != "complete":
+        return None
+    if report.warnings or any(entry.state in {"partial", "not_run"} for entry in report.coverage.values()):
         return None
     if any(audit.injection_findings for audit in report.audits) or any(
         finding.finding_type in {"secret_in_config", "shell_wrapper_launch"}
