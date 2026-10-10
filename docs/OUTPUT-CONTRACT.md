@@ -3,6 +3,91 @@
 MCPAudit reports are designed for local review and CI ingestion. Keep this
 contract stable unless a release note calls out a breaking change.
 
+## Credential-free authorization observations
+
+Eligible connected HTTP scans add `ServerAudit.authorization_probe` and, when
+present, `authorization_findings`. Both fields are omitted when absent.
+`--skip-connect` scans and project sources without `--connect-project-configs`
+never run the probe. `--config-only` only restricts configuration discovery to
+the `--config` file; without `--skip-connect` it still connects to HTTP servers
+and runs the probe, so use both flags for a scan that makes no requests. The
+report `schema_version`, existing findings, numeric scores, and connection status
+meanings are unchanged.
+
+The probe makes one `server/discover` POST to the configured endpoint with
+program-owned request headers and MCP 2026-07-28 request metadata. It never
+accepts configuration header values, credentials, cookies, or session IDs.
+Endpoints containing user information, query strings, or fragments are skipped
+with an unavailable warning. HTTP endpoints can be probed within the existing
+connection authority but produce A12. Probe failure does not establish that
+authorization is absent. The observation survives an SDK connection failure.
+
+`authorization_probe` records nullable `status`, `session_id_present` (presence
+only), and `jsonrpc_error_code`; `www_authenticate` is an array of parsed Bearer
+parameter maps. Every retained parameter passes redaction: `resource_metadata`,
+`scope`, and `error` use credential redaction, and other values are withheld.
+Raw headers, session values, cookies, and response bodies are never retained.
+`warnings` contains fixed reason codes, including blocked/unavailable metadata,
+invalid documents, timeout, and byte/fetch limits. `metadata_fetches` records
+only the redacted URL, nullable status/body byte count, and a fixed `reason`.
+SSE responses are closed after their headers with `probe_stream_not_read`;
+their JSON-RPC error code remains unknown.
+Any probe warning also adds a report-level `authorization_probe_incomplete`
+warning naming the affected server and fixed reason codes. Successful SDK
+enumeration retains `connection_status: connected`, but the report warning
+prevents a presentation letter grade and is visible in terminal output and HTML.
+Both SARIF profiles emit it as a warning-level tool execution notification with
+descriptor `MCP-AUTHORIZATION-PROBE-INCOMPLETE` and the structured warning in
+`properties`; it is incomplete coverage, not an authorization finding.
+
+On 401, metadata discovery uses HTTPS GET only, no credentials, proxy
+environment, redirects, cookies, or mutations; all DNS addresses must be
+public and a resolved address is pinned while TLS verifies the original host.
+IP literals and localhost metadata hosts are rejected. Limits are 64 KiB per
+body, 32 metadata fetch attempts, and 8 advertised authorization servers per
+probe, within the existing per-server connection deadline. The connected
+probe uses at most half the remaining time, capped at five seconds, reserving time
+for SDK enumeration. Completed observations and attempted fetch records survive
+probe or SDK timeouts. A challenged metadata URL must remain on the resource
+authority, matching the posture producer contract. RFC 9728 path/root and
+RFC 8414/OpenID discovery fallbacks are attempted in order; a binding mismatch
+stops use of that document.
+`WWW-Authenticate` is parsed with an RFC 9110 challenge tokenizer that decodes
+each quoted-pair exactly once. Metadata review, including well-known fallback
+and the absent-scope finding, runs only when the challenge list parsed
+completely and contained at most one `resource_metadata` parameter, inside a
+Bearer challenge that began with an auth-param. Anything else emits
+`challenge_parse_incomplete` and skips metadata review entirely: more than one
+field line, empty list elements (including a trailing comma), a parameter no
+challenge owns (before any scheme, after a bare scheme, or after a token68), a
+`resource_metadata` parameter outside a Bearer challenge, a duplicate parameter
+name in a Bearer challenge, a repeated `resource_metadata`, a token68 Bearer
+challenge, malformed tokens, quoted strings or quoted-pairs, a field value over
+8,192 characters, more than 32 parameters in a Bearer challenge, or more than 8
+Bearer challenges. Retained parameters are partial evidence and cannot establish
+that a metadata advertisement was absent. An empty `resource_metadata` value
+produces `challenge_metadata_ambiguous` without falling back to well-known
+metadata.
+
+Authorization rules are `MCPAUTH001` (A1, PRM missing, medium), `MCPAUTH002`
+(A2, absent scope guidance, low advisory), `MCPAUTH003` (A3, resource mismatch,
+medium), `MCPAUTH004` (A4, issuer mismatch, high), `MCPAUTH005` (A5, S256 absent,
+medium), `MCPAUTH006` (A6, DCR advertised without CIMD, low), `MCPAUTH007`
+(A7, RFC 9207 not advertised, low), and `MCPAUTH012` (A12, non-HTTPS, medium).
+Findings carry `rule_id`, `title`, `summary`, `remediation`, `severity`,
+`requirement_level=advisory`, `target_type`, `target_name`, and `reference_url`.
+They appear in JSON, terminal review actions/details, HTML, and SARIF; medium
+maps to SARIF warning and high to error. A1 requires observed 404/410 at every
+attempted PRM location; blocked or unavailable fetches are unknown. A2 does not
+compare challenge scopes with advertised supported scopes. A6 describes the
+advertisement only: pre-registration availability remains unknown. None of
+these observations establishes a completed OAuth flow or runtime security.
+
+The authorization posture and OAuth transcript labs use
+`mcp-authorization-2026-07-28`; legacy profiles remain accepted. Posture
+references may be reordered but must match a supported, profile-bound reference
+set with no duplicates or unrecognized URLs. Lab schema versions are unchanged.
+
 ## Visible finding suppressions
 
 `AuditReport.suppressed` is an additive array, defaulting to `[]` on legacy

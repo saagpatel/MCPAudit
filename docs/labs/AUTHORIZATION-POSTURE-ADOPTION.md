@@ -56,8 +56,9 @@ The v1 consumer accepts only:
 
 - `schema_version=McpAuthorizationPostureV1`;
 - `contract_version=1.0.0`;
-- specification profile `mcp-authorization-2025-11-25` with its fixed primary
-  references;
+- specification profile `mcp-authorization-2026-07-28` (or the legacy
+  `mcp-authorization-2025-11-25`) with a supported profile-bound reference set;
+  reference order is immaterial, but duplicates and unrecognized URLs fail;
 - one exact `official-mcp-registry-export` binding and manifest SHA-256;
 - HTTPS-only resource, metadata, issuer, and authorization endpoint fields;
 - bounded, current or unknown fetch evidence;

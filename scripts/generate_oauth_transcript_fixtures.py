@@ -32,7 +32,7 @@ def base(fixture_id: str, control_kind: str) -> dict[str, Any]:
         "synthetic": True,
         "fixture_id": fixture_id,
         "control_kind": control_kind,
-        "spec_profile": "mcp-authorization-2025-11-25+draft-2026-07-28",
+        "spec_profile": "mcp-authorization-2026-07-28",
         "intended_resource": RESOURCE,
         "intended_authorization_server": AUTHORITY,
         "registration": {

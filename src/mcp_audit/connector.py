@@ -31,6 +31,7 @@ from pydantic import BaseModel
 from mcp_audit import __version__
 from mcp_audit.agent_text import agent_visible_text
 from mcp_audit.models import (
+    AuthorizationProbeObservation,
     CanarySummary,
     CapabilityTarget,
     Confidence,
@@ -466,6 +467,32 @@ class ServerConnector:
         identity_era: str | None = None
         try:
             with anyio.move_on_after(self.timeout) as cancel_scope:
+                if config.transport == TransportType.HTTP and config.url:
+                    from mcp_audit.probe import probe_authorization
+
+                    # Reserve at least half the remaining budget for SDK enumeration.
+                    # Attach mutable evidence before awaiting so cancellation retains it.
+                    audit.authorization_probe = AuthorizationProbeObservation()
+                    remaining = max(0.0, cancel_scope.deadline - anyio.current_time())
+                    await probe_authorization(
+                        config.url,
+                        timeout=min(5.0, remaining / 2),
+                        observation=audit.authorization_probe,
+                        findings=audit.authorization_findings,
+                    )
+                    if audit.authorization_probe.warnings and self.scan_warnings is not None:
+                        reasons = ", ".join(dict.fromkeys(audit.authorization_probe.warnings))
+                        self.scan_warnings.append(
+                            ScanWarning(
+                                code="authorization_probe_incomplete",
+                                message=(
+                                    f"Server '{config.name}': authorization probe coverage is incomplete "
+                                    f"({reasons}). Review authorization independently "
+                                    "before trusting this result."
+                                ),
+                                servers=[config.name],
+                            )
+                        )
                 if config.transport == TransportType.STDIO:
                     capabilities = (
                         await self._connect_stdio(config, probe)
@@ -600,11 +627,9 @@ class ServerConnector:
                 audit.canary.status = "partial"
                 audit.canary.warnings.append("Canary session failed; coverage is incomplete.")
                 return audit
-            return ServerAudit(
-                server=config,
-                connection_status="failed",
-                connection_error=message,
-            )
+            audit.connection_status = "failed"
+            audit.connection_error = message
+            return audit
         finally:
             if audit.canary:
                 audit.canary.elapsed_seconds = time.monotonic() - started

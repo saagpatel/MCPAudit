@@ -27,6 +27,7 @@ _AUDIT_GROUPS = (
     "artifact_verify_findings",
     "pin_integrity_findings",
     "protocol_findings",
+    "authorization_findings",
     "drift_findings",
 )
 _FLEET_GROUPS = ("fleet_trifecta_findings", "shadowing_findings")

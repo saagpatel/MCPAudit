@@ -56,6 +56,72 @@ ANNOTATION_CONTRADICTION = FindingMetadata(
 )
 
 
+AUTHORIZATION_FINDINGS: dict[str, FindingMetadata] = {
+    rule: FindingMetadata(rule, title, severity, description, remediation)
+    for rule, title, severity, description, remediation in (
+        (
+            "MCPAUTH001",
+            "Protected-resource metadata missing",
+            "medium",
+            "Credential-free discovery returned 404 or 410 for every protected-resource metadata location.",
+            "Publish RFC 9728 protected-resource metadata and advertise its discovery location.",
+        ),
+        (
+            "MCPAUTH002",
+            "Challenge scope guidance absent",
+            "low",
+            "The 401 Bearer challenge did not provide scope guidance for this operation.",
+            "Advertise the least-privilege scopes required for this operation in the challenge.",
+        ),
+        (
+            "MCPAUTH003",
+            "Resource metadata mismatch",
+            "medium",
+            "The metadata resource does not exactly match the contacted MCP endpoint.",
+            "Bind protected-resource metadata to the intended resource; "
+            "review URI canonicalization manually.",
+        ),
+        (
+            "MCPAUTH004",
+            "Authorization issuer mismatch",
+            "high",
+            "The metadata issuer differs from the issuer used for discovery; "
+            "this document was not used further.",
+            "Correct the advertised issuer and metadata binding before any OAuth flow.",
+        ),
+        (
+            "MCPAUTH005",
+            "PKCE S256 not advertised",
+            "medium",
+            "Authorization metadata does not advertise PKCE S256.",
+            "Advertise and implement code_challenge_methods_supported including S256.",
+        ),
+        (
+            "MCPAUTH006",
+            "DCR-only registration advertisement",
+            "low",
+            "Metadata advertises dynamic registration without Client ID Metadata Document support; "
+            "pre-registration availability is unknown.",
+            "Support Client ID Metadata Documents or review separately available pre-registration.",
+        ),
+        (
+            "MCPAUTH007",
+            "RFC 9207 not advertised",
+            "low",
+            "Authorization metadata does not advertise authorization_response_iss_parameter_supported=true.",
+            "Advertise RFC 9207 issuer response support and include iss in authorization responses.",
+        ),
+        (
+            "MCPAUTH012",
+            "Non-HTTPS authorization endpoint",
+            "medium",
+            "A configured or advertised authorization-related endpoint does not use HTTPS.",
+            "Use HTTPS endpoints before sending credentials; review local development exceptions manually.",
+        ),
+    )
+}
+
+
 PROTOCOL_FINDINGS: dict[str, FindingMetadata] = {
     rule: FindingMetadata(rule, title, "low", description, remediation)
     for rule, title, description, remediation in (
@@ -1174,6 +1240,25 @@ FINDING_COPY.update(
             "Low severity does not certify security or full protocol conformance.",
         )
         for rule, metadata in PROTOCOL_FINDINGS.items()
+    }
+)
+
+FINDING_COPY.update(
+    {
+        rule: FindingCopy(
+            f"Your server's authorization needs review: {metadata.title.lower()}.",
+            metadata.description,
+            (
+                "Credential-free endpoint and public metadata observations need manual review.",
+                "Incorrect bindings or missing safeguards can affect OAuth client security.",
+                "Metadata advertisements do not prove how the server handles credentials.",
+            ),
+            metadata.remediation,
+            "About 5 minutes for an initial review",
+            "Advertisement or transport evidence only; no token, client registration, "
+            "authorization response, or runtime security was tested.",
+        )
+        for rule, metadata in AUTHORIZATION_FINDINGS.items()
     }
 )
 

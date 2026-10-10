@@ -112,7 +112,11 @@ the [checkup guide](docs/guides/checkup.md).
 
 Configuration-based findings describe declared access. A connected listing
 adds the tool metadata the server provides, but does not prove what the server
-will do later. The optional canary is bounded and exercises only eligible
+will do later. Connected HTTP scans also send one credential-free
+`server/discover` request and, on 401, review bounded public authorization
+metadata. The probe never uses configuration header values and does not run
+with `--skip-connect` or for project sources without connection opt-in.
+These observations do not prove a completed OAuth flow. The optional canary is bounded and exercises only eligible
 tools under its documented limits. See [How it works](docs/how-it-works.md)
 for the boundary between those observations.
 

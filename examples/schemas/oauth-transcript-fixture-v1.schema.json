@@ -1004,8 +1004,11 @@
       "$ref": "#/$defs/ScopeContext"
     },
     "spec_profile": {
-      "const": "mcp-authorization-2025-11-25+draft-2026-07-28",
-      "default": "mcp-authorization-2025-11-25+draft-2026-07-28",
+      "default": "mcp-authorization-2026-07-28",
+      "enum": [
+        "mcp-authorization-2025-11-25+draft-2026-07-28",
+        "mcp-authorization-2026-07-28"
+      ],
       "title": "Spec Profile",
       "type": "string"
     },
