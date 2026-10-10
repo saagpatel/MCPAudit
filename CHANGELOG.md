@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Terminate stdio process groups even after their leader exits, fail immediately
+  on transport parse errors with a safe protocol reason, and include a bounded,
+  redacted stderr tail in connection errors. Cap HTTP response bodies before
+  buffering and apply the remaining per-server wall clock to Python analysis.
+  Report shortened listing text only as `surface_truncated`, without incorrectly
+  claiming the complete item inventory could not be listed.
 - Bound stdio frames with a linear bytearray reader (16 MiB default), share a
   64 MiB serialized-byte budget across listing pages and surfaces, and cap
   retained per-item text at 256 KiB with `surface_truncated` and partial
