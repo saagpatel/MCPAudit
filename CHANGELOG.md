@@ -351,6 +351,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+#### Release workflows
+
+- Remove an invalid `cache-mode` job key from the PyPI and MCP Registry publish
+  workflows; caching stays disabled through `setup-uv` `enable-cache: false`.
+
 #### Configuration discovery and artifact destinations
 
 - Classify absent client config candidates before opening them in static review;
