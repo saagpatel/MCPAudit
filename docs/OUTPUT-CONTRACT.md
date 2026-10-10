@@ -995,6 +995,16 @@ MCP047 flags icon sources that are not HTTPS or `data:` and HTTPS icon origins
 that differ from the configured MCP endpoint. The checks only inspect strings
 and schema structure: they never fetch a schema or icon. Credential findings
 contain parameter names only, not values. `schema_version` remains unchanged.
+Traversal follows schema-bearing keywords and definition containers, excluding
+instance payloads such as `examples`, `default`, `const`, and `enum`. Local
+references establish reachability; unused definitions remain inspectable for
+unreachable header declarations and external references. Each schema's
+reachability and declaration walks inspect at most 2,048 distinct schema objects.
+Exhaustion emits `warnings[]` with `code: tool_schema_incomplete`,
+`check: metadata`, and reason `node_budget_exceeded`, making metadata coverage
+`partial` for the affected server. Findings from inspected nodes are retained;
+an empty findings list under this warning does not imply complete analysis.
+Unvisited branches are not declared unreachable when reachability is incomplete.
 
 `config_health_findings` is an additive top-level list for pre-connection config
 diagnostics. Findings include `finding_type`, `severity`, optional
