@@ -2,6 +2,7 @@
 
 ## User guides
 
+- [Command line flags, JSON output, and errors](cli.md)
 - [Start here](start-here.md)
 - [How it works](how-it-works.md)
 - [Reading results](reading-results.md)

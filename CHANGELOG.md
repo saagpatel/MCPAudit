@@ -27,9 +27,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Check locked dependency advisories with a bounded OSV query and explicit
   unavailable-feed failures. Saved-response tests verify failures and coverage;
   absence of OSV matches does not replace direct dependency security floors.
+- Preserve keyword capability evidence even when served annotations claim
+  read-only, non-destructive or closed-world behavior. Report explicit
+  declaration/evidence contradictions at MEDIUM-or-better keyword confidence
+  as MCP043 (`annotation_contradiction`), HIGH for destructive evidence and
+  MEDIUM otherwise, in additive JSON findings, SARIF and permission policy
+  gates. Canary eligibility retains its served-annotation veto.
+- Pin tool surfaces with canonical form v2, covering annotations, title, output
+  schema, icons and metadata; restore those fields for baseline comparison and
+  flag security-relevant annotation changes as HIGH MCP018 deltas. Share the
+  compact canonical serializer with canary surfaces. Keep legacy v1 hashes
+  active without automatic migration, warn about uncovered fields and label
+  them in refresh previews before an explicit upgrade.
+- Discover and report project-scope MCP configs without spawning their commands
+  or contacting their endpoints by default. `scan` and `watch` require
+  `--connect-project-configs` to connect them; `pin` (including refresh) and
+  `serve` tools also skip them. Workstation configs retain their connection
+  default, and the Action and pre-commit hook remain config-only by default.
+  Reports add `audits[].server.scope` and a `project_config_not_connected`
+  warning with the shell-quoted command and arguments (credentials redacted),
+  or the skipped remote endpoint.
+- Share NFKC, invisible-codepoint stripping and curated confusable folding
+  across static injection, runtime text and tool-name shadowing checks. Report
+  MEDIUM `OBFUSCATED_METADATA` for invisible classes or mixed-script confusables
+  with field pointers; preserve source evidence and display invisible characters
+  as codepoint markers in terminal, HTML and SARIF messages. Anchor bounded raw
+  evidence to the detected phrase or gated anomaly so stripped context and
+  benign non-Latin prefixes cannot displace it, including normalized HTML-comment
+  delimiters after long benign prefixes.
+- Share NFKC, invisible-codepoint stripping and curated confusable folding
+  across static injection, runtime text and tool-name shadowing checks. Report
+  MEDIUM `OBFUSCATED_METADATA` for invisible classes or mixed-script confusables
+  with field pointers; preserve source evidence and display invisible characters
+  as codepoint markers in evidence, terminal, HTML and SARIF messages. Anchor
+  bounded redacted evidence to the detected phrase or gated anomaly so stripped context and
+  benign non-Latin prefixes cannot displace it, including normalized HTML-comment
+  delimiters after long benign prefixes.
 
 ### Added
 
+- Align the additive `check`, `checkup`, and `inspect` surface with repeated
+  `--client` filters (hyphen or underscore spellings), JSON stdout/file output,
+  and recovery details for operational errors. Preserve legacy `scan --json`
+  path semantics. Identify post-scan and artifact-write failures by operation;
+  include recovery details for artifact validation errors while retaining exit 2.
 - Add a lazy CLI command registry with `lab <topic>`, `safeforge preinstall|run`,
   `skills scan`, and `baseline pin` families. Keep old spellings as hidden 2.x
   aliases; completion and `--help-all` list every registered path. Hide and
@@ -106,6 +147,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Label modern tool-surface session drift as a SEP-2567 protocol requirement;
   keep unavailable evidence separate from findings and retain partial coverage
   when the SDK rejects cache metadata.
+- Add static tool-schema findings for `x-mcp-header` declarations, credential parameters mirrored to headers, external `$ref` values, and icon source schemes/origins. These checks inspect served metadata only and never fetch schemas or icons. Traverse schema-bearing branches rather than instance payloads, validate null header declarations, and report exhausted traversal budgets as partial metadata coverage. Resolve local anchors and percent-encoded JSON Pointers; report unresolved local references as incomplete instead of asserting unreachable headers.
 
 ### Fixed
 
@@ -183,45 +225,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   length-changing lowercase text from aborting a server scan.
 - Defer static/runtime instruction vocabulary unification to the 2.9 structural
   detection and redaction redesign; retain main's independent phrase rules.
-
-### Security
-
-- Preserve keyword capability evidence even when served annotations claim
-  read-only, non-destructive or closed-world behavior. Report explicit
-  declaration/evidence contradictions at MEDIUM-or-better keyword confidence
-  as MCP043 (`annotation_contradiction`), HIGH for destructive evidence and
-  MEDIUM otherwise, in additive JSON findings, SARIF and permission policy
-  gates. Canary eligibility retains its served-annotation veto.
-- Pin tool surfaces with canonical form v2, covering annotations, title, output
-  schema, icons and metadata; restore those fields for baseline comparison and
-  flag security-relevant annotation changes as HIGH MCP018 deltas. Share the
-  compact canonical serializer with canary surfaces. Keep legacy v1 hashes
-  active without automatic migration, warn about uncovered fields and label
-  them in refresh previews before an explicit upgrade.
-- Discover and report project-scope MCP configs without spawning their commands
-  or contacting their endpoints by default. `scan` and `watch` require
-  `--connect-project-configs` to connect them; `pin` (including refresh) and
-  `serve` tools also skip them. Workstation configs retain their connection
-  default, and the Action and pre-commit hook remain config-only by default.
-  Reports add `audits[].server.scope` and a `project_config_not_connected`
-  warning with the shell-quoted command and arguments (credentials redacted),
-  or the skipped remote endpoint.
-- Share NFKC, invisible-codepoint stripping and curated confusable folding
-  across static injection, runtime text and tool-name shadowing checks. Report
-  MEDIUM `OBFUSCATED_METADATA` for invisible classes or mixed-script confusables
-  with field pointers; preserve source evidence and display invisible characters
-  as codepoint markers in terminal, HTML and SARIF messages. Anchor bounded raw
-  evidence to the detected phrase or gated anomaly so stripped context and
-  benign non-Latin prefixes cannot displace it, including normalized HTML-comment
-  delimiters after long benign prefixes.
-- Share NFKC, invisible-codepoint stripping and curated confusable folding
-  across static injection, runtime text and tool-name shadowing checks. Report
-  MEDIUM `OBFUSCATED_METADATA` for invisible classes or mixed-script confusables
-  with field pointers; preserve source evidence and display invisible characters
-  as codepoint markers in evidence, terminal, HTML and SARIF messages. Anchor
-  bounded redacted evidence to the detected phrase or gated anomaly so stripped context and
-  benign non-Latin prefixes cannot displace it, including normalized HTML-comment
-  delimiters after long benign prefixes.
 
 ### Changed
 

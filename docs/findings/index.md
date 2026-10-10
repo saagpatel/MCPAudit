@@ -690,6 +690,78 @@ How sure: An observed protocol advisory; unavailable evidence produces no findin
 
 see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp050
 
+## MCP051
+
+Your tool schema declares an invalid or unusable HTTP header mapping.
+
+What we saw: A static schema rule found a malformed, duplicate, non-primitive, or unreachable x-mcp-header annotation.
+
+Why it matters:
+
+1. A consumer interprets the header annotation.
+2. The declaration is ambiguous or unsupported.
+3. Consumers may disagree about the request sent.
+
+How to fix (About 5 minutes to review the schema): Use one RFC token header name on a reachable primitive schema property.
+
+How sure: A static schema check; it does not execute the tool or validate server behavior.
+
+see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp051
+
+## MCP052
+
+Your tool schema mirrors a credential-looking parameter to a request header.
+
+What we saw: A schema property name suggests credential material and carries x-mcp-header metadata.
+
+Why it matters:
+
+1. The parameter may carry a credential.
+2. The schema also maps it to a header.
+3. The credential may be handled inconsistently by consumers.
+
+How to fix (About 5 minutes to review the schema): Review whether the credential should be represented once and whether the server needs it.
+
+How sure: A name-based signal; the parameter value is never inspected.
+
+see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp052
+
+## MCP053
+
+Your tool schema refers to an external schema document.
+
+What we saw: An external $ref can make validation depend on remote content.
+
+Why it matters:
+
+1. A schema consumer follows the reference.
+2. The referenced document can change independently.
+3. Validation may differ across environments.
+
+How to fix (About 5 minutes to review the schema): Vendor the schema locally or replace the reference with a reviewed local definition.
+
+How sure: The reference is reported as text only; no network request is made.
+
+see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp053
+
+## MCP054
+
+Your tool icon uses a non-HTTPS or cross-origin source.
+
+What we saw: The served icon source is not same-origin HTTPS or an embedded data URI.
+
+Why it matters:
+
+1. A client loads the icon source.
+2. The source is not constrained to the server origin.
+3. The client may contact or display content from an unexpected host.
+
+How to fix (About 5 minutes to review the icon): Use a same-origin HTTPS URL or an appropriate embedded data URI.
+
+How sure: A static URI comparison; the icon is never requested.
+
+see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp054
+
 ## Configuration health
 
 Your server configuration needs review before you connect.

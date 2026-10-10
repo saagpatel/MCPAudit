@@ -67,6 +67,11 @@ prints the same entry offline. Explicit `--config` sources are labeled
 "explicit file; parsed as Claude-style config"; the parser identity does not
 establish which client uses that file.
 
+Static tool metadata checks also flag malformed MCP header annotations,
+credential parameters mapped to headers, external schema references and
+unexpected icon sources. These checks inspect served metadata without fetching
+schemas or icons.
+
 ## Use in CI
 
 MCPAudit can write SARIF and evaluate local policy files. Begin with
