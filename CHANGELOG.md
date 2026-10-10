@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add static tool-schema findings for `x-mcp-header` declarations, credential parameters mirrored to headers, external `$ref` values, and icon source schemes/origins. These checks inspect served metadata only and never fetch schemas or icons.
+
 - Add reasoned, optionally expiring `ignore:` finding exceptions and one-run
   `--ignore` / `--ignore-reason` options to `scan` and `check`. Keep original
   evidence and scores, list exception counts and reasons beside terminal coverage,
