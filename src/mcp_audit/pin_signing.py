@@ -386,6 +386,7 @@ def check_and_record_pinned_at(
         server = servers.setdefault(server_name, {})
         if not isinstance(server, dict):
             raise PinSigningError("Trusted pin keys have an invalid format.")
+        server["signature_required"] = True
         previous = server.get("last_seen_pinned_at")
         rolled_back = False
         if isinstance(previous, str):
@@ -395,8 +396,42 @@ def check_and_record_pinned_at(
                 raise PinSigningError("Trusted pin rollback state is invalid.") from exc
         if not rolled_back:
             server["last_seen_pinned_at"] = _timestamp(incoming)
-            _write_json(trusted_keys_path, data)
+        _write_json(trusted_keys_path, data)
         return rolled_back
+
+
+def signature_required(server_name: str, trusted_keys_path: Path = DEFAULT_TRUSTED_KEYS_PATH) -> bool:
+    """Read the signing expectation independently of editable pin contents."""
+    data = _read_trust_data(trusted_keys_path)
+    servers = data.get("servers", {})
+    if not isinstance(servers, dict):
+        raise PinSigningError("Trusted pin signing state has an invalid format.")
+    server = servers.get(server_name, {})
+    if not isinstance(server, dict):
+        raise PinSigningError("Trusted pin signing state has an invalid format.")
+    required = server.get("signature_required")
+    if "signature_required" in server:
+        if not isinstance(required, bool):
+            raise PinSigningError("Trusted pin signing state has an invalid format.")
+        return required
+    # Migrate existing verified-baseline history without trusting pin metadata.
+    return "last_seen_pinned_at" in server
+
+
+def record_signature_requirement(
+    server_name: str, required: bool, trusted_keys_path: Path = DEFAULT_TRUSTED_KEYS_PATH
+) -> None:
+    """Persist signing or a successfully written explicit downgrade."""
+    with _trusted_store_lock(trusted_keys_path):
+        data = _read_trust_data(trusted_keys_path)
+        servers = data.setdefault("servers", {})
+        if not isinstance(servers, dict):
+            raise PinSigningError("Trusted pin signing state has an invalid format.")
+        server = servers.setdefault(server_name, {})
+        if not isinstance(server, dict):
+            raise PinSigningError("Trusted pin signing state has an invalid format.")
+        server["signature_required"] = required
+        _write_json(trusted_keys_path, data)
 
 
 def _create_keypair(key_dir: Path) -> GeneratedKey:

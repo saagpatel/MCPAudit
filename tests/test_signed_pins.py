@@ -20,7 +20,7 @@ from mcp_audit.connector import ServerConnector
 from mcp_audit.engine import ScanOptions, run_scan
 from mcp_audit.models import PinVerificationState, ProtocolObservation, ServerAudit, ToolAnnotations, ToolInfo
 from mcp_audit.overrides import OverrideConfig
-from mcp_audit.pin_signing import PinSigningError, generate_keypair
+from mcp_audit.pin_signing import PinSigningError, generate_keypair, sign_document
 from mcp_audit.pinning import PinStore
 from mcp_audit.report import ReportGenerator
 from tests.conftest import make_server_config
@@ -215,11 +215,47 @@ def test_unsigned_escape_hatch_and_v1_warning(signed_store: PinStore) -> None:
     entry = data["servers"]["fixture"]
     entry["tools"]["list_items"].pop("pin_schema")
     signed_store.path.write_text(yaml.safe_dump(data))
-    legacy = PinStore(signed_store.path)
+    legacy = PinStore(signed_store.path, trusted_keys_path=signed_store._trusted_keys_path)
     verified = legacy.verification("fixture")
     assert verified is not None and verified.state == "schema_outdated"
     assert legacy.baseline_trusted("fixture")
     assert legacy.schema_warnings("fixture")[0].code == "pin_schema_outdated"
+
+
+def test_pin_write_records_signing_requirement_before_first_verification(signed_store: PinStore) -> None:
+    trust = json.loads(signed_store._trusted_keys_path.read_text())
+    assert trust["servers"]["fixture"] == {"signature_required": True}
+    data = yaml.safe_load(signed_store.path.read_text())
+    entry = data["servers"]["fixture"]
+    for field in ("signature", "signer", "surface_sha256", "canonical_bytes_len"):
+        entry.pop(field)
+    signed_store.path.write_text(yaml.safe_dump(data))
+    loaded = PinStore(signed_store.path, trusted_keys_path=signed_store._trusted_keys_path)
+    assert not loaded.baseline_trusted("fixture")
+
+
+def test_failed_unsigned_write_keeps_signature_requirement(
+    signed_store: PinStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mcp_audit.pin_signing import signature_required
+
+    before = signed_store.path.read_bytes()
+    trust = signed_store._trusted_keys_path
+    unsigned = PinStore(signed_store.path, unsigned=True, trusted_keys_path=trust)
+
+    def fail_write() -> None:
+        raise OSError("Synthetic pin replacement failure")
+
+    monkeypatch.setattr(unsigned, "_write", fail_write)
+    with pytest.raises(OSError, match="Synthetic pin replacement failure"):
+        unsigned.pin_server("fixture", [ToolInfo(name="list_items")])
+    assert signed_store.path.read_bytes() == before
+    assert signature_required("fixture", trust)
+    data = yaml.safe_load(before)
+    for field in ("signature", "signer", "surface_sha256", "canonical_bytes_len"):
+        data["servers"]["fixture"].pop(field)
+    signed_store.path.write_text(yaml.safe_dump(data))
+    assert not PinStore(signed_store.path, trusted_keys_path=trust).baseline_trusted("fixture")
 
 
 def test_missing_private_key_cannot_silently_downgrade_signed_pin(signed_store: PinStore) -> None:
@@ -231,13 +267,117 @@ def test_missing_private_key_cannot_silently_downgrade_signed_pin(signed_store: 
     assert signed_store.path.read_bytes() == before
 
 
-def test_status_prints_complete_copyable_public_key(signed_store: PinStore) -> None:
+def test_status_prints_complete_copyable_public_key(
+    signed_store: PinStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from mcp_audit.cli import main
 
-    public_key = signed_store.signing_status("fixture")["public_key"]
+    monkeypatch.setattr("mcp_audit.pin_signing.DEFAULT_TRUSTED_KEYS_PATH", signed_store._trusted_keys_path)
+    public_key = signed_store.signing_status("fixture")["trusted_public_key"]
     result = CliRunner().invoke(main, ["pin", "--pin-file", str(signed_store.path), "--status"])
     assert result.exit_code == 0
-    assert f"Public key for fixture (CI): {public_key}" in result.output
+    assert f"Trusted public key for fixture (CI): {public_key}" in result.output
+
+
+@pytest.mark.parametrize("strip_all", [False, True])
+@pytest.mark.parametrize("legacy", [False, True])
+def test_stripped_signature_is_untrusted_even_after_tool_schema_downgrade(
+    signed_store: PinStore, strip_all: bool, legacy: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mcp_audit.policy import evaluate_policy, load_policy
+
+    trust = signed_store._trusted_keys_path
+    assert signed_store.baseline_trusted("fixture")
+    data = yaml.safe_load(signed_store.path.read_text())
+    entry = data["servers"]["fixture"]
+    for field in (
+        ("signature", "signer", "surface_sha256", "canonical_bytes_len") if strip_all else ("signature",)
+    ):
+        entry.pop(field)
+    malicious = ToolInfo(name="list_items", description="Changed surface")
+    entry["tools"]["list_items"]["hash"] = signed_store.compute_hash(malicious)
+    entry["tools"]["list_items"]["snapshot"] = signed_store._tool_snapshot(malicious)
+    if legacy:
+        entry["tools"]["list_items"]["pin_schema"] = 1
+    signed_store.path.write_text(yaml.safe_dump(data))
+
+    class LocalStore(PinStore):
+        def __init__(self, path: Path = signed_store.path) -> None:
+            super().__init__(path, trusted_keys_path=trust)
+
+    class Connector:
+        def __init__(self, timeout: int) -> None:
+            self.scan_warnings: list[object] = []
+
+        async def connect(self, server: object) -> ServerAudit:
+            return ServerAudit(
+                server=make_server_config(name="fixture"),
+                connection_status="connected",
+                tools=[malicious],
+            )
+
+    monkeypatch.setattr(pinning, "PinStore", LocalStore)
+    monkeypatch.setattr(engine, "ServerConnector", Connector)
+    report = anyio.run(
+        partial(
+            run_scan,
+            ScanOptions(pin_check=True, pin_file=signed_store.path),
+            servers=[make_server_config(name="fixture")],
+        )
+    )
+    loaded = LocalStore()
+    assert not loaded.baseline_trusted("fixture")
+    assert loaded.check_drift("fixture", [malicious]) == []
+    assert loaded.baseline_tools("fixture") == []
+    assert loaded.baseline_config("fixture") is None
+    assert loaded.canary_baseline("fixture") is None
+    assert report.audits[0].pin_verification is not None
+    assert report.audits[0].pin_verification.state == "tampered_entry"
+    assert report.audits[0].pin_integrity_findings[0].rule_id == "MCP027"
+    assert "pin_unsigned" not in {w.code for w in report.warnings}
+    policy_file = signed_store.path.parent / "policy.yaml"
+    policy_file.write_text("fail_on:\n  pin_integrity: true\n")
+    assert not evaluate_policy(report, load_policy(policy_file)).passed
+
+    # A writer that verified before the edit must also re-read and refuse it.
+    for mutation in (signed_store.rotate_key, signed_store.resign):
+        with pytest.raises(PinSigningError, match="untrusted pin baseline"):
+            mutation()
+    with pytest.raises(PinSigningError, match="untrusted pin baseline"):
+        signed_store.pin_server("fixture", [malicious])
+    assert yaml.safe_load(signed_store.path.read_text()) == data
+
+
+@pytest.mark.parametrize("replace_signature", [False, True])
+def test_status_never_offers_embedded_attacker_key_for_ci(
+    signed_store: PinStore, monkeypatch: pytest.MonkeyPatch, replace_signature: bool
+) -> None:
+    from mcp_audit.cli import main
+
+    trust = signed_store._trusted_keys_path
+    original_key = signed_store.signing_status("fixture")["trusted_public_key"]
+    attacker = generate_keypair(signed_store.path.parent / "attacker-keys", trust.with_name("attacker.json"))
+    data = yaml.safe_load(signed_store.path.read_text())
+    entry = data["servers"]["fixture"]
+    entry["signer"] = {"kid": attacker.kid, "public_key": attacker.public_key}
+    if replace_signature:
+        entry["tools"]["list_items"]["snapshot"]["description"] = "Changed surface"
+        entry.update(
+            sign_document(signed_store._server_document("fixture", entry), attacker.private_key_path)
+        )
+    signed_store.path.write_text(yaml.safe_dump(data))
+    monkeypatch.setattr("mcp_audit.pin_signing.DEFAULT_TRUSTED_KEYS_PATH", trust)
+    result = CliRunner().invoke(main, ["pin", "--pin-file", str(signed_store.path), "--status"])
+    assert result.exit_code == 0
+    assert attacker.public_key not in result.output
+    if replace_signature:
+        assert "(CI):" not in result.output
+    else:
+        assert f"(CI): {original_key}" in result.output
+    result = CliRunner().invoke(main, ["pin", "--pin-file", str(signed_store.path), "--status", "--json"])
+    status = json.loads(result.output)["servers"][0]
+    assert status["public_key"] == attacker.public_key  # Existing field remains untrusted entry metadata.
+    assert status["trusted_public_key"] == (None if replace_signature else original_key)
 
 
 @pytest.mark.anyio

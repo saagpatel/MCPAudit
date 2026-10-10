@@ -228,7 +228,12 @@ class PinStore:
 
     def verification(self, server_name: str) -> PinVerification | None:
         """Verify an entry before exposing any saved baseline to a consumer."""
-        from mcp_audit.pin_signing import PinSigningError, check_and_record_pinned_at, verify_document
+        from mcp_audit.pin_signing import (
+            PinSigningError,
+            check_and_record_pinned_at,
+            signature_required,
+            verify_document,
+        )
 
         if server_name in self._verification:
             return self._verification[server_name]
@@ -244,7 +249,22 @@ class PinStore:
                 "Restore it from backup or re-review the server and re-pin."
             )
             return result
-        if "signature" not in entry and self.legacy_tool_names(server_name):
+        missing_required_signature = False
+        if "signature" not in entry:
+            try:
+                missing_required_signature = signature_required(server_name, self._trusted_keys_path)
+            except PinSigningError:
+                missing_required_signature = True
+            missing_required_signature |= any(
+                field in entry for field in ("signer", "surface_sha256", "canonical_bytes_len")
+            )
+        if missing_required_signature:
+            result = PinVerification(state=PinVerificationState.TAMPERED_ENTRY)
+            self._verification_messages[server_name] = (
+                f"Pin for {server_name} fails signature verification; a required signature is missing "
+                "or its trusted signing expectation is unavailable. Restore the baseline from backup."
+            )
+        elif "signature" not in entry and self.legacy_tool_names(server_name):
             result = PinVerification(state=PinVerificationState.SCHEMA_OUTDATED)
         else:
             try:
@@ -327,14 +347,30 @@ class PinStore:
         return warnings
 
     def signing_status(self, server_name: str) -> dict[str, object]:
+        from mcp_audit.pin_signing import PinSigningError, key_id, load_trusted_keys
+
         entry = self._data.get("servers", {}).get(server_name, {})
         signature = entry.get("signature", {})
         signer = entry.get("signer", {})
+        trusted_public_key = None
+        verified = self.verification(server_name)
+        if verified is not None and verified.state in {
+            PinVerificationState.VERIFIED,
+            PinVerificationState.RETIRED_KEY,
+        }:
+            try:
+                record = load_trusted_keys(self._trusted_keys_path).get(verified.kid or "", {})
+                public_key = record.get("public_key")
+                if isinstance(public_key, str) and key_id(bytes.fromhex(public_key)) == verified.kid:
+                    trusted_public_key = public_key
+            except (PinSigningError, ValueError):
+                trusted_public_key = None
         return {
             "schema": entry.get("pin_schema", 1 if self.legacy_tool_names(server_name) else 2),
             "signed": bool(signature),
             "kid": signature.get("kid") if isinstance(signature, dict) else None,
             "public_key": signer.get("public_key") if isinstance(signer, dict) else None,
+            "trusted_public_key": trusted_public_key,
         }
 
     def _server_document(self, server_name: str, entry: dict[str, Any]) -> dict[str, object]:
@@ -364,15 +400,21 @@ class PinStore:
         }
 
     def _sign_entry(self, server_name: str, entry: dict[str, Any]) -> None:
-        from mcp_audit.pin_signing import sign_document
+        from mcp_audit.pin_signing import record_signature_requirement, sign_document, signature_required
 
         was_signed = "signature" in entry
         for key in ("signature", "signer", "surface_sha256", "canonical_bytes_len"):
             entry.pop(key, None)
         if self._unsigned:
             return
-        if was_signed or self._explicit_key or self._signing_key.exists():
+        if (
+            was_signed
+            or self._explicit_key
+            or self._signing_key.exists()
+            or signature_required(server_name, self._trusted_keys_path)
+        ):
             entry.update(sign_document(self._server_document(server_name, entry), self._signing_key))
+            record_signature_requirement(server_name, True, self._trusted_keys_path)
 
     def rotate_key(self, grace_days: int = 30) -> str:
         """Reverify all signed entries before key replacement and re-signing."""
@@ -502,11 +544,20 @@ class PinStore:
         """
         if len({tool.name for tool in tools}) != len(tools):
             raise ValueError("Cannot pin duplicate tool names.")
+        from mcp_audit.pin_signing import record_signature_requirement, signature_required
+
         now = datetime.now(UTC).isoformat()
         with _file_lock(self._path):
             # Re-read under the lock: another process may have written pins
             # since this store loaded, and mutating a stale copy would erase them.
             self._data = self._load(strict=True)
+            if not self.baseline_trusted(server_name):
+                from mcp_audit.pin_signing import PinSigningError
+
+                raise PinSigningError(
+                    "Cannot pin through an untrusted pin baseline; restore it or explicitly clear "
+                    "the server's pin and re-review before pinning again."
+                )
             if "servers" not in self._data:
                 self._data["servers"] = {}
             server_entry: dict[str, Any] = self._data["servers"].setdefault(server_name, {"tools": {}})
@@ -550,11 +601,16 @@ class PinStore:
                 if protocol
                 else {"negotiated_version": None, "era": "unknown"}
             )
+            downgrade_signing = self._unsigned and (
+                "signature" in server_entry or signature_required(server_name, self._trusted_keys_path)
+            )
             self._sign_entry(server_name, server_entry)
             self._verification.pop(server_name, None)
             self._data["pinned_at"] = now
             self._data["pin_schema"] = 2
             self._write()
+            if downgrade_signing:
+                record_signature_requirement(server_name, False, self._trusted_keys_path)
 
     def check_drift(self, server_name: str, tools: list[ToolInfo]) -> list[DriftFinding]:
         """Compare current tool hashes against stored pins. Returns drift findings."""

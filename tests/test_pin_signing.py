@@ -19,8 +19,10 @@ from mcp_audit.pin_signing import (
     check_and_record_pinned_at,
     generate_keypair,
     key_id,
+    record_signature_requirement,
     rotate_key,
     sign_document,
+    signature_required,
     trust_key,
     verify_document,
 )
@@ -48,6 +50,39 @@ def sample_document() -> dict[str, object]:
             }
         ],
     }
+
+
+def test_signed_expectation_is_separate_and_explicitly_downgradable(tmp_path: Path) -> None:
+    trusted = tmp_path / "trusted.json"
+    assert not signature_required("legacy", trusted)
+    record_signature_requirement("fixture", True, trusted)
+    assert signature_required("fixture", trusted)
+    assert not signature_required("legacy", trusted)
+    record_signature_requirement("fixture", False, trusted)
+    assert not signature_required("fixture", trusted)
+
+
+def test_verified_history_requires_signatures_until_explicit_downgrade(tmp_path: Path) -> None:
+    trusted = tmp_path / "trusted.json"
+    trusted.write_text(
+        json.dumps({"keys": {}, "servers": {"fixture": {"last_seen_pinned_at": "2026-01-01T00:00:00Z"}}})
+    )
+    assert signature_required("fixture", trusted)
+    record_signature_requirement("fixture", False, trusted)
+    assert not signature_required("fixture", trusted)
+    assert json.loads(trusted.read_text())["servers"]["fixture"]["last_seen_pinned_at"]
+
+
+@pytest.mark.parametrize("state", ["unreadable", "invalid"])
+def test_signing_expectation_fails_closed_on_invalid_trust_state(tmp_path: Path, state: str) -> None:
+    trusted = tmp_path / "trusted.json"
+    trusted.write_text(
+        "{"
+        if state == "unreadable"
+        else json.dumps({"keys": {}, "servers": {"fixture": {"signature_required": "false"}}})
+    )
+    with pytest.raises(PinSigningError):
+        signature_required("fixture", trusted)
 
 
 def test_keygen_sign_and_verify_round_trip(signing_paths: tuple[Path, Path]) -> None:

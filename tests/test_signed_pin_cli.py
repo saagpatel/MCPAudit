@@ -303,3 +303,69 @@ def test_pin_write_reports_wrong_mode_signing_key_refusal(
     assert result.exit_code == 1
     assert "must be mode 0600 and owned by you." in " ".join(result.output.split())
     assert "pin-signing.key" in result.output
+
+
+@pytest.mark.parametrize("hash_field", ["package_hashes", "registry_artifact_hashes"])
+def test_plain_pin_cannot_resign_hashes_from_failed_baseline(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, hash_field: str
+) -> None:
+    trust = tmp_path / "trusted.json"
+    key = pin_signing.generate_keypair(tmp_path / "keys", trust)
+    monkeypatch.setattr(pin_signing, "DEFAULT_SIGNING_KEY_PATH", key.private_key_path)
+    monkeypatch.setattr(pin_signing, "DEFAULT_TRUSTED_KEYS_PATH", trust)
+    pin_file = tmp_path / "pins.yaml"
+    config = make_server_config(name="fixture")
+    tools = [make_tool("example", description="reviewed")]
+    store = PinStore(pin_file, signing_key=key.private_key_path, trusted_keys_path=trust)
+    store.pin_server(
+        "fixture",
+        tools,
+        config,
+        package_hashes={"npm:fixture": "sha256:good"},
+        artifact_hashes={"npm:fixture": "sha256:good"},
+    )
+    assert store.baseline_trusted("fixture")
+    data = yaml.safe_load(pin_file.read_text())
+    data["servers"]["fixture"]["config_snapshot"][hash_field]["npm:fixture"] = "sha256:edited"
+    data["servers"]["fixture"]["signature"]["sig"] = "invalid-signature"
+    pin_file.write_text(yaml.safe_dump(data))
+    before = pin_file.read_bytes()
+    synthetic_config = tmp_path / "synthetic.json"
+    synthetic_config.write_text('{"mcpServers": {"fixture": {"command": "fixture"}}}\n')
+
+    async def fake_scan(options: ScanOptions, *args: object, **kwargs: object) -> AuditReport:
+        assert options.config_only and options.extra_config == str(synthetic_config)
+        return AuditReport(
+            scan_timestamp=datetime.now(UTC),
+            hostname="test-host",
+            os_platform="test-os",
+            servers_discovered=1,
+            servers_connected=1,
+            servers_failed=0,
+            total_tools=1,
+            high_risk_servers=0,
+            scan_duration_seconds=0.0,
+            audits=[ServerAudit(server=config, tools=tools, connection_status="connected")],
+        )
+
+    monkeypatch.setattr("mcp_audit.pin_cli.run_scan", fake_scan)
+    result = CliRunner().invoke(
+        cli.main,
+        [
+            "pin",
+            "--server",
+            "fixture",
+            "--config",
+            str(synthetic_config),
+            "--config-only",
+            "--pin-file",
+            str(pin_file),
+        ],
+    )
+    assert result.exit_code == 1
+    assert "untrusted pin baseline" in " ".join(result.output.split())
+    assert pin_file.read_bytes() == before
+    # The library guard must reverify even when this instance cached success.
+    with pytest.raises(pin_signing.PinSigningError, match="untrusted pin baseline"):
+        store.pin_server("fixture", tools, config)
+    assert pin_file.read_bytes() == before

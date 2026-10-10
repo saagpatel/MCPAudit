@@ -829,14 +829,14 @@ def _render_pin_status(store: object, json_status: bool) -> None:
 
     console.print(table)
     for status in statuses:
-        public_key = store.signing_status(status.server_name).get("public_key")
+        public_key = store.signing_status(status.server_name).get("trusted_public_key")
         if (
             isinstance(public_key, str)
             and len(public_key) == 64
             and all(c in "0123456789abcdef" for c in public_key)
         ):
             # Plain output keeps a copyable CI key intact on narrow terminals.
-            click.echo(f"Public key for {strip_controls(status.server_name)} (CI): {public_key}")
+            click.echo(f"Trusted public key for {strip_controls(status.server_name)} (CI): {public_key}")
 
 
 def _configured_pin_server_names(extra_config: str | None, config_only: bool) -> set[str]:
