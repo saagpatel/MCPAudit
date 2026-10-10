@@ -14,7 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   evidence and scores, list exception counts and reasons beside terminal coverage,
   and add `suppressed[]` to JSON. Policies can forbid exceptions with
   `allow_ignores: false`; coverage failures remain active and HIGH one-run
-  exceptions require a reason.
+  exceptions require a reason. Exact injection selectors fall back to the tool
+  name when the optional target name is unset or empty.
 
 - Add offline `explain` and a generated finding reference with plain-English
   consequences, initial repair estimates, confidence limits and reference links.

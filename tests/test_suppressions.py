@@ -13,7 +13,7 @@ from pydantic import ValidationError
 from mcp_audit import check_cli, cli
 from mcp_audit.cli import main
 from mcp_audit.engine import ScanOptions, run_scan
-from mcp_audit.models import AuditReport, CheckCoverage
+from mcp_audit.models import AuditReport, CheckCoverage, InjectionFinding, InjectionSeverity
 from mcp_audit.overrides import OverrideApplier, OverrideConfig, load_override_config
 from mcp_audit.policy import PolicyConfig, evaluate_policy, load_policy
 from mcp_audit.report import ReportGenerator
@@ -156,6 +156,40 @@ def test_fleet_server_and_tool_must_match_same_contributor() -> None:
     assert not report.suppressed
     apply_suppressions(report, [_entry(server="two", tool="beta")])
     assert len(report.suppressed) == 1
+
+
+@pytest.mark.parametrize("target_name", [None, "", "search-prompt"])
+def test_exact_injection_ignore_uses_target_name_or_tool_name(target_name: str | None) -> None:
+    report = _shadow_report()
+    audit = report.audits[0]
+    finding = InjectionFinding(
+        tool_name="search",
+        severity=InjectionSeverity.HIGH,
+        pattern_name="ignore_instructions",
+        matched_text="Ignore previous instructions",
+        description="Synthetic injection finding",
+    )
+    assert finding.target_name is None
+    if target_name is not None:
+        finding.target_name = target_name
+    audit.injection_findings = [finding]
+    original = audit.model_dump(mode="json")
+    policy = PolicyConfig(fail_on_injection_severity="high")
+    assert not evaluate_policy(report, policy).passed
+
+    wrong_tool = "search" if target_name else "other"
+    apply_suppressions(report, [_entry(rule=finding.rule_id, server=audit.server.name, tool=wrong_tool)])
+    assert not report.suppressed
+    assert not evaluate_policy(report, policy).passed
+
+    apply_suppressions(
+        report, [_entry(rule=finding.rule_id, server=audit.server.name, tool=target_name or "search")]
+    )
+    assert len(report.suppressed) == 1
+    assert report.suppressed[0].finding_path == "/audits/0/injection_findings/0"
+    assert report.suppressed[0].rule_id == finding.rule_id
+    assert evaluate_policy(report, policy).passed
+    assert audit.model_dump(mode="json") == original
 
 
 def test_ignore_reason_redacts_before_truncation() -> None:

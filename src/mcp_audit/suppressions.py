@@ -77,7 +77,7 @@ def _finding(path: str, item: BaseModel, server: str = "") -> _Finding:
     data: dict[str, object] = item.model_dump(mode="json")
     rule = data.get("rule_id", "MCP009")
     severity = data.get("severity", "medium")
-    target = data.get("target_name", data.get("tool_name", ""))
+    target = data.get("target_name") or data.get("tool_name", "")
     targets = [(server, target if isinstance(target, str) else "")]
     for key in ("collisions", "leg1_contributors", "leg2_contributors", "leg3_contributors"):
         contributors = data.get(key)
