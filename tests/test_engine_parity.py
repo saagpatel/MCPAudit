@@ -45,7 +45,16 @@ def _report_hashes(report: AuditReport) -> dict[str, str]:
         "sarif": json.dumps(SarifGenerator().generate(stable), indent=2).encode("utf-8"),
         "html": HtmlReportGenerator().generate(stable).encode("utf-8"),
     }
-    return {name: hashlib.sha256(output).hexdigest() for name, output in outputs.items()}
+    return {name: hashlib.sha256(_location_free(output)).hexdigest() for name, output in outputs.items()}
+
+
+def _location_free(output: bytes) -> bytes:
+    """Hash outputs independent of the checkout location (SARIF resolves paths to file URIs)."""
+    for root in {ROOT, Path.cwd().resolve()}:
+        output = output.replace(root.as_uri().encode(), b"file:///REPO").replace(
+            str(root).encode(), b"<REPO>"
+        )
+    return output
 
 
 def _engine_hashes() -> dict[str, dict[str, str]]:
@@ -203,7 +212,10 @@ def test_cli_adapter_files_match_pre_extraction_sha256(
     baseline = cast(dict[str, object], FIXTURE["baseline_output_sha256"])
     cli_files = cast(dict[str, object], baseline["cli_files"])
     expected = cast(dict[str, object], cli_files[relative_path])
-    observed = {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in output_paths.values()}
+    observed = {
+        path.name: hashlib.sha256(_location_free(path.read_bytes())).hexdigest()
+        for path in output_paths.values()
+    }
     assert observed == {name: expected[name] for name in output_paths}
     assert exit_code == expected["exit_code"]
 

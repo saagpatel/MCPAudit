@@ -118,22 +118,22 @@
     "engine_reports": {
       "config:examples/configs/popular-public-servers.json": {
         "json": "1be15686dc638d38b12833d7af13a4347234b3d61f3229db2095977e3ddb508d",
-        "sarif": "e3982d998ee953e5c46630fdb10a7ff6c2e9bb7d8f362176aa971dfc3ebe364f",
+        "sarif": "24741ad5f90c1f4df8e33fa188150ba6a36f07728700f1b5ced86375045e8923",
         "html": "8ae868f4fb187d31fb336174a47b92edee937e6abb088777cebc78505bac7a70"
       },
       "config:examples/sandbox/fixtures/synthetic-mcp-config.json": {
         "json": "3a43743b48889ac4350b2a7b7d52e7bc648313a4a8f905e9fadda55917df7551",
-        "sarif": "1952e72bc98a0966af6d98c1dc2e47fec021fdc1b4360407c63f21110b848633",
+        "sarif": "2a746e838cf18fea03ee5dfaa8bd41dbd156ae3bea2f8e20ae3a3938076f64b6",
         "html": "e87a34ce904d0f2ddde79b62a8aeb6cf4beeba47e142093f72584fc90e5d6027"
       },
       "connected": {
         "json": "aa17c93a0c993aa4b5ca2c59c1580749cdffb8d4a7cd9f499aaf5f11ffd8a4c7",
-        "sarif": "2052837432d6653ff8ddf0fe4869e12dd8b355b916c5cc0e5c6a3c7f853102e5",
+        "sarif": "f9e0510be51292b5f22221d4596a836b834fafcab2c99e244d91e498833e29e6",
         "html": "e5e4094b3993fd83efb792d571781355dd4cb53c663ace53a04da36be8f2c0f3"
       },
       "connected_error_isolation": {
         "json": "84c2cf03e50fbbef089fe0b4a03fd4205a0b80d27ae2ce9081e98c3a4e798f8e",
-        "sarif": "31ba0fd107ef28a196480667b872b9fbf11841ead4018deb6d6675fae615cb20",
+        "sarif": "e22b236febc84e4c2f419e7870d44e3a8ede9a106eadb1023c255392013facf5",
         "html": "9ccbfdff430d73ffe842bba10ab8753e97b5148efe16acdb435296b89d2b8327"
       }
     },
@@ -146,7 +146,7 @@
       },
       "examples/sandbox/fixtures/config-only-report.json": {
         "report.json": "eec3b27404cf82d6c10ea45573b3af9a5eec808d70f627557c7885b4abd1e1c0",
-        "report.sarif": "069e32558b36a83664b7f58614e9e954e496861a47a961287733708c19818796",
+        "report.sarif": "9f643f9c3ada3c216f2439df25d9b9ffbe09d0e1922c4baccd1b544d9a7904db",
         "report.html": "91377ab3a8dc22e8244f8a134c83386a8243dc69c9bff1390f3f6bc3ee522c72",
         "exit_code": 0
       },
