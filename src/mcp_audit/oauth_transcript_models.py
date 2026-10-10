@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 FIXTURE_SCHEMA: Final = "mcpaudit.oauth-transcript.fixture.v1"
 REPORT_SCHEMA: Final = "mcpaudit.oauth-transcript.report.v1"
-SPEC_PROFILE: Final = "mcp-authorization-2025-11-25+draft-2026-07-28"
+SPEC_PROFILE: Final = "mcp-authorization-2026-07-28"
 MAX_URL_LENGTH: Final = 2_048
 MAX_OBSERVATIONS: Final = 64
 MAX_CREDENTIAL_RECORDS: Final = 8
@@ -434,7 +434,9 @@ class OAuthTranscriptFixture(StrictModel):
     synthetic: Literal[True]
     fixture_id: str = Field(pattern=r"^[a-z0-9][a-z0-9._-]{2,127}$")
     control_kind: Literal["vulnerable", "negative", "near_miss", "special"]
-    spec_profile: Literal["mcp-authorization-2025-11-25+draft-2026-07-28"] = SPEC_PROFILE
+    spec_profile: Literal["mcp-authorization-2025-11-25+draft-2026-07-28", "mcp-authorization-2026-07-28"] = (
+        SPEC_PROFILE
+    )
     intended_resource: str
     intended_authorization_server: str
     registration: RegistrationSelection

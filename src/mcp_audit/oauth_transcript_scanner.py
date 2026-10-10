@@ -101,7 +101,7 @@ _RULES: dict[str, RuleDefinition] = {
         "Incomplete or unverifiable OAuth transcript evidence",
         "Supply a complete redacted synthetic observation for the missing binding; do not infer a pass.",
         (
-            "MCP Authorization 2025-11-25",
+            "MCP Authorization 2026-07-28",
             "RFC 9728 Sections 3.3 and 5",
         ),
     ),
@@ -112,7 +112,7 @@ _RULES: dict[str, RuleDefinition] = {
         "Use the latest 401 resource_metadata location, validate the protected resource identity, and "
         "validate authorization-server metadata against the selected issuer before authorization.",
         (
-            "MCP Authorization 2025-11-25: Authorization Server Discovery",
+            "MCP Authorization 2026-07-28: Authorization Server Discovery",
             "RFC 9728 Sections 3.3, 5.1, and 5.2",
             "RFC 8414 Section 3.3",
         ),
@@ -124,8 +124,8 @@ _RULES: dict[str, RuleDefinition] = {
         "Send the canonical MCP resource in authorization and token requests and reject token evidence "
         "unless the protected resource is an observed intended audience.",
         (
-            "MCP Authorization 2025-11-25: Resource Parameter Implementation",
-            "MCP Authorization 2025-11-25: Token Audience Binding and Validation",
+            "MCP Authorization 2026-07-28: Resource Parameter Implementation",
+            "MCP Authorization 2026-07-28: Token Audience Binding and Validation",
             "RFC 8707 Section 2",
         ),
     ),
@@ -136,7 +136,7 @@ _RULES: dict[str, RuleDefinition] = {
         "Record the validated issuer per request, compare every present or advertised-required iss value "
         "with exact string equality, and reject mismatches before sending the code to a token endpoint.",
         (
-            "MCP Authorization draft retrieved 2026-07-28: Authorization Response Validation",
+            "MCP Authorization 2026-07-28: Authorization Response Validation",
             "RFC 9207 Sections 2.3 and 2.4",
         ),
     ),
@@ -147,7 +147,7 @@ _RULES: dict[str, RuleDefinition] = {
         "Key persisted pre-registered, dynamically registered, and user-supplied client state by the "
         "validated issuer and re-register or stop when protected-resource metadata selects another issuer.",
         (
-            "MCP Authorization draft retrieved 2026-07-28: Authorization Server Binding",
+            "MCP Authorization 2026-07-28: Authorization Server Binding",
             "RFC 6749 Section 2.2",
             "RFC 7591 Sections 1 and 3.2.1",
         ),
@@ -159,8 +159,8 @@ _RULES: dict[str, RuleDefinition] = {
         "Use pre-registration first when available, otherwise CIMD when advertised, and use DCR only as "
         "a supported deprecated fallback with the client kind's appropriate application_type.",
         (
-            "MCP Authorization 2025-11-25: Client Registration Approaches",
-            "MCP Authorization draft retrieved 2026-07-28: Client Registration",
+            "MCP Authorization 2026-07-28: Client Registration Approaches",
+            "MCP Authorization 2026-07-28: Client Registration",
             "OpenID Connect Dynamic Client Registration 1.0 Section 2",
         ),
     ),
@@ -171,8 +171,8 @@ _RULES: dict[str, RuleDefinition] = {
         "Treat the current resource challenge as authoritative, retain previously granted scopes only "
         "during reauthorization, and do not silently widen or drop the resulting scope set.",
         (
-            "MCP Authorization 2025-11-25: Scope Selection Strategy",
-            "MCP Authorization draft retrieved 2026-07-28: Scope Selection Strategy",
+            "MCP Authorization 2026-07-28: Scope Selection Strategy",
+            "MCP Authorization 2026-07-28: Scope Selection Strategy",
             "RFC 6750 Section 3",
         ),
     ),
@@ -183,7 +183,7 @@ _RULES: dict[str, RuleDefinition] = {
         "Validate the authorization-request redirect against registration, require the observed response "
         "at that same URI, and send the identical URI during authorization-code redemption.",
         (
-            "MCP Authorization 2025-11-25: Open Redirection",
+            "MCP Authorization 2026-07-28: Open Redirection",
             "RFC 6749 Sections 3.1.2.3, 4.1.3, and 10.6",
             "RFC 8252 Sections 7.3 and 8.4",
         ),

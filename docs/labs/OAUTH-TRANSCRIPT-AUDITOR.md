@@ -10,16 +10,15 @@ credential store.
 ## Specification profile
 
 The v1 contract is pinned to
-`mcp-authorization-2025-11-25+draft-2026-07-28`:
+`mcp-authorization-2026-07-28` (legacy
+`mcp-authorization-2025-11-25+draft-2026-07-28` fixtures remain accepted):
 
-- [MCP Authorization 2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization)
-  supplies the published discovery, resource-indicator, token-audience, client
+- [MCP Authorization 2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization)
+  supplies the final authorization, discovery, issuer-response, resource,
   registration, and scope requirements.
-- The [current MCP Authorization draft](https://modelcontextprotocol.io/specification/draft/basic/authorization),
-  retrieved 2026-07-28, supplies authorization-response `iss` validation.
-  Its [discovery](https://modelcontextprotocol.io/specification/draft/basic/authorization/authorization-server-discovery)
-  and [client registration](https://modelcontextprotocol.io/specification/draft/basic/authorization/client-registration)
-  pages supply issuer-bound credential and `application_type` requirements.
+- Its [discovery](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization/authorization-server-discovery)
+  and [client registration](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization/client-registration)
+  pages supply issuer-bound credential and application-type requirements.
 - Relevant primary standards are
   [RFC 9728](https://datatracker.ietf.org/doc/html/rfc9728),
   [RFC 8414](https://datatracker.ietf.org/doc/html/rfc8414),
@@ -28,9 +27,8 @@ The v1 contract is pinned to
   [RFC 7591](https://datatracker.ietf.org/doc/html/rfc7591), and
   [OpenID Connect Dynamic Client Registration 1.0](https://openid.net/specs/openid-connect-registration-1_0.html).
 
-The draft retrieval date is part of the profile because draft text can change.
-New normative behavior requires a new explicit profile; it is not silently
-folded into v1.
+The final specification date is part of the profile. Legacy fixtures remain
+accepted; the profile update does not add PKCE or live OAuth verification.
 
 ## Requirement classification
 
@@ -40,10 +38,10 @@ folded into v1.
 | RFC 8707 `resource` in authorization and token requests | required by MCP |
 | Server-side token audience validation | required by MCP; only supplied synthetic evidence is checked |
 | Present `iss` comparison, and required `iss` when metadata advertises support | required |
-| Issuer binding for persisted pre-registered, DCR, and user-supplied credentials | required in the pinned MCP draft |
+| Issuer binding for persisted pre-registered, DCR, and user-supplied credentials | required in the pinned MCP specification |
 | Pre-registration / CIMD / DCR / manual selection priority | recommended |
-| Dynamic Client Registration | deprecated in the pinned draft, but still allowed as a supported fallback |
-| DCR `application_type` appropriate to native/web client kind | required by the pinned MCP draft |
+| Dynamic Client Registration | deprecated in the pinned specification, but still allowed as a supported fallback |
+| DCR `application_type` appropriate to native/web client kind | required by the pinned MCP specification |
 | Challenge-first least-privilege scope selection | recommended; silent drops and cross-resource attribution are violations |
 | Registered, received, and redemption-time redirect URI binding | required; native loopback registration permits only the RFC 8252 port exception |
 | Token signatures, PKCE correctness, IdP integrity, consent, and production authorization | unsupported |

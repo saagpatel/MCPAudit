@@ -14,12 +14,16 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 INPUT_SCHEMA: Final = "McpAuthorizationPostureV1"
 INPUT_CONTRACT_VERSION: Final = "1.0.0"
 REPORT_SCHEMA: Final = "mcpaudit.authorization-posture.report.v1"
-SPEC_PROFILE: Final = "mcp-authorization-2025-11-25"
+SPEC_PROFILE: Final = "mcp-authorization-2026-07-28"
 SPEC_REFERENCES: Final = [
-    "https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization",
+    "https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization",
     "https://datatracker.ietf.org/doc/html/rfc9728",
     "https://datatracker.ietf.org/doc/html/rfc8414",
     "https://openid.net/specs/openid-connect-discovery-1_0.html",
+]
+SPEC_REFERENCE_SETS: Final = [
+    SPEC_REFERENCES,
+    [reference.replace("2026-07-28", "2025-11-25") for reference in SPEC_REFERENCES],
 ]
 MAX_URL_LENGTH: Final = 2_048
 MAX_REASON_CODES: Final = 32
@@ -136,12 +140,19 @@ def _expected_authorization_metadata_url(issuer: str, discovery: str) -> str:
 
 
 class ProducerSpecification(StrictModel):
-    profile: Literal["mcp-authorization-2025-11-25"]
+    profile: Literal["mcp-authorization-2025-11-25", "mcp-authorization-2026-07-28"]
     references: list[str] = Field(min_length=4, max_length=4)
 
     @model_validator(mode="after")
     def references_match_profile(self) -> ProducerSpecification:
-        if self.references != SPEC_REFERENCES:
+        supported = [
+            references
+            for references in SPEC_REFERENCE_SETS
+            if self.profile.removeprefix("mcp-authorization-") in references[0]
+        ]
+        if len(set(self.references)) != len(self.references) or not any(
+            set(self.references) == set(references) for references in supported
+        ):
             raise ValueError("specification references do not match the contract profile")
         return self
 

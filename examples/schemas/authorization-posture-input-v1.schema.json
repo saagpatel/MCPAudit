@@ -505,7 +505,10 @@
       "additionalProperties": false,
       "properties": {
         "profile": {
-          "const": "mcp-authorization-2025-11-25",
+          "enum": [
+            "mcp-authorization-2025-11-25",
+            "mcp-authorization-2026-07-28"
+          ],
           "title": "Profile",
           "type": "string"
         },
