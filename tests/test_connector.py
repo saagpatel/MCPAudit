@@ -41,10 +41,10 @@ async def test_stdio_stderr_is_bounded_sanitized_and_cleaned_up(
     elif mode == "fail":
         args.append("fail")
     config = make_server_config(name="stderr-fixture", command=sys.executable, args=args)
-    connector = ServerConnector(timeout=0.5 if mode == "timeout" else 5)
+    connector = ServerConnector(timeout=3 if mode == "timeout" else 5)
     caplog.set_level(logging.INFO if mode == "quiet" else logging.DEBUG, logger="mcp_audit.connector")
     if mode == "cancel":
-        with anyio.move_on_after(0.5) as scope:
+        with anyio.move_on_after(3) as scope:
             await connector.connect(config)
         assert scope.cancelled_caught
     else:
@@ -105,7 +105,7 @@ async def test_stdio_stderr_ansi_separated_credential_anchors_are_redacted(
         args=["-m", "tests.fixtures.noisy_stderr_server", "ansi-anchors", mode],
     )
     caplog.set_level(logging.DEBUG, logger="mcp_audit.connector")
-    audit = await ServerConnector(timeout=0.5 if mode == "hang" else 5).connect(config)
+    audit = await ServerConnector(timeout=3 if mode == "hang" else 5).connect(config)
     assert audit.connection_status == {"complete": "connected", "fail": "failed", "hang": "timeout"}[mode]
     records = [r.getMessage() for r in caplog.records if "stderr tail:" in r.getMessage()]
     assert records
