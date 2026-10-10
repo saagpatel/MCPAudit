@@ -43,6 +43,10 @@ DEFAULT_PIN_PATH = Path.home() / ".mcp-audit-pins.yaml"
 # corrupted or hostile file cannot exhaust memory. Real baselines are a few KB.
 _MAX_PIN_FILE_BYTES = 10 * 1024 * 1024
 TOOL_SURFACE_SCHEMA = "mcpaudit.tool-surface.v2"
+PIN_MANIFEST_SCHEMA = "mcpaudit.pin-manifest.v1"
+# Reserved key in a canary pin baseline: legacy v1 tool names whose live
+# surface is not covered by the signed v2 rows and is excluded from comparison.
+CANARY_UNCOVERED_TOOLS_KEY = "uncovered_legacy_tools"
 
 
 def canonical_tool_surface(tool: ToolInfo) -> dict[str, object]:
@@ -202,10 +206,12 @@ class PinStore:
         )
         self._unsigned = unsigned
         self._trusted_keys_path = trusted_keys_path or DEFAULT_TRUSTED_KEYS_PATH
-        self._verification: dict[str, PinVerification] = {}
+        self._verification: dict[str, PinVerification | None] = {}
         self._verification_messages: dict[str, str] = {}
         self._rollback_warnings: dict[str, list[tuple[str, str]]] = {}
         self._keys_trusted_cache: bool | None = None
+        self._entry_results: dict[str, PinVerification | None] = {}
+        self._manifest_cache: tuple[str, dict[str, str]] | None = None
         self._read_error: str | None = None
         self._data: dict[str, Any] = self._load()
 
@@ -230,7 +236,25 @@ class PinStore:
     # ------------------------------------------------------------------
 
     def verification(self, server_name: str) -> PinVerification | None:
-        """Verify an entry before exposing any saved baseline to a consumer."""
+        """Verify an entry before exposing any saved baseline to a consumer.
+
+        Entry-level verification, then (while trusted keys exist) the signed
+        document manifest: deleted, renamed, or spliced-in signed entries, and a
+        missing or invalid manifest, are all ``tampered_entry``.
+        """
+        if server_name in self._verification:
+            return self._verification[server_name]
+        result = self._entry_verification(server_name)
+        violation = self._manifest_violation(server_name)
+        if violation is not None:
+            result = PinVerification(state=PinVerificationState.TAMPERED_ENTRY)
+            self._verification_messages[server_name] = violation
+            self._rollback_warnings.pop(server_name, None)
+        self._verification[server_name] = result
+        return result
+
+    def _entry_verification(self, server_name: str) -> PinVerification | None:
+        """Verify one server entry on its own (signature, expectation, keys)."""
         from mcp_audit.pin_signing import (
             PinSigningError,
             has_active_trusted_key,
@@ -240,8 +264,8 @@ class PinStore:
             verify_document,
         )
 
-        if server_name in self._verification:
-            return self._verification[server_name]
+        if server_name in self._entry_results:
+            return self._entry_results[server_name]
         servers = self._data.get("servers", {})
         if server_name not in servers:
             # A deleted, renamed, or never-written entry (including an empty,
@@ -252,9 +276,10 @@ class PinStore:
             except PinSigningError:
                 expected_signed = True
             if not expected_signed:
+                self._entry_results[server_name] = None
                 return None
             result = PinVerification(state=PinVerificationState.TAMPERED_ENTRY)
-            self._verification[server_name] = result
+            self._entry_results[server_name] = result
             self._verification_messages[server_name] = (
                 f"Pin for {server_name} fails signature verification; the signed baseline required by "
                 "your trusted signing expectations is missing from the pin file, or that expectation "
@@ -265,7 +290,7 @@ class PinStore:
         entry = servers[server_name]
         if not isinstance(entry, dict):
             result = PinVerification(state=PinVerificationState.TAMPERED_ENTRY)
-            self._verification[server_name] = result
+            self._entry_results[server_name] = result
             self._verification_messages[server_name] = (
                 f"Pin for {server_name} fails signature verification; the saved server entry is invalid. "
                 "Restore it from backup or re-review the server and re-pin."
@@ -352,7 +377,7 @@ class PinStore:
                             )
                         if not warnings:
                             del self._rollback_warnings[server_name]
-        self._verification[server_name] = result
+        self._entry_results[server_name] = result
         return result
 
     def baseline_trusted(self, server_name: str) -> bool:
@@ -363,6 +388,134 @@ class PinStore:
             PinVerificationState.BAD_SIGNATURE,
             PinVerificationState.TAMPERED_ENTRY,
         }
+
+    def _entry_trusted(self, server_name: str) -> bool:
+        result = self._entry_verification(server_name)
+        return result is None or result.state not in {
+            PinVerificationState.UNTRUSTED_SIGNER,
+            PinVerificationState.BAD_SIGNATURE,
+            PinVerificationState.TAMPERED_ENTRY,
+        }
+
+    def _manifest(self) -> tuple[str, dict[str, str]]:
+        """Return ("absent" | "invalid" | "valid", signed server digests)."""
+        from mcp_audit.pin_signing import verify_document
+
+        if self._manifest_cache is None:
+            raw = self._data.get("manifest")
+            if raw is None:
+                self._manifest_cache = ("absent", {})
+            else:
+                state = "invalid"
+                listed: dict[str, str] = {}
+                if (
+                    isinstance(raw, dict)
+                    and raw.get("schema") == PIN_MANIFEST_SCHEMA
+                    and isinstance(raw.get("servers"), dict)
+                    and all(isinstance(k, str) and isinstance(v, str) for k, v in raw["servers"].items())
+                ):
+                    document = {"schema": PIN_MANIFEST_SCHEMA, "servers": raw["servers"]}
+                    try:
+                        verified = verify_document(
+                            document, raw, self._trusted_keys_path, server_name="<pin manifest>"
+                        )
+                    except (ValueError, TypeError, KeyError, AttributeError):
+                        verified = None
+                    if verified is not None and verified.state in {"verified", "retired_key"}:
+                        state, listed = "valid", dict(raw["servers"])
+                self._manifest_cache = (state, listed)
+        return self._manifest_cache
+
+    def _manifest_violation(self, server_name: str) -> str | None:
+        """Why the signed manifest makes this server untrusted, or None."""
+        if not self._keys_trusted():
+            return None  # Unsigned workflows: the manifest is optional and ignored.
+        state, listed = self._manifest()
+        entry = self._data.get("servers", {}).get(server_name)
+        legacy = isinstance(entry, dict) and "signature" not in entry and _is_legacy_entry(entry)
+        if state != "valid":
+            if legacy:
+                return None  # D8: genuine v1 warns (and is withheld), never MCP027.
+            if state == "absent":
+                return (
+                    f"Pin for {server_name} fails signature verification; trusted pin keys exist but the "
+                    "pin file has no signed manifest, so deleted or renamed signed entries cannot be "
+                    "detected. Restore the pin file from backup, or sign a manifest with "
+                    "`mcp-audit pin rotate-key --resign` after review."
+                )
+            return (
+                f"Pin for {server_name} fails signature verification; the pin file's signed manifest "
+                "is invalid or signed by an untrusted key. Restore the pin file from backup."
+            )
+        digest = listed.get(server_name)
+        if digest is not None:
+            if not isinstance(entry, dict):
+                return (
+                    f"Pin for {server_name} fails signature verification; the signed manifest lists it "
+                    "but its entry is missing (deleted or renamed). Restore the pin file from backup, or "
+                    f"run `mcp-audit pin --clear {server_name}` and re-review before pinning again."
+                )
+            if entry.get("surface_sha256") != digest:
+                return (
+                    f"Pin for {server_name} fails signature verification; its entry does not match the "
+                    "signed manifest. Restore the pin file from backup."
+                )
+        elif isinstance(entry, dict) and "signature" in entry:
+            return (
+                f"Pin for {server_name} fails signature verification; the entry is signed but not listed "
+                f"in the signed manifest (spliced in). Run `mcp-audit pin --clear {server_name}` and "
+                "re-review before pinning again."
+            )
+        return None
+
+    def _write_trusted(self, server_name: str) -> bool:
+        """Writers check entries individually until a manifest exists, so first use and
+        migration can create one; afterwards the manifest-aware verdict applies."""
+        if self._keys_trusted() and self._manifest()[0] == "absent":
+            return self._entry_trusted(server_name)
+        return self.baseline_trusted(server_name)
+
+    def _check_manifest_writable(self, *, removing: str | None = None) -> None:
+        from mcp_audit.pin_signing import PinSigningError
+
+        if not self._keys_trusted():
+            return
+        state, listed = self._manifest()
+        if state == "invalid":
+            raise PinSigningError(
+                "Cannot write through a pin file whose signed manifest fails verification; "
+                "restore it from backup."
+            )
+        missing = sorted(set(listed) - set(self.pinned_servers()) - {removing})
+        if missing:
+            raise PinSigningError(
+                "Signed pin entries listed in the manifest are missing: "
+                f"{', '.join(missing)}. Restore them from backup, or run `mcp-audit pin --clear NAME` "
+                "for each after review, before writing."
+            )
+
+    def _sign_manifest(self) -> None:
+        """Sign the set of signed entries (with their digests) into the pin file."""
+        from mcp_audit.pin_signing import sign_document
+
+        servers: dict[str, Any] = self._data.get("servers", {})
+        signed = {
+            name: entry["surface_sha256"]
+            for name, entry in sorted(servers.items())
+            if isinstance(entry, dict)
+            and "signature" in entry
+            and isinstance(entry.get("surface_sha256"), str)
+        }
+        document = {"schema": PIN_MANIFEST_SCHEMA, "servers": signed}
+        self._data["manifest"] = {**document, **sign_document(document, self._signing_key)}
+        self._manifest_cache = None
+
+    def _reset_verification(self) -> None:
+        self._verification.clear()
+        self._verification_messages.clear()
+        self._rollback_warnings.clear()
+        self._entry_results.clear()
+        self._manifest_cache = None
 
     def baseline_usable(self, server_name: str) -> bool:
         """Whether saved data may serve as a comparison baseline.
@@ -522,10 +675,9 @@ class PinStore:
             raise PinSigningError("Key rotation requires signing; omit --unsigned.")
         with _file_lock(self._path):
             self._data = self._load(strict=True)
-            self._verification.clear()
+            self._check_manifest_writable()
             for server in self.pinned_servers():
-                result = self.verification(server)
-                if result is not None and not self.baseline_trusted(server):
+                if not self._write_trusted(server):
                     raise PinSigningError(
                         "Cannot rotate keys through an untrusted pin baseline; restore or re-review it first."
                     )
@@ -547,11 +699,10 @@ class PinStore:
                 # old one retires; only genuinely legacy unsigned entries are left as-is.
                 if _resigned_by_rotation(entry) and self._sign_entry(server, entry):
                     signed.append(server)
+            self._sign_manifest()
             self._write()
             self._record_signed(signed)
-            self._verification.clear()
-            self._verification_messages.clear()
-            self._rollback_warnings.clear()
+            self._reset_verification()
             return generated.public_key
 
     def resign(self) -> str:
@@ -562,8 +713,9 @@ class PinStore:
             raise PinSigningError("Re-signing requires signing; omit --unsigned.")
         with _file_lock(self._path):
             self._data = self._load(strict=True)
+            self._check_manifest_writable()
             for server in self.pinned_servers():
-                if not self.baseline_trusted(server):
+                if not self._write_trusted(server):
                     raise PinSigningError(
                         "Cannot re-sign an untrusted pin baseline; restore or re-review it first."
                     )
@@ -575,11 +727,10 @@ class PinStore:
             for server, entry in self._data.get("servers", {}).items():
                 if _resigned_by_rotation(entry) and self._sign_entry(server, entry):
                     signed.append(server)
+            self._sign_manifest()
             self._write()
             self._record_signed(signed)
-            self._verification.clear()
-            self._verification_messages.clear()
-            self._rollback_warnings.clear()
+            self._reset_verification()
             return signer["public_key"]
 
     def compute_hash(self, tool: ToolInfo) -> str:
@@ -655,7 +806,8 @@ class PinStore:
             # Re-read under the lock: another process may have written pins
             # since this store loaded, and mutating a stale copy would erase them.
             self._data = self._load(strict=True)
-            if not self.baseline_trusted(server_name):
+            self._check_manifest_writable()
+            if not self._write_trusted(server_name):
                 from mcp_audit.pin_signing import PinSigningError
 
                 raise PinSigningError(
@@ -721,7 +873,9 @@ class PinStore:
                         "your key (`--signing-key` or `mcp-audit pin keygen`), or remove the trusted "
                         "keys before writing unsigned pins."
                     )
-            self._verification.pop(server_name, None)
+            if signed:
+                self._sign_manifest()
+            self._reset_verification()
             self._data["pinned_at"] = now
             self._data["pin_schema"] = 2
             self._write()
@@ -825,14 +979,28 @@ class PinStore:
         after the pin file write succeeds (or when no entry remains to write),
         so a failed write never leaves an entry without its expectation.
         """
-        from mcp_audit.pin_signing import forget_server
+        from mcp_audit.pin_signing import PinSigningError, forget_server
 
         with _file_lock(self._path):
             self._data = self._load(strict=True)
+            self._check_manifest_writable(removing=server_name)
             servers: dict[str, Any] = self._data.get("servers", {})
-            if server_name in servers:
-                del servers[server_name]
+            removed = servers.pop(server_name, None)
+            listed = server_name in self._manifest()[1]
+            was_signed = isinstance(removed, dict) and "signature" in removed
+            if "manifest" in self._data and (was_signed or listed):
+                try:
+                    self._sign_manifest()
+                except PinSigningError:
+                    if self._keys_trusted():
+                        raise PinSigningError(
+                            "Clearing a signed pin re-signs the pin manifest; a signing key is required."
+                        ) from None
+                    # No trusted keys: the manifest is ignored; drop the stale one.
+                    del self._data["manifest"]
+            if removed is not None or listed:
                 self._write()
+            self._reset_verification()
             forget_server(server_name, self._trusted_keys_path)
 
     def pinned_servers(self) -> list[str]:
@@ -877,13 +1045,25 @@ class PinStore:
     def canary_baseline(
         self, server_name: str, *, warnings: list[ScanWarning] | None = None
     ) -> dict[str, dict[str, object]] | None:
-        """Use complete v2 pins; warn and fall back when their snapshots are corrupt."""
+        """Use the v2 pin rows; warn and fall back when their snapshots are corrupt.
+
+        A mixed entry (trusted v2 rows plus retained legacy v1 rows) still
+        compares its v2 rows. Legacy tool names are listed under
+        :data:`CANARY_UNCOVERED_TOOLS_KEY` so the first-listing comparison
+        excludes them instead of reporting them as new; ``pin_schema_outdated``
+        already warns that their newer fields are not covered.
+        """
         if not self.baseline_usable(server_name):
             return None
-        if server_name not in self.pinned_servers() or self.legacy_tool_names(server_name):
+        if server_name not in self.pinned_servers():
             return None
-        entries = self._data["servers"][server_name].get("tools", {})
-        if any(entry.get("pin_schema") != 2 for entry in entries.values()):
+        legacy = self.legacy_tool_names(server_name)
+        entries = {
+            name: entry
+            for name, entry in self._data["servers"][server_name].get("tools", {}).items()
+            if name not in legacy
+        }
+        if not entries or any(entry.get("pin_schema") != 2 for entry in entries.values()):
             return None
         required_fields = ToolInfo.model_fields.keys() - {"name"}
         tools: dict[str, object] = {}
@@ -911,7 +1091,10 @@ class PinStore:
                     )
                 )
             return None
-        return {"tools": tools}
+        baseline: dict[str, dict[str, object]] = {"tools": tools}
+        if legacy:
+            baseline[CANARY_UNCOVERED_TOOLS_KEY] = {name: True for name in sorted(legacy)}
+        return baseline
 
     def baseline_config(
         self, server_name: str, *, review_unverified_legacy: bool = False
@@ -1030,9 +1213,7 @@ class PinStore:
         (mutation paths): parse failures raise :class:`PinFileError`, because
         writing through them would wipe a possibly-repairable baseline.
         """
-        self._verification.clear()
-        self._verification_messages.clear()
-        self._rollback_warnings.clear()
+        self._reset_verification()
         self._keys_trusted_cache = None
         if not self._path.exists():
             self._read_error = None
