@@ -302,7 +302,7 @@ def test_pin_write_reports_wrong_mode_signing_key_refusal(
 
     assert result.exit_code == 1
     assert "must be mode 0600 and owned by you." in " ".join(result.output.split())
-    assert "pin-signing.key" in result.output
+    assert "pin-signing.key" in "".join(result.output.split())  # Rich may wrap the long path
 
 
 @pytest.mark.parametrize("hash_field", ["package_hashes", "registry_artifact_hashes"])

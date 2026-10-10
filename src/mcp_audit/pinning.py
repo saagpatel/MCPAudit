@@ -1238,7 +1238,7 @@ class PinStore:
                 "Failed to parse pin file %s (%s) — treating as empty for reading; "
                 "pin mutations will refuse to overwrite it",
                 self._path,
-                exc,
+                self._read_error,  # sanitized: str(exc) can echo a source line containing a secret
             )
             return {}
 
