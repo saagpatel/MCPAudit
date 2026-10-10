@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Update signed-pin regression connector doubles for bounded transport options,
+  and retain the required unsigned-pin warning alongside integrity-exclusion
+  warnings in integration assertions.
 - Exclude home dotfiles and additional credential directories from launch-artifact
   hashing, including existing pin baselines and resolved targets; report partial
   comparison coverage without exposing excluded hashes. Apply archive-equivalent

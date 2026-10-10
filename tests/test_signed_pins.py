@@ -170,7 +170,7 @@ def test_engine_surfaces_failed_verification_and_withholds_baseline(
             super().__init__(path, trusted_keys_path=trust)
 
     class Connector:
-        def __init__(self, timeout: int) -> None:
+        def __init__(self, timeout: float, **transport_options: object) -> None:
             self.scan_warnings: list[object] = []
 
         async def connect(self, server: object, **kwargs: object) -> ServerAudit:
@@ -306,7 +306,7 @@ def test_stripped_signature_is_untrusted_even_after_tool_schema_downgrade(
             super().__init__(path, trusted_keys_path=trust)
 
     class Connector:
-        def __init__(self, timeout: int) -> None:
+        def __init__(self, timeout: float, **transport_options: object) -> None:
             self.scan_warnings: list[object] = []
 
         async def connect(self, server: object) -> ServerAudit:

@@ -156,7 +156,18 @@ async def test_existing_pin_exclusions_never_hash_or_export_protected_entries(
         assert findings[0].artifact_path == str(visible)
         assert findings[0].severity == IntegritySeverity.HIGH
     assert calls == [visible.resolve()] * (2 * int(include_safe))
-    assert report.warnings == warnings
+    assert [warning for warning in report.warnings if warning.check == "integrity_check"] == warnings
+    assert [warning for warning in report.warnings if warning.check != "integrity_check"] == [
+        ScanWarning(
+            code="pin_unsigned",
+            message=(
+                "Pin for fixture is unsigned. Run `mcp-audit pin keygen` then "
+                "`pin --refresh fixture --apply` to sign it."
+            ),
+            check="pin_check",
+            servers=["fixture"],
+        )
+    ]
     warning = warnings[0]
     assert warning.code == "integrity_comparison_incomplete"
     assert warning.check == "integrity_check" and warning.servers == ["fixture"]
