@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Restrict publication to exactly the versioned wheel and sdist, reject extras
+  and symlinks, and bind their SHA-256 values to an approved release manifest
+  recording source and workflow revisions. Recheck disposable consumer copies
+  after installation and recheck the retained candidates before publication.
+- Assert the exact Registry descriptor before OIDC login and on readback; bind
+  non-yanked PyPI filenames and hashes to the approved manifest. Share a main-only,
+  named-reviewer environment check across both publishers, disable release caches,
+  and add a publication dry-run mode without OIDC authority.
+- Bind the Action's default install to its own package version and install the
+  checkout's local wheel in self-audit. Raise the AnyIO floor to `>=4.14.2` and
+  include Actions in CodeQL analysis.
+- Check locked dependency advisories with a bounded OSV query and explicit
+  unavailable-feed failures. Saved-response tests verify failures and coverage;
+  absence of OSV matches does not replace direct dependency security floors.
+
 ### Added
 
 - Align the additive `check`, `checkup`, and `inspect` surface with repeated

@@ -174,7 +174,8 @@ def test_candidate_state_is_never_publishable(tmp_path: Path) -> None:
     (tmp_path / "docs").mkdir()
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "mcp-audits"\nversion = "2.6.0"\n'
-        'dependencies = ["mcp>=2.2.0,<3.0", "cryptography>=50.0.0,<51.0", "click>=8.3.3,<9.0"]\n'
+        'dependencies = ["mcp>=2.2.0,<3.0", "cryptography>=50.0.0,<51.0", '
+        '"click>=8.3.3,<9.0", "anyio>=4.14.2"]\n'
         '[project.scripts]\nmcp-audit = "mcp_audit.cli:main"\n'
         'mcp-audits = "mcp_audit.cli:main"\n'
         'proof-before-action = "mcp_audit.proof_cli:main"\n',
@@ -197,7 +198,24 @@ def test_candidate_state_is_never_publishable(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     (tmp_path / "server.json").write_text(
-        json.dumps({"version": "2.5.0", "packages": [{"version": "2.5.0"}]}),
+        json.dumps(
+            {
+                "name": "io.github.saagpatel/mcp-audit",
+                "version": "2.5.0",
+                "repository": {"url": "https://github.com/saagpatel/MCPAudit", "source": "github"},
+                "packages": [
+                    {
+                        "registryType": "pypi",
+                        "registryBaseUrl": "https://pypi.org",
+                        "identifier": "mcp-audits",
+                        "version": "2.5.0",
+                        "runtimeHint": "uvx",
+                        "transport": {"type": "stdio"},
+                        "packageArguments": [{"type": "positional", "value": "serve"}],
+                    }
+                ],
+            }
+        ),
         encoding="utf-8",
     )
     (tmp_path / "CHANGELOG.md").write_text(
@@ -333,16 +351,23 @@ def test_pypi_environment_requires_named_solo_maintainer_review() -> None:
     verify = RELEASE_VERIFIER["verify_environment_protection"]
     protected: dict[str, Any] = {
         "can_admins_bypass": False,
+        "deployment_branch_policy": {"protected_branches": False, "custom_branch_policies": True},
         "protection_rules": [
             {
                 "type": "required_reviewers",
                 "prevent_self_review": False,
-                "reviewers": [{"type": "User", "reviewer": {"login": "maintainer"}}],
+                "reviewers": [{"type": "User", "reviewer": {"login": "saagpatel"}}],
             }
         ],
     }
 
-    verify(protected)
+    branches = {"branch_policies": [{"name": "main", "type": "branch"}]}
+    verify(protected, branches)
+    stronger = {
+        **protected,
+        "protection_rules": [{**protected["protection_rules"][0], "prevent_self_review": True}],
+    }
+    verify(stronger, branches)
     for unsafe in (
         {**protected, "can_admins_bypass": True},
         {**protected, "protection_rules": []},
@@ -351,14 +376,22 @@ def test_pypi_environment_requires_named_solo_maintainer_review() -> None:
             "protection_rules": [
                 {
                     "type": "required_reviewers",
-                    "prevent_self_review": True,
-                    "reviewers": protected["protection_rules"][0]["reviewers"],
+                    "prevent_self_review": False,
+                    "reviewers": [{"type": "User", "reviewer": {"login": "other-reviewer"}}],
                 }
             ],
         },
     ):
         with pytest.raises(RELEASE_VERIFIER["VerificationError"]):
-            verify(unsafe)
+            verify(unsafe, branches)
+    unsafe_branch_cases: tuple[object, ...] = (
+        None,
+        {"branch_policies": []},
+        {"branch_policies": [{"name": "*", "type": "branch"}]},
+    )
+    for unsafe_branches in unsafe_branch_cases:
+        with pytest.raises(RELEASE_VERIFIER["VerificationError"]):
+            verify(protected, unsafe_branches)
 
 
 def test_publication_requires_a_separate_manual_dispatch() -> None:
@@ -406,21 +439,22 @@ def test_oidc_authority_is_confined_to_post_build_publish_job() -> None:
     assert "uv run pytest" in build_job
     assert "scripts/verify_release.py" in build_job
     assert "actions/upload-artifact@" in build_job
-    assert "needs: build" in publish_job
+    assert "needs: [build, consumer-smoke]" in publish_job
     assert "environment: pypi" in publish_job
-    assert workflow.count("actions: read") == 2
+    assert workflow.count("actions: read") == 3
     assert workflow.count("GH_TOKEN: ${{ github.token }}") == 2
-    assert workflow.count("Authorization: Bearer $GH_TOKEN") == 2
+    assert workflow.count("Authorization: Bearer $GH_TOKEN") == 4
     assert "id-token: write" in publish_job
     assert "$RUNNER_TEMP/pypi-environment.json" in workflow
-    assert ".can_admins_bypass == false" in publish_job
-    assert ".prevent_self_review == false" in publish_job
-    assert "required_reviewers" in publish_job
-    assert "sha256sum -c SHA256SUMS" in publish_job
+    assert "--publication-check environment" in publish_job
+    assert "--branch-policies-json" in publish_job
+    assert "--publication-check artifacts" in publish_job
     assert publish_job.index("Verify protected PyPI environment") < publish_job.index(
-        "sha256sum -c SHA256SUMS"
+        "--publication-check artifacts"
     )
-    assert publish_job.index("sha256sum -c SHA256SUMS") < publish_job.index("pypa/gh-action-pypi-publish@")
+    assert publish_job.index("--publication-check artifacts") < publish_job.index(
+        "pypa/gh-action-pypi-publish@"
+    )
 
 
 def test_publish_gate_runs_corpus_and_exact_distribution_install_smokes() -> None:
@@ -456,16 +490,19 @@ def test_registry_publication_is_manual_pypi_first_and_oidc_confined() -> None:
     assert "--root ." in validate_job
     assert "working-directory: release-source" in validate_job
     assert "https://pypi.org/pypi/mcp-audits/$release_version/json" in validate_job
-    assert "environments/$RELEASE_ENVIRONMENT" in validate_job
+    assert "environments/pypi/deployment-branch-policies" in validate_job
     assert 'mcp-publisher" validate server.json' in validate_job
     assert "needs: validate" in publish_job
     assert "environment: pypi" in publish_job
     assert "id-token: write" in publish_job
     assert "login github-oidc" in publish_job
-    assert 'mcp-publisher" publish server.json' in publish_job
-    assert 'test "$(git rev-parse HEAD)" = "$RELEASE_COMMIT"' in publish_job
+    assert 'mcp-publisher" publish release-source/server.json' in publish_job
+    assert 'test "$(git -C release-source rev-parse HEAD)" = "$RELEASE_COMMIT"' in publish_job
     assert "/versions/$selector" in publish_job
-    assert "isLatest == true" in publish_job
+    assert "--publication-check registry" in publish_job
+    assert publish_job.index("--publication-check descriptor") < publish_job.index("login github-oidc")
+    assert "--publication-check pypi" in publish_job
+    assert "--manifest-sha256" in publish_job
 
 
 def test_registry_publisher_binary_is_version_and_hash_pinned() -> None:

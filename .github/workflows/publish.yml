@@ -11,6 +11,11 @@ on:
         description: Exact 40-character commit recorded in the release approval
         required: true
         type: string
+      dry_run:
+        description: Build and smoke-test without granting publication authority
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   actions: read
@@ -31,6 +36,7 @@ jobs:
     name: Verify and build exact release
     needs: validate-dispatch-ref
     runs-on: ubuntu-latest
+    cache-mode: none
 
     steps:
       - name: Checkout release controls
@@ -49,6 +55,7 @@ jobs:
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           python-version: "3.11"
+          enable-cache: false
 
       - name: Read back protected PyPI environment
         env:
@@ -60,6 +67,10 @@ jobs:
             --header "X-GitHub-Api-Version: 2026-03-10" \
             "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/environments/pypi" \
             --output "$RUNNER_TEMP/pypi-environment.json"
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/environments/pypi/deployment-branch-policies" \
+            --output "$RUNNER_TEMP/pypi-branches.json"
 
       - name: Verify release authorization binding
         env:
@@ -73,6 +84,7 @@ jobs:
             --tag "$RELEASE_TAG" \
             --commit "$RELEASE_COMMIT" \
             --environment-json "$RUNNER_TEMP/pypi-environment.json" \
+            --branch-policies-json "$RUNNER_TEMP/pypi-branches.json" \
             --require-publishable
 
       - name: Install locked dependencies
@@ -88,6 +100,8 @@ jobs:
       - name: Run release quality gate
         working-directory: release-source
         run: |
+          python ../release-controls/scripts/check_advisories.py --lock uv.lock \
+            --build-constraints ../release-controls/build-constraints.txt
           uv run pytest
           uv run ruff check
           uv run ruff format --check
@@ -101,33 +115,91 @@ jobs:
 
       - name: Build wheel and sdist
         working-directory: release-source
-        run: uv build --clear
+        run: uv build --clear --no-create-gitignore
 
       - name: Verify built distributions
         env:
           RELEASE_COMMIT: ${{ inputs.commit }}
           RELEASE_TAG: ${{ inputs.tag }}
+          WORKFLOW_SHA: ${{ github.sha }}
         working-directory: release-source
         run: |
+          mkdir -p "$RUNNER_TEMP/candidate/dist"
           uv run python ../release-controls/scripts/verify_release.py \
             --root . \
             --tag "$RELEASE_TAG" \
             --commit "$RELEASE_COMMIT" \
             --environment-json "$RUNNER_TEMP/pypi-environment.json" \
+            --branch-policies-json "$RUNNER_TEMP/pypi-branches.json" \
             --require-publishable \
-            --dist-dir dist
-          sha256sum dist/* | tee SHA256SUMS
+            --dist-dir dist \
+            --workflow-sha "$WORKFLOW_SHA" \
+            --write-manifest "$RUNNER_TEMP/candidate/release-manifest.json"
+          sha256sum "$RUNNER_TEMP/candidate/release-manifest.json"
+          python -c 'import os; print("workflow_sha=" + os.environ["WORKFLOW_SHA"]); print("source_commit=" + os.environ["RELEASE_COMMIT"])'
 
+      - name: Resolve explicit artifact paths
+        id: paths
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          release_version="${RELEASE_TAG#v}"
+          cp "release-source/dist/mcp_audits-$release_version-py3-none-any.whl" "$RUNNER_TEMP/candidate/dist/"
+          cp "release-source/dist/mcp_audits-$release_version.tar.gz" "$RUNNER_TEMP/candidate/dist/"
+          echo "wheel=$RUNNER_TEMP/candidate/dist/mcp_audits-$release_version-py3-none-any.whl" >> "$GITHUB_OUTPUT"
+          echo "sdist=$RUNNER_TEMP/candidate/dist/mcp_audits-$release_version.tar.gz" >> "$GITHUB_OUTPUT"
+
+      - name: Upload exact candidate artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mcp-audits-${{ inputs.tag }}
+          path: |
+            ${{ steps.paths.outputs.wheel }}
+            ${{ steps.paths.outputs.sdist }}
+            ${{ runner.temp }}/candidate/release-manifest.json
+          if-no-files-found: error
+          retention-days: 14
+
+  consumer-smoke:
+    name: Smoke disposable copies without candidate write authority
+    needs: build
+    runs-on: ubuntu-latest
+    cache-mode: none
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout trusted smoke controls
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          python-version: "3.11"
+          enable-cache: false
+      - name: Download disposable copies of candidates
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: mcp-audits-${{ inputs.tag }}
+          path: release/
+      - name: Verify before smoke
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_COMMIT: ${{ inputs.commit }}
+          WORKFLOW_SHA: ${{ github.sha }}
+        run: |
+          python scripts/verify_release.py --publication-check artifacts \
+            --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" --workflow-sha "$WORKFLOW_SHA" \
+            --dist-dir release/dist --manifest release/release-manifest.json
+          cp release/release-manifest.json "$RUNNER_TEMP/approved-manifest.json"
       - name: Smoke-install exact wheel and sdist
         env:
           RELEASE_TAG: ${{ inputs.tag }}
-        working-directory: release-source
         run: |
           release_version="${RELEASE_TAG#v}"
-          wheel="$(find dist -maxdepth 1 -type f -name 'mcp_audits-*.whl' -print -quit)"
-          sdist="$(find dist -maxdepth 1 -type f -name 'mcp_audits-*.tar.gz' -print -quit)"
-          test -n "$wheel"
-          test -n "$sdist"
+          wheel="release/dist/mcp_audits-$release_version-py3-none-any.whl"
+          sdist="release/dist/mcp_audits-$release_version.tar.gz"
           for package in "$wheel" "$sdist"; do
             smoke="$RUNNER_TEMP/install-smoke-$(basename "$package")"
             uv venv "$smoke"
@@ -137,29 +209,34 @@ jobs:
             test "$("$smoke/bin/proof-before-action" --version)" = "proof-before-action, version $release_version"
             "$smoke/bin/python" -I scripts/smoke_installed_artifact.py
           done
-
-      - name: Upload exact candidate artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: mcp-audits-${{ inputs.tag }}
-          path: |
-            release-source/dist/*.whl
-            release-source/dist/*.tar.gz
-            release-source/SHA256SUMS
-          if-no-files-found: error
-          retention-days: 14
+      - name: Recheck exact file set and digests after smoke
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_COMMIT: ${{ inputs.commit }}
+          WORKFLOW_SHA: ${{ github.sha }}
+        run: |
+          python scripts/verify_release.py --publication-check artifacts \
+            --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" --workflow-sha "$WORKFLOW_SHA" \
+            --dist-dir release/dist --manifest "$RUNNER_TEMP/approved-manifest.json"
 
   publish:
     name: Publish approved artifacts to PyPI
-    needs: build
+    needs: [build, consumer-smoke]
+    if: ${{ !inputs.dry_run }}
     runs-on: ubuntu-latest
     environment: pypi
+    cache-mode: none
     permissions:
       actions: read
       contents: read
       id-token: write  # OIDC trusted publishing
 
     steps:
+      - name: Checkout trusted publication controls
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
       - name: Verify protected PyPI environment is still enforced
         env:
           GH_TOKEN: ${{ github.token }}
@@ -170,15 +247,13 @@ jobs:
             --header "X-GitHub-Api-Version: 2026-03-10" \
             "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/environments/pypi" \
             --output "$RUNNER_TEMP/pypi-environment.json"
-          jq --exit-status '
-            .can_admins_bypass == false
-            and any(
-              .protection_rules[];
-              .type == "required_reviewers"
-              and .prevent_self_review == false
-              and (.reviewers | length) > 0
-            )
-          ' "$RUNNER_TEMP/pypi-environment.json"
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $GH_TOKEN" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/environments/pypi/deployment-branch-policies" \
+            --output "$RUNNER_TEMP/pypi-branches.json"
+          python scripts/verify_release.py --publication-check environment \
+            --environment-json "$RUNNER_TEMP/pypi-environment.json" \
+            --branch-policies-json "$RUNNER_TEMP/pypi-branches.json"
 
       - name: Download exact candidate artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -187,10 +262,15 @@ jobs:
           path: release/
 
       - name: Read back artifact hashes
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          RELEASE_COMMIT: ${{ inputs.commit }}
+          WORKFLOW_SHA: ${{ github.sha }}
         run: |
-          cd release
-          sha256sum -c SHA256SUMS
-          cat SHA256SUMS
+          python scripts/verify_release.py --publication-check artifacts \
+            --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" --workflow-sha "$WORKFLOW_SHA" \
+            --dist-dir release/dist --manifest release/release-manifest.json
+          cat release/release-manifest.json
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2

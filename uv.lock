@@ -683,7 +683,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "anthropic", marker = "extra == 'llm'", specifier = ">=0.40" },
-    { name = "anyio", specifier = ">=4.0" },
+    { name = "anyio", specifier = ">=4.14.2" },
     { name = "click", specifier = ">=8.3.3,<9.0" },
     { name = "cryptography", specifier = ">=50.0.0,<51.0" },
     { name = "json5", specifier = ">=0.10" },
