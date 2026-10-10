@@ -209,6 +209,58 @@ def test_json_stdout_is_parseable_with_artifacts_and_policy(tmp_path: Path) -> N
     assert "<html" in paths["html"].read_text()
 
 
+def test_check_clients_accept_hyphen_and_underscore_aliases() -> None:
+    _config(Path.home() / ".cursor/mcp.json", "cursor-fixture")
+    _config(Path.home() / ".claude.json", "claude-fixture")
+    for alias in ("claude-code", "claude_code"):
+        result = CliRunner().invoke(cli.main, ["check", "--client", alias, "--json"])
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.stdout)
+        assert payload["servers_discovered"] == 1
+        assert payload["audits"][0]["server"]["client"] == "claude_code"
+
+
+def test_inspect_json_output_and_repeatable_client_filters(tmp_path: Path) -> None:
+    _config(Path.home() / ".cursor/mcp.json", "cursor-fixture")
+    _config(Path.home() / ".claude.json", "claude-fixture")
+    output = tmp_path / "inspect.json"
+    result = CliRunner().invoke(
+        cli.main,
+        ["inspect", "--client", "cursor", "--client", "claude-code", "--json", "--output-json", str(output)],
+    )
+    assert result.exit_code == 0, result.output
+    assert "Wrote" not in result.stdout
+    payload = json.loads(result.stdout)
+    assert {item["identity"].split(":", 1)[0] for item in payload["servers"]} == {
+        "cursor",
+        "claude_code",
+    }
+    assert json.loads(output.read_text()) == payload
+
+
+def test_checkup_supports_both_audit_report_json_modes(tmp_path: Path) -> None:
+    output = tmp_path / "report.json"
+    card = tmp_path / "card.html"
+    result = CliRunner().invoke(
+        cli.main,
+        ["checkup", "--config", str(SANDBOX), "--card", str(card), "--json", "--output-json", str(output)],
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == json.loads(output.read_text())
+    assert "Wrote" not in result.stdout
+    assert "<html" in card.read_text()
+
+
+def test_check_error_includes_recovery_state_and_option_typo_suggestion() -> None:
+    missing = CliRunner().invoke(cli.main, ["check", "--config", "missing-synthetic-config.json"])
+    assert missing.exit_code == 1
+    for section in ("What failed:", "Where:", "Recovery:", "Scanned: no", "Written: none", "Exit code: 1"):
+        assert section in missing.output
+    typo = CliRunner().invoke(cli.main, ["check", "--detials"])
+    assert typo.exit_code == 2
+    assert "Did you mean" in typo.output
+
+
 def test_bare_json_and_details_and_grouped_help() -> None:
     result = CliRunner().invoke(cli.main, ["--json"])
     assert result.exit_code == 0, result.output
