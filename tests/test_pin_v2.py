@@ -15,7 +15,7 @@ import yaml
 from mcp.types import Tool as SdkTool
 from rich.console import Console
 
-from mcp_audit import cli, pinning
+from mcp_audit import pin_cli, pinning
 from mcp_audit.canonical import canonical_json_bytes
 from mcp_audit.connector import ServerConnector
 from mcp_audit.engine import ScanOptions, run_scan
@@ -237,8 +237,8 @@ def test_legacy_refresh_labels_uncovered_fields_without_writing(
     async def fake_scan(*args: object, **kwargs: object) -> AuditReport:
         return _report(audit)
 
-    monkeypatch.setattr(cli, "run_scan", fake_scan)
-    anyio.run(cli._run_pin_refresh, "fixture", store, False, as_json)
+    monkeypatch.setattr(pin_cli, "run_scan", fake_scan)
+    anyio.run(pin_cli._run_pin_refresh, "fixture", store, False, as_json)
     output = capsys.readouterr().out
     if as_json:
         payload = json.loads(output)

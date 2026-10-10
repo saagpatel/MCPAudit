@@ -10,7 +10,7 @@ import pytest
 import yaml
 from click.testing import CliRunner
 
-from mcp_audit import cli, engine
+from mcp_audit import cli, engine, pin_cli, scan_cli
 from mcp_audit.engine import ScanOptions
 from mcp_audit.escalation import EscalationAnalyzer
 from mcp_audit.models import AuditReport, EscalationKind, ProvenanceKind, ProvenanceSeverity, ToolInfo
@@ -42,7 +42,7 @@ def test_local_fixture_pin_and_scan_lifecycle(
     async def fixture_scan(options: ScanOptions, **kwargs: object) -> AuditReport:
         return await engine.run_scan(options, servers=[cfg])
 
-    monkeypatch.setattr(cli, "run_scan", fixture_scan)
+    monkeypatch.setattr(pin_cli, "run_scan", fixture_scan)
     args = ["pin", "--pin-file", str(pin_file), *refresh_args]
     if raw_args:
         args.append("--no-redact-args")
@@ -58,7 +58,7 @@ def test_local_fixture_pin_and_scan_lifecycle(
     # --pin-check checks schemas; --provenance-check enables the args comparison.
     config_file = tmp_path / "mcp.json"
     config_file.write_text(json.dumps({"mcpServers": {cfg.name: {"command": cfg.command, "args": cfg.args}}}))
-    monkeypatch.setattr(cli, "run_scan", engine.run_scan)
+    monkeypatch.setattr(scan_cli, "run_scan", engine.run_scan)
     monkeypatch.setattr("mcp_audit.pinning.DEFAULT_PIN_PATH", pin_file)
     output = tmp_path / "report.json"
     scan_args = [

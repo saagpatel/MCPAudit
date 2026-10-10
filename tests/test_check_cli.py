@@ -11,7 +11,7 @@ from typing import cast
 import pytest
 from click.testing import CliRunner
 
-from mcp_audit import cli, engine
+from mcp_audit import cli, engine, scan_cli
 from mcp_audit.check_cli import demo
 from mcp_audit.connector import ServerConnector
 from mcp_audit.discovery.vscode import VSCodeDiscoverer
@@ -161,7 +161,7 @@ def test_explicit_config_never_discovers_or_loads_saved_settings(
         raise AssertionError("saved settings and legacy discovery must not be consulted")
 
     monkeypatch.setattr(engine, "discover_all_configs", forbidden)
-    monkeypatch.setattr(cli, "load_override_config", forbidden)
+    monkeypatch.setattr(scan_cli, "load_override_config", forbidden)
     monkeypatch.setattr(Path, "home", forbidden)
     result = CliRunner().invoke(cli.main, ["check", "--config", str(config), "--json"])
     assert result.exit_code == 0, result.output
