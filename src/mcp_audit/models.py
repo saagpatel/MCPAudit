@@ -1096,6 +1096,8 @@ class SchemaFinding(ReferencedFinding):
         # Per-finding detail keeps distinct schema problems as distinct summary actions.
         detail = f" ({self.evidence[0]})" if self.evidence else ""
         return FINDING_COPY[self.rule_id].how_to_fix + detail
+
+
 class CacheHintObservation(BaseModel):
     """Wire hints for one page; presence flags distinguish absent from invalid."""
 
