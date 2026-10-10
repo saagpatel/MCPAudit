@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -17,6 +18,9 @@ from mcp_audit.canonical import canonical_json_bytes
 from mcp_audit.models import (
     DriftFinding,
     DriftStatus,
+    PinVerification,
+    PinVerificationState,
+    ProtocolObservation,
     ScanWarning,
     ServerConfig,
     SurfaceFieldChange,
@@ -178,8 +182,27 @@ class StalePinStatus(ServerPinStatus):
 class PinStore:
     """Stores SHA256 hashes of MCP tool schemas and detects drift between scans."""
 
-    def __init__(self, path: Path = DEFAULT_PIN_PATH) -> None:
+    def __init__(
+        self,
+        path: Path = DEFAULT_PIN_PATH,
+        *,
+        signing_key: Path | None = None,
+        unsigned: bool = False,
+        trusted_keys_path: Path | None = None,
+    ) -> None:
+        from mcp_audit.pin_signing import DEFAULT_SIGNING_KEY_PATH, DEFAULT_TRUSTED_KEYS_PATH
+
         self._path = path
+        environment_key = os.environ.get("MCP_AUDIT_PIN_KEY")
+        self._explicit_key = signing_key is not None or environment_key is not None
+        self._signing_key = signing_key or (
+            Path(environment_key) if environment_key else DEFAULT_SIGNING_KEY_PATH
+        )
+        self._unsigned = unsigned
+        self._trusted_keys_path = trusted_keys_path or DEFAULT_TRUSTED_KEYS_PATH
+        self._verification: dict[str, PinVerification] = {}
+        self._verification_messages: dict[str, str] = {}
+        self._rollback_warnings: dict[str, str] = {}
         self._read_error: str | None = None
         self._data: dict[str, Any] = self._load()
 
@@ -203,14 +226,234 @@ class PinStore:
     # Public API
     # ------------------------------------------------------------------
 
+    def verification(self, server_name: str) -> PinVerification | None:
+        """Verify an entry before exposing any saved baseline to a consumer."""
+        from mcp_audit.pin_signing import PinSigningError, check_and_record_pinned_at, verify_document
+
+        if server_name in self._verification:
+            return self._verification[server_name]
+        servers = self._data.get("servers", {})
+        if server_name not in servers:
+            return None
+        entry = servers[server_name]
+        if not isinstance(entry, dict):
+            result = PinVerification(state=PinVerificationState.TAMPERED_ENTRY)
+            self._verification[server_name] = result
+            self._verification_messages[server_name] = (
+                f"Pin for {server_name} fails signature verification; the saved server entry is invalid. "
+                "Restore it from backup or re-review the server and re-pin."
+            )
+            return result
+        if "signature" not in entry and self.legacy_tool_names(server_name):
+            result = PinVerification(state=PinVerificationState.SCHEMA_OUTDATED)
+        else:
+            try:
+                verified = verify_document(
+                    self._server_document(server_name, entry) if "signature" in entry else {},
+                    entry if "signature" in entry else None,
+                    self._trusted_keys_path,
+                    server_name=server_name,
+                )
+            except (ValueError, TypeError, KeyError, AttributeError):
+                result = PinVerification(state=PinVerificationState.TAMPERED_ENTRY)
+                self._verification_messages[server_name] = (
+                    f"Pin for {server_name} fails signature verification; "
+                    "the baseline was modified after signing. Do not refresh from this file; "
+                    "restore it from backup or re-review the server and re-pin."
+                )
+            else:
+                result = PinVerification(state=PinVerificationState(verified.state), kid=verified.kid)
+                if verified.message:
+                    self._verification_messages[server_name] = verified.message
+                if verified.state in {"verified", "retired_key"}:
+                    timestamp = entry.get("pinned_at")
+                    if isinstance(timestamp, str):
+                        try:
+                            rolled_back = check_and_record_pinned_at(
+                                server_name, timestamp, self._trusted_keys_path
+                            )
+                        except (PinSigningError, OSError, ValueError):
+                            self._rollback_warnings[server_name] = (
+                                "Pin rollback tracking could not be updated."
+                            )
+                        else:
+                            if rolled_back:
+                                self._rollback_warnings[server_name] = (
+                                    f"Pin for {server_name} is older than the last verified baseline."
+                                )
+        self._verification[server_name] = result
+        return result
+
+    def baseline_trusted(self, server_name: str) -> bool:
+        """Unsigned and legacy pins remain usable; failed signatures never do."""
+        result = self.verification(server_name)
+        return result is None or result.state not in {
+            PinVerificationState.UNTRUSTED_SIGNER,
+            PinVerificationState.BAD_SIGNATURE,
+            PinVerificationState.TAMPERED_ENTRY,
+        }
+
+    def verification_message(self, server_name: str) -> str:
+        self.verification(server_name)
+        return self._verification_messages.get(server_name, "")
+
+    def verification_warnings(self, server_name: str) -> list[ScanWarning]:
+        result = self.verification(server_name)
+        warnings: list[ScanWarning] = []
+        if result is not None and result.state in {
+            PinVerificationState.UNSIGNED,
+            PinVerificationState.RETIRED_KEY,
+        }:
+            warnings.append(
+                ScanWarning(
+                    code="pin_unsigned"
+                    if result.state == PinVerificationState.UNSIGNED
+                    else "pin_signed_by_retired_key",
+                    message=self.verification_message(server_name),
+                    check="pin_check",
+                    servers=[server_name],
+                )
+            )
+        if server_name in self._rollback_warnings:
+            message = self._rollback_warnings[server_name]
+            warnings.append(
+                ScanWarning(
+                    code="pin_rolled_back" if "older" in message else "pin_rollback_tracking_unavailable",
+                    message=message,
+                    check="pin_check",
+                    servers=[server_name],
+                )
+            )
+        return warnings
+
+    def signing_status(self, server_name: str) -> dict[str, object]:
+        entry = self._data.get("servers", {}).get(server_name, {})
+        signature = entry.get("signature", {})
+        signer = entry.get("signer", {})
+        return {
+            "schema": entry.get("pin_schema", 1 if self.legacy_tool_names(server_name) else 2),
+            "signed": bool(signature),
+            "kid": signature.get("kid") if isinstance(signature, dict) else None,
+            "public_key": signer.get("public_key") if isinstance(signer, dict) else None,
+        }
+
+    def _server_document(self, server_name: str, entry: dict[str, Any]) -> dict[str, object]:
+        """Cover the normalized surface and all stored comparison metadata."""
+        config = entry.get("config_snapshot", {})
+        config_without_artifacts = {key: value for key, value in config.items() if key != "artifact_hashes"}
+        tools = [
+            canonical_tool_surface(ToolInfo(name=name, **snapshot["snapshot"]))
+            for name, snapshot in sorted(entry.get("tools", {}).items())
+        ]
+        return {
+            "schema": TOOL_SURFACE_SCHEMA,
+            "server": {
+                "name": server_name,
+                "config_sha256": hashlib.sha256(canonical_json_bytes(config_without_artifacts)).hexdigest(),
+            },
+            "protocol": entry.get("protocol", {"negotiated_version": None, "era": "unknown"}),
+            "pinned_at": entry.get("pinned_at"),
+            "tools": tools,
+            # Hashes and redacted snapshots both participate: redaction must not
+            # make an edited stored hash or launch-artifact baseline trustworthy.
+            "pin_metadata": {
+                key: value
+                for key, value in entry.items()
+                if key not in {"signature", "signer", "surface_sha256", "canonical_bytes_len"}
+            },
+        }
+
+    def _sign_entry(self, server_name: str, entry: dict[str, Any]) -> None:
+        from mcp_audit.pin_signing import sign_document
+
+        was_signed = "signature" in entry
+        for key in ("signature", "signer", "surface_sha256", "canonical_bytes_len"):
+            entry.pop(key, None)
+        if self._unsigned:
+            return
+        if was_signed or self._explicit_key or self._signing_key.exists():
+            entry.update(sign_document(self._server_document(server_name, entry), self._signing_key))
+
+    def rotate_key(self, grace_days: int = 30) -> str:
+        """Reverify all signed entries before key replacement and re-signing."""
+        from mcp_audit.pin_signing import PinSigningError, rotate_key
+
+        if self._unsigned:
+            raise PinSigningError("Key rotation requires signing; omit --unsigned.")
+        with _file_lock(self._path):
+            self._data = self._load(strict=True)
+            self._verification.clear()
+            for server in self.pinned_servers():
+                result = self.verification(server)
+                if result is not None and not self.baseline_trusted(server):
+                    raise PinSigningError(
+                        "Cannot rotate keys through an untrusted pin baseline; restore or re-review it first."
+                    )
+                if not self.legacy_tool_names(server):
+                    # Preflight unsigned entries too, before changing key material.
+                    try:
+                        canonical_json_bytes(self._server_document(server, self._data["servers"][server]))
+                    except (ValueError, TypeError, KeyError, AttributeError) as exc:
+                        raise PinSigningError(
+                            "Cannot rotate keys through an invalid v2 pin baseline."
+                        ) from exc
+            generated = rotate_key(
+                self._signing_key.parent, self._trusted_keys_path, self._signing_key, grace_days=grace_days
+            )
+            self._signing_key = generated.private_key_path
+            for server, entry in self._data.get("servers", {}).items():
+                if self.legacy_tool_names(server):
+                    continue
+                self._sign_entry(server, entry)
+            self._write()
+            self._verification.clear()
+            self._verification_messages.clear()
+            self._rollback_warnings.clear()
+            return generated.public_key
+
+    def resign(self) -> str:
+        """Re-sign reviewed v2 entries with the existing active key."""
+        from mcp_audit.pin_signing import PinSigningError, sign_document
+
+        if self._unsigned:
+            raise PinSigningError("Re-signing requires signing; omit --unsigned.")
+        with _file_lock(self._path):
+            self._data = self._load(strict=True)
+            for server in self.pinned_servers():
+                if not self.baseline_trusted(server):
+                    raise PinSigningError(
+                        "Cannot re-sign an untrusted pin baseline; restore or re-review it first."
+                    )
+            # Validate the active key even when only legacy entries exist.
+            metadata = sign_document({}, self._signing_key)
+            signer = metadata["signer"]
+            assert isinstance(signer, dict) and isinstance(signer["public_key"], str)
+            for server, entry in self._data.get("servers", {}).items():
+                if not self.legacy_tool_names(server):
+                    self._sign_entry(server, entry)
+            self._write()
+            self._verification.clear()
+            self._verification_messages.clear()
+            self._rollback_warnings.clear()
+            return signer["public_key"]
+
     def compute_hash(self, tool: ToolInfo) -> str:
         """Return 'sha256:<hex>' hash of the tool's canonical schema."""
         return surface_hash(canonical_tool_surface(tool))
 
     def legacy_tool_names(self, server_name: str) -> set[str]:
         """Tools whose pins predate annotation coverage, including mixed files."""
-        entries = self._data.get("servers", {}).get(server_name, {}).get("tools", {})
-        return {name for name, entry in entries.items() if entry.get("pin_schema", 1) == 1}
+        server = self._data.get("servers", {}).get(server_name, {})
+        if not isinstance(server, dict):
+            return set()
+        entries = server.get("tools", {})
+        if not isinstance(entries, dict):
+            return set()
+        return {
+            name
+            for name, entry in entries.items()
+            if isinstance(entry, dict) and entry.get("pin_schema", 1) == 1
+        }
 
     def schema_warnings(self, server_name: str) -> list[ScanWarning]:
         """Expose reduced legacy coverage without changing or re-hashing pins."""
@@ -248,6 +491,7 @@ class PinStore:
         artifact_hashes: dict[str, str] | None = None,
         *,
         redact_args: bool = True,
+        protocol: ProtocolObservation | None = None,
     ) -> None:
         """Upsert pin entries for all tools on a server. Writes atomically.
 
@@ -299,12 +543,23 @@ class PinStore:
                 elif isinstance(prior_snapshot.get("registry_artifact_hashes"), dict):
                     snapshot["registry_artifact_hashes"] = prior_snapshot["registry_artifact_hashes"]
                 server_entry["config_snapshot"] = snapshot
+            server_entry["pin_schema"] = 2
+            server_entry["pinned_at"] = now
+            server_entry["protocol"] = (
+                {"negotiated_version": protocol.negotiated_version, "era": protocol.era}
+                if protocol
+                else {"negotiated_version": None, "era": "unknown"}
+            )
+            self._sign_entry(server_name, server_entry)
+            self._verification.pop(server_name, None)
             self._data["pinned_at"] = now
             self._data["pin_schema"] = 2
             self._write()
 
     def check_drift(self, server_name: str, tools: list[ToolInfo]) -> list[DriftFinding]:
         """Compare current tool hashes against stored pins. Returns drift findings."""
+        if not self.baseline_trusted(server_name):
+            return []
         servers: dict[str, Any] = self._data.get("servers", {})
         server_entry: dict[str, Any] = servers.get(server_name, {})
         pinned_tools: dict[str, Any] = server_entry.get("tools", {})
@@ -406,6 +661,8 @@ class PinStore:
         Restores all covered fields, including annotations. Legacy snapshots
         retain absent fields as None. Empty list if the server is not pinned.
         """
+        if not self.baseline_trusted(server_name):
+            return []
         servers: dict[str, Any] = self._data.get("servers", {})
         pinned_tools: dict[str, Any] = servers.get(server_name, {}).get("tools", {})
         tools: list[ToolInfo] = []
@@ -429,6 +686,8 @@ class PinStore:
         self, server_name: str, *, warnings: list[ScanWarning] | None = None
     ) -> dict[str, dict[str, object]] | None:
         """Use complete v2 pins; warn and fall back when their snapshots are corrupt."""
+        if not self.baseline_trusted(server_name):
+            return None
         if server_name not in self.pinned_servers() or self.legacy_tool_names(server_name):
             return None
         entries = self._data["servers"][server_name].get("tools", {})
@@ -469,6 +728,8 @@ class PinStore:
         existed (older baselines) — callers must treat None as "no provenance
         comparison possible" and skip silently.
         """
+        if not self.baseline_trusted(server_name):
+            return None
         servers: dict[str, Any] = self._data.get("servers", {})
         snapshot = servers.get(server_name, {}).get("config_snapshot")
         return snapshot if isinstance(snapshot, dict) else None
@@ -575,6 +836,9 @@ class PinStore:
         (mutation paths): parse failures raise :class:`PinFileError`, because
         writing through them would wipe a possibly-repairable baseline.
         """
+        self._verification.clear()
+        self._verification_messages.clear()
+        self._rollback_warnings.clear()
         if not self._path.exists():
             self._read_error = None
             return {}
@@ -586,6 +850,8 @@ class PinStore:
             if len(data) > _MAX_PIN_FILE_BYTES:
                 raise yaml.YAMLError(f"pin file exceeds {_MAX_PIN_FILE_BYTES} bytes")
             raw: Any = yaml.load(data.decode("utf-8"), Loader=_NoAliasSafeLoader)  # noqa: S506 - loader subclasses SafeLoader
+            if isinstance(raw, dict) and "servers" in raw and not isinstance(raw["servers"], dict):
+                raise yaml.YAMLError("pin servers must be a mapping")
             self._read_error = None
             return dict(raw) if isinstance(raw, dict) else {}
         except Exception as exc:

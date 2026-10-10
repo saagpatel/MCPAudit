@@ -65,11 +65,12 @@ async def test_pinned_command_rewrite_is_high_in_run_scan(
     path = str(binary.resolve())
     assert store.baseline_artifacts(config.name) == {path: hashlib.sha256(before).hexdigest()}
     clean = await run_scan(ScanOptions(skip_connect=True, integrity_check=True), servers=[config])
-    assert not clean.audits[0].integrity_findings and not clean.warnings
+    assert not clean.audits[0].integrity_findings
+    assert [warning.code for warning in clean.warnings] == ["pin_unsigned"]
 
     binary.write_bytes(after)
     report = await run_scan(ScanOptions(skip_connect=True, integrity_check=True), servers=[config])
-    assert not report.warnings
+    assert [warning.code for warning in report.warnings] == ["pin_unsigned"]
     findings = report.audits[0].integrity_findings
     assert len(findings) == 1
     finding = findings[0]

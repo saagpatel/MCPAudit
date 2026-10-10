@@ -247,6 +247,11 @@ def discover(client_filter: str | None, verbose: bool) -> None:
     "--pin-check", is_flag=True, default=False, help="Check for tool schema drift against stored pins."
 )  # noqa: E501
 @click.option(
+    "--pin-file",
+    type=click.Path(path_type=Path),
+    help="Use this pin baseline for verification and drift checks.",
+)
+@click.option(
     "--trifecta-check",
     is_flag=True,
     default=False,
@@ -333,6 +338,7 @@ def scan(
     egress_allowlist: str | None,
     multi_tenant_hosts: str | None,
     pin_check: bool,
+    pin_file: Path | None,
     trifecta_check: bool,
     shadow_check: bool,
     escalation_check: bool,
@@ -366,6 +372,7 @@ def scan(
             card=card,
             names=names,
             previous=previous,
+            pin_file=pin_file,
         ),
         json_output,
         sarif_output,

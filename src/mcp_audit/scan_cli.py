@@ -61,6 +61,7 @@ async def _run_scan(
     card: Path | None = None,
     names: bool = False,
     previous: Path | None = None,
+    pin_file: Path | None = None,
 ) -> None:
     """CLI scan entrypoint — calls the engine's run_scan then renders output."""
     from mcp_audit.checkup import generate_card, load_previous, sticker
@@ -120,6 +121,7 @@ async def _run_scan(
         ssrf_check=ssrf_check,
         egress_check=egress_check,
         pin_check=pin_check,
+        pin_file=pin_file,
         trifecta_check=trifecta_check,
         shadow_check=shadow_check,
         escalation_check=escalation_check,

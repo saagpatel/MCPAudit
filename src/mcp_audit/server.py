@@ -148,7 +148,7 @@ def _build_mcp_server() -> Any:
                 f"Server '{name}' is ambiguous: {len(matches)} discovered entries share this name"
             )
 
-        report = await _scan(ScanOptions(), servers=[matches[0]])
+        report = await _scan(ScanOptions(pin_check=True), servers=[matches[0]])
         report = report.redacted()
         payload = report.audits[0].model_dump(mode="json")
         payload["warnings"] = [warning.model_dump() for warning in report.warnings]

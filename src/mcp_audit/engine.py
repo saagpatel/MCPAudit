@@ -43,6 +43,7 @@ from mcp_audit.models import (
     LLMAnalysisReasonCode,
     LLMAnalysisStatus,
     LLMAnalysisSummary,
+    PinIntegrityFinding,
     ScanWarning,
     ServerAudit,
     ServerConfig,
@@ -71,6 +72,7 @@ class ScanOptions:
     clients: list[ClientType] | None = None
     timeout: int = 10
     extra_config: str | None = None
+    pin_file: Path | None = None
 
     # Optional check families
     inject_check: bool = False
@@ -412,7 +414,7 @@ def _prepare_scan(
     ):
         from mcp_audit.pinning import PinStore
 
-        pin_store = PinStore()
+        pin_store = PinStore(path=opts.pin_file) if opts.pin_file is not None else PinStore()
         for server in servers:
             scan_warnings.extend(pin_store.schema_warnings(server.name))
         if opts.canary_check and pin_store.read_error:
@@ -546,6 +548,25 @@ async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) ->
     else:
         async with connection_limiter:
             audit = await connector.connect(srv)
+
+    if pin_store is not None:
+        audit.pin_verification = pin_store.verification(srv.name)
+        for warning in pin_store.verification_warnings(srv.name):
+            warn(warning.code, redact_text(warning.message), check=warning.check, servers=warning.servers)
+        if not pin_store.baseline_trusted(srv.name):
+            assert audit.pin_verification is not None
+            message = pin_store.verification_message(srv.name)
+            audit.pin_integrity_findings.append(
+                PinIntegrityFinding.model_validate(
+                    {
+                        "state": audit.pin_verification.state,
+                        "server_name": srv.name,
+                        "kid": audit.pin_verification.kid,
+                        "summary": message,
+                    }
+                )
+            )
+            warn("pin_integrity_failed", redact_text(message), check="pin_check", servers=[srv.name])
 
     # Keep listed surfaces intact for hashing/reporting. Only detector
     # input is bounded; coverage loss is explicit and contains no text.
@@ -959,7 +980,7 @@ def _finalize_scan(context: _ScanContext) -> AuditReport:
             config_health_inspected=True,
             baselines={
                 check: [
-                    a.server.name in pin_store.pinned_servers()
+                    a.server.name in pin_store.pinned_servers() and pin_store.baseline_trusted(a.server.name)
                     if check == "pin_check"
                     else bool(baseline(a.server.name))
                     for a in audits
