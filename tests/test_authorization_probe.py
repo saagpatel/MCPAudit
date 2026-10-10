@@ -267,22 +267,31 @@ async def test_spaced_auth_parameters_with_mixed_schemes(peer: Peer, spacing: st
     assert [request[1] for request in peer.requests] == ["/mcp", "/advertised", AS_PATH]
 
 
+ADVERTISED = 'resource_metadata="https://mcp.fixture.test/bad-prm"'
+
+
 @pytest.mark.anyio
-@pytest.mark.parametrize("challenge_form", ["duplicate", "field_lines", "empty_element", "empty_field_line"])
+@pytest.mark.parametrize(
+    "challenge_form",
+    ["plain", "quoted_pairs", "quoted_comma_decoy", "mixed_schemes", "mixed_case_spaced"],
+)
 @pytest.mark.parametrize("rule", ["MCPAUTH003", "MCPAUTH004"])
 async def test_advertised_metadata_not_replaced_by_clean_well_known(
     peer: Peer, challenge_form: str, rule: str
 ) -> None:
     ready(peer)  # Keep clean well-known metadata available to expose an incorrect fallback.
-    advertised = 'resource_metadata="https://mcp.fixture.test/bad-prm"'
-    forms: dict[str, str | list[str]] = {
-        "duplicate": f'Bearer {advertised}, {advertised}, scope="read"',
-        "field_lines": ['Bearer realm="mcp"', f'{advertised}, scope="read"'],
-        "empty_element": f'Bearer scope="read",, {advertised}',
-        "empty_field_line": ['Bearer scope="read",', advertised],
+    forms = {
+        "plain": f'Bearer {ADVERTISED}, scope="read"',
+        # Valid quoted-pairs are decoded once and keep the challenge complete.
+        "quoted_pairs": f'Bearer realm="a\\"b\\\\c\\,d", {ADVERTISED}, scope="read"',
+        "quoted_comma_decoy": (
+            'Bearer realm="x, resource_metadata=\\"https://mcp.fixture.test/decoy\\"", '
+            f'{ADVERTISED}, scope="read"'
+        ),
+        "mixed_schemes": f'Negotiate abc+/==, Basic realm="b", Bearer {ADVERTISED}, scope="read"',
+        "mixed_case_spaced": 'bearer Resource_Metadata = "https://mcp.fixture.test/bad-prm" , scope=read',
     }
-    challenge = forms[challenge_form]
-    peer.routes["/mcp"] = (401, {"WWW-Authenticate": challenge}, b"{}")
+    peer.routes["/mcp"] = (401, {"WWW-Authenticate": forms[challenge_form]}, b"{}")
     peer.document(
         "/bad-prm",
         {
@@ -297,9 +306,64 @@ async def test_advertised_metadata_not_replaced_by_clean_well_known(
     observation, findings = await probe.probe_authorization(RESOURCE)
     assert [finding.rule_id for finding in findings] == [rule]
     assert not observation.warnings
-    assert observation.www_authenticate[0]["resource_metadata"] == "https://mcp.fixture.test/bad-prm"
+    assert observation.www_authenticate[-1]["resource_metadata"] == "https://mcp.fixture.test/bad-prm"
     expected = ["/mcp", "/bad-prm"] + ([AS_PATH] if rule == "MCPAUTH004" else [])
     assert [request[1] for request in peer.requests] == expected
+
+
+def test_quoted_pairs_are_decoded_exactly_once() -> None:
+    challenges, incomplete = probe._challenges([r'Bearer realm="a\"b\\c\\\"d", scope="r\ead"'])
+    assert not incomplete
+    assert challenges == [{"realm": 'a"b\\c\\"d', "scope": "read"}]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "challenge_form",
+    [
+        "metadata_line_before_bearer",
+        "metadata_before_bearer_in_field",
+        "metadata_in_basic_challenge",
+        "metadata_after_token68",
+        "duplicate_metadata",
+        "conflicting_metadata",
+        "metadata_in_two_bearer_challenges",
+        "continuation_line",
+        "empty_element",
+        "empty_field_line",
+        "trailing_comma",
+        "duplicate_parameter",
+        "bearer_token68",
+        "bare_bearer_then_metadata",
+    ],
+)
+async def test_unattributable_or_ambiguous_metadata_is_incomplete(peer: Peer, challenge_form: str) -> None:
+    ready(peer)  # Clean well-known metadata stays available to expose an incorrect fallback.
+    forms: dict[str, str | list[str]] = {
+        "metadata_line_before_bearer": [ADVERTISED, 'Bearer scope="read"'],
+        "metadata_before_bearer_in_field": f'{ADVERTISED}, Bearer scope="read"',
+        "metadata_in_basic_challenge": f'Basic realm="b", {ADVERTISED}, Bearer scope="read"',
+        "metadata_after_token68": f'Basic abc==, {ADVERTISED}, Bearer scope="read"',
+        "duplicate_metadata": f'Bearer {ADVERTISED}, {ADVERTISED}, scope="read"',
+        "conflicting_metadata": (
+            f'Bearer {ADVERTISED}, resource_metadata="https://mcp.fixture.test/two", scope="read"'
+        ),
+        "metadata_in_two_bearer_challenges": f'Bearer {ADVERTISED}, scope="read", Bearer {ADVERTISED}',
+        "continuation_line": ['Bearer realm="mcp"', f'{ADVERTISED}, scope="read"'],
+        "empty_element": f'Bearer scope="read",, {ADVERTISED}',
+        "empty_field_line": ['Bearer scope="read",', ADVERTISED],
+        "trailing_comma": f'Bearer {ADVERTISED}, scope="read",',
+        "duplicate_parameter": f'Bearer scope="read", {ADVERTISED}, scope="write"',
+        "bearer_token68": f"Bearer scope=, {ADVERTISED}",
+        "bare_bearer_then_metadata": f"Bearer, {ADVERTISED}",
+    }
+    peer.routes["/mcp"] = (401, {"WWW-Authenticate": forms[challenge_form]}, b"{}")
+    peer.document("/bad-prm", {"resource": "https://mcp.fixture.test/other"})
+    observation, findings = await probe.probe_authorization(RESOURCE)
+    assert not findings  # Neither a clean fallback nor absent-scope guidance.
+    assert observation.warnings == ["challenge_parse_incomplete"]
+    assert not observation.metadata_fetches
+    assert [request[1] for request in peer.requests] == ["/mcp"]
 
 
 @pytest.mark.anyio
@@ -366,19 +430,9 @@ async def test_incomplete_challenge_never_uses_clean_well_known(peer: Peer, fail
 
 
 @pytest.mark.anyio
-async def test_conflicting_metadata_parameters_warn_without_fallback(peer: Peer) -> None:
+async def test_empty_metadata_advertisement_warns_without_fallback(peer: Peer) -> None:
     ready(peer)
-    peer.routes["/mcp"] = (
-        401,
-        {
-            "WWW-Authenticate": (
-                'Bearer resource_metadata="https://mcp.fixture.test/one", '
-                'resource_metadata="https://mcp.fixture.test/two", '
-                'resource_metadata="https://mcp.fixture.test/one", scope="read"'
-            )
-        },
-        b"{}",
-    )
+    peer.routes["/mcp"] = (401, {"WWW-Authenticate": 'Bearer resource_metadata="", scope="read"'}, b"{}")
     observation, findings = await probe.probe_authorization(RESOURCE)
     assert not findings
     assert observation.warnings == ["challenge_metadata_ambiguous"]
@@ -753,3 +807,114 @@ async def test_findings_survive_report_projections(peer: Peer) -> None:
         result["ruleId"] == "MCPAUTH004" and result["level"] == "error"
         for result in sarif["runs"][0]["results"]
     )
+
+
+def _adversarial_challenges() -> list[str | list[str]]:
+    """Header shapes that all advertise one metadata URL; deterministic, no randomness."""
+    url = "https://mcp.fixture.test/bad-prm"
+    metadata = [
+        f'resource_metadata="{url}"',
+        f'Resource_Metadata = "{url}"',
+        f'RESOURCE_METADATA\t=\t"{url}"',
+        f"resource_metadata={url}",  # ":" and "/" are not token characters.
+        f'resource_metadata="{url}\\"',  # The closing quote is escaped.
+        'resource_metadata="https:\\/\\/mcp.fixture.test\\/bad-prm"',  # Valid quoted-pairs.
+    ]
+    neighbours = [
+        'scope="read"',
+        'realm="a, b"',
+        'realm="a\\"b"',
+        'realm="\\\\"',
+        "error=invalid_token",
+        'p = "v"',
+        "",
+        'realm="\x01"',
+        'realm="a\\',
+        "realm=",
+        "=x",
+        "p=a b",
+    ]
+    schemes = ["Bearer", "bearer", "BEARER", "Basic", "Negotiate abc==", "Bearer abc==", "DPoP", ""]
+    shapes: list[str | list[str]] = []
+    for item in metadata:
+        for neighbour in neighbours:
+            for scheme in schemes:
+                head = f"{scheme} {item}".strip()
+                shapes.append(f"{head}, {neighbour}")
+                shapes.append(f"{scheme} {neighbour}, {item}".strip())
+                shapes.append(f"{neighbour}, {head}")
+                shapes.append([f"{scheme} {neighbour}".strip(), item])
+                shapes.append([item, f"{scheme} {neighbour}".strip()])
+        shapes.append(f"Bearer {item}," + ", ".join(f'p{i}="{i}"' for i in range(40)))
+        shapes.append("Bearer " + ", ".join(f'p{i}="{i}"' for i in range(31)) + f", {item}")
+        shapes.append(f'Basic realm="x", Bearer {item}, scope="read", Basic realm="y"')
+        shapes.append(f"Bearer {item}, {item}")
+        shapes.append(f"Bearer {item}, Bearer {item}")
+        shapes.append(f"Bearer {item},")
+        shapes.append(f", Bearer {item}")
+        shapes.append(f"Bearer  {item}")
+        shapes.append(f"Bearer{item}")
+    return shapes
+
+
+@pytest.mark.anyio
+async def test_advertised_metadata_is_used_or_review_is_skipped(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Property: an advertisement is never replaced by a silent, clean well-known fallback."""
+    gets: list[str] = []
+    challenge: list[str] = []
+    prm = json.dumps({"resource": "https://mcp.fixture.test/other"}).encode()
+    clean = json.dumps({"resource": RESOURCE, "authorization_servers": [ISSUER]}).encode()
+
+    async def respond(url: str, method: Literal["POST", "GET"], timeout: float) -> probe._Response:
+        if method == "POST":
+            return probe._Response(401, list(challenge), False, b"{}", False)
+        gets.append(url)
+        if url.endswith("/bad-prm"):
+            return probe._Response(200, [], False, prm, False)
+        if "/.well-known/oauth-protected-resource" in url:
+            return probe._Response(200, [], False, clean, False)
+        return probe._Response(200, [], False, json.dumps(healthy_metadata()).encode(), False)
+
+    monkeypatch.setattr(probe, "_request", respond)
+    shapes = _adversarial_challenges()
+    assert len(shapes) > 2_500
+    outcomes = {"used": 0, "incomplete": 0, "withheld": 0}
+    for shape in shapes:
+        challenge[:] = shape if isinstance(shape, list) else [shape]
+        gets.clear()
+        observation, findings = await probe.probe_authorization(RESOURCE)
+        assert not any("/.well-known/oauth-protected-resource" in url for url in gets), shape
+        if "challenge_parse_incomplete" in observation.warnings:
+            outcomes["incomplete"] += 1
+            assert not gets and not findings, shape
+        elif gets:
+            outcomes["used"] += 1
+            assert gets == ["https://mcp.fixture.test/bad-prm"], shape
+            assert "MCPAUTH003" in [finding.rule_id for finding in findings], shape
+        else:
+            # Only a well-formed advertisement that the binding checks refuse may skip a fetch.
+            outcomes["withheld"] += 1
+            assert observation.warnings == ["challenge_metadata_outside_resource_authority"], shape
+    assert outcomes["used"] and outcomes["incomplete"]
+
+
+@pytest.mark.parametrize(
+    "header",
+    [
+        'Basic realm="x"',
+        'Negotiate abc==, Basic realm="x"',
+        'Bearer scope="read"',
+        "Bearer",
+        'Bearer realm="a\\"b"',
+    ],
+)
+def test_complete_parse_without_advertisement_permits_well_known(header: str) -> None:
+    challenges, incomplete = probe._challenges([header])
+    assert not incomplete
+    assert all("resource_metadata" not in challenge for challenge in challenges)
+
+
+def test_bearer_challenge_cap_is_incomplete() -> None:
+    challenges, incomplete = probe._challenges([", ".join(["Bearer"] * (probe.MAX_BEARER_CHALLENGES + 1))])
+    assert incomplete
+    assert len(challenges) == probe.MAX_BEARER_CHALLENGES

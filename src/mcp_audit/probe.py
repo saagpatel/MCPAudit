@@ -5,7 +5,6 @@ from __future__ import annotations
 import http.client
 import ipaddress
 import json
-import re
 import socket
 import ssl
 import threading
@@ -15,7 +14,6 @@ from dataclasses import dataclass
 from functools import partial
 from typing import Literal
 from urllib.parse import urlsplit
-from urllib.request import parse_http_list
 
 import anyio
 
@@ -36,11 +34,14 @@ from mcp_audit.redaction import redact_text
 from mcp_audit.taxonomy import AUTHORIZATION_FINDINGS
 
 MAX_BODY_BYTES = 65_536
-_PARAM = re.compile(
-    r'^([!#$%&\'*+.^_`|~0-9A-Za-z-]+)\s*=\s*(?:"((?:\\.|[^"\\])*)"|([!#$%&\'*+.^_`|~0-9A-Za-z-]+))$'
-)
-_SCHEME = re.compile(r"^([!#$%&'*+.^_`|~0-9A-Za-z-]+)(?:[ \t]+(.*))?$")
-_TOKEN68 = re.compile(r"^[A-Za-z0-9._~+/-]+=*$")
+MAX_CHALLENGE_FIELD_CHARS = 8_192
+MAX_CHALLENGE_PARAMS = 32
+MAX_BEARER_CHALLENGES = 8
+_ALNUM = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+_TCHAR = frozenset(_ALNUM + "!#$%&'*+-.^_`|~")
+_TOKEN68 = frozenset(_ALNUM + "-._~+/")
+_OWS = frozenset(" \t")
+_EQUALS = frozenset("=")
 
 
 @dataclass
@@ -53,56 +54,144 @@ class _Response:
     streamed: bool = False
 
 
-def _challenges(headers: list[str]) -> tuple[list[dict[str, str]], bool]:
-    """Parse Bearer parameters without mixing Basic or another challenge into them."""
-    challenges: list[dict[str, str]] = []
-    current: dict[str, str] | None = None
-    incomplete = any(len(header) > 8_192 for header in headers)
-    # Repeated field lines form one comma-separated challenge list.
-    combined = ", ".join(header[:8_192] for header in headers)
-    quoted = escaped = False
-    for char in combined:
-        if escaped:
-            escaped = False
-        elif quoted and char == "\\":
-            escaped = True
-        elif char == '"':
-            quoted = not quoted
-    incomplete |= quoted or escaped
-    for item in parse_http_list(combined):
-        item = item.strip()
-        if not item:
-            continue
-        match = _PARAM.fullmatch(item)
-        if match is None:
-            scheme = _SCHEME.fullmatch(item)
-            if scheme is None:
-                # A malformed parameter must not silently terminate a Bearer challenge.
-                incomplete = True
-                current = None
+class _Cursor:
+    """Single-pass reader over a challenge list; backtracking is bounded to one element."""
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.pos = 0
+
+    def peek(self) -> str:
+        return self.text[self.pos] if self.pos < len(self.text) else ""
+
+    def take(self, allowed: frozenset[str]) -> str:
+        start = self.pos
+        while self.pos < len(self.text) and self.text[self.pos] in allowed:
+            self.pos += 1
+        return self.text[start : self.pos]
+
+    def ows(self) -> bool:
+        return bool(self.take(_OWS))
+
+    def element_end(self) -> bool:
+        self.ows()
+        return self.peek() in {"", ","}
+
+    def quoted(self) -> str | None:
+        """RFC 9110 quoted-string; each quoted-pair is decoded exactly once."""
+        self.pos += 1
+        decoded: list[str] = []
+        while self.pos < len(self.text):
+            char = self.text[self.pos]
+            if char == '"':
+                self.pos += 1
+                return "".join(decoded)
+            if char == "\\":
+                escaped = self.text[self.pos + 1 : self.pos + 2]
+                if not escaped or not (
+                    escaped == "\t" or " " <= escaped <= "~" or "\x80" <= escaped <= "\xff"
+                ):
+                    return None
+                decoded.append(escaped)
+                self.pos += 2
                 continue
-            current = {} if scheme[1].lower() == "bearer" else None
-            if current is not None:
-                challenges.append(current)
-                if scheme[2] is not None:
-                    match = _PARAM.fullmatch(scheme[2].strip())
-                    if match is None:
-                        incomplete = True
-            elif scheme[2] is not None:
-                tail = scheme[2].strip()
-                if _PARAM.fullmatch(tail) is None and _TOKEN68.fullmatch(tail) is None:
-                    incomplete = True
-        if current is not None and match:
-            key = match[1].lower()
-            value = re.sub(r"\\(.)", r"\1", match[2]) if match[2] is not None else match[3]
-            if key in current and current[key] != value:
-                # Conflicting duplicates remain present but cannot steer a fetch.
-                current[key] = ""
-            elif key not in current and len(current) < 32:
-                current[key] = value
-            elif key not in current:
+            # qdtext: HTAB / SP / VCHAR except DQUOTE and backslash / obs-text.
+            if not (char == "\t" or " " <= char <= "~" or "\x80" <= char <= "\xff"):
+                return None
+            decoded.append(char)
+            self.pos += 1
+        return None
+
+    def param_value(self) -> str | None:
+        """After an auth-param name: BWS "=" BWS ( token / quoted-string ), ending the element."""
+        if self.peek() != "=":
+            return None
+        self.pos += 1
+        self.ows()
+        value = self.quoted() if self.peek() == '"' else self.take(_TCHAR) or None
+        return value if value is not None and self.element_end() else None
+
+
+def _challenges(headers: list[str]) -> tuple[list[dict[str, str]], bool]:
+    """Parse RFC 9110 challenges, keeping Bearer parameters; fail closed on any doubt.
+
+    The result is complete only when every field value parsed unambiguously and at most one
+    ``resource_metadata`` appeared, inside a Bearer challenge. Anything else (several field
+    lines, empty list elements, unattributable or duplicate parameters, malformed tokens or
+    quoted strings, truncation, or a challenge or parameter cap) is incomplete, so no caller
+    may treat a missing ``resource_metadata`` as an omitted advertisement.
+    """
+    challenges: list[dict[str, str]] = []
+    if not headers:
+        return challenges, False
+    # Clients attribute parameters across repeated field lines inconsistently.
+    incomplete = len(headers) > 1 or any(len(header) > MAX_CHALLENGE_FIELD_CHARS for header in headers)
+    cursor = _Cursor(", ".join(header[:MAX_CHALLENGE_FIELD_CHARS] for header in headers))
+    current: dict[str, str] | None = None  # The open Bearer challenge, if any.
+    accepts_params = False  # The open challenge began with an auth-param.
+    metadata_seen = 0
+
+    def store(name: str, value: str) -> None:
+        nonlocal incomplete, metadata_seen
+        key = name.lower()
+        if key == "resource_metadata":
+            metadata_seen += 1
+            incomplete |= metadata_seen > 1 or current is None
+        if not accepts_params:
+            incomplete = True  # No challenge owns this parameter.
+        elif current is not None:
+            if key in current or len(current) >= MAX_CHALLENGE_PARAMS:
                 incomplete = True
-    return challenges, incomplete
+            else:
+                current[key] = value
+
+    while True:
+        cursor.ows()
+        if cursor.peek() in {"", ","}:
+            incomplete = True  # Empty field value or list element.
+        else:
+            name = cursor.take(_TCHAR)
+            spaced = cursor.ows()
+            if not name:
+                return challenges, True
+            if cursor.peek() == "=":
+                # An auth-param continuing the open challenge.
+                value = cursor.param_value()
+                if value is None:
+                    return challenges, True
+                store(name, value)
+            else:
+                # A new challenge: scheme [ 1*SP ( token68 / auth-param ) ].
+                current = {} if name.lower() == "bearer" else None
+                if current is not None and len(challenges) < MAX_BEARER_CHALLENGES:
+                    challenges.append(current)
+                elif current is not None:
+                    incomplete = True  # Parsed, but not retained as evidence.
+                # Only "scheme SP auth-param" opens a parameter list; a bare scheme or a
+                # token68 cannot own a later parameter.
+                accepts_params = False
+                if not cursor.element_end():
+                    if not spaced:
+                        return challenges, True
+                    start = cursor.pos
+                    param = cursor.take(_TCHAR)
+                    cursor.ows()
+                    value = cursor.param_value() if param else None
+                    if value is not None:
+                        accepts_params = True
+                        store(param, value)
+                    else:
+                        cursor.pos = start
+                        if not cursor.take(_TOKEN68):
+                            return challenges, True
+                        cursor.take(_EQUALS)
+                        if not cursor.element_end():
+                            return challenges, True
+                        # RFC 6750 Bearer uses auth-params only; "scope=" may be a truncated one.
+                        incomplete |= current is not None
+        if not cursor.peek():
+            return challenges, incomplete
+        cursor.pos += 1  # The element separator.
 
 
 def _json_object(raw: bytes) -> dict[str, object] | None:
