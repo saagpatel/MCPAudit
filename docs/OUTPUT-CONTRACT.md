@@ -29,6 +29,13 @@ invalid documents, timeout, and byte/fetch limits. `metadata_fetches` records
 only the redacted URL, nullable status/body byte count, and a fixed `reason`.
 SSE responses are closed after their headers with `probe_stream_not_read`;
 their JSON-RPC error code remains unknown.
+Any probe warning also adds a report-level `authorization_probe_incomplete`
+warning naming the affected server and fixed reason codes. Successful SDK
+enumeration retains `connection_status: connected`, but the report warning
+prevents a presentation letter grade and is visible in terminal output and HTML.
+Both SARIF profiles emit it as a warning-level tool execution notification with
+descriptor `MCP-AUTHORIZATION-PROBE-INCOMPLETE` and the structured warning in
+`properties`; it is incomplete coverage, not an authorization finding.
 
 On 401, metadata discovery uses HTTPS GET only, no credentials, proxy
 environment, redirects, cookies, or mutations; all DNS addresses must be
@@ -43,7 +50,13 @@ authority, matching the posture producer contract. RFC 9728 path/root and
 RFC 8414/OpenID discovery fallbacks are attempted in order; a binding mismatch
 stops use of that document.
 Repeated challenge field lines are parsed as one list, including parameter
-whitespace around `=`. Identical duplicate parameters retain their value;
+whitespace around `=`; empty list elements are ignored. Parsing retains at most
+8,192 characters per header field and 32 parameters per Bearer challenge.
+Header truncation, excess parameters, or malformed challenge syntax emit
+`challenge_parse_incomplete` and skip metadata review entirely, including
+well-known fallback and absent-scope findings. Retained parameters are partial
+evidence and cannot establish that a metadata advertisement was absent.
+Identical duplicate parameters retain their value;
 conflicting or empty metadata advertisements produce
 `challenge_metadata_ambiguous` without falling back to well-known metadata.
 

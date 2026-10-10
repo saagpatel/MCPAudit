@@ -18,7 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   supported reference sets. Reserve SDK enumeration time and retain partial
   probe evidence on timeout; parse spaced parameters and repeated challenge
   lines, preserving identical duplicates and warning on conflicting metadata
-  advertisements without substituting well-known metadata.
+  advertisements without substituting well-known metadata. Ignore empty
+  challenge list elements and warn on incomplete parsing or exhausted header
+  and parameter limits without well-known fallback. Project incomplete probe
+  coverage into scan warnings, terminal/HTML grading, and SARIF notifications
+  while preserving successful SDK enumeration.
 
 ### Fixed
 
