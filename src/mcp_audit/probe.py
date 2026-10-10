@@ -36,7 +36,11 @@ from mcp_audit.redaction import redact_text
 from mcp_audit.taxonomy import AUTHORIZATION_FINDINGS
 
 MAX_BODY_BYTES = 65_536
-_PARAM = re.compile(r'^([!#$%&\'*+.^_`|~0-9A-Za-z-]+)\s*=\s*(?:"((?:\\.|[^"\\])*)"|([^\s,]+))$')
+_PARAM = re.compile(
+    r'^([!#$%&\'*+.^_`|~0-9A-Za-z-]+)\s*=\s*(?:"((?:\\.|[^"\\])*)"|([!#$%&\'*+.^_`|~0-9A-Za-z-]+))$'
+)
+_SCHEME = re.compile(r"^([!#$%&'*+.^_`|~0-9A-Za-z-]+)(?:[ \t]+(.*))?$")
+_TOKEN68 = re.compile(r"^[A-Za-z0-9._~+/-]+=*$")
 
 
 @dataclass
@@ -49,22 +53,45 @@ class _Response:
     streamed: bool = False
 
 
-def _challenges(headers: list[str]) -> list[dict[str, str]]:
+def _challenges(headers: list[str]) -> tuple[list[dict[str, str]], bool]:
     """Parse Bearer parameters without mixing Basic or another challenge into them."""
     challenges: list[dict[str, str]] = []
     current: dict[str, str] | None = None
+    incomplete = any(len(header) > 8_192 for header in headers)
     # Repeated field lines form one comma-separated challenge list.
-    for item in parse_http_list(", ".join(header[:8_192] for header in headers)):
+    combined = ", ".join(header[:8_192] for header in headers)
+    quoted = escaped = False
+    for char in combined:
+        if escaped:
+            escaped = False
+        elif quoted and char == "\\":
+            escaped = True
+        elif char == '"':
+            quoted = not quoted
+    incomplete |= quoted or escaped
+    for item in parse_http_list(combined):
         item = item.strip()
+        if not item:
+            continue
         match = _PARAM.fullmatch(item)
         if match is None:
-            scheme, space, tail = item.partition(" ")
-            current = {} if scheme.lower() == "bearer" else None
+            scheme = _SCHEME.fullmatch(item)
+            if scheme is None:
+                # A malformed parameter must not silently terminate a Bearer challenge.
+                incomplete = True
+                current = None
+                continue
+            current = {} if scheme[1].lower() == "bearer" else None
             if current is not None:
                 challenges.append(current)
-            if space:
-                item = tail.strip()
-                match = _PARAM.fullmatch(item)
+                if scheme[2] is not None:
+                    match = _PARAM.fullmatch(scheme[2].strip())
+                    if match is None:
+                        incomplete = True
+            elif scheme[2] is not None:
+                tail = scheme[2].strip()
+                if _PARAM.fullmatch(tail) is None and _TOKEN68.fullmatch(tail) is None:
+                    incomplete = True
         if current is not None and match:
             key = match[1].lower()
             value = re.sub(r"\\(.)", r"\1", match[2]) if match[2] is not None else match[3]
@@ -73,7 +100,9 @@ def _challenges(headers: list[str]) -> list[dict[str, str]]:
                 current[key] = ""
             elif key not in current and len(current) < 32:
                 current[key] = value
-    return challenges
+            elif key not in current:
+                incomplete = True
+    return challenges, incomplete
 
 
 def _json_object(raw: bytes) -> dict[str, object] | None:
@@ -314,7 +343,9 @@ async def probe_authorization(
             response = await _request(url, "POST", timeout)
             observation.status = response.status
             observation.session_id_present = response.session_id_present
-            challenges = _challenges(response.challenges)
+            challenges, challenge_incomplete = _challenges(response.challenges)
+            if challenge_incomplete:
+                observation.warnings.append("challenge_parse_incomplete")
             observation.www_authenticate = [
                 {
                     key: redact_text(value)
@@ -334,7 +365,7 @@ async def probe_authorization(
                 code = error.get("code") if isinstance(error, dict) else None
                 if type(code) is int:
                     observation.jsonrpc_error_code = code
-            if response.status == 401:
+            if response.status == 401 and not challenge_incomplete:
                 await _review_metadata(url, challenges, observation, findings, timeout)
     except (OSError, ValueError, http.client.HTTPException, TimeoutError):
         observation.warnings.append("probe_blocked_or_unavailable")

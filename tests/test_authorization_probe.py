@@ -10,12 +10,13 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from io import BytesIO
+from io import BytesIO, StringIO
 from typing import Literal, cast
 from unittest.mock import Mock
 
 import anyio
 import pytest
+from rich.console import Console
 
 from mcp_audit import probe
 from mcp_audit.connector import ServerConnector, _ServerCapabilities
@@ -31,6 +32,7 @@ from mcp_audit.models import (
     TransportType,
 )
 from mcp_audit.sarif import SarifGenerator
+from mcp_audit.terminal_summary import render_summary
 from tests.conftest import make_server_config, make_tool
 
 RESOURCE = "https://mcp.fixture.test/mcp"
@@ -266,18 +268,20 @@ async def test_spaced_auth_parameters_with_mixed_schemes(peer: Peer, spacing: st
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("challenge_form", ["duplicate", "field_lines"])
+@pytest.mark.parametrize("challenge_form", ["duplicate", "field_lines", "empty_element", "empty_field_line"])
 @pytest.mark.parametrize("rule", ["MCPAUTH003", "MCPAUTH004"])
 async def test_advertised_metadata_not_replaced_by_clean_well_known(
     peer: Peer, challenge_form: str, rule: str
 ) -> None:
     ready(peer)  # Keep clean well-known metadata available to expose an incorrect fallback.
     advertised = 'resource_metadata="https://mcp.fixture.test/bad-prm"'
-    challenge: str | list[str] = (
-        f'Bearer {advertised}, {advertised}, scope="read"'
-        if challenge_form == "duplicate"
-        else ['Bearer realm="mcp"', f'{advertised}, scope="read"']
-    )
+    forms: dict[str, str | list[str]] = {
+        "duplicate": f'Bearer {advertised}, {advertised}, scope="read"',
+        "field_lines": ['Bearer realm="mcp"', f'{advertised}, scope="read"'],
+        "empty_element": f'Bearer scope="read",, {advertised}',
+        "empty_field_line": ['Bearer scope="read",', advertised],
+    }
+    challenge = forms[challenge_form]
     peer.routes["/mcp"] = (401, {"WWW-Authenticate": challenge}, b"{}")
     peer.document(
         "/bad-prm",
@@ -292,9 +296,73 @@ async def test_advertised_metadata_not_replaced_by_clean_well_known(
         peer.document(AS_PATH, metadata)
     observation, findings = await probe.probe_authorization(RESOURCE)
     assert [finding.rule_id for finding in findings] == [rule]
+    assert not observation.warnings
     assert observation.www_authenticate[0]["resource_metadata"] == "https://mcp.fixture.test/bad-prm"
     expected = ["/mcp", "/bad-prm"] + ([AS_PATH] if rule == "MCPAUTH004" else [])
     assert [request[1] for request in peer.requests] == expected
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("extensions", [30, 31])
+async def test_challenge_parameter_limit_cannot_hide_advertised_metadata(peer: Peer, extensions: int) -> None:
+    ready(peer)
+    parameters = ", ".join(f'p{i}="{i}"' for i in range(1, extensions + 1))
+    peer.routes["/mcp"] = (
+        401,
+        {
+            "WWW-Authenticate": (
+                f'Bearer scope="read", {parameters}, resource_metadata="https://mcp.fixture.test/bad-prm"'
+            )
+        },
+        b"{}",
+    )
+    peer.document("/bad-prm", {"resource": "https://mcp.fixture.test/other"})
+    observation, findings = await probe.probe_authorization(RESOURCE)
+    if extensions == 30:
+        assert [finding.rule_id for finding in findings] == ["MCPAUTH003"]
+        assert not observation.warnings
+        assert [request[1] for request in peer.requests] == ["/mcp", "/bad-prm"]
+    else:
+        assert not findings
+        assert observation.warnings == ["challenge_parse_incomplete"]
+        assert not observation.metadata_fetches
+        assert [request[1] for request in peer.requests] == ["/mcp"]
+    assert len(observation.www_authenticate[0]) == 32
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "failure",
+    [
+        "header_limit",
+        "malformed_parameter",
+        "spaced_malformed_parameter",
+        "malformed_bearer",
+        "unclosed_quote",
+    ],
+)
+async def test_incomplete_challenge_never_uses_clean_well_known(peer: Peer, failure: str) -> None:
+    ready(peer)
+    padding_prefix = 'Bearer scope="read", padding="'
+    prefix = {
+        # The retained 8,192 characters are valid: only the truncation flag can catch the lost URL.
+        "header_limit": padding_prefix + "x" * (8_192 - len(padding_prefix) - 1) + '",',
+        "malformed_parameter": 'Bearer scope="read", broken=,',
+        "spaced_malformed_parameter": 'Bearer scope="read", broken =,',
+        "malformed_bearer": "Bearer scope=,",
+        "unclosed_quote": 'Bearer scope="read", Basic realm="unclosed,',
+    }[failure]
+    peer.routes["/mcp"] = (
+        401,
+        {"WWW-Authenticate": prefix + ' resource_metadata="https://mcp.fixture.test/bad-prm"'},
+        b"{}",
+    )
+    peer.document("/bad-prm", {"resource": "https://mcp.fixture.test/other"})
+    observation, findings = await probe.probe_authorization(RESOURCE)
+    assert not findings
+    assert observation.warnings == ["challenge_parse_incomplete"]
+    assert not observation.metadata_fetches
+    assert [request[1] for request in peer.requests] == ["/mcp"]
 
 
 @pytest.mark.anyio
@@ -585,6 +653,70 @@ async def test_outer_cancellation_retains_incremental_probe_evidence(
     assert [finding.rule_id for finding in findings] == ["MCPAUTH002"]
     assert len(observation.metadata_fetches) == 1
     assert observation.metadata_fetches[0].status is None
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("failure", ["unavailable", "incomplete_challenge", "metadata_unavailable", "none"])
+async def test_probe_warnings_survive_successful_sdk_and_report_projections(
+    peer: Peer, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    ready(peer)
+    expected_reason = {
+        "unavailable": "probe_blocked_or_unavailable",
+        "incomplete_challenge": "challenge_parse_incomplete",
+        "metadata_unavailable": "resource_metadata_unavailable",
+    }.get(failure)
+    if failure == "incomplete_challenge":
+        peer.routes["/mcp"] = (401, {"WWW-Authenticate": 'Bearer scope="read", broken='}, b"{}")
+    elif failure == "metadata_unavailable":
+        peer.routes[PRM_PATH] = (503, {}, b"{}")
+    elif failure == "unavailable":
+
+        async def unavailable(url: str, method: Literal["POST", "GET"], timeout: float) -> probe._Response:
+            raise OSError("synthetic unavailable probe")
+
+        monkeypatch.setattr(probe, "_request", unavailable)
+
+    async def enumerate_tools(self: ServerConnector, config: ServerConfig) -> _ServerCapabilities:
+        return _ServerCapabilities([make_tool(name="fixture-tool")], [], [])
+
+    monkeypatch.setattr(ServerConnector, "_connect_http", enumerate_tools)
+    server = make_server_config(transport=TransportType.HTTP, command=None, url=RESOURCE)
+    report = await run_scan(ScanOptions(config_only=True), servers=[server])
+    audit = report.audits[0]
+    assert audit.connection_status == "connected"
+    assert report.servers_connected == 1
+    assert [tool.name for tool in audit.tools] == ["fixture-tool"]
+    assert audit.authorization_probe is not None
+    warnings = [warning for warning in report.warnings if warning.code == "authorization_probe_incomplete"]
+    if expected_reason is None:
+        assert not audit.authorization_probe.warnings
+        assert not warnings
+        assert report.ensure_review_summary().grade is not None
+        return
+    assert audit.authorization_probe.warnings == [expected_reason]
+    assert len(warnings) == 1
+    warning = warnings[0]
+    assert warning.servers == [server.name]
+    assert expected_reason in warning.message
+    assert report.ensure_review_summary().grade is None
+    assert report.ux_summary.grade is None
+    assert expected_reason in report.model_dump_json()
+    html = HtmlReportGenerator().generate(report)
+    assert warning.code in html and expected_reason in html
+    terminal = StringIO()
+    render_summary(Console(file=terminal, width=200, color_system=None), report)
+    assert expected_reason in terminal.getvalue()
+    assert "Preview" in terminal.getvalue()
+    for profile in ("compatibility", "extended"):
+        sarif = SarifGenerator().generate(report, profile=profile)
+        notifications = sarif["runs"][0]["invocations"][0]["toolExecutionNotifications"]
+        notification = next(
+            item for item in notifications if item["descriptor"]["id"] == "MCP-AUTHORIZATION-PROBE-INCOMPLETE"
+        )
+        assert notification["level"] == "warning"
+        assert notification["message"]["text"] == warning.message
+        assert notification["properties"] == warning.model_dump()
 
 
 @pytest.mark.anyio

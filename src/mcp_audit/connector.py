@@ -480,6 +480,19 @@ class ServerConnector:
                         observation=audit.authorization_probe,
                         findings=audit.authorization_findings,
                     )
+                    if audit.authorization_probe.warnings and self.scan_warnings is not None:
+                        reasons = ", ".join(dict.fromkeys(audit.authorization_probe.warnings))
+                        self.scan_warnings.append(
+                            ScanWarning(
+                                code="authorization_probe_incomplete",
+                                message=(
+                                    f"Server '{config.name}': authorization probe coverage is incomplete "
+                                    f"({reasons}). Review authorization independently "
+                                    "before trusting this result."
+                                ),
+                                servers=[config.name],
+                            )
+                        )
                 if config.transport == TransportType.STDIO:
                     capabilities = (
                         await self._connect_stdio(config, probe)

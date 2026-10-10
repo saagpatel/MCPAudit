@@ -316,11 +316,11 @@ class SarifGenerator:
             {
                 "level": "warning",
                 "message": {"text": warning.message},
-                "descriptor": {"id": "MCP-PROJECT-CONFIG-NOT-CONNECTED"},
+                "descriptor": {"id": f"MCP-{warning.code.upper().replace('_', '-')}"},
                 "properties": warning.model_dump(),
             }
             for warning in report.warnings
-            if warning.code == "project_config_not_connected"
+            if warning.code in {"project_config_not_connected", "authorization_probe_incomplete"}
         )
         if canaries or coverage_notifications:
             invocation: dict[str, Any] = {"executionSuccessful": True}
