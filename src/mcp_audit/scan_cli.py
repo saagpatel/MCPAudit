@@ -58,12 +58,22 @@ async def _run_scan(
     color: str = "auto",
     ignore_rules: tuple[str, ...] = (),
     ignore_reason: str | None = None,
+    card: Path | None = None,
+    names: bool = False,
+    previous: Path | None = None,
 ) -> None:
     """CLI scan entrypoint — calls the engine's run_scan then renders output."""
+    from mcp_audit.checkup import generate_card, load_previous, sticker
     from mcp_audit.terminal_summary import summary_console
 
     out = summary_console(color=color)
     diagnostics = io.StringIO()
+    if (names or previous is not None) and card is None:
+        raise click.UsageError("--names and --previous require --card.")
+    try:
+        previous_report = load_previous(previous)
+    except (OSError, ValueError) as exc:
+        raise click.ClickException(f"Cannot load previous report: {type(exc).__name__}") from None
     if config_only and not extra_config:
         raise click.ClickException("--config-only requires --config PATH.")
     if canary_check and (skip_connect or not config_only or not extra_config):
@@ -134,12 +144,14 @@ async def _run_scan(
     config_paths: list[Path] = [cfg_path]
     if policy_path:
         config_paths.append(Path(policy_path))
+    if previous is not None:
+        config_paths.append(previous)
     try:
         report = await run_scan(
             scan_options,
             override_applier=override_applier,
             console=Console(file=diagnostics, force_terminal=False),
-            config_paths=config_paths if json_output or sarif_output or html_output else None,
+            config_paths=config_paths if json_output or sarif_output or html_output or card else None,
         )
     except ValueError as exc:
         # A caller-supplied --config path that is missing or unparseable must be
@@ -151,6 +163,7 @@ async def _run_scan(
             ("--json", Path(json_output) if json_output else None),
             ("--sarif", Path(sarif_output) if sarif_output else None),
             ("--html", Path(html_output) if html_output else None),
+            ("--card", card),
         ],
         config_paths,
     )
@@ -192,6 +205,14 @@ async def _run_scan(
         html_path = Path(html_output)
         html_path.write_text(HtmlReportGenerator().generate(out_report, show_host=show_host))
         written_artifacts.append(html_path.name)
+
+    if card is not None:
+        try:
+            card.write_text(generate_card(report, names=names, previous=previous_report), encoding="utf-8")
+        except OSError as exc:
+            raise click.ClickException(f"Cannot write checkup card: {type(exc).__name__}") from None
+        out.print(terminal_safe(sticker(report)))
+        written_artifacts.append(card.name)
 
     if written_artifacts:
         out.print(terminal_safe(f"Wrote {' · '.join(written_artifacts)}"))

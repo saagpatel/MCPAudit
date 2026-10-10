@@ -16,7 +16,7 @@ from rich.console import Console
 from mcp_audit.agent_ui_cli import agent_ui
 from mcp_audit.authorization_posture_cli import authorization_posture
 from mcp_audit.cache_contract_cli import cache_contract
-from mcp_audit.check_cli import check, demo, inspect
+from mcp_audit.check_cli import check, checkup, demo, inspect
 from mcp_audit.confighealth import config_health_findings
 from mcp_audit.discovery import ConfigParseError, discover_all_configs
 from mcp_audit.enforcement_cli import enforcement_fixture
@@ -49,12 +49,12 @@ class ReviewGroup(click.Group):
 
     def format_commands(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
         groups = {
-            "Everyday": ("check", "inspect", "demo", "explain"),
+            "Everyday": ("check", "checkup", "inspect", "demo", "explain"),
             "Integrations": ("serve",),
             "Advanced": tuple(
                 name
                 for name in self.list_commands(ctx)
-                if name not in {"check", "inspect", "demo", "explain", "serve"}
+                if name not in {"check", "checkup", "inspect", "demo", "explain", "serve"}
             ),
         }
         for heading, names in groups.items():
@@ -104,6 +104,7 @@ def main(ctx: click.Context, debug: bool, details: bool, json_stdout: bool, colo
 
 
 main.add_command(check)
+main.add_command(checkup)
 main.add_command(inspect)
 main.add_command(demo)
 
@@ -530,6 +531,11 @@ def discover(client_filter: str | None, verbose: bool) -> None:
     help="Field-report mode: scrub hostname and home-path usernames from --json/--sarif/--html output (opt-in).",  # noqa: E501
 )
 @click.option("--show-host", is_flag=True, help="Include the hostname in HTML (hidden by default).")
+@click.option("--card", type=click.Path(path_type=Path), help="Write a local counts-only HTML checkup card.")
+@click.option("--names", is_flag=True, help="Opt in to server names on the checkup card only.")
+@click.option(
+    "--previous", type=click.Path(path_type=Path), help="Compare the card with this local report JSON."
+)
 def scan(
     json_output: str | None,
     sarif_output: str | None,
@@ -570,6 +576,9 @@ def scan(
     canary_calls: int,
     canary_identities: int | None,
     canary_safe_tools: tuple[str, ...],
+    card: Path | None,
+    names: bool,
+    previous: Path | None,
 ) -> None:
     """Full audit: discover servers, connect, enumerate tools, score risk, report."""
     if config_only and not extra_config:
@@ -584,6 +593,9 @@ def scan(
             color=color,
             ignore_rules=ignore_rules,
             ignore_reason=ignore_reason,
+            card=card,
+            names=names,
+            previous=previous,
         ),
         json_output,
         sarif_output,
