@@ -1043,6 +1043,61 @@ class ConfigHealthFinding(ReferencedFinding):
     config_paths: list[str] = Field(default_factory=list)
 
 
+class SchemaFinding(ReferencedFinding):
+    """A static finding on a served tool schema or icon declaration."""
+
+    tool_name: str
+    kind: str
+    evidence: list[str]
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def rule_id(self) -> str:
+        return {
+            "header_invalid": "MCP051",
+            "header_duplicate": "MCP051",
+            "header_type": "MCP051",
+            "header_unreachable": "MCP051",
+            "credential_header": "MCP052",
+            "external_ref": "MCP053",
+            "icon_source": "MCP054",
+            "icon_origin": "MCP054",
+        }[self.kind]
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def severity(self) -> str:
+        return "medium" if self.kind.startswith("header_") else "low"
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def title(self) -> str:
+        return {
+            "header_invalid": "Invalid MCP header declaration",
+            "header_duplicate": "Duplicate MCP header declaration",
+            "header_type": "Non-primitive MCP header value",
+            "header_unreachable": "Unreachable MCP header declaration",
+            "credential_header": "Credential parameter mirrored to a header",
+            "external_ref": "External schema reference",
+            "icon_source": "Unsupported icon source",
+            "icon_origin": "Cross-origin icon source",
+        }[self.kind]
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def target_name(self) -> str:
+        return self.tool_name
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def remediation(self) -> str:
+        from mcp_audit.taxonomy import FINDING_COPY
+
+        # Per-finding detail keeps distinct schema problems as distinct summary actions.
+        detail = f" ({self.evidence[0]})" if self.evidence else ""
+        return FINDING_COPY[self.rule_id].how_to_fix + detail
+
+
 class CacheHintObservation(BaseModel):
     """Wire hints for one page; presence flags distinguish absent from invalid."""
 
@@ -1104,6 +1159,7 @@ class ServerAudit(BaseModel):
     annotation_coverage: float = 0.0  # Percentage of tools with annotations
     annotations_missing: bool = False  # Informational; missing hints are not capability evidence.
     injection_findings: list[InjectionFinding] = Field(default_factory=list)
+    schema_findings: list[SchemaFinding] = Field(default_factory=list)
     ssrf_findings: list[SsrfFinding] = Field(default_factory=list)
     egress_findings: list[EgressFinding] = Field(default_factory=list)
     drift_findings: list[DriftFinding] = Field(default_factory=list)
