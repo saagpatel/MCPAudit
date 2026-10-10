@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -74,7 +75,9 @@ async def _connect_http_probe(reader: asyncio.StreamReader, writer: asyncio.Stre
         pass
     finally:
         writer.close()
-        await writer.wait_closed()
+        # The scanner hangs up at its cap; a reset while closing is the expected outcome.
+        with contextlib.suppress(ConnectionError, OSError):
+            await writer.wait_closed()
 
 
 class _Chunks(httpx2.AsyncByteStream):
