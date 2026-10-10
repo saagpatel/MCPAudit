@@ -83,7 +83,7 @@ For a pinned release example, the composite Action can upload SARIF to GitHub
 code scanning:
 
 ```yaml
-- uses: saagpatel/MCPAudit@v2.8.1
+- uses: saagpatel/MCPAudit@v2.9.0
 ```
 
 The release checklist calls out Action references so maintainers can update
