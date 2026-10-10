@@ -91,6 +91,7 @@ and inputs before enabling it in a repository.
 | --- | --- | --- |
 | Learn the output | `mcp-audit demo` | Uses bundled synthetic input |
 | Review one file | `mcp-audit check --config FILE` | Static check of the selected config |
+| Make a share card | `mcp-audit checkup --config FILE --card checkup.html` | Writes a local counts-only HTML Preview |
 | See discovered sources | `mcp-audit inspect` | Lists identities and source status |
 | Inspect one server | `mcp-audit check --connect --server ID` | Connects to one unambiguous identity |
 | Automate a policy | `mcp-audit check --policy FILE` | Evaluates a local policy |
@@ -98,6 +99,20 @@ and inputs before enabling it in a repository.
 The `ID` for a connected check has the form `CLIENT:SCOPE:NAME`. Use the exact
 identity shown by `inspect`; the command refuses ambiguous selections. A
 connected check can start the configured local command or contact its endpoint.
+
+`checkup` writes a self-contained HTML card with a 1200×630 crop and prints a
+Markdown sticker line. It shows counts, date, coverage-qualified grade or
+**Preview**, and “reach and hygiene, not a safety certificate.” Names are absent
+unless `--names` is supplied; even then, paths, hostnames, credential key names
+and tool text stay out of the card. Nothing is uploaded. The default destination
+is `checkup.html`. `checkup --connect --server ID` uses the same explicit
+connection boundary as `check` and adds the card's metadata checks.
+
+Legacy `scan --card checkup.html` writes the same card without changing its
+connection behavior or enabling extra checks. Optional `--previous report.json`
+compares an explicitly selected earlier local report when inventory and coverage
+match; there is no automatic history or streak tracking. The printed sticker
+contains counts and the caveat, with no hosted badge or link.
 
 ## Keep the evidence in context
 
