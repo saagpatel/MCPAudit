@@ -18,6 +18,15 @@ from mcp_audit.http_transport import BoundedHttpClient, HttpBodySizeError
 from mcp_audit.models import ClientType, ServerConfig, TransportType
 
 
+def _peak_rss() -> int:
+    peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return peak if sys.platform == "darwin" else peak * 1024
+
+
+# Peak after imports: tests bound growth during the probe, not interpreter/module size.
+BASELINE_RSS = _peak_rss()
+
+
 async def probe(url: str) -> dict[str, object]:
     config = ServerConfig(
         name="local-http-fixture",
@@ -27,13 +36,11 @@ async def probe(url: str) -> dict[str, object]:
         url=url,
     )
     audit = await ServerConnector(timeout=2).connect(config)
-    peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    if sys.platform != "darwin":
-        peak *= 1024
     return {
         "status": audit.connection_status,
         "error": audit.connection_error,
-        "peak_rss_bytes": peak,
+        "peak_rss_bytes": _peak_rss(),
+        "baseline_rss_bytes": BASELINE_RSS,
     }
 
 
@@ -61,10 +68,12 @@ async def probe_mock_body() -> dict[str, object]:
             error = str(exc)
         else:
             error = "HTTP response unexpectedly completed"
-    peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    if sys.platform != "darwin":
-        peak *= 1024
-    return {"error": error, "peak_rss_bytes": peak, "body_bytes": stream.emitted}
+    return {
+        "error": error,
+        "peak_rss_bytes": _peak_rss(),
+        "baseline_rss_bytes": BASELINE_RSS,
+        "body_bytes": stream.emitted,
+    }
 
 
 def main() -> None:

@@ -440,7 +440,8 @@ async def test_endless_local_http_body_hits_default_cap_in_isolated_scanner(tmp_
     error = result["error"]
     assert isinstance(error, str) and "body size" in error.lower()
     assert str(BODY_LIMIT) in error
-    assert result["peak_rss_bytes"] < 300_000_000
+    # Growth during the probe stays bounded by the body cap (an uncapped body grows by GBs).
+    assert result["peak_rss_bytes"] - result["baseline_rss_bytes"] < 8 * BODY_LIMIT
     assert elapsed < 6.5
 
 
@@ -470,7 +471,8 @@ async def test_default_http_body_cap_bounds_isolated_process_rss(tmp_path: Path)
     result = json.loads(stdout)
     assert result["error"] == f"HTTP body size exceeds {BODY_LIMIT} bytes."
     assert result["body_bytes"] == BODY_LIMIT + 65_536
-    assert result["peak_rss_bytes"] < 300_000_000
+    # Growth during the probe stays bounded by the body cap (an uncapped body grows by GBs).
+    assert result["peak_rss_bytes"] - result["baseline_rss_bytes"] < 8 * BODY_LIMIT
 
 
 @pytest.mark.parametrize(
