@@ -52,24 +52,27 @@ class _Response:
 def _challenges(headers: list[str]) -> list[dict[str, str]]:
     """Parse Bearer parameters without mixing Basic or another challenge into them."""
     challenges: list[dict[str, str]] = []
-    for header in headers:
-        current: dict[str, str] | None = None
-        for item in parse_http_list(header[:8_192]):
+    current: dict[str, str] | None = None
+    # Repeated field lines form one comma-separated challenge list.
+    for item in parse_http_list(", ".join(header[:8_192] for header in headers)):
+        item = item.strip()
+        match = _PARAM.fullmatch(item)
+        if match is None:
             scheme, space, tail = item.partition(" ")
-            if space and "=" not in scheme:
-                current = {} if scheme.lower() == "bearer" else None
-                if current is not None:
-                    challenges.append(current)
+            current = {} if scheme.lower() == "bearer" else None
+            if current is not None:
+                challenges.append(current)
+            if space:
                 item = tail.strip()
-            match = _PARAM.fullmatch(item.strip())
-            if current is not None and match:
-                key = match[1].lower()
-                value = re.sub(r"\\(.)", r"\1", match[2]) if match[2] is not None else match[3]
-                if key in current:
-                    # Ambiguous metadata locations must never steer a fetch.
-                    current[key] = ""
-                elif len(current) < 32:
-                    current[key] = value
+                match = _PARAM.fullmatch(item)
+        if current is not None and match:
+            key = match[1].lower()
+            value = re.sub(r"\\(.)", r"\1", match[2]) if match[2] is not None else match[3]
+            if key in current and current[key] != value:
+                # Conflicting duplicates remain present but cannot steer a fetch.
+                current[key] = ""
+            elif key not in current and len(current) < 32:
+                current[key] = value
     return challenges
 
 
@@ -293,11 +296,17 @@ def _finding(rule: str, target: str) -> AuthorizationFinding:
 
 
 async def probe_authorization(
-    url: str, *, timeout: float = 10.0
+    url: str,
+    *,
+    timeout: float = 10.0,
+    observation: AuthorizationProbeObservation | None = None,
+    findings: list[AuthorizationFinding] | None = None,
 ) -> tuple[AuthorizationProbeObservation, list[AuthorizationFinding]]:
     """No config headers accepted; call only after the connected-scan eligibility gate."""
-    observation = AuthorizationProbeObservation()
-    findings: list[AuthorizationFinding] = []
+    if observation is None:
+        observation = AuthorizationProbeObservation()
+    if findings is None:
+        findings = []
     try:
         if urlsplit(url).scheme == "http":
             findings.append(_finding("MCPAUTH012", "MCP endpoint"))
@@ -340,10 +349,13 @@ async def _review_metadata(
     timeout: float,
 ) -> None:
     fetcher = _Metadata(observation, timeout)
-    locations = [item["resource_metadata"] for item in challenges if item.get("resource_metadata")]
+    locations = [item["resource_metadata"] for item in challenges if "resource_metadata" in item]
     if not any(item.get("scope") for item in challenges):
         findings.append(_finding("MCPAUTH002", "WWW-Authenticate scope"))
     if locations:
+        if not all(locations):
+            observation.warnings.append("challenge_metadata_ambiguous")
+            return
         for location in locations:
             if urlsplit(location).scheme != "https":
                 findings.append(_finding("MCPAUTH012", "protected-resource metadata endpoint"))

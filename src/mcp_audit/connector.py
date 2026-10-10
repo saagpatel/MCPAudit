@@ -31,6 +31,7 @@ from pydantic import BaseModel
 from mcp_audit import __version__
 from mcp_audit.agent_text import agent_visible_text
 from mcp_audit.models import (
+    AuthorizationProbeObservation,
     CanarySummary,
     CapabilityTarget,
     Confidence,
@@ -469,8 +470,15 @@ class ServerConnector:
                 if config.transport == TransportType.HTTP and config.url:
                     from mcp_audit.probe import probe_authorization
 
-                    audit.authorization_probe, audit.authorization_findings = await probe_authorization(
-                        config.url, timeout=self.timeout
+                    # Reserve at least half the remaining budget for SDK enumeration.
+                    # Attach mutable evidence before awaiting so cancellation retains it.
+                    audit.authorization_probe = AuthorizationProbeObservation()
+                    remaining = max(0.0, cancel_scope.deadline - anyio.current_time())
+                    await probe_authorization(
+                        config.url,
+                        timeout=min(5.0, remaining / 2),
+                        observation=audit.authorization_probe,
+                        findings=audit.authorization_findings,
                     )
                 if config.transport == TransportType.STDIO:
                     capabilities = (

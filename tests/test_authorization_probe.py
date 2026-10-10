@@ -14,22 +14,24 @@ from io import BytesIO
 from typing import Literal, cast
 from unittest.mock import Mock
 
+import anyio
 import pytest
 
 from mcp_audit import probe
-from mcp_audit.connector import ServerConnector
+from mcp_audit.connector import ServerConnector, _ServerCapabilities
 from mcp_audit.engine import ScanOptions, run_scan
 from mcp_audit.finding_display import finding_views
 from mcp_audit.htmlreport import HtmlReportGenerator
 from mcp_audit.models import (
     AuditReport,
+    AuthorizationFinding,
     AuthorizationProbeObservation,
     ServerAudit,
     ServerConfig,
     TransportType,
 )
 from mcp_audit.sarif import SarifGenerator
-from tests.conftest import make_server_config
+from tests.conftest import make_server_config, make_tool
 
 RESOURCE = "https://mcp.fixture.test/mcp"
 ISSUER = "https://auth.fixture.test/tenant"
@@ -40,7 +42,7 @@ real_request = probe._request
 
 @dataclass
 class Peer:
-    routes: dict[str, tuple[int, dict[str, str], bytes]] = field(default_factory=dict)
+    routes: dict[str, tuple[int, dict[str, str | list[str]], bytes]] = field(default_factory=dict)
     requests: list[tuple[str, str, dict[str, str], bytes]] = field(default_factory=list)
     port: int = 0
 
@@ -68,7 +70,8 @@ def peer(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> Ite
             status, headers, data = peer.routes.get(self.path, (404, {}, b""))
             self.send_response(status)
             for key, value in headers.items():
-                self.send_header(key, value)
+                for line in value if isinstance(value, list) else [value]:
+                    self.send_header(key, line)
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
@@ -105,7 +108,11 @@ def peer(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> Ite
                 headers = dict(line.split(": ", 1) for line in lines)
                 peer.requests.append((method, path, headers, body))
                 status, response_headers, data = peer.routes.get(path, (404, {}, b""))
-                header_lines = "".join(f"{key}: {value}\r\n" for key, value in response_headers.items())
+                header_lines = "".join(
+                    f"{key}: {line}\r\n"
+                    for key, value in response_headers.items()
+                    for line in (value if isinstance(value, list) else [value])
+                )
                 return BytesIO(
                     f"HTTP/1.1 {status} Fixture\r\n{header_lines}Content-Length: {len(data)}\r\n\r\n".encode()
                     + data
@@ -233,6 +240,85 @@ async def test_clean_fixture_and_redacted_headers(peer: Peer) -> None:
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("spacing", ["scope", "resource_metadata", "both"])
+async def test_spaced_auth_parameters_with_mixed_schemes(peer: Peer, spacing: str) -> None:
+    ready(peer)
+    resource_equals = " = " if spacing in {"resource_metadata", "both"} else "="
+    scope_equals = " = " if spacing in {"scope", "both"} else "="
+    peer.routes["/mcp"] = (
+        401,
+        {
+            "WWW-Authenticate": (
+                'Basic realm="basic", Bearer '
+                f'resource_metadata{resource_equals}"https://mcp.fixture.test/advertised", '
+                f'scope{scope_equals}"read", Basic realm="other", scope = "ignored"'
+            )
+        },
+        b"{}",
+    )
+    peer.routes["/advertised"] = peer.routes[PRM_PATH]
+    observation, findings = await probe.probe_authorization(RESOURCE)
+    assert not findings
+    assert observation.www_authenticate == [
+        {"resource_metadata": "https://mcp.fixture.test/advertised", "scope": "read"}
+    ]
+    assert [request[1] for request in peer.requests] == ["/mcp", "/advertised", AS_PATH]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("challenge_form", ["duplicate", "field_lines"])
+@pytest.mark.parametrize("rule", ["MCPAUTH003", "MCPAUTH004"])
+async def test_advertised_metadata_not_replaced_by_clean_well_known(
+    peer: Peer, challenge_form: str, rule: str
+) -> None:
+    ready(peer)  # Keep clean well-known metadata available to expose an incorrect fallback.
+    advertised = 'resource_metadata="https://mcp.fixture.test/bad-prm"'
+    challenge: str | list[str] = (
+        f'Bearer {advertised}, {advertised}, scope="read"'
+        if challenge_form == "duplicate"
+        else ['Bearer realm="mcp"', f'{advertised}, scope="read"']
+    )
+    peer.routes["/mcp"] = (401, {"WWW-Authenticate": challenge}, b"{}")
+    peer.document(
+        "/bad-prm",
+        {
+            "resource": "https://mcp.fixture.test/other" if rule == "MCPAUTH003" else RESOURCE,
+            "authorization_servers": [ISSUER],
+        },
+    )
+    if rule == "MCPAUTH004":
+        metadata = healthy_metadata()
+        metadata["issuer"] = "https://other.fixture.test"
+        peer.document(AS_PATH, metadata)
+    observation, findings = await probe.probe_authorization(RESOURCE)
+    assert [finding.rule_id for finding in findings] == [rule]
+    assert observation.www_authenticate[0]["resource_metadata"] == "https://mcp.fixture.test/bad-prm"
+    expected = ["/mcp", "/bad-prm"] + ([AS_PATH] if rule == "MCPAUTH004" else [])
+    assert [request[1] for request in peer.requests] == expected
+
+
+@pytest.mark.anyio
+async def test_conflicting_metadata_parameters_warn_without_fallback(peer: Peer) -> None:
+    ready(peer)
+    peer.routes["/mcp"] = (
+        401,
+        {
+            "WWW-Authenticate": (
+                'Bearer resource_metadata="https://mcp.fixture.test/one", '
+                'resource_metadata="https://mcp.fixture.test/two", '
+                'resource_metadata="https://mcp.fixture.test/one", scope="read"'
+            )
+        },
+        b"{}",
+    )
+    observation, findings = await probe.probe_authorization(RESOURCE)
+    assert not findings
+    assert observation.warnings == ["challenge_metadata_ambiguous"]
+    assert not observation.metadata_fetches
+    assert [request[0] for request in peer.requests] == ["POST"]
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize("status", [200, 400, 403, 404, 302])
 async def test_only_401_fetches_metadata_and_no_redirects(peer: Peer, status: int) -> None:
     ready(peer)
@@ -293,7 +379,8 @@ def test_tls_verifies_original_host_on_pinned_socket(monkeypatch: pytest.MonkeyP
 @pytest.mark.parametrize("mode", ["redirect", "large", "invalid", "duplicate", "unavailable"])
 async def test_bad_metadata_is_unknown_not_missing(peer: Peer, mode: str) -> None:
     ready(peer)
-    status, headers, data = 200, {}, b"{}"
+    headers: dict[str, str | list[str]] = {}
+    status, data = 200, b"{}"
     if mode == "redirect":
         status, headers = 302, {"Location": "https://auth.fixture.test/redirect"}
     elif mode == "large":
@@ -420,6 +507,84 @@ async def test_scan_connection_gates_and_failed_sdk_retains_evidence(
     else:
         assert audit.authorization_probe is None
         assert "authorization_probe" not in audit.model_dump(mode="json")
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("stalled_path", ["/mcp", PRM_PATH, AS_PATH])
+@pytest.mark.parametrize("sdk_times_out", [False, True])
+async def test_probe_stall_reserves_sdk_budget_and_retains_evidence(
+    peer: Peer, monkeypatch: pytest.MonkeyPatch, stalled_path: str, sdk_times_out: bool
+) -> None:
+    ready(peer)
+    completed_request = probe._request
+
+    async def stalled_request(url: str, method: Literal["POST", "GET"], timeout: float) -> probe._Response:
+        if url.endswith(stalled_path):
+            await anyio.sleep_forever()
+        return await completed_request(url, method, timeout)
+
+    sdk_called = False
+
+    async def enumerate_tools(self: ServerConnector, config: ServerConfig) -> _ServerCapabilities:
+        nonlocal sdk_called
+        sdk_called = True
+        assert anyio.current_effective_deadline() > anyio.current_time()
+        if sdk_times_out:
+            await anyio.sleep_forever()
+        await anyio.sleep(0.005)
+        return _ServerCapabilities([make_tool(name="fixture-tool")], [], [])
+
+    monkeypatch.setattr(probe, "_request", stalled_request)
+    monkeypatch.setattr(ServerConnector, "_connect_http", enumerate_tools)
+    config = make_server_config(transport=TransportType.HTTP, command=None, url=RESOURCE)
+    audit = await ServerConnector(timeout=0.1).connect(config)
+    assert sdk_called
+    assert audit.connection_status == ("timeout" if sdk_times_out else "connected")
+    if not sdk_times_out:
+        assert [tool.name for tool in audit.tools] == ["fixture-tool"]
+    observation = audit.authorization_probe
+    assert observation is not None
+    assert observation.warnings == ["probe_blocked_or_unavailable"]
+    assert observation.status == (None if stalled_path == "/mcp" else 401)
+    assert len(observation.metadata_fetches) == ["/mcp", PRM_PATH, AS_PATH].index(stalled_path)
+    if observation.metadata_fetches:
+        assert observation.jsonrpc_error_code == -32001
+        assert observation.www_authenticate[0]["scope"] == "read"
+        assert observation.metadata_fetches[-1].status is None
+        assert observation.metadata_fetches[-1].reason == "unavailable"
+    if stalled_path == AS_PATH:
+        assert observation.metadata_fetches[0].status == 200
+        assert observation.metadata_fetches[0].reason == "json_object"
+
+
+@pytest.mark.anyio
+async def test_outer_cancellation_retains_incremental_probe_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observation = AuthorizationProbeObservation()
+    findings: list[AuthorizationFinding] = []
+    metadata_started = anyio.Event()
+
+    async def request(url: str, method: Literal["POST", "GET"], timeout: float) -> probe._Response:
+        if method == "POST":
+            return probe._Response(401, ['Bearer realm="mcp"'], False, b"{}", False)
+        metadata_started.set()
+        await anyio.sleep_forever()
+        raise AssertionError("unreachable")
+
+    async def run() -> None:
+        await probe.probe_authorization(RESOURCE, observation=observation, findings=findings)
+
+    monkeypatch.setattr(probe, "_request", request)
+    async with anyio.create_task_group() as tasks:
+        tasks.start_soon(run)
+        await metadata_started.wait()
+        tasks.cancel_scope.cancel()
+    assert observation.status == 401
+    assert observation.www_authenticate == [{"realm": "<redacted>"}]
+    assert [finding.rule_id for finding in findings] == ["MCPAUTH002"]
+    assert len(observation.metadata_fetches) == 1
+    assert observation.metadata_fetches[0].status is None
 
 
 @pytest.mark.anyio
