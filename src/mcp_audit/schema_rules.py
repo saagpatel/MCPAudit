@@ -75,7 +75,7 @@ def _local_ref(
     return current
 
 
-_MAX_REF_HOPS = 16
+_MAX_REF_HOPS = 64
 
 
 def _effective_types(
@@ -105,22 +105,26 @@ def _effective_types(
 
 def _property_header(
     root: dict[str, object], prop: object, anchors: dict[str, dict[str, object] | None] | None
-) -> object | None:
-    """The x-mcp-header a property declares directly or through a local $ref chain (bounded)."""
+) -> tuple[object | None, bool]:
+    """(x-mcp-header, resolved) for a property, directly or through a bounded local $ref chain.
+
+    Composition without a direct annotation, or an exhausted chain, is unresolved: the
+    caller records incomplete analysis rather than treating the property as headerless.
+    """
     seen: set[int] = set()
     current = prop
     for _ in range(_MAX_REF_HOPS):
         if not isinstance(current, dict) or id(current) in seen:
-            return None
+            return None, isinstance(current, dict)
         seen.add(id(current))
         if "x-mcp-header" in current:
             header: object = current["x-mcp-header"]
-            return header
+            return header, True
         ref = current.get("$ref")
         if not isinstance(ref, str):
-            return None
+            return None, not any(key in current for key in ("allOf", "anyOf", "oneOf"))
         current = _local_ref(root, ref, anchors)
-    return None
+    return None, False
 
 
 def _schema_children(node: dict[str, object], *, include_definitions: bool) -> Iterator[dict[str, object]]:
@@ -275,7 +279,13 @@ def _schema_rules(
         for name, prop in properties.items():
             if not isinstance(name, str):
                 continue
-            header = _property_header(schema, prop, reference_anchors)
+            header, header_resolved = _property_header(schema, prop, reference_anchors)
+            if not header_resolved:
+                # An unresolved reference is already reported by the reachability walk.
+                reason = "x-mcp-header use could not be resolved for a property"
+                if not reachability_incomplete and reason not in incomplete_reasons:
+                    incomplete_reasons.append(reason)
+                continue
             if not isinstance(header, str) or not _HEADER_TOKEN.fullmatch(header):
                 continue
             if header.casefold() in headers:

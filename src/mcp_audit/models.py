@@ -1083,7 +1083,11 @@ class SchemaFinding(ReferencedFinding):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def remediation(self) -> str:
-        return "Review the served schema metadata and remove or correct the unexpected declaration."
+        from mcp_audit.taxonomy import FINDING_COPY
+
+        # Per-finding detail keeps distinct schema problems as distinct summary actions.
+        detail = f" ({self.evidence[0]})" if self.evidence else ""
+        return FINDING_COPY[self.rule_id].how_to_fix + detail
 
 
 class ServerAudit(BaseModel):

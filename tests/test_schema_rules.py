@@ -410,3 +410,44 @@ def test_inline_credential_header_evidence_names_the_parameter() -> None:
         },
     )
     assert any("api_token" in f.evidence[0] for f in scan_tool_schema(tool) if f.kind == "credential_header")
+
+
+def test_composed_header_annotation_is_incomplete_not_silent() -> None:
+    tool = ToolInfo(
+        name="t",
+        input_schema={
+            "type": "object",
+            "properties": {"api_token": {"allOf": [{"type": "string", "x-mcp-header": "Authorization"}]}},
+        },
+    )
+    reasons: list[str] = []
+    scan_tool_schema(tool, incomplete_reasons=reasons)
+    assert reasons
+
+
+def test_long_local_reference_chain_reaches_header() -> None:
+    defs: dict[str, object] = {f"r{i}": {"$ref": f"#/$defs/r{i + 1}"} for i in range(15)}
+    defs["r15"] = {"type": "string", "x-mcp-header": "Authorization"}
+    tool = ToolInfo(
+        name="t",
+        input_schema={"type": "object", "properties": {"api_token": {"$ref": "#/$defs/r0"}}, "$defs": defs},
+    )
+    assert "credential_header" in [f.kind for f in scan_tool_schema(tool)]
+
+
+def test_distinct_schema_findings_stay_distinct_summary_actions() -> None:
+    from mcp_audit.models import SchemaFinding
+    from tests.test_terminal_summary import _connected
+
+    report = _connected()
+    report.audits[0].schema_findings = [
+        SchemaFinding(
+            tool_name="t", kind="header_invalid", evidence=["x-mcp-header must be an RFC token string"]
+        ),
+        SchemaFinding(
+            tool_name="t",
+            kind="credential_header",
+            evidence=["credential-looking parameter api_token is mirrored to a header"],
+        ),
+    ]
+    assert report.ensure_review_summary().action_count == 2
