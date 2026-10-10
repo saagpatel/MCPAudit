@@ -267,7 +267,7 @@ def pin_keygen() -> None:
 
 
 @pin_command.command("rotate-key")
-@click.option("--grace-days", type=click.IntRange(min=0), default=30, show_default=True)
+@click.option("--grace-days", type=click.IntRange(min=0, max=3650), default=30, show_default=True)
 @click.option(
     "--resign", is_flag=True, help="Re-sign existing pins with the current key without rotating it."
 )

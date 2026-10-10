@@ -47,6 +47,9 @@ _KEY_MODE_MESSAGE = "Signing key {path} must be mode 0600 and owned by you."
 _MAX_PRIVATE_KEY_BYTES = 64 * 1024
 _MAX_TRUSTED_KEYS_BYTES = 10 * 1024 * 1024
 _KID_PATTERN = re.compile(r"[0-9a-f]{16}\Z")
+# Retired-key grace is bounded so every deadline stays representable and a
+# hostile or mistaken trust-store value cannot keep a retired key alive forever.
+MAX_GRACE_DAYS = 3650
 
 
 class PinSigningError(ValueError):
@@ -158,8 +161,7 @@ def verify_document(
     now: datetime | None = None,
 ) -> VerificationResult:
     """Verify a canonical document using only the separate trusted-key store."""
-    if grace_days < 0:
-        raise ValueError("grace_days must be non-negative")
+    _check_grace_days(grace_days)
     if now is not None and now.tzinfo is None:
         raise ValueError("now must include a timezone")
     if signature_record is None:
@@ -167,8 +169,8 @@ def verify_document(
             "unsigned",
             None,
             (
-                f"Pin for {server_name} is unsigned. Run `mcp-audit pin keygen` then "
-                f"`pin --refresh {server_name} --apply` to sign it."
+                f"Pin for {server_name} is unsigned. Run `mcp-audit pin keygen`, then "
+                f"`pin --clear {server_name}` and `pin --server {server_name}` after review to sign it."
             ),
         )
 
@@ -223,16 +225,16 @@ def verify_document(
     retired_at = record.get("retired_at")
     if isinstance(retired_at, str):
         try:
-            retired_time = _parse_timestamp(retired_at)
-        except ValueError:
+            deadline = _retirement_deadline(retired_at, record.get("grace_days", grace_days))
+        except (ValueError, OverflowError):
             return VerificationResult(
-                "untrusted_signer", kid, f"Pin for {server_name} is signed by an invalid retired key {kid}."
+                "untrusted_signer",
+                kid,
+                f"Pin for {server_name} is signed by retired key {kid} whose retirement time or grace "
+                f"period is invalid (grace must be 0-{MAX_GRACE_DAYS} days); treating it as untrusted.",
             )
         current = now or datetime.now(UTC)
-        retired_grace_days = record.get("grace_days")
-        if not isinstance(retired_grace_days, int) or isinstance(retired_grace_days, bool):
-            retired_grace_days = grace_days
-        if current > retired_time + timedelta(days=retired_grace_days):
+        if current > deadline:
             message = (
                 f"Pin for {server_name} is signed by key {kid} which is not in your trusted keys. "
                 "If you rotated keys, run `pin trust-key --add`. Otherwise treat the pin file as replaced."
@@ -244,7 +246,7 @@ def verify_document(
             (
                 f"Pin for {server_name} was signed by a retired key ({kid}); re-sign with "
                 f"`pin rotate-key --resign` before "
-                f"{(retired_time + timedelta(days=retired_grace_days)).date().isoformat()}."
+                f"{deadline.date().isoformat()}."
             ),
         )
     return VerificationResult("verified", kid)
@@ -268,9 +270,9 @@ def load_trusted_keys(path: Path = DEFAULT_TRUSTED_KEYS_PATH) -> dict[str, dict[
                 "public_key": raw["public_key"],
                 "retired_at": retired_at if isinstance(retired_at, str) else None,
             }
-            grace_days = raw.get("grace_days")
-            if isinstance(grace_days, int) and not isinstance(grace_days, bool) and grace_days >= 0:
-                normalized["grace_days"] = grace_days
+            if "grace_days" in raw:
+                # Kept as stored; verification rejects out-of-range values as untrusted.
+                normalized["grace_days"] = raw["grace_days"]
             result[kid] = normalized
     return result
 
@@ -302,10 +304,11 @@ def rotate_key(
     now: datetime | None = None,
 ) -> GeneratedKey:
     """Generate a replacement key and start the old key's grace period."""
-    if grace_days < 0:
-        raise ValueError("grace_days must be non-negative")
+    _check_grace_days(grace_days)
     if now is not None and now.tzinfo is None:
         raise ValueError("now must include a timezone")
+    # Refuse before touching key material if the deadline is not representable.
+    _retirement_deadline(_timestamp(now), grace_days)
     with _trusted_store_lock(trusted_keys_path):
         old_private = load_private_key(old_private_key_path)
         old_public = old_private.public_key().public_bytes(
@@ -398,6 +401,56 @@ def check_and_record_pinned_at(
             server["last_seen_pinned_at"] = _timestamp(incoming)
         _write_json(trusted_keys_path, data)
         return rolled_back
+
+
+def record_signed_pin(
+    server_name: str, pinned_at: object, trusted_keys_path: Path = DEFAULT_TRUSTED_KEYS_PATH
+) -> None:
+    """After a successful signed write, require signatures and advance the rollback high-water mark."""
+    incoming: datetime | None = None
+    if isinstance(pinned_at, str):
+        try:
+            incoming = _parse_timestamp(pinned_at)
+        except ValueError:
+            incoming = None
+    with _trusted_store_lock(trusted_keys_path):
+        data = _read_trust_data(trusted_keys_path)
+        servers = data.setdefault("servers", {})
+        if not isinstance(servers, dict):
+            raise PinSigningError("Trusted pin signing state has an invalid format.")
+        server = servers.setdefault(server_name, {})
+        if not isinstance(server, dict):
+            raise PinSigningError("Trusted pin signing state has an invalid format.")
+        server["signature_required"] = True
+        previous = server.get("last_seen_pinned_at")
+        if incoming is not None:
+            try:
+                newer = not isinstance(previous, str) or incoming > _parse_timestamp(previous)
+            except ValueError as exc:
+                raise PinSigningError("Trusted pin rollback state is invalid.") from exc
+            if newer:
+                server["last_seen_pinned_at"] = _timestamp(incoming)
+        _write_json(trusted_keys_path, data)
+
+
+def has_active_trusted_key(
+    trusted_keys_path: Path = DEFAULT_TRUSTED_KEYS_PATH, now: datetime | None = None
+) -> bool:
+    """Whether any trusted key can currently verify pins (active, or retired within grace).
+
+    Raises :class:`PinSigningError` when the trust store cannot be read; callers fail closed.
+    """
+    current = now or datetime.now(UTC)
+    for record in load_trusted_keys(trusted_keys_path).values():
+        retired_at = record.get("retired_at")
+        if not isinstance(retired_at, str):
+            return True
+        try:
+            if current <= _retirement_deadline(retired_at, record.get("grace_days", 30)):
+                return True
+        except (ValueError, OverflowError):
+            continue
+    return False
 
 
 def signature_required(server_name: str, trusted_keys_path: Path = DEFAULT_TRUSTED_KEYS_PATH) -> bool:
@@ -604,6 +657,24 @@ def _write_json(path: Path, value: Mapping[str, object]) -> None:
     except OSError as exc:
         Path(temporary).unlink(missing_ok=True)
         raise PinSigningError("Trusted pin keys could not be written.") from exc
+
+
+def _check_grace_days(grace_days: int) -> None:
+    if grace_days < 0:
+        raise ValueError("grace_days must be non-negative")
+    if grace_days > MAX_GRACE_DAYS:
+        raise ValueError(f"grace_days must be at most {MAX_GRACE_DAYS}")
+
+
+def _retirement_deadline(retired_at: str, grace_days: object) -> datetime:
+    """Return the end of a retired key's grace; ValueError/OverflowError when invalid."""
+    if (
+        not isinstance(grace_days, int)
+        or isinstance(grace_days, bool)
+        or not 0 <= grace_days <= MAX_GRACE_DAYS
+    ):
+        raise ValueError("retired key grace period is invalid")
+    return _parse_timestamp(retired_at) + timedelta(days=grace_days)
 
 
 def _parse_timestamp(value: str) -> datetime:

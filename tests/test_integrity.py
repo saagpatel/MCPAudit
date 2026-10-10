@@ -161,8 +161,8 @@ async def test_existing_pin_exclusions_never_hash_or_export_protected_entries(
         ScanWarning(
             code="pin_unsigned",
             message=(
-                "Pin for fixture is unsigned. Run `mcp-audit pin keygen` then "
-                "`pin --refresh fixture --apply` to sign it."
+                "Pin for fixture is unsigned. Run `mcp-audit pin keygen`, then "
+                "`pin --clear fixture` and `pin --server fixture` after review to sign it."
             ),
             check="pin_check",
             servers=["fixture"],

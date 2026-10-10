@@ -201,30 +201,46 @@ def test_engine_surfaces_failed_verification_and_withholds_baseline(
 
 
 def test_unsigned_escape_hatch_and_v1_warning(signed_store: PinStore) -> None:
+    before = signed_store.path.read_bytes()
     unsigned = PinStore(
         signed_store.path,
         signing_key=signed_store._signing_key,
         unsigned=True,
         trusted_keys_path=signed_store._trusted_keys_path,
     )
-    unsigned.pin_server("fixture", [ToolInfo(name="list_items")])
-    verified = unsigned.verification("fixture")
+    # With trusted keys present an unsigned v2 pin would read back as tampered.
+    with pytest.raises(PinSigningError, match="Trusted pin keys exist"):
+        unsigned.pin_server("fixture", [ToolInfo(name="list_items")])
+    assert signed_store.path.read_bytes() == before
+    no_keys = PinStore(
+        signed_store.path.with_name("no-keys-pins.yaml"),
+        unsigned=True,
+        trusted_keys_path=signed_store.path.with_name("no-keys-trust.json"),
+    )
+    no_keys.pin_server("fixture", [ToolInfo(name="list_items")])
+    verified = no_keys.verification("fixture")
     assert verified is not None and verified.state == "unsigned"
-    assert unsigned.verification_warnings("fixture")[0].code == "pin_unsigned"
+    assert no_keys.verification_warnings("fixture")[0].code == "pin_unsigned"
+    # A genuine v1 entry still only warns, even when trusted keys exist.
     data = yaml.safe_load(signed_store.path.read_text())
-    entry = data["servers"]["fixture"]
-    entry["tools"]["list_items"].pop("pin_schema")
+    data["servers"]["legacy"] = {
+        "tools": {"list_items": {"hash": "sha256:" + "0" * 64, "pinned_at": "2020-01-01T00:00:00+00:00"}}
+    }
     signed_store.path.write_text(yaml.safe_dump(data))
     legacy = PinStore(signed_store.path, trusted_keys_path=signed_store._trusted_keys_path)
-    verified = legacy.verification("fixture")
+    verified = legacy.verification("legacy")
     assert verified is not None and verified.state == "schema_outdated"
-    assert legacy.baseline_trusted("fixture")
-    assert legacy.schema_warnings("fixture")[0].code == "pin_schema_outdated"
+    assert legacy.baseline_trusted("legacy")
+    assert legacy.schema_warnings("legacy")[0].code == "pin_schema_outdated"
 
 
 def test_pin_write_records_signing_requirement_before_first_verification(signed_store: PinStore) -> None:
     trust = json.loads(signed_store._trusted_keys_path.read_text())
-    assert trust["servers"]["fixture"] == {"signature_required": True}
+    pinned_at = yaml.safe_load(signed_store.path.read_text())["servers"]["fixture"]["pinned_at"]
+    assert trust["servers"]["fixture"] == {
+        "signature_required": True,
+        "last_seen_pinned_at": pinned_at.replace("+00:00", "Z"),
+    }
     data = yaml.safe_load(signed_store.path.read_text())
     entry = data["servers"]["fixture"]
     for field in ("signature", "signer", "surface_sha256", "canonical_bytes_len"):
@@ -247,7 +263,8 @@ def test_failed_unsigned_write_keeps_signature_requirement(
         raise OSError("Synthetic pin replacement failure")
 
     monkeypatch.setattr(unsigned, "_write", fail_write)
-    with pytest.raises(OSError, match="Synthetic pin replacement failure"):
+    # Refused before any write: trusted keys make unsigned v2 pins unverifiable.
+    with pytest.raises(PinSigningError, match="Trusted pin keys exist"):
         unsigned.pin_server("fixture", [ToolInfo(name="list_items")])
     assert signed_store.path.read_bytes() == before
     assert signature_required("fixture", trust)

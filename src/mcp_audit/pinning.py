@@ -233,6 +233,7 @@ class PinStore:
         from mcp_audit.pin_signing import (
             PinSigningError,
             check_and_record_pinned_at,
+            has_active_trusted_key,
             signature_required,
             verify_document,
         )
@@ -269,19 +270,29 @@ class PinStore:
             )
             return result
         missing_required_signature = False
+        unsigned_under_trusted_keys = False
         if "signature" not in entry:
             try:
                 missing_required_signature = signature_required(server_name, self._trusted_keys_path)
+                # Public-key-only CI has no per-server expectation on first use:
+                # once any key is trusted, an unsigned v2 entry is a stripped
+                # signature, not a legacy pin. True v1 entries still only warn.
+                if not missing_required_signature and not _is_legacy_entry(entry):
+                    unsigned_under_trusted_keys = has_active_trusted_key(self._trusted_keys_path)
             except PinSigningError:
                 missing_required_signature = True
             missing_required_signature |= any(
                 field in entry for field in ("signer", "surface_sha256", "canonical_bytes_len")
             )
-        if missing_required_signature:
+        if missing_required_signature or unsigned_under_trusted_keys:
             result = PinVerification(state=PinVerificationState.TAMPERED_ENTRY)
             self._verification_messages[server_name] = (
                 f"Pin for {server_name} fails signature verification; a required signature is missing "
                 "or its trusted signing expectation is unavailable. Restore the baseline from backup."
+                if missing_required_signature
+                else f"Pin for {server_name} fails signature verification; the v2 baseline is unsigned "
+                "but trusted pin keys exist, so its signature was removed or never written. Restore a "
+                f"signed baseline, or run `mcp-audit pin --clear {server_name}` and re-pin after review."
             )
         elif "signature" not in entry and self.legacy_tool_names(server_name):
             result = PinVerification(state=PinVerificationState.SCHEMA_OUTDATED)
@@ -444,11 +455,15 @@ class PinStore:
         return False
 
     def _record_signed(self, server_names: list[str]) -> None:
-        """Persist signing expectations for entries whose signed write succeeded."""
-        from mcp_audit.pin_signing import record_signature_requirement
+        """After a successful signed write, persist the signing expectation and
+        advance the rollback high-water mark to each entry's ``pinned_at``."""
+        from mcp_audit.pin_signing import record_signed_pin
 
+        servers: dict[str, Any] = self._data.get("servers", {})
         for server_name in server_names:
-            record_signature_requirement(server_name, True, self._trusted_keys_path)
+            entry = servers.get(server_name, {})
+            pinned_at = entry.get("pinned_at") if isinstance(entry, dict) else None
+            record_signed_pin(server_name, pinned_at, self._trusted_keys_path)
 
     def rotate_key(self, grace_days: int = 30) -> str:
         """Reverify all signed entries before key replacement and re-signing."""
@@ -538,7 +553,8 @@ class PinStore:
 
     def schema_warnings(self, server_name: str) -> list[ScanWarning]:
         """Expose reduced legacy coverage without changing or re-hashing pins."""
-        if not self.legacy_tool_names(server_name):
+        if not self.legacy_tool_names(server_name) or not self.baseline_trusted(server_name):
+            # A rejected entry gets only tampered/withheld guidance, never refresh advice.
             return []
         return [
             ScanWarning(
@@ -583,7 +599,7 @@ class PinStore:
         """
         if len({tool.name for tool in tools}) != len(tools):
             raise ValueError("Cannot pin duplicate tool names.")
-        from mcp_audit.pin_signing import record_signature_requirement, signature_required
+        from mcp_audit.pin_signing import signature_required
 
         now = datetime.now(UTC).isoformat()
         with _file_lock(self._path):
@@ -640,18 +656,25 @@ class PinStore:
                 if protocol
                 else {"negotiated_version": None, "era": "unknown"}
             )
-            downgrade_signing = self._unsigned and (
-                "signature" in server_entry or signature_required(server_name, self._trusted_keys_path)
-            )
             signed = self._sign_entry(server_name, server_entry)
+            if not signed:
+                from mcp_audit.pin_signing import PinSigningError, has_active_trusted_key
+
+                if has_active_trusted_key(self._trusted_keys_path) or signature_required(
+                    server_name, self._trusted_keys_path
+                ):
+                    # The entry would read back as tampered (MCP027); refuse it.
+                    raise PinSigningError(
+                        "Trusted pin keys exist, so unsigned v2 pins fail verification. Sign with "
+                        "your key (`--signing-key` or `mcp-audit pin keygen`), or remove the trusted "
+                        "keys before writing unsigned pins."
+                    )
             self._verification.pop(server_name, None)
             self._data["pinned_at"] = now
             self._data["pin_schema"] = 2
             self._write()
             if signed:
                 self._record_signed([server_name])
-            if downgrade_signing:
-                record_signature_requirement(server_name, False, self._trusted_keys_path)
 
     def check_drift(self, server_name: str, tools: list[ToolInfo]) -> list[DriftFinding]:
         """Compare current tool hashes against stored pins. Returns drift findings."""
@@ -1061,6 +1084,17 @@ class PinStore:
         if not details:
             details.append("tool metadata changed")
         return details
+
+
+def _is_legacy_entry(entry: dict[str, Any]) -> bool:
+    """A genuine v1 entry: v1 tool pins and no marker only v2 writers produce."""
+    tools = entry.get("tools", {})
+    if not isinstance(tools, dict) or entry.get("pin_schema") == 2 or "protocol" in entry:
+        return False
+    tool_entries = [tool for tool in tools.values() if isinstance(tool, dict)]
+    return bool(tool_entries) and all(
+        tool.get("pin_schema", 1) == 1 and "canonical_form" not in tool for tool in tool_entries
+    )
 
 
 def surface_hash(value: object) -> str:
