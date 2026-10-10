@@ -497,9 +497,10 @@ async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) ->
     3. Overrides, annotation/capability analysis, then permission scoring.
     4. Injection, SSRF, egress, then non-tool scoring. Egress consumes raw SSRF
        findings; allowlist filtering and substrate suppression happen later.
-    5. Pin drift, trifecta, escalation, provenance, integrity, package and
-       artifact verification. Escalation consumes the initialized pin baseline.
-    6. Publish the audit and completed checks only after every stage succeeds.
+    5. Pin drift, trifecta, escalation, provenance and integrity.
+       Escalation consumes the initialized pin baseline.
+    6. Publish completed analysis, then run optional package/artifact verification
+       outside the analysis deadline and mark those checks complete on success.
     """
     opts = context.opts
     applier = context.applier
@@ -735,6 +736,20 @@ async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) ->
                 for warning in integrity_warnings:
                     warn(warning.code, warning.message, check=warning.check, servers=warning.servers)
 
+    # Publish the completed permission analysis before optional registry I/O.
+    # Package and artifact verification are outside the per-server analysis
+    # deadline, so their latency must not discard these findings.
+    if time.monotonic() >= deadline:
+        raise AnalysisTimeout()
+    audits[idx] = audit
+    completed[idx].update(("metadata", "permissions", "capabilities"))
+    completed[idx].update(
+        check
+        for check in OPTIONAL_CHECKS
+        if getattr(opts, "canary_check" if check == "runtime_security" else check)
+        and check not in {"shadow_check", "verify_artifacts", "download_artifacts"}
+    )
+
     # Optional registry package verification (network) vs the pin baseline.
     # Runs in a worker thread so the synchronous registry I/O never blocks
     # the anyio event loop.
@@ -768,14 +783,8 @@ async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) ->
             srv, baseline_artifact_pkgs, verified_artifact_refs, artifact=True
         )
 
-    if time.monotonic() >= deadline:
-        raise AnalysisTimeout()
-    audits[idx] = audit
-    completed[idx].update(("metadata", "permissions", "capabilities"))
     completed[idx].update(
-        check
-        for check in OPTIONAL_CHECKS
-        if getattr(opts, "canary_check" if check == "runtime_security" else check) and check != "shadow_check"
+        check for check in ("verify_artifacts", "download_artifacts") if getattr(opts, check)
     )
 
 
