@@ -6,10 +6,13 @@ contract stable unless a release note calls out a breaking change.
 ## Credential-free authorization observations
 
 Eligible connected HTTP scans add `ServerAudit.authorization_probe` and, when
-present, `authorization_findings`. Both fields are omitted when absent;
-config-only/`--skip-connect` scans and project sources without the project
-connection opt-in never run the probe. The report `schema_version`, existing
-findings, numeric scores, and connection status meanings are unchanged.
+present, `authorization_findings`. Both fields are omitted when absent.
+`--skip-connect` scans and project sources without `--connect-project-configs`
+never run the probe. `--config-only` only restricts configuration discovery to
+the `--config` file; without `--skip-connect` it still connects to HTTP servers
+and runs the probe, so use both flags for a scan that makes no requests. The
+report `schema_version`, existing findings, numeric scores, and connection status
+meanings are unchanged.
 
 The probe makes one `server/discover` POST to the configured endpoint with
 program-owned request headers and MCP 2026-07-28 request metadata. It never
@@ -49,16 +52,22 @@ probe or SDK timeouts. A challenged metadata URL must remain on the resource
 authority, matching the posture producer contract. RFC 9728 path/root and
 RFC 8414/OpenID discovery fallbacks are attempted in order; a binding mismatch
 stops use of that document.
-Repeated challenge field lines are parsed as one list, including parameter
-whitespace around `=`; empty list elements are ignored. Parsing retains at most
-8,192 characters per header field and 32 parameters per Bearer challenge.
-Header truncation, excess parameters, or malformed challenge syntax emit
-`challenge_parse_incomplete` and skip metadata review entirely, including
-well-known fallback and absent-scope findings. Retained parameters are partial
-evidence and cannot establish that a metadata advertisement was absent.
-Identical duplicate parameters retain their value;
-conflicting or empty metadata advertisements produce
-`challenge_metadata_ambiguous` without falling back to well-known metadata.
+`WWW-Authenticate` is parsed with an RFC 9110 challenge tokenizer that decodes
+each quoted-pair exactly once. Metadata review, including well-known fallback
+and the absent-scope finding, runs only when the challenge list parsed
+completely and contained at most one `resource_metadata` parameter, inside a
+Bearer challenge that began with an auth-param. Anything else emits
+`challenge_parse_incomplete` and skips metadata review entirely: more than one
+field line, empty list elements (including a trailing comma), a parameter no
+challenge owns (before any scheme, after a bare scheme, or after a token68), a
+`resource_metadata` parameter outside a Bearer challenge, a duplicate parameter
+name in a Bearer challenge, a repeated `resource_metadata`, a token68 Bearer
+challenge, malformed tokens, quoted strings or quoted-pairs, a field value over
+8,192 characters, more than 32 parameters in a Bearer challenge, or more than 8
+Bearer challenges. Retained parameters are partial evidence and cannot establish
+that a metadata advertisement was absent. An empty `resource_metadata` value
+produces `challenge_metadata_ambiguous` without falling back to well-known
+metadata.
 
 Authorization rules are `MCPAUTH001` (A1, PRM missing, medium), `MCPAUTH002`
 (A2, absent scope guidance, low advisory), `MCPAUTH003` (A3, resource mismatch,

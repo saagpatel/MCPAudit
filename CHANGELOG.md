@@ -16,13 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   GETs and authorization rules A1–A7 and A12. Update authorization lab profiles
   to the final 2026-07-28 profile while accepting legacy inputs and reordered
   supported reference sets. Reserve SDK enumeration time and retain partial
-  probe evidence on timeout; parse spaced parameters and repeated challenge
-  lines, preserving identical duplicates and warning on conflicting metadata
-  advertisements without substituting well-known metadata. Ignore empty
-  challenge list elements and warn on incomplete parsing or exhausted header
-  and parameter limits without well-known fallback. Project incomplete probe
-  coverage into scan warnings, terminal/HTML grading, and SARIF notifications
-  while preserving successful SDK enumeration.
+  probe evidence on timeout. Parse `WWW-Authenticate` with an RFC 9110
+  challenge tokenizer that decodes quoted-pairs once and fails closed: repeated
+  field lines, empty elements, unattributable, duplicate, or non-Bearer
+  `resource_metadata` parameters, malformed syntax, and exhausted header,
+  challenge, or parameter limits warn `challenge_parse_incomplete` and skip
+  metadata review instead of substituting well-known metadata. Project
+  incomplete probe coverage into scan warnings, terminal/HTML grading, and SARIF
+  notifications while preserving successful SDK enumeration. `--skip-connect`
+  disables the probe; `--config-only` alone does not.
 
 ### Fixed
 
