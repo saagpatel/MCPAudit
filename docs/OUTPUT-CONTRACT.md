@@ -568,8 +568,11 @@ describe the saved entry, and are not themselves verification evidence.
 The additive `trusted_public_key` is nullable: it comes from the separate trust
 store only for a verified signature (including a retired key within grace).
 Terminal status prints only this authenticated key for CI; the existing JSON
-`public_key` remains untrusted embedded metadata. Ordinary pin writes, refresh,
-rotation and re-signing refuse failed baseline verification.
+`public_key` remains untrusted embedded metadata. Status also adds `verification`
+(the nullable verification state) and `baseline_usable` (false when scans withhold
+the baseline); terminal status shows them in a Verification column, marked
+"(withheld)". Ordinary pin writes, refresh, rotation and re-signing refuse failed
+baseline verification.
 
 Escalation findings add `kind: annotation_delta` and an `annotation_changes`
 list of hint names (empty for other kinds). This is HIGH `MCP018` for
@@ -579,6 +582,11 @@ annotations do not establish deltas. These hint names also appear in terminal,
 HTML, SARIF result properties and `get_escalation_findings` output.
 `pin --refresh --json` adds `uncovered_fields` rows with `tool_name`, `field`
 and `summary: "not previously covered"` for each newly covered v1 tool field.
+It also adds `baseline_verified` and nullable `baseline_note`. A legacy v1
+baseline withheld by scans (trusted keys, nothing authenticating the entry) is
+still compared in refresh review so every difference is shown, with
+`baseline_verified: false` and a note; terminal review labels it and never
+reports "No drift found" against an unverified baseline.
 
 Each audit may include:
 

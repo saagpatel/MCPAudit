@@ -29,6 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from comparisons while a key is trusted (`pin_baseline_withheld`, also for
   `pin_check` and `canary_check`) without raising `MCP027`, and report rollback
   even when the trust-store high-water update fails.
+- Show the full `pin --refresh` comparison against a withheld legacy v1 baseline,
+  labeled as unverified, instead of reporting a clean match; add additive
+  `baseline_verified`/`baseline_note` refresh JSON fields and `verification`/
+  `baseline_usable` status fields with a terminal Verification column.
 - Update signed-pin regression connector doubles for bounded transport options,
   and retain the required unsigned-pin warning alongside integrity-exclusion
   warnings in integration assertions.
