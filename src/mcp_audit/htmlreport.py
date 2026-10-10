@@ -456,6 +456,22 @@ class HtmlReportGenerator:
         body.append(self._integrity_table(audit))
         body.append(self._package_verify_table(audit))
         body.append(self._artifact_verify_table(audit))
+        if audit.protocol_findings:
+            body.append(
+                self._table(
+                    "Protocol advisories",
+                    ["Rule", "Target", "Observation", "Manual step"],
+                    [
+                        self._row(
+                            self._esc(f.rule_id),
+                            self._esc(f.target_name),
+                            self._esc(f.summary),
+                            self._esc(f.remediation),
+                        )
+                        for f in audit.protocol_findings
+                    ],
+                )
+            )
         body.append(self._drift_table(audit))
         return f'<div class="server">{"".join(body)}</div>'
 

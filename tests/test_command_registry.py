@@ -313,6 +313,7 @@ mcp_audit/proof_cli.py
 mcp_audit/proof_models.py
 mcp_audit/proof_observer.py
 mcp_audit/proof_trust.py
+mcp_audit/protocol.py
 mcp_audit/provenance.py
 mcp_audit/redaction.py
 mcp_audit/report.py

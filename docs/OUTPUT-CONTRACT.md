@@ -540,6 +540,63 @@ Each audit may include:
   `source_trust`, analyzer/model provenance, candidate/analyzed tool counts,
   and the number of admitted findings. `unknown` never means clean.
 
+### Connected protocol observations (additive)
+
+`audits[].protocol` is present when an SDK session was negotiated and inspected.
+Static/config-only scans and reports without session evidence omit it; the model
+defaults to null on load. It records:
+
+- `negotiated_version`, and `era`: `modern`, `legacy`, or `unknown`, classified
+  using the SDK's explicit version sets, never a guessed date cutoff.
+- `discover_supported`: true when the SDK retained a discover result, false
+  after an explicit method-not-found response, null otherwise. A fallback
+  handshake alone cannot establish unsupported discovery.
+- `server_info`: nullable, redacted `{name, version}` advertised by the peer.
+  It is a display identity, not an authenticated identity.
+- `session_id_minted`: true when an observed HTTP response carried
+  `Mcp-Session-Id`, false when HTTP responses were observed without it, null
+  when unobserved (including stdio and legacy SSE). No header value is retained.
+- `extensions`: advertised extension identifiers only; no extension settings.
+- `logging_advertised`: nullable capability observation.
+- `cache_hints`: per-response metadata for discover and listed tools, prompts,
+  and resources. Each record has `method`, `listing` (session-local index),
+  `page`, nullable `ttl_ms` / `cache_scope`, and `ttl_ms_present` /
+  `cache_scope_present`. Presence flags distinguish absence from invalid values;
+  non-integer TTLs and invalid scopes are withheld as null. Negative integer
+  TTLs are retained before SDK normalization. Failed metadata validation can
+  retain hint evidence without admitting the tool/prompt/resource surface.
+- `tools_order`: ordered name lists from complete tool listings only. Repeated
+  listings come from an already requested canary; this check makes no extra calls.
+
+Nonempty `audits[].protocol_findings` contains low-severity advisories with
+`rule_id`, `title`, `summary`, `remediation`, `target_type`, `target_name`,
+`requirement_level`, and `reference_url`. Empty lists are omitted to preserve
+legacy output. These findings appear in terminal, HTML, SARIF (note level),
+and suppression/review summaries without altering numeric permission scores.
+
+| Rule | Evidence required | Requirement level |
+| --- | --- | --- |
+| MCP044 | Observed legacy negotiation on HTTP | advisory |
+| MCP045 | HTTP response carried a session-ID header | advisory |
+| MCP046 | Known-modern peer advertised logging (SEP-2577) | advisory |
+| MCP047 | Known-modern complete response omitted a required cache hint (SEP-2549) | protocol_must |
+| MCP048 | Explicit scopes differ across pages of one complete modern listing (SEP-2549) | protocol_must |
+| MCP049 | Observed invalid TTL, including one the SDK clamps rather than rejects | protocol_must on modern peers; advisory otherwise |
+| MCP050 | Two complete tool listings have the same name multiset but different order | protocol_should |
+
+Rules deduplicate by rule and method/target per session. Missing/unavailable
+session evidence, failed RPCs, or incomplete pagination alone do not establish
+missing hints, cross-page scope drift, tool removal, or ordering changes.
+SDK-rejected cache metadata retains partial listing coverage and a fixed rule
+message, never the validation input. A clamped TTL can produce MCP049 while
+the tool listing still completes. Advertised extensions alone emit no finding.
+
+`drift_findings[].requirement_level` defaults to `heuristic` for old reports
+and saved-pin comparisons (the default is omitted on export). Modern observed
+tool-surface session drift adds `protocol_must` and cites SEP-2567 in its summary;
+prompt/resource drift stays heuristic. This label does not change severity.
+The report `schema_version` and all existing fields retain their meanings.
+
 ### Agent-visible text and prompt arguments (additive)
 
 `prompts[].arguments` remains the ordered list of argument names. The optional

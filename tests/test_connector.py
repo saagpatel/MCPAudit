@@ -763,6 +763,7 @@ async def test_sdk_redirect_target_is_redacted_without_socket_access(
         return sse_client(url, httpx_client_factory=client_factory)
 
     monkeypatch.setattr("mcp.client.streamable_http.create_mcp_http_client", client_factory)
+    monkeypatch.setattr("mcp_audit.connector.create_mcp_http_client", client_factory)
     monkeypatch.setattr("mcp_audit.connector.sse_client", mock_sse_client)
     config = make_server_config(transport=transport, url="http://127.0.0.1:8765/mcp")
     with caplog.at_level(logging.WARNING):
@@ -876,11 +877,23 @@ def _patch_client_and_sse(
 ) -> object:
     """Capture Client construction and sse_client selection without opening a network."""
     sse_sentinel = object()
+    http_sentinel = object()
+    observed_sentinel = object()
 
     def fake_sse_client(url: str, *_args: object, **_kwargs: object) -> object:
         captured["sse_called"] = True
         captured["sse_url"] = url
         return sse_sentinel
+
+    def fake_http_client(url: str, **kwargs: object) -> object:
+        captured["http_url"] = url
+        captured["http_client"] = kwargs["http_client"]
+        return http_sentinel
+
+    def fake_observer(transport: object, capture: object) -> object:
+        captured["observed_transport"] = transport
+        captured["observed_result"] = observed_sentinel
+        return observed_sentinel
 
     class FakeClient:
         def __init__(self, server: object, **_kwargs: object) -> None:
@@ -888,6 +901,8 @@ def _patch_client_and_sse(
             raise error if error is not None else _SpawnAborted("no network")
 
     monkeypatch.setattr("mcp_audit.connector.sse_client", fake_sse_client, raising=False)
+    monkeypatch.setattr("mcp_audit.connector.streamable_http_client", fake_http_client)
+    monkeypatch.setattr("mcp_audit.connector.observe_transport", fake_observer)
     monkeypatch.setattr("mcp_audit.connector.Client", FakeClient)
     return sse_sentinel
 
@@ -917,7 +932,8 @@ async def test_sse_connect_uses_legacy_sse_transport_not_url_string(
 
     assert captured.get("sse_called") is True
     assert captured.get("sse_url") == url
-    assert captured.get("client_server") is sse_sentinel
+    assert captured.get("observed_transport") is sse_sentinel
+    assert captured.get("client_server") is captured["observed_result"]
     assert captured.get("client_server") != url
     assert "deprecated SSE transport" in caplog.text
     assert "StreamableHTTP" not in caplog.text
@@ -929,7 +945,7 @@ async def test_sse_connect_uses_legacy_sse_transport_not_url_string(
 
 
 @pytest.mark.anyio
-async def test_http_connect_still_passes_url_string_for_streamable_http(
+async def test_http_connect_uses_observed_streamable_http_transport(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     captured: dict[str, object] = {}
@@ -949,8 +965,11 @@ async def test_http_connect_still_passes_url_string_for_streamable_http(
         audit = await connector.connect(config)
 
     assert "sse_called" not in captured
-    assert captured.get("client_server") == url
-    assert isinstance(captured.get("client_server"), str)
+    assert captured.get("http_url") == url
+    assert captured.get("http_client") is not None
+    assert captured.get("observed_transport") is not None
+    assert captured.get("client_server") is captured["observed_result"]
+    assert captured.get("client_server") != url
     assert "deprecated SSE" not in caplog.text
     assert audit.connection_status == "failed"
 
