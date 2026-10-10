@@ -13,7 +13,8 @@ import pytest
 from click.testing import CliRunner
 from rich.console import Console
 
-from mcp_audit import cli, pin_cli, watcher
+from mcp_audit import _core_cli as core_cli
+from mcp_audit import pin_cli, watcher
 from mcp_audit.cli import main
 from mcp_audit.connector import ServerConnector
 from mcp_audit.engine import ScanOptions, run_scan
@@ -206,10 +207,10 @@ def test_terminal_and_html_fields_are_safe(payload: str) -> None:
 def test_discovery_pin_and_watch_sinks_are_safe(payload: str, monkeypatch: pytest.MonkeyPatch) -> None:
     report = _hostile_report(payload)
     console, buffer = _console()
-    monkeypatch.setattr(cli, "console", console)
+    monkeypatch.setattr(core_cli, "console", console)
     monkeypatch.setattr(pin_cli, "console", console)
     monkeypatch.setattr(watcher, "_console", console)
-    monkeypatch.setattr(cli, "discover_all_configs", lambda *_args, **_kwargs: [report.audits[0].server])
+    monkeypatch.setattr(core_cli, "discover_all_configs", lambda *_args, **_kwargs: [report.audits[0].server])
     result = CliRunner().invoke(main, ["discover", "--verbose"])
     assert result.exit_code == 0, result.output
     pin_cli._render_pin_refresh_review(payload, 1, report.audits[0].drift_findings)
