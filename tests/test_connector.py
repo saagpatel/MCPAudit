@@ -65,8 +65,10 @@ async def test_stdio_stderr_is_bounded_sanitized_and_cleaned_up(
         assert records == []
     else:
         assert len(records) == 1
-        assert "stderr tail: …[truncated] stderr-tail[/bold]\nBearer <redacted>\n" in records[0]
-        assert "stderr-tail[/bold]" in records[0]
+        # Text after a terminal control on a line is withheld (fail closed on hostile formatting).
+        assert (
+            "stderr tail: …[truncated] <terminal-formatted text withheld>\nBearer <redacted>\n" in records[0]
+        )
         assert "Bearer <redacted>" in records[0]
         assert "fixture-sensitive-marker" not in records[0]
         assert "\x1b" not in records[0] and "\x07" not in records[0]
@@ -112,10 +114,11 @@ async def test_stdio_stderr_ansi_separated_credential_anchors_are_redacted(
     for output in (caplog.text, audit.connection_error or ""):
         assert "synthetic-secret" not in output
         assert "\x1b" not in output
+    withheld = "token<terminal-formatted text withheld>\nBearer<terminal-formatted text withheld>"
     for record in records:
-        assert "token=<redacted>\nBearer <redacted>" in record
+        assert withheld in record
     if mode != "complete":
-        assert audit.connection_error and "token=<redacted>\nBearer <redacted>" in audit.connection_error
+        assert audit.connection_error and withheld in audit.connection_error
 
 
 @pytest.mark.anyio

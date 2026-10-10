@@ -480,6 +480,9 @@ async def test_default_http_body_cap_bounds_isolated_process_rss(tmp_path: Path)
         "Bearer\u009b[0m synthetic-secret",
         "password\u001b[31m: synthetic-secret",
         "api_key\u009d0;title\u009c=synthetic-secret",
+        "to\u001b[ken=synthetic-secret",
+        "to\u009b[0mken=synthetic-secret",
+        "\u001b[31mError:\u001b[0m token=synthetic-secret",
     ],
 )
 def test_stderr_control_residue_cannot_split_credentials(line: str) -> None:
