@@ -1035,6 +1035,57 @@ class ConfigHealthFinding(ReferencedFinding):
     config_paths: list[str] = Field(default_factory=list)
 
 
+class SchemaFinding(ReferencedFinding):
+    """A static finding on a served tool schema or icon declaration."""
+
+    tool_name: str
+    kind: str
+    evidence: list[str]
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def rule_id(self) -> str:
+        return {
+            "header_invalid": "MCP044",
+            "header_duplicate": "MCP044",
+            "header_type": "MCP044",
+            "header_unreachable": "MCP044",
+            "credential_header": "MCP045",
+            "external_ref": "MCP046",
+            "icon_source": "MCP047",
+            "icon_origin": "MCP047",
+        }[self.kind]
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def severity(self) -> str:
+        return "medium" if self.kind.startswith("header_") else "low"
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def title(self) -> str:
+        return {
+            "header_invalid": "Invalid MCP header declaration",
+            "header_duplicate": "Duplicate MCP header declaration",
+            "header_type": "Non-primitive MCP header value",
+            "header_unreachable": "Unreachable MCP header declaration",
+            "credential_header": "Credential parameter mirrored to a header",
+            "external_ref": "External schema reference",
+            "icon_source": "Unsupported icon source",
+            "icon_origin": "Cross-origin icon source",
+        }[self.kind]
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def target_name(self) -> str:
+        return self.tool_name
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def remediation(self) -> str:
+        return "Review the served schema metadata and remove or correct the unexpected declaration."
+
+
 class ServerAudit(BaseModel):
     """Complete audit result for a single MCP server."""
 
@@ -1055,6 +1106,7 @@ class ServerAudit(BaseModel):
     annotation_coverage: float = 0.0  # Percentage of tools with annotations
     annotations_missing: bool = False  # Informational; missing hints are not capability evidence.
     injection_findings: list[InjectionFinding] = Field(default_factory=list)
+    schema_findings: list[SchemaFinding] = Field(default_factory=list)
     ssrf_findings: list[SsrfFinding] = Field(default_factory=list)
     egress_findings: list[EgressFinding] = Field(default_factory=list)
     drift_findings: list[DriftFinding] = Field(default_factory=list)

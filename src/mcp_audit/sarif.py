@@ -40,6 +40,7 @@ from mcp_audit.models import (
     ProvenanceFinding,
     ProvenanceKind,
     ProvenanceSeverity,
+    SchemaFinding,
     ServerAudit,
     ShadowingFinding,
     ShadowingKind,
@@ -513,6 +514,21 @@ class SarifGenerator:
             }
             for finding in _unique_config_health_findings(config_health or [])
         ]
+        schema_rules = [
+            {
+                "id": rule_id,
+                "name": f"SchemaRule{rule_id}",
+                "shortDescription": {"text": title},
+                "fullDescription": {"text": title},
+                "properties": {"category": "schema_metadata"},
+            }
+            for rule_id, title in (
+                ("MCP044", "Invalid MCP header declaration"),
+                ("MCP045", "Credential parameter mirrored to a header"),
+                ("MCP046", "External schema reference"),
+                ("MCP047", "Unexpected icon source"),
+            )
+        ]
         return (
             perm_rules
             + [
@@ -537,6 +553,7 @@ class SarifGenerator:
             + artifact_verify_rules
             + contract_rules
             + config_health_rules
+            + schema_rules
         )
 
     def _make_results(
@@ -556,6 +573,8 @@ class SarifGenerator:
                 results.append(self._make_capability_result(capability_finding, audit))
             for inj in audit.injection_findings:
                 results.append(self._make_injection_result(inj, audit))
+            for schema_finding in audit.schema_findings:
+                results.append(self._make_schema_result(schema_finding, audit))
             for ssrf in audit.ssrf_findings:
                 results.append(self._make_ssrf_result(ssrf, audit))
             for egress in audit.egress_findings:
@@ -911,6 +930,21 @@ class SarifGenerator:
                 "evidence": finding.evidence,
                 "remediation": finding.remediation,
             },
+        }
+
+    def _make_schema_result(self, finding: SchemaFinding, audit: ServerAudit) -> dict[str, Any]:
+        """Build a SARIF result for a static schema metadata finding."""
+        rule_id = finding.rule_id
+        uri = _artifact_uri(audit.server.config_path)
+        return {
+            "ruleId": rule_id,
+            "level": "warning" if finding.severity in {"high", "medium"} else "note",
+            "message": {"text": f"{finding.title} in tool '{finding.tool_name}'."},
+            "locations": [{"physicalLocation": {"artifactLocation": {"uri": uri}}}],
+            "partialFingerprints": {
+                "mcpAuditStableId": _stable_fingerprint(rule_id, audit.server.name, finding.tool_name)
+            },
+            "properties": {"kind": finding.kind, "evidence": finding.evidence, "severity": finding.severity},
         }
 
     def _make_egress_result(self, finding: EgressFinding, audit: ServerAudit) -> dict[str, Any]:
