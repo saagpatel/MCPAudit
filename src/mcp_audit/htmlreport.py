@@ -156,6 +156,11 @@ class HtmlReportGenerator:
         report = report.redacted()
         summary = report.ensure_review_summary()
         findings = summary.actions
+        # Explicitly selected source paths retain P2-4's attribution contract.
+        # A caller's identifier-redacted report already contains scrubbed paths.
+        explicit_paths = [
+            audit.server.config_path if audit.server.config_source else None for audit in report.audits
+        ]
         if not show_host:
             findings = [
                 Action(
@@ -190,8 +195,8 @@ class HtmlReportGenerator:
             self._actions(findings, summary.action_counts),
             "<h2>Your servers</h2>",
         ]
-        for audit in report.audits:
-            parts.append(self._server_card(audit))
+        for audit, source_path in zip(report.audits, explicit_paths, strict=True):
+            parts.append(self._server_card(audit, source_path=source_path))
         parts.extend(
             [
                 '<details class="audit-log"><summary>Full audit log</summary>',
@@ -266,7 +271,7 @@ class HtmlReportGenerator:
             out.append("</section>")
         return "".join(out)
 
-    def _server_card(self, audit: ServerAudit) -> str:
+    def _server_card(self, audit: ServerAudit, *, source_path: str | None = None) -> str:
         srv = audit.server
         verbs = {
             PermissionCategory.FILE_READ: "reads files",
@@ -284,8 +289,9 @@ class HtmlReportGenerator:
         return (
             '<details class="server-card">'
             f"<summary>{self._esc(srv.name)} — {self._esc(audit.connection_status)}</summary>"
-            f"<p>{self._esc(reach)}</p><p>{self._esc(srv.client.value)} · "
-            f"<code>{self._esc(srv.config_path)}</code> · {self._esc(srv.transport.value)}</p>"
+            f"<p>{self._esc(reach)}</p><p>{self._esc(srv.source_label)} · "
+            f"<code>{self._esc(source_path if source_path is not None else srv.config_path)}</code> · "
+            f"{self._esc(srv.transport.value)}</p>"
             f"<p>Env key names only: <code>{self._esc(keys)}</code></p>"
             f"<p>Capability exposure: {exposure}. Full findings and evidence are in the audit log.</p>"
             "</details>"

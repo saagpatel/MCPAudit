@@ -89,6 +89,7 @@ def compute_summary(report: AuditReport) -> ReviewSummary:
     grouped: dict[tuple[str, str], Action] = {}
     ranks = {"high": 0, "medium": 1, "low": 2}
     owners: dict[tuple[str, ...], str] = {}
+    finding_severities: dict[tuple[str, str, str], str] = {}
 
     def owner_id(identity: tuple[str, ...]) -> str:
         return owners.setdefault(identity, f"owner-{len(owners) + 1:04d}")
@@ -101,9 +102,21 @@ def compute_summary(report: AuditReport) -> ReviewSummary:
         step: str,
         source: str,
         display: ReviewActionDisplay | None = None,
+        finding: object | None = None,
+        *,
+        merge_steps: bool = True,
     ) -> None:
+        # Grade distinct finding rows on their raw owner, before advice is folded.
+        if finding is not None:
+            assert isinstance(finding, BaseModel)
+            finding_kind = type(finding).__name__
+            finding_key = finding.model_dump_json()
+        else:
+            finding_kind = "manual"
+            finding_key = family
+        finding_severities[(owner, finding_kind, finding_key)] = severity
         key = (owner, family)
-        if key not in grouped and step and family != "policy":
+        if merge_steps and key not in grouped and step and family != "policy":
             key = next(
                 (
                     existing
@@ -152,6 +165,7 @@ def compute_summary(report: AuditReport) -> ReviewSummary:
                 finding.remediation,
                 f"{finding.rule_id}: {where}",
                 _display(finding, [audit]),
+                finding,
             )
         for injection in audit.injection_findings:
             add(
@@ -162,6 +176,7 @@ def compute_summary(report: AuditReport) -> ReviewSummary:
                 injection.remediation,
                 f"{injection.rule_id}: {where}",
                 _display(injection, [audit]),
+                injection,
             )
         outbound_findings: list[_Outbound] = [*audit.ssrf_findings, *audit.egress_findings]
         for outbound in outbound_findings:
@@ -173,6 +188,7 @@ def compute_summary(report: AuditReport) -> ReviewSummary:
                 outbound.remediation,
                 f"{outbound.rule_id}: {where}",
                 _display(outbound, [audit]),
+                outbound,
             )
         other_findings: list[_Finding] = [
             *audit.annotation_findings,
@@ -192,6 +208,7 @@ def compute_summary(report: AuditReport) -> ReviewSummary:
                 finding_with_rule.remediation,
                 f"{finding_with_rule.rule_id}: {where}",
                 _display(finding_with_rule, [audit]),
+                finding_with_rule,
             )
         for drift in audit.drift_findings:
             add(
@@ -202,6 +219,7 @@ def compute_summary(report: AuditReport) -> ReviewSummary:
                 drift.remediation or "Compare the changed surface with your reviewed baseline.",
                 f"{drift.target_name}: {where}",
                 _display(drift, [audit]),
+                drift,
             )
         if audit.annotations_missing:
             add(
@@ -236,6 +254,8 @@ def compute_summary(report: AuditReport) -> ReviewSummary:
                 ],
                 tuple(health.config_paths),
             ),
+            health,
+            merge_steps=False,
         )
     fleet_findings: list[_Finding] = [*report.fleet_trifecta_findings, *report.shadowing_findings]
     for fleet in fleet_findings:
@@ -256,6 +276,7 @@ def compute_summary(report: AuditReport) -> ReviewSummary:
             fleet.remediation,
             fleet.rule_id,
             _display(fleet, [audit for audit in report.audits if audit.server.name in names]),
+            fleet,
         )
     if report.policy_result:
         for index, violation in enumerate(report.policy_result.violations):
@@ -287,6 +308,7 @@ def compute_summary(report: AuditReport) -> ReviewSummary:
                     if audit_index is not None and 0 <= audit_index < len(report.audits)
                     else [],
                 ),
+                violation,
             )
     findings = sorted(grouped.values(), key=lambda action: ranks.get(action.severity, 2))
     cards: dict[tuple[tuple[str, ...], tuple[str, ...]], str] = {}
@@ -302,12 +324,12 @@ def compute_summary(report: AuditReport) -> ReviewSummary:
         actions=findings,
         action_counts=counts,
         action_count=len(findings),
-        grade=_compute_grade(report, findings),
+        grade=_compute_grade(report, list(finding_severities.values())),
         review_minutes=len(findings) * 5,
     )
 
 
-def _compute_grade(report: AuditReport, findings: list[Action]) -> ReviewGrade | None:
+def _compute_grade(report: AuditReport, severities: list[str]) -> ReviewGrade | None:
     """D6 rubric, qualified by metadata completion; never read a risk score.
 
     Incomplete/legacy reports get no letter. Confirmed shell launch means a
@@ -325,7 +347,7 @@ def _compute_grade(report: AuditReport, findings: list[Action]) -> ReviewGrade |
         for finding in report.config_health_findings
     ):
         return "F"
-    fixes = sum(action.severity == "high" for action in findings)
+    fixes = severities.count("high")
     chain_and_shell = any(
         audit.trifecta_findings
         and (
@@ -338,6 +360,6 @@ def _compute_grade(report: AuditReport, findings: list[Action]) -> ReviewGrade |
         return "D"
     if fixes == 1:
         return "C"
-    if any(action.severity == "medium" for action in findings):
+    if "medium" in severities:
         return "B"
     return "A"

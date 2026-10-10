@@ -265,8 +265,8 @@ Config-only, empty, legacy/unknown-mode, and incomplete metadata reports have a
 null grade and show **Preview**. Recorded partial/not-run checks and scan warnings
 also prevent a letter. With completed metadata, F means hidden
 instruction findings, a `secret_in_config` finding, or a shell-wrapper launch;
-D means at least two deduplicated Fix-now actions or a read/fetch/send chain
-with a shell capability; C means one Fix-now action; B means Worth-a-look
+D means at least two distinct Fix-now findings on their raw identities or a read/fetch/send chain
+with a shell capability; C means one Fix-now finding; B means Worth-a-look
 findings only; A means FYI-only or no findings. The caveat "Reach and hygiene,
 not a safety certificate" appears on the result itself. Optional checks and
 their limits remain explicit in coverage; a letter does not certify runtime safety.
@@ -275,7 +275,11 @@ HTML orders the summary, Checked strip, Top fixes, Worth a look, FYI, collapsed
 server summaries, and collapsed full audit log. Fix now / Worth a look / FYI
 map to high / medium / low severity. Actions merge identical remediation on
 one server identity and overlapping SSRF/egress advice for one target, retaining
-source rules and remediation steps. Original finding rows remain in the log.
+source rules and remediation steps. Config-health finding families remain separate
+even when their remediation matches; terminal cards can fold them for display.
+Grading counts distinct findings before action grouping. Original finding rows remain in the log.
+Explicit-file server cards show the source label and recorded config path, including
+in the default HTML view. Passing an identifier-redacted report keeps those paths scrubbed.
 `AuditReport.review_summary` is additive stored data, computed exactly once on
 first presentation, redaction or serialization, after scan and policy evaluation.
 It contains `actions` (each with opaque `identity` and `owner`, `severity`, display

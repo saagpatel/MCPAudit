@@ -16,6 +16,7 @@ from mcp_audit.models import (
     AuditReport,
     CheckCoverage,
     ConnectionMode,
+    EgressFinding,
     PolicyResult,
     PolicyViolation,
     ReviewSummary,
@@ -287,6 +288,32 @@ def test_credential_redaction_cannot_collapse_config_identities() -> None:
     ReportGenerator(Console(file=terminal, width=180)).render_terminal(redacted, details=False)
     assert "1. ▲ Fix now" in terminal.getvalue() and "2. ▲ Fix now" in terminal.getvalue()
     assert "synthetic-secret-" not in redacted.model_dump_json()
+
+
+def test_grade_counts_distinct_findings_before_shared_advice_is_grouped() -> None:
+    report = _report("ssrf_findings", "/Users", 1)
+    audit = report.audits[0]
+    audit.egress_findings = [EgressFinding.model_validate(_CASES["egress_findings"])]
+    baseline = report.ensure_review_summary()
+    assert baseline.action_count == 1  # One target, two independent finding classes.
+    assert baseline.grade == "D"
+    redacted = report.redacted(identifiers=True)
+    for candidate in (
+        report,
+        report.redacted(),
+        redacted,
+        redacted.redacted(identifiers=True),
+        AuditReport.model_validate_json(redacted.model_dump_json()),
+    ):
+        summary = candidate.ensure_review_summary()
+        assert (summary.grade, summary.action_count, summary.review_minutes) == ("D", 1, 5)
+        assert candidate.ux_summary.grade == "D"
+        assert json.loads(candidate.model_dump_json())["ux_summary"]["grade"] == "D"
+        for show_host in (False, True):
+            assert 'aria-label="Grade D"' in HtmlReportGenerator().generate(candidate, show_host=show_host)
+        terminal = StringIO()
+        ReportGenerator(Console(file=terminal, width=180)).render_terminal(candidate, details=False)
+        assert "MCPAudit · Grade D" in terminal.getvalue()
 
 
 def test_large_alias_set_keeps_summary_display_idempotent() -> None:
