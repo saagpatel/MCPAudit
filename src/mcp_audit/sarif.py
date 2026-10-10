@@ -38,12 +38,8 @@ from mcp_audit.models import (
     PackageVerifySeverity,
     PermissionCategory,
     PermissionFinding,
-<<<<<<< HEAD
-    ProtocolFinding,
-||||||| 76391e3
-=======
     PinIntegrityFinding,
->>>>>>> origin/main
+    ProtocolFinding,
     ProvenanceFinding,
     ProvenanceKind,
     ProvenanceSeverity,
