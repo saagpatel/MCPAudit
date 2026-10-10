@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 
 import httpx2
 from mcp.shared._httpx_utils import MCP_DEFAULT_SSE_READ_TIMEOUT, MCP_DEFAULT_TIMEOUT
@@ -15,16 +15,21 @@ class HttpBodySizeError(ValueError):
 
 
 class _BoundedBody(httpx2.AsyncByteStream):
-    def __init__(self, stream: httpx2.AsyncByteStream, limit: int) -> None:
+    def __init__(
+        self, stream: httpx2.AsyncByteStream, limit: int, on_error: Callable[[HttpBodySizeError], None]
+    ) -> None:
         self.stream = stream
         self.limit = limit
+        self.on_error = on_error
 
     async def __aiter__(self) -> AsyncIterator[bytes]:
         size = 0
         async for chunk in self.stream:
             size += len(chunk)
             if size > self.limit:
-                raise HttpBodySizeError(f"HTTP body size exceeds {self.limit} bytes.")
+                error = HttpBodySizeError(f"HTTP body size exceeds {self.limit} bytes.")
+                self.on_error(error)
+                raise error
             yield chunk
 
     async def aclose(self) -> None:
@@ -46,6 +51,7 @@ class BoundedHttpClient(httpx2.AsyncClient):
         if max_body_bytes < 1:
             raise ValueError("HTTP body limit must be positive.")
         self.max_body_bytes = max_body_bytes
+        self.on_body_error: Callable[[HttpBodySizeError], None] | None = None
         super().__init__(
             headers={**(headers or {}), "Accept-Encoding": "identity"},
             timeout=timeout or httpx2.Timeout(MCP_DEFAULT_TIMEOUT, read=MCP_DEFAULT_SSE_READ_TIMEOUT),
@@ -54,15 +60,23 @@ class BoundedHttpClient(httpx2.AsyncClient):
             event_hooks={"response": [self._bound_response]},
         )
 
+    def _notify_body_error(self, error: HttpBodySizeError) -> None:
+        if self.on_body_error is not None:
+            self.on_body_error(error)
+
     async def _bound_response(self, response: httpx2.Response) -> None:
         # Refuse unsolicited compression before decoding to avoid expansion bombs.
         if response.headers.get("content-encoding", "identity").lower() != "identity":
-            raise HttpBodySizeError("Compressed HTTP bodies are not supported by bounded transport.")
+            error = HttpBodySizeError("Compressed HTTP bodies are not supported by bounded transport.")
+            self._notify_body_error(error)
+            raise error
         length = response.headers.get("content-length", "")
         if length.isdecimal() and int(length) > self.max_body_bytes:
-            raise HttpBodySizeError(f"HTTP body size exceeds {self.max_body_bytes} bytes.")
+            error = HttpBodySizeError(f"HTTP body size exceeds {self.max_body_bytes} bytes.")
+            self._notify_body_error(error)
+            raise error
         assert isinstance(response.stream, httpx2.AsyncByteStream)
-        response.stream = _BoundedBody(response.stream, self.max_body_bytes)
+        response.stream = _BoundedBody(response.stream, self.max_body_bytes, self._notify_body_error)
 
 
 def create_mcp_http_client(

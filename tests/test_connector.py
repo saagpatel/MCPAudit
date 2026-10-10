@@ -96,6 +96,29 @@ async def test_stdio_stderr_truncation_discards_unanchored_secrets(
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("mode", ["complete", "fail", "hang"])
+async def test_stdio_stderr_ansi_separated_credential_anchors_are_redacted(
+    mode: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    config = make_server_config(
+        command=sys.executable,
+        args=["-m", "tests.fixtures.noisy_stderr_server", "ansi-anchors", mode],
+    )
+    caplog.set_level(logging.DEBUG, logger="mcp_audit.connector")
+    audit = await ServerConnector(timeout=0.5 if mode == "hang" else 5).connect(config)
+    assert audit.connection_status == {"complete": "connected", "fail": "failed", "hang": "timeout"}[mode]
+    records = [r.getMessage() for r in caplog.records if "stderr tail:" in r.getMessage()]
+    assert records
+    for output in (caplog.text, audit.connection_error or ""):
+        assert "synthetic-secret" not in output
+        assert "\x1b" not in output
+    for record in records:
+        assert "token=<redacted>\nBearer <redacted>" in record
+    if mode != "complete":
+        assert audit.connection_error and "token=<redacted>\nBearer <redacted>" in audit.connection_error
+
+
+@pytest.mark.anyio
 async def test_stdio_short_stderr_preserves_redacted_line(caplog: pytest.LogCaptureFixture) -> None:
     config = make_server_config(
         name="stderr-fixture",

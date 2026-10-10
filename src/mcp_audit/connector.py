@@ -18,7 +18,7 @@ from typing import TextIO, TypeVar, cast
 import anyio
 import httpx2
 from mcp import Client, StdioServerParameters
-from mcp.client.session import IncomingMessage, MessageHandlerFnT
+from mcp.client.session import IncomingMessage
 from mcp.client.sse import sse_client
 from mcp.client.streamable_http import streamable_http_client
 from mcp.shared.exceptions import MCPError
@@ -74,26 +74,35 @@ class ProtocolError(ValueError):
     """A transport fault requires immediate session failure, not a timeout."""
 
 
-@asynccontextmanager
-async def _protocol_guard(server_name: str) -> AsyncIterator[MessageHandlerFnT]:
+@dataclass
+class _ProtocolGuard:
+    server_name: str
+    scope: anyio.CancelScope
     failure: str | None = None
+
+    def reject(self, error: Exception) -> None:
+        if self.failure is None:
+            # ValidationError strings include untrusted input; retain types only.
+            self.failure = (
+                str(error)
+                if isinstance(error, HttpBodySizeError)
+                else f"Transport rejected a server message ({type(error).__name__})."
+            )
+            logger.debug("Server %s protocol_error: %s", self.server_name, self.failure)
+            self.scope.cancel()
+
+    async def __call__(self, message: IncomingMessage) -> None:
+        if isinstance(message, Exception):
+            self.reject(message)
+
+
+@asynccontextmanager
+async def _protocol_guard(server_name: str) -> AsyncIterator[_ProtocolGuard]:
     with anyio.CancelScope() as scope:
-
-        async def message_handler(message: IncomingMessage) -> None:
-            nonlocal failure
-            if isinstance(message, Exception) and failure is None:
-                # ValidationError strings include untrusted input; retain types only.
-                failure = (
-                    str(message)
-                    if isinstance(message, HttpBodySizeError)
-                    else f"Transport rejected a server message ({type(message).__name__})."
-                )
-                logger.debug("Server %s protocol_error: %s", server_name, failure)
-                scope.cancel()
-
-        yield message_handler
-    if failure is not None:
-        raise ProtocolError(f"protocol_error: {failure}")
+        guard = _ProtocolGuard(server_name, scope)
+        yield guard
+    if guard.failure is not None:
+        raise ProtocolError(f"protocol_error: {guard.failure}")
 
 
 class _ParseLogFilter(logging.Filter):
@@ -150,12 +159,12 @@ _SSE_LOGGER_NAMES = (
 
 def _redact_sse_log_text(value: str) -> str:
     # Negotiated POST endpoints can use arbitrary query keys for session credentials.
-    redacted = _REDIRECT_URL.sub(r"\1<redacted-url>", value)
+    redacted = _REDIRECT_URL.sub(r"\1<redacted-url>", strip_controls(value))
     redacted = _SSE_URL_SUFFIX.sub(
         lambda match: match[1] + "?<redacted>" if match[2] is not None else match[0], redacted
     )
     redacted = _SSE_URL_USERINFO.sub(r"\1<redacted>@", redacted)
-    return strip_controls(redact_text(redacted))
+    return redact_text(redacted)
 
 
 def _exception_leaves(exc: BaseException) -> Iterator[BaseException]:
@@ -757,13 +766,17 @@ class ServerConnector:
             # Never retain or render the header's credential-bearing value.
             minted = minted is True or "mcp-session-id" in response.headers
 
-        async with create_mcp_http_client() as http_client:
+        async with (
+            _protocol_guard(config.name) as message_handler,
+            create_mcp_http_client() as http_client,
+        ):
             if isinstance(http_client, BoundedHttpClient):
                 http_client.max_body_bytes = self.max_frame_bytes
+                # SDK SSE handlers may swallow stream errors; cancel our session directly.
+                http_client.on_body_error = message_handler.reject
             http_client.event_hooks["response"].append(observe_response)
             capture = ProtocolCapture(ProtocolObservation())
             async with (
-                _protocol_guard(config.name) as message_handler,
                 Client(
                     observe_transport(streamable_http_client(config.url, http_client=http_client), capture),
                     client_info=probe.client_info if probe else _CLIENT_INFO,
@@ -796,6 +809,7 @@ class ServerConnector:
             client = create_mcp_http_client(headers, timeout, auth)
             if isinstance(client, BoundedHttpClient):
                 client.max_body_bytes = self.max_frame_bytes
+                client.on_body_error = message_handler.reject
             return client
 
         async with (

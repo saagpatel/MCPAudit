@@ -13,6 +13,7 @@ import time
 from collections.abc import AsyncIterator
 from pathlib import Path
 
+import anyio
 import httpx2
 import pytest
 
@@ -206,6 +207,105 @@ async def test_connector_http_cap_is_applied_through_sdk_client_hook(
     assert audit.connection_error and "HTTP body size exceeds 16384 bytes" in audit.connection_error
     assert time.monotonic() - started < 2 + 4.5
     assert stream.emitted == 20_480
+
+
+class _SseComments(_Chunks):
+    def __init__(self, overflow: anyio.Event) -> None:
+        super().__init__(chunk_size=4096)
+        self.overflow = overflow
+        self.closed = False
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        while True:
+            self.emitted += self.chunk_size
+            if self.emitted > 16_384:
+                self.overflow.set()
+            yield b":" + b"x" * (self.chunk_size - 3) + b"\n\n"
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+class _SseEndpoint(httpx2.AsyncByteStream):
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        yield b"event: endpoint\ndata: /messages\n\n"
+        await anyio.sleep_forever()
+
+    async def aclose(self) -> None:
+        pass
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("transport", [TransportType.HTTP, TransportType.SSE])
+async def test_body_overflow_cancels_session_even_when_sdk_swallows_error(
+    transport: TransportType, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    overflow = anyio.Event()
+    stream = _SseComments(overflow)
+    get_requests = 0
+
+    async def respond(request: httpx2.Request) -> httpx2.Response:
+        nonlocal get_requests
+        if request.method == "GET":
+            get_requests += 1
+            return httpx2.Response(
+                200,
+                stream=stream if transport == TransportType.HTTP else _SseEndpoint(),
+                headers={"Content-Type": "text/event-stream"},
+            )
+        if request.method == "DELETE":
+            return httpx2.Response(200)
+        if transport == TransportType.SSE:
+            # Legacy SSE POST reads the body, then its writer swallows the exception.
+            return httpx2.Response(200, stream=stream)
+        message = json.loads(request.content)
+        if "id" not in message:
+            return httpx2.Response(202)
+        payload: dict[str, object] = {"jsonrpc": "2.0", "id": message["id"]}
+        headers = {"Content-Type": "application/json"}
+        if message["method"] == "initialize":
+            headers["mcp-session-id"] = "fixture-session"
+            payload["result"] = {
+                "protocolVersion": message["params"]["protocolVersion"],
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": "fixture", "version": "1"},
+            }
+        elif message["method"] == "tools/list":
+            # Without the failure latch, GET overflow would still allow a complete audit.
+            await overflow.wait()
+            payload["result"] = {"tools": []}
+        else:
+            payload["error"] = {"code": -32601, "message": "Method not found"}
+        return httpx2.Response(200, json=payload, headers=headers)
+
+    def factory(
+        headers: dict[str, str] | None = None,
+        timeout: httpx2.Timeout | None = None,
+        auth: httpx2.Auth | None = None,
+    ) -> BoundedHttpClient:
+        return BoundedHttpClient(
+            headers=headers, timeout=timeout, auth=auth, transport=httpx2.MockTransport(respond)
+        )
+
+    monkeypatch.setattr("mcp_audit.connector.create_mcp_http_client", factory)
+    connector = ServerConnector(timeout=5, max_frame_bytes=16_384)
+    warnings = connector.scan_warnings = []
+    config = make_server_config(transport=transport, url="https://fixture.invalid/mcp")
+    started = time.monotonic()
+    with caplog.at_level(logging.DEBUG):
+        audit = await connector.connect(config)
+    assert time.monotonic() - started < 1
+    assert audit.connection_status == "failed"
+    assert audit.connection_error and "HTTP body size exceeds 16384 bytes" in audit.connection_error
+    assert audit.tools == []
+    assert any(w.code == "protocol_error" for w in warnings)
+    assert get_requests == 1
+    assert stream.emitted == 20_480
+    assert stream.closed
+    protocol_logs = [
+        r for r in caplog.records if r.getMessage().startswith("Server test-server protocol_error:")
+    ]
+    assert len(protocol_logs) == 1
 
 
 @pytest.mark.anyio
