@@ -42,6 +42,7 @@ class PolicyConfig:
     fail_on_integrity: bool = False
     fail_on_package_verify: bool = False
     fail_on_artifact_verify: bool = False
+    fail_on_pin_integrity: bool = False
     required_pin_servers: list[str] = field(default_factory=list)
     denied_permissions: list[PermissionCategory] = field(default_factory=list)
     max_risk: float | None = None
@@ -96,6 +97,9 @@ def load_policy(path: Path) -> PolicyConfig:
     integrity = bool(fail_on.get("integrity", False))
     package_verify = bool(fail_on.get("package_verify", False))
     artifact_verify = bool(fail_on.get("artifact_verify", False))
+    pin_integrity = fail_on.get("pin_integrity", False)
+    if not isinstance(pin_integrity, bool):
+        raise ValueError("fail_on.pin_integrity must be a boolean.")
     coverage = fail_on.get("coverage", False)
     if not isinstance(coverage, bool):
         raise ValueError("fail_on.coverage must be a boolean.")
@@ -129,6 +133,7 @@ def load_policy(path: Path) -> PolicyConfig:
         fail_on_integrity=integrity,
         fail_on_package_verify=package_verify,
         fail_on_artifact_verify=artifact_verify,
+        fail_on_pin_integrity=pin_integrity,
         required_pin_servers=[str(value) for value in _sequence(pins.get("servers"), "require.pins.servers")],
         denied_permissions=permissions,
         max_risk=max_risk,
@@ -210,6 +215,17 @@ def evaluate_policy(
                         server_name=server_name,
                         severity="medium",
                         message=f"Server '{server_name}' is required to have a pin baseline.",
+                    )
+                )
+
+        if policy.fail_on_pin_integrity:
+            for finding in audit.pin_integrity_findings:
+                violations.append(
+                    PolicyViolation(
+                        rule="fail_on.pin_integrity",
+                        server_name=server_name,
+                        severity="high",
+                        message=f"{finding.rule_id} pin integrity verification failed: {finding.state}.",
                     )
                 )
 

@@ -515,6 +515,26 @@ comparisons use the same normalized tool form and serializer. Legacy pins still
 compare only name, description and input schema with their original v1 bytes;
 scans never upgrade them. See [Pin Maintenance](../maintainers/PIN-MAINTENANCE.md) for migration.
 
+Saved-pin consumers add `pin_verification: {state, kid}` per server when a
+baseline exists. States are `verified`, `unsigned`, `untrusted_signer`,
+`bad_signature`, `tampered_entry`, `retired_key`, and `schema_outdated`;
+`kid` is nullable and accepts only the 16-character lowercase hex key ID.
+`pin_integrity_findings` contains HIGH `MCP027` findings for untrusted signers,
+invalid signatures, and modified entries. Each finding includes `state`,
+`server_name`, nullable `kid`, `summary`, `severity`, `rule_id`, `title`,
+`description`, and `remediation`, plus the standard finding reference fields.
+Failed verification skips all saved-baseline comparisons, including the canary's
+first-listing comparison; independent in-session canary comparisons still run.
+The findings reach JSON, terminal/HTML summaries, SARIF, and the opt-in
+`fail_on.pin_integrity: true` policy gate. Existing drift policy semantics and
+report `schema_version` remain unchanged. Unsigned v2 and legacy v1 pins warn
+and remain usable. Verification uses the separate trusted public-key store,
+never an embedded public key or a private signing key.
+
+`scan --pin-file PATH` selects the saved baseline. `pin --status --json` adds
+`schema`, `signed`, `kid`, and `public_key` per server. These status fields
+describe the saved entry, and are not themselves verification evidence.
+
 Escalation findings add `kind: annotation_delta` and an `annotation_changes`
 list of hint names (empty for other kinds). This is HIGH `MCP018` for
 readOnlyHint true→false, destructiveHint false/absent→explicitly true, or
@@ -912,6 +932,12 @@ The report top level also includes:
   in scan/session observation order. Fields:
   - `code` — stable machine key. Current vocabulary:
     `pin_baseline_missing` (check requested but nothing is pinned),
+    `pin_unsigned` (v2 baseline has no signature),
+    `pin_signed_by_retired_key` (valid signature within the retired key's grace period),
+    `pin_integrity_failed` (HIGH MCP027; saved-baseline comparisons skipped),
+    `pin_rolled_back` (verified pin predates the locally recorded newest pin timestamp),
+    `pin_rollback_tracking_unavailable` (verification succeeded but the local timestamp
+    store could not be read or updated; rollback detection was not established),
     `pin_schema_outdated` (a compared server has v1 tool entries; annotations,
     title, outputSchema, icons and meta were not covered; original v1 drift
     comparisons remain active, and refresh review is required for v2 coverage),
@@ -1755,6 +1781,8 @@ SARIF output uses stable MCP rule IDs:
 - `MCP024`: launch-artifact integrity drift vs pin baseline (on-disk binary/script hash change)
 - `MCP025`: registry package-verification drift vs pin baseline (npm/PyPI published hash change; network, opt-in)
 - `MCP026`: byte-level artifact verification vs pin baseline (downloaded bytes don't match the registry-published hash, or a pinned file changed/added since baseline; network, opt-in)
+- `MCP027`: pin integrity verification failed (untrusted signer, invalid signature,
+  or modified baseline; HIGH, skips saved-baseline comparisons)
 - `MCP040`: outbound destination outside the egress allowlist (fixed, non-caller-controlled destination; opt-in `--egress-check`)
 - `MCP041`: unbounded caller-controlled outbound destination (URL/host parameter or templated host authority; opt-in `--egress-check`)
 - `MCP042`: allowlisted destination with residual egress risk (multi-tenant data-bearing API or caller-attachable credentials; opt-in `--egress-check`)

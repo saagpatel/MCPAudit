@@ -9,6 +9,7 @@ from pydantic import (
     Field,
     SerializerFunctionWrapHandler,
     computed_field,
+    field_validator,
     model_serializer,
     model_validator,
 )
@@ -34,6 +35,37 @@ class ConnectionMode(StrEnum):
     UNKNOWN = "unknown"
     ATTEMPTED = "attempted"
     SKIPPED = "skipped"
+
+
+class PinVerificationState(StrEnum):
+    """Result of checking a stored pin's schema and signature."""
+
+    VERIFIED = "verified"
+    UNSIGNED = "unsigned"
+    UNTRUSTED_SIGNER = "untrusted_signer"
+    BAD_SIGNATURE = "bad_signature"
+    TAMPERED_ENTRY = "tampered_entry"
+    RETIRED_KEY = "retired_key"
+    SCHEMA_OUTDATED = "schema_outdated"
+
+
+def _pin_kid(value: object) -> str | None:
+    """Keep only the canonical public key identifier shape in reports."""
+    if isinstance(value, str) and len(value) == 16 and all(char in "0123456789abcdef" for char in value):
+        return value
+    return None
+
+
+class PinVerification(BaseModel):
+    """Structured pin verification status, independent from drift findings."""
+
+    state: PinVerificationState
+    kid: str | None = None
+
+    @field_validator("kid", mode="before")
+    @classmethod
+    def validate_kid(cls, value: object) -> str | None:
+        return _pin_kid(value)
 
 
 class PermissionCategory(StrEnum):
@@ -990,6 +1022,53 @@ class DriftFinding(ReferencedFinding):
         return self.tool_name
 
 
+class PinIntegrityFinding(ReferencedFinding):
+    """A signed pin failed verification, so its baseline cannot be trusted."""
+
+    state: Literal["untrusted_signer", "bad_signature", "tampered_entry"]
+    server_name: str
+    kid: str | None = None
+    summary: str
+    severity: Literal["high"] = "high"
+
+    @field_validator("kid", mode="before")
+    @classmethod
+    def validate_kid(cls, value: object) -> str | None:
+        return _pin_kid(value)
+
+    @field_validator("summary")
+    @classmethod
+    def sanitize_summary(cls, value: str) -> str:
+        from mcp_audit.redaction import redact_text
+        from mcp_audit.terminal_text import strip_controls
+
+        return " ".join(strip_controls(redact_text(value)).split())
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def rule_id(self) -> str:
+        return "MCP027"
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def title(self) -> str:
+        from mcp_audit.taxonomy import PIN_INTEGRITY_FINDING
+
+        return PIN_INTEGRITY_FINDING.title
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def description(self) -> str:
+        return self.summary
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def remediation(self) -> str:
+        from mcp_audit.taxonomy import PIN_INTEGRITY_FINDING
+
+        return PIN_INTEGRITY_FINDING.remediation
+
+
 class RiskScore(BaseModel):
     """Multi-dimensional risk score for a server."""
 
@@ -1091,6 +1170,8 @@ class ServerAudit(BaseModel):
     connection_error: str | None = None
     protocol: ProtocolObservation | None = None
     protocol_findings: list[ProtocolFinding] = Field(default_factory=list)
+    pin_verification: PinVerification | None = None
+    pin_integrity_findings: list[PinIntegrityFinding] = Field(default_factory=list)
     tools: list[ToolInfo] = Field(default_factory=list)
     prompts: list[PromptInfo] = Field(default_factory=list)
     resources: list[ResourceInfo] = Field(default_factory=list)
@@ -1124,6 +1205,10 @@ class ServerAudit(BaseModel):
             data.pop("protocol", None)
         if not self.protocol_findings:
             data.pop("protocol_findings", None)
+        if self.pin_verification is None:
+            data.pop("pin_verification", None)
+        if not self.pin_integrity_findings:
+            data.pop("pin_integrity_findings", None)
         return data
 
 

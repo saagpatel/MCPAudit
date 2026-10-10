@@ -474,6 +474,24 @@ How sure: Byte comparisons establish only the recorded mismatch. New files can b
 
 see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp026
 
+## MCP027
+
+Your signed pin could not be trusted.
+
+What we saw: The pin signature is invalid, its contents changed after signing, or its signer is not trusted.
+
+Why it matters:
+
+1. You rely on a signed pin as the reviewed tool-surface baseline.
+2. MCPAudit could not verify the signature or trusted signer.
+3. Drift comparison against this baseline was skipped.
+
+How to fix (About 5 minutes for an initial review): Do not refresh from this pin file. Restore it from backup or review the server and create a new pin.
+
+How sure: The finding establishes a verification failure, not who changed the pin or why.
+
+see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp027
+
 ## MCP040
 
 Your server may send data to a destination you did not allow.
