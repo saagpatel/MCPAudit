@@ -315,3 +315,36 @@ def test_exact_schema_budget_and_reference_cycle_do_not_report_exhaustion() -> N
     incomplete: list[str] = []
     assert scan_tool_schema(tool, incomplete_reasons=incomplete) == []
     assert incomplete == []
+
+
+def test_header_type_follows_local_references() -> None:
+    def schema(target: dict[str, object]) -> dict[str, object]:
+        return {
+            "type": "object",
+            "properties": {"value": {"$ref": "#/$defs/text", "x-mcp-header": "X-Value"}},
+            "$defs": {"text": target},
+        }
+
+    ok = ToolInfo(name="t", input_schema=schema({"type": "string"}))
+    assert [f.kind for f in scan_tool_schema(ok)] == []
+    bad = ToolInfo(name="t", input_schema=schema({"type": "object"}))
+    assert [f.kind for f in scan_tool_schema(bad)] == ["header_type"]
+    cyclic = ToolInfo(
+        name="t",
+        input_schema={
+            "type": "object",
+            "properties": {"value": {"$ref": "#/$defs/a", "x-mcp-header": "X-Value"}},
+            "$defs": {"a": {"$ref": "#/$defs/b"}, "b": {"$ref": "#/$defs/a"}},
+        },
+    )
+    assert [f.kind for f in scan_tool_schema(cyclic)] == ["header_type"]
+    broken = ToolInfo(
+        name="t",
+        input_schema={
+            "type": "object",
+            "properties": {"value": {"$ref": "#/$defs/missing", "x-mcp-header": "X"}},
+        },
+    )
+    reasons: list[str] = []
+    assert "header_type" not in [f.kind for f in scan_tool_schema(broken, incomplete_reasons=reasons)]
+    assert reasons

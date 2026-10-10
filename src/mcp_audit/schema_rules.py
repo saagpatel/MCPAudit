@@ -75,6 +75,33 @@ def _local_ref(
     return current
 
 
+_MAX_REF_HOPS = 16
+
+
+def _effective_types(
+    root: dict[str, object], node: dict[str, object], anchors: dict[str, dict[str, object] | None] | None
+) -> tuple[set[str], bool]:
+    """Declared types, following local $ref chains (bounded, cycle-safe). False when unresolved."""
+    seen: set[int] = set()
+    current: object = node
+    for _ in range(_MAX_REF_HOPS):
+        if not isinstance(current, dict):
+            return set(), False  # unresolvable reference
+        if id(current) in seen:
+            return set(), True  # a cycle that never declares a type declares none
+        seen.add(id(current))
+        raw_type = current.get("type")
+        if isinstance(raw_type, str):
+            return {raw_type}, True
+        if isinstance(raw_type, list):
+            return {value for value in raw_type if isinstance(value, str)}, True
+        ref = current.get("$ref")
+        if not isinstance(ref, str):
+            return set(), True
+        current = _local_ref(root, ref, anchors)
+    return set(), False
+
+
 def _schema_children(node: dict[str, object], *, include_definitions: bool) -> Iterator[dict[str, object]]:
     maps = _SCHEMA_MAP_KEYWORDS + (("$defs", "definitions") if include_definitions else ())
     for key in maps:
@@ -206,14 +233,12 @@ def _schema_rules(
             )
         else:
             headers[header.casefold()] = header
-        raw_type = node.get("type")
-        types = (
-            {raw_type}
-            if isinstance(raw_type, str)
-            else {value for value in raw_type if isinstance(value, str)}
-            if isinstance(raw_type, list)
-            else set()
-        )
+        types, resolved = _effective_types(schema, node, reference_anchors)
+        if not resolved:
+            reason = "x-mcp-header type could not be resolved through a local $ref"
+            if reason not in incomplete_reasons:
+                incomplete_reasons.append(reason)
+            continue
         if not types or not types <= _PRIMITIVE_TYPES:
             findings.append(
                 SchemaFinding(
