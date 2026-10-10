@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from itertools import chain
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import anyio
 from rich.console import Console
@@ -98,6 +98,62 @@ class ScanOptions:
     max_concurrency: int = 32
 
 
+if TYPE_CHECKING:
+    from mcp_audit.egress import EgressDetector
+    from mcp_audit.escalation import EscalationAnalyzer
+    from mcp_audit.injection import InjectionDetector
+    from mcp_audit.integrity import IntegrityAnalyzer
+    from mcp_audit.llm_analyzer import LLMAnalyzer
+    from mcp_audit.pinning import PinStore
+    from mcp_audit.pkgverify import ArtifactVerifier, PackageVerifier
+    from mcp_audit.provenance import ProvenanceAnalyzer
+    from mcp_audit.shadowing import ShadowingAnalyzer
+    from mcp_audit.ssrf import SsrfDetector
+    from mcp_audit.trifecta import TrifectaAnalyzer
+
+
+@dataclass(slots=True)
+class _ScanContext:
+    """Mutable state owned by one invocation; never shared across scans."""
+
+    opts: ScanOptions
+    applier: OverrideApplier
+    out: Console
+    start: float
+    servers: list[ServerConfig]
+    parse_errors: list[ConfigParseError]
+    scan_warnings: list[ScanWarning]
+    connector: ServerConnector
+    connection_limiter: anyio.CapacityLimiter
+    analyzer: PermissionAnalyzer
+    scorer: RiskScorer
+    llm_analyzer: LLMAnalyzer | None
+    llm_unavailable_summary: LLMAnalysisSummary | None
+    injection_detector: InjectionDetector | None
+    ssrf_detector: SsrfDetector | None
+    ssrf_allow: set[str]
+    egress_detector: EgressDetector | None
+    egress_server_allow: dict[str, set[str]]
+    trifecta_analyzer: TrifectaAnalyzer | None
+    shadowing_analyzer: ShadowingAnalyzer | None
+    escalation_analyzer: EscalationAnalyzer | None
+    provenance_analyzer: ProvenanceAnalyzer | None
+    integrity_analyzer: IntegrityAnalyzer | None
+    package_verifier: PackageVerifier | None
+    artifact_verifier: ArtifactVerifier | None
+    pin_store: PinStore | None
+    audits: list[ServerAudit]
+    completed: list[set[str]]
+    package_coverage: dict[str, list[CheckCoverage]]
+
+    def warn(
+        self, code: str, message: str, *, check: str | None = None, servers: list[str] | None = None
+    ) -> None:
+        # Preserve arrival order on the console; finalization sorts report data only.
+        self.scan_warnings.append(ScanWarning(code=code, message=message, check=check, servers=servers or []))
+        self.out.print(terminal_safe(message), style="yellow")
+
+
 async def run_scan(
     options: ScanOptions | None = None,
     *,
@@ -135,15 +191,6 @@ async def run_scan(
     applier = override_applier if override_applier is not None else OverrideApplier(OverrideConfig())
     out = console if console is not None else Console(quiet=True)
 
-    # Coverage warnings are data first, console rendering second: the report
-    # carries them so JSON/MCP consumers can tell "checked, clean" from
-    # "check silently skipped" — the console line is just the CLI view.
-    scan_warnings: list[ScanWarning] = []
-
-    def warn(code: str, message: str, *, check: str | None = None, servers: list[str] | None = None) -> None:
-        scan_warnings.append(ScanWarning(code=code, message=message, check=check, servers=servers or []))
-        out.print(terminal_safe(message), style="yellow")
-
     start = time.monotonic()
 
     # 1. Discover servers (unless the caller supplied a pre-parsed list).
@@ -161,6 +208,55 @@ async def run_scan(
                 config_paths.append(Path(opts.extra_config))
             extra_servers = _parse_extra_config(Path(opts.extra_config), parse_errors)
             servers = extra_servers if opts.config_only else servers + extra_servers
+
+    context = _prepare_scan(opts, servers, parse_errors, applier, out, start)
+
+    # Discovery -> setup/pins -> ordered per-server stages -> fleet/finalization.
+    # Disabled progress avoids refresh threads for silent library consumers.
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        TimeElapsedColumn(),
+        console=out,
+        transient=True,
+        disable=console is None,
+    ) as progress:
+        task_id = progress.add_task(f"Auditing {len(servers)} server(s)...", total=len(servers))
+
+        async def audit_one_guarded(idx: int, srv: ServerConfig) -> None:
+            # An analyzer crash must not cancel sibling audits or retain partial evidence.
+            try:
+                await _analyze_server(context, idx, srv)
+                progress.advance(task_id)
+            except Exception as exc:
+                context.audits[idx] = ServerAudit(
+                    server=srv,
+                    connection_status="failed",
+                    connection_error=redact_text(f"analysis error: {describe_exception(exc)}"),
+                )
+                progress.advance(task_id)
+
+        async with anyio.create_task_group() as tg:
+            for i, srv in enumerate(servers):
+                tg.start_soon(audit_one_guarded, i, srv)
+
+    return _finalize_scan(context)
+
+
+def _prepare_scan(
+    opts: ScanOptions,
+    servers: list[ServerConfig],
+    parse_errors: list[ConfigParseError],
+    applier: OverrideApplier,
+    out: Console,
+    start: float,
+) -> _ScanContext:
+    """Initialize optional components and baselines once, before any server task."""
+    scan_warnings: list[ScanWarning] = []
+
+    def warn(code: str, message: str, *, check: str | None = None, servers: list[str] | None = None) -> None:
+        scan_warnings.append(ScanWarning(code=code, message=message, check=check, servers=servers or []))
+        out.print(terminal_safe(message), style="yellow")
 
     connector = ServerConnector(timeout=float(opts.timeout))
     connector.scan_warnings = []
@@ -211,7 +307,6 @@ async def run_scan(
 
     ssrf_detector = None
     ssrf_allow: set[str] = set()
-    ssrf_suppressed = 0
     if opts.ssrf_check:
         from mcp_audit.ssrf import SsrfDetector, parse_host_allowlist
 
@@ -336,268 +431,322 @@ async def run_scan(
         if getattr(opts, check)
     }
 
-    # 2. Connect / analyze / score each server concurrently.
-    # disable= when silent: even a quiet Console pays a refresh thread plus
-    # ~10 discarded renders/second from rich's Live machinery; disabled
-    # Progress keeps add_task/advance as safe no-ops with zero overhead.
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        TimeElapsedColumn(),
-        console=out,
-        transient=True,
-        disable=console is None,
-    ) as progress:
-        task_id = progress.add_task(f"Auditing {len(servers)} server(s)...", total=len(servers))
+    return _ScanContext(
+        opts=opts,
+        applier=applier,
+        out=out,
+        start=start,
+        servers=servers,
+        parse_errors=parse_errors,
+        scan_warnings=scan_warnings,
+        connector=connector,
+        connection_limiter=connection_limiter,
+        analyzer=analyzer,
+        scorer=scorer,
+        llm_analyzer=llm_analyzer,
+        llm_unavailable_summary=llm_unavailable_summary,
+        injection_detector=injection_detector,
+        ssrf_detector=ssrf_detector,
+        ssrf_allow=ssrf_allow,
+        egress_detector=egress_detector,
+        egress_server_allow=egress_server_allow,
+        trifecta_analyzer=trifecta_analyzer,
+        shadowing_analyzer=shadowing_analyzer,
+        escalation_analyzer=escalation_analyzer,
+        provenance_analyzer=provenance_analyzer,
+        integrity_analyzer=integrity_analyzer,
+        package_verifier=package_verifier,
+        artifact_verifier=artifact_verifier,
+        pin_store=pin_store,
+        audits=audits,
+        completed=completed,
+        package_coverage=package_coverage,
+    )
 
-        async def audit_one(idx: int, srv: ServerConfig) -> None:
-            project_skipped = (
-                srv.scope == "project" or srv.project_path is not None
-            ) and not opts.connect_project_configs
-            skip_connect = opts.skip_connect or project_skipped
-            if project_skipped:
-                launch = (
-                    shlex.join(cast(list[str], redact_data([srv.command, *srv.args])))
-                    if srv.command
-                    else redact_text(srv.url or "(no command or endpoint)")
-                )
-                warn(
-                    "project_config_not_connected",
-                    f"Project config '{redact_text(srv.name)}' not connected: {launch}. "
-                    "Use --connect-project-configs to opt in (unless --skip-connect).",
-                    check="connection",
-                    servers=[srv.name],
-                )
-            if skip_connect:
-                audit = connector.skip_connect_audit(srv)
-            elif opts.canary_check:
-                baseline_warnings: list[ScanWarning] = []
-                baseline = (
-                    pin_store.canary_baseline(srv.name, warnings=baseline_warnings) if pin_store else None
-                )
-                for warning in baseline_warnings:
-                    warn(warning.code, warning.message, check=warning.check, servers=warning.servers)
-                async with connection_limiter:
-                    audit = await connector.connect(
-                        srv,
-                        canary_calls=opts.canary_calls,
-                        canary_identities=opts.canary_identities,
-                        canary_baseline=baseline,
-                        safe_tools=frozenset(
-                            mark[len(srv.name) + 1 :]
-                            for mark in opts.canary_safe_tools
-                            if mark.startswith(srv.name + "/")
-                        ),
-                    )
-                if audit.canary and audit.canary.status != "complete":
-                    warn(
-                        "canary_incomplete",
-                        "; ".join(audit.canary.warnings) or "Canary incomplete.",
-                        check="canary_check",
-                        servers=[srv.name],
-                    )
-            else:
-                async with connection_limiter:
-                    audit = await connector.connect(srv)
 
-            # Keep listed surfaces intact for hashing/reporting. Only detector
-            # input is bounded; coverage loss is explicit and contains no text.
-            fields: list[str] = []
-            for tool in audit.tools:
-                fields.extend((tool.name, tool.description or ""))
-                props = tool.input_schema.get("properties", {}) if tool.input_schema else {}
-                if isinstance(props, dict):
-                    fields.extend(str(name) for name in props)
-            for prompt in audit.prompts:
-                fields.extend((prompt.name, prompt.description or "", *prompt.arguments))
-            for resource in audit.resources:
-                fields.extend(
-                    (resource.uri, resource.name or "", resource.description or "", resource.mime_type or "")
-                )
-            truncated = sum(len(bounded_text(text)) < len(text) for text in fields)
-            if truncated:
-                warn(
-                    "description_truncated",
-                    f"Detector text limited to {MAX_FIELD_BYTES} UTF-8 bytes per field; "
-                    f"{truncated} field(s) truncated. Findings may omit suffix evidence.",
-                    check="permission_analysis",
-                    servers=[srv.name],
-                )
+async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) -> None:
+    """Ordered server stages (optional stages retain their place when enabled).
 
-            for target_type, target_name, text in chain(
-                (("tool", tool.name, agent_visible_text(tool)) for tool in audit.tools),
-                (
-                    ("prompt", prompt.name, prompt_visible_text(prompt))
-                    for prompt in audit.prompts
-                    if injection_detector is not None
+    1. Connection/canary (pins already loaded), then bounded-input diagnostics.
+    2. Permission analysis and optional LLM augmentation.
+    3. Overrides, annotation/capability analysis, then permission scoring.
+    4. Injection, SSRF, egress, then non-tool scoring. Egress consumes raw SSRF
+       findings; allowlist filtering and substrate suppression happen later.
+    5. Pin drift, trifecta, escalation, provenance, integrity, package and
+       artifact verification. Escalation consumes the initialized pin baseline.
+    6. Publish the audit and completed checks only after every stage succeeds.
+    """
+    opts = context.opts
+    applier = context.applier
+    connector = context.connector
+    connection_limiter = context.connection_limiter
+    analyzer = context.analyzer
+    scorer = context.scorer
+    llm_analyzer = context.llm_analyzer
+    llm_unavailable_summary = context.llm_unavailable_summary
+    injection_detector = context.injection_detector
+    ssrf_detector = context.ssrf_detector
+    egress_detector = context.egress_detector
+    egress_server_allow = context.egress_server_allow
+    pin_store = context.pin_store
+    trifecta_analyzer = context.trifecta_analyzer
+    escalation_analyzer = context.escalation_analyzer
+    provenance_analyzer = context.provenance_analyzer
+    integrity_analyzer = context.integrity_analyzer
+    package_verifier = context.package_verifier
+    artifact_verifier = context.artifact_verifier
+    package_coverage = context.package_coverage
+    audits = context.audits
+    completed = context.completed
+    warn = context.warn
+
+    project_skipped = (
+        srv.scope == "project" or srv.project_path is not None
+    ) and not opts.connect_project_configs
+    skip_connect = opts.skip_connect or project_skipped
+    if project_skipped:
+        launch = (
+            shlex.join(cast(list[str], redact_data([srv.command, *srv.args])))
+            if srv.command
+            else redact_text(srv.url or "(no command or endpoint)")
+        )
+        warn(
+            "project_config_not_connected",
+            f"Project config '{redact_text(srv.name)}' not connected: {launch}. "
+            "Use --connect-project-configs to opt in (unless --skip-connect).",
+            check="connection",
+            servers=[srv.name],
+        )
+    if skip_connect:
+        audit = connector.skip_connect_audit(srv)
+    elif opts.canary_check:
+        baseline_warnings: list[ScanWarning] = []
+        baseline = pin_store.canary_baseline(srv.name, warnings=baseline_warnings) if pin_store else None
+        for warning in baseline_warnings:
+            warn(warning.code, warning.message, check=warning.check, servers=warning.servers)
+        async with connection_limiter:
+            audit = await connector.connect(
+                srv,
+                canary_calls=opts.canary_calls,
+                canary_identities=opts.canary_identities,
+                canary_baseline=baseline,
+                safe_tools=frozenset(
+                    mark[len(srv.name) + 1 :]
+                    for mark in opts.canary_safe_tools
+                    if mark.startswith(srv.name + "/")
                 ),
-            ):
-                if text.incomplete:
-                    warn(
-                        "agent_text_incomplete",
-                        f"Agent-visible text scan incomplete for {target_type} {target_name!r}: "
-                        + "; ".join(text.incomplete),
-                        check="agent_visible_text",
-                        servers=[srv.name],
-                    )
+            )
+        if audit.canary and audit.canary.status != "complete":
+            warn(
+                "canary_incomplete",
+                "; ".join(audit.canary.warnings) or "Canary incomplete.",
+                check="canary_check",
+                servers=[srv.name],
+            )
+    else:
+        async with connection_limiter:
+            audit = await connector.connect(srv)
 
-            # Analyze tool list for new permission findings
-            schema_incomplete: list[str] = []
-            if not skip_connect or not audit.permissions:
-                raw_findings = analyzer.analyze_server(audit.tools, incomplete_reasons=schema_incomplete)
-            else:
-                raw_findings = list(audit.permissions)
-            if schema_incomplete:
+    # Keep listed surfaces intact for hashing/reporting. Only detector
+    # input is bounded; coverage loss is explicit and contains no text.
+    fields: list[str] = []
+    for tool in audit.tools:
+        fields.extend((tool.name, tool.description or ""))
+        props = tool.input_schema.get("properties", {}) if tool.input_schema else {}
+        if isinstance(props, dict):
+            fields.extend(str(name) for name in props)
+    for prompt in audit.prompts:
+        fields.extend((prompt.name, prompt.description or "", *prompt.arguments))
+    for resource in audit.resources:
+        fields.extend(
+            (resource.uri, resource.name or "", resource.description or "", resource.mime_type or "")
+        )
+    truncated = sum(len(bounded_text(text)) < len(text) for text in fields)
+    if truncated:
+        warn(
+            "description_truncated",
+            f"Detector text limited to {MAX_FIELD_BYTES} UTF-8 bytes per field; "
+            f"{truncated} field(s) truncated. Findings may omit suffix evidence.",
+            check="permission_analysis",
+            servers=[srv.name],
+        )
+
+    for target_type, target_name, text in chain(
+        (("tool", tool.name, agent_visible_text(tool)) for tool in audit.tools),
+        (
+            ("prompt", prompt.name, prompt_visible_text(prompt))
+            for prompt in audit.prompts
+            if injection_detector is not None
+        ),
+    ):
+        if text.incomplete:
+            warn(
+                "agent_text_incomplete",
+                f"Agent-visible text scan incomplete for {target_type} {target_name!r}: "
+                + "; ".join(text.incomplete),
+                check="agent_visible_text",
+                servers=[srv.name],
+            )
+
+    # Analyze tool list for new permission findings
+    schema_incomplete: list[str] = []
+    if not skip_connect or not audit.permissions:
+        raw_findings = analyzer.analyze_server(audit.tools, incomplete_reasons=schema_incomplete)
+    else:
+        raw_findings = list(audit.permissions)
+    if schema_incomplete:
+        warn(
+            "permission_schema_incomplete",
+            "Permission schema analysis incomplete: " + "; ".join(schema_incomplete),
+            check="permission_analysis",
+            servers=[srv.name],
+        )
+
+    # Optional LLM augmentation for low-confidence tools
+    if llm_analyzer is not None:
+        llm_outcome = await llm_analyzer.analyze_server_with_status(audit.tools, raw_findings)
+        audit.llm_analysis = llm_outcome.summary
+        raw_findings = raw_findings + llm_outcome.findings
+    elif opts.llm_analysis and llm_unavailable_summary is not None:
+        audit.llm_analysis = llm_unavailable_summary.model_copy(deep=True)
+
+    # Apply user overrides between analysis and scoring
+    audit.permissions = applier.apply(srv.name, raw_findings)
+    audit.annotations_missing = analyzer.annotations_missing(audit.tools)
+    audit.annotation_findings = [
+        finding for tool in audit.tools for finding in analyzer.analyze_annotation_contradictions(tool)
+    ]
+    audit.capability_findings = analyzer.analyze_capabilities(audit.prompts, audit.resources)
+    audit.risk_score = scorer.score_server(audit.permissions)
+    # Legacy annotation contributions obey the same operator overrides.
+    alert_findings = applier.apply(srv.name, raw_findings + analyzer.legacy_annotation_findings(audit.tools))
+    audit.permission_alert_score = scorer.score_server(alert_findings).composite
+
+    # Optional injection detection
+    if injection_detector is not None:
+        audit.injection_findings.extend(
+            injection_detector.scan_server(audit.tools, audit.prompts, audit.resources)
+        )
+
+    # Optional SSRF detection (allowlist filtering happens in a post-loop pass)
+    if ssrf_detector is not None:
+        audit.ssrf_findings = ssrf_detector.scan_server(audit.tools, audit.resources)
+
+    # Optional egress detection (consumes the SSRF findings just computed + resource URIs)
+    if egress_detector is not None:
+        audit.egress_findings = egress_detector.scan_server(audit, egress_server_allow.get(srv.name))
+
+    audit.non_tool_risk = scorer.score_non_tool(audit.capability_findings, audit.injection_findings)
+
+    # Optional pin drift check (gated on --pin-check, not mere store presence)
+    if pin_store is not None and opts.pin_check:
+        audit.drift_findings.extend(pin_store.check_drift(srv.name, audit.tools))
+
+    # Optional trifecta per-server detection
+    if trifecta_analyzer is not None:
+        audit.trifecta_findings = trifecta_analyzer.analyze_server(audit)
+
+    # Optional capability-escalation check vs the pin baseline
+    if escalation_analyzer is not None and pin_store is not None:
+        escalation_baseline = pin_store.baseline_tools(srv.name)
+        if escalation_baseline:
+            escalation_incomplete: list[str] = []
+            audit.escalation_findings = escalation_analyzer.analyze_server(
+                srv.name,
+                escalation_baseline,
+                audit.tools,
+                uncovered_annotations=pin_store.legacy_tool_names(srv.name),
+                incomplete_reasons=escalation_incomplete,
+            )
+            if escalation_incomplete:
                 warn(
                     "permission_schema_incomplete",
-                    "Permission schema analysis incomplete: " + "; ".join(schema_incomplete),
-                    check="permission_analysis",
+                    "Escalation schema analysis incomplete: " + "; ".join(escalation_incomplete),
+                    check="escalation_check",
                     servers=[srv.name],
                 )
 
-            # Optional LLM augmentation for low-confidence tools
-            if llm_analyzer is not None:
-                llm_outcome = await llm_analyzer.analyze_server_with_status(audit.tools, raw_findings)
-                audit.llm_analysis = llm_outcome.summary
-                raw_findings = raw_findings + llm_outcome.findings
-            elif opts.llm_analysis and llm_unavailable_summary is not None:
-                audit.llm_analysis = llm_unavailable_summary.model_copy(deep=True)
+    # Optional provenance / launch-config drift check vs the pin baseline
+    if provenance_analyzer is not None and pin_store is not None:
+        baseline_config = pin_store.baseline_config(srv.name)
+        if baseline_config:
+            audit.provenance_findings = provenance_analyzer.analyze_server(srv, baseline_config)
 
-            # Apply user overrides between analysis and scoring
-            audit.permissions = applier.apply(srv.name, raw_findings)
-            audit.annotations_missing = analyzer.annotations_missing(audit.tools)
-            audit.annotation_findings = [
-                finding
-                for tool in audit.tools
-                for finding in analyzer.analyze_annotation_contradictions(tool)
-            ]
-            audit.capability_findings = analyzer.analyze_capabilities(audit.prompts, audit.resources)
-            audit.risk_score = scorer.score_server(audit.permissions)
-            # Legacy annotation contributions obey the same operator overrides.
-            alert_findings = applier.apply(
-                srv.name, raw_findings + analyzer.legacy_annotation_findings(audit.tools)
+    # Optional launch-artifact integrity (on-disk hash) check vs the pin baseline
+    if integrity_analyzer is not None and pin_store is not None:
+        baseline_artifacts = pin_store.baseline_artifacts(srv.name)
+        if baseline_artifacts:
+            audit.integrity_findings = integrity_analyzer.analyze_server(srv.name, baseline_artifacts)
+
+    # Optional registry package verification (network) vs the pin baseline.
+    # Runs in a worker thread so the synchronous registry I/O never blocks
+    # the anyio event loop.
+    if package_verifier is not None and pin_store is not None:
+        from mcp_audit.pkgverify import verification_coverage
+
+        baseline_pkgs = pin_store.baseline_package_hashes(srv.name)
+        verified_refs: set[str] = set()
+        if baseline_pkgs:
+            audit.package_verify_findings = await anyio.to_thread.run_sync(
+                package_verifier.analyze_server, srv.name, srv, baseline_pkgs, verified_refs
             )
-            audit.permission_alert_score = scorer.score_server(alert_findings).composite
+        package_coverage["verify_artifacts"][idx] = verification_coverage(srv, baseline_pkgs, verified_refs)
 
-            # Optional injection detection
-            if injection_detector is not None:
-                audit.injection_findings.extend(
-                    injection_detector.scan_server(audit.tools, audit.prompts, audit.resources)
-                )
+    # Optional byte-level artifact verification (network) vs the pin baseline.
+    # Downloads + hashes off the event loop so blocking I/O never stalls anyio.
+    if artifact_verifier is not None and pin_store is not None:
+        from mcp_audit.pkgverify import verification_coverage
 
-            # Optional SSRF detection (allowlist filtering happens in a post-loop pass)
-            if ssrf_detector is not None:
-                audit.ssrf_findings = ssrf_detector.scan_server(audit.tools, audit.resources)
-
-            # Optional egress detection (consumes the SSRF findings just computed + resource URIs)
-            if egress_detector is not None:
-                audit.egress_findings = egress_detector.scan_server(audit, egress_server_allow.get(srv.name))
-
-            audit.non_tool_risk = scorer.score_non_tool(audit.capability_findings, audit.injection_findings)
-
-            # Optional pin drift check (gated on --pin-check, not mere store presence)
-            if pin_store is not None and opts.pin_check:
-                audit.drift_findings.extend(pin_store.check_drift(srv.name, audit.tools))
-
-            # Optional trifecta per-server detection
-            if trifecta_analyzer is not None:
-                audit.trifecta_findings = trifecta_analyzer.analyze_server(audit)
-
-            # Optional capability-escalation check vs the pin baseline
-            if escalation_analyzer is not None and pin_store is not None:
-                escalation_baseline = pin_store.baseline_tools(srv.name)
-                if escalation_baseline:
-                    escalation_incomplete: list[str] = []
-                    audit.escalation_findings = escalation_analyzer.analyze_server(
-                        srv.name,
-                        escalation_baseline,
-                        audit.tools,
-                        uncovered_annotations=pin_store.legacy_tool_names(srv.name),
-                        incomplete_reasons=escalation_incomplete,
-                    )
-                    if escalation_incomplete:
-                        warn(
-                            "permission_schema_incomplete",
-                            "Escalation schema analysis incomplete: " + "; ".join(escalation_incomplete),
-                            check="escalation_check",
-                            servers=[srv.name],
-                        )
-
-            # Optional provenance / launch-config drift check vs the pin baseline
-            if provenance_analyzer is not None and pin_store is not None:
-                baseline_config = pin_store.baseline_config(srv.name)
-                if baseline_config:
-                    audit.provenance_findings = provenance_analyzer.analyze_server(srv, baseline_config)
-
-            # Optional launch-artifact integrity (on-disk hash) check vs the pin baseline
-            if integrity_analyzer is not None and pin_store is not None:
-                baseline_artifacts = pin_store.baseline_artifacts(srv.name)
-                if baseline_artifacts:
-                    audit.integrity_findings = integrity_analyzer.analyze_server(srv.name, baseline_artifacts)
-
-            # Optional registry package verification (network) vs the pin baseline.
-            # Runs in a worker thread so the synchronous registry I/O never blocks
-            # the anyio event loop.
-            if package_verifier is not None and pin_store is not None:
-                from mcp_audit.pkgverify import verification_coverage
-
-                baseline_pkgs = pin_store.baseline_package_hashes(srv.name)
-                verified_refs: set[str] = set()
-                if baseline_pkgs:
-                    audit.package_verify_findings = await anyio.to_thread.run_sync(
-                        package_verifier.analyze_server, srv.name, srv, baseline_pkgs, verified_refs
-                    )
-                package_coverage["verify_artifacts"][idx] = verification_coverage(
-                    srv, baseline_pkgs, verified_refs
-                )
-
-            # Optional byte-level artifact verification (network) vs the pin baseline.
-            # Downloads + hashes off the event loop so blocking I/O never stalls anyio.
-            if artifact_verifier is not None and pin_store is not None:
-                from mcp_audit.pkgverify import verification_coverage
-
-                baseline_artifact_pkgs = pin_store.baseline_artifact_hashes(srv.name)
-                verified_artifact_refs: set[str] = set()
-                if baseline_artifact_pkgs:
-                    audit.artifact_verify_findings = await anyio.to_thread.run_sync(
-                        artifact_verifier.analyze_server,
-                        srv.name,
-                        srv,
-                        baseline_artifact_pkgs,
-                        verified_artifact_refs,
-                    )
-                package_coverage["download_artifacts"][idx] = verification_coverage(
-                    srv, baseline_artifact_pkgs, verified_artifact_refs, artifact=True
-                )
-
-            audits[idx] = audit
-            completed[idx].update(("metadata", "permissions", "capabilities"))
-            completed[idx].update(
-                check
-                for check in OPTIONAL_CHECKS
-                if getattr(opts, "canary_check" if check == "runtime_security" else check)
-                and check != "shadow_check"
+        baseline_artifact_pkgs = pin_store.baseline_artifact_hashes(srv.name)
+        verified_artifact_refs: set[str] = set()
+        if baseline_artifact_pkgs:
+            audit.artifact_verify_findings = await anyio.to_thread.run_sync(
+                artifact_verifier.analyze_server,
+                srv.name,
+                srv,
+                baseline_artifact_pkgs,
+                verified_artifact_refs,
             )
-            progress.advance(task_id)
+        package_coverage["download_artifacts"][idx] = verification_coverage(
+            srv, baseline_artifact_pkgs, verified_artifact_refs, artifact=True
+        )
 
-        async def audit_one_guarded(idx: int, srv: ServerConfig) -> None:
-            # One server's analyzer crash must not cancel the sibling audits:
-            # an uncaught exception in a task group takes down the whole scan.
-            try:
-                await audit_one(idx, srv)
-            except Exception as exc:
-                audits[idx] = ServerAudit(
-                    server=srv,
-                    connection_status="failed",
-                    connection_error=redact_text(f"analysis error: {describe_exception(exc)}"),
-                )
-                progress.advance(task_id)
+    audits[idx] = audit
+    completed[idx].update(("metadata", "permissions", "capabilities"))
+    completed[idx].update(
+        check
+        for check in OPTIONAL_CHECKS
+        if getattr(opts, "canary_check" if check == "runtime_security" else check) and check != "shadow_check"
+    )
 
-        async with anyio.create_task_group() as tg:
-            for i, srv in enumerate(servers):
-                tg.start_soon(audit_one_guarded, i, srv)
 
-    for warning in connector.scan_warnings:
+def _finalize_scan(context: _ScanContext) -> AuditReport:
+    """Ordered fleet stages after all guarded server tasks have finished.
+
+    Connector/LLM/baseline warnings precede SSRF suppression; egress has already
+    consumed SSRF. Fleet trifecta and shadowing precede coverage construction.
+    Discard failed-task package evidence, sort warnings, build the report, then
+    apply finding suppression (after scoring, preserving the existing contract).
+    """
+    opts = context.opts
+    applier = context.applier
+    out = context.out
+    start = context.start
+    servers = context.servers
+    parse_errors = context.parse_errors
+    scan_warnings = context.scan_warnings
+    connector = context.connector
+    audits = context.audits
+    completed = context.completed
+    package_coverage = context.package_coverage
+    pin_store = context.pin_store
+    ssrf_allow = context.ssrf_allow
+    trifecta_analyzer = context.trifecta_analyzer
+    shadowing_analyzer = context.shadowing_analyzer
+    warn = context.warn
+    ssrf_suppressed = 0
+
+    for warning in cast(list[ScanWarning], connector.scan_warnings):
         warn(warning.code, warning.message, check=warning.check, servers=warning.servers)
 
     # A model omission, refusal, malformed response, provider error, or detected
