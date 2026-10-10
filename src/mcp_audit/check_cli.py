@@ -42,7 +42,7 @@ def _parse_client_options(
 class _RecoveryError(click.ClickException):
     def __init__(self, message: str, *, exit_code: int = 1) -> None:
         super().__init__(message)
-        self.exit_code = exit_code
+        self.exit_code = exit_code  # type: ignore[misc]  # click declares a ClassVar; per-error codes are intended
 
 
 def _recovery_error(
