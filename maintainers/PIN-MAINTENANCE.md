@@ -29,9 +29,77 @@ or filled with defaults; finite numbers retain their served JSON representation
 
 Pins and canary surfaces share one serializer: sorted keys, compact separators,
 unescaped Unicode, no NaN/Infinity, UTF-8 and one trailing newline. V1 comparison
-uses the same serializer's legacy mode with spaces and no newline. This phase
-defines the tool form; signatures and the server/protocol signing envelope
-are separate work.
+uses the same serializer's legacy mode with spaces and no newline.
+
+## Signed Server Baselines
+
+Ed25519 signatures cover a server envelope with `schema`, server name,
+`config_sha256`, protocol version/era, server `pinned_at`, and normalized tools
+sorted by name. `pin_metadata` also covers every stored tool hash, snapshot,
+timestamp and config baseline (including artifact hashes). This additional
+coverage protects comparison metadata and credential-redacted snapshots
+without storing raw credential fields. The config digest excludes
+`artifact_hashes`; the separately signed metadata still protects those hashes.
+`signature`, `signer`, `surface_sha256` and `canonical_bytes_len` are envelope
+verification fields rather than part of the signed metadata. The digest and
+length are checked against reconstruction, and `signer` is informational.
+
+`pin keygen` writes a PKCS8 PEM private key at
+`~/.mcp-audit/keys/pin-signing.key` (0600, current user) and a raw-hex public key
+at `pin-signing.pub`, under a 0700 directory. `--signing-key` and
+`MCP_AUDIT_PIN_KEY` select another private key for writes. New writes sign when
+a key exists; missing explicit keys, unreadable keys, wrong ownership and wrong
+permissions refuse signing. `--unsigned` writes unsigned v2 pins only while no
+trusted key exists; once any key is trusted, unsigned v2 writes are refused
+because they would read back as tampered (`MCP027`). Legacy v1 entries keep the
+`pin_schema_outdated` warning and never fail verification, but while a key is
+trusted their baseline is withheld (`pin_baseline_withheld`) because nothing
+authenticates it; a reviewed `pin --refresh SERVER --apply` replaces it with a
+fresh signed v2 baseline without carrying over the legacy rows.
+
+Public keys are trusted separately in `~/.mcp-audit/trusted-pin-keys.json`,
+with key IDs `sha256(raw_public_key)[:16]`. Embedded public keys are never
+trust anchors. CI can import the public key with `pin trust-key --add PUBLICHEX`
+and verify without any private key. That is enough to fail closed: with a trusted
+key present, a v2 entry whose signature and all signing metadata were deleted is
+`tampered_entry`, even before CI records any per-server expectation. A signed
+document manifest (`manifest`, schema `mcpaudit.pin-manifest.v1`) lists every
+signed server with its entry digest and is re-signed by every signed write,
+re-sign, rotation and clear. With a trusted key, a missing or invalid manifest,
+a listed entry that was deleted, renamed or changed, or a signed entry that is
+not listed is `tampered_entry`. Writes refuse a manifest that lists missing
+entries; restore them or `pin --clear` each. Clearing needs the signing key while
+keys are trusted. After `pin keygen`, run `pin rotate-key --resign` to sign the
+first manifest for existing signed entries. The trust
+store also records the newest `pinned_at` per server for rollback warnings; every
+successful signed write and every verification advance that local high-water
+record without modifying the pin baseline. Restoring an older signed entry warns
+`pin_rolled_back`; it does not fail verification. Rollback is decided before the
+high-water write, so a trust-store write failure still reports it. An unwritable
+trust store leaves signature verification usable but emits
+`pin_rollback_tracking_unavailable`.
+
+`pin --pin-file FILE rotate-key` verifies signed entries before changing keys
+and re-signs every signed or v2 entry, including mixed entries that retain legacy
+v1 tool rows (those rows are kept unchanged); only unsigned pure v1 entries are
+left as they are. It retains old private/public files under their old key
+ID and marks the old trusted public key retired with a 30-day grace period
+(`rotate-key --grace-days N`, 0-3650, changes that rotation's grace). An invalid
+or out-of-range persisted grace makes the retired signer untrusted. During grace,
+verification proceeds with `pin_signed_by_retired_key`; after grace, the signer
+is untrusted and saved-baseline comparisons are skipped. Explicitly re-adding
+the same public key with `trust-key --add` re-trusts it and clears retirement.
+Legacy v1 tool entries are never upgraded by rotation.
+
+Scan pin checks, all other saved-baseline comparisons, the canary's first
+listing, `serve check_server`, and each watch rescan verify the loaded entry.
+Failures produce HIGH `MCP027` and withhold saved baselines; in-session canary
+comparisons continue. Unsigned v2 entries and v1 entries remain usable with
+warnings. Enable `fail_on.pin_integrity: true` to gate failures in policy.
+For a server the trust store expects to be signed, a missing entry or pin file
+also fails verification, and a failed baseline never satisfies `require.pins`.
+If it cannot be restored from backup, `pin --clear SERVER` removes the entry and
+its signing expectation so the server can be re-reviewed and pinned again.
 
 Snapshots restore annotations and the additional fields for review and
 escalation analysis, with credential redaction retained. Security-relevant hint

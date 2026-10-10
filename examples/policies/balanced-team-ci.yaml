@@ -5,6 +5,8 @@ fail_on:
   capabilities: high
   config_health: medium
   drift: true
+  # HIGH MCP027: a signed pin that is missing, unsigned, or fails verification.
+  pin_integrity: true
 require:
   pins:
     servers:

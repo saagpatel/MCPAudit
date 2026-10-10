@@ -132,10 +132,18 @@ async def test_failed_second_identity_retains_primary_evidence(tmp_path: Path) -
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("signed", [False, True], ids=["unsigned", "signed"])
 async def test_saved_v2_pin_detects_already_flipped_call_zero(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, signed: bool
 ) -> None:
-    store = PinStore(tmp_path / "pins.yaml")
+    from mcp_audit.pin_signing import generate_keypair
+
+    if signed:
+        trusted = tmp_path / "trusted.json"
+        key = generate_keypair(tmp_path / "keys", trusted)
+        store = PinStore(tmp_path / "pins.yaml", signing_key=key.private_key_path, trusted_keys_path=trusted)
+    else:
+        store = PinStore(tmp_path / "pins.yaml")
     monkeypatch.setattr("mcp_audit.pinning.PinStore", lambda: store)
     trace = tmp_path / "events.jsonl"
     config = make_server_config(command=sys.executable, args=[FIXTURE, "stable", str(trace)])
@@ -146,6 +154,8 @@ async def test_saved_v2_pin_detects_already_flipped_call_zero(
     config.args[1] = "flipped"
     report = await run_scan(ScanOptions(canary_check=True, timeout=15), servers=[config])
     audit = report.audits[0]
+    assert audit.pin_verification is not None
+    assert audit.pin_verification.state == ("verified" if signed else "unsigned")
     assert audit.canary is not None and audit.canary.baseline_source == "pin"
     assert audit.canary.completed_calls == 5 and audit.canary.status == "complete"
     assert audit.canary.baseline_hash != audit.canary.current_hash
@@ -169,7 +179,8 @@ async def test_unchanged_v2_pin_is_clean(tmp_path: Path, monkeypatch: pytest.Mon
     audit = report.audits[0]
     assert audit.canary is not None and audit.canary.baseline_source == "pin"
     assert audit.canary.baseline_hash == audit.canary.current_hash
-    assert not audit.drift_findings and not report.warnings
+    assert not audit.drift_findings
+    assert [warning.code for warning in report.warnings] == ["pin_unsigned"]
 
 
 def test_legacy_pins_are_not_used_as_v2_canary_baselines(tmp_path: Path) -> None:
@@ -228,7 +239,8 @@ async def test_corrupt_v2_pins_warn_and_run_session_canary(
     assert audit.canary.status == "complete" and audit.canary.completed_calls == 5
     assert audit.canary.baseline_hash == audit.canary.current_hash
     assert not audit.drift_findings
-    (warning,) = report.warnings
+    assert {warning.code for warning in report.warnings} == {"pin_baseline_corrupted", "pin_unsigned"}
+    warning = next(warning for warning in report.warnings if warning.code == "pin_baseline_corrupted")
     assert warning.code == "pin_baseline_corrupted"
     assert warning.check == "canary_check" and warning.servers == [config.name]
     assert "using an in-session baseline only" in warning.message

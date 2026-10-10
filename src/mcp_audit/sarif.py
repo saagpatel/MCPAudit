@@ -38,7 +38,12 @@ from mcp_audit.models import (
     PackageVerifySeverity,
     PermissionCategory,
     PermissionFinding,
+<<<<<<< HEAD
     ProtocolFinding,
+||||||| 76391e3
+=======
+    PinIntegrityFinding,
+>>>>>>> origin/main
     ProvenanceFinding,
     ProvenanceKind,
     ProvenanceSeverity,
@@ -63,6 +68,7 @@ from mcp_audit.taxonomy import (
     INTEGRITY_FINDINGS,
     PACKAGE_VERIFY_FINDINGS,
     PERMISSION_FINDINGS,
+    PIN_INTEGRITY_FINDING,
     PROVENANCE_FINDINGS,
     SHADOWING_FINDINGS,
     SSRF_FINDINGS,
@@ -262,6 +268,18 @@ class SarifGenerator:
             for rule_id, metadata in (PROTOCOL_FINDINGS | AUTHORIZATION_FINDINGS).items()
             if rule_id in observed_protocol_rules
         )
+        if any(audit.pin_integrity_findings for audit in report.audits):
+            run["tool"]["driver"]["rules"].append(
+                {
+                    "id": PIN_INTEGRITY_FINDING.rule_id,
+                    "name": "PinIntegrityMCP027",
+                    "shortDescription": {"text": PIN_INTEGRITY_FINDING.title},
+                    "fullDescription": {"text": PIN_INTEGRITY_FINDING.description},
+                    "help": {"text": PIN_INTEGRITY_FINDING.remediation},
+                    "defaultConfiguration": {"level": "error"},
+                    "properties": {"category": "pin_integrity", "severity": "high"},
+                }
+            )
         for rule in run["tool"]["driver"]["rules"]:
             rule_id = rule["id"]
             rule["helpUri"] = finding_url(rule_id)
@@ -651,6 +669,8 @@ class SarifGenerator:
                 results.append(self._make_package_verify_result(package_verify, audit))
             for artifact_verify in audit.artifact_verify_findings:
                 results.append(self._make_artifact_verify_result(artifact_verify, audit))
+            for pin_integrity in audit.pin_integrity_findings:
+                results.append(self._make_pin_integrity_result(pin_integrity, audit))
             for drift_finding in audit.drift_findings:
                 results.append(self._make_drift_result(drift_finding, audit))
         for fleet_trifecta in report.fleet_trifecta_findings:
@@ -1286,6 +1306,28 @@ class SarifGenerator:
                 "version": finding.version,
                 "baseline_hash": finding.baseline_hash,
                 "current_hash": finding.current_hash,
+                "remediation": finding.remediation,
+            },
+        }
+
+    def _make_pin_integrity_result(self, finding: PinIntegrityFinding, audit: ServerAudit) -> dict[str, Any]:
+        """Build a SARIF result for an untrusted or modified signed pin (MCP027)."""
+        rule_id = finding.rule_id
+        return {
+            "ruleId": rule_id,
+            "level": "error",
+            "message": {"text": f"{finding.summary} Suggested action: {finding.remediation}"},
+            "locations": [
+                {"physicalLocation": {"artifactLocation": {"uri": _artifact_uri(audit.server.config_path)}}}
+            ],
+            "partialFingerprints": {
+                "mcpAuditStableId": _stable_fingerprint(rule_id, audit.server.name, finding.state)
+            },
+            "properties": {
+                "state": finding.state,
+                "kid": finding.kid,
+                "server_name": finding.server_name,
+                "severity": "high",
                 "remediation": finding.remediation,
             },
         }

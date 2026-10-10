@@ -600,6 +600,81 @@ comparisons use the same normalized tool form and serializer. Legacy pins still
 compare only name, description and input schema with their original v1 bytes;
 scans never upgrade them. See [Pin Maintenance](../maintainers/PIN-MAINTENANCE.md) for migration.
 
+Saved-pin consumers add `pin_verification: {state, kid}` per server when a
+baseline exists. States are `verified`, `unsigned`, `untrusted_signer`,
+`bad_signature`, `tampered_entry`, `retired_key`, and `schema_outdated`;
+`kid` is nullable and accepts only the 16-character lowercase hex key ID.
+`pin_integrity_findings` contains HIGH `MCP027` findings for untrusted signers,
+invalid signatures, and modified entries. Each finding includes `state`,
+`server_name`, nullable `kid`, `summary`, `severity`, `rule_id`, `title`,
+`description`, and `remediation`, plus the standard finding reference fields.
+Failed verification skips all saved-baseline comparisons, including the canary's
+first-listing comparison (a trusted mixed entry still compares its v2 rows there,
+excluding its legacy v1 tool names); independent in-session canary comparisons still run.
+The findings reach JSON, terminal/HTML summaries, SARIF, and the opt-in
+`fail_on.pin_integrity: true` policy gate. A server with an MCP027 finding never
+satisfies `require.pins`, and enabled baseline-comparison gates (`fail_on.drift`,
+`escalation`, `provenance`, `integrity`, `package_verify`, `artifact_verify`) add a
+HIGH violation stating that their comparison was withheld. When the scan did not
+verify a server (no pin-based check ran), `fail_on.pin_integrity` verifies the
+selected pin store directly. Policies without signed pins, and report
+`schema_version`, are unchanged. Legacy v1 pins always warn (`pin_schema_outdated`)
+and never produce `MCP027`; they remain the comparison baseline only while no key
+is trusted. With a trusted key they are unauthenticated, so their baseline is
+withheld (`pin_baseline_withheld`, no drift/escalation/canary/provenance
+comparison, `require.pins` unmet, enabled comparison gates fail). A v1 entry for a
+server with a recorded signing expectation or rollback high-water mark is a
+downgrade and is `tampered_entry`. Unsigned v2 pins warn (`pin_unsigned`) and remain usable only
+while the separate trust store holds no usable trusted key (active, or retired
+within grace): once any key is trusted, including a public-key-only CI store
+populated by `pin trust-key --add`, an unsigned v2 entry is `tampered_entry` and
+HIGH `MCP027`, and pin writes refuse to produce unsigned v2 entries.
+Successful signed writes and verification record a per-server `signature_required`
+expectation there; existing verified timestamp history also implies it. Missing
+required signatures, remaining signing metadata without a signature, or unreadable
+signing expectations produce `tampered_entry` and HIGH `MCP027`, including when
+tool entries claim v1 and when the whole entry or pin file is missing, renamed,
+empty, or unparseable. The expectation is written only after the signed pin file
+write succeeds. `pin --clear SERVER` is the explicit recovery path: it removes the
+entry and that server's expectation and rollback history. Each successful signed
+write also advances the per-server rollback high-water `pinned_at`, so restoring an
+older validly signed entry warns `pin_rolled_back` (verification stays `verified`)
+even when no scan verified the newer pin. Rollback is decided from a read before
+any trust-store write, so a failed update still warns `pin_rolled_back` alongside
+`pin_rollback_tracking_unavailable`; a fresh CI trust store has no high-water
+mark until its first verification. Retired-key grace is bounded to 0-3650 days;
+an invalid or unrepresentable persisted retirement deadline makes that signer
+`untrusted_signer` (HIGH `MCP027`) instead of failing the scan.
+While any key is trusted, the pin file must also carry a signed document-level
+`manifest` (`schema: mcpaudit.pin-manifest.v1`, plus the same `signature`,
+`signer`, `surface_sha256` and `canonical_bytes_len` envelope). It maps every
+signed server name to its entry's `surface_sha256` and is re-signed on every
+signed write, re-sign, rotation and `pin --clear`. Verification then fails closed
+with `tampered_entry` (HIGH `MCP027`) when the manifest is missing, invalid or
+signed by an untrusted key (every scanned server except genuine legacy v1
+entries), when a listed server's entry is missing, renamed or does not match its
+digest, or when a signed entry is not listed (spliced in). This covers
+public-key-only CI with no per-server expectation. Writers refuse an invalid
+manifest or one listing missing entries (restore them or `pin --clear` each);
+a file with no manifest yet gets one on its first signed write, so after
+`pin keygen` run `pin rotate-key --resign` (or re-pin) to sign one. Clearing a
+signed server needs the signing key while keys are trusted. Without trusted keys
+the manifest is optional and ignored.
+Verification uses the separate trusted public-key store,
+never an embedded public key or a private signing key.
+
+`scan --pin-file PATH` selects the saved baseline. `pin --status --json` adds
+`schema`, `signed`, `kid`, and `public_key` per server. These status fields
+describe the saved entry, and are not themselves verification evidence.
+The additive `trusted_public_key` is nullable: it comes from the separate trust
+store only for a verified signature (including a retired key within grace).
+Terminal status prints only this authenticated key for CI; the existing JSON
+`public_key` remains untrusted embedded metadata. Status also adds `verification`
+(the nullable verification state) and `baseline_usable` (false when scans withhold
+the baseline); terminal status shows them in a Verification column, marked
+"(withheld)". Ordinary pin writes, refresh, rotation and re-signing refuse failed
+baseline verification.
+
 Escalation findings add `kind: annotation_delta` and an `annotation_changes`
 list of hint names (empty for other kinds). This is HIGH `MCP018` for
 readOnlyHint true→false, destructiveHint false/absent→explicitly true, or
@@ -608,6 +683,11 @@ annotations do not establish deltas. These hint names also appear in terminal,
 HTML, SARIF result properties and `get_escalation_findings` output.
 `pin --refresh --json` adds `uncovered_fields` rows with `tool_name`, `field`
 and `summary: "not previously covered"` for each newly covered v1 tool field.
+It also adds `baseline_verified` and nullable `baseline_note`. A legacy v1
+baseline withheld by scans (trusted keys, nothing authenticating the entry) is
+still compared in refresh review so every difference is shown, with
+`baseline_verified: false` and a note; terminal review labels it and never
+reports "No drift found" against an unverified baseline.
 
 Each audit may include:
 
@@ -997,6 +1077,12 @@ The report top level also includes:
   in scan/session observation order. Fields:
   - `code` — stable machine key. Current vocabulary:
     `pin_baseline_missing` (check requested but nothing is pinned),
+    `pin_unsigned` (v2 baseline has no signature),
+    `pin_signed_by_retired_key` (valid signature within the retired key's grace period),
+    `pin_integrity_failed` (HIGH MCP027; saved-baseline comparisons skipped),
+    `pin_rolled_back` (verified pin predates the locally recorded newest pin timestamp),
+    `pin_rollback_tracking_unavailable` (verification succeeded but the local timestamp
+    store could not be read or updated; rollback detection was not established),
     `pin_schema_outdated` (a compared server has v1 tool entries; annotations,
     title, outputSchema, icons and meta were not covered; original v1 drift
     comparisons remain active, and refresh review is required for v2 coverage),
@@ -1009,6 +1095,11 @@ The report top level also includes:
     in-session baseline without modifying the pin file),
     `pin_baseline_stale` (pinned servers whose baseline predates the capture
     this check compares against; named in `servers`),
+    `pin_baseline_withheld` (servers whose pin baseline failed integrity
+    verification, HIGH MCP027, or is an unsigned legacy v1 pin while trusted keys
+    exist, so this baseline comparison was not run; also emitted for `pin_check`
+    and `canary_check`; named in `servers` and never also reported as
+    `pin_baseline_stale`),
     `integrity_comparison_incomplete` (with `check: integrity_check`; pinned
     paths excluded by sensitive-path protection or unavailable path resolution.
     The message reports counts, never excluded paths or their saved/current hashes),
@@ -1902,6 +1993,8 @@ SARIF output uses stable MCP rule IDs:
 - `MCP024`: launch-artifact integrity drift vs pin baseline (on-disk binary/script hash change)
 - `MCP025`: registry package-verification drift vs pin baseline (npm/PyPI published hash change; network, opt-in)
 - `MCP026`: byte-level artifact verification vs pin baseline (downloaded bytes don't match the registry-published hash, or a pinned file changed/added since baseline; network, opt-in)
+- `MCP027`: pin integrity verification failed (untrusted signer, invalid signature,
+  or modified baseline; HIGH, skips saved-baseline comparisons)
 - `MCP040`: outbound destination outside the egress allowlist (fixed, non-caller-controlled destination; opt-in `--egress-check`)
 - `MCP041`: unbounded caller-controlled outbound destination (URL/host parameter or templated host authority; opt-in `--egress-check`)
 - `MCP042`: allowlisted destination with residual egress risk (multi-tenant data-bearing API or caller-attachable credentials; opt-in `--egress-check`)

@@ -106,6 +106,36 @@ def test_scan_artifacts_cannot_overwrite_override(tmp_path: Path, flag: str, kin
     assert override.read_bytes() == before
 
 
+@pytest.mark.parametrize("flag", [*FLAGS["scan"], "--card"])
+@pytest.mark.parametrize("kind", ["direct", "symlink", "hardlink"])
+def test_scan_artifacts_cannot_overwrite_selected_pin_baseline(tmp_path: Path, flag: str, kind: str) -> None:
+    config, policy, override = _inputs(tmp_path)
+    pin_file = tmp_path / "pins.yaml"
+    pin_file.write_text("servers: {}\n", encoding="utf-8")
+    before = pin_file.read_bytes()
+    output = _alias(pin_file, tmp_path / "pin-alias", kind)
+    other = tmp_path / "untouched-artifact"
+    other_flag = "--sarif" if flag == "--json" else "--json"
+    result = CliRunner().invoke(
+        main,
+        [
+            *_args("scan", config, policy, override),
+            "--pin-file",
+            str(pin_file),
+            flag,
+            str(output),
+            other_flag,
+            str(other),
+        ],
+    )
+
+    assert result.exit_code == 2, result.output
+    assert flag in result.stderr
+    assert "aliases an input file" in result.stderr
+    assert pin_file.read_bytes() == before
+    assert not other.exists()
+
+
 @pytest.mark.parametrize(("command", "flag"), OUTPUT_CASES)
 @pytest.mark.parametrize("contents", ['{"mcpServers": {}}', '{"mcpServers":', '{"theme": "dark"}'])
 @pytest.mark.parametrize("kind", ["direct", "symlink", "hardlink"])

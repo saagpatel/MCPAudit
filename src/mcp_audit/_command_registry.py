@@ -152,7 +152,10 @@ SKILLS_COMMANDS = {
 }
 BASELINE_COMMANDS = {
     "pin": CommandSpec(
-        "mcp_audit.pin_cli", "pin_command", "Create, review, refresh, or clear pin baselines."
+        "mcp_audit.pin_cli",
+        "pin_command",
+        "Create, review, refresh, or clear pin baselines.",
+        subcommands=("keygen", "rotate-key", "trust-key"),
     ),
 }
 
@@ -198,4 +201,10 @@ for _name, _spec in (
     ("skillscan", SKILLS_COMMANDS["scan"]),
     ("pin", BASELINE_COMMANDS["pin"]),
 ):
-    COMMANDS[_name] = CommandSpec(_spec.module, _spec.attribute, _spec.help, hidden=True)
+    COMMANDS[_name] = CommandSpec(
+        _spec.module,
+        _spec.attribute,
+        _spec.help,
+        hidden=True,
+        subcommands=_spec.subcommands,
+    )

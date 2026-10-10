@@ -95,6 +95,7 @@ async def _watch_loop(
     cfg_path = Path(override_config_path) if override_config_path else DEFAULT_OVERRIDE_PATH
     override_applier = OverrideApplier(load_override_config(cfg_path))
     scan_options = ScanOptions(
+        pin_check=True,
         skip_connect=skip_connect,
         connect_project_configs=connect_project_configs,
         clients=client_list,

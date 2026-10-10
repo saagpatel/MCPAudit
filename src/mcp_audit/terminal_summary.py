@@ -28,9 +28,15 @@ _FINDING_FLAGS = {
     "IntegrityFinding": "--integrity-check",
     "PackageVerifyFinding": "--verify-artifacts",
     "ArtifactVerifyFinding": "--download-artifacts",
+    "PinIntegrityFinding": "--pin-check",
     "DriftFinding": "--pin-check",
 }
-_STATIC_FLAGS = {"--provenance-check", "--integrity-check", "--verify-artifacts", "--download-artifacts"}
+_STATIC_FLAGS = {
+    "--provenance-check",
+    "--integrity-check",
+    "--verify-artifacts",
+    "--download-artifacts",
+}
 
 
 def summary_console(*, color: str = "auto", stderr: bool = False) -> Console:
@@ -98,7 +104,10 @@ def _action(finding: BaseModel, audits: list[ServerAudit], sources: tuple[str, .
         if len(budgets) == 1:
             flags += (f"--canary-calls {next(iter(budgets))}",)
     connected = (
-        not kind and (flag not in _STATIC_FLAGS) and any(a.connection_status != "skipped" for a in audits)
+        not kind
+        and rule != "MCP027"
+        and (flag not in _STATIC_FLAGS)
+        and any(a.connection_status != "skipped" for a in audits)
     )
     return Action(
         severity=_text(data, "severity") or "medium",

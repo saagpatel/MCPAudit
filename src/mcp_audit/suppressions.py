@@ -25,6 +25,7 @@ _AUDIT_GROUPS = (
     "integrity_findings",
     "package_verify_findings",
     "artifact_verify_findings",
+    "pin_integrity_findings",
     "protocol_findings",
     "authorization_findings",
     "drift_findings",

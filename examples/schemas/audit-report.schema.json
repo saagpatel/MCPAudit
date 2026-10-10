@@ -1413,6 +1413,92 @@
       "title": "PermissionFinding",
       "type": "object"
     },
+    "PinIntegrityFinding": {
+      "description": "A signed pin failed verification, so its baseline cannot be trusted.",
+      "properties": {
+        "state": {
+          "enum": [
+            "untrusted_signer",
+            "bad_signature",
+            "tampered_entry"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "server_name": {
+          "title": "Server Name",
+          "type": "string"
+        },
+        "kid": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kid"
+        },
+        "summary": {
+          "title": "Summary",
+          "type": "string"
+        },
+        "severity": {
+          "const": "high",
+          "default": "high",
+          "title": "Severity",
+          "type": "string"
+        }
+      },
+      "required": [
+        "state",
+        "server_name",
+        "summary"
+      ],
+      "title": "PinIntegrityFinding",
+      "type": "object"
+    },
+    "PinVerification": {
+      "description": "Structured pin verification status, independent from drift findings.",
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/PinVerificationState"
+        },
+        "kid": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kid"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "title": "PinVerification",
+      "type": "object"
+    },
+    "PinVerificationState": {
+      "description": "Result of checking a stored pin's schema and signature.",
+      "enum": [
+        "verified",
+        "unsigned",
+        "untrusted_signer",
+        "bad_signature",
+        "tampered_entry",
+        "retired_key",
+        "schema_outdated"
+      ],
+      "title": "PinVerificationState",
+      "type": "string"
+    },
     "PolicyResult": {
       "description": "Result of evaluating an audit report against a local policy file.",
       "properties": {
@@ -2297,6 +2383,24 @@
             "$ref": "#/$defs/AuthorizationFinding"
           },
           "title": "Authorization Findings",
+          "type": "array"
+        },
+        "pin_verification": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PinVerification"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "pin_integrity_findings": {
+          "items": {
+            "$ref": "#/$defs/PinIntegrityFinding"
+          },
+          "title": "Pin Integrity Findings",
           "type": "array"
         },
         "tools": {
