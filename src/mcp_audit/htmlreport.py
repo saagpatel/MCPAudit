@@ -162,6 +162,11 @@ class HtmlReportGenerator:
             audit.server.config_path if audit.server.config_source else None for audit in report.audits
         ]
         if not show_host:
+            # Hiding identifiers is the default; only --show-host keeps raw paths.
+            explicit_paths = [
+                _hide_text(path, report.hostname) if path is not None else None for path in explicit_paths
+            ]
+        if not show_host:
             findings = [
                 Action(
                     identity=action.identity,

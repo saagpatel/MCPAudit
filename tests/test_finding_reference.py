@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 from datetime import UTC, datetime
+from html import escape
 from pathlib import Path
 
 import anyio
@@ -21,7 +22,7 @@ from mcp_audit.finding_display import finding_views, render_finding_text
 from mcp_audit.htmlreport import HtmlReportGenerator
 from mcp_audit.injection import InjectionDetector
 from mcp_audit.models import AuditReport, ClientType, ServerAudit, ToolInfo
-from mcp_audit.redaction import marked_excerpt_parts, redacted_excerpt
+from mcp_audit.redaction import marked_excerpt_parts, redact_identifiers, redacted_excerpt
 from mcp_audit.report import ReportGenerator
 from mcp_audit.review_discovery import review_sources
 from mcp_audit.sarif import SarifGenerator
@@ -185,8 +186,12 @@ async def test_source_labels_and_references_across_core_outputs() -> None:
     ReportGenerator(Console(file=output, width=180)).render_terminal(report)
     terminal = output.getvalue()
     html = HtmlReportGenerator().generate(report)
+    shown = HtmlReportGenerator().generate(report, show_host=True)
+    # Default HTML hides home-directory identifiers; --show-host keeps the raw path.
+    assert escape(redact_identifiers(str(SYNTHETIC))) in html and str(SYNTHETIC) not in html
+    assert str(SYNTHETIC) in shown
     for rendered in (terminal, html):
-        assert SOURCE_LABEL in rendered and str(SYNTHETIC) in rendered
+        assert SOURCE_LABEL in rendered
         for view in finding_views(report):
             assert taxonomy.finding_url(view.rule_id) in rendered
     sarif = SarifGenerator().generate(report, profile="extended")

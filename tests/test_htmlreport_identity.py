@@ -186,3 +186,16 @@ def test_scan_redaction_preserves_html_actions_and_json_grade(
         for identifier in ("synthetic-user-a", "synthetic-user-b", "shared-server", identity_report.hostname):
             assert identifier not in html
     assert identity_report.model_dump(mode="json") == original
+
+
+def test_default_html_hides_explicit_config_home_paths() -> None:
+    report = AuditReport.model_validate_json(
+        Path("tests/fixtures/reports/sample_audit_report.json").read_text()
+    )
+    for audit in report.audits:
+        audit.server.config_path = "/Users/synthetic-user/claude_desktop_config.json"
+        audit.server.config_source = "explicit file; parsed as Claude-style config"
+    hidden = HtmlReportGenerator().generate(report)
+    assert "synthetic-user" not in hidden
+    assert "explicit file; parsed as Claude-style config" in hidden
+    assert "synthetic-user" in HtmlReportGenerator().generate(report, show_host=True)
