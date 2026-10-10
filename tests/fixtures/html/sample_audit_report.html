@@ -59,6 +59,7 @@ footer { margin-top: 2.5rem; font-size: 0.85rem; }
   .grade { text-align: left; }
   .summary { display: grid; grid-template-columns: minmax(0, 1fr); }
 }
+.finding-explanation { white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (prefers-color-scheme: dark) {
   :root { --bg: #161616; --card: #1f1f1f; --ink: #e6e6e6; --muted: #b5b5b5;
           --line: #696969; --head: #262626; --high-bg: #451f24; --high: #ffb4b4;
@@ -78,8 +79,51 @@ footer { margin-top: 2.5rem; font-size: 0.85rem; }
 <div class="summary"><div class="stat"><div class="num">Connections attempted</div><div class="label">Connection mode</div></div><div class="stat"><div class="num">1</div><div class="label">Discovered</div></div><div class="stat"><div class="num">1</div><div class="label">Connected</div></div><div class="stat"><div class="num">0</div><div class="label">Failed</div></div><div class="stat"><div class="num">1</div><div class="label">Tools</div></div><div class="stat"><div class="num">1</div><div class="label">High-risk servers</div></div></div>
 <h2>Policy: <span class="policy-fail">FAILED</span></h2><div class="table-scroll" tabindex="0" role="region" aria-label="Audit table"><table><thead><tr><th>Severity</th><th>Rule</th><th>Server</th><th>Tool</th><th>Message</th></tr></thead><tbody><tr><td><span class="badge sev-high">▲ Fix now</span></td><td>max_risk</td><td>example</td><td>—</td><td>Server risk score 8.0 meets or exceeds policy limit 7.0.</td></tr></tbody></table></div>
 <h2>Config health</h2><p class="empty">No findings recorded. See coverage above for whether this check ran.</p>
-<div class="server"><div class="server-head"><h3>example</h3><span class="badge muted">claude_code</span><span class="badge muted">stdio</span><span class="badge ok">connected</span><span class="badge sev-high">capability exposure 8.0/10</span></div><h2>Permissions</h2><div class="table-scroll" tabindex="0" role="region" aria-label="Audit table"><table><thead><tr><th>Severity</th><th>Rule</th><th>Category</th><th>Tool</th><th>Confidence</th><th>Evidence</th></tr></thead><tbody><tr><td><span class="badge sev-high">▲ Fix now</span></td><td>MCP004</td><td>shell_execution</td><td>execute_command</td><td>high</td><td>execute_command</td></tr></tbody></table></div><h2>Prompt-injection</h2><p class="empty">No findings recorded. See coverage above for whether this check ran.</p><h2>SSRF</h2><p class="empty">No findings recorded. See coverage above for whether this check ran.</p><h2>Egress</h2><p class="empty">No findings recorded. See coverage above for whether this check ran.</p><h2>Lethal trifecta</h2><p class="empty">No findings recorded. See coverage above for whether this check ran.</p><h2>Capability escalation (vs pin baseline)</h2><p class="empty">No findings recorded. See coverage above for whether this check ran.</p><h2>Provenance / launch-config drift (vs pin baseline)</h2><p class="empty">No findings recorded. See coverage above for whether this check ran.</p><h2>Launch-artifact integrity (vs pin baseline)</h2><p class="empty">No findings recorded. See coverage above for whether this check ran.</p><h2>Registry package verification (vs pin baseline)</h2><p class="empty">No findings recorded. See coverage above for whether this check ran.</p><h2>Artifact byte verification (vs pin baseline)</h2><p class="empty">No findings recorded. See coverage above for whether this check ran.</p><h2>Schema drift</h2><div class="table-scroll" tabindex="0" role="region" aria-label="Audit table"><table><thead><tr><th>Status</th><th>Tool</th><th>Summary</th><th>Details</th></tr></thead><tbody><tr><td>changed</td><td>execute_command</td><td>Pinned tool metadata changed since the baseline.</td><td>input schema changed</td></tr></tbody></table></div></div>
+<div class="server"><div class="server-head"><h3>example</h3><span class="badge muted">claude_code</span><span class="badge muted">stdio</span><span class="badge ok">connected</span><span class="badge sev-high">capability exposure 8.0/10</span></div><p>Source: claude_code | config_path: <code>/tmp/mcp.json</code> | entry: example</p><h2>Permissions</h2><div class="table-scroll" tabindex="0" role="region" aria-label="Audit table"><table><thead><tr><th>Severity</th><th>Rule</th><th>Category</th><th>Tool</th><th>Confidence</th><th>Evidence</th></tr></thead><tbody><tr><td><span class="badge sev-high">▲ Fix now</span></td><td>MCP004</td><td>shell_execution</td><td>execute_command</td><td>high</td><td>execute_command</td></tr></tbody></table></div><h2>Prompt-injection</h2><p class="empty">No findings recorded. See coverage above for whether this check ran.</p><h2>SSRF</h2><p class="empty">No findings recorded. See coverage above for whether this check ran.</p><h2>Egress</h2><p class="empty">No findings recorded. See coverage above for whether this check ran.</p><h2>Lethal trifecta</h2><p class="empty">No findings recorded. See coverage above for whether this check ran.</p><h2>Capability escalation (vs pin baseline)</h2><p class="empty">No findings recorded. See coverage above for whether this check ran.</p><h2>Provenance / launch-config drift (vs pin baseline)</h2><p class="empty">No findings recorded. See coverage above for whether this check ran.</p><h2>Launch-artifact integrity (vs pin baseline)</h2><p class="empty">No findings recorded. See coverage above for whether this check ran.</p><h2>Registry package verification (vs pin baseline)</h2><p class="empty">No findings recorded. See coverage above for whether this check ran.</p><h2>Artifact byte verification (vs pin baseline)</h2><p class="empty">No findings recorded. See coverage above for whether this check ran.</p><h2>Schema drift</h2><div class="table-scroll" tabindex="0" role="region" aria-label="Audit table"><table><thead><tr><th>Status</th><th>Tool</th><th>Summary</th><th>Details</th></tr></thead><tbody><tr><td>changed</td><td>execute_command</td><td>Pinned tool metadata changed since the baseline.</td><td>input schema changed</td></tr></tbody></table></div></div>
 <h2>Fleet-level findings</h2><h3>Fleet lethal trifecta (advisory)</h3><p class="empty">No findings recorded. See coverage above for whether this check ran.</p><h3>Tool-name shadowing</h3><p class="empty">No findings recorded. See coverage above for whether this check ran.</p>
+<h2>Finding explanations</h2>
+<pre class="finding-explanation">MCP004: Your AI may be able to run commands through this server.
+Server/config entry: example
+Source: claude_code | identity: claude_code:workstation:example | config_path: /tmp/mcp.json
+Config entry pointer: unavailable (legacy or unresolved entry)
+Target: execute_command
+What we saw: Tool metadata indicates the server may run shell commands or local processes.
+evidence: [&#x27;execute_command&#x27;]
+Why it matters: 1. You enable a command-running tool. 2. It can use the server process&#x27;s permissions. 3. Files or other local programs could be affected.
+How to fix (About 1 minute to disable; review time varies): Disable or isolate command execution until you have reviewed its arguments and allowed operations.
+Specific action: Disable or isolate this server until you have reviewed the command surface and source.
+Static recheck (runtime not checked): mcp-audit check --config /tmp/mcp.json
+How sure: A capability inference from config or served metadata, not an observed operation. Use the finding&#x27;s confidence and evidence; descriptions and annotations can be inaccurate.</pre><p>see: <a href="https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp004">https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp004</a></p>
+<pre class="finding-explanation">MCP001: Your AI may be able to read files through this server.
+Server/config entry: example
+Source: claude_code | identity: claude_code:workstation:example | config_path: /tmp/mcp.json
+Config entry pointer: unavailable (legacy or unresolved entry)
+Target: file:///tmp/example.txt
+What we saw: Tool metadata indicates the server may read local files or file-like inputs.
+evidence: [&quot;resource URI scheme &#x27;file&#x27;&quot;]
+Why it matters: 1. You enable a file-reading tool. 2. The tool may reach private paths. 3. Those files can enter the AI&#x27;s context.
+How to fix (About 5 minutes to review scope): Limit allowed paths to the project files you need; remove the server if its access is unnecessary.
+Specific action: Review the configured paths and only keep this server enabled for trusted projects.
+Static recheck (runtime not checked): mcp-audit check --config /tmp/mcp.json
+How sure: A capability inference from config or served metadata, not an observed operation. Use the finding&#x27;s confidence and evidence; descriptions and annotations can be inaccurate.</pre><p>see: <a href="https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp001">https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp001</a></p>
+<pre class="finding-explanation">MCP009: Your AI&#x27;s available tools changed since the comparison baseline.
+Server/config entry: example
+Source: claude_code | config_path: /tmp/mcp.json
+Config entry pointer: unavailable (legacy or unresolved entry)
+Target: execute_command
+What we saw: Pinned tool metadata changed since the baseline.
+details: [&#x27;input schema changed&#x27;]
+Why it matters: 1. You reviewed an earlier surface. 2. The current surface differs. 3. Your earlier trust decision may no longer cover it.
+How to fix (About 5 minutes for an initial comparison): Review the recorded changes before refreshing any pin. Disable an unexpected surface pending review.
+Specific action: Review the changed tool metadata before refreshing the pin baseline.
+Static recheck (runtime not checked): mcp-audit check --config /tmp/mcp.json
+How sure: A comparison with the saved baseline, not proof of compromise. Confirm the baseline&#x27;s scope and review the specific delta; an intentional update can also trigger this finding.</pre><p>see: <a href="https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp009">https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp009</a></p>
+<pre class="finding-explanation">MCP010: Your audit did not meet your local policy.
+Server/config entry: example
+What we saw: A reported result or missing coverage violated an explicitly selected policy rule.
+Why it matters: 1. You set a local requirement. 2. This scan did not satisfy it. 3. Accepting the result would bypass that requirement.
+How to fix (Review time depends on the violated rule): Read the named policy violation; repair the configuration or deliberately review the policy before rechecking.
+How sure: A deterministic policy evaluation, not a universal security verdict.</pre><p>see: <a href="https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp010">https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp010</a></p>
 <h2>Scan warnings</h2><p class="empty">No findings recorded. See coverage above for whether this check ran.</p>
 </details>
 <footer>Generated by mcp-audit. Env var values are never captured; only key names appear in any output.</footer>
