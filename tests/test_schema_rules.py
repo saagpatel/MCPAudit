@@ -451,3 +451,59 @@ def test_distinct_schema_findings_stay_distinct_summary_actions() -> None:
         ),
     ]
     assert report.ensure_review_summary().action_count == 2
+
+
+def test_composition_beside_ref_is_incomplete() -> None:
+    tool = ToolInfo(
+        name="t",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "api_token": {
+                    "$ref": "#/$defs/plain",
+                    "allOf": [{"type": "string", "x-mcp-header": "Authorization"}],
+                }
+            },
+            "$defs": {"plain": {"type": "string"}},
+        },
+    )
+    reasons: list[str] = []
+    scan_tool_schema(tool, incomplete_reasons=reasons)
+    assert reasons
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [
+        {
+            "prefixItems": [
+                {"type": "string", "x-mcp-header": "X-Value"},
+                {"type": "string", "x-mcp-header": "X-Value"},
+            ]
+        },
+        {
+            "patternProperties": {
+                "^a$": {"type": "string", "x-mcp-header": "X-Value"},
+                "^b$": {"type": "string", "x-mcp-header": "X-Value"},
+            }
+        },
+        {
+            "properties": {"a": {"type": "string", "x-mcp-header": "X-Value"}},
+            "additionalProperties": {"type": "string", "x-mcp-header": "X-Value"},
+        },
+    ],
+)
+def test_duplicate_headers_outside_properties_are_found(schema: dict[str, object]) -> None:
+    assert "header_duplicate" in [f.kind for f in scan_tool_schema(ToolInfo(name="t", input_schema=schema))]
+
+
+@pytest.mark.parametrize("name", ["accessToken", "apiKey", "authToken"])
+def test_camel_case_credential_names_match(name: str) -> None:
+    tool = ToolInfo(
+        name="t",
+        input_schema={
+            "type": "object",
+            "properties": {name: {"type": "string", "x-mcp-header": "Authorization"}},
+        },
+    )
+    assert "credential_header" in [f.kind for f in scan_tool_schema(tool)]

@@ -7,6 +7,7 @@ from collections.abc import Iterator
 from urllib.parse import ParseResult, unquote, urlparse
 
 from mcp_audit.models import SchemaFinding, ToolInfo
+from mcp_audit.ssrf import _word_tokens
 
 _HEADER_TOKEN = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
 _CREDENTIAL_WORDS = {
@@ -120,11 +121,48 @@ def _property_header(
         if "x-mcp-header" in current:
             header: object = current["x-mcp-header"]
             return header, True
+        if any(_may_hold_header(current.get(key)) for key in ("allOf", "anyOf", "oneOf")):
+            return None, False  # an applicator may carry the header; do not guess
         ref = current.get("$ref")
         if not isinstance(ref, str):
-            return None, not any(key in current for key in ("allOf", "anyOf", "oneOf"))
+            return None, True
         current = _local_ref(root, ref, anchors)
     return None, False
+
+
+def _may_hold_header(value: object, budget: int = 2_000) -> bool:
+    """True when a composition subtree has an x-mcp-header or a $ref that could hide one (bounded)."""
+    stack = [value]
+    while stack:
+        budget -= 1
+        if budget < 0:
+            return True
+        current = stack.pop()
+        if isinstance(current, dict):
+            if "x-mcp-header" in current or "$ref" in current:
+                return True
+            stack.extend(current.values())
+        elif isinstance(current, list):
+            stack.extend(current)
+    return False
+
+
+def _value_slots(node: dict[str, object]) -> Iterator[tuple[str | None, object]]:
+    """Schemas that describe instance values, with the property name when there is one."""
+    properties = node.get("properties")
+    if isinstance(properties, dict):
+        for name, prop in properties.items():
+            if isinstance(name, str):
+                yield name, prop
+    patterns = node.get("patternProperties")
+    if isinstance(patterns, dict):
+        yield from ((None, prop) for prop in patterns.values())
+    for keyword in ("additionalProperties", "items"):
+        if isinstance(node.get(keyword), dict):
+            yield None, node[keyword]
+    prefix = node.get("prefixItems")
+    if isinstance(prefix, list):
+        yield from ((None, item) for item in prefix)
 
 
 def _schema_children(node: dict[str, object], *, include_definitions: bool) -> Iterator[dict[str, object]]:
@@ -270,16 +308,11 @@ def _schema_rules(
                     tool_name=tool.name, kind="external_ref", evidence=["schema contains an external $ref"]
                 )
             )
-    # Header checks apply per property use: a shared definition reached through a
-    # local $ref counts once for each property that uses it.
+    # Header checks apply per instance slot: a shared definition reached through a
+    # local $ref counts once for each property, item or pattern slot that uses it.
     for node in reachable:
-        properties = node.get("properties")
-        if not isinstance(properties, dict):
-            continue
-        for name, prop in properties.items():
-            if not isinstance(name, str):
-                continue
-            header, header_resolved = _property_header(schema, prop, reference_anchors)
+        for name, slot in _value_slots(node):
+            header, header_resolved = _property_header(schema, slot, reference_anchors)
             if not header_resolved:
                 # An unresolved reference is already reported by the reachability walk.
                 reason = "x-mcp-header use could not be resolved for a property"
@@ -300,7 +333,7 @@ def _schema_rules(
                 headers[header.casefold()] = header
             # A credential-looking parameter mapped to a request header duplicates the
             # credential's transport declaration and can make schema consumers disagree.
-            if set(re.findall(r"[a-z0-9]+", name.lower())) & _CREDENTIAL_WORDS:
+            if name is not None and {word.lower() for word in _word_tokens(name)} & _CREDENTIAL_WORDS:
                 findings.append(
                     SchemaFinding(
                         tool_name=tool.name,
