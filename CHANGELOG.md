@@ -70,6 +70,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Align the additive `check`, `checkup`, and `inspect` surface with repeated
+  `--client` filters (hyphen or underscore spellings), JSON stdout/file output,
+  and recovery details for operational errors. Preserve legacy `scan --json`
+  path semantics. Identify post-scan and artifact-write failures by operation;
+  include recovery details for artifact validation errors while retaining exit 2.
 - Add a lazy CLI command registry with `lab <topic>`, `safeforge preinstall|run`,
   `skills scan`, and `baseline pin` families. Keep old spellings as hidden 2.x
   aliases; completion and `--help-all` list every registered path. Hide and
