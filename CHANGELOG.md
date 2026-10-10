@@ -9,8 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Add static tool-schema findings for `x-mcp-header` declarations, credential parameters mirrored to headers, external `$ref` values, and icon source schemes/origins. These checks inspect served metadata only and never fetch schemas or icons.
-
+- Add local `checkup` / `scan --card FILE` HTML checkup cards with a 1200×630
+  counts-only crop, coverage-qualified grade or Preview, date, four vitals and
+  a Markdown sticker. Reuse the existing finding-class rubric and caveat without
+  changing scores or JSON fields. Server names require `--names`; optional
+  `--previous FILE` compares matching earlier local reports without uploading
+  content or keeping automatic history.
 - Add reasoned, optionally expiring `ignore:` finding exceptions and one-run
   `--ignore` / `--ignore-reason` options to `scan` and `check`. Keep original
   evidence and scores, list exception counts and reasons beside terminal coverage,
@@ -68,6 +72,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   including either `--show-host` setting. Retain distinct policy violations and targets
   while grouping policy advice per affected server identity.
   Improve mobile table scrolling, muted-text contrast and dark-mode colors.
+- Add static tool-schema findings for `x-mcp-header` declarations, credential parameters mirrored to headers, external `$ref` values, and icon source schemes/origins. These checks inspect served metadata only and never fetch schemas or icons.
 
 ### Fixed
 

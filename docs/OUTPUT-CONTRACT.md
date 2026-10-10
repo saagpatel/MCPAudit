@@ -1640,6 +1640,41 @@ Compatibility rules:
 - SARIF rule IDs must remain stable unless a breaking release explicitly
   documents a migration.
 
+## Local checkup card
+
+`mcp-audit checkup` (default file `checkup.html`), `check --card FILE` and legacy
+`scan --card FILE` write a self-contained local HTML card. The fixed `.card`
+element is 1200×630 pixels, following mockup C's paper, two-column grade and four
+vitals layout. No remote resources, uploads, scripts, or automatic history are
+used. A counts-only Markdown sticker line is printed on the terminal as well.
+
+The card consumes the existing finding-class `ux_summary.grade` and caveat;
+numeric risk scores and JSON schema version are unchanged. Config-only,
+incomplete and legacy runs show **Preview**, with no letter. A letter is labeled
+**deep scan**; both modes print “reach and hygiene, not a safety certificate.”
+The date comes from the report's scan timestamp. The four vitals count instruction
+signals (including experimental phrase hints), per-server plus fleet read/fetch/send
+chain findings, tool-name collision findings, and auto-updating npm/PyPI package
+launches recognized by the existing local package-reference parser. This last
+count covers absent exact versions, npm tags/ranges, and PyPI wildcard pins;
+it does not inspect arbitrary launch scripts or container updates. No package
+registry is contacted. Incomplete/unrequested checks say “not checked” or show
+an observed count marked “partial”; an unrun check never appears clean.
+
+Default HTML and sticker contents exclude server names, hostnames, paths,
+environment/header key names, tool names and evidence text. `--names` adds only
+escaped, bounded, credential-redacted server names below the crop, through the
+shared redact-then-slice helper. Review this explicit opt-in before sharing.
+The HTML card is a presentation artifact, not a new JSON report schema.
+
+`--previous FILE` reads only the explicitly selected local AuditReport JSON
+(bounded to 16 MiB). A comparison is displayed only for an older report with the
+same server identities and coverage, two letter grades, a non-worsening grade,
+and fewer review actions. The text says “fewer review actions”, without claiming
+verified fixes, elapsed repair time or improved runtime safety. Preview runs
+never produce this comparison. Artifact destinations cannot alias input reports,
+configuration files or other selected outputs.
+
 ## SARIF Report
 
 All profiles include `runs[].properties.mcpAuditCoverage` and invocation

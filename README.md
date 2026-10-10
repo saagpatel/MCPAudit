@@ -96,6 +96,7 @@ and inputs before enabling it in a repository.
 | --- | --- | --- |
 | Learn the output | `mcp-audit demo` | Uses bundled synthetic input |
 | Review one file | `mcp-audit check --config FILE` | Static check of the selected config |
+| Make a share card | `mcp-audit checkup --config FILE --card checkup.html` | Writes a local counts-only HTML Preview |
 | See discovered sources | `mcp-audit inspect` | Lists identities and source status |
 | Inspect one server | `mcp-audit check --connect --server ID` | Connects to one unambiguous identity |
 | Automate a policy | `mcp-audit check --policy FILE` | Evaluates a local policy |
@@ -103,6 +104,9 @@ and inputs before enabling it in a repository.
 The `ID` for a connected check has the form `CLIENT:SCOPE:NAME`. Use the exact
 identity shown by `inspect`; the command refuses ambiguous selections. A
 connected check can start the configured local command or contact its endpoint.
+
+`checkup` writes a local, counts-only share card with no names by default; see
+the [checkup guide](docs/guides/checkup.md).
 
 ## Keep the evidence in context
 
