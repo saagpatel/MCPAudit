@@ -14,7 +14,8 @@ permissions:
 
 jobs:
   analyze:
-    name: Analyze Python and Actions
+    # Name is a required status check in branch protection; it also scans Actions.
+    name: Analyze Python
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
