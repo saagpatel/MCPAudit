@@ -149,6 +149,23 @@ class TestHashing:
         assert str(key.resolve()) not in hashes
         assert all(".ssh" not in path for path in hashes)
 
+    def test_home_dotfiles_and_github_credentials_are_not_hashed(
+        self, tmp_path: Path, monkeypatch: Any
+    ) -> None:
+        monkeypatch.setenv("HOME", str(tmp_path))
+        visible = tmp_path / "server.py"
+        env_file = tmp_path / ".env"
+        gh_credentials = tmp_path / ".config" / "gh" / "hosts.yml"
+        for path in (visible, env_file, gh_credentials):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("synthetic fixture", encoding="utf-8")
+        config = _cfg(
+            command="mcp-audit-test-command-not-on-path",
+            args=[str(visible), str(env_file), str(gh_credentials)],
+        )
+
+        assert resolve_artifact_hashes(config) == {str(visible.resolve()): hash_file(visible)}
+
 
 # ---------------------------------------------------------------------------
 # No comparison possible

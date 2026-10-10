@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -65,6 +66,28 @@ class TestInstallToConfig:
         data = json.loads(cfg.read_text())
         assert "mcp-audit" in data["mcpServers"]
         assert data["mcpServers"]["mcp-audit"] == _MCP_AUDIT_SERVER_ENTRY
+
+    def test_install_replaces_config_atomically(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        cfg = tmp_path / "config.json"
+        original = '{"mcpServers": {}}'
+        cfg.write_text(original, encoding="utf-8")
+        replace = os.replace
+        observed: list[bool] = []
+
+        def inspect_replace(source: Path, target: Path) -> None:
+            observed.append(source.parent == cfg.parent and target == cfg)
+            assert cfg.read_text(encoding="utf-8") == original
+            replace(source, target)
+
+        monkeypatch.setattr(os, "replace", inspect_replace)
+
+        assert _install_to_config(cfg)
+        assert observed == [True]
+        assert json.loads(cfg.read_text(encoding="utf-8"))["mcpServers"]["mcp-audit"] == (
+            _MCP_AUDIT_SERVER_ENTRY
+        )
 
     def test_skips_if_already_registered(self, tmp_path: Path) -> None:
         cfg = tmp_path / "config.json"
