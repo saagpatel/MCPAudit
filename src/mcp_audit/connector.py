@@ -161,20 +161,16 @@ _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 
 
 def _fail_closed_controlled_lines(value: str) -> str:
-    """Strip controls; on a line that carried controls, withhold everything after the first one.
+    """Withhold every line that carries a terminal control; plain lines pass through unchanged.
 
-    A hostile server controls its own formatting: an escape sequence can swallow characters of
-    a credential label (`to\x1b[ken=` becomes `toen=`), so no anchor-based redactor is safe on
-    such lines. Text before the first control is kept for diagnostics; plain lines are unchanged.
+    A hostile server controls its own formatting: an escape sequence can split a credential
+    label from its value or hide a URL `@` anchor, on either side of the control. No anchor-based
+    redactor is safe on such a line, so the whole line is withheld.
     """
-    lines = []
-    for line in value.split("\n"):
-        first = _CONTROL_CHARS.search(line)
-        if first is None:
-            lines.append(line)
-        else:
-            lines.append(strip_controls(line[: first.start()]) + "<terminal-formatted text withheld>")
-    return "\n".join(lines)
+    return "\n".join(
+        "<terminal-formatted line withheld>" if _CONTROL_CHARS.search(line) else line
+        for line in value.split("\n")
+    )
 
 
 def _redact_sse_log_text(value: str) -> str:

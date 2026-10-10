@@ -483,6 +483,8 @@ async def test_default_http_body_cap_bounds_isolated_process_rss(tmp_path: Path)
         "to\u001b[ken=synthetic-secret",
         "to\u009b[0mken=synthetic-secret",
         "\u001b[31mError:\u001b[0m token=synthetic-secret",
+        "https://deploy:synthetic-secret\u001b[0m@git.internal/mcp",
+        "synthetic-secret\u009b0m",
     ],
 )
 def test_stderr_control_residue_cannot_split_credentials(line: str) -> None:
