@@ -407,6 +407,7 @@ def observed_evidence_from_report(
                 audit.integrity_findings,
                 audit.package_verify_findings,
                 audit.artifact_verify_findings,
+                audit.pin_integrity_findings,
             )
         ),
         missing=not tools,

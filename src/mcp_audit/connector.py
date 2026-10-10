@@ -873,15 +873,25 @@ class ServerConnector:
             return capabilities
         probe.initial_surface.update(capabilities.surface)
         previous = capabilities.surface
-        baseline = {**previous, **probe.baseline} if probe.baseline is not None else previous
-        summary.baseline_source = "pin" if probe.baseline is not None else "session"
+        from mcp_audit.pinning import CANARY_UNCOVERED_TOOLS_KEY
+
+        pinned = dict(probe.baseline) if probe.baseline is not None else None
+        # Legacy v1 rows of a mixed pin are not part of the v2 comparison.
+        uncovered = set(pinned.pop(CANARY_UNCOVERED_TOOLS_KEY, {})) if pinned is not None else set()
+        baseline = {**previous, **pinned} if pinned is not None else previous
+        summary.baseline_source = "pin" if pinned is not None else "session"
         summary.baseline_hash = surface_hash(baseline)
         summary.current_hash = surface_hash(previous)
-        if probe.baseline is not None:
+        if pinned is not None:
             # Pin snapshots withhold credentials. Normalize only this comparison;
             # subsequent session and identity drift still use the full raw surface.
             pin_current = cast(dict[str, dict[str, object]], redact_data(previous))
-            pin_baseline = cast(dict[str, dict[str, object]], redact_data(probe.baseline))
+            if uncovered and isinstance(pin_current.get("tools"), dict):
+                pin_current = {
+                    **pin_current,
+                    "tools": {k: v for k, v in pin_current["tools"].items() if k not in uncovered},
+                }
+            pin_baseline = cast(dict[str, dict[str, object]], redact_data(pinned))
             pinned_drift = detect_session_drift(server_name, pin_baseline, pin_current, 0)
             for finding in pinned_drift:
                 finding.summary = "Tool surface differs from the v2 pin at the first canary listing."

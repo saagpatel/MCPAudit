@@ -42,6 +42,7 @@ class PolicyConfig:
     fail_on_integrity: bool = False
     fail_on_package_verify: bool = False
     fail_on_artifact_verify: bool = False
+    fail_on_pin_integrity: bool = False
     required_pin_servers: list[str] = field(default_factory=list)
     denied_permissions: list[PermissionCategory] = field(default_factory=list)
     max_risk: float | None = None
@@ -96,6 +97,9 @@ def load_policy(path: Path) -> PolicyConfig:
     integrity = bool(fail_on.get("integrity", False))
     package_verify = bool(fail_on.get("package_verify", False))
     artifact_verify = bool(fail_on.get("artifact_verify", False))
+    pin_integrity = fail_on.get("pin_integrity", False)
+    if not isinstance(pin_integrity, bool):
+        raise ValueError("fail_on.pin_integrity must be a boolean.")
     coverage = fail_on.get("coverage", False)
     if not isinstance(coverage, bool):
         raise ValueError("fail_on.coverage must be a boolean.")
@@ -129,6 +133,7 @@ def load_policy(path: Path) -> PolicyConfig:
         fail_on_integrity=integrity,
         fail_on_package_verify=package_verify,
         fail_on_artifact_verify=artifact_verify,
+        fail_on_pin_integrity=pin_integrity,
         required_pin_servers=[str(value) for value in _sequence(pins.get("servers"), "require.pins.servers")],
         denied_permissions=permissions,
         max_risk=max_risk,
@@ -185,6 +190,14 @@ def evaluate_policy(
 
         resolved_pin_store = PinStore()
 
+    # Servers whose saved baseline the scan withheld from comparison.
+    withheld_servers = {
+        server
+        for warning in report.warnings
+        if warning.code == "pin_baseline_withheld"
+        for server in warning.servers
+    }
+
     for audit_index, audit in enumerate(report.audits):
         first_violation = len(violations)
         server_name = audit.server.name
@@ -200,16 +213,48 @@ def evaluate_policy(
                 )
             )
 
+        # Fail closed: a pin that failed verification is never a usable baseline.
+        # Prefer the scan's own verification; consult the selected store only
+        # when the scan did not verify this server (no pin-based check ran).
+        integrity_states: list[str] = [finding.state for finding in audit.pin_integrity_findings]
+        if not integrity_states and audit.pin_verification is None:
+            if resolved_pin_store is None and policy.fail_on_pin_integrity:
+                from mcp_audit.pinning import PinStore
+
+                resolved_pin_store = PinStore()
+            fallback_state = _pin_integrity_state(resolved_pin_store, server_name)
+            if fallback_state is not None:
+                integrity_states.append(fallback_state)
+
         require_pin = server_name in policy.required_pin_servers or server_rule.require_pin
         if require_pin:
-            tool_count = _pin_tool_count(resolved_pin_store, server_name)
+            tool_count = 0 if integrity_states else _pin_tool_count(resolved_pin_store, server_name)
             if tool_count == 0:
                 violations.append(
                     PolicyViolation(
                         rule="require.pins",
                         server_name=server_name,
-                        severity="medium",
-                        message=f"Server '{server_name}' is required to have a pin baseline.",
+                        severity="high" if integrity_states else "medium",
+                        message=(
+                            f"Server '{server_name}' pin baseline failed integrity verification "
+                            f"(MCP027 {integrity_states[0]}) and cannot satisfy require.pins."
+                            if integrity_states
+                            else f"Server '{server_name}' pin baseline was withheld as unauthenticated "
+                            "and cannot satisfy require.pins."
+                            if server_name in withheld_servers
+                            else f"Server '{server_name}' is required to have a pin baseline."
+                        ),
+                    )
+                )
+
+        if policy.fail_on_pin_integrity:
+            for state in integrity_states:
+                violations.append(
+                    PolicyViolation(
+                        rule="fail_on.pin_integrity",
+                        server_name=server_name,
+                        severity="high",
+                        message=f"MCP027 pin integrity verification failed: {state}.",
                     )
                 )
 
@@ -506,6 +551,35 @@ def evaluate_policy(
                     )
                 )
 
+        # Gates that compare against the saved pin baseline cannot pass when the
+        # scan withheld that baseline after a failed verification (MCP027).
+        if audit.pin_integrity_findings or server_name in withheld_servers:
+            reason = (
+                f"failed integrity verification (MCP027 {audit.pin_integrity_findings[0].state})"
+                if audit.pin_integrity_findings
+                else "is an unauthenticated legacy v1 pin while trusted keys exist"
+            )
+            for gate, enabled in (
+                ("drift", fail_on_drift),
+                ("escalation", policy.fail_on_escalation),
+                ("provenance", policy.fail_on_provenance),
+                ("integrity", policy.fail_on_integrity),
+                ("package_verify", policy.fail_on_package_verify),
+                ("artifact_verify", policy.fail_on_artifact_verify),
+            ):
+                if enabled:
+                    violations.append(
+                        PolicyViolation(
+                            rule=f"fail_on.{gate}",
+                            server_name=server_name,
+                            severity="high",
+                            message=(
+                                f"Pin baseline for server '{server_name}' {reason}; "
+                                f"the {gate} comparison was withheld."
+                            ),
+                        )
+                    )
+
         for violation in violations[first_violation:]:
             violation.audit_index = audit_index
 
@@ -585,6 +659,19 @@ def _effective_threshold(*values: str | None) -> str | None:
 
 def _threshold_rule(name: str, broad_threshold: str | None, effective_threshold: str) -> str:
     return "fail_on.severity" if broad_threshold == effective_threshold else f"fail_on.{name}"
+
+
+def _pin_integrity_state(pin_store: object | None, server_name: str) -> str | None:
+    """Return the failed verification state from a selected pin store, if any."""
+    if pin_store is None:
+        return None
+    baseline_trusted = getattr(pin_store, "baseline_trusted", None)
+    verification = getattr(pin_store, "verification", None)
+    if not callable(baseline_trusted) or not callable(verification) or baseline_trusted(server_name):
+        return None
+    result = verification(server_name)
+    state = getattr(result, "state", None)
+    return str(state) if state is not None else "tampered_entry"
 
 
 def _pin_tool_count(pin_store: object | None, server_name: str) -> int:

@@ -9,6 +9,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fail closed for signed pins the trust store expects: a deleted, renamed,
+  emptied, unparseable, or substituted entry or pin file now yields HIGH
+  `MCP027`. Failed verification no longer satisfies `require.pins`, and enabled
+  baseline-comparison gates fail instead of passing on a withheld baseline,
+  which is reported as `pin_baseline_withheld` rather than as a legacy pin.
+  Signing expectations are written only after the pin write succeeds, and
+  `pin --clear` removes the expectation as the explicit recovery path. Example CI
+  policies enable `fail_on.pin_integrity`.
+- Treat an unsigned v2 pin as tampered (HIGH `MCP027`) whenever the trust store
+  holds a usable trusted key, so public-key-only CI rejects fully stripped
+  signatures; refuse unsigned v2 writes in that state while legacy v1 pins keep
+  warning. Advance the rollback high-water `pinned_at` on every successful signed
+  write so restoring an older signed pin warns `pin_rolled_back`. Suppress legacy
+  refresh guidance for rejected entries, bound retired-key grace to 0-3650 days,
+  and treat invalid persisted grace as an untrusted signer instead of crashing.
+- Re-sign signed and mixed v1/v2 entries during key rotation and re-signing so
+  they do not expire with the retired key. Withhold unsigned legacy v1 baselines
+  from comparisons while a key is trusted (`pin_baseline_withheld`, also for
+  `pin_check` and `canary_check`) without raising `MCP027`, and report rollback
+  even when the trust-store high-water update fails.
+- Show the full `pin --refresh` comparison against a withheld legacy v1 baseline,
+  labeled as unverified, instead of reporting a clean match; add additive
+  `baseline_verified`/`baseline_note` refresh JSON fields and `verification`/
+  `baseline_usable` status fields with a terminal Verification column.
+- Sign a document-level pin manifest of signed servers and their entry digests
+  on every signed write, re-sign, rotation and clear. While a key is trusted, a
+  missing or invalid manifest, a deleted or renamed listed entry, or a spliced
+  signed entry is `MCP027`, closing deletion in public-key-only CI. A trusted
+  mixed v1/v2 entry now keeps its signed v2 rows as the canary baseline.
+- Update signed-pin regression connector doubles for bounded transport options,
+  and retain the required unsigned-pin warning alongside integrity-exclusion
+  warnings in integration assertions.
 - Exclude home dotfiles and additional credential directories from launch-artifact
   hashing, including existing pin baselines and resolved targets; report partial
   comparison coverage without exposing excluded hashes. Apply archive-equivalent
@@ -16,6 +48,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   install transport log redaction once for debug CLI runs, and write serve installs
   atomically while preserving config symlinks and updating their targets. Describe
   `--timeout` as a per-server session budget.
+- Stop scoring read-only declarations as file access and absent tool hints as
+  destructive/network capabilities. Consolidate missing hints into one
+  per-server `annotations_missing` FYI (SARIF `MCP005` note), retaining genuine
+  capability rule IDs, fingerprints, and alert levels with operator overrides
+  applied to legacy annotation contributions, including declared-confidence
+  warnings for retained schema-only file evidence. Keep canary keyword vetoes
+  non-contextual; recognize literal URLs, IPv4 addresses, and email destinations
+  as outbound context. Require context for
+  ambiguous set/add/commit/reply/forward/export and open/list/describe keywords;
+  promote all six precision-corpus regressions and raise precision floors to 100%.
+- Classify absent client config candidates before opening them in static review;
+  missing files produce no config-health finding or partial coverage. Retain
+  redacted config diagnostic reasons in summaries, including null project entries,
+  while preserving the connection block for malformed configs.
+- Recognize VS Code server maps in explicit configs and parse both VS Code
+  files as JSONC. Report malformed entries and duplicate keys, reject
+  non-regular config paths before reading, accept UTF-8 BOMs, and distinguish
+  empty server maps from empty, unsupported, and unreadable config files.
+  Preserve parsing diagnostics in in-memory scan coverage and reject project
+  containers without a supported server map. Treat discovered general VS Code
+  and Claude settings without MCP sections as zero entries, allowing unrelated
+  valid servers to be selected while retaining malformed-config diagnostics.
+  Normalize selected project dot components without resolving symlinks, and
+  retain malformed null project entries as diagnostics that block connections.
+  Reject report destinations that alias config or policy inputs, scan overrides,
+  or another artifact, including symlinks and hard links, before any artifact
+  is written.
+- Share MCP server entry parsing across the five config discoverers so Cursor,
+  Windsurf, and Claude Desktop recognize HTTP and deprecated SSE transports
+  while retaining header key names only.
+- Scan bounded agent-visible tool text, including annotation titles and all
+  input-schema string leaves, for instruction-shaped text and permission
+  keywords. Preserve matched field paths and report incomplete text coverage.
+- Retain prompt argument descriptions and required flags in additive metadata,
+  scan their text, and name required arguments in canary skip warnings.
+- Normalize permission-detector fields once and scan category keywords with
+  overlapping matches that preserve scores and evidence order. Bound detector
+  text to 256 KiB per field and report `description_truncated` coverage warnings.
+- Tokenize SSRF identifiers in linear time and bound fetch-verb text inspection.
+- Limit simultaneous server sessions to 32 by default, configurable with
+  `--max-concurrency`; clarify that `--timeout` is a per-session budget and
+  excludes time waiting for a connection slot.
+- Mark incomplete metadata listings, including pagination floods, as partial
+  connections rather than clean connected rows with zero tools.
+- Infer capabilities from nested input-schema property names using the bounded
+  SSRF schema walker. Property names retain weight 1 and the HIGH confidence
+  threshold remains 6; evidence includes matching schema paths. Nested
+  `upload_url` and `shell_command` gains now produce HIGH MCP018 escalation.
+  Report incomplete property traversal with sanitized reason codes and partial
+  permission, trifecta, and escalation coverage, including pinned schemas used
+  for escalation comparison.
+  The offline examples golden comparison against the pre-change analyzer has
+  no fleet-wide permission finding count change: 12 → 12 across 9 public-config
+  servers, 7 → 7 across 5 sandbox-config servers, and 22 → 22 across 13 stored
+  tool surfaces in the sandbox manifest and synthetic enforcement report.
+  Config runs use config-only/skip-connect with no overrides; stored metadata
+  is replayed locally without launching servers. These fixtures contain no
+  nested property-name capability gains; the nested regression fixture covers
+  the added detection.
+- Report static phrase matches as experimental MEDIUM with pattern and field
+  evidence, retain concrete secret targets for "Fix now" summaries, and flag
+  high-entropy metadata runs at LOW without decoding them.
+  Withhold phrase excerpts after full-field credential redaction, preserve
+  instruction evidence in the MCP findings endpoint, restore override phrase
+  coverage, and align the synthetic sandbox with the MEDIUM heuristic tier.
+  Build metadata evidence with a shared full-field redaction helper that maps
+  match offsets before slicing and rendering invisible codepoints, including
+  obfuscation, hidden-directive, schema, SSRF, and escalation evidence.
+  Withhold field evidence when normalization exposes a credential label missed
+  by raw redaction; apply the same protection to serialized metadata. Use
+  original-string case-insensitive offsets and clamp evidence spans to prevent
+  length-changing lowercase text from aborting a server scan.
+- Defer static/runtime instruction vocabulary unification to the 2.9 structural
+  detection and redaction redesign; retain main's independent phrase rules.
 
 ### Security
 
@@ -83,6 +189,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bounded redacted evidence to the detected phrase or gated anomaly so stripped context and
   benign non-Latin prefixes cannot displace it, including normalized HTML-comment
   delimiters after long benign prefixes.
+- Add Ed25519 signed pin baselines with separate trusted public keys, key
+  rotation and retired-key grace, rollback warnings, and HIGH `MCP027`
+  findings that skip untrusted baseline comparisons and support
+  `fail_on.pin_integrity`. Verification does not require a private key. Persist
+  signing expectations separately to reject stripped signatures, print CI keys
+  only from verified trust records, refuse writes through failed baselines,
+  protect selected pin files from report overwrite, and use them for pin policies.
 
 ### Added
 
@@ -168,83 +281,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   keep unavailable evidence separate from findings and retain partial coverage
   when the SDK rejects cache metadata.
 - Add static tool-schema findings for `x-mcp-header` declarations, credential parameters mirrored to headers, external `$ref` values, and icon source schemes/origins. These checks inspect served metadata only and never fetch schemas or icons. Traverse schema-bearing branches rather than instance payloads, validate null header declarations, and report exhausted traversal budgets as partial metadata coverage. Resolve local anchors and percent-encoded JSON Pointers; report unresolved local references as incomplete instead of asserting unreachable headers.
-
-### Fixed
-
-- Stop scoring read-only declarations as file access and absent tool hints as
-  destructive/network capabilities. Consolidate missing hints into one
-  per-server `annotations_missing` FYI (SARIF `MCP005` note), retaining genuine
-  capability rule IDs, fingerprints, and alert levels with operator overrides
-  applied to legacy annotation contributions, including declared-confidence
-  warnings for retained schema-only file evidence. Keep canary keyword vetoes
-  non-contextual; recognize literal URLs, IPv4 addresses, and email destinations
-  as outbound context. Require context for
-  ambiguous set/add/commit/reply/forward/export and open/list/describe keywords;
-  promote all six precision-corpus regressions and raise precision floors to 100%.
-- Classify absent client config candidates before opening them in static review;
-  missing files produce no config-health finding or partial coverage. Retain
-  redacted config diagnostic reasons in summaries, including null project entries,
-  while preserving the connection block for malformed configs.
-- Recognize VS Code server maps in explicit configs and parse both VS Code
-  files as JSONC. Report malformed entries and duplicate keys, reject
-  non-regular config paths before reading, accept UTF-8 BOMs, and distinguish
-  empty server maps from empty, unsupported, and unreadable config files.
-  Preserve parsing diagnostics in in-memory scan coverage and reject project
-  containers without a supported server map. Treat discovered general VS Code
-  and Claude settings without MCP sections as zero entries, allowing unrelated
-  valid servers to be selected while retaining malformed-config diagnostics.
-  Normalize selected project dot components without resolving symlinks, and
-  retain malformed null project entries as diagnostics that block connections.
-  Reject report destinations that alias config or policy inputs, scan overrides,
-  or another artifact, including symlinks and hard links, before any artifact
-  is written.
-- Share MCP server entry parsing across the five config discoverers so Cursor,
-  Windsurf, and Claude Desktop recognize HTTP and deprecated SSE transports
-  while retaining header key names only.
-- Scan bounded agent-visible tool text, including annotation titles and all
-  input-schema string leaves, for instruction-shaped text and permission
-  keywords. Preserve matched field paths and report incomplete text coverage.
-- Retain prompt argument descriptions and required flags in additive metadata,
-  scan their text, and name required arguments in canary skip warnings.
-- Normalize permission-detector fields once and scan category keywords with
-  overlapping matches that preserve scores and evidence order. Bound detector
-  text to 256 KiB per field and report `description_truncated` coverage warnings.
-- Tokenize SSRF identifiers in linear time and bound fetch-verb text inspection.
-- Limit simultaneous server sessions to 32 by default, configurable with
-  `--max-concurrency`; clarify that `--timeout` is a per-session budget and
-  excludes time waiting for a connection slot.
-- Mark incomplete metadata listings, including pagination floods, as partial
-  connections rather than clean connected rows with zero tools.
-- Infer capabilities from nested input-schema property names using the bounded
-  SSRF schema walker. Property names retain weight 1 and the HIGH confidence
-  threshold remains 6; evidence includes matching schema paths. Nested
-  `upload_url` and `shell_command` gains now produce HIGH MCP018 escalation.
-  Report incomplete property traversal with sanitized reason codes and partial
-  permission, trifecta, and escalation coverage, including pinned schemas used
-  for escalation comparison.
-  The offline examples golden comparison against the pre-change analyzer has
-  no fleet-wide permission finding count change: 12 → 12 across 9 public-config
-  servers, 7 → 7 across 5 sandbox-config servers, and 22 → 22 across 13 stored
-  tool surfaces in the sandbox manifest and synthetic enforcement report.
-  Config runs use config-only/skip-connect with no overrides; stored metadata
-  is replayed locally without launching servers. These fixtures contain no
-  nested property-name capability gains; the nested regression fixture covers
-  the added detection.
-- Report static phrase matches as experimental MEDIUM with pattern and field
-  evidence, retain concrete secret targets for "Fix now" summaries, and flag
-  high-entropy metadata runs at LOW without decoding them.
-  Withhold phrase excerpts after full-field credential redaction, preserve
-  instruction evidence in the MCP findings endpoint, restore override phrase
-  coverage, and align the synthetic sandbox with the MEDIUM heuristic tier.
-  Build metadata evidence with a shared full-field redaction helper that maps
-  match offsets before slicing and rendering invisible codepoints, including
-  obfuscation, hidden-directive, schema, SSRF, and escalation evidence.
-  Withhold field evidence when normalization exposes a credential label missed
-  by raw redaction; apply the same protection to serialized metadata. Use
-  original-string case-insensitive offsets and clamp evidence spans to prevent
-  length-changing lowercase text from aborting a server scan.
-- Defer static/runtime instruction vocabulary unification to the 2.9 structural
-  detection and redaction redesign; retain main's independent phrase rules.
 
 ### Changed
 

@@ -25,6 +25,18 @@ def anyio_backend() -> str:
 
 
 @pytest.fixture(autouse=True)
+def isolated_pin_keys(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin tests must never read workstation signing keys or update its trust store."""
+    from mcp_audit import pin_signing, pinning
+
+    monkeypatch.setattr(pin_signing, "DEFAULT_SIGNING_KEY_PATH", tmp_path / "keys" / "pin-signing.key")
+    monkeypatch.setattr(pin_signing, "DEFAULT_TRUSTED_KEYS_PATH", tmp_path / "trusted-pin-keys.json")
+    # Policy gates may open the default pin store; keep it off the workstation.
+    monkeypatch.setattr(pinning, "DEFAULT_PIN_PATH", tmp_path / "default-pins.yaml")
+    monkeypatch.delenv("MCP_AUDIT_PIN_KEY", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def isolated_canary_pins(request: pytest.FixtureRequest) -> None:
     """Canary lanes must not read the workstation's saved pin snapshots."""
     if request.node.path.name not in {

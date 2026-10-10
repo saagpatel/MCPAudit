@@ -19,6 +19,7 @@ import platform
 import shlex
 import socket
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from itertools import chain
@@ -44,6 +45,7 @@ from mcp_audit.models import (
     LLMAnalysisReasonCode,
     LLMAnalysisStatus,
     LLMAnalysisSummary,
+    PinIntegrityFinding,
     ScanWarning,
     ServerAudit,
     ServerConfig,
@@ -74,6 +76,7 @@ class ScanOptions:
     clients: list[ClientType] | None = None
     timeout: int = 10
     extra_config: str | None = None
+    pin_file: Path | None = None
 
     # Optional check families
     inject_check: bool = False
@@ -437,7 +440,7 @@ def _prepare_scan(
     ):
         from mcp_audit.pinning import PinStore
 
-        pin_store = PinStore()
+        pin_store = PinStore(path=opts.pin_file) if opts.pin_file is not None else PinStore()
         for server in servers:
             scan_warnings.extend(pin_store.schema_warnings(server.name))
         if opts.canary_check and pin_store.read_error:
@@ -575,6 +578,25 @@ async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) ->
         async with connection_limiter:
             deadline = time.monotonic() + opts.timeout
             audit = await connector.connect(srv)
+
+    if pin_store is not None:
+        audit.pin_verification = pin_store.verification(srv.name)
+        for warning in pin_store.verification_warnings(srv.name):
+            warn(warning.code, redact_text(warning.message), check=warning.check, servers=warning.servers)
+        if not pin_store.baseline_trusted(srv.name):
+            assert audit.pin_verification is not None
+            message = pin_store.verification_message(srv.name)
+            audit.pin_integrity_findings.append(
+                PinIntegrityFinding.model_validate(
+                    {
+                        "state": audit.pin_verification.state,
+                        "server_name": srv.name,
+                        "kid": audit.pin_verification.kid,
+                        "summary": message,
+                    }
+                )
+            )
+            warn("pin_integrity_failed", redact_text(message), check="pin_check", servers=[srv.name])
 
     if audit.connection_status in {"failed", "timeout"} and time.monotonic() >= deadline:
         audits[idx] = audit
@@ -892,6 +914,36 @@ def _finalize_scan(context: _ScanContext) -> AuditReport:
                     check=check_field,
                 )
 
+    # A baseline withheld after failed verification (MCP027), or an
+    # unauthenticated legacy v1 pin while trusted keys exist, is not a stale
+    # pin: report it as withheld, never as "predates capture, re-pin".
+    withheld: list[str] = []
+    if pin_store is not None:
+        withheld = sorted(
+            {audit.server.name for audit in audits if not pin_store.baseline_usable(audit.server.name)}
+        )
+    if withheld:
+        for check_field, flag in (
+            ("pin_check", "--pin-check"),
+            ("canary_check", "--canary-check"),
+            ("escalation_check", "--escalation-check"),
+            ("provenance_check", "--provenance-check"),
+            ("integrity_check", "--integrity-check"),
+            ("verify_artifacts", "--verify-artifacts"),
+            ("download_artifacts", "--download-artifacts"),
+        ):
+            if not getattr(opts, check_field):
+                continue
+            warn(
+                "pin_baseline_withheld",
+                f"{flag}: {len(withheld)} server(s) have pin baselines that cannot be trusted "
+                "(failed integrity verification, MCP027, or an unsigned legacy v1 pin while "
+                f"trusted keys exist) and were not compared: {', '.join(withheld)}. "
+                "Restore a signed baseline, or re-review and re-pin.",
+                check=check_field,
+                servers=withheld,
+            )
+
     # Per-server staleness: a server IS pinned but its baseline predates the
     # provenance/integrity snapshot, so it is silently skipped. Surface it so the
     # user knows the check ran but found nothing to compare for those servers.
@@ -899,8 +951,12 @@ def _finalize_scan(context: _ScanContext) -> AuditReport:
         opts.provenance_check or opts.integrity_check or opts.verify_artifacts or opts.download_artifacts
     ):
         pinned = set(pin_store.pinned_servers())
-        scanned_pinned = [audit.server.name for audit in audits if audit.server.name in pinned]
-        stale_baseline_checks = [
+        scanned_pinned = [
+            audit.server.name
+            for audit in audits
+            if audit.server.name in pinned and audit.server.name not in withheld
+        ]
+        stale_baseline_checks: list[tuple[str, str, Callable[[str], object], str, str]] = [
             (
                 "provenance_check",
                 "--provenance-check",
@@ -1027,7 +1083,7 @@ def _finalize_scan(context: _ScanContext) -> AuditReport:
             config_health_inspected=True,
             baselines={
                 check: [
-                    a.server.name in pin_store.pinned_servers()
+                    a.server.name in pin_store.pinned_servers() and pin_store.baseline_usable(a.server.name)
                     if check == "pin_check"
                     else bool(baseline(a.server.name))
                     for a in audits

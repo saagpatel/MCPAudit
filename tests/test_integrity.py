@@ -67,11 +67,12 @@ async def test_pinned_command_rewrite_is_high_in_run_scan(
     path = str(binary.resolve())
     assert store.baseline_artifacts(config.name) == {path: hashlib.sha256(before).hexdigest()}
     clean = await run_scan(ScanOptions(skip_connect=True, integrity_check=True), servers=[config])
-    assert not clean.audits[0].integrity_findings and not clean.warnings
+    assert not clean.audits[0].integrity_findings
+    assert [warning.code for warning in clean.warnings] == ["pin_unsigned"]
 
     binary.write_bytes(after)
     report = await run_scan(ScanOptions(skip_connect=True, integrity_check=True), servers=[config])
-    assert not report.warnings
+    assert [warning.code for warning in report.warnings] == ["pin_unsigned"]
     findings = report.audits[0].integrity_findings
     assert len(findings) == 1
     finding = findings[0]
@@ -155,7 +156,18 @@ async def test_existing_pin_exclusions_never_hash_or_export_protected_entries(
         assert findings[0].artifact_path == str(visible)
         assert findings[0].severity == IntegritySeverity.HIGH
     assert calls == [visible.resolve()] * (2 * int(include_safe))
-    assert report.warnings == warnings
+    assert [warning for warning in report.warnings if warning.check == "integrity_check"] == warnings
+    assert [warning for warning in report.warnings if warning.check != "integrity_check"] == [
+        ScanWarning(
+            code="pin_unsigned",
+            message=(
+                "Pin for fixture is unsigned. Run `mcp-audit pin keygen`, then "
+                "`pin --clear fixture` and `pin --server fixture` after review to sign it."
+            ),
+            check="pin_check",
+            servers=["fixture"],
+        )
+    ]
     warning = warnings[0]
     assert warning.code == "integrity_comparison_incomplete"
     assert warning.check == "integrity_check" and warning.servers == ["fixture"]
