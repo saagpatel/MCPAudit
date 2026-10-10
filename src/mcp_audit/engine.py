@@ -473,9 +473,21 @@ async def run_scan(
                 for finding in analyzer.analyze_annotation_contradictions(tool)
             ]
             audit.capability_findings = analyzer.analyze_capabilities(audit.prompts, audit.resources)
+            tool_schema_incomplete: list[str] = []
             audit.schema_findings = [
-                finding for tool in audit.tools for finding in scan_tool_schema(tool, server_url=srv.url)
+                finding
+                for tool in audit.tools
+                for finding in scan_tool_schema(
+                    tool, server_url=srv.url, incomplete_reasons=tool_schema_incomplete
+                )
             ]
+            if tool_schema_incomplete:
+                warn(
+                    "tool_schema_incomplete",
+                    "Tool schema analysis incomplete: " + "; ".join(tool_schema_incomplete),
+                    check="metadata",
+                    servers=[srv.name],
+                )
             audit.risk_score = scorer.score_server(audit.permissions)
             # Legacy annotation contributions obey the same operator overrides.
             alert_findings = applier.apply(

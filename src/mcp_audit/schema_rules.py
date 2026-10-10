@@ -21,6 +21,23 @@ _CREDENTIAL_WORDS = {
     "token",
 }
 _PRIMITIVE_TYPES = {"string", "number", "integer", "boolean"}
+_MAX_SCHEMA_NODES = 2048
+_SCHEMA_MAP_KEYWORDS = ("properties", "patternProperties", "dependentSchemas", "dependencies")
+_SCHEMA_ARRAY_KEYWORDS = ("allOf", "anyOf", "oneOf", "prefixItems")
+_SINGLE_SCHEMA_KEYWORDS = (
+    "items",
+    "additionalItems",
+    "additionalProperties",
+    "contains",
+    "unevaluatedItems",
+    "unevaluatedProperties",
+    "propertyNames",
+    "contentSchema",
+    "else",
+    "if",
+    "not",
+    "then",
+)
 
 
 def _local_ref(root: dict[str, object], ref: str) -> object | None:
@@ -40,58 +57,47 @@ def _local_ref(root: dict[str, object], ref: str) -> object | None:
     return current
 
 
-def _reachable_nodes(root: dict[str, object]) -> Iterator[dict[str, object]]:
+def _schema_children(node: dict[str, object], *, include_definitions: bool) -> Iterator[dict[str, object]]:
+    maps = _SCHEMA_MAP_KEYWORDS + (("$defs", "definitions") if include_definitions else ())
+    for key in maps:
+        value = node.get(key)
+        if isinstance(value, dict):
+            yield from (child for child in value.values() if isinstance(child, dict))
+    for key in _SCHEMA_ARRAY_KEYWORDS:
+        value = node.get(key)
+        if isinstance(value, list):
+            yield from (child for child in value if isinstance(child, dict))
+    for key in _SINGLE_SCHEMA_KEYWORDS:
+        value = node.get(key)
+        if isinstance(value, dict):
+            yield value
+        elif key == "items" and isinstance(value, list):
+            yield from (child for child in value if isinstance(child, dict))
+
+
+def _walk_nodes(
+    root: dict[str, object], *, include_definitions: bool, incomplete_reasons: list[str]
+) -> list[dict[str, object]]:
     stack = [root]
     seen: set[int] = set()
-    while stack and len(seen) < 2048:
+    nodes: list[dict[str, object]] = []
+    while stack:
         node = stack.pop()
         if id(node) in seen:
             continue
+        if len(seen) >= _MAX_SCHEMA_NODES:
+            if "node_budget_exceeded" not in incomplete_reasons:
+                incomplete_reasons.append("node_budget_exceeded")
+            break
         seen.add(id(node))
-        yield node
-        ref = node.get("$ref")
+        nodes.append(node)
+        ref = node.get("$ref") if not include_definitions else None
         if isinstance(ref, str):
             target = _local_ref(root, ref)
             if isinstance(target, dict):
                 stack.append(target)
-        for key in (
-            "properties",
-            "items",
-            "allOf",
-            "anyOf",
-            "oneOf",
-            "additionalProperties",
-            "contains",
-            "unevaluatedItems",
-            "unevaluatedProperties",
-            "prefixItems",
-            "dependentSchemas",
-            "patternProperties",
-            "else",
-            "if",
-            "not",
-            "then",
-        ):
-            value = node.get(key)
-            if isinstance(value, dict):
-                stack.extend(child for child in value.values() if isinstance(child, dict))
-            elif isinstance(value, list):
-                stack.extend(child for child in value if isinstance(child, dict))
-
-
-def _all_nodes(root: dict[str, object]) -> Iterator[dict[str, object]]:
-    stack: list[object] = [root]
-    seen: set[int] = set()
-    while stack and len(seen) < 2048:
-        value = stack.pop()
-        if isinstance(value, dict):
-            if id(value) in seen:
-                continue
-            seen.add(id(value))
-            yield value
-            stack.extend(value.values())
-        elif isinstance(value, list):
-            stack.extend(value)
+        stack.extend(_schema_children(node, include_definitions=include_definitions))
+    return nodes
 
 
 def _origin(parsed: ParseResult) -> tuple[str, str, int | None] | None:
@@ -107,16 +113,26 @@ def _origin(parsed: ParseResult) -> tuple[str, str, int | None] | None:
     return scheme, hostname.casefold(), None if port == default_port else port
 
 
-def _schema_rules(tool: ToolInfo, schema: dict[str, object]) -> list[SchemaFinding]:
+def _schema_rules(
+    tool: ToolInfo, schema: dict[str, object], *, incomplete_reasons: list[str]
+) -> list[SchemaFinding]:
     findings: list[SchemaFinding] = []
-    reachable = list(_reachable_nodes(schema))
+    reachability_incomplete: list[str] = []
+    reachable = _walk_nodes(schema, include_definitions=False, incomplete_reasons=reachability_incomplete)
+    for reason in reachability_incomplete:
+        if reason not in incomplete_reasons:
+            incomplete_reasons.append(reason)
     reachable_ids = {id(node) for node in reachable}
+    all_nodes = _walk_nodes(schema, include_definitions=True, incomplete_reasons=incomplete_reasons)
     headers: dict[str, str] = {}
-    for node in _all_nodes(schema):
-        header = node.get("x-mcp-header")
-        if header is None:
+    for node in all_nodes:
+        if "x-mcp-header" not in node:
             continue
+        header = node["x-mcp-header"]
         if id(node) not in reachable_ids:
+            # Exhaustion cannot establish that an unvisited branch is unreachable.
+            if reachability_incomplete:
+                continue
             findings.append(
                 SchemaFinding(
                     tool_name=tool.name,
@@ -125,7 +141,6 @@ def _schema_rules(tool: ToolInfo, schema: dict[str, object]) -> list[SchemaFindi
                 )
             )
             continue
-        name = str(header)
         if not isinstance(header, str) or not _HEADER_TOKEN.fullmatch(header):
             findings.append(
                 SchemaFinding(
@@ -160,7 +175,7 @@ def _schema_rules(tool: ToolInfo, schema: dict[str, object]) -> list[SchemaFindi
                     evidence=["x-mcp-header property must have a primitive type"],
                 )
             )
-    for node in _all_nodes(schema):
+    for node in all_nodes:
         ref = node.get("$ref")
         if isinstance(ref, str) and not ref.startswith("#"):
             findings.append(
@@ -189,12 +204,15 @@ def _schema_rules(tool: ToolInfo, schema: dict[str, object]) -> list[SchemaFindi
     return findings
 
 
-def scan_tool_schema(tool: ToolInfo, *, server_url: str | None = None) -> list[SchemaFinding]:
-    """Inspect served schemas and icons without fetching or resolving remote references."""
+def scan_tool_schema(
+    tool: ToolInfo, *, server_url: str | None = None, incomplete_reasons: list[str] | None = None
+) -> list[SchemaFinding]:
+    """Inspect metadata offline, recording traversal exhaustion when a collector is supplied."""
     findings: list[SchemaFinding] = []
+    reasons = incomplete_reasons if incomplete_reasons is not None else []
     for schema in (tool.input_schema, tool.output_schema):
         if isinstance(schema, dict):
-            findings.extend(_schema_rules(tool, schema))
+            findings.extend(_schema_rules(tool, schema, incomplete_reasons=reasons))
     try:
         server = urlparse(server_url) if server_url else None
     except ValueError:
