@@ -183,7 +183,11 @@ async def _run_scan(
         from mcp_audit.policy import evaluate_policy
 
         selected_pin_store = None
-        if policy.required_pin_servers or any(rule.require_pin for rule in policy.server_rules.values()):
+        if (
+            policy.required_pin_servers
+            or policy.fail_on_pin_integrity
+            or any(rule.require_pin for rule in policy.server_rules.values())
+        ):
             from mcp_audit.pinning import PinStore
 
             selected_pin_store = PinStore(path=pin_file) if pin_file is not None else PinStore()
