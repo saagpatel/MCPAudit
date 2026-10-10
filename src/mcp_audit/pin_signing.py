@@ -371,6 +371,30 @@ def rotate_key(
             shutil.rmtree(staging_dir)
 
 
+def is_pinned_at_rollback(
+    server_name: str,
+    pinned_at: str,
+    trusted_keys_path: Path = DEFAULT_TRUSTED_KEYS_PATH,
+) -> bool:
+    """Read-only: whether ``pinned_at`` predates the recorded high-water mark."""
+    try:
+        incoming = _parse_timestamp(pinned_at)
+    except ValueError as exc:
+        raise PinSigningError("Pin timestamp is invalid.") from exc
+    data = _read_trust_data(trusted_keys_path)
+    servers = data.get("servers", {})
+    server = servers.get(server_name, {}) if isinstance(servers, dict) else None
+    if not isinstance(server, dict):
+        raise PinSigningError("Trusted pin keys have an invalid format.")
+    previous = server.get("last_seen_pinned_at")
+    if not isinstance(previous, str):
+        return False
+    try:
+        return incoming < _parse_timestamp(previous)
+    except ValueError as exc:
+        raise PinSigningError("Trusted pin rollback state is invalid.") from exc
+
+
 def check_and_record_pinned_at(
     server_name: str,
     pinned_at: str,

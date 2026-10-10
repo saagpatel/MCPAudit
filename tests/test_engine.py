@@ -585,6 +585,9 @@ def test_stale_pin_baseline_names_affected_servers(monkeypatch: pytest.MonkeyPat
         def baseline_trusted(self, name: str) -> bool:
             return True  # A legacy baseline that verified, not one that was withheld.
 
+        def baseline_usable(self, name: str) -> bool:
+            return True
+
         def baseline_config(self, name: str) -> None:
             return None
 

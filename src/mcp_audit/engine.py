@@ -873,15 +873,18 @@ def _finalize_scan(context: _ScanContext) -> AuditReport:
                     check=check_field,
                 )
 
-    # A baseline withheld after failed verification (MCP027) is not a legacy
+    # A baseline withheld after failed verification (MCP027), or an
+    # unauthenticated legacy v1 pin while trusted keys exist, is not a stale
     # pin: report it as withheld, never as "predates capture, re-pin".
     withheld: list[str] = []
     if pin_store is not None:
         withheld = sorted(
-            {audit.server.name for audit in audits if not pin_store.baseline_trusted(audit.server.name)}
+            {audit.server.name for audit in audits if not pin_store.baseline_usable(audit.server.name)}
         )
     if withheld:
         for check_field, flag in (
+            ("pin_check", "--pin-check"),
+            ("canary_check", "--canary-check"),
             ("escalation_check", "--escalation-check"),
             ("provenance_check", "--provenance-check"),
             ("integrity_check", "--integrity-check"),
@@ -892,9 +895,10 @@ def _finalize_scan(context: _ScanContext) -> AuditReport:
                 continue
             warn(
                 "pin_baseline_withheld",
-                f"{flag}: {len(withheld)} server(s) have pin baselines that failed integrity "
-                f"verification (MCP027) and were not compared: {', '.join(withheld)}. "
-                "Restore the pin file from backup, or clear and re-review before re-pinning.",
+                f"{flag}: {len(withheld)} server(s) have pin baselines that cannot be trusted "
+                "(failed integrity verification, MCP027, or an unsigned legacy v1 pin while "
+                f"trusted keys exist) and were not compared: {', '.join(withheld)}. "
+                "Restore a signed baseline, or re-review and re-pin.",
                 check=check_field,
                 servers=withheld,
             )
@@ -1038,7 +1042,7 @@ def _finalize_scan(context: _ScanContext) -> AuditReport:
             config_health_inspected=True,
             baselines={
                 check: [
-                    a.server.name in pin_store.pinned_servers() and pin_store.baseline_trusted(a.server.name)
+                    a.server.name in pin_store.pinned_servers() and pin_store.baseline_usable(a.server.name)
                     if check == "pin_check"
                     else bool(baseline(a.server.name))
                     for a in audits

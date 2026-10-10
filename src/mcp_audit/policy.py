@@ -190,6 +190,14 @@ def evaluate_policy(
 
         resolved_pin_store = PinStore()
 
+    # Servers whose saved baseline the scan withheld from comparison.
+    withheld_servers = {
+        server
+        for warning in report.warnings
+        if warning.code == "pin_baseline_withheld"
+        for server in warning.servers
+    }
+
     for audit_index, audit in enumerate(report.audits):
         first_violation = len(violations)
         server_name = audit.server.name
@@ -231,6 +239,9 @@ def evaluate_policy(
                             f"Server '{server_name}' pin baseline failed integrity verification "
                             f"(MCP027 {integrity_states[0]}) and cannot satisfy require.pins."
                             if integrity_states
+                            else f"Server '{server_name}' pin baseline was withheld as unauthenticated "
+                            "and cannot satisfy require.pins."
+                            if server_name in withheld_servers
                             else f"Server '{server_name}' is required to have a pin baseline."
                         ),
                     )
@@ -542,8 +553,12 @@ def evaluate_policy(
 
         # Gates that compare against the saved pin baseline cannot pass when the
         # scan withheld that baseline after a failed verification (MCP027).
-        if audit.pin_integrity_findings:
-            state = audit.pin_integrity_findings[0].state
+        if audit.pin_integrity_findings or server_name in withheld_servers:
+            reason = (
+                f"failed integrity verification (MCP027 {audit.pin_integrity_findings[0].state})"
+                if audit.pin_integrity_findings
+                else "is an unauthenticated legacy v1 pin while trusted keys exist"
+            )
             for gate, enabled in (
                 ("drift", fail_on_drift),
                 ("escalation", policy.fail_on_escalation),
@@ -559,8 +574,8 @@ def evaluate_policy(
                             server_name=server_name,
                             severity="high",
                             message=(
-                                f"Pin baseline for server '{server_name}' failed integrity verification "
-                                f"(MCP027 {state}); the {gate} comparison was withheld."
+                                f"Pin baseline for server '{server_name}' {reason}; "
+                                f"the {gate} comparison was withheld."
                             ),
                         )
                     )

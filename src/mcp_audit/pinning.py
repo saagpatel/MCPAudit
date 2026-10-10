@@ -204,7 +204,8 @@ class PinStore:
         self._trusted_keys_path = trusted_keys_path or DEFAULT_TRUSTED_KEYS_PATH
         self._verification: dict[str, PinVerification] = {}
         self._verification_messages: dict[str, str] = {}
-        self._rollback_warnings: dict[str, str] = {}
+        self._rollback_warnings: dict[str, list[tuple[str, str]]] = {}
+        self._keys_trusted_cache: bool | None = None
         self._read_error: str | None = None
         self._data: dict[str, Any] = self._load()
 
@@ -232,8 +233,9 @@ class PinStore:
         """Verify an entry before exposing any saved baseline to a consumer."""
         from mcp_audit.pin_signing import (
             PinSigningError,
-            check_and_record_pinned_at,
             has_active_trusted_key,
+            is_pinned_at_rollback,
+            record_signed_pin,
             signature_required,
             verify_document,
         )
@@ -318,19 +320,38 @@ class PinStore:
                 if verified.state in {"verified", "retired_key"}:
                     timestamp = entry.get("pinned_at")
                     if isinstance(timestamp, str):
+                        # Decide rollback from a read before any write, so a failed
+                        # trust-store update can never turn a rollback into a clean verify.
+                        warnings = self._rollback_warnings.setdefault(server_name, [])
                         try:
-                            rolled_back = check_and_record_pinned_at(
-                                server_name, timestamp, self._trusted_keys_path
-                            )
-                        except (PinSigningError, OSError, ValueError):
-                            self._rollback_warnings[server_name] = (
-                                "Pin rollback tracking could not be updated."
-                            )
-                        else:
-                            if rolled_back:
-                                self._rollback_warnings[server_name] = (
-                                    f"Pin for {server_name} is older than the last verified baseline."
+                            if is_pinned_at_rollback(server_name, timestamp, self._trusted_keys_path):
+                                warnings.append(
+                                    (
+                                        "pin_rolled_back",
+                                        f"Pin for {server_name} is older than the last verified baseline.",
+                                    )
                                 )
+                        except (PinSigningError, OSError, ValueError):
+                            warnings.append(
+                                (
+                                    "pin_rollback_tracking_unavailable",
+                                    (
+                                        "Pin rollback state could not be read; "
+                                        "rollback detection was not established."
+                                    ),
+                                )
+                            )
+                        try:
+                            record_signed_pin(server_name, timestamp, self._trusted_keys_path)
+                        except (PinSigningError, OSError, ValueError):
+                            warnings.append(
+                                (
+                                    "pin_rollback_tracking_unavailable",
+                                    "Pin rollback tracking could not be updated.",
+                                )
+                            )
+                        if not warnings:
+                            del self._rollback_warnings[server_name]
         self._verification[server_name] = result
         return result
 
@@ -342,6 +363,30 @@ class PinStore:
             PinVerificationState.BAD_SIGNATURE,
             PinVerificationState.TAMPERED_ENTRY,
         }
+
+    def baseline_usable(self, server_name: str) -> bool:
+        """Whether saved data may serve as a comparison baseline.
+
+        Stricter than :meth:`baseline_trusted`: an unsigned legacy v1 entry still
+        only warns (never MCP027), but while trusted keys exist it is
+        unauthenticated, attacker-substitutable data and is withheld.
+        """
+        if not self.baseline_trusted(server_name):
+            return False
+        result = self.verification(server_name)
+        if result is None or result.state != PinVerificationState.SCHEMA_OUTDATED:
+            return True
+        return not self._keys_trusted()
+
+    def _keys_trusted(self) -> bool:
+        from mcp_audit.pin_signing import PinSigningError, has_active_trusted_key
+
+        if self._keys_trusted_cache is None:
+            try:
+                self._keys_trusted_cache = has_active_trusted_key(self._trusted_keys_path)
+            except PinSigningError:
+                self._keys_trusted_cache = True
+        return self._keys_trusted_cache
 
     def verification_message(self, server_name: str) -> str:
         self.verification(server_name)
@@ -364,16 +409,8 @@ class PinStore:
                     servers=[server_name],
                 )
             )
-        if server_name in self._rollback_warnings:
-            message = self._rollback_warnings[server_name]
-            warnings.append(
-                ScanWarning(
-                    code="pin_rolled_back" if "older" in message else "pin_rollback_tracking_unavailable",
-                    message=message,
-                    check="pin_check",
-                    servers=[server_name],
-                )
-            )
+        for code, message in self._rollback_warnings.get(server_name, []):
+            warnings.append(ScanWarning(code=code, message=message, check="pin_check", servers=[server_name]))
         return warnings
 
     def signing_status(self, server_name: str) -> dict[str, object]:
@@ -480,7 +517,7 @@ class PinStore:
                     raise PinSigningError(
                         "Cannot rotate keys through an untrusted pin baseline; restore or re-review it first."
                     )
-                if not self.legacy_tool_names(server):
+                if _resigned_by_rotation(self._data["servers"][server]):
                     # Preflight unsigned entries too, before changing key material.
                     try:
                         canonical_json_bytes(self._server_document(server, self._data["servers"][server]))
@@ -494,9 +531,9 @@ class PinStore:
             self._signing_key = generated.private_key_path
             signed: list[str] = []
             for server, entry in self._data.get("servers", {}).items():
-                if self.legacy_tool_names(server):
-                    continue
-                if self._sign_entry(server, entry):
+                # Signed and mixed v1/v2 entries must move to the new key before the
+                # old one retires; only genuinely legacy unsigned entries are left as-is.
+                if _resigned_by_rotation(entry) and self._sign_entry(server, entry):
                     signed.append(server)
             self._write()
             self._record_signed(signed)
@@ -524,7 +561,7 @@ class PinStore:
             assert isinstance(signer, dict) and isinstance(signer["public_key"], str)
             signed: list[str] = []
             for server, entry in self._data.get("servers", {}).items():
-                if not self.legacy_tool_names(server) and self._sign_entry(server, entry):
+                if _resigned_by_rotation(entry) and self._sign_entry(server, entry):
                     signed.append(server)
             self._write()
             self._record_signed(signed)
@@ -615,6 +652,9 @@ class PinStore:
                 )
             if "servers" not in self._data:
                 self._data["servers"] = {}
+            if not self.baseline_usable(server_name):
+                # Never carry unauthenticated legacy rows or hashes into a new signed baseline.
+                self._data["servers"][server_name] = {"tools": {}}
             server_entry: dict[str, Any] = self._data["servers"].setdefault(server_name, {"tools": {}})
             tool_entries: dict[str, Any] = server_entry.setdefault("tools", {})
             for tool in tools:
@@ -678,7 +718,7 @@ class PinStore:
 
     def check_drift(self, server_name: str, tools: list[ToolInfo]) -> list[DriftFinding]:
         """Compare current tool hashes against stored pins. Returns drift findings."""
-        if not self.baseline_trusted(server_name):
+        if not self.baseline_usable(server_name):
             return []
         servers: dict[str, Any] = self._data.get("servers", {})
         server_entry: dict[str, Any] = servers.get(server_name, {})
@@ -781,7 +821,7 @@ class PinStore:
 
     def tool_count(self, server_name: str) -> int:
         """Return number of pinned tools for a server."""
-        if not self.baseline_trusted(server_name):
+        if not self.baseline_usable(server_name):
             # A baseline that failed verification must not satisfy require.pins.
             return 0
         servers: dict[str, Any] = self._data.get("servers", {})
@@ -793,7 +833,7 @@ class PinStore:
         Restores all covered fields, including annotations. Legacy snapshots
         retain absent fields as None. Empty list if the server is not pinned.
         """
-        if not self.baseline_trusted(server_name):
+        if not self.baseline_usable(server_name):
             return []
         servers: dict[str, Any] = self._data.get("servers", {})
         pinned_tools: dict[str, Any] = servers.get(server_name, {}).get("tools", {})
@@ -818,7 +858,7 @@ class PinStore:
         self, server_name: str, *, warnings: list[ScanWarning] | None = None
     ) -> dict[str, dict[str, object]] | None:
         """Use complete v2 pins; warn and fall back when their snapshots are corrupt."""
-        if not self.baseline_trusted(server_name):
+        if not self.baseline_usable(server_name):
             return None
         if server_name not in self.pinned_servers() or self.legacy_tool_names(server_name):
             return None
@@ -860,7 +900,7 @@ class PinStore:
         existed (older baselines) — callers must treat None as "no provenance
         comparison possible" and skip silently.
         """
-        if not self.baseline_trusted(server_name):
+        if not self.baseline_usable(server_name):
             return None
         servers: dict[str, Any] = self._data.get("servers", {})
         snapshot = servers.get(server_name, {}).get("config_snapshot")
@@ -971,6 +1011,7 @@ class PinStore:
         self._verification.clear()
         self._verification_messages.clear()
         self._rollback_warnings.clear()
+        self._keys_trusted_cache = None
         if not self._path.exists():
             self._read_error = None
             return {}
@@ -1084,6 +1125,11 @@ class PinStore:
         if not details:
             details.append("tool metadata changed")
         return details
+
+
+def _resigned_by_rotation(entry: object) -> bool:
+    """Rotation/re-signing covers signed and v2 (including mixed) entries, never bare v1."""
+    return isinstance(entry, dict) and ("signature" in entry or not _is_legacy_entry(entry))
 
 
 def _is_legacy_entry(entry: dict[str, Any]) -> bool:
