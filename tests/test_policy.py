@@ -8,6 +8,7 @@ from pathlib import Path
 import anyio
 import pytest
 
+from mcp_audit import _core_cli as core_cli
 from mcp_audit import cli, scan_cli
 from mcp_audit.models import (
     ArtifactVerifyFinding,
@@ -647,7 +648,7 @@ servers:
         )
 
     monkeypatch.setattr(scan_cli, "run_scan", fake_run_scan)
-    monkeypatch.setattr(cli, "discover_all_configs", lambda clients, parse_errors=None: [])
+    monkeypatch.setattr(core_cli, "discover_all_configs", lambda clients, parse_errors=None: [])
 
     anyio.run(
         cli._run_scan,

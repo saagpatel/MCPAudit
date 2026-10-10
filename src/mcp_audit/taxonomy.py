@@ -42,6 +42,55 @@ ANNOTATION_CONTRADICTION = FindingMetadata(
 )
 
 
+PROTOCOL_FINDINGS: dict[str, FindingMetadata] = {
+    rule: FindingMetadata(rule, title, "low", description, remediation)
+    for rule, title, description, remediation in (
+        (
+            "MCP044",
+            "Legacy HTTP handshake",
+            "The HTTP server negotiated a handshake-era protocol.",
+            "Review legacy session behavior; upgrade the server if modern stateless operation is intended.",
+        ),
+        (
+            "MCP045",
+            "Session ID minted",
+            "An HTTP response included Mcp-Session-Id; its value was withheld.",
+            "Review session handling and avoid relying on session IDs as authorization.",
+        ),
+        (
+            "MCP046",
+            "Deprecated logging capability",
+            "A modern server advertised logging (SEP-2577).",
+            "Remove the deprecated logging capability from the modern server advertisement.",
+        ),
+        (
+            "MCP047",
+            "Required cache hints absent",
+            "A completed modern response omitted ttlMs or cacheScope (SEP-2549).",
+            "Return explicit ttlMs and cacheScope on every cacheable result.",
+        ),
+        (
+            "MCP048",
+            "Cache scope differs across pages",
+            "Pages of one modern listing used different cacheScope values (SEP-2549).",
+            "Return the same cacheScope on every page of the listing.",
+        ),
+        (
+            "MCP049",
+            "Invalid cache TTL",
+            "A server returned an invalid ttlMs; the SDK may reject or clamp it.",
+            "Return an integer ttlMs greater than or equal to zero; repeat the incomplete listing.",
+        ),
+        (
+            "MCP050",
+            "Tool order changed",
+            "Two completed tool listings changed order without changing membership.",
+            "Return tools in deterministic order to avoid unstable client caches.",
+        ),
+    )
+}
+
+
 PERMISSION_FINDINGS: dict[PermissionCategory, FindingMetadata] = {
     PermissionCategory.FILE_READ: FindingMetadata(
         rule_id="MCP001",
@@ -1080,6 +1129,26 @@ FINDING_COPY: dict[str, FindingCopy] = {
         "A static URI comparison; the icon is never requested.",
     ),
 }
+
+
+FINDING_COPY.update(
+    {
+        rule: FindingCopy(
+            f"Your server's protocol needs review: {metadata.title.lower()}.",
+            metadata.description,
+            (
+                "The connected server supplies protocol metadata.",
+                "The observed behavior can affect client compatibility or caching.",
+                "Review the specific evidence before relying on the server's protocol behavior.",
+            ),
+            metadata.remediation,
+            "About 5 minutes for an initial review",
+            "An observed protocol advisory; unavailable evidence produces no finding. "
+            "Low severity does not certify security or full protocol conformance.",
+        )
+        for rule, metadata in PROTOCOL_FINDINGS.items()
+    }
+)
 
 
 CONFIG_HEALTH_COPY = FindingCopy(

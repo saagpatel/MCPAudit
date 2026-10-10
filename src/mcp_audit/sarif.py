@@ -237,6 +237,23 @@ class SarifGenerator:
             ],
         }
         run = document["runs"][0]
+        from mcp_audit.taxonomy import PROTOCOL_FINDINGS
+
+        observed_protocol_rules = {
+            finding.rule_id for audit in report.audits for finding in audit.protocol_findings
+        }
+        run["tool"]["driver"]["rules"].extend(
+            {
+                "id": rule_id,
+                "name": metadata.title.replace(" ", ""),
+                "shortDescription": {"text": metadata.title},
+                "fullDescription": {"text": metadata.description},
+                "help": {"text": metadata.remediation},
+                "defaultConfiguration": {"level": "note"},
+            }
+            for rule_id, metadata in PROTOCOL_FINDINGS.items()
+            if rule_id in observed_protocol_rules
+        )
         for rule in run["tool"]["driver"]["rules"]:
             rule_id = rule["id"]
             rule["helpUri"] = finding_url(rule_id)
@@ -571,6 +588,31 @@ class SarifGenerator:
                 results.append(self._make_result(permission_finding, audit, alert_score=alert_score))
             for annotation_finding in audit.annotation_findings:
                 results.append(self._make_annotation_result(annotation_finding, audit))
+            for protocol in audit.protocol_findings:
+                results.append(
+                    {
+                        "ruleId": protocol.rule_id,
+                        "level": "note",
+                        "message": {"text": protocol.summary},
+                        "locations": [
+                            {
+                                "physicalLocation": {
+                                    "artifactLocation": {
+                                        "uri": _artifact_uri(audit.server.config_path),
+                                    }
+                                }
+                            }
+                        ],
+                        "partialFingerprints": {
+                            "mcpAuditStableId": _stable_fingerprint(
+                                protocol.rule_id,
+                                audit.server.name,
+                                protocol.target_name,
+                            )
+                        },
+                        "properties": protocol.model_dump(mode="json"),
+                    }
+                )
             for capability_finding in audit.capability_findings:
                 results.append(self._make_capability_result(capability_finding, audit))
             for inj in audit.injection_findings:
@@ -1240,7 +1282,7 @@ class SarifGenerator:
             f"schema drift status '{finding.status.value}'. "
             f"Suggested action: {finding.remediation or 'Review before refreshing pins.'}"
         )
-        if finding.kind:
+        if finding.kind or finding.requirement_level == "protocol_must":
             msg = f"{finding.summary} {msg}"
         return {
             "ruleId": _DRIFT_RULE_ID,
@@ -1265,6 +1307,11 @@ class SarifGenerator:
                 "severity": finding.severity,
                 "after_call": finding.after_call,
                 "surface": finding.surface,
+                **(
+                    {"requirement_level": finding.requirement_level}
+                    if finding.requirement_level != "heuristic"
+                    else {}
+                ),
                 "field_changes": [change.model_dump() for change in finding.field_changes],
                 "remediation": finding.remediation,
             },

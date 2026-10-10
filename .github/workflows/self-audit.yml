@@ -28,9 +28,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          python-version: "3.11"
+          enable-cache: false
+
+      - name: Build local wheel
+        id: build
+        run: |
+          set -euo pipefail
+          uv build --wheel --out-dir dist
+          wheel="$(python -c 'import pathlib, tomllib; version = tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"]; wheels = list(pathlib.Path("dist").glob(f"mcp_audits-{version}-*.whl")); assert len(wheels) == 1, f"expected one wheel for {version}, found {len(wheels)}"; print(wheels[0].resolve())')"
+          echo "wheel=${wheel}" >> "${GITHUB_OUTPUT}"
+
       - name: Audit MCP servers (local action)
         uses: ./
         with:
+          wheel: ${{ steps.build.outputs.wheel }}
           config: examples/configs/popular-public-servers.json
           args: --inject-check --ssrf-check --trifecta-check --shadow-check
           sarif: mcp-audit.sarif

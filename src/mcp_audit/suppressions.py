@@ -25,6 +25,7 @@ _AUDIT_GROUPS = (
     "integrity_findings",
     "package_verify_findings",
     "artifact_verify_findings",
+    "protocol_findings",
     "drift_findings",
 )
 _FLEET_GROUPS = ("fleet_trifecta_findings", "shadowing_findings")

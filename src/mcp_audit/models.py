@@ -964,12 +964,20 @@ class DriftFinding(ReferencedFinding):
     details: list[str] = Field(default_factory=list)
     remediation: str = ""
     source: Literal["pin", "session"] = "pin"
+    requirement_level: Literal["protocol_must", "heuristic"] = "heuristic"
     kind: Literal["IDENTITY_CONDITIONED_SURFACE"] | None = None
     severity: Literal["low", "medium", "high"] = "medium"
     after_call: int | None = None
     surface_type: CapabilityTarget = CapabilityTarget.TOOL
     surface: str | None = None  # tools, prompts, prompt_results, or resources for a session
     field_changes: list[SurfaceFieldChange] = Field(default_factory=list)
+
+    @model_serializer(mode="wrap")
+    def _serialize_requirement(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if self.requirement_level == "heuristic":
+            data.pop("requirement_level", None)
+        return data
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -1088,6 +1096,43 @@ class SchemaFinding(ReferencedFinding):
         # Per-finding detail keeps distinct schema problems as distinct summary actions.
         detail = f" ({self.evidence[0]})" if self.evidence else ""
         return FINDING_COPY[self.rule_id].how_to_fix + detail
+class CacheHintObservation(BaseModel):
+    """Wire hints for one page; presence flags distinguish absent from invalid."""
+
+    method: str
+    listing: int = Field(ge=0)
+    page: int = Field(ge=0)
+    ttl_ms: int | None = None
+    cache_scope: Literal["public", "private"] | None = None
+    ttl_ms_present: bool = False
+    cache_scope_present: bool = False
+
+
+class ProtocolObservation(BaseModel):
+    """SDK observations, without interpreting unavailable evidence as a violation."""
+
+    negotiated_version: str | None = None
+    era: Literal["modern", "legacy", "unknown"] = "unknown"
+    discover_supported: bool | None = None
+    server_info: dict[str, str] | None = None
+    session_id_minted: bool | None = None
+    extensions: list[str] = Field(default_factory=list)
+    cache_hints: list[CacheHintObservation] = Field(default_factory=list)
+    tools_order: list[list[str]] = Field(default_factory=list)
+    logging_advertised: bool | None = None
+
+
+class ProtocolFinding(ReferencedFinding):
+    """An advisory supported by observed protocol evidence only."""
+
+    rule_id: str
+    title: str
+    summary: str
+    remediation: str
+    severity: Literal["low"] = "low"
+    requirement_level: Literal["protocol_must", "protocol_should", "advisory"] = "advisory"
+    target_type: str = "server"
+    target_name: str = ""
 
 
 class ServerAudit(BaseModel):
@@ -1097,6 +1142,8 @@ class ServerAudit(BaseModel):
     presentation_id: str | None = None  # Compatibility field; review_summary now owns grouping identities.
     connection_status: str  # "connected", "partial", "failed", "timeout", "skipped"
     connection_error: str | None = None
+    protocol: ProtocolObservation | None = None
+    protocol_findings: list[ProtocolFinding] = Field(default_factory=list)
     tools: list[ToolInfo] = Field(default_factory=list)
     prompts: list[PromptInfo] = Field(default_factory=list)
     resources: list[ResourceInfo] = Field(default_factory=list)
@@ -1122,6 +1169,16 @@ class ServerAudit(BaseModel):
     artifact_verify_findings: list[ArtifactVerifyFinding] = Field(default_factory=list)
     llm_analysis: LLMAnalysisSummary | None = None
     canary: CanarySummary | None = None
+
+    @model_serializer(mode="wrap")
+    def _serialize_protocol(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        # Preserve legacy/config-only output when no protocol was observed.
+        if self.protocol is None:
+            data.pop("protocol", None)
+        if not self.protocol_findings:
+            data.pop("protocol_findings", None)
+        return data
 
 
 class ShadowingFinding(ReferencedFinding):

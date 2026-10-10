@@ -138,6 +138,70 @@
       "title": "ArtifactVerifySeverity",
       "type": "string"
     },
+    "CacheHintObservation": {
+      "description": "Wire hints for one page; presence flags distinguish absent from invalid.",
+      "properties": {
+        "method": {
+          "title": "Method",
+          "type": "string"
+        },
+        "listing": {
+          "minimum": 0,
+          "title": "Listing",
+          "type": "integer"
+        },
+        "page": {
+          "minimum": 0,
+          "title": "Page",
+          "type": "integer"
+        },
+        "ttl_ms": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ttl Ms"
+        },
+        "cache_scope": {
+          "anyOf": [
+            {
+              "enum": [
+                "public",
+                "private"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cache Scope"
+        },
+        "ttl_ms_present": {
+          "default": false,
+          "title": "Ttl Ms Present",
+          "type": "boolean"
+        },
+        "cache_scope_present": {
+          "default": false,
+          "title": "Cache Scope Present",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "method",
+        "listing",
+        "page"
+      ],
+      "title": "CacheHintObservation",
+      "type": "object"
+    },
     "CanarySummary": {
       "description": "Bounded runtime exercise coverage; complete does not mean trustworthy.",
       "properties": {
@@ -486,6 +550,15 @@
             "session"
           ],
           "title": "Source",
+          "type": "string"
+        },
+        "requirement_level": {
+          "default": "heuristic",
+          "enum": [
+            "protocol_must",
+            "heuristic"
+          ],
+          "title": "Requirement Level",
           "type": "string"
         },
         "kind": {
@@ -1332,6 +1405,165 @@
       "title": "PromptInfo",
       "type": "object"
     },
+    "ProtocolFinding": {
+      "description": "An advisory supported by observed protocol evidence only.",
+      "properties": {
+        "rule_id": {
+          "title": "Rule Id",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "summary": {
+          "title": "Summary",
+          "type": "string"
+        },
+        "remediation": {
+          "title": "Remediation",
+          "type": "string"
+        },
+        "severity": {
+          "const": "low",
+          "default": "low",
+          "title": "Severity",
+          "type": "string"
+        },
+        "requirement_level": {
+          "default": "advisory",
+          "enum": [
+            "protocol_must",
+            "protocol_should",
+            "advisory"
+          ],
+          "title": "Requirement Level",
+          "type": "string"
+        },
+        "target_type": {
+          "default": "server",
+          "title": "Target Type",
+          "type": "string"
+        },
+        "target_name": {
+          "default": "",
+          "title": "Target Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rule_id",
+        "title",
+        "summary",
+        "remediation"
+      ],
+      "title": "ProtocolFinding",
+      "type": "object"
+    },
+    "ProtocolObservation": {
+      "description": "SDK observations, without interpreting unavailable evidence as a violation.",
+      "properties": {
+        "negotiated_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Negotiated Version"
+        },
+        "era": {
+          "default": "unknown",
+          "enum": [
+            "modern",
+            "legacy",
+            "unknown"
+          ],
+          "title": "Era",
+          "type": "string"
+        },
+        "discover_supported": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Discover Supported"
+        },
+        "server_info": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Server Info"
+        },
+        "session_id_minted": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id Minted"
+        },
+        "extensions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Extensions",
+          "type": "array"
+        },
+        "cache_hints": {
+          "items": {
+            "$ref": "#/$defs/CacheHintObservation"
+          },
+          "title": "Cache Hints",
+          "type": "array"
+        },
+        "tools_order": {
+          "items": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": "Tools Order",
+          "type": "array"
+        },
+        "logging_advertised": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Logging Advertised"
+        }
+      },
+      "title": "ProtocolObservation",
+      "type": "object"
+    },
     "ProvenanceFinding": {
       "description": "A launch-config / provenance change detected against the pin baseline.\n\nFires when a server's LAUNCH configuration changed since it was pinned \u2014 a\nsupply-chain signal independent of the tool schemas:\n  COMMAND      \u2014 the command/binary or transport changed (HIGH).\n  ARGS         \u2014 the launch arguments changed: version float, package swap,\n                 or a new flag.  MEDIUM, or HIGH if a known-dangerous flag was\n                 gained.\n  URL          \u2014 the HTTP endpoint/URL changed (HIGH).\n  CREDENTIALS  \u2014 the declared env/header KEY-NAME set changed (MEDIUM).\n\nPure delta vs the pinned config snapshot \u2014 an unchanged launch config produces\nnothing.  Credential surface is compared by KEY NAME only; values are never\ncaptured, stored, or displayed.  Requires a pin baseline that includes a\nconfig snapshot (``--provenance-check`` implies a pin comparison; baselines\npinned before this feature are skipped until re-pinned).",
       "properties": {
@@ -1862,6 +2094,24 @@
           ],
           "default": null,
           "title": "Connection Error"
+        },
+        "protocol": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProtocolObservation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "protocol_findings": {
+          "items": {
+            "$ref": "#/$defs/ProtocolFinding"
+          },
+          "title": "Protocol Findings",
+          "type": "array"
         },
         "tools": {
           "items": {
