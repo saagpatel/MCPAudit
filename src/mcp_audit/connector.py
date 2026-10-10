@@ -15,9 +15,12 @@ from pathlib import PurePath
 from typing import TextIO, TypeVar, cast
 
 import anyio
+import httpx2
 from mcp import Client, StdioServerParameters
 from mcp.client.sse import sse_client
 from mcp.client.stdio import stdio_client
+from mcp.client.streamable_http import streamable_http_client
+from mcp.shared._httpx_utils import create_mcp_http_client
 from mcp.types import Implementation, ListPromptsResult, ListResourcesResult, ListRootsResult, ListToolsResult
 from mcp.types import Prompt as SdkPrompt
 from mcp.types import Resource as SdkResource
@@ -34,6 +37,8 @@ from mcp_audit.models import (
     PermissionFinding,
     PromptArgumentInfo,
     PromptInfo,
+    ProtocolFinding,
+    ProtocolObservation,
     ResourceInfo,
     ScanWarning,
     ServerAudit,
@@ -42,6 +47,7 @@ from mcp_audit.models import (
     ToolInfo,
     TransportType,
 )
+from mcp_audit.protocol import ProtocolCapture, cache_hint_failure, observe_session, observe_transport
 from mcp_audit.redaction import redact_data, redact_text
 from mcp_audit.rules.result_injection import RESULT_SCAN_LIMIT
 from mcp_audit.terminal_text import TerminalSafeLogFilter, strip_controls
@@ -140,6 +146,11 @@ class _SseLogFilter(logging.Filter):
         # Transport DEBUG records include raw endpoints, headers and protocol payloads.
         if record.levelno <= logging.DEBUG:
             return False
+        if record.name == "mcp.client.streamable_http" and record.getMessage().startswith(
+            "Received session ID:"
+        ):
+            record.msg = "Received session ID: <redacted>"
+            record.args = ()
         record.msg = _redact_sse_log_text(record.getMessage())
         record.args = ()
         if record.exc_info is not None:
@@ -275,16 +286,26 @@ def _listing_failure_message(label: str, exc: Exception) -> str:
 
 
 async def _list_pages(
-    fetch: Callable[..., Awaitable[_Page]], items: Callable[[_Page], list[_Item]]
+    fetch: Callable[..., Awaitable[_Page]],
+    items: Callable[[_Page], list[_Item]],
+    *,
+    capture: ProtocolCapture | None = None,
+    method: str = "",
 ) -> list[_Item]:
     """Admit a surface only after its complete, bounded pagination succeeds."""
     collected: list[_Item] = []
+    pages: list[_Page] = []
+    if capture is not None:
+        capture.wire_hints.pop(method, None)
     cursor = None
     for _ in range(20):
         page = await fetch(cursor=cursor, cache_mode="bypass")
         collected.extend(items(page))
+        pages.append(page)
         cursor = page.next_cursor
         if not cursor:
+            if capture is not None:
+                capture.pages(method, list(pages))
             return collected
     raise _ListingPageLimit("Listing exceeds the 20-page limit.")
 
@@ -296,6 +317,8 @@ class _ServerCapabilities:
     resources: list[ResourceInfo]
     surface: dict[str, dict[str, object]] = field(default_factory=dict)
     listing_warnings: list[str] = field(default_factory=list)
+    protocol: ProtocolObservation | None = None
+    protocol_findings: list[ProtocolFinding] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -400,6 +423,7 @@ class ServerConnector:
             )
             probe = _CanaryProbe(audit, canary_calls, safe_tools, baseline=canary_baseline)
         started = time.monotonic()
+        identity_era: str | None = None
         try:
             with anyio.move_on_after(self.timeout) as cancel_scope:
                 if config.transport == TransportType.STDIO:
@@ -446,6 +470,7 @@ class ServerConnector:
                         TransportType.SSE: self._connect_sse,
                     }[config.transport]
                     alternate = await connect(config, identity_probe)
+                    identity_era = alternate.protocol.era if alternate.protocol is not None else None
                     # Compare initial listings: exercise-induced changes are not
                     # evidence of identity conditioning. Failed listings are unknown.
                     findings = detect_session_drift(config.name, probe.initial_surface, alternate.surface, 0)
@@ -471,6 +496,20 @@ class ServerConnector:
                 return audit
 
             tools = audit.tools if probe else capabilities.tools
+            audit.protocol = capabilities.protocol
+            audit.protocol_findings = capabilities.protocol_findings
+            if audit.protocol is not None:
+                capture = ProtocolCapture(audit.protocol, audit.protocol_findings)
+                capture.session_rules(config.transport)
+                if audit.protocol.era == "modern":
+                    for finding in audit.drift_findings:
+                        if (
+                            finding.source == "session"
+                            and finding.surface == "tools"
+                            and (finding.kind != "IDENTITY_CONDITIONED_SURFACE" or identity_era == "modern")
+                        ):
+                            finding.requirement_level = "protocol_must"
+                            finding.summary += " Tool surface stability is required by SEP-2567."
             logger.debug("Connected to %s, found %d tools", config.name, len(tools))
             listing_incomplete = bool(capabilities.listing_warnings) or bool(
                 audit.canary
@@ -542,12 +581,13 @@ class ServerConnector:
             env=None,
         )
         with _capture_stderr(config.name) as errlog:
+            capture = ProtocolCapture(ProtocolObservation())
             async with Client(
-                stdio_client(params, errlog=errlog),
+                observe_transport(stdio_client(params, errlog=errlog), capture),
                 client_info=probe.client_info if probe else _CLIENT_INFO,
                 list_roots_callback=_canary_roots if probe and probe.identity_only else None,
             ) as client:
-                return await self._inspect_session(client, config.name, probe)
+                return await self._inspect_session(client, config.name, probe, capture)
 
     async def _connect_http(
         self, config: ServerConfig, probe: _CanaryProbe | None = None
@@ -557,13 +597,25 @@ class ServerConnector:
 
         for name in _SSE_LOGGER_NAMES:
             logging.getLogger(name).addFilter(_SSE_LOG_FILTER)
-        # mcp 2.1.1 maps Client(str) to streamable_http_client.
-        async with Client(
-            config.url,
-            client_info=probe.client_info if probe else _CLIENT_INFO,
-            list_roots_callback=_canary_roots if probe and probe.identity_only else None,
-        ) as client:
-            return await self._inspect_session(client, config.name, probe)
+        minted: bool | None = None
+
+        async def observe_response(response: httpx2.Response) -> None:
+            nonlocal minted
+            # Never retain or render the header's credential-bearing value.
+            minted = minted is True or "mcp-session-id" in response.headers
+
+        async with create_mcp_http_client() as http_client:
+            http_client.event_hooks["response"].append(observe_response)
+            capture = ProtocolCapture(ProtocolObservation())
+            async with Client(
+                observe_transport(streamable_http_client(config.url, http_client=http_client), capture),
+                client_info=probe.client_info if probe else _CLIENT_INFO,
+                list_roots_callback=_canary_roots if probe and probe.identity_only else None,
+            ) as client:
+                result = await self._inspect_session(client, config.name, probe, capture)
+                if result.protocol is not None:
+                    result.protocol.session_id_minted = minted
+                return result
 
     async def _connect_sse(
         self, config: ServerConfig, probe: _CanaryProbe | None = None
@@ -576,18 +628,35 @@ class ServerConnector:
         for name in _SSE_LOGGER_NAMES:
             logging.getLogger(name).addFilter(_SSE_LOG_FILTER)
         # Client(str) is Streamable HTTP; legacy SSE must pass sse_client as Transport.
+        capture = ProtocolCapture(ProtocolObservation())
         async with Client(
-            sse_client(config.url),
+            observe_transport(sse_client(config.url), capture),
             client_info=probe.client_info if probe else _CLIENT_INFO,
             list_roots_callback=_canary_roots if probe and probe.identity_only else None,
         ) as client:
-            return await self._inspect_session(client, config.name, probe)
+            return await self._inspect_session(client, config.name, probe, capture)
 
     async def _inspect_session(
-        self, session: Client, server_name: str, probe: _CanaryProbe | None
+        self,
+        session: Client,
+        server_name: str,
+        probe: _CanaryProbe | None,
+        capture: ProtocolCapture | None = None,
     ) -> _ServerCapabilities:
+        if capture is None:
+            capture = ProtocolCapture(ProtocolObservation())
+        capture.observation = observe_session(session)
+        if capture.observation.discover_supported is None and capture.discover_unsupported:
+            capture.observation.discover_supported = False
+        discover = session.session.discover_result
+        if discover is not None:
+            capture.pages("server/discover", [discover])
         capabilities = await self._list_capabilities(
-            session, server_name, probe, probe.initial_surface if probe and probe.identity_only else None
+            session,
+            server_name,
+            probe,
+            probe.initial_surface if probe and probe.identity_only else None,
+            capture=capture,
         )
         if probe is None:
             return capabilities
@@ -616,7 +685,9 @@ class ServerConnector:
             probe.audit.drift_findings.extend(pinned_drift)
         for call in range(1, probe.calls + 1):
             if "tools" not in capabilities.surface:
-                capabilities = await self._list_capabilities(session, server_name, probe, previous, call - 1)
+                capabilities = await self._list_capabilities(
+                    session, server_name, probe, previous, call - 1, capture=capture
+                )
                 probe.audit.drift_findings.extend(
                     detect_session_drift(server_name, previous, capabilities.surface, call - 1)
                 )
@@ -641,7 +712,9 @@ class ServerConnector:
                 summary.warnings.append(
                     f"Tool call {call} returned an error result; exercise may be ineffective."
                 )
-            capabilities = await self._list_capabilities(session, server_name, probe, previous, call)
+            capabilities = await self._list_capabilities(
+                session, server_name, probe, previous, call, capture=capture
+            )
             probe.audit.drift_findings.extend(
                 detect_session_drift(server_name, previous, capabilities.surface, call)
             )
@@ -657,6 +730,8 @@ class ServerConnector:
         probe: _CanaryProbe | None = None,
         previous: dict[str, dict[str, object]] | None = None,
         after_call: int = 0,
+        *,
+        capture: ProtocolCapture | None = None,
     ) -> _ServerCapabilities:
         tools: list[SdkTool] = []
         prompts: list[PromptInfo] = []
@@ -673,13 +748,18 @@ class ServerConnector:
         list_prompts = True
         list_resources = True
         try:
-            tools = await _list_pages(session.list_tools, lambda page: page.tools)
+            tools = await _list_pages(
+                session.list_tools, lambda page: page.tools, capture=capture, method="tools/list"
+            )
             if probe:
                 from mcp_audit.pinning import canonical_tool_surface
 
                 surface["tools"] = {t.name: canonical_tool_surface(self._convert_tool(t)) for t in tools}
         except Exception as exc:
-            if not probe and not isinstance(exc, _ListingPageLimit):
+            ttl_error = cache_hint_failure(exc)
+            if capture is not None:
+                capture.failed("tools/list", exc)
+            if not probe and not isinstance(exc, _ListingPageLimit) and not ttl_error:
                 raise
             message = _listing_failure_message("Tool", exc)
             listing_warnings.append(message)
@@ -688,7 +768,9 @@ class ServerConnector:
 
         if list_prompts:
             try:
-                prompt_items = await _list_pages(session.list_prompts, lambda page: page.prompts)
+                prompt_items = await _list_pages(
+                    session.list_prompts, lambda page: page.prompts, capture=capture, method="prompts/list"
+                )
                 prompts = [self._convert_prompt(prompt) for prompt in prompt_items]
                 if probe:
                     if "prompts" in probe.listing_failures:
@@ -727,11 +809,19 @@ class ServerConnector:
                         body = "\n".join(_result_text(result.model_dump(mode="json", by_alias=True)))
                         self._scan_runtime_text(probe, prompt.name, body, after_call, CapabilityTarget.PROMPT)
             except Exception as exc:
+                ttl_error = cache_hint_failure(exc)
+                if capture is not None:
+                    capture.failed("prompts/list", exc)
                 if probe:
                     surface.pop("prompts", None)
                     surface.pop("prompt_results", None)
                 message = _listing_failure_message("Prompt", exc)
-                if prompts_advertised or "prompts" in (previous or {}) or isinstance(exc, _ListingPageLimit):
+                if (
+                    prompts_advertised
+                    or "prompts" in (previous or {})
+                    or isinstance(exc, _ListingPageLimit)
+                    or ttl_error
+                ):
                     listing_warnings.append(message)
                 if probe:
                     probe.listing_failures["prompts"] = message
@@ -746,7 +836,12 @@ class ServerConnector:
 
         if list_resources:
             try:
-                resource_items = await _list_pages(session.list_resources, lambda page: page.resources)
+                resource_items = await _list_pages(
+                    session.list_resources,
+                    lambda page: page.resources,
+                    capture=capture,
+                    method="resources/list",
+                )
                 resources = [self._convert_resource(resource) for resource in resource_items]
                 if probe:
                     if "resources" in probe.listing_failures:
@@ -755,11 +850,15 @@ class ServerConnector:
                         str(r.uri): r.model_dump(mode="json", by_alias=True) for r in resource_items
                     }
             except Exception as exc:
+                ttl_error = cache_hint_failure(exc)
+                if capture is not None:
+                    capture.failed("resources/list", exc)
                 message = _listing_failure_message("Resource", exc)
                 if (
                     resources_advertised
                     or "resources" in (previous or {})
                     or isinstance(exc, _ListingPageLimit)
+                    or ttl_error
                 ):
                     listing_warnings.append(message)
                 if probe:
@@ -776,6 +875,8 @@ class ServerConnector:
                     )
 
         tool_infos = [self._convert_tool(t) for t in tools]
+        if capture is not None:
+            capture.wire_rules()
         if probe and not probe.identity_only:
             if "tools" in surface:
                 probe.audit.tools = tool_infos
@@ -789,6 +890,8 @@ class ServerConnector:
             resources=resources,
             surface=surface,
             listing_warnings=listing_warnings,
+            protocol=capture.observation if capture is not None else None,
+            protocol_findings=capture.findings if capture is not None else [],
         )
 
     @staticmethod

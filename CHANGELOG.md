@@ -95,6 +95,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   including either `--show-host` setting. Retain distinct policy violations and targets
   while grouping policy advice per affected server identity.
   Improve mobile table scrolling, muted-text contrast and dark-mode colors.
+- Record connected protocol versions, discover evidence, extension identifiers,
+  session-ID presence (never its value), raw cache hints and complete tool order.
+  Add low protocol advisories for legacy HTTP, minted sessions, deprecated logging,
+  missing/inconsistent cache hints, invalid TTLs and observed order changes.
+  Label modern tool-surface session drift as a SEP-2567 protocol requirement;
+  keep unavailable evidence separate from findings and retain partial coverage
+  when the SDK rejects cache metadata.
 
 ### Fixed
 

@@ -184,7 +184,9 @@ def payload(result: dict[str, Any]) -> Any:
 
 
 def audit_contract(audit: dict[str, Any], status: str = "connected") -> None:
-    assert set(audit) == AUDIT_FIELDS, sorted(set(audit) ^ AUDIT_FIELDS)
+    # P3-2: `protocol` is additive and present only when an SDK session was negotiated.
+    expected = AUDIT_FIELDS | ({"protocol"} if status == "connected" else set())
+    assert set(audit) == expected, sorted(set(audit) ^ expected)
     assert set(audit["server"]) == SERVER_FIELDS
     assert audit["server"]["name"] == "Target"
     assert audit["connection_status"] == status
