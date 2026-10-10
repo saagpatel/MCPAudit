@@ -53,6 +53,7 @@ def test_direct_security_floors_exclude_known_vulnerable_versions() -> None:
 
     assert "cryptography>=50.0.0,<51.0" in requirements
     assert "click>=8.3.3,<9.0" in requirements
+    assert "anyio>=4.14.2" in requirements
 
 
 def test_clusterfuzzlite_uses_oss_fuzz_python_builder() -> None:

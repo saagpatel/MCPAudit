@@ -15,7 +15,7 @@ git diff --check
 uv lock --check
 uv run python scripts/verify_release.py
 candidate_commit="$(git rev-parse HEAD)"
-uv build --clear
+uv build --clear --no-create-gitignore
 uv run python scripts/verify_release.py \
   --commit "$candidate_commit" \
   --dist-dir dist
@@ -42,10 +42,20 @@ being uploaded manually.
   `mcp-audit`, `mcp-audits`, and `proof-before-action` commands are present.
 - Wheel and sdist metadata require `mcp>=2.2.0,<3.0`; their contents contain no
   private paths, development caches, or generated local evidence.
+- Wheel and sdist metadata retain the `anyio>=4.14.2` security floor.
 - Record SHA-256 hashes for the exact wheel and sdist being considered for
   publication.
 
 ## Exact-Candidate Security Readback
+
+The advisory workflow and release gate query every public PyPI package/version
+in the lock, including extras. OSV request size, response size, query count, and
+request timeout are bounded. An unavailable or malformed feed exits 2 and fails
+the gate; an advisory exits 1. No exception or suppression list is applied.
+Saved-response fixture checks are offline tests, not current advisory evidence.
+When exact build constraints are present, their package pins are included; missing
+constraints are explicitly reported as unavailable build-input coverage. Toolchain
+and image pins require separate verified upstream checksum evidence before release.
 
 - Record the exact candidate commit and re-query open Dependabot, code-scanning,
   and secret-scanning alerts against the live repository.
@@ -106,30 +116,46 @@ publication.
 
 1. Obtain separate publication approval naming the exact 40-character merge
    commit and `vX.Y.Z` tag. Confirm the `pypi` environment requires a named
-   maintainer reviewer, permits solo-maintainer approval, and disables
-   administrator bypass; otherwise stop with `NO-GO`. This is not independent
+   repository-owner reviewer, disables administrator bypass, and has exactly one
+   custom deployment policy for the `main` branch (no tag or wildcard policies);
+   otherwise stop with `NO-GO`. Solo-maintainer approval remains permitted;
+   stronger self-review protection is accepted. This is not independent
    review, so the publication approval must explicitly accept that limitation.
 2. Create the tag only after that approval. Tag creation does not publish.
 3. From the `main` branch, manually dispatch `Publish to PyPI` with the exact
-   tag and commit. A tag or feature-branch dispatch fails before the build. A
+   tag and commit. Use the default `dry_run: true` first; it runs the build and
+   isolated consumer smoke without starting the OIDC publication job. A tag or
+   feature-branch dispatch fails before the build. A
    typed confirmation is not authorization. The workflow reads back the live
    environment protections and rechecks the tag/commit/main binding,
    release-state gate, lockfile, tests, style, types, package metadata, and
    clean build provenance.
-4. Review the build job's wheel and sdist SHA-256 values before approving the
-   protected `publish` job. That job downloads the exact retained artifact,
-   verifies its hashes, and only then requests PyPI OIDC authority.
+4. Review the build job's `release-manifest.json` and its SHA-256 before approval.
+   It binds exactly two version-derived filenames and digests to both the source
+   commit and workflow/control SHA. Dispatch with `dry_run: false` only for the
+   separately approved publication. The protected `publish` job independently
+   rechecks the file set and hashes. OIDC capability is granted to the entire job;
+   its earlier steps already possess that capability before hash verification.
+   Consumer install smokes run in a separate read-only job using disposable
+   copies, with no write authority over the retained publication candidates.
 5. Confirm the PyPI release JSON and simple index include the new version.
-6. Create or update the matching GitHub Release notes.
+6. Create or update the matching GitHub Release notes and attach the approved
+   `release-manifest.json` as a durable asset. Retain its independently reviewed
+   SHA-256 for the Registry dispatch; the short-lived workflow artifact alone is
+   not a durable approval record.
 7. Confirm the existing protected `pypi` release environment still has required
    reviewers with administrator bypass disabled. The Registry workflow reuses
    this gate for a separate post-PyPI approval rather than creating a second,
    potentially unprotected environment on first use.
 8. From `main`, manually dispatch `Publish to MCP Registry` with the same exact
-   tag and commit only after PyPI and GitHub Release readback. Its validation job
+   tag, commit, and approved manifest SHA-256 only after PyPI and GitHub Release readback. Its validation job
    proves the PyPI prerequisite, release binding, protected environment, pinned
-   publisher hash, and descriptor validity before the environment-bound OIDC
+   publisher hash, exact descriptor tuple, and non-yanked PyPI filenames and
+   SHA-256 values before the environment-bound OIDC
    job can run.
+   The publish job rechecks the shared environment policy, approved PyPI manifest,
+   and exact descriptor immediately before login, then uses the same tuple
+   assertion for the official Registry readbacks.
 9. Confirm both the exact-version and `latest` official Registry endpoints name
    `io.github.saagpatel/mcp-audit` at the released version with the exact PyPI package
    tuple. Registry metadata does not prove artifact hashes, installation,
