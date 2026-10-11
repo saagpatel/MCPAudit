@@ -6,7 +6,30 @@ import pytest
 from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
 
 from mcp_audit.models import ToolInfo
-from mcp_audit.schema_rules import scan_tool_schema
+from mcp_audit.schema_rules import _schema_children, scan_tool_schema
+
+
+@pytest.mark.parametrize("include_definitions", [False, True])
+def test_schema_children_preserve_keyword_and_mapping_order(include_definitions: bool) -> None:
+    schema = {
+        "items": [{"title": "item"}, False],
+        "allOf": [{"title": "composition"}, None],
+        "$defs": {"one": {"title": "definition"}},
+        "properties": {"b": {"title": "first"}, "a": {"title": "second"}},
+        "additionalProperties": {"title": "additional"},
+        "examples": [{"title": "instance payload"}],
+        "type": "object",
+    }
+    children = list(_schema_children(schema, include_definitions=include_definitions))
+    titles = [child["title"] for child in children]
+    assert titles == [
+        "first",
+        "second",
+        *(["definition"] if include_definitions else []),
+        "composition",
+        "item",
+        "additional",
+    ]
 
 
 @pytest.mark.parametrize(

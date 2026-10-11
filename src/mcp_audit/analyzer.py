@@ -4,7 +4,7 @@ import re
 from functools import cache
 from urllib.parse import urlparse
 
-from mcp_audit.agent_text import agent_visible_text
+from mcp_audit.agent_text import AgentText, agent_visible_text
 from mcp_audit.models import (
     AnnotationFinding,
     CapabilityFinding,
@@ -58,16 +58,19 @@ def _pattern_regex(pattern: str) -> re.Pattern[str]:
 
 
 @cache
-def _category_regex(
-    category: PermissionCategory,
-) -> tuple[re.Pattern[str], dict[str, set[str]]]:
-    patterns = [pattern for group in PERMISSION_PATTERNS[category].values() for pattern in group]
+def _keyword_regex() -> tuple[re.Pattern[str], dict[str, list[tuple[PermissionCategory, str]]]]:
+    patterns = {pattern for category in PERMISSION_PATTERNS for pattern in _category_rules(category)}
     alternatives = "|".join(re.escape(pattern) for pattern in sorted(set(patterns), key=len, reverse=True))
     # Lookahead retains overlaps such as working_directory / directory. Expand
     # longest matches to retain same-start hits such as read_file / read too.
     regex = re.compile(rf"(?=(?<![a-z])({alternatives})(?![a-z]))")
     contained = {
-        match: {pattern for pattern in patterns if _pattern_regex(pattern).search(match)}
+        match: [
+            (category, pattern)
+            for category in PERMISSION_PATTERNS
+            for pattern in _category_rules(category)
+            if _pattern_regex(pattern).search(match)
+        ]
         for match in patterns
     }
     return regex, contained
@@ -133,12 +136,17 @@ class PermissionAnalyzer:
     """Infers permission categories for MCP tools via annotations and keyword patterns."""
 
     def analyze_server(
-        self, tools: list[ToolInfo], *, incomplete_reasons: list[str] | None = None
+        self,
+        tools: list[ToolInfo],
+        *,
+        incomplete_reasons: list[str] | None = None,
+        agent_texts: list[AgentText] | None = None,
     ) -> list[PermissionFinding]:
         """Return all permission findings across all tools on a server."""
         findings: list[PermissionFinding] = []
-        for tool in tools:
-            findings.extend(self.analyze_tool(tool, incomplete_reasons=incomplete_reasons))
+        texts = agent_texts if agent_texts is not None else map(agent_visible_text, tools)
+        for tool, text in zip(tools, texts, strict=True):
+            findings.extend(self.analyze_tool(tool, incomplete_reasons=incomplete_reasons, agent_text=text))
         return findings
 
     def analyze_capabilities(
@@ -226,7 +234,11 @@ class PermissionAnalyzer:
         return findings
 
     def analyze_tool(
-        self, tool: ToolInfo, *, incomplete_reasons: list[str] | None = None
+        self,
+        tool: ToolInfo,
+        *,
+        incomplete_reasons: list[str] | None = None,
+        agent_text: AgentText | None = None,
     ) -> list[PermissionFinding]:
         """Return findings and optionally collect sanitized schema coverage reasons."""
         annotation_findings = self._annotation_findings(tool)
@@ -234,17 +246,26 @@ class PermissionAnalyzer:
 
         keyword_findings = [
             f
-            for f in self._keyword_findings(tool, incomplete_reasons=incomplete_reasons)
+            for f in self._keyword_findings(
+                tool, incomplete_reasons=incomplete_reasons, agent_text=agent_text
+            )
             if f.category not in annotation_categories
         ]
 
         return annotation_findings + keyword_findings
 
     def analyze_tool_keywords(
-        self, tool: ToolInfo, *, incomplete_reasons: list[str] | None = None, contextual: bool = True
+        self,
+        tool: ToolInfo,
+        *,
+        incomplete_reasons: list[str] | None = None,
+        contextual: bool = True,
+        agent_text: AgentText | None = None,
     ) -> list[PermissionFinding]:
         """Infer capabilities without allowing server annotations to suppress hints."""
-        return self._keyword_findings(tool, incomplete_reasons=incomplete_reasons, contextual=contextual)
+        return self._keyword_findings(
+            tool, incomplete_reasons=incomplete_reasons, contextual=contextual, agent_text=agent_text
+        )
 
     def _annotation_findings(self, tool: ToolInfo) -> list[PermissionFinding]:
         """Produce capability findings only from explicit positive declarations."""
@@ -309,13 +330,15 @@ class PermissionAnalyzer:
             )
         return findings
 
-    def analyze_annotation_contradictions(self, tool: ToolInfo) -> list[AnnotationFinding]:
+    def analyze_annotation_contradictions(
+        self, tool: ToolInfo, *, agent_text: AgentText | None = None
+    ) -> list[AnnotationFinding]:
         """Compare explicit served hints with existing keyword capability evidence."""
         ann = tool.annotations
         if ann is None:
             return []
         contradictions: list[AnnotationFinding] = []
-        for finding in self.analyze_tool_keywords(tool):
+        for finding in self.analyze_tool_keywords(tool, agent_text=agent_text):
             if finding.confidence not in {Confidence.MEDIUM, Confidence.HIGH}:
                 continue
             hint: str | None = None
@@ -352,10 +375,15 @@ class PermissionAnalyzer:
         return contradictions
 
     def _keyword_findings(
-        self, tool: ToolInfo, *, incomplete_reasons: list[str] | None = None, contextual: bool = True
+        self,
+        tool: ToolInfo,
+        *,
+        incomplete_reasons: list[str] | None = None,
+        contextual: bool = True,
+        agent_text: AgentText | None = None,
     ) -> list[PermissionFinding]:
         """Score bounded agent-visible text; added metadata has weight one."""
-        fields = agent_visible_text(tool).fields
+        fields = (agent_text if agent_text is not None else agent_visible_text(tool)).fields
         weights = {"/name": 3, "/description": 2}
         sources = [(field.text, weights.get(field.path, 1)) for field in fields]
         paths = [field.path for field in fields]
@@ -424,18 +452,19 @@ class PermissionAnalyzer:
             PermissionCategory.FILE_WRITE: write_context,
             PermissionCategory.EXFILTRATION: transfer_context,
         }
+        regex, contained = _keyword_regex()
+        category_hits: dict[PermissionCategory, dict[str, list[tuple[int, int]]]] = {}
+        for index, (text, weight) in enumerate(normalized):
+            hits: set[tuple[PermissionCategory, str]] = set()
+            for match in regex.finditer(text):
+                hits.update(contained[match.group(1)])
+            for category, pattern in hits:
+                category_hits.setdefault(category, {}).setdefault(pattern, []).append((index, weight))
 
         for category in PERMISSION_PATTERNS:
             total_score = 0
             evidence: list[str] = []
-            regex, contained = _category_regex(category)
-            hit_sources: dict[str, list[tuple[int, int]]] = {}
-            for index, (text, weight) in enumerate(normalized):
-                hits: set[str] = set()
-                for match in regex.finditer(text):
-                    hits.update(contained[match.group(1)])
-                for pattern in hits:
-                    hit_sources.setdefault(pattern, []).append((index, weight))
+            hit_sources = category_hits.get(category, {})
             matched_paths: list[str] = []
 
             rules = _category_rules(category)

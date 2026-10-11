@@ -39,6 +39,12 @@ _SINGLE_SCHEMA_KEYWORDS = (
     "not",
     "then",
 )
+_CHILD_KEYWORD_ORDER = {
+    key: index
+    for index, key in enumerate(
+        (*_SCHEMA_MAP_KEYWORDS, "$defs", "definitions", *_SCHEMA_ARRAY_KEYWORDS, *_SINGLE_SCHEMA_KEYWORDS)
+    )
+}
 
 
 def _local_ref(
@@ -166,21 +172,19 @@ def _value_slots(node: dict[str, object]) -> Iterator[tuple[str | None, object]]
 
 
 def _schema_children(node: dict[str, object], *, include_definitions: bool) -> Iterator[dict[str, object]]:
-    maps = _SCHEMA_MAP_KEYWORDS + (("$defs", "definitions") if include_definitions else ())
-    for key in maps:
-        value = node.get(key)
-        if isinstance(value, dict):
-            yield from (child for child in value.values() if isinstance(child, dict))
-    for key in _SCHEMA_ARRAY_KEYWORDS:
-        value = node.get(key)
-        if isinstance(value, list):
-            yield from (child for child in value if isinstance(child, dict))
-    for key in _SINGLE_SCHEMA_KEYWORDS:
-        value = node.get(key)
-        if isinstance(value, dict):
+    # Visit only present schema keywords, in the same budget-sensitive order.
+    for key in sorted(node.keys() & _CHILD_KEYWORD_ORDER.keys(), key=_CHILD_KEYWORD_ORDER.__getitem__):
+        value = node[key]
+        if key in (*_SCHEMA_MAP_KEYWORDS, "$defs", "definitions"):
+            if key in {"$defs", "definitions"} and not include_definitions:
+                continue
+            if isinstance(value, dict):
+                yield from (child for child in value.values() if isinstance(child, dict))
+        elif key in _SCHEMA_ARRAY_KEYWORDS or (key == "items" and isinstance(value, list)):
+            if isinstance(value, list):
+                yield from (child for child in value if isinstance(child, dict))
+        elif isinstance(value, dict):
             yield value
-        elif key == "items" and isinstance(value, list):
-            yield from (child for child in value if isinstance(child, dict))
 
 
 def _walk_nodes(

@@ -9,6 +9,7 @@ cli._run_scan_core compatibility shim.
 from __future__ import annotations
 
 import io
+import sys
 from functools import partial
 from pathlib import Path
 
@@ -16,8 +17,10 @@ import anyio
 import pytest
 from rich.console import Console
 
+from mcp_audit import analyzer as analyzer_module
 from mcp_audit import engine
-from mcp_audit.agent_text import agent_visible_text
+from mcp_audit import injection as injection_module
+from mcp_audit.agent_text import AgentText, agent_visible_text
 from mcp_audit.discovery import ConfigParseError
 from mcp_audit.engine import ScanOptions, run_scan
 from mcp_audit.models import (
@@ -35,6 +38,37 @@ from mcp_audit.models import (
     ToolInfo,
 )
 from tests.conftest import make_server_config
+
+
+@pytest.mark.anyio
+async def test_fixture_tool_text_extracted_once_and_reused_by_detectors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[ToolInfo] = []
+
+    def counted(tool: ToolInfo) -> AgentText:
+        calls.append(tool)
+        return agent_visible_text(tool)
+
+    for module in (engine, analyzer_module, injection_module):
+        monkeypatch.setattr(module, "agent_visible_text", counted)
+    fixture = Path(__file__).parent / "fixtures" / "bounded_surface_server.py"
+    server = make_server_config(command=sys.executable, args=[str(fixture), "tools", "100000"])
+    report = await run_scan(ScanOptions(config_only=True, inject_check=True), servers=[server])
+    [audit] = report.audits
+    assert audit.connection_status == "partial"
+    assert calls == audit.tools
+    assert len(calls) == 1
+    assert any(w.code == "agent_text_incomplete" for w in report.warnings)
+    text = agent_visible_text(audit.tools[0])
+    analyzer = analyzer_module.PermissionAnalyzer()
+    detector = injection_module.InjectionDetector()
+    assert audit.permissions == analyzer.analyze_server(audit.tools, agent_texts=[text])
+    assert audit.injection_findings == detector.scan_server(
+        audit.tools, audit.prompts, audit.resources, agent_texts=[text]
+    )
+    assert analyzer.analyze_server(audit.tools) == audit.permissions
+    assert detector.scan_server(audit.tools, audit.prompts, audit.resources) == audit.injection_findings
 
 
 @pytest.mark.parametrize("surface", ["input_schema", "output_schema"])
@@ -754,7 +788,11 @@ async def test_analyzer_exception_group_reports_redacted_leaf_causes(monkeypatch
     from mcp_audit.models import PermissionFinding
 
     def exploding(
-        self: PermissionAnalyzer, tools: list[ToolInfo], *, incomplete_reasons: list[str] | None = None
+        self: PermissionAnalyzer,
+        tools: list[ToolInfo],
+        *,
+        incomplete_reasons: list[str] | None = None,
+        agent_texts: list[AgentText] | None = None,
     ) -> list[PermissionFinding]:
         raise ExceptionGroup(
             "outer server text",
