@@ -25,6 +25,7 @@ _RULE_TITLES = {
     "MCPOAUTH005": "Registration method and application type",
     "MCPOAUTH006": "Protected-resource scope binding",
     "MCPOAUTH007": "Authorization redirect URI binding",
+    "MCPOAUTH008": "Authorization code flow PKCE S256 binding",
 }
 
 
