@@ -32,7 +32,7 @@ from mcp_audit.models import (
     ProvenanceSeverity,
     ServerConfig,
 )
-from mcp_audit.redaction import redact_data, redact_text
+from mcp_audit.redaction import redact_data, redact_url
 
 # Flag prefixes that mark a launch argument as security-relevant. A newly gained
 # arg whose token starts with any of these escalates an ARGS change to HIGH.
@@ -151,8 +151,10 @@ class ProvenanceAnalyzer:
 
     def _url_finding(self, name: str, cfg: ServerConfig, baseline: dict[str, Any]) -> list[ProvenanceFinding]:
         base_url = baseline.get("url")
-        base_url = redact_text(base_url) if isinstance(base_url, str) else base_url
-        cur_url = redact_text(cfg.url) if cfg.url is not None else None
+        # Both sides use the pin snapshot's URL-field redaction, so an unchanged
+        # config never reports drift against its own snapshot.
+        base_url = redact_url(base_url) if isinstance(base_url, str) else base_url
+        cur_url = redact_url(cfg.url) if cfg.url is not None else None
         if cur_url == base_url:
             return []
         return [

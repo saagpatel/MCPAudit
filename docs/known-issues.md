@@ -1,16 +1,20 @@
 # Known issues
 
-- Credential redaction is pattern-based: a quoted secret flag value containing
-  an escaped quote can leak its suffix; a zero-width character inside a
-  bearer/basic token can leave its tail. Secret-shaped schema property names
-  are not redacted, and terminal output prints tool names without credential
-  redaction (terminal controls are still sanitized). A structural redaction
-  redesign is planned for 2.10. Review field reports before sharing.
+- Reports use structural credential redaction, with pattern matching as a
+  fallback for free text. Arbitrary unlabeled secrets may remain unrecognized;
+  review field reports before sharing. Redacted tool schemas are display
+  evidence and must not be used as replacement execution schemas.
+- Two free-text redaction edge cases remain open for a 2.10.x follow-up:
+  a terminal CSI sequence whose final byte is a letter can remove one letter
+  of a secret label (so `pa<CSI>ssword=...` is not recognized as a password
+  assignment), and a token-only URL userinfo separated from `@` by whitespace
+  (`https://token @host`) is not redacted. Typed URL fields are unaffected.
 - A fresh CI trust store has no rollback high-water mark until its first
-  verification, so restoring a complete older signed pin file in a one-shot
-  CI job is not detected. Persist the trust store. Deleting it removes trusted
-  keys and signing expectations; expectations are keyed by server name across
-  pin files.
+  verification. In a one-shot CI job, set `require.pin_min_sequence` (or
+  `--pin-min-sequence`) outside the pin file to refuse an older signed pin
+  file, or persist the trust store. A missing trust store while the pin file
+  carries a signed manifest is `MCP027`; expectations are keyed by server name
+  across pin files.
 - Static schema header checks do not follow every composition form. Unsupported
   or ambiguous cases report incomplete coverage rather than findings.
 - Legacy v1 pins do not cover annotation-only changes, title, output schema,

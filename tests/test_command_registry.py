@@ -274,6 +274,7 @@ mcp_audit/check_cli.py
 mcp_audit/checkup.py
 mcp_audit/cli.py
 mcp_audit/confighealth.py
+mcp_audit/conformance_probe.py
 mcp_audit/connector.py
 mcp_audit/coverage.py
 mcp_audit/discovery/__init__.py
@@ -307,6 +308,7 @@ mcp_audit/oauth_transcript_cli.py
 mcp_audit/oauth_transcript_models.py
 mcp_audit/oauth_transcript_sarif.py
 mcp_audit/oauth_transcript_scanner.py
+mcp_audit/otel.py
 mcp_audit/overrides.py
 mcp_audit/pin_cli.py
 mcp_audit/pin_signing.py
@@ -347,6 +349,7 @@ mcp_audit/session_resume_lab.py
 mcp_audit/session_resume_models.py
 mcp_audit/session_resume_scenarios_v1.json
 mcp_audit/shadowing.py
+mcp_audit/shadow_cli.py
 mcp_audit/skillscan.py
 mcp_audit/skillscan_cli.py
 mcp_audit/skillscan_models.py

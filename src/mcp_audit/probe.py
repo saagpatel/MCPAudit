@@ -30,7 +30,7 @@ from mcp_audit.models import (
     AuthorizationFinding,
     AuthorizationProbeObservation,
 )
-from mcp_audit.redaction import redact_text
+from mcp_audit.redaction import redact_text, redact_url
 from mcp_audit.taxonomy import AUTHORIZATION_FINDINGS
 
 MAX_BODY_BYTES = 65_536
@@ -273,7 +273,15 @@ class _PinnedHTTPConnection(http.client.HTTPConnection):
         self.sock = _pinned_socket(self.address, self.port, self.request_timeout)
 
 
-def _request_sync(url: str, method: str, address: str, timeout: float) -> _Response:
+def _request_sync(
+    url: str,
+    method: str,
+    address: str,
+    timeout: float,
+    *,
+    request_headers: dict[str, str] | None = None,
+    request_body: bytes | None = None,
+) -> _Response:
     started = time.monotonic()
     parsed = urlsplit(url)
     host = parsed.hostname
@@ -309,6 +317,9 @@ def _request_sync(url: str, method: str, address: str, timeout: float) -> _Respo
                 },
             }
         ).encode()
+    if request_headers is not None:
+        headers = request_headers
+        body = request_body
     timer: threading.Timer | None = None
     try:
         connection.connect()
@@ -381,7 +392,7 @@ class _Metadata:
         if len(self.observation.metadata_fetches) >= MAX_FETCHES:
             self.observation.warnings.append("metadata_fetch_limit")
             return None
-        record = AuthorizationFetch(url=redact_text(url), reason="unavailable")
+        record = AuthorizationFetch(url=redact_url(url), reason="unavailable")
         self.observation.metadata_fetches.append(record)
         try:
             response = await _request(url, "GET", self.timeout)
@@ -441,8 +452,10 @@ async def probe_authorization(
                 observation.warnings.append("challenge_parse_incomplete")
             observation.www_authenticate = [
                 {
-                    key: redact_text(value)
-                    if key in {"resource_metadata", "scope", "error"}
+                    key: redact_url(value)
+                    if key == "resource_metadata"
+                    else redact_text(value)
+                    if key in {"scope", "error"}
                     else "<redacted>"
                     for key, value in challenge.items()
                 }

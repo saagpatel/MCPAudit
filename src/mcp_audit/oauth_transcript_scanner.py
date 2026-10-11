@@ -19,6 +19,7 @@ from mcp_audit.oauth_transcript_models import (
     MAX_OBSERVATIONS,
     MAX_URL_LENGTH,
     AudienceEvidenceSource,
+    AuthorizationErrorResponse,
     AuthorizationRequest,
     AuthorizationResponse,
     AuthorizationServerMetadata,
@@ -59,8 +60,9 @@ _SUPPORTED_INPUTS = [
 _UNSUPPORTED_INPUTS = [
     "Live HTTP, DNS, browsers, OAuth or MCP connections, authorization servers, identity providers, "
     "accounts, keychains, cookies, credential stores, and private transcripts.",
-    "Token signature or cryptographic validation, PKCE correctness, client-authentication strength, "
-    "identity-provider compromise resistance, consent, or production authorization.",
+    "Token signature or cryptographic validation, PKCE challenge/verifier correspondence, "
+    "client-authentication strength, identity-provider compromise resistance, consent, or "
+    "production authorization.",
     "Arbitrary HTTP bodies, unredacted authorization codes or tokens, redirects beyond the recorded "
     "bounded observations, and URL fetching of any kind.",
     "Authorization-server mappings from resource indicators to general or abstract token audiences; "
@@ -70,8 +72,9 @@ _UNSUPPORTED_INPUTS = [
 _CLAIM_CEILING = [
     "The supplied synthetic transcript satisfies or violates only the implemented observable MCP/OAuth "
     "binding invariants.",
-    "A clean report does not establish token authenticity, PKCE correctness, client authentication "
-    "strength, identity-provider security, consent, real-world authorization, or production safety.",
+    "A clean report does not establish token authenticity, PKCE challenge/verifier correspondence, "
+    "client-authentication strength, identity-provider security, consent, real-world authorization, "
+    "or production safety.",
     "Audience evidence is treated as a supplied synthetic observation; JWT signatures and introspection "
     "server authenticity are not validated.",
     "Incomplete, redacted, malformed, unsupported, or unverifiable binding evidence remains UNKNOWN.",
@@ -133,9 +136,9 @@ _RULES: dict[str, RuleDefinition] = {
     "MCPOAUTH003": RuleDefinition(
         FindingSeverity.HIGH,
         RequirementLevel.REQUIRED,
-        "Authorization response issuer was not safely bound before code redemption",
-        "Record the validated issuer per request, compare every present or advertised-required iss value "
-        "with exact string equality, and reject mismatches before sending the code to a token endpoint.",
+        "Authorization response issuer was not safely bound",
+        "Record the validated issuer per request, compare present or required iss values on success and "
+        "error responses, and stop on mismatches before code redemption.",
         (
             "MCP Authorization 2026-07-28: Authorization Response Validation",
             "RFC 9207 Sections 2.3 and 2.4",
@@ -187,6 +190,17 @@ _RULES: dict[str, RuleDefinition] = {
             "MCP Authorization 2026-07-28: Open Redirection",
             "RFC 6749 Sections 3.1.2.3, 4.1.3, and 10.6",
             "RFC 8252 Sections 7.3 and 8.4",
+        ),
+    ),
+    "MCPOAUTH008": RuleDefinition(
+        FindingSeverity.HIGH,
+        RequirementLevel.REQUIRED,
+        "Authorization code flow does not use PKCE with S256",
+        "Send a redacted PKCE challenge using S256 and include the corresponding "
+        "verifier in the token request.",
+        (
+            "MCP Authorization 2026-07-28: Authorization Request",
+            "RFC 7636 Sections 4.2 and 4.5",
         ),
     ),
 }
@@ -408,6 +422,7 @@ def _metadata_candidates(issuer: str) -> dict[MetadataKind, set[str]]:
 class Flow:
     authorization_request: AuthorizationRequest | None
     authorization_response: AuthorizationResponse | None
+    authorization_error_response: AuthorizationErrorResponse | None
     token_request: TokenRequest | None
     token_response: TokenResponse | None
     challenge: ProtectedResourceChallenge | None
@@ -423,6 +438,10 @@ def _flow(fixture: OAuthTranscriptFixture) -> Flow:
         item for item in fixture.observations if isinstance(item, AuthorizationResponse)
     ]
     authorization_response = authorization_responses[0] if authorization_responses else None
+    authorization_error_responses = [
+        item for item in fixture.observations if isinstance(item, AuthorizationErrorResponse)
+    ]
+    authorization_error_response = authorization_error_responses[0] if authorization_error_responses else None
     token_requests = [item for item in fixture.observations if isinstance(item, TokenRequest)]
     token_request = token_requests[0] if token_requests else None
     token_responses = [item for item in fixture.observations if isinstance(item, TokenResponse)]
@@ -460,6 +479,7 @@ def _flow(fixture: OAuthTranscriptFixture) -> Flow:
     return Flow(
         authorization_request=authorization_request,
         authorization_response=authorization_response,
+        authorization_error_response=authorization_error_response,
         token_request=token_request,
         token_response=token_response,
         challenge=challenge,
@@ -481,20 +501,34 @@ def _evaluate_structure(fixture: OAuthTranscriptFixture, flow: Flow) -> list[OAu
         count = sum(isinstance(item, observation_type) for item in fixture.observations)
         if count > 1:
             evidence.append(f"multiple {label} observations make the evaluated flow ambiguous")
+    authorization_responses = sum(
+        isinstance(item, (AuthorizationResponse, AuthorizationErrorResponse)) for item in fixture.observations
+    )
+    if authorization_responses > 1:
+        evidence.append("multiple authorization responses make the evaluated flow ambiguous")
     ordered = (
         flow.authorization_request,
-        flow.authorization_response,
+        flow.authorization_response or flow.authorization_error_response,
         flow.token_request,
         flow.token_response,
     )
-    if all(item is not None for item in ordered):
-        sequences = [item.sequence for item in ordered if item is not None]
-        if sequences != sorted(sequences):
-            evidence.append("authorization and token observations are not in protocol order")
+    sequences = [item.sequence for item in ordered if item is not None]
+    if sequences != sorted(sequences):
+        evidence.append("authorization and token observations are not in protocol order")
+    if (
+        flow.authorization_error_response is not None
+        and flow.authorization_response is None
+        and flow.token_request is not None
+    ):
+        evidence.append("authorization error response has code redemption without a successful response")
     if flow.token_response is not None and fixture.audience_evidence.state == EvidenceState.CURRENT.value:
         if fixture.audience_evidence.token_response_exchange_id != flow.token_response.exchange_id:
             evidence.append("current audience evidence is not bound to the observed token response")
-    if flow.token_response is None and fixture.audience_evidence.state == EvidenceState.CURRENT.value:
+    if (
+        flow.token_response is None
+        and flow.authorization_error_response is None
+        and fixture.audience_evidence.state == EvidenceState.CURRENT.value
+    ):
         evidence.append("current audience evidence has no observed token response")
     if (
         flow.authorization_response is not None
@@ -664,13 +698,19 @@ def _evaluate_issuer_binding(fixture: OAuthTranscriptFixture, flow: Flow) -> lis
     authority = flow.authorization_metadata
     request = flow.authorization_request
     response = flow.authorization_response
+    error_response = flow.authorization_error_response
     token = flow.token_request
     if authority is None or authority.document_state != DocumentState.COMPLETE.value:
         return [_unknown("authorization-response", "validated issuer metadata is unavailable")]
     if request is None:
         return [_unknown("authorization-response", "authorization request observation is missing")]
-    if response is None:
+    if response is None and error_response is None:
         return [_unknown("authorization-response", "authorization response observation is missing")]
+    if response is not None:
+        issuer = response.issuer
+    else:
+        assert error_response is not None
+        issuer = error_response.issuer
     unknown_evidence: list[str] = []
     violations: list[str] = []
     if request.recorded_issuer is None:
@@ -680,26 +720,53 @@ def _evaluate_issuer_binding(fixture: OAuthTranscriptFixture, flow: Flow) -> lis
 
     supported = authority.authorization_response_iss_parameter_supported is True
     mismatch = (
-        response.issuer is not None
-        and request.recorded_issuer is not None
-        and response.issuer != request.recorded_issuer
+        issuer is not None and request.recorded_issuer is not None and issuer != request.recorded_issuer
     )
-    token_after_response = token is not None and token.sequence > response.sequence
-    accepted = response.handling == ResponseHandling.ACCEPTED.value or token_after_response
-    if mismatch and accepted:
-        violations.append("a mismatched authorization response issuer was accepted before code redemption")
-    if supported and response.issuer is None and accepted:
-        violations.append(
-            "advertised-required authorization response issuer is absent but the response was accepted"
-        )
-    if response.handling == ResponseHandling.UNKNOWN.value:
+    token_after_response = response is not None and token is not None and token.sequence > response.sequence
+    accepted = response is not None and (
+        response.handling == ResponseHandling.ACCEPTED.value or token_after_response
+    )
+    if mismatch and (accepted or error_response is not None):
+        violations.append("authorization response issuer differs from the per-request recorded issuer")
+    if supported and issuer is None and (accepted or error_response is not None):
+        violations.append("advertised-required authorization response issuer is absent")
+    if response is not None and response.handling == ResponseHandling.UNKNOWN.value:
         unknown_evidence.append("authorization response handling is not observable")
-    if response.issuer is not None and request.recorded_issuer is None:
+    if issuer is not None and request.recorded_issuer is None:
         unknown_evidence.append("a present authorization response issuer cannot be compared")
     findings: list[OAuthTranscriptFinding] = []
     if violations:
         findings.append(_finding("MCPOAUTH003", target="authorization-response", evidence=violations))
     findings.extend(_unknown("authorization-response", item) for item in unknown_evidence)
+    return findings
+
+
+def _evaluate_pkce(flow: Flow) -> list[OAuthTranscriptFinding]:
+    request = flow.authorization_request
+    token = flow.token_request
+    if request is None:
+        return [_unknown("pkce-s256", "authorization request evidence is unavailable")]
+    violations: list[str] = []
+    unknown_evidence: list[str] = []
+    if "code_challenge_method" not in request.model_fields_set:
+        unknown_evidence.append("authorization request code challenge method is unrecorded")
+    elif request.code_challenge_method != "S256":
+        violations.append("authorization request does not use the required S256 code challenge method")
+    if "code_challenge_marker" not in request.model_fields_set:
+        unknown_evidence.append("authorization request code challenge evidence is unrecorded")
+    elif request.code_challenge_marker is None:
+        violations.append("authorization request has no redacted code challenge evidence")
+    if token is None:
+        if flow.authorization_error_response is None:
+            unknown_evidence.append("token request code verifier evidence is unavailable")
+    elif "code_verifier_marker" not in token.model_fields_set:
+        unknown_evidence.append("token request code verifier evidence is unrecorded")
+    elif token.code_verifier_marker is None:
+        violations.append("token request has no redacted code verifier evidence")
+    findings: list[OAuthTranscriptFinding] = []
+    if violations:
+        findings.append(_finding("MCPOAUTH008", target="pkce-s256", evidence=violations))
+    findings.extend(_unknown("pkce-s256", item) for item in unknown_evidence)
     return findings
 
 
@@ -930,6 +997,7 @@ def _evaluate_redirect_binding(
 ) -> list[OAuthTranscriptFinding]:
     request = flow.authorization_request
     response = flow.authorization_response
+    error_response = flow.authorization_error_response
     token = flow.token_request
     unknown_evidence: list[str] = []
     violations: list[str] = []
@@ -945,15 +1013,21 @@ def _evaluate_redirect_binding(
             for registered in fixture.registration.redirect_uris
         ):
             violations.append("authorization request redirect URI is absent from client registration")
-    if response is None:
+    if response is None and error_response is None:
         unknown_evidence.append("authorization response redirect evidence is unavailable")
-    elif request is not None and response.redirect_uri != request.redirect_uri:
-        violations.append("authorization response arrived at a URI different from the request")
-    if token is None:
+    elif request is not None:
+        if response is not None:
+            response_redirect = response.redirect_uri
+        else:
+            assert error_response is not None
+            response_redirect = error_response.redirect_uri
+        if response_redirect != request.redirect_uri:
+            violations.append("authorization response arrived at a URI different from the request")
+    if token is None and error_response is None:
         unknown_evidence.append("token request redirect evidence is unavailable")
-    elif token.redirect_uri is None:
+    elif token is not None and token.redirect_uri is None:
         unknown_evidence.append("authorization-code redemption redirect URI is missing")
-    elif request is not None and token.redirect_uri != request.redirect_uri:
+    elif token is not None and request is not None and token.redirect_uri != request.redirect_uri:
         violations.append("authorization-code redemption redirect URI differs from the request")
     findings: list[OAuthTranscriptFinding] = []
     if violations:
@@ -1001,6 +1075,7 @@ def scan_oauth_transcript(fixture: OAuthTranscriptFixture, input_sha256: str) ->
             *_evaluate_discovery(fixture, flow),
             *_evaluate_resource_binding(fixture, flow),
             *_evaluate_issuer_binding(fixture, flow),
+            *_evaluate_pkce(flow),
             *_evaluate_credential_binding(fixture, flow),
             *_evaluate_registration(fixture, flow),
             *_evaluate_scopes(fixture, flow),

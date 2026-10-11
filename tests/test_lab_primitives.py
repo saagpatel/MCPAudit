@@ -171,7 +171,7 @@ def test_tool_pin_legacy_and_current_canonical_bytes_are_unchanged() -> None:
             "oauth_transcript",
             scan_oauth_transcript_path,
             "oauth_transcript/mcpoauth001-negative.json",
-            "67b58c4b6025c7c334dd7abe1addf6e079431d690a0df59a54d5a3253528f05a",
+            "235a482c9399916238669397182901e061c64cc8b019093e128b8a601eef831c",
         ),
         (
             "result_parcel",
@@ -199,5 +199,5 @@ def test_session_resume_suite_canonical_bytes_match_before_extraction() -> None:
     from mcp_audit.session_resume_lab import report_json_bytes
 
     assert hashlib.sha256(report_json_bytes(run_builtin_suite())).hexdigest() == (
-        "840c0346443b6302c34329462d52d56c76d9ed7baf6faba5df131d66f0d34627"
+        "70c2bba92f116363b709c92c17449a4a10ae2ae13cc6a6470e2965dc45f8a88c"
     )

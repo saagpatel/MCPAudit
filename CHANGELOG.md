@@ -9,10 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Record the two open free-text redaction edge cases and the `pin_min_sequence`
+  CI rollback guard in the known-issues list.
+- Schedule the frozen `cli._run_scan_core` compatibility shim for removal in
+  3.0, retaining the existing 2.x compatibility window.
 - Describe `--inject-check` and MCP019 findings in terms of instruction-shaped text.
 
 ### Added
 
+- Add an opt-in `[otel]` library integration exporting redacted reports as
+  counts-only report, server, and coverage-check spans, with rule-count events
+  and no report hostnames, identifiers, or evidence payloads.
+- Add read-only `mcp-audit shadow` review on the public engine with explicit
+  configs and pins, opt-in metadata connections, existing drift and pin-integrity
+  checks, fleet tool-name collisions, and policy/sequence gates. Verification
+  reads existing trust history without updating it; output keeps the existing
+  `AuditReport` schema. Compare tool pins only after a successful metadata listing,
+  preserving static signature/rollback checks without inferring removed tools from
+  unavailable listings. Malformed policy types produce value-free input errors
+  before connections. No enforcing proxy is included.
 - Share offline lab descriptor reads, strict JSON decoding, and canonical
   serialization mechanics while retaining each lab's limits, errors, aliases,
   and number policy. Verify existing canonical report bytes with fixture digests;
@@ -22,6 +37,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pinned actionlint binary.
 - Signed pin manifests carry a monotonic `sequence`; `require.pin_min_sequence`
   and `--pin-min-sequence` reject older or unauthenticated baselines in CI.
+- Add opt-in `lab --conformance-probe --url URL` negative MCP header and
+  loopback-only Origin probes, with bounded credential-free requests and
+  explicit unknown results when conformance evidence is unavailable.
+- Extend the offline OAuth transcript lab with an S256 PKCE finding and
+  issuer validation for authorization error responses. Validate error-flow
+  ordering and contradictory code redemption, keep unrecorded PKCE evidence
+  unknown, and include the PKCE finding in the SARIF rule catalog.
 - Preview argument-only fixes with `fix SERVER --config FILE` for unpinned
   `npx -y` packages and broad filesystem roots; suggestions are not written to disk.
 
@@ -50,6 +72,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is missing, preventing trust-store deletion from bypassing verification.
   Pin writes also refuse unverified manifests rather than signing their claimed
   sequence, and failed clears preserve the signed manifest.
+- Guide unsigned v2 pins through `pin --refresh SERVER --apply` to a fresh signed
+  baseline without clearing first; label migration reviews as unverified and
+  preserve fail-closed checks for previously signed entries.
+- Redact typed reports structurally before terminal, JSON, SARIF, and HTML
+  rendering, including argv values, URL components, dynamic dictionary keys,
+  schema property names, Unicode-obfuscated credentials, and escaped quotes.
+  Detect normalized credentials without publishing normalized text; replace the
+  union of raw and mapped spans. Withhold ambiguous boundaries, including
+  introduced whitespace and removed escapes, and normalization-sensitive URL
+  authorities and malformed URL copies;
+  redact dash-prefixed secret values in pins and literals in composed secret
+  schemas. Keep control-bearing server stderr lines withheld. Treat bytes
+  removed for detection beside a value as part of its raw span, cut inline
+  argv secrets just after the raw delimiter, keep values whole across escaped
+  and unterminated quotes, and make redaction idempotent. Redact every copied
+  server URL as a URL field, so unchanged configs report no URL drift, and
+  withhold free-text URLs whose credential component a quote or angle bracket
+  cut short. Withhold the token around any removed escape that hides a
+  delimiter next to a credential, and treat a non-numeric netloc `:` suffix as
+  a URL password even when whitespace separates it from `@`, including after
+  a quote or angle bracket cuts the authority.
 
 ## [2.9.0] - 2026-10-10
 

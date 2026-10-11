@@ -63,6 +63,67 @@
       "title": "AudienceEvidence",
       "type": "object"
     },
+    "AuthorizationErrorResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "exchange_id": {
+          "pattern": "^[a-z0-9][a-z0-9._-]{2,63}$",
+          "title": "Exchange Id",
+          "type": "string"
+        },
+        "issuer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Issuer"
+        },
+        "kind": {
+          "const": "authorization_error_response",
+          "title": "Kind",
+          "type": "string"
+        },
+        "redirect_uri": {
+          "title": "Redirect Uri",
+          "type": "string"
+        },
+        "redirects_followed": {
+          "default": 0,
+          "maximum": 5,
+          "minimum": 0,
+          "title": "Redirects Followed",
+          "type": "integer"
+        },
+        "response_status": {
+          "enum": [
+            302,
+            303
+          ],
+          "title": "Response Status",
+          "type": "integer"
+        },
+        "sequence": {
+          "maximum": 256,
+          "minimum": 1,
+          "title": "Sequence",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "exchange_id",
+        "sequence",
+        "kind",
+        "response_status",
+        "redirect_uri",
+        "issuer"
+      ],
+      "title": "AuthorizationErrorResponse",
+      "type": "object"
+    },
     "AuthorizationRequest": {
       "additionalProperties": false,
       "properties": {
@@ -73,6 +134,32 @@
           ],
           "title": "Client Id Kind",
           "type": "string"
+        },
+        "code_challenge_marker": {
+          "anyOf": [
+            {
+              "const": "<redacted>",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Code Challenge Marker"
+        },
+        "code_challenge_method": {
+          "anyOf": [
+            {
+              "maxLength": 32,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Code Challenge Method"
         },
         "exchange_id": {
           "pattern": "^[a-z0-9][a-z0-9._-]{2,63}$",
@@ -738,6 +825,19 @@
           "title": "Code Marker",
           "type": "string"
         },
+        "code_verifier_marker": {
+          "anyOf": [
+            {
+              "const": "<redacted>",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Code Verifier Marker"
+        },
         "credential_record_id": {
           "anyOf": [
             {
@@ -943,6 +1043,7 @@
       "items": {
         "discriminator": {
           "mapping": {
+            "authorization_error_response": "#/$defs/AuthorizationErrorResponse",
             "authorization_request": "#/$defs/AuthorizationRequest",
             "authorization_response": "#/$defs/AuthorizationResponse",
             "authorization_server_metadata": "#/$defs/AuthorizationServerMetadata",
@@ -969,6 +1070,9 @@
           },
           {
             "$ref": "#/$defs/AuthorizationResponse"
+          },
+          {
+            "$ref": "#/$defs/AuthorizationErrorResponse"
           },
           {
             "$ref": "#/$defs/TokenRequest"

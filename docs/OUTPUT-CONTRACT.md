@@ -3,6 +3,101 @@
 MCPAudit reports are designed for local review and CI ingestion. Keep this
 contract stable unless a release note calls out a breaking change.
 
+## Report redaction
+
+Terminal, JSON, SARIF, and HTML consume the credential-redacted typed report
+through `AuditReport.redacted()`. Declared report field names and
+`schema_version` are unchanged. Redaction does not rescore findings or regroup
+the saved review summary.
+
+Launch argv uses element boundaries: secret flags consume their next value,
+including a dash-prefixed value, and inline assignments are cut just after the
+raw `=` or `:` and withhold everything after it. Complete server URL fields are parsed; userinfo, query values, and
+fragments are withheld while endpoint context is retained. Malformed URL
+authorities are withheld. Every copy of a server URL (pins, provenance
+findings, warnings, probe records, config-health summaries) uses this same
+URL-field redaction. In free text, a URL that a quote or angle bracket cuts
+short inside its query, fragment, userinfo, or a trailing path assignment is
+withheld through the end of its token. A free-text `scheme://X:Y` authority
+whose `Y` is not a numeric port is treated as userinfo and `Y` is withheld,
+whether or not an `@` follows in the same token. A URL cut by a quote or angle
+bracket inside its authority is withheld through its token when the authority
+holds such a password, and up to a later `@` that starts a token on the same
+line. Environment and header configuration retain key
+names only. Any environment/header maps in arbitrary metadata withhold values.
+
+Dynamic JSON keys and schema property names receive credential redaction too.
+If keys collapse to the same redacted text, ordinal suffixes retain all map
+entries. Secret-property string literals in defaults, examples, constants, and
+enums are withheld recursively. Redacted schemas are display evidence, not
+replacement schemas for execution or validation.
+
+Matching uses raw text and a detection-only view with Unicode normalization
+(NFKC, invisible removal, curated confusable folding) and terminal-control
+removal. Normalized matches map back to raw ranges; the union of both passes
+is replaced in the original text. Normalized spelling is never published.
+Bytes removed for detection (controls, escape sequences, invisibles) next to a
+value belong to that value, and a raw terminator inside a removed escape
+sequence does not end it. A value is a run of quoted and unquoted segments;
+backslash escapes never end it, and an unterminated quote runs to the end of
+the field. Removed bytes may never hide a delimiter: when a removed run holds a
+delimiter, ends in a bare two-byte escape, or follows a secret label, text from
+the first secret label or URL in that whitespace-free token (or from the start
+of an existing replacement there) through the end of the token is withheld.
+Credential values with changed structural delimiters are withheld,
+including introduced whitespace or removed escapes. Unmappable matches or uncertain value
+boundaries withhold the whole field. URL parsing uses raw input; NFKC changes in
+the scheme or authority
+(including userinfo) withhold the whole URL. Excerpts whose raw offsets cannot
+safely survive normalization are withheld. Server stderr keeps its stricter
+policy: withhold every control-bearing line rather than strip controls and reveal
+its contents.
+Display match offsets are cleared when redaction changes their matched text.
+Redaction is idempotent: redacting redacted output returns it unchanged.
+
+Free text still uses best-effort credential patterns; arbitrary unlabeled
+secrets are not guaranteed to be recognized. Review reports before sharing.
+The separate opt-in identifier pass continues to scrub host, home-directory,
+and server identifiers.
+
+## OpenTelemetry integration
+
+Install `mcp-audits[otel]` to use
+`mcp_audit.otel.export_report(report, tracer=tracer)`. This library-only
+integration emits spans through a caller-supplied OpenTelemetry API tracer;
+it does not configure a global provider, collector, credentials, or network
+exporter. Install and configure an SDK/exporter separately, and flush it using
+its own lifecycle. A no-op or unsampled tracer does not deliver telemetry.
+
+The exporter reads only the result of `AuditReport.redacted()`. Span names
+are fixed: `mcp_audit.report`, `mcp_audit.server`, and `mcp_audit.check`.
+Server and check spans are children of the report span. The report starts
+with an empty context, excluding ambient parent trace state and baggage.
+These are export-time spans, not measured scan/check execution durations.
+
+| Span | Attributes |
+| --- | --- |
+| Report | `mcp_audit.server.count` (audit rows), `mcp_audit.finding.count` (fleet/config/policy findings only) |
+| Server | `mcp_audit.server.index` (1-based report-local ordinal), `mcp_audit.connection.state`, `mcp_audit.tool.count`, `mcp_audit.finding.count` |
+| Check | `mcp_audit.check.name`, `mcp_audit.coverage.state` |
+
+Report and server spans have one `mcp_audit.finding` event per rule, with
+`mcp_audit.rule.id` and `mcp_audit.finding.count`. Suppressed findings remain
+included, as in the source report. Fleet/config/policy events stay on the
+report span; they are not assigned to a server by name. Known rule IDs are
+retained; unknown rule IDs become `unknown`. All known coverage checks have
+a span, with missing coverage recorded as `unknown`. Additional coverage
+entries have a span labeled `unknown`, without exporting their dynamic key.
+Coverage is report-wide; these spans never claim per-server check completion.
+Unrecognized connection states also become `unknown`.
+
+No report hostname, server/tool name, endpoint, path, environment/header key,
+schema, evidence, warning, coverage reason, or exception text is emitted.
+Only fixed vocabulary and counts enter attributes/events. Caller-owned SDK
+resources and processors are outside this payload boundary: configure them
+without host-identifying resource attributes or enrichment when exporting
+these spans. The report JSON shape and `schema_version` remain unchanged.
+
 ## Credential-free authorization observations
 
 Eligible connected HTTP scans add `ServerAudit.authorization_probe` and, when
@@ -459,10 +554,13 @@ flag/value pairs in argv and text, bearer/basic credentials, and common
 GitHub, OpenAI/Anthropic, Slack, AWS access-key, JWT, GitLab and npm token
 shapes. Quoted JSON/dict assignments inside strings are covered, as are string
 dictionary values under secret-named keys and string literals in a secret schema
-property's `default`, `examples`, and `const`; non-string values and structure
+property's `default`, `example`, `examples`, `const`, and `enum`, including
+nested schema composition branches; non-string values and structure
 are retained. Inline secret argv assignments redact the whole remainder of the
-element. A secret flag does not consume the following argv element when that
-element starts with `-`, so gained flags remain visible to provenance checks.
+element. A secret flag consumes the following argv element even when that
+element starts with `-`, consistently in reports and default pin snapshots.
+That slot is ambiguous and is withheld as a credential; provenance cannot infer
+a gained option there. Options outside secret-value slots remain distinguishable.
 In any `scheme://` URL, userinfo, every query parameter value (including
 non-secret parameters), and the entire fragment are redacted; query names,
 hosts, ports and path shape remain visible. Userinfo extends through the last
@@ -472,6 +570,12 @@ pairs redact their entire URL value before standalone URL spans are protected
 from generic named-assignment matching, including secret-named hosts.
 Nested `scheme://` URLs within paths are scrubbed independently. A secret-named
 path assignment whose value is a URL redacts that whole value, including its path.
+Malformed URL authorities are withheld in free-text copies as well as typed URL
+fields, including warnings and default pin snapshots. Fields whose detection
+transforms introduce, remove, or move credential delimiters are withheld rather
+than risk restoring text removed by the raw pass. Unchanged context retains its
+raw spelling, including Unicode and controls; human-facing renderers separately
+sanitize terminal controls.
 
 Provenance comparisons redact both sides. Changes confined to query values or
 fragments therefore do not report drift, even for non-secret endpoint options;
@@ -703,7 +807,8 @@ Terminal status prints only this authenticated key for CI; the existing JSON
 (the nullable verification state) and `baseline_usable` (false when scans withhold
 the baseline); terminal status shows them in a Verification column, marked
 "(withheld)". Ordinary pin writes, refresh, rotation and re-signing refuse failed
-baseline verification.
+baseline verification, except for the explicit unsigned v2 refresh migration
+described below.
 
 Escalation findings add `kind: annotation_delta` and an `annotation_changes`
 list of hint names (empty for other kinds). This is HIGH `MCP018` for
@@ -718,6 +823,13 @@ baseline withheld by scans (trusted keys, nothing authenticating the entry) is
 still compared in refresh review so every difference is shown, with
 `baseline_verified: false` and a note; terminal review labels it and never
 reports "No drift found" against an unverified baseline.
+Unsigned v2 migration review uses the same fields (`baseline_verified: false`
+and an unsigned migration `baseline_note`) while scans continue to withhold the
+entry with `MCP027` under trusted keys. Only entries without signing metadata,
+a per-server signing expectation, or a signed manifest binding are eligible.
+`--apply` requires a trusted private key and signs a fresh live baseline; it
+does not retain removed tools or saved registry hashes. Signed-integrity failures
+remain blocked. No JSON fields or schema version change.
 
 Each audit may include:
 
@@ -734,6 +846,27 @@ Each audit may include:
   object records `status` (`complete` or `unknown`), a stable `reason_code`,
   `source_trust`, analyzer/model provenance, candidate/analyzed tool counts,
   and the number of admitted findings. `unknown` never means clean.
+
+### Opt-in negative conformance lab
+
+`lab --conformance-probe --url URL` emits a separate JSON artifact with
+`contract: mcpaudit.conformance-probe.v1`, `protocol_version: 2026-07-28`,
+nullable numeric `control_status`, boolean `modern_control`, `observations`,
+and a fixed `claim_ceiling`. This is not an `AuditReport`; existing fields and
+`schema_version` are unchanged.
+
+Each observation contains `probe` (`T7` or `T9`), `variant`
+(`protocol_version`, `method`, `name`, or `origin`), `verdict`
+(`pass`, `fail`, `unknown`, or `not_run`), a fixed `reason`, nullable numeric
+`status`, and nullable integer `error_code`. Reasons are `expected_rejection`,
+`negative_request_accepted`, `request_unavailable`, `unexpected_response`,
+`modern_control_unavailable`, `origin_control_unavailable`, or `loopback_only`.
+T7 requires a successful modern discovery control and HTTP 400 / `-32020`
+rejection. T9 is loopback-only and requires HTTP 403 after a control that was
+not itself rejected with 403. No endpoint, response text, response headers,
+credentials, cookies, or session identifiers appear in this artifact.
+See [the lab guide](labs/README.md#negative-conformance-probes-explicit-opt-in)
+for request bounds and verdict limits.
 
 ### Connected protocol observations (additive)
 
@@ -1630,7 +1763,7 @@ authorization-response issuer validation, issuer-bound client state, and DCR
 
 Reports use sorted compact canonical JSON with one terminal newline and no
 timestamp or input path. Stable finding IDs are `MCPOAUTH001` through
-`MCPOAUTH007`; `MCPOAUTH000` represents missing, malformed, redacted,
+`MCPOAUTH008`; `MCPOAUTH000` represents missing, malformed, redacted,
 unsupported, or unverifiable evidence. Each finding contains severity,
 `violation|advisory|unknown` outcome, `required|recommended|deprecated|unsupported`
 requirement level, title, semantic target, redacted evidence, remediation,
@@ -1658,8 +1791,15 @@ per URL. URLs are never fetched, redirects are never followed, and no network,
 browser, OAuth, MCP, account, keychain, or credential-store path exists.
 
 A passing report proves only the implemented binding invariants in the
-supplied synthetic transcript. It does not prove token signature validity,
-PKCE correctness, client-authentication strength, IdP integrity, consent,
+supplied synthetic transcript. The PKCE rule checks the recorded S256 method
+and redacted challenge/verifier markers. Omitted PKCE fields are unrecorded
+evidence (`MCPOAUTH000`, unknown); explicit nulls record observed absence and
+non-S256 methods record noncompliance (`MCPOAUTH008`, violation). Authorization
+error responses participate in flow ordering; code redemption without a
+successful response in an error-only flow is contradictory evidence
+(`MCPOAUTH000`, unknown). The PKCE rule does not establish cryptographic
+correspondence. A report does not prove token signature validity,
+client-authentication strength, IdP integrity, consent,
 real-world authorization, or production security. See
 `docs/labs/OAUTH-TRANSCRIPT-AUDITOR.md`.
 

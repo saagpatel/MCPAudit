@@ -154,9 +154,10 @@ async def test_project_connection_warning_reaches_sarif(
     if redaction_probe:
         warning = warning.model_copy(
             update={
+                # Report-level redaction treats a period touching a secret value as part of it.
                 "message": (
                     f"Project config '{server.name}' not connected: synthetic-project-server --token "
-                    "<redacted>. Use --connect-project-configs to opt in (unless --skip-connect)."
+                    "<redacted> Use --connect-project-configs to opt in (unless --skip-connect)."
                 )
             }
         )

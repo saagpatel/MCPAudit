@@ -45,6 +45,17 @@ def test_builtin_corpus_covers_required_faults_and_negative_control() -> None:
     assert REQUIRED_FAULTS <= set(scenarios)
     assert "successful-resume-control" in scenarios
     assert "current-profile-resume-unsupported" in scenarios
+    transport_reference = (
+        "https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#streamable-http"
+    )
+    references = [
+        reference
+        for scenario in scenarios.values()
+        for assumption in scenario.assumptions
+        for reference in assumption.references
+    ]
+    assert transport_reference in references
+    assert not any(reference.endswith("/basic/transports") for reference in references)
 
 
 def test_every_builtin_replays_byte_identically_with_exact_ordering() -> None:

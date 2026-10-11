@@ -3,11 +3,20 @@
 from __future__ import annotations
 
 import re
+import unicodedata
+from bisect import bisect_left
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
+
+from pydantic import BaseModel
+
+from mcp_audit.normalize import normalize_text
+from mcp_audit.terminal_text import control_free_spans, strip_controls
 
 _REDACTED = "<redacted>"
+_MAX_PASSES = 4
 _NAME_TOKEN = re.compile(r"[A-Za-z0-9_.-]+")
 _SESSION_LABEL = re.compile(r"(?<![A-Za-z0-9])session[_-]name(?=$|[_.-])", re.IGNORECASE)
 _SECRET_NAME = re.compile(
@@ -16,25 +25,37 @@ _SECRET_NAME = re.compile(
     r"(?:^|[_.-])(?:auth|sig)(?:$|[_.-])",
     re.IGNORECASE,
 )
-_ASSIGNMENT_PREFIX = re.compile(r"[\"']?\s*[:=]\s*")
-_ASSIGNMENT_VALUE = re.compile(
-    r"([\"']?\s*[:=]\s*)(<redacted>(?=$|[\s,;&\"'}\]])|"
-    r"\"(?:\\.|[^\"\\])*+\"|'(?:\\.|[^'\\])*+'|[^\s,;&\"']+)"
+# A value is a run of quoted and unquoted segments, as in a shell word, so a
+# replacement never stops where a second pass would continue. A backslash
+# escapes the next character; an unterminated quoted segment runs to the end
+# of the field; ': ' ends a value, as does a closing bracket right after a
+# closing quote, matching the redacted-token lookahead.
+_REDACTED_VALUE = r"<redacted>(?=$|[\s,;&\"'}\]]|:(?:\s|$|<redacted>)|⟧(?=$|[\s,;&\"'}\]]))"
+_VALUE = (
+    r"(?:\"(?:\\[\s\S]|[^\"\\])*+(?:\"|\\?\Z)|'(?:\\[\s\S]|[^'\\])*+(?:'|\\?\Z)|"
+    r"\\[\s\S]|(?!:(?:\s|\Z))(?!(?<=[^\\][\"'])[}\]])[^\s,;&\"'])++"
 )
-_FLAG_VALUE = re.compile(r"(\s+)(\"[^\"]*\"|'[^']*'|[^\s,;&\"']+)")
-_BEARER_TOKEN = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+")
-_BASIC_TOKEN = re.compile(r"(?i)\bBasic\s+[A-Za-z0-9._~+/=-]+")
+_VALUE_CONTINUATION = re.compile(_VALUE)
+_ASSIGNMENT_PREFIX = re.compile(r"[\"']?\s*[:=]\s*")
+_ASSIGNMENT_VALUE = re.compile(rf"([\"']?\s*[:=]\s*)({_REDACTED_VALUE}|{_VALUE})")
+_FLAG_VALUE = re.compile(rf"(\s+)({_REDACTED_VALUE}|{_VALUE})")
+_FLAG_PREFIX = re.compile(r"\s*")
+# Credentials share the value grammar: angle brackets and quotes never split one.
+_BEARER_TOKEN = re.compile(rf"(?i)\bBearer\s+(<redacted>|{_VALUE})")
+_BASIC_TOKEN = re.compile(rf"(?i)\bBasic\s+(<redacted>|{_VALUE})")
 # Consume scheme-like runs once; a nested scheme ends the current path span.
 # Query values and fragments still consume their entire enclosing URL tail.
 _URL = re.compile(
     r"(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*+://"
-    r"(?:<redacted>|[A-Za-z][A-Za-z0-9+.-]*+(?!://)|"
-    r"[0-9+.-][A-Za-z0-9+.-]*+|[?#](?:<redacted>|[^\s\"'<>])*+|"
+    r"(?:<redacted>|\\[\"']|[A-Za-z][A-Za-z0-9+.-]*+(?!://)|"
+    r"[0-9+.-][A-Za-z0-9+.-]*+|[?#](?:<redacted>|\\[\"']|[^\s\"'<>])*+|"
     r"[^\s\"'<>A-Za-z0-9+.?#-])++"
 )
 # Whole secret values include nested URLs; standalone spans stop at each scheme.
-_URL_VALUE = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*+://(?:<redacted>|[^\s\"'<>])++")
+_URL_VALUE = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*+://(?:<redacted>|\\[\"']|[^\s\"'<>])++")
 _URL_USERINFO = re.compile(r"(^[A-Za-z][A-Za-z0-9+.-]*+://)(?:[^/?#\s@]*+@)++")
+_TOKEN_TAIL = re.compile(r"\S*")
+_SPACED_AT = re.compile(r"\s@")
 _QUERY_VALUE = re.compile(r"=([^&;]*)")
 _SECRET_VALUE = re.compile(
     r"gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|"
@@ -56,7 +77,8 @@ def _is_secret_name(name: str) -> bool:
     # authority and oauth_callback_port are harmless. Plural tokens are counts,
     # tokenizer selects a tokenizer; session_name/session-name components label
     # a session rather than authenticate it. session_id remains secret-bearing.
-    name = name.lstrip("-")
+    name = strip_controls(name)
+    name = (name if name.isascii() else normalize_text(name)).lstrip("-")
     name = _SESSION_LABEL.sub("label", name)
     return _SECRET_NAME.search(name) is not None
 
@@ -88,7 +110,9 @@ def _apply_edits(
     return "".join(pieces)
 
 
-def _named_value_edits(value: str, *, protect_urls: bool = False) -> Iterator[tuple[int, int, str]]:
+def _named_value_edits(
+    value: str, *, protect_urls: bool = False, empty_values: bool = False
+) -> Iterator[tuple[int, int, str]]:
     # Tokenize names first, then match the value at a fixed offset. A pattern
     # like NAME*SECRETNAME* followed by '=' retries quadratically on long names.
     cursor = 0
@@ -106,27 +130,61 @@ def _named_value_edits(value: str, *, protect_urls: bool = False) -> Iterator[tu
         match = _ASSIGNMENT_VALUE.match(value, name.end())
         if match is None and name.group().startswith("-"):
             match = _FLAG_VALUE.match(value, name.end())
+        if match is None and empty_values:
+            # In detection text a value can be empty because its raw bytes were
+            # removed (an escape sequence) or normalization created a terminator.
+            # Mark the empty value; the caller maps it to raw bytes or withholds.
+            prefix = _ASSIGNMENT_PREFIX.match(value, name.end())
+            if prefix is None and name.group().startswith("-"):
+                prefix = _FLAG_PREFIX.match(value, name.end())
+            if prefix is not None:
+                yield prefix.end(), prefix.end(), _REDACTED
+            continue
         if match is not None:
             url_value = _URL_VALUE.match(value, match.start(2))
-            # Preserve authentication schemes already scrubbed by the bearer/
-            # basic pass, including in Authorization header assignments.
-            if match.group(2).lower() in {"bearer", "basic"} and value.startswith(
-                " <redacted>", match.end(2)
+            # The bearer/basic detector owns the credential span, retaining
+            # the raw authentication scheme in Authorization assignments.
+            if match.group(2).lower() in {"bearer", "basic"} and any(
+                pattern.match(value, match.start(2)) for pattern in (_BEARER_TOKEN, _BASIC_TOKEN)
             ):
                 continue
             # An unquoted URL value belongs to the enclosing assignment/flag,
             # including query delimiters that normally end an unquoted value.
-            cursor = url_value.end() if url_value is not None else match.end(2)
+            cursor = max(url_value.end(), match.end(2)) if url_value is not None else match.end(2)
             yield match.start(2), cursor, _REDACTED
 
 
-def _url_edits(value: str) -> Iterator[tuple[int, int, str]]:
+def _ambiguous_url(value: str) -> bool:
+    try:
+        parts = urlsplit(value)
+    except ValueError:
+        return True
+    # A compatibility-spelled scheme is not recognized by the raw parser.
+    scheme = value.partition("://")[0] if "://" in value else parts.scheme
+    return not parts.scheme or any(
+        unicodedata.normalize("NFKC", part) != part for part in (scheme, parts.netloc)
+    )
+
+
+def _url_edits(value: str, *, raw: bool = True) -> Iterator[tuple[int, int, str]]:
+    if raw and _ambiguous_url(value):
+        # Free-text copies need the same protection as complete URL fields.
+        yield 0, len(value), _REDACTED
+        return
     userinfo = _URL_USERINFO.match(value)
-    if userinfo is not None:
-        yield userinfo.end(1), userinfo.end() - 1, _REDACTED
     base, fragment_marker, _fragment = value.partition("#")
     base, query_marker, query = base.partition("?")
     scheme_end = base.index("://") + 3
+    if userinfo is not None:
+        yield userinfo.end(1), userinfo.end() - 1, _REDACTED
+    else:
+        # 'X:Y' in a netloc is userinfo unless Y is a port: in free text a
+        # password can be cut from its '@' (a space before it, say).
+        authority_end = base.find("/", scheme_end) % (len(base) + 1)
+        authority = base[scheme_end:authority_end]
+        if _netloc_password(authority):
+            colon = authority.find(":", authority.find("]") + 1 if authority.startswith("[") else 0)
+            yield scheme_end + colon + 1, authority_end, _REDACTED
     path_start = base.find("/", scheme_end)
     if path_start >= 0:
         offset = path_start + 1
@@ -140,6 +198,71 @@ def _url_edits(value: str) -> Iterator[tuple[int, int, str]]:
             yield offset + match.start(1), offset + match.end(1), _REDACTED
     if fragment_marker:
         yield value.index("#") + 1, len(value), _REDACTED
+
+
+def _token_end(value: str, start: int) -> int:
+    match = _TOKEN_TAIL.match(value, start)
+    return start if match is None else match.end()
+
+
+class _NextFinder:
+    """First position at or after ``start`` of a substring or pattern, cached.
+
+    Callers ask with non-decreasing starts, so each search runs once per hit.
+    """
+
+    def __init__(self, value: str) -> None:
+        self.value = value
+        self.found: dict[str | re.Pattern[str], int] = {}
+
+    def __call__(self, key: str | re.Pattern[str], start: int) -> int:
+        found = self.found.get(key, -1)
+        if found < start:
+            if isinstance(key, str):
+                found = self.value.find(key, start)
+            else:
+                match = key.search(self.value, start)
+                found = -1 if match is None else match.start()
+            found = len(self.value) if found < 0 else found
+            self.found[key] = found
+        return found
+
+
+def _netloc_password(authority: str) -> bool:
+    """``X:Y`` where ``Y`` is not a numeric port: ``Y`` is a userinfo password."""
+    colon = authority.find(":", authority.find("]") + 1 if authority.startswith("[") else 0)
+    port = authority[colon + 1 :]
+    return colon >= 0 and bool(port) and not port.isdigit()
+
+
+def _truncated_url(url: str, userinfo_follows: bool) -> bool:
+    """The component a quote or angle bracket cut short can carry a credential.
+
+    That is a query or fragment, an authority that userinfo continues or that
+    already holds a password, or a final path segment whose named value runs
+    to the cut.
+    """
+    rest = url[url.index("://") + 3 :]
+    if "?" in rest or "#" in rest:
+        return True
+    if "/" not in rest:
+        return userinfo_follows or _netloc_password(rest)
+    segment = rest.rpartition("/")[2]
+    return _ends_with_secret_label(segment) or any(
+        end == len(segment) for _, end, _ in _named_value_edits(segment)
+    )
+
+
+def _ends_with_secret_label(text: str) -> bool:
+    """``NAME=`` or ``NAME:`` at the end of ``text``, scanned backward in linear time."""
+    head = text.rstrip()
+    if head[-1:] not in {"=", ":"}:
+        return False
+    head = head[:-1].rstrip().rstrip("\"'")
+    start = len(head)
+    while start and (head[start - 1].isascii() and (head[start - 1].isalnum() or head[start - 1] in "_.-")):
+        start -= 1
+    return start < len(head) and _is_secret_name(head[start:])
 
 
 def _jwt_edits(value: str) -> Iterator[tuple[int, int, str]]:
@@ -156,43 +279,313 @@ def _jwt_edits(value: str) -> Iterator[tuple[int, int, str]]:
             yield header.start(), cursor, _REDACTED
 
 
-def _redact_text(value: str, window: _ExcerptWindow | None = None) -> str:
-    for pattern, replacement in ((_BEARER_TOKEN, "Bearer <redacted>"), (_BASIC_TOKEN, "Basic <redacted>")):
-        value = _apply_edits(
-            value, ((match.start(), match.end(), replacement) for match in pattern.finditer(value)), window
-        )
+def _text_edits(value: str, *, raw: bool = True) -> Iterator[tuple[int, int, str]]:
+    for pattern in (_BEARER_TOKEN, _BASIC_TOKEN):
+        for match in pattern.finditer(value):
+            yield match.start(1), match.end(1), _REDACTED
     # Enclosing assignments see their complete values before URL protection.
     # Names within standalone URLs are handled separately, preserving authority.
-    value = _apply_edits(value, _named_value_edits(value, protect_urls=True), window)
-    value = _apply_edits(
-        value,
-        (
-            (match.start() + start, match.start() + end, replacement)
-            for match in _URL.finditer(value)
-            for start, end, replacement in _url_edits(match.group())
-        ),
-        window,
+    yield from _named_value_edits(value, protect_urls=True, empty_values=not raw)
+    # Matches are ordered, so each lookahead is found once per position. An '@'
+    # after another scheme or on another line belongs to something else.
+    following = _NextFinder(value)
+    token_end = -1
+    for match in _URL.finditer(value):
+        end = match.end()
+        if end < len(value) and value[end] in "\"'<>":
+            if token_end < end:
+                token_end = _token_end(value, end)
+            boundary = min(following("://", end), following("\n", end))
+            # A quote or angle bracket ended the URL inside a token, so a query
+            # value or userinfo may continue past it: withhold through the token.
+            if _truncated_url(match.group(), following("@", end) < min(token_end, boundary)):
+                yield match.start(), token_end, _REDACTED
+                continue
+            # Cut inside the authority with an '@' starting a later token on the
+            # line: the userinfo runs on across whitespace up to that '@'.
+            spaced_at = following(_SPACED_AT, end)
+            if "/" not in match.group()[match.group().index("://") + 3 :] and spaced_at < boundary:
+                yield match.start(), spaced_at, _REDACTED
+                continue
+        for start, end, replacement in _url_edits(match.group(), raw=raw):
+            yield match.start() + start, match.start() + end, replacement
+    yield from _jwt_edits(value)
+    for match in _SECRET_VALUE.finditer(value):
+        yield match.start(), match.end(), _REDACTED
+
+
+def _union_edits(edits: Iterable[tuple[int, int, str]]) -> list[tuple[int, int, str]]:
+    result: list[tuple[int, int, str]] = []
+    for start, end, replacement in sorted(edits):
+        # Adjacent replacements merge, so a second pass sees one token.
+        if result and start <= result[-1][1]:
+            result[-1] = result[-1][0], max(end, result[-1][1]), _REDACTED
+        else:
+            result.append((start, end, replacement))
+    return result
+
+
+def _normalized_view(value: str) -> tuple[str, list[tuple[int, int]] | None]:
+    """Detection text and one raw range per character; never a display value.
+
+    Ranges are built in source order, so they are non-decreasing. Stripped
+    controls, escape sequences and invisibles have no normalized character.
+    """
+    pieces: list[str] = []
+    origins: list[tuple[int, int]] = []
+    for start, end in control_free_spans(value):
+        for index in range(start, end):
+            piece = normalize_text(value[index])
+            pieces.append(piece)
+            origins.extend([(index, index + 1)] * len(piece))
+    normalized = normalize_text(strip_controls(value))
+    # Cross-character composition/reordering has no per-codepoint mapping.
+    # Withhold recognized credentials rather than guess their source offsets.
+    return normalized, origins if "".join(pieces) == normalized else None
+
+
+def _structural(char: str) -> bool:
+    return char.isspace() or char in "\"'=: /@?#[]\\,;&"
+
+
+class _RawMap:
+    """Map normalized detection spans to whole raw spans of one field."""
+
+    def __init__(self, value: str, normalized: str, origins: list[tuple[int, int]]) -> None:
+        self.value = value
+        self.normalized = normalized
+        self.origins = origins
+        self.starts = [start for start, _ in origins]
+        self.retained = bytearray(len(value))
+        for start in self.starts:
+            self.retained[start] = 1
+        self.raw_delimiters = [index for index, char in enumerate(value) if _structural(char)]
+        self.normalized_delimiters = [
+            (char, origin[0]) for char, origin in zip(normalized, origins, strict=True) if _structural(char)
+        ]
+        self.delimiter_starts = [start for _, start in self.normalized_delimiters]
+
+    def span(self, start: int, end: int) -> tuple[int, int] | None:
+        """Raw span from the previous to the next retained character, or None.
+
+        Raw bytes that normalization removed next to a match (controls, escape
+        sequences, invisibles) belong to the match: a value runs from just
+        after its raw delimiter to just before its raw terminator. A boundary
+        that splits one raw character's expansion has no raw position.
+        """
+        origins = self.origins
+        if any(0 < edge < len(origins) and origins[edge - 1] == origins[edge] for edge in (start, end)):
+            return None
+        raw_start = origins[start - 1][1] if start else 0
+        # Whitespace between a delimiter and its value is not a raw boundary
+        # when removed bytes sit inside it: start just after the delimiter.
+        previous = start - 1
+        while previous >= 0 and self.normalized[previous].isspace():
+            previous -= 1
+        delimiter_end = origins[previous][1] if previous >= 0 else 0
+        if not all(self.retained[delimiter_end:raw_start]):
+            raw_start = delimiter_end
+        return raw_start, origins[end][0] if end < len(origins) else len(self.value)
+
+    def snap(self, start: int, end: int) -> tuple[int, int]:
+        """Widen a raw span over removed bytes on either side.
+
+        A raw terminator inside a removed escape sequence is not a terminator:
+        the value continues after the sequence, until a retained terminator.
+        """
+        before = bisect_left(self.starts, start)
+        length = len(self.value)
+        while end < length and not self.retained[end]:
+            after = bisect_left(self.starts, end)
+            end = self.starts[after] if after < len(self.starts) else length
+            if (match := _VALUE_CONTINUATION.match(self.value, end)) is not None:
+                end = match.end()
+        return self.origins[before - 1][1] if before else 0, end
+
+    def ambiguous(self, start: int, end: int) -> bool:
+        """Normalization moved, created or removed a delimiter in the span or at its end.
+
+        Removed bytes after the span's last retained character are replaced
+        with it and cannot extend the value; the terminator after them is checked.
+        """
+        following = bisect_left(self.starts, end)
+        core_end = (
+            self.origins[following - 1][1] if following and self.starts[following - 1] >= start else start
+        )
+        raw = self.raw_delimiters[
+            bisect_left(self.raw_delimiters, start) : bisect_left(self.raw_delimiters, core_end)
+        ]
+        normalized = self.normalized_delimiters[
+            bisect_left(self.delimiter_starts, start) : bisect_left(self.delimiter_starts, core_end)
+        ]
+        if [(self.value[index], index) for index in raw] != normalized:
+            return True
+        # The raw character that terminates the span must terminate it in both views.
+        if following == len(self.starts):
+            return False
+        index = self.starts[following]
+        char = self.value[index]
+        return index != end or (normalize_text(char) != char and any(map(_structural, normalize_text(char))))
+
+
+def _redaction_edits(
+    value: str, raw_edits: list[tuple[int, int, str]] | None = None
+) -> list[tuple[int, int, str]] | None:
+    """Disjoint raw-span edits for one field, or None to withhold the whole field.
+
+    Normalization is for detection only. Every normalized match is mapped to a
+    whole raw span and the union of raw spans is replaced; no normalized text
+    or normalized offset is ever emitted. ``raw_edits`` may carry the field's
+    already computed raw-pass union.
+    """
+    if raw_edits is None:
+        raw_edits = _union_edits(_text_edits(value))
+    normalized = normalize_text(strip_controls(value))
+    if normalized == value:
+        return raw_edits
+    normalized_edits = list(_text_edits(normalized, raw=False))
+    normalized, origins = _normalized_view(value)
+    if origins is None:
+        return None
+    raw_map = _RawMap(value, normalized, origins)
+    raw_edits = _union_edits(
+        (*raw_map.snap(start, end), replacement) for start, end, replacement in raw_edits
     )
-    value = _apply_edits(value, _jwt_edits(value), window)
-    return _apply_edits(
-        value, ((match.start(), match.end(), _REDACTED) for match in _SECRET_VALUE.finditer(value)), window
-    )
+    edits = list(raw_edits)
+    for url in _URL.finditer(normalized):
+        span = raw_map.span(url.start(), url.end())
+        if span is None:
+            return None
+        # Judge the URL by its own raw characters; replace it with its neighbors.
+        if _ambiguous_url(value[origins[url.start()][0] : origins[url.end() - 1][1]]):
+            edits.append((*span, _REDACTED))
+    for start, end, replacement in normalized_edits:
+        span = raw_map.span(start, end)
+        if span is None:
+            return None
+        if start < end or span[0] < span[1]:
+            edits.append((*span, replacement))
+        # An empty detection match hides only raw bytes removed at its position;
+        # a terminator that normalization created there leaves no raw extent.
+        elif raw_map.ambiguous(*span) and not any(left <= span[0] < right for left, right, _ in raw_edits):
+            return None
+    result = _union_edits(edits)
+    for start, end, _ in result:
+        if not raw_map.ambiguous(start, end):
+            continue
+        # A complete raw value (snapped to retained characters) is withheld in
+        # place; any other ambiguous extent withholds the field.
+        if value[start:end].isascii() and any(left <= start and end <= right for left, right, _ in raw_edits):
+            continue
+        return None
+    # These spans end at raw whitespace, so they need no ambiguity check.
+    swallowed = list(_swallowed_delimiter_edits(raw_map, result))
+    return _union_edits([*result, *swallowed]) if swallowed else result
+
+
+_SWALLOWABLE = frozenset("=:@\"'/?#&;,")
+
+
+def _secret_names(text: str) -> tuple[list[int], dict[int, int]]:
+    """Starts of secret label words, and each one's start keyed by its end."""
+    names = [name for name in _NAME_TOKEN.finditer(text) if _is_secret_name(name.group())]
+    return [name.start() for name in names], {name.end(): name.start() for name in names}
+
+
+def _after_last(positions: list[int], limit: int) -> int:
+    """Index just after the last listed position before ``limit`` (a token start)."""
+    index = bisect_left(positions, limit)
+    return positions[index - 1] + 1 if index else 0
+
+
+def _swallowed_delimiter_edits(
+    raw_map: _RawMap, result: list[tuple[int, int, str]]
+) -> Iterator[tuple[int, int, str]]:
+    """Removed bytes may never hide a delimiter next to a credential.
+
+    For each run of raw bytes that detection removed: if it holds a structural
+    delimiter, ends in a bare two-byte escape (whose extent terminals read
+    differently), or directly follows a secret label word, withhold from the
+    first secret label or URL in its whitespace-free token (or a raw label
+    inside the run) through the end of that token. A run inside an existing
+    replacement only matters for the first two reasons, which can end it
+    early; that replacement then extends through the token, keeping its
+    intact raw label.
+    """
+    value, normalized, starts = raw_map.value, raw_map.normalized, raw_map.starts
+    normalized_names, normalized_ends = _secret_names(normalized)
+    raw_names, raw_ends = _secret_names(value)
+    normalized_spaces = [index for index, char in enumerate(normalized) if char.isspace()]
+    raw_spaces = [index for index, char in enumerate(value) if char.isspace()]
+    schemes = [match.start() for match in re.finditer("://", normalized)]
+    covered = [start for start, _, _ in result]
+    index, length = 0, len(value)
+    while index < length:
+        if raw_map.retained[index]:
+            index += 1
+            continue
+        run_start = index
+        while index < length and not raw_map.retained[index]:
+            index += 1
+        run = value[run_start:index]
+        delimiter = any(char.isspace() or char in _SWALLOWABLE for char in run) or (
+            len(run) >= 2 and run[-2] == "\x1b" and run[-1] not in "[]"
+        )
+        following = bisect_left(starts, run_start)
+        edit = bisect_left(covered, run_start + 1) - 1
+        inside = edit >= 0 and index <= result[edit][1]
+        if not delimiter and (inside or (following not in normalized_ends and run_start not in raw_ends)):
+            continue
+        if inside:
+            # The label and delimiter before this replacement are intact raw
+            # text; only its end is in doubt, so extend it through the token.
+            yield result[edit][0], _token_end(value, index), _REDACTED
+            continue
+        token_start = _after_last(normalized_spaces, following)
+        raw_token_start = _after_last(raw_spaces, run_start)
+        anchors: list[int] = []
+        name = bisect_left(normalized_names, token_start)
+        if name < len(normalized_names) and normalized_names[name] < following:
+            anchors.append(raw_map.origins[normalized_names[name]][0])
+        scheme = bisect_left(schemes, token_start)
+        if scheme < len(schemes) and schemes[scheme] < following:
+            anchors.append(raw_map.origins[token_start][0])
+        name = bisect_left(raw_names, raw_token_start)
+        # A raw label inside the removed run counts too (an OSC payload, say).
+        if name < len(raw_names) and raw_names[name] < index:
+            anchors.append(raw_names[name])
+        if anchors:
+            yield min(anchors), _token_end(value, index), _REDACTED
 
 
 def redact_text(value: str) -> str:
-    """Redact likely credential values while preserving useful context."""
-    redacted = _redact_text(value)
-    return "[metadata excerpt withheld]" if _normalization_exposes_secret(redacted) else redacted
+    """Redact likely credential values while preserving useful context.
+
+    Each pass replaces whole raw spans, so its output is still the raw field
+    with spans replaced. Replacing a value can change how neighboring
+    detectors read the field (a removed '//' ends a URL), so passes repeat
+    until the output is stable; a field that does not settle is withheld.
+    """
+    for _ in range(_MAX_PASSES):
+        edits = _redaction_edits(value)
+        if edits is None:
+            return _REDACTED
+        redacted = _apply_edits(value, edits)
+        if redacted == value:
+            return value
+        value = redacted
+    return _REDACTED
 
 
 def _normalization_exposes_secret(redacted: str) -> bool:
-    from mcp_audit.normalize import normalize_text
-
     # normalize_text is the identity on ASCII (test_normalize_text_is_identity_on_ascii).
-    if redacted.isascii():
-        return False
-    normalized = normalize_text(redacted)
-    return normalized != redacted and _redact_text(normalized) != normalized
+    normalized = strip_controls(redacted)
+    if not normalized.isascii():
+        normalized = normalize_text(normalized)
+    return (
+        normalized != redacted
+        and _apply_edits(normalized, _union_edits(_text_edits(normalized, raw=False))) != normalized
+    )
 
 
 def trim_excerpt_context(before: str, after: str) -> tuple[str, str]:
@@ -228,11 +621,17 @@ def redacted_excerpt(
     start = min(len(text), max(0, start))
     end = min(len(text), max(start, end))
     window = _ExcerptWindow(start, end)
-    redacted = _redact_text(text, window)
-    # A label can become recognizable only after Unicode normalization. If
-    # raw-field redaction missed such a value, withhold the field's evidence
-    # altogether rather than copy any raw or normalized part of that value.
-    if _normalization_exposes_secret(redacted):
+    raw_edits = _union_edits(_text_edits(text))
+    redacted = _apply_edits(text, raw_edits, window)
+    # A label or value extent can become recognizable only after Unicode
+    # normalization or control stripping. If raw-field redaction is not the
+    # complete field redaction, withhold the field's evidence altogether
+    # rather than copy any raw or normalized part of that value.
+    if (
+        _redaction_edits(text, raw_edits) != raw_edits
+        or (raw_edits and redact_text(redacted) != redacted)
+        or _normalization_exposes_secret(redacted)
+    ):
         withheld = "[metadata excerpt withheld]"
         return withheld if max_length is None else withheld[:max_length]
     left = max(0, window.start - context_before)
@@ -299,69 +698,161 @@ def _redact_literal_strings(value: object) -> object:
     if isinstance(value, list):
         return [_redact_literal_strings(item) for item in value]
     if isinstance(value, dict):
-        return {key: _redact_literal_strings(item) for key, item in value.items()}
+        result: dict[object, object] = {}
+        for key, item in value.items():
+            result[_redacted_key(key, result)] = _redact_literal_strings(item)
+        return result
     return value
 
 
-def _redact_properties(properties: dict[object, object]) -> dict[object, object]:
+def _redacted_key(key: object, result: dict[object, object]) -> object:
+    """Scrub dynamic keys without losing entries when multiple secrets collapse."""
+    redacted = redact_text(key) if isinstance(key, str) else key
+    candidate = redacted
+    index = 2
+    while candidate in result:
+        candidate = f"{redacted} [{index}]"
+        index += 1
+    return candidate
+
+
+def _redact_properties(
+    properties: dict[object, object], *, secret_schema: bool = False
+) -> dict[object, object]:
     result: dict[object, object] = {}
     for name, schema in properties.items():
-        if isinstance(name, str) and _is_secret_name(name) and isinstance(schema, dict):
-            result[name] = {
-                key: _redact_literal_strings(item)
-                if key in {"default", "examples", "const"}
-                else redact_data(item)
-                for key, item in schema.items()
-            }
-        else:
-            result[name] = redact_data(schema)
+        result[_redacted_key(name, result)] = _redact_json(
+            schema, secret_schema=secret_schema or (isinstance(name, str) and _is_secret_name(name))
+        )
     return result
 
 
-def redact_data(value: Any) -> Any:
-    """Recursively redact strings and secret flag/value pairs in JSON-like data."""
+def redact_argv(value: list[object]) -> list[object]:
+    """Use argv boundaries, including values that start with a dash."""
+    result: list[object] = []
+    secret_value = False
+    for item in value:
+        if secret_value:
+            result.append(_REDACTED)
+            secret_value = False
+            continue
+        if not isinstance(item, str):
+            result.append(_redact_json(item))
+            continue
+        normalized, origins = _normalized_view(item)
+        name = _NAME_TOKEN.match(normalized)
+        if (
+            name is not None
+            and _is_secret_name(name.group())
+            and normalized[name.end() :].startswith(("=", ":"))
+            and _URL.match(normalized) is None
+        ):
+            # Cut the raw argument just after the raw delimiter character and
+            # replace the whole remaining value, including removed controls.
+            # A delimiter that shares its raw character with a neighbor has no
+            # raw boundary, so the argument is withheld.
+            delimiter = name.end()
+            if origins is None or any(
+                0 <= neighbor < len(origins) and origins[neighbor] == origins[delimiter]
+                for neighbor in (delimiter - 1, delimiter + 1)
+            ):
+                result.append(_REDACTED)
+            else:
+                result.append(redact_text(item[: origins[delimiter][1]] + _REDACTED))
+        else:
+            result.append(redact_text(item))
+        secret_value = (
+            normalized.startswith("-")
+            and _NAME_TOKEN.fullmatch(normalized) is not None
+            and _is_secret_name(normalized)
+        )
+    return result
+
+
+def redact_url(value: str) -> str:
+    """Parse a complete URL field; retain endpoint shape, never authentication data."""
+    # A field the free-text URL span would not cover whole has no raw boundary.
+    if _ambiguous_url(value) or _URL_VALUE.fullmatch(value) is None:
+        return _REDACTED
+    # Work on raw spans, retaining the exact spelling and delimiters of the URL.
+    return redact_text(value)
+
+
+def _redact_json(value: object, *, secret_schema: bool = False) -> object:
     if isinstance(value, str):
         return redact_text(value)
     if isinstance(value, list):
-        result = []
-        secret_value = False
-        for item in value:
-            if isinstance(item, str):
-                name = _NAME_TOKEN.match(item)
-                if secret_value and not item.startswith("-"):
-                    result.append(_REDACTED)
-                elif (
-                    name is not None
-                    and _is_secret_name(name.group())
-                    and item[name.end() :].startswith(("=", ":"))
-                    and _URL.match(item) is None
-                ):
-                    # One argv element has a known boundary, even when its value
-                    # contains spaces, commas, ampersands or embedded quotes.
-                    result.append(item[: name.end() + 1] + _REDACTED)
-                else:
-                    result.append(redact_text(item))
-            else:
-                result.append(redact_data(item))
-            secret_value = (
-                isinstance(item, str)
-                and item.startswith("-")
-                and _NAME_TOKEN.fullmatch(item) is not None
-                and _is_secret_name(item)
-            )
-        return result
+        return [_redact_json(item, secret_schema=secret_schema) for item in value]
     if isinstance(value, dict):
-        return {
-            key: _REDACTED
-            if isinstance(key, str) and _is_secret_name(key) and isinstance(item, str)
-            else _redact_properties(item)
-            if key == "properties" and isinstance(item, dict)
-            else _redact_config_pointer(item)
-            if key == "config_pointer" and isinstance(item, str)
-            else redact_data(item)
-            for key, item in value.items()
-        }
+        result: dict[object, object] = {}
+        for key, item in value.items():
+            redacted: object
+            # Secret-property context follows composition branches, while the
+            # usual metadata rules still apply to non-literal fields.
+            if secret_schema and key in {"default", "example", "examples", "const", "enum"}:
+                redacted = _redact_literal_strings(item)
+            elif key == "properties" and isinstance(item, dict):
+                redacted = _redact_properties(item, secret_schema=secret_schema)
+            elif key == "config_pointer" and isinstance(item, str):
+                redacted = _redact_config_pointer(item)
+            elif key == "args" and isinstance(item, list):
+                redacted = redact_argv(item)
+            elif key in {"env", "headers"} and isinstance(item, dict):
+                key_map: dict[object, object] = {}
+                for name in item:
+                    key_map[_redacted_key(name, key_map)] = _REDACTED
+                redacted = key_map
+            elif isinstance(key, str) and _is_secret_name(key):
+                redacted = _redact_literal_strings(item)
+            else:
+                redacted = _redact_json(item, secret_schema=secret_schema)
+            result[_redacted_key(key, result)] = redacted
+        return result
     return value
+
+
+def redact_data(value: Any) -> Any:
+    """Redact JSON-like metadata; retain the legacy top-level argv-list API."""
+    return redact_argv(value) if isinstance(value, list) else _redact_json(value)
+
+
+def redact_model(model: BaseModel) -> dict[str, object]:
+    """One structural pass over a typed report, preserving declared field names."""
+    from mcp_audit.models import ServerConfig
+
+    def walk(source: object, data: object) -> object:
+        if isinstance(source, BaseModel) and isinstance(data, dict):
+            result: dict[str, object] = {}
+            for key, item in data.items():
+                if isinstance(source, ServerConfig) and key == "args" and isinstance(item, list):
+                    result[key] = redact_argv(item)
+                elif isinstance(source, ServerConfig) and key == "url" and isinstance(item, str):
+                    result[key] = redact_url(item)
+                elif key == "config_pointer" and isinstance(item, str):
+                    result[key] = _redact_config_pointer(item)
+                else:
+                    result[key] = walk(getattr(source, key), item)
+            if result.get("matched_span") is not None and result.get("matched_text") != data.get(
+                "matched_text"
+            ):
+                result["matched_span"] = None
+            return result
+        if isinstance(source, (list, tuple)) and isinstance(data, list):
+            return [walk(raw, item) for raw, item in zip(source, data, strict=True)]
+        if (
+            isinstance(source, dict)
+            and isinstance(data, dict)
+            and any(isinstance(item, BaseModel) for item in source.values())
+        ):
+            result_map: dict[object, object] = {}
+            for key, item in data.items():
+                result_map[_redacted_key(key, result_map)] = walk(source[key], item)
+            return result_map
+        return _redact_json(data)
+
+    data = walk(model, model.model_dump(mode="json"))
+    assert isinstance(data, dict)
+    return data
 
 
 def _redact_config_pointer(pointer: str) -> str:
