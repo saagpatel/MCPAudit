@@ -37,8 +37,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - See [Known issues](docs/known-issues.md) for remaining free-text redaction
   edge cases, sequence rollback limits, schema-check coverage, and legacy v1 pins.
-- The planned `fix <server>` dry-run (D15) is absent from this candidate tree;
-  it is not an available command.
 
 ### Security
 
@@ -91,6 +89,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Preview argument-only fixes with `fix SERVER --config FILE` for unpinned
+  `npx -y` packages and broad filesystem roots (D15); suggestions are not written
+  to disk, and previews are withheld when the server's config location contains
+  credential-shaped text.
 #### Read-only review and observability
 
 - Add an opt-in `[otel]` library integration exporting redacted reports as
