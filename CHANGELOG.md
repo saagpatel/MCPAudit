@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Preview argument-only fixes with `fix SERVER --config FILE` for unpinned
+  `npx -y` packages and broad filesystem roots; suggestions are not written to disk.
 - Lint GitHub Actions workflows on every pull request with a checksum-verified,
   pinned actionlint binary.
 
