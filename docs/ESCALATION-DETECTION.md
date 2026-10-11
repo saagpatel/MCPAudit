@@ -62,10 +62,10 @@ description/schema content rather than annotation defaults.
 
 ### MCP019 — Description-injection escalation
 
-A pinned tool's description **gained** one or more prompt-injection patterns
-(e.g. `ignore_instructions`, `system_override`, `hidden_directive`) that were
-absent from the approved baseline. A benign tool description mutating to carry
-agent-targeting instructions is a strong compromise signal. Always **HIGH**.
+A pinned tool's description **gained** instruction-shaped text (e.g.
+`ignore_instructions`, `system_override`, `hidden_directive`) that was absent
+from the approved baseline. A benign tool description mutating to carry
+agent-targeting instructions is a strong unexpected-change signal. Always **HIGH**.
 
 ## Output
 
