@@ -9,10 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Schedule the frozen `cli._run_scan_core` compatibility shim for removal in
+  3.0, retaining the existing 2.x compatibility window.
 - Describe `--inject-check` and MCP019 findings in terms of instruction-shaped text.
 
 ### Added
 
+- Add read-only `mcp-audit shadow` review on the public engine with explicit
+  configs and pins, opt-in metadata connections, existing drift and pin-integrity
+  checks, fleet tool-name collisions, and policy/sequence gates. Verification
+  reads existing trust history without updating it; output keeps the existing
+  `AuditReport` schema. No enforcing proxy is included.
 - Share offline lab descriptor reads, strict JSON decoding, and canonical
   serialization mechanics while retaining each lab's limits, errors, aliases,
   and number policy. Verify existing canonical report bytes with fixture digests;

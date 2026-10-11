@@ -471,8 +471,8 @@ async def _run_scan_core(
 
     The scan pipeline moved to :mod:`mcp_audit.engine`; this wrapper keeps the
     old private entry point working for external callers (e.g. shadow-mcp)
-    until they migrate. It preserves the historical behavior of printing
-    progress + advisory warnings to the CLI console.
+    through 2.x; removal is scheduled for 3.0. It preserves the historical
+    behavior of printing progress + advisory warnings to the CLI console.
 
     FROZEN SURFACE: never extend this signature. New scan options go on
     :class:`mcp_audit.engine.ScanOptions` only — a flag added here but not
@@ -480,7 +480,7 @@ async def _run_scan_core(
     """
     warnings.warn(
         "mcp_audit.cli._run_scan_core is deprecated; use mcp_audit.engine.run_scan "
-        "with mcp_audit.engine.ScanOptions instead.",
+        "with mcp_audit.engine.ScanOptions instead. Scheduled for removal in 3.0.",
         DeprecationWarning,
         stacklevel=2,
     )
