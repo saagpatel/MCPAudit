@@ -10,6 +10,7 @@ import click
 
 from mcp_audit.models import TransportType
 from mcp_audit.pkgverify import PackageRef, _split_npm_spec
+from mcp_audit.redaction import _redact_config_pointer
 from mcp_audit.review_discovery import review_sources, server_identity
 
 _PACKAGE = re.compile(r"(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*")
@@ -23,17 +24,22 @@ _FILESYSTEM = "@modelcontextprotocol/server-filesystem"
 
 
 def _narrow_path(value: str, roots: list[str]) -> str:
+    """Accept a strict subdirectory; `$HOME/...` is checked symbolically, so it works on any host."""
+    symbolic = value.startswith("$HOME/")
+    rest = value[len("$HOME/") :] if symbolic else value
+    parts = rest.split("/")
+    candidate = PurePosixPath(value)
     home = PurePosixPath(Path.home().as_posix())
-    expanded = str(home) + value[len("$HOME") :] if value.startswith("$HOME/") else value
-    candidate = PurePosixPath(expanded)
     if (
-        not candidate.is_absolute()
-        or expanded.startswith("//")
-        or any(part in {".", ".."} for part in expanded.split("/"))
-        or "\\" in value
+        "\\" in value
         or any(ord(char) < 32 or ord(char) == 127 for char in value)
-        or candidate in {PurePosixPath("/"), home}
-        or ("$HOME" in roots and not candidate.is_relative_to(home))
+        or any(part in {".", ".."} for part in parts)
+        or (symbolic and (not rest or rest.startswith("/")))
+        or (
+            not symbolic
+            and (not candidate.is_absolute() or value.startswith("//") or candidate == PurePosixPath("/"))
+        )
+        or (not symbolic and (candidate == home or ("$HOME" in roots and not candidate.is_relative_to(home))))
     ):
         raise click.BadParameter(
             "supply a strict subdirectory of the configured root; use an absolute path or $HOME/subdir",
@@ -72,6 +78,13 @@ def fix(server: str, config: Path, package_version: str | None, narrower_path: s
             "Use inspect --config FILE. Nothing written."
         )
     entry = selected[0]
+    if entry.config_pointer is None:
+        raise click.ClickException("Cannot locate this server inside the config file. Nothing written.")
+    if _redact_config_pointer(entry.config_pointer) != entry.config_pointer:
+        raise click.ClickException(
+            "The server's config location contains credential-shaped text; previews are withheld. "
+            "Nothing written."
+        )
     args = entry.args
     patches: list[dict[str, str]] = []
     npx_form = (

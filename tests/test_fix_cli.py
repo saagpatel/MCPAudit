@@ -252,3 +252,28 @@ def test_preview_never_discovers_connects_fetches_or_writes(
     assert '"headers"' not in result.output
     assert config.read_bytes() == before
     assert set(tmp_path.rglob("*")) == files
+
+
+@pytest.mark.parametrize("key", ["fixture password=pointer-secret", "https://user:pointer-secret@host"])
+def test_credential_shaped_config_pointer_withholds_previews(tmp_path: Path, key: str) -> None:
+    config = tmp_path / "selected.json"
+    server = {"command": "npx", "args": ["-y", "fixture-package"]}
+    config.write_text(json.dumps({"mcpServers": {key: server}}))
+    result = _run(config, server=key)
+    assert result.exit_code == 1
+    assert "previews are withheld" in result.output
+    assert "pointer-secret" not in result.output
+
+
+def test_symbolic_home_path_is_accepted_on_drive_qualified_hosts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class _WindowsHome:
+        def as_posix(self) -> str:
+            return "C:/Users/fixture"
+
+    monkeypatch.setattr("mcp_audit.fix_cli.Path.home", lambda: _WindowsHome())
+    config = _config(tmp_path, ["-y", FILESYSTEM + "@1.2.3", "$HOME"])
+    assert _patches(_run(config, "--path", "$HOME/project"))[0]["value"] == "$HOME/project"
+    for bad in ("$HOME/", "$HOME//project", "$HOME/../project", "$HOME/project/."):
+        assert _run(config, "--path", bad).exit_code == 2
