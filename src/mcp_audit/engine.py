@@ -633,8 +633,9 @@ async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) ->
                 servers=[srv.name],
             )
 
+        tool_texts = [agent_visible_text(tool) for tool in audit.tools]
         for target_type, target_name, text in chain(
-            (("tool", tool.name, agent_visible_text(tool)) for tool in audit.tools),
+            (("tool", tool.name, text) for tool, text in zip(audit.tools, tool_texts, strict=True)),
             (
                 ("prompt", prompt.name, prompt_visible_text(prompt))
                 for prompt in audit.prompts
@@ -653,7 +654,9 @@ async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) ->
         # Analyze tool list for new permission findings
         schema_incomplete: list[str] = []
         if not skip_connect or not audit.permissions:
-            raw_findings = analyzer.analyze_server(audit.tools, incomplete_reasons=schema_incomplete)
+            raw_findings = analyzer.analyze_server(
+                audit.tools, incomplete_reasons=schema_incomplete, agent_texts=tool_texts
+            )
         else:
             raw_findings = list(audit.permissions)
         if schema_incomplete:
@@ -678,7 +681,9 @@ async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) ->
         audit.permissions = applier.apply(srv.name, raw_findings)
         audit.annotations_missing = analyzer.annotations_missing(audit.tools)
         audit.annotation_findings = [
-            finding for tool in audit.tools for finding in analyzer.analyze_annotation_contradictions(tool)
+            finding
+            for tool, text in zip(audit.tools, tool_texts, strict=True)
+            for finding in analyzer.analyze_annotation_contradictions(tool, agent_text=text)
         ]
         audit.capability_findings = analyzer.analyze_capabilities(audit.prompts, audit.resources)
         tool_schema_incomplete: list[str] = []
@@ -706,7 +711,9 @@ async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) ->
         # Optional injection detection
         if injection_detector is not None:
             audit.injection_findings.extend(
-                injection_detector.scan_server(audit.tools, audit.prompts, audit.resources)
+                injection_detector.scan_server(
+                    audit.tools, audit.prompts, audit.resources, agent_texts=tool_texts
+                )
             )
 
         # Optional SSRF detection (allowlist filtering happens in a post-loop pass)

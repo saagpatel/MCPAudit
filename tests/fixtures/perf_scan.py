@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 from unittest.mock import patch
 
+from mcp_audit.agent_text import AgentText
 from mcp_audit.analyzer import PermissionAnalyzer
 from mcp_audit.cli import main
 from mcp_audit.models import PermissionFinding, ToolInfo
@@ -20,13 +21,17 @@ def run() -> None:
     original = PermissionAnalyzer.analyze_server
 
     def timed(
-        self: PermissionAnalyzer, tools: list[ToolInfo], *, incomplete_reasons: list[str] | None = None
+        self: PermissionAnalyzer,
+        tools: list[ToolInfo],
+        *,
+        incomplete_reasons: list[str] | None = None,
+        agent_texts: list[AgentText] | None = None,
     ) -> list[PermissionFinding]:
         nonlocal analysis_seconds
         analysis_tool_counts.append(len(tools))
         start = time.perf_counter()
         try:
-            return original(self, tools, incomplete_reasons=incomplete_reasons)
+            return original(self, tools, incomplete_reasons=incomplete_reasons, agent_texts=agent_texts)
         finally:
             analysis_seconds += time.perf_counter() - start
 

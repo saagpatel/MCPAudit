@@ -10,6 +10,7 @@ from types import FrameType
 import pytest
 
 from mcp_audit import analysis_budget as budget_module
+from mcp_audit.agent_text import AgentText
 from mcp_audit.analysis_budget import AnalysisTimeout, analysis_budget
 from mcp_audit.analyzer import PermissionAnalyzer
 from mcp_audit.connector import ServerConnector
@@ -78,6 +79,7 @@ async def test_fixture_analysis_uses_remaining_server_wall_clock(
         tools: list[ToolInfo],
         *,
         incomplete_reasons: list[str] | None = None,
+        agent_texts: list[AgentText] | None = None,
     ) -> list[PermissionFinding]:
         assert len(tools) == 1  # A real fixture listing reached analysis.
         while True:

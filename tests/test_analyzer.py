@@ -4,9 +4,11 @@ import json
 import re
 from pathlib import Path
 from time import perf_counter
+from unittest.mock import Mock
 
 import pytest
 
+from mcp_audit import analyzer as analyzer_module
 from mcp_audit.agent_text import agent_visible_text
 from mcp_audit.analyzer import PermissionAnalyzer
 from mcp_audit.models import (
@@ -23,6 +25,21 @@ from mcp_audit.text_limits import MAX_FIELD_BYTES, bounded_text
 from tests.conftest import make_tool
 
 analyzer = PermissionAnalyzer()
+
+
+def test_keyword_scoring_searches_each_field_once_across_categories(monkeypatch: pytest.MonkeyPatch) -> None:
+    regex, contained = analyzer_module._keyword_regex()
+    matcher = Mock(wraps=regex)
+    monkeypatch.setattr(analyzer_module, "_keyword_regex", lambda: (matcher, contained))
+    fixture = Path("tests/fixtures/nested_schema_permissions.json")
+    tool = ToolInfo.model_validate_json(fixture.read_text())
+    findings = analyzer.analyze_tool_keywords(tool)
+    # The two nested property names supplement the ordinary visible fields.
+    assert matcher.finditer.call_count == len(agent_visible_text(tool).fields) + 2
+    assert {finding.category for finding in findings} >= {
+        PermissionCategory.SHELL_EXEC,
+        PermissionCategory.EXFILTRATION,
+    }
 
 
 @pytest.mark.parametrize("index", range(4))
