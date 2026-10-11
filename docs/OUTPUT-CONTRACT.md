@@ -486,10 +486,13 @@ flag/value pairs in argv and text, bearer/basic credentials, and common
 GitHub, OpenAI/Anthropic, Slack, AWS access-key, JWT, GitLab and npm token
 shapes. Quoted JSON/dict assignments inside strings are covered, as are string
 dictionary values under secret-named keys and string literals in a secret schema
-property's `default`, `examples`, and `const`; non-string values and structure
+property's `default`, `example`, `examples`, `const`, and `enum`, including
+nested schema composition branches; non-string values and structure
 are retained. Inline secret argv assignments redact the whole remainder of the
-element. A secret flag does not consume the following argv element when that
-element starts with `-`, so gained flags remain visible to provenance checks.
+element. A secret flag consumes the following argv element even when that
+element starts with `-`, consistently in reports and default pin snapshots.
+That slot is ambiguous and is withheld as a credential; provenance cannot infer
+a gained option there. Options outside secret-value slots remain distinguishable.
 In any `scheme://` URL, userinfo, every query parameter value (including
 non-secret parameters), and the entire fragment are redacted; query names,
 hosts, ports and path shape remain visible. Userinfo extends through the last
@@ -499,6 +502,10 @@ pairs redact their entire URL value before standalone URL spans are protected
 from generic named-assignment matching, including secret-named hosts.
 Nested `scheme://` URLs within paths are scrubbed independently. A secret-named
 path assignment whose value is a URL redacts that whole value, including its path.
+Malformed URL authorities are withheld in free-text copies as well as typed URL
+fields, including warnings and default pin snapshots. Fields whose Unicode
+normalization introduces credential delimiters are withheld rather than risk
+restoring text removed by the raw pass.
 
 Provenance comparisons redact both sides. Changes confined to query values or
 fragments therefore do not report drift, even for non-secret endpoint options;
