@@ -31,9 +31,12 @@ _SECRET_NAME = re.compile(
 _SECRET_LABELS = re.compile(f"(?=({_SECRET_NAME.pattern}))", re.IGNORECASE)
 # Escape framing and controls; what is left of a removed run is its printable bytes.
 _RUN_FRAMING = re.compile(r"\x1b[\[\]\\]?|[\x00-\x08\x0b-\x1f\x7f-\x9f]")
-# Removed runs with printable bytes per label chunk before the label is ambiguous.
-_MAX_LITERAL_RUNS = 4
+# Readings of one whitespace-free chunk before it is ambiguous.
+_MAX_READINGS = 1024
 _CACHED_NAME_LENGTH = 256
+# Reading characters detected per field before its remaining tokens are ambiguous.
+_READING_BUDGET = 1 << 18
+_STRUCTURAL_BYTES = re.compile(r"[=:@/?#\"'`]")
 # A value is a run of quoted and unquoted segments, as in a shell word, so a
 # replacement never stops where a second pass would continue. A backslash
 # escapes the next character; an unterminated quoted segment runs to the end
@@ -114,56 +117,132 @@ def _plain_secret_name(name: str) -> bool:
     return _SECRET_NAME.search(name) is not None
 
 
-def _run_readings(run: str) -> tuple[tuple[str, bool], ...]:
-    """Ways a removed control run can read inside a label, flagged when literal.
+# One reading choice for a segment: its text, each character's raw index, and
+# whether the text comes from a removed run.
+_Choice = tuple[str, tuple[int, ...], bool]
 
-    Detection drops the whole run, but a terminal or a reader of the raw field
+
+@dataclass(frozen=True)
+class _Segment:
+    start: int
+    end: int
+    choices: tuple[_Choice, ...]
+
+
+@dataclass(frozen=True)
+class _Reading:
+    """One reading of raw text: its characters, their raw indexes, and which came from removed runs."""
+
+    text: str
+    origins: tuple[int, ...]
+    literal: tuple[bool, ...]
+
+
+def _printable_spans(value: str, start: int, end: int) -> Iterator[tuple[int, int]]:
+    """Printable ranges of a removed run once escape framing and controls go."""
+    for framing in _RUN_FRAMING.finditer(value, start, end):
+        if start < framing.start():
+            yield start, framing.start()
+        start = framing.end()
+    if start < end:
+        yield start, end
+
+
+def _segments(value: str) -> list[_Segment]:
+    """Retained text and removed runs, each with the ways it can be read.
+
+    Detection drops a removed run, but a terminal or a reader of the raw field
     may take its printable bytes literally: a CSI/C1 final byte (``ESC [ s``),
-    its parameters, an OSC payload or the byte after a bare ESC.
+    its parameters and intermediates, an OSC payload or the byte after a bare
+    ESC. A CSI consumes parameter and intermediate bytes greedily, so the
+    sequence may have been meant to end earlier: it reads as dropped or as any
+    suffix of its printable bytes. Any other run reads as dropped, as its last
+    printable byte, or as all of them. The longest reading is always last.
     """
-    printable = _RUN_FRAMING.sub("", run)
-    literal = dict.fromkeys(text for text in (printable[-1:], printable) if text)
-    return (("", False), *((text, True) for text in literal))
-
-
-def _label_chunks(name: str) -> Iterator[list[tuple[tuple[str, bool], ...]]]:
-    """Whitespace-free chunks of a raw label as reading choices per segment."""
-    chunk: list[tuple[tuple[str, bool], ...]] = []
+    segments: list[_Segment] = []
     cursor = 0
-    for start, end in control_free_spans(name):
+    for start, end in (*control_free_spans(value), (len(value), len(value))):
         if cursor < start:
-            chunk.append(_run_readings(name[cursor:start]))
-        for piece in re.split(r"(\s+)", name[start:end]):
-            if piece.isspace():
-                yield chunk
-                chunk = []
-            elif piece:
-                chunk.append(((piece, False),))
+            printable = tuple(
+                index
+                for left, right in _printable_spans(value, cursor, start)
+                for index in range(left, right)
+            )
+            choices: dict[str, _Choice] = {"": ("", (), True)}
+            csi = value.startswith(("\x1b[", "\x9b"), cursor)
+            suffixes = range(len(printable) - 1, -1, -1) if csi else (len(printable) - 1, 0)
+            for indexes in (printable[index:] for index in suffixes if index >= 0):
+                text = "".join(value[index] for index in indexes)
+                choices.setdefault(text, (text, indexes, True))
+            segments.append(_Segment(cursor, start, tuple(choices.values())))
+        if start < end:
+            segments.append(_Segment(start, end, ((value[start:end], tuple(range(start, end)), False),)))
         cursor = end
-    if cursor < len(name):
-        chunk.append(_run_readings(name[cursor:]))
+    return segments
+
+
+def _chunks(segments: list[_Segment]) -> Iterator[list[_Segment]]:
+    """Whitespace-free chunks: retained whitespace splits, removed whitespace does not."""
+    chunk: list[_Segment] = []
+    for segment in segments:
+        text, indexes, literal = segment.choices[0]
+        if literal:
+            chunk.append(segment)
+            continue
+        cursor = 0
+        for space in re.finditer(r"\s+", text):
+            if cursor < space.start():
+                piece = (text[cursor : space.start()], indexes[cursor : space.start()], False)
+                chunk.append(_Segment(indexes[cursor], indexes[space.start() - 1] + 1, (piece,)))
+            yield chunk
+            chunk = []
+            cursor = space.end()
+        if cursor < len(text):
+            chunk.append(_Segment(indexes[cursor], segment.end, ((text[cursor:], indexes[cursor:], False),)))
     yield chunk
+
+
+def _reading_count(chunk: list[_Segment]) -> int:
+    """Number of readings, stopping once past the limit (no huge products)."""
+    count = 1
+    for segment in chunk:
+        count *= len(segment.choices)
+        if count > _MAX_READINGS:
+            break
+    return count
+
+
+def _readings(chunk: list[_Segment]) -> Iterator[_Reading] | None:
+    """Every combination of run choices, or None when too many runs make it ambiguous."""
+    if _reading_count(chunk) > _MAX_READINGS:
+        return None
+    return (
+        _Reading(
+            "".join(text for text, _, _ in combination),
+            tuple(index for _, indexes, _ in combination for index in indexes),
+            tuple(literal for text, _, literal in combination for _ in text),
+        )
+        for combination in product(*(segment.choices for segment in chunk))
+    )
 
 
 def _literal_secret_name(name: str) -> bool:
     """Reading removed printable bytes literally completes a secret label.
 
-    Each removed run reads as dropped, as its final byte or as all of its
-    printable bytes, and every combination is tried. A reading counts only
-    when a secret-label match covers a literal byte: a byte that merely ends
-    an exclusion (the ``m`` of a colour reset after ``tokens``) is not a label.
+    Every combination of run readings is tried. A reading counts only when a
+    secret-label match covers a literal byte: a byte that merely ends an
+    exclusion (the ``m`` of a colour reset after ``tokens``) is not a label.
     A chunk with too many such runs to enumerate is ambiguous and counts.
     """
-    for chunk in _label_chunks(name):
-        if sum(len(choices) > 1 for choices in chunk) > _MAX_LITERAL_RUNS:
+    for chunk in _chunks(_segments(name)):
+        readings = _readings(chunk)
+        if readings is None:
             return True
-        for combination in product(*chunk):
-            if not any(literal for _, literal in combination):
-                continue
-            text = "".join(piece for piece, _ in combination)
-            literal = [flag for piece, flag in combination for _ in piece]
-            if _covers_literal(text, literal):
-                return True
+        if any(
+            any(reading.literal) and _covers_literal(reading.text, list(reading.literal))
+            for reading in readings
+        ):
+            return True
     return False
 
 
@@ -225,7 +304,10 @@ def _named_value_edits(
     protect_urls: bool = False,
     empty_values: bool = False,
     labels: frozenset[int] | None = None,
+    base: int = 0,
 ) -> Iterator[tuple[int, int, str]]:
+    # ``labels``, when given, holds the secret label starts of the enclosing
+    # detection text, where ``value`` starts at ``base``.
     # Tokenize names first, then match the value at a fixed offset. A pattern
     # like NAME*SECRETNAME* followed by '=' retries quadratically on long names.
     cursor = 0
@@ -235,7 +317,7 @@ def _named_value_edits(
         while url is not None and name.start() >= url.end():
             url = next(urls, None)
         if name.start() < cursor or not (
-            name.start() in labels if labels is not None else _is_secret_name(name.group())
+            base + name.start() in labels if labels is not None else _is_secret_name(name.group())
         ):
             continue
         if url is not None and name.start() >= url.start():
@@ -281,7 +363,10 @@ def _ambiguous_url(value: str) -> bool:
     )
 
 
-def _url_edits(value: str, *, raw: bool = True) -> Iterator[tuple[int, int, str]]:
+def _url_edits(
+    value: str, *, raw: bool = True, labels: frozenset[int] | None = None, at: int = 0
+) -> Iterator[tuple[int, int, str]]:
+    """URL credential spans; path labels use ``labels`` with ``value`` at ``at`` in their text."""
     if raw and _ambiguous_url(value):
         # Free-text copies need the same protection as complete URL fields.
         yield 0, len(value), _REDACTED
@@ -304,7 +389,7 @@ def _url_edits(value: str, *, raw: bool = True) -> Iterator[tuple[int, int, str]
     if path_start >= 0:
         offset = path_start + 1
         for segment in base[offset:].split("/"):
-            for start, end, replacement in _named_value_edits(segment):
+            for start, end, replacement in _named_value_edits(segment, labels=labels, base=at + offset):
                 yield offset + start, offset + end, replacement
             offset += len(segment) + 1
     if query_marker:
@@ -432,7 +517,7 @@ def _text_edits(
             value, authority, end
         ):
             yield authority, end, _REDACTED
-        for start, end, replacement in _url_edits(match.group(), raw=raw):
+        for start, end, replacement in _url_edits(match.group(), raw=raw, labels=labels, at=match.start()):
             yield match.start() + start, match.start() + end, replacement
     yield from _jwt_edits(value)
     for match in _SECRET_VALUE.finditer(value):
@@ -458,12 +543,9 @@ def _literal_spans(value: str) -> Iterator[tuple[int, int]]:
     """
     cursor = 0
     for start, end in (*control_free_spans(value), (len(value), len(value))):
-        for framing in _RUN_FRAMING.finditer(value, cursor, start):
-            if cursor < framing.start():
-                yield cursor, framing.start()
-            cursor = framing.end()
-        if cursor < end:
-            yield cursor, end
+        yield from _printable_spans(value, cursor, start)
+        if start < end:
+            yield start, end
         cursor = end
 
 
@@ -623,7 +705,135 @@ def _redaction_edits(
     if edits is None or not any(_RUN_FRAMING.sub("", run) for run in _removed_runs(value)):
         return edits
     literal = _view_edits(value, raw_edits, literal=True, covered=edits)
-    return None if literal is None else _union_edits([*edits, *literal])
+    if literal is None:
+        return None
+    # Mixed readings (one run dropped, another literal) and the decisions they
+    # change (flag, delimiter, label) are checked token by token.
+    return _union_edits([*edits, *literal, *_token_reading_edits(value)])
+
+
+def _reading_outcome(
+    value: str, window: list[_Segment], in_run: bytearray, budget: list[int], suffix: str = ""
+) -> tuple[list[tuple[int, int, str]], bool] | None:
+    """Detect a window of raw text in every reading of its removed runs.
+
+    Each reading is detected like any field: names are judged by
+    ``_is_secret_name`` on their raw extent (adjacent removed runs included),
+    so a flag, label, delimiter or userinfo decision is made over the same
+    readings everywhere. Matches map back to raw spans widened over removed
+    runs. The boolean reports whether a match reached into ``suffix`` (text
+    after the window). None when the readings cannot be enumerated within the
+    field's remaining ``budget`` or have no per-character raw map.
+    """
+    start, end = window[0].start, window[-1].end
+    # Charge the whole window per reading before building any of them.
+    count = _reading_count(window)
+    if count > _MAX_READINGS:
+        return None
+    budget[0] -= count * (end - start)
+    readings = _readings(window) if budget[0] >= 0 else None
+    if readings is None:
+        return None
+
+    def widen(left: int, right: int) -> tuple[int, int]:
+        while left > start and in_run[left - 1]:
+            left -= 1
+        while right < end and in_run[right]:
+            right += 1
+        return left, right
+
+    edits: list[tuple[int, int, str]] = []
+    claims = False
+    for reading in readings:
+        if not any(reading.literal):
+            continue  # The detection views already read every run as dropped.
+        pieces = [normalize_text(char) for char in reading.text]
+        text = "".join(pieces)
+        if text != normalize_text(reading.text):
+            return None
+        origins = [origin for piece, origin in zip(pieces, reading.origins, strict=True) for _ in piece]
+        labels: set[int] = set()
+        for name in _NAME_TOKEN.finditer(text):
+            left, right = widen(origins[name.start()], origins[name.end() - 1] + 1)
+            if _is_secret_name(value[left:right]):
+                labels.add(name.start())
+        length = len(text)
+        for left, right, _ in _text_edits(text + suffix, raw=False, labels=frozenset(labels)):
+            claims = claims or right > length
+            right = min(right, length)
+            if left < right:
+                edits.append((*widen(origins[left], origins[right - 1] + 1), _REDACTED))
+    return edits, claims
+
+
+def _may_be_structural(window: list[_Segment]) -> bool:
+    """Some reading of the text could hold a delimiter or start with a flag dash."""
+    literal = "".join(segment.choices[-1][0] for segment in window)
+    return _STRUCTURAL_BYTES.search(literal) is not None or _may_start_with_dash(window)
+
+
+def _may_start_with_dash(window: list[_Segment]) -> bool:
+    for segment in window:
+        if not segment.choices[0][2]:
+            return segment.choices[0][0].startswith("-")
+        if any(text.startswith("-") for text, _, _ in segment.choices):
+            return True
+    return False
+
+
+def _run_mask(value: str, segments: list[_Segment]) -> bytearray:
+    in_run = bytearray(len(value))
+    for segment in segments:
+        if segment.choices[0][2]:
+            in_run[segment.start : segment.end] = b"\x01" * (segment.end - segment.start)
+    return in_run
+
+
+def _token_reading_edits(value: str) -> Iterator[tuple[int, int, str]]:
+    """Raw spans that some reading of the removed runs makes a credential.
+
+    Decisions span neighbouring tokens (a flag and its value, a label and the
+    value after ': ', an authority and a spaced '@host'), so each
+    whitespace-free token is read together with the next one. A window that
+    cannot be enumerated is withheld when any reading could make a
+    structural decision.
+    """
+    segments = _segments(value)
+    in_run = _run_mask(value, segments)
+    chunks = [chunk for chunk in _chunks(segments) if chunk]
+    budget = [_READING_BUDGET]
+    for index, chunk in enumerate(chunks):
+        window = list(chunk)
+        if index + 1 < len(chunks):
+            following = chunks[index + 1]
+            gap = (
+                value[chunk[-1].end : following[0].start],
+                tuple(range(chunk[-1].end, following[0].start)),
+                False,
+            )
+            window += [_Segment(chunk[-1].end, following[0].start, (gap,)), *following]
+        if not any(len(segment.choices) > 1 for segment in window):
+            continue
+        start, end = window[0].start, window[-1].end
+        outcome = _reading_outcome(value, window, in_run, budget)
+        if outcome is None:
+            if not _may_be_structural(window):
+                continue
+            outcome = [(start, end, _REDACTED)], False
+        for left, right, replacement in outcome[0]:
+            if right == end and (match := _VALUE_CONTINUATION.match(value, left)) is not None:
+                # A value the window cut short continues as one value.
+                right = max(right, match.end())
+            yield left, right, replacement
+
+
+def _claims_next_argument(item: str) -> bool:
+    """Some reading of an argument takes the next argument as its value."""
+    segments = _segments(item)
+    if not any(len(segment.choices) > 1 for segment in segments):
+        return False
+    outcome = _reading_outcome(item, segments, _run_mask(item, segments), [_READING_BUDGET], " v")
+    return _may_be_structural(segments) if outcome is None else outcome[1]
 
 
 def _removed_runs(value: str) -> Iterator[str]:
@@ -984,7 +1194,7 @@ def redact_argv(value: list[object]) -> list[object]:
             normalized.startswith("-")
             and _NAME_TOKEN.fullmatch(normalized) is not None
             and _is_secret_name(item)
-        )
+        ) or _claims_next_argument(item)
     return result
 
 
