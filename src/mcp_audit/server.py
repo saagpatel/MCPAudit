@@ -7,15 +7,17 @@ import logging
 import os
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 import anyio
 import click
+from mcp.types import CallToolResult, TextContent
+from pydantic import BaseModel
 from rich.console import Console
 
 from mcp_audit.discovery import ConfigParseError, discover_all_configs
 from mcp_audit.engine import ScanOptions, run_scan
-from mcp_audit.models import AuditReport, ServerConfig
+from mcp_audit.models import AuditReport, ScanWarning, ServerConfig
 from mcp_audit.report import error_console as _error_console
 from mcp_audit.terminal_text import TerminalSafeLogFilter, terminal_safe
 
@@ -108,6 +110,25 @@ def _findings_payload(report: AuditReport, findings: list[dict[str, Any]]) -> st
     )
 
 
+class _ListToolPayload(BaseModel):
+    result: str
+    warnings: list[ScanWarning]
+
+
+def _list_payload(report: AuditReport, entries: list[dict[str, object]]) -> CallToolResult:
+    """Keep the legacy JSON list and expose warnings even when that list is empty."""
+    payload = _ListToolPayload(result=json.dumps(entries, indent=2), warnings=report.warnings)
+    return CallToolResult(
+        content=[
+            TextContent(type="text", text=payload.result),
+            TextContent(
+                type="text", text=json.dumps({"warnings": payload.model_dump()["warnings"]}, indent=2)
+            ),
+        ],
+        structured_content=payload.model_dump(),
+    )
+
+
 def _build_mcp_server() -> Any:
     """Build and return the MCPServer instance with all tools registered."""
     from mcp.server import MCPServer
@@ -129,20 +150,20 @@ def _build_mcp_server() -> Any:
         return report.model_dump_json(indent=2)
 
     @app.tool()  # type: ignore[untyped-decorator]
-    async def get_high_risk_servers() -> str:
+    async def get_high_risk_servers() -> Annotated[CallToolResult, _ListToolPayload]:
         """Return servers with composite risk score ≥ 7.0 as a JSON list of name/score objects.
 
-        Coverage warnings, including project_config_not_connected, are returned
-        by scan_mcp_servers and the get_*_findings tools' warnings key.
+        Coverage warnings, including project_config_not_connected, are in
+        structuredContent.warnings and a second text block alongside the list.
         """
         report = await _scan(ScanOptions())
         report = report.redacted()
-        high_risk = [
+        high_risk: list[dict[str, object]] = [
             {"name": a.server.name, "score": a.risk_score.composite if a.risk_score else 0.0}
             for a in report.audits
             if a.risk_score is not None and a.risk_score.composite >= 7.0
         ]
-        return json.dumps(high_risk, indent=2)
+        return _list_payload(report, high_risk)
 
     @app.tool()  # type: ignore[untyped-decorator]
     async def check_server(name: str) -> str:
@@ -408,11 +429,15 @@ def _build_mcp_server() -> Any:
         return _findings_payload(report, all_findings)
 
     @app.tool()  # type: ignore[untyped-decorator]
-    async def list_discovered_servers() -> str:
-        """Return names and clients of all discovered MCP servers. Returns JSON list."""
+    async def list_discovered_servers() -> Annotated[CallToolResult, _ListToolPayload]:
+        """Return names and clients of discovered servers as a JSON list, with coverage warnings.
+
+        Warnings are in structuredContent.warnings and a second text block alongside the list.
+        """
         servers = discover_all_configs(None)
         report = (await run_scan(ScanOptions(skip_connect=True), servers=servers)).redacted()
-        return json.dumps(
+        return _list_payload(
+            report,
             [
                 {
                     "name": a.server.name,
@@ -421,7 +446,6 @@ def _build_mcp_server() -> Any:
                 }
                 for a in report.audits
             ],
-            indent=2,
         )
 
     return app
