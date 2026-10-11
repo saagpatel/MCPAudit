@@ -44,7 +44,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and unterminated quotes, and make redaction idempotent. Redact every copied
   server URL as a URL field, so unchanged configs report no URL drift, and
   withhold free-text URLs whose credential component a quote or angle bracket
-  cut short.
+  cut short. Withhold the token around any removed escape that hides a
+  delimiter next to a credential, and treat a non-numeric netloc `:` suffix as
+  a URL password even when whitespace separates it from `@`.
 
 ## [2.9.0] - 2026-10-10
 

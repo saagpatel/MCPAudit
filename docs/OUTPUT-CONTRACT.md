@@ -18,7 +18,9 @@ authorities are withheld. Every copy of a server URL (pins, provenance
 findings, warnings, probe records, config-health summaries) uses this same
 URL-field redaction. In free text, a URL that a quote or angle bracket cuts
 short inside its query, fragment, userinfo, or a trailing path assignment is
-withheld through the end of its token. Environment and header configuration retain key
+withheld through the end of its token. A free-text `scheme://X:Y` authority
+whose `Y` is not a numeric port is treated as userinfo and `Y` is withheld,
+whether or not an `@` follows in the same token. Environment and header configuration retain key
 names only. Any environment/header maps in arbitrary metadata withhold values.
 
 Dynamic JSON keys and schema property names receive credential redaction too.
@@ -35,7 +37,11 @@ Bytes removed for detection (controls, escape sequences, invisibles) next to a
 value belong to that value, and a raw terminator inside a removed escape
 sequence does not end it. A value is a run of quoted and unquoted segments;
 backslash escapes never end it, and an unterminated quote runs to the end of
-the field. Credential values with changed structural delimiters are withheld,
+the field. Removed bytes may never hide a delimiter: when a removed run holds a
+delimiter, ends in a bare two-byte escape, or follows a secret label, text from
+the first secret label or URL in that whitespace-free token (or from the start
+of an existing replacement there) through the end of the token is withheld.
+Credential values with changed structural delimiters are withheld,
 including introduced whitespace or removed escapes. Unmappable matches or uncertain value
 boundaries withhold the whole field. URL parsing uses raw input; NFKC changes in
 the scheme or authority
