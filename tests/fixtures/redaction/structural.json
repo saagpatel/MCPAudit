@@ -31,21 +31,21 @@
     "id": "nfkc-label",
     "kind": "text",
     "source": "ｐａｓｓｗｏｒｄ=unicode-secret",
-    "expected": "password=<redacted>",
+    "expected": "\uff50\uff41\uff53\uff53\uff57\uff4f\uff52\uff44=<redacted>",
     "forbidden": ["unicode-secret"]
   },
   {
     "id": "confusable-label",
     "kind": "text",
     "source": "pаssword=confusable-secret",
-    "expected": "password=<redacted>",
+    "expected": "p\u0430ssword=<redacted>",
     "forbidden": ["confusable-secret"]
   },
   {
     "id": "ansi-split-label",
     "kind": "text",
     "source": "pass\u001b[31mword=control-secret\u001b[0m",
-    "expected": "password=<redacted>",
+    "expected": "pass\u001b[31mword=<redacted>\u001b[0m",
     "forbidden": ["control-secret"]
   },
   {
@@ -159,5 +159,45 @@
     "source": {"properties": {"token": {"anyOf": [{"default": "opaque-secret"}], "allOf": [{"example": "all-secret"}], "oneOf": [{"enum": ["one-secret"]}], "if": {"const": "if-secret"}, "then": {"examples": ["then-secret"]}, "else": {"items": {"default": "item-secret"}}}, "port": {"type": "integer", "default": 8080}}},
     "expected": {"properties": {"token": {"anyOf": [{"default": "<redacted>"}], "allOf": [{"example": "<redacted>"}], "oneOf": [{"enum": ["<redacted>"]}], "if": {"const": "<redacted>"}, "then": {"examples": ["<redacted>"]}, "else": {"items": {"default": "<redacted>"}}}, "port": {"type": "integer", "default": 8080}}},
     "forbidden": ["opaque-secret", "all-secret", "one-secret", "if-secret", "then-secret", "item-secret"]
+  },
+  {
+    "id": "diaeresis-assignment",
+    "kind": "text",
+    "source": "password=roundtwo-prefix-secret\u00a8suffix-secret",
+    "expected": "<redacted>",
+    "forbidden": [
+      "roundtwo-prefix-secret",
+      "suffix-secret"
+    ]
+  },
+  {
+    "id": "diaeresis-flag",
+    "kind": "text",
+    "source": "--password roundtwo-prefix-secret\u00a8suffix-secret",
+    "expected": "<redacted>",
+    "forbidden": [
+      "roundtwo-prefix-secret",
+      "suffix-secret"
+    ]
+  },
+  {
+    "id": "control-deletes-escape",
+    "kind": "text",
+    "source": "password=\"roundtwo-prefix-secret\u001b\\\"suffix-secret\"",
+    "expected": "password=<redacted>",
+    "forbidden": [
+      "roundtwo-prefix-secret",
+      "suffix-secret"
+    ]
+  },
+  {
+    "id": "fullwidth-slash-userinfo",
+    "kind": "url",
+    "source": "https://user:roundtwo-prefix-secret\uff0fsuffix-secret@fixture.example/mcp",
+    "expected": "<redacted>",
+    "forbidden": [
+      "roundtwo-prefix-secret",
+      "suffix-secret"
+    ]
   }
 ]

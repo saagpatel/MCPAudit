@@ -15,14 +15,19 @@ from mcp_audit.connector import _redact_sse_log_text
 from mcp_audit.htmlreport import HtmlReportGenerator
 from mcp_audit.models import (
     AuditReport,
+    AuthorizationFetch,
+    AuthorizationProbeObservation,
     InjectionFinding,
     InjectionSeverity,
+    ProvenanceFinding,
+    ProvenanceKind,
+    ProvenanceSeverity,
     ScanWarning,
     ServerAudit,
     ToolInfo,
 )
 from mcp_audit.pinning import PinStore
-from mcp_audit.redaction import redact_data, redact_text, redacted_excerpt
+from mcp_audit.redaction import redact_data, redact_text, redact_url, redacted_excerpt
 from mcp_audit.report import ReportGenerator
 from mcp_audit.sarif import SarifGenerator
 from tests.conftest import make_server_config
@@ -38,6 +43,8 @@ def _report(case: dict[str, object]) -> AuditReport:
     server = make_server_config(name="synthetic-server", env_keys=["API_TOKEN"])
     server.headers_keys = ["X-Key"]
     tool = ToolInfo(name="synthetic-tool")
+    probe: AuthorizationProbeObservation | None = None
+    provenance: list[ProvenanceFinding] = []
     if kind == "text":
         assert isinstance(source, str)
         tool.name = tool.description = source
@@ -54,6 +61,19 @@ def _report(case: dict[str, object]) -> AuditReport:
         assert isinstance(source, str)
         server.url = source
         tool.meta = {"endpoint": source}
+        probe = AuthorizationProbeObservation(
+            metadata_fetches=[AuthorizationFetch(url=source, reason="synthetic")], warnings=[source]
+        )
+        provenance = [
+            ProvenanceFinding(
+                kind=ProvenanceKind.URL,
+                severity=ProvenanceSeverity.HIGH,
+                server_name=server.name,
+                summary=f"Endpoint: {source}",
+                baseline=source,
+                current=source,
+            )
+        ]
     else:
         raise AssertionError(f"Unsupported corpus kind: {kind}")
     finding = InjectionFinding(
@@ -75,7 +95,12 @@ def _report(case: dict[str, object]) -> AuditReport:
         high_risk_servers=0,
         audits=[
             ServerAudit(
-                server=server, tools=[tool], injection_findings=[finding], connection_status="connected"
+                server=server,
+                tools=[tool],
+                injection_findings=[finding],
+                connection_status="connected",
+                authorization_probe=probe,
+                provenance_findings=provenance,
             )
         ],
         scan_duration_seconds=0,
@@ -108,6 +133,11 @@ def test_structural_redaction_corpus(case: dict[str, object], tmp_path: Path, id
         assert audit.tools[0].meta == case["expected"]
     elif kind == "url":
         assert audit.server.url == case["expected"]
+        assert (
+            audit.provenance_findings[0].baseline == audit.provenance_findings[0].current == case["expected"]
+        )
+        assert audit.authorization_probe is not None
+        assert audit.authorization_probe.metadata_fetches[0].url == case["expected"]
     assert audit.server.env_keys == ["API_TOKEN"]
     assert audit.server.headers_keys == ["X-Key"]
     assert safe.schema_version == report.schema_version
@@ -156,6 +186,101 @@ def test_metadata_lists_are_not_argv_and_env_maps_have_no_values() -> None:
     # Only key names and an absent value are supplied for the synthetic env map.
     assert redact_data({"env": {"API_TOKEN": None}}) == {"env": {"API_TOKEN": "<redacted>"}}
     assert redact_data({"items": ["--token", "ordinary label"]}) == {"items": ["--token", "ordinary label"]}
+
+
+@pytest.mark.parametrize(
+    "char",
+    ["\uff02", "\uff0f", "\uff20", "\uff1a", "\uff1d", "\u00a8", "\u2024", "\ufe6b", "\uff03", "\uff1f"],
+)
+@pytest.mark.parametrize("position", ["assignment", "flag", "header", "userinfo"])
+@pytest.mark.parametrize("obfuscated_label", [False, True])
+def test_delimiter_changes_never_publish_secret_substrings(
+    char: str, position: str, obfuscated_label: bool
+) -> None:
+    secret = f"v7KpQ9d2M{char}Z8nR4t6Vc"
+    sources = {
+        "assignment": f"password={secret}",
+        "flag": f"--password {secret}",
+        "header": f"Authorization: Bearer {secret}",
+        "userinfo": f"https://user:{secret}@fixture.example/mcp",
+    }
+    source = sources[position]
+    if obfuscated_label:
+        source = (
+            source.replace("password", "ｐａｓｓｗｏｒｄ")
+            .replace("Authorization", "Ａｕｔｈｏｒｉｚａｔｉｏｎ")
+            .replace("Bearer", "Ｂｅａｒｅｒ")
+        )
+    report = _report({"source": source, "kind": "url" if position == "userinfo" else "text"})
+    report.warnings = [ScanWarning(code="fixture", message=source, check="connection")]
+    safe = report.redacted()
+    terminal = StringIO()
+    ReportGenerator(Console(file=terminal, width=200, color_system=None)).render_terminal(
+        report, verbose=True
+    )
+    outputs = [
+        safe.model_dump_json(),
+        terminal.getvalue(),
+        HtmlReportGenerator().generate(report),
+        json.dumps(SarifGenerator().generate(report)),
+    ]
+    # Every longer substring contains a six-character substring. Test both raw
+    # halves independently so introduced delimiters cannot conceal a leaked tail.
+    for output in outputs:
+        for offset in range(len(secret) - 5):
+            assert secret[offset : offset + 6] not in output
+    assert safe.redacted().model_dump() == safe.model_dump()
+    if position == "userinfo":
+        assert redact_url(source) == safe.audits[0].server.url == "<redacted>"
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("ｐａｓｓｗｏｒｄ=fixture-secret ordinary Ｆ／＠", "ｐａｓｓｗｏｒｄ=<redacted> ordinary Ｆ／＠"),
+        ("pass\u200bword=fixture-secret", "pass\u200bword=<redacted>"),
+        ("pass\x1b[31mword=fixture-secret", "pass\x1b[31mword=<redacted>"),
+        ("Bearer plantedfirst\u200bplantedsecond-secret", "Bearer <redacted>"),
+        ('password="prefix\x1b\\"suffix-secret"', "password=<redacted>"),
+        # Cross-character NFKC composition has no per-codepoint map: withhold.
+        ("ｐａｓｓｗｏｒｄ=fixture-secret e\u0301", "<redacted>"),
+    ],
+    ids=[
+        "raw-label-context",
+        "zero-width-label",
+        "control-label",
+        "union-spans",
+        "removed-escape",
+        "composition",
+    ],
+)
+def test_normalization_only_detects_and_raw_coverage_survives(text: str, expected: str) -> None:
+    assert redact_text(text) == expected
+    assert redact_text(expected) == expected
+
+
+def test_inline_argv_keeps_raw_obfuscated_flag_spelling() -> None:
+    assert redact_data(['--ｐａｓｓｗｏｒｄ=fixture-secret"tail']) == ["--ｐａｓｓｗｏｒｄ=<redacted>"]
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "ｈｔｔｐｓ://user:fixture-secret@fixture.example/mcp",
+        "https：／／user:fixture-secret@fixture.example/mcp",
+        "https://user:fixture-secret@Ｆixture.example/mcp",
+    ],
+    ids=["scheme", "scheme-delimiters", "authority"],
+)
+def test_compatibility_url_boundaries_are_withheld(url: str) -> None:
+    assert redact_url(url) == "<redacted>"
+    assert redact_text(url) == "<redacted>"
+
+
+def test_redacted_assignment_before_colon_is_stable() -> None:
+    text = 'password="fixture-secret": ordinary context'
+    expected = "password=<redacted>: ordinary context"
+    assert redact_text(text) == redact_text(expected) == expected
 
 
 @pytest.mark.parametrize("control", ["\x1b[31m", "\x9b31m", "\x00", "\x08"])

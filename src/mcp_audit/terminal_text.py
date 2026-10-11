@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import re
 import traceback
+from collections.abc import Iterator
 
 from rich.text import Text
 
@@ -20,13 +21,26 @@ def strip_controls(value: str) -> str:
     Each escape sequence is consumed once, including unterminated CSI/OSC
     sequences, so adversarial input cannot cause regex backtracking.
     """
-    parts: list[str] = []
+    return "".join(value[start:end] for start, end in control_free_spans(value))
+
+
+def control_free_spans(value: str) -> Iterator[tuple[int, int]]:
+    """Retained raw ranges for control stripping, also used by redaction mapping."""
+
+    def retain(start: int, end: int) -> Iterator[tuple[int, int]]:
+        for control in _CONTROLS.finditer(value, start, end):
+            if start < control.start():
+                yield start, control.start()
+            start = control.end()
+        if start < end:
+            yield start, end
+
     start = 0
     length = len(value)
     # 7-bit (ESC [ / ESC ]) and 8-bit C1 (CSI U+009B / OSC U+009D) introducers.
     while (match := _INTRODUCER.search(value, start)) is not None:
         escape = match.start()
-        parts.append(value[start:escape])
+        yield from retain(start, escape)
         end = escape + 1
         kind = value[escape]
         if kind == "\x1b" and end < length:
@@ -47,8 +61,7 @@ def strip_controls(value: str) -> str:
                     break
                 end += 1
         start = end
-    parts.append(value[start:])
-    return _CONTROLS.sub("", "".join(parts))
+    yield from retain(start, length)
 
 
 def terminal_safe(value: str) -> Text:

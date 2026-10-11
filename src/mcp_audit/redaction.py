@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel
 
 from mcp_audit.normalize import normalize_text
-from mcp_audit.terminal_text import strip_controls
+from mcp_audit.terminal_text import control_free_spans, strip_controls
 
 _REDACTED = "<redacted>"
 _NAME_TOKEN = re.compile(r"[A-Za-z0-9_.-]+")
@@ -24,15 +25,15 @@ _SECRET_NAME = re.compile(
 )
 _ASSIGNMENT_PREFIX = re.compile(r"[\"']?\s*[:=]\s*")
 _ASSIGNMENT_VALUE = re.compile(
-    r"([\"']?\s*[:=]\s*)(<redacted>(?=$|[\s,;&\"'}\]]|⟧(?=$|[\s,;&\"'}\]]))|"
+    r"([\"']?\s*[:=]\s*)(<redacted>(?=$|[\s,;&\"'}\]]|:(?:\s|$)|⟧(?=$|[\s,;&\"'}\]]))|"
     r"\"(?:\\.|[^\"\\])*+\"|'(?:\\.|[^'\\])*+'|[^\s,;&\"']+)"
 )
 _FLAG_VALUE = re.compile(
     r"(\s+)(<redacted>(?=$|[\s,;&\"'}\]]|:(?:\s|$)|⟧(?=$|[\s,;&\"'}\]]))|"
     r"\"(?:\\.|[^\"\\])*+\"|'(?:\\.|[^'\\])*+'|[^\s,;&\"']+)"
 )
-_BEARER_TOKEN = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+")
-_BASIC_TOKEN = re.compile(r"(?i)\bBasic\s+[A-Za-z0-9._~+/=-]+")
+_BEARER_TOKEN = re.compile(r"(?i)\bBearer\s+(<redacted>|[^\s,\"'<>]+)")
+_BASIC_TOKEN = re.compile(r"(?i)\bBasic\s+(<redacted>|[^\s,\"'<>]+)")
 # Consume scheme-like runs once; a nested scheme ends the current path span.
 # Query values and fragments still consume their entire enclosing URL tail.
 _URL = re.compile(
@@ -118,10 +119,10 @@ def _named_value_edits(value: str, *, protect_urls: bool = False) -> Iterator[tu
             match = _FLAG_VALUE.match(value, name.end())
         if match is not None:
             url_value = _URL_VALUE.match(value, match.start(2))
-            # Preserve authentication schemes already scrubbed by the bearer/
-            # basic pass, including in Authorization header assignments.
-            if match.group(2).lower() in {"bearer", "basic"} and value.startswith(
-                " <redacted>", match.end(2)
+            # The bearer/basic detector owns the credential span, retaining
+            # the raw authentication scheme in Authorization assignments.
+            if match.group(2).lower() in {"bearer", "basic"} and any(
+                pattern.match(value, match.start(2)) for pattern in (_BEARER_TOKEN, _BASIC_TOKEN)
             ):
                 continue
             # An unquoted URL value belongs to the enclosing assignment/flag,
@@ -130,11 +131,21 @@ def _named_value_edits(value: str, *, protect_urls: bool = False) -> Iterator[tu
             yield match.start(2), cursor, _REDACTED
 
 
-def _url_edits(value: str) -> Iterator[tuple[int, int, str]]:
+def _ambiguous_url(value: str) -> bool:
     try:
-        urlsplit(value)
+        parts = urlsplit(value)
     except ValueError:
-        # Free-text copies need the same malformed-authority protection as URL fields.
+        return True
+    # A compatibility-spelled scheme is not recognized by the raw parser.
+    scheme = value.partition("://")[0] if "://" in value else parts.scheme
+    return not parts.scheme or any(
+        unicodedata.normalize("NFKC", part) != part for part in (scheme, parts.netloc)
+    )
+
+
+def _url_edits(value: str, *, raw: bool = True) -> Iterator[tuple[int, int, str]]:
+    if raw and _ambiguous_url(value):
+        # Free-text copies need the same protection as complete URL fields.
         yield 0, len(value), _REDACTED
         return
     userinfo = _URL_USERINFO.match(value)
@@ -172,44 +183,103 @@ def _jwt_edits(value: str) -> Iterator[tuple[int, int, str]]:
             yield header.start(), cursor, _REDACTED
 
 
-def _redact_text(value: str, window: _ExcerptWindow | None = None) -> str:
-    for pattern, replacement in ((_BEARER_TOKEN, "Bearer <redacted>"), (_BASIC_TOKEN, "Basic <redacted>")):
-        value = _apply_edits(
-            value, ((match.start(), match.end(), replacement) for match in pattern.finditer(value)), window
-        )
+def _text_edits(value: str, *, raw: bool = True) -> Iterator[tuple[int, int, str]]:
+    for pattern in (_BEARER_TOKEN, _BASIC_TOKEN):
+        for match in pattern.finditer(value):
+            yield match.start(1), match.end(1), _REDACTED
     # Enclosing assignments see their complete values before URL protection.
     # Names within standalone URLs are handled separately, preserving authority.
-    value = _apply_edits(value, _named_value_edits(value, protect_urls=True), window)
-    value = _apply_edits(
-        value,
-        (
-            (match.start() + start, match.start() + end, replacement)
-            for match in _URL.finditer(value)
-            for start, end, replacement in _url_edits(match.group())
-        ),
-        window,
-    )
-    value = _apply_edits(value, _jwt_edits(value), window)
-    return _apply_edits(
-        value, ((match.start(), match.end(), _REDACTED) for match in _SECRET_VALUE.finditer(value)), window
-    )
+    yield from _named_value_edits(value, protect_urls=True)
+    for match in _URL.finditer(value):
+        for start, end, replacement in _url_edits(match.group(), raw=raw):
+            yield match.start() + start, match.start() + end, replacement
+    yield from _jwt_edits(value)
+    for match in _SECRET_VALUE.finditer(value):
+        yield match.start(), match.end(), _REDACTED
+
+
+def _union_edits(edits: Iterable[tuple[int, int, str]]) -> list[tuple[int, int, str]]:
+    result: list[tuple[int, int, str]] = []
+    for start, end, replacement in sorted(edits):
+        if result and start < result[-1][1]:
+            result[-1] = result[-1][0], max(end, result[-1][1]), _REDACTED
+        else:
+            result.append((start, end, replacement))
+    return result
+
+
+def _redact_text(value: str, window: _ExcerptWindow | None = None) -> str:
+    return _apply_edits(value, _union_edits(_text_edits(value)), window)
+
+
+def _normalized_view(value: str) -> tuple[str, list[tuple[int, int]] | None]:
+    """Detection text and one raw range per character; never a display value."""
+    pieces: list[str] = []
+    origins: list[tuple[int, int]] = []
+    for start, end in control_free_spans(value):
+        for index in range(start, end):
+            piece = normalize_text(value[index])
+            pieces.append(piece)
+            origins.extend([(index, index + 1)] * len(piece))
+    normalized = normalize_text(strip_controls(value))
+    # Cross-character composition/reordering has no per-codepoint mapping.
+    # Withhold recognized credentials rather than guess their source offsets.
+    return normalized, origins if "".join(pieces) == normalized else None
+
+
+def _structural(char: str) -> bool:
+    return char.isspace() or char in "\"'=: /@?#[]\\,;&"
+
+
+def _ambiguous_value(value: str) -> bool:
+    normalized, origins = _normalized_view(value)
+    if origins is None:
+        return True
+    raw_delimiters = [(char, index, index + 1) for index, char in enumerate(value) if _structural(char)]
+    normalized_delimiters = [
+        (char, *origin) for char, origin in zip(normalized, origins, strict=True) if _structural(char)
+    ]
+    return raw_delimiters != normalized_delimiters
 
 
 def redact_text(value: str) -> str:
     """Redact likely credential values while preserving useful context."""
-    redacted = _redact_text(value)
-    normalized = strip_controls(value)
-    if not normalized.isascii():
-        normalized = normalize_text(normalized)
-    if normalized != value:
-        normalized_redacted = _redact_text(normalized)
-        if normalized_redacted != normalized:
-            # Compatibility punctuation can shorten a value recognized by the
-            # raw pass. Withhold ambiguous fields rather than restore that tail.
-            if any(normalized.count(char) > value.count(char) for char in "\"',;&/?#\\"):
+    raw_edits = list(_text_edits(value))
+    edits = raw_edits.copy()
+    normalized = normalize_text(strip_controls(value))
+    if normalized == value:
+        return _apply_edits(value, _union_edits(edits))
+    normalized_edits = list(_text_edits(normalized, raw=False))
+    if normalized_edits:
+        normalized, origins = _normalized_view(value)
+        if origins is None:
+            return _REDACTED
+        for url in _URL.finditer(normalized):
+            start, end = origins[url.start()][0], origins[url.end() - 1][1]
+            if _ambiguous_url(value[start:end]):
+                edits.append((start, end, _REDACTED))
+        for start, end, replacement in normalized_edits:
+            ranges = origins[start:end]
+            if not ranges or any(left[0] > right[0] for left, right in zip(ranges, ranges[1:], strict=False)):
                 return _REDACTED
-            return normalized_redacted
-    return redacted
+            # Include stripped characters between retained source positions.
+            edits.append((ranges[0][0], ranges[-1][1], replacement))
+            # A newly introduced terminator can sit just outside a shortened
+            # match, especially when the raw pass did not recognize its label.
+            if end < len(origins) and _ambiguous_value(value[origins[end][0] : origins[end][1]]):
+                return _REDACTED
+    # An ambiguous candidate withholds the field, matching the earlier fail-closed
+    # contract. In particular, removal of an escape cannot shorten raw coverage.
+    for start, end, _ in edits:
+        if _ambiguous_value(value[start:end]):
+            # Complete raw coverage already withholds control-bearing values.
+            # Retain surrounding context without emitting any stripped text.
+            if value[start:end].isascii() and any(
+                left <= start and end <= right for left, right, _ in raw_edits
+            ):
+                continue
+            return _REDACTED
+    return _apply_edits(value, _union_edits(edits))
 
 
 def _normalization_exposes_secret(redacted: str) -> bool:
@@ -217,7 +287,10 @@ def _normalization_exposes_secret(redacted: str) -> bool:
     normalized = strip_controls(redacted)
     if not normalized.isascii():
         normalized = normalize_text(normalized)
-    return normalized != redacted and _redact_text(normalized) != normalized
+    return (
+        normalized != redacted
+        and _apply_edits(normalized, _union_edits(_text_edits(normalized, raw=False))) != normalized
+    )
 
 
 def trim_excerpt_context(before: str, after: str) -> tuple[str, str]:
@@ -365,7 +438,7 @@ def redact_argv(value: list[object]) -> list[object]:
         if not isinstance(item, str):
             result.append(_redact_json(item))
             continue
-        normalized = normalize_text(strip_controls(item))
+        normalized, origins = _normalized_view(item)
         name = _NAME_TOKEN.match(normalized)
         if (
             name is not None
@@ -373,7 +446,11 @@ def redact_argv(value: list[object]) -> list[object]:
             and normalized[name.end() :].startswith(("=", ":"))
             and _URL.match(normalized) is None
         ):
-            result.append(normalized[: name.end() + 1] + _REDACTED)
+            if origins is None:
+                result.append(_REDACTED)
+            else:
+                start = origins[name.end() + 1][0] if name.end() + 1 < len(origins) else len(item)
+                result.append(redact_text(item[:start] + _REDACTED))
         else:
             result.append(redact_text(item))
         secret_value = (
@@ -386,18 +463,10 @@ def redact_argv(value: list[object]) -> list[object]:
 
 def redact_url(value: str) -> str:
     """Parse a complete URL field; retain endpoint shape, never authentication data."""
-    normalized = normalize_text(strip_controls(value))
-    try:
-        parts = urlsplit(normalized)
-    except ValueError:
-        return _REDACTED  # Malformed authorities have no safe structural boundary.
-    authority = parts.netloc
-    if "@" in authority:
-        authority = _REDACTED + "@" + authority.rsplit("@", 1)[1]
-    query = _QUERY_VALUE.sub("=<redacted>", parts.query)
-    redacted = urlunsplit((parts.scheme, authority, parts.path, query, _REDACTED if parts.fragment else ""))
-    # Path assignments and nested URLs are free-text fallback cases.
-    return redact_text(redacted)
+    if _ambiguous_url(value):
+        return _REDACTED
+    # Work on raw spans, retaining the exact spelling and delimiters of the URL.
+    return redact_text(value)
 
 
 def _redact_json(value: object, *, secret_schema: bool = False) -> object:
