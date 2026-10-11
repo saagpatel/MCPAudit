@@ -8,8 +8,9 @@ import runpy
 import subprocess
 import sys
 import tomllib
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from click.testing import CliRunner
@@ -91,7 +92,7 @@ def test_release_metadata_verifier_passes() -> None:
 def test_release_verifier_requires_public_tag_in_precommit_usage_comment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    read_text = RELEASE_VERIFIER["_read_text"]
+    read_text = cast(Callable[[str], str], RELEASE_VERIFIER["_read_text"])
 
     def read_with_stale_precommit_tag(path: str) -> str:
         content = read_text(path)
@@ -248,6 +249,7 @@ def test_candidate_state_is_never_publishable(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     (tmp_path / "README.md").write_text("uses: saagpatel/MCPAudit@v2.5.0\n", encoding="utf-8")
+    (tmp_path / ".pre-commit-hooks.yaml").write_text("#       rev: v2.5.0\n", encoding="utf-8")
     (tmp_path / "docs/ADOPTION-GUIDE.md").write_text(
         "uses: saagpatel/MCPAudit@v2.5.0\nrev: v2.5.0\n", encoding="utf-8"
     )

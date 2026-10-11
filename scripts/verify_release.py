@@ -305,7 +305,7 @@ def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object
             raise VerificationError(f"{path} does not reference the usable public release")
     if f"rev: v{public_version}" not in adoption:
         raise VerificationError("pre-commit example does not reference the usable public release")
-    if f"#       rev: v{public_version}" not in precommit:
+    if not re.search(rf"^#\s+rev: v{re.escape(public_version)}\s*$", precommit, re.MULTILINE):
         raise VerificationError("pre-commit usage comment does not reference the usable public release")
 
     dependencies = project.get("dependencies")
