@@ -52,8 +52,8 @@ def _semantic_diff_count(first: Any, second: Any, path: tuple[str, ...] = ()) ->
 
 def test_fixture_inventory_has_vulnerable_negative_near_miss_triplets() -> None:
     triplets = [path for path in FIXTURE_ROOT.glob("mcpoauth*.json") if path.parent == FIXTURE_ROOT]
-    assert len(triplets) == 24
-    for rule in range(8):
+    assert len(triplets) == 27
+    for rule in range(9):
         prefix = f"mcpoauth{rule:03d}-"
         members = sorted(path.name for path in triplets if path.name.startswith(prefix))
         assert members == [
@@ -63,7 +63,7 @@ def test_fixture_inventory_has_vulnerable_negative_near_miss_triplets() -> None:
         ]
 
 
-@pytest.mark.parametrize("rule", range(8))
+@pytest.mark.parametrize("rule", range(9))
 def test_each_vulnerable_control_fires_only_its_stable_rule(rule: int) -> None:
     report = scan_oauth_transcript_path(_fixture(f"mcpoauth{rule:03d}-vulnerable.json"))
     expected = f"MCPOAUTH{rule:03d}"
@@ -77,7 +77,7 @@ def test_each_vulnerable_control_fires_only_its_stable_rule(rule: int) -> None:
         assert finding.assumptions
 
 
-@pytest.mark.parametrize("rule", range(8))
+@pytest.mark.parametrize("rule", range(9))
 def test_each_negative_control_changes_one_semantic_binding_and_clears_the_rule(rule: int) -> None:
     vulnerable = _payload(f"mcpoauth{rule:03d}-vulnerable.json")
     negative = _payload(f"mcpoauth{rule:03d}-negative.json")
@@ -90,7 +90,7 @@ def test_each_negative_control_changes_one_semantic_binding_and_clears_the_rule(
     assert all(item.outcome.value == "advisory" for item in report.findings)
 
 
-@pytest.mark.parametrize("rule", range(1, 8))
+@pytest.mark.parametrize("rule", range(1, 9))
 def test_near_misses_do_not_create_false_violations(rule: int) -> None:
     report = scan_oauth_transcript_path(_fixture(f"mcpoauth{rule:03d}-near_miss.json"))
     assert report.verdict == "pass"
@@ -129,6 +129,71 @@ def test_required_named_security_scenarios_are_covered() -> None:
     assert [item.rule_id for item in redirect_mismatch.findings if item.outcome.value == "violation"] == [
         "MCPOAUTH007"
     ]
+
+
+def test_pkce_requires_s256_and_redacted_challenge_and_verifier() -> None:
+    vulnerable = scan_oauth_transcript_path(_fixture("mcpoauth008-vulnerable.json"))
+    negative = scan_oauth_transcript_path(_fixture("mcpoauth008-negative.json"))
+    assert [item.rule_id for item in vulnerable.findings if item.outcome.value == "violation"] == [
+        "MCPOAUTH008"
+    ]
+    assert negative.verdict == "pass"
+    assert all(item.outcome.value == "advisory" for item in negative.findings)
+
+
+@pytest.mark.parametrize(
+    ("observation_index", "field"),
+    [(3, "code_challenge_marker"), (5, "code_verifier_marker")],
+)
+def test_pkce_requires_redacted_challenge_and_verifier_markers(
+    tmp_path: Path,
+    observation_index: int,
+    field: str,
+) -> None:
+    payload = _payload("mcpoauth008-negative.json")
+    payload["fixture_id"] = "missing-pkce-marker"
+    del payload["observations"][observation_index][field]
+    path = tmp_path / f"{field}.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    report = scan_oauth_transcript_path(path)
+    assert "MCPOAUTH008" in {item.rule_id for item in report.findings if item.outcome.value == "violation"}
+
+
+@pytest.mark.parametrize(
+    ("issuer", "has_violation"),
+    [
+        ("https://other-auth.example", True),
+        (None, True),
+        ("https://auth.example", False),
+    ],
+)
+def test_error_authorization_response_issuer_is_validated(
+    tmp_path: Path,
+    issuer: str | None,
+    has_violation: bool,
+) -> None:
+    payload = _payload("mcpoauth003-negative.json")
+    payload["fixture_id"] = "error-response-issuer-case"
+    payload["audience_evidence"] = {
+        "state": "unverifiable",
+        "source": "none",
+        "token_response_exchange_id": None,
+        "audiences": [],
+        "accepted_for_resource": None,
+    }
+    response = payload["observations"][4]
+    response["kind"] = "authorization_error_response"
+    response.pop("code_marker")
+    response.pop("handling")
+    response["issuer"] = issuer
+    payload["observations"] = payload["observations"][:5]
+    path = tmp_path / "authorization-error.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    report = scan_oauth_transcript_path(path)
+    violations = [item.rule_id for item in report.findings if item.outcome.value == "violation"]
+    assert ("MCPOAUTH003" in violations) is has_violation
 
 
 def test_discovery_resource_comparison_normalizes_scheme_and_host_case(tmp_path: Path) -> None:

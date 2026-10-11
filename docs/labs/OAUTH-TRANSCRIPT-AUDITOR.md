@@ -2,8 +2,8 @@
 
 `mcp-audit oauth-transcript` is an experimental, offline analyzer for
 explicitly synthetic and redacted MCP/OAuth HTTP transcript fixtures. It
-evaluates observable discovery, issuer, resource, audience, registration,
-credential, and scope bindings. It never contacts an MCP server,
+evaluates observable discovery, success/error response issuer, resource,
+audience, registration, credential, PKCE-method, and scope bindings. It never contacts an MCP server,
 authorization server, identity provider, browser, DNS resolver, keychain, or
 credential store.
 
@@ -28,7 +28,9 @@ The v1 contract is pinned to
   [OpenID Connect Dynamic Client Registration 1.0](https://openid.net/specs/openid-connect-registration-1_0.html).
 
 The final specification date is part of the profile. Legacy fixtures remain
-accepted; the profile update does not add PKCE or live OAuth verification.
+accepted. PKCE coverage checks the recorded S256 method and redacted challenge
+and verifier markers; it does not validate their cryptographic correspondence
+or enable live OAuth verification.
 
 ## Requirement classification
 
@@ -37,14 +39,15 @@ accepted; the profile update does not add PKCE or live OAuth verification.
 | Protected-resource metadata and authorization-server discovery validation | required |
 | RFC 8707 `resource` in authorization and token requests | required by MCP |
 | Server-side token audience validation | required by MCP; only supplied synthetic evidence is checked |
-| Present `iss` comparison, and required `iss` when metadata advertises support | required |
+| Present `iss` comparison on success and error responses, and required `iss` when metadata advertises support | required |
 | Issuer binding for persisted pre-registered, DCR, and user-supplied credentials | required in the pinned MCP specification |
 | Pre-registration / CIMD / DCR / manual selection priority | recommended |
 | Dynamic Client Registration | deprecated in the pinned specification, but still allowed as a supported fallback |
 | DCR `application_type` appropriate to native/web client kind | required by the pinned MCP specification |
+| PKCE with the S256 method and redacted challenge/verifier evidence | required; cryptographic correspondence is unsupported |
 | Challenge-first least-privilege scope selection | recommended; silent drops and cross-resource attribution are violations |
 | Registered, received, and redemption-time redirect URI binding | required; native loopback registration permits only the RFC 8252 port exception |
-| Token signatures, PKCE correctness, IdP integrity, consent, and production authorization | unsupported |
+| Token signatures, cryptographic PKCE challenge/verifier correspondence, IdP integrity, consent, and production authorization | unsupported |
 | Authorization-server mappings from resource indicators to abstract/general audiences | unsupported; mark the audience evidence `unverifiable` |
 
 Dynamic Client Registration is therefore not rejected universally. A valid DCR
@@ -127,11 +130,12 @@ The analyzer never follows a redirect or fetches a URL found in a fixture.
 | `MCPOAUTH000` | missing, malformed, redacted, unsupported, or unverifiable binding evidence | `UNKNOWN` |
 | `MCPOAUTH001` | 401 → protected-resource metadata → authorization-server metadata chain | violation |
 | `MCPOAUTH002` | authorization/token resource indicators and supplied token audience evidence | violation |
-| `MCPOAUTH003` | exact authorization-response issuer binding before code redemption | violation |
+| `MCPOAUTH003` | exact authorization-response issuer binding, including errors | violation |
 | `MCPOAUTH004` | issuer-bound persisted client credential reuse | violation |
 | `MCPOAUTH005` | registration selection and `application_type` compatibility | violation or deprecated advisory |
 | `MCPOAUTH006` | challenged/requested/returned scope binding | violation |
 | `MCPOAUTH007` | registration/request/response/redemption redirect URI binding | violation |
+| `MCPOAUTH008` | PKCE S256 method and redacted challenge/verifier evidence | violation |
 
 Findings contain a stable ID, severity, outcome, requirement level, title,
 semantic target, redacted evidence summary, remediation, primary references,
@@ -154,7 +158,7 @@ fixture path, or extra evidence. JSON remains the authoritative report.
 ## Fixture corpus
 
 `tests/fixtures/oauth_transcript/` contains vulnerable, negative, and near-miss
-triplets for `MCPOAUTH000` through `MCPOAUTH007`. Each negative control clears
+triplets for `MCPOAUTH000` through `MCPOAUTH008`. Each negative control clears
 its vulnerable twin by changing one semantic binding. The corpus includes:
 
 - stale discovery and wrong-resource metadata;
@@ -179,5 +183,5 @@ The supported claim is only:
 
 Audience evidence is accepted as a synthetic observation. The auditor does not
 validate token signatures or introspection authenticity. It does not prove
-PKCE correctness, client authentication strength, identity-provider compromise
+PKCE challenge/verifier correspondence, client authentication strength, identity-provider compromise
 resistance, user consent, live authorization, or production security.

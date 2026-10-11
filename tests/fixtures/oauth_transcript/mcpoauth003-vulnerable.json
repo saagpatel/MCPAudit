@@ -69,6 +69,8 @@
     },
     {
       "client_id_kind": "opaque",
+      "code_challenge_marker": "<redacted>",
+      "code_challenge_method": "S256",
       "exchange_id": "authorization-request",
       "kind": "authorization_request",
       "recorded_issuer": "https://auth.example",
@@ -96,6 +98,7 @@
     },
     {
       "code_marker": "<redacted>",
+      "code_verifier_marker": "<redacted>",
       "credential_record_id": "synthetic-dcr-client",
       "exchange_id": "token-request",
       "grant_type": "authorization_code",

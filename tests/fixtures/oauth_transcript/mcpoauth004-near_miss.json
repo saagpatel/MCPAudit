@@ -61,6 +61,8 @@
     },
     {
       "client_id_kind": "https_metadata_url",
+      "code_challenge_marker": "<redacted>",
+      "code_challenge_method": "S256",
       "exchange_id": "authorization-request",
       "kind": "authorization_request",
       "recorded_issuer": "https://auth.example",
@@ -88,6 +90,7 @@
     },
     {
       "code_marker": "<redacted>",
+      "code_verifier_marker": "<redacted>",
       "credential_record_id": null,
       "exchange_id": "token-request",
       "grant_type": "authorization_code",

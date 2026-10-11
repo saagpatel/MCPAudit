@@ -219,6 +219,8 @@ class AuthorizationRequest(ObservationBase):
     recorded_issuer: str | None
     redirect_uri: str
     client_id_kind: Literal["https_metadata_url", "opaque"]
+    code_challenge_marker: Literal["<redacted>"] | None = None
+    code_challenge_method: str | None = Field(default=None, max_length=32)
 
     @field_validator("request_url")
     @classmethod
@@ -267,6 +269,23 @@ class AuthorizationResponse(ObservationBase):
         return None if value is None else _require_issuer_url(value)
 
 
+class AuthorizationErrorResponse(ObservationBase):
+    kind: Literal["authorization_error_response"]
+    response_status: Literal[302, 303]
+    redirect_uri: str
+    issuer: str | None
+
+    @field_validator("redirect_uri")
+    @classmethod
+    def redirect_is_synthetic(cls, value: str) -> str:
+        return _require_synthetic_url(value, redirect=True)
+
+    @field_validator("issuer")
+    @classmethod
+    def issuer_is_synthetic(cls, value: str | None) -> str | None:
+        return None if value is None else _require_issuer_url(value)
+
+
 class TokenRequest(ObservationBase):
     kind: Literal["token_request"]
     request_url: str
@@ -279,6 +298,7 @@ class TokenRequest(ObservationBase):
         default=None,
         pattern=r"^[a-z0-9][a-z0-9._-]{2,63}$",
     )
+    code_verifier_marker: Literal["<redacted>"] | None = None
 
     @field_validator("request_url")
     @classmethod
@@ -333,6 +353,7 @@ TranscriptObservation = Annotated[
     | AuthorizationServerMetadata
     | AuthorizationRequest
     | AuthorizationResponse
+    | AuthorizationErrorResponse
     | TokenRequest
     | TokenResponse
     | ProtectedResourceUse,
@@ -493,6 +514,7 @@ class OAuthTranscriptFinding(StrictModel):
         "MCPOAUTH005",
         "MCPOAUTH006",
         "MCPOAUTH007",
+        "MCPOAUTH008",
     ]
     severity: FindingSeverity
     outcome: FindingOutcome
