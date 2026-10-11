@@ -57,12 +57,31 @@ from mcp_audit.rules.result_injection import RESULT_SCAN_LIMIT
 from mcp_audit.stdio_transport import (
     DEFAULT_MAX_FRAME_BYTES,
     DEFAULT_MAX_SURFACE_BYTES,
+    ConnectionSlot,
     FrameSizeError,
     bounded_stdio_client,
 )
 from mcp_audit.surface_limits import ListingBudget, SurfaceLimitError
 from mcp_audit.terminal_text import TerminalSafeLogFilter, strip_controls
 from mcp_audit.text_limits import MAX_FIELD_BYTES
+
+_CONNECTION_SLOT: ContextVar[ConnectionSlot | None] = ContextVar("connection_slot", default=None)
+
+
+@asynccontextmanager
+async def connection_slot(
+    sessions: anyio.CapacityLimiter, reapers: anyio.CapacityLimiter
+) -> AsyncIterator[None]:
+    """Bind a task's session permit to its stdio shutdown handoff."""
+    slot = ConnectionSlot(sessions, reapers)
+    await slot.acquire()
+    token = _CONNECTION_SLOT.set(slot)
+    try:
+        yield
+    finally:
+        _CONNECTION_SLOT.reset(token)
+        slot.release()
+
 
 logger = logging.getLogger(__name__)
 logger.addFilter(TerminalSafeLogFilter())
@@ -779,6 +798,7 @@ class ServerConnector:
                 max_frame_bytes=self.max_frame_bytes,
                 sdk_reader=self.sdk_stdio_fallback,
                 on_orphans=on_orphans,
+                connection_slot=_CONNECTION_SLOT.get(),
             )
             async with (
                 _protocol_guard(config.name) as message_handler,

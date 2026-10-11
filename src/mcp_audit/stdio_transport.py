@@ -6,7 +6,7 @@ import os
 import signal
 import sys
 from collections.abc import AsyncIterator, Callable
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from typing import TextIO
 
 import anyio
@@ -35,6 +35,32 @@ DEFAULT_MAX_SURFACE_BYTES = 64 * 1024 * 1024
 
 class FrameSizeError(ValueError):
     """A server exceeded the frame cap before JSON parsing."""
+
+
+class ConnectionSlot:
+    """Transfer session capacity to bounded, awaited process cleanup."""
+
+    def __init__(self, sessions: anyio.CapacityLimiter, reapers: anyio.CapacityLimiter) -> None:
+        self.sessions = sessions
+        self.reapers = reapers
+        self.held = False
+
+    async def acquire(self) -> None:
+        if not self.held:
+            await self.sessions.acquire_on_behalf_of(self)
+            self.held = True
+
+    def release(self) -> None:
+        if self.held:
+            self.sessions.release_on_behalf_of(self)
+            self.held = False
+
+    @asynccontextmanager
+    async def reaping(self) -> AsyncIterator[None]:
+        # Waiting groups retain session capacity: no unbounded cleanup queue.
+        async with self.reapers:
+            self.release()
+            yield
 
 
 async def _stop_process_group(process: ServerProcess, on_orphans: Callable[[str], None]) -> None:
@@ -121,6 +147,7 @@ async def bounded_stdio_client(
     max_frame_bytes: int = DEFAULT_MAX_FRAME_BYTES,
     sdk_reader: bool = False,
     on_orphans: Callable[[str], None] = lambda message: None,
+    connection_slot: ConnectionSlot | None = None,
 ) -> AsyncIterator[TransportStreams]:
     """Keep SDK parsing and curated environment with bounded group cleanup.
 
@@ -129,6 +156,9 @@ async def bounded_stdio_client(
     """
     if max_frame_bytes < 1:
         raise ValueError("max_frame_bytes must be positive")
+    if connection_slot is not None:
+        # Canary identities can open another session after the first was reaped.
+        await connection_slot.acquire()
     command = await _get_executable_command(server.command)
     process = await _create_platform_compatible_process(
         command, server.args, get_default_environment() | (server.env or {}), errlog, server.cwd
@@ -204,6 +234,9 @@ async def bounded_stdio_client(
                 write.close()
                 with anyio.move_on_after(0.5):
                     await writer_done.wait()
-                await _stop_process_group(process, on_orphans)
+                assert process.stdin
+                await _close_pipe(process.stdin)
+                async with connection_slot.reaping() if connection_slot is not None else nullcontext():
+                    await _stop_process_group(process, on_orphans)
                 await _aclose_all(read, write, read_writer, write_reader)
             tasks.cancel_scope.cancel()

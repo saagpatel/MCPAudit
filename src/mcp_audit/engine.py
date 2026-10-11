@@ -34,7 +34,7 @@ from mcp_audit.agent_text import agent_visible_text, prompt_visible_text
 from mcp_audit.analysis_budget import AnalysisTimeout, analysis_budget
 from mcp_audit.analyzer import PermissionAnalyzer
 from mcp_audit.confighealth import config_health_findings
-from mcp_audit.connector import ServerConnector, describe_exception
+from mcp_audit.connector import ServerConnector, connection_slot, describe_exception
 from mcp_audit.coverage import OPTIONAL_CHECKS, build_coverage
 from mcp_audit.discovery import ConfigParseError, discover_all_configs
 from mcp_audit.models import (
@@ -134,6 +134,7 @@ class _ScanContext:
     scan_warnings: list[ScanWarning]
     connector: ServerConnector
     connection_limiter: anyio.CapacityLimiter
+    reaper_limiter: anyio.CapacityLimiter
     analyzer: PermissionAnalyzer
     scorer: RiskScorer
     llm_analyzer: LLMAnalyzer | None
@@ -293,6 +294,7 @@ def _prepare_scan(
     )
     connector.scan_warnings = []
     connection_limiter = anyio.CapacityLimiter(opts.max_concurrency)
+    reaper_limiter = anyio.CapacityLimiter(opts.max_concurrency)
     analyzer = PermissionAnalyzer()
     scorer = RiskScorer()
 
@@ -473,6 +475,7 @@ def _prepare_scan(
         scan_warnings=scan_warnings,
         connector=connector,
         connection_limiter=connection_limiter,
+        reaper_limiter=reaper_limiter,
         analyzer=analyzer,
         scorer=scorer,
         llm_analyzer=llm_analyzer,
@@ -560,7 +563,7 @@ async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) ->
         baseline = pin_store.canary_baseline(srv.name, warnings=baseline_warnings) if pin_store else None
         for warning in baseline_warnings:
             warn(warning.code, warning.message, check=warning.check, servers=warning.servers)
-        async with connection_limiter:
+        async with connection_slot(connection_limiter, context.reaper_limiter):
             deadline = time.monotonic() + opts.timeout
             audit = await connector.connect(
                 srv,
@@ -581,7 +584,7 @@ async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) ->
                 servers=[srv.name],
             )
     else:
-        async with connection_limiter:
+        async with connection_slot(connection_limiter, context.reaper_limiter):
             deadline = time.monotonic() + opts.timeout
             audit = await connector.connect(srv)
 
