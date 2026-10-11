@@ -14,7 +14,11 @@ Launch argv uses element boundaries: secret flags consume their next value,
 including a dash-prefixed value, and inline assignments are cut just after the
 raw `=` or `:` and withhold everything after it. Complete server URL fields are parsed; userinfo, query values, and
 fragments are withheld while endpoint context is retained. Malformed URL
-authorities are withheld. Environment and header configuration retain key
+authorities are withheld. Every copy of a server URL (pins, provenance
+findings, warnings, probe records, config-health summaries) uses this same
+URL-field redaction. In free text, a URL that a quote or angle bracket cuts
+short inside its query, fragment, userinfo, or a trailing path assignment is
+withheld through the end of its token. Environment and header configuration retain key
 names only. Any environment/header maps in arbitrary metadata withhold values.
 
 Dynamic JSON keys and schema property names receive credential redaction too.

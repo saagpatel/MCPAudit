@@ -41,7 +41,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   schemas. Keep control-bearing server stderr lines withheld. Treat bytes
   removed for detection beside a value as part of its raw span, cut inline
   argv secrets just after the raw delimiter, keep values whole across escaped
-  and unterminated quotes, and make redaction idempotent.
+  and unterminated quotes, and make redaction idempotent. Redact every copied
+  server URL as a URL field, so unchanged configs report no URL drift, and
+  withhold free-text URLs whose credential component a quote or angle bracket
+  cut short.
 
 ## [2.9.0] - 2026-10-10
 
