@@ -29,6 +29,8 @@ from mcp_audit.server import _build_mcp_server
 from tests.conftest import make_server_config
 
 FIXTURE = Path(__file__).parent / "fixtures" / "configs" / "cfg_secrets.json"
+ACCESS_KEY_FIXTURE = "AKIA" + "ABCDEFGHIJKLMNOP"
+SESSION_KEY_FIXTURE = "ASIA" + "ABCDEFGHIJKLMNOP"
 
 
 def _fixture_secrets() -> list[str]:
@@ -39,7 +41,8 @@ def _fixture_secrets() -> list[str]:
         "hunter2-SECRET",
         "ENVSTYLESECRET",
         "xoxb-SLACKSECRET-123456",
-        "AKIAABCDEFGHIJKLMNOP",
+        ACCESS_KEY_FIXTURE,
+        SESSION_KEY_FIXTURE,
         "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature12345678",
         "QUERYSECRET789",
         "SIGSECRET",
@@ -53,11 +56,16 @@ def _fixture_secrets() -> list[str]:
 
 @pytest.mark.parametrize("field_report", [False, True], ids=["default", "redact-identifiers"])
 def test_cli_all_report_surfaces_redact_fixture_credentials(tmp_path: Path, field_report: bool) -> None:
+    config_text = FIXTURE.read_text(encoding="utf-8")
+    config_text = config_text.replace("ACCESS_KEY_FIXTURE", ACCESS_KEY_FIXTURE)
+    config_text = config_text.replace("SESSION_KEY_FIXTURE", SESSION_KEY_FIXTURE)
+    config = tmp_path / "cfg_secrets.json"
+    config.write_text(config_text, encoding="utf-8")
     outputs = {suffix: tmp_path / f"report.{suffix}" for suffix in ("json", "sarif", "html")}
     args = [
         "scan",
         "--config",
-        str(FIXTURE),
+        str(config),
         "--config-only",
         "--skip-connect",
         "--override-config",
