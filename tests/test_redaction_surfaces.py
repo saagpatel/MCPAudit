@@ -93,7 +93,15 @@ def test_cli_all_report_surfaces_redact_fixture_credentials(tmp_path: Path, fiel
 
 @pytest.mark.parametrize(
     "url",
-    ["https://[broken:url-secret@fixture.example/mcp", "https://[broken:url-secret.fixture.example/mcp"],
+    [
+        "https://[broken:url-secret@fixture.example/mcp",
+        "https://[broken:url-secret.fixture.example/mcp",
+        "https://fixture.example/mcp?token=<url-secret>",
+        "https://user:<url-secret>@fixture.example/mcp",
+        'https://fixture.example/mcp?token="url-secret"',
+        "https://user:'url-secret'@fixture.example/mcp",
+        "https://fixture.example/mcp?token=`url-secret`",
+    ],
 )
 def test_cli_project_warning_withholds_malformed_url(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, url: str
@@ -123,7 +131,9 @@ def test_cli_project_warning_withholds_malformed_url(
     assert result.exit_code == 0, result.output
     report = json.loads(outputs["json"].read_text())
     warning = next(w for w in report["warnings"] if w["code"] == "project_config_not_connected")
-    assert warning["message"].startswith("Project config 'fixture' not connected: <redacted>. ")
+    # Backticks are ordinary URL characters: the query value alone is withheld.
+    prefix = "Project config 'fixture' not connected: "
+    assert warning["message"].startswith(prefix + ("https://" if "`" in url else "<redacted>. "))
     assert "not connected" in result.output
     for output in [result.output, *(path.read_text() for path in outputs.values())]:
         assert "url-secret" not in output

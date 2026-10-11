@@ -19,9 +19,11 @@ from typing import cast
 import pytest
 from rich.console import Console
 
+from mcp_audit.confighealth import _server_definition_summary
 from mcp_audit.htmlreport import HtmlReportGenerator
 from mcp_audit.models import AuditReport, ScanWarning, ServerAudit, ToolInfo, TransportType
 from mcp_audit.pinning import PinStore
+from mcp_audit.provenance import ProvenanceAnalyzer
 from mcp_audit.redaction import redact_argv, redact_data, redact_text, redact_url, redacted_excerpt
 from mcp_audit.report import ReportGenerator
 from mcp_audit.sarif import SarifGenerator
@@ -57,13 +59,21 @@ INSERTS = {
     "bom": "\ufeff",
     "escaped-double-quote": '\\"',
     "escaped-single-quote": "\\'",
+    # Characters that end a free-text URL span or an unquoted token.
+    "less-than": "<",
+    "greater-than": ">",
+    "double-quote": '"',
+    "single-quote": "'",
+    "backtick": "`",
 }
+_CLOSING = {"<": ">", "\uff02": "\uff02"}
 PLACEMENTS = {
     "start": lambda insert: insert + LEFT + RIGHT,
     "middle": lambda insert: LEFT + insert + RIGHT,
     "end": lambda insert: LEFT + RIGHT + insert,
+    "wrapped": lambda insert: insert + LEFT + RIGHT + _CLOSING.get(insert, insert),
 }
-POSITIONS = ("assignment", "flag-inline", "flag-separate", "header", "env", "userinfo")
+POSITIONS = ("assignment", "flag-inline", "flag-separate", "header", "env", "userinfo", "query")
 
 
 def _sources(position: str, secret: str) -> tuple[str, list[str], str | None]:
@@ -78,7 +88,10 @@ def _sources(position: str, secret: str) -> tuple[str, list[str], str | None]:
         return f"Authorization: Bearer {secret}", ["--header", f"Authorization: Bearer {secret}"], None
     if position == "env":
         return f"export API_TOKEN={secret} && run", [f"API_TOKEN={secret}"], None
-    url = f"https://user:{secret}@fixture.example/mcp"
+    if position == "userinfo":
+        url = f"https://user:{secret}@fixture.example/mcp"
+    else:
+        url = f"https://fixture.example/mcp?token={secret}"
     return f"Endpoint {url} ready", ["--url", url], url
 
 
@@ -96,6 +109,15 @@ def _report(text: str, args: list[str], url: str | None) -> AuditReport:
         input_schema={"type": "object", "properties": {"value": {"type": "string", "description": text}}},
         meta={"note": text},
     )
+    # A pin of a different endpoint makes provenance copy the current URL.
+    previous = make_server_config(name="synthetic-server", url="https://previous.example/mcp")
+    provenance = (
+        ProvenanceAnalyzer().analyze_server(server, PinStore(Path("unused"))._config_snapshot(previous))
+        if url is not None
+        else []
+    )
+    if url is not None:
+        assert provenance, "URL drift must be reported against a different pinned endpoint"
     return AuditReport(
         scan_timestamp=datetime(2026, 1, 1, tzinfo=UTC),
         hostname="synthetic-host",
@@ -105,7 +127,11 @@ def _report(text: str, args: list[str], url: str | None) -> AuditReport:
         servers_failed=0,
         total_tools=1,
         high_risk_servers=0,
-        audits=[ServerAudit(server=server, tools=[tool], connection_status="connected")],
+        audits=[
+            ServerAudit(
+                server=server, tools=[tool], connection_status="connected", provenance_findings=provenance
+            )
+        ],
         scan_duration_seconds=0,
         warnings=[ScanWarning(code="synthetic", message=text, check="connection")],
     )
@@ -146,6 +172,7 @@ def test_normalization_never_moves_a_redaction_boundary(
         "snapshot": json.dumps(snapshot),
         "pins": pin_file.read_text(),
         "excerpt": redacted_excerpt(text, 0, len(text), context_before=8, context_after=8),
+        "definition": _server_definition_summary(report.audits[0].server),
     }
     for surface, output in outputs.items():
         for piece in _forbidden(INSERTS[insert]):
@@ -291,3 +318,34 @@ def test_seeded_structural_fuzz_never_publishes_a_value_chunk() -> None:
         for output in outputs:
             assert not any(chunk in output for chunk in chunks), (text, output)
         assert redact_text(outputs[0]) == outputs[0]
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://api.example.test/path with spaces",
+        " https://api.example.test/mcp ",
+        "https://fixture.example/mcp?token=<opaque-secret>",
+        "https://user:fixture-secret@fixture.example/mcp?mode=admin#fragment",
+        "https://api.example.test/mcp",
+    ],
+)
+def test_unchanged_url_has_no_drift_against_its_own_snapshot(url: str) -> None:
+    server = make_server_config(name="synthetic-server", url=url, transport=TransportType.HTTP)
+    snapshot = PinStore(Path("unused"))._config_snapshot(server)
+    assert ProvenanceAnalyzer().analyze_server(server, snapshot) == []
+
+
+@pytest.mark.parametrize("quote", ["<>", '""', "''", "``", "><"])
+def test_truncated_url_never_splits_a_credential(quote: str) -> None:
+    opening, closing = quote[0], quote[1]
+    for url in (
+        f"https://fixture.example/mcp?token={opening}opaque-secret{closing}",
+        f"https://user:{opening}opaque-secret{closing}@fixture.example/mcp",
+        f"https://fixture.example/mcp/token={opening}opaque-secret{closing}",
+    ):
+        for text in (url, f"Endpoint {url} ready"):
+            redacted = redact_text(text)
+            assert "opaque" not in redacted and "secret" not in redacted, (text, redacted)
+            assert redact_text(redacted) == redacted
+        assert redact_url(url) == "<redacted>" or "opaque" not in redact_url(url)
