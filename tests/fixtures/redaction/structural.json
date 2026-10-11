@@ -386,5 +386,33 @@
     "source": "api_key \u001b]0;x＝\u001b\\\"planted st credential\" tail",
     "expected": "api_key <redacted> tail",
     "forbidden": ["planted", "st credential"]
+  },
+  {
+    "id": "escape-opened-quote-after-escaped-delimiter",
+    "kind": "text",
+    "source": "password \u001b]x=\u0007 \u001b]x\"\u0007first planted-quote-credential\" tail",
+    "expected": "password \u001b]x=\u0007 <redacted>",
+    "forbidden": ["planted-quote-credential"]
+  },
+  {
+    "id": "escape-opened-fullwidth-quote",
+    "kind": "text",
+    "source": "token \u001b]x:\u0007 \u001b]x＂\u0007first planted-fw-credential＂ tail",
+    "expected": "token \u001b]x:\u0007 <redacted>",
+    "forbidden": ["planted-fw-credential"]
+  },
+  {
+    "id": "retained-fullwidth-quote-after-escaped-delimiter",
+    "kind": "text",
+    "source": "api_key \u001b]x=\u0007 ＂first planted-retained-fw-credential＂ tail",
+    "expected": "api_key \u001b]x=\u0007 <redacted>",
+    "forbidden": ["planted-retained-fw-credential"]
+  },
+  {
+    "id": "escape-backslash-inside-quoted-value",
+    "kind": "text",
+    "source": "password \u001b]x=\u0007 \"a b \u001b]\\\u0007\" planted-escaped-credential\" tail",
+    "expected": "password \u001b]x=\u0007 <redacted>",
+    "forbidden": ["planted-escaped-credential"]
   }
 ]

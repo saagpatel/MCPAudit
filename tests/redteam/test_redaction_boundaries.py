@@ -696,3 +696,28 @@ def test_escaped_delimiter_standing_alone_between_label_and_value(escape: str, d
                     once = redact_text(text)
                     assert forbidden.search(once) is None, text
                     assert redact_text(once) == once, text
+
+
+@pytest.mark.parametrize(
+    "opening",
+    [
+        "\x1b]x{quote}\x07",
+        "\x1b]0;x{quote}\x1b\\",
+        "\x1b{quote}",
+        "\x1b[1m\x1b]x{quote}\x07\x1b[0m",
+        "{quote}",
+    ],
+    ids=["osc-bel", "osc-st", "bare-esc", "wrapped", "retained"],
+)
+@pytest.mark.parametrize("quote", ['"', "'", "＂", "＇"])
+@pytest.mark.parametrize("delimiter", ["\x1b]x=\x07 ", "\x1b]x:\x07 ", "= "])
+def test_quote_opened_by_an_escape_or_normalization_withholds_the_quoted_value(
+    opening: str, quote: str, delimiter: str
+) -> None:
+    forbidden = re.compile("|".join(_forbidden("")))
+    for body in (f"first {_SWEEP_SECRET}", f"a b {_SWEEP_SECRET} c", f"x\\ {_SWEEP_SECRET}"):
+        for tail in ("", " tail", ' tail "x"'):
+            text = f"x password {delimiter}{opening.format(quote=quote)}{body}{quote}{tail}"
+            once = redact_text(text)
+            assert forbidden.search(once) is None, text
+            assert redact_text(once) == once, text

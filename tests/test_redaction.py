@@ -1,5 +1,6 @@
 """Tests for centralized output redaction."""
 
+import json
 import tracemalloc
 from collections.abc import Callable
 from time import perf_counter
@@ -441,3 +442,33 @@ def test_label_reading_work_is_linear_through_the_public_schema_api(monkeypatch:
         # Every reading consumer shares one budget per field: work stays a
         # small multiple of the input, not readings times the label.
         assert work[0] <= 40 * len(name) + (1 << 20), (size, work[0])
+
+
+@pytest.mark.parametrize("joiner", ["\x1b[m ", "\x1b]x=\x07 "], ids=["escape-only", "escaped-delimiter"])
+def test_joined_escape_tokens_before_a_long_quoted_value_stay_linear(
+    monkeypatch: pytest.MonkeyPatch, joiner: str
+) -> None:
+    import mcp_audit.redaction as redaction
+
+    work = [0]
+    continuation, text_edits = redaction._VALUE_CONTINUATION, redaction._text_edits
+
+    class CountedContinuation:
+        def match(self, text: str, start: int = 0) -> Any:
+            found = continuation.match(text, start)
+            work[0] += 0 if found is None else found.end() - start
+            return found
+
+    def counted_text_edits(text: str, **kwargs: Any) -> Any:
+        work[0] += len(text)
+        return text_edits(text, **kwargs)
+
+    monkeypatch.setattr(redaction, "_VALUE_CONTINUATION", CountedContinuation())
+    monkeypatch.setattr(redaction, "_text_edits", counted_text_edits)
+    for size in (1000, 4000, 16000):
+        text = "password " + joiner * size + '"' + "word " * size + 'fixture-credential"'
+        work[0] = 0
+        redacted = redact_data({"description": text})
+        assert "fixture-credential" not in json.dumps(redacted)
+        # Shared quoted suffixes are scanned once and charged to the field budget.
+        assert work[0] <= 40 * len(text) + (1 << 20), (size, work[0])
