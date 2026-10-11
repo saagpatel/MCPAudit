@@ -40,8 +40,9 @@ _ASSIGNMENT_PREFIX = re.compile(r"[\"']?\s*[:=]\s*")
 _ASSIGNMENT_VALUE = re.compile(rf"([\"']?\s*[:=]\s*)({_REDACTED_VALUE}|{_VALUE})")
 _FLAG_VALUE = re.compile(rf"(\s+)({_REDACTED_VALUE}|{_VALUE})")
 _FLAG_PREFIX = re.compile(r"\s*")
-_BEARER_TOKEN = re.compile(r"(?i)\bBearer\s+(<redacted>|(?:\\[\s\S]|[^\s,\"'<>])++)")
-_BASIC_TOKEN = re.compile(r"(?i)\bBasic\s+(<redacted>|(?:\\[\s\S]|[^\s,\"'<>])++)")
+# Credentials share the value grammar: angle brackets and quotes never split one.
+_BEARER_TOKEN = re.compile(rf"(?i)\bBearer\s+(<redacted>|{_VALUE})")
+_BASIC_TOKEN = re.compile(rf"(?i)\bBasic\s+(<redacted>|{_VALUE})")
 # Consume scheme-like runs once; a nested scheme ends the current path span.
 # Query values and fragments still consume their entire enclosing URL tail.
 _URL = re.compile(
@@ -53,6 +54,7 @@ _URL = re.compile(
 # Whole secret values include nested URLs; standalone spans stop at each scheme.
 _URL_VALUE = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*+://(?:<redacted>|\\[\"']|[^\s\"'<>])++")
 _URL_USERINFO = re.compile(r"(^[A-Za-z][A-Za-z0-9+.-]*+://)(?:[^/?#\s@]*+@)++")
+_TOKEN_TAIL = re.compile(r"\S*")
 _QUERY_VALUE = re.compile(r"=([^&;]*)")
 _SECRET_VALUE = re.compile(
     r"gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|"
@@ -147,7 +149,7 @@ def _named_value_edits(
                 continue
             # An unquoted URL value belongs to the enclosing assignment/flag,
             # including query delimiters that normally end an unquoted value.
-            cursor = url_value.end() if url_value is not None else match.end(2)
+            cursor = max(url_value.end(), match.end(2)) if url_value is not None else match.end(2)
             yield match.start(2), cursor, _REDACTED
 
 
@@ -189,6 +191,40 @@ def _url_edits(value: str, *, raw: bool = True) -> Iterator[tuple[int, int, str]
         yield value.index("#") + 1, len(value), _REDACTED
 
 
+def _token_end(value: str, start: int) -> int:
+    match = _TOKEN_TAIL.match(value, start)
+    return start if match is None else match.end()
+
+
+def _truncated_url(url: str, userinfo_follows: bool) -> bool:
+    """The component a quote or angle bracket cut short can carry a credential.
+
+    That is a query or fragment, an authority that userinfo continues, or a
+    final path segment whose named value runs to the cut.
+    """
+    rest = url[url.index("://") + 3 :]
+    if "?" in rest or "#" in rest:
+        return True
+    if "/" not in rest:
+        return userinfo_follows
+    segment = rest.rpartition("/")[2]
+    return _ends_with_secret_label(segment) or any(
+        end == len(segment) for _, end, _ in _named_value_edits(segment)
+    )
+
+
+def _ends_with_secret_label(text: str) -> bool:
+    """``NAME=`` or ``NAME:`` at the end of ``text``, scanned backward in linear time."""
+    head = text.rstrip()
+    if head[-1:] not in {"=", ":"}:
+        return False
+    head = head[:-1].rstrip().rstrip("\"'")
+    start = len(head)
+    while start and (head[start - 1].isascii() and (head[start - 1].isalnum() or head[start - 1] in "_.-")):
+        start -= 1
+    return start < len(head) and _is_secret_name(head[start:])
+
+
 def _jwt_edits(value: str) -> Iterator[tuple[int, int, str]]:
     # Consume each candidate header once, even when it contains many 'eyJ'
     # prefixes without a dot. An unanchored three-part JWT regex is quadratic
@@ -210,7 +246,25 @@ def _text_edits(value: str, *, raw: bool = True) -> Iterator[tuple[int, int, str
     # Enclosing assignments see their complete values before URL protection.
     # Names within standalone URLs are handled separately, preserving authority.
     yield from _named_value_edits(value, protect_urls=True, empty_values=not raw)
+    # Matches are ordered, so the token end, next '@' and next '://' are found
+    # once per position. An '@' after another scheme belongs to that URL.
+    token_end = next_at = next_scheme = -1
     for match in _URL.finditer(value):
+        end = match.end()
+        if end < len(value) and value[end] in "\"'<>":
+            if token_end < end:
+                token_end = _token_end(value, end)
+            if next_at < end:
+                found = value.find("@", end)
+                next_at = len(value) if found < 0 else found
+            if next_scheme < end:
+                found = value.find("://", end)
+                next_scheme = len(value) if found < 0 else found
+            # A quote or angle bracket ended the URL inside a token, so a query
+            # value or userinfo may continue past it: withhold through the token.
+            if _truncated_url(match.group(), next_at < min(token_end, next_scheme)):
+                yield match.start(), token_end, _REDACTED
+                continue
         for start, end, replacement in _url_edits(match.group(), raw=raw):
             yield match.start() + start, match.start() + end, replacement
     yield from _jwt_edits(value)

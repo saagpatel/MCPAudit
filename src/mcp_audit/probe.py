@@ -30,7 +30,7 @@ from mcp_audit.models import (
     AuthorizationFinding,
     AuthorizationProbeObservation,
 )
-from mcp_audit.redaction import redact_text
+from mcp_audit.redaction import redact_text, redact_url
 from mcp_audit.taxonomy import AUTHORIZATION_FINDINGS
 
 MAX_BODY_BYTES = 65_536
@@ -381,7 +381,7 @@ class _Metadata:
         if len(self.observation.metadata_fetches) >= MAX_FETCHES:
             self.observation.warnings.append("metadata_fetch_limit")
             return None
-        record = AuthorizationFetch(url=redact_text(url), reason="unavailable")
+        record = AuthorizationFetch(url=redact_url(url), reason="unavailable")
         self.observation.metadata_fetches.append(record)
         try:
             response = await _request(url, "GET", self.timeout)
@@ -441,8 +441,10 @@ async def probe_authorization(
                 observation.warnings.append("challenge_parse_incomplete")
             observation.www_authenticate = [
                 {
-                    key: redact_text(value)
-                    if key in {"resource_metadata", "scope", "error"}
+                    key: redact_url(value)
+                    if key == "resource_metadata"
+                    else redact_text(value)
+                    if key in {"scope", "error"}
                     else "<redacted>"
                     for key, value in challenge.items()
                 }

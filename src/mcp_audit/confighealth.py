@@ -20,7 +20,7 @@ from mcp_audit.models import (
     ServerConfig,
     TransportType,
 )
-from mcp_audit.redaction import redact_text
+from mcp_audit.redaction import redact_text, redact_url
 
 _CREDENTIAL_HEAVY_THRESHOLD = 3
 _REMOTE_URL = re.compile(r"https?://", re.IGNORECASE)
@@ -331,7 +331,7 @@ def _docker_image_source(args: list[str]) -> str | None:
 
 def _server_definition_summary(server: ServerConfig) -> str:
     if server.url:
-        return f"{server.transport.value} url={redact_text(server.url)}"
+        return f"{server.transport.value} url={redact_url(server.url)}"
     command = server.command or "missing-command"
     source = _package_runner_source(server)
     if source is not None:

@@ -53,7 +53,7 @@ from mcp_audit.models import (
     TrifectaFinding,
 )
 from mcp_audit.overrides import OverrideApplier, OverrideConfig
-from mcp_audit.redaction import redact_data, redact_text
+from mcp_audit.redaction import redact_data, redact_text, redact_url
 from mcp_audit.schema_rules import scan_tool_schema
 from mcp_audit.scorer import RiskScorer
 from mcp_audit.stdio_transport import DEFAULT_MAX_FRAME_BYTES, DEFAULT_MAX_SURFACE_BYTES
@@ -537,7 +537,9 @@ async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) ->
         launch = (
             shlex.join(cast(list[str], redact_data([srv.command, *srv.args])))
             if srv.command
-            else redact_text(srv.url or "(no command or endpoint)")
+            else redact_url(srv.url)
+            if srv.url
+            else "(no command or endpoint)"
         )
         warn(
             "project_config_not_connected",
