@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import random
+from collections.abc import Callable
 from datetime import UTC, datetime
 from io import StringIO
 from pathlib import Path
@@ -151,6 +152,13 @@ def test_normalization_never_moves_a_redaction_boundary(
 ) -> None:
     secret = PLACEMENTS[placement](INSERTS[insert])
     text, args, url = _sources(position, secret)
+    _assert_surfaces(text, args, url, _forbidden(INSERTS[insert]), tmp_path)
+
+
+def _assert_surfaces(
+    text: str, args: list[str], url: str | None, forbidden: list[str], tmp_path: Path
+) -> None:
+    """No forbidden piece on any surface; every structural path is idempotent."""
     report = _report(text, args, url)
     safe = report.redacted()
 
@@ -175,7 +183,7 @@ def test_normalization_never_moves_a_redaction_boundary(
         "definition": _server_definition_summary(report.audits[0].server),
     }
     for surface, output in outputs.items():
-        for piece in _forbidden(INSERTS[insert]):
+        for piece in forbidden:
             assert piece not in output, (surface, piece)
 
     # Redaction is idempotent on every structural path.
@@ -186,6 +194,46 @@ def test_normalization_never_moves_a_redaction_boundary(
     assert redact_data(once) == once
     if url is not None:
         assert redact_url(redact_url(url)) == redact_url(url)
+
+
+# Escape sequences and controls placed right before a delimiter they may consume.
+CONTROLS_BEFORE_DELIMITER = {
+    "esc": "\x1b",
+    "csi": "\x1b[",
+    "c1-csi": "\x9b",
+    "c1-osc": "\x9d",
+    "osc": f"\x1b]0;{OSC_PAYLOAD}",
+    "esc-esc": "\x1b\x1b",
+}
+_Source = Callable[[str, str], tuple[str, list[str], str | None]]
+DELIMITER_SOURCES: dict[str, _Source] = {
+    "assignment-equals": lambda c, v: (f"config password{c}={v} ready", [f"password{c}={v}"], None),
+    "assignment-colon": lambda c, v: (f"config password{c}:{v} ready", [f"password{c}:{v}"], None),
+    "flag-inline": lambda c, v: (f"run --password{c}={v} x", [f"--password{c}={v}", "x"], None),
+    "quote": lambda c, v: (f'config password={c}"{v} {v}" ready', [f'password={c}"{v}"'], None),
+    "header": lambda c, v: (f"Authorization{c}: Bearer {v}", [f"Authorization{c}: Bearer {v}"], None),
+    "userinfo-at": lambda c, v: (
+        f"Endpoint https://user:{v}{c}@fixture.example/mcp ready",
+        ["--url", f"https://user:{v}{c}@fixture.example/mcp"],
+        f"https://user:{v}{c}@fixture.example/mcp",
+    ),
+}
+
+
+@pytest.mark.redteam
+@pytest.mark.parametrize("source", list(DELIMITER_SOURCES))
+@pytest.mark.parametrize("control", list(CONTROLS_BEFORE_DELIMITER))
+def test_removed_bytes_never_hide_a_delimiter(control: str, source: str, tmp_path: Path) -> None:
+    text, args, url = DELIMITER_SOURCES[source](CONTROLS_BEFORE_DELIMITER[control], LEFT + RIGHT)
+    _assert_surfaces(text, args, url, _forbidden(OSC_PAYLOAD), tmp_path)
+
+
+@pytest.mark.redteam
+@pytest.mark.parametrize("space", [" ", "\t", "\u00a0", "  "], ids=["space", "tab", "nbsp", "two-spaces"])
+@pytest.mark.parametrize("password", [LEFT + RIGHT, f"{LEFT}:{RIGHT}"], ids=["plain", "with-colon"])
+def test_netloc_password_cut_from_its_at_sign_is_withheld(space: str, password: str, tmp_path: Path) -> None:
+    url = f"https://user:{password}{space}@fixture.example/mcp"
+    _assert_surfaces(f"Endpoint {url} ready", ["--url", url], url, _forbidden(""), tmp_path)
 
 
 def test_inline_argv_cuts_after_raw_delimiter_through_leading_osc() -> None:
@@ -208,7 +256,7 @@ def test_inline_argv_cuts_after_raw_delimiter_through_leading_osc() -> None:
         # the value extent is ambiguous, so the field is withheld.
         (f"password\uff1a\x1b]0;{OSC_PAYLOAD}\x07 tail", "<redacted>"),
         # A detected value that is empty only after control stripping.
-        (f"--\uff50assword \x1b]0;{OSC_PAYLOAD}\x07, next", "--\uff50assword <redacted>, next"),
+        (f"--\uff50assword \x1b]0;{OSC_PAYLOAD}\x07, next", "--\uff50assword <redacted> next"),
         (f"password=\x1b]0;{OSC_PAYLOAD}", "password=<redacted>"),
     ],
     ids=[
@@ -299,7 +347,7 @@ def test_seeded_structural_fuzz_never_publishes_a_value_chunk() -> None:
     rng = random.Random(20261011)
     inserts = list(INSERTS.values())
     labels = ["password", "\uff50assword", "pass\u200bword", "pass\x1b[31mword", "api_key", "--password"]
-    delimiters = ["=", ":", "\uff1d", "\uff1a", ": ", '":"', '="', "='"]
+    delimiters = ["=", ":", "\uff1d", "\uff1a", ": ", '":"', '="', "='", "\x1b=", "\x1b:", "\x9b=", "\x1b[="]
     for _ in range(3000):
         chunks = ["".join(rng.choice("ABCDEFGHJKMNPQRSTUVWXYZ23456789") for _ in range(6)) for _ in range(3)]
         value = "".join(
@@ -308,10 +356,6 @@ def test_seeded_structural_fuzz_never_publishes_a_value_chunk() -> None:
         label, delimiter = rng.choice(labels), rng.choice(delimiters)
         prefix, suffix = rng.choice(["", "x ", "{"]), rng.choice(["", " tail", '"}'])
         text = prefix + label + delimiter + value + suffix
-        # ESC ESC is one two-character escape for strip_controls, so a following
-        # '[' or ']' and any ';' after it are retained terminators in both views.
-        if "\x1b\x1b" in text:
-            continue
         outputs = [redact_text(text), redacted_excerpt(text, 0, len(text), context_after=len(text))]
         if label.startswith("--"):
             outputs.append(repr(redact_argv([text.removeprefix(prefix)])))
