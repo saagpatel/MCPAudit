@@ -298,11 +298,17 @@ engine remains silent for library/MCP callers without a console. Explicit
 All SARIF profiles retain this warning as an invocation notification with
 descriptor ID `MCP-PROJECT-CONFIG-NOT-CONNECTED`, its redacted message, and
 the warning fields in `properties`. Coverage warnings, including
-`project_config_not_connected`, are returned by `scan_mcp_servers` and the
-`get_*_findings` tools' `warnings` key. `get_high_risk_servers` retains its
-legacy JSON list of `name`/`score` objects and does not return warnings; callers
-needing coverage information must use those warning-bearing tools.
-`check_server` retains its audit fields and adds `warnings`.
+`project_config_not_connected`, are returned by every successful `serve` tool
+response. `scan_mcp_servers`, `check_server`, and the `get_*_findings` tools
+include them in their JSON `warnings` key; `check_server` retains its audit fields.
+`get_high_risk_servers` and `list_discovered_servers` retain their legacy JSON
+lists in the first text block and in `structuredContent.result` (a JSON string).
+Their MCP responses add `structuredContent.warnings`, containing the structured
+scan warnings, and a second text block containing JSON `{"warnings": [...]}`.
+These fields are present even for an empty result list or an empty warning list.
+The published output schemas retain `result` and add `warnings`.
+Warnings use the same report redaction as the existing warning-bearing tools;
+no audit-report field or `schema_version` changes.
 
 ## Missing tool annotations
 

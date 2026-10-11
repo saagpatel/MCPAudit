@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Surface project-config connection warnings in every `serve` tool response,
+  preserving legacy list results with additive structured warnings and a warning
+  text block. Verify their existing SARIF invocation notifications in both profiles.
 - Keep long string parameters out of generated pytest IDs to avoid oversized collection output.
 
 ## [2.9.0] - 2026-10-10
