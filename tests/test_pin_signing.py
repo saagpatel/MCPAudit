@@ -432,5 +432,5 @@ def test_unsigned_v2_is_reported_with_remediation(signing_paths: tuple[Path, Pat
     assert result.state == "unsigned"
     assert result.message == (
         "Pin for fixture-server is unsigned. Run `mcp-audit pin keygen`, then "
-        "`pin --clear fixture-server` and `pin --server fixture-server` after review to sign it."
+        "`mcp-audit pin --refresh fixture-server` and rerun with `--apply` after review to sign it."
     )

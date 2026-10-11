@@ -703,7 +703,8 @@ Terminal status prints only this authenticated key for CI; the existing JSON
 (the nullable verification state) and `baseline_usable` (false when scans withhold
 the baseline); terminal status shows them in a Verification column, marked
 "(withheld)". Ordinary pin writes, refresh, rotation and re-signing refuse failed
-baseline verification.
+baseline verification, except for the explicit unsigned v2 refresh migration
+described below.
 
 Escalation findings add `kind: annotation_delta` and an `annotation_changes`
 list of hint names (empty for other kinds). This is HIGH `MCP018` for
@@ -718,6 +719,13 @@ baseline withheld by scans (trusted keys, nothing authenticating the entry) is
 still compared in refresh review so every difference is shown, with
 `baseline_verified: false` and a note; terminal review labels it and never
 reports "No drift found" against an unverified baseline.
+Unsigned v2 migration review uses the same fields (`baseline_verified: false`
+and an unsigned migration `baseline_note`) while scans continue to withhold the
+entry with `MCP027` under trusted keys. Only entries without signing metadata,
+a per-server signing expectation, or a signed manifest binding are eligible.
+`--apply` requires a trusted private key and signs a fresh live baseline; it
+does not retain removed tools or saved registry hashes. Signed-integrity failures
+remain blocked. No JSON fields or schema version change.
 
 Each audit may include:
 
@@ -734,6 +742,27 @@ Each audit may include:
   object records `status` (`complete` or `unknown`), a stable `reason_code`,
   `source_trust`, analyzer/model provenance, candidate/analyzed tool counts,
   and the number of admitted findings. `unknown` never means clean.
+
+### Opt-in negative conformance lab
+
+`lab --conformance-probe --url URL` emits a separate JSON artifact with
+`contract: mcpaudit.conformance-probe.v1`, `protocol_version: 2026-07-28`,
+nullable numeric `control_status`, boolean `modern_control`, `observations`,
+and a fixed `claim_ceiling`. This is not an `AuditReport`; existing fields and
+`schema_version` are unchanged.
+
+Each observation contains `probe` (`T7` or `T9`), `variant`
+(`protocol_version`, `method`, `name`, or `origin`), `verdict`
+(`pass`, `fail`, `unknown`, or `not_run`), a fixed `reason`, nullable numeric
+`status`, and nullable integer `error_code`. Reasons are `expected_rejection`,
+`negative_request_accepted`, `request_unavailable`, `unexpected_response`,
+`modern_control_unavailable`, `origin_control_unavailable`, or `loopback_only`.
+T7 requires a successful modern discovery control and HTTP 400 / `-32020`
+rejection. T9 is loopback-only and requires HTTP 403 after a control that was
+not itself rejected with 403. No endpoint, response text, response headers,
+credentials, cookies, or session identifiers appear in this artifact.
+See [the lab guide](labs/README.md#negative-conformance-probes-explicit-opt-in)
+for request bounds and verdict limits.
 
 ### Connected protocol observations (additive)
 

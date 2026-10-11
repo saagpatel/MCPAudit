@@ -170,7 +170,7 @@ def verify_document(
             None,
             (
                 f"Pin for {server_name} is unsigned. Run `mcp-audit pin keygen`, then "
-                f"`pin --clear {server_name}` and `pin --server {server_name}` after review to sign it."
+                f"`mcp-audit pin --refresh {server_name}` and rerun with `--apply` after review to sign it."
             ),
         )
 
