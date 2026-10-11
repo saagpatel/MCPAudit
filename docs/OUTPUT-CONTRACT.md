@@ -54,7 +54,11 @@ parser ended it). Detection also reads the whole
 field with those bytes kept, and reads each whitespace-free token together
 with the following tokens up to the next one that is more than escape
 sequences and delimiters (so a delimiter an escape supplies may stand alone
-between a label and its value), in every combination of its runs' readings, so every
+between a label and its value), in every combination of its runs' readings. A
+value cut off at the end of that window continues through the raw text only
+when the quote or backslash that carries it is spelled in retained text and no
+escape sequence lies in the rest of the value; when an escape reading or
+normalization supplied it, the value is withheld to the end of the field. So every
 structural decision (flag, label, delimiter, URL path label, spaced userinfo)
 is made over the same readings. A label is judged on its raw bytes, including
 adjacent removed runs, and the same judgment applies to free text, URL paths,
