@@ -344,5 +344,19 @@
     "source": "Endpoint https://spaced-csi-userinfo-secret \u001b[1@fixture.example/mcp",
     "expected": "Endpoint https://<redacted> \u001b[1@fixture.example/mcp",
     "forbidden": ["spaced-csi-userinfo-secret"]
+  },
+  {
+    "id": "fullwidth-at-in-osc-over-reading-cap",
+    "kind": "text",
+    "source": "Endpoint https://planted-userinfo \u001b]x＠\u0007f\u001b[mi\u001b[mx\u001b[mt\u001b[mu\u001b[mr\u001b[me\u001b[m.\u001b[me\u001b[mx\u001b[ma\u001b[mmple/mcp",
+    "expected": "Endpoint <redacted>",
+    "forbidden": ["planted-userinfo"]
+  },
+  {
+    "id": "fullwidth-at-in-osc-under-reading-cap",
+    "kind": "text",
+    "source": "Endpoint https://planted-userinfo \u001b]x＠\u0007fixture.example/mcp",
+    "expected": "Endpoint https://<redacted> \u001b]x＠\u0007fixture.example/mcp",
+    "forbidden": ["planted-userinfo"]
   }
 ]

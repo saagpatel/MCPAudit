@@ -632,3 +632,40 @@ def test_csi_parameter_bytes_never_hide_a_schema_or_json_key(label: str) -> None
             key = label[:index] + sequence + label[index:]
             data = {"properties": {key: {"type": "string", "default": _SWEEP_SECRET}}, key: _SWEEP_SECRET}
             assert forbidden.search(repr(redact_data(data))) is None, key
+
+
+# Enough single-letter colour runs to push a window past the reading limit.
+_OVER_READING_CAP = "".join(f"\x1b[m{letter}" for letter in "abcdefghijkl")
+_FULLWIDTH = {"=": "＝", ":": "：", "@": "＠", "/": "／", "?": "？", "#": "＃"}
+_FULLWIDTH |= {"-": "－", '"': "＂", "'": "＇"}
+# A structural character that only one escape sequence reading supplies (the
+# OSC "last character" reading); {pad} pushes that token's window past the cap.
+_HIDDEN_STRUCTURAL = {
+    "=": ["password{pad}\x1b]x{char}\x07{secret}"],
+    ":": ["token{pad}\x1b]x{char}\x07 {secret}"],
+    "@": ["Endpoint https://{secret} \x1b]x{char}\x07f{pad}ixture.example/mcp"],
+    "/": ["https:/\x1b]x{char}\x07fixture.example/mcp?token={secret}{pad}"],
+    "?": ["https://fixture.example/mcp\x1b]x{char}\x07token={secret}{pad}"],
+    "#": ["https://fixture.example/mcp\x1b]x{char}\x07{secret}{pad}"],
+    "-": ["run \x1b]x{char}\x07password{pad} {secret}"],
+    '"': ["password=\x1b]x{char}\x07{secret}{pad} tail{char}"],
+    "'": ["password=\x1b]x{char}\x07{secret}{pad} tail{char}"],
+}
+
+
+@pytest.mark.parametrize("cap", ["under-cap", "over-cap"])
+@pytest.mark.parametrize("width", ["ascii", "fullwidth"])
+@pytest.mark.parametrize("structural", list(_HIDDEN_STRUCTURAL))
+def test_structural_byte_from_an_escape_is_judged_after_normalization(
+    structural: str, width: str, cap: str
+) -> None:
+    char = _FULLWIDTH[structural] if width == "fullwidth" else structural
+    pad = _OVER_READING_CAP if cap == "over-cap" else ""
+    forbidden = re.compile("|".join(_forbidden("")))
+    for template in _HIDDEN_STRUCTURAL[structural]:
+        text = template.format(char=char, secret=_SWEEP_SECRET, pad=pad)
+        once = redact_text(text)
+        assert forbidden.search(once) is None, text
+        assert redact_text(once) == once, text
+    if structural == "-":
+        assert redact_argv([f"\x1b]x{char}\x07password{pad}", _SWEEP_SECRET])[1] == "<redacted>"
