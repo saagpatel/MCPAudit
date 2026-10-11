@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Share offline lab descriptor reads, strict JSON decoding, and canonical
+  serialization mechanics while retaining each lab's limits, errors, aliases,
+  and number policy. Verify existing canonical report bytes with fixture digests;
+  reject nonstandard JSON constants in session-resume and handle short reads in
+  task-time-machine.
+
 - Lint GitHub Actions workflows on every pull request with a checksum-verified,
   pinned actionlint binary.
 
