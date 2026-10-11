@@ -347,6 +347,7 @@ mcp_audit/session_resume_lab.py
 mcp_audit/session_resume_models.py
 mcp_audit/session_resume_scenarios_v1.json
 mcp_audit/shadowing.py
+mcp_audit/shadow_cli.py
 mcp_audit/skillscan.py
 mcp_audit/skillscan_cli.py
 mcp_audit/skillscan_models.py

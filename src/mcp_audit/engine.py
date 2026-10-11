@@ -171,6 +171,7 @@ async def run_scan(
     config_paths: list[Path] | None = None,
     override_applier: OverrideApplier | None = None,
     console: Console | None = None,
+    pin_store: PinStore | None = None,
 ) -> AuditReport:
     """Run the scan pipeline and return an :class:`AuditReport`.
 
@@ -181,6 +182,8 @@ async def run_scan(
     and coverage; the caller's list is not modified.
     ``config_paths`` optionally collects encountered filesystem configs, including
     empty and malformed files, for CLI artifact destination protection.
+    ``pin_store`` supplies a caller-selected baseline and verification policy;
+    otherwise enabled pin checks open the store selected by ``options.pin_file``.
 
     ``override_applier`` defaults to a no-op applier; the CLI and MCP server
     pass one loaded from the user's override file. ``console`` defaults to a
@@ -218,7 +221,7 @@ async def run_scan(
             extra_servers = _parse_extra_config(Path(opts.extra_config), parse_errors)
             servers = extra_servers if opts.config_only else servers + extra_servers
 
-    context = _prepare_scan(opts, servers, parse_errors, applier, out, start)
+    context = _prepare_scan(opts, servers, parse_errors, applier, out, start, pin_store)
 
     # Discovery -> setup/pins -> ordered per-server stages -> fleet/finalization.
     # Disabled progress avoids refresh threads for silent library consumers.
@@ -273,6 +276,7 @@ def _prepare_scan(
     applier: OverrideApplier,
     out: Console,
     start: float,
+    pin_store: PinStore | None = None,
 ) -> _ScanContext:
     """Initialize optional components and baselines once, before any server task."""
     scan_warnings: list[ScanWarning] = []
@@ -428,7 +432,6 @@ def _prepare_scan(
 
     # Canary first listings and other baseline checks need pins even without
     # --pin-check. Ordinary saved-pin drift output stays gated on pin_check.
-    pin_store = None
     if (
         opts.canary_check
         or opts.pin_check
@@ -440,7 +443,8 @@ def _prepare_scan(
     ):
         from mcp_audit.pinning import PinStore
 
-        pin_store = PinStore(path=opts.pin_file) if opts.pin_file is not None else PinStore()
+        if pin_store is None:
+            pin_store = PinStore(path=opts.pin_file) if opts.pin_file is not None else PinStore()
         for server in servers:
             scan_warnings.extend(pin_store.schema_warnings(server.name))
         if opts.canary_check and pin_store.read_error:
@@ -713,8 +717,8 @@ async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) ->
 
         audit.non_tool_risk = scorer.score_non_tool(audit.capability_findings, audit.injection_findings)
 
-        # Optional pin drift check (gated on --pin-check, not mere store presence)
-        if pin_store is not None and opts.pin_check:
+        # Compare pins only against a completed metadata listing, including an empty one.
+        if pin_store is not None and opts.pin_check and audit.connection_status == "connected":
             audit.drift_findings.extend(pin_store.check_drift(srv.name, audit.tools))
 
         # Optional trifecta per-server detection
@@ -770,6 +774,7 @@ async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) ->
         for check in OPTIONAL_CHECKS
         if getattr(opts, "canary_check" if check == "runtime_security" else check)
         and check not in {"shadow_check", "verify_artifacts", "download_artifacts"}
+        and (check != "pin_check" or audit.connection_status == "connected")
     )
 
     # Optional registry package verification (network) vs the pin baseline.

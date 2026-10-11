@@ -219,6 +219,12 @@ COMMANDS: dict[str, CommandSpec | NamespaceSpec] = {
     "serve": CommandSpec(
         "mcp_audit.server", "serve_command", "Run MCPAudit as an MCP server.", "Integrations"
     ),
+    "shadow": CommandSpec(
+        "mcp_audit.shadow_cli",
+        "shadow",
+        "Review saved pins and tool surfaces without a proxy.",
+        "Integrations",
+    ),
     "scan": CommandSpec("mcp_audit._core_cli", "scan", "Full legacy audit with explicit scan modes."),
     "discover": CommandSpec(
         "mcp_audit._core_cli", "discover", "Discover configured servers without connections."
