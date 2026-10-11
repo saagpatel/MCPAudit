@@ -8,7 +8,7 @@ import signal
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import cast
 
@@ -216,6 +216,25 @@ def print_metrics(metrics: dict[str, object]) -> None:
     print(json.dumps(summary, sort_keys=True))
 
 
+def assert_oversized_rejected(metrics: dict[str, object]) -> None:
+    assert metrics["deadline_exceeded"] is False and metrics["exit_code"] == 0, metrics
+    assert number(metrics, "peak_rss_bytes") < 300_000_000, metrics
+    assert metrics["statuses"] == ["failed"], metrics
+    errors = cast(list[str | None], metrics["errors"])
+    assert (
+        errors[0]
+        and "frame" in errors[0].lower()
+        and any(word in errors[0].lower() for word in ("size", "exceed", "limit", "large"))
+    ), metrics
+    assert metrics["total_tools"] == 0, metrics
+
+
+def assert_frame_rejection_bounded(large_seconds: float, small_seconds: float) -> None:
+    # Both frames exceed the 16 MiB limit, so rejection reads the same prefix:
+    # 2.5x the bytes may cost at most 2x the time (linear would be 2.5x).
+    assert large_seconds <= 2 * small_seconds + 0.1, (large_seconds, small_seconds)
+
+
 def assert_limits(metrics: dict[str, object], case: Case, profile: str) -> None:
     stage = PROFILES.index(profile)
     assert metrics["deadline_exceeded"] is False, metrics
@@ -233,16 +252,7 @@ def assert_limits(metrics: dict[str, object], case: Case, profile: str) -> None:
             wall, rss = 3, None
             assert number(metrics, "peak_rss_bytes") < 400_000_000, metrics
     if case.name == "oversized_50mb":
-        assert number(metrics, "wall_seconds") < 1, metrics
-        assert number(metrics, "peak_rss_bytes") < 300_000_000, metrics
-        assert metrics["statuses"] == ["failed"], metrics
-        errors = cast(list[str | None], metrics["errors"])
-        assert (
-            errors[0]
-            and "frame" in errors[0].lower()
-            and any(word in errors[0].lower() for word in ("size", "exceed", "limit", "large"))
-        ), metrics
-        assert metrics["total_tools"] == 0, metrics
+        assert_oversized_rejected(metrics)
         rss = None
     elif case.name == "spawn_child_exit":
         assert metrics["connected"] == 1 and metrics["total_tools"] == 1, metrics
@@ -282,6 +292,16 @@ def test_hostile_performance(case: Case, tmp_path: Path, pytestconfig: pytest.Co
     metrics["profile"] = profile
     (root / "metrics.json").write_text(json.dumps(metrics, indent=2) + "\n")
     print_metrics(metrics)
+    if case.name == "oversized_50mb":
+        smaller_root = root / "frame20"
+        smaller_root.mkdir()
+        smaller_case = replace(case, name="oversized_20mb", args=("oversized", "--frame-bytes", "20000000"))
+        smaller_metrics = run_case(smaller_root, smaller_case)
+        print_metrics(smaller_metrics)
+        assert_oversized_rejected(smaller_metrics)
+        assert_frame_rejection_bounded(
+            number(metrics, "wall_seconds"), number(smaller_metrics, "wall_seconds")
+        )
     short: dict[str, object] | None = None
     if case.name == "scale_500":
         short_root = root / "timeout2"
@@ -299,3 +319,10 @@ def test_hostile_performance(case: Case, tmp_path: Path, pytestconfig: pytest.Co
             assert short["connected"] == 500 and short["total_tools"] == 5000, short
         else:
             assert set(cast(list[str], short["statuses"])) <= {"connected", "timeout"}, short
+
+
+def test_frame_rejection_bound_rejects_size_dependent_timing() -> None:
+    assert_frame_rejection_bounded(1.1, 1.0)
+    for large in (2.5, 6.25):  # linear and quadratic growth from 20 MB to 50 MB
+        with pytest.raises(AssertionError):
+            assert_frame_rejection_bounded(large, 1.0)

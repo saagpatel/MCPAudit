@@ -282,10 +282,14 @@ def test_megabyte_url_and_quoted_value_inputs_are_linear(prefix: str, chunk: str
 
 @pytest.mark.parametrize("chunk", ["a", "token", "eyJabcdefgh", "token "])
 def test_megabyte_adversarial_input_is_linear(chunk: str) -> None:
-    text = (chunk * (1_048_576 // len(chunk) + 1))[:1_048_576]
-    start = perf_counter()
-    redact_text(text)
-    assert perf_counter() - start < 2.0  # linear is far faster; quadratic takes minutes
+    def elapsed(size: int) -> float:
+        text = (chunk * (size // len(chunk) + 1))[:size]
+        start = perf_counter()
+        redact_text(text)
+        return perf_counter() - start
+
+    small, large = elapsed(262_144), elapsed(1_048_576)
+    assert large < 10 * small + 0.05
 
 
 def test_redact_identifiers_scrubs_hostname() -> None:

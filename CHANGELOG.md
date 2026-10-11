@@ -7,8 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Lint GitHub Actions workflows on every pull request with a checksum-verified,
+  pinned actionlint binary.
+
 ### Tests
 
+- Reject sub-2-second wall-clock assertions in tests and use input-scaling checks for performance regressions.
 - Assemble synthetic access-key fixtures at runtime and verify the pre-commit
   usage comment names the usable public release tag.
 
