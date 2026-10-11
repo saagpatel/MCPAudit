@@ -46,6 +46,10 @@ def _group_exists(group: int) -> bool:
         os.killpg(group, 0)
     except ProcessLookupError:
         return False
+    except PermissionError:
+        # macOS can report EPERM while a group's last members are being reaped;
+        # the group still exists, so keep polling until it is gone.
+        return True
     return True
 
 
