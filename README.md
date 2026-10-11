@@ -142,7 +142,7 @@ connecting to a server. Experimental fixture-based work is grouped under
 - [Adjusting permission findings](docs/guides/suppressing.md)
 - [Sandbox walkthrough](docs/guides/sandbox.md) using the
   [`examples/sandbox/`](examples/sandbox/) fixtures
-- [Output contract](docs/OUTPUT-CONTRACT.md)
+- [Output contract](docs/OUTPUT-CONTRACT.md), including the optional [OpenTelemetry integration](docs/OUTPUT-CONTRACT.md#opentelemetry-integration)
 - [Documentation index](docs/README.md)
 
 Experimental, fixture-based tools are documented in [the labs](docs/labs).

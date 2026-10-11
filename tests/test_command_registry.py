@@ -307,6 +307,7 @@ mcp_audit/oauth_transcript_cli.py
 mcp_audit/oauth_transcript_models.py
 mcp_audit/oauth_transcript_sarif.py
 mcp_audit/oauth_transcript_scanner.py
+mcp_audit/otel.py
 mcp_audit/overrides.py
 mcp_audit/pin_cli.py
 mcp_audit/pin_signing.py

@@ -60,6 +60,44 @@ secrets are not guaranteed to be recognized. Review reports before sharing.
 The separate opt-in identifier pass continues to scrub host, home-directory,
 and server identifiers.
 
+## OpenTelemetry integration
+
+Install `mcp-audits[otel]` to use
+`mcp_audit.otel.export_report(report, tracer=tracer)`. This library-only
+integration emits spans through a caller-supplied OpenTelemetry API tracer;
+it does not configure a global provider, collector, credentials, or network
+exporter. Install and configure an SDK/exporter separately, and flush it using
+its own lifecycle. A no-op or unsampled tracer does not deliver telemetry.
+
+The exporter reads only the result of `AuditReport.redacted()`. Span names
+are fixed: `mcp_audit.report`, `mcp_audit.server`, and `mcp_audit.check`.
+Server and check spans are children of the report span. The report starts
+with an empty context, excluding ambient parent trace state and baggage.
+These are export-time spans, not measured scan/check execution durations.
+
+| Span | Attributes |
+| --- | --- |
+| Report | `mcp_audit.server.count` (audit rows), `mcp_audit.finding.count` (fleet/config/policy findings only) |
+| Server | `mcp_audit.server.index` (1-based report-local ordinal), `mcp_audit.connection.state`, `mcp_audit.tool.count`, `mcp_audit.finding.count` |
+| Check | `mcp_audit.check.name`, `mcp_audit.coverage.state` |
+
+Report and server spans have one `mcp_audit.finding` event per rule, with
+`mcp_audit.rule.id` and `mcp_audit.finding.count`. Suppressed findings remain
+included, as in the source report. Fleet/config/policy events stay on the
+report span; they are not assigned to a server by name. Known rule IDs are
+retained; unknown rule IDs become `unknown`. All known coverage checks have
+a span, with missing coverage recorded as `unknown`. Additional coverage
+entries have a span labeled `unknown`, without exporting their dynamic key.
+Coverage is report-wide; these spans never claim per-server check completion.
+Unrecognized connection states also become `unknown`.
+
+No report hostname, server/tool name, endpoint, path, environment/header key,
+schema, evidence, warning, coverage reason, or exception text is emitted.
+Only fixed vocabulary and counts enter attributes/events. Caller-owned SDK
+resources and processors are outside this payload boundary: configure them
+without host-identifying resource attributes or enrichment when exporting
+these spans. The report JSON shape and `schema_version` remain unchanged.
+
 ## Credential-free authorization observations
 
 Eligible connected HTTP scans add `ServerAudit.authorization_probe` and, when

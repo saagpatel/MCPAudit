@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add an opt-in `[otel]` library integration exporting redacted reports as
+  counts-only report, server, and coverage-check spans, with rule-count events
+  and no report hostnames, identifiers, or evidence payloads.
 - Add read-only `mcp-audit shadow` review on the public engine with explicit
   configs and pins, opt-in metadata connections, existing drift and pin-integrity
   checks, fleet tool-name collisions, and policy/sequence gates. Verification
