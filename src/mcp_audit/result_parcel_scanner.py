@@ -11,6 +11,7 @@ from typing import Any, Final, Literal
 
 from pydantic import ValidationError
 
+from mcp_audit.lab_primitives import read_bounded_descriptor, strict_json_loads
 from mcp_audit.result_parcel_models import (
     CURRENT_PROTOCOL_VERSION,
     INLINE_ADVISORY_BYTES,
@@ -51,19 +52,6 @@ REPORT_ASSUMPTIONS: Final = [
 
 class ParcelInputError(ValueError):
     """A stable file boundary failure for a supplied scenario."""
-
-
-def _reject_constant(value: str) -> None:
-    raise ValueError(f"non-standard JSON constant: {value}")
-
-
-def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    result: dict[str, Any] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError("duplicate JSON object key")
-        result[key] = value
-    return result
 
 
 def _validate_json_limits(value: Any, depth: int = 0) -> None:
@@ -140,11 +128,7 @@ def parse_scenario_bytes(raw: bytes) -> ParcelScenario | ParcelAnalysisReport:
     if len(raw) > MAX_INPUT_BYTES:
         return _unknown_report(raw[: MAX_INPUT_BYTES + 1], "input_size_limit_exceeded")
     try:
-        payload = json.loads(
-            raw,
-            parse_constant=_reject_constant,
-            object_pairs_hook=_reject_duplicate_keys,
-        )
+        payload = strict_json_loads(raw)
         _validate_json_limits(payload)
         scenario = ParcelScenario.model_validate(payload)
     except (UnicodeDecodeError, json.JSONDecodeError, RecursionError, ValidationError, ValueError):
@@ -187,15 +171,7 @@ def scan_scenario_path(path: Path) -> ParcelAnalysisReport:
             raise ParcelInputError("parcel scenario input is not a regular file")
         if (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino):
             raise ParcelInputError("parcel scenario identity changed before open")
-        chunks: list[bytes] = []
-        remaining = MAX_INPUT_BYTES + 1
-        while remaining:
-            chunk = os.read(descriptor, min(65_536, remaining))
-            if not chunk:
-                break
-            chunks.append(chunk)
-            remaining -= len(chunk)
-        raw = b"".join(chunks)
+        raw = read_bounded_descriptor(descriptor, MAX_INPUT_BYTES)
         after = os.fstat(descriptor)
     except OSError as exc:
         raise ParcelInputError("cannot read parcel scenario input") from exc

@@ -9,7 +9,7 @@ import os
 import stat
 from collections.abc import Iterable, Mapping
 from pathlib import Path
-from typing import Any, Never
+from typing import Any
 from urllib.parse import urlsplit
 
 from pydantic import ValidationError
@@ -32,6 +32,7 @@ from mcp_audit.agent_ui_models import (
     canonical_json_bytes,
     sha256_bytes,
 )
+from mcp_audit.lab_primitives import read_bounded_descriptor, strict_json_loads, validate_json_nesting
 
 _MAX_INPUT_BYTES = 1_048_576
 _MAX_JSONL_LINES = 256
@@ -153,48 +154,12 @@ class AgentUIInputError(ValueError):
     """The input could not be safely read as a fixture."""
 
 
-def _reject_json_constant(value: str) -> Never:
-    raise ValueError(f"unsupported JSON constant: {value}")
-
-
-def _object_without_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    output: dict[str, Any] = {}
-    for key, value in pairs:
-        if key in output:
-            raise ValueError(f"duplicate JSON key: {key}")
-        output[key] = value
-    return output
-
-
-def _load_json(value: bytes) -> Any:
-    return json.loads(
-        value,
-        object_pairs_hook=_object_without_duplicates,
-        parse_constant=_reject_json_constant,
-    )
+def _load_json(value: bytes) -> object:
+    return strict_json_loads(value)
 
 
 def _validate_json_nesting(value: bytes) -> None:
-    depth = 0
-    in_string = False
-    escaped = False
-    for byte in value:
-        if in_string:
-            if escaped:
-                escaped = False
-            elif byte == 0x5C:
-                escaped = True
-            elif byte == 0x22:
-                in_string = False
-            continue
-        if byte == 0x22:
-            in_string = True
-        elif byte in {0x5B, 0x7B}:
-            depth += 1
-            if depth > _MAX_JSON_DEPTH:
-                raise AgentUIInputError(f"JSON nesting exceeds {_MAX_JSON_DEPTH} levels")
-        elif byte in {0x5D, 0x7D}:
-            depth = max(0, depth - 1)
+    validate_json_nesting(value, _MAX_JSON_DEPTH, AgentUIInputError)
 
 
 def _validation_evidence(exc: ValidationError) -> str:
@@ -373,15 +338,7 @@ def _read_fixture_bytes(path: Path) -> tuple[bytes, tuple[int, int]]:
         if opened.st_size > _MAX_INPUT_BYTES:
             raise AgentUIInputError(f"input fixture exceeds {_MAX_INPUT_BYTES} bytes")
 
-        chunks: list[bytes] = []
-        remaining = _MAX_INPUT_BYTES + 1
-        while remaining:
-            chunk = os.read(descriptor, min(65_536, remaining))
-            if not chunk:
-                break
-            chunks.append(chunk)
-            remaining -= len(chunk)
-        raw = b"".join(chunks)
+        raw = read_bounded_descriptor(descriptor, _MAX_INPUT_BYTES)
         if len(raw) > _MAX_INPUT_BYTES:
             raise AgentUIInputError(f"input fixture exceeds {_MAX_INPUT_BYTES} bytes")
         return raw, (opened.st_dev, opened.st_ino)

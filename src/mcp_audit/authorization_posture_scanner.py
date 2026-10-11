@@ -6,7 +6,7 @@ import json
 import os
 import stat
 from pathlib import Path
-from typing import Any, Never
+from typing import Any
 
 from pydantic import ValidationError
 
@@ -24,6 +24,7 @@ from mcp_audit.authorization_posture_models import (
     canonical_json_bytes,
     sha256_bytes,
 )
+from mcp_audit.lab_primitives import read_bounded_descriptor, strict_json_loads, validate_json_nesting
 
 MAX_INPUT_BYTES = 1_048_576
 MAX_JSON_DEPTH = 32
@@ -71,40 +72,8 @@ class AuthorizationPostureInputError(ValueError):
     """The posture artifact could not be safely accepted."""
 
 
-def _reject_json_constant(_value: str) -> Never:
-    raise ValueError("unsupported JSON constant")
-
-
-def _object_without_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    output: dict[str, Any] = {}
-    for key, value in pairs:
-        if key in output:
-            raise ValueError("duplicate JSON key")
-        output[key] = value
-    return output
-
-
 def _validate_json_nesting(raw: bytes) -> None:
-    depth = 0
-    in_string = False
-    escaped = False
-    for byte in raw:
-        if in_string:
-            if escaped:
-                escaped = False
-            elif byte == 0x5C:
-                escaped = True
-            elif byte == 0x22:
-                in_string = False
-            continue
-        if byte == 0x22:
-            in_string = True
-        elif byte in {0x5B, 0x7B}:
-            depth += 1
-            if depth > MAX_JSON_DEPTH:
-                raise AuthorizationPostureInputError(f"JSON nesting exceeds {MAX_JSON_DEPTH} levels")
-        elif byte in {0x5D, 0x7D}:
-            depth = max(0, depth - 1)
+    validate_json_nesting(raw, MAX_JSON_DEPTH, AuthorizationPostureInputError)
 
 
 def _count_json_nodes(value: Any, *, depth: int = 0) -> int:
@@ -147,15 +116,7 @@ def _read_posture_bytes(path: Path) -> tuple[bytes, tuple[int, int]]:
             raise AuthorizationPostureInputError("posture input changed while it was opened")
         if opened.st_size > MAX_INPUT_BYTES:
             raise AuthorizationPostureInputError(f"posture input exceeds {MAX_INPUT_BYTES} bytes")
-        chunks: list[bytes] = []
-        remaining = MAX_INPUT_BYTES + 1
-        while remaining:
-            chunk = os.read(descriptor, min(65_536, remaining))
-            if not chunk:
-                break
-            chunks.append(chunk)
-            remaining -= len(chunk)
-        raw = b"".join(chunks)
+        raw = read_bounded_descriptor(descriptor, MAX_INPUT_BYTES)
         if len(raw) > MAX_INPUT_BYTES:
             raise AuthorizationPostureInputError(f"posture input exceeds {MAX_INPUT_BYTES} bytes")
         return raw, (opened.st_dev, opened.st_ino)
@@ -171,11 +132,7 @@ def parse_authorization_posture_bytes(raw: bytes) -> McpAuthorizationPostureV1:
     parse_error: str | None = None
     payload: Any = None
     try:
-        payload = json.loads(
-            raw,
-            object_pairs_hook=_object_without_duplicates,
-            parse_constant=_reject_json_constant,
-        )
+        payload = strict_json_loads(raw)
     except (UnicodeDecodeError, json.JSONDecodeError, ValueError, RecursionError) as exc:
         parse_error = f"invalid JSON posture: {type(exc).__name__}"
     if parse_error is not None:
