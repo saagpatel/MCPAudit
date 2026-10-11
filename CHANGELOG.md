@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Lint GitHub Actions workflows on every pull request with a checksum-verified,
   pinned actionlint binary.
 
+### Tests
+
+- Reject sub-2-second wall-clock assertions in tests and use input-scaling checks for performance regressions.
+
 ## [2.9.0] - 2026-10-10
 
 ### Upgrade notes

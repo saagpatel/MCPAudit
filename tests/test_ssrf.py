@@ -59,12 +59,17 @@ def test_fetch_verb_utf8_cap_does_not_split_or_overrun_multibyte_text() -> None:
     assert ssrf_module._has_fetch_verb("fetch" + prefix)
 
 
-def test_megabyte_description_verb_scan_stays_under_one_second() -> None:
+def test_megabyte_description_verb_scan_scales_linearly() -> None:
     # An uppercase run exercised the old acronym regex's quadratic failure.
-    tool = _tool("store_record", "X" * (1024 * 1024), {"url": {"type": "string"}})
-    started = perf_counter()
-    findings = SsrfDetector().scan_tool(tool)
-    assert perf_counter() - started < 1.0
+    def scan(size: int) -> tuple[float, list[SsrfFinding]]:
+        tool = _tool("store_record", "X" * size, {"url": {"type": "string"}})
+        started = perf_counter()
+        findings = SsrfDetector().scan_tool(tool)
+        return perf_counter() - started, findings
+
+    small_elapsed, _ = scan(256 * 1024)
+    large_elapsed, findings = scan(1024 * 1024)
+    assert large_elapsed < 10 * small_elapsed + 0.05
     assert len(findings) == 1
     assert findings[0].severity is SsrfSeverity.MEDIUM
     assert findings[0].pattern_name == "url_param"

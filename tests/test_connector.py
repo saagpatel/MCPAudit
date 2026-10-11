@@ -249,12 +249,17 @@ class TestDescribeException:
             "OSError: connect to http://127.0.0.1:9 failed"
         )
 
-    @pytest.mark.parametrize("size", [200_000, 1_000_000])
-    def test_adversarial_url_messages_are_bounded_before_redaction(self, size: int) -> None:
-        error = RuntimeError("http://" * (size // 7))
-        started = time.perf_counter()
-        summary = describe_exception(error)
-        assert time.perf_counter() - started < 2.0  # linear runs ~0.05 s; quadratic takes minutes
+    def test_adversarial_url_messages_scale_before_redaction(self) -> None:
+        def elapsed(size: int) -> tuple[float, str]:
+            error = RuntimeError("http://" * (size // 7))
+            started = time.perf_counter()
+            summary = describe_exception(error)
+            return time.perf_counter() - started, summary
+
+        small_elapsed, small_summary = elapsed(200_000)
+        large_elapsed, summary = elapsed(1_000_000)
+        assert large_elapsed < 10 * small_elapsed + 0.05
+        assert small_summary == "RuntimeError"
         assert summary == "RuntimeError"
 
     @pytest.mark.parametrize("whitespace", [" ", "\t", "\n"])
@@ -282,10 +287,15 @@ class TestDescribeException:
 
 @pytest.mark.parametrize("suffix", ["", "?opaque=synthetic-value", "@example.test/sse"])
 def test_sse_log_redaction_is_linear_on_adversarial_urls(suffix: str) -> None:
-    text = "http://" * (1_000_000 // 7) + suffix
-    started = time.perf_counter()
-    redacted = _redact_sse_log_text(text)
-    assert time.perf_counter() - started < 2.0  # linear runs ~0.05 s; quadratic takes minutes
+    def redact(size: int) -> tuple[float, str]:
+        text = "http://" * (size // 7) + suffix
+        started = time.perf_counter()
+        redacted = _redact_sse_log_text(text)
+        return time.perf_counter() - started, redacted
+
+    small_elapsed, _ = redact(250_000)
+    large_elapsed, redacted = redact(1_000_000)
+    assert large_elapsed < 10 * small_elapsed + 0.05
     assert "synthetic-value" not in redacted
 
 
