@@ -19,6 +19,7 @@ from mcp_audit.oauth_transcript_sarif import oauth_report_to_sarif
 from mcp_audit.oauth_transcript_scanner import (
     OAuthTranscriptInputError,
     parse_oauth_transcript_bytes,
+    parse_oauth_transcript_path,
     report_json_bytes,
     scan_oauth_transcript_path,
 )
@@ -143,21 +144,48 @@ def test_pkce_requires_s256_and_redacted_challenge_and_verifier() -> None:
 
 @pytest.mark.parametrize(
     ("observation_index", "field"),
-    [(3, "code_challenge_marker"), (5, "code_verifier_marker")],
+    [(3, "code_challenge_method"), (3, "code_challenge_marker"), (5, "code_verifier_marker")],
 )
-def test_pkce_requires_redacted_challenge_and_verifier_markers(
+@pytest.mark.parametrize("recorded_absence", [False, True])
+def test_pkce_distinguishes_unrecorded_fields_from_observed_absence(
     tmp_path: Path,
     observation_index: int,
     field: str,
+    recorded_absence: bool,
 ) -> None:
     payload = _payload("mcpoauth008-negative.json")
     payload["fixture_id"] = "missing-pkce-marker"
-    del payload["observations"][observation_index][field]
+    if recorded_absence:
+        payload["observations"][observation_index][field] = None
+    else:
+        del payload["observations"][observation_index][field]
     path = tmp_path / f"{field}.json"
     path.write_text(json.dumps(payload), encoding="utf-8")
 
     report = scan_oauth_transcript_path(path)
-    assert "MCPOAUTH008" in {item.rule_id for item in report.findings if item.outcome.value == "violation"}
+    assert report.verdict == ("fail" if recorded_absence else "unknown")
+    findings = [item for item in report.findings if item.target == "pkce-s256"]
+    assert len(findings) == 1
+    assert findings[0].rule_id == ("MCPOAUTH008" if recorded_absence else "MCPOAUTH000")
+    assert findings[0].outcome.value == ("violation" if recorded_absence else "unknown")
+
+
+def test_unchanged_legacy_fixture_has_unknown_pkce_evidence() -> None:
+    # Preserved from d9b63f3 before the PKCE fields were added to this branch.
+    path = _fixture("legacy-mcpoauth001-negative.json")
+    fixture, _, _ = parse_oauth_transcript_path(path)
+    request = fixture.observations[3]
+    token = fixture.observations[5]
+    assert "code_challenge_method" not in request.model_fields_set
+    assert "code_challenge_marker" not in request.model_fields_set
+    assert "code_verifier_marker" not in token.model_fields_set
+
+    report = scan_oauth_transcript_path(path)
+    assert report.verdict == "unknown"
+    material = [item for item in report.findings if item.outcome.value != "advisory"]
+    assert len(material) == 3
+    assert all(item.rule_id == "MCPOAUTH000" and item.target == "pkce-s256" for item in material)
+    assert all(item.outcome.value == "unknown" for item in material)
 
 
 @pytest.mark.parametrize(
@@ -194,6 +222,50 @@ def test_error_authorization_response_issuer_is_validated(
     report = scan_oauth_transcript_path(path)
     violations = [item.rule_id for item in report.findings if item.outcome.value == "violation"]
     assert ("MCPOAUTH003" in violations) is has_violation
+    assert not any(item.target == "transcript-structure" for item in report.findings)
+
+
+@pytest.mark.parametrize("before_request", [False, True])
+@pytest.mark.parametrize("redeem_code", [False, True])
+def test_authorization_error_response_order_and_code_redemption(
+    tmp_path: Path,
+    before_request: bool,
+    redeem_code: bool,
+) -> None:
+    payload = _payload("mcpoauth008-negative.json")
+    response = payload["observations"][4]
+    response["kind"] = "authorization_error_response"
+    response.pop("code_marker")
+    response.pop("handling")
+    if before_request:
+        payload["observations"][3], payload["observations"][4] = (
+            payload["observations"][4],
+            payload["observations"][3],
+        )
+        for sequence, observation in enumerate(payload["observations"], start=1):
+            observation["sequence"] = sequence
+    if not redeem_code:
+        payload["observations"] = payload["observations"][:5]
+        payload["audience_evidence"] = {
+            "state": "unverifiable",
+            "source": "none",
+            "token_response_exchange_id": None,
+            "audiences": [],
+            "accepted_for_resource": None,
+        }
+    path = tmp_path / "authorization-error-flow.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    report = scan_oauth_transcript_path(path)
+    structure = [item for item in report.findings if item.target == "transcript-structure"]
+    assert all(item.rule_id == "MCPOAUTH000" and item.outcome.value == "unknown" for item in structure)
+    evidence = [text for item in structure for text in item.evidence]
+    assert ("authorization and token observations are not in protocol order" in evidence) is before_request
+    assert (
+        "authorization error response has code redemption without a successful response" in evidence
+    ) is redeem_code
+    if before_request or redeem_code:
+        assert report.verdict == "unknown"
 
 
 def test_discovery_resource_comparison_normalizes_scheme_and_host_case(tmp_path: Path) -> None:
@@ -598,15 +670,17 @@ def test_parser_enforces_nesting_and_redirect_budgets() -> None:
         parse_oauth_transcript_bytes(json.dumps(payload).encode())
 
 
-def test_sarif_uses_existing_compatibility_shape_without_fixture_locations() -> None:
-    report = scan_oauth_transcript_path(_fixture("mcpoauth003-vulnerable.json"))
+@pytest.mark.parametrize("rule", range(9))
+def test_sarif_uses_existing_compatibility_shape_without_fixture_locations(rule: int) -> None:
+    report = scan_oauth_transcript_path(_fixture(f"mcpoauth{rule:03d}-vulnerable.json"))
     sarif = oauth_report_to_sarif(report)
     assert sarif["version"] == "2.1.0"
     run = sarif["runs"][0]
     assert run["tool"]["driver"]["name"] == "mcp-audit"
-    assert {item["id"] for item in run["tool"]["driver"]["rules"]} == {
-        f"MCPOAUTH{rule:03d}" for rule in range(8)
-    }
+    rule_ids = {item["id"] for item in run["tool"]["driver"]["rules"]}
+    assert rule_ids == {f"MCPOAUTH{number:03d}" for number in range(9)}
+    assert run["results"]
+    assert {item["ruleId"] for item in run["results"]} <= rule_ids
     assert all("locations" not in item for item in run["results"])
     assert "other-auth.example" not in json.dumps(sarif)
 

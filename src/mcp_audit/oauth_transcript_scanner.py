@@ -508,14 +508,19 @@ def _evaluate_structure(fixture: OAuthTranscriptFixture, flow: Flow) -> list[OAu
         evidence.append("multiple authorization responses make the evaluated flow ambiguous")
     ordered = (
         flow.authorization_request,
-        flow.authorization_response,
+        flow.authorization_response or flow.authorization_error_response,
         flow.token_request,
         flow.token_response,
     )
-    if all(item is not None for item in ordered):
-        sequences = [item.sequence for item in ordered if item is not None]
-        if sequences != sorted(sequences):
-            evidence.append("authorization and token observations are not in protocol order")
+    sequences = [item.sequence for item in ordered if item is not None]
+    if sequences != sorted(sequences):
+        evidence.append("authorization and token observations are not in protocol order")
+    if (
+        flow.authorization_error_response is not None
+        and flow.authorization_response is None
+        and flow.token_request is not None
+    ):
+        evidence.append("authorization error response has code redemption without a successful response")
     if flow.token_response is not None and fixture.audience_evidence.state == EvidenceState.CURRENT.value:
         if fixture.audience_evidence.token_response_exchange_id != flow.token_response.exchange_id:
             evidence.append("current audience evidence is not bound to the observed token response")
@@ -743,13 +748,19 @@ def _evaluate_pkce(flow: Flow) -> list[OAuthTranscriptFinding]:
         return [_unknown("pkce-s256", "authorization request evidence is unavailable")]
     violations: list[str] = []
     unknown_evidence: list[str] = []
-    if request.code_challenge_method != "S256":
+    if "code_challenge_method" not in request.model_fields_set:
+        unknown_evidence.append("authorization request code challenge method is unrecorded")
+    elif request.code_challenge_method != "S256":
         violations.append("authorization request does not use the required S256 code challenge method")
-    if request.code_challenge_marker is None:
+    if "code_challenge_marker" not in request.model_fields_set:
+        unknown_evidence.append("authorization request code challenge evidence is unrecorded")
+    elif request.code_challenge_marker is None:
         violations.append("authorization request has no redacted code challenge evidence")
     if token is None:
         if flow.authorization_error_response is None:
             unknown_evidence.append("token request code verifier evidence is unavailable")
+    elif "code_verifier_marker" not in token.model_fields_set:
+        unknown_evidence.append("token request code verifier evidence is unrecorded")
     elif token.code_verifier_marker is None:
         violations.append("token request has no redacted code verifier evidence")
     findings: list[OAuthTranscriptFinding] = []
