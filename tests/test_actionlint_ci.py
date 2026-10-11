@@ -16,6 +16,7 @@ def test_actionlint_runs_for_pull_requests_with_a_pinned_checksum() -> None:
     assert "ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8" in (
         actionlint_job
     )
+    assert "uses: actions/checkout@" in actionlint_job
     assert "sha256sum --check" in actionlint_job
     assert '"$RUNNER_TEMP/actionlint/actionlint"' in actionlint_job
     assert "invalid-cache-mode.yml" in actionlint_job
