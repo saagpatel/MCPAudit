@@ -59,7 +59,9 @@ def test_bare_empty_home_spawns_nothing_and_offers_next_commands(monkeypatch: py
     monkeypatch.setattr(ServerConnector, "connect", forbidden)
     result = CliRunner().invoke(cli.main, [])
     assert result.exit_code == 0, result.output
-    assert result.output.startswith("No MCP servers found")
+    lines = result.output.splitlines()
+    assert lines[0].startswith("No MCP servers found")
+    assert lines[1].startswith("Coverage:")
     assert "PARTIAL" not in result.output
     assert "mcp-audit demo" in result.output
     assert "mcp-audit check --config" in result.output

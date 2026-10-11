@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Lead empty-home bare CLI output with the empty state, followed immediately by
+  its coverage summary.
+- Keep long string parameters out of generated pytest IDs to avoid oversized collection output.
+- Review authorization metadata for independently valid `WWW-Authenticate` header
+  lines and legal empty comma elements. Ambiguous metadata, malformed lines,
+  cross-line parameter continuations, and exhausted limits still fail closed.
 - Redact typed reports structurally before terminal, JSON, SARIF, and HTML
   rendering, including argv values, URL components, dynamic dictionary keys,
   schema property names, Unicode-obfuscated credentials, and escaped quotes.
@@ -33,10 +39,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   authorities and malformed URL copies;
   redact dash-prefixed secret values in pins and literals in composed secret
   schemas. Keep control-bearing server stderr lines withheld.
-- Keep long string parameters out of generated pytest IDs to avoid oversized collection output.
-- Review authorization metadata for independently valid `WWW-Authenticate` header
-  lines and legal empty comma elements. Ambiguous metadata, malformed lines,
-  cross-line parameter continuations, and exhausted limits still fail closed.
 
 ## [2.9.0] - 2026-10-10
 
