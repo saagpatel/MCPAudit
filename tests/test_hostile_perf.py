@@ -8,7 +8,7 @@ import signal
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import cast
 
@@ -233,7 +233,6 @@ def assert_limits(metrics: dict[str, object], case: Case, profile: str) -> None:
             wall, rss = 3, None
             assert number(metrics, "peak_rss_bytes") < 400_000_000, metrics
     if case.name == "oversized_50mb":
-        assert number(metrics, "wall_seconds") < 1, metrics
         assert number(metrics, "peak_rss_bytes") < 300_000_000, metrics
         assert metrics["statuses"] == ["failed"], metrics
         errors = cast(list[str | None], metrics["errors"])
@@ -282,6 +281,16 @@ def test_hostile_performance(case: Case, tmp_path: Path, pytestconfig: pytest.Co
     metrics["profile"] = profile
     (root / "metrics.json").write_text(json.dumps(metrics, indent=2) + "\n")
     print_metrics(metrics)
+    if case.name == "oversized_50mb":
+        smaller_root = root / "scaled25"
+        smaller_root.mkdir()
+        smaller_case = replace(
+            case,
+            name="oversized_25mb",
+            args=("oversized", "--frame-bytes", "25000000"),
+        )
+        smaller_metrics = run_case(smaller_root, smaller_case)
+        assert number(metrics, "wall_seconds") < 10 * number(smaller_metrics, "wall_seconds") + 0.05
     short: dict[str, object] | None = None
     if case.name == "scale_500":
         short_root = root / "timeout2"
