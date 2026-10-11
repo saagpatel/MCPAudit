@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exited, and reduce per-line deadline tracing overhead while retaining every
   clock check. Connection concurrency, deadlines, and performance budgets are
   unchanged.
+- Make direct red-team fixture sampling deterministic so global RNG consumption
+  cannot make detector parity classify a randomly gated tool differently.
 
 ## [2.10.0] - 2026-10-11
 
