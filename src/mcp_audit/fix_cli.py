@@ -9,7 +9,7 @@ from pathlib import Path, PurePosixPath
 import click
 
 from mcp_audit.models import TransportType
-from mcp_audit.pkgverify import resolve_package_refs
+from mcp_audit.pkgverify import PackageRef, _split_npm_spec
 from mcp_audit.review_discovery import review_sources, server_identity
 
 _PACKAGE = re.compile(r"(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*")
@@ -74,14 +74,18 @@ def fix(server: str, config: Path, package_version: str | None, narrower_path: s
     entry = selected[0]
     args = entry.args
     patches: list[dict[str, str]] = []
-    refs = resolve_package_refs(entry)
-    simple_npx = (
+    npx_form = (
         entry.transport == TransportType.STDIO
         and not entry.url
         and Path(entry.command or "").name == "npx"
         and len(args) >= 2
         and args[0] == "-y"
-        and len(refs) == 1
+    )
+    # The strict `npx -y PKG` form names the package directly; generic runner
+    # resolution would skip npx subcommand words that are also package names.
+    refs = [PackageRef("npm", *_split_npm_spec(args[1]))] if npx_form else []
+    simple_npx = (
+        npx_form
         and _PACKAGE.fullmatch(refs[0].name) is not None
         and args[1] == refs[0].name + (f"@{refs[0].version}" if refs[0].version else "")
     )

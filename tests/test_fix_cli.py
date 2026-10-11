@@ -45,7 +45,7 @@ def _patches(result: Result) -> list[dict[str, str]]:
     return patches
 
 
-@pytest.mark.parametrize("package", ["fixture-package", "@fixture/package"])
+@pytest.mark.parametrize("package", ["fixture-package", "@fixture/package", "exec", "run", "tool", "x"])
 @pytest.mark.parametrize("version", [None, "1.2.3", "1.2.3-rc.1+build.2"])
 def test_unpinned_package_preview(tmp_path: Path, package: str, version: str | None) -> None:
     config = _config(tmp_path, ["-y", package, "--token", "withheld-fixture-argument"])
