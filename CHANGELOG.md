@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Describe `--inject-check` and MCP019 findings in terms of instruction-shaped text.
+
 ### Added
 
 - Extend the offline OAuth transcript lab with an S256 PKCE finding and
@@ -16,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests
 
+- Guard evidence excerpts and match spans against Unicode lowercase expansion,
+  including combined normalization, across tool, prompt, and resource metadata.
 - Treat `EPERM` from a process-group probe as "still exists" in transport hygiene tests,
   so macOS reaping races no longer crash the shutdown assertion.
 - Reject sub-2-second wall-clock assertions in tests and use input-scaling checks for performance regressions.
@@ -24,10 +30,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Lead empty-home bare CLI output with the empty state, followed immediately by
+  its coverage summary.
 - Keep long string parameters out of generated pytest IDs to avoid oversized collection output.
 - Review authorization metadata for independently valid `WWW-Authenticate` header
   lines and legal empty comma elements. Ambiguous metadata, malformed lines,
   cross-line parameter continuations, and exhausted limits still fail closed.
+- Surface project-config connection warnings in every `serve` tool response,
+  preserving legacy list results with additive structured warnings and a warning
+  text block. Verify their existing SARIF invocation notifications in both profiles.
 
 ## [2.9.0] - 2026-10-10
 

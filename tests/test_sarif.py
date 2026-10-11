@@ -427,6 +427,17 @@ class TestSarifResults:
         assert shell_rule["help"]["text"]
         assert shell_rule["properties"]["severity"] == "high"
 
+        mcp019 = next(rule for rule in rules if rule["id"] == "MCP019")
+        mcp019_text = " ".join(
+            [
+                mcp019["shortDescription"]["text"],
+                mcp019["fullDescription"]["text"],
+                mcp019["help"]["text"],
+            ]
+        )
+        assert "instruction-shaped text" in mcp019_text
+        assert "prompt injection" not in mcp019_text.casefold()
+
     def test_sarif_redacts_report_strings(self) -> None:
         audit = _make_audit(findings=[_finding(tool="run_shell")])
         audit.server.name = "server-with-token=abc123"
