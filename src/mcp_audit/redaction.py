@@ -5,7 +5,8 @@ from __future__ import annotations
 import re
 import unicodedata
 from bisect import bisect_left
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
+from contextvars import ContextVar
 from dataclasses import dataclass
 from functools import lru_cache
 from itertools import accumulate, product
@@ -19,6 +20,7 @@ from mcp_audit.terminal_text import control_free_spans, strip_controls
 
 _REDACTED = "<redacted>"
 _MAX_PASSES = 4
+_REPORT_REDACTOR: ContextVar[Callable[[str], str] | None] = ContextVar("report_redactor", default=None)
 _NAME_TOKEN = re.compile(r"[A-Za-z0-9_.-]+")
 _SESSION_LABEL = re.compile(r"(?<![A-Za-z0-9])session[_-]name(?=$|[_.-])", re.IGNORECASE)
 _SECRET_NAME = re.compile(
@@ -1009,6 +1011,12 @@ def _swallowed_delimiter_edits(
 
 
 def redact_text(value: str) -> str:
+    """Redact text, reusing bounded short fields only within a report operation."""
+    cached = _REPORT_REDACTOR.get()
+    return cached(value) if cached is not None and len(value) <= 1024 else _redact_text(value)
+
+
+def _redact_text(value: str) -> str:
     """Redact likely credential values while preserving useful context.
 
     Each pass replaces whole raw spans, so its output is still the raw field
@@ -1272,24 +1280,25 @@ def redact_model(model: BaseModel) -> dict[str, object]:
     from mcp_audit.models import ServerConfig
 
     def walk(source: object, data: object) -> object:
+        # These containers belong to model_dump, not the caller's model.
         if isinstance(source, BaseModel) and isinstance(data, dict):
-            result: dict[str, object] = {}
+            matched_text = data.get("matched_text")
             for key, item in data.items():
                 if isinstance(source, ServerConfig) and key == "args" and isinstance(item, list):
-                    result[key] = redact_argv(item)
+                    data[key] = redact_argv(item)
                 elif isinstance(source, ServerConfig) and key == "url" and isinstance(item, str):
-                    result[key] = redact_url(item)
+                    data[key] = redact_url(item)
                 elif key == "config_pointer" and isinstance(item, str):
-                    result[key] = _redact_config_pointer(item)
+                    data[key] = _redact_config_pointer(item)
                 else:
-                    result[key] = walk(getattr(source, key), item)
-            if result.get("matched_span") is not None and result.get("matched_text") != data.get(
-                "matched_text"
-            ):
-                result["matched_span"] = None
-            return result
+                    data[key] = walk(getattr(source, key), item)
+            if data.get("matched_span") is not None and data.get("matched_text") != matched_text:
+                data["matched_span"] = None
+            return data
         if isinstance(source, (list, tuple)) and isinstance(data, list):
-            return [walk(raw, item) for raw, item in zip(source, data, strict=True)]
+            for index, (raw, item) in enumerate(zip(source, data, strict=True)):
+                data[index] = walk(raw, item)
+            return data
         if (
             isinstance(source, dict)
             and isinstance(data, dict)
@@ -1301,7 +1310,15 @@ def redact_model(model: BaseModel) -> dict[str, object]:
             return result_map
         return _redact_json(data)
 
-    data = walk(model, model.model_dump(mode="json"))
+    # Repeated schema words and evidence are common in large fleets. The cache
+    # belongs to this operation, so raw credential-bearing text is not retained.
+    cached = lru_cache(maxsize=4096)(_redact_text)
+    token = _REPORT_REDACTOR.set(cached)
+    try:
+        data = walk(model, model.model_dump(mode="json"))
+    finally:
+        _REPORT_REDACTOR.reset(token)
+        cached.cache_clear()
     assert isinstance(data, dict)
     return data
 

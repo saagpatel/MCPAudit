@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Unicode spaces in free text (`https://token @host`). A free-text URL
   authority followed only by spaces and `@` is now withheld.
 
+### Fixed
+
+- Reduce hostile-fleet scan overhead with standard JSON decoding before the
+  JSON5 fallback, ASCII normalization without per-character classification,
+  keyword scoring over matched rules, and bounded report-local redaction reuse.
+  Redaction reuses its serialized containers without modifying source models.
+- Avoid the remaining stdio shutdown grace once the owned process group has
+  exited, and reduce per-line deadline tracing overhead while retaining every
+  clock check. Connection concurrency, deadlines, and performance budgets are
+  unchanged.
+- Make direct red-team fixture sampling deterministic so global RNG consumption
+  cannot make detector parity classify a randomly gated tool differently.
+
 ## [2.10.0] - 2026-10-11
 
 ### Upgrade notes

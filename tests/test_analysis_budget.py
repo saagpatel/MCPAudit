@@ -9,6 +9,7 @@ from types import FrameType
 
 import pytest
 
+from mcp_audit import analysis_budget as budget_module
 from mcp_audit.analysis_budget import AnalysisTimeout, analysis_budget
 from mcp_audit.analyzer import PermissionAnalyzer
 from mcp_audit.connector import ServerConnector
@@ -39,6 +40,30 @@ def test_deadline_restores_an_existing_tracer() -> None:
         assert sys.gettrace() is previous_trace
     finally:
         sys.settrace(original)
+
+
+def test_deadline_tracing_does_not_call_a_helper_per_line(monkeypatch: pytest.MonkeyPatch) -> None:
+    checks = 0
+    previous = sys.getprofile()
+
+    def profile(frame: FrameType, event: str, arg: object) -> None:
+        nonlocal checks
+        if (
+            event == "call"
+            and frame.f_code.co_filename == budget_module.__file__
+            and frame.f_code.co_name == "check"
+        ):
+            checks += 1
+
+    monkeypatch.setattr(time, "monotonic", lambda: 0.0)
+    sys.setprofile(profile)
+    try:
+        with analysis_budget(1.0):
+            for _ in range(1000):
+                pass
+    finally:
+        sys.setprofile(previous)
+    assert checks == 2  # Entry and exit; each traced line still checks the clock inline.
 
 
 @pytest.mark.anyio

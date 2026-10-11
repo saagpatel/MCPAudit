@@ -29,16 +29,19 @@ def analysis_budget(deadline: float) -> Iterator[None]:
     previous = sys.gettrace()
     caller = sys._getframe(2)  # contextlib.__enter__ -> synchronous analysis stage
     previous_local = caller.f_trace
+    clock = time.monotonic
+    excluded_files = (__file__, contextlib.__file__)
 
     def check() -> None:
-        if time.monotonic() >= deadline:
+        if clock() >= deadline:
             raise AnalysisTimeout("Per-server wall-clock budget exhausted; analysis is incomplete.")
 
     def trace(frame: FrameType, event: str, arg: object) -> _Trace | None:
         # Let the context manager unwind and restore tracing even at expiry.
-        if frame.f_code.co_filename in {__file__, contextlib.__file__}:
+        if frame.f_code.co_filename in excluded_files:
             return None
-        check()
+        if clock() >= deadline:
+            raise AnalysisTimeout("Per-server wall-clock budget exhausted; analysis is incomplete.")
         return trace
 
     check()
