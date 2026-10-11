@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pinned actionlint binary.
 - Signed pin manifests carry a monotonic `sequence`; `require.pin_min_sequence`
   and `--pin-min-sequence` reject older or unauthenticated baselines in CI.
+- Add opt-in `lab --conformance-probe --url URL` negative MCP header and
+  loopback-only Origin probes, with bounded credential-free requests and
+  explicit unknown results when conformance evidence is unavailable.
 - Extend the offline OAuth transcript lab with an S256 PKCE finding and
   issuer validation for authorization error responses.
 
@@ -50,6 +53,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is missing, preventing trust-store deletion from bypassing verification.
   Pin writes also refuse unverified manifests rather than signing their claimed
   sequence, and failed clears preserve the signed manifest.
+- Guide unsigned v2 pins through `pin --refresh SERVER --apply` to a fresh signed
+  baseline without clearing first; label migration reviews as unverified and
+  preserve fail-closed checks for previously signed entries.
 
 ## [2.9.0] - 2026-10-10
 

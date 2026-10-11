@@ -274,6 +274,7 @@ mcp_audit/check_cli.py
 mcp_audit/checkup.py
 mcp_audit/cli.py
 mcp_audit/confighealth.py
+mcp_audit/conformance_probe.py
 mcp_audit/connector.py
 mcp_audit/coverage.py
 mcp_audit/discovery/__init__.py
