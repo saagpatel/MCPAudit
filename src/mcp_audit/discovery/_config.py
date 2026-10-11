@@ -40,11 +40,16 @@ def decode_config(
         return result
 
     try:
-        data: object = (
-            json5.loads(text, object_pairs_hook=pairs_hook)
-            if jsonc
-            else json.loads(text, object_pairs_hook=pairs_hook)
-        )
+        data: object
+        if jsonc:
+            try:
+                data = json.loads(text, object_pairs_hook=pairs_hook)
+            except ValueError:
+                # A failed partial decode may already have counted nested keys.
+                duplicates = 0
+                data = json5.loads(text, object_pairs_hook=pairs_hook)
+        else:
+            data = json.loads(text, object_pairs_hook=pairs_hook)
     except (ValueError, RecursionError) as exc:
         # Parser exceptions can quote credential-bearing input; retain only
         # their type, never the source excerpt.

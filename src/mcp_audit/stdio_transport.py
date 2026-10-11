@@ -53,7 +53,14 @@ async def _stop_process_group(process: ServerProcess, on_orphans: Callable[[str]
             except PermissionError:
                 on_orphans("Process-group shutdown was denied; server processes may remain.")
             if sig == signal.SIGTERM:
-                await anyio.sleep(0.1)
+                with anyio.move_on_after(0.1):
+                    await process.wait()
+                try:
+                    os.killpg(process.pid, 0)
+                except ProcessLookupError:
+                    return  # The entire owned group exited within the grace.
+                except PermissionError:
+                    pass  # Still escalate and report denied verification below.
         await _wait_for_process_exit(process, 0.5)
         with anyio.move_on_after(0.3):
             while True:

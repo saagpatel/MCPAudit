@@ -47,6 +47,8 @@ def invisible_class(char: str) -> str | None:
 
 def normalize_text(text: str) -> str:
     """NFKC, remove invisibles, then fold the curated confusable supplement."""
+    if text.isascii():
+        return text
     return "".join(
         _CONFUSABLE_MAP.get(char.lower(), char).upper()
         if char.isupper() and char.lower() in _CONFUSABLE_MAP
