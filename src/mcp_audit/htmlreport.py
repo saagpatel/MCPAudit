@@ -153,7 +153,10 @@ class HtmlReportGenerator:
 
     def generate(self, report: AuditReport, *, show_host: bool = False) -> str:
         """Return the full HTML document. Caller writes it to disk."""
-        report = report.redacted()
+        return self._generate_redacted(report.redacted(), show_host=show_host)
+
+    def _generate_redacted(self, report: AuditReport, *, show_host: bool = False) -> str:
+        """Render a scan-local credential-redacted snapshot."""
         summary = report.ensure_review_summary()
         findings = summary.actions
         # Explicitly selected source paths retain P2-4's attribution contract.

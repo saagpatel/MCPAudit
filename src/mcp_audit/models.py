@@ -1490,9 +1490,15 @@ class AuditReport(BaseModel):
 
     def redacted(self, *, identifiers: bool = False) -> "AuditReport":
         """Return a credential-redacted copy, optionally scrubbing field-report identifiers."""
-        from mcp_audit.redaction import redact_identifiers, redact_model
+        from mcp_audit.redaction import redact_model
 
         data = redact_model(self)
+        return self._redacted_copy(data, identifiers=identifiers)
+
+    def _redacted_copy(self, data: dict[str, object], *, identifiers: bool = False) -> "AuditReport":
+        """Validate already credential-redacted data, preserving review decisions."""
+        from mcp_audit.redaction import redact_identifiers
+
         if identifiers:
             names = {audit.server.name for audit in self.audits if audit.server.name}
             names.update(f.server_name for f in self.config_health_findings if f.server_name)

@@ -4,16 +4,19 @@ from __future__ import annotations
 
 import ast
 import json
+from contextlib import ExitStack
 from datetime import UTC, datetime
 from io import StringIO
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
 from rich.console import Console
 
 from mcp_audit import cli
+from mcp_audit.checkup import generate_card
 from mcp_audit.engine import ScanOptions
 from mcp_audit.htmlreport import HtmlReportGenerator
 from mcp_audit.models import (
@@ -23,6 +26,7 @@ from mcp_audit.models import (
     ServerAudit,
     ServerConfig,
 )
+from mcp_audit.redaction import redact_model
 from mcp_audit.report import ReportGenerator
 from mcp_audit.sarif import SarifGenerator
 from mcp_audit.server import _build_mcp_server
@@ -61,7 +65,7 @@ def test_cli_all_report_surfaces_redact_fixture_credentials(tmp_path: Path, fiel
     config_text = config_text.replace("SESSION_KEY_FIXTURE", SESSION_KEY_FIXTURE)
     config = tmp_path / "cfg_secrets.json"
     config.write_text(config_text, encoding="utf-8")
-    outputs = {suffix: tmp_path / f"report.{suffix}" for suffix in ("json", "sarif", "html")}
+    outputs = {suffix: tmp_path / f"report.{suffix}" for suffix in ("json", "sarif", "html", "card")}
     args = [
         "scan",
         "--config",
@@ -76,13 +80,41 @@ def test_cli_all_report_surfaces_redact_fixture_credentials(tmp_path: Path, fiel
         str(outputs["sarif"]),
         "--html",
         str(outputs["html"]),
+        "--card",
+        str(outputs["card"]),
+        "--names",
     ]
     if field_report:
         args.append("--redact")
 
-    result = CliRunner().invoke(cli.main, args)
+    with ExitStack() as stack:
+        redact_report = stack.enter_context(patch("mcp_audit.redaction.redact_model", wraps=redact_model))
+        renderers = [
+            stack.enter_context(patch.object(cls, name, autospec=True, side_effect=getattr(cls, name)))
+            for cls, name in (
+                (ReportGenerator, "_render_redacted_terminal"),
+                (ReportGenerator, "_render_redacted_json"),
+                (SarifGenerator, "_generate_redacted"),
+                (HtmlReportGenerator, "_generate_redacted"),
+            )
+        ]
+        card_renderer = stack.enter_context(patch("mcp_audit.checkup.generate_card", wraps=generate_card))
+        result = CliRunner().invoke(cli.main, args)
 
     assert result.exit_code == 0, result.output
+    assert redact_report.call_count == 1
+    snapshots = []
+    for renderer in renderers:
+        assert renderer.call_count == 1
+        snapshots.append(renderer.call_args.args[1])
+    assert card_renderer.call_count == 1
+    snapshots.append(card_renderer.call_args.args[0])
+    for snapshot in snapshots:
+        assert isinstance(snapshot, AuditReport)
+        for secret in _fixture_secrets():
+            assert secret not in snapshot.model_dump_json(), "renderer received unredacted data"
+    if not field_report:
+        assert all(snapshot is snapshots[0] for snapshot in snapshots)
     for surface, path in outputs.items():
         rendered = path.read_text()
         for secret in _fixture_secrets():
@@ -284,6 +316,17 @@ def test_each_report_renderer_calls_redaction_entry_point(
     HtmlReportGenerator().generate(report)
 
     assert calls == [report, report, report, report]
+
+
+def test_public_renderers_redact_again_after_source_mutation(tmp_path: Path) -> None:
+    report = _report_with_secret_finding()
+    generator = ReportGenerator(console=Console(file=StringIO()))
+    path = tmp_path / "report.json"
+    generator.render_json(report, path)
+    report.audits[0].server.args = ["--token", "new-fixture-secret"]
+    generator.render_json(report, path)
+    assert "new-fixture-secret" not in path.read_text()
+    assert report.audits[0].server.args == ["--token", "new-fixture-secret"]
 
 
 def test_renderers_and_serve_module_do_not_call_redact_data_directly() -> None:
