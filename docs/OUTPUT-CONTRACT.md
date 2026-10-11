@@ -11,8 +11,8 @@ through `AuditReport.redacted()`. Declared report field names and
 the saved review summary.
 
 Launch argv uses element boundaries: secret flags consume their next value,
-including a dash-prefixed value, and inline assignments withhold their entire
-value. Complete server URL fields are parsed; userinfo, query values, and
+including a dash-prefixed value, and inline assignments are cut just after the
+raw `=` or `:` and withhold everything after it. Complete server URL fields are parsed; userinfo, query values, and
 fragments are withheld while endpoint context is retained. Malformed URL
 authorities are withheld. Environment and header configuration retain key
 names only. Any environment/header maps in arbitrary metadata withhold values.
@@ -27,8 +27,12 @@ Matching uses raw text and a detection-only view with Unicode normalization
 (NFKC, invisible removal, curated confusable folding) and terminal-control
 removal. Normalized matches map back to raw ranges; the union of both passes
 is replaced in the original text. Normalized spelling is never published.
-Credential values with changed structural delimiters are withheld, including
-introduced whitespace or removed escapes. Unmappable matches or uncertain value
+Bytes removed for detection (controls, escape sequences, invisibles) next to a
+value belong to that value, and a raw terminator inside a removed escape
+sequence does not end it. A value is a run of quoted and unquoted segments;
+backslash escapes never end it, and an unterminated quote runs to the end of
+the field. Credential values with changed structural delimiters are withheld,
+including introduced whitespace or removed escapes. Unmappable matches or uncertain value
 boundaries withhold the whole field. URL parsing uses raw input; NFKC changes in
 the scheme or authority
 (including userinfo) withhold the whole URL. Excerpts whose raw offsets cannot
@@ -36,6 +40,7 @@ safely survive normalization are withheld. Server stderr keeps its stricter
 policy: withhold every control-bearing line rather than strip controls and reveal
 its contents.
 Display match offsets are cleared when redaction changes their matched text.
+Redaction is idempotent: redacting redacted output returns it unchanged.
 
 Free text still uses best-effort credential patterns; arbitrary unlabeled
 secrets are not guaranteed to be recognized. Review reports before sharing.

@@ -38,7 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   introduced whitespace and removed escapes, and normalization-sensitive URL
   authorities and malformed URL copies;
   redact dash-prefixed secret values in pins and literals in composed secret
-  schemas. Keep control-bearing server stderr lines withheld.
+  schemas. Keep control-bearing server stderr lines withheld. Treat bytes
+  removed for detection beside a value as part of its raw span, cut inline
+  argv secrets just after the raw delimiter, keep values whole across escaped
+  and unterminated quotes, and make redaction idempotent.
 
 ## [2.9.0] - 2026-10-10
 
