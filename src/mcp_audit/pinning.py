@@ -184,7 +184,12 @@ class StalePinStatus(ServerPinStatus):
 
 
 class PinStore:
-    """Stores SHA256 hashes of MCP tool schemas and detects drift between scans."""
+    """Stores SHA256 hashes of MCP tool schemas and detects drift between scans.
+
+    ``record_verification=False`` checks existing rollback history without
+    persisting new signing expectations or timestamps during verification.
+    Explicit pin mutations remain writes regardless of this option.
+    """
 
     def __init__(
         self,
@@ -193,6 +198,7 @@ class PinStore:
         signing_key: Path | None = None,
         unsigned: bool = False,
         trusted_keys_path: Path | None = None,
+        record_verification: bool = True,
     ) -> None:
         from mcp_audit.pin_signing import DEFAULT_SIGNING_KEY_PATH, DEFAULT_TRUSTED_KEYS_PATH
 
@@ -206,6 +212,7 @@ class PinStore:
         )
         self._unsigned = unsigned
         self._trusted_keys_path = trusted_keys_path or DEFAULT_TRUSTED_KEYS_PATH
+        self._record_verification = record_verification
         self._verification: dict[str, PinVerification | None] = {}
         self._verification_messages: dict[str, str] = {}
         self._rollback_warnings: dict[str, list[tuple[str, str]]] = {}
@@ -371,15 +378,16 @@ class PinStore:
                                     ),
                                 )
                             )
-                        try:
-                            record_signed_pin(server_name, timestamp, self._trusted_keys_path)
-                        except (PinSigningError, OSError, ValueError):
-                            warnings.append(
-                                (
-                                    "pin_rollback_tracking_unavailable",
-                                    "Pin rollback tracking could not be updated.",
+                        if self._record_verification:
+                            try:
+                                record_signed_pin(server_name, timestamp, self._trusted_keys_path)
+                            except (PinSigningError, OSError, ValueError):
+                                warnings.append(
+                                    (
+                                        "pin_rollback_tracking_unavailable",
+                                        "Pin rollback tracking could not be updated.",
+                                    )
                                 )
-                            )
                         if not warnings:
                             del self._rollback_warnings[server_name]
         self._entry_results[server_name] = result
