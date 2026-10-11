@@ -38,8 +38,10 @@ _MAX_READINGS = 1024
 _CACHED_NAME_LENGTH = 256
 # Reading characters detected per field before its remaining tokens are ambiguous.
 _READING_BUDGET = 1 << 18
-# Characters a structural decision keys on (delimiters, URL and quote boundaries).
-_STRUCTURAL_CHARS = frozenset("=:@/?#\"'`<>\\")
+# Suffix readings enumerated per escape sequence. A longer sequence is not
+# enumerated: every window holding it is ambiguous and withheld, which is
+# never less conservative than enumerating it, and keeps the cost linear.
+_MAX_SUFFIX = 64
 # A value is a run of quoted and unquoted segments, as in a shell word, so a
 # replacement never stops where a second pass would continue. A backslash
 # escapes the next character; an unterminated quoted segment runs to the end
@@ -130,6 +132,8 @@ class _Segment:
     start: int
     end: int
     choices: tuple[_Choice, ...]
+    # False when the choices omit readings (a sequence longer than _MAX_SUFFIX).
+    complete: bool = True
 
 
 @dataclass(frozen=True)
@@ -161,6 +165,9 @@ def _segments(value: str) -> list[_Segment]:
     it (a CSI consumes parameter and intermediate bytes greedily; an OSC runs
     to its terminator), so each sequence in a removed run reads as dropped or
     as any suffix of its printable bytes. The longest reading is always last.
+    Only suffixes up to ``_MAX_SUFFIX`` characters are built (plus the whole
+    payload), so building segments is linear; a longer sequence's segment is
+    marked incomplete and makes every window that holds it ambiguous.
     """
     segments: list[_Segment] = []
     cursor = 0
@@ -173,23 +180,25 @@ def _segments(value: str) -> list[_Segment]:
         ]
         for left, right in zip([cursor, *cuts], [*cuts, start], strict=True):
             if left < right:
-                segments.append(_Segment(left, right, _sequence_choices(value, left, right)))
+                choices, complete = _sequence_choices(value, left, right)
+                segments.append(_Segment(left, right, choices, complete))
         if start < end:
             segments.append(_Segment(start, end, ((value[start:end], tuple(range(start, end)), False),)))
         cursor = end
     return segments
 
 
-def _sequence_choices(value: str, start: int, end: int) -> tuple[_Choice, ...]:
+def _sequence_choices(value: str, start: int, end: int) -> tuple[tuple[_Choice, ...], bool]:
+    """Dropped, each suffix up to ``_MAX_SUFFIX``, then the whole payload; and whether that is all."""
     printable = tuple(
         index for left, right in _printable_spans(value, start, end) for index in range(left, right)
     )
     choices: dict[str, _Choice] = {"": ("", (), True)}
-    for offset in range(len(printable) - 1, -1, -1):
-        indexes = printable[offset:]
+    for length in (*range(1, min(len(printable), _MAX_SUFFIX) + 1), len(printable)):
+        indexes = printable[len(printable) - length :]
         text = "".join(value[index] for index in indexes)
         choices.setdefault(text, (text, indexes, True))
-    return tuple(choices.values())
+    return tuple(choices.values()), len(printable) <= _MAX_SUFFIX
 
 
 def _chunks(segments: list[_Segment]) -> Iterator[list[_Segment]]:
@@ -214,9 +223,14 @@ def _chunks(segments: list[_Segment]) -> Iterator[list[_Segment]]:
 
 
 def _reading_count(chunk: list[_Segment]) -> int:
-    """Number of readings, stopping once past the limit (no huge products)."""
+    """Number of readings, stopping once past the limit (no huge products).
+
+    A segment with unenumerated readings counts as past the limit.
+    """
     count = 1
     for segment in chunk:
+        if not segment.complete:
+            return _MAX_READINGS + 1
         count *= len(segment.choices)
         if count > _MAX_READINGS:
             break
@@ -777,34 +791,6 @@ def _reading_outcome(
     return edits, claims
 
 
-def _may_be_structural(window: list[_Segment]) -> bool:
-    """Some reading of the text could hold a delimiter or start with a flag dash.
-
-    Judged over the union of every character any reading contributes, after
-    the normalization detection applies (a fullwidth ``＠`` is ``@``), so this
-    fallback is never less conservative than enumerating the readings. A run
-    character that normalizes to whitespace could split a token, so it counts.
-    """
-    for segment in window:
-        for text, _, literal in segment.choices:
-            for char in {*normalize_text(text), *(piece for raw in text for piece in normalize_text(raw))}:
-                if char in _STRUCTURAL_CHARS or (literal and char.isspace()):
-                    return True
-    return _may_start_with_dash(window)
-
-
-def _may_start_with_dash(window: list[_Segment]) -> bool:
-    for segment in window:
-        if not segment.choices[0][2]:
-            text = normalize_text(segment.choices[0][0])
-            if text:
-                return text.startswith("-")
-            continue  # Invisible characters normalize away.
-        if any(normalize_text(text).startswith("-") for text, _, _ in segment.choices):
-            return True
-    return False
-
-
 def _run_mask(value: str, segments: list[_Segment]) -> bytearray:
     in_run = bytearray(len(value))
     for segment in segments:
@@ -819,8 +805,9 @@ def _token_reading_edits(value: str) -> Iterator[tuple[int, int, str]]:
     Decisions span neighbouring tokens (a flag and its value, a label and the
     value after ': ', an authority and a spaced '@host'), so each
     whitespace-free token is read together with the next one. A window that
-    cannot be enumerated is withheld when any reading could make a
-    structural decision.
+    cannot be enumerated (too many readings, an over-long sequence, the
+    field's budget spent, or no per-character map) is withheld whole: no
+    cheaper test is as conservative as the readings it skips.
     """
     segments = _segments(value)
     in_run = _run_mask(value, segments)
@@ -841,8 +828,6 @@ def _token_reading_edits(value: str) -> Iterator[tuple[int, int, str]]:
         start, end = window[0].start, window[-1].end
         outcome = _reading_outcome(value, window, in_run, budget)
         if outcome is None:
-            if not _may_be_structural(window):
-                continue
             outcome = [(start, end, _REDACTED)], False
         for left, right, replacement in outcome[0]:
             if right == end and (match := _VALUE_CONTINUATION.match(value, left)) is not None:
@@ -852,12 +837,12 @@ def _token_reading_edits(value: str) -> Iterator[tuple[int, int, str]]:
 
 
 def _claims_next_argument(item: str) -> bool:
-    """Some reading of an argument takes the next argument as its value."""
+    """Some reading of an argument takes the next argument as its value (assumed when unenumerable)."""
     segments = _segments(item)
     if not any(len(segment.choices) > 1 for segment in segments):
         return False
     outcome = _reading_outcome(item, segments, _run_mask(item, segments), [_READING_BUDGET], " v")
-    return _may_be_structural(segments) if outcome is None else outcome[1]
+    return outcome is None or outcome[1]
 
 
 def _removed_runs(value: str) -> Iterator[str]:
