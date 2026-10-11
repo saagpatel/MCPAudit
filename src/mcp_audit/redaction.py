@@ -65,6 +65,8 @@ _URL_VALUE = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*+://(?:<redacted>|\\[\"']|[^\s\
 _URL_USERINFO = re.compile(r"(^[A-Za-z][A-Za-z0-9+.-]*+://)(?:[^/?#\s@]*+@)++")
 _TOKEN_TAIL = re.compile(r"\S*")
 _SPACED_AT = re.compile(r"\s@")
+_SPACED_USERINFO = re.compile(r"[^\S\r\n]+@")
+_AUTHORITY_END = re.compile(r"[/?#]")
 _QUERY_VALUE = re.compile(r"=([^&;]*)")
 _SECRET_VALUE = re.compile(
     r"gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|"
@@ -423,6 +425,13 @@ def _text_edits(
             if "/" not in match.group()[match.group().index("://") + 3 :] and spaced_at < boundary:
                 yield match.start(), spaced_at, _REDACTED
                 continue
+        # Only spaces (any Unicode space) between an authority and '@': the
+        # authority is userinfo cut from its '@', as for the quoted case above.
+        authority = match.start() + match.group().index("://") + 3
+        if _SPACED_USERINFO.match(value, end) is not None and not _AUTHORITY_END.search(
+            value, authority, end
+        ):
+            yield authority, end, _REDACTED
         for start, end, replacement in _url_edits(match.group(), raw=raw):
             yield match.start() + start, match.start() + end, replacement
     yield from _jwt_edits(value)
