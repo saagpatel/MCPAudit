@@ -81,12 +81,21 @@ def metadata_only(
     return calls
 
 
+@pytest.mark.parametrize("drift_policy", [False, True])
 def test_shadow_static_default_uses_engine_without_connecting_or_writing(
-    shadow_inputs: tuple[Path, Path, Path, ToolInfo], metadata_only: list[str]
+    shadow_inputs: tuple[Path, Path, Path, ToolInfo],
+    metadata_only: list[str],
+    tmp_path: Path,
+    drift_policy: bool,
 ) -> None:
     paths = shadow_inputs[:3]
     original = {path: path.read_bytes() for path in paths}
-    result = CliRunner().invoke(cli.main, _args(shadow_inputs))
+    args = _args(shadow_inputs)
+    if drift_policy:
+        policy = tmp_path / "policy.yaml"
+        policy.write_text("fail_on:\n  drift: true\n")
+        args.extend(["--policy", str(policy)])
+    result = CliRunner().invoke(cli.main, args)
     assert result.exit_code == 0, result.output
     report = AuditReport.model_validate_json(result.stdout)
     assert report.schema_version == 1
@@ -98,7 +107,67 @@ def test_shadow_static_default_uses_engine_without_connecting_or_writing(
     }
     assert report.coverage["pin_check"].state == "not_run"
     assert report.coverage["shadow_check"].state == "not_run"
+    assert all(not audit.drift_findings for audit in report.audits)
+    if drift_policy:
+        assert report.policy_result is not None and report.policy_result.passed
     assert {path: path.read_bytes() for path in paths} == original
+
+
+@pytest.mark.parametrize("state", ["failed", "timeout", "partial"])
+def test_shadow_unavailable_listing_does_not_report_removed_tools(
+    shadow_inputs: tuple[Path, Path, Path, ToolInfo],
+    metadata_only: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    state: str,
+) -> None:
+    async def unavailable(self: ServerConnector, server: ServerConfig) -> ServerAudit:
+        metadata_only.append(server.name)
+        return ServerAudit(server=server, connection_status=state)
+
+    monkeypatch.setattr(ServerConnector, "connect", unavailable)
+    policy = tmp_path / "policy.yaml"
+    policy.write_text("fail_on:\n  drift: true\n")
+    result = CliRunner().invoke(cli.main, [*_args(shadow_inputs), "--connect", "--policy", str(policy)])
+    assert result.exit_code == 0, result.output
+    report = AuditReport.model_validate_json(result.stdout)
+    assert sorted(metadata_only) == ["fixture-a", "fixture-b"]
+    assert {audit.connection_status for audit in report.audits} == {state}
+    assert all(not audit.drift_findings for audit in report.audits)
+    assert report.coverage["pin_check"].state == "not_run"
+    assert report.policy_result is not None and report.policy_result.passed
+
+
+@pytest.mark.parametrize("empty_listing", [False, True])
+def test_shadow_completed_listing_distinguishes_removal_from_matching_tools(
+    shadow_inputs: tuple[Path, Path, Path, ToolInfo],
+    metadata_only: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    empty_listing: bool,
+) -> None:
+    async def connected(self: ServerConnector, server: ServerConfig) -> ServerAudit:
+        metadata_only.append(server.name)
+        return ServerAudit(
+            server=server,
+            connection_status="connected",
+            tools=[] if empty_listing else [shadow_inputs[3]],
+        )
+
+    monkeypatch.setattr(ServerConnector, "connect", connected)
+    policy = tmp_path / "policy.yaml"
+    policy.write_text("fail_on:\n  drift: true\n")
+    result = CliRunner().invoke(cli.main, [*_args(shadow_inputs), "--connect", "--policy", str(policy)])
+    assert result.exit_code == (2 if empty_listing else 0), result.output
+    report = AuditReport.model_validate_json(result.stdout)
+    assert sorted(metadata_only) == ["fixture-a", "fixture-b"]
+    assert report.coverage["pin_check"].state == "complete"
+    for audit in report.audits:
+        assert [(finding.tool_name, finding.status.value) for finding in audit.drift_findings] == (
+            [(shadow_inputs[3].name, "removed")] if empty_listing else []
+        )
+    assert report.policy_result is not None
+    assert report.policy_result.passed is not empty_listing
 
 
 def test_shadow_connected_review_joins_pin_drift_and_fleet_findings(
@@ -246,11 +315,25 @@ def test_shadow_terminal_surfaces_pin_warnings(
     assert "pin baselines that cannot be trusted" in result.output
 
 
+@pytest.mark.parametrize(
+    ("policy_yaml", "error_type"),
+    [
+        ("require:\n  pin_min_sequence: 0\n", "ValueError"),
+        ("max_risk: []\n", "TypeError"),
+        ("max_risk: {synthetic-policy-value: []}\n", "TypeError"),
+        ("max_risk: synthetic-policy-value\n", "ValueError"),
+    ],
+)
 def test_shadow_invalid_policy_stops_before_connection(
-    shadow_inputs: tuple[Path, Path, Path, ToolInfo], metadata_only: list[str], tmp_path: Path
+    shadow_inputs: tuple[Path, Path, Path, ToolInfo],
+    metadata_only: list[str],
+    tmp_path: Path,
+    policy_yaml: str,
+    error_type: str,
 ) -> None:
     policy = tmp_path / "policy.yaml"
-    policy.write_text("require:\n  pin_min_sequence: 0\n")
+    policy.write_text(policy_yaml)
     result = CliRunner().invoke(cli.main, [*_args(shadow_inputs), "--connect", "--policy", str(policy)])
     assert result.exit_code == 1
+    assert result.output == f"Error: Cannot complete shadow review ({error_type}).\n"
     assert metadata_only == []

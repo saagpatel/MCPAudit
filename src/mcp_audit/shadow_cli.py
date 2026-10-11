@@ -95,7 +95,7 @@ def shadow(
         )
         if policy_config is not None:
             report.policy_result = evaluate_policy(report, policy_config, pin_store=pins)
-    except (OSError, ValueError, yaml.YAMLError) as exc:
+    except (OSError, TypeError, ValueError, yaml.YAMLError) as exc:
         # Parser exceptions can contain source snippets. Keep diagnostics value-free.
         raise click.ClickException(f"Cannot complete shadow review ({type(exc).__name__}).") from None
 

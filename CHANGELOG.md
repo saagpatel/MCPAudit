@@ -19,7 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   configs and pins, opt-in metadata connections, existing drift and pin-integrity
   checks, fleet tool-name collisions, and policy/sequence gates. Verification
   reads existing trust history without updating it; output keeps the existing
-  `AuditReport` schema. No enforcing proxy is included.
+  `AuditReport` schema. Compare tool pins only after a successful metadata listing,
+  preserving static signature/rollback checks without inferring removed tools from
+  unavailable listings. Malformed policy types produce value-free input errors
+  before connections. No enforcing proxy is included.
 - Share offline lab descriptor reads, strict JSON decoding, and canonical
   serialization mechanics while retaining each lab's limits, errors, aliases,
   and number policy. Verify existing canonical report bytes with fixture digests;

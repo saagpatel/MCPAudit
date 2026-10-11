@@ -717,8 +717,8 @@ async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) ->
 
         audit.non_tool_risk = scorer.score_non_tool(audit.capability_findings, audit.injection_findings)
 
-        # Optional pin drift check (gated on --pin-check, not mere store presence)
-        if pin_store is not None and opts.pin_check:
+        # Compare pins only against a completed metadata listing, including an empty one.
+        if pin_store is not None and opts.pin_check and audit.connection_status == "connected":
             audit.drift_findings.extend(pin_store.check_drift(srv.name, audit.tools))
 
         # Optional trifecta per-server detection
@@ -774,6 +774,7 @@ async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) ->
         for check in OPTIONAL_CHECKS
         if getattr(opts, "canary_check" if check == "runtime_security" else check)
         and check not in {"shadow_check", "verify_artifacts", "download_artifacts"}
+        and (check != "pin_check" or audit.connection_status == "connected")
     )
 
     # Optional registry package verification (network) vs the pin baseline.
