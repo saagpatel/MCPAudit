@@ -27,7 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Redact typed reports structurally before terminal, JSON, SARIF, and HTML
   rendering, including argv values, URL components, dynamic dictionary keys,
   schema property names, Unicode-obfuscated credentials, and escaped quotes.
-  Withhold ambiguous normalized credential boundaries and malformed URL copies;
+  Detect normalized credentials without publishing normalized text; replace the
+  union of raw and mapped spans. Withhold ambiguous boundaries, including
+  introduced whitespace and removed escapes, and normalization-sensitive URL
+  authorities and malformed URL copies;
   redact dash-prefixed secret values in pins and literals in composed secret
   schemas. Keep control-bearing server stderr lines withheld.
 - Keep long string parameters out of generated pytest IDs to avoid oversized collection output.

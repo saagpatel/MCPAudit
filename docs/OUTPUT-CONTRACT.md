@@ -23,12 +23,18 @@ entries. Secret-property string literals in defaults, examples, constants, and
 enums are withheld recursively. Redacted schemas are display evidence, not
 replacement schemas for execution or validation.
 
-Matching uses the shared Unicode normalization (NFKC, invisible removal, and
-curated confusable folding) and terminal-control removal before the free-text
-fallback. Normalized display text may replace an obfuscated credential-bearing
-field. Excerpts whose raw offsets cannot safely survive normalization are
-withheld. Server stderr keeps its stricter policy: withhold every control-bearing
-line rather than strip controls and reveal its contents.
+Matching uses raw text and a detection-only view with Unicode normalization
+(NFKC, invisible removal, curated confusable folding) and terminal-control
+removal. Normalized matches map back to raw ranges; the union of both passes
+is replaced in the original text. Normalized spelling is never published.
+Credential values with changed structural delimiters are withheld, including
+introduced whitespace or removed escapes. Unmappable matches or uncertain value
+boundaries withhold the whole field. URL parsing uses raw input; NFKC changes in
+the scheme or authority
+(including userinfo) withhold the whole URL. Excerpts whose raw offsets cannot
+safely survive normalization are withheld. Server stderr keeps its stricter
+policy: withhold every control-bearing line rather than strip controls and reveal
+its contents.
 Display match offsets are cleared when redaction changes their matched text.
 
 Free text still uses best-effort credential patterns; arbitrary unlabeled
@@ -503,9 +509,11 @@ from generic named-assignment matching, including secret-named hosts.
 Nested `scheme://` URLs within paths are scrubbed independently. A secret-named
 path assignment whose value is a URL redacts that whole value, including its path.
 Malformed URL authorities are withheld in free-text copies as well as typed URL
-fields, including warnings and default pin snapshots. Fields whose Unicode
-normalization introduces credential delimiters are withheld rather than risk
-restoring text removed by the raw pass.
+fields, including warnings and default pin snapshots. Fields whose detection
+transforms introduce, remove, or move credential delimiters are withheld rather
+than risk restoring text removed by the raw pass. Unchanged context retains its
+raw spelling, including Unicode and controls; human-facing renderers separately
+sanitize terminal controls.
 
 Provenance comparisons redact both sides. Changes confined to query values or
 fragments therefore do not report drift, even for non-secret endpoint options;
