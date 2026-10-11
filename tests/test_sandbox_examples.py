@@ -25,7 +25,7 @@ PRIVATE_OR_SECRET_PATTERNS = [
     re.compile(r"[A-Za-z]:\\\\Users\\\\[A-Za-z0-9._-]+"),
     re.compile(r"\bsk-[A-Za-z0-9_-]{12,}"),
     re.compile(r"\bghp_[A-Za-z0-9_]{12,}"),
-    re.compile(r"\bAKIA[0-9A-Z]{12,}"),
+    re.compile(r"\b" + "AKIA" + r"[0-9A-Z]{12,}"),
     re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{12,}"),
     re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+"),
     re.compile(r"\b10\.\d{1,3}\.\d{1,3}\.\d{1,3}\b"),

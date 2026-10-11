@@ -116,17 +116,15 @@ def _challenges(headers: list[str]) -> tuple[list[dict[str, str]], bool]:
     """Parse RFC 9110 challenges, keeping Bearer parameters; fail closed on any doubt.
 
     The result is complete only when every field value parsed unambiguously and at most one
-    ``resource_metadata`` appeared, inside a Bearer challenge. Anything else (several field
-    lines, empty list elements, unattributable or duplicate parameters, malformed tokens or
-    quoted strings, truncation, or a challenge or parameter cap) is incomplete, so no caller
-    may treat a missing ``resource_metadata`` as an omitted advertisement.
+    ``resource_metadata`` appeared, inside a Bearer challenge. Field lines are parsed independently
+    and empty list elements are ignored. Anything else (unattributable or duplicate parameters,
+    malformed tokens or quoted strings, truncation, or a challenge or parameter cap) is
+    incomplete, so no caller may treat a missing ``resource_metadata`` as an omitted advertisement.
     """
     challenges: list[dict[str, str]] = []
     if not headers:
         return challenges, False
-    # Clients attribute parameters across repeated field lines inconsistently.
-    incomplete = len(headers) > 1 or any(len(header) > MAX_CHALLENGE_FIELD_CHARS for header in headers)
-    cursor = _Cursor(", ".join(header[:MAX_CHALLENGE_FIELD_CHARS] for header in headers))
+    incomplete = any(len(header) > MAX_CHALLENGE_FIELD_CHARS for header in headers)
     current: dict[str, str] | None = None  # The open Bearer challenge, if any.
     accepts_params = False  # The open challenge began with an auth-param.
     metadata_seen = 0
@@ -145,53 +143,58 @@ def _challenges(headers: list[str]) -> tuple[list[dict[str, str]], bool]:
             else:
                 current[key] = value
 
-    while True:
-        cursor.ows()
-        if cursor.peek() in {"", ","}:
-            incomplete = True  # Empty field value or list element.
-        else:
-            name = cursor.take(_TCHAR)
-            spaced = cursor.ows()
-            if not name:
-                return challenges, True
-            if cursor.peek() == "=":
-                # An auth-param continuing the open challenge.
-                value = cursor.param_value()
-                if value is None:
+    for header in headers:
+        cursor = _Cursor(header[:MAX_CHALLENGE_FIELD_CHARS])
+        # A field line must contain a challenge; auth-params cannot continue another line.
+        current = None
+        accepts_params = False
+        incomplete |= not header.strip(" \t,")
+        while True:
+            cursor.ows()
+            if cursor.peek() not in {"", ","}:
+                name = cursor.take(_TCHAR)
+                spaced = cursor.ows()
+                if not name:
                     return challenges, True
-                store(name, value)
-            else:
-                # A new challenge: scheme [ 1*SP ( token68 / auth-param ) ].
-                current = {} if name.lower() == "bearer" else None
-                if current is not None and len(challenges) < MAX_BEARER_CHALLENGES:
-                    challenges.append(current)
-                elif current is not None:
-                    incomplete = True  # Parsed, but not retained as evidence.
-                # Only "scheme SP auth-param" opens a parameter list; a bare scheme or a
-                # token68 cannot own a later parameter.
-                accepts_params = False
-                if not cursor.element_end():
-                    if not spaced:
+                if cursor.peek() == "=":
+                    # An auth-param continuing the open challenge.
+                    value = cursor.param_value()
+                    if value is None:
                         return challenges, True
-                    start = cursor.pos
-                    param = cursor.take(_TCHAR)
-                    cursor.ows()
-                    value = cursor.param_value() if param else None
-                    if value is not None:
-                        accepts_params = True
-                        store(param, value)
-                    else:
-                        cursor.pos = start
-                        if not cursor.take(_TOKEN68):
+                    store(name, value)
+                else:
+                    # A new challenge: scheme [ 1*SP ( token68 / auth-param ) ].
+                    current = {} if name.lower() == "bearer" else None
+                    if current is not None and len(challenges) < MAX_BEARER_CHALLENGES:
+                        challenges.append(current)
+                    elif current is not None:
+                        incomplete = True  # Parsed, but not retained as evidence.
+                    # Only "scheme SP auth-param" opens a parameter list; a bare scheme or a
+                    # token68 cannot own a later parameter.
+                    accepts_params = False
+                    if not cursor.element_end():
+                        if not spaced:
                             return challenges, True
-                        cursor.take(_EQUALS)
-                        if not cursor.element_end():
-                            return challenges, True
-                        # RFC 6750 Bearer uses auth-params only; "scope=" may be a truncated one.
-                        incomplete |= current is not None
-        if not cursor.peek():
-            return challenges, incomplete
-        cursor.pos += 1  # The element separator.
+                        start = cursor.pos
+                        param = cursor.take(_TCHAR)
+                        cursor.ows()
+                        value = cursor.param_value() if param else None
+                        if value is not None:
+                            accepts_params = True
+                            store(param, value)
+                        else:
+                            cursor.pos = start
+                            if not cursor.take(_TOKEN68):
+                                return challenges, True
+                            cursor.take(_EQUALS)
+                            if not cursor.element_end():
+                                return challenges, True
+                            # RFC 6750 Bearer uses auth-params only; "scope=" may be a truncated one.
+                            incomplete |= current is not None
+            if not cursor.peek():
+                break
+            cursor.pos += 1  # The element separator.
+    return challenges, incomplete
 
 
 def _json_object(raw: bytes) -> dict[str, object] | None:

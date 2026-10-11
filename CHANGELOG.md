@@ -16,13 +16,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests
 
+- Treat `EPERM` from a process-group probe as "still exists" in transport hygiene tests,
+  so macOS reaping races no longer crash the shutdown assertion.
 - Reject sub-2-second wall-clock assertions in tests and use input-scaling checks for performance regressions.
+- Assemble synthetic access-key fixtures at runtime and verify the pre-commit
+  usage comment names the usable public release tag.
 
 ### Fixed
 
 - A signed pin manifest still produces `MCP027` when its separate trust store
   is missing, preventing trust-store deletion from bypassing verification.
 - Keep long string parameters out of generated pytest IDs to avoid oversized collection output.
+- Review authorization metadata for independently valid `WWW-Authenticate` header
+  lines and legal empty comma elements. Ambiguous metadata, malformed lines,
+  cross-line parameter continuations, and exhausted limits still fail closed.
 
 ## [2.9.0] - 2026-10-10
 
