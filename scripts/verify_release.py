@@ -272,6 +272,7 @@ def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object
     changelog = _read_text("CHANGELOG.md")
     readme = _read_text("README.md")
     adoption = _read_text("docs/ADOPTION-GUIDE.md")
+    precommit = _read_text(".pre-commit-hooks.yaml")
 
     if project.get("name") != DISTRIBUTION_NAME:
         raise VerificationError("project metadata has the wrong distribution name")
@@ -304,6 +305,8 @@ def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object
             raise VerificationError(f"{path} does not reference the usable public release")
     if f"rev: v{public_version}" not in adoption:
         raise VerificationError("pre-commit example does not reference the usable public release")
+    if not re.search(rf"^#\s+rev: v{re.escape(public_version)}\s*$", precommit, re.MULTILINE):
+        raise VerificationError("pre-commit usage comment does not reference the usable public release")
 
     dependencies = project.get("dependencies")
     if not isinstance(dependencies, list) or "mcp>=2.2.0,<3.0" not in dependencies:
