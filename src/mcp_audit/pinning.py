@@ -26,7 +26,7 @@ from mcp_audit.models import (
     SurfaceFieldChange,
     ToolInfo,
 )
-from mcp_audit.redaction import redact_data, redact_text
+from mcp_audit.redaction import redact_data, redact_url
 from mcp_audit.terminal_text import TerminalSafeLogFilter
 
 try:
@@ -1384,7 +1384,7 @@ class PinStore:
         return {
             "command": server_config.command,
             "args": redact_data(server_config.args) if redact_args else list(server_config.args),
-            "url": redact_text(server_config.url) if server_config.url is not None else None,
+            "url": redact_url(server_config.url) if server_config.url is not None else None,
             "transport": server_config.transport.value,
             "env_keys": sorted(server_config.env_keys),
             "headers_keys": sorted(server_config.headers_keys),

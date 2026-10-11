@@ -175,7 +175,7 @@ def test_secret_named_url_endpoint_drift_is_preserved(tmp_path: Path, host: str,
     assert all(changed_url in finding.current for finding in findings)
 
 
-def test_flag_in_secret_value_slot_is_reported_as_dangerous_drift(tmp_path: Path) -> None:
+def test_dangerous_flag_outside_secret_value_slot_is_reported_as_drift(tmp_path: Path) -> None:
     cfg = make_server_config(command=None, args=["--token", "old", "--port", "8080"])
     store = PinStore(tmp_path / "pins.yaml")
     store.pin_server(cfg.name, [], cfg)
@@ -183,12 +183,32 @@ def test_flag_in_secret_value_slot_is_reported_as_dangerous_drift(tmp_path: Path
     analyzer = ProvenanceAnalyzer()
     rotated = cfg.model_copy(update={"args": ["--token", "rotated", "--port", "8080"]})
     assert analyzer.analyze_server(rotated, baseline) == []
-    changed = cfg.model_copy(update={"args": ["--token", "--no-sandbox", "--port", "8080"]})
+    changed = cfg.model_copy(update={"args": ["--token", "rotated", "--no-sandbox", "--port", "8080"]})
     findings = analyzer.analyze_server(changed, baseline)
     assert [finding.kind for finding in findings] == [ProvenanceKind.ARGS]
     assert findings[0].severity == ProvenanceSeverity.HIGH
     assert findings[0].gained_flags == ["--no-sandbox"]
     assert "--no-sandbox" in findings[0].current
+
+
+@pytest.mark.parametrize("secret", ["-dash-secret", "--no-sandbox-private-secret"])
+def test_dash_prefixed_secret_value_is_withheld_in_saved_pin_and_provenance(
+    tmp_path: Path, secret: str
+) -> None:
+    cfg = make_server_config(command=None, args=["--password", secret, "--port", "8080"])
+    pin_file = tmp_path / "pins.yaml"
+    PinStore(pin_file).pin_server(cfg.name, [], cfg)
+    baseline = PinStore(pin_file).baseline_config(cfg.name)
+    assert baseline is not None
+    assert baseline["args"] == ["--password", "<redacted>", "--port", "8080"]
+    assert secret not in pin_file.read_text()
+    changed = cfg.model_copy(update={"args": ["--password", "-rotated-secret", "--port", "9090"]})
+    findings = ProvenanceAnalyzer().analyze_server(changed, baseline)
+    assert [finding.kind for finding in findings] == [ProvenanceKind.ARGS]
+    assert findings[0].gained_flags == []
+    assert secret not in findings[0].model_dump_json()
+    assert "-rotated-secret" not in findings[0].model_dump_json()
+    assert "9090" in findings[0].current
 
 
 @pytest.mark.parametrize("legacy", [False, True], ids=["redacted-pin", "legacy-raw-pin"])

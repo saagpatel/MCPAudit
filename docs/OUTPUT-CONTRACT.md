@@ -3,6 +3,63 @@
 MCPAudit reports are designed for local review and CI ingestion. Keep this
 contract stable unless a release note calls out a breaking change.
 
+## Report redaction
+
+Terminal, JSON, SARIF, and HTML consume the credential-redacted typed report
+through `AuditReport.redacted()`. Declared report field names and
+`schema_version` are unchanged. Redaction does not rescore findings or regroup
+the saved review summary.
+
+Launch argv uses element boundaries: secret flags consume their next value,
+including a dash-prefixed value, and inline assignments are cut just after the
+raw `=` or `:` and withhold everything after it. Complete server URL fields are parsed; userinfo, query values, and
+fragments are withheld while endpoint context is retained. Malformed URL
+authorities are withheld. Every copy of a server URL (pins, provenance
+findings, warnings, probe records, config-health summaries) uses this same
+URL-field redaction. In free text, a URL that a quote or angle bracket cuts
+short inside its query, fragment, userinfo, or a trailing path assignment is
+withheld through the end of its token. A free-text `scheme://X:Y` authority
+whose `Y` is not a numeric port is treated as userinfo and `Y` is withheld,
+whether or not an `@` follows in the same token. A URL cut by a quote or angle
+bracket inside its authority is withheld through its token when the authority
+holds such a password, and up to a later `@` that starts a token on the same
+line. Environment and header configuration retain key
+names only. Any environment/header maps in arbitrary metadata withhold values.
+
+Dynamic JSON keys and schema property names receive credential redaction too.
+If keys collapse to the same redacted text, ordinal suffixes retain all map
+entries. Secret-property string literals in defaults, examples, constants, and
+enums are withheld recursively. Redacted schemas are display evidence, not
+replacement schemas for execution or validation.
+
+Matching uses raw text and a detection-only view with Unicode normalization
+(NFKC, invisible removal, curated confusable folding) and terminal-control
+removal. Normalized matches map back to raw ranges; the union of both passes
+is replaced in the original text. Normalized spelling is never published.
+Bytes removed for detection (controls, escape sequences, invisibles) next to a
+value belong to that value, and a raw terminator inside a removed escape
+sequence does not end it. A value is a run of quoted and unquoted segments;
+backslash escapes never end it, and an unterminated quote runs to the end of
+the field. Removed bytes may never hide a delimiter: when a removed run holds a
+delimiter, ends in a bare two-byte escape, or follows a secret label, text from
+the first secret label or URL in that whitespace-free token (or from the start
+of an existing replacement there) through the end of the token is withheld.
+Credential values with changed structural delimiters are withheld,
+including introduced whitespace or removed escapes. Unmappable matches or uncertain value
+boundaries withhold the whole field. URL parsing uses raw input; NFKC changes in
+the scheme or authority
+(including userinfo) withhold the whole URL. Excerpts whose raw offsets cannot
+safely survive normalization are withheld. Server stderr keeps its stricter
+policy: withhold every control-bearing line rather than strip controls and reveal
+its contents.
+Display match offsets are cleared when redaction changes their matched text.
+Redaction is idempotent: redacting redacted output returns it unchanged.
+
+Free text still uses best-effort credential patterns; arbitrary unlabeled
+secrets are not guaranteed to be recognized. Review reports before sharing.
+The separate opt-in identifier pass continues to scrub host, home-directory,
+and server identifiers.
+
 ## Credential-free authorization observations
 
 Eligible connected HTTP scans add `ServerAudit.authorization_probe` and, when
@@ -459,10 +516,13 @@ flag/value pairs in argv and text, bearer/basic credentials, and common
 GitHub, OpenAI/Anthropic, Slack, AWS access-key, JWT, GitLab and npm token
 shapes. Quoted JSON/dict assignments inside strings are covered, as are string
 dictionary values under secret-named keys and string literals in a secret schema
-property's `default`, `examples`, and `const`; non-string values and structure
+property's `default`, `example`, `examples`, `const`, and `enum`, including
+nested schema composition branches; non-string values and structure
 are retained. Inline secret argv assignments redact the whole remainder of the
-element. A secret flag does not consume the following argv element when that
-element starts with `-`, so gained flags remain visible to provenance checks.
+element. A secret flag consumes the following argv element even when that
+element starts with `-`, consistently in reports and default pin snapshots.
+That slot is ambiguous and is withheld as a credential; provenance cannot infer
+a gained option there. Options outside secret-value slots remain distinguishable.
 In any `scheme://` URL, userinfo, every query parameter value (including
 non-secret parameters), and the entire fragment are redacted; query names,
 hosts, ports and path shape remain visible. Userinfo extends through the last
@@ -472,6 +532,12 @@ pairs redact their entire URL value before standalone URL spans are protected
 from generic named-assignment matching, including secret-named hosts.
 Nested `scheme://` URLs within paths are scrubbed independently. A secret-named
 path assignment whose value is a URL redacts that whole value, including its path.
+Malformed URL authorities are withheld in free-text copies as well as typed URL
+fields, including warnings and default pin snapshots. Fields whose detection
+transforms introduce, remove, or move credential delimiters are withheld rather
+than risk restoring text removed by the raw pass. Unchanged context retains its
+raw spelling, including Unicode and controls; human-facing renderers separately
+sanitize terminal controls.
 
 Provenance comparisons redact both sides. Changes confined to query values or
 fragments therefore do not report drift, even for non-secret endpoint options;

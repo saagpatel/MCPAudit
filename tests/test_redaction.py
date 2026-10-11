@@ -265,6 +265,8 @@ def test_url_host_port_and_path_survive_named_assignment_pass(host: str) -> None
         ("https://proxy.example/", "https://host/"),  # repeated nested scheme boundaries
         ("https://proxy.example/", "a+.-/"),  # long scheme-like path runs without ://
         ("https://proxy.example/", "1https://"),  # invalid nested schemes stay in the path
+        ("x ", 'https://h/a"'),  # many quote-truncated URLs in one token
+        ("x ", "https://h/token=<"),  # truncated path assignments
     ],
 )
 def test_megabyte_url_and_quoted_value_inputs_are_linear(prefix: str, chunk: str) -> None:

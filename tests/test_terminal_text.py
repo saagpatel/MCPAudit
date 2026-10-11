@@ -195,10 +195,19 @@ def test_terminal_and_html_fields_are_safe(payload: str) -> None:
     output = _SGR.sub("", buffer.getvalue())  # Rich's own styling is allowed.
     assert not _FORBIDDEN.search(output)
     if payload.startswith("["):
-        assert payload in output
+        if payload == "[link=http://evil.example]x[/link]":
+            # The closing markup bracket makes the free-text authority
+            # malformed; credential redaction must withhold that entire span.
+            assert "[link=<redacted>" in output
+            assert payload not in output
+        else:
+            assert payload in output
         assert "\\[" not in output
     html = HtmlReportGenerator().generate(report)
     assert not _FORBIDDEN.search(html)
+    if payload == "[link=http://evil.example]x[/link]":
+        assert "[link=&lt;redacted&gt;" in html
+        assert payload not in html
     # Rendering must not mutate the data contract.
     assert report.audits[0].server.name == payload
 

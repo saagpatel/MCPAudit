@@ -68,6 +68,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Guide unsigned v2 pins through `pin --refresh SERVER --apply` to a fresh signed
   baseline without clearing first; label migration reviews as unverified and
   preserve fail-closed checks for previously signed entries.
+- Redact typed reports structurally before terminal, JSON, SARIF, and HTML
+  rendering, including argv values, URL components, dynamic dictionary keys,
+  schema property names, Unicode-obfuscated credentials, and escaped quotes.
+  Detect normalized credentials without publishing normalized text; replace the
+  union of raw and mapped spans. Withhold ambiguous boundaries, including
+  introduced whitespace and removed escapes, and normalization-sensitive URL
+  authorities and malformed URL copies;
+  redact dash-prefixed secret values in pins and literals in composed secret
+  schemas. Keep control-bearing server stderr lines withheld. Treat bytes
+  removed for detection beside a value as part of its raw span, cut inline
+  argv secrets just after the raw delimiter, keep values whole across escaped
+  and unterminated quotes, and make redaction idempotent. Redact every copied
+  server URL as a URL field, so unchanged configs report no URL drift, and
+  withhold free-text URLs whose credential component a quote or angle bracket
+  cut short. Withhold the token around any removed escape that hides a
+  delimiter next to a credential, and treat a non-numeric netloc `:` suffix as
+  a URL password even when whitespace separates it from `@`, including after
+  a quote or angle bracket cuts the authority.
 
 ## [2.9.0] - 2026-10-10
 
