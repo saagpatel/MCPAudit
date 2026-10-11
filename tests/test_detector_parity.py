@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import json
-import random
 from collections.abc import Iterator
 from pathlib import Path
 
+import pytest
 from mcp.types import Prompt, Resource, Tool
 
 from mcp_audit.analyzer import PermissionAnalyzer
@@ -91,23 +91,9 @@ def test_examples_and_redteam_detector_findings_match_golden() -> None:
     assert actual == expected
 
 
-def test_gate_random_status_classification_ignores_global_rng_consumption() -> None:
-    def classify_status() -> list[list[object]]:
-        raw_tool = tools_for("gate_random", "current", 0, "mcp-audit", 0.0)[0]
-        tool = ServerConnector._convert_tool(Tool.model_validate(raw_tool))
-        return [
-            [finding.tool_name, finding.category.value, finding.confidence.value, finding.evidence]
-            for finding in PermissionAnalyzer().analyze_tool(tool)
-        ]
+def test_gate_random_status_classification_ignores_global_rng(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("tests.fixtures.evasion_server.random.random", lambda: 0.9999)
+    raw_tool = tools_for("gate_random", "current", 0, "mcp-audit", 0.0)[0]
+    tool = ServerConnector._convert_tool(Tool.model_validate(raw_tool))
 
-    expected = classify_status()
-    rng_state = random.getstate()
-    try:
-        random.seed(1)
-        for _ in range(10):
-            random.random()
-        actual = classify_status()
-    finally:
-        random.setstate(rng_state)
-
-    assert actual == expected == []
+    assert PermissionAnalyzer().analyze_tool(tool) == []
