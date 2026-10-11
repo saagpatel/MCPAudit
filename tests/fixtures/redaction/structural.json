@@ -45,7 +45,7 @@
     "id": "ansi-split-label",
     "kind": "text",
     "source": "pass\u001b[31mword=control-secret\u001b[0m",
-    "expected": "pass\u001b[31mword=<redacted>\u001b[0m",
+    "expected": "pass\u001b[31mword=<redacted>",
     "forbidden": ["control-secret"]
   },
   {
