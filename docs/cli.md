@@ -13,6 +13,33 @@ select multiple clients. Hyphen and underscore spellings are accepted, for
 example `--client claude-code` and `--client claude_code`. An explicit
 `--config FILE` remains an explicitly selected source.
 
+## Dry-run config fixes
+
+`fix SERVER --config FILE` reads only the selected file and prints JSON Patch
+argument replacements, labeled "not written to disk". `SERVER` must be a unique
+name in that file or an exact `CLIENT:SCOPE:NAME` identity from
+`inspect --config FILE`. No servers start and no registry is contacted.
+
+```sh
+mcp-audit fix example --config ./mcp.json
+mcp-audit fix example --config ./mcp.json --package-version 1.2.3
+mcp-audit fix files --config ./mcp.json --path /workspace/project
+```
+
+The two supported cases are an unversioned package in `npx -y PACKAGE`, and
+literal `$HOME` or `/` directory arguments to
+`npx -y @modelcontextprotocol/server-filesystem` (unversioned or exactly versioned).
+Other launcher forms and packages are left for manual review. Missing replacement
+values become `<version you supply>` or `<narrower path you supply>` placeholders;
+replace them before applying anything. `--package-version` accepts an exact
+version, and `--path` accepts an absolute path or `$HOME/subdirectory` that
+lexically narrows the original root. Quote `$HOME/subdirectory` to keep it literal.
+Package availability and runtime access are not verified, including symlinks.
+
+Only changed arguments and their JSON Pointers are printed; preserve all other
+fields when editing manually. There is no `--write` option. The command does not
+emit or change `AuditReport` fields.
+
 ## Helpful errors
 
 Before recovery details, a missing explicit config produced a short error:

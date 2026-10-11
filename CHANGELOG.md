@@ -44,6 +44,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   issuer validation for authorization error responses. Validate error-flow
   ordering and contradictory code redemption, keep unrecorded PKCE evidence
   unknown, and include the PKCE finding in the SARIF rule catalog.
+- Preview argument-only fixes with `fix SERVER --config FILE` for unpinned
+  `npx -y` packages and broad filesystem roots; suggestions are not written to disk.
 
 ### Tests
 
