@@ -49,8 +49,30 @@ them. Removing a signature (even along with all signing metadata or by changing
 tool entries to v1) cannot downgrade that expectation. Genuine legacy v1
 baselines always remain usable with a `pin_schema_outdated` warning; unsigned v2
 baselines remain usable with a `pin_unsigned` warning only while no key is trusted.
-After `pin keygen`, re-pin an existing unsigned v2 server with
-`pin --clear SERVER` followed by `pin --server SERVER` after review.
+To migrate an existing unsigned v2 server, generate a key, review the live
+surface, then apply the signed refresh without clearing the old pin first:
+
+```sh
+mcp-audit pin keygen
+mcp-audit pin --config ./fixture.json --config-only --refresh SERVER
+mcp-audit pin --config ./fixture.json --config-only --refresh SERVER --apply
+```
+
+Both refresh commands can start the selected configured server. Preview leaves
+the pin unchanged, labels the old baseline as unverified, and shows tool,
+capability and launch-config differences. `--apply` replaces the unsigned entry
+with a fresh signed baseline and manifest; old removed tools and saved registry
+hashes are not carried forward. A trusted private signing key is required;
+`--unsigned` cannot apply this migration. Until migration, scans still withhold
+the unsigned baseline and report `MCP027` while trusted keys exist.
+
+Migration is available only for v2 entries with no signing metadata, no prior
+per-server signing expectation, and no signed manifest binding the entry.
+A failed signature, invalid manifest, or previously signed baseline still
+requires restoring a trusted backup or explicitly clearing and re-reviewing it.
+With a fresh trust store, fully stripped signing metadata cannot be distinguished
+from an originally unsigned entry; refresh review is an explicit decision to
+trust the live surface, not evidence that the old entry was authentic.
 
 Provision CI with the public key from key generation through a trusted channel.
 Status prints a CI key only after verification using the separate trust store;
@@ -81,7 +103,7 @@ with a trusted key their baseline is withheld from comparisons
 Rollback detection needs history: a fresh CI trust store has no high-water
 `pinned_at` until its first verification, so persist this store separately from
 pins (or seed `servers.SERVER.last_seen_pinned_at`) to warn on older signed pins.
-Ordinary pin writes and refreshes refuse failed verification rather than
+Ordinary pin writes and signed-baseline refreshes refuse failed verification rather than
 copying and re-signing saved registry hashes. Restore a trusted backup, or
 explicitly clear the server's pin and review a fresh baseline before re-pinning.
 
