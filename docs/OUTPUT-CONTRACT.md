@@ -56,10 +56,13 @@ stops use of that document.
 each quoted-pair exactly once. Metadata review, including well-known fallback
 and the absent-scope finding, runs only when the challenge list parsed
 completely and contained at most one `resource_metadata` parameter, inside a
-Bearer challenge that began with an auth-param. Anything else emits
-`challenge_parse_incomplete` and skips metadata review entirely: more than one
-field line, empty list elements (including a trailing comma), a parameter no
-challenge owns (before any scheme, after a bare scheme, or after a token68), a
+Bearer challenge that began with an auth-param. Multiple field lines are parsed
+independently, and empty comma-separated list elements (including leading and
+trailing commas) are ignored. Each field line must contain a challenge; parameters
+cannot continue a challenge from another line. Anything else emits
+`challenge_parse_incomplete` and skips metadata review entirely: an empty field
+line, a parameter no challenge owns (before any scheme, after a bare scheme, or
+after a token68), a
 `resource_metadata` parameter outside a Bearer challenge, a duplicate parameter
 name in a Bearer challenge, a repeated `resource_metadata`, a token68 Bearer
 challenge, malformed tokens, quoted strings or quoted-pairs, a field value over

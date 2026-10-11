@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   preserving legacy list results with additive structured warnings and a warning
   text block. Verify their existing SARIF invocation notifications in both profiles.
 - Keep long string parameters out of generated pytest IDs to avoid oversized collection output.
+- Review authorization metadata for independently valid `WWW-Authenticate` header
+  lines and legal empty comma elements. Ambiguous metadata, malformed lines,
+  cross-line parameter continuations, and exhausted limits still fail closed.
 
 ## [2.9.0] - 2026-10-10
 
