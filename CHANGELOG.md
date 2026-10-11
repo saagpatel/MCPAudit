@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Tests/CI: calibrate hostile performance time ceilings to the runner using
+  median fixture startup/stdio and synthetic report CPU measurements. Preserve
+  published case values, RSS and coverage requirements; record calibration in
+  every case artifact and support raw runs with `--perf-no-calibration`.
+
 ### Security
 
 - Recognize a secret label, flag dash, or delimiter that an escape sequence
