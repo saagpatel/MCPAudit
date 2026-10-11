@@ -3,6 +3,7 @@
 import tracemalloc
 from collections.abc import Callable
 from time import perf_counter
+from typing import Any
 
 import pytest
 
@@ -414,3 +415,29 @@ def test_escape_reading_choices_and_memory_grow_linearly(build: Callable[[int], 
 
     # A 4x larger payload stays near 4x the memory; quadratic would be 16x.
     assert peak(16384) < 6 * peak(4096)
+
+
+def test_label_reading_work_is_linear_through_the_public_schema_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    import mcp_audit.redaction as redaction
+
+    work = [0]
+    covers, text_edits = redaction._covers_literal, redaction._text_edits
+
+    def counted_covers(text: str, literal: list[bool]) -> bool:
+        work[0] += len(text)
+        return covers(text, literal)
+
+    def counted_text_edits(text: str, **kwargs: Any) -> Any:
+        work[0] += len(text)
+        return text_edits(text, **kwargs)
+
+    monkeypatch.setattr(redaction, "_covers_literal", counted_covers)
+    monkeypatch.setattr(redaction, "_text_edits", counted_text_edits)
+    for size in (1024, 4096, 16384):
+        # Long retained text around several escape sequences in one property name.
+        name = "".join(f"{letter * size}\x1b[{index}m" for index, letter in enumerate("abcd", 1))
+        work[0] = 0
+        redact_data({"type": "object", "properties": {name: {"type": "string", "default": "fixture"}}})
+        # Every reading consumer shares one budget per field: work stays a
+        # small multiple of the input, not readings times the label.
+        assert work[0] <= 40 * len(name) + (1 << 20), (size, work[0])

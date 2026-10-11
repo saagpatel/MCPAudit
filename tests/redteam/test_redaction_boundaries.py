@@ -669,3 +669,30 @@ def test_structural_byte_from_an_escape_is_judged_after_normalization(
         assert redact_text(once) == once, text
     if structural == "-":
         assert redact_argv([f"\x1b]x{char}\x07password{pad}", _SWEEP_SECRET])[1] == "<redacted>"
+
+
+_DELIMITER_ESCAPES = {
+    "osc-bel": "\x1b]x{delimiter}\x07",
+    "osc-st": "\x1b]0;x{delimiter}\x1b\\",
+    "osc-unterminated": "\x1b]x{delimiter}",
+    "bare-esc": "\x1b{delimiter}",
+    "csi": "\x1b[1{delimiter}",
+    "c1-csi": "\x9b{delimiter}",
+    "wrapped": "\x1b[1m\x1b]x{delimiter}\x07\x1b[0m",
+}
+
+
+@pytest.mark.parametrize("escape", list(_DELIMITER_ESCAPES.values()), ids=list(_DELIMITER_ESCAPES))
+@pytest.mark.parametrize("delimiter", [":", "=", "：", "＝"])
+def test_escaped_delimiter_standing_alone_between_label_and_value(escape: str, delimiter: str) -> None:
+    forbidden = re.compile("|".join(_forbidden("")))
+    for label in ("password", "token", "api_key"):
+        for left in range(4):
+            for right in range(4):
+                for value in (_SWEEP_SECRET, f'"{_SWEEP_SECRET} more"', f"'a {_SWEEP_SECRET}'"):
+                    text = (
+                        f"x {label}{' ' * left}{escape.format(delimiter=delimiter)}{' ' * right}{value} tail"
+                    )
+                    once = redact_text(text)
+                    assert forbidden.search(once) is None, text
+                    assert redact_text(once) == once, text

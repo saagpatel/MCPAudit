@@ -358,5 +358,33 @@
     "source": "Endpoint https://planted-userinfo \u001b]x＠\u0007fixture.example/mcp",
     "expected": "Endpoint https://<redacted> \u001b]x＠\u0007fixture.example/mcp",
     "forbidden": ["planted-userinfo"]
+  },
+  {
+    "id": "escaped-colon-as-standalone-token",
+    "kind": "text",
+    "source": "password \u001b]x:\u0007 planted-colon-credential",
+    "expected": "password \u001b]x:\u0007 <redacted>",
+    "forbidden": ["planted-colon-credential"]
+  },
+  {
+    "id": "escaped-equals-as-standalone-token",
+    "kind": "text",
+    "source": "password \u001b]x=\u0007 planted-equals-credential",
+    "expected": "password \u001b]x=\u0007 <redacted>",
+    "forbidden": ["planted-equals-credential"]
+  },
+  {
+    "id": "escaped-fullwidth-colon-token-quoted-value",
+    "kind": "text",
+    "source": "token  \u001b]x：\u0007   \"planted quoted credential\" tail",
+    "expected": "token  \u001b]x：\u0007   <redacted> tail",
+    "forbidden": ["planted", "quoted credential"]
+  },
+  {
+    "id": "escaped-fullwidth-equals-st-quoted-value",
+    "kind": "text",
+    "source": "api_key \u001b]0;x＝\u001b\\\"planted st credential\" tail",
+    "expected": "api_key <redacted> tail",
+    "forbidden": ["planted", "st credential"]
   }
 ]
