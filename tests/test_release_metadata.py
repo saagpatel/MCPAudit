@@ -8,8 +8,9 @@ import runpy
 import subprocess
 import sys
 import tomllib
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from click.testing import CliRunner
@@ -86,6 +87,27 @@ def test_release_metadata_verifier_passes() -> None:
     )
     assert result.returncode == 0, result.stderr
     assert "release metadata verified for 2.9.0" in result.stdout
+
+
+def test_release_verifier_requires_public_tag_in_precommit_usage_comment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    read_text = cast(Callable[[str], str], RELEASE_VERIFIER["_read_text"])
+
+    def read_with_stale_precommit_tag(path: str) -> str:
+        content = read_text(path)
+        if path == ".pre-commit-hooks.yaml":
+            return content.replace("rev: v2.9.0", "rev: v2.8.1")
+        return content
+
+    monkeypatch.setitem(
+        RELEASE_VERIFIER["verify_metadata"].__globals__, "_read_text", read_with_stale_precommit_tag
+    )
+    with pytest.raises(
+        RELEASE_VERIFIER["VerificationError"],
+        match="pre-commit usage comment does not reference the usable public release",
+    ):
+        RELEASE_VERIFIER["verify_metadata"](require_publishable=False)
 
 
 def test_release_state_cannot_keep_a_stale_published_version(
@@ -227,6 +249,7 @@ def test_candidate_state_is_never_publishable(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     (tmp_path / "README.md").write_text("uses: saagpatel/MCPAudit@v2.5.0\n", encoding="utf-8")
+    (tmp_path / ".pre-commit-hooks.yaml").write_text("#       rev: v2.5.0\n", encoding="utf-8")
     (tmp_path / "docs/ADOPTION-GUIDE.md").write_text(
         "uses: saagpatel/MCPAudit@v2.5.0\nrev: v2.5.0\n", encoding="utf-8"
     )
