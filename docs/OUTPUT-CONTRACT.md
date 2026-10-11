@@ -735,6 +735,27 @@ Each audit may include:
   `source_trust`, analyzer/model provenance, candidate/analyzed tool counts,
   and the number of admitted findings. `unknown` never means clean.
 
+### Opt-in negative conformance lab
+
+`lab --conformance-probe --url URL` emits a separate JSON artifact with
+`contract: mcpaudit.conformance-probe.v1`, `protocol_version: 2026-07-28`,
+nullable numeric `control_status`, boolean `modern_control`, `observations`,
+and a fixed `claim_ceiling`. This is not an `AuditReport`; existing fields and
+`schema_version` are unchanged.
+
+Each observation contains `probe` (`T7` or `T9`), `variant`
+(`protocol_version`, `method`, `name`, or `origin`), `verdict`
+(`pass`, `fail`, `unknown`, or `not_run`), a fixed `reason`, nullable numeric
+`status`, and nullable integer `error_code`. Reasons are `expected_rejection`,
+`negative_request_accepted`, `request_unavailable`, `unexpected_response`,
+`modern_control_unavailable`, `origin_control_unavailable`, or `loopback_only`.
+T7 requires a successful modern discovery control and HTTP 400 / `-32020`
+rejection. T9 is loopback-only and requires HTTP 403 after a control that was
+not itself rejected with 403. No endpoint, response text, response headers,
+credentials, cookies, or session identifiers appear in this artifact.
+See [the lab guide](labs/README.md#negative-conformance-probes-explicit-opt-in)
+for request bounds and verdict limits.
+
 ### Connected protocol observations (additive)
 
 `audits[].protocol` is present when an SDK session was negotiated and inspected.
