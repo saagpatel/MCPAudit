@@ -52,15 +52,19 @@ Each escape sequence in a removed run reads as dropped or as any suffix of
 its printable bytes (the sequence may have been meant to end earlier than the
 parser ended it). Detection also reads the whole
 field with those bytes kept, and reads each whitespace-free token together
-with the next one in every combination of its runs' readings, so every
+with the following tokens up to the next one that is more than escape
+sequences and delimiters (so a delimiter an escape supplies may stand alone
+between a label and its value), in every combination of its runs' readings, so every
 structural decision (flag, label, delimiter, URL path label, spaced userinfo)
 is made over the same readings. A label is judged on its raw bytes, including
 adjacent removed runs, and the same judgment applies to free text, URL paths,
 argv flags, schema property names and their literals, JSON keys, and pin
 snapshots. Suffixes are enumerated up to 64 characters per sequence, so the
-cost stays linear in the field. A label or token whose readings cannot be
-enumerated (too many combinations, a longer sequence, or the field's
-detection budget spent) is ambiguous: the label is treated as secret, and the
+cost stays linear in the field. All reading work for one field (labels,
+token windows, argv pairing, keys) is charged to one budget proportional to
+the field's length before it is done. A label or token whose readings cannot
+be enumerated (too many combinations, a longer sequence, too many joined
+tokens, or the field's detection budget spent) is ambiguous: the label is treated as secret, and the
 token is withheld together with the token after it, which is never less
 conservative than enumerating the readings.
 Credential values with changed structural delimiters are withheld,
