@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from bisect import bisect_left
+from bisect import bisect_left, bisect_right
 from collections.abc import Callable, Iterable, Iterator
 from contextvars import ContextVar
 from dataclasses import dataclass
 from functools import lru_cache
+from itertools import accumulate, product
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -28,6 +29,27 @@ _SECRET_NAME = re.compile(
     r"(?:^|[_.-])(?:auth|sig)(?:$|[_.-])",
     re.IGNORECASE,
 )
+# Every (overlapping) secret-label match, so a literal byte is never hidden by a neighbour.
+_SECRET_LABELS = re.compile(f"(?=({_SECRET_NAME.pattern}))", re.IGNORECASE)
+# Escape framing and controls; what is left of a removed run is its printable bytes.
+_RUN_FRAMING = re.compile(r"\x1b[\[\]\\]?|[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+# Readings of one whitespace-free chunk before it is ambiguous.
+_MAX_READINGS = 1024
+# Reading characters a field may enumerate: a floor plus a share per character,
+# so the work for every reading consumer of one field stays linear.
+_WORK_FLOOR = 1 << 18
+_LABEL_WORK_FLOOR = 1 << 12
+_WORK_PER_CHAR = 16
+# Delimiter-only or escape-only tokens a window joins between a label and its value.
+_MAX_JOINED = 8
+# Characters that let a value run past whitespace (quotes, a backslash escape).
+_CONTINUING = frozenset("\"'\\")
+# A window edit whose value runs on to the end of the field.
+_TO_FIELD_END = -1
+# Suffix readings enumerated per escape sequence. A longer sequence is not
+# enumerated: every window holding it is ambiguous and withheld, which is
+# never less conservative than enumerating it, and keeps the cost linear.
+_MAX_SUFFIX = 64
 # A value is a run of quoted and unquoted segments, as in a shell word, so a
 # replacement never stops where a second pass would continue. A backslash
 # escapes the next character; an unterminated quoted segment runs to the end
@@ -59,6 +81,8 @@ _URL_VALUE = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*+://(?:<redacted>|\\[\"']|[^\s\
 _URL_USERINFO = re.compile(r"(^[A-Za-z][A-Za-z0-9+.-]*+://)(?:[^/?#\s@]*+@)++")
 _TOKEN_TAIL = re.compile(r"\S*")
 _SPACED_AT = re.compile(r"\s@")
+_SPACED_USERINFO = re.compile(r"[^\S\r\n]+@")
+_AUTHORITY_END = re.compile(r"[/?#]")
 _QUERY_VALUE = re.compile(r"=([^&;]*)")
 _SECRET_VALUE = re.compile(
     r"gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|"
@@ -75,15 +99,239 @@ _WIN_HOME = re.compile(r"([A-Za-z]:\\Users\\)[^\\/\s:\"']+")
 _HOST_PLACEHOLDER = "<redacted-host>"
 
 
-def _is_secret_name(name: str) -> bool:
+class _Budget:
+    """Reading characters one field may still enumerate, shared by every consumer.
+
+    It also remembers label answers for the field; nothing outlives the field.
+    """
+
+    __slots__ = ("labels", "left")
+
+    def __init__(self, size: int, floor: int = _WORK_FLOOR) -> None:
+        self.left = floor + _WORK_PER_CHAR * size
+        self.labels: dict[str, bool] = {}
+
+    def charge(self, cost: int) -> bool:
+        """Spend ``cost``; False once the field's work is spent (the caller withholds)."""
+        self.left -= cost
+        return self.left >= 0
+
+
+def _is_secret_name(name: str, budget: _Budget | None = None) -> bool:
+    """A raw label is secret in its detection reading or in any literal reading.
+
+    Every consumer (free-text labels, argv flags, schema property names and
+    JSON keys) asks this one question of the raw label, so a label split by an
+    escape sequence gets the same answer everywhere. Enumerating its readings
+    is charged to ``budget`` (the enclosing field's, or the label's own); a
+    label whose readings the budget cannot cover is treated as secret.
+    """
+    if budget is not None and (known := budget.labels.get(name)) is not None:
+        return known
+    plain = strip_controls(name)
+    if _plain_secret_name(plain):
+        return True
+    if plain == name:
+        return False
+    result = _literal_secret_name(name, budget or _Budget(len(name), _LABEL_WORK_FLOOR))
+    if result is None:
+        return True  # Budget spent: conservative, and not remembered.
+    if budget is not None:
+        budget.labels[name] = result
+    return result
+
+
+def _plain_secret_name(name: str) -> bool:
     # auth/sig must be whole separator-delimited components: author,
     # authority and oauth_callback_port are harmless. Plural tokens are counts,
     # tokenizer selects a tokenizer; session_name/session-name components label
     # a session rather than authenticate it. session_id remains secret-bearing.
-    name = strip_controls(name)
     name = (name if name.isascii() else normalize_text(name)).lstrip("-")
     name = _SESSION_LABEL.sub("label", name)
     return _SECRET_NAME.search(name) is not None
+
+
+# One reading choice for a segment: its text, each character's raw index, and
+# whether the text comes from a removed run.
+_Choice = tuple[str, tuple[int, ...], bool]
+
+
+@dataclass(frozen=True)
+class _Segment:
+    start: int
+    end: int
+    choices: tuple[_Choice, ...]
+    # False when the choices omit readings (a sequence longer than _MAX_SUFFIX).
+    complete: bool = True
+
+
+@dataclass(frozen=True)
+class _Reading:
+    """One reading of raw text: its characters, their raw indexes, and which came from removed runs."""
+
+    text: str
+    origins: tuple[int, ...]
+    literal: tuple[bool, ...]
+
+
+def _printable_spans(value: str, start: int, end: int) -> Iterator[tuple[int, int]]:
+    """Printable ranges of a removed run once escape framing and controls go."""
+    for framing in _RUN_FRAMING.finditer(value, start, end):
+        if start < framing.start():
+            yield start, framing.start()
+        start = framing.end()
+    if start < end:
+        yield start, end
+
+
+def _segments(value: str) -> list[_Segment]:
+    """Retained text and removed runs, each with the ways it can be read.
+
+    Detection drops a removed run, but a terminal or a reader of the raw field
+    may take its printable bytes literally: a CSI/C1 final byte (``ESC [ s``),
+    its parameters and intermediates, an OSC payload or the byte after a bare
+    ESC. A sequence may have been meant to end earlier than the parser ended
+    it (a CSI consumes parameter and intermediate bytes greedily; an OSC runs
+    to its terminator), so each sequence in a removed run reads as dropped or
+    as any suffix of its printable bytes. The longest reading is always last.
+    Only suffixes up to ``_MAX_SUFFIX`` characters are built (plus the whole
+    payload), so building segments is linear; a longer sequence's segment is
+    marked incomplete and makes every window that holds it ambiguous.
+    """
+    segments: list[_Segment] = []
+    cursor = 0
+    for start, end in (*control_free_spans(value), (len(value), len(value))):
+        # Adjacent sequences form one removed run; each one is read on its own.
+        cuts = [
+            index
+            for index in range(cursor + 1, start)
+            if value[index] in "\x1b\x9b\x9d" and not value.startswith("\x1b\\", index)
+        ]
+        for left, right in zip([cursor, *cuts], [*cuts, start], strict=True):
+            if left < right:
+                choices, complete = _sequence_choices(value, left, right)
+                segments.append(_Segment(left, right, choices, complete))
+        if start < end:
+            segments.append(_Segment(start, end, ((value[start:end], tuple(range(start, end)), False),)))
+        cursor = end
+    return segments
+
+
+def _sequence_choices(value: str, start: int, end: int) -> tuple[tuple[_Choice, ...], bool]:
+    """Dropped, each suffix up to ``_MAX_SUFFIX``, then the whole payload; and whether that is all."""
+    printable = tuple(
+        index for left, right in _printable_spans(value, start, end) for index in range(left, right)
+    )
+    choices: dict[str, _Choice] = {"": ("", (), True)}
+    for length in (*range(1, min(len(printable), _MAX_SUFFIX) + 1), len(printable)):
+        indexes = printable[len(printable) - length :]
+        text = "".join(value[index] for index in indexes)
+        choices.setdefault(text, (text, indexes, True))
+    return tuple(choices.values()), len(printable) <= _MAX_SUFFIX
+
+
+def _chunks(segments: list[_Segment]) -> Iterator[list[_Segment]]:
+    """Whitespace-free chunks: retained whitespace splits, removed whitespace does not."""
+    chunk: list[_Segment] = []
+    for segment in segments:
+        text, indexes, literal = segment.choices[0]
+        if literal:
+            chunk.append(segment)
+            continue
+        cursor = 0
+        for space in re.finditer(r"\s+", text):
+            if cursor < space.start():
+                piece = (text[cursor : space.start()], indexes[cursor : space.start()], False)
+                chunk.append(_Segment(indexes[cursor], indexes[space.start() - 1] + 1, (piece,)))
+            yield chunk
+            chunk = []
+            cursor = space.end()
+        if cursor < len(text):
+            chunk.append(_Segment(indexes[cursor], segment.end, ((text[cursor:], indexes[cursor:], False),)))
+    yield chunk
+
+
+def _reading_count(chunk: list[_Segment]) -> int:
+    """Number of readings, stopping once past the limit (no huge products).
+
+    A segment with unenumerated readings counts as past the limit.
+    """
+    count = 1
+    for segment in chunk:
+        if not segment.complete:
+            return _MAX_READINGS + 1
+        count *= len(segment.choices)
+        if count > _MAX_READINGS:
+            break
+    return count
+
+
+def _readings(chunk: list[_Segment]) -> Iterator[_Reading] | None:
+    """Every combination of run choices, or None when too many runs make it ambiguous."""
+    if _reading_count(chunk) > _MAX_READINGS:
+        return None
+    return (
+        _Reading(
+            "".join(text for text, _, _ in combination),
+            tuple(index for _, indexes, _ in combination for index in indexes),
+            tuple(literal for text, _, literal in combination for _ in text),
+        )
+        for combination in product(*(segment.choices for segment in chunk))
+    )
+
+
+def _literal_secret_name(name: str, budget: _Budget) -> bool | None:
+    """Reading removed printable bytes literally completes a secret label.
+
+    Every combination of run readings is tried. A reading counts only when a
+    secret-label match covers a literal byte: a byte that merely ends an
+    exclusion (the ``m`` of a colour reset after ``tokens``) is not a label.
+    A chunk with too many such runs to enumerate is ambiguous and counts.
+    Each chunk's readings are charged to ``budget`` before they are built;
+    None when it is spent.
+    """
+    for chunk in _chunks(_segments(name)):
+        if not any(len(segment.choices) > 1 for segment in chunk):
+            continue
+        count = _reading_count(chunk)
+        if count > _MAX_READINGS:
+            return True
+        if not budget.charge(count * (chunk[-1].end - chunk[0].start)):
+            return None
+        readings = _readings(chunk)
+        if readings is None:
+            return True
+        if any(
+            any(reading.literal) and _covers_literal(reading.text, list(reading.literal))
+            for reading in readings
+        ):
+            return True
+    return False
+
+
+def _covers_literal(text: str, literal: list[bool]) -> bool:
+    if not text.isascii():
+        pieces = [normalize_text(char) for char in text]
+        if "".join(pieces) != normalize_text(text):
+            # No per-character map: judge the whole reading.
+            return _plain_secret_name(text)
+        literal = [flag for piece, flag in zip(pieces, literal, strict=True) for _ in piece]
+        text = "".join(pieces)
+    stripped = len(text) - len(text.lstrip("-"))
+    text, literal = text[stripped:], literal[stripped:]
+    parts: list[str] = []
+    marks: list[bool] = []
+    cursor = 0
+    for label in _SESSION_LABEL.finditer(text):
+        parts.extend((text[cursor : label.start()], "label"))
+        marks.extend([*literal[cursor : label.start()], *[False] * len("label")])
+        cursor = label.end()
+    parts.append(text[cursor:])
+    marks.extend(literal[cursor:])
+    counts = list(accumulate(marks, initial=0))
+    return any(
+        counts[match.end(1)] > counts[match.start(1)] for match in _SECRET_LABELS.finditer("".join(parts))
+    )
 
 
 @dataclass
@@ -114,8 +362,15 @@ def _apply_edits(
 
 
 def _named_value_edits(
-    value: str, *, protect_urls: bool = False, empty_values: bool = False
+    value: str,
+    *,
+    protect_urls: bool = False,
+    empty_values: bool = False,
+    labels: frozenset[int] | None = None,
+    base: int = 0,
 ) -> Iterator[tuple[int, int, str]]:
+    # ``labels``, when given, holds the secret label starts of the enclosing
+    # detection text, where ``value`` starts at ``base``.
     # Tokenize names first, then match the value at a fixed offset. A pattern
     # like NAME*SECRETNAME* followed by '=' retries quadratically on long names.
     cursor = 0
@@ -124,7 +379,9 @@ def _named_value_edits(
     for name in _NAME_TOKEN.finditer(value):
         while url is not None and name.start() >= url.end():
             url = next(urls, None)
-        if name.start() < cursor or not _is_secret_name(name.group()):
+        if name.start() < cursor or not (
+            base + name.start() in labels if labels is not None else _is_secret_name(name.group())
+        ):
             continue
         if url is not None and name.start() >= url.start():
             prefix = _ASSIGNMENT_PREFIX.match(value, name.end())
@@ -169,7 +426,10 @@ def _ambiguous_url(value: str) -> bool:
     )
 
 
-def _url_edits(value: str, *, raw: bool = True) -> Iterator[tuple[int, int, str]]:
+def _url_edits(
+    value: str, *, raw: bool = True, labels: frozenset[int] | None = None, at: int = 0
+) -> Iterator[tuple[int, int, str]]:
+    """URL credential spans; path labels use ``labels`` with ``value`` at ``at`` in their text."""
     if raw and _ambiguous_url(value):
         # Free-text copies need the same protection as complete URL fields.
         yield 0, len(value), _REDACTED
@@ -192,7 +452,7 @@ def _url_edits(value: str, *, raw: bool = True) -> Iterator[tuple[int, int, str]
     if path_start >= 0:
         offset = path_start + 1
         for segment in base[offset:].split("/"):
-            for start, end, replacement in _named_value_edits(segment):
+            for start, end, replacement in _named_value_edits(segment, labels=labels, base=at + offset):
                 yield offset + start, offset + end, replacement
             offset += len(segment) + 1
     if query_marker:
@@ -282,13 +542,16 @@ def _jwt_edits(value: str) -> Iterator[tuple[int, int, str]]:
             yield header.start(), cursor, _REDACTED
 
 
-def _text_edits(value: str, *, raw: bool = True) -> Iterator[tuple[int, int, str]]:
+def _text_edits(
+    value: str, *, raw: bool = True, labels: frozenset[int] | None = None
+) -> Iterator[tuple[int, int, str]]:
+    """Credential spans; ``labels``, when given, are the starts of secret label tokens."""
     for pattern in (_BEARER_TOKEN, _BASIC_TOKEN):
         for match in pattern.finditer(value):
             yield match.start(1), match.end(1), _REDACTED
     # Enclosing assignments see their complete values before URL protection.
     # Names within standalone URLs are handled separately, preserving authority.
-    yield from _named_value_edits(value, protect_urls=True, empty_values=not raw)
+    yield from _named_value_edits(value, protect_urls=True, empty_values=not raw, labels=labels)
     # Matches are ordered, so each lookahead is found once per position. An '@'
     # after another scheme or on another line belongs to something else.
     following = _NextFinder(value)
@@ -310,7 +573,14 @@ def _text_edits(value: str, *, raw: bool = True) -> Iterator[tuple[int, int, str
             if "/" not in match.group()[match.group().index("://") + 3 :] and spaced_at < boundary:
                 yield match.start(), spaced_at, _REDACTED
                 continue
-        for start, end, replacement in _url_edits(match.group(), raw=raw):
+        # Only spaces (any Unicode space) between an authority and '@': the
+        # authority is userinfo cut from its '@', as for the quoted case above.
+        authority = match.start() + match.group().index("://") + 3
+        if _SPACED_USERINFO.match(value, end) is not None and not _AUTHORITY_END.search(
+            value, authority, end
+        ):
+            yield authority, end, _REDACTED
+        for start, end, replacement in _url_edits(match.group(), raw=raw, labels=labels, at=match.start()):
             yield match.start() + start, match.start() + end, replacement
     yield from _jwt_edits(value)
     for match in _SECRET_VALUE.finditer(value):
@@ -328,20 +598,36 @@ def _union_edits(edits: Iterable[tuple[int, int, str]]) -> list[tuple[int, int, 
     return result
 
 
-def _normalized_view(value: str) -> tuple[str, list[tuple[int, int]] | None]:
+def _literal_spans(value: str) -> Iterator[tuple[int, int]]:
+    """Retained raw ranges when removed runs keep their printable bytes.
+
+    Only escape framing and controls go: CSI parameters and final bytes, OSC
+    payloads and the byte after a bare ESC read as literal text.
+    """
+    cursor = 0
+    for start, end in (*control_free_spans(value), (len(value), len(value))):
+        yield from _printable_spans(value, cursor, start)
+        if start < end:
+            yield start, end
+        cursor = end
+
+
+def _normalized_view(value: str, *, literal: bool = False) -> tuple[str, list[tuple[int, int]] | None]:
     """Detection text and one raw range per character; never a display value.
 
     Ranges are built in source order, so they are non-decreasing. Stripped
-    controls, escape sequences and invisibles have no normalized character.
+    controls, escape sequences and invisibles have no normalized character;
+    the ``literal`` view keeps the printable bytes of escape sequences.
     """
     pieces: list[str] = []
     origins: list[tuple[int, int]] = []
-    for start, end in control_free_spans(value):
+    spans = list(_literal_spans(value) if literal else control_free_spans(value))
+    for start, end in spans:
         for index in range(start, end):
             piece = normalize_text(value[index])
             pieces.append(piece)
             origins.extend([(index, index + 1)] * len(piece))
-    normalized = normalize_text(strip_controls(value))
+    normalized = normalize_text("".join(value[start:end] for start, end in spans))
     # Cross-character composition/reordering has no per-codepoint mapping.
     # Withhold recognized credentials rather than guess their source offsets.
     return normalized, origins if "".join(pieces) == normalized else None
@@ -354,8 +640,11 @@ def _structural(char: str) -> bool:
 class _RawMap:
     """Map normalized detection spans to whole raw spans of one field."""
 
-    def __init__(self, value: str, normalized: str, origins: list[tuple[int, int]]) -> None:
+    def __init__(
+        self, value: str, normalized: str, origins: list[tuple[int, int]], *, literal: bool = False
+    ) -> None:
         self.value = value
+        self.literal = literal
         self.normalized = normalized
         self.origins = origins
         self.starts = [start for start, _ in origins]
@@ -367,6 +656,33 @@ class _RawMap:
             (char, origin[0]) for char, origin in zip(normalized, origins, strict=True) if _structural(char)
         ]
         self.delimiter_starts = [start for _, start in self.normalized_delimiters]
+
+    def secret_labels(self, budget: _Budget) -> frozenset[int]:
+        """Starts of normalized name tokens whose raw label is secret.
+
+        A token's raw label extends over removed bytes on either side, which a
+        reading may take literally (``pa ESC [ ssword`` detects as ``pasword``),
+        so it is judged by ``_is_secret_name`` on those raw bytes. In the
+        literal view that raw judgment is the only one: the detection text of
+        ``ESC [ 1m tokens ESC [ 0m`` is not a label the raw field carries.
+        """
+        labels: set[int] = set()
+        length = len(self.value)
+        for name in _NAME_TOKEN.finditer(self.normalized):
+            start, end = self.origins[name.start()][0], self.origins[name.end() - 1][1]
+            while start and not self.retained[start - 1]:
+                start -= 1
+            while end < length and not self.retained[end]:
+                end += 1
+            if all(self.retained[start:end]):
+                secret = _is_secret_name(name.group())
+            else:
+                secret = (not self.literal and _is_secret_name(name.group())) or _is_secret_name(
+                    self.value[start:end], budget
+                )
+            if secret:
+                labels.add(name.start())
+        return frozenset(labels)
 
     def span(self, start: int, end: int) -> tuple[int, int] | None:
         """Raw span from the previous to the next retained character, or None.
@@ -446,11 +762,230 @@ def _redaction_edits(
     normalized = normalize_text(strip_controls(value))
     if normalized == value:
         return raw_edits
-    normalized_edits = list(_text_edits(normalized, raw=False))
-    normalized, origins = _normalized_view(value)
+    budget = _Budget(len(value))
+    edits = _view_edits(value, raw_edits, budget, literal=False)
+    # A removed run may have consumed printable bytes (a CSI final byte, an
+    # ESC-swallowed ':', an OSC payload): detect against that reading too.
+    if edits is None or not any(_RUN_FRAMING.sub("", run) for run in _removed_runs(value)):
+        return edits
+    literal = _view_edits(value, raw_edits, budget, literal=True, covered=edits)
+    if literal is None:
+        return None
+    # Mixed readings (one run dropped, another literal) and the decisions they
+    # change (flag, delimiter, label) are checked token by token.
+    return _union_edits([*edits, *literal, *_token_reading_edits(value, budget)])
+
+
+def _reading_outcome(
+    value: str, window: list[_Segment], in_run: bytearray, budget: _Budget, suffix: str = ""
+) -> tuple[list[tuple[int, int, str, int | None]], bool] | None:
+    """Detect a window of raw text in every reading of its removed runs.
+
+    Each reading is detected like any field: names are judged by
+    ``_is_secret_name`` on their raw extent (adjacent removed runs included),
+    so a flag, label, delimiter or userinfo decision is made over the same
+    readings everywhere. Matches map back to raw spans widened over removed
+    runs. The boolean reports whether a match reached into ``suffix`` (text
+    after the window). An edit that reaches the end of the window carries
+    where its value may continue: nowhere (an unquoted value ends at the
+    whitespace there), from a raw offset (a quote or backslash spelled in
+    retained text), or ``_TO_FIELD_END`` when an escape reading or
+    normalization supplied it, so the value's extent depends on that reading.
+    None when the readings cannot be enumerated within the field's remaining
+    ``budget`` or have no per-character raw map.
+    """
+    start, end = window[0].start, window[-1].end
+    # Charge the whole window per reading before building any of them.
+    count = _reading_count(window)
+    if count > _MAX_READINGS:
+        return None
+    readings = _readings(window) if budget.charge(count * (end - start)) else None
+    if readings is None:
+        return None
+
+    def widen(left: int, right: int) -> tuple[int, int]:
+        while left > start and in_run[left - 1]:
+            left -= 1
+        while right < end and in_run[right]:
+            right += 1
+        return left, right
+
+    edits: list[tuple[int, int, str, int | None]] = []
+    claims = False
+    for reading in readings:
+        if not any(reading.literal):
+            continue  # The detection views already read every run as dropped.
+        pieces = [normalize_text(char) for char in reading.text]
+        text = "".join(pieces)
+        if text != normalize_text(reading.text):
+            return None
+        origins = [origin for piece, origin in zip(pieces, reading.origins, strict=True) for _ in piece]
+        labels: set[int] = set()
+        for name in _NAME_TOKEN.finditer(text):
+            left, right = widen(origins[name.start()], origins[name.end() - 1] + 1)
+            if _is_secret_name(value[left:right], budget):
+                labels.add(name.start())
+        length = len(text)
+        for left, right, _ in _text_edits(text + suffix, raw=False, labels=frozenset(labels)):
+            claims = claims or right > length
+            right = min(right, length)
+            if left >= right:
+                continue
+            tail: int | None = None
+            if right == length:
+                carried = [index for index in range(left, right) if text[index] in _CONTINUING]
+                # Raw text decides the rest only if it spells these characters itself.
+                if any(in_run[origins[index]] or value[origins[index]] != text[index] for index in carried):
+                    tail = _TO_FIELD_END
+                elif carried:
+                    tail = origins[left]
+                    while tail < end and in_run[tail]:
+                        tail += 1
+            edits.append((*widen(origins[left], origins[right - 1] + 1), _REDACTED, tail))
+    return edits, claims
+
+
+def _run_mask(value: str, segments: list[_Segment]) -> bytearray:
+    in_run = bytearray(len(value))
+    for segment in segments:
+        if segment.choices[0][2]:
+            in_run[segment.start : segment.end] = b"\x01" * (segment.end - segment.start)
+    return in_run
+
+
+def _joinable(chunk: list[_Segment]) -> bool:
+    """Only escape sequences and delimiters: a label may continue across it to a value."""
+    return all(
+        segment.choices[0][2] or set(normalize_text(segment.choices[0][0])) <= {":", "="} for segment in chunk
+    )
+
+
+def _joined(value: str, chunks: list[list[_Segment]]) -> list[_Segment]:
+    """Consecutive chunks as one window, the raw whitespace between them retained."""
+    window = list(chunks[0])
+    for chunk in chunks[1:]:
+        gap = (value[window[-1].end : chunk[0].start], tuple(range(window[-1].end, chunk[0].start)), False)
+        window += [_Segment(window[-1].end, chunk[0].start, (gap,)), *chunk]
+    return window
+
+
+def _token_reading_edits(value: str, budget: _Budget) -> Iterator[tuple[int, int, str]]:
+    """Raw spans that some reading of the removed runs makes a credential.
+
+    Decisions span neighbouring tokens (a flag and its value, a label and the
+    value after ': ', an authority and a spaced '@host'), so each
+    whitespace-free token is read together with the tokens up to the next one
+    that is more than escape sequences and delimiters: a delimiter supplied by
+    an escape may stand alone between a label and its value. A window that
+    cannot be enumerated (too many readings or joined tokens, an over-long
+    sequence, the field's budget spent, or no per-character map) is withheld
+    whole: no cheaper test is as conservative as the readings it skips.
+    """
+    segments = _segments(value)
+    in_run = _run_mask(value, segments)
+    chunks = [chunk for chunk in _chunks(segments) if chunk]
+    varied = list(
+        accumulate((any(len(segment.choices) > 1 for segment in chunk) for chunk in chunks), initial=0)
+    )
+    # solid[k]: the first chunk at or after k that is not joinable.
+    solid = [len(chunks)] * (len(chunks) + 1)
+    for index in range(len(chunks) - 1, -1, -1):
+        solid[index] = solid[index + 1] if _joinable(chunks[index]) else index
+    # quoted[k]: chunks before k holding a quote or backslash in any reading.
+    quoted = list(
+        accumulate(
+            (
+                any(char in _CONTINUING for char in normalize_text(value[chunk[0].start : chunk[-1].end]))
+                for chunk in chunks
+            ),
+            initial=0,
+        )
+    )
+    # printable_before[k]: printable run bytes before raw offset k.
+    printable = bytearray(len(value))
+    for segment in segments:
+        for position in segment.choices[-1][1] if segment.choices[0][2] else ():
+            printable[position] = 1
+    printable_before = list(accumulate(printable, initial=0))
+    continuations: dict[int, int] = {}
+    for index, chunk in enumerate(chunks):
+        last = min(solid[min(index + 1, len(chunks))], len(chunks) - 1)
+        if varied[last + 1] == varied[index]:
+            continue
+        start, end = chunk[0].start, chunks[last][-1].end
+        outcome = (
+            _reading_outcome(value, _joined(value, chunks[index : last + 1]), in_run, budget)
+            if last - index - 1 <= _MAX_JOINED
+            else None
+        )
+        if outcome is None:
+            # Unenumerated: a quote anywhere in the window may open a value
+            # that runs past it, so withhold to the end of the field.
+            tail = _TO_FIELD_END if quoted[last + 1] > quoted[index] else None
+            outcome = [(start, end, _REDACTED, tail)], False
+        for left, right, replacement, tail in outcome[0]:
+            if right == end and tail is not None:
+                right = max(right, _continuation_end(value, tail, continuations, budget, printable_before))
+            yield left, right, replacement
+
+
+def _continuation_end(
+    value: str, start: int, known: dict[int, int], budget: _Budget, printable_before: list[int]
+) -> int:
+    """End of the value continuing at raw ``start``, scanned once per offset and charged.
+
+    The scan reads raw text, so it holds only when no escape sequence with
+    printable bytes lies inside it (one could supply a quote or backslash that
+    moves the end). Otherwise, for ``_TO_FIELD_END``, or once the budget is
+    spent, the value runs to the end of the field.
+    """
+    if start == _TO_FIELD_END:
+        return len(value)
+    if (end := known.get(start)) is None:
+        match = _VALUE_CONTINUATION.match(value, start)
+        end = start if match is None else match.end()
+        if not budget.charge(end - start) or printable_before[end] > printable_before[start]:
+            end = len(value)
+        known[start] = end
+    return end
+
+
+def _claims_next_argument(item: str) -> bool:
+    """Some reading of an argument takes the next argument as its value (assumed when unenumerable)."""
+    segments = _segments(item)
+    if not any(len(segment.choices) > 1 for segment in segments):
+        return False
+    budget = _Budget(len(item), _LABEL_WORK_FLOOR)
+    outcome = _reading_outcome(item, segments, _run_mask(item, segments), budget, " v")
+    return outcome is None or outcome[1]
+
+
+def _removed_runs(value: str) -> Iterator[str]:
+    cursor = 0
+    for start, end in (*control_free_spans(value), (len(value), len(value))):
+        if cursor < start:
+            yield value[cursor:start]
+        cursor = end
+
+
+def _view_edits(
+    value: str,
+    raw_edits: list[tuple[int, int, str]],
+    budget: _Budget,
+    *,
+    literal: bool,
+    covered: list[tuple[int, int, str]] | None = None,
+) -> list[tuple[int, int, str]] | None:
+    """Raw-span edits from one detection view of the field, or None to withhold it.
+
+    An ambiguous extent inside a ``covered`` edit (another view's) is replaced anyway.
+    """
+    normalized, origins = _normalized_view(value, literal=literal)
     if origins is None:
         return None
-    raw_map = _RawMap(value, normalized, origins)
+    raw_map = _RawMap(value, normalized, origins, literal=literal)
+    labels = raw_map.secret_labels(budget)
+    normalized_edits = list(_text_edits(normalized, raw=False, labels=labels))
     raw_edits = _union_edits(
         (*raw_map.snap(start, end), replacement) for start, end, replacement in raw_edits
     )
@@ -470,28 +1005,40 @@ def _redaction_edits(
             edits.append((*span, replacement))
         # An empty detection match hides only raw bytes removed at its position;
         # a terminator that normalization created there leaves no raw extent.
-        elif raw_map.ambiguous(*span) and not any(left <= span[0] < right for left, right, _ in raw_edits):
+        elif raw_map.ambiguous(*span) and not (
+            _within(raw_edits, span[0], span[0] + 1) or _within(covered or [], span[0], span[0] + 1)
+        ):
             return None
     result = _union_edits(edits)
     for start, end, _ in result:
-        if not raw_map.ambiguous(start, end):
+        if not raw_map.ambiguous(start, end) or _within(covered or [], start, end):
             continue
         # A complete raw value (snapped to retained characters) is withheld in
         # place; any other ambiguous extent withholds the field.
-        if value[start:end].isascii() and any(left <= start and end <= right for left, right, _ in raw_edits):
+        if value[start:end].isascii() and _within(raw_edits, start, end):
             continue
         return None
     # These spans end at raw whitespace, so they need no ambiguity check.
-    swallowed = list(_swallowed_delimiter_edits(raw_map, result))
+    swallowed = list(_swallowed_delimiter_edits(raw_map, result, labels, budget))
     return _union_edits([*result, *swallowed]) if swallowed else result
+
+
+def _within(edits: list[tuple[int, int, str]], start: int, end: int) -> bool:
+    """``[start, end)`` lies inside one of ``edits`` (sorted, disjoint), found by bisection."""
+    index = bisect_right(edits, start, key=lambda edit: edit[0]) - 1
+    return index >= 0 and edits[index][0] <= start and end <= edits[index][1]
 
 
 _SWALLOWABLE = frozenset("=:@\"'/?#&;,")
 
 
-def _secret_names(text: str) -> tuple[list[int], dict[int, int]]:
+def _secret_names(text: str, labels: frozenset[int] | None = None) -> tuple[list[int], dict[int, int]]:
     """Starts of secret label words, and each one's start keyed by its end."""
-    names = [name for name in _NAME_TOKEN.finditer(text) if _is_secret_name(name.group())]
+    names = [
+        name
+        for name in _NAME_TOKEN.finditer(text)
+        if (name.start() in labels if labels is not None else _is_secret_name(name.group()))
+    ]
     return [name.start() for name in names], {name.end(): name.start() for name in names}
 
 
@@ -502,13 +1049,14 @@ def _after_last(positions: list[int], limit: int) -> int:
 
 
 def _swallowed_delimiter_edits(
-    raw_map: _RawMap, result: list[tuple[int, int, str]]
+    raw_map: _RawMap, result: list[tuple[int, int, str]], labels: frozenset[int], budget: _Budget
 ) -> Iterator[tuple[int, int, str]]:
     """Removed bytes may never hide a delimiter next to a credential.
 
     For each run of raw bytes that detection removed: if it holds a structural
     delimiter, ends in a bare two-byte escape (whose extent terminals read
-    differently), or directly follows a secret label word, withhold from the
+    differently), is itself a secret label when read literally and directly
+    precedes an assignment, or directly follows a secret label word, withhold from the
     first secret label or URL in its whitespace-free token (or a raw label
     inside the run) through the end of that token. A run inside an existing
     replacement only matters for the first two reasons, which can end it
@@ -516,9 +1064,27 @@ def _swallowed_delimiter_edits(
     intact raw label.
     """
     value, normalized, starts = raw_map.value, raw_map.normalized, raw_map.starts
-    normalized_names, normalized_ends = _secret_names(normalized)
+    normalized_names, normalized_ends = _secret_names(normalized, labels)
     raw_names, raw_ends = _secret_names(value)
     normalized_spaces = [index for index, char in enumerate(normalized) if char.isspace()]
+    # solid[k]: the first non-whitespace position at or after k (one backward pass),
+    # so an assignment check after each run is O(1) however long the whitespace.
+    solid = [len(normalized)] * (len(normalized) + 1)
+    for position in range(len(normalized) - 1, -1, -1):
+        solid[position] = solid[position + 1] if normalized[position].isspace() else position
+
+    # token_ends[k]: raw end of the whitespace-free token holding k, in one pass.
+    token_ends = [len(value)] * (len(value) + 1)
+    for position in range(len(value) - 1, -1, -1):
+        token_ends[position] = position if value[position].isspace() else token_ends[position + 1]
+
+    def assignment_at(position: int) -> bool:
+        """``_ASSIGNMENT_PREFIX`` matches at ``position``: an optional quote, spaces, ':' or '='."""
+        if position < len(normalized) and normalized[position] in "\"'":
+            position += 1
+        position = solid[position]
+        return position < len(normalized) and normalized[position] in ":="
+
     raw_spaces = [index for index, char in enumerate(value) if char.isspace()]
     schemes = [match.start() for match in re.finditer("://", normalized)]
     covered = [start for start, _, _ in result]
@@ -531,10 +1097,14 @@ def _swallowed_delimiter_edits(
         while index < length and not raw_map.retained[index]:
             index += 1
         run = value[run_start:index]
-        delimiter = any(char.isspace() or char in _SWALLOWABLE for char in run) or (
-            len(run) >= 2 and run[-2] == "\x1b" and run[-1] not in "[]"
-        )
         following = bisect_left(starts, run_start)
+        # An OSC payload, say, that reads as a label for the assignment after it.
+        label = assignment_at(following) and _is_secret_name(run, budget)
+        delimiter = (
+            label
+            or any(char.isspace() or char in _SWALLOWABLE for char in run)
+            or (len(run) >= 2 and run[-2] == "\x1b" and run[-1] not in "[]")
+        )
         edit = bisect_left(covered, run_start + 1) - 1
         inside = edit >= 0 and index <= result[edit][1]
         if not delimiter and (inside or (following not in normalized_ends and run_start not in raw_ends)):
@@ -542,7 +1112,7 @@ def _swallowed_delimiter_edits(
         if inside:
             # The label and delimiter before this replacement are intact raw
             # text; only its end is in doubt, so extend it through the token.
-            yield result[edit][0], _token_end(value, index), _REDACTED
+            yield result[edit][0], token_ends[index], _REDACTED
             continue
         token_start = _after_last(normalized_spaces, following)
         raw_token_start = _after_last(raw_spaces, run_start)
@@ -557,8 +1127,10 @@ def _swallowed_delimiter_edits(
         # A raw label inside the removed run counts too (an OSC payload, say).
         if name < len(raw_names) and raw_names[name] < index:
             anchors.append(raw_names[name])
+        if label:
+            anchors.append(run_start)
         if anchors:
-            yield min(anchors), _token_end(value, index), _REDACTED
+            yield min(anchors), token_ends[index], _REDACTED
 
 
 def redact_text(value: str) -> str:
@@ -752,8 +1324,9 @@ def redact_argv(value: list[object]) -> list[object]:
         name = _NAME_TOKEN.match(normalized)
         if (
             name is not None
-            and _is_secret_name(name.group())
             and normalized[name.end() :].startswith(("=", ":"))
+            # The raw label runs up to the raw delimiter, removed bytes included.
+            and _is_secret_name(name.group() if origins is None else item[: origins[name.end()][0]])
             and _URL.match(normalized) is None
         ):
             # Cut the raw argument just after the raw delimiter character and
@@ -773,8 +1346,8 @@ def redact_argv(value: list[object]) -> list[object]:
         secret_value = (
             normalized.startswith("-")
             and _NAME_TOKEN.fullmatch(normalized) is not None
-            and _is_secret_name(normalized)
-        )
+            and _is_secret_name(item)
+        ) or _claims_next_argument(item)
     return result
 
 

@@ -1,6 +1,10 @@
 """Tests for centralized output redaction."""
 
+import json
+import tracemalloc
+from collections.abc import Callable
 from time import perf_counter
+from typing import Any
 
 import pytest
 
@@ -381,3 +385,90 @@ def test_redact_identifiers_alias_respects_word_boundaries() -> None:
     # a server literally named "git" must not corrupt the unrelated word "github"
     out = redact_identifiers({"t": "see github docs"}, name_aliases={"git": "server-01"})
     assert out["t"] == "see github docs"
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda n: "\x1b]" + "a" * n + "\x07",  # terminated OSC payload
+        lambda n: "\x1b]" + "a" * n,  # unterminated OSC payload
+        lambda n: "x \x1b[" + "1;" * (n // 2) + "m y",  # long CSI parameters
+        lambda n: "x " + "\x1b[m" * n + " y",  # many adjacent sequences
+    ],
+    ids=["osc", "osc-unterminated", "csi-params", "adjacent-sequences"],
+)
+def test_escape_reading_choices_and_memory_grow_linearly(build: Callable[[int], str]) -> None:
+    from mcp_audit.redaction import _segments
+
+    # Characters copied into reading choices: bounded per input character.
+    for size in (1024, 4096, 16384):
+        text = build(size)
+        copied = sum(len(choice) for segment in _segments(text) for choice, _, _ in segment.choices)
+        assert copied <= 2 * len(text) + 4096, (size, copied)
+
+    def peak(size: int) -> int:
+        tracemalloc.start()
+        try:
+            redact_text(build(size))
+            return tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+
+    # A 4x larger payload stays near 4x the memory; quadratic would be 16x.
+    assert peak(16384) < 6 * peak(4096)
+
+
+def test_label_reading_work_is_linear_through_the_public_schema_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    import mcp_audit.redaction as redaction
+
+    work = [0]
+    covers, text_edits = redaction._covers_literal, redaction._text_edits
+
+    def counted_covers(text: str, literal: list[bool]) -> bool:
+        work[0] += len(text)
+        return covers(text, literal)
+
+    def counted_text_edits(text: str, **kwargs: Any) -> Any:
+        work[0] += len(text)
+        return text_edits(text, **kwargs)
+
+    monkeypatch.setattr(redaction, "_covers_literal", counted_covers)
+    monkeypatch.setattr(redaction, "_text_edits", counted_text_edits)
+    for size in (1024, 4096, 16384):
+        # Long retained text around several escape sequences in one property name.
+        name = "".join(f"{letter * size}\x1b[{index}m" for index, letter in enumerate("abcd", 1))
+        work[0] = 0
+        redact_data({"type": "object", "properties": {name: {"type": "string", "default": "fixture"}}})
+        # Every reading consumer shares one budget per field: work stays a
+        # small multiple of the input, not readings times the label.
+        assert work[0] <= 40 * len(name) + (1 << 20), (size, work[0])
+
+
+@pytest.mark.parametrize("joiner", ["\x1b[m ", "\x1b]x=\x07 "], ids=["escape-only", "escaped-delimiter"])
+def test_joined_escape_tokens_before_a_long_quoted_value_stay_linear(
+    monkeypatch: pytest.MonkeyPatch, joiner: str
+) -> None:
+    import mcp_audit.redaction as redaction
+
+    work = [0]
+    continuation, text_edits = redaction._VALUE_CONTINUATION, redaction._text_edits
+
+    class CountedContinuation:
+        def match(self, text: str, start: int = 0) -> Any:
+            found = continuation.match(text, start)
+            work[0] += 0 if found is None else found.end() - start
+            return found
+
+    def counted_text_edits(text: str, **kwargs: Any) -> Any:
+        work[0] += len(text)
+        return text_edits(text, **kwargs)
+
+    monkeypatch.setattr(redaction, "_VALUE_CONTINUATION", CountedContinuation())
+    monkeypatch.setattr(redaction, "_text_edits", counted_text_edits)
+    for size in (1000, 4000, 16000):
+        text = "password " + joiner * size + '"' + "word " * size + 'fixture-credential"'
+        work[0] = 0
+        redacted = redact_data({"description": text})
+        assert "fixture-credential" not in json.dumps(redacted)
+        # Shared quoted suffixes are scanned once and charged to the field budget.
+        assert work[0] <= 40 * len(text) + (1 << 20), (size, work[0])

@@ -499,3 +499,225 @@ def test_authority_cut_before_spaced_at_is_withheld(
     text = f"Endpoint {url} ready"
     assert "secret" not in redact_text(text) and "planted" not in redact_text(text)
     _assert_surfaces(text, ["--url", url], url, ["planted", "tail-secret"], tmp_path)
+
+
+# Sequences whose final (or only following) byte detection removes with them.
+CONSUMING_SEQUENCES = {"csi": "\x1b[", "c1-csi": "\x9b", "csi-params": "\x1b[1;2", "bare-esc": "\x1b"}
+
+
+@pytest.mark.parametrize("sequence", list(CONSUMING_SEQUENCES.values()), ids=list(CONSUMING_SEQUENCES))
+@pytest.mark.parametrize("label", ["password", "token", "secret", "api_key"])
+@pytest.mark.parametrize("split", [0, 1, -1], ids=["first", "second", "last"])
+def test_label_letter_consumed_by_an_escape_sequence_is_still_a_label(
+    sequence: str, label: str, split: int, tmp_path: Path
+) -> None:
+    # The sequence ends on a letter of the label, so detection text drops it.
+    raw = label[: split % len(label)] + sequence + label[split % len(label) :]
+    secret = LEFT + RIGHT
+    text = f"config {raw}={secret} ready"
+    _assert_surfaces(text, [f"--{raw}", secret, f"--{raw}={secret}"], None, _forbidden(""), tmp_path)
+    assert redact_argv([f"--{raw}", secret])[1] == "<redacted>"
+    schema = redact_data({"properties": {raw: {"type": "string", "default": secret}}, raw: secret})
+    assert secret not in json.dumps(schema)
+
+
+@pytest.mark.parametrize(
+    "space",
+    [" ", "  ", "\t", "\u00a0", "\u2003", "\u3000"],
+    ids=["space", "spaces", "tab", "nbsp", "em", "ideographic"],
+)
+@pytest.mark.parametrize("wrap", ["{}", '"{}"', "({})", "<{}>", "'{}'"])
+def test_userinfo_cut_from_its_at_by_spaces_is_redacted(space: str, wrap: str, tmp_path: Path) -> None:
+    url = f"https://{LEFT}{RIGHT}{space}@fixture.example/mcp"
+    text = "Endpoint " + wrap.format(url) + " ready"
+    assert (
+        redact_text(text)
+        == "Endpoint " + wrap.format(f"https://<redacted>{space}@fixture.example/mcp") + " ready"
+    )
+    _assert_surfaces(text, ["--url", url], url, _forbidden(""), tmp_path)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "\x1b[31mERROR\x1b[0m: timeout=30 retries=3",
+        "\x9b31mwarn\x9b0m count=5",
+        "\x1b[1mtokens\x1b[0m: 5",
+        "\x1b[1mtokenizer\x1b[0m=bpe",
+        "\x1b[1mauthor\x1b[0m=fixture",
+        "\x1b[32mok\x1b[0m session_name=demo",
+        "\x1b]8;;https://example.test/docs\x07docs\x1b]8;;\x07 mode=fast",
+        "email me @ host",
+        "contact @fixture about it",
+        "see https://example.test/docs @fixture",
+    ],
+)
+def test_ordinary_colored_text_and_prose_are_not_redacted(text: str) -> None:
+    assert redact_text(text) == text
+    assert redact_argv(["\x1b[1m--verbose\x1b[0m", "on", "--color", "\x1b[31mred\x1b[0m"]) == [
+        "\x1b[1m--verbose\x1b[0m",
+        "on",
+        "--color",
+        "\x1b[31mred\x1b[0m",
+    ]
+    schema = {"properties": {"\x1b[1mtimeout\x1b[0m": {"type": "integer", "default": "30"}}}
+    assert redact_data(schema) == schema
+
+
+# Every CSI parameter and intermediate byte, open (the next byte is consumed as
+# the final byte) and closed by 'm', with 7-bit and C1 introducers.
+CSI_PARAMETER_SEQUENCES = [
+    introducer + chr(byte) + final
+    for introducer in ("\x1b[", "\x9b")
+    for byte in range(0x20, 0x40)
+    for final in ("", "m")
+]
+_SWEEP_SECRET = LEFT + RIGHT
+_SWEEP_TEXTS = [
+    "run --password {secret} now",
+    "config api_key={secret} ready",
+    "token: {secret}",
+    "https://fixture.example/a/password={secret}/x",
+    "https://fixture.example/mcp?q={secret}",
+    "https://fixture.example/mcp#{secret}",
+    "Endpoint https://{secret} @fixture.example/mcp",
+]
+
+
+def _inserted(text: str) -> list[str]:
+    """``text`` with each CSI sequence inserted at every position before the secret."""
+    cut = text.index("{secret}")
+    prefix, suffix = text[:cut], text[cut:].format(secret=_SWEEP_SECRET)
+    return [
+        prefix[:index] + sequence + prefix[index:] + suffix
+        for index in range(cut + 1)
+        for sequence in CSI_PARAMETER_SEQUENCES
+    ]
+
+
+@pytest.mark.parametrize("template", _SWEEP_TEXTS)
+def test_csi_parameter_bytes_never_hide_a_structural_decision_in_text(template: str) -> None:
+    forbidden = re.compile("|".join(_forbidden("")))
+    for text in _inserted(template):
+        once = redact_text(text)
+        assert forbidden.search(once) is None, text
+        assert redact_text(once) == once, text
+
+
+@pytest.mark.parametrize(
+    "args",
+    [["--password", "{secret}"], ["--api_key={secret}"], ["token:{secret}"]],
+    ids=["flag", "inline", "colon"],
+)
+def test_csi_parameter_bytes_never_hide_a_structural_decision_in_argv(args: list[str]) -> None:
+    forbidden = re.compile("|".join(_forbidden("")))
+    store = PinStore(Path("unused"))
+    label = args[0].replace("{secret}", "")
+    for argument in _inserted(label + "{secret}"):
+        argv = (
+            [argument[: len(argument) - len(_SWEEP_SECRET)], _SWEEP_SECRET] if len(args) == 2 else [argument]
+        )
+        once = redact_argv(cast(list[object], argv))
+        snapshot = store._config_snapshot(make_server_config(args=argv))
+        assert forbidden.search(repr(once)) is None, argv
+        assert forbidden.search(json.dumps(snapshot)) is None, argv
+        assert redact_argv(once) == once, argv
+
+
+@pytest.mark.parametrize("label", ["password", "--password", "api_key", "token"])
+def test_csi_parameter_bytes_never_hide_a_schema_or_json_key(label: str) -> None:
+    forbidden = re.compile("|".join(_forbidden("")))
+    for index in range(len(label) + 1):
+        for sequence in CSI_PARAMETER_SEQUENCES:
+            key = label[:index] + sequence + label[index:]
+            data = {"properties": {key: {"type": "string", "default": _SWEEP_SECRET}}, key: _SWEEP_SECRET}
+            assert forbidden.search(repr(redact_data(data))) is None, key
+
+
+# Enough single-letter colour runs to push a window past the reading limit.
+_OVER_READING_CAP = "".join(f"\x1b[m{letter}" for letter in "abcdefghijkl")
+_FULLWIDTH = {"=": "＝", ":": "：", "@": "＠", "/": "／", "?": "？", "#": "＃"}
+_FULLWIDTH |= {"-": "－", '"': "＂", "'": "＇"}
+# A structural character that only one escape sequence reading supplies (the
+# OSC "last character" reading); {pad} pushes that token's window past the cap.
+_HIDDEN_STRUCTURAL = {
+    "=": ["password{pad}\x1b]x{char}\x07{secret}"],
+    ":": ["token{pad}\x1b]x{char}\x07 {secret}"],
+    "@": ["Endpoint https://{secret} \x1b]x{char}\x07f{pad}ixture.example/mcp"],
+    "/": ["https:/\x1b]x{char}\x07fixture.example/mcp?token={secret}{pad}"],
+    "?": ["https://fixture.example/mcp\x1b]x{char}\x07token={secret}{pad}"],
+    "#": ["https://fixture.example/mcp\x1b]x{char}\x07{secret}{pad}"],
+    "-": ["run \x1b]x{char}\x07password{pad} {secret}"],
+    '"': ["password=\x1b]x{char}\x07{secret}{pad} tail{char}"],
+    "'": ["password=\x1b]x{char}\x07{secret}{pad} tail{char}"],
+}
+
+
+@pytest.mark.parametrize("cap", ["under-cap", "over-cap"])
+@pytest.mark.parametrize("width", ["ascii", "fullwidth"])
+@pytest.mark.parametrize("structural", list(_HIDDEN_STRUCTURAL))
+def test_structural_byte_from_an_escape_is_judged_after_normalization(
+    structural: str, width: str, cap: str
+) -> None:
+    char = _FULLWIDTH[structural] if width == "fullwidth" else structural
+    pad = _OVER_READING_CAP if cap == "over-cap" else ""
+    forbidden = re.compile("|".join(_forbidden("")))
+    for template in _HIDDEN_STRUCTURAL[structural]:
+        text = template.format(char=char, secret=_SWEEP_SECRET, pad=pad)
+        once = redact_text(text)
+        assert forbidden.search(once) is None, text
+        assert redact_text(once) == once, text
+    if structural == "-":
+        assert redact_argv([f"\x1b]x{char}\x07password{pad}", _SWEEP_SECRET])[1] == "<redacted>"
+
+
+_DELIMITER_ESCAPES = {
+    "osc-bel": "\x1b]x{delimiter}\x07",
+    "osc-st": "\x1b]0;x{delimiter}\x1b\\",
+    "osc-unterminated": "\x1b]x{delimiter}",
+    "bare-esc": "\x1b{delimiter}",
+    "csi": "\x1b[1{delimiter}",
+    "c1-csi": "\x9b{delimiter}",
+    "wrapped": "\x1b[1m\x1b]x{delimiter}\x07\x1b[0m",
+}
+
+
+@pytest.mark.parametrize("escape", list(_DELIMITER_ESCAPES.values()), ids=list(_DELIMITER_ESCAPES))
+@pytest.mark.parametrize("delimiter", [":", "=", "：", "＝"])
+def test_escaped_delimiter_standing_alone_between_label_and_value(escape: str, delimiter: str) -> None:
+    forbidden = re.compile("|".join(_forbidden("")))
+    for label in ("password", "token", "api_key"):
+        for left in range(4):
+            for right in range(4):
+                for value in (_SWEEP_SECRET, f'"{_SWEEP_SECRET} more"', f"'a {_SWEEP_SECRET}'"):
+                    text = (
+                        f"x {label}{' ' * left}{escape.format(delimiter=delimiter)}{' ' * right}{value} tail"
+                    )
+                    once = redact_text(text)
+                    assert forbidden.search(once) is None, text
+                    assert redact_text(once) == once, text
+
+
+@pytest.mark.parametrize(
+    "opening",
+    [
+        "\x1b]x{quote}\x07",
+        "\x1b]0;x{quote}\x1b\\",
+        "\x1b{quote}",
+        "\x1b[1m\x1b]x{quote}\x07\x1b[0m",
+        "{quote}",
+    ],
+    ids=["osc-bel", "osc-st", "bare-esc", "wrapped", "retained"],
+)
+@pytest.mark.parametrize("quote", ['"', "'", "＂", "＇"])
+@pytest.mark.parametrize("delimiter", ["\x1b]x=\x07 ", "\x1b]x:\x07 ", "= "])
+def test_quote_opened_by_an_escape_or_normalization_withholds_the_quoted_value(
+    opening: str, quote: str, delimiter: str
+) -> None:
+    forbidden = re.compile("|".join(_forbidden("")))
+    for body in (f"first {_SWEEP_SECRET}", f"a b {_SWEEP_SECRET} c", f"x\\ {_SWEEP_SECRET}"):
+        for tail in ("", " tail", ' tail "x"'):
+            text = f"x password {delimiter}{opening.format(quote=quote)}{body}{quote}{tail}"
+            once = redact_text(text)
+            assert forbidden.search(once) is None, text
+            assert redact_text(once) == once, text

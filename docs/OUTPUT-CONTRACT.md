@@ -23,7 +23,9 @@ whose `Y` is not a numeric port is treated as userinfo and `Y` is withheld,
 whether or not an `@` follows in the same token. A URL cut by a quote or angle
 bracket inside its authority is withheld through its token when the authority
 holds such a password, and up to a later `@` that starts a token on the same
-line. Environment and header configuration retain key
+line. A free-text `scheme://X` authority followed only by spaces (including
+tabs and Unicode spaces) and then `@` is treated as userinfo and `X` is
+withheld. Environment and header configuration retain key
 names only. Any environment/header maps in arbitrary metadata withhold values.
 
 Dynamic JSON keys and schema property names receive credential redaction too.
@@ -44,6 +46,31 @@ the field. Removed bytes may never hide a delimiter: when a removed run holds a
 delimiter, ends in a bare two-byte escape, or follows a secret label, text from
 the first secret label or URL in that whitespace-free token (or from the start
 of an existing replacement there) through the end of the token is withheld.
+A removed run may have consumed printable bytes (a CSI or C1 final byte, its
+parameters and intermediates, an OSC payload, or the byte after a bare ESC).
+Each escape sequence in a removed run reads as dropped or as any suffix of
+its printable bytes (the sequence may have been meant to end earlier than the
+parser ended it). Detection also reads the whole
+field with those bytes kept, and reads each whitespace-free token together
+with the following tokens up to the next one that is more than escape
+sequences and delimiters (so a delimiter an escape supplies may stand alone
+between a label and its value), in every combination of its runs' readings. A
+value cut off at the end of that window continues through the raw text only
+when the quote or backslash that carries it is spelled in retained text and no
+escape sequence lies in the rest of the value; when an escape reading or
+normalization supplied it, the value is withheld to the end of the field. So every
+structural decision (flag, label, delimiter, URL path label, spaced userinfo)
+is made over the same readings. A label is judged on its raw bytes, including
+adjacent removed runs, and the same judgment applies to free text, URL paths,
+argv flags, schema property names and their literals, JSON keys, and pin
+snapshots. Suffixes are enumerated up to 64 characters per sequence, so the
+cost stays linear in the field. All reading work for one field (labels,
+token windows, argv pairing, keys) is charged to one budget proportional to
+the field's length before it is done. A label or token whose readings cannot
+be enumerated (too many combinations, a longer sequence, too many joined
+tokens, or the field's detection budget spent) is ambiguous: the label is treated as secret, and the
+token is withheld together with the token after it, which is never less
+conservative than enumerating the readings.
 Credential values with changed structural delimiters are withheld,
 including introduced whitespace or removed escapes. Unmappable matches or uncertain value
 boundaries withhold the whole field. URL parsing uses raw input; NFKC changes in
