@@ -207,18 +207,25 @@ async def _run_scan(
         report.policy_result = evaluate_policy(report, policy, pin_store=selected_pin_store)
 
     gen = ReportGenerator(console=out)
-    gen.render_terminal(report, verbose=verbose, details=details, explicit_config=config_only)
-    if diagnostics.getvalue():
-        out.print(terminal_safe(diagnostics.getvalue().rstrip()))
-
+    # Share one fresh snapshot; reports remain mutable until policy/suppression
+    # evaluation finishes, so caching redaction on the source model is unsafe.
+    safe_report = report.redacted()
     # Field-report mode scrubs host/username identifiers from shared artifacts.
     # Terminal output keeps real values for local readability.
-    out_report = report.redacted(identifiers=True) if redact else report
+    out_report = (
+        report._redacted_copy(safe_report.model_dump(mode="json"), identifiers=True)
+        if redact
+        else safe_report
+    )
+    report = safe_report  # Release the raw graph before serializing the snapshot.
+    gen._render_redacted_terminal(safe_report, verbose=verbose, details=details, explicit_config=config_only)
+    if diagnostics.getvalue():
+        out.print(terminal_safe(diagnostics.getvalue().rstrip()))
     written_artifacts: list[str] = []
 
     if json_output:
         json_path = Path(json_output)
-        gen.render_json(out_report, json_path)
+        gen._render_redacted_json(out_report, json_path)
         written_artifacts.append(json_path.name)
 
     if sarif_output:
@@ -226,7 +233,7 @@ async def _run_scan(
 
         from mcp_audit.sarif import SarifGenerator
 
-        sarif_doc = SarifGenerator().generate(out_report, profile=sarif_profile)
+        sarif_doc = SarifGenerator()._generate_redacted(out_report, profile=sarif_profile)
         sarif_path = Path(sarif_output)
         sarif_path.write_text(_json.dumps(sarif_doc, indent=2))
         written_artifacts.append(sarif_path.name)
@@ -235,15 +242,17 @@ async def _run_scan(
         from mcp_audit.htmlreport import HtmlReportGenerator
 
         html_path = Path(html_output)
-        html_path.write_text(HtmlReportGenerator().generate(out_report, show_host=show_host))
+        html_path.write_text(HtmlReportGenerator()._generate_redacted(out_report, show_host=show_host))
         written_artifacts.append(html_path.name)
 
     if card is not None:
         try:
-            card.write_text(generate_card(report, names=names, previous=previous_report), encoding="utf-8")
+            card.write_text(
+                generate_card(safe_report, names=names, previous=previous_report), encoding="utf-8"
+            )
         except OSError as exc:
             raise click.ClickException(f"Cannot write checkup card: {type(exc).__name__}") from None
-        out.print(terminal_safe(sticker(report)))
+        out.print(terminal_safe(sticker(safe_report)))
         written_artifacts.append(card.name)
 
     if written_artifacts:

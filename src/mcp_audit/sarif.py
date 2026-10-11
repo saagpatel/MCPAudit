@@ -213,9 +213,12 @@ class SarifGenerator:
 
     def generate(self, report: AuditReport, *, profile: str = "compatibility") -> dict[str, Any]:
         """Return SARIF, optionally adding config-health findings in the extended profile."""
+        return self._generate_redacted(report.redacted(), profile=profile)
+
+    def _generate_redacted(self, report: AuditReport, *, profile: str = "compatibility") -> dict[str, Any]:
+        """Render a scan-local credential-redacted snapshot."""
         if profile not in {"compatibility", "extended"}:
             raise ValueError(f"Unknown SARIF profile: {profile}")
-        report = report.redacted()
         try:
             tool_version = pkg_version("mcp-audits")
         except PackageNotFoundError:

@@ -6,6 +6,7 @@ import io
 import json
 from pathlib import Path
 
+from pydantic_core import PydanticSerializationError, to_json
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -60,7 +61,19 @@ class ReportGenerator:
         explicit_config: bool = False,
     ) -> None:
         """Select summary/details explicitly, preserving legacy library callers."""
-        report = report.redacted()
+        self._render_redacted_terminal(
+            report.redacted(), verbose, details=details, explicit_config=explicit_config
+        )
+
+    def _render_redacted_terminal(
+        self,
+        report: AuditReport,
+        verbose: bool = False,
+        *,
+        details: bool | None = None,
+        explicit_config: bool = False,
+    ) -> None:
+        """Render a scan-local credential-redacted snapshot."""
         from mcp_audit.terminal_summary import render_summary
 
         if details is not None:
@@ -736,8 +749,18 @@ class ReportGenerator:
 
     def render_json(self, report: AuditReport, path: Path) -> None:
         """Write full AuditReport as JSON to the given path."""
-        redacted = report.redacted().model_dump(mode="json")
-        path.write_text(json.dumps(redacted, indent=2))
+        self._render_redacted_json(report.redacted(), path)
+
+    def _render_redacted_json(self, report: AuditReport, path: Path) -> None:
+        """Serialize a scan-local credential-redacted snapshot."""
+        redacted = report.model_dump(mode="json")
+        try:
+            text = to_json(redacted, indent=2, ensure_ascii=True).decode("ascii")
+        except (TypeError, PydanticSerializationError):
+            # Older Pydantic cores lack ensure_ascii; the stdlib also handles
+            # lone surrogates retained in arbitrary server-supplied schemas.
+            text = json.dumps(redacted, indent=2)
+        path.write_text(text)
         self._console.print(terminal_safe(f"JSON report written to {path}"), style="green")
 
     def _render_policy_result(self, report: AuditReport) -> None:

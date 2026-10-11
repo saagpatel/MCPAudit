@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 from rich.console import Console
 
+from mcp_audit import report as report_module
 from mcp_audit.discovery.claude_code import ClaudeCodeDiscoverer
 from mcp_audit.models import (
     AuditReport,
@@ -31,6 +32,34 @@ from mcp_audit.models import (
 from mcp_audit.report import ReportGenerator, scrub_report_identifiers
 from mcp_audit.taxonomy import finding_copy
 from tests.conftest import make_server_config, make_tool
+
+
+@pytest.mark.parametrize("legacy_core", [False, True])
+@pytest.mark.parametrize("text", ["synthetic café 🙂", "synthetic\ud800"])
+def test_json_encoder_preserves_unicode_and_nonfinite_schema_values(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, legacy_core: bool, text: str
+) -> None:
+    report = AuditReport.model_validate_json(
+        Path("tests/fixtures/reports/sample_audit_report.json").read_text()
+    )
+    report.audits[0].tools = [
+        make_tool(
+            "synthetic-tool",
+            input_schema={"title": text, "enum": [float("nan"), float("inf"), float("-inf"), 1e-7]},
+        )
+    ]
+    expected = json.dumps(report.redacted().model_dump(mode="json"), sort_keys=True)
+    if legacy_core:
+
+        def unsupported_ascii(*args: object, **kwargs: object) -> bytes:
+            raise TypeError("ensure_ascii unavailable")
+
+        monkeypatch.setattr(report_module, "to_json", unsupported_ascii)
+    path = tmp_path / "report.json"
+    ReportGenerator(console=Console(file=io.StringIO())).render_json(report, path)
+    rendered = path.read_text()
+    assert rendered.isascii()
+    assert json.dumps(json.loads(rendered), sort_keys=True) == expected
 
 
 def _make_console() -> tuple[Console, io.StringIO]:

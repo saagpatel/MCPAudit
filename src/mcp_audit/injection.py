@@ -295,9 +295,13 @@ class InjectionDetector:
             )
         return findings
 
-    def scan_tool(self, tool: ToolInfo) -> list[InjectionFinding]:
+    def scan_tool(self, tool: ToolInfo, *, agent_text: AgentText | None = None) -> list[InjectionFinding]:
         """Return all injection findings for a single tool."""
-        return self._scan_fields(CapabilityTarget.TOOL, tool.name, agent_visible_text(tool))
+        return self._scan_fields(
+            CapabilityTarget.TOOL,
+            tool.name,
+            agent_text if agent_text is not None else agent_visible_text(tool),
+        )
 
     def scan_prompt(self, prompt: PromptInfo) -> list[InjectionFinding]:
         """Return all injection findings for a single prompt."""
@@ -488,11 +492,14 @@ class InjectionDetector:
         tools: list[ToolInfo],
         prompts: list[PromptInfo] | None = None,
         resources: list[ResourceInfo] | None = None,
+        *,
+        agent_texts: list[AgentText] | None = None,
     ) -> list[InjectionFinding]:
         """Return all injection findings across all server capabilities."""
         findings: list[InjectionFinding] = []
-        for tool in tools:
-            findings.extend(self.scan_tool(tool))
+        texts = agent_texts if agent_texts is not None else map(agent_visible_text, tools)
+        for tool, text in zip(tools, texts, strict=True):
+            findings.extend(self.scan_tool(tool, agent_text=text))
         for prompt in prompts or []:
             findings.extend(self.scan_prompt(prompt))
         for resource in resources or []:
