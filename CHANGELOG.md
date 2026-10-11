@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Record the two open free-text redaction edge cases and the `pin_min_sequence`
+  CI rollback guard in the known-issues list.
 - Schedule the frozen `cli._run_scan_core` compatibility shim for removal in
   3.0, retaining the existing 2.x compatibility window.
 - Describe `--inject-check` and MCP019 findings in terms of instruction-shaped text.
