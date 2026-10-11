@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from bisect import bisect_left
+from bisect import bisect_left, bisect_right
 from collections.abc import Callable, Iterable, Iterator
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -42,6 +42,10 @@ _LABEL_WORK_FLOOR = 1 << 12
 _WORK_PER_CHAR = 16
 # Delimiter-only or escape-only tokens a window joins between a label and its value.
 _MAX_JOINED = 8
+# Characters that let a value run past whitespace (quotes, a backslash escape).
+_CONTINUING = frozenset("\"'\\")
+# A window edit whose value runs on to the end of the field.
+_TO_FIELD_END = -1
 # Suffix readings enumerated per escape sequence. A longer sequence is not
 # enumerated: every window holding it is ambiguous and withheld, which is
 # never less conservative than enumerating it, and keeps the cost linear.
@@ -774,7 +778,7 @@ def _redaction_edits(
 
 def _reading_outcome(
     value: str, window: list[_Segment], in_run: bytearray, budget: _Budget, suffix: str = ""
-) -> tuple[list[tuple[int, int, str]], bool] | None:
+) -> tuple[list[tuple[int, int, str, int | None]], bool] | None:
     """Detect a window of raw text in every reading of its removed runs.
 
     Each reading is detected like any field: names are judged by
@@ -782,8 +786,13 @@ def _reading_outcome(
     so a flag, label, delimiter or userinfo decision is made over the same
     readings everywhere. Matches map back to raw spans widened over removed
     runs. The boolean reports whether a match reached into ``suffix`` (text
-    after the window). None when the readings cannot be enumerated within the
-    field's remaining ``budget`` or have no per-character raw map.
+    after the window). An edit that reaches the end of the window carries
+    where its value may continue: nowhere (an unquoted value ends at the
+    whitespace there), from a raw offset (a quote or backslash spelled in
+    retained text), or ``_TO_FIELD_END`` when an escape reading or
+    normalization supplied it, so the value's extent depends on that reading.
+    None when the readings cannot be enumerated within the field's remaining
+    ``budget`` or have no per-character raw map.
     """
     start, end = window[0].start, window[-1].end
     # Charge the whole window per reading before building any of them.
@@ -801,7 +810,7 @@ def _reading_outcome(
             right += 1
         return left, right
 
-    edits: list[tuple[int, int, str]] = []
+    edits: list[tuple[int, int, str, int | None]] = []
     claims = False
     for reading in readings:
         if not any(reading.literal):
@@ -820,8 +829,19 @@ def _reading_outcome(
         for left, right, _ in _text_edits(text + suffix, raw=False, labels=frozenset(labels)):
             claims = claims or right > length
             right = min(right, length)
-            if left < right:
-                edits.append((*widen(origins[left], origins[right - 1] + 1), _REDACTED))
+            if left >= right:
+                continue
+            tail: int | None = None
+            if right == length:
+                carried = [index for index in range(left, right) if text[index] in _CONTINUING]
+                # Raw text decides the rest only if it spells these characters itself.
+                if any(in_run[origins[index]] or value[origins[index]] != text[index] for index in carried):
+                    tail = _TO_FIELD_END
+                elif carried:
+                    tail = origins[left]
+                    while tail < end and in_run[tail]:
+                        tail += 1
+            edits.append((*widen(origins[left], origins[right - 1] + 1), _REDACTED, tail))
     return edits, claims
 
 
@@ -871,6 +891,23 @@ def _token_reading_edits(value: str, budget: _Budget) -> Iterator[tuple[int, int
     solid = [len(chunks)] * (len(chunks) + 1)
     for index in range(len(chunks) - 1, -1, -1):
         solid[index] = solid[index + 1] if _joinable(chunks[index]) else index
+    # quoted[k]: chunks before k holding a quote or backslash in any reading.
+    quoted = list(
+        accumulate(
+            (
+                any(char in _CONTINUING for char in normalize_text(value[chunk[0].start : chunk[-1].end]))
+                for chunk in chunks
+            ),
+            initial=0,
+        )
+    )
+    # printable_before[k]: printable run bytes before raw offset k.
+    printable = bytearray(len(value))
+    for segment in segments:
+        for position in segment.choices[-1][1] if segment.choices[0][2] else ():
+            printable[position] = 1
+    printable_before = list(accumulate(printable, initial=0))
+    continuations: dict[int, int] = {}
     for index, chunk in enumerate(chunks):
         last = min(solid[min(index + 1, len(chunks))], len(chunks) - 1)
         if varied[last + 1] == varied[index]:
@@ -882,17 +919,35 @@ def _token_reading_edits(value: str, budget: _Budget) -> Iterator[tuple[int, int
             else None
         )
         if outcome is None:
-            outcome = [(start, end, _REDACTED)], False
-        for left, right, replacement in outcome[0]:
-            if right == end:
-                # A value the window cut short continues as one value, from
-                # its first retained character or the window's last token.
-                for first in (left, chunks[last][0].start):
-                    while first < right and in_run[first]:
-                        first += 1
-                    if first >= left and (match := _VALUE_CONTINUATION.match(value, first)) is not None:
-                        right = max(right, match.end())
+            # Unenumerated: a quote anywhere in the window may open a value
+            # that runs past it, so withhold to the end of the field.
+            tail = _TO_FIELD_END if quoted[last + 1] > quoted[index] else None
+            outcome = [(start, end, _REDACTED, tail)], False
+        for left, right, replacement, tail in outcome[0]:
+            if right == end and tail is not None:
+                right = max(right, _continuation_end(value, tail, continuations, budget, printable_before))
             yield left, right, replacement
+
+
+def _continuation_end(
+    value: str, start: int, known: dict[int, int], budget: _Budget, printable_before: list[int]
+) -> int:
+    """End of the value continuing at raw ``start``, scanned once per offset and charged.
+
+    The scan reads raw text, so it holds only when no escape sequence with
+    printable bytes lies inside it (one could supply a quote or backslash that
+    moves the end). Otherwise, for ``_TO_FIELD_END``, or once the budget is
+    spent, the value runs to the end of the field.
+    """
+    if start == _TO_FIELD_END:
+        return len(value)
+    if (end := known.get(start)) is None:
+        match = _VALUE_CONTINUATION.match(value, start)
+        end = start if match is None else match.end()
+        if not budget.charge(end - start) or printable_before[end] > printable_before[start]:
+            end = len(value)
+        known[start] = end
+    return end
 
 
 def _claims_next_argument(item: str) -> bool:
@@ -950,24 +1005,28 @@ def _view_edits(
             edits.append((*span, replacement))
         # An empty detection match hides only raw bytes removed at its position;
         # a terminator that normalization created there leaves no raw extent.
-        elif raw_map.ambiguous(*span) and not any(
-            left <= span[0] < right for left, right, _ in (*raw_edits, *(covered or ()))
+        elif raw_map.ambiguous(*span) and not (
+            _within(raw_edits, span[0], span[0] + 1) or _within(covered or [], span[0], span[0] + 1)
         ):
             return None
     result = _union_edits(edits)
     for start, end, _ in result:
-        if not raw_map.ambiguous(start, end) or any(
-            left <= start and end <= right for left, right, _ in covered or ()
-        ):
+        if not raw_map.ambiguous(start, end) or _within(covered or [], start, end):
             continue
         # A complete raw value (snapped to retained characters) is withheld in
         # place; any other ambiguous extent withholds the field.
-        if value[start:end].isascii() and any(left <= start and end <= right for left, right, _ in raw_edits):
+        if value[start:end].isascii() and _within(raw_edits, start, end):
             continue
         return None
     # These spans end at raw whitespace, so they need no ambiguity check.
     swallowed = list(_swallowed_delimiter_edits(raw_map, result, labels, budget))
     return _union_edits([*result, *swallowed]) if swallowed else result
+
+
+def _within(edits: list[tuple[int, int, str]], start: int, end: int) -> bool:
+    """``[start, end)`` lies inside one of ``edits`` (sorted, disjoint), found by bisection."""
+    index = bisect_right(edits, start, key=lambda edit: edit[0]) - 1
+    return index >= 0 and edits[index][0] <= start and end <= edits[index][1]
 
 
 _SWALLOWABLE = frozenset("=:@\"'/?#&;,")
@@ -1008,6 +1067,24 @@ def _swallowed_delimiter_edits(
     normalized_names, normalized_ends = _secret_names(normalized, labels)
     raw_names, raw_ends = _secret_names(value)
     normalized_spaces = [index for index, char in enumerate(normalized) if char.isspace()]
+    # solid[k]: the first non-whitespace position at or after k (one backward pass),
+    # so an assignment check after each run is O(1) however long the whitespace.
+    solid = [len(normalized)] * (len(normalized) + 1)
+    for position in range(len(normalized) - 1, -1, -1):
+        solid[position] = solid[position + 1] if normalized[position].isspace() else position
+
+    # token_ends[k]: raw end of the whitespace-free token holding k, in one pass.
+    token_ends = [len(value)] * (len(value) + 1)
+    for position in range(len(value) - 1, -1, -1):
+        token_ends[position] = position if value[position].isspace() else token_ends[position + 1]
+
+    def assignment_at(position: int) -> bool:
+        """``_ASSIGNMENT_PREFIX`` matches at ``position``: an optional quote, spaces, ':' or '='."""
+        if position < len(normalized) and normalized[position] in "\"'":
+            position += 1
+        position = solid[position]
+        return position < len(normalized) and normalized[position] in ":="
+
     raw_spaces = [index for index, char in enumerate(value) if char.isspace()]
     schemes = [match.start() for match in re.finditer("://", normalized)]
     covered = [start for start, _, _ in result]
@@ -1022,7 +1099,7 @@ def _swallowed_delimiter_edits(
         run = value[run_start:index]
         following = bisect_left(starts, run_start)
         # An OSC payload, say, that reads as a label for the assignment after it.
-        label = _ASSIGNMENT_PREFIX.match(normalized, following) is not None and _is_secret_name(run, budget)
+        label = assignment_at(following) and _is_secret_name(run, budget)
         delimiter = (
             label
             or any(char.isspace() or char in _SWALLOWABLE for char in run)
@@ -1035,7 +1112,7 @@ def _swallowed_delimiter_edits(
         if inside:
             # The label and delimiter before this replacement are intact raw
             # text; only its end is in doubt, so extend it through the token.
-            yield result[edit][0], _token_end(value, index), _REDACTED
+            yield result[edit][0], token_ends[index], _REDACTED
             continue
         token_start = _after_last(normalized_spaces, following)
         raw_token_start = _after_last(raw_spaces, run_start)
@@ -1053,7 +1130,7 @@ def _swallowed_delimiter_edits(
         if label:
             anchors.append(run_start)
         if anchors:
-            yield min(anchors), _token_end(value, index), _REDACTED
+            yield min(anchors), token_ends[index], _REDACTED
 
 
 def redact_text(value: str) -> str:
