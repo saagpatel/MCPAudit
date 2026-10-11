@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- Recognize a secret label when an escape sequence consumed one of its
+  letters or delimiters (a CSI or C1 final byte, parameters, an OSC payload,
+  or the byte after a bare ESC) in free text, argv flags, schema property
+  names and defaults, JSON keys, and pin snapshots. Detection also reads the
+  removed bytes literally; ordinary colored text is unchanged.
+- Redact token-only URL userinfo separated from its `@` by spaces, tabs, or
+  Unicode spaces in free text (`https://token @host`). A free-text URL
+  authority followed only by spaces and `@` is now withheld.
+
 ## [2.10.0] - 2026-10-11
 
 ### Upgrade notes

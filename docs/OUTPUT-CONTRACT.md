@@ -23,7 +23,9 @@ whose `Y` is not a numeric port is treated as userinfo and `Y` is withheld,
 whether or not an `@` follows in the same token. A URL cut by a quote or angle
 bracket inside its authority is withheld through its token when the authority
 holds such a password, and up to a later `@` that starts a token on the same
-line. Environment and header configuration retain key
+line. A free-text `scheme://X` authority followed only by spaces (including
+tabs and Unicode spaces) and then `@` is treated as userinfo and `X` is
+withheld. Environment and header configuration retain key
 names only. Any environment/header maps in arbitrary metadata withhold values.
 
 Dynamic JSON keys and schema property names receive credential redaction too.
@@ -44,6 +46,13 @@ the field. Removed bytes may never hide a delimiter: when a removed run holds a
 delimiter, ends in a bare two-byte escape, or follows a secret label, text from
 the first secret label or URL in that whitespace-free token (or from the start
 of an existing replacement there) through the end of the token is withheld.
+A removed run may have consumed printable bytes (a CSI or C1 final byte, its
+parameters, an OSC payload, or the byte after a bare ESC), so detection also
+reads the field with those bytes kept. A label is judged on its raw bytes,
+including adjacent removed runs read either way, and the same judgment applies
+to free text, argv flags, schema property names and their literals, JSON keys,
+and pin snapshots; a label whose readings are too many to enumerate is treated
+as secret.
 Credential values with changed structural delimiters are withheld,
 including introduced whitespace or removed escapes. Unmappable matches or uncertain value
 boundaries withhold the whole field. URL parsing uses raw input; NFKC changes in
