@@ -72,6 +72,11 @@ class ConformancePeer:
             if code is not None
             else ProtocolServer("modern").respond(body)
         )
+        error = response.get("error") if response is not None else None
+        if negative and isinstance(error, dict) and self.mode == "missing-message":
+            del error["message"]
+        elif negative and isinstance(error, dict) and self.mode == "numeric-message":
+            error["message"] = 123
         data = json.dumps(response).encode()
         if negative and self.mode == "oversized":
             data = b"x" * 65_537

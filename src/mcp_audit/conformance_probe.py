@@ -54,7 +54,7 @@ def _error_code(response: _Response) -> int | None:
     if "result" in raw or not isinstance(error, dict):
         return None
     code = error.get("code")
-    return code if type(code) is int else None
+    return code if type(code) is int and isinstance(error.get("message"), str) else None
 
 
 def _modern_control(response: _Response | None) -> bool:

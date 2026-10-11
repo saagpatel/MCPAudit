@@ -103,7 +103,11 @@ async def test_accepting_negative_requests_is_a_failure(peer: ConformancePeer) -
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("peer", ["auth", "redirect", "wrong-error", "oversized"], indirect=True)
+@pytest.mark.parametrize(
+    "peer",
+    ["auth", "redirect", "wrong-error", "oversized", "missing-message", "numeric-message"],
+    indirect=True,
+)
 async def test_incomplete_rejections_remain_unknown(peer: ConformancePeer) -> None:
     report = await run_conformance_probe(_url(peer), 2)
     observations = report["observations"]
