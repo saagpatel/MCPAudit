@@ -273,14 +273,27 @@ ADVERTISED = 'resource_metadata="https://mcp.fixture.test/bad-prm"'
 @pytest.mark.anyio
 @pytest.mark.parametrize(
     "challenge_form",
-    ["plain", "quoted_pairs", "quoted_comma_decoy", "mixed_schemes", "mixed_case_spaced"],
+    [
+        "plain",
+        "quoted_pairs",
+        "quoted_comma_decoy",
+        "mixed_schemes",
+        "mixed_case_spaced",
+        "separate_basic_first",
+        "separate_bearer_first",
+        "empty_between_parameters",
+        "empty_between_challenges",
+        "leading_empty",
+        "trailing_empty",
+        "separate_with_empty_elements",
+    ],
 )
 @pytest.mark.parametrize("rule", ["MCPAUTH003", "MCPAUTH004"])
 async def test_advertised_metadata_not_replaced_by_clean_well_known(
     peer: Peer, challenge_form: str, rule: str
 ) -> None:
     ready(peer)  # Keep clean well-known metadata available to expose an incorrect fallback.
-    forms = {
+    forms: dict[str, str | list[str]] = {
         "plain": f'Bearer {ADVERTISED}, scope="read"',
         # Valid quoted-pairs are decoded once and keep the challenge complete.
         "quoted_pairs": f'Bearer realm="a\\"b\\\\c\\,d", {ADVERTISED}, scope="read"',
@@ -290,6 +303,16 @@ async def test_advertised_metadata_not_replaced_by_clean_well_known(
         ),
         "mixed_schemes": f'Negotiate abc+/==, Basic realm="b", Bearer {ADVERTISED}, scope="read"',
         "mixed_case_spaced": 'bearer Resource_Metadata = "https://mcp.fixture.test/bad-prm" , scope=read',
+        "separate_basic_first": ['Basic realm="b"', f'Bearer {ADVERTISED}, scope="read"'],
+        "separate_bearer_first": [f'Bearer {ADVERTISED}, scope="read"', 'Basic realm="b"'],
+        "empty_between_parameters": f'Bearer scope="read",, \t, {ADVERTISED}',
+        "empty_between_challenges": f'Basic realm="b",, Bearer {ADVERTISED}, scope="read"',
+        "leading_empty": f', \t, Bearer {ADVERTISED}, scope="read"',
+        "trailing_empty": f'Bearer {ADVERTISED}, scope="read", \t,',
+        "separate_with_empty_elements": [
+            ', Basic realm="b",,',
+            f', Bearer {ADVERTISED},, scope="read",',
+        ],
     }
     peer.routes["/mcp"] = (401, {"WWW-Authenticate": forms[challenge_form]}, b"{}")
     peer.document(
@@ -318,6 +341,20 @@ def test_quoted_pairs_are_decoded_exactly_once() -> None:
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("advertised", [False, True])
+async def test_separate_challenge_lines_review_clean_metadata(peer: Peer, advertised: bool) -> None:
+    ready(peer)
+    bearer = f'Bearer {ADVERTISED}, scope="read"' if advertised else 'Bearer scope="read"'
+    peer.routes["/mcp"] = (401, {"WWW-Authenticate": ['Basic realm="b"', bearer]}, b"{}")
+    peer.routes["/bad-prm"] = peer.routes[PRM_PATH]
+    observation, findings = await probe.probe_authorization(RESOURCE)
+    assert not findings
+    assert not observation.warnings
+    metadata_path = "/bad-prm" if advertised else PRM_PATH
+    assert [request[1] for request in peer.requests] == ["/mcp", metadata_path, AS_PATH]
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     "challenge_form",
     [
@@ -329,9 +366,17 @@ def test_quoted_pairs_are_decoded_exactly_once() -> None:
         "conflicting_metadata",
         "metadata_in_two_bearer_challenges",
         "continuation_line",
-        "empty_element",
         "empty_field_line",
-        "trailing_comma",
+        "blank_field_line",
+        "only_empty_elements",
+        "malformed_line_before",
+        "malformed_line_after",
+        "duplicate_metadata_lines",
+        "conflicting_metadata_lines",
+        "metadata_in_basic_line",
+        "parameter_continuation_line",
+        "oversized_line_before",
+        "oversized_line_after",
         "duplicate_parameter",
         "bearer_token68",
         "bare_bearer_then_metadata",
@@ -350,9 +395,26 @@ async def test_unattributable_or_ambiguous_metadata_is_incomplete(peer: Peer, ch
         ),
         "metadata_in_two_bearer_challenges": f'Bearer {ADVERTISED}, scope="read", Bearer {ADVERTISED}',
         "continuation_line": ['Bearer realm="mcp"', f'{ADVERTISED}, scope="read"'],
-        "empty_element": f'Bearer scope="read",, {ADVERTISED}',
         "empty_field_line": ['Bearer scope="read",', ADVERTISED],
-        "trailing_comma": f'Bearer {ADVERTISED}, scope="read",',
+        "blank_field_line": [" \t", f'Bearer {ADVERTISED}, scope="read"'],
+        "only_empty_elements": [", \t,,", f'Bearer {ADVERTISED}, scope="read"'],
+        "malformed_line_before": ['Basic realm="unclosed', f'Bearer {ADVERTISED}, scope="read"'],
+        "malformed_line_after": [f'Bearer {ADVERTISED}, scope="read"', 'Basic realm="b", broken='],
+        "duplicate_metadata_lines": [f'Bearer {ADVERTISED}, scope="read"', f"Bearer {ADVERTISED}"],
+        "conflicting_metadata_lines": [
+            f'Bearer {ADVERTISED}, scope="read"',
+            'Bearer resource_metadata="https://mcp.fixture.test/two"',
+        ],
+        "metadata_in_basic_line": [f"Basic {ADVERTISED}", 'Bearer scope="read"'],
+        "parameter_continuation_line": [f"Bearer {ADVERTISED}", 'scope="read"'],
+        "oversized_line_before": [
+            'Basic realm="' + "x" * probe.MAX_CHALLENGE_FIELD_CHARS + '"',
+            f'Bearer {ADVERTISED}, scope="read"',
+        ],
+        "oversized_line_after": [
+            f'Bearer {ADVERTISED}, scope="read"',
+            'Basic realm="' + "x" * probe.MAX_CHALLENGE_FIELD_CHARS + '"',
+        ],
         "duplicate_parameter": f'Bearer scope="read", {ADVERTISED}, scope="write"',
         "bearer_token68": f"Bearer scope=, {ADVERTISED}",
         "bare_bearer_then_metadata": f"Bearer, {ADVERTISED}",
@@ -854,6 +916,11 @@ def _adversarial_challenges() -> list[str | list[str]]:
         shapes.append(f", Bearer {item}")
         shapes.append(f"Bearer  {item}")
         shapes.append(f"Bearer{item}")
+        shapes.append(['Basic realm="x"', f'Bearer {item}, scope="read"'])
+        shapes.append([f'Bearer {item}, scope="read"', 'Basic realm="x"'])
+        shapes.append([', Basic realm="x",,', f', Bearer {item},, scope="read",'])
+        shapes.append([f'Bearer {item}, scope="read"', f"Bearer {item}"])
+        shapes.append([f'Bearer {item}, scope="read"', 'Basic realm="unclosed'])
     return shapes
 
 
@@ -914,8 +981,10 @@ def test_complete_parse_without_advertisement_permits_well_known(header: str) ->
     assert all("resource_metadata" not in challenge for challenge in challenges)
 
 
-def test_bearer_challenge_cap_is_incomplete() -> None:
-    challenges, incomplete = probe._challenges([", ".join(["Bearer"] * (probe.MAX_BEARER_CHALLENGES + 1))])
+@pytest.mark.parametrize("separate_lines", [False, True])
+def test_bearer_challenge_cap_is_incomplete(separate_lines: bool) -> None:
+    headers = ["Bearer"] * (probe.MAX_BEARER_CHALLENGES + 1)
+    challenges, incomplete = probe._challenges(headers if separate_lines else [", ".join(headers)])
     assert incomplete
     assert len(challenges) == probe.MAX_BEARER_CHALLENGES
 
