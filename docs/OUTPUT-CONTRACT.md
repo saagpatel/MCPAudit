@@ -1688,7 +1688,12 @@ browser, OAuth, MCP, account, keychain, or credential-store path exists.
 
 A passing report proves only the implemented binding invariants in the
 supplied synthetic transcript. The PKCE rule checks the recorded S256 method
-and redacted challenge/verifier markers; it does not establish cryptographic
+and redacted challenge/verifier markers. Omitted PKCE fields are unrecorded
+evidence (`MCPOAUTH000`, unknown); explicit nulls record observed absence and
+non-S256 methods record noncompliance (`MCPOAUTH008`, violation). Authorization
+error responses participate in flow ordering; code redemption without a
+successful response in an error-only flow is contradictory evidence
+(`MCPOAUTH000`, unknown). The PKCE rule does not establish cryptographic
 correspondence. A report does not prove token signature validity,
 client-authentication strength, IdP integrity, consent,
 real-world authorization, or production security. See

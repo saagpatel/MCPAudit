@@ -26,7 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   loopback-only Origin probes, with bounded credential-free requests and
   explicit unknown results when conformance evidence is unavailable.
 - Extend the offline OAuth transcript lab with an S256 PKCE finding and
-  issuer validation for authorization error responses.
+  issuer validation for authorization error responses. Validate error-flow
+  ordering and contradictory code redemption, keep unrecorded PKCE evidence
+  unknown, and include the PKCE finding in the SARIF rule catalog.
 
 ### Tests
 
