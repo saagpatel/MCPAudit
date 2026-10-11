@@ -618,9 +618,10 @@ satisfies `require.pins`, and enabled baseline-comparison gates (`fail_on.drift`
 HIGH violation stating that their comparison was withheld. When the scan did not
 verify a server (no pin-based check ran), `fail_on.pin_integrity` verifies the
 selected pin store directly. Policies without signed pins, and report
-`schema_version`, are unchanged. Legacy v1 pins always warn (`pin_schema_outdated`)
-and never produce `MCP027`; they remain the comparison baseline only while no key
-is trusted. With a trusted key they are unauthenticated, so their baseline is
+`schema_version`, are unchanged. Genuine legacy v1 pins warn (`pin_schema_outdated`)
+and do not produce `MCP027` unless signing expectations or a signed manifest with
+missing trust establish a failure; they remain the comparison baseline only while
+no key is trusted. With a trusted key they are unauthenticated, so their baseline is
 withheld (`pin_baseline_withheld`, no drift/escalation/canary/provenance
 comparison, `require.pins` unmet, enabled comparison gates fail). A v1 entry for a
 server with a recorded signing expectation or rollback high-water mark is a
@@ -658,8 +659,28 @@ public-key-only CI with no per-server expectation. Writers refuse an invalid
 manifest or one listing missing entries (restore them or `pin --clear` each);
 a file with no manifest yet gets one on its first signed write, so after
 `pin keygen` run `pin rotate-key --resign` (or re-pin) to sign one. Clearing a
-signed server needs the signing key while keys are trusted. Without trusted keys
-the manifest is optional and ignored.
+signed server needs the signing key while keys are trusted. An unsigned workflow
+without trusted keys does not require a manifest. A manifest carrying a signature
+still requires independent trust: a missing trust store makes it invalid and
+produces HIGH `MCP027` (`untrusted_signer` for untrusted signed entries,
+otherwise `tampered_entry`) for scanned servers, including missing
+entries and legacy substitutes, with all saved-baseline comparisons withheld.
+
+Newly signed manifests also contain a signed positive-integer `sequence`, starting
+at 1 and incrementing on every signed pin-file write, including re-sign, rotation
+and signed clear. Writers read the previous value under the pin-file lock. An
+older manifest without `sequence` remains valid without a minimum requirement;
+its next signed write starts at 1. Altering or stripping a signed sequence fails
+manifest verification. This is a per-file write counter, not external history:
+restoring an older file before signing can reuse a previously issued sequence.
+`require.pin_min_sequence: N` and `scan`/`check --pin-min-sequence N` require an
+independently trusted, verified manifest with sequence >= the positive integer N.
+Missing, invalid, unsigned, untrusted and sequence-less manifests fail this gate,
+even with no scanned servers. When both minima are set, the higher one applies.
+Failure adds a HIGH `policy_result.violations` entry with rule
+`require.pin_min_sequence` and returns policy exit 2; no new per-server verification
+state or report field is introduced, and `schema_version` is unchanged. Keep the
+minimum protected separately from the pin file to resist rollback of both.
 Verification uses the separate trusted public-key store,
 never an embedded public key or a private signing key.
 

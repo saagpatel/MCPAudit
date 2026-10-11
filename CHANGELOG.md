@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Signed pin manifests carry a monotonic `sequence`; `require.pin_min_sequence`
+  and `--pin-min-sequence` reject older or unauthenticated baselines in CI.
 - Lint GitHub Actions workflows on every pull request with a checksum-verified,
   pinned actionlint binary.
 
@@ -18,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A signed pin manifest still produces `MCP027` when its separate trust store
+  is missing, preventing trust-store deletion from bypassing verification.
 - Keep long string parameters out of generated pytest IDs to avoid oversized collection output.
 
 ## [2.9.0] - 2026-10-10

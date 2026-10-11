@@ -33,3 +33,17 @@ returns a nonzero status after requested artifacts are written. See the
 
 Connected checks can execute configured local programs or contact endpoints.
 Enable them only in a workflow where that reach is intended and reviewed.
+
+For signed pins in one-shot CI, provision the public key through a trusted
+channel, then require a signed manifest sequence in protected policy or with
+`--pin-min-sequence`:
+
+```sh
+mcp-audit scan --config ./fixture.json --config-only --skip-connect \
+  --override-config /dev/null --pin-file ./pins.yaml --pin-min-sequence 12
+```
+
+An older, missing, untrusted, or sequence-less manifest fails with policy exit
+status 2, including when no servers are configured. Persisting the separate
+trust store retains per-server timestamp history and signing expectations;
+see [pinning](pinning.md) for storage protection and migration details.
