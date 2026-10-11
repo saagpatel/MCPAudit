@@ -171,11 +171,20 @@ def _url_edits(value: str, *, raw: bool = True) -> Iterator[tuple[int, int, str]
         yield 0, len(value), _REDACTED
         return
     userinfo = _URL_USERINFO.match(value)
-    if userinfo is not None:
-        yield userinfo.end(1), userinfo.end() - 1, _REDACTED
     base, fragment_marker, _fragment = value.partition("#")
     base, query_marker, query = base.partition("?")
     scheme_end = base.index("://") + 3
+    if userinfo is not None:
+        yield userinfo.end(1), userinfo.end() - 1, _REDACTED
+    else:
+        # 'X:Y' in a netloc is userinfo unless Y is a port: in free text a
+        # password can be cut from its '@' (a space before it, say).
+        authority_end = base.find("/", scheme_end) % (len(base) + 1)
+        authority = base[scheme_end:authority_end]
+        colon = authority.find(":", authority.find("]") + 1 if authority.startswith("[") else 0)
+        port = authority[colon + 1 :]
+        if colon >= 0 and port and not port.isdigit():
+            yield scheme_end + colon + 1, authority_end, _REDACTED
     path_start = base.find("/", scheme_end)
     if path_start >= 0:
         offset = path_start + 1
@@ -402,8 +411,6 @@ def _redaction_edits(
     if normalized == value:
         return raw_edits
     normalized_edits = list(_text_edits(normalized, raw=False))
-    if not normalized_edits and not raw_edits and _URL.search(normalized) is None:
-        return []
     normalized, origins = _normalized_view(value)
     if origins is None:
         return None
@@ -438,7 +445,84 @@ def _redaction_edits(
         if value[start:end].isascii() and any(left <= start and end <= right for left, right, _ in raw_edits):
             continue
         return None
-    return result
+    # These spans end at raw whitespace, so they need no ambiguity check.
+    swallowed = list(_swallowed_delimiter_edits(raw_map, result))
+    return _union_edits([*result, *swallowed]) if swallowed else result
+
+
+_SWALLOWABLE = frozenset("=:@\"'/?#&;,")
+
+
+def _secret_names(text: str) -> tuple[list[int], dict[int, int]]:
+    """Starts of secret label words, and each one's start keyed by its end."""
+    names = [name for name in _NAME_TOKEN.finditer(text) if _is_secret_name(name.group())]
+    return [name.start() for name in names], {name.end(): name.start() for name in names}
+
+
+def _after_last(positions: list[int], limit: int) -> int:
+    """Index just after the last listed position before ``limit`` (a token start)."""
+    index = bisect_left(positions, limit)
+    return positions[index - 1] + 1 if index else 0
+
+
+def _swallowed_delimiter_edits(
+    raw_map: _RawMap, result: list[tuple[int, int, str]]
+) -> Iterator[tuple[int, int, str]]:
+    """Removed bytes may never hide a delimiter next to a credential.
+
+    For each run of raw bytes that detection removed: if it holds a structural
+    delimiter, ends in a bare two-byte escape (whose extent terminals read
+    differently), or directly follows a secret label word, withhold from the
+    first secret label or URL in its whitespace-free token (or a raw label
+    inside the run) through the end of that token. A run inside an existing
+    replacement only matters for the first two reasons, which can end it
+    early; that replacement then extends through the token, keeping its
+    intact raw label.
+    """
+    value, normalized, starts = raw_map.value, raw_map.normalized, raw_map.starts
+    normalized_names, normalized_ends = _secret_names(normalized)
+    raw_names, raw_ends = _secret_names(value)
+    normalized_spaces = [index for index, char in enumerate(normalized) if char.isspace()]
+    raw_spaces = [index for index, char in enumerate(value) if char.isspace()]
+    schemes = [match.start() for match in re.finditer("://", normalized)]
+    covered = [start for start, _, _ in result]
+    index, length = 0, len(value)
+    while index < length:
+        if raw_map.retained[index]:
+            index += 1
+            continue
+        run_start = index
+        while index < length and not raw_map.retained[index]:
+            index += 1
+        run = value[run_start:index]
+        delimiter = any(char.isspace() or char in _SWALLOWABLE for char in run) or (
+            len(run) >= 2 and run[-2] == "\x1b" and run[-1] not in "[]"
+        )
+        following = bisect_left(starts, run_start)
+        edit = bisect_left(covered, run_start + 1) - 1
+        inside = edit >= 0 and index <= result[edit][1]
+        if not delimiter and (inside or (following not in normalized_ends and run_start not in raw_ends)):
+            continue
+        if inside:
+            # The label and delimiter before this replacement are intact raw
+            # text; only its end is in doubt, so extend it through the token.
+            yield result[edit][0], _token_end(value, index), _REDACTED
+            continue
+        token_start = _after_last(normalized_spaces, following)
+        raw_token_start = _after_last(raw_spaces, run_start)
+        anchors: list[int] = []
+        name = bisect_left(normalized_names, token_start)
+        if name < len(normalized_names) and normalized_names[name] < following:
+            anchors.append(raw_map.origins[normalized_names[name]][0])
+        scheme = bisect_left(schemes, token_start)
+        if scheme < len(schemes) and schemes[scheme] < following:
+            anchors.append(raw_map.origins[token_start][0])
+        name = bisect_left(raw_names, raw_token_start)
+        # A raw label inside the removed run counts too (an OSC payload, say).
+        if name < len(raw_names) and raw_names[name] < index:
+            anchors.append(raw_names[name])
+        if anchors:
+            yield min(anchors), _token_end(value, index), _REDACTED
 
 
 def redact_text(value: str) -> str:
