@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pinned actionlint binary.
 - Signed pin manifests carry a monotonic `sequence`; `require.pin_min_sequence`
   and `--pin-min-sequence` reject older or unauthenticated baselines in CI.
+- Add opt-in `lab --conformance-probe --url URL` negative MCP header and
+  loopback-only Origin probes, with bounded credential-free requests and
+  explicit unknown results when conformance evidence is unavailable.
 
 ### Tests
 
