@@ -34,7 +34,7 @@ def _tool_json(result: object) -> Any:
     """Decode the stable structured result emitted by an MCPAudit tool."""
     structured = getattr(result, "structured_content", None)
     assert isinstance(structured, dict)
-    assert set(structured) == {"result"}
+    assert set(structured) in ({"result"}, {"result", "warnings"})
     raw = structured["result"]
     assert isinstance(raw, str)
     return json.loads(raw)
@@ -381,6 +381,7 @@ def _report_with(audits: list[ServerAudit], warnings: list[ScanWarning] | None =
 
 
 def _stub_run_scan(monkeypatch: pytest.MonkeyPatch, report: AuditReport) -> dict[str, ScanOptions]:
+    import mcp_audit.overrides as overrides_module
     import mcp_audit.server as server_module
 
     seen: dict[str, ScanOptions] = {}
@@ -390,6 +391,7 @@ def _stub_run_scan(monkeypatch: pytest.MonkeyPatch, report: AuditReport) -> dict
         return report
 
     monkeypatch.setattr(server_module, "run_scan", fake_run_scan)
+    monkeypatch.setattr(overrides_module, "load_override_config", lambda: OverrideConfig())
     return seen
 
 
@@ -521,27 +523,36 @@ async def test_get_high_risk_servers_filters_by_composite_and_retains_list_contr
     _stub_run_scan(monkeypatch, _report_with(audits, warnings=warnings))
 
     app = _build_mcp_server()
-    payload = _tool_json(await app.call_tool("get_high_risk_servers", {}))
+    result = await app.call_tool("get_high_risk_servers", {})
+    payload = _tool_json(result)
 
     assert isinstance(payload, list)
     assert payload == [{"name": "risky", "score": 9.1}]
     assert payload[0]["name"] == "risky"
+    assert result.structured_content["warnings"] == [warning.model_dump() for warning in warnings]
 
 
 @pytest.mark.anyio
-async def test_get_high_risk_servers_returns_empty_list_with_coverage_warning(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize("tool_name", ["get_high_risk_servers", "list_discovered_servers"])
+async def test_list_tools_return_empty_list_with_coverage_warning(
+    monkeypatch: pytest.MonkeyPatch, tool_name: str
 ) -> None:
+    import mcp_audit.server as server_module
+
     warning = ScanWarning(
         code="project_config_not_connected", message="Synthetic project config not connected."
     )
     _stub_run_scan(monkeypatch, _report_with([], warnings=[warning]))
+    monkeypatch.setattr(server_module, "discover_all_configs", lambda *args: [])
     app = _build_mcp_server()
-    assert _tool_json(await app.call_tool("get_high_risk_servers", {})) == []
-    tool = next(tool for tool in await app.list_tools() if tool.name == "get_high_risk_servers")
-    assert "project_config_not_connected" in tool.description
-    assert "scan_mcp_servers" in tool.description
-    assert "get_*_findings" in tool.description
+    result = await app.call_tool(tool_name, {})
+    assert _tool_json(result) == []
+    assert result.structured_content["warnings"] == [warning.model_dump()]
+    assert json.loads(result.content[0].text) == []
+    assert json.loads(result.content[1].text) == {"warnings": [warning.model_dump()]}
+    tool = next(tool for tool in await app.list_tools() if tool.name == tool_name)
+    assert "structuredContent.warnings" in tool.description
+    assert set(tool.output_schema["properties"]) == {"result", "warnings"}
 
 
 @pytest.mark.anyio
@@ -549,6 +560,8 @@ async def test_get_high_risk_servers_returns_empty_list_with_coverage_warning(
     "tool_name",
     [
         "scan_mcp_servers",
+        "get_high_risk_servers",
+        "list_discovered_servers",
         "check_server",
         "get_injection_findings",
         "get_ssrf_findings",
@@ -578,7 +591,13 @@ async def test_all_audit_tools_preserve_project_connection_warning(
     _stub_run_scan(monkeypatch, _report_with([audit], warnings=[warning]))
     monkeypatch.setattr(server_module, "discover_all_configs", lambda *args: [config])
     arguments = {"name": config.name} if tool_name == "check_server" else {}
-    payload = _tool_json(await _build_mcp_server().call_tool(tool_name, arguments))
+    result = await _build_mcp_server().call_tool(tool_name, arguments)
+    payload = _tool_json(result)
+    if tool_name in {"get_high_risk_servers", "list_discovered_servers"}:
+        assert result.structured_content["warnings"] == [warning.model_dump()]
+        assert json.loads(result.content[0].text) == payload
+        assert json.loads(result.content[1].text) == {"warnings": [warning.model_dump()]}
+        return
     assert payload["warnings"] == [warning.model_dump()]
     if tool_name == "check_server":
         assert {key: value for key, value in payload.items() if key != "warnings"} == audit.model_dump(
@@ -586,6 +605,47 @@ async def test_all_audit_tools_preserve_project_connection_warning(
         )
     elif tool_name.startswith("get_"):
         assert payload["findings"] == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("tool_name", ["get_high_risk_servers", "list_discovered_servers"])
+async def test_list_tools_report_real_project_skip_without_connecting(
+    monkeypatch: pytest.MonkeyPatch, tool_name: str
+) -> None:
+    import mcp_audit.engine as engine_module
+    import mcp_audit.overrides as overrides_module
+    import mcp_audit.server as server_module
+    from mcp_audit.connector import ServerConnector
+
+    config = make_server_config(command="synthetic-project-server", args=["--token", "synthetic-value"])
+    config.scope = "project"
+
+    def discover(
+        clients: list[ClientType] | None = None,
+        parse_errors: list[ConfigParseError] | None = None,
+    ) -> list[ServerConfig]:
+        return [config]
+
+    async def unexpected_connect(self: ServerConnector, server: ServerConfig) -> ServerAudit:
+        pytest.fail("project server must not be connected")
+
+    monkeypatch.setattr(server_module, "discover_all_configs", discover)
+    monkeypatch.setattr(engine_module, "discover_all_configs", discover)
+    monkeypatch.setattr(overrides_module, "load_override_config", lambda: OverrideConfig())
+    monkeypatch.setattr(ServerConnector, "connect", unexpected_connect)
+
+    result = await _build_mcp_server().call_tool(tool_name, {})
+    [warning] = result.structured_content["warnings"]
+    assert warning["code"] == "project_config_not_connected"
+    assert warning["check"] == "connection"
+    assert warning["servers"] == [config.name]
+    assert "synthetic-project-server --token <redacted>" in warning["message"]
+    assert "synthetic-value" not in result.model_dump_json()
+    assert json.loads(result.content[1].text) == {"warnings": [warning]}
+    if tool_name == "get_high_risk_servers":
+        assert _tool_json(result) == []
+    else:
+        assert _tool_json(result) == [{"name": config.name, "client": "claude_code", "transport": "stdio"}]
 
 
 def _record_named_scan(

@@ -7,8 +7,8 @@ security-significant escalations:
                                    it did not hold when pinned.  HIGH when the
                                    gained category is exfiltration/shell_execution/
                                    destructive; MEDIUM for file_write/network.
-  MCP019 (DESCRIPTION_INJECTION) — a tool's description GAINED prompt-injection
-                                   pattern(s) absent from the pinned baseline.
+  MCP019 (DESCRIPTION_INJECTION) — a tool's description GAINED instruction-shaped
+                                   text absent from the pinned baseline.
 
 This is the temporal / supply-chain layer: a previously-trusted MCP server that
 ships an update quietly broadening its capability surface or mutating its
@@ -269,8 +269,8 @@ class EscalationAnalyzer:
                 tool_name=current.name,
                 gained_patterns=gained_sorted,
                 description=(
-                    f"Tool '{safe_tool_name}' on server '{safe_server_name}' gained prompt-injection "
-                    f"pattern(s) [{gained_str}] in its description vs the pin baseline."
+                    f"Tool '{safe_tool_name}' on server '{safe_server_name}' gained instruction-shaped "
+                    f"text patterns [{gained_str}] in its description vs the pin baseline."
                 ),
             )
         ]

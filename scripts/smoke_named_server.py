@@ -184,6 +184,17 @@ def payload(result: dict[str, Any]) -> Any:
     return json.loads(content[0]["text"])
 
 
+def list_payload(result: dict[str, Any]) -> Any:
+    # H-4: list tools keep the legacy JSON list first and add a coverage-warnings block.
+    assert result.get("isError", False) is False, result
+    content = result["content"]
+    assert len(content) == 2 and all(block["type"] == "text" for block in content), content
+    warnings = json.loads(content[1]["text"])
+    assert set(warnings) == {"warnings"} and isinstance(warnings["warnings"], list), warnings
+    assert result["structuredContent"]["warnings"] == warnings["warnings"], result
+    return json.loads(content[0]["text"])
+
+
 def audit_contract(audit: dict[str, Any], status: str = "connected") -> None:
     # P3-2: `protocol` is additive and present only when an SDK session was negotiated.
     expected = AUDIT_FIELDS | ({"protocol"} if status == "connected" else set())
@@ -377,7 +388,7 @@ async def run_case(executable: Path, mock: Path, case: str) -> int:
                 assert expected_reason in text
                 assert "PRIVATE_PARSE_SENTINEL" not in text and str(root) not in text
                 # A rejected tools/call must leave the session usable.
-                assert isinstance(payload(await session.call("list_discovered_servers", {})), list)
+                assert isinstance(list_payload(await session.call("list_discovered_servers", {})), list)
             assert startup_counts(markers) == expected, (case, startup_counts(markers))
         finally:
             try:
