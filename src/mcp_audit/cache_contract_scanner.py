@@ -46,6 +46,8 @@ from mcp_audit.cache_contract_models import (
     UseEvent,
     canonical_json_bytes,
 )
+from mcp_audit.canonical import compact_json_bytes
+from mcp_audit.lab_primitives import read_bounded_descriptor, strict_json_loads
 
 SUPPORTED_METHODS: Final = frozenset(
     {
@@ -202,14 +204,8 @@ def _event_target(sequence: int) -> str:
     return f"event:{sequence}"
 
 
-def _json_bytes(value: Any) -> bytes:
-    return json.dumps(
-        value,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-        allow_nan=False,
-    ).encode("utf-8")
+def _json_bytes(value: object) -> bytes:
+    return compact_json_bytes(value)
 
 
 def _request_key(request: CacheRequest) -> tuple[str, str, str]:
@@ -236,19 +232,6 @@ def _trace_digest(trace: CacheTrace) -> str:
 
 def _raw_digest(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
-
-
-def _reject_nonstandard_constant(value: str) -> None:
-    raise ValueError(f"non-standard JSON constant: {value}")
-
-
-def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    value: dict[str, Any] = {}
-    for key, child in pairs:
-        if key in value:
-            raise ValueError("duplicate JSON object key")
-        value[key] = child
-    return value
 
 
 def _validate_json_limits(value: Any, depth: int = 0) -> None:
@@ -303,11 +286,7 @@ def scan_cache_bytes(raw: bytes) -> CacheAuditReport:
     if len(raw) > MAX_INPUT_BYTES:
         return _unknown_report(raw, "input_size_limit_exceeded")
     try:
-        payload = json.loads(
-            raw,
-            parse_constant=_reject_nonstandard_constant,
-            object_pairs_hook=_reject_duplicate_keys,
-        )
+        payload = strict_json_loads(raw)
         _validate_json_limits(payload)
         trace = CacheTrace.model_validate(payload)
         for event in trace.events:
@@ -359,15 +338,7 @@ def scan_cache_path(path: Path) -> CacheAuditReport:
             raise CacheContractInputError("cache trace input is not a regular file")
         if (metadata.st_dev, metadata.st_ino) != (opened.st_dev, opened.st_ino):
             raise CacheContractInputError("cache trace identity changed before it was opened")
-        chunks: list[bytes] = []
-        remaining = MAX_INPUT_BYTES + 1
-        while remaining > 0:
-            chunk = os.read(descriptor, min(65_536, remaining))
-            if not chunk:
-                break
-            chunks.append(chunk)
-            remaining -= len(chunk)
-        raw = b"".join(chunks)
+        raw = read_bounded_descriptor(descriptor, MAX_INPUT_BYTES)
         finished = os.fstat(descriptor)
     except OSError as exc:
         raise CacheContractInputError("cannot read cache trace input") from exc

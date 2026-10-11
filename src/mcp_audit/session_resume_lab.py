@@ -13,6 +13,7 @@ from typing import Final, Literal
 
 from pydantic import ValidationError
 
+from mcp_audit.lab_primitives import read_bounded_descriptor, strict_json_loads
 from mcp_audit.session_resume_models import (
     MAX_INPUT_BYTES,
     MAX_JSON_DEPTH,
@@ -69,10 +70,6 @@ class SessionResumeInputError(ValueError):
     """A bounded, sanitized input-contract failure."""
 
 
-class _DuplicateKeyError(ValueError):
-    pass
-
-
 @dataclass
 class _RequestState:
     successful_sends: int = 0
@@ -97,15 +94,6 @@ class _EventState:
     replay_available: bool = True
 
 
-def _reject_duplicate_keys(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise _DuplicateKeyError("duplicate JSON object key")
-        result[key] = value
-    return result
-
-
 def _json_depth(value: object, depth: int = 0) -> int:
     if depth > MAX_JSON_DEPTH:
         return depth
@@ -120,8 +108,8 @@ def _parse_scenario_bytes(raw: bytes) -> SessionResumeScenario:
     if len(raw) > MAX_INPUT_BYTES:
         raise SessionResumeInputError(f"scenario exceeds {MAX_INPUT_BYTES} bytes")
     try:
-        payload = json.loads(raw, object_pairs_hook=_reject_duplicate_keys)
-    except (UnicodeDecodeError, json.JSONDecodeError, _DuplicateKeyError, RecursionError) as exc:
+        payload = strict_json_loads(raw)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError, RecursionError) as exc:
         raise SessionResumeInputError("scenario is not valid bounded JSON") from exc
     if _json_depth(payload) > MAX_JSON_DEPTH:
         raise SessionResumeInputError(f"scenario exceeds {MAX_JSON_DEPTH} JSON levels")
@@ -153,15 +141,7 @@ def load_scenario_path(path: Path) -> SessionResumeScenario:
                 metadata.st_ino,
             ):
                 raise SessionResumeInputError("scenario identity changed during bounded read")
-            chunks: list[bytes] = []
-            remaining = MAX_INPUT_BYTES + 1
-            while remaining > 0:
-                chunk = os.read(descriptor, remaining)
-                if not chunk:
-                    break
-                chunks.append(chunk)
-                remaining -= len(chunk)
-            raw = b"".join(chunks)
+            raw = read_bounded_descriptor(descriptor, MAX_INPUT_BYTES)
             after = os.fstat(descriptor)
             opened_identity = (
                 opened.st_dev,
@@ -191,8 +171,8 @@ def load_builtin_scenarios() -> dict[str, SessionResumeScenario]:
 
     try:
         raw = resources.files("mcp_audit").joinpath("session_resume_scenarios_v1.json").read_bytes()
-        payload = json.loads(raw, object_pairs_hook=_reject_duplicate_keys)
-    except (OSError, json.JSONDecodeError, _DuplicateKeyError, RecursionError) as exc:
+        payload = strict_json_loads(raw)
+    except (OSError, json.JSONDecodeError, ValueError, RecursionError) as exc:
         raise SessionResumeInputError("built-in scenario corpus is unavailable or malformed") from exc
     if not isinstance(payload, dict) or set(payload) != {"schema_version", "scenarios"}:
         raise SessionResumeInputError("built-in scenario corpus has an invalid envelope")
