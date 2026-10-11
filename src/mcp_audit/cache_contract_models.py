@@ -7,11 +7,12 @@ only long enough to evaluate the bounded observable rules.
 
 from __future__ import annotations
 
-import json
 from enum import StrEnum
 from typing import Annotated, Any, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from mcp_audit.lab_primitives import model_json_bytes
 
 TRACE_SCHEMA: Final = "mcpaudit.cache-contract.trace.v1"
 REPORT_SCHEMA: Final = "mcpaudit.cache-contract.report.v1"
@@ -189,20 +190,5 @@ class CacheAuditReport(StrictModel):
 
 
 def canonical_json_bytes(value: BaseModel | dict[str, Any] | list[Any]) -> bytes:
-    """Return compact, sorted UTF-8 JSON with one terminal newline."""
-
-    payload: dict[str, Any] | list[Any]
-    if isinstance(value, BaseModel):
-        payload = value.model_dump(mode="json")
-    else:
-        payload = value
-    return (
-        json.dumps(
-            payload,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-            allow_nan=False,
-        ).encode("utf-8")
-        + b"\n"
-    )
+    """Return canonical UTF-8 bytes with one terminal newline."""
+    return model_json_bytes(value)
