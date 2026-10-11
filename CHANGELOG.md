@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add opt-in `lab --conformance-probe --url URL` negative MCP header and
+  loopback-only Origin probes, with bounded credential-free requests and
+  explicit unknown results when conformance evidence is unavailable.
 - Lint GitHub Actions workflows on every pull request with a checksum-verified,
   pinned actionlint binary.
 
