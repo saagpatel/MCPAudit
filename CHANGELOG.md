@@ -46,7 +46,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   withhold free-text URLs whose credential component a quote or angle bracket
   cut short. Withhold the token around any removed escape that hides a
   delimiter next to a credential, and treat a non-numeric netloc `:` suffix as
-  a URL password even when whitespace separates it from `@`.
+  a URL password even when whitespace separates it from `@`, including after
+  a quote or angle bracket cuts the authority.
 
 ## [2.9.0] - 2026-10-10
 

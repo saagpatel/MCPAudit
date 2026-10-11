@@ -20,7 +20,10 @@ URL-field redaction. In free text, a URL that a quote or angle bracket cuts
 short inside its query, fragment, userinfo, or a trailing path assignment is
 withheld through the end of its token. A free-text `scheme://X:Y` authority
 whose `Y` is not a numeric port is treated as userinfo and `Y` is withheld,
-whether or not an `@` follows in the same token. Environment and header configuration retain key
+whether or not an `@` follows in the same token. A URL cut by a quote or angle
+bracket inside its authority is withheld through its token when the authority
+holds such a password, and up to a later `@` that starts a token on the same
+line. Environment and header configuration retain key
 names only. Any environment/header maps in arbitrary metadata withhold values.
 
 Dynamic JSON keys and schema property names receive credential redaction too.
