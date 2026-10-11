@@ -238,15 +238,20 @@ class PinStore:
     def verification(self, server_name: str) -> PinVerification | None:
         """Verify an entry before exposing any saved baseline to a consumer.
 
-        Entry-level verification, then (while trusted keys exist) the signed
-        document manifest: deleted, renamed, or spliced-in signed entries, and a
-        missing or invalid manifest, are all ``tampered_entry``.
+        Entry-level verification, then the document manifest while trusted keys
+        exist or the manifest carries a signature. Deleted, renamed, or spliced-in
+        signed entries and a missing or invalid manifest are ``tampered_entry``;
+        an entry's untrusted-signer diagnosis is retained when no key is usable.
         """
         if server_name in self._verification:
             return self._verification[server_name]
         result = self._entry_verification(server_name)
         violation = self._manifest_violation(server_name)
-        if violation is not None:
+        if violation is not None and not (
+            result is not None
+            and result.state == PinVerificationState.UNTRUSTED_SIGNER
+            and not self._keys_trusted()
+        ):
             result = PinVerification(state=PinVerificationState.TAMPERED_ENTRY)
             self._verification_messages[server_name] = violation
             self._rollback_warnings.pop(server_name, None)
@@ -413,8 +418,11 @@ class PinStore:
                     and raw.get("schema") == PIN_MANIFEST_SCHEMA
                     and isinstance(raw.get("servers"), dict)
                     and all(isinstance(k, str) and isinstance(v, str) for k, v in raw["servers"].items())
+                    and ("sequence" not in raw or (type(raw["sequence"]) is int and raw["sequence"] > 0))
                 ):
                     document = {"schema": PIN_MANIFEST_SCHEMA, "servers": raw["servers"]}
+                    if "sequence" in raw:
+                        document["sequence"] = raw["sequence"]
                     try:
                         verified = verify_document(
                             document, raw, self._trusted_keys_path, server_name="<pin manifest>"
@@ -426,15 +434,28 @@ class PinStore:
                 self._manifest_cache = (state, listed)
         return self._manifest_cache
 
+    def verified_manifest_sequence(self) -> int | None:
+        """Return the authenticated sequence, never an unverified claimed value.
+
+        Pre-sequence manifests remain verifiable but cannot satisfy a CI minimum.
+        """
+        if self._manifest()[0] != "valid":
+            return None
+        raw = self._data.get("manifest")
+        sequence = raw.get("sequence") if isinstance(raw, dict) else None
+        return sequence if type(sequence) is int else None
+
     def _manifest_violation(self, server_name: str) -> str | None:
         """Why the signed manifest makes this server untrusted, or None."""
-        if not self._keys_trusted():
-            return None  # Unsigned workflows: the manifest is optional and ignored.
+        raw = self._data.get("manifest")
+        signed_manifest = isinstance(raw, dict) and "signature" in raw
+        if not self._keys_trusted() and not signed_manifest:
+            return None  # Unsigned workflows: the manifest is optional.
         state, listed = self._manifest()
         entry = self._data.get("servers", {}).get(server_name)
         legacy = isinstance(entry, dict) and "signature" not in entry and _is_legacy_entry(entry)
         if state != "valid":
-            if legacy:
+            if legacy and (not signed_manifest or self._keys_trusted()):
                 return None  # D8: genuine v1 warns (and is withheld), never MCP027.
             if state == "absent":
                 return (
@@ -478,10 +499,10 @@ class PinStore:
     def _check_manifest_writable(self, *, removing: str | None = None) -> None:
         from mcp_audit.pin_signing import PinSigningError
 
-        if not self._keys_trusted():
+        if not self._keys_trusted() and "manifest" not in self._data:
             return
         state, listed = self._manifest()
-        if state == "invalid":
+        if "manifest" in self._data and state != "valid":
             raise PinSigningError(
                 "Cannot write through a pin file whose signed manifest fails verification; "
                 "restore it from backup."
@@ -496,7 +517,7 @@ class PinStore:
 
     def _sign_manifest(self) -> None:
         """Sign the set of signed entries (with their digests) into the pin file."""
-        from mcp_audit.pin_signing import sign_document
+        from mcp_audit.pin_signing import PinSigningError, sign_document
 
         servers: dict[str, Any] = self._data.get("servers", {})
         signed = {
@@ -506,7 +527,12 @@ class PinStore:
             and "signature" in entry
             and isinstance(entry.get("surface_sha256"), str)
         }
-        document = {"schema": PIN_MANIFEST_SCHEMA, "servers": signed}
+        if "manifest" in self._data and self._manifest()[0] != "valid":
+            raise PinSigningError(
+                "Cannot advance an unverified pin manifest sequence; restore it from backup."
+            )
+        sequence = self.verified_manifest_sequence() or 0
+        document = {"schema": PIN_MANIFEST_SCHEMA, "servers": signed, "sequence": sequence + 1}
         self._data["manifest"] = {**document, **sign_document(document, self._signing_key)}
         self._manifest_cache = None
 
@@ -1052,13 +1078,10 @@ class PinStore:
             if "manifest" in self._data and (was_signed or listed):
                 try:
                     self._sign_manifest()
-                except PinSigningError:
-                    if self._keys_trusted():
-                        raise PinSigningError(
-                            "Clearing a signed pin re-signs the pin manifest; a signing key is required."
-                        ) from None
-                    # No trusted keys: the manifest is ignored; drop the stale one.
-                    del self._data["manifest"]
+                except PinSigningError as exc:
+                    raise PinSigningError(
+                        "Clearing a signed pin re-signs the pin manifest; a signing key is required."
+                    ) from exc
             if removed is not None or listed:
                 self._write()
             self._reset_verification()

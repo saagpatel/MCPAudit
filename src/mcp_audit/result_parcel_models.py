@@ -7,11 +7,12 @@ negotiated extensions and local/provider patterns.
 
 from __future__ import annotations
 
-import json
 from enum import StrEnum
 from typing import Annotated, Any, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from mcp_audit.lab_primitives import model_json_bytes
 
 SCENARIO_SCHEMA: Final = "mcpaudit.result-parcel.scenario.v1"
 REPORT_SCHEMA: Final = "mcpaudit.result-parcel.report.v1"
@@ -310,16 +311,5 @@ class ParcelAnalysisReport(StrictModel):
 
 
 def canonical_json_bytes(value: BaseModel | dict[str, Any] | list[Any]) -> bytes:
-    """Return stable JSON bytes with one terminal newline."""
-
-    payload: Any = value.model_dump(mode="json") if isinstance(value, BaseModel) else value
-    return (
-        json.dumps(
-            payload,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-            allow_nan=False,
-        ).encode("utf-8")
-        + b"\n"
-    )
+    """Return canonical UTF-8 bytes with one terminal newline."""
+    return model_json_bytes(value)

@@ -7,11 +7,12 @@ contracts for MCP Apps, ChatGPT plugins, or A2UI hosts.
 from __future__ import annotations
 
 import hashlib
-import json
 from enum import StrEnum
 from typing import Annotated, Any, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from mcp_audit.lab_primitives import model_json_bytes
 
 MCP_APPS_FIXTURE_SCHEMA: Final = "mcpaudit.agent-ui.mcp-apps-fixture.v1"
 A2UI_FIXTURE_SCHEMA: Final = "mcpaudit.agent-ui.a2ui-fixture.v1"
@@ -475,8 +476,8 @@ class AgentUIReport(StrictModel):
 
 
 def canonical_json_bytes(value: BaseModel | dict[str, Any] | list[Any]) -> bytes:
-    payload = value.model_dump(mode="json", by_alias=True) if isinstance(value, BaseModel) else value
-    return (json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n").encode()
+    """Return canonical UTF-8 bytes with one terminal newline."""
+    return model_json_bytes(value, by_alias=True, allow_nan=True)
 
 
 def sha256_bytes(value: bytes) -> str:

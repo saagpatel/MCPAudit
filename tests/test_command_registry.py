@@ -297,6 +297,7 @@ mcp_audit/htmlreport.py
 mcp_audit/http_transport.py
 mcp_audit/injection.py
 mcp_audit/integrity.py
+mcp_audit/lab_primitives.py
 mcp_audit/llm_analyzer.py
 mcp_audit/models.py
 mcp_audit/monitor.py
