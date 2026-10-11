@@ -1490,9 +1490,9 @@ class AuditReport(BaseModel):
 
     def redacted(self, *, identifiers: bool = False) -> "AuditReport":
         """Return a credential-redacted copy, optionally scrubbing field-report identifiers."""
-        from mcp_audit.redaction import redact_data, redact_identifiers
+        from mcp_audit.redaction import redact_identifiers, redact_model
 
-        data = redact_data(self.model_dump(mode="json"))
+        data = redact_model(self)
         if identifiers:
             names = {audit.server.name for audit in self.audits if audit.server.name}
             names.update(f.server_name for f in self.config_health_findings if f.server_name)
@@ -1502,6 +1502,7 @@ class AuditReport(BaseModel):
         # Redaction may change only display text within the saved summary.
         summary = self.ensure_review_summary()
         saved = data["review_summary"]
+        assert isinstance(saved, dict)
         saved.update(summary.model_dump(exclude={"actions"}))
         for action_data, action in zip(saved["actions"], summary.actions, strict=True):
             action_data.update(

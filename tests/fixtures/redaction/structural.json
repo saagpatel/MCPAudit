@@ -1,0 +1,114 @@
+[
+  {
+    "id": "escaped-double-quote-flag",
+    "kind": "text",
+    "source": "--password \"fixture\\\"quote suffix-secret\"",
+    "expected": "--password <redacted>",
+    "forbidden": ["fixture", "suffix-secret"]
+  },
+  {
+    "id": "escaped-single-quote-flag",
+    "kind": "text",
+    "source": "--token 'fixture\\'quote suffix-secret'",
+    "expected": "--token <redacted>",
+    "forbidden": ["fixture", "suffix-secret"]
+  },
+  {
+    "id": "zero-width-bearer",
+    "kind": "text",
+    "source": "Bearer plantedfirst\u200bplantedsecond-secret",
+    "expected": "Bearer <redacted>",
+    "forbidden": ["plantedfirst", "plantedsecond-secret"]
+  },
+  {
+    "id": "zero-width-basic",
+    "kind": "text",
+    "source": "Basic plantedfirst\u2060plantedsecond-secret",
+    "expected": "Basic <redacted>",
+    "forbidden": ["plantedfirst", "plantedsecond-secret"]
+  },
+  {
+    "id": "nfkc-label",
+    "kind": "text",
+    "source": "ｐａｓｓｗｏｒｄ=unicode-secret",
+    "expected": "password=<redacted>",
+    "forbidden": ["unicode-secret"]
+  },
+  {
+    "id": "confusable-label",
+    "kind": "text",
+    "source": "pаssword=confusable-secret",
+    "expected": "password=<redacted>",
+    "forbidden": ["confusable-secret"]
+  },
+  {
+    "id": "ansi-split-label",
+    "kind": "text",
+    "source": "pass\u001b[31mword=control-secret\u001b[0m",
+    "expected": "password=<redacted>",
+    "forbidden": ["control-secret"]
+  },
+  {
+    "id": "c1-split-bearer",
+    "kind": "text",
+    "source": "Bearer plantedfirst\u009b31mplantedsecond-secret",
+    "expected": "Bearer <redacted>",
+    "forbidden": ["plantedfirst", "plantedsecond-secret"]
+  },
+  {
+    "id": "structural-argv-boundaries",
+    "kind": "args",
+    "source": ["--api\u200b-key", "plantedfirst plantedsecond,plantedthird&plantedfourth", "--password=plantedfirst\"plantedsecond'plantedthird", "--port", "8080"],
+    "expected": ["--api\u200b-key", "<redacted>", "--password=<redacted>", "--port", "8080"],
+    "forbidden": ["plantedfirst", "plantedsecond", "plantedthird", "plantedfourth"]
+  },
+  {
+    "id": "dash-prefixed-argv-value",
+    "kind": "args",
+    "source": ["--password", "-dash-secret", "--port", "8080"],
+    "expected": ["--password", "<redacted>", "--port", "8080"],
+    "forbidden": ["dash-secret"]
+  },
+  {
+    "id": "schema-property-and-key-collision",
+    "kind": "schema",
+    "source": {"type": "object", "properties": {"token=property-secret": {"type": "string"}, "token=other-secret": {"type": "integer"}}, "required": ["token=property-secret", "token=other-secret"]},
+    "expected": {"type": "object", "properties": {"token=<redacted>": {"type": "string"}, "token=<redacted> [2]": {"type": "integer"}}, "required": ["token=<redacted>", "token=<redacted>"]},
+    "forbidden": ["property-secret", "other-secret"]
+  },
+  {
+    "id": "unicode-secret-schema-literals",
+    "kind": "schema",
+    "source": {"properties": {"pass\u200bword": {"type": "string", "default": "default-secret", "enum": ["enum-secret"], "examples": [{"token=example-key-secret": "example-secret"}], "const": "const-secret"}, "port": {"type": "integer", "default": 8080}}},
+    "expected": {"properties": {"pass\u200bword": {"type": "string", "default": "<redacted>", "enum": ["<redacted>"], "examples": [{"token=<redacted>": "<redacted>"}], "const": "<redacted>"}, "port": {"type": "integer", "default": 8080}}},
+    "forbidden": ["default-secret", "enum-secret", "example-key-secret", "example-secret", "const-secret"]
+  },
+  {
+    "id": "nested-json-keys-and-secret-containers",
+    "kind": "meta",
+    "source": {"token=map-secret": {"value": "container-secret", "count": 2}, "items": [{"ghp_abcdefghijklmnopqrstuvwxyz012345": "ordinary"}]},
+    "expected": {"token=<redacted>": {"value": "<redacted>", "count": 2}, "items": [{"<redacted>": "ordinary"}]},
+    "forbidden": ["map-secret", "container-secret", "abcdefghijklmnopqrstuvwxyz012345"]
+  },
+  {
+    "id": "header-map-with-opaque-value",
+    "kind": "meta",
+    "source": {"headers": {"X-Custom": "opaque-header-secret", "Authorization": "Bearer header-secret"}},
+    "expected": {"headers": {"X-Custom": "<redacted>", "Authorization": "<redacted>"}},
+    "forbidden": ["opaque-header-secret", "header-secret"]
+  },
+  {
+    "id": "parsed-url-components",
+    "kind": "url",
+    "source": "https://user:url-secret@fixture.example:8443/mcp?opaque=query-secret&flag#fragment-secret",
+    "expected": "https://<redacted>@fixture.example:8443/mcp?opaque=<redacted>&flag#<redacted>",
+    "forbidden": ["url-secret", "query-secret", "fragment-secret"]
+  },
+  {
+    "id": "malformed-url-authority",
+    "kind": "url",
+    "source": "https://[broken:url-secret@fixture.example/mcp",
+    "expected": "<redacted>",
+    "forbidden": ["url-secret"]
+  }
+]

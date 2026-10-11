@@ -6,6 +6,12 @@ import re
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
+
+from pydantic import BaseModel
+
+from mcp_audit.normalize import normalize_text
+from mcp_audit.terminal_text import strip_controls
 
 _REDACTED = "<redacted>"
 _NAME_TOKEN = re.compile(r"[A-Za-z0-9_.-]+")
@@ -18,10 +24,13 @@ _SECRET_NAME = re.compile(
 )
 _ASSIGNMENT_PREFIX = re.compile(r"[\"']?\s*[:=]\s*")
 _ASSIGNMENT_VALUE = re.compile(
-    r"([\"']?\s*[:=]\s*)(<redacted>(?=$|[\s,;&\"'}\]])|"
+    r"([\"']?\s*[:=]\s*)(<redacted>(?=$|[\s,;&\"'}\]]|⟧(?=$|[\s,;&\"'}\]]))|"
     r"\"(?:\\.|[^\"\\])*+\"|'(?:\\.|[^'\\])*+'|[^\s,;&\"']+)"
 )
-_FLAG_VALUE = re.compile(r"(\s+)(\"[^\"]*\"|'[^']*'|[^\s,;&\"']+)")
+_FLAG_VALUE = re.compile(
+    r"(\s+)(<redacted>(?=$|[\s,;&\"'}\]]|:(?:\s|$)|⟧(?=$|[\s,;&\"'}\]]))|"
+    r"\"(?:\\.|[^\"\\])*+\"|'(?:\\.|[^'\\])*+'|[^\s,;&\"']+)"
+)
 _BEARER_TOKEN = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+")
 _BASIC_TOKEN = re.compile(r"(?i)\bBasic\s+[A-Za-z0-9._~+/=-]+")
 # Consume scheme-like runs once; a nested scheme ends the current path span.
@@ -56,7 +65,8 @@ def _is_secret_name(name: str) -> bool:
     # authority and oauth_callback_port are harmless. Plural tokens are counts,
     # tokenizer selects a tokenizer; session_name/session-name components label
     # a session rather than authenticate it. session_id remains secret-bearing.
-    name = name.lstrip("-")
+    name = strip_controls(name)
+    name = (name if name.isascii() else normalize_text(name)).lstrip("-")
     name = _SESSION_LABEL.sub("label", name)
     return _SECRET_NAME.search(name) is not None
 
@@ -182,16 +192,21 @@ def _redact_text(value: str, window: _ExcerptWindow | None = None) -> str:
 def redact_text(value: str) -> str:
     """Redact likely credential values while preserving useful context."""
     redacted = _redact_text(value)
-    return "[metadata excerpt withheld]" if _normalization_exposes_secret(redacted) else redacted
+    normalized = strip_controls(value)
+    if not normalized.isascii():
+        normalized = normalize_text(normalized)
+    if normalized != value:
+        normalized_redacted = _redact_text(normalized)
+        if normalized_redacted != normalized:
+            return normalized_redacted
+    return redacted
 
 
 def _normalization_exposes_secret(redacted: str) -> bool:
-    from mcp_audit.normalize import normalize_text
-
     # normalize_text is the identity on ASCII (test_normalize_text_is_identity_on_ascii).
-    if redacted.isascii():
-        return False
-    normalized = normalize_text(redacted)
+    normalized = strip_controls(redacted)
+    if not normalized.isascii():
+        normalized = normalize_text(normalized)
     return normalized != redacted and _redact_text(normalized) != normalized
 
 
@@ -299,69 +314,161 @@ def _redact_literal_strings(value: object) -> object:
     if isinstance(value, list):
         return [_redact_literal_strings(item) for item in value]
     if isinstance(value, dict):
-        return {key: _redact_literal_strings(item) for key, item in value.items()}
+        result: dict[object, object] = {}
+        for key, item in value.items():
+            result[_redacted_key(key, result)] = _redact_literal_strings(item)
+        return result
     return value
+
+
+def _redacted_key(key: object, result: dict[object, object]) -> object:
+    """Scrub dynamic keys without losing entries when multiple secrets collapse."""
+    redacted = redact_text(key) if isinstance(key, str) else key
+    candidate = redacted
+    index = 2
+    while candidate in result:
+        candidate = f"{redacted} [{index}]"
+        index += 1
+    return candidate
 
 
 def _redact_properties(properties: dict[object, object]) -> dict[object, object]:
     result: dict[object, object] = {}
     for name, schema in properties.items():
         if isinstance(name, str) and _is_secret_name(name) and isinstance(schema, dict):
-            result[name] = {
-                key: _redact_literal_strings(item)
-                if key in {"default", "examples", "const"}
-                else redact_data(item)
-                for key, item in schema.items()
-            }
+            redacted_schema: dict[object, object] = {}
+            for key, item in schema.items():
+                redacted_schema[_redacted_key(key, redacted_schema)] = (
+                    _redact_literal_strings(item)
+                    if key in {"default", "examples", "const", "enum"}
+                    else _redact_json(item)
+                )
+            result[_redacted_key(name, result)] = redacted_schema
         else:
-            result[name] = redact_data(schema)
+            result[_redacted_key(name, result)] = _redact_json(schema)
     return result
 
 
-def redact_data(value: Any) -> Any:
-    """Recursively redact strings and secret flag/value pairs in JSON-like data."""
+def redact_argv(value: list[object], *, preserve_options: bool = False) -> list[object]:
+    """Use argv boundaries, including values that start with a dash."""
+    result: list[object] = []
+    secret_value = False
+    for item in value:
+        if secret_value and not (preserve_options and isinstance(item, str) and item.startswith("-")):
+            result.append(_REDACTED)
+            secret_value = False
+            continue
+        if not isinstance(item, str):
+            result.append(_redact_json(item))
+            continue
+        normalized = normalize_text(strip_controls(item))
+        name = _NAME_TOKEN.match(normalized)
+        if (
+            name is not None
+            and _is_secret_name(name.group())
+            and normalized[name.end() :].startswith(("=", ":"))
+            and _URL.match(normalized) is None
+        ):
+            result.append(normalized[: name.end() + 1] + _REDACTED)
+        else:
+            result.append(redact_text(item))
+        secret_value = (
+            normalized.startswith("-")
+            and _NAME_TOKEN.fullmatch(normalized) is not None
+            and _is_secret_name(normalized)
+        )
+    return result
+
+
+def redact_url(value: str) -> str:
+    """Parse a complete URL field; retain endpoint shape, never authentication data."""
+    normalized = normalize_text(strip_controls(value))
+    try:
+        parts = urlsplit(normalized)
+    except ValueError:
+        return _REDACTED  # Malformed authorities have no safe structural boundary.
+    authority = parts.netloc
+    if "@" in authority:
+        authority = _REDACTED + "@" + authority.rsplit("@", 1)[1]
+    query = _QUERY_VALUE.sub("=<redacted>", parts.query)
+    redacted = urlunsplit((parts.scheme, authority, parts.path, query, _REDACTED if parts.fragment else ""))
+    # Path assignments and nested URLs are free-text fallback cases.
+    return redact_text(redacted)
+
+
+def _redact_json(value: object) -> object:
     if isinstance(value, str):
         return redact_text(value)
     if isinstance(value, list):
-        result = []
-        secret_value = False
-        for item in value:
-            if isinstance(item, str):
-                name = _NAME_TOKEN.match(item)
-                if secret_value and not item.startswith("-"):
-                    result.append(_REDACTED)
-                elif (
-                    name is not None
-                    and _is_secret_name(name.group())
-                    and item[name.end() :].startswith(("=", ":"))
-                    and _URL.match(item) is None
-                ):
-                    # One argv element has a known boundary, even when its value
-                    # contains spaces, commas, ampersands or embedded quotes.
-                    result.append(item[: name.end() + 1] + _REDACTED)
-                else:
-                    result.append(redact_text(item))
-            else:
-                result.append(redact_data(item))
-            secret_value = (
-                isinstance(item, str)
-                and item.startswith("-")
-                and _NAME_TOKEN.fullmatch(item) is not None
-                and _is_secret_name(item)
-            )
-        return result
+        return [_redact_json(item) for item in value]
     if isinstance(value, dict):
-        return {
-            key: _REDACTED
-            if isinstance(key, str) and _is_secret_name(key) and isinstance(item, str)
-            else _redact_properties(item)
-            if key == "properties" and isinstance(item, dict)
-            else _redact_config_pointer(item)
-            if key == "config_pointer" and isinstance(item, str)
-            else redact_data(item)
-            for key, item in value.items()
-        }
+        result: dict[object, object] = {}
+        for key, item in value.items():
+            redacted: object
+            if key == "properties" and isinstance(item, dict):
+                redacted = _redact_properties(item)
+            elif key == "config_pointer" and isinstance(item, str):
+                redacted = _redact_config_pointer(item)
+            elif key == "args" and isinstance(item, list):
+                redacted = redact_argv(item)
+            elif key in {"env", "headers"} and isinstance(item, dict):
+                key_map: dict[object, object] = {}
+                for name in item:
+                    key_map[_redacted_key(name, key_map)] = _REDACTED
+                redacted = key_map
+            elif isinstance(key, str) and _is_secret_name(key):
+                redacted = _redact_literal_strings(item)
+            else:
+                redacted = _redact_json(item)
+            result[_redacted_key(key, result)] = redacted
+        return result
     return value
+
+
+def redact_data(value: Any) -> Any:
+    """Redact JSON-like metadata; retain the legacy top-level argv-list API."""
+    # Pin/provenance callers must still see option changes such as --no-sandbox.
+    # The typed report's argv path withholds even dash-prefixed value slots.
+    return redact_argv(value, preserve_options=True) if isinstance(value, list) else _redact_json(value)
+
+
+def redact_model(model: BaseModel) -> dict[str, object]:
+    """One structural pass over a typed report, preserving declared field names."""
+    from mcp_audit.models import ServerConfig
+
+    def walk(source: object, data: object) -> object:
+        if isinstance(source, BaseModel) and isinstance(data, dict):
+            result: dict[str, object] = {}
+            for key, item in data.items():
+                if isinstance(source, ServerConfig) and key == "args" and isinstance(item, list):
+                    result[key] = redact_argv(item)
+                elif isinstance(source, ServerConfig) and key == "url" and isinstance(item, str):
+                    result[key] = redact_url(item)
+                elif key == "config_pointer" and isinstance(item, str):
+                    result[key] = _redact_config_pointer(item)
+                else:
+                    result[key] = walk(getattr(source, key), item)
+            if result.get("matched_span") is not None and result.get("matched_text") != data.get(
+                "matched_text"
+            ):
+                result["matched_span"] = None
+            return result
+        if isinstance(source, (list, tuple)) and isinstance(data, list):
+            return [walk(raw, item) for raw, item in zip(source, data, strict=True)]
+        if (
+            isinstance(source, dict)
+            and isinstance(data, dict)
+            and any(isinstance(item, BaseModel) for item in source.values())
+        ):
+            result_map: dict[object, object] = {}
+            for key, item in data.items():
+                result_map[_redacted_key(key, result_map)] = walk(source[key], item)
+            return result_map
+        return _redact_json(data)
+
+    data = walk(model, model.model_dump(mode="json"))
+    assert isinstance(data, dict)
+    return data
 
 
 def _redact_config_pointer(pointer: str) -> str:
