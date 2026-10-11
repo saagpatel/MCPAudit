@@ -131,6 +131,12 @@ def _named_value_edits(value: str, *, protect_urls: bool = False) -> Iterator[tu
 
 
 def _url_edits(value: str) -> Iterator[tuple[int, int, str]]:
+    try:
+        urlsplit(value)
+    except ValueError:
+        # Free-text copies need the same malformed-authority protection as URL fields.
+        yield 0, len(value), _REDACTED
+        return
     userinfo = _URL_USERINFO.match(value)
     if userinfo is not None:
         yield userinfo.end(1), userinfo.end() - 1, _REDACTED
@@ -198,6 +204,10 @@ def redact_text(value: str) -> str:
     if normalized != value:
         normalized_redacted = _redact_text(normalized)
         if normalized_redacted != normalized:
+            # Compatibility punctuation can shorten a value recognized by the
+            # raw pass. Withhold ambiguous fields rather than restore that tail.
+            if any(normalized.count(char) > value.count(char) for char in "\"',;&/?#\\"):
+                return _REDACTED
             return normalized_redacted
     return redacted
 
@@ -332,29 +342,23 @@ def _redacted_key(key: object, result: dict[object, object]) -> object:
     return candidate
 
 
-def _redact_properties(properties: dict[object, object]) -> dict[object, object]:
+def _redact_properties(
+    properties: dict[object, object], *, secret_schema: bool = False
+) -> dict[object, object]:
     result: dict[object, object] = {}
     for name, schema in properties.items():
-        if isinstance(name, str) and _is_secret_name(name) and isinstance(schema, dict):
-            redacted_schema: dict[object, object] = {}
-            for key, item in schema.items():
-                redacted_schema[_redacted_key(key, redacted_schema)] = (
-                    _redact_literal_strings(item)
-                    if key in {"default", "examples", "const", "enum"}
-                    else _redact_json(item)
-                )
-            result[_redacted_key(name, result)] = redacted_schema
-        else:
-            result[_redacted_key(name, result)] = _redact_json(schema)
+        result[_redacted_key(name, result)] = _redact_json(
+            schema, secret_schema=secret_schema or (isinstance(name, str) and _is_secret_name(name))
+        )
     return result
 
 
-def redact_argv(value: list[object], *, preserve_options: bool = False) -> list[object]:
+def redact_argv(value: list[object]) -> list[object]:
     """Use argv boundaries, including values that start with a dash."""
     result: list[object] = []
     secret_value = False
     for item in value:
-        if secret_value and not (preserve_options and isinstance(item, str) and item.startswith("-")):
+        if secret_value:
             result.append(_REDACTED)
             secret_value = False
             continue
@@ -396,17 +400,21 @@ def redact_url(value: str) -> str:
     return redact_text(redacted)
 
 
-def _redact_json(value: object) -> object:
+def _redact_json(value: object, *, secret_schema: bool = False) -> object:
     if isinstance(value, str):
         return redact_text(value)
     if isinstance(value, list):
-        return [_redact_json(item) for item in value]
+        return [_redact_json(item, secret_schema=secret_schema) for item in value]
     if isinstance(value, dict):
         result: dict[object, object] = {}
         for key, item in value.items():
             redacted: object
-            if key == "properties" and isinstance(item, dict):
-                redacted = _redact_properties(item)
+            # Secret-property context follows composition branches, while the
+            # usual metadata rules still apply to non-literal fields.
+            if secret_schema and key in {"default", "example", "examples", "const", "enum"}:
+                redacted = _redact_literal_strings(item)
+            elif key == "properties" and isinstance(item, dict):
+                redacted = _redact_properties(item, secret_schema=secret_schema)
             elif key == "config_pointer" and isinstance(item, str):
                 redacted = _redact_config_pointer(item)
             elif key == "args" and isinstance(item, list):
@@ -419,7 +427,7 @@ def _redact_json(value: object) -> object:
             elif isinstance(key, str) and _is_secret_name(key):
                 redacted = _redact_literal_strings(item)
             else:
-                redacted = _redact_json(item)
+                redacted = _redact_json(item, secret_schema=secret_schema)
             result[_redacted_key(key, result)] = redacted
         return result
     return value
@@ -427,9 +435,7 @@ def _redact_json(value: object) -> object:
 
 def redact_data(value: Any) -> Any:
     """Redact JSON-like metadata; retain the legacy top-level argv-list API."""
-    # Pin/provenance callers must still see option changes such as --no-sandbox.
-    # The typed report's argv path withholds even dash-prefixed value slots.
-    return redact_argv(value, preserve_options=True) if isinstance(value, list) else _redact_json(value)
+    return redact_argv(value) if isinstance(value, list) else _redact_json(value)
 
 
 def redact_model(model: BaseModel) -> dict[str, object]:

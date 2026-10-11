@@ -13,7 +13,15 @@ from rich.console import Console
 
 from mcp_audit.connector import _redact_sse_log_text
 from mcp_audit.htmlreport import HtmlReportGenerator
-from mcp_audit.models import AuditReport, InjectionFinding, InjectionSeverity, ServerAudit, ToolInfo
+from mcp_audit.models import (
+    AuditReport,
+    InjectionFinding,
+    InjectionSeverity,
+    ScanWarning,
+    ServerAudit,
+    ToolInfo,
+)
+from mcp_audit.pinning import PinStore
 from mcp_audit.redaction import redact_data, redact_text, redacted_excerpt
 from mcp_audit.report import ReportGenerator
 from mcp_audit.sarif import SarifGenerator
@@ -45,6 +53,7 @@ def _report(case: dict[str, object]) -> AuditReport:
     elif kind == "url":
         assert isinstance(source, str)
         server.url = source
+        tool.meta = {"endpoint": source}
     else:
         raise AssertionError(f"Unsupported corpus kind: {kind}")
     finding = InjectionFinding(
@@ -70,6 +79,9 @@ def _report(case: dict[str, object]) -> AuditReport:
             )
         ],
         scan_duration_seconds=0,
+        warnings=[ScanWarning(code="synthetic_url", message=f"Endpoint: {source}", check="connection")]
+        if kind == "url"
+        else [],
     )
 
 
@@ -115,6 +127,23 @@ def test_structural_redaction_corpus(case: dict[str, object], tmp_path: Path, id
         HtmlReportGenerator().generate(report),
         json.dumps(SarifGenerator().generate(report)),
     ]
+    pin_file = tmp_path / "pins.yaml"
+    # Pin identities intentionally remain raw; exercise the saved metadata with
+    # an ordinary identity so this sweep checks the reportable snapshot fields.
+    pin_tool = report.audits[0].tools[0].model_copy(update={"name": "synthetic-tool"})
+    PinStore(pin_file).pin_server(report.audits[0].server.name, [pin_tool], report.audits[0].server)
+    store = PinStore(pin_file)
+    snapshot = store.baseline_config(report.audits[0].server.name)
+    assert snapshot is not None
+    if kind == "args":
+        assert snapshot["args"] == audit.server.args
+    elif kind == "url":
+        assert snapshot["url"] == audit.server.url
+    elif kind == "schema":
+        assert (
+            store.baseline_tools(report.audits[0].server.name)[0].input_schema == audit.tools[0].input_schema
+        )
+    outputs.append(pin_file.read_text())
     forbidden = case["forbidden"]
     assert isinstance(forbidden, list)
     for output in outputs:

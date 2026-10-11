@@ -91,6 +91,44 @@ def test_cli_all_report_surfaces_redact_fixture_credentials(tmp_path: Path, fiel
         assert secret not in result.output, "terminal output leaked fixture credential"
 
 
+@pytest.mark.parametrize(
+    "url",
+    ["https://[broken:url-secret@fixture.example/mcp", "https://[broken:url-secret.fixture.example/mcp"],
+)
+def test_cli_project_warning_withholds_malformed_url(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, url: str
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / ".mcp.json"
+    config.write_text(json.dumps({"mcpServers": {"fixture": {"url": url}}}))
+    outputs = {suffix: tmp_path / f"report.{suffix}" for suffix in ("json", "sarif", "html")}
+    result = CliRunner().invoke(
+        cli.main,
+        [
+            "scan",
+            "--config",
+            str(config),
+            "--config-only",
+            "--skip-connect",
+            "--override-config",
+            "/dev/null",
+            "--json",
+            str(outputs["json"]),
+            "--sarif",
+            str(outputs["sarif"]),
+            "--html",
+            str(outputs["html"]),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    report = json.loads(outputs["json"].read_text())
+    warning = next(w for w in report["warnings"] if w["code"] == "project_config_not_connected")
+    assert warning["message"].startswith("Project config 'fixture' not connected: <redacted>. ")
+    assert "not connected" in result.output
+    for output in [result.output, *(path.read_text() for path in outputs.values())]:
+        assert "url-secret" not in output
+
+
 @pytest.mark.parametrize("name", ["password", "token", "auth"])
 def test_cli_redact_preserves_credential_redaction_for_secret_named_servers(
     tmp_path: Path, name: str

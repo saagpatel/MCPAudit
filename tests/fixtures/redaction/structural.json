@@ -110,5 +110,54 @@
     "source": "https://[broken:url-secret@fixture.example/mcp",
     "expected": "<redacted>",
     "forbidden": ["url-secret"]
+  },
+  {
+    "id": "malformed-url-authority-without-userinfo",
+    "kind": "url",
+    "source": "https://[broken:url-secret.fixture.example/mcp",
+    "expected": "<redacted>",
+    "forbidden": ["url-secret"]
+  },
+  {
+    "id": "fullwidth-double-quote-assignment",
+    "kind": "text",
+    "source": "password=\"quote-prefix-secret\uff02suffix-secret\"",
+    "expected": "<redacted>",
+    "forbidden": ["quote-prefix-secret", "suffix-secret"]
+  },
+  {
+    "id": "fullwidth-double-quote-flag",
+    "kind": "text",
+    "source": "--password \"quote-prefix-secret\uff02suffix-secret\"",
+    "expected": "<redacted>",
+    "forbidden": ["quote-prefix-secret", "suffix-secret"]
+  },
+  {
+    "id": "fullwidth-single-quote-assignment",
+    "kind": "text",
+    "source": "password='quote-prefix-secret\uff07suffix-secret'",
+    "expected": "<redacted>",
+    "forbidden": ["quote-prefix-secret", "suffix-secret"]
+  },
+  {
+    "id": "fullwidth-single-quote-flag",
+    "kind": "text",
+    "source": "--password 'quote-prefix-secret\uff07suffix-secret'",
+    "expected": "<redacted>",
+    "forbidden": ["quote-prefix-secret", "suffix-secret"]
+  },
+  {
+    "id": "secret-schema-example",
+    "kind": "schema",
+    "source": {"properties": {"password": {"type": "string", "example": "opaque-secret"}}},
+    "expected": {"properties": {"password": {"type": "string", "example": "<redacted>"}}},
+    "forbidden": ["opaque-secret"]
+  },
+  {
+    "id": "secret-schema-compositions",
+    "kind": "schema",
+    "source": {"properties": {"token": {"anyOf": [{"default": "opaque-secret"}], "allOf": [{"example": "all-secret"}], "oneOf": [{"enum": ["one-secret"]}], "if": {"const": "if-secret"}, "then": {"examples": ["then-secret"]}, "else": {"items": {"default": "item-secret"}}}, "port": {"type": "integer", "default": 8080}}},
+    "expected": {"properties": {"token": {"anyOf": [{"default": "<redacted>"}], "allOf": [{"example": "<redacted>"}], "oneOf": [{"enum": ["<redacted>"]}], "if": {"const": "<redacted>"}, "then": {"examples": ["<redacted>"]}, "else": {"items": {"default": "<redacted>"}}}, "port": {"type": "integer", "default": 8080}}},
+    "forbidden": ["opaque-secret", "all-secret", "one-secret", "if-secret", "then-secret", "item-secret"]
   }
 ]
