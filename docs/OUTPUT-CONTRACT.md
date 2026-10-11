@@ -1438,6 +1438,13 @@ record is discarded so a truncated credential anchor cannot defeat redaction.
 Terminal controls are stripped before credential and URL redaction so controls
 interrupting credential anchors cannot expose their values in diagnostics.
 
+`--max-concurrency N` (`ScanOptions.max_concurrency`, default 32) bounds active
+MCP sessions. After session and stdin closure, shutdown/reaping uses a separate
+pool of at most N owned process groups, so at most 2N groups may be live. A group
+waiting for cleanup capacity retains its session permit. Scans await every
+reaper before returning or writing reports, including on timeout/cancellation;
+cleanup errors and orphan diagnostics remain visible.
+
 On POSIX, shutdown sends SIGTERM and then SIGKILL to the owned process group
 even if the leader exited. ESRCH is harmless; a surviving group or denied
 cleanup produces `orphan_processes`. Detached descendants that create a new

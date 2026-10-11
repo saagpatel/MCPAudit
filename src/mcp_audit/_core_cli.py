@@ -177,7 +177,10 @@ def discover(client_filter: str | None, verbose: bool) -> None:
     default=32,
     type=click.IntRange(min=1),
     show_default=True,
-    help="Maximum simultaneous server sessions.",
+    help=(
+        "Maximum active MCP sessions; also bounds additional process groups in shutdown/reaping "
+        "(at most 2N live groups). Scans wait for all cleanup."
+    ),
 )
 @click.option("--verbose", is_flag=True, default=False, help="Show per-tool permission details.")
 @click.option(

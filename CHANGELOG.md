@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Release connection capacity after MCP session and stdin closure, before
+  process shutdown/reaping. `--max-concurrency N` bounds active MCP sessions
+  and an additional pool of at most N owned process groups in cleanup (at most
+  2N live groups). Scans still await all cleanup, including cancellation and
+  timeout paths, with the existing shutdown grace, deadlines and diagnostics.
+
 ### Security
 
 - Recognize a secret label, flag dash, or delimiter that an escape sequence

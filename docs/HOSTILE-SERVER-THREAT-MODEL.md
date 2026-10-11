@@ -25,6 +25,11 @@ The per-server clock starts after connection admission and its remaining time
 bounds synchronous Python analysis. Python loops are interrupted cooperatively;
 native blocking calls are checked on return, not preempted. Optional artifact
 worker I/O and fleet-wide finalization are outside that Python-analysis deadline.
+`--max-concurrency N` bounds active MCP sessions plus at most N additional owned
+process groups in shutdown/reaping (at most 2N live groups). Session and stdin
+close before capacity transfers to the bounded cleanup pool; groups waiting
+for that pool retain their session permit. Scans await all cleanup, including
+on timeout or cancellation, before returning or writing reports.
 POSIX shutdown signals the whole owned group with SIGTERM then SIGKILL even
 after the leader exits; survivors or denied cleanup produce `orphan_processes`.
 A child that creates a new session escapes process-group cleanup entirely:
