@@ -132,6 +132,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Install `rich` and its hash-pinned dependencies in the ClusterFuzzLite build, which
+  structural redaction now imports through terminal-safe text handling.
 #### CLI presentation and test collection
 
 - Lead empty-home bare CLI output with the empty state, followed immediately by
