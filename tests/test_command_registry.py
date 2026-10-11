@@ -274,6 +274,7 @@ mcp_audit/check_cli.py
 mcp_audit/checkup.py
 mcp_audit/cli.py
 mcp_audit/confighealth.py
+mcp_audit/conformance_probe.py
 mcp_audit/connector.py
 mcp_audit/coverage.py
 mcp_audit/discovery/__init__.py
@@ -297,6 +298,7 @@ mcp_audit/htmlreport.py
 mcp_audit/http_transport.py
 mcp_audit/injection.py
 mcp_audit/integrity.py
+mcp_audit/lab_primitives.py
 mcp_audit/llm_analyzer.py
 mcp_audit/models.py
 mcp_audit/monitor.py
@@ -345,6 +347,7 @@ mcp_audit/session_resume_lab.py
 mcp_audit/session_resume_models.py
 mcp_audit/session_resume_scenarios_v1.json
 mcp_audit/shadowing.py
+mcp_audit/shadow_cli.py
 mcp_audit/skillscan.py
 mcp_audit/skillscan_cli.py
 mcp_audit/skillscan_models.py

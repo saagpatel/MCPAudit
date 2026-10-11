@@ -138,21 +138,38 @@ def test_unknown_profile_is_rejected(empty_report: AuditReport) -> None:
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("profile", ["compatibility", "extended"])
-async def test_project_connection_warning_reaches_sarif(profile: str) -> None:
+@pytest.mark.parametrize("skip_connect", [False, True])
+@pytest.mark.parametrize("redaction_probe", [False, True])
+async def test_project_connection_warning_reaches_sarif(
+    profile: str, skip_connect: bool, redaction_probe: bool
+) -> None:
     from mcp_audit.engine import ScanOptions, run_scan
     from tests.conftest import make_server_config
 
-    server = make_server_config(command="synthetic-project-server", args=["--fixture"])
+    args = ["--token", "synthetic-value"] if redaction_probe else ["--fixture"]
+    server = make_server_config(command="synthetic-project-server", args=args)
     server.scope = "project"
-    report = await run_scan(ScanOptions(), servers=[server])
+    report = await run_scan(ScanOptions(skip_connect=skip_connect), servers=[server])
     warning = next(w for w in report.warnings if w.code == "project_config_not_connected")
+    if redaction_probe:
+        warning = warning.model_copy(
+            update={
+                "message": (
+                    f"Project config '{server.name}' not connected: synthetic-project-server --token "
+                    "<redacted>. Use --connect-project-configs to opt in (unless --skip-connect)."
+                )
+            }
+        )
     # Coverage notifications must coexist with the exact, redacted skip explanation.
     run = SarifGenerator().generate(report, profile=profile)["runs"][0]
     notifications = run["invocations"][0]["toolExecutionNotifications"]
-    notification = next(
+    [notification] = [
         item for item in notifications if item["descriptor"]["id"] == "MCP-PROJECT-CONFIG-NOT-CONNECTED"
-    )
+    ]
     assert notification["message"]["text"] == warning.message
     assert notification["properties"] == warning.model_dump()
     assert notification["level"] == "warning"
+    assert "synthetic-value" not in notification["message"]["text"]
+    if redaction_probe:
+        assert "<redacted>" in notification["message"]["text"]
     assert any(item["descriptor"]["id"].startswith("MCP-COVERAGE-") for item in notifications)

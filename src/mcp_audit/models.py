@@ -177,7 +177,7 @@ class ShadowingSeverity(StrEnum):
 
 class EscalationKind(StrEnum):
     CAPABILITY = "capability"  # Tool gained a dangerous permission category vs its pin baseline
-    DESCRIPTION_INJECTION = "description_injection"  # Description gained injection pattern(s)
+    DESCRIPTION_INJECTION = "description_injection"  # Description gained instruction-shaped text
     ANNOTATION_DELTA = "annotation_delta"  # Security-relevant annotation hint flip
 
 
@@ -683,8 +683,8 @@ class EscalationFinding(ReferencedFinding):
       CAPABILITY            — the tool gained a dangerous permission category it
                               did not hold when pinned (e.g. read-only → file_write,
                               exfiltration, shell_execution, destructive).
-      DESCRIPTION_INJECTION — the tool's description gained prompt-injection
-                              pattern(s) absent from the pinned baseline.
+      DESCRIPTION_INJECTION — the tool's description gained instruction-shaped
+                              text absent from the pinned baseline.
 
     Purely a delta against the pin store: a tool matching its baseline produces no
     finding, so findings stay scoped to reviewed baseline deltas.  Requires a pin

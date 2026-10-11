@@ -665,7 +665,7 @@ def test_cli_run_scan_core_shim_warns_and_delegates(monkeypatch: pytest.MonkeyPa
         engine, "discover_all_configs", lambda clients, parse_errors=None: [make_server_config(name="srv")]
     )
 
-    with pytest.warns(DeprecationWarning, match="mcp_audit.engine.run_scan"):
+    with pytest.warns(DeprecationWarning, match="mcp_audit.engine.run_scan.*removal in 3.0"):
         report = anyio.run(
             partial(cli._run_scan_core, True, None, 10, None, OverrideApplier(OverrideConfig()))
         )

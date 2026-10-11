@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import ipaddress
-import json
 from datetime import UTC, datetime
 from typing import Any, Final, Literal
 from urllib.parse import unquote, urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from mcp_audit.lab_primitives import model_json_bytes
 
 INPUT_SCHEMA: Final = "McpAuthorizationPostureV1"
 INPUT_CONTRACT_VERSION: Final = "1.0.0"
@@ -545,8 +546,8 @@ class AuthorizationPostureReport(StrictModel):
 
 
 def canonical_json_bytes(value: BaseModel | dict[str, Any] | list[Any]) -> bytes:
-    payload = value.model_dump(mode="json") if isinstance(value, BaseModel) else value
-    return (json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n").encode()
+    """Return canonical UTF-8 bytes with one terminal newline."""
+    return model_json_bytes(value, allow_nan=True)
 
 
 def sha256_bytes(value: bytes) -> str:

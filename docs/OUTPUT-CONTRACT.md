@@ -358,11 +358,17 @@ engine remains silent for library/MCP callers without a console. Explicit
 All SARIF profiles retain this warning as an invocation notification with
 descriptor ID `MCP-PROJECT-CONFIG-NOT-CONNECTED`, its redacted message, and
 the warning fields in `properties`. Coverage warnings, including
-`project_config_not_connected`, are returned by `scan_mcp_servers` and the
-`get_*_findings` tools' `warnings` key. `get_high_risk_servers` retains its
-legacy JSON list of `name`/`score` objects and does not return warnings; callers
-needing coverage information must use those warning-bearing tools.
-`check_server` retains its audit fields and adds `warnings`.
+`project_config_not_connected`, are returned by every successful `serve` tool
+response. `scan_mcp_servers`, `check_server`, and the `get_*_findings` tools
+include them in their JSON `warnings` key; `check_server` retains its audit fields.
+`get_high_risk_servers` and `list_discovered_servers` retain their legacy JSON
+lists in the first text block and in `structuredContent.result` (a JSON string).
+Their MCP responses add `structuredContent.warnings`, containing the structured
+scan warnings, and a second text block containing JSON `{"warnings": [...]}`.
+These fields are present even for an empty result list or an empty warning list.
+The published output schemas retain `result` and add `warnings`.
+Warnings use the same report redaction as the existing warning-bearing tools;
+no audit-report field or `schema_version` changes.
 
 ## Missing tool annotations
 
@@ -687,9 +693,10 @@ satisfies `require.pins`, and enabled baseline-comparison gates (`fail_on.drift`
 HIGH violation stating that their comparison was withheld. When the scan did not
 verify a server (no pin-based check ran), `fail_on.pin_integrity` verifies the
 selected pin store directly. Policies without signed pins, and report
-`schema_version`, are unchanged. Legacy v1 pins always warn (`pin_schema_outdated`)
-and never produce `MCP027`; they remain the comparison baseline only while no key
-is trusted. With a trusted key they are unauthenticated, so their baseline is
+`schema_version`, are unchanged. Genuine legacy v1 pins warn (`pin_schema_outdated`)
+and do not produce `MCP027` unless signing expectations or a signed manifest with
+missing trust establish a failure; they remain the comparison baseline only while
+no key is trusted. With a trusted key they are unauthenticated, so their baseline is
 withheld (`pin_baseline_withheld`, no drift/escalation/canary/provenance
 comparison, `require.pins` unmet, enabled comparison gates fail). A v1 entry for a
 server with a recorded signing expectation or rollback high-water mark is a
@@ -727,8 +734,28 @@ public-key-only CI with no per-server expectation. Writers refuse an invalid
 manifest or one listing missing entries (restore them or `pin --clear` each);
 a file with no manifest yet gets one on its first signed write, so after
 `pin keygen` run `pin rotate-key --resign` (or re-pin) to sign one. Clearing a
-signed server needs the signing key while keys are trusted. Without trusted keys
-the manifest is optional and ignored.
+signed server needs the signing key while keys are trusted. An unsigned workflow
+without trusted keys does not require a manifest. A manifest carrying a signature
+still requires independent trust: a missing trust store makes it invalid and
+produces HIGH `MCP027` (`untrusted_signer` for untrusted signed entries,
+otherwise `tampered_entry`) for scanned servers, including missing
+entries and legacy substitutes, with all saved-baseline comparisons withheld.
+
+Newly signed manifests also contain a signed positive-integer `sequence`, starting
+at 1 and incrementing on every signed pin-file write, including re-sign, rotation
+and signed clear. Writers read the previous value under the pin-file lock. An
+older manifest without `sequence` remains valid without a minimum requirement;
+its next signed write starts at 1. Altering or stripping a signed sequence fails
+manifest verification. This is a per-file write counter, not external history:
+restoring an older file before signing can reuse a previously issued sequence.
+`require.pin_min_sequence: N` and `scan`/`check --pin-min-sequence N` require an
+independently trusted, verified manifest with sequence >= the positive integer N.
+Missing, invalid, unsigned, untrusted and sequence-less manifests fail this gate,
+even with no scanned servers. When both minima are set, the higher one applies.
+Failure adds a HIGH `policy_result.violations` entry with rule
+`require.pin_min_sequence` and returns policy exit 2; no new per-server verification
+state or report field is introduced, and `schema_version` is unchanged. Keep the
+minimum protected separately from the pin file to resist rollback of both.
 Verification uses the separate trusted public-key store,
 never an embedded public key or a private signing key.
 
@@ -742,7 +769,8 @@ Terminal status prints only this authenticated key for CI; the existing JSON
 (the nullable verification state) and `baseline_usable` (false when scans withhold
 the baseline); terminal status shows them in a Verification column, marked
 "(withheld)". Ordinary pin writes, refresh, rotation and re-signing refuse failed
-baseline verification.
+baseline verification, except for the explicit unsigned v2 refresh migration
+described below.
 
 Escalation findings add `kind: annotation_delta` and an `annotation_changes`
 list of hint names (empty for other kinds). This is HIGH `MCP018` for
@@ -757,6 +785,13 @@ baseline withheld by scans (trusted keys, nothing authenticating the entry) is
 still compared in refresh review so every difference is shown, with
 `baseline_verified: false` and a note; terminal review labels it and never
 reports "No drift found" against an unverified baseline.
+Unsigned v2 migration review uses the same fields (`baseline_verified: false`
+and an unsigned migration `baseline_note`) while scans continue to withhold the
+entry with `MCP027` under trusted keys. Only entries without signing metadata,
+a per-server signing expectation, or a signed manifest binding are eligible.
+`--apply` requires a trusted private key and signs a fresh live baseline; it
+does not retain removed tools or saved registry hashes. Signed-integrity failures
+remain blocked. No JSON fields or schema version change.
 
 Each audit may include:
 
@@ -773,6 +808,27 @@ Each audit may include:
   object records `status` (`complete` or `unknown`), a stable `reason_code`,
   `source_trust`, analyzer/model provenance, candidate/analyzed tool counts,
   and the number of admitted findings. `unknown` never means clean.
+
+### Opt-in negative conformance lab
+
+`lab --conformance-probe --url URL` emits a separate JSON artifact with
+`contract: mcpaudit.conformance-probe.v1`, `protocol_version: 2026-07-28`,
+nullable numeric `control_status`, boolean `modern_control`, `observations`,
+and a fixed `claim_ceiling`. This is not an `AuditReport`; existing fields and
+`schema_version` are unchanged.
+
+Each observation contains `probe` (`T7` or `T9`), `variant`
+(`protocol_version`, `method`, `name`, or `origin`), `verdict`
+(`pass`, `fail`, `unknown`, or `not_run`), a fixed `reason`, nullable numeric
+`status`, and nullable integer `error_code`. Reasons are `expected_rejection`,
+`negative_request_accepted`, `request_unavailable`, `unexpected_response`,
+`modern_control_unavailable`, `origin_control_unavailable`, or `loopback_only`.
+T7 requires a successful modern discovery control and HTTP 400 / `-32020`
+rejection. T9 is loopback-only and requires HTTP 403 after a control that was
+not itself rejected with 403. No endpoint, response text, response headers,
+credentials, cookies, or session identifiers appear in this artifact.
+See [the lab guide](labs/README.md#negative-conformance-probes-explicit-opt-in)
+for request bounds and verdict limits.
 
 ### Connected protocol observations (additive)
 
@@ -1669,7 +1725,7 @@ authorization-response issuer validation, issuer-bound client state, and DCR
 
 Reports use sorted compact canonical JSON with one terminal newline and no
 timestamp or input path. Stable finding IDs are `MCPOAUTH001` through
-`MCPOAUTH007`; `MCPOAUTH000` represents missing, malformed, redacted,
+`MCPOAUTH008`; `MCPOAUTH000` represents missing, malformed, redacted,
 unsupported, or unverifiable evidence. Each finding contains severity,
 `violation|advisory|unknown` outcome, `required|recommended|deprecated|unsupported`
 requirement level, title, semantic target, redacted evidence, remediation,
@@ -1697,8 +1753,15 @@ per URL. URLs are never fetched, redirects are never followed, and no network,
 browser, OAuth, MCP, account, keychain, or credential-store path exists.
 
 A passing report proves only the implemented binding invariants in the
-supplied synthetic transcript. It does not prove token signature validity,
-PKCE correctness, client-authentication strength, IdP integrity, consent,
+supplied synthetic transcript. The PKCE rule checks the recorded S256 method
+and redacted challenge/verifier markers. Omitted PKCE fields are unrecorded
+evidence (`MCPOAUTH000`, unknown); explicit nulls record observed absence and
+non-S256 methods record noncompliance (`MCPOAUTH008`, violation). Authorization
+error responses participate in flow ordering; code redemption without a
+successful response in an error-only flow is contradictory evidence
+(`MCPOAUTH000`, unknown). The PKCE rule does not establish cryptographic
+correspondence. A report does not prove token signature validity,
+client-authentication strength, IdP integrity, consent,
 real-world authorization, or production security. See
 `docs/labs/OAUTH-TRANSCRIPT-AUDITOR.md`.
 

@@ -9,7 +9,7 @@
       "protocol_version": "2025-11-25",
       "trace_complete": true,
       "server_policy": {"session_mode": "required", "replay_mode": "supported", "duplicate_suppression": "proven", "retry_limit": 3},
-      "assumptions": [{"assumption_id": "legacy-resume-contract", "source": "standard_requirement", "statement": "Legacy Streamable HTTP permits per-stream SSE replay after Last-Event-ID.", "references": ["https://modelcontextprotocol.io/specification/2025-11-25/basic/transports"]}],
+      "assumptions": [{"assumption_id": "legacy-resume-contract", "source": "standard_requirement", "statement": "Legacy Streamable HTTP permits per-stream SSE replay after Last-Event-ID.", "references": ["https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#streamable-http"]}],
       "steps": [
         {"step_id": "init", "at_ms": 0, "type": "initialize", "session_id": "session-control"},
         {"step_id": "send", "at_ms": 10, "type": "send_request", "request_id": "req-control", "session_id": "session-control"},
@@ -46,7 +46,7 @@
       "protocol_version": "2025-11-25",
       "trace_complete": true,
       "server_policy": {"session_mode": "required", "replay_mode": "unsupported", "duplicate_suppression": "unknown", "retry_limit": 3},
-      "assumptions": [{"assumption_id": "accepted-not-delivered", "source": "design_inference", "statement": "Acceptance and result delivery are separate virtual transport transitions.", "references": ["https://www.rfc-editor.org/rfc/rfc9110.html", "https://modelcontextprotocol.io/specification/2025-11-25/basic/transports"]}],
+      "assumptions": [{"assumption_id": "accepted-not-delivered", "source": "design_inference", "statement": "Acceptance and result delivery are separate virtual transport transitions.", "references": ["https://www.rfc-editor.org/rfc/rfc9110.html", "https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#streamable-http"]}],
       "steps": [
         {"step_id": "init", "at_ms": 0, "type": "initialize", "session_id": "session-after"},
         {"step_id": "send", "at_ms": 10, "type": "send_request", "request_id": "req-after", "session_id": "session-after"},
@@ -65,7 +65,7 @@
       "protocol_version": "2025-11-25",
       "trace_complete": true,
       "server_policy": {"session_mode": "required", "replay_mode": "unsupported", "duplicate_suppression": "proven", "retry_limit": 3},
-      "assumptions": [{"assumption_id": "link-drop", "source": "fixture_behavior", "statement": "The virtual link drops the named event and performs no implicit retry.", "references": ["https://modelcontextprotocol.io/specification/2025-11-25/basic/transports"]}],
+      "assumptions": [{"assumption_id": "link-drop", "source": "fixture_behavior", "statement": "The virtual link drops the named event and performs no implicit retry.", "references": ["https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#streamable-http"]}],
       "steps": [
         {"step_id": "init", "at_ms": 0, "type": "initialize", "session_id": "session-drop"},
         {"step_id": "send", "at_ms": 10, "type": "send_request", "request_id": "req-drop", "session_id": "session-drop"},
@@ -102,7 +102,7 @@
       "protocol_version": "2025-11-25",
       "trace_complete": true,
       "server_policy": {"session_mode": "required", "replay_mode": "supported", "duplicate_suppression": "unknown", "retry_limit": 3},
-      "assumptions": [{"assumption_id": "stale-cursor-policy", "source": "design_inference", "statement": "Legacy MCP does not prescribe stale cursor retention or recovery behavior.", "references": ["https://modelcontextprotocol.io/specification/2025-11-25/basic/transports"]}],
+      "assumptions": [{"assumption_id": "stale-cursor-policy", "source": "design_inference", "statement": "Legacy MCP does not prescribe stale cursor retention or recovery behavior.", "references": ["https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#streamable-http"]}],
       "steps": [
         {"step_id": "init", "at_ms": 0, "type": "initialize", "session_id": "session-stale"},
         {"step_id": "send", "at_ms": 10, "type": "send_request", "request_id": "req-stale", "session_id": "session-stale"},
@@ -122,7 +122,7 @@
       "protocol_version": "2025-11-25",
       "trace_complete": false,
       "server_policy": {"session_mode": "required", "replay_mode": "implementation_defined", "duplicate_suppression": "unknown", "retry_limit": 3},
-      "assumptions": [{"assumption_id": "unknown-cursor-policy", "source": "design_inference", "statement": "Legacy MCP does not define the response for an unknown Last-Event-ID.", "references": ["https://modelcontextprotocol.io/specification/2025-11-25/basic/transports"]}],
+      "assumptions": [{"assumption_id": "unknown-cursor-policy", "source": "design_inference", "statement": "Legacy MCP does not define the response for an unknown Last-Event-ID.", "references": ["https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#streamable-http"]}],
       "steps": [
         {"step_id": "init", "at_ms": 0, "type": "initialize", "session_id": "session-unknown-cursor"},
         {"step_id": "send", "at_ms": 10, "type": "send_request", "request_id": "req-unknown-cursor", "session_id": "session-unknown-cursor"},
@@ -137,7 +137,7 @@
       "protocol_version": "2025-06-18",
       "trace_complete": true,
       "server_policy": {"session_mode": "required", "replay_mode": "unsupported", "duplicate_suppression": "proven", "retry_limit": 3},
-      "assumptions": [{"assumption_id": "missing-session-status", "source": "standard_requirement", "statement": "A legacy server that requires sessions should return 400 when the session header is missing.", "references": ["https://modelcontextprotocol.io/specification/2025-06-18/basic/transports"]}],
+      "assumptions": [{"assumption_id": "missing-session-status", "source": "standard_requirement", "statement": "A legacy server that requires sessions should return 400 when the session header is missing.", "references": ["https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#streamable-http"]}],
       "steps": [
         {"step_id": "init", "at_ms": 0, "type": "initialize", "session_id": "session-required"},
         {"step_id": "send", "at_ms": 10, "type": "send_request", "request_id": "req-missing", "session_id": null},
@@ -152,7 +152,7 @@
       "protocol_version": "2025-06-18",
       "trace_complete": true,
       "server_policy": {"session_mode": "required", "replay_mode": "unsupported", "duplicate_suppression": "proven", "retry_limit": 3},
-      "assumptions": [{"assumption_id": "unknown-session-status", "source": "design_inference", "statement": "Legacy MCP mandates 404 after termination but does not distinguish malformed from never-issued session IDs.", "references": ["https://modelcontextprotocol.io/specification/2025-06-18/basic/transports"]}],
+      "assumptions": [{"assumption_id": "unknown-session-status", "source": "design_inference", "statement": "Legacy MCP mandates 404 after termination but does not distinguish malformed from never-issued session IDs.", "references": ["https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#streamable-http"]}],
       "steps": [
         {"step_id": "init", "at_ms": 0, "type": "initialize", "session_id": "session-valid"},
         {"step_id": "send", "at_ms": 10, "type": "send_request", "request_id": "req-invalid", "session_id": "session-never-issued"},
@@ -167,7 +167,7 @@
       "protocol_version": "2025-11-25",
       "trace_complete": true,
       "server_policy": {"session_mode": "required", "replay_mode": "supported", "duplicate_suppression": "unknown", "retry_limit": 3},
-      "assumptions": [{"assumption_id": "session-expiry-status", "source": "standard_requirement", "statement": "After session termination, legacy requests carrying that session ID must receive 404 and reinitialize.", "references": ["https://modelcontextprotocol.io/specification/2025-11-25/basic/transports"]}],
+      "assumptions": [{"assumption_id": "session-expiry-status", "source": "standard_requirement", "statement": "After session termination, legacy requests carrying that session ID must receive 404 and reinitialize.", "references": ["https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#streamable-http"]}],
       "steps": [
         {"step_id": "init", "at_ms": 0, "type": "initialize", "session_id": "session-expiring"},
         {"step_id": "terminate", "at_ms": 10, "type": "terminate_session", "session_id": "session-expiring", "reason": "expiry"},
@@ -183,7 +183,7 @@
       "protocol_version": "2025-11-25",
       "trace_complete": true,
       "server_policy": {"session_mode": "required", "replay_mode": "unsupported", "duplicate_suppression": "proven", "retry_limit": 3},
-      "assumptions": [{"assumption_id": "client-delete", "source": "standard_requirement", "statement": "Legacy clients should DELETE unused sessions; servers may reject DELETE with 405.", "references": ["https://modelcontextprotocol.io/specification/2025-11-25/basic/transports"]}],
+      "assumptions": [{"assumption_id": "client-delete", "source": "standard_requirement", "statement": "Legacy clients should DELETE unused sessions; servers may reject DELETE with 405.", "references": ["https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#streamable-http"]}],
       "steps": [
         {"step_id": "init", "at_ms": 0, "type": "initialize", "session_id": "session-delete"},
         {"step_id": "terminate", "at_ms": 10, "type": "terminate_session", "session_id": "session-delete", "reason": "client_delete"},
@@ -199,7 +199,7 @@
       "protocol_version": "2025-11-25",
       "trace_complete": true,
       "server_policy": {"session_mode": "required", "replay_mode": "supported", "duplicate_suppression": "unknown", "retry_limit": 3},
-      "assumptions": [{"assumption_id": "restart-durability", "source": "design_inference", "statement": "MCP does not prescribe session or replay-log durability across server restart or migration.", "references": ["https://modelcontextprotocol.io/specification/2025-11-25/basic/transports"]}],
+      "assumptions": [{"assumption_id": "restart-durability", "source": "design_inference", "statement": "MCP does not prescribe session or replay-log durability across server restart or migration.", "references": ["https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#streamable-http"]}],
       "steps": [
         {"step_id": "init", "at_ms": 0, "type": "initialize", "session_id": "session-restart"},
         {"step_id": "send", "at_ms": 10, "type": "send_request", "request_id": "req-restart", "session_id": "session-restart"},
@@ -219,7 +219,7 @@
       "protocol_version": "2025-11-25",
       "trace_complete": false,
       "server_policy": {"session_mode": "required", "replay_mode": "implementation_defined", "duplicate_suppression": "unknown", "retry_limit": 3},
-      "assumptions": [{"assumption_id": "rotation-gap", "source": "design_inference", "statement": "Legacy MCP defines creation and termination but no session rotation or migration protocol.", "references": ["https://modelcontextprotocol.io/specification/2025-11-25/basic/transports"]}],
+      "assumptions": [{"assumption_id": "rotation-gap", "source": "design_inference", "statement": "Legacy MCP defines creation and termination but no session rotation or migration protocol.", "references": ["https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#streamable-http"]}],
       "steps": [
         {"step_id": "init", "at_ms": 0, "type": "initialize", "session_id": "session-old"},
         {"step_id": "rotate", "at_ms": 10, "type": "rotate_session", "old_session_id": "session-old", "new_session_id": "session-new", "migration_declared": false},
@@ -234,7 +234,7 @@
       "protocol_version": "2025-11-25",
       "trace_complete": true,
       "server_policy": {"session_mode": "required", "replay_mode": "supported", "duplicate_suppression": "unknown", "retry_limit": 3},
-      "assumptions": [{"assumption_id": "reconnect-arbitration", "source": "design_inference", "statement": "Legacy MCP permits multiple streams but does not define concurrent reconnect ownership or arbitration.", "references": ["https://modelcontextprotocol.io/specification/2025-11-25/basic/transports"]}],
+      "assumptions": [{"assumption_id": "reconnect-arbitration", "source": "design_inference", "statement": "Legacy MCP permits multiple streams but does not define concurrent reconnect ownership or arbitration.", "references": ["https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#streamable-http"]}],
       "steps": [
         {"step_id": "init", "at_ms": 0, "type": "initialize", "session_id": "session-race"},
         {"step_id": "send", "at_ms": 10, "type": "send_request", "request_id": "req-race", "session_id": "session-race"},
@@ -254,7 +254,7 @@
       "protocol_version": "2025-11-25",
       "trace_complete": true,
       "server_policy": {"session_mode": "required", "replay_mode": "supported", "duplicate_suppression": "proven", "retry_limit": 3},
-      "assumptions": [{"assumption_id": "replay-retention", "source": "design_inference", "statement": "Legacy MCP allows replay but does not prescribe retention windows or gap responses.", "references": ["https://modelcontextprotocol.io/specification/2025-11-25/basic/transports"]}],
+      "assumptions": [{"assumption_id": "replay-retention", "source": "design_inference", "statement": "Legacy MCP allows replay but does not prescribe retention windows or gap responses.", "references": ["https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#streamable-http"]}],
       "steps": [
         {"step_id": "init", "at_ms": 0, "type": "initialize", "session_id": "session-gap"},
         {"step_id": "send", "at_ms": 10, "type": "send_request", "request_id": "req-gap", "session_id": "session-gap"},
@@ -274,7 +274,7 @@
       "protocol_version": "2025-11-25",
       "trace_complete": false,
       "server_policy": {"session_mode": "required", "replay_mode": "implementation_defined", "duplicate_suppression": "unknown", "retry_limit": 3},
-      "assumptions": [{"assumption_id": "legacy-cancellation", "source": "standard_requirement", "statement": "Under legacy Streamable HTTP, disconnect is not cancellation and clients should send CancelledNotification.", "references": ["https://modelcontextprotocol.io/specification/2025-11-25/basic/transports"]}],
+      "assumptions": [{"assumption_id": "legacy-cancellation", "source": "standard_requirement", "statement": "Under legacy Streamable HTTP, disconnect is not cancellation and clients should send CancelledNotification.", "references": ["https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#streamable-http"]}],
       "steps": [
         {"step_id": "init", "at_ms": 0, "type": "initialize", "session_id": "session-cancel"},
         {"step_id": "send", "at_ms": 10, "type": "send_request", "request_id": "req-cancel", "session_id": "session-cancel"},

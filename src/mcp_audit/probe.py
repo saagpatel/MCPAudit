@@ -273,7 +273,15 @@ class _PinnedHTTPConnection(http.client.HTTPConnection):
         self.sock = _pinned_socket(self.address, self.port, self.request_timeout)
 
 
-def _request_sync(url: str, method: str, address: str, timeout: float) -> _Response:
+def _request_sync(
+    url: str,
+    method: str,
+    address: str,
+    timeout: float,
+    *,
+    request_headers: dict[str, str] | None = None,
+    request_body: bytes | None = None,
+) -> _Response:
     started = time.monotonic()
     parsed = urlsplit(url)
     host = parsed.hostname
@@ -309,6 +317,9 @@ def _request_sync(url: str, method: str, address: str, timeout: float) -> _Respo
                 },
             }
         ).encode()
+    if request_headers is not None:
+        headers = request_headers
+        body = request_body
     timer: threading.Timer | None = None
     try:
         connection.connect()

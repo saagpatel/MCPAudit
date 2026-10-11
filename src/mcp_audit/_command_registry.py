@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from copy import copy
 from dataclasses import dataclass
@@ -28,6 +29,7 @@ class NamespaceSpec:
     children: Mapping[str, CommandSpec]
     section: str = "Advanced"
     hidden: bool = False
+    implementation: click.Command | None = None
 
 
 class LazyGroup(click.Group):
@@ -51,8 +53,11 @@ class LazyGroup(click.Group):
         if spec is None:
             return None
         if isinstance(spec, NamespaceSpec):
-            return LazyGroup(name=cmd_name, help=spec.help, registry=spec.children)
-        command = getattr(import_module(spec.module), spec.attribute)
+            if spec.implementation is None:
+                return LazyGroup(name=cmd_name, help=spec.help, registry=spec.children)
+            command = spec.implementation
+        else:
+            command = getattr(import_module(spec.module), spec.attribute)
         if not isinstance(command, click.Command):
             raise TypeError(f"registry entry {cmd_name!r} is not a Click command")
         # Aliases must not mutate the canonical implementation's metadata.
@@ -141,6 +146,50 @@ LAB_COMMANDS = {
         subcommands=("list", "run", "schema"),
     ),
 }
+
+
+@click.group(cls=LazyGroup, registry=LAB_COMMANDS, invoke_without_command=True)
+@click.option(
+    "--conformance-probe", is_flag=True, help="Send negative T7/T9 requests to the explicit --url only."
+)
+@click.option("--url", help="Credential-free MCP HTTP endpoint; T9 runs only on loopback.")
+@click.option(
+    "--timeout",
+    type=click.FloatRange(min=0.1, max=30),
+    default=3.0,
+    show_default=True,
+    help="Deadline in seconds for each of at most five requests.",
+)
+@click.pass_context
+def lab(ctx: click.Context, conformance_probe: bool, url: str | None, timeout: float) -> None:
+    """Offline labs, or explicit credential-free negative HTTP conformance probes."""
+    if ctx.invoked_subcommand is not None:
+        if (
+            conformance_probe
+            or url is not None
+            or ctx.get_parameter_source("timeout") == click.core.ParameterSource.COMMANDLINE
+        ):
+            raise click.UsageError("Conformance options cannot be combined with a lab topic.")
+        return
+    if not conformance_probe:
+        if url is not None or ctx.get_parameter_source("timeout") == click.core.ParameterSource.COMMANDLINE:
+            raise click.UsageError("--url and --timeout require --conformance-probe.")
+        click.echo(ctx.get_help())
+        return
+    if url is None:
+        raise click.UsageError("--conformance-probe requires --url.")
+
+    import anyio
+
+    from mcp_audit.conformance_probe import run_conformance_probe
+
+    try:
+        report = anyio.run(run_conformance_probe, url, timeout)
+    except ValueError as exc:
+        raise click.UsageError("Provide a credential-free HTTP URL without query or fragment.") from exc
+    click.echo(json.dumps(report, sort_keys=True))
+
+
 SAFEFORGE_COMMANDS = {
     "preinstall": CommandSpec(
         "mcp_audit.safeforge_cli", "safeforge_preinstall", "Verify a forge handoff without execution."
@@ -170,6 +219,12 @@ COMMANDS: dict[str, CommandSpec | NamespaceSpec] = {
     "serve": CommandSpec(
         "mcp_audit.server", "serve_command", "Run MCPAudit as an MCP server.", "Integrations"
     ),
+    "shadow": CommandSpec(
+        "mcp_audit.shadow_cli",
+        "shadow",
+        "Review saved pins and tool surfaces without a proxy.",
+        "Integrations",
+    ),
     "scan": CommandSpec("mcp_audit._core_cli", "scan", "Full legacy audit with explicit scan modes."),
     "discover": CommandSpec(
         "mcp_audit._core_cli", "discover", "Discover configured servers without connections."
@@ -178,7 +233,12 @@ COMMANDS: dict[str, CommandSpec | NamespaceSpec] = {
     "baseline": NamespaceSpec("Manage saved tool schema baselines.", BASELINE_COMMANDS),
     "skills": NamespaceSpec("Review local skills and bundles.", SKILLS_COMMANDS),
     "safeforge": NamespaceSpec("Verify and run forge handoffs.", SAFEFORGE_COMMANDS),
-    "lab": NamespaceSpec("Experimental offline evidence contracts.", LAB_COMMANDS, "Labs"),
+    "lab": NamespaceSpec(
+        "Experimental evidence contracts and opt-in conformance probes.",
+        LAB_COMMANDS,
+        "Labs",
+        implementation=lab,
+    ),
     "monitor": CommandSpec(
         "mcp_audit.monitor",
         "monitor_command",

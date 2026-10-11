@@ -17,6 +17,7 @@ from typing import Any, Final
 
 from pydantic import ValidationError
 
+from mcp_audit.lab_primitives import read_bounded_descriptor, strict_json_loads
 from mcp_audit.task_time_machine_models import (
     CURRENT_PROTOCOL_VERSION,
     MAX_EVENTS,
@@ -1003,23 +1004,8 @@ def parse_scenario_bytes(raw: bytes) -> TaskScenario | TaskSimulationResult:
     if len(raw) > MAX_INPUT_BYTES:
         return malformed_result(raw[: MAX_INPUT_BYTES + 1], "input_size_limit_exceeded")
 
-    def pairs_hook(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-        result: dict[str, Any] = {}
-        for key, value in pairs:
-            if key in result:
-                raise ValueError("duplicate_json_key")
-            result[key] = value
-        return result
-
-    def reject_constant(_value: str) -> None:
-        raise ValueError("non_finite_json_number")
-
     try:
-        payload = json.loads(
-            raw,
-            object_pairs_hook=pairs_hook,
-            parse_constant=reject_constant,
-        )
+        payload = strict_json_loads(raw)
     except (UnicodeDecodeError, json.JSONDecodeError, RecursionError, ValueError):
         return malformed_result(raw, "invalid_strict_json")
     stack: list[tuple[Any, int]] = [(payload, 1)]
@@ -1057,7 +1043,7 @@ def load_scenario_path(path: Path) -> TaskScenario | TaskSimulationResult:
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode):
             raise TaskTimeMachineInputError("scenario_input_not_regular_file")
-        raw = os.read(descriptor, MAX_INPUT_BYTES + 1)
+        raw = read_bounded_descriptor(descriptor, MAX_INPUT_BYTES)
         after = os.fstat(descriptor)
         identity = (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
         after_identity = (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)

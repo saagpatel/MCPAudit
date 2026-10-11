@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from enum import StrEnum
 from typing import Annotated, Any, Final, Literal
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from mcp_audit.lab_primitives import model_json_bytes
 
 FIXTURE_SCHEMA: Final = "mcpaudit.oauth-transcript.fixture.v1"
 REPORT_SCHEMA: Final = "mcpaudit.oauth-transcript.report.v1"
@@ -219,6 +220,8 @@ class AuthorizationRequest(ObservationBase):
     recorded_issuer: str | None
     redirect_uri: str
     client_id_kind: Literal["https_metadata_url", "opaque"]
+    code_challenge_marker: Literal["<redacted>"] | None = None
+    code_challenge_method: str | None = Field(default=None, max_length=32)
 
     @field_validator("request_url")
     @classmethod
@@ -267,6 +270,23 @@ class AuthorizationResponse(ObservationBase):
         return None if value is None else _require_issuer_url(value)
 
 
+class AuthorizationErrorResponse(ObservationBase):
+    kind: Literal["authorization_error_response"]
+    response_status: Literal[302, 303]
+    redirect_uri: str
+    issuer: str | None
+
+    @field_validator("redirect_uri")
+    @classmethod
+    def redirect_is_synthetic(cls, value: str) -> str:
+        return _require_synthetic_url(value, redirect=True)
+
+    @field_validator("issuer")
+    @classmethod
+    def issuer_is_synthetic(cls, value: str | None) -> str | None:
+        return None if value is None else _require_issuer_url(value)
+
+
 class TokenRequest(ObservationBase):
     kind: Literal["token_request"]
     request_url: str
@@ -279,6 +299,7 @@ class TokenRequest(ObservationBase):
         default=None,
         pattern=r"^[a-z0-9][a-z0-9._-]{2,63}$",
     )
+    code_verifier_marker: Literal["<redacted>"] | None = None
 
     @field_validator("request_url")
     @classmethod
@@ -333,6 +354,7 @@ TranscriptObservation = Annotated[
     | AuthorizationServerMetadata
     | AuthorizationRequest
     | AuthorizationResponse
+    | AuthorizationErrorResponse
     | TokenRequest
     | TokenResponse
     | ProtectedResourceUse,
@@ -493,6 +515,7 @@ class OAuthTranscriptFinding(StrictModel):
         "MCPOAUTH005",
         "MCPOAUTH006",
         "MCPOAUTH007",
+        "MCPOAUTH008",
     ]
     severity: FindingSeverity
     outcome: FindingOutcome
@@ -528,8 +551,8 @@ class OAuthTranscriptReport(StrictModel):
 
 
 def canonical_json_bytes(value: BaseModel | dict[str, Any] | list[Any]) -> bytes:
-    payload = value.model_dump(mode="json", by_alias=True) if isinstance(value, BaseModel) else value
-    return (json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n").encode()
+    """Return canonical UTF-8 bytes with one terminal newline."""
+    return model_json_bytes(value, by_alias=True, allow_nan=True)
 
 
 def sha256_bytes(value: bytes) -> str:

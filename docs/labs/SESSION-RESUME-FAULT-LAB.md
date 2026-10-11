@@ -25,7 +25,7 @@ materially different from the legacy session-bearing revisions.
 Primary MCP snapshots:
 
 - [Streamable HTTP 2026-07-28](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/0cb6c6a31768cbb16129b35e6b569a31fecfe1b6/docs/specification/2026-07-28/basic/transports/streamable-http.mdx), repository path last touched by commit `0cb6c6a31768cbb16129b35e6b569a31fecfe1b6` on 2026-07-28.
-- [Transports 2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports), historical repository path last touched by commit `977e7481985c7e87e218ad037ea6ff5e383b8cfe` as of this review.
+- [Transports 2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#streamable-http), historical repository path last touched by commit `977e7481985c7e87e218ad037ea6ff5e383b8cfe` as of this review.
 - [Transports 2025-06-18](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports), historical repository path last touched by commit `0a736f347d4a6cebe6eba1d9088fe3f5516dbc37` as of this review.
 - [Streamable HTTP 2025-03-26](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2025-03-26/basic/transports.mdx).
 - [WHATWG Server-Sent Events](https://html.spec.whatwg.org/multipage/server-sent-events.html), living standard retrieved 2026-08-11. It defines `id`, retained last-event ID, `Last-Event-ID`, and `retry` processing; it does not define MCP replay retention.

@@ -271,6 +271,11 @@ def discover(client_filter: str | None, verbose: bool) -> None:
     help="Use this pin baseline for verification and drift checks.",
 )
 @click.option(
+    "--pin-min-sequence",
+    type=click.IntRange(min=1),
+    help="Require a trusted signed pin manifest at or above this sequence (policy exit 2 on failure).",
+)
+@click.option(
     "--trifecta-check",
     is_flag=True,
     default=False,
@@ -361,6 +366,7 @@ def scan(
     multi_tenant_hosts: str | None,
     pin_check: bool,
     pin_file: Path | None,
+    pin_min_sequence: int | None,
     trifecta_check: bool,
     shadow_check: bool,
     escalation_check: bool,
@@ -398,6 +404,7 @@ def scan(
             names=names,
             previous=previous,
             pin_file=pin_file,
+            pin_min_sequence=pin_min_sequence,
         ),
         json_output,
         sarif_output,
@@ -464,8 +471,8 @@ async def _run_scan_core(
 
     The scan pipeline moved to :mod:`mcp_audit.engine`; this wrapper keeps the
     old private entry point working for external callers (e.g. shadow-mcp)
-    until they migrate. It preserves the historical behavior of printing
-    progress + advisory warnings to the CLI console.
+    through 2.x; removal is scheduled for 3.0. It preserves the historical
+    behavior of printing progress + advisory warnings to the CLI console.
 
     FROZEN SURFACE: never extend this signature. New scan options go on
     :class:`mcp_audit.engine.ScanOptions` only — a flag added here but not
@@ -473,7 +480,7 @@ async def _run_scan_core(
     """
     warnings.warn(
         "mcp_audit.cli._run_scan_core is deprecated; use mcp_audit.engine.run_scan "
-        "with mcp_audit.engine.ScanOptions instead.",
+        "with mcp_audit.engine.ScanOptions instead. Scheduled for removal in 3.0.",
         DeprecationWarning,
         stacklevel=2,
     )

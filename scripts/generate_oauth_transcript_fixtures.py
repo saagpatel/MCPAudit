@@ -113,6 +113,8 @@ def base(fixture_id: str, control_kind: str) -> dict[str, Any]:
                 "recorded_issuer": AUTHORITY,
                 "redirect_uri": REDIRECT,
                 "client_id_kind": "opaque",
+                "code_challenge_marker": "<redacted>",
+                "code_challenge_method": "S256",
             },
             {
                 "kind": "authorization_response",
@@ -137,6 +139,7 @@ def base(fixture_id: str, control_kind: str) -> dict[str, Any]:
                 "resources": [RESOURCE],
                 "scopes": ["mcp.read"],
                 "credential_record_id": "synthetic-dcr-client",
+                "code_verifier_marker": "<redacted>",
             },
             {
                 "kind": "token_response",
@@ -240,6 +243,11 @@ def fixture(rule: int, control: str) -> dict[str, Any]:
             payload["observations"][3]["redirect_uri"] = REDIRECT_EPHEMERAL
             payload["observations"][4]["redirect_uri"] = REDIRECT_EPHEMERAL
             payload["observations"][5]["redirect_uri"] = REDIRECT_EPHEMERAL
+    elif rule == 8:
+        if control == "vulnerable":
+            payload["observations"][3]["code_challenge_method"] = "plain"
+        elif control == "near_miss":
+            payload["observations"][3]["code_challenge_method"] = "S256"
     return payload
 
 
@@ -252,7 +260,7 @@ def write_fixture(name: str, payload: dict[str, Any]) -> None:
 
 def main() -> None:
     ROOT.mkdir(parents=True, exist_ok=True)
-    for rule in range(8):
+    for rule in range(9):
         for control in ("vulnerable", "negative", "near_miss"):
             write_fixture(f"mcpoauth{rule:03d}-{control}.json", fixture(rule, control))
 
