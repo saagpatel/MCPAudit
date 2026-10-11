@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Lead empty-home bare CLI output with the empty state, followed immediately by
+  its coverage summary.
 - Keep long string parameters out of generated pytest IDs to avoid oversized collection output.
 - Review authorization metadata for independently valid `WWW-Authenticate` header
   lines and legal empty comma elements. Ambiguous metadata, malformed lines,
