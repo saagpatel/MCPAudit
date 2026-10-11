@@ -88,6 +88,27 @@ def test_release_metadata_verifier_passes() -> None:
     assert "release metadata verified for 2.9.0" in result.stdout
 
 
+def test_release_verifier_requires_public_tag_in_precommit_usage_comment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    read_text = RELEASE_VERIFIER["_read_text"]
+
+    def read_with_stale_precommit_tag(path: str) -> str:
+        content = read_text(path)
+        if path == ".pre-commit-hooks.yaml":
+            return content.replace("rev: v2.9.0", "rev: v2.8.1")
+        return content
+
+    monkeypatch.setitem(
+        RELEASE_VERIFIER["verify_metadata"].__globals__, "_read_text", read_with_stale_precommit_tag
+    )
+    with pytest.raises(
+        RELEASE_VERIFIER["VerificationError"],
+        match="pre-commit usage comment does not reference the usable public release",
+    ):
+        RELEASE_VERIFIER["verify_metadata"](require_publishable=False)
+
+
 def test_release_state_cannot_keep_a_stale_published_version(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
