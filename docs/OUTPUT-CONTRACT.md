@@ -57,11 +57,11 @@ structural decision (flag, label, delimiter, URL path label, spaced userinfo)
 is made over the same readings. A label is judged on its raw bytes, including
 adjacent removed runs, and the same judgment applies to free text, URL paths,
 argv flags, schema property names and their literals, JSON keys, and pin
-snapshots. A label or token whose readings are too many to enumerate is
-ambiguous: the label is treated as secret, and a token that any reading could
-make structural is withheld with the token after it. That fallback judges the
-union of every character any reading contributes after detection
-normalization (a fullwidth `＠` counts as `@`), so it is never less
+snapshots. Suffixes are enumerated up to 64 characters per sequence, so the
+cost stays linear in the field. A label or token whose readings cannot be
+enumerated (too many combinations, a longer sequence, or the field's
+detection budget spent) is ambiguous: the label is treated as secret, and the
+token is withheld together with the token after it, which is never less
 conservative than enumerating the readings.
 Credential values with changed structural delimiters are withheld,
 including introduced whitespace or removed escapes. Unmappable matches or uncertain value
