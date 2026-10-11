@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Reuse one credential-redacted snapshot across legacy scan renderers, retaining
+  separate identifier scrubbing for shared artifacts and fresh redaction for
+  standalone renderer calls. Encode JSON reports with the native encoder when
+  supported, with a compatibility fallback for older cores and lone surrogates.
+- Reuse bounded agent-visible tool text across coverage and detector passes,
+  match permission keywords once per field across categories, and visit only
+  present schema child keywords in the existing traversal order. Detector
+  evidence, schema budgets, connection concurrency, and process cleanup are
+  unchanged.
 - Reduce hostile-fleet scan overhead with standard JSON decoding before the
   JSON5 fallback, ASCII normalization without per-character classification,
   keyword scoring over matched rules, and bounded report-local redaction reuse.
