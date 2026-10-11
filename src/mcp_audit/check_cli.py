@@ -111,6 +111,12 @@ def _print_sources(out: Console, paths: list[tuple[str, str]]) -> None:
 )
 @click.option("--show-host", is_flag=True, help="Include the hostname in HTML (hidden by default).")
 @click.option("--policy", type=click.Path(path_type=Path), help="Evaluate this explicit local policy.")
+@click.option("--pin-file", type=click.Path(path_type=Path), help="Use this pin baseline for policy checks.")
+@click.option(
+    "--pin-min-sequence",
+    type=click.IntRange(min=1),
+    help="Require a trusted signed pin manifest at or above this sequence (policy exit 2 on failure).",
+)
 @click.option(
     "--override-config", type=click.Path(path_type=Path), help="Ignore YAML (default: ~/.mcp-audit.yaml)."
 )
@@ -152,6 +158,8 @@ def check(
     html: Path | None,
     show_host: bool,
     policy: Path | None,
+    pin_file: Path | None,
+    pin_min_sequence: int | None,
     color: str,
     override_config: Path | None,
     ignore_rules: tuple[str, ...],
@@ -216,6 +224,8 @@ def check(
             inputs.append(ignore_path)
         if policy is not None:
             inputs.append(policy)
+        if pin_file is not None:
+            inputs.append(pin_file)
         if previous is not None:
             inputs.append(previous)
         try:
@@ -257,6 +267,17 @@ def check(
                     "check the policy file and rerun mcp-audit check --policy FILE",
                     scanned=False,
                 ) from None
+        if pin_min_sequence is not None:
+            from dataclasses import replace
+
+            from mcp_audit.policy import PolicyConfig
+
+            policy_config = replace(
+                policy_config or PolicyConfig(),
+                pin_min_sequence=max(pin_min_sequence, policy_config.pin_min_sequence or 0)
+                if policy_config
+                else pin_min_sequence,
+            )
         operation = partial(
             run_scan,
             ScanOptions(
@@ -281,7 +302,17 @@ def check(
         if policy_config is not None:
             from mcp_audit.policy import evaluate_policy
 
-            report.policy_result = evaluate_policy(report, policy_config)
+            selected_pin_store = None
+            if (
+                policy_config.required_pin_servers
+                or policy_config.pin_min_sequence is not None
+                or policy_config.fail_on_pin_integrity
+                or any(rule.require_pin for rule in policy_config.server_rules.values())
+            ):
+                from mcp_audit.pinning import PinStore
+
+                selected_pin_store = PinStore(path=pin_file)
+            report.policy_result = evaluate_policy(report, policy_config, pin_store=selected_pin_store)
         safe_report = report.redacted()
         payload = json.dumps(safe_report.model_dump(mode="json"), indent=2)
         if not json_stdout:

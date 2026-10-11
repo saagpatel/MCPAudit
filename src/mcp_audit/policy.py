@@ -43,6 +43,7 @@ class PolicyConfig:
     fail_on_package_verify: bool = False
     fail_on_artifact_verify: bool = False
     fail_on_pin_integrity: bool = False
+    pin_min_sequence: int | None = None
     required_pin_servers: list[str] = field(default_factory=list)
     denied_permissions: list[PermissionCategory] = field(default_factory=list)
     max_risk: float | None = None
@@ -81,6 +82,9 @@ def load_policy(path: Path) -> PolicyConfig:
     deny = _mapping(raw.get("deny"), "deny")
     require = _mapping(raw.get("require"), "require")
     pins = _mapping(require.get("pins"), "require.pins")
+    pin_min_sequence = require.get("pin_min_sequence")
+    if "pin_min_sequence" in require and (type(pin_min_sequence) is not int or pin_min_sequence < 1):
+        raise ValueError("require.pin_min_sequence must be a positive integer.")
     server_rules = _server_rules(raw.get("servers"))
 
     severity = _severity(fail_on.get("severity"), "fail_on.severity")
@@ -134,6 +138,7 @@ def load_policy(path: Path) -> PolicyConfig:
         fail_on_package_verify=package_verify,
         fail_on_artifact_verify=artifact_verify,
         fail_on_pin_integrity=pin_integrity,
+        pin_min_sequence=pin_min_sequence,
         required_pin_servers=[str(value) for value in _sequence(pins.get("servers"), "require.pins.servers")],
         denied_permissions=permissions,
         max_risk=max_risk,
@@ -184,11 +189,34 @@ def evaluate_policy(
                 )
     resolved_pin_store = pin_store
     if (
-        policy.required_pin_servers or any(rule.require_pin for rule in policy.server_rules.values())
+        policy.required_pin_servers
+        or policy.pin_min_sequence is not None
+        or any(rule.require_pin for rule in policy.server_rules.values())
     ) and resolved_pin_store is None:
         from mcp_audit.pinning import PinStore
 
         resolved_pin_store = PinStore()
+
+    if policy.pin_min_sequence is not None:
+        from mcp_audit.pinning import PinStore
+
+        sequence = (
+            resolved_pin_store.verified_manifest_sequence()
+            if isinstance(resolved_pin_store, PinStore)
+            else None
+        )
+        if sequence is None or sequence < policy.pin_min_sequence:
+            violations.append(
+                PolicyViolation(
+                    rule="require.pin_min_sequence",
+                    severity="high",
+                    message=(
+                        "A trusted signed pin manifest with "
+                        f"sequence >= {policy.pin_min_sequence} is required; "
+                        + ("no verified sequence is available." if sequence is None else f"got {sequence}.")
+                    ),
+                )
+            )
 
     # Servers whose saved baseline the scan withheld from comparison.
     withheld_servers = {

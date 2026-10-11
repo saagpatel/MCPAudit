@@ -78,9 +78,39 @@ with the pins; `pin --clear SERVER` re-signs it.
 Genuine legacy v1 entries (v1 tool pins with no v2 markers) still only warn, but
 with a trusted key their baseline is withheld from comparisons
 (`pin_baseline_withheld`) because nothing authenticates it.
-Rollback detection needs history: a fresh CI trust store has no high-water
-`pinned_at` until its first verification, so persist this store separately from
-pins (or seed `servers.SERVER.last_seen_pinned_at`) to warn on older signed pins.
+Every signed write, refresh, re-sign, rotation and signed clear increments the
+manifest's signed positive-integer `sequence`, starting at 1. For one-shot CI,
+set a minimum independently of the pin file being checked:
+
+```yaml
+require:
+  pin_min_sequence: 12
+fail_on:
+  pin_integrity: true
+```
+
+Alternatively, add `--pin-min-sequence 12` to the static scan above (or to
+`check --config ./fixture.json --pin-file ./pins.yaml`). Both commands return
+policy exit status 2 if the verified manifest is older, missing, untrusted, or
+has no sequence. A CLI minimum cannot lower a policy minimum. Existing signed
+manifests without a sequence still verify without this gate; re-sign after
+review to start their sequence at 1. Keep the minimum in protected CI settings
+or a separately reviewed policy: rolling back both the pins and the minimum
+defeats this protection. The sequence counts writes to this pin file; restoring
+an old file before signing can reuse a previously issued sequence.
+
+Persisting the separate trust store is the stronger option for retaining trust
+and per-server history. Preserve `~/.mcp-audit/trusted-pin-keys.json` between CI
+runs using protected persistent storage, separately from the editable pin file;
+restore it before verification and save updates after verification. Protect it
+against rollback and deletion, and serialize jobs that update the same store.
+Do not provision CI with the private signing key. A public-key-only store can
+bootstrap verification from an independently trusted key, but has no timestamp
+history until its first verification. Persisted `last_seen_pinned_at` values
+warn `pin_rolled_back` on older signed entries; those warnings alone do not
+fail CI, so use the sequence gate to enforce the required minimum.
+A signed manifest with a missing trust store produces HIGH `MCP027` and withholds
+saved baselines; restoring the independently trusted store is required.
 Ordinary pin writes and refreshes refuse failed verification rather than
 copying and re-signing saved registry hashes. Restore a trusted backup, or
 explicitly clear the server's pin and review a fresh baseline before re-pinning.

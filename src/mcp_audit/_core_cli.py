@@ -271,6 +271,11 @@ def discover(client_filter: str | None, verbose: bool) -> None:
     help="Use this pin baseline for verification and drift checks.",
 )
 @click.option(
+    "--pin-min-sequence",
+    type=click.IntRange(min=1),
+    help="Require a trusted signed pin manifest at or above this sequence (policy exit 2 on failure).",
+)
+@click.option(
     "--trifecta-check",
     is_flag=True,
     default=False,
@@ -361,6 +366,7 @@ def scan(
     multi_tenant_hosts: str | None,
     pin_check: bool,
     pin_file: Path | None,
+    pin_min_sequence: int | None,
     trifecta_check: bool,
     shadow_check: bool,
     escalation_check: bool,
@@ -398,6 +404,7 @@ def scan(
             names=names,
             previous=previous,
             pin_file=pin_file,
+            pin_min_sequence=pin_min_sequence,
         ),
         json_output,
         sarif_output,
