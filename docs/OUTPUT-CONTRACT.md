@@ -3,6 +3,39 @@
 MCPAudit reports are designed for local review and CI ingestion. Keep this
 contract stable unless a release note calls out a breaking change.
 
+## Report redaction
+
+Terminal, JSON, SARIF, and HTML consume the credential-redacted typed report
+through `AuditReport.redacted()`. Declared report field names and
+`schema_version` are unchanged. Redaction does not rescore findings or regroup
+the saved review summary.
+
+Launch argv uses element boundaries: secret flags consume their next value,
+including a dash-prefixed value, and inline assignments withhold their entire
+value. Complete server URL fields are parsed; userinfo, query values, and
+fragments are withheld while endpoint context is retained. Malformed URL
+authorities are withheld. Environment and header configuration retain key
+names only. Any environment/header maps in arbitrary metadata withhold values.
+
+Dynamic JSON keys and schema property names receive credential redaction too.
+If keys collapse to the same redacted text, ordinal suffixes retain all map
+entries. Secret-property string literals in defaults, examples, constants, and
+enums are withheld recursively. Redacted schemas are display evidence, not
+replacement schemas for execution or validation.
+
+Matching uses the shared Unicode normalization (NFKC, invisible removal, and
+curated confusable folding) and terminal-control removal before the free-text
+fallback. Normalized display text may replace an obfuscated credential-bearing
+field. Excerpts whose raw offsets cannot safely survive normalization are
+withheld. Server stderr keeps its stricter policy: withhold every control-bearing
+line rather than strip controls and reveal its contents.
+Display match offsets are cleared when redaction changes their matched text.
+
+Free text still uses best-effort credential patterns; arbitrary unlabeled
+secrets are not guaranteed to be recognized. Review reports before sharing.
+The separate opt-in identifier pass continues to scrub host, home-directory,
+and server identifiers.
+
 ## Credential-free authorization observations
 
 Eligible connected HTTP scans add `ServerAudit.authorization_probe` and, when

@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Redact typed reports structurally before terminal, JSON, SARIF, and HTML
+  rendering, including argv values, URL components, dynamic dictionary keys,
+  schema property names, Unicode-obfuscated credentials, and escaped quotes.
+  Keep control-bearing server stderr lines withheld.
 - Keep long string parameters out of generated pytest IDs to avoid oversized collection output.
 
 ## [2.9.0] - 2026-10-10
