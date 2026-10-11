@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A signed pin manifest still produces `MCP027` when its separate trust store
   is missing, preventing trust-store deletion from bypassing verification.
+  Pin writes also refuse unverified manifests rather than signing their claimed
+  sequence, and failed clears preserve the signed manifest.
 - Keep long string parameters out of generated pytest IDs to avoid oversized collection output.
 - Review authorization metadata for independently valid `WWW-Authenticate` header
   lines and legal empty comma elements. Ambiguous metadata, malformed lines,

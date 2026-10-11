@@ -499,10 +499,10 @@ class PinStore:
     def _check_manifest_writable(self, *, removing: str | None = None) -> None:
         from mcp_audit.pin_signing import PinSigningError
 
-        if not self._keys_trusted():
+        if not self._keys_trusted() and "manifest" not in self._data:
             return
         state, listed = self._manifest()
-        if state == "invalid":
+        if "manifest" in self._data and state != "valid":
             raise PinSigningError(
                 "Cannot write through a pin file whose signed manifest fails verification; "
                 "restore it from backup."
@@ -527,10 +527,11 @@ class PinStore:
             and "signature" in entry
             and isinstance(entry.get("surface_sha256"), str)
         }
-        prior = self._data.get("manifest")
-        sequence = prior.get("sequence", 0) if isinstance(prior, dict) else 0
-        if type(sequence) is not int or sequence < 0:
-            raise PinSigningError("Cannot advance an invalid pin manifest sequence; restore it from backup.")
+        if "manifest" in self._data and self._manifest()[0] != "valid":
+            raise PinSigningError(
+                "Cannot advance an unverified pin manifest sequence; restore it from backup."
+            )
+        sequence = self.verified_manifest_sequence() or 0
         document = {"schema": PIN_MANIFEST_SCHEMA, "servers": signed, "sequence": sequence + 1}
         self._data["manifest"] = {**document, **sign_document(document, self._signing_key)}
         self._manifest_cache = None
@@ -1016,13 +1017,10 @@ class PinStore:
             if "manifest" in self._data and (was_signed or listed):
                 try:
                     self._sign_manifest()
-                except PinSigningError:
-                    if self._keys_trusted():
-                        raise PinSigningError(
-                            "Clearing a signed pin re-signs the pin manifest; a signing key is required."
-                        ) from None
-                    # No trusted keys: the manifest is ignored; drop the stale one.
-                    del self._data["manifest"]
+                except PinSigningError as exc:
+                    raise PinSigningError(
+                        "Clearing a signed pin re-signs the pin manifest; a signing key is required."
+                    ) from exc
             if removed is not None or listed:
                 self._write()
             self._reset_verification()

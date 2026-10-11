@@ -15,7 +15,7 @@ from click.testing import CliRunner
 from mcp_audit import cli, pin_signing, pinning
 from mcp_audit.engine import ScanOptions, run_scan
 from mcp_audit.models import AuditReport, PinVerificationState, ToolInfo
-from mcp_audit.pin_signing import GeneratedKey, generate_keypair, sign_document, trust_key
+from mcp_audit.pin_signing import GeneratedKey, PinSigningError, generate_keypair, sign_document, trust_key
 from mcp_audit.pinning import PinStore
 from mcp_audit.policy import PolicyConfig, evaluate_policy, load_policy
 from tests.conftest import make_server_config
@@ -229,3 +229,112 @@ def test_policy_minimum_uses_default_store(
     store, _, _ = signed_pins
     monkeypatch.setattr(pinning, "DEFAULT_PIN_PATH", store.path)
     assert evaluate_policy(empty_report(), PolicyConfig(pin_min_sequence=1)).passed
+
+
+@pytest.mark.parametrize(
+    "manifest_state,write", [("unsigned", "pin"), ("unsigned", "resign"), ("signed-empty", "resign")]
+)
+def test_writers_cannot_authenticate_a_sequence_after_trust_store_deletion(
+    signed_pins: tuple[PinStore, GeneratedKey, Path],
+    tmp_path: Path,
+    write: str,
+    manifest_state: str,
+) -> None:
+    store, key, trust = signed_pins
+    assert store.verified_manifest_sequence() == 1
+    ci_trust = tmp_path / "ci-trust.json"
+    trust_key(key.public_key, ci_trust)
+    data = yaml.safe_load(store.path.read_text())
+    if manifest_state == "unsigned":
+        data["manifest"] = {"schema": pinning.PIN_MANIFEST_SCHEMA, "sequence": 11, "servers": {}}
+        entry = data["servers"]["fixture"]
+        for field in ("signature", "signer", "surface_sha256", "canonical_bytes_len"):
+            entry.pop(field)
+        for tool in entry["tools"].values():
+            tool["snapshot"]["description"] = "unreviewed replacement"
+    else:
+        document = {
+            "schema": pinning.PIN_MANIFEST_SCHEMA,
+            "sequence": 11,
+            "servers": data["manifest"]["servers"],
+        }
+        data["manifest"] = {**document, **sign_document(document, key.private_key_path)}
+        data["servers"] = {}
+    store.path.write_text(yaml.safe_dump(data))
+    trust.unlink()
+    before = store.path.read_bytes()
+    key_before = key.private_key_path.read_bytes()
+
+    if write == "pin":
+        # Reuse an instance that previously cached trusted verification.
+        with pytest.raises(PinSigningError, match="signed manifest fails verification"):
+            store.pin_server("fixture", [ToolInfo(name="replacement", input_schema={})])
+    else:
+        result = CliRunner().invoke(
+            cli.main,
+            [
+                "pin",
+                "--pin-file",
+                str(store.path),
+                "--signing-key",
+                str(key.private_key_path),
+                "rotate-key",
+                "--resign",
+            ],
+        )
+        assert result.exit_code == 1, result.output
+        assert "signed manifest fails verification" in " ".join(result.output.split())
+
+    assert store.path.read_bytes() == before
+    assert key.private_key_path.read_bytes() == key_before
+    assert not trust.exists()
+    ci_reader = PinStore(store.path, trusted_keys_path=ci_trust)
+    assert not evaluate_policy(empty_report(), PolicyConfig(pin_min_sequence=12), ci_reader).passed
+
+
+def test_clear_preserves_signed_manifest_and_mcp027_after_trust_and_key_deletion(
+    signed_pins: tuple[PinStore, GeneratedKey, Path], tmp_path: Path
+) -> None:
+    store, key, trust = signed_pins
+    tool = ToolInfo.model_validate_json(Path("tests/fixtures/pinning/tool-v2.json").read_text())
+    store.pin_server("payments", [tool])
+    store.pin_server("docs", [tool])
+    trust.unlink()
+    key.private_key_path.unlink()
+    before = store.path.read_bytes()
+
+    result = CliRunner().invoke(cli.main, ["pin", "--pin-file", str(store.path), "--clear", "payments"])
+    assert result.exit_code == 1, result.output
+    assert "signed manifest fails verification" in " ".join(result.output.split())
+    assert store.path.read_bytes() == before
+    assert not trust.exists()
+
+    data = yaml.safe_load(store.path.read_text())
+    data["servers"]["docs"] = {"pin_schema": 2, "tools": {}}
+    store.path.write_text(yaml.safe_dump(data))
+    config = tmp_path / "synthetic.json"
+    config.write_text('{"mcpServers": {"docs": {"command": "fixture"}}}')
+    report = tmp_path / "report.json"
+    result = CliRunner().invoke(
+        cli.main,
+        [
+            "scan",
+            "--config",
+            str(config),
+            "--config-only",
+            "--skip-connect",
+            "--override-config",
+            "/dev/null",
+            "--pin-file",
+            str(store.path),
+            "--pin-check",
+            "--json",
+            str(report),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    audit = json.loads(report.read_text())["audits"][0]
+    assert audit["pin_integrity_findings"][0]["rule_id"] == "MCP027"
+    assert audit["pin_integrity_findings"][0]["severity"] == "high"
+    assert not PinStore(store.path).baseline_usable("docs")
+    assert not trust.exists()
