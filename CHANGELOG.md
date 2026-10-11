@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Reduce hostile-fleet scan overhead with standard JSON decoding before the
+  JSON5 fallback, ASCII normalization without per-character classification,
+  keyword scoring over matched rules, and bounded report-local redaction reuse.
+  Redaction reuses its serialized containers without modifying source models.
+- Avoid the remaining stdio shutdown grace once the owned process group has
+  exited, and reduce per-line deadline tracing overhead while retaining every
+  clock check. Connection concurrency, deadlines, and performance budgets are
+  unchanged.
+
 ## [2.10.0] - 2026-10-11
 
 ### Upgrade notes
