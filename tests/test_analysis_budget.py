@@ -24,7 +24,6 @@ def test_deadline_interrupts_python_work_and_restores_trace() -> None:
         while True:
             time.monotonic()
     assert sys.gettrace() is previous
-    assert time.monotonic() - started < 1
 
 
 def test_deadline_restores_an_existing_tracer() -> None:

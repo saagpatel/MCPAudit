@@ -12,6 +12,7 @@ from mcp_audit.analyzer import PermissionAnalyzer
 from mcp_audit.models import (
     Confidence,
     PermissionCategory,
+    PermissionFinding,
     PromptInfo,
     ResourceInfo,
     ToolAnnotations,
@@ -208,12 +209,16 @@ def test_category_matcher_preserves_all_overlapping_pattern_scores_and_evidence(
         assert analyzer._score_keywords(sources, paths) == expected, text
 
 
-def test_five_megabyte_description_analysis_stays_under_one_second() -> None:
-    tool = make_tool("status", description="read_file " + "x" * 5_000_000)
-    started = perf_counter()
-    findings = analyzer.analyze_tool_keywords(tool)
-    elapsed = perf_counter() - started
-    assert elapsed < 1.0
+def test_five_megabyte_description_analysis_scales_linearly() -> None:
+    def analyze(size: int) -> tuple[float, list[PermissionFinding]]:
+        tool = make_tool("status", description="read_file " + "x" * size)
+        started = perf_counter()
+        findings = analyzer.analyze_tool_keywords(tool)
+        return perf_counter() - started, findings
+
+    small_elapsed, _ = analyze(1_000_000)
+    large_elapsed, findings = analyze(5_000_000)
+    assert large_elapsed < 10 * small_elapsed + 0.05
     assert next(f for f in findings if f.category == PermissionCategory.FILE_READ).evidence == [
         "read_file",
         "read",
