@@ -73,6 +73,18 @@ def _category_regex(
     return regex, contained
 
 
+@cache
+def _category_rules(category: PermissionCategory) -> dict[str, list[tuple[int, int]]]:
+    """Index score contributions in the existing evidence order."""
+    rules: dict[str, list[tuple[int, int]]] = {}
+    order = 0
+    for strength, patterns in PERMISSION_PATTERNS[category].items():
+        for pattern in patterns:
+            rules.setdefault(pattern, []).append((order, _STRENGTH_SCORES[strength]))
+            order += 1
+    return rules
+
+
 # Weighted score thresholds for confidence levels
 _HIGH_THRESHOLD = 6  # ≥2 strong name hits (3*weight=3 * 2 = 6)
 _MEDIUM_THRESHOLD = 2
@@ -413,31 +425,33 @@ class PermissionAnalyzer:
             PermissionCategory.EXFILTRATION: transfer_context,
         }
 
-        for category, strengths in PERMISSION_PATTERNS.items():
+        for category in PERMISSION_PATTERNS:
             total_score = 0
             evidence: list[str] = []
             regex, contained = _category_regex(category)
-            source_hits: list[tuple[set[str], int]] = []
-            for text, weight in normalized:
+            hit_sources: dict[str, list[tuple[int, int]]] = {}
+            for index, (text, weight) in enumerate(normalized):
                 hits: set[str] = set()
                 for match in regex.finditer(text):
                     hits.update(contained[match.group(1)])
-                source_hits.append((hits, weight))
+                for pattern in hits:
+                    hit_sources.setdefault(pattern, []).append((index, weight))
             matched_paths: list[str] = []
 
-            for strength, patterns in strengths.items():
-                strength_score = _STRENGTH_SCORES[strength]
-                for pattern in patterns:
-                    if contextual and pattern in _CONTEXTUAL_KEYWORDS.get(category, set()):
-                        if not contexts[category]:
-                            continue
-                    for index, (hits, source_weight) in enumerate(source_hits):
-                        if pattern in hits:
-                            total_score += strength_score * source_weight
-                            if pattern not in evidence:
-                                evidence.append(pattern)
-                            if paths is not None and paths[index] not in matched_paths:
-                                matched_paths.append(paths[index])
+            rules = _category_rules(category)
+            contributions = sorted(
+                (order, pattern, score) for pattern in hit_sources for order, score in rules[pattern]
+            )
+            for _order, pattern, strength_score in contributions:
+                if contextual and pattern in _CONTEXTUAL_KEYWORDS.get(category, ()):
+                    if not contexts[category]:
+                        continue
+                for index, source_weight in hit_sources[pattern]:
+                    total_score += strength_score * source_weight
+                    if pattern not in evidence:
+                        evidence.append(pattern)
+                    if paths is not None and paths[index] not in matched_paths:
+                        matched_paths.append(paths[index])
 
             results[category] = (total_score, evidence, matched_paths)
 

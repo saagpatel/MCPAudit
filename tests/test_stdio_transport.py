@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
 
 import anyio
 import pytest
 from anyio.abc import ByteReceiveStream
 from click.testing import CliRunner
+from mcp.os.win32.utilities import ServerProcess
 from mcp.types import ListToolsResult, Tool
 
+from mcp_audit import stdio_transport
 from mcp_audit.connector import ServerConnector, _list_pages
 from mcp_audit.engine import ScanOptions, run_scan
 from mcp_audit.stdio_transport import FrameSizeError, read_lines
@@ -19,6 +24,37 @@ from mcp_audit.text_limits import MAX_FIELD_BYTES
 from tests.conftest import make_server_config
 
 FIXTURES = Path(__file__).parent / "fixtures"
+
+
+@pytest.mark.anyio
+async def test_shutdown_does_not_sleep_after_the_owned_group_exits(monkeypatch: pytest.MonkeyPatch) -> None:
+    signals: list[int] = []
+    closed: list[object] = []
+    stdin, stdout = object(), object()
+
+    async def exited() -> int:
+        return 0
+
+    async def close_pipe(pipe: object) -> None:
+        closed.append(pipe)
+
+    async def unexpected_sleep(seconds: float) -> None:
+        pytest.fail("An exited group must not consume the shutdown grace")
+
+    def killpg(pid: int, sig: int) -> None:
+        assert pid == 12345
+        signals.append(sig)
+        if sig == 0:
+            raise ProcessLookupError
+
+    process = cast(ServerProcess, SimpleNamespace(pid=12345, stdin=stdin, stdout=stdout, wait=exited))
+    monkeypatch.setattr(os, "killpg", killpg)
+    monkeypatch.setattr(stdio_transport, "_close_pipe", close_pipe)
+    monkeypatch.setattr(stdio_transport, "_close_subprocess_transport", lambda process: None)
+    monkeypatch.setattr(anyio, "sleep", unexpected_sleep)
+    await stdio_transport._stop_process_group(process, lambda message: pytest.fail(message))
+    assert signals == [15, 0]
+    assert closed == [stdin, stdout]
 
 
 class ChunkStream(ByteReceiveStream):
