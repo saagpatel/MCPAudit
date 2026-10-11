@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Describe `--inject-check` and MCP019 findings in terms of instruction-shaped text.
+
 ### Added
 
 - Lint GitHub Actions workflows on every pull request with a checksum-verified,

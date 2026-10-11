@@ -176,6 +176,8 @@ class TestDescriptionInjectionEscalation:
         assert f.severity == EscalationSeverity.HIGH
         assert f.rule_id == "MCP019"
         assert "instruction_override" in f.gained_patterns
+        assert "instruction-shaped text" in f.description
+        assert "prompt injection" not in f.description.casefold()
 
     def test_preexisting_injection_in_baseline_is_not_reescalated(self) -> None:
         # Injection present in BOTH baseline and current → no new pattern gained.

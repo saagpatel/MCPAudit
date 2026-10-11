@@ -334,7 +334,7 @@ see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp0
 
 Your pinned tool now contains new instruction-shaped text.
 
-What we saw: The current description contains injection patterns absent from the saved tool description.
+What we saw: The current description contains instruction-shaped text absent from the saved tool description.
 
 Why it matters:
 
