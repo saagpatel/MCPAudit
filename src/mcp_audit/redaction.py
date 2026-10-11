@@ -36,7 +36,8 @@ _MAX_READINGS = 1024
 _CACHED_NAME_LENGTH = 256
 # Reading characters detected per field before its remaining tokens are ambiguous.
 _READING_BUDGET = 1 << 18
-_STRUCTURAL_BYTES = re.compile(r"[=:@/?#\"'`]")
+# Characters a structural decision keys on (delimiters, URL and quote boundaries).
+_STRUCTURAL_CHARS = frozenset("=:@/?#\"'`<>\\")
 # A value is a run of quoted and unquoted segments, as in a shell word, so a
 # replacement never stops where a second pass would continue. A backslash
 # escapes the next character; an unterminated quoted segment runs to the end
@@ -154,31 +155,39 @@ def _segments(value: str) -> list[_Segment]:
     Detection drops a removed run, but a terminal or a reader of the raw field
     may take its printable bytes literally: a CSI/C1 final byte (``ESC [ s``),
     its parameters and intermediates, an OSC payload or the byte after a bare
-    ESC. A CSI consumes parameter and intermediate bytes greedily, so the
-    sequence may have been meant to end earlier: it reads as dropped or as any
-    suffix of its printable bytes. Any other run reads as dropped, as its last
-    printable byte, or as all of them. The longest reading is always last.
+    ESC. A sequence may have been meant to end earlier than the parser ended
+    it (a CSI consumes parameter and intermediate bytes greedily; an OSC runs
+    to its terminator), so each sequence in a removed run reads as dropped or
+    as any suffix of its printable bytes. The longest reading is always last.
     """
     segments: list[_Segment] = []
     cursor = 0
     for start, end in (*control_free_spans(value), (len(value), len(value))):
-        if cursor < start:
-            printable = tuple(
-                index
-                for left, right in _printable_spans(value, cursor, start)
-                for index in range(left, right)
-            )
-            choices: dict[str, _Choice] = {"": ("", (), True)}
-            csi = value.startswith(("\x1b[", "\x9b"), cursor)
-            suffixes = range(len(printable) - 1, -1, -1) if csi else (len(printable) - 1, 0)
-            for indexes in (printable[index:] for index in suffixes if index >= 0):
-                text = "".join(value[index] for index in indexes)
-                choices.setdefault(text, (text, indexes, True))
-            segments.append(_Segment(cursor, start, tuple(choices.values())))
+        # Adjacent sequences form one removed run; each one is read on its own.
+        cuts = [
+            index
+            for index in range(cursor + 1, start)
+            if value[index] in "\x1b\x9b\x9d" and not value.startswith("\x1b\\", index)
+        ]
+        for left, right in zip([cursor, *cuts], [*cuts, start], strict=True):
+            if left < right:
+                segments.append(_Segment(left, right, _sequence_choices(value, left, right)))
         if start < end:
             segments.append(_Segment(start, end, ((value[start:end], tuple(range(start, end)), False),)))
         cursor = end
     return segments
+
+
+def _sequence_choices(value: str, start: int, end: int) -> tuple[_Choice, ...]:
+    printable = tuple(
+        index for left, right in _printable_spans(value, start, end) for index in range(left, right)
+    )
+    choices: dict[str, _Choice] = {"": ("", (), True)}
+    for offset in range(len(printable) - 1, -1, -1):
+        indexes = printable[offset:]
+        text = "".join(value[index] for index in indexes)
+        choices.setdefault(text, (text, indexes, True))
+    return tuple(choices.values())
 
 
 def _chunks(segments: list[_Segment]) -> Iterator[list[_Segment]]:
@@ -767,16 +776,29 @@ def _reading_outcome(
 
 
 def _may_be_structural(window: list[_Segment]) -> bool:
-    """Some reading of the text could hold a delimiter or start with a flag dash."""
-    literal = "".join(segment.choices[-1][0] for segment in window)
-    return _STRUCTURAL_BYTES.search(literal) is not None or _may_start_with_dash(window)
+    """Some reading of the text could hold a delimiter or start with a flag dash.
+
+    Judged over the union of every character any reading contributes, after
+    the normalization detection applies (a fullwidth ``＠`` is ``@``), so this
+    fallback is never less conservative than enumerating the readings. A run
+    character that normalizes to whitespace could split a token, so it counts.
+    """
+    for segment in window:
+        for text, _, literal in segment.choices:
+            for char in {*normalize_text(text), *(piece for raw in text for piece in normalize_text(raw))}:
+                if char in _STRUCTURAL_CHARS or (literal and char.isspace()):
+                    return True
+    return _may_start_with_dash(window)
 
 
 def _may_start_with_dash(window: list[_Segment]) -> bool:
     for segment in window:
         if not segment.choices[0][2]:
-            return segment.choices[0][0].startswith("-")
-        if any(text.startswith("-") for text, _, _ in segment.choices):
+            text = normalize_text(segment.choices[0][0])
+            if text:
+                return text.startswith("-")
+            continue  # Invisible characters normalize away.
+        if any(normalize_text(text).startswith("-") for text, _, _ in segment.choices):
             return True
     return False
 
