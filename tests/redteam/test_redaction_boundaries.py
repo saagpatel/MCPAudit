@@ -562,3 +562,73 @@ def test_ordinary_colored_text_and_prose_are_not_redacted(text: str) -> None:
     ]
     schema = {"properties": {"\x1b[1mtimeout\x1b[0m": {"type": "integer", "default": "30"}}}
     assert redact_data(schema) == schema
+
+
+# Every CSI parameter and intermediate byte, open (the next byte is consumed as
+# the final byte) and closed by 'm', with 7-bit and C1 introducers.
+CSI_PARAMETER_SEQUENCES = [
+    introducer + chr(byte) + final
+    for introducer in ("\x1b[", "\x9b")
+    for byte in range(0x20, 0x40)
+    for final in ("", "m")
+]
+_SWEEP_SECRET = LEFT + RIGHT
+_SWEEP_TEXTS = [
+    "run --password {secret} now",
+    "config api_key={secret} ready",
+    "token: {secret}",
+    "https://fixture.example/a/password={secret}/x",
+    "https://fixture.example/mcp?q={secret}",
+    "https://fixture.example/mcp#{secret}",
+    "Endpoint https://{secret} @fixture.example/mcp",
+]
+
+
+def _inserted(text: str) -> list[str]:
+    """``text`` with each CSI sequence inserted at every position before the secret."""
+    cut = text.index("{secret}")
+    prefix, suffix = text[:cut], text[cut:].format(secret=_SWEEP_SECRET)
+    return [
+        prefix[:index] + sequence + prefix[index:] + suffix
+        for index in range(cut + 1)
+        for sequence in CSI_PARAMETER_SEQUENCES
+    ]
+
+
+@pytest.mark.parametrize("template", _SWEEP_TEXTS)
+def test_csi_parameter_bytes_never_hide_a_structural_decision_in_text(template: str) -> None:
+    forbidden = re.compile("|".join(_forbidden("")))
+    for text in _inserted(template):
+        once = redact_text(text)
+        assert forbidden.search(once) is None, text
+        assert redact_text(once) == once, text
+
+
+@pytest.mark.parametrize(
+    "args",
+    [["--password", "{secret}"], ["--api_key={secret}"], ["token:{secret}"]],
+    ids=["flag", "inline", "colon"],
+)
+def test_csi_parameter_bytes_never_hide_a_structural_decision_in_argv(args: list[str]) -> None:
+    forbidden = re.compile("|".join(_forbidden("")))
+    store = PinStore(Path("unused"))
+    label = args[0].replace("{secret}", "")
+    for argument in _inserted(label + "{secret}"):
+        argv = (
+            [argument[: len(argument) - len(_SWEEP_SECRET)], _SWEEP_SECRET] if len(args) == 2 else [argument]
+        )
+        once = redact_argv(cast(list[object], argv))
+        snapshot = store._config_snapshot(make_server_config(args=argv))
+        assert forbidden.search(repr(once)) is None, argv
+        assert forbidden.search(json.dumps(snapshot)) is None, argv
+        assert redact_argv(once) == once, argv
+
+
+@pytest.mark.parametrize("label", ["password", "--password", "api_key", "token"])
+def test_csi_parameter_bytes_never_hide_a_schema_or_json_key(label: str) -> None:
+    forbidden = re.compile("|".join(_forbidden("")))
+    for index in range(len(label) + 1):
+        for sequence in CSI_PARAMETER_SEQUENCES:
+            key = label[:index] + sequence + label[index:]
+            data = {"properties": {key: {"type": "string", "default": _SWEEP_SECRET}}, key: _SWEEP_SECRET}
+            assert forbidden.search(repr(redact_data(data))) is None, key

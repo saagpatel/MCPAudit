@@ -302,5 +302,47 @@
     "source": "Endpoint \"https://spaced-userinfo-secret\u2003@fixture.example/mcp\"",
     "expected": "Endpoint \"https://<redacted>\u2003@fixture.example/mcp\"",
     "forbidden": ["spaced-userinfo-secret"]
+  },
+  {
+    "id": "csi-swallows-flag-dashes-text",
+    "kind": "text",
+    "source": "run \u001b[--password csi-dash-secret now",
+    "expected": "run \u001b[--password <redacted> now",
+    "forbidden": ["csi-dash-secret"]
+  },
+  {
+    "id": "csi-param-before-flag-dashes-text",
+    "kind": "text",
+    "source": "run \u001b[0--password csi-param-dash-secret now",
+    "expected": "run \u001b[0--password <redacted> now",
+    "forbidden": ["csi-param-dash-secret"]
+  },
+  {
+    "id": "csi-swallows-flag-dashes-argv",
+    "kind": "args",
+    "source": ["\u001b[--password", "argv-csi-dash-secret", "\u009b--token", "argv-c1-dash-secret", "\u001b[0--password", "argv-param-dash-secret", "--port", "8080"],
+    "expected": ["\u001b[--password", "<redacted>", "\u009b--token", "<redacted>", "\u001b[0--password", "<redacted>", "--port", "8080"],
+    "forbidden": ["argv-csi-dash-secret", "argv-c1-dash-secret", "argv-param-dash-secret"]
+  },
+  {
+    "id": "csi-param-splits-url-path-label",
+    "kind": "text",
+    "source": "https://fixture.example/pa\u001b[1ssword=path-param-secret",
+    "expected": "https://fixture.example/pa\u001b[1ssword=<redacted>",
+    "forbidden": ["path-param-secret"]
+  },
+  {
+    "id": "csi-params-split-url-path-label",
+    "kind": "text",
+    "source": "https://fixture.example/api_\u001b[1;2key=path-params-secret",
+    "expected": "<redacted>",
+    "forbidden": ["path-params-secret"]
+  },
+  {
+    "id": "csi-swallows-spaced-userinfo-at",
+    "kind": "text",
+    "source": "Endpoint https://spaced-csi-userinfo-secret \u001b[1@fixture.example/mcp",
+    "expected": "Endpoint https://<redacted> \u001b[1@fixture.example/mcp",
+    "forbidden": ["spaced-csi-userinfo-secret"]
   }
 ]
