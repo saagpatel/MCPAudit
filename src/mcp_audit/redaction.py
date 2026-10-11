@@ -55,6 +55,7 @@ _URL = re.compile(
 _URL_VALUE = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*+://(?:<redacted>|\\[\"']|[^\s\"'<>])++")
 _URL_USERINFO = re.compile(r"(^[A-Za-z][A-Za-z0-9+.-]*+://)(?:[^/?#\s@]*+@)++")
 _TOKEN_TAIL = re.compile(r"\S*")
+_SPACED_AT = re.compile(r"\s@")
 _QUERY_VALUE = re.compile(r"=([^&;]*)")
 _SECRET_VALUE = re.compile(
     r"gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|"
@@ -181,9 +182,8 @@ def _url_edits(value: str, *, raw: bool = True) -> Iterator[tuple[int, int, str]
         # password can be cut from its '@' (a space before it, say).
         authority_end = base.find("/", scheme_end) % (len(base) + 1)
         authority = base[scheme_end:authority_end]
-        colon = authority.find(":", authority.find("]") + 1 if authority.startswith("[") else 0)
-        port = authority[colon + 1 :]
-        if colon >= 0 and port and not port.isdigit():
+        if _netloc_password(authority):
+            colon = authority.find(":", authority.find("]") + 1 if authority.startswith("[") else 0)
             yield scheme_end + colon + 1, authority_end, _REDACTED
     path_start = base.find("/", scheme_end)
     if path_start >= 0:
@@ -205,17 +205,48 @@ def _token_end(value: str, start: int) -> int:
     return start if match is None else match.end()
 
 
+class _NextFinder:
+    """First position at or after ``start`` of a substring or pattern, cached.
+
+    Callers ask with non-decreasing starts, so each search runs once per hit.
+    """
+
+    def __init__(self, value: str) -> None:
+        self.value = value
+        self.found: dict[str | re.Pattern[str], int] = {}
+
+    def __call__(self, key: str | re.Pattern[str], start: int) -> int:
+        found = self.found.get(key, -1)
+        if found < start:
+            if isinstance(key, str):
+                found = self.value.find(key, start)
+            else:
+                match = key.search(self.value, start)
+                found = -1 if match is None else match.start()
+            found = len(self.value) if found < 0 else found
+            self.found[key] = found
+        return found
+
+
+def _netloc_password(authority: str) -> bool:
+    """``X:Y`` where ``Y`` is not a numeric port: ``Y`` is a userinfo password."""
+    colon = authority.find(":", authority.find("]") + 1 if authority.startswith("[") else 0)
+    port = authority[colon + 1 :]
+    return colon >= 0 and bool(port) and not port.isdigit()
+
+
 def _truncated_url(url: str, userinfo_follows: bool) -> bool:
     """The component a quote or angle bracket cut short can carry a credential.
 
-    That is a query or fragment, an authority that userinfo continues, or a
-    final path segment whose named value runs to the cut.
+    That is a query or fragment, an authority that userinfo continues or that
+    already holds a password, or a final path segment whose named value runs
+    to the cut.
     """
     rest = url[url.index("://") + 3 :]
     if "?" in rest or "#" in rest:
         return True
     if "/" not in rest:
-        return userinfo_follows
+        return userinfo_follows or _netloc_password(rest)
     segment = rest.rpartition("/")[2]
     return _ends_with_secret_label(segment) or any(
         end == len(segment) for _, end, _ in _named_value_edits(segment)
@@ -255,24 +286,26 @@ def _text_edits(value: str, *, raw: bool = True) -> Iterator[tuple[int, int, str
     # Enclosing assignments see their complete values before URL protection.
     # Names within standalone URLs are handled separately, preserving authority.
     yield from _named_value_edits(value, protect_urls=True, empty_values=not raw)
-    # Matches are ordered, so the token end, next '@' and next '://' are found
-    # once per position. An '@' after another scheme belongs to that URL.
-    token_end = next_at = next_scheme = -1
+    # Matches are ordered, so each lookahead is found once per position. An '@'
+    # after another scheme or on another line belongs to something else.
+    following = _NextFinder(value)
+    token_end = -1
     for match in _URL.finditer(value):
         end = match.end()
         if end < len(value) and value[end] in "\"'<>":
             if token_end < end:
                 token_end = _token_end(value, end)
-            if next_at < end:
-                found = value.find("@", end)
-                next_at = len(value) if found < 0 else found
-            if next_scheme < end:
-                found = value.find("://", end)
-                next_scheme = len(value) if found < 0 else found
+            boundary = min(following("://", end), following("\n", end))
             # A quote or angle bracket ended the URL inside a token, so a query
             # value or userinfo may continue past it: withhold through the token.
-            if _truncated_url(match.group(), next_at < min(token_end, next_scheme)):
+            if _truncated_url(match.group(), following("@", end) < min(token_end, boundary)):
                 yield match.start(), token_end, _REDACTED
+                continue
+            # Cut inside the authority with an '@' starting a later token on the
+            # line: the userinfo runs on across whitespace up to that '@'.
+            spaced_at = following(_SPACED_AT, end)
+            if "/" not in match.group()[match.group().index("://") + 3 :] and spaced_at < boundary:
+                yield match.start(), spaced_at, _REDACTED
                 continue
         for start, end, replacement in _url_edits(match.group(), raw=raw):
             yield match.start() + start, match.start() + end, replacement
