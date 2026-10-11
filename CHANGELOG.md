@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests
 
+- Treat `EPERM` from a process-group probe as "still exists" in transport hygiene tests,
+  so macOS reaping races no longer crash the shutdown assertion.
 - Reject sub-2-second wall-clock assertions in tests and use input-scaling checks for performance regressions.
 
 ### Fixed
