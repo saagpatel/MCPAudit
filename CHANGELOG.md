@@ -5,74 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.10.0] - Unreleased
 
-### Changed
+### Upgrade notes
 
-- Record the two open free-text redaction edge cases and the `pin_min_sequence`
-  CI rollback guard in the known-issues list.
-- Schedule the frozen `cli._run_scan_core` compatibility shim for removal in
-  3.0, retaining the existing 2.x compatibility window.
-- Describe `--inject-check` and MCP019 findings in terms of instruction-shaped text.
+- Reports use structural credential redaction (D10). Expect more `<redacted>`
+  markers in report text, including some labels next to terminal controls and
+  quoted URLs with queries. Redacted schemas are display evidence, not replacement
+  execution schemas; review reports before sharing.
+- MCP019 and `--inject-check` now describe instruction-shaped text. The wording
+  does not establish malicious intent or change the detector's evidence boundary.
+- List-tool MCP responses retain their legacy result in the first text block and
+  gain a second warning text block, including when warnings are empty, plus additive
+  `structuredContent.warnings`. Consumers must tolerate the extra block and field.
+- Signed pin manifests gain a monotonic `sequence` (D11). Existing signed manifests
+  without it still verify unless a minimum is required; re-sign after review to
+  start at 1. Keep `require.pin_min_sequence` or `--pin-min-sequence` outside the
+  pin file for one-shot CI rollback protection. A signed manifest with a missing
+  trust store reports `MCP027`; restore the trusted public keys before verification.
+- Migrate unsigned v2 pins with `pin --refresh SERVER --apply` after key setup and
+  review. The preview is unverified; previously signed entries retain fail-closed
+  integrity checks. See [Pinning](docs/guides/pinning.md).
+- Independently valid multi-line `WWW-Authenticate` challenges and legal empty
+  comma elements now permit authorization metadata review (D12). Ambiguous or
+  malformed challenges and exhausted limits still withhold that review.
+- The frozen `mcp_audit.cli._run_scan_core` compatibility shim remains available
+  through 2.x and is scheduled for removal in 3.0. Library integrations should
+  use `mcp_audit.engine.run_scan(ScanOptions(...))`.
 
-### Added
+### Known issues
 
-- Add an opt-in `[otel]` library integration exporting redacted reports as
-  counts-only report, server, and coverage-check spans, with rule-count events
-  and no report hostnames, identifiers, or evidence payloads.
-- Add read-only `mcp-audit shadow` review on the public engine with explicit
-  configs and pins, opt-in metadata connections, existing drift and pin-integrity
-  checks, fleet tool-name collisions, and policy/sequence gates. Verification
-  reads existing trust history without updating it; output keeps the existing
-  `AuditReport` schema. Compare tool pins only after a successful metadata listing,
-  preserving static signature/rollback checks without inferring removed tools from
-  unavailable listings. Malformed policy types produce value-free input errors
-  before connections. No enforcing proxy is included.
-- Share offline lab descriptor reads, strict JSON decoding, and canonical
-  serialization mechanics while retaining each lab's limits, errors, aliases,
-  and number policy. Verify existing canonical report bytes with fixture digests;
-  reject nonstandard JSON constants in session-resume and handle short reads in
-  task-time-machine.
-- Lint GitHub Actions workflows on every pull request with a checksum-verified,
-  pinned actionlint binary.
-- Signed pin manifests carry a monotonic `sequence`; `require.pin_min_sequence`
-  and `--pin-min-sequence` reject older or unauthenticated baselines in CI.
-- Add opt-in `lab --conformance-probe --url URL` negative MCP header and
-  loopback-only Origin probes, with bounded credential-free requests and
-  explicit unknown results when conformance evidence is unavailable.
-- Extend the offline OAuth transcript lab with an S256 PKCE finding and
-  issuer validation for authorization error responses. Validate error-flow
-  ordering and contradictory code redemption, keep unrecorded PKCE evidence
-  unknown, and include the PKCE finding in the SARIF rule catalog.
+- See [Known issues](docs/known-issues.md) for remaining free-text redaction
+  edge cases, sequence rollback limits, schema-check coverage, and legacy v1 pins.
+- The planned `fix <server>` dry-run (D15) is absent from this candidate tree;
+  it is not an available command.
 
-### Tests
+### Security
 
-- Guard evidence excerpts and match spans against Unicode lowercase expansion,
-  including combined normalization, across tool, prompt, and resource metadata.
-- Treat `EPERM` from a process-group probe as "still exists" in transport hygiene tests,
-  so macOS reaping races no longer crash the shutdown assertion.
-- Reject sub-2-second wall-clock assertions in tests and use input-scaling checks for performance regressions.
-- Assemble synthetic access-key fixtures at runtime and verify the pre-commit
-  usage comment names the usable public release tag.
+#### Structural credential redaction
 
-### Fixed
-
-- Lead empty-home bare CLI output with the empty state, followed immediately by
-  its coverage summary.
-- Keep long string parameters out of generated pytest IDs to avoid oversized collection output.
-- Review authorization metadata for independently valid `WWW-Authenticate` header
-  lines and legal empty comma elements. Ambiguous metadata, malformed lines,
-  cross-line parameter continuations, and exhausted limits still fail closed.
-- Surface project-config connection warnings in every `serve` tool response,
-  preserving legacy list results with additive structured warnings and a warning
-  text block. Verify their existing SARIF invocation notifications in both profiles.
-- A signed pin manifest still produces `MCP027` when its separate trust store
-  is missing, preventing trust-store deletion from bypassing verification.
-  Pin writes also refuse unverified manifests rather than signing their claimed
-  sequence, and failed clears preserve the signed manifest.
-- Guide unsigned v2 pins through `pin --refresh SERVER --apply` to a fresh signed
-  baseline without clearing first; label migration reviews as unverified and
-  preserve fail-closed checks for previously signed entries.
 - Redact typed reports structurally before terminal, JSON, SARIF, and HTML
   rendering, including argv values, URL components, dynamic dictionary keys,
   schema property names, Unicode-obfuscated credentials, and escaped quotes.
@@ -91,6 +62,118 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   delimiter next to a credential, and treat a non-numeric netloc `:` suffix as
   a URL password even when whitespace separates it from `@`, including after
   a quote or angle bracket cuts the authority.
+
+#### Signed pins and drift baselines
+
+- Signed pin manifests carry a monotonic `sequence`; `require.pin_min_sequence`
+  and `--pin-min-sequence` reject older or unauthenticated baselines in CI.
+
+- A signed pin manifest still produces `MCP027` when its separate trust store
+  is missing, preventing trust-store deletion from bypassing verification.
+  Pin writes also refuse unverified manifests rather than signing their claimed
+  sequence, and failed clears preserve the signed manifest.
+
+- Guide unsigned v2 pins through `pin --refresh SERVER --apply` to a fresh signed
+  baseline without clearing first; label migration reviews as unverified and
+  preserve fail-closed checks for previously signed entries.
+
+### Changed
+
+#### Compatibility and documentation
+
+- Record the two open free-text redaction edge cases and the `pin_min_sequence`
+  CI rollback guard in the known-issues list.
+
+- Schedule the frozen `cli._run_scan_core` compatibility shim for removal in
+  3.0, retaining the existing 2.x compatibility window.
+
+- Describe `--inject-check` and MCP019 findings in terms of instruction-shaped text.
+
+### Added
+
+#### Read-only review and observability
+
+- Add an opt-in `[otel]` library integration exporting redacted reports as
+  counts-only report, server, and coverage-check spans, with rule-count events
+  and no report hostnames, identifiers, or evidence payloads.
+
+- Add read-only `mcp-audit shadow` review on the public engine with explicit
+  configs and pins, opt-in metadata connections, existing drift and pin-integrity
+  checks, fleet tool-name collisions, and policy/sequence gates. Verification
+  reads existing trust history without updating it; output keeps the existing
+  `AuditReport` schema. Compare tool pins only after a successful metadata listing,
+  preserving static signature/rollback checks without inferring removed tools from
+  unavailable listings. Malformed policy types produce value-free input errors
+  before connections. No enforcing proxy is included.
+
+#### Offline labs and opt-in conformance probes
+
+- Share offline lab descriptor reads, strict JSON decoding, and canonical
+  serialization mechanics while retaining each lab's limits, errors, aliases,
+  and number policy. Verify existing canonical report bytes with fixture digests;
+  reject nonstandard JSON constants in session-resume and handle short reads in
+  task-time-machine.
+
+- Add opt-in `lab --conformance-probe --url URL` negative MCP header and
+  loopback-only Origin probes, with bounded credential-free requests and
+  explicit unknown results when conformance evidence is unavailable.
+
+- Extend the offline OAuth transcript lab with an S256 PKCE finding and
+  issuer validation for authorization error responses. Validate error-flow
+  ordering and contradictory code redemption, keep unrecorded PKCE evidence
+  unknown, and include the PKCE finding in the SARIF rule catalog.
+
+#### CI workflow validation
+
+- Lint GitHub Actions workflows on every pull request with a checksum-verified,
+  pinned actionlint binary.
+
+### Fixed
+
+#### CLI presentation and test collection
+
+- Lead empty-home bare CLI output with the empty state, followed immediately by
+  its coverage summary.
+
+- Keep long string parameters out of generated pytest IDs to avoid oversized collection output.
+
+#### Authorization and coverage reporting
+
+- Review authorization metadata for independently valid `WWW-Authenticate` header
+  lines and legal empty comma elements. Ambiguous metadata, malformed lines,
+  cross-line parameter continuations, and exhausted limits still fail closed.
+
+- Surface project-config connection warnings in every `serve` tool response,
+  preserving legacy list results with additive structured warnings and a warning
+  text block. Verify their existing SARIF invocation notifications in both profiles.
+
+### Tests
+
+- Guard evidence excerpts and match spans against Unicode lowercase expansion,
+  including combined normalization, across tool, prompt, and resource metadata.
+
+- Treat `EPERM` from a process-group probe as "still exists" in transport hygiene tests,
+  so macOS reaping races no longer crash the shutdown assertion.
+
+- Reject sub-2-second wall-clock assertions in tests and use input-scaling checks for performance regressions.
+
+- Assemble synthetic access-key fixtures at runtime and verify the pre-commit
+  usage comment names the usable public release tag.
+
+### Release boundary details
+
+Release status: candidate
+Publication decision: NO-GO
+
+MCPAudit 2.10.0 is a candidate for review and CI validation only. This source
+state does not authorize tagging, publication, Registry mutation, deployment,
+or claims of downstream adoption. The release-state flip belongs in a separate
+reviewed PR after the candidate lands.
+
+Published-version metadata, the Registry descriptor, Action examples, and
+pre-commit examples remain at 2.9.0. Retain `mcp-audits==2.9.0` as the rollback
+pin and verify installed command identity after rollback. Source metadata and
+local tests are not publication readback.
 
 ## [2.9.0] - 2026-10-10
 
@@ -2222,6 +2305,7 @@ real workstations; API surface may still shift before the `1.0.0` stable cut.
 - `mcp-audit` CLI entry point
 
 [Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v2.9.0...HEAD
+[2.10.0]: https://github.com/saagpatel/MCPAudit/compare/v2.9.0...HEAD
 [2.9.0]: https://github.com/saagpatel/MCPAudit/compare/v2.8.1...v2.9.0
 [2.8.1]: https://github.com/saagpatel/MCPAudit/compare/v2.8.0...v2.8.1
 [2.8.0]: https://github.com/saagpatel/MCPAudit/compare/v2.7.0...v2.8.0

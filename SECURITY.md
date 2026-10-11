@@ -133,7 +133,7 @@ MCPAudit reads config files from your local filesystem. It trusts that the confi
 
 ### Prompt injection in MCPAudit's own output
 
-MCPAudit parses and displays content from MCP server configs and MCP server metadata, including tool descriptions that may be attacker-controlled. If a malicious MCP server is installed, its tool descriptions could contain content designed to manipulate AI assistants that consume MCPAudit's output. Terminal controls and markup are handled for display, and credential redaction is pattern-based; these protections do not make metadata safe instructions. Users should treat MCPAudit's output as untrusted data when piping it to AI systems.
+MCPAudit parses and displays content from MCP server configs and MCP server metadata, including tool descriptions that may be attacker-controlled. If a malicious MCP server is installed, its tool descriptions could contain content designed to manipulate AI assistants that consume MCPAudit's output. Terminal controls and markup are handled for display, and credential redaction traverses typed reports structurally with pattern matching as a fallback for free text; these protections do not make metadata safe instructions. Users should treat MCPAudit's output as untrusted data when piping it to AI systems.
 
 ### LLM mode (`--llm-analysis`)
 
