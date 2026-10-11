@@ -282,3 +282,29 @@ def test_failed_migration_write_preserves_baseline_and_expectation(
         store.pin_server("fixture", _live_tools(), migrate_unsigned_v2=True)
     assert unsigned_v2.read_bytes() == before
     assert pin_signing.DEFAULT_TRUSTED_KEYS_PATH.read_bytes() == trust_before
+
+
+@pytest.mark.parametrize(
+    "corrupt",
+    ["annotations", "config_not_mapping", "config_args", "config_hashes"],
+)
+def test_malformed_unsigned_snapshot_is_not_migration_eligible(
+    unsigned_v2: Path, monkeypatch: pytest.MonkeyPatch, corrupt: str
+) -> None:
+    data = yaml.safe_load(unsigned_v2.read_text())
+    entry = data["servers"]["fixture"]
+    if corrupt == "annotations":
+        entry["tools"]["status"]["snapshot"]["annotations"] = "bad"
+    elif corrupt == "config_not_mapping":
+        entry["config_snapshot"] = ["bad"]
+    elif corrupt == "config_args":
+        entry["config_snapshot"]["args"] = "bad"
+    else:
+        entry["config_snapshot"]["artifact_hashes"] = {"path": 1}
+    unsigned_v2.write_text(yaml.safe_dump(data))
+    assert PinStore(unsigned_v2).unsigned_v2_migration_allowed("fixture") is False
+    before = unsigned_v2.read_bytes()
+    result = _refresh(monkeypatch, unsigned_v2, _live_tools(), "--apply", "--json")
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["applied"] is False
+    assert unsigned_v2.read_bytes() == before

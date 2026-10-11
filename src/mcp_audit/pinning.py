@@ -560,6 +560,8 @@ class PinStore:
             for name, row in tools.items()
         ):
             return False
+        if not _unsigned_v2_shapes_valid(entry):
+            return False
         state, listed = self._manifest()
         if state == "invalid" or server_name in listed:
             return False
@@ -1444,3 +1446,45 @@ def surface_field_diff(before: object, after: object, path: str = "") -> list[Su
             for change in surface_field_diff(old, new, f"{path}/{i}")
         ]
     return [SurfaceFieldChange(path=path, before_hash=surface_hash(before), after_hash=surface_hash(after))]
+
+
+_SNAPSHOT_STR_LISTS = ("args", "env_keys", "headers_keys")
+
+
+def _unsigned_v2_shapes_valid(entry: dict[str, Any]) -> bool:
+    """Unauthenticated rows must rebuild cleanly before a guided migration may use them."""
+    from pydantic import ValidationError
+
+    for name, row in entry["tools"].items():
+        snapshot: dict[str, Any] = row["snapshot"]
+        try:
+            ToolInfo(
+                name=name,
+                description=snapshot.get("description"),
+                input_schema=snapshot.get("input_schema"),
+                annotations=snapshot.get("annotations"),
+                title=snapshot.get("title"),
+                output_schema=snapshot.get("output_schema"),
+                icons=snapshot.get("icons"),
+                meta=snapshot.get("meta"),
+            )
+        except (ValidationError, TypeError, ValueError):
+            return False
+    config: object = entry.get("config_snapshot")
+    if config is None:
+        return True
+    if not isinstance(config, dict):
+        return False
+    if not all(isinstance(config.get(key), (str, type(None))) for key in ("command", "url")):
+        return False
+    if not isinstance(config.get("transport"), str):
+        return False
+    if not all(
+        isinstance(config.get(key), list) and all(isinstance(v, str) for v in config[key])
+        for key in _SNAPSHOT_STR_LISTS
+    ):
+        return False
+    hashes: object = config.get("artifact_hashes", {})
+    return isinstance(hashes, dict) and all(
+        isinstance(k, str) and isinstance(v, str) for k, v in hashes.items()
+    )
