@@ -703,7 +703,8 @@ Terminal status prints only this authenticated key for CI; the existing JSON
 (the nullable verification state) and `baseline_usable` (false when scans withhold
 the baseline); terminal status shows them in a Verification column, marked
 "(withheld)". Ordinary pin writes, refresh, rotation and re-signing refuse failed
-baseline verification.
+baseline verification, except for the explicit unsigned v2 refresh migration
+described below.
 
 Escalation findings add `kind: annotation_delta` and an `annotation_changes`
 list of hint names (empty for other kinds). This is HIGH `MCP018` for
@@ -718,6 +719,13 @@ baseline withheld by scans (trusted keys, nothing authenticating the entry) is
 still compared in refresh review so every difference is shown, with
 `baseline_verified: false` and a note; terminal review labels it and never
 reports "No drift found" against an unverified baseline.
+Unsigned v2 migration review uses the same fields (`baseline_verified: false`
+and an unsigned migration `baseline_note`) while scans continue to withhold the
+entry with `MCP027` under trusted keys. Only entries without signing metadata,
+a per-server signing expectation, or a signed manifest binding are eligible.
+`--apply` requires a trusted private key and signs a fresh live baseline; it
+does not retain removed tools or saved registry hashes. Signed-integrity failures
+remain blocked. No JSON fields or schema version change.
 
 Each audit may include:
 

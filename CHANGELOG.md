@@ -51,6 +51,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is missing, preventing trust-store deletion from bypassing verification.
   Pin writes also refuse unverified manifests rather than signing their claimed
   sequence, and failed clears preserve the signed manifest.
+- Guide unsigned v2 pins through `pin --refresh SERVER --apply` to a fresh signed
+  baseline without clearing first; label migration reviews as unverified and
+  preserve fail-closed checks for previously signed entries.
 
 ## [2.9.0] - 2026-10-10
 

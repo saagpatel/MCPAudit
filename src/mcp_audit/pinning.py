@@ -324,7 +324,7 @@ class PinStore:
                 if missing_required_signature
                 else f"Pin for {server_name} fails signature verification; the v2 baseline is unsigned "
                 "but trusted pin keys exist, so its signature was removed or never written. Restore a "
-                f"signed baseline, or run `mcp-audit pin --clear {server_name}` and re-pin after review."
+                f"signed baseline, or review `mcp-audit pin --refresh {server_name}` for unsigned migration."
             )
         elif "signature" not in entry and self.legacy_tool_names(server_name):
             result = PinVerification(state=PinVerificationState.SCHEMA_OUTDATED)
@@ -561,7 +561,48 @@ class PinStore:
         """A saved legacy baseline that verifies cleanly but is withheld as unauthenticated."""
         return self.baseline_trusted(server_name) and not self.baseline_usable(server_name)
 
-    def _review_gate(self, server_name: str, review_unverified_legacy: bool) -> bool:
+    def unsigned_v2_migration_allowed(self, server_name: str) -> bool:
+        """Allow explicit refresh review of v2 pins that were never required to be signed.
+
+        This is not a scan trust verdict. Signing remnants, a signing expectation,
+        or a manifest binding the entry keep the ordinary integrity gate closed.
+        """
+        from mcp_audit.pin_signing import signature_required
+
+        entry: object = self._data.get("servers", {}).get(server_name)
+        if not self._keys_trusted() or not isinstance(entry, dict) or entry.get("pin_schema") != 2:
+            return False
+        signing_fields = {"signature", "signer", "surface_sha256", "canonical_bytes_len"}
+        if signing_fields.intersection(entry) or signature_required(server_name, self._trusted_keys_path):
+            return False
+        tools = entry.get("tools")
+        if not isinstance(tools, dict) or not all(
+            isinstance(name, str)
+            and isinstance(row, dict)
+            and row.get("pin_schema") == 2
+            and row.get("canonical_form") == TOOL_SURFACE_SCHEMA
+            and isinstance(row.get("hash"), str)
+            and isinstance(row.get("snapshot"), dict)
+            for name, row in tools.items()
+        ):
+            return False
+        if not _unsigned_v2_shapes_valid(entry):
+            return False
+        state, listed = self._manifest()
+        if state == "invalid" or server_name in listed:
+            return False
+        if state == "absent" and any(
+            isinstance(saved, dict) and signing_fields.intersection(saved)
+            for saved in self._data.get("servers", {}).values()
+        ):
+            return False
+        return True
+
+    def _review_gate(
+        self, server_name: str, review_unverified_legacy: bool, review_unsigned_v2: bool = False
+    ) -> bool:
+        if review_unsigned_v2 and self.unsigned_v2_migration_allowed(server_name):
+            return True
         if review_unverified_legacy:
             return self.baseline_trusted(server_name)
         return self.baseline_usable(server_name)
@@ -815,6 +856,7 @@ class PinStore:
         *,
         redact_args: bool = True,
         protocol: ProtocolObservation | None = None,
+        migrate_unsigned_v2: bool = False,
     ) -> None:
         """Upsert pin entries for all tools on a server. Writes atomically.
 
@@ -825,7 +867,7 @@ class PinStore:
         """
         if len({tool.name for tool in tools}) != len(tools):
             raise ValueError("Cannot pin duplicate tool names.")
-        from mcp_audit.pin_signing import signature_required
+        from mcp_audit.pin_signing import PinSigningError, signature_required, verify_document
 
         now = datetime.now(UTC).isoformat()
         with _file_lock(self._path):
@@ -833,9 +875,9 @@ class PinStore:
             # since this store loaded, and mutating a stale copy would erase them.
             self._data = self._load(strict=True)
             self._check_manifest_writable()
-            if not self._write_trusted(server_name):
-                from mcp_audit.pin_signing import PinSigningError
-
+            if migrate_unsigned_v2 and not self.unsigned_v2_migration_allowed(server_name):
+                raise PinSigningError("Unsigned v2 migration is no longer eligible; review the pin again.")
+            if not migrate_unsigned_v2 and not self._write_trusted(server_name):
                 raise PinSigningError(
                     "Cannot pin through an untrusted pin baseline; restore it or explicitly clear "
                     "the server's pin and re-review before pinning again."
@@ -887,6 +929,20 @@ class PinStore:
                 else {"negotiated_version": None, "era": "unknown"}
             )
             signed = self._sign_entry(server_name, server_entry)
+            if migrate_unsigned_v2 and (
+                not signed
+                or verify_document(
+                    self._server_document(server_name, server_entry),
+                    server_entry,
+                    self._trusted_keys_path,
+                    server_name=server_name,
+                ).state
+                != "verified"
+            ):
+                raise PinSigningError(
+                    "Unsigned v2 migration requires a trusted signing key. Run `mcp-audit pin keygen` "
+                    "or select a trusted key with --signing-key; omit --unsigned, then refresh --apply."
+                )
             if not signed:
                 from mcp_audit.pin_signing import PinSigningError, has_active_trusted_key
 
@@ -909,16 +965,21 @@ class PinStore:
                 self._record_signed([server_name])
 
     def check_drift(
-        self, server_name: str, tools: list[ToolInfo], *, review_unverified_legacy: bool = False
+        self,
+        server_name: str,
+        tools: list[ToolInfo],
+        *,
+        review_unverified_legacy: bool = False,
+        review_unsigned_v2: bool = False,
     ) -> list[DriftFinding]:
         """Compare current tool hashes against stored pins. Returns drift findings.
 
         ``review_unverified_legacy`` is for operator refresh review only: it
-        also compares against a withheld (unauthenticated legacy v1) baseline so
-        the operator sees every difference before signing. Integrity failures
-        are never compared.
+        also compares against a withheld (unauthenticated legacy v1) baseline.
+        ``review_unsigned_v2`` permits eligible unsigned v2 migration review only.
+        Neither option changes scan trust or allows known signed-integrity failures.
         """
-        if not self._review_gate(server_name, review_unverified_legacy):
+        if not self._review_gate(server_name, review_unverified_legacy, review_unsigned_v2):
             return []
         servers: dict[str, Any] = self._data.get("servers", {})
         server_entry: dict[str, Any] = servers.get(server_name, {})
@@ -1038,13 +1099,15 @@ class PinStore:
         servers: dict[str, Any] = self._data.get("servers", {})
         return len(servers.get(server_name, {}).get("tools", {}))
 
-    def baseline_tools(self, server_name: str, *, review_unverified_legacy: bool = False) -> list[ToolInfo]:
+    def baseline_tools(
+        self, server_name: str, *, review_unverified_legacy: bool = False, review_unsigned_v2: bool = False
+    ) -> list[ToolInfo]:
         """Reconstruct pinned tools as ``ToolInfo`` from stored snapshots.
 
         Restores all covered fields, including annotations. Legacy snapshots
         retain absent fields as None. Empty list if the server is not pinned.
         """
-        if not self._review_gate(server_name, review_unverified_legacy):
+        if not self._review_gate(server_name, review_unverified_legacy, review_unsigned_v2):
             return []
         servers: dict[str, Any] = self._data.get("servers", {})
         pinned_tools: dict[str, Any] = servers.get(server_name, {}).get("tools", {})
@@ -1120,7 +1183,7 @@ class PinStore:
         return baseline
 
     def baseline_config(
-        self, server_name: str, *, review_unverified_legacy: bool = False
+        self, server_name: str, *, review_unverified_legacy: bool = False, review_unsigned_v2: bool = False
     ) -> dict[str, Any] | None:
         """Return the pinned launch-config snapshot for a server, or None.
 
@@ -1128,7 +1191,7 @@ class PinStore:
         existed (older baselines) — callers must treat None as "no provenance
         comparison possible" and skip silently.
         """
-        if not self._review_gate(server_name, review_unverified_legacy):
+        if not self._review_gate(server_name, review_unverified_legacy, review_unsigned_v2):
             return None
         servers: dict[str, Any] = self._data.get("servers", {})
         snapshot = servers.get(server_name, {}).get("config_snapshot")
@@ -1406,3 +1469,45 @@ def surface_field_diff(before: object, after: object, path: str = "") -> list[Su
             for change in surface_field_diff(old, new, f"{path}/{i}")
         ]
     return [SurfaceFieldChange(path=path, before_hash=surface_hash(before), after_hash=surface_hash(after))]
+
+
+_SNAPSHOT_STR_LISTS = ("args", "env_keys", "headers_keys")
+
+
+def _unsigned_v2_shapes_valid(entry: dict[str, Any]) -> bool:
+    """Unauthenticated rows must rebuild cleanly before a guided migration may use them."""
+    from pydantic import ValidationError
+
+    for name, row in entry["tools"].items():
+        snapshot: dict[str, Any] = row["snapshot"]
+        try:
+            ToolInfo(
+                name=name,
+                description=snapshot.get("description"),
+                input_schema=snapshot.get("input_schema"),
+                annotations=snapshot.get("annotations"),
+                title=snapshot.get("title"),
+                output_schema=snapshot.get("output_schema"),
+                icons=snapshot.get("icons"),
+                meta=snapshot.get("meta"),
+            )
+        except (ValidationError, TypeError, ValueError):
+            return False
+    config: object = entry.get("config_snapshot")
+    if config is None:
+        return True
+    if not isinstance(config, dict):
+        return False
+    if not all(isinstance(config.get(key), (str, type(None))) for key in ("command", "url")):
+        return False
+    if not isinstance(config.get("transport"), str):
+        return False
+    if not all(
+        isinstance(config.get(key), list) and all(isinstance(v, str) for v in config[key])
+        for key in _SNAPSHOT_STR_LISTS
+    ):
+        return False
+    hashes: object = config.get("artifact_hashes", {})
+    return isinstance(hashes, dict) and all(
+        isinstance(k, str) and isinstance(v, str) for k, v in hashes.items()
+    )
