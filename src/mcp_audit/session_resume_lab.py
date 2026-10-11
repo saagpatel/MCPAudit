@@ -53,7 +53,9 @@ from mcp_audit.session_resume_models import (
     canonical_json_bytes,
 )
 
-MCP_2025_11_TRANSPORT: Final = "https://modelcontextprotocol.io/specification/2025-11-25/basic/transports"
+MCP_2025_11_TRANSPORT: Final = (
+    "https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#streamable-http"
+)
 MCP_2026_07_TRANSPORT: Final = (
     "https://github.com/modelcontextprotocol/modelcontextprotocol/blob/"
     "0cb6c6a31768cbb16129b35e6b569a31fecfe1b6/docs/specification/2026-07-28/"

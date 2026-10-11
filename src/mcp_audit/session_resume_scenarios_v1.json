@@ -137,7 +137,7 @@
       "protocol_version": "2025-06-18",
       "trace_complete": true,
       "server_policy": {"session_mode": "required", "replay_mode": "unsupported", "duplicate_suppression": "proven", "retry_limit": 3},
-      "assumptions": [{"assumption_id": "missing-session-status", "source": "standard_requirement", "statement": "A legacy server that requires sessions should return 400 when the session header is missing.", "references": ["https://modelcontextprotocol.io/specification/2025-06-18/basic/transports"]}],
+      "assumptions": [{"assumption_id": "missing-session-status", "source": "standard_requirement", "statement": "A legacy server that requires sessions should return 400 when the session header is missing.", "references": ["https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#streamable-http"]}],
       "steps": [
         {"step_id": "init", "at_ms": 0, "type": "initialize", "session_id": "session-required"},
         {"step_id": "send", "at_ms": 10, "type": "send_request", "request_id": "req-missing", "session_id": null},
@@ -152,7 +152,7 @@
       "protocol_version": "2025-06-18",
       "trace_complete": true,
       "server_policy": {"session_mode": "required", "replay_mode": "unsupported", "duplicate_suppression": "proven", "retry_limit": 3},
-      "assumptions": [{"assumption_id": "unknown-session-status", "source": "design_inference", "statement": "Legacy MCP mandates 404 after termination but does not distinguish malformed from never-issued session IDs.", "references": ["https://modelcontextprotocol.io/specification/2025-06-18/basic/transports"]}],
+      "assumptions": [{"assumption_id": "unknown-session-status", "source": "design_inference", "statement": "Legacy MCP mandates 404 after termination but does not distinguish malformed from never-issued session IDs.", "references": ["https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#streamable-http"]}],
       "steps": [
         {"step_id": "init", "at_ms": 0, "type": "initialize", "session_id": "session-valid"},
         {"step_id": "send", "at_ms": 10, "type": "send_request", "request_id": "req-invalid", "session_id": "session-never-issued"},
