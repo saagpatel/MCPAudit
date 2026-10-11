@@ -9,11 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- Recognize a secret label when an escape sequence consumed one of its
-  letters or delimiters (a CSI or C1 final byte, parameters, an OSC payload,
-  or the byte after a bare ESC) in free text, argv flags, schema property
-  names and defaults, JSON keys, and pin snapshots. Detection also reads the
-  removed bytes literally; ordinary colored text is unchanged.
+- Recognize a secret label, flag dash, or delimiter that an escape sequence
+  consumed (a CSI or C1 final byte, parameter or intermediate bytes, an OSC
+  payload, or the byte after a bare ESC) in free text, URL paths, argv flags,
+  schema property names and defaults, JSON keys, and pin snapshots. Every
+  token is detected in each reading of its removed runs; ordinary colored
+  text is unchanged.
 - Redact token-only URL userinfo separated from its `@` by spaces, tabs, or
   Unicode spaces in free text (`https://token @host`). A free-text URL
   authority followed only by spaces and `@` is now withheld.
