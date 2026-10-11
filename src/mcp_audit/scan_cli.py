@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+from dataclasses import replace
 from pathlib import Path
 
 import click
@@ -65,6 +66,7 @@ async def _run_scan(
     max_frame_bytes: int = 16 * 1024 * 1024,
     max_surface_bytes: int = 64 * 1024 * 1024,
     sdk_stdio_fallback: bool = False,
+    pin_min_sequence: int | None = None,
 ) -> None:
     """CLI scan entrypoint — calls the engine's run_scan then renders output."""
     from mcp_audit.checkup import generate_card, load_previous, sticker
@@ -107,6 +109,16 @@ async def _run_scan(
                 terminal_safe(f"Failed to load policy {policy_path}: {redact_text(str(exc))}"), style="red"
             )
             raise SystemExit(1) from exc
+
+    if pin_min_sequence is not None:
+        from mcp_audit.policy import PolicyConfig
+
+        policy = replace(
+            policy or PolicyConfig(),
+            pin_min_sequence=max(pin_min_sequence, policy.pin_min_sequence or 0)
+            if policy
+            else pin_min_sequence,
+        )
 
     scan_options = ScanOptions(
         max_concurrency=max_concurrency,
@@ -185,6 +197,7 @@ async def _run_scan(
         selected_pin_store = None
         if (
             policy.required_pin_servers
+            or policy.pin_min_sequence is not None
             or policy.fail_on_pin_integrity
             or any(rule.require_pin for rule in policy.server_rules.values())
         ):

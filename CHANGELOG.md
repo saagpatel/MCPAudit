@@ -18,9 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and number policy. Verify existing canonical report bytes with fixture digests;
   reject nonstandard JSON constants in session-resume and handle short reads in
   task-time-machine.
-
 - Lint GitHub Actions workflows on every pull request with a checksum-verified,
   pinned actionlint binary.
+- Signed pin manifests carry a monotonic `sequence`; `require.pin_min_sequence`
+  and `--pin-min-sequence` reject older or unauthenticated baselines in CI.
 
 ### Tests
 
@@ -43,6 +44,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Surface project-config connection warnings in every `serve` tool response,
   preserving legacy list results with additive structured warnings and a warning
   text block. Verify their existing SARIF invocation notifications in both profiles.
+- A signed pin manifest still produces `MCP027` when its separate trust store
+  is missing, preventing trust-store deletion from bypassing verification.
+  Pin writes also refuse unverified manifests rather than signing their claimed
+  sequence, and failed clears preserve the signed manifest.
 
 ## [2.9.0] - 2026-10-10
 
