@@ -48,9 +48,9 @@ the first secret label or URL in that whitespace-free token (or from the start
 of an existing replacement there) through the end of the token is withheld.
 A removed run may have consumed printable bytes (a CSI or C1 final byte, its
 parameters and intermediates, an OSC payload, or the byte after a bare ESC).
-A CSI run reads as dropped or as any suffix of its printable bytes (the
-sequence may have been meant to end earlier); other runs read as dropped, as
-their last printable byte, or as all of them. Detection also reads the whole
+Each escape sequence in a removed run reads as dropped or as any suffix of
+its printable bytes (the sequence may have been meant to end earlier than the
+parser ended it). Detection also reads the whole
 field with those bytes kept, and reads each whitespace-free token together
 with the next one in every combination of its runs' readings, so every
 structural decision (flag, label, delimiter, URL path label, spaced userinfo)
@@ -59,7 +59,10 @@ adjacent removed runs, and the same judgment applies to free text, URL paths,
 argv flags, schema property names and their literals, JSON keys, and pin
 snapshots. A label or token whose readings are too many to enumerate is
 ambiguous: the label is treated as secret, and a token that any reading could
-make structural is withheld with the token after it.
+make structural is withheld with the token after it. That fallback judges the
+union of every character any reading contributes after detection
+normalization (a fullwidth `＠` counts as `@`), so it is never less
+conservative than enumerating the readings.
 Credential values with changed structural delimiters are withheld,
 including introduced whitespace or removed escapes. Unmappable matches or uncertain value
 boundaries withhold the whole field. URL parsing uses raw input; NFKC changes in
