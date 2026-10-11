@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import random
+import re
 from collections.abc import Callable
 from datetime import UTC, datetime
 from io import StringIO
@@ -393,3 +394,108 @@ def test_truncated_url_never_splits_a_credential(quote: str) -> None:
             assert "opaque" not in redacted and "secret" not in redacted, (text, redacted)
             assert redact_text(redacted) == redacted
         assert redact_url(url) == "<redacted>" or "opaque" not in redact_url(url)
+
+
+# Pairwise composition: every perturbation class meets every other one in URL
+# userinfo, URL query and assignment positions, through every surface at once.
+_CUT = ['"', "'", "<", ">", "`"]
+_CONTROL_DELIMITERS = [
+    control + delimiter
+    for control in ("\x1b", "\x1b[", "\x9b", "\x1b]0;x")
+    for delimiter in ("=", ":", "@", '"')
+]
+_COMPAT = [
+    "\uff02",
+    "\uff0f",
+    "\uff20",
+    "\uff1a",
+    "\uff1d",
+    "\u00a8",
+    "\u2024",
+    "\ufe6b",
+    "\uff03",
+    "\uff1f",
+    "\u200b",
+]
+_PERTURBATIONS = ["", *_CUT, *_CONTROL_DELIMITERS, *_COMPAT]
+_SPACES_BEFORE_AT = ["", " ", "\t", "\u00a0"]
+# Renderers consume report.redacted(); render every surface for one batch per class.
+_RENDERED = {"", '"', "\x1b=", "\uff02"}
+
+
+def _composed_cases(first: str, rng: random.Random) -> list[tuple[str, list[str], str | None, list[str]]]:
+    cases: list[tuple[str, list[str], str | None, list[str]]] = []
+    for second in _PERTURBATIONS:
+        for position in ("userinfo", "query", "assignment"):
+            # Whitespace before '@' pairs with every first perturbation.
+            for space in _SPACES_BEFORE_AT if position == "userinfo" and not second else [""]:
+                chunks = [
+                    "".join(rng.choice("ABCDEFGHJKMNPQRSTUVWXYZ23456789") for _ in range(7)) for _ in range(3)
+                ]
+                value = chunks[0] + first + chunks[1] + second + chunks[2]
+                if position == "assignment":
+                    text, args, url = f"config password={value} ready", [f"password={value}"], None
+                else:
+                    url = (
+                        f"https://user:{value}{space}@fixture.example/mcp"
+                        if position == "userinfo"
+                        else f"https://fixture.example/mcp?token={value}"
+                    )
+                    text, args = f"Endpoint {url} ready", ["--url", url]
+                cases.append((text, args, url, [chunk[i : i + 6] for chunk in chunks for i in range(2)]))
+    return cases
+
+
+@pytest.mark.redteam
+@pytest.mark.parametrize("first", _PERTURBATIONS, ids=[repr(item) for item in _PERTURBATIONS])
+def test_composed_perturbations_never_publish_a_credential(first: str, tmp_path: Path) -> None:
+    cases = _composed_cases(first, random.Random(f"compose:{first}"))
+    reports = [_report(text, args, url) for text, args, url, _ in cases]
+    for index, report in enumerate(reports):
+        report.audits[0].server.name = f"synthetic-server-{index}"
+    report = reports[0].model_copy(
+        update={
+            "audits": [audit for item in reports for audit in item.audits],
+            "warnings": [warning for item in reports for warning in item.warnings],
+        }
+    )
+    store = PinStore(tmp_path / "pins.yaml")
+    outputs = [
+        report.redacted().model_dump_json(),
+        json.dumps([store._config_snapshot(audit.server) for audit in report.audits]),
+        *(_server_definition_summary(audit.server) for audit in report.audits),
+    ]
+    if first in _RENDERED:
+        terminal = StringIO()
+        generator = ReportGenerator(Console(file=terminal, width=200, color_system=None))
+        generator.render_terminal(report, verbose=True)
+        generator.render_json(report, tmp_path / "report.json")
+        outputs += [
+            (tmp_path / "report.json").read_text(),
+            terminal.getvalue(),
+            HtmlReportGenerator().generate(report),
+            json.dumps(SarifGenerator().generate(report)),
+        ]
+    for text, args, url, _ in cases:
+        once = redact_text(text)
+        assert redact_text(once) == once, text
+        argv = redact_argv(cast(list[object], args))
+        assert redact_argv(argv) == argv, args
+        outputs += [once, repr(argv), redacted_excerpt(text, 0, len(text), context_after=len(text))]
+        if url is not None:
+            outputs.append(redact_url(url))
+    published = "\n".join(outputs)
+    pattern = re.compile("|".join(piece for _, _, _, pieces in cases for piece in pieces))
+    assert pattern.search(published) is None, pattern.findall(published)[:5]
+
+
+@pytest.mark.parametrize("cut", ['"', "'", "<", ">", "`"])
+@pytest.mark.parametrize("password", ["planted{cut}tail-secret", "{cut}planted-tail-secret"])
+@pytest.mark.parametrize("space", [" ", "\t", "\u00a0"], ids=["space", "tab", "nbsp"])
+def test_authority_cut_before_spaced_at_is_withheld(
+    cut: str, password: str, space: str, tmp_path: Path
+) -> None:
+    url = f"https://user:{password.format(cut=cut)}{space}@fixture.example/mcp"
+    text = f"Endpoint {url} ready"
+    assert "secret" not in redact_text(text) and "planted" not in redact_text(text)
+    _assert_surfaces(text, ["--url", url], url, ["planted", "tail-secret"], tmp_path)
