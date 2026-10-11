@@ -10,13 +10,13 @@ from mcp_audit.models import ClientType, ServerConfig, ToolAnnotations, ToolInfo
 from mcp_audit.pinning import PinStore
 from mcp_audit.probe import _request, _Response
 
-_MAX_PARAM_ID_STRING_LENGTH = 256
+_MAX_PARAM_ID_STRING_LENGTH = 64
 
 
-def pytest_make_parametrize_id(_config: pytest.Config, val: object, argname: str) -> str | None:
-    """Keep long string values out of generated pytest node IDs."""
-    if isinstance(val, str) and len(val) > _MAX_PARAM_ID_STRING_LENGTH:
-        return f"{argname}-string-{len(val)}"
+def pytest_make_parametrize_id(config: pytest.Config, val: object, argname: str) -> str | None:
+    """Keep long string and bytes values out of generated pytest node IDs."""
+    if isinstance(val, (str, bytes)) and len(ascii(val)) > _MAX_PARAM_ID_STRING_LENGTH:
+        return f"{argname}-{type(val).__name__}-{len(val)}"
     return None
 
 
