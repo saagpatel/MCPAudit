@@ -98,7 +98,9 @@ def test_release_verifier_requires_public_tag_in_precommit_usage_comment(
     def read_with_stale_precommit_tag(path: str) -> str:
         content = read_text(path)
         if path == ".pre-commit-hooks.yaml":
-            return content.replace("rev: v2.9.0", "rev: v2.8.1")
+            stale = re.sub(r"rev: v\d+\.\d+\.\d+", "rev: v0.0.0", content)
+            assert stale != content
+            return stale
         return content
 
     monkeypatch.setitem(
