@@ -199,5 +199,108 @@
       "roundtwo-prefix-secret",
       "suffix-secret"
     ]
+  },
+  {
+    "id": "csi-final-byte-splits-label",
+    "kind": "text",
+    "source": "pa\u001b[ssword=csi-final-secret",
+    "expected": "pa\u001b[ssword=<redacted>",
+    "forbidden": ["csi-final-secret"]
+  },
+  {
+    "id": "c1-final-byte-splits-label",
+    "kind": "text",
+    "source": "to\u009bken: c1-final-secret",
+    "expected": "to\u009bken: <redacted>",
+    "forbidden": ["c1-final-secret"]
+  },
+  {
+    "id": "csi-params-final-byte-splits-label",
+    "kind": "text",
+    "source": "api_\u001b[1;2key=csi-param-secret",
+    "expected": "<redacted>",
+    "forbidden": ["csi-param-secret"]
+  },
+  {
+    "id": "csi-final-byte-splits-flag",
+    "kind": "text",
+    "source": "--pa\u001b[ssword csi-flag-secret",
+    "expected": "--pa\u001b[ssword <redacted>",
+    "forbidden": ["csi-flag-secret"]
+  },
+  {
+    "id": "mixed-runs-split-label",
+    "kind": "text",
+    "source": "pa\u001b[ss\u001b[31mword=mixed-run-secret",
+    "expected": "pa\u001b[ss\u001b[31mword=<redacted>",
+    "forbidden": ["mixed-run-secret"]
+  },
+  {
+    "id": "bare-escape-consumes-delimiter",
+    "kind": "text",
+    "source": "password\u001b: eaten-colon-secret",
+    "expected": "<redacted> <redacted>",
+    "forbidden": ["eaten-colon-secret"]
+  },
+  {
+    "id": "osc-payload-label",
+    "kind": "text",
+    "source": "\u001b]password\u0007=osc-label-secret",
+    "expected": "<redacted>",
+    "forbidden": ["osc-label-secret"]
+  },
+  {
+    "id": "csi-final-byte-splits-argv-flag",
+    "kind": "args",
+    "source": ["--pa\u001b[ssword", "argv-csi-secret", "--port", "8080", "--to\u009bken=argv-inline-secret"],
+    "expected": ["--pa\u001b[ssword", "<redacted>", "--port", "8080", "--to\u009bken=<redacted>"],
+    "forbidden": ["argv-csi-secret", "argv-inline-secret"]
+  },
+  {
+    "id": "csi-final-byte-splits-schema-property",
+    "kind": "schema",
+    "source": {
+      "type": "object",
+      "properties": {
+        "pa\u001b[ssword": {"type": "string", "default": "schema-csi-secret"},
+        "api\u009b_key": {"type": "string", "examples": ["schema-c1-secret"]}
+      }
+    },
+    "expected": {
+      "type": "object",
+      "properties": {
+        "pa\u001b[ssword": {"type": "string", "default": "<redacted>"},
+        "api\u009b_key": {"type": "string", "examples": ["<redacted>"]}
+      }
+    },
+    "forbidden": ["schema-csi-secret", "schema-c1-secret"]
+  },
+  {
+    "id": "space-before-userinfo-at",
+    "kind": "text",
+    "source": "Endpoint https://spaced-userinfo-secret @fixture.example/mcp",
+    "expected": "Endpoint https://<redacted> @fixture.example/mcp",
+    "forbidden": ["spaced-userinfo-secret"]
+  },
+  {
+    "id": "tab-before-userinfo-at",
+    "kind": "text",
+    "source": "Endpoint https://spaced-userinfo-secret\t@fixture.example/mcp",
+    "expected": "Endpoint https://<redacted>\t@fixture.example/mcp",
+    "forbidden": ["spaced-userinfo-secret"]
+  },
+  {
+    "id": "nbsp-before-userinfo-at",
+    "kind": "text",
+    "source": "Endpoint https://spaced-userinfo-secret\u00a0@fixture.example/mcp",
+    "expected": "Endpoint https://<redacted>\u00a0@fixture.example/mcp",
+    "forbidden": ["spaced-userinfo-secret"]
+  },
+  {
+    "id": "em-space-before-userinfo-at-quoted",
+    "kind": "text",
+    "source": "Endpoint \"https://spaced-userinfo-secret\u2003@fixture.example/mcp\"",
+    "expected": "Endpoint \"https://<redacted>\u2003@fixture.example/mcp\"",
+    "forbidden": ["spaced-userinfo-secret"]
   }
 ]

@@ -499,3 +499,66 @@ def test_authority_cut_before_spaced_at_is_withheld(
     text = f"Endpoint {url} ready"
     assert "secret" not in redact_text(text) and "planted" not in redact_text(text)
     _assert_surfaces(text, ["--url", url], url, ["planted", "tail-secret"], tmp_path)
+
+
+# Sequences whose final (or only following) byte detection removes with them.
+CONSUMING_SEQUENCES = {"csi": "\x1b[", "c1-csi": "\x9b", "csi-params": "\x1b[1;2", "bare-esc": "\x1b"}
+
+
+@pytest.mark.parametrize("sequence", list(CONSUMING_SEQUENCES.values()), ids=list(CONSUMING_SEQUENCES))
+@pytest.mark.parametrize("label", ["password", "token", "secret", "api_key"])
+@pytest.mark.parametrize("split", [0, 1, -1], ids=["first", "second", "last"])
+def test_label_letter_consumed_by_an_escape_sequence_is_still_a_label(
+    sequence: str, label: str, split: int, tmp_path: Path
+) -> None:
+    # The sequence ends on a letter of the label, so detection text drops it.
+    raw = label[: split % len(label)] + sequence + label[split % len(label) :]
+    secret = LEFT + RIGHT
+    text = f"config {raw}={secret} ready"
+    _assert_surfaces(text, [f"--{raw}", secret, f"--{raw}={secret}"], None, _forbidden(""), tmp_path)
+    assert redact_argv([f"--{raw}", secret])[1] == "<redacted>"
+    schema = redact_data({"properties": {raw: {"type": "string", "default": secret}}, raw: secret})
+    assert secret not in json.dumps(schema)
+
+
+@pytest.mark.parametrize(
+    "space",
+    [" ", "  ", "\t", "\u00a0", "\u2003", "\u3000"],
+    ids=["space", "spaces", "tab", "nbsp", "em", "ideographic"],
+)
+@pytest.mark.parametrize("wrap", ["{}", '"{}"', "({})", "<{}>", "'{}'"])
+def test_userinfo_cut_from_its_at_by_spaces_is_redacted(space: str, wrap: str, tmp_path: Path) -> None:
+    url = f"https://{LEFT}{RIGHT}{space}@fixture.example/mcp"
+    text = "Endpoint " + wrap.format(url) + " ready"
+    assert (
+        redact_text(text)
+        == "Endpoint " + wrap.format(f"https://<redacted>{space}@fixture.example/mcp") + " ready"
+    )
+    _assert_surfaces(text, ["--url", url], url, _forbidden(""), tmp_path)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "\x1b[31mERROR\x1b[0m: timeout=30 retries=3",
+        "\x9b31mwarn\x9b0m count=5",
+        "\x1b[1mtokens\x1b[0m: 5",
+        "\x1b[1mtokenizer\x1b[0m=bpe",
+        "\x1b[1mauthor\x1b[0m=fixture",
+        "\x1b[32mok\x1b[0m session_name=demo",
+        "\x1b]8;;https://example.test/docs\x07docs\x1b]8;;\x07 mode=fast",
+        "email me @ host",
+        "contact @fixture about it",
+        "see https://example.test/docs @fixture",
+    ],
+)
+def test_ordinary_colored_text_and_prose_are_not_redacted(text: str) -> None:
+    assert redact_text(text) == text
+    assert redact_argv(["\x1b[1m--verbose\x1b[0m", "on", "--color", "\x1b[31mred\x1b[0m"]) == [
+        "\x1b[1m--verbose\x1b[0m",
+        "on",
+        "--color",
+        "\x1b[31mred\x1b[0m",
+    ]
+    schema = {"properties": {"\x1b[1mtimeout\x1b[0m": {"type": "integer", "default": "30"}}}
+    assert redact_data(schema) == schema
