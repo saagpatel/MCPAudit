@@ -518,18 +518,18 @@ ESCALATION_FINDINGS: dict[EscalationKind, FindingMetadata] = {
     ),
     EscalationKind.DESCRIPTION_INJECTION: FindingMetadata(
         rule_id="MCP019",
-        title="Tool description gained injection patterns since pin baseline",
+        title="Tool description gained instruction-shaped text since pin baseline",
         severity="high",
         description=(
-            "A pinned tool's description has GAINED prompt-injection pattern(s) that were absent "
+            "A pinned tool's description has GAINED instruction-shaped text that was absent "
             "from the operator-approved baseline (e.g. 'ignore previous instructions', hidden "
             "directives, or system-prompt override framing). A benign tool description mutating "
-            "to carry agent-targeting instructions is a strong rug-pull / compromise signal."
+            "to carry agent-targeting instructions is a strong unexpected-change signal."
         ),
         remediation=(
             "Treat the server as untrusted until reviewed. Read the full updated description, "
-            "compare it against the pinned baseline, and confirm the injected text with the "
-            "server author. Do not refresh the pin while the injection pattern is present."
+            "compare it against the pinned baseline, and confirm the instruction-shaped text "
+            "with the server author. Do not refresh the pin while it is present."
         ),
     ),
 }
@@ -1003,7 +1003,7 @@ FINDING_COPY: dict[str, FindingCopy] = {
     ),
     "MCP019": FindingCopy(
         "Your pinned tool now contains new instruction-shaped text.",
-        "The current description contains injection patterns absent from the saved tool description.",
+        "The current description contains instruction-shaped text absent from the saved tool description.",
         (
             "You trusted an earlier description.",
             "The updated description adds agent-directed text.",

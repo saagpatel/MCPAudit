@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import socket
 import traceback
@@ -225,6 +226,10 @@ def test_report_is_canonical_deterministic_and_omits_fetch_details(tmp_path: Pat
     second = report_json_bytes(review_authorization_posture_path(source))
 
     assert first == second
+    # Captured using the pre-extraction serializer and the same synthetic input.
+    assert hashlib.sha256(first).hexdigest() == (
+        "bb7225ae879e8dd971e804d8ade7a423505019af52398080e4bd82826e012f32"
+    )
     assert first.endswith(b"\n")
     assert b"authorization_endpoint" not in first
     assert b"token_endpoint" not in first

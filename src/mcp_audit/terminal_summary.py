@@ -265,6 +265,7 @@ def render_summary(out: Console, report: AuditReport, *, explicit_config: bool =
         actions = [replace(a, identities=tuple(identities.get(i, i) for i in a.identities)) for a in actions]
     if not report.audits:
         out.print("No MCP servers found. No security result or score is available.")
+        out.print(terminal_safe(_coverage(report)))
         if report.config_health_findings or report.warnings:
             out.print("Configuration diagnostics leave incomplete coverage.")
         elif explicit_config:
@@ -303,7 +304,8 @@ def render_summary(out: Console, report: AuditReport, *, explicit_config: bool =
         f"{len(report.warnings)} scan warnings; {report.total_tools} tools; "
         f"{report.high_risk_servers} high-risk servers (capability exposure)"
     )
-    out.print(terminal_safe(_coverage(report)))
+    if report.audits:
+        out.print(terminal_safe(_coverage(report)))
     candidates: list[Action] = []
     for warning in report.warnings:
         affected = [a for a in report.audits if not warning.servers or a.server.name in warning.servers]

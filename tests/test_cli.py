@@ -94,6 +94,16 @@ def test_scan_help_describes_session_timeout_budget() -> None:
     assert "--max-concurrency" in help_text
 
 
+def test_scan_help_describes_inject_check_as_instruction_shaped_text() -> None:
+    result = CliRunner().invoke(cli.main, ["scan", "--help"])
+    help_text = " ".join(result.output.split())
+
+    assert result.exit_code == 0, result.output
+    assert "--inject-check" in help_text
+    assert "instruction-shaped text" in help_text
+    assert "prompt injection" not in help_text.casefold()
+
+
 def test_debug_installs_transport_secret_filter_once_at_main(monkeypatch: pytest.MonkeyPatch) -> None:
     from mcp_audit import connector
 

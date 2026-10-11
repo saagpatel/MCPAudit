@@ -7,11 +7,12 @@ report so synthetic fixtures cannot become a path for credential reflection.
 
 from __future__ import annotations
 
-import json
 from enum import StrEnum
 from typing import Annotated, Any, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
+
+from mcp_audit.lab_primitives import model_json_bytes
 
 SCENARIO_SCHEMA: Final = "mcpaudit.task-time-machine.scenario.v1"
 RESULT_SCHEMA: Final = "mcpaudit.task-time-machine.result.v1"
@@ -287,20 +288,5 @@ class TaskSimulationResult(StrictModel):
 
 
 def canonical_json_bytes(value: BaseModel | dict[str, Any] | list[Any]) -> bytes:
-    """Return sorted compact UTF-8 JSON with one terminal newline."""
-
-    payload: dict[str, Any] | list[Any]
-    if isinstance(value, BaseModel):
-        payload = value.model_dump(mode="json")
-    else:
-        payload = value
-    return (
-        json.dumps(
-            payload,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-            allow_nan=False,
-        ).encode("utf-8")
-        + b"\n"
-    )
+    """Return canonical UTF-8 bytes with one terminal newline."""
+    return model_json_bytes(value)
