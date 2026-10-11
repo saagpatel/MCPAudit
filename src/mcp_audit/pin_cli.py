@@ -35,11 +35,17 @@ _UNVERIFIED_LEGACY_NOTE = (
     "Compared against an unverified legacy (v1) baseline: trusted pin keys exist but nothing "
     "authenticates this entry. Review before signing."
 )
+_UNSIGNED_V2_MIGRATION_NOTE = (
+    "Compared against an unverified unsigned v2 baseline. Review the current tools and launch config; "
+    "--apply replaces this entry with a fresh signed baseline using a trusted signing key. "
+    "Run `mcp-audit pin keygen` if you do not have one."
+)
 
 
 class _PinServerOptions(TypedDict, total=False):
     redact_args: bool
     protocol: ProtocolObservation
+    migrate_unsigned_v2: bool
 
 
 # ---------------------------------------------------------------------------
@@ -71,7 +77,7 @@ class _PinServerOptions(TypedDict, total=False):
     "refresh_server",
     default=None,
     metavar="NAME",
-    help="Review pin drift for one server before refreshing its baseline.",
+    help="Review pin drift for one server, including unsigned v2 migration to a signed baseline.",
 )
 @click.option(
     "--apply",
@@ -480,7 +486,8 @@ async def _run_pin_refresh(
         )
         return
 
-    if not store.baseline_trusted(audit.server.name):
+    migrate_unsigned_v2 = store.unsigned_v2_migration_allowed(audit.server.name)
+    if not migrate_unsigned_v2 and not store.baseline_trusted(audit.server.name):
         verification_error = store.verification_message(audit.server.name)
         if not verification_error:
             verification_error = f"Pin for {audit.server.name} failed signature verification."
@@ -501,10 +508,23 @@ async def _run_pin_refresh(
     # Review must show the comparison even when scans withhold the baseline:
     # an unauthenticated legacy v1 pin is compared and clearly labeled.
     unverified_legacy = store.unverified_legacy_baseline(audit.server.name)
-    baseline_note = _UNVERIFIED_LEGACY_NOTE if unverified_legacy else None
-    findings = store.check_drift(audit.server.name, audit.tools, review_unverified_legacy=True)
+    baseline_note = (
+        _UNSIGNED_V2_MIGRATION_NOTE
+        if migrate_unsigned_v2
+        else _UNVERIFIED_LEGACY_NOTE
+        if unverified_legacy
+        else None
+    )
+    findings = store.check_drift(
+        audit.server.name,
+        audit.tools,
+        review_unverified_legacy=True,
+        review_unsigned_v2=migrate_unsigned_v2,
+    )
     uncovered_fields = store.uncovered_field_rows(audit.server.name, audit.tools)
-    escalation_findings, provenance_findings = _refresh_security_deltas(store, audit)
+    escalation_findings, provenance_findings = _refresh_security_deltas(
+        store, audit, review_unsigned_v2=migrate_unsigned_v2
+    )
     # Capture registry hashes only when we will actually re-pin (network call,
     # offloaded to a thread so it doesn't block the event loop).
     refresh_pkgs = (
@@ -519,6 +539,8 @@ async def _run_pin_refresh(
     if json_status:
         if apply_refresh:
             pin_options: _PinServerOptions = {"redact_args": redact_args}
+            if migrate_unsigned_v2:
+                pin_options["migrate_unsigned_v2"] = True
             if audit.protocol is not None:
                 pin_options["protocol"] = audit.protocol
             store.pin_server(
@@ -570,6 +592,8 @@ async def _run_pin_refresh(
         return
 
     final_pin_options: _PinServerOptions = {"redact_args": redact_args}
+    if migrate_unsigned_v2:
+        final_pin_options["migrate_unsigned_v2"] = True
     if audit.protocol is not None:
         final_pin_options["protocol"] = audit.protocol
     store.pin_server(
@@ -588,6 +612,8 @@ async def _run_pin_refresh(
 def _refresh_security_deltas(
     store: object,
     audit: ServerAudit,
+    *,
+    review_unsigned_v2: bool = False,
 ) -> tuple[list[EscalationFinding], list[ProvenanceFinding]]:
     """Compute capability-escalation and provenance deltas vs the pin baseline.
 
@@ -604,7 +630,9 @@ def _refresh_security_deltas(
     escalation_findings: list[EscalationFinding] = []
     provenance_findings: list[ProvenanceFinding] = []
 
-    baseline_tools = store.baseline_tools(audit.server.name, review_unverified_legacy=True)
+    baseline_tools = store.baseline_tools(
+        audit.server.name, review_unverified_legacy=True, review_unsigned_v2=review_unsigned_v2
+    )
     if baseline_tools:
         escalation_findings = EscalationAnalyzer().analyze_server(
             audit.server.name,
@@ -613,7 +641,9 @@ def _refresh_security_deltas(
             uncovered_annotations=store.legacy_tool_names(audit.server.name),
         )
 
-    baseline_config = store.baseline_config(audit.server.name, review_unverified_legacy=True)
+    baseline_config = store.baseline_config(
+        audit.server.name, review_unverified_legacy=True, review_unsigned_v2=review_unsigned_v2
+    )
     if baseline_config:
         provenance_findings = ProvenanceAnalyzer().analyze_server(audit.server, baseline_config)
 
@@ -726,7 +756,7 @@ def _render_pin_refresh_review(
         if baseline_note is not None:
             console.print(
                 "[yellow]The pin baseline could not be verified; no differences from the unverified "
-                "legacy baseline were found. Review the current tools before signing.[/yellow]"
+                "baseline were found. Review the current tools before signing.[/yellow]"
             )
             return
         console.print("[green]No drift found. Current tools already match the pin baseline.[/green]")

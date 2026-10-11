@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Guide unsigned v2 pins through `pin --refresh SERVER --apply` to a fresh signed
+  baseline without clearing first; label migration reviews as unverified and
+  preserve fail-closed checks for previously signed entries.
 - Keep long string parameters out of generated pytest IDs to avoid oversized collection output.
 - Review authorization metadata for independently valid `WWW-Authenticate` header
   lines and legal empty comma elements. Ambiguous metadata, malformed lines,
