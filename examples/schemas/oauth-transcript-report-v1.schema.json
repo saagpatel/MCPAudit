@@ -65,7 +65,8 @@
             "MCPOAUTH004",
             "MCPOAUTH005",
             "MCPOAUTH006",
-            "MCPOAUTH007"
+            "MCPOAUTH007",
+            "MCPOAUTH008"
           ],
           "title": "Rule Id",
           "type": "string"

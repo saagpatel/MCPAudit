@@ -1659,7 +1659,7 @@ authorization-response issuer validation, issuer-bound client state, and DCR
 
 Reports use sorted compact canonical JSON with one terminal newline and no
 timestamp or input path. Stable finding IDs are `MCPOAUTH001` through
-`MCPOAUTH007`; `MCPOAUTH000` represents missing, malformed, redacted,
+`MCPOAUTH008`; `MCPOAUTH000` represents missing, malformed, redacted,
 unsupported, or unverifiable evidence. Each finding contains severity,
 `violation|advisory|unknown` outcome, `required|recommended|deprecated|unsupported`
 requirement level, title, semantic target, redacted evidence, remediation,
@@ -1687,8 +1687,15 @@ per URL. URLs are never fetched, redirects are never followed, and no network,
 browser, OAuth, MCP, account, keychain, or credential-store path exists.
 
 A passing report proves only the implemented binding invariants in the
-supplied synthetic transcript. It does not prove token signature validity,
-PKCE correctness, client-authentication strength, IdP integrity, consent,
+supplied synthetic transcript. The PKCE rule checks the recorded S256 method
+and redacted challenge/verifier markers. Omitted PKCE fields are unrecorded
+evidence (`MCPOAUTH000`, unknown); explicit nulls record observed absence and
+non-S256 methods record noncompliance (`MCPOAUTH008`, violation). Authorization
+error responses participate in flow ordering; code redemption without a
+successful response in an error-only flow is contradictory evidence
+(`MCPOAUTH000`, unknown). The PKCE rule does not establish cryptographic
+correspondence. A report does not prove token signature validity,
+client-authentication strength, IdP integrity, consent,
 real-world authorization, or production security. See
 `docs/labs/OAUTH-TRANSCRIPT-AUDITOR.md`.
 
