@@ -1,5 +1,7 @@
 """Tests for centralized output redaction."""
 
+import tracemalloc
+from collections.abc import Callable
 from time import perf_counter
 
 import pytest
@@ -381,3 +383,34 @@ def test_redact_identifiers_alias_respects_word_boundaries() -> None:
     # a server literally named "git" must not corrupt the unrelated word "github"
     out = redact_identifiers({"t": "see github docs"}, name_aliases={"git": "server-01"})
     assert out["t"] == "see github docs"
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda n: "\x1b]" + "a" * n + "\x07",  # terminated OSC payload
+        lambda n: "\x1b]" + "a" * n,  # unterminated OSC payload
+        lambda n: "x \x1b[" + "1;" * (n // 2) + "m y",  # long CSI parameters
+        lambda n: "x " + "\x1b[m" * n + " y",  # many adjacent sequences
+    ],
+    ids=["osc", "osc-unterminated", "csi-params", "adjacent-sequences"],
+)
+def test_escape_reading_choices_and_memory_grow_linearly(build: Callable[[int], str]) -> None:
+    from mcp_audit.redaction import _segments
+
+    # Characters copied into reading choices: bounded per input character.
+    for size in (1024, 4096, 16384):
+        text = build(size)
+        copied = sum(len(choice) for segment in _segments(text) for choice, _, _ in segment.choices)
+        assert copied <= 2 * len(text) + 4096, (size, copied)
+
+    def peak(size: int) -> int:
+        tracemalloc.start()
+        try:
+            redact_text(build(size))
+            return tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+
+    # A 4x larger payload stays near 4x the memory; quadratic would be 16x.
+    assert peak(16384) < 6 * peak(4096)
