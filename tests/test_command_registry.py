@@ -295,6 +295,7 @@ mcp_audit/finding_display.py
 mcp_audit/fixture_gateway.py
 mcp_audit/fixtures/demo-mcp-config.json
 mcp_audit/fix_cli.py
+mcp_audit/fleet_workers.py
 mcp_audit/htmlreport.py
 mcp_audit/http_transport.py
 mcp_audit/injection.py
