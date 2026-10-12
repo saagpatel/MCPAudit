@@ -1076,7 +1076,7 @@ or timeout.
 
 Additive, optional fields for compatibility with older reports:
 
-- `client_identity`: the presented MCP client name/version, e.g. `mcp-audit/2.10.1`;
+- `client_identity`: the presented MCP client name/version, e.g. `mcp-audit/2.11.0`;
   MCPAudit presents this explicit identity on stdio, Streamable HTTP, and SSE,
   in canary and ordinary connected scans. Older reports load with an empty string
   (identity unrecorded), not the current package identity.

@@ -17,6 +17,7 @@
 
 ## Reference
 
+- [2.11.0 candidate and upgrade notes](2.11-RELEASE-NOTES.md)
 - [2.10.1 release and upgrade notes](2.10-RELEASE-NOTES.md)
 - [Annotation and scoring migration](SCORING-MIGRATION.md)
 - [3.0 boundary proposal](3.0-BOUNDARY-PROPOSAL.md)

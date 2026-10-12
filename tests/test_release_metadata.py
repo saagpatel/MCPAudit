@@ -137,7 +137,7 @@ def test_release_state_cannot_keep_a_stale_published_version(
         "_release_state",
         lambda: {
             "schema_version": "mcp-audit.release-state.v1",
-            "candidate_version": "2.10.1",
+            "candidate_version": _project_version(),
             "published_version": "2.10.0",
             "previous_version": "2.10.0",
             "status": "release",
@@ -159,9 +159,9 @@ def test_candidate_version_cannot_equal_published_version(
         "_release_state",
         lambda: {
             "schema_version": "mcp-audit.release-state.v1",
-            "candidate_version": "2.10.1",
-            "published_version": "2.10.1",
-            "previous_version": "2.10.1",
+            "candidate_version": _project_version(),
+            "published_version": _project_version(),
+            "previous_version": _project_version(),
             "status": "candidate",
         },
     )
@@ -180,7 +180,7 @@ def test_candidate_previous_version_must_equal_published_version(
         "_release_state",
         lambda: {
             "schema_version": "mcp-audit.release-state.v1",
-            "candidate_version": "2.10.1",
+            "candidate_version": _project_version(),
             "published_version": "2.10.0",
             "previous_version": "2.9.0",
             "status": "candidate",
