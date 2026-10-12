@@ -910,12 +910,16 @@ def test_status_reports_verification_and_withheld_baselines(
     result = CliRunner().invoke(
         cli.main, ["pin", "--status", "--json", "--pin-file", str(legacy_pin_with_trusted_key)]
     )
-    server = json.loads(result.output)["servers"][0]
+    payload = json.loads(result.output)
+    server = payload["servers"][0]
     assert server["verification"] == "schema_outdated"
     assert server["baseline_usable"] is False
+    assert payload["warnings"][0]["code"] == "pin_schema_outdated"
+    assert "mcp-audit pin --refresh fixture" in payload["warnings"][0]["message"]
     monkeypatch.setattr(pin_cli.console, "width", 240)
     result = CliRunner().invoke(cli.main, ["pin", "--status", "--pin-file", str(legacy_pin_with_trusted_key)])
     assert "schema_outdated (withheld)" in result.output
+    assert "mcp-audit pin --refresh fixture" in result.output
 
 
 # --- Signed document manifest: deleted, renamed, or spliced signed entries in keys-only CI.
