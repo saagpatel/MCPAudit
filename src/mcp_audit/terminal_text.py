@@ -36,11 +36,19 @@ def control_free_spans(value: str) -> Iterator[tuple[int, int]]:
             yield start, end
 
     start = 0
+    for escape, end in escape_spans(value):
+        yield from retain(start, escape)
+        start = end
+    yield from retain(start, len(value))
+
+
+def escape_spans(value: str) -> Iterator[tuple[int, int]]:
+    """Complete escape ranges, including unterminated sequences, consumed once."""
+    start = 0
     length = len(value)
     # 7-bit (ESC [ / ESC ]) and 8-bit C1 (CSI U+009B / OSC U+009D) introducers.
     while (match := _INTRODUCER.search(value, start)) is not None:
         escape = match.start()
-        yield from retain(start, escape)
         end = escape + 1
         kind = value[escape]
         if kind == "\x1b" and end < length:
@@ -60,8 +68,8 @@ def control_free_spans(value: str) -> Iterator[tuple[int, int]]:
                     end += 2
                     break
                 end += 1
+        yield escape, end
         start = end
-    yield from retain(start, length)
 
 
 def terminal_safe(value: str) -> Text:
