@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Requested pin checks with withheld baselines now report partial coverage with
+  reason `pin_baseline_withheld`. The opt-in policy boolean
+  `fail_on.pin_baseline_withheld` fails these checks; its default remains off.
+- Pin warnings name the refresh command and the coming 3.0 withholding of v1
+  baselines even without trusted keys. The 3.0 proposal specifies default
+  failure and mixed-row exclusion; 2.x v1 comparisons remain available.
+
 ## [2.11.0] - 2026-10-12
 
 ### Upgrade notes

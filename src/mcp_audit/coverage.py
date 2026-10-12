@@ -182,6 +182,8 @@ def build_coverage(
                 entry = CheckCoverage(state="partial", reason="; ".join(reasons))
             if check not in completed[index]:
                 entry = CheckCoverage(state="not_run", reason="check execution unavailable")
+            if check == "pin_check" and "pin_baseline_withheld" in reasons:
+                entry = CheckCoverage(state="partial", reason="pin_baseline_withheld")
             entries.append(entry)
         coverage[check] = _aggregate(entries)
         if skip_connect and check == "metadata":
