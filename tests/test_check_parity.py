@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from mcp_audit import check_cli, cli, engine
+from mcp_audit import check_cli, cli, engine, pinning
 from mcp_audit.connector import ServerConnector
 from mcp_audit.engine import ScanOptions
 from mcp_audit.models import AuditReport, ResourceInfo, ServerAudit, ServerConfig
@@ -58,6 +58,137 @@ def _config(path: Path, *, args: list[str] | None = None) -> Path:
         )
     )
     return path
+
+
+@pytest.mark.parametrize("explicit_baseline", [False, True])
+@pytest.mark.parametrize("alias", ["direct", "symlink", "hardlink"])
+@pytest.mark.parametrize("artifact", ["--output-json", "--sarif", "--html", "--card"])
+@pytest.mark.parametrize(
+    "consumer",
+    [
+        "pin-check",
+        "escalation-check",
+        "provenance-check",
+        "integrity-check",
+        "canary-check",
+        "verify-artifacts",
+        "download-artifacts",
+        "policy-pins",
+        "policy-sequence",
+        "policy-integrity",
+        "policy-server",
+        "pin-min-sequence",
+    ],
+)
+def test_baseline_consumers_reject_artifact_aliases_before_scan_or_write(
+    explicit_baseline: bool,
+    alias: str,
+    artifact: str,
+    consumer: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    baseline = Path.home() / ".mcp-audit-pins.yaml"
+    monkeypatch.setattr(pinning, "DEFAULT_PIN_PATH", baseline)
+    before = b"pins: {}\n"
+    baseline.write_bytes(before)
+    destination = baseline
+    if alias != "direct":
+        destination = tmp_path / "baseline-alias"
+        if alias == "symlink":
+            destination.symlink_to(baseline)
+        else:
+            destination.hardlink_to(baseline)
+    config = _config(tmp_path / "fixture.json")
+    args = ["check", "--config", str(config), "--json", artifact, str(destination)]
+    other_output = tmp_path / "other-report"
+    args.extend(["--sarif" if artifact == "--output-json" else "--output-json", str(other_output)])
+    if explicit_baseline:
+        args.extend(["--pin-file", str(baseline)])
+    if consumer.startswith("policy-"):
+        policy = tmp_path / "policy.yaml"
+        policy.write_text(
+            {
+                "policy-pins": "require:\n  pins:\n    servers: [fixture]\n",
+                "policy-sequence": "require:\n  pin_min_sequence: 1\n",
+                "policy-integrity": "fail_on:\n  pin_integrity: true\n",
+                "policy-server": "servers:\n  fixture:\n    require_pin: true\n",
+            }[consumer]
+        )
+        args.extend(["--policy", str(policy)])
+    elif consumer == "pin-min-sequence":
+        args.extend(["--pin-min-sequence", "1"])
+    else:
+        args.append(f"--{consumer}")
+    if consumer == "canary-check":
+        args.extend(["--connect", "--server", "claude_code:workstation:fixture"])
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        raise AssertionError("baseline aliases must be rejected before scanning or writing")
+
+    monkeypatch.setattr(check_cli, "run_scan", forbidden)
+    monkeypatch.setattr(Path, "write_text", forbidden)
+    result = CliRunner().invoke(cli.main, args)
+    assert result.exit_code == 2, result.output
+    assert "aliases an input file" in result.stderr
+    assert artifact in result.stderr
+    assert "Scanned: no" in result.stderr
+    assert "Written: none" in result.stderr
+    assert baseline.read_bytes() == before
+    assert destination.read_bytes() == before
+    assert not other_output.exists()
+
+
+@pytest.mark.parametrize("skip_connect", [False, True])
+def test_static_project_connection_opt_in_is_rejected_before_discovery(
+    skip_connect: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def forbidden(*args: object, **kwargs: object) -> None:
+        raise AssertionError("invalid connection scope must fail before discovery")
+
+    monkeypatch.setattr(check_cli, "review_sources", forbidden)
+    result = CliRunner().invoke(
+        cli.main,
+        ["check", "--connect-project-configs", "--json", *(["--skip-connect"] if skip_connect else [])],
+    )
+    assert result.exit_code == 2, result.output
+    assert "--connect-project-configs requires --connect" in result.stderr
+
+
+def test_static_project_config_retains_warning_and_sarif(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _config(tmp_path / ".mcp.json")
+    output = tmp_path / "report.sarif"
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        raise AssertionError("static project checks must not launch or connect")
+
+    monkeypatch.setattr(ServerConnector, "connect", forbidden)
+    monkeypatch.setattr(subprocess, "Popen", forbidden)
+    result = CliRunner().invoke(
+        cli.main,
+        [
+            "check",
+            "--client",
+            "claude-code",
+            "--override-config",
+            "/dev/null",
+            "--json",
+            "--sarif",
+            str(output),
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    report = json.loads(result.stdout)
+    assert report["connection_mode"] == "skipped"
+    assert report["audits"][0]["server"]["scope"] == "project"
+    assert any(w["code"] == "project_config_not_connected" for w in report["warnings"])
+    sarif = json.loads(output.read_text())
+    assert any(
+        notification["descriptor"]["id"] == "MCP-PROJECT-CONFIG-NOT-CONNECTED"
+        for notification in sarif["runs"][0]["invocations"][0]["toolExecutionNotifications"]
+    )
 
 
 @pytest.mark.parametrize("detector", DETECTORS)
@@ -200,6 +331,7 @@ def test_policy_and_cli_allowlists_merge_per_server(
             "--connect",
             "--server",
             "claude_code:workstation:fixture",
+            "--connect-project-configs",
             "--egress-check",
             "--egress-allowlist",
             "cli.example",
@@ -326,7 +458,6 @@ def test_tuning_and_selected_pin_file_reach_the_engine(
             "--ssrf-check",
             "--ssrf-allowlist",
             "trusted.example",
-            "--connect-project-configs",
             "--json",
         ],
     )
@@ -335,7 +466,7 @@ def test_tuning_and_selected_pin_file_reach_the_engine(
     assert captured[0].max_concurrency == 3
     assert captured[0].pin_file == pin_file
     assert captured[0].ssrf_allowlist == "trusted.example"
-    assert captured[0].connect_project_configs
+    assert not captured[0].connect_project_configs
     assert captured[0].skip_connect
 
 

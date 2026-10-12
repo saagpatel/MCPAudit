@@ -288,6 +288,9 @@ def check(
     sarif_profile: str,
 ) -> None:
     """Review configs statically; runtime security is not checked by default."""
+    connecting = connect
+    if connect_project_configs and not connecting:
+        raise click.UsageError("--connect-project-configs requires --connect.")
     if skip_connect and connect:
         raise click.UsageError("--skip-connect cannot be combined with --connect.")
     if config_only and (config is None or include_discovered):
@@ -347,6 +350,49 @@ def check(
         stage = "config discovery and parsing"
         sources = review_sources(config, include_discovered, project, clients)
         previous_report = load_previous(previous)
+        policy_config = None
+        if policy:
+            from mcp_audit.policy import load_policy
+
+            try:
+                policy_config = load_policy(policy)
+            except (OSError, ValueError, yaml.YAMLError) as exc:
+                raise _recovery_error(
+                    f"cannot load policy ({type(exc).__name__})",
+                    "policy file",
+                    "check the policy file and rerun mcp-audit check --policy FILE",
+                    scanned=False,
+                ) from None
+        if pin_min_sequence is not None:
+            from dataclasses import replace
+
+            from mcp_audit.policy import PolicyConfig
+
+            policy_config = replace(
+                policy_config or PolicyConfig(),
+                pin_min_sequence=max(pin_min_sequence, policy_config.pin_min_sequence or 0)
+                if policy_config
+                else pin_min_sequence,
+            )
+        policy_requires_pins = policy_config is not None and bool(
+            policy_config.required_pin_servers
+            or policy_config.pin_min_sequence is not None
+            or policy_config.fail_on_pin_integrity
+            or any(rule.require_pin for rule in policy_config.server_rules.values())
+        )
+        if pin_file is None and (
+            pin_check
+            or escalation_check
+            or provenance_check
+            or integrity_check
+            or canary_check
+            or verify_artifacts
+            or download_artifacts
+            or policy_requires_pins
+        ):
+            from mcp_audit.pinning import DEFAULT_PIN_PATH
+
+            pin_file = DEFAULT_PIN_PATH
         inputs = [Path(path) for path, status in sources.paths if status != "absent"]
         if ignore_path is not None:
             inputs.append(ignore_path)
@@ -382,34 +428,10 @@ def check(
                 "Configured code may execute and access the network. "
                 "Auditor read-only intent is not a sandbox."
             )
-        policy_config = None
-        if policy:
-            from mcp_audit.policy import load_policy
-
-            try:
-                policy_config = load_policy(policy)
-            except (OSError, ValueError, yaml.YAMLError) as exc:
-                raise _recovery_error(
-                    f"cannot load policy ({type(exc).__name__})",
-                    "policy file",
-                    "check the policy file and rerun mcp-audit check --policy FILE",
-                    scanned=False,
-                ) from None
-        if pin_min_sequence is not None:
-            from dataclasses import replace
-
-            from mcp_audit.policy import PolicyConfig
-
-            policy_config = replace(
-                policy_config or PolicyConfig(),
-                pin_min_sequence=max(pin_min_sequence, policy_config.pin_min_sequence or 0)
-                if policy_config
-                else pin_min_sequence,
-            )
         operation = partial(
             run_scan,
             ScanOptions(
-                skip_connect=not connect,
+                skip_connect=not connecting,
                 timeout=timeout,
                 max_concurrency=max_concurrency,
                 pin_file=pin_file,
@@ -445,7 +467,7 @@ def check(
                 max_frame_bytes=max_frame_bytes,
                 max_surface_bytes=max_surface_bytes,
                 sdk_stdio_fallback=sdk_stdio_fallback,
-                connect_project_configs=connect or connect_project_configs,
+                connect_project_configs=connecting and (connect or connect_project_configs),
                 config_only=config is not None and not include_discovered,
                 inject_check=inject_check or (card is not None and connect),
                 trifecta_check=trifecta_check or (card is not None and connect),
@@ -465,12 +487,7 @@ def check(
             from mcp_audit.policy import evaluate_policy
 
             selected_pin_store = None
-            if (
-                policy_config.required_pin_servers
-                or policy_config.pin_min_sequence is not None
-                or policy_config.fail_on_pin_integrity
-                or any(rule.require_pin for rule in policy_config.server_rules.values())
-            ):
+            if policy_requires_pins:
                 from mcp_audit.pinning import PinStore
 
                 selected_pin_store = PinStore(path=pin_file)
