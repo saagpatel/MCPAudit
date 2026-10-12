@@ -28,6 +28,10 @@
   between starting an MCP server and registering its process group, that
   group is not known to the parent and is not reaped. This matches the
   existing exposure when the scanner itself is killed mid-spawn.
+  In containers whose PID 1 does not reap adopted processes (no `--init` or
+  equivalent), descendants of a killed server can remain as zombies after a
+  worker crash; the same applies to descendants of stdio servers in
+  single-process scans. Run scans under an init process that reaps children.
 - A fresh CI trust store has no rollback high-water mark until its first
   verification. In a one-shot CI job, set `require.pin_min_sequence` (or
   `--pin-min-sequence`) outside the pin file to refuse an older signed pin
