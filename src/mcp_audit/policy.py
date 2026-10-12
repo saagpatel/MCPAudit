@@ -43,6 +43,7 @@ class PolicyConfig:
     fail_on_package_verify: bool = False
     fail_on_artifact_verify: bool = False
     fail_on_pin_integrity: bool = False
+    fail_on_pin_baseline_withheld: bool = False
     pin_min_sequence: int | None = None
     required_pin_servers: list[str] = field(default_factory=list)
     denied_permissions: list[PermissionCategory] = field(default_factory=list)
@@ -104,6 +105,9 @@ def load_policy(path: Path) -> PolicyConfig:
     pin_integrity = fail_on.get("pin_integrity", False)
     if not isinstance(pin_integrity, bool):
         raise ValueError("fail_on.pin_integrity must be a boolean.")
+    pin_baseline_withheld = fail_on.get("pin_baseline_withheld", False)
+    if not isinstance(pin_baseline_withheld, bool):
+        raise ValueError("fail_on.pin_baseline_withheld must be a boolean.")
     coverage = fail_on.get("coverage", False)
     if not isinstance(coverage, bool):
         raise ValueError("fail_on.coverage must be a boolean.")
@@ -138,6 +142,7 @@ def load_policy(path: Path) -> PolicyConfig:
         fail_on_package_verify=package_verify,
         fail_on_artifact_verify=artifact_verify,
         fail_on_pin_integrity=pin_integrity,
+        fail_on_pin_baseline_withheld=pin_baseline_withheld,
         pin_min_sequence=pin_min_sequence,
         required_pin_servers=[str(value) for value in _sequence(pins.get("servers"), "require.pins.servers")],
         denied_permissions=permissions,
@@ -225,11 +230,31 @@ def evaluate_policy(
         if warning.code == "pin_baseline_withheld"
         for server in warning.servers
     }
+    withheld_pin_checks = {
+        server
+        for warning in report.warnings
+        if warning.code == "pin_baseline_withheld" and warning.check == "pin_check"
+        for server in warning.servers or [audit.server.name for audit in report.audits]
+    }
 
     for audit_index, audit in enumerate(report.audits):
         first_violation = len(violations)
         server_name = audit.server.name
         server_rule = policy.server_rules.get(server_name, ServerPolicyConfig())
+
+        if policy.fail_on_pin_baseline_withheld and server_name in withheld_pin_checks:
+            violations.append(
+                PolicyViolation(
+                    rule="fail_on.pin_baseline_withheld",
+                    server_name=server_name,
+                    severity="high",
+                    message=(
+                        f"Requested pin check for server '{server_name}' could not compare its "
+                        "withheld baseline. Restore a trusted baseline, or review with "
+                        f"`mcp-audit pin --refresh {server_name}` before applying."
+                    ),
+                )
+            )
 
         if policy.allow_servers and server_name not in policy.allow_servers:
             violations.append(
