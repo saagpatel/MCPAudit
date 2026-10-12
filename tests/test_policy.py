@@ -9,7 +9,7 @@ import anyio
 import pytest
 
 from mcp_audit import _core_cli as core_cli
-from mcp_audit import cli, scan_cli
+from mcp_audit import scan_cli
 from mcp_audit.models import (
     ArtifactVerifyFinding,
     ArtifactVerifyKind,
@@ -651,7 +651,7 @@ servers:
     monkeypatch.setattr(core_cli, "discover_all_configs", lambda clients, parse_errors=None: [])
 
     anyio.run(
-        cli._run_scan,
+        scan_cli._run_scan,
         None,  # json_output
         None,  # sarif_output
         None,  # html_output
@@ -876,7 +876,7 @@ deny:
 
     with pytest.raises(SystemExit) as exc:
         anyio.run(
-            cli._run_scan,
+            scan_cli._run_scan,
             str(json_path),
             None,  # sarif_output
             None,  # html_output
