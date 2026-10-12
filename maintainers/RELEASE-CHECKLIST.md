@@ -24,6 +24,16 @@ uv run python scripts/verify_release.py \
 Remove generated `dist/` artifacts after the build check unless the release is
 being uploaded manually.
 
+`--dist-dir` binds the artifacts to the approved commit's content, not only to
+its provenance file. Every sdist file must be byte-identical to that path at the
+commit, apart from the build-generated `PKG-INFO`, provenance file, and uv_build's
+normalized `pyproject.toml` (which must parse identically to the commit's, while
+`pyproject.toml.orig` keeps its exact bytes). A wheel may hold only its
+`.dist-info/` and the contracted module, each module file byte-identical to the
+commit's source and every file listed in `RECORD`; `.data/` members are
+rejected. Requirements are compared as parsed `packaging` requirements, so a
+quoted marker value such as `extra == "labs "` never passes as `labs`.
+
 ## Candidate Metadata Check
 
 - `pyproject.toml`, `docs/release-state.json`, and `CHANGELOG.md` agree on the

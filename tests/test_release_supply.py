@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import base64
 import copy
+import hashlib
 import io
 import json
 import subprocess
@@ -48,7 +50,10 @@ def _published_version(state: object) -> str:
 # version until promotion, so descriptor and registry probes use that one.
 VERSION = _version_for_state(_release_state())
 PUBLISHED_VERSION = _published_version(_release_state())
-COMMIT = "a" * 40
+# Artifacts are content-bound to a real commit, so fixtures package HEAD's bytes.
+COMMIT = subprocess.run(
+    ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+).stdout.strip()
 WORKFLOW_SHA = "b" * 40
 
 
@@ -74,6 +79,31 @@ def test_descriptor_matches_published_version() -> None:
     assert raw["version"] == PUBLISHED_VERSION
 
 
+def _head(path: str) -> bytes:
+    return subprocess.run(["git", "show", f"HEAD:{path}"], capture_output=True, check=True).stdout
+
+
+def _write_wheel(path: Path, entries: dict[str, bytes]) -> None:
+    """Write a wheel whose RECORD lists every member with its digest."""
+    record = f"mcp_audits-{VERSION}.dist-info/RECORD"
+    rows = [
+        f"{name},sha256={base64.urlsafe_b64encode(hashlib.sha256(content).digest()).rstrip(b'=').decode()},"
+        f"{len(content)}\n"
+        for name, content in entries.items()
+        if name != record
+    ]
+    with zipfile.ZipFile(path, "w") as archive:
+        for name, content in entries.items():
+            if name != record:
+                archive.writestr(name, content)
+        archive.writestr(record, "".join(rows) + f"{record},,\n")
+
+
+def _wheel_entries(path: Path) -> dict[str, bytes]:
+    with zipfile.ZipFile(path) as archive:
+        return {name: archive.read(name) for name in archive.namelist()}
+
+
 @pytest.fixture
 def distributions(tmp_path: Path) -> Path:
     dist = tmp_path / "dist"
@@ -85,18 +115,24 @@ def distributions(tmp_path: Path) -> Path:
     ).encode()
     provenance = json.dumps({"commit": COMMIT, "dirty": False}).encode()
     entries = "[console_scripts]\n" + "".join(f"{k} = {v}\n" for k, v in release.EXPECTED_SCRIPTS.items())
-    project = Path("pyproject.toml").read_text(encoding="utf-8")
     wheel, sdist = release.distribution_names(VERSION)
-    with zipfile.ZipFile(dist / wheel, "w") as archive:
-        archive.writestr(f"mcp_audits-{VERSION}.dist-info/METADATA", metadata)
-        archive.writestr(f"mcp_audits-{VERSION}.dist-info/entry_points.txt", entries)
-        archive.writestr("mcp_audit/_build_provenance.json", provenance)
+    _write_wheel(
+        dist / wheel,
+        {
+            f"mcp_audits-{VERSION}.dist-info/METADATA": metadata,
+            f"mcp_audits-{VERSION}.dist-info/entry_points.txt": entries.encode(),
+            "mcp_audit/__init__.py": _head("src/mcp_audit/__init__.py"),
+            "mcp_audit/_build_provenance.json": provenance,
+        },
+    )
     with tarfile.open(dist / sdist, "w:gz") as archive:
         for name, content in (
             ("PKG-INFO", metadata),
-            ("src/mcp_audit/__init__.py", b""),
+            ("src/mcp_audit/__init__.py", _head("src/mcp_audit/__init__.py")),
             ("src/mcp_audit/_build_provenance.json", provenance),
-            ("pyproject.toml", project.encode()),
+            ("pyproject.toml", _head("pyproject.toml")),
+            ("pyproject.toml.orig", _head("pyproject.toml")),
+            ("mcp_audit_build_backend.py", _head("mcp_audit_build_backend.py")),
         ):
             info = tarfile.TarInfo(f"mcp_audits-{VERSION}/{name}")
             info.size = len(content)
@@ -362,4 +398,65 @@ def test_wheel_duplicate_members_are_rejected(distributions: Path) -> None:
     with zipfile.ZipFile(wheel, "a") as archive, pytest.warns(UserWarning, match="Duplicate name"):
         archive.writestr("mcp_audit/_build_provenance.json", b'{"commit": "0", "dirty": true}')
     with pytest.raises(release.VerificationError, match="more than once"):
+        release.verify_distributions(dist_dir=distributions, version=VERSION, commit=COMMIT)
+
+
+def test_fixture_matches_the_approved_commit(distributions: Path) -> None:
+    assert len(release.verify_distributions(dist_dir=distributions, version=VERSION, commit=COMMIT)) == 2
+
+
+def test_sdist_build_backend_must_be_the_approved_one(distributions: Path) -> None:
+    # Grok round 3, finding 2: the in-tree PEP 517 backend decides what a rebuild packages.
+    sdist = distributions / release.distribution_names(VERSION)[1]
+    backend = f"mcp_audits-{VERSION}/mcp_audit_build_backend.py"
+    with tarfile.open(sdist, "r:gz") as archive:
+        entries = {}
+        for info in archive.getmembers():
+            stream = archive.extractfile(info)
+            assert stream is not None
+            entries[info.name] = stream.read()
+    entries[backend] += b"\nfrom setuptools.build_meta import build_wheel  # noqa\n"
+    with tarfile.open(sdist, "w:gz") as archive:
+        for name, content in entries.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(content)
+            archive.addfile(info, io.BytesIO(content))
+    with pytest.raises(release.VerificationError, match="approved commit"):
+        release.verify_distributions(dist_dir=distributions, version=VERSION, commit=COMMIT)
+
+
+@pytest.mark.parametrize(
+    ("member", "content"),
+    [
+        ("mcp_audit/__init__.py", b"import os\nos.system('true')\n"),
+        ("mcp_audit/payload.py", b"print('not from the approved commit')\n"),
+        ("mcp_audit_payload.pth", b"import mcp_audit.payload\n"),
+    ],
+)
+def test_wheel_code_must_be_the_approved_commit(distributions: Path, member: str, content: bytes) -> None:
+    # Grok round 3, finding 2: copied METADATA/entry points/provenance must not vouch for other code.
+    wheel = distributions / release.distribution_names(VERSION)[0]
+    entries = _wheel_entries(wheel)
+    entries[member] = content
+    _write_wheel(wheel, entries)
+    with pytest.raises(release.VerificationError, match="approved commit|outside"):
+        release.verify_distributions(dist_dir=distributions, version=VERSION, commit=COMMIT)
+
+
+@pytest.mark.parametrize("mutation", ["unlisted", "digest", "escape"])
+def test_wheel_record_lists_exactly_the_members(distributions: Path, mutation: str) -> None:
+    wheel = distributions / release.distribution_names(VERSION)[0]
+    entries = _wheel_entries(wheel)
+    record = f"mcp_audits-{VERSION}.dist-info/RECORD"
+    lines = entries[record].decode().splitlines()
+    if mutation == "unlisted":
+        lines = [line for line in lines if not line.startswith("mcp_audit/__init__.py,")]
+    elif mutation == "digest":
+        lines = [line.replace("sha256=", "sha256=A", 1) if "__init__" in line else line for line in lines]
+    else:
+        lines.append("../../../bin/python,,")
+    with zipfile.ZipFile(wheel, "w") as archive:
+        for name, content in entries.items():
+            archive.writestr(name, "\n".join(lines) + "\n" if name == record else content)
+    with pytest.raises(release.VerificationError, match="RECORD"):
         release.verify_distributions(dist_dir=distributions, version=VERSION, commit=COMMIT)

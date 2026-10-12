@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import io
 import json
@@ -153,77 +154,186 @@ def test_distribution_contract_is_explicit_and_ordered(tmp_path: Path, mutation:
             release.load_distributions(path)
 
 
-@pytest.fixture
-def train_artifacts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    monkeypatch.setattr(release, "DISTRIBUTIONS", TRAIN)
-    dist = tmp_path / "dist"
-    dist.mkdir()
-    for item in TRAIN:
-        metadata = f"Name: {item.name}\nVersion: {VERSION}\n"
-        if item.name == "mcp-audits":
-            metadata += (
-                "Requires-Dist: mcp>=2.2.0,<3.0\nRequires-Dist: cryptography>=50.0.0,<51.0\n"
-                "Requires-Dist: click>=8.3.3,<9.0\nRequires-Dist: anyio>=4.14.2\n"
-            )
-            for extra, packages in (("labs", ("labs",)), ("proof", ("proof",)), ("all", ("labs", "proof"))):
-                for package in packages:
-                    metadata += f'Requires-Dist: mcp-audits-{package}=={VERSION}; extra == "{extra}"\n'
-        else:
-            metadata += f"Requires-Dist: mcp-audits=={VERSION}\n"
-        provenance = json.dumps({"commit": COMMIT, "dirty": False}).encode()
+EXTRAS = (("labs", ("labs",)), ("proof", ("proof",)), ("all", ("labs", "proof")))
+BUILD_SYSTEM = (
+    '[build-system]\nrequires = ["uv_build>=0.11.2,<0.13.0"]\n'
+    'build-backend = "mcp_audit_build_backend"\nbackend-path = ["."]\n'
+)
+
+
+def _git(repo: Path, *args: str) -> str:
+    return subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "-c",
+            "user.name=fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-c",
+            "init.defaultBranch=main",
+            *args,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
+def _project_toml(item: release.Distribution) -> str:
+    dependencies = (
+        ["mcp>=2.2.0,<3.0", "cryptography>=50.0.0,<51.0", "click>=8.3.3,<9.0", "anyio>=4.14.2"]
+        if item.name == "mcp-audits"
+        else [f"mcp-audits=={VERSION}"]
+    )
+    project = (
+        f'{BUILD_SYSTEM}[project]\nname="{item.name}"\nversion="{VERSION}"\n'
+        f"dependencies={json.dumps(dependencies)}\n[project.scripts]\n"
+    ) + "".join(f'{key} = "{value}"\n' for key, value in item.scripts.items())
+    if item.name == "mcp-audits":
+        project += "[project.optional-dependencies]\n" + "".join(
+            f"{extra}={json.dumps([f'mcp-audits-{package}=={VERSION}' for package in packages])}\n"
+            for extra, packages in EXTRAS
+        )
+    return (
+        project + f'[tool.uv.build-backend]\nmodule-name="{item.module}"\nmodule-root="{item.module_root}"\n'
+    )
+
+
+def _commit_train(repo: Path, train: tuple[release.Distribution, ...]) -> str:
+    """Commit a synthetic three-project checkout; artifacts are bound to its exact bytes."""
+    for item in train:
+        base = repo / PurePosixPath(item.project).parent
+        package = base / item.module_root / item.module
+        package.mkdir(parents=True, exist_ok=True)
+        (package / "__init__.py").write_text(f'"""{item.name} fixture."""\n')
+        for target in item.scripts.values():
+            module = target.partition(":")[0].removeprefix(f"{item.module}.")
+            (package / f"{module}.py").write_text("def main() -> None:\n    pass\n")
+        (base / "pyproject.toml").write_text(_project_toml(item))
+        (base / "mcp_audit_build_backend.py").write_text('"""Fixture in-tree build backend."""\n')
+    if not (repo / ".git").exists():
+        _git(repo, "init", "-q")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "fixture")
+    return _git(repo, "rev-parse", "HEAD")
+
+
+def _write_wheel(path: Path, entries: dict[str, bytes]) -> None:
+    """Write a wheel whose RECORD lists every member with its digest."""
+    (record,) = [name for name in entries if name.endswith(".dist-info/RECORD")] or [
+        next(name for name in entries if name.endswith(".dist-info/METADATA")).replace("METADATA", "RECORD")
+    ]
+    rows = [
+        f"{name},sha256={base64.urlsafe_b64encode(hashlib.sha256(content).digest()).rstrip(b'=').decode()},"
+        f"{len(content)}\n"
+        for name, content in entries.items()
+        if name != record
+    ]
+    with zipfile.ZipFile(path, "w") as archive:
+        for name, content in entries.items():
+            if name != record:
+                archive.writestr(name, content)
+        archive.writestr(record, "".join(rows) + f"{record},,\n")
+
+
+def _wheel_entries(path: Path) -> dict[str, bytes]:
+    with zipfile.ZipFile(path) as archive:
+        return {name: archive.read(name) for name in archive.namelist()}
+
+
+def _metadata(item: release.Distribution) -> str:
+    metadata = f"Name: {item.name}\nVersion: {VERSION}\n"
+    if item.name != "mcp-audits":
+        return metadata + f"Requires-Dist: mcp-audits=={VERSION}\n"
+    metadata += (
+        "Requires-Dist: mcp>=2.2.0,<3.0\nRequires-Dist: cryptography>=50.0.0,<51.0\n"
+        "Requires-Dist: click>=8.3.3,<9.0\nRequires-Dist: anyio>=4.14.2\n"
+    )
+    for extra, packages in EXTRAS:
+        for package in packages:
+            metadata += f'Requires-Dist: mcp-audits-{package}=={VERSION}; extra == "{extra}"\n'
+    return metadata
+
+
+def _pack_train(repo: Path, dist: Path, train: tuple[release.Distribution, ...], commit: str) -> None:
+    """Pack each committed project the way the in-tree backend and uv_build do."""
+    for item in train:
+        base = repo / PurePosixPath(item.project).parent
+        package = PurePosixPath(item.module_root) / item.module
+        sources = {
+            path.relative_to(base).as_posix(): path.read_bytes()
+            for path in sorted((base / package).rglob("*"))
+            if path.is_file()
+        }
+        metadata = _metadata(item).encode()
+        provenance = json.dumps({"commit": commit, "dirty": False}).encode()
         wheel, sdist = release.distribution_names(VERSION, item.name)
         stem = item.name.replace("-", "_")
         scripts = "[console_scripts]\n" + "".join(f"{key} = {value}\n" for key, value in item.scripts.items())
-        dependencies = (
-            ["mcp>=2.2.0,<3.0", "cryptography>=50.0.0,<51.0", "click>=8.3.3,<9.0", "anyio>=4.14.2"]
-            if item.name == "mcp-audits"
-            else [f"mcp-audits=={VERSION}"]
+        _write_wheel(
+            dist / wheel,
+            {
+                f"{stem}-{VERSION}.dist-info/METADATA": metadata,
+                f"{stem}-{VERSION}.dist-info/entry_points.txt": scripts.encode(),
+                **{
+                    str(PurePosixPath(name).relative_to(package.parent)): data
+                    for name, data in sources.items()
+                },
+                f"{item.module}/_build_provenance.json": provenance,
+            },
         )
-        project = (
-            f'[project]\nname="{item.name}"\nversion="{VERSION}"\n'
-            f"dependencies={json.dumps(dependencies)}\n[project.scripts]\n"
-        ) + "".join(f'{key} = "{value}"\n' for key, value in item.scripts.items())
-        if item.name == "mcp-audits":
-            project += "[project.optional-dependencies]\n" + "".join(
-                f"{extra}={json.dumps([f'mcp-audits-{package}=={VERSION}' for package in packages])}\n"
-                for extra, packages in (
-                    ("labs", ("labs",)),
-                    ("proof", ("proof",)),
-                    ("all", ("labs", "proof")),
-                )
-            )
-        project += f'[tool.uv.build-backend]\nmodule-name="{item.module}"\nmodule-root="{item.module_root}"\n'
-        with zipfile.ZipFile(dist / wheel, "w") as archive:
-            archive.writestr(f"{stem}-{VERSION}.dist-info/METADATA", metadata)
-            archive.writestr(f"{stem}-{VERSION}.dist-info/entry_points.txt", scripts)
-            archive.writestr(f"{item.module}/_build_provenance.json", provenance)
-        with tarfile.open(dist / sdist, "w:gz") as archive:
-            for name, content in (
-                ("PKG-INFO", metadata.encode()),
-                (f"{item.module_root}/{item.module}/__init__.py", b""),
-                (f"{item.module_root}/{item.module}/_build_provenance.json", provenance),
-                ("pyproject.toml", project.encode()),
-            ):
-                info = tarfile.TarInfo(f"{stem}-{VERSION}/{name}")
-                info.size = len(content)
-                archive.addfile(info, io.BytesIO(content))
+        entries = {
+            "PKG-INFO": metadata,
+            "pyproject.toml": (base / "pyproject.toml").read_bytes(),
+            "mcp_audit_build_backend.py": (base / "mcp_audit_build_backend.py").read_bytes(),
+            **sources,
+            f"{package}/_build_provenance.json": provenance,
+        }
+        _write_sdist(dist / sdist, {f"{stem}-{VERSION}/{name}": content for name, content in entries.items()})
+
+
+def _commit(dist: Path) -> str:
+    return (dist.parent / "commit").read_text()
+
+
+@pytest.fixture
+def train_artifacts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.setattr(release, "DISTRIBUTIONS", TRAIN)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.setattr(release, "ROOT", repo)
+    commit = _commit_train(repo, TRAIN)
+    (tmp_path / "commit").write_text(commit)
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    _pack_train(repo, dist, TRAIN, commit)
     return dist
 
 
 def test_all_six_artifacts_and_manifest_are_verified(train_artifacts: Path) -> None:
-    hashes = dict(release.verify_distributions(dist_dir=train_artifacts, version=VERSION, commit=COMMIT))
+    hashes = dict(
+        release.verify_distributions(
+            dist_dir=train_artifacts, version=VERSION, commit=_commit(train_artifacts)
+        )
+    )
     assert len(hashes) == 6
     manifest = {
         "schema_version": release.MANIFEST_SCHEMA,
         "version": VERSION,
-        "commit": COMMIT,
+        "commit": _commit(train_artifacts),
         "workflow_sha": "b" * 40,
         "files": hashes,
     }
-    assert release.verify_manifest(manifest, version=VERSION, commit=COMMIT) == hashes
+    assert release.verify_manifest(manifest, version=VERSION, commit=_commit(train_artifacts)) == hashes
     del hashes[release.distribution_names(VERSION, TRAIN[2].name)[1]]
     with pytest.raises(release.VerificationError, match="exactly"):
-        release.verify_manifest(manifest, version=VERSION, commit=COMMIT)
+        release.verify_manifest(manifest, version=VERSION, commit=_commit(train_artifacts))
 
 
 def _sdist_entries(path: Path) -> dict[str, bytes]:
@@ -252,20 +362,18 @@ def test_sdist_accepts_flat_package_layouts(
     module_root: str,
 ) -> None:
     labs = TRAIN[1]._replace(module_root=module_root)
+    train = (TRAIN[0], labs, TRAIN[2])
     contract = train_artifacts.parent / "flat-contract.json"
-    contract.write_text(json.dumps([item._asdict() for item in (TRAIN[0], labs, TRAIN[2])]))
+    contract.write_text(json.dumps([item._asdict() for item in train]))
     monkeypatch.setattr(release, "DISTRIBUTIONS", release.load_distributions(contract))
-    sdist = train_artifacts / release.distribution_names(VERSION, labs.name)[1]
-    entries = _sdist_entries(sdist)
-    prefix = PurePosixPath(f"mcp_audits_labs-{VERSION}")
-    project = str(prefix / "pyproject.toml")
-    entries[project] = entries[project].replace(b'module-root="src"', f'module-root="{module_root}"'.encode())
-    for filename in ("__init__.py", "_build_provenance.json"):
-        entries[str(prefix / labs.module / filename)] = entries.pop(
-            str(prefix / "src" / labs.module / filename)
-        )
-    _write_sdist(sdist, entries)
-    assert len(release.verify_distributions(dist_dir=train_artifacts, version=VERSION, commit=COMMIT)) == 6
+    # The flat layout must be what the approved commit contains, not an archive rewrite.
+    repo = train_artifacts.parent / "repo"
+    _git(repo, "rm", "-q", "-r", "labs/src")
+    commit = _commit_train(repo, train)
+    for path in train_artifacts.iterdir():
+        path.unlink()
+    _pack_train(repo, train_artifacts, train, commit)
+    assert len(release.verify_distributions(dist_dir=train_artifacts, version=VERSION, commit=commit)) == 6
 
 
 @pytest.mark.parametrize(
@@ -302,7 +410,9 @@ def test_sdist_rebuild_inputs_must_match_contract(train_artifacts: Path, mutatio
     _write_sdist(sdist, entries)
     # PKG-INFO and the wheel remain valid; only rebuild inputs have changed.
     with pytest.raises(release.VerificationError):
-        release.verify_distributions(dist_dir=train_artifacts, version=VERSION, commit=COMMIT)
+        release.verify_distributions(
+            dist_dir=train_artifacts, version=VERSION, commit=_commit(train_artifacts)
+        )
 
 
 def test_sdist_core_extras_must_pin_lockstep_versions(train_artifacts: Path) -> None:
@@ -312,7 +422,9 @@ def test_sdist_core_extras_must_pin_lockstep_versions(train_artifacts: Path) -> 
     entries[project] = entries[project].replace(b"mcp-audits-labs==3.0.0", b"mcp-audits-labs>=0")
     _write_sdist(sdist, entries)
     with pytest.raises(release.VerificationError, match="exact lockstep"):
-        release.verify_distributions(dist_dir=train_artifacts, version=VERSION, commit=COMMIT)
+        release.verify_distributions(
+            dist_dir=train_artifacts, version=VERSION, commit=_commit(train_artifacts)
+        )
 
 
 @pytest.mark.parametrize("kind", [tarfile.SYMTYPE, tarfile.LNKTYPE])
@@ -334,7 +446,9 @@ def test_sdist_package_tree_rejects_links(train_artifacts: Path, kind: bytes, fi
         link.linkname = "../../payload.py"
         archive.addfile(link)
     with pytest.raises(release.VerificationError, match="regular file|without links"):
-        release.verify_distributions(dist_dir=train_artifacts, version=VERSION, commit=COMMIT)
+        release.verify_distributions(
+            dist_dir=train_artifacts, version=VERSION, commit=_commit(train_artifacts)
+        )
 
 
 @pytest.mark.parametrize("artifact", ["wheel", "sdist"])
@@ -362,7 +476,9 @@ def test_gui_script_ownership_is_enforced(train_artifacts: Path, artifact: str, 
         )
         _write_sdist(sdist, entries)
     with pytest.raises(release.VerificationError, match="GUI entry points"):
-        release.verify_distributions(dist_dir=train_artifacts, version=VERSION, commit=COMMIT)
+        release.verify_distributions(
+            dist_dir=train_artifacts, version=VERSION, commit=_commit(train_artifacts)
+        )
 
 
 @pytest.mark.parametrize("duplicate", [False, True])
@@ -408,7 +524,9 @@ def test_partial_or_inconsistent_train_fails(train_artifacts: Path, mutation: st
             for name, content in entries.items():
                 archive.writestr(name, content)
     with pytest.raises(release.VerificationError):
-        release.verify_distributions(dist_dir=train_artifacts, version=VERSION, commit=COMMIT)
+        release.verify_distributions(
+            dist_dir=train_artifacts, version=VERSION, commit=_commit(train_artifacts)
+        )
 
 
 def test_maintenance_branch_binds_only_2x_and_its_remote(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -601,3 +719,146 @@ def test_maintenance_metadata_uses_checkout_state(
     monkeypatch.setattr(release, "_read_text", lambda path: "{}" if path == "server.json" else "")
     with pytest.raises(release.VerificationError, match="2.x"):
         release.verify_metadata(require_publishable=False)
+
+
+def _rewrite_sdist_entries(path: Path, mutate: dict[str, bytes | None]) -> None:
+    entries = _sdist_entries(path)
+    for name, content in mutate.items():
+        if content is None:
+            entries.pop(name)
+        else:
+            entries[name] = content
+    _write_sdist(path, entries)
+
+
+@pytest.mark.parametrize("artifact", ["wheel", "sdist"])
+@pytest.mark.parametrize(
+    ("spelling", "accepted"),
+    [
+        ('mcp-audits-labs=={v}; extra == "labs "', False),
+        ('mcp-audits-labs=={v}; extra == " labs"', False),
+        ('mcp-audits-labs=={v}; extra == "lab"', False),
+        ('mcp-audits-labs[cli]=={v}; extra == "labs"', False),
+        ('mcp-audits-labs=={v}; extra == "labs" and python_version < "3"', False),
+        ("mcp_audits.labs == {v} ; extra == 'labs'", True),
+        ('mcp-audits-labs==={v}; extra == "labs"', False),
+    ],
+)
+def test_core_extras_compare_parsed_requirements(
+    train_artifacts: Path, artifact: str, spelling: str, accepted: bool
+) -> None:
+    # Grok round 3, finding 1: deleting spaces made `extra == "labs "` look pinned,
+    # but pip treats it as a different extra, so `[labs]` would not pull the satellite.
+    wheel_name, sdist_name = release.distribution_names(VERSION)
+    original = f'Requires-Dist: mcp-audits-labs=={VERSION}; extra == "labs"\n'.encode()
+    replacement = f"Requires-Dist: {spelling.format(v=VERSION)}\n".encode()
+    if artifact == "wheel":
+        wheel = train_artifacts / wheel_name
+        entries = _wheel_entries(wheel)
+        metadata = f"mcp_audits-{VERSION}.dist-info/METADATA"
+        assert original in entries[metadata]
+        entries[metadata] = entries[metadata].replace(original, replacement)
+        entries.pop(f"mcp_audits-{VERSION}.dist-info/RECORD")
+        _write_wheel(wheel, entries)
+    else:
+        sdist = train_artifacts / sdist_name
+        name = f"mcp_audits-{VERSION}/PKG-INFO"
+        content = _sdist_entries(sdist)[name]
+        assert original in content
+        _rewrite_sdist_entries(sdist, {name: content.replace(original, replacement)})
+    if accepted:
+        release.verify_distributions(
+            dist_dir=train_artifacts, version=VERSION, commit=_commit(train_artifacts)
+        )
+    else:
+        with pytest.raises(release.VerificationError, match="exact lockstep"):
+            release.verify_distributions(
+                dist_dir=train_artifacts, version=VERSION, commit=_commit(train_artifacts)
+            )
+
+
+def test_sdist_build_system_cannot_switch_to_an_unwalked_tree(train_artifacts: Path) -> None:
+    # Grok round 3, finding 2: dependencies, module keys, package and provenance all
+    # still look right, but a rebuild would package payload/ with setuptools.
+    labs = TRAIN[1]
+    sdist = train_artifacts / release.distribution_names(VERSION, labs.name)[1]
+    prefix = f"mcp_audits_labs-{VERSION}"
+    project = _sdist_entries(sdist)[f"{prefix}/pyproject.toml"]
+    switched = project.replace(BUILD_SYSTEM.encode(), b"").replace(
+        b"[project]",
+        b'[build-system]\nrequires = ["setuptools"]\nbuild-backend = "setuptools.build_meta"\n'
+        b'[tool.setuptools.packages.find]\nwhere = ["payload"]\n[project]',
+        1,
+    )
+    assert switched != project
+    _rewrite_sdist_entries(
+        sdist,
+        {
+            f"{prefix}/pyproject.toml": switched,
+            f"{prefix}/payload/{labs.module}/__init__.py": b"print('unapproved')\n",
+        },
+    )
+    with pytest.raises(release.VerificationError, match="approved commit"):
+        release.verify_distributions(
+            dist_dir=train_artifacts, version=VERSION, commit=_commit(train_artifacts)
+        )
+
+
+def test_sdist_pyproject_may_be_reformatted_but_not_changed(train_artifacts: Path) -> None:
+    # uv_build rewrites the sdist pyproject.toml and keeps the original as .orig.
+    sdist = train_artifacts / release.distribution_names(VERSION, TRAIN[1].name)[1]
+    prefix = f"mcp_audits_labs-{VERSION}"
+    project = _sdist_entries(sdist)[f"{prefix}/pyproject.toml"]
+    _rewrite_sdist_entries(
+        sdist,
+        {
+            f"{prefix}/pyproject.toml": b"# reformatted\n" + project.replace(b'name="', b'name = "'),
+            f"{prefix}/pyproject.toml.orig": project,
+        },
+    )
+    release.verify_distributions(dist_dir=train_artifacts, version=VERSION, commit=_commit(train_artifacts))
+    _rewrite_sdist_entries(sdist, {f"{prefix}/pyproject.toml.orig": project + b"# edited\n"})
+    with pytest.raises(release.VerificationError, match="approved commit"):
+        release.verify_distributions(
+            dist_dir=train_artifacts, version=VERSION, commit=_commit(train_artifacts)
+        )
+
+
+@pytest.mark.parametrize(
+    "member",
+    [
+        "scripts/proof-before-action",
+        "data/bin/proof-before-action",
+        "purelib/mcp_audit_labs/__init__.py",
+    ],
+)
+def test_wheel_data_members_are_rejected(train_artifacts: Path, member: str) -> None:
+    # Grok round 3, finding 3: .data/scripts installs a command with no entry point,
+    # so an empty script contract would not mean "installs no commands".
+    labs = TRAIN[1]
+    assert labs.scripts == {}
+    wheel = train_artifacts / release.distribution_names(VERSION, labs.name)[0]
+    entries = _wheel_entries(wheel)
+    entries.pop(f"mcp_audits_labs-{VERSION}.dist-info/RECORD")
+    entries[f"mcp_audits_labs-{VERSION}.data/{member}"] = b"#!python\nprint('unlisted command')\n"
+    _write_wheel(wheel, entries)
+    with pytest.raises(release.VerificationError, match="outside"):
+        release.verify_distributions(
+            dist_dir=train_artifacts, version=VERSION, commit=_commit(train_artifacts)
+        )
+
+
+@pytest.mark.parametrize("item", TRAIN, ids=lambda item: item.name)
+def test_wheel_modules_are_the_contracted_commit_sources(
+    train_artifacts: Path, item: release.Distribution
+) -> None:
+    wheel = train_artifacts / release.distribution_names(VERSION, item.name)[0]
+    entries = _wheel_entries(wheel)
+    stem = item.name.replace("-", "_")
+    entries.pop(f"{stem}-{VERSION}.dist-info/RECORD")
+    entries[f"{item.module}/__init__.py"] += b"import subprocess\n"
+    _write_wheel(wheel, entries)
+    with pytest.raises(release.VerificationError, match="approved commit"):
+        release.verify_distributions(
+            dist_dir=train_artifacts, version=VERSION, commit=_commit(train_artifacts)
+        )
