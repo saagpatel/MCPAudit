@@ -1367,6 +1367,12 @@ Always-recorded keys are `config_health`, `permissions`, `capabilities`, and
 `escalation_check`, `provenance_check`, `integrity_check`, `verify_artifacts`,
 `download_artifacts`, and `llm_analysis`. `runtime_security` records the
 bounded `canary_check` exercise. Consumers must tolerate additional keys.
+The `pin_baseline_withheld` warning retains `check: canary_check` and makes
+`runtime_security` coverage `partial` when an affected server's in-session
+exercise otherwise completed. The saved-baseline comparison remains unavailable;
+unaffected servers and unrelated checks are not degraded by this warning.
+An unrequested canary remains `not_requested`, and an unrun exercise remains
+`not_run`.
 Missing keys and absent or empty coverage maps are unknown, never passed.
 Old reports load with an empty map; rendering does not infer completion from
 zero findings or connection counts. `schema_version` remains `1`.
