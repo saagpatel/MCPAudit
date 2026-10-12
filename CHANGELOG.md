@@ -46,6 +46,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Reuse short keyword match results within each server's permission-analysis
+  batch, and stream JSON report audits from the shared redacted snapshot.
+  Preserve finding semantics, report fields, and JSON formatting.
 - Warn on legacy v1 pin reads with a `pin --refresh SERVER` migration hint;
   `pin --status` includes the warning in terminal and JSON output, with server
   names rendered literally in terminal warnings. v1 pin support is deprecated
