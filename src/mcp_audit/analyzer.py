@@ -1,7 +1,9 @@
 """Permission inference engine — keyword heuristics + MCP annotation analysis."""
 
 import re
-from functools import cache
+from collections.abc import Callable
+from contextvars import ContextVar
+from functools import cache, lru_cache
 from urllib.parse import urlparse
 
 from mcp_audit.agent_text import AgentText, agent_visible_text
@@ -113,6 +115,24 @@ _TRANSFER_CONTEXT = re.compile(
     r"|(?<![\w.+-])[\w.+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+(?![\w.-])"
 )
 
+_KeywordSource = tuple[bool, bool, bool, frozenset[tuple[PermissionCategory, str]]]
+_KEYWORD_SOURCE_CACHE: ContextVar[Callable[[str], _KeywordSource] | None] = ContextVar(
+    "keyword_source_cache", default=None
+)
+
+
+def _keyword_source(text: str) -> _KeywordSource:
+    normalized = _keyword_text(bounded_text(text))
+    regex, contained = _keyword_regex()
+    hits = frozenset(hit for match in regex.finditer(normalized) for hit in contained[match.group(1)])
+    return (
+        bool(_FILE_CONTEXT.search(normalized)),
+        bool(_WRITE_CONTEXT.search(normalized)),
+        bool(_TRANSFER_CONTEXT.search(normalized)),
+        hits,
+    )
+
+
 _REMOTE_RESOURCE_SCHEMES = {
     "az",
     "azure",
@@ -145,8 +165,18 @@ class PermissionAnalyzer:
         """Return all permission findings across all tools on a server."""
         findings: list[PermissionFinding] = []
         texts = agent_texts if agent_texts is not None else map(agent_visible_text, tools)
-        for tool, text in zip(tools, texts, strict=True):
-            findings.extend(self.analyze_tool(tool, incomplete_reasons=incomplete_reasons, agent_text=text))
+        # Repeated short schema words are common across a server's tools. Keep
+        # immutable match results only for this batch, never across scans.
+        cached = lru_cache(maxsize=4096)(_keyword_source)
+        token = _KEYWORD_SOURCE_CACHE.set(cached)
+        try:
+            for tool, text in zip(tools, texts, strict=True):
+                findings.extend(
+                    self.analyze_tool(tool, incomplete_reasons=incomplete_reasons, agent_text=text)
+                )
+        finally:
+            _KEYWORD_SOURCE_CACHE.reset(token)
+            cached.cache_clear()
         return findings
 
     def analyze_capabilities(
@@ -443,22 +473,19 @@ class PermissionAnalyzer:
     ) -> dict[PermissionCategory, tuple[int, list[str], list[str]]]:
         """Return (weighted_score, evidence, field_paths) per category."""
         results: dict[PermissionCategory, tuple[int, list[str], list[str]]] = {}
-        normalized = [(_keyword_text(bounded_text(text)), weight) for text, weight in sources]
-        file_context = any(_FILE_CONTEXT.search(text) for text, _ in normalized)
-        write_context = any(_WRITE_CONTEXT.search(text) for text, _ in normalized)
-        transfer_context = any(_TRANSFER_CONTEXT.search(text) for text, _ in normalized)
+        cached = _KEYWORD_SOURCE_CACHE.get()
+        classified = [
+            ((cached(text) if cached is not None and len(text) <= 1024 else _keyword_source(text)), weight)
+            for text, weight in sources
+        ]
         contexts = {
-            PermissionCategory.FILE_READ: file_context,
-            PermissionCategory.FILE_WRITE: write_context,
-            PermissionCategory.EXFILTRATION: transfer_context,
+            PermissionCategory.FILE_READ: any(source[0] for source, _ in classified),
+            PermissionCategory.FILE_WRITE: any(source[1] for source, _ in classified),
+            PermissionCategory.EXFILTRATION: any(source[2] for source, _ in classified),
         }
-        regex, contained = _keyword_regex()
         category_hits: dict[PermissionCategory, dict[str, list[tuple[int, int]]]] = {}
-        for index, (text, weight) in enumerate(normalized):
-            hits: set[tuple[PermissionCategory, str]] = set()
-            for match in regex.finditer(text):
-                hits.update(contained[match.group(1)])
-            for category, pattern in hits:
+        for index, (source, weight) in enumerate(classified):
+            for category, pattern in source[3]:
                 category_hits.setdefault(category, {}).setdefault(pattern, []).append((index, weight))
 
         for category in PERMISSION_PATTERNS:

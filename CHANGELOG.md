@@ -9,9 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Avoid duplicate escape suffix construction and per-character ASCII
-  normalization in redaction views. Add a full-field 1 MiB mixed CSI/OSC/ESC
-  hostile performance case and deterministic linear-work regression tests.
+- Parse terminated OSC 8 hyperlinks structurally during report redaction:
+  redact URI credentials as typed URLs and detect link text without escape
+  framing, preserving long plain links. Keep the conservative fallback for
+  malformed frames and other escapes longer than 64 printable characters.
 - Follow local `$ref`, `allOf`, `anyOf`, and `oneOf` in static schema header
   type and per-property checks, with bounded depth and work. Preserve incomplete
   metadata coverage for unresolved, malformed, cyclic, or exhausted branches.
@@ -37,6 +38,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   payload before the cut delimiter that holds a value withholds the element.
   Keep existing ESC ESC control-stripping semantics because restarting at the
   second ESC adds withholding for benign long OSC payloads.
+- Avoid duplicate escape suffix construction and per-character ASCII
+  normalization in redaction views. Add a full-field 1 MiB mixed CSI/OSC/ESC
+  hostile performance case and deterministic linear-work regression tests.
 
 ### Tests
 
@@ -45,6 +49,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Reuse short keyword match results within each server's permission-analysis
+  batch, and stream JSON report audits from the shared redacted snapshot.
+  Preserve finding semantics, report fields, and JSON formatting.
 - Warn on legacy v1 pin reads with a `pin --refresh SERVER` migration hint;
   `pin --status` includes the warning in terminal and JSON output, with server
   names rendered literally in terminal warnings. v1 pin support is deprecated
