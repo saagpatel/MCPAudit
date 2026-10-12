@@ -584,7 +584,12 @@ dictionary values under secret-named keys and string literals in a secret schema
 property's `default`, `example`, `examples`, `const`, and `enum`, including
 nested schema composition branches; non-string values and structure
 are retained. Inline secret argv assignments redact the whole remainder of the
-element. A secret flag consumes the following argv element even when that
+element. An argv element whose alternate escape-sequence or normalized readings
+supply a secret label and an inline delimiter is withheld whole when the
+control-stripped view cannot safely retain the label and delimiter. Flag tokens
+are NFKC-normalized for detection before pairing; recognizable secret flags such
+as `--＝password` consume the following element despite punctuation before the
+label. A secret flag consumes the following argv element even when that
 element starts with `-`, consistently in reports and default pin snapshots.
 That slot is ambiguous and is withheld as a credential; provenance cannot infer
 a gained option there. Options outside secret-value slots remain distinguishable.

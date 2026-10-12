@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Withhold whole argv elements when alternate readings expose an inline secret
+  assignment, including multi-word values after escape-supplied delimiters;
+  pair normalized secret flags such as `--＝password` with their next argument.
+  Keep existing ESC ESC control-stripping semantics because restarting at the
+  second ESC adds withholding for benign long OSC payloads.
 - Add a regression test requiring publish workflows to disable `setup-uv`
   caching and omit `actions/cache`; document the false-positive dispositions
   for code-scanning alerts #42, #43, #44, and #47 in the release checklist.
