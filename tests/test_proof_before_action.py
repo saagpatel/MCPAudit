@@ -2145,7 +2145,7 @@ def test_proof_checkout_provenance_follows_its_package(
             output = ""
         return subprocess.CompletedProcess(command, 0, output, "")
 
-    monkeypatch.setattr(proof_capsule_module.subprocess, "run", run)
+    monkeypatch.setattr(subprocess, "run", run)
     assert proof_capsule_module._producer_state() == ("a" * 40, False, "source-checkout")
     assert proof_capsule_module._producer_state(source_path=Path("../outside.py")) == (None, None, None)
 
@@ -2166,7 +2166,7 @@ def test_proof_checkout_provenance_accepts_explicit_source_layout(
             output = ""
         return subprocess.CompletedProcess(command, 0, output, "")
 
-    monkeypatch.setattr(proof_capsule_module.subprocess, "run", run)
+    monkeypatch.setattr(subprocess, "run", run)
     assert proof_capsule_module._producer_state(source_path=source) == ("a" * 40, False, "source-checkout")
 
 
@@ -2183,7 +2183,7 @@ def test_split_proof_installed_path_has_no_checkout_provenance(
     def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         raise AssertionError("installed module must not inspect an ancestor checkout")
 
-    monkeypatch.setattr(proof_capsule_module.subprocess, "run", run)
+    monkeypatch.setattr(subprocess, "run", run)
     assert proof_capsule_module._producer_state() == (None, None, None)
 
 
