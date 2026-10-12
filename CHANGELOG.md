@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Mark canary `runtime_security` coverage as partial when a saved pin baseline
+  is withheld, even if the in-session exercise completes.
+
 ### Changed
 
 - Move shared authorization URL helpers and canonical posture JSON encoding into
