@@ -683,7 +683,9 @@ def verify_capsule(
     }
 
 
-def _producer_state() -> tuple[
+def _producer_state(
+    *, source_path: Path | None = None
+) -> tuple[
     str | None,
     bool | None,
     Literal["build-metadata", "source-checkout"] | None,
@@ -692,12 +694,15 @@ def _producer_state() -> tuple[
     if embedded is not None:
         return (*embedded, "build-metadata")
     module_path = Path(__file__).resolve()
-    root = module_path.parents[2]
-    expected_module = root / "src/mcp_audit/proof_capsule.py"
+    source_path = source_path or Path("src") / Path(*__package__.split(".")) / "proof_capsule.py"
+    if source_path.is_absolute() or ".." in source_path.parts or len(source_path.parts) < 2:
+        return None, None, None
     try:
+        root = module_path.parents[len(source_path.parts) - 1]
+        expected_module = root / source_path
         if expected_module.resolve() != module_path:
             return None, None, None
-    except OSError:
+    except (OSError, IndexError):
         return None, None, None
     try:
         top_level = subprocess.run(

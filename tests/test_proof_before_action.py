@@ -2126,6 +2126,67 @@ def test_installed_module_uses_embedded_build_provenance(
     )
 
 
+@pytest.mark.parametrize("package", ["mcp_audit", "proof_before_action"])
+def test_proof_checkout_provenance_follows_its_package(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    package: str,
+) -> None:
+    module = tmp_path / "src" / package / "proof_capsule.py"
+    module.parent.mkdir(parents=True)
+    module.write_text("# synthetic source\n")
+    monkeypatch.setattr(proof_capsule_module, "__file__", str(module))
+    monkeypatch.setattr(proof_capsule_module, "__package__", package)
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        assert command[:3] == ["git", "-C", str(tmp_path)]
+        output = str(tmp_path) if command[-1] == "--show-toplevel" else "a" * 40
+        if command[-1] == "--porcelain":
+            output = ""
+        return subprocess.CompletedProcess(command, 0, output, "")
+
+    monkeypatch.setattr(proof_capsule_module.subprocess, "run", run)
+    assert proof_capsule_module._producer_state() == ("a" * 40, False, "source-checkout")
+    assert proof_capsule_module._producer_state(source_path=Path("../outside.py")) == (None, None, None)
+
+
+def test_proof_checkout_provenance_accepts_explicit_source_layout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = Path("python/proof_before_action/proof_capsule.py")
+    module = tmp_path / source
+    module.parent.mkdir(parents=True)
+    module.write_text("# synthetic source\n")
+    monkeypatch.setattr(proof_capsule_module, "__file__", str(module))
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        output = str(tmp_path) if command[-1] == "--show-toplevel" else "a" * 40
+        if command[-1] == "--porcelain":
+            output = ""
+        return subprocess.CompletedProcess(command, 0, output, "")
+
+    monkeypatch.setattr(proof_capsule_module.subprocess, "run", run)
+    assert proof_capsule_module._producer_state(source_path=source) == ("a" * 40, False, "source-checkout")
+
+
+def test_split_proof_installed_path_has_no_checkout_provenance(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = tmp_path / "site-packages/proof_before_action/proof_capsule.py"
+    module.parent.mkdir(parents=True)
+    module.write_text("# synthetic installed module\n")
+    monkeypatch.setattr(proof_capsule_module, "__file__", str(module))
+    monkeypatch.setattr(proof_capsule_module, "__package__", "proof_before_action")
+
+    def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise AssertionError("installed module must not inspect an ancestor checkout")
+
+    monkeypatch.setattr(proof_capsule_module.subprocess, "run", run)
+    assert proof_capsule_module._producer_state() == (None, None, None)
+
+
 @requires_docker
 def test_tampering_and_wrong_commit_or_schema_are_detected(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
