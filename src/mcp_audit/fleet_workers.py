@@ -47,6 +47,7 @@ def worker_count(context: _ScanContext) -> int:
         or any(
             getattr(opts, option)
             for option in (
+                "skip_connect",  # Published contract: --skip-connect never spawns a process.
                 "canary_check",
                 "llm_analysis",
                 "pin_check",

@@ -279,7 +279,7 @@ async def run_scan(
     override_applier: OverrideApplier | None = None,
     console: Console | None = None,
     pin_store: PinStore | None = None,
-    _allow_sharding: bool = True,
+    _allow_sharding: bool = False,
 ) -> AuditReport:
     """Run the scan pipeline and return an :class:`AuditReport`.
 

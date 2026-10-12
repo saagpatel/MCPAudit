@@ -11,7 +11,7 @@ import subprocess
 import time
 from multiprocessing.connection import Connection
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import anyio
 import pytest
@@ -19,6 +19,7 @@ from click.testing import CliRunner
 from rich.console import Console
 
 from mcp_audit import engine, fleet_workers
+from mcp_audit.api import scan_config_only
 from mcp_audit.cli import main
 from mcp_audit.connector import ServerConnector
 from mcp_audit.engine import ScanOptions, _ScanContext, _WorkerSetup
@@ -30,11 +31,17 @@ from tests.conftest import make_server_config
 from tests.test_transport_hygiene import _assert_process_group_exited, _stdio_server
 
 FIXTURES = Path(__file__).parent / "fixtures"
+SHARD_SERVERS = fleet_workers.SHARD_THRESHOLD + 1
+
+
+async def _scan(options: ScanOptions, **kwargs: Any) -> AuditReport:
+    # The CLI is the only caller that enables sharding; tests opt in the same way.
+    return await engine.run_scan(options, _allow_sharding=True, **kwargs)
 
 
 def _context(count: int, options: ScanOptions | None = None) -> _ScanContext:
     return engine._prepare_scan(
-        options or ScanOptions(skip_connect=True),
+        options or ScanOptions(),
         [make_server_config(name=f"srv-{index:04d}") for index in range(count)],
         [],
         OverrideApplier(OverrideConfig()),
@@ -137,9 +144,9 @@ async def test_large_connected_fleet_json_parity(monkeypatch: pytest.MonkeyPatch
         )
     )
     monkeypatch.setenv("_MCP_AUDIT_SHARDING", "off")
-    single = await engine.run_scan(options, servers=servers, override_applier=applier)
+    single = await _scan(options, servers=servers, override_applier=applier)
     monkeypatch.setenv("_MCP_AUDIT_SHARDING", "on")
-    sharded = await engine.run_scan(options, servers=servers, override_applier=applier)
+    sharded = await _scan(options, servers=servers, override_applier=applier)
     assert _stable(single) == _stable(sharded)
     assert sharded.servers_connected == 220
     assert [audit.server.name for audit in sharded.audits] == [server.name for server in servers]
@@ -226,7 +233,7 @@ async def test_sharded_stderr_timeout_and_transport_cleanup(
     roots = [tmp_path / str(index) for index in range(2)]
     for root in roots:
         root.mkdir()
-    report = await engine.run_scan(
+    report = await _scan(
         ScanOptions(timeout=1),
         servers=[
             _stdio_server(mode, root).model_copy(update={"name": str(index)})
@@ -240,9 +247,7 @@ async def test_sharded_stderr_timeout_and_transport_cleanup(
             assert audit.connection_error and "diagnostic marker" in audit.connection_error
             assert "synthetic-secret" not in audit.connection_error
         monkeypatch.setenv("_MCP_AUDIT_SHARDING", "off")
-        single = await engine.run_scan(
-            ScanOptions(timeout=1), servers=[audit.server for audit in report.audits]
-        )
+        single = await _scan(ScanOptions(timeout=1), servers=[audit.server for audit in report.audits])
         assert _stable(single) == _stable(report)
     for root in roots:
         records = [json.loads(path.read_text()) for path in root.glob("*.json")]
@@ -254,12 +259,63 @@ async def test_sharded_stderr_timeout_and_transport_cleanup(
 
 @pytest.mark.anyio
 async def test_analysis_budget_still_applies_inside_workers(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("_MCP_AUDIT_SHARDING", "on")
-    report = await engine.run_scan(ScanOptions(timeout=0, skip_connect=True), servers=_context(2).servers)
+    # Skip-connect never shards by policy; force workers to exercise the in-worker budget.
+    monkeypatch.setattr(fleet_workers, "worker_count", lambda context: 2)
+    sharded: list[int] = []
+    original = fleet_workers.run_sharded
+
+    async def recording(context: _ScanContext, workers: int, advance: Any) -> None:
+        sharded.append(workers)
+        await original(context, workers, advance)
+
+    monkeypatch.setattr(fleet_workers, "run_sharded", recording)
+    report = await _scan(ScanOptions(timeout=0, skip_connect=True), servers=_context(2).servers)
     assert all(audit.connection_status == "timeout" for audit in report.audits)
     assert [warning.code for warning in report.warnings] == ["analysis_timeout", "analysis_timeout"]
     assert all(not audit.permissions for audit in report.audits)
+    assert sharded == [2]
     assert mp.active_children() == []
+
+
+def test_skip_connect_never_shards(monkeypatch: pytest.MonkeyPatch) -> None:
+    for mode in (None, "on"):
+        if mode is None:
+            monkeypatch.delenv("_MCP_AUDIT_SHARDING", raising=False)
+        else:
+            monkeypatch.setenv("_MCP_AUDIT_SHARDING", mode)
+        assert fleet_workers.worker_count(_context(SHARD_SERVERS, ScanOptions(skip_connect=True))) == 0
+
+
+@pytest.mark.anyio
+async def test_library_scans_stay_single_process_above_threshold(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("_MCP_AUDIT_SHARDING", raising=False)
+    monkeypatch.setattr(fleet_workers, "worker_count", lambda context: 2)
+
+    async def refuse(*args: object, **kwargs: object) -> None:
+        raise AssertionError("library callers must not shard")
+
+    monkeypatch.setattr(fleet_workers, "run_sharded", refuse)
+    report = await engine.run_scan(ScanOptions(skip_connect=True), servers=_context(SHARD_SERVERS).servers)
+    assert len(report.audits) == SHARD_SERVERS
+    assert report.servers_failed == 0
+
+
+@pytest.mark.anyio
+async def test_config_only_api_spawns_nothing_above_threshold(monkeypatch: pytest.MonkeyPatch) -> None:
+    def refuse(*args: object, **kwargs: object) -> None:
+        raise AssertionError("scan_config_only must not spawn")
+
+    monkeypatch.setattr(subprocess, "Popen", refuse)
+    monkeypatch.setattr(mp.process.BaseProcess, "start", refuse)
+    config = {
+        "mcpServers": {
+            f"srv-{index:04d}": {"command": "synthetic-server", "args": ["--port", "1"]}
+            for index in range(SHARD_SERVERS)
+        }
+    }
+    report = await scan_config_only(config)
+    assert len(report.audits) == SHARD_SERVERS
+    assert report.servers_failed == 0
 
 
 @pytest.mark.anyio
@@ -439,7 +495,7 @@ async def test_killed_worker_server_and_child_groups_are_reaped(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setattr(fleet_workers, "_worker_main", _child_crashing_worker)
-    context = _context(4)
+    context = _context(4, ScanOptions(skip_connect=True))
     context.servers[0] = _stdio_server("spawn-child-ignore", tmp_path)
     with anyio.fail_after(10):
         await fleet_workers.run_sharded(context, 2, lambda: None)
@@ -481,7 +537,7 @@ async def test_parent_cancellation_reaps_workers_and_server_groups(
     observed = False
 
     async def scan() -> None:
-        await engine.run_scan(
+        await _scan(
             ScanOptions(timeout=30),
             servers=[_stdio_server("hang", root) for root in roots],
         )
