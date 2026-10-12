@@ -16,8 +16,11 @@
   file, or persist the trust store. A missing trust store while the pin file
   carries a signed manifest is `MCP027`; expectations are keyed by server name
   across pin files.
-- Static schema header checks do not follow every composition form. Unsupported
-  or ambiguous cases report incomplete coverage rather than findings.
+- Static schema header checks follow local `$ref`, `allOf`, `anyOf`, and `oneOf`
+  within bounded depth and work. External or ambiguous references, embedded
+  resource scopes, dynamic references, malformed branches, cycles, and budget
+  exhaustion still report incomplete coverage. These checks analyze declared
+  types and header mappings, not full JSON Schema validation.
 - Legacy v1 pins do not cover annotation-only changes, title, output schema,
   icons, or metadata. Review `pin --refresh` before upgrading to v2; current
   v2 pins cover these fields, including security-relevant annotation deltas.
