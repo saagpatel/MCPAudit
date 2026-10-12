@@ -30,7 +30,13 @@ only what the configuration and available static evidence support.
 
 `check --connect --server CLIENT:SCOPE:NAME` requires one unambiguous identity.
 It may start a local process or contact a configured endpoint to list server
-capabilities. Legacy `scan` retains its separate behavior and defaults. Starting
+capabilities. `check --connect-all` connects to the reviewed fleet and conflicts
+with `--connect` and `--server`. Project servers remain skipped unless
+`--connect-project-configs` is supplied. `--config FILE` limits the sources to
+that file unless `--include-discovered` is requested. `--max-concurrency` bounds
+simultaneous sessions; `--timeout` applies per session and excludes queue wait.
+Fleet canary requires an explicit file without discovery.
+Legacy `scan` retains its separate behavior and defaults. Starting
 a server is not the same as calling its tools; the opt-in canary is a distinct
 operation that may make bounded empty-argument calls when eligible.
 
@@ -57,7 +63,7 @@ the frame cap; it retains the listing caps. See the [output contract](OUTPUT-CON
 
 ## Large fleets
 
-When run from the `mcp-audit scan` CLI on POSIX hosts supporting spawn and
+When run from `mcp-audit check --connect-all` or the legacy `scan` CLI on POSIX hosts supporting spawn and
 process-group cleanup, connected scans of fleets larger than 256 servers run their per-server connection, enumeration and analysis stages
 in `min(cpu_count or 1, ceil(server_count / 256), 8)` worker processes, provided
 that gives at least two workers. Slices are contiguous; audits return in input
