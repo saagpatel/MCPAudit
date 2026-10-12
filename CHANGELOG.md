@@ -20,6 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Move shared client filter parsing out of the legacy scan module and warn when
   callers access deprecated `mcp_audit.cli` scan shims.
 
+### Added
+
+- Requested pin checks with withheld baselines now report partial coverage with
+  reason `pin_baseline_withheld`. The opt-in policy boolean
+  `fail_on.pin_baseline_withheld` fails these checks; its default remains off.
+- Pin warnings name the refresh command and the coming 3.0 withholding of v1
+  baselines even without trusted keys. The 3.0 proposal specifies default
+  failure and mixed-row exclusion; 2.x v1 comparisons remain available.
+
 ## [2.11.0] - 2026-10-12
 
 ### Upgrade notes
