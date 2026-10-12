@@ -17,8 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Connected large-fleet CLI scans can emit the additive `worker_process_failed`
   scan warning when worker results are missing. Consumers must tolerate the new
   warning code; failed worker audits do not establish completed checks.
-- Argv elements whose readings expose a secret label and inline delimiter are
-  withheld whole, including escape-supplied and fullwidth delimiters. Expect
+- Argv elements whose secret value would otherwise stay partly visible (an
+  escape-supplied or fullwidth delimiter, a URL prefix, or a value tail the
+  free-text redactor does not cover) are withheld whole. A plain
+  `--token=value` still shows its label with the value redacted. Expect
   more `<redacted>` markers in those rare cases; flag names are NFKC-normalized
   before flag/value pairing, and detection also reads ESC ESC as a terminal does.
 - Long, terminated OSC 8 hyperlinks now retain their redacted URL instead of
@@ -37,8 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   framing, preserving long plain links. Keep the conservative fallback for
   malformed frames and other escapes longer than 64 printable characters.
 
-- Withhold whole argv elements when alternate readings expose an inline secret
-  assignment, including URL-prefixed readings and multi-word values after
+- Withhold whole argv elements when an inline secret assignment exposed by an
+  alternate reading would otherwise leave part of its value visible, including URL-prefixed readings and multi-word values after
   escape-supplied delimiters; preserve following flags when an ordinary option's
   inline value is a secret label such as `--format=token`;
   pair normalized secret flags such as `--＝password` with their next argument.
