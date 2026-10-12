@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Avoid duplicate escape suffix construction and per-character ASCII
+  normalization in redaction views. Add a full-field 1 MiB mixed CSI/OSC/ESC
+  hostile performance case and deterministic linear-work regression tests.
 - Follow local `$ref`, `allOf`, `anyOf`, and `oneOf` in static schema header
   type and per-property checks, with bounded depth and work. Preserve incomplete
   metadata coverage for unresolved, malformed, cyclic, or exhausted branches.
