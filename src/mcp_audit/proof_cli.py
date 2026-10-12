@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+from importlib.metadata import version
 from pathlib import Path
 
 import click
 import yaml
 from pydantic import BaseModel, ValidationError
 
+from mcp_audit._command_registry import PROOF_INSTALL_NOTICE
 from mcp_audit.proof_capsule import (
     build_capsule,
     compare_bill,
@@ -26,8 +28,22 @@ from mcp_audit.proof_observer import ObservationBlocked, observe_command
 from mcp_audit.proof_trust import build_release_trust_manifest
 
 
+def _version_notice(ctx: click.Context, param: click.Parameter, value: bool) -> None:
+    if value and not ctx.resilient_parsing:
+        click.echo(PROOF_INSTALL_NOTICE, err=True)
+        click.echo(f"proof-before-action, version {version('mcp-audits')}")
+        ctx.exit()
+
+
 @click.group()
-@click.version_option(package_name="mcp-audits", prog_name="proof-before-action")
+@click.option(
+    "--version",
+    is_flag=True,
+    is_eager=True,
+    expose_value=False,
+    callback=_version_notice,
+    help="Show the version and exit.",
+)
 def main() -> None:
     """Observe first, compare with declared limits, then emit portable evidence."""
 

@@ -52,7 +52,7 @@ def test_core_import_graph_excludes_labs_and_proof() -> None:
             elif (
                 isinstance(node, ast.Call)
                 and isinstance(node.func, ast.Name)
-                and node.func.id in {"import_module", "__import__"}
+                and node.func.id in {"import_module", "__import__", "_import_command_module"}
                 and node.args
                 and isinstance(node.args[0], ast.Constant)
                 and isinstance(node.args[0].value, str)
@@ -70,9 +70,10 @@ def test_core_import_graph_excludes_labs_and_proof() -> None:
                     module == "mcp_audit._command_registry"
                     and isinstance(parent, ast.FunctionDef)
                     and parent.name == "lab"
-                    and isinstance(node, ast.ImportFrom)
-                    and node.module == "mcp_audit.conformance_probe"
-                    and [alias.name for alias in node.names] == ["run_conformance_probe"]
+                    and isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Name)
+                    and node.func.id == "_import_command_module"
+                    and target == "mcp_audit.conformance_probe"
                 ):
                     continue
                 violations.append(f"{module}:{node.lineno} -> {target}")

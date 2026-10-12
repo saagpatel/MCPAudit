@@ -13,7 +13,14 @@ import click
 import pytest
 from click.testing import CliRunner
 
-from mcp_audit._command_registry import COMMANDS, LAB_COMMANDS, CommandSpec, LazyGroup, NamespaceSpec
+from mcp_audit._command_registry import (
+    COMMANDS,
+    LAB_COMMANDS,
+    LAB_INSTALL_NOTICE,
+    CommandSpec,
+    LazyGroup,
+    NamespaceSpec,
+)
 from mcp_audit.cli import main
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -124,7 +131,15 @@ def test_lab_and_old_paths_keep_original_output_bytes(name: str, args: list[str]
     canonical = runner.invoke(main, ["lab", name, *args])
     assert original.exit_code == legacy.exit_code == canonical.exit_code
     assert original.stdout_bytes == legacy.stdout_bytes == canonical.stdout_bytes
-    assert original.stderr_bytes == legacy.stderr_bytes == canonical.stderr_bytes
+    assert original.stderr_bytes == canonical.stderr_bytes
+    assert (
+        legacy.stderr_bytes
+        == (
+            f"Notice: 'mcp-audit {name}' is removed in 3.0. "
+            f"Use 'mcp-audit lab {name}' instead. {LAB_INSTALL_NOTICE}\n"
+        ).encode()
+        + canonical.stderr_bytes
+    )
     if name != "enforcement-fixture":
         assert original.exit_code in {0, 1}, original.output
         assert original.stdout_bytes
@@ -152,7 +167,7 @@ def test_side_product_aliases_share_callbacks_and_help(legacy: str, canonical: l
     new_help = runner.invoke(main, [*canonical, "--help"])
     assert old_help.exit_code == new_help.exit_code == 0
     # Usage intentionally names the spelling used; all option/help text stays identical.
-    assert old_help.output.split("\n", 1)[1] == new_help.output.split("\n", 1)[1]
+    assert old_help.stdout.split("\n", 1)[1] == new_help.stdout.split("\n", 1)[1]
     assert old.hidden and not new.hidden
 
 
@@ -194,7 +209,17 @@ def test_side_product_aliases_keep_output_bytes(family: str, tmp_path: Path) -> 
     canonical = runner.invoke(main, new)
     assert legacy.exit_code == canonical.exit_code == (2 if family in {"preinstall", "run"} else 0)
     assert legacy.stdout_bytes == canonical.stdout_bytes
-    assert legacy.stderr_bytes == canonical.stderr_bytes
+    if family == "baseline":
+        assert legacy.stderr_bytes == canonical.stderr_bytes
+    else:
+        assert (
+            legacy.stderr_bytes
+            == (
+                f"Notice: 'mcp-audit {old[0]}' is removed in 3.0. "
+                f"Use 'mcp-audit {' '.join(new[:2])}' instead. {LAB_INSTALL_NOTICE}\n"
+            ).encode()
+            + canonical.stderr_bytes
+        )
     assert legacy.stdout_bytes
 
 
@@ -212,6 +237,95 @@ def test_monitor_is_hidden_and_warns_before_legacy_callback(monkeypatch: pytest.
     assert calls == ["synthetic-peer"]
     assert "DeprecationWarning" in result.stderr
     assert "3.0" in result.stderr
+
+
+@pytest.mark.parametrize("name", [name for name, spec in COMMANDS.items() if spec.hidden])
+def test_hidden_alias_help_notices_except_pin(name: str) -> None:
+    result = CliRunner().invoke(main, [name, "--help"])
+    assert result.exit_code == 0, result.output
+    if name == "pin":
+        assert result.stderr == ""
+    else:
+        assert f"'mcp-audit {name}' is removed in 3.0" in result.stderr
+        assert LAB_INSTALL_NOTICE in result.stderr
+    assert "uv tool install" not in result.stdout
+
+
+def test_lab_help_shows_future_installs_without_importing_labs(monkeypatch: pytest.MonkeyPatch) -> None:
+    def forbidden_import(name: str) -> None:
+        raise AssertionError(f"help imported {name}")
+
+    monkeypatch.setattr("mcp_audit._command_registry.import_module", forbidden_import)
+    result = CliRunner().invoke(main, ["lab", "--help"])
+    assert result.exit_code == 0, result.output
+    help_text = " ".join(result.stdout.split())
+    assert "In 3.0" in help_text
+    assert "uv tool install 'mcp-audits[labs]'" in result.stdout
+    assert "uv tool install mcp-audits-proof" in result.stdout
+    assert "a uv tool extra does not expose its scripts" in help_text
+    assert result.stderr == ""
+
+
+GUARDED_PATHS = [
+    ["lab", "agent-ui", "--help"],
+    ["agent-ui", "--help"],
+    ["safeforge", "preinstall", "--help"],
+    ["safeforge", "run", "--help"],
+    ["safeforge-preinstall", "--help"],
+    ["safeforge-run", "--help"],
+    ["lab", "--conformance-probe", "--url", "http://127.0.0.1:1/mcp"],
+]
+
+
+@pytest.mark.parametrize("args", GUARDED_PATHS)
+@pytest.mark.parametrize("missing", ["mcp_audit_labs", "mcp_audit_labs.agent_ui_cli"])
+def test_missing_labs_exit_two_with_installs(
+    args: list[str], missing: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def missing_import(name: str) -> None:
+        raise ModuleNotFoundError("synthetic missing distribution", name=missing)
+
+    monkeypatch.setattr("mcp_audit._command_registry.import_module", missing_import)
+    result = CliRunner().invoke(main, args)
+    assert result.exit_code == 2, result.output
+    assert "Optional distribution missing" in result.stderr
+    assert LAB_INSTALL_NOTICE in result.stderr
+    assert result.stdout == ""
+
+
+@pytest.mark.parametrize("missing", ["proof_before_action", "proof_before_action.cli"])
+def test_future_proof_distribution_guard(missing: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    def missing_import(name: str) -> None:
+        raise ModuleNotFoundError("synthetic missing distribution", name=missing)
+
+    monkeypatch.setattr("mcp_audit._command_registry.import_module", missing_import)
+    future_proof = LazyGroup(
+        registry={"proof": CommandSpec("proof_before_action.cli", "main", "Synthetic future entry.")}
+    )
+    result = CliRunner().invoke(future_proof, ["proof", "--help"])
+    assert result.exit_code == 2, result.output
+    assert "uv tool install mcp-audits-proof" in result.stderr
+    assert "a uv tool extra does not expose its scripts" in result.stderr
+    assert result.stdout == ""
+
+
+@pytest.mark.parametrize("args", GUARDED_PATHS)
+@pytest.mark.parametrize(
+    "missing", [None, "anyio", "mcp_audit", "mcp_audit_labs_extra", "proof_before_action_extra"]
+)
+def test_unrelated_import_errors_propagate(
+    args: list[str], missing: str | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    error = ImportError("synthetic implementation defect", name=missing)
+
+    def broken_import(name: str) -> None:
+        raise error
+
+    monkeypatch.setattr("mcp_audit._command_registry.import_module", broken_import)
+    result = CliRunner().invoke(main, args)
+    assert result.exception is error
+    assert "Optional distribution missing" not in result.stderr
+    assert result.stdout == ""
 
 
 @pytest.mark.parametrize("module", ["oauth_transcript_cli", "authorization_posture_cli"])

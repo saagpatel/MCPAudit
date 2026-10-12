@@ -238,7 +238,7 @@ def test_cli_builtin_human_and_json_modes() -> None:
     assert human.exit_code == 0
     assert "Transitions" in human.output
     assert machine.exit_code == 0
-    assert json.loads(machine.output)["verdict"] == "pass"
+    assert json.loads(machine.stdout)["verdict"] == "pass"
 
 
 def test_cli_runs_user_fixture_and_returns_one_for_unknown() -> None:
@@ -249,16 +249,16 @@ def test_cli_runs_user_fixture_and_returns_one_for_unknown() -> None:
         main, ["task-time-machine", "run", str(FIXTURES / "malformed.json"), "--json"]
     )
     assert success.exit_code == 0
-    assert json.loads(success.output)["final_task"]["status"] == "completed"
+    assert json.loads(success.stdout)["final_task"]["status"] == "completed"
     assert malformed.exit_code == 1
-    assert json.loads(malformed.output)["coverage"]["input_state"] == "malformed"
+    assert json.loads(malformed.stdout)["coverage"]["input_state"] == "malformed"
 
 
 @pytest.mark.parametrize("contract", ["scenario", "result"])
 def test_cli_emits_contract_schema(contract: str) -> None:
     result = CliRunner().invoke(main, ["task-time-machine", "schema", contract])
     assert result.exit_code == 0
-    assert json.loads(result.output)["additionalProperties"] is False
+    assert json.loads(result.stdout)["additionalProperties"] is False
 
 
 def test_cli_requires_exactly_one_input() -> None:
