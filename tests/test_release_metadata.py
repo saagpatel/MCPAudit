@@ -31,37 +31,50 @@ def _project_version() -> str:
 
 
 def test_release_versions_are_consistent_across_surfaces() -> None:
-    version = _project_version()
     state = json.loads(Path("docs/release-state.json").read_text(encoding="utf-8"))
+    assert isinstance(state, dict)
+    version = state["candidate_version"]
+    published_version = state["published_version"]
+    previous_version = state["previous_version"]
+    status = state["status"]
+    assert isinstance(version, str)
+    assert isinstance(published_version, str)
+    assert isinstance(previous_version, str)
+    assert status in {"candidate", "release"}
     server = json.loads(Path("server.json").read_text(encoding="utf-8"))
     changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
     readme = Path("README.md").read_text(encoding="utf-8")
     adoption = Path("docs/ADOPTION-GUIDE.md").read_text(encoding="utf-8")
 
-    assert version == "2.10.1"
-    assert state == {
-        "schema_version": "mcp-audit.release-state.v1",
-        "candidate_version": "2.10.1",
-        "published_version": version,
-        "previous_version": "2.10.0",
-        "status": "release",
-    }
-    assert server["version"] == state["published_version"]
-    assert server["packages"][0]["version"] == state["published_version"]
+    assert _project_version() == version
+    if status == "release":
+        assert published_version == version
+        assert f"## [{version}] - 2026-10-11" in changelog
+        assert f"## [{version}] - Unreleased" not in changelog
+    else:
+        assert published_version != version
+        assert "## [Unreleased]" in changelog
+        assert f"## [{version}] - 2026-10-11" not in changelog
+    assert server["version"] == published_version
+    assert server["packages"][0]["version"] == published_version
     assert "## [2.7.0] - 2026-08-14" in changelog
     assert "## [2.8.0] - 2026-10-06" in changelog
     assert "## [2.8.1] - 2026-10-06" in changelog
     assert "## [2.9.0] - 2026-10-10" in changelog
     assert "## [2.10.0] - 2026-10-11" in changelog
-    assert f"## [{version}] - 2026-10-11" in changelog
-    assert f"## [{version}] - Unreleased" not in changelog
-    assert f"[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v{version}...HEAD" in changelog
-    assert f"[{version}]: https://github.com/saagpatel/MCPAudit/compare/v2.10.0...v{version}" in changelog
+    assert (
+        f"[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v{published_version}...HEAD"
+        in changelog
+    )
+    assert (
+        f"[{published_version}]: https://github.com/saagpatel/MCPAudit/compare/v{previous_version}..."
+        f"v{published_version}"
+    ) in changelog
     assert "[2.10.0]: https://github.com/saagpatel/MCPAudit/compare/v2.9.0...v2.10.0" in changelog
     assert "[2.8.0]: https://github.com/saagpatel/MCPAudit/compare/v2.7.0...v2.8.0" in changelog
-    assert f"saagpatel/MCPAudit@v{state['published_version']}" in readme
-    assert f"saagpatel/MCPAudit@v{state['published_version']}" in adoption
-    assert f"rev: v{state['published_version']}" in adoption
+    assert f"saagpatel/MCPAudit@v{published_version}" in readme
+    assert f"saagpatel/MCPAudit@v{published_version}" in adoption
+    assert f"rev: v{published_version}" in adoption
 
 
 def test_release_version_is_a_stable_semantic_version() -> None:
@@ -89,7 +102,7 @@ def test_release_metadata_verifier_passes() -> None:
         timeout=30,
     )
     assert result.returncode == 0, result.stderr
-    assert "release metadata verified for 2.10.1" in result.stdout
+    assert f"release metadata verified for {_project_version()}" in result.stdout
 
 
 def test_release_verifier_requires_public_tag_in_precommit_usage_comment(

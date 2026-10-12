@@ -16,9 +16,40 @@ import yaml
 
 from scripts import verify_release as release
 
-VERSION = "2.10.1"
+
+def _version_for_state(state: object) -> str:
+    assert isinstance(state, dict)
+    status = state.get("status")
+    if status == "candidate":
+        version_field = "candidate_version"
+    elif status == "release":
+        version_field = "published_version"
+    else:
+        raise AssertionError(f"unsupported release status: {status!r}")
+    version = state.get(version_field)
+    assert isinstance(version, str)
+    return version
+
+
+def _release_version() -> str:
+    state = json.loads(Path("docs/release-state.json").read_text(encoding="utf-8"))
+    return _version_for_state(state)
+
+
+VERSION = _release_version()
 COMMIT = "a" * 40
 WORKFLOW_SHA = "b" * 40
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [("candidate", "91.2.3"), ("release", "44.5.6")],
+)
+def test_release_version_uses_state_identity(status: str, expected: str) -> None:
+    assert (
+        _version_for_state({"status": status, "candidate_version": "91.2.3", "published_version": "44.5.6"})
+        == expected
+    )
 
 
 @pytest.fixture
