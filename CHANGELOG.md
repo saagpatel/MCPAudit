@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Move shared authorization URL helpers and canonical posture JSON encoding into
+  core, so connected authorization probes do not load lab contracts. Expose the
+  probe helpers used by conformance labs and guard the core import boundary.
+
 ## [2.11.0] - 2026-10-12
 
 ### Upgrade notes

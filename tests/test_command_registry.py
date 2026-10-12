@@ -305,6 +305,7 @@ mcp_audit/llm_analyzer.py
 mcp_audit/models.py
 mcp_audit/monitor.py
 mcp_audit/normalize.py
+mcp_audit/oauth_urls.py
 mcp_audit/oauth_transcript_cli.py
 mcp_audit/oauth_transcript_models.py
 mcp_audit/oauth_transcript_sarif.py
