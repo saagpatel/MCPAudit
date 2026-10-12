@@ -409,10 +409,201 @@
     "forbidden": ["planted-retained-fw-credential"]
   },
   {
+    "id": "ordinary-inline-option-secret-named-value",
+    "kind": "args",
+    "source": ["--format=token", "--verbose"],
+    "expected": ["--format=token", "--verbose"],
+    "forbidden": []
+  },
+  {
+    "id": "ordinary-inline-option-fullwidth-delimiter",
+    "kind": "args",
+    "source": ["--format＝token", "--no-sandbox"],
+    "expected": ["--format＝token", "--no-sandbox"],
+    "forbidden": []
+  },
+  {
+    "id": "ordinary-inline-option-escape-supplied-value",
+    "kind": "args",
+    "source": ["--format=\u001b[0mtoken", "--no-sandbox"],
+    "expected": ["--format=\u001b[0mtoken", "--no-sandbox"],
+    "forbidden": []
+  },
+  {
+    "id": "url-prefixed-inline-argv-secret",
+    "kind": "args",
+    "source": ["https://example.com/\u001b]0;--password=\u0007one two v7KpQ9d2MZ8nR4t6Vc", "--port", "8080"],
+    "expected": ["<redacted>", "--port", "8080"],
+    "forbidden": ["one two", "v7KpQ9d2M", "Z8nR4t6Vc"]
+  },
+  {
+    "id": "url-prefixed-fullwidth-inline-argv-secret",
+    "kind": "args",
+    "source": ["https://example.com/\u001b]0;--password＝\u0007one two v7KpQ9d2MZ8nR4t6Vc", "--port", "8080"],
+    "expected": ["<redacted>", "--port", "8080"],
+    "forbidden": ["one two", "v7KpQ9d2M", "Z8nR4t6Vc"]
+  },
+  {
+    "id": "bare-escape-inline-argv-secret",
+    "kind": "args",
+    "source": ["--password\u001b=one two v7KpQ9d2MZ8nR4t6Vc", "--port", "8080"],
+    "expected": ["<redacted>", "--port", "8080"],
+    "forbidden": ["one two", "v7KpQ9d2M", "Z8nR4t6Vc"]
+  },
+  {
+    "id": "normalized-secret-flag-leading-delimiter",
+    "kind": "args",
+    "source": ["--＝password", "v7KpQ9d2MZ8nR4t6Vc", "--port", "8080"],
+    "expected": ["--＝password", "<redacted>", "--port", "8080"],
+    "forbidden": ["v7KpQ9d2M", "Z8nR4t6Vc"]
+  },
+  {
+    "id": "url-prefixed-normalized-inline-argv-secret",
+    "kind": "args",
+    "source": ["https://example.com/password＝one two v7KpQ9d2MZ8nR4t6Vc", "--port", "8080"],
+    "expected": ["<redacted>", "--port", "8080"],
+    "forbidden": ["one two", "v7KpQ9d2M", "Z8nR4t6Vc"]
+  },
+  {
+    "id": "url-prefixed-raw-path-argv-secret",
+    "kind": "args",
+    "source": ["https://example.com/--password=one two v7KpQ9d2MZ8nR4t6Vc", "--port", "8080"],
+    "expected": ["<redacted>", "--port", "8080"],
+    "forbidden": ["one two", "v7KpQ9d2M", "Z8nR4t6Vc"]
+  },
+  {
+    "id": "url-prefixed-raw-query-argv-secret",
+    "kind": "args",
+    "source": ["https://example.com/mcp?password=one two v7KpQ9d2MZ8nR4t6Vc", "--port", "8080"],
+    "expected": ["<redacted>", "--port", "8080"],
+    "forbidden": ["one two", "v7KpQ9d2M", "Z8nR4t6Vc"]
+  },
+  {
+    "id": "ordinary-inline-option-composed-value",
+    "kind": "args",
+    "source": ["--format=token\u1100\u1161", "--no-sandbox"],
+    "expected": ["--format=token\u1100\u1161", "--no-sandbox"],
+    "forbidden": []
+  },
+  {
+    "id": "ordinary-url-escape-reading-without-assignment",
+    "kind": "args",
+    "source": ["https://example.com/\u001b[31mdocs\u001b[0m", "--port", "8080"],
+    "expected": ["https://example.com/\u001b[31mdocs\u001b[0m", "--port", "8080"],
+    "forbidden": []
+  },
+  {
     "id": "escape-backslash-inside-quoted-value",
     "kind": "text",
     "source": "password \u001b]x=\u0007 \"a b \u001b]\\\u0007\" planted-escaped-credential\" tail",
     "expected": "password \u001b]x=\u0007 <redacted>",
     "forbidden": ["planted-escaped-credential"]
+  },
+  {
+    "id": "osc8-long-bel-plain",
+    "kind": "text",
+    "source": "\u001b]8;id=docs;https://fixture.example/documentation/a-long-path-for-terminal-hyperlink-precision/overview\u0007Hyperlink precision label\u001b]8;;\u0007",
+    "expected": "\u001b]8;id=docs;https://fixture.example/documentation/a-long-path-for-terminal-hyperlink-precision/overview\u0007Hyperlink precision label\u001b]8;;\u0007",
+    "forbidden": [],
+    "retained": [
+      "Hyperlink precision label"
+    ]
+  },
+  {
+    "id": "osc8-long-bel-credentialed",
+    "kind": "text",
+    "source": "\u001b]8;id=docs;https://fixture-user:fixture-password@fixture.example/documentation/a-long-path-for-terminal-hyperlink-precision/overview?mode=fixture-query#fixture-fragment\u0007Hyperlink precision label\u001b]8;;\u0007",
+    "expected": "\u001b]8;id=docs;https://<redacted>@fixture.example/documentation/a-long-path-for-terminal-hyperlink-precision/overview?mode=<redacted>#<redacted>\u0007Hyperlink precision label\u001b]8;;\u0007",
+    "forbidden": [
+      "fixture-user",
+      "fixture-password",
+      "fixture-query",
+      "fixture-fragment"
+    ],
+    "retained": [
+      "Hyperlink precision label"
+    ]
+  },
+  {
+    "id": "osc8-long-st-plain",
+    "kind": "text",
+    "source": "\u001b]8;id=docs;https://fixture.example/documentation/a-long-path-for-terminal-hyperlink-precision/overview\u001b\\Hyperlink precision label\u001b]8;;\u001b\\",
+    "expected": "\u001b]8;id=docs;https://fixture.example/documentation/a-long-path-for-terminal-hyperlink-precision/overview\u001b\\Hyperlink precision label\u001b]8;;\u001b\\",
+    "forbidden": [],
+    "retained": [
+      "Hyperlink precision label"
+    ]
+  },
+  {
+    "id": "osc8-long-st-credentialed",
+    "kind": "text",
+    "source": "\u001b]8;id=docs;https://fixture-user:fixture-password@fixture.example/documentation/a-long-path-for-terminal-hyperlink-precision/overview?mode=fixture-query#fixture-fragment\u001b\\Hyperlink precision label\u001b]8;;\u001b\\",
+    "expected": "\u001b]8;id=docs;https://<redacted>@fixture.example/documentation/a-long-path-for-terminal-hyperlink-precision/overview?mode=<redacted>#<redacted>\u001b\\Hyperlink precision label\u001b]8;;\u001b\\",
+    "forbidden": [
+      "fixture-user",
+      "fixture-password",
+      "fixture-query",
+      "fixture-fragment"
+    ],
+    "retained": [
+      "Hyperlink precision label"
+    ]
+  },
+  {
+    "id": "osc8-long-c1-plain",
+    "kind": "text",
+    "source": "\u009d8;id=docs;https://fixture.example/documentation/a-long-path-for-terminal-hyperlink-precision/overview\u009cHyperlink precision label\u009d8;;\u009c",
+    "expected": "\u009d8;id=docs;https://fixture.example/documentation/a-long-path-for-terminal-hyperlink-precision/overview\u009cHyperlink precision label\u009d8;;\u009c",
+    "forbidden": [],
+    "retained": [
+      "Hyperlink precision label"
+    ]
+  },
+  {
+    "id": "osc8-long-c1-credentialed",
+    "kind": "text",
+    "source": "\u009d8;id=docs;https://fixture-user:fixture-password@fixture.example/documentation/a-long-path-for-terminal-hyperlink-precision/overview?mode=fixture-query#fixture-fragment\u009cHyperlink precision label\u009d8;;\u009c",
+    "expected": "\u009d8;id=docs;https://<redacted>@fixture.example/documentation/a-long-path-for-terminal-hyperlink-precision/overview?mode=<redacted>#<redacted>\u009cHyperlink precision label\u009d8;;\u009c",
+    "forbidden": [
+      "fixture-user",
+      "fixture-password",
+      "fixture-query",
+      "fixture-fragment"
+    ],
+    "retained": [
+      "Hyperlink precision label"
+    ]
+  },
+  {
+    "id": "osc8-secret-link-text",
+    "kind": "text",
+    "source": "\u001b]8;;https://fixture.example/documentation/a-long-path-for-terminal-hyperlink-precision/overview\u0007password=fixture-link-secret\u001b]8;;\u0007 tail",
+    "expected": "\u001b]8;;https://fixture.example/documentation/a-long-path-for-terminal-hyperlink-precision/overview\u0007password=<redacted>\u001b]8;;\u0007 tail",
+    "forbidden": [
+      "fixture-link-secret"
+    ],
+    "retained": [
+      "password="
+    ]
+  },
+  {
+    "id": "non-hyperlink-long-osc",
+    "kind": "text",
+    "source": "\u001b]0;unrelated-escape-payloadunrelated-escape-payloadunrelated-escape-payloadunrelated-escape-payload\u0007Unrelated escape label tail",
+    "expected": "<redacted> label tail",
+    "forbidden": [
+      "Unrelated escape label",
+      "unrelated-escape-payload"
+    ]
+  },
+  {
+    "id": "non-hyperlink-long-csi",
+    "kind": "text",
+    "source": "\u001b[1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;1;mUnrelated escape label tail",
+    "expected": "<redacted> label tail",
+    "forbidden": [
+      "Unrelated escape label",
+      "unrelated-escape-payload"
+    ]
   }
 ]

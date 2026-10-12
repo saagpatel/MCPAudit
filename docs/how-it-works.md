@@ -54,3 +54,32 @@ across listing pages and surfaces). Retained item text is capped at 256 KiB;
 `surface_truncated` warns that metadata is incomplete. The temporary
 `--sdk-stdio-fallback` flag uses the SDK reader for compatibility and disables
 the frame cap; it retains the listing caps. See the [output contract](OUTPUT-CONTRACT.md).
+
+## Large fleets
+
+When run from the `mcp-audit scan` CLI on POSIX hosts supporting spawn and
+process-group cleanup, connected scans of fleets larger than 256 servers run their per-server connection, enumeration and analysis stages
+in `min(cpu_count or 1, ceil(server_count / 256), 8)` worker processes, provided
+that gives at least two workers. Slices are contiguous; audits return in input
+order. Each worker uses `max(1, ceil(max_concurrency / workers))` local slots;
+parent-owned connection tokens also enforce the exact scan-wide connection
+limit when rounding would otherwise oversubscribe it. Discovery, setup and
+baseline decisions, fleet trifecta/shadowing checks, scoring finalization,
+redaction and report construction stay in the parent.
+
+Pin creation/refresh, canary, LLM analysis, pin comparison and any pin-baseline checks (escalation,
+provenance, integrity, package/artifact verification), caller-supplied pin stores
+and custom override appliers silently retain the single-process path. Pin
+verification can update rollback tracking, and package verifiers share a
+scan-wide registry cache; these modes do not have a separate read-only worker
+baseline protocol. Unsupported hosts and single-core hosts also retain that path.
+`--skip-connect` scans never shard (they spawn no process), and library
+callers of `run_scan` and the `mcp_audit.api` entry points stay single-process.
+There is no public sharding option.
+
+Workers capture stderr and reap their own MCP process groups. The parent tracks
+registered groups, reaps workers, and cleans up registered groups after a crash
+or cancellation. A missing worker result is a failed audit with a
+`worker_process_failed` warning; completed results from that worker and its
+siblings remain available. Report warning sorting and the JSON schema remain
+unchanged.

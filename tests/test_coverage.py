@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
+from mcp_audit import coverage as coverage_module
 from mcp_audit.cli import main
 from mcp_audit.connector import ServerConnector
 from mcp_audit.engine import ScanOptions, run_scan
@@ -35,6 +36,43 @@ from mcp_audit.text_limits import MAX_FIELD_BYTES
 from tests.conftest import make_server_config, make_tool
 
 FIXTURES = Path(__file__).parent / "fixtures"
+
+
+@pytest.mark.parametrize("size", [0, 1, 10])
+@pytest.mark.parametrize("completion", ["all", "none", "mixed"])
+@pytest.mark.parametrize("discovery_incomplete", [False, True])
+def test_static_coverage_matches_per_server_aggregation(
+    monkeypatch: pytest.MonkeyPatch, size: int, completion: str, discovery_incomplete: bool
+) -> None:
+    audits = [
+        ServerAudit(server=make_server_config(name=f"fixture-{i}"), connection_status="skipped")
+        for i in range(size)
+    ]
+    completed = [
+        {"metadata", "permissions", "capabilities"}
+        if completion == "all" or completion == "mixed" and i % 2
+        else set()
+        for i in range(size)
+    ]
+    warnings = [ScanWarning(code="synthetic", message="fixture", check="permission_analysis")]
+
+    def build() -> dict[str, CheckCoverage]:
+        return coverage_module.build_coverage(
+            audits,
+            requested={"inject_check"},
+            skip_connect=True,
+            warnings=warnings,
+            baselines={},
+            completed=completed,
+            package_coverage={},
+            discovery_incomplete=discovery_incomplete,
+            config_health_inspected=True,
+        )
+
+    fast = build()
+    monkeypatch.setattr(coverage_module, "_skip_connect_entries", lambda *args: None)
+    assert fast == build()
+
 
 # Expected affected inputs are explicit so the matrix does not mirror the
 # aggregator's private dependency sets. Each row exercises every check.

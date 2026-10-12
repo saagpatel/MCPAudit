@@ -301,6 +301,7 @@ def test_cli_config_path_errors_are_safe(payload: str, tmp_path: Path) -> None:
         ("a\x1b]title\x07b", "ab"),
         ("a\x1b]title\x1b\\b", "ab"),
         ("a\x1bXb", "ab"),
+        ("a\x1b\x1b[31mb", "a[31mb"),
         ("a\x1b[", "a"),
         ("a\x1b]unterminated", "a"),
         ("a\x1b", "a"),

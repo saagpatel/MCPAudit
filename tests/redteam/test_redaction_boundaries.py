@@ -684,6 +684,254 @@ _DELIMITER_ESCAPES = {
 
 @pytest.mark.parametrize("escape", list(_DELIMITER_ESCAPES.values()), ids=list(_DELIMITER_ESCAPES))
 @pytest.mark.parametrize("delimiter", [":", "=", "：", "＝"])
+def test_inline_argv_escape_readings_withhold_the_whole_element(escape: str, delimiter: str) -> None:
+    argument = f"--password{escape.format(delimiter=delimiter)}one two {_SWEEP_SECRET}"
+    args: list[object] = [argument, "--port", "8080"]
+    once = redact_argv(args)
+    assert once[0] == "<redacted>"
+    assert once[-1] == "8080"
+    assert redact_argv(once) == once
+    snapshot = PinStore(Path("unused"))._config_snapshot(make_server_config(args=[str(arg) for arg in args]))
+    assert _SWEEP_SECRET not in json.dumps(snapshot)
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    [
+        "--\x1b]xpassword=\x07",
+        "--pass\x1b[1mword\x1b]x=\x07",
+        "--pa\x1b[ssword\x1b]x:\x07",
+        "--password" + _OVER_READING_CAP + "\x1b]x=\x07",
+    ],
+)
+def test_mixed_inline_argv_readings_keep_no_multiword_value(prefix: str) -> None:
+    once = redact_argv([prefix + f"one two {_SWEEP_SECRET}"])
+    assert once == ["<redacted>"]
+    assert redact_argv(once) == once
+
+
+@pytest.mark.parametrize("label", ["password", "api_key", "token", "secret", "authorization"])
+@pytest.mark.parametrize(
+    "insert",
+    [value for value in INSERTS.values() if "\x1b" not in value and "\x9b" not in value],
+)
+def test_non_escape_obfuscation_in_a_flag_never_exposes_its_next_argument(label: str, insert: str) -> None:
+    # The label remains recognizable; punctuation before it must not break
+    # structural pairing just because it fails the free-text name grammar.
+    argument = "--" + insert + label
+    args: list[object] = [argument, _SWEEP_SECRET, "--port", "8080"]
+    once = redact_argv(args)
+    assert once[1] == "<redacted>", argument
+    assert once[2:] == ["--port", "8080"]
+    assert redact_argv(once) == once
+
+
+@pytest.mark.parametrize("argument", ["--＝password", "－－ｐａｓｓｗｏｒｄ", "--：password"])
+def test_normalized_secret_flags_are_paired_on_all_report_surfaces(argument: str, tmp_path: Path) -> None:
+    _assert_surfaces("ordinary fixture text", [argument, _SWEEP_SECRET], None, _forbidden(""), tmp_path)
+
+
+@pytest.mark.parametrize("escape", ["\x1b]x=\x07", "\x1b[=", "\x1b=", "\x1b]x＝\x07"])
+def test_inline_argv_readings_are_withheld_on_all_report_surfaces(escape: str, tmp_path: Path) -> None:
+    _assert_surfaces(
+        "ordinary fixture text",
+        [f"--password{escape}one two {_SWEEP_SECRET}"],
+        None,
+        _forbidden(""),
+        tmp_path,
+    )
+
+
+@pytest.mark.parametrize("prefix", ["mode=fast", "--verbose"])
+def test_esc_esc_retains_current_readings_without_new_withholding(prefix: str) -> None:
+    # Restarting the second ESC turns this harmless text into an OSC longer
+    # than the suffix cap, adding whole-field and next-argument withholding.
+    # D18 permits that terminal change only if no new withholding is needed.
+    text = prefix + "\x1b\x1b]" + "a" * 65 + "\x07"
+    assert redact_text(text) == text
+    assert redact_argv([text, "on"]) == [text, "on"]
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--＝port", "8080"],
+        ["--tokens", "5", "--tokenizer", "bpe", "--session-name", "demo"],
+        ["--tokens\x1b[0m=5", "--verbose"],
+        ["--tokenizer\x1b[0m=bpe", "--verbose"],
+        ["--session-name\x1b[0m=demo", "--verbose"],
+        ["--color=one two red", "--verbose"],
+        ["--color\x1b]x=\x07one two red", "--verbose"],
+        ["https://fixture.example/password/docs", "--port", "8080"],
+    ],
+)
+def test_ordinary_argv_structure_remains_visible(args: list[str]) -> None:
+    assert redact_argv(cast(list[object], args)) == args
+
+
+def _argv_snapshot(args: list[object]) -> str:
+    config = make_server_config(args=[str(arg) for arg in args])
+    return json.dumps(PinStore(Path("unused"))._config_snapshot(config))
+
+
+# Hangul and Latin letters spelled as base + combining marks: NFKC composes
+# them across characters, so the element has no per-character raw map.
+_DECOMPOSED = ["\u1100\u1161", "e\u0301", "A\u030a"]
+
+
+@pytest.mark.parametrize(
+    "argument",
+    [
+        # The secret assignment is already in the raw element, after a URL prefix.
+        "https://example.com/--password=one two {secret}",
+        "https://example.com/mcp?password=one two {secret}",
+        "https://example.com/mcp?x=1&token=one two {secret}",
+        "--endpoint=https://example.com/mcp?password=one two {secret}",
+        "https://example.com/a/api_key: one two {secret}",
+        # H-6 acceptance: an escape sequence between label and delimiter.
+        "--password\x1b[0m=one two {secret}",
+        "--password\x1b]x\x07=one two {secret}",
+        "https://example.com/--password\x1b[0m=one two {secret}",
+        # '=' + U+0338 composes to '≠': the parser still sees '='.
+        "--password=\u0338one two {secret}",
+        "https://example.com/--password=\u0338one two {secret}",
+    ],
+)
+def test_argv_element_with_spaced_secret_value_is_withheld_whole(argument: str) -> None:
+    args: list[object] = [argument.format(secret=_SWEEP_SECRET), "--port", "8080"]
+    once = redact_argv(args)
+    assert once == ["<redacted>", "--port", "8080"]
+    assert redact_argv(once) == once
+    snapshot = _argv_snapshot(args)
+    assert _SWEEP_SECRET not in snapshot
+    assert "two" not in snapshot
+
+
+@pytest.mark.parametrize(
+    "argument",
+    [
+        # ESC ESC: a terminal abandons the first ESC and reads an OSC.
+        "--password\x1b\x1b]=one two {secret}\x07",
+        "--password\x1b\x1b]x=\x07one two {secret}",
+        "--password\x1b\x1b\x1b]=one two {secret}\x07",
+        "--password\x1b\x1b]＝one two {secret}\x07",
+        "--password\x1b\x1b]:one two {secret}\x1b\\",
+        "https://example.com/--password\x1b\x1b]=one two {secret}\x07",
+        # Separators other than whitespace inside one argv element.
+        "https://example.com/mcp?password=one&two&{secret}",
+        "https://example.com/--password=one&two&{secret}",
+        "https://example.com/mcp?token=one;two;{secret}",
+        "https://example.com/--password=one,two,{secret}",
+        "https://example.com/--password=one;two {secret}",
+        "x api_key=one&two&{secret}",
+        # An escape payload before the raw delimiter holds a value of its own.
+        "--password\x1b]=one two {secret}\x07=rest",
+        "--password\x1b\x1b]=one two {secret}\x07=rest",
+    ],
+)
+def test_argv_value_past_any_separator_is_withheld_whole(argument: str) -> None:
+    args: list[object] = [argument.format(secret=_SWEEP_SECRET), "--port", "8080"]
+    once = redact_argv(args)
+    assert once[0] == "<redacted>"
+    # An escape-only reading can leave a bare secret flag, which claims --port.
+    assert once[-1] == "8080"
+    assert redact_argv(once) == once
+    snapshot = _argv_snapshot(args)
+    assert _SWEEP_SECRET not in snapshot
+    assert "two" not in snapshot
+
+
+@pytest.mark.parametrize(
+    "argument, expected",
+    [
+        (
+            "https://example.com/mcp?password={secret}&mode=fast",
+            "https://example.com/mcp?password=<redacted>&mode=<redacted>",
+        ),
+        ("https://example.com/mcp?token=one,two|{secret}", "https://example.com/mcp?token=<redacted>"),
+        (
+            '--config={{"password":"{secret}","model":"small"}}',
+            '--config={{"password":<redacted>,"model":"small"}}',
+        ),
+        ("--header=Authorization: Bearer {secret}", "--header=Authorization: Bearer <redacted>"),
+        (
+            "https://token.example.test:8443/mcp?password={secret}",
+            "https://token.example.test:8443/mcp?password=<redacted>",
+        ),
+        ("--ｐａｓｓｗｏｒｄ={secret}", "--ｐａｓｓｗｏｒｄ=<redacted>"),
+        ("--to\x9bken={secret}", "--to\x9bken=<redacted>"),
+    ],
+)
+def test_covered_argv_values_keep_their_structure(argument: str, expected: str) -> None:
+    once = redact_argv([argument.format(secret=_SWEEP_SECRET), "--no-sandbox"])
+    assert once == [expected.format(), "--no-sandbox"]
+    assert redact_argv(once) == once
+
+
+@pytest.mark.parametrize(
+    "prefix", ["mode=fast", "--verbose", "--color=red", "--session-name", "--author", "--design"]
+)
+def test_esc_esc_restart_reading_adds_no_withholding_without_a_label(prefix: str) -> None:
+    for payload in ("a" * 65, "x=1", "a" * 65 + "=b c"):
+        text = f"{prefix}\x1b\x1b]{payload}\x07"
+        assert redact_argv([text, "on"]) == [text, "on"]
+        assert redact_argv([text, "--no-sandbox"]) == [text, "--no-sandbox"]
+
+
+@pytest.mark.parametrize(
+    "argument",
+    [
+        "https://example.com/--password={secret}",
+        "https://example.com/mcp?password={secret}&x=1",
+        "https://token.example.test:8443/mcp?password={secret}",
+    ],
+)
+def test_url_prefixed_argv_secret_without_whitespace_keeps_its_endpoint(argument: str) -> None:
+    once = redact_argv([argument.format(secret=_SWEEP_SECRET), "--port", "8080"])
+    assert once[0] == argument.format(secret="<redacted>").replace("&x=1", "&x=<redacted>")
+    assert once[1:] == ["--port", "8080"]
+    assert redact_argv(once) == once
+
+
+@pytest.mark.parametrize(
+    "argument",
+    [
+        "--format=token",
+        "--format＝token",
+        "--format=\x1b[0mtoken",
+        *(f"--format=token{letter}" for letter in _DECOMPOSED),
+        *(f"--format=\x1b[0mtoken{letter}" for letter in _DECOMPOSED),
+        "--format=\u0338token",
+    ],
+)
+def test_secret_label_inside_an_inline_value_never_pairs_with_the_next_argument(argument: str) -> None:
+    gained = redact_argv([argument, "--no-sandbox"])
+    plain = redact_argv([argument, "--verbose"])
+    assert gained == [argument, "--no-sandbox"]
+    assert plain == [argument, "--verbose"]
+    assert gained != plain
+    assert "--no-sandbox" in _argv_snapshot([argument, "--no-sandbox"])
+
+
+@pytest.mark.parametrize(
+    "argument",
+    [
+        "--＝password",
+        "--password",
+        *(f"--password{letter}" for letter in _DECOMPOSED),
+        *(f"--\x1b[0mpassword{letter}" for letter in _DECOMPOSED),
+    ],
+)
+def test_secret_flag_name_pairs_with_the_next_argument(argument: str) -> None:
+    args: list[object] = [argument, _SWEEP_SECRET, "--port", "8080"]
+    once = redact_argv(args)
+    assert once[1:] == ["<redacted>", "--port", "8080"]
+    assert redact_argv(once) == once
+    assert _SWEEP_SECRET not in _argv_snapshot(args)
+
+
+@pytest.mark.parametrize("escape", list(_DELIMITER_ESCAPES.values()), ids=list(_DELIMITER_ESCAPES))
+@pytest.mark.parametrize("delimiter", [":", "=", "：", "＝"])
 def test_escaped_delimiter_standing_alone_between_label_and_value(escape: str, delimiter: str) -> None:
     forbidden = re.compile("|".join(_forbidden("")))
     for label in ("password", "token", "api_key"):

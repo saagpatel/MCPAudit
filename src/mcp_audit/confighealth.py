@@ -84,7 +84,9 @@ def config_health_findings(
             )
         )
 
-    for name, count in sorted(duplicate_server_config_counts(servers).items()):
+    duplicates = duplicate_server_config_counts(servers)
+    repeated = [server for server in servers if server.name in duplicates]
+    for name, count in sorted(duplicates.items()):
         findings.append(
             ConfigHealthFinding(
                 finding_type="duplicate_server_name",
@@ -99,7 +101,7 @@ def config_health_findings(
             )
         )
 
-    for name, scopes in sorted(_conflicting_scope_server_names(servers).items()):
+    for name, scopes in sorted(_conflicting_scope_server_names(repeated).items()):
         findings.append(
             ConfigHealthFinding(
                 finding_type="conflicting_scope_server_name",
@@ -118,7 +120,7 @@ def config_health_findings(
             )
         )
 
-    for name, definitions in sorted(_conflicting_definition_server_names(servers).items()):
+    for name, definitions in sorted(_conflicting_definition_server_names(repeated).items()):
         findings.append(
             ConfigHealthFinding(
                 finding_type="conflicting_server_definition",
@@ -137,6 +139,7 @@ def config_health_findings(
         )
 
     grouped_finding_count = len(findings)
+    command_paths: dict[str, Path] = {}
     for server in servers:
         first_finding = len(findings)
         if server.transport == TransportType.STDIO and not server.command:
@@ -150,7 +153,7 @@ def config_health_findings(
                     remediation="Add a command for the server or remove the incomplete config entry.",
                 )
             )
-        if _missing_local_binary(server):
+        if _missing_local_binary(server, command_paths):
             findings.append(
                 ConfigHealthFinding(
                     finding_type="missing_local_binary",
@@ -274,12 +277,18 @@ def _config_command_line(server: ServerConfig) -> str:
     return " ".join(part for part in [server.command, *server.args] if part)
 
 
-def _missing_local_binary(server: ServerConfig) -> bool:
+def _missing_local_binary(server: ServerConfig, paths: dict[str, Path] | None = None) -> bool:
     if server.transport != TransportType.STDIO or not server.command:
         return False
     command = server.command.strip()
     if "/" in command or "\\" in command:
-        return not Path(command).expanduser().exists()
+        path = paths.get(command) if paths is not None else None
+        if path is None:
+            path = Path(command)
+            if paths is not None and len(paths) < 4096:
+                paths[command] = path
+        # Cache only lexical parsing; expansion and filesystem state stay live.
+        return not path.expanduser().exists()
     return False
 
 

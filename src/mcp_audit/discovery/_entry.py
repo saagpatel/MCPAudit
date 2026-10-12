@@ -18,6 +18,7 @@ def parse_server_entry(
     project_path: str | None = None,
     *,
     scope: Literal["workstation", "project"] = "workstation",
+    config_pointer: str | None = None,
 ) -> ServerConfig:
     """Convert one client config entry into a common ServerConfig."""
     raw_type = entry.get("type", "")
@@ -50,6 +51,7 @@ def parse_server_entry(
         name=name,
         client=client,
         config_path=config_path,
+        config_pointer=config_pointer,
         project_path=project_path,
         scope=scope,
         command=entry.get("command") or None,
@@ -74,6 +76,7 @@ def parse_server_map(
     if not isinstance(servers, dict):
         raise ConfigParseError(config_path, client, "server map is not an object")
     results: list[ServerConfig] = []
+    scope: Literal["workstation", "project"] | None = None
     for name, entry in servers.items():
         reason = None
         if not isinstance(name, str) or not isinstance(entry, dict):
@@ -91,7 +94,14 @@ def parse_server_map(
                 if field in entry and not isinstance(entry[field], dict):
                     reason = f"{field} must be an object"
             if reason is None:
+                if scope is None:
+                    scope = (
+                        "project"
+                        if project_path is not None or is_project_config(Path(config_path))
+                        else "workstation"
+                    )
                 try:
+                    token = name.replace("~", "~0").replace("/", "~1")
                     results.append(
                         parse_server_entry(
                             name,
@@ -99,13 +109,10 @@ def parse_server_map(
                             config_path,
                             client,
                             project_path,
-                            scope="project"
-                            if project_path is not None or is_project_config(Path(config_path))
-                            else "workstation",
+                            scope=scope,
+                            config_pointer=f"{map_pointer}/{token}",
                         )
                     )
-                    token = name.replace("~", "~0").replace("/", "~1")
-                    results[-1] = results[-1].model_copy(update={"config_pointer": f"{map_pointer}/{token}"})
                     continue
                 except ValidationError:
                     reason = "server entry failed validation"

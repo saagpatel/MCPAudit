@@ -16,9 +16,62 @@ import yaml
 
 from scripts import verify_release as release
 
-VERSION = "2.10.0"
+
+def _version_for_state(state: object) -> str:
+    assert isinstance(state, dict)
+    status = state.get("status")
+    if status == "candidate":
+        version_field = "candidate_version"
+    elif status == "release":
+        version_field = "published_version"
+    else:
+        raise AssertionError(f"unsupported release status: {status!r}")
+    version = state.get(version_field)
+    assert isinstance(version, str)
+    return version
+
+
+def _release_state() -> dict[str, object]:
+    state = json.loads(Path("docs/release-state.json").read_text(encoding="utf-8"))
+    assert isinstance(state, dict)
+    return state
+
+
+def _published_version(state: object) -> str:
+    assert isinstance(state, dict)
+    version = state.get("published_version")
+    assert isinstance(version, str)
+    return version
+
+
+# Artifacts carry the version being built; server.json stays at the published
+# version until promotion, so descriptor and registry probes use that one.
+VERSION = _version_for_state(_release_state())
+PUBLISHED_VERSION = _published_version(_release_state())
 COMMIT = "a" * 40
 WORKFLOW_SHA = "b" * 40
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [("candidate", "91.2.3"), ("release", "44.5.6")],
+)
+def test_release_version_uses_state_identity(status: str, expected: str) -> None:
+    assert (
+        _version_for_state({"status": status, "candidate_version": "91.2.3", "published_version": "44.5.6"})
+        == expected
+    )
+
+
+def test_candidate_state_keeps_descriptor_probes_on_published_version() -> None:
+    state = {"status": "candidate", "candidate_version": "91.2.3", "published_version": "44.5.6"}
+    assert _version_for_state(state) == "91.2.3"
+    assert _published_version(state) == "44.5.6"
+
+
+def test_descriptor_matches_published_version() -> None:
+    raw = json.loads(Path("server.json").read_text())
+    assert raw["version"] == PUBLISHED_VERSION
 
 
 @pytest.fixture
@@ -185,15 +238,15 @@ def test_probe_release_rejects_wrong_package_descriptor(field: str, value: objec
     assert isinstance(package, dict)
     package[field] = value
     with pytest.raises(release.VerificationError, match="exact release tuple"):
-        release.verify_descriptor(raw, version=VERSION)
+        release.verify_descriptor(raw, version=PUBLISHED_VERSION)
 
 
 def test_descriptor_rejects_extra_packages_and_remotes() -> None:
     raw = _descriptor()
-    release.verify_descriptor(raw, version=VERSION)
+    release.verify_descriptor(raw, version=PUBLISHED_VERSION)
     for field, value in (("packages", _packages(raw) * 2), ("remotes", [{"type": "sse"}])):
         with pytest.raises(release.VerificationError, match="exact release tuple"):
-            release.verify_descriptor({**raw, field: value}, version=VERSION)
+            release.verify_descriptor({**raw, field: value}, version=PUBLISHED_VERSION)
 
 
 def test_registry_readback_reuses_exact_descriptor_assertion() -> None:
@@ -206,13 +259,13 @@ def test_registry_readback_reuses_exact_descriptor_assertion() -> None:
             }
         },
     }
-    release.verify_registry(raw, version=VERSION)
+    release.verify_registry(raw, version=PUBLISHED_VERSION)
     changed = copy.deepcopy(raw)
     server = changed["server"]
     assert isinstance(server, dict)
     server["repository"] = {"url": "https://example.invalid", "source": "github"}
     with pytest.raises(release.VerificationError, match="exact release tuple"):
-        release.verify_registry(changed, version=VERSION)
+        release.verify_registry(changed, version=PUBLISHED_VERSION)
 
 
 @pytest.mark.parametrize("mutation", ["digest", "filename", "yanked", "extra"])
@@ -253,10 +306,15 @@ def test_workflow_isolates_consumer_copies_and_uploads_explicit_paths() -> None:
     upload = next(step for step in jobs["build"]["steps"] if "upload-artifact" in step.get("uses", ""))
     assert "*" not in upload["with"]["path"]
     assert len(upload["with"]["path"].splitlines()) == 3
-    # No release job reads or writes the Actions cache: no actions/cache step, and
-    # every setup-uv step disables its cache (`cache-mode` is not a workflow key).
-    for path in (".github/workflows/publish.yml", ".github/workflows/publish-mcp-registry.yml"):
-        for job in yaml.safe_load(Path(path).read_text())["jobs"].values():
+
+
+def test_publish_workflows_disable_actions_cache() -> None:
+    paths = sorted(Path(".github/workflows").glob("publish*.yml"))
+    assert paths
+
+    for path in paths:
+        workflow = yaml.safe_load(path.read_text())
+        for job in workflow["jobs"].values():
             assert "cache-mode" not in job
             for step in job.get("steps", []):
                 uses = step.get("uses", "")

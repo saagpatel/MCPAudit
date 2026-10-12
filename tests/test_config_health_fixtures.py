@@ -4,12 +4,53 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
+from mcp_audit import confighealth
 from mcp_audit.confighealth import config_health_findings
 from mcp_audit.discovery import ConfigParseError
 from mcp_audit.discovery.claude_code import ClaudeCodeDiscoverer
 from mcp_audit.models import ClientType, ConfigHealthSeverity
+from tests.conftest import make_server_config
 
 CONFIG_HEALTH_FIXTURES = Path("tests/fixtures/config_health")
+
+
+def test_command_path_reuse_keeps_each_existence_check_live(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    binary = tmp_path / "synthetic-binary"
+    binary.write_text("")
+    original_path, original_exists = Path, Path.exists
+    parsed: list[str] = []
+
+    def counted_path(value: str) -> Path:
+        parsed.append(value)
+        return original_path(value)
+
+    def exists(path: Path) -> bool:
+        result = original_exists(path)
+        if path == binary and result:
+            binary.unlink()
+        return result
+
+    monkeypatch.setattr(confighealth, "Path", counted_path)
+    monkeypatch.setattr(Path, "exists", exists)
+    servers = [make_server_config(name=name, command=str(binary)) for name in ("first", "second")]
+    findings = config_health_findings(servers)
+    assert parsed == [str(binary)]
+    assert [(finding.finding_type, finding.server_name) for finding in findings] == [
+        ("missing_local_binary", "second")
+    ]
+
+
+def test_unique_names_need_no_conflict_definition_summaries(monkeypatch: pytest.MonkeyPatch) -> None:
+    def unexpected_summary(*args: object) -> str:
+        pytest.fail("A unique name cannot have conflicting definitions")
+
+    monkeypatch.setattr(confighealth, "_server_definition_summary", unexpected_summary)
+    servers = [make_server_config(name=f"fixture-{i}", command="fixture") for i in range(100)]
+    assert config_health_findings(servers) == []
 
 
 def _finding_types(fixture_name: str) -> set[str]:

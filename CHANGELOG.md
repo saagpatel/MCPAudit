@@ -5,14 +5,144 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.11.0] - 2026-10-12
+
+### Upgrade notes
+
+- Reading a legacy v1 pin emits `pin_schema_outdated` with a
+  `mcp-audit pin --refresh SERVER --apply` migration hint. Preview with
+  `mcp-audit pin --refresh SERVER`, review the proposed changes, then apply.
+  These commands can start the selected configured server. v1 support is
+  scheduled for removal in 3.0; see [Pinning](docs/guides/pinning.md).
+- Connected large-fleet CLI scans can emit the additive `worker_process_failed`
+  scan warning when worker results are missing. Consumers must tolerate the new
+  warning code; failed worker audits do not establish completed checks.
+- Argv elements whose secret value would otherwise stay partly visible (an
+  escape-supplied or fullwidth delimiter, a URL prefix, or a value tail the
+  free-text redactor does not cover) are withheld whole. A plain
+  `--token=value` still shows its label with the value redacted. Expect
+  more `<redacted>` markers in those rare cases; flag names are NFKC-normalized
+  before flag/value pairing, and detection also reads ESC ESC as a terminal does.
+- Long, terminated OSC 8 hyperlinks now retain their redacted URL instead of
+  being withheld wholesale. The URI uses URL redaction and the link text uses
+  free-text detection. Malformed frames retain the conservative fallback.
+
+### Known issues
+
+- See [Known issues](docs/known-issues.md) for remaining redaction edges,
+  worker-crash cleanup limits, schema-check coverage, and legacy v1 pins.
+
+### Security
+
+- Parse terminated OSC 8 hyperlinks structurally during report redaction:
+  redact URI credentials as typed URLs and detect link text without escape
+  framing, preserving long plain links. Keep the conservative fallback for
+  malformed frames and other escapes longer than 64 printable characters.
+
+- Withhold whole argv elements when an inline secret assignment exposed by an
+  alternate reading would otherwise leave part of its value visible, including URL-prefixed readings and multi-word values after
+  escape-supplied delimiters; preserve following flags when an ordinary option's
+  inline value is a secret label such as `--format=token`;
+  pair normalized secret flags such as `--＝password` with their next argument.
+  Withhold URL-prefixed argv elements whose raw secret assignment carries a
+  multi-word value (`https://host/--password=one two secret`,
+  `https://host/mcp?password=one two secret`), and decide flag pairing by the
+  flag name alone, so an option whose inline value contains a secret label and
+  composes under NFKC (`--format=token` plus combining characters) no longer
+  hides itself or the next flag from reports, pins and provenance drift.
+  Argv detection also reads ESC ESC as a terminal does (restarting the
+  sequence) and treats `&`, `;`, `,` and `|` inside an element like whitespace,
+  so `--password ESC ESC ]=one two secret BEL` and
+  `https://host/mcp?password=one&two&secret` are withheld whole; an escape
+  payload before the cut delimiter that holds a value withholds the element.
+  Keep existing ESC ESC control-stripping semantics because restarting at the
+  second ESC adds withholding for benign long OSC payloads.
+
+- Avoid duplicate escape suffix construction and per-character ASCII
+  normalization in redaction views. Add a full-field 1 MiB mixed CSI/OSC/ESC
+  hostile performance case and deterministic linear-work regression tests.
+
+### Added
+
+- Add the `worker_process_failed` scan warning code for missing large-fleet
+  worker results, with explicit failed audits rather than silent omissions.
 
 ### Changed
 
-- Tests/CI: calibrate hostile performance time ceilings to the runner using
-  median fixture startup/stdio and synthetic report CPU measurements. Preserve
-  published case values, RSS and coverage requirements; record calibration in
-  every case artifact and support raw runs with `--perf-no-calibration`.
+- Warn on legacy v1 pin reads with a `pin --refresh SERVER` migration hint;
+  `pin --status` includes the warning in terminal and JSON output, with server
+  names rendered literally in terminal warnings. v1 pin support is deprecated
+  and planned for removal in 3.0.
+
+- Keep release supply tests aligned with the candidate or published version selected by release state.
+
+### Performance
+
+- Shard the per-server stage of connected CLI scans of fleets larger than 256
+  servers across up to eight spawn workers on supported POSIX hosts, keeping fleet checks and report
+  finalization in the parent and enforcing the scan-wide connection limit.
+  Stateful pin, canary, LLM and package-verification modes retain the existing
+  single-process path, as do `--skip-connect` scans and library callers.
+  Missing worker results produce explicit failed audits
+  and an additive `worker_process_failed` warning.
+
+- Reduce config-only report redaction overhead with a conservative printable-ASCII
+  argv shortcut, pass-local argv memoization, and typed copies of validated report
+  models. Avoid repeated empty-metadata analysis, coverage model construction,
+  config tagging copies, and JSON conversions. Preserve credential redaction,
+  report formatting, and performance thresholds.
+
+- Reuse short keyword match results within each server's permission-analysis
+  batch, and stream JSON report audits from the shared redacted snapshot.
+  Preserve finding semantics, report fields, and JSON formatting.
+
+### Fixed
+
+- Follow local `$ref`, `allOf`, `anyOf`, and `oneOf` in static schema header
+  type and per-property checks, with bounded depth and work. Preserve incomplete
+  metadata coverage for unresolved, malformed, cyclic, or exhausted branches.
+  Retain known header-type violations when an unrelated alternative is unresolved.
+
+### Documentation
+
+- Propose the 3.0 boundary for owner sign-off in `docs/3.0-BOUNDARY-PROPOSAL.md`:
+  the core, labs, and Proof Before Action package split, `scan` becoming an
+  alias of `check`, removal of `monitor`, `_run_scan_core`, and v1 pins, the
+  user-facing breaking changes, and the 2.x deprecation timeline. No behavior
+  changes.
+
+### Tests
+
+- Add a regression test requiring publish workflows to disable `setup-uv`
+  caching and omit `actions/cache`; document the false-positive dispositions
+  for code-scanning alerts #42, #43, #44, and #47 in the release checklist.
+
+- Complete the calibrated performance gate with 100,000 config-only servers,
+  a 1 MiB description under `--ssrf-check`, and hostile-server wall bounds with
+  zero leftover processes or groups in every profile.
+
+- Include the failed process-group teardown assertion and `ps -g` output in
+  transport hygiene test failures.
+
+### Release boundary details
+
+Release status: approved
+Publication decision: GO
+
+MCPAudit 2.11.0 is a backward-compatible release for structural argv and OSC 8
+redaction, large-fleet scan and report performance, legacy v1 pin migration
+warnings, and bounded local schema-header traversal. This document authorizes
+the exact release-state source for review and publication gating; tag, GitHub
+Release, PyPI, MCP Registry, runtime, deployment, adoption, and user-acceptance
+claims still require their own live readbacks.
+
+Release metadata, the Registry descriptor, Action examples, pre-commit example,
+and `docs/release-state.json` identify 2.11.0. Until publication completes,
+those source references are proposed release identities rather than proof that
+any public artifact or Registry entry exists. Retain `mcp-audits==2.10.1` as the
+rollback pin and verify installed command identity after rollback.
+
+## [2.10.1] - 2026-10-11
 
 ### Security
 
@@ -26,6 +156,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Redact token-only URL userinfo separated from its `@` by spaces, tabs, or
   Unicode spaces in free text (`https://token @host`). A free-text URL
   authority followed only by spaces and `@` is now withheld.
+
+### Changed
+
+- Tests/CI: calibrate hostile performance time ceilings to the runner using
+  median fixture startup/stdio and synthetic report CPU measurements. Preserve
+  published case values, RSS and coverage requirements; record calibration in
+  every case artifact and support raw runs with `--perf-no-calibration`.
 
 ### Fixed
 
@@ -48,6 +185,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unchanged.
 - Make direct red-team fixture sampling deterministic so global RNG consumption
   cannot make detector parity classify a randomly gated tool differently.
+
+### Known issues
+
+- See [Known issues](docs/known-issues.md) for the remaining argv
+  escape-supplied inline delimiter and fullwidth flag delimiter redaction edges.
+
+### Release boundary details
+
+Release status: approved
+Publication decision: GO
+
+MCPAudit 2.10.1 is a backward-compatible patch release for residual
+credential-redaction edges, hostile-fleet scan performance, and test/CI
+reliability. This document authorizes the exact release-state source for review
+and publication gating; tag, GitHub Release, PyPI, MCP Registry, runtime,
+deployment, adoption, and user-acceptance claims still require their own live
+readbacks.
+
+Release metadata, the Registry descriptor, Action examples, pre-commit example,
+and `docs/release-state.json` identify 2.10.1. Until publication completes,
+those source references are proposed release identities rather than proof that
+any public artifact or Registry entry exists. Retain `mcp-audits==2.10.0` as the
+rollback pin and verify installed command identity after rollback.
 
 ## [2.10.0] - 2026-10-11
 
@@ -2356,7 +2516,9 @@ real workstations; API surface may still shift before the `1.0.0` stable cut.
 - Risk score output with pass/warn/fail thresholds
 - `mcp-audit` CLI entry point
 
-[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v2.10.0...HEAD
+[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v2.11.0...HEAD
+[2.11.0]: https://github.com/saagpatel/MCPAudit/compare/v2.10.1...v2.11.0
+[2.10.1]: https://github.com/saagpatel/MCPAudit/compare/v2.10.0...v2.10.1
 [2.10.0]: https://github.com/saagpatel/MCPAudit/compare/v2.9.0...v2.10.0
 [2.9.0]: https://github.com/saagpatel/MCPAudit/compare/v2.8.1...v2.9.0
 [2.8.1]: https://github.com/saagpatel/MCPAudit/compare/v2.8.0...v2.8.1

@@ -33,7 +33,12 @@ console = Console()
 
 _UNVERIFIED_LEGACY_NOTE = (
     "Compared against an unverified legacy (v1) baseline: trusted pin keys exist but nothing "
-    "authenticates this entry. Review before signing."
+    "authenticates this entry. Review before signing with `mcp-audit pin --refresh SERVER`."
+)
+_LEGACY_V1_MIGRATION_NOTE = (
+    "Legacy v1 baseline has reduced schema coverage. Review and migrate it with "
+    "`mcp-audit pin --refresh SERVER`, then apply with "
+    "`mcp-audit pin --refresh SERVER --apply`."
 )
 _UNSIGNED_V2_MIGRATION_NOTE = (
     "Compared against an unverified unsigned v2 baseline. Review the current tools and launch config; "
@@ -331,6 +336,7 @@ async def _run_pin(
         ScanOptions(extra_config=extra_config, config_only=config_only),
         override_applier=override_applier,
         console=console,
+        _allow_sharding=False,
     )
     duplicate_names = _duplicate_server_names(report.audits)
     verifier, artifact_verifier = _make_registry_verifiers(verify_artifacts, download_artifacts)
@@ -447,6 +453,7 @@ async def _run_pin_refresh(
         ScanOptions(extra_config=extra_config, config_only=config_only),
         override_applier=override_applier,
         console=console,
+        _allow_sharding=False,
     )
 
     matching_audits = [audit for audit in report.audits if audit.server.name == server_name]
@@ -513,6 +520,8 @@ async def _run_pin_refresh(
         if migrate_unsigned_v2
         else _UNVERIFIED_LEGACY_NOTE
         if unverified_legacy
+        else _LEGACY_V1_MIGRATION_NOTE
+        if store.legacy_tool_names(audit.server.name)
         else None
     )
     findings = store.check_drift(
@@ -833,10 +842,21 @@ def _render_pin_status(store: object, json_status: bool) -> None:
     if json_status:
         import json
 
+        warnings = [
+            {
+                "code": warning.code,
+                "message": warning.message,
+                "check": warning.check,
+                "servers": warning.servers,
+            }
+            for status in statuses
+            for warning in store.schema_warnings(status.server_name)
+        ]
         payload = {
             "pin_file": str(store.path),
             "server_count": len(statuses),
             "total_tools": total_tools,
+            "warnings": warnings,
             "servers": [
                 {
                     "name": status.server_name,
@@ -889,6 +909,9 @@ def _render_pin_status(store: object, json_status: bool) -> None:
         )
 
     console.print(table)
+    for status in statuses:
+        for warning in store.schema_warnings(status.server_name):
+            console.print(terminal_safe(warning.message), style="yellow")
     for status in statuses:
         public_key = store.signing_status(status.server_name).get("trusted_public_key")
         if (

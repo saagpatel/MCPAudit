@@ -48,7 +48,16 @@ the first secret label or URL in that whitespace-free token (or from the start
 of an existing replacement there) through the end of the token is withheld.
 A removed run may have consumed printable bytes (a CSI or C1 final byte, its
 parameters and intermediates, an OSC payload, or the byte after a bare ESC).
-Each escape sequence in a removed run reads as dropped or as any suffix of
+Terminated OSC 8 hyperlinks are parsed separately: their URI uses typed URL
+redaction (userinfo, query values and fragments), their parameters receive
+ordinary text redaction, and their framing is excluded from ordinary text
+detection. Link text is detected together with surrounding text, including
+labels or values split by hyperlink frames. Safe frames and endpoint spelling
+remain in machine-readable text; human-facing control stripping is unchanged.
+Both ESC `]` and C1 OSC introducers and BEL, ESC `\` and C1 ST terminators
+are recognized. Unterminated or control-bearing OSC 8 frames retain the
+conservative escape-reading fallback.
+Every other escape sequence in a removed run reads as dropped or as any suffix of
 its printable bytes (the sequence may have been meant to end earlier than the
 parser ended it). Detection also reads the whole
 field with those bytes kept, and reads each whitespace-free token together
@@ -584,7 +593,21 @@ dictionary values under secret-named keys and string literals in a secret schema
 property's `default`, `example`, `examples`, `const`, and `enum`, including
 nested schema composition branches; non-string values and structure
 are retained. Inline secret argv assignments redact the whole remainder of the
-element. A secret flag consumes the following argv element even when that
+element unless an escape payload before the delimiter holds value text in some
+reading, which withholds the element. An argv element is one shell word, so a
+value runs to its end: an element is withheld whole when a reading of it (raw,
+control-stripped, NFKC-normalized, an escape-sequence reading, or the terminal
+reading in which ESC ESC restarts the sequence) gives a secret label and an
+inline delimiter and either the readings differ from the raw element or
+free-text redaction would leave a later word of the value visible, URL prefix or
+not. Value words split at whitespace and at every character that ends a value
+in the free-text or URL grammars (`,` `;` `&` `|` quotes and brackets); a later
+word that starts a new `name=` assignment after such a separator belongs to
+that assignment. Pairing is decided by the flag's own name, read in each per-character
+NFKC reading from the first name after the leading dashes and punctuation up to
+the first inline delimiter: recognizable secret flags such as `--＝password`
+consume the following element, and an option whose inline value merely contains
+a secret label (`--format=token`) never does. A secret flag consumes the following argv element even when that
 element starts with `-`, consistently in reports and default pin snapshots.
 That slot is ambiguous and is withheld as a credential; provenance cannot infer
 a gained option there. Options outside secret-value slots remain distinguishable.
@@ -833,7 +856,10 @@ Terminal status prints only this authenticated key for CI; the existing JSON
 `public_key` remains untrusted embedded metadata. Status also adds `verification`
 (the nullable verification state) and `baseline_usable` (false when scans withhold
 the baseline); terminal status shows them in a Verification column, marked
-"(withheld)". Ordinary pin writes, refresh, rotation and re-signing refuse failed
+"(withheld)". Status JSON also includes a `warnings` array, using the scan
+warning shape (`code`, `message`, `check`, `servers`); v1 entries include the
+`pin_schema_outdated` migration warning here and in terminal status. Ordinary
+pin writes, refresh, rotation and re-signing refuse failed
 baseline verification, except for the explicit unsigned v2 refresh migration
 described below.
 
@@ -1050,7 +1076,7 @@ or timeout.
 
 Additive, optional fields for compatibility with older reports:
 
-- `client_identity`: the presented MCP client name/version, e.g. `mcp-audit/2.10.0`;
+- `client_identity`: the presented MCP client name/version, e.g. `mcp-audit/2.11.0`;
   MCPAudit presents this explicit identity on stdio, Streamable HTTP, and SSE,
   in canary and ordinary connected scans. Older reports load with an empty string
   (identity unrecorded), not the current package identity.
@@ -1312,6 +1338,11 @@ The report top level also includes:
     permission was denied; `check: connection`, cleanup remains unverified),
     `analysis_timeout` (the remaining per-server wall clock expired during analysis;
     incomplete findings are discarded and the connection status is `timeout`),
+    `worker_process_failed` (a large-fleet worker could not start or exited
+    without returning this server's result; `check: connection`, names the
+    affected server, sets its connection status to `failed`, and retains no
+    incomplete findings or completed-check claims; returned results and sibling
+    workers are preserved),
     `description_truncated` (permission keyword or SSRF fetch-verb input
     exceeded the 256 KiB UTF-8 per-field limit; suffix evidence was not inspected).
     The vocabulary is additive — consumers must tolerate unknown codes.
@@ -1509,6 +1540,20 @@ Unresolved or ambiguous local references emit the same warning with reason
 `local_ref_unresolved`. Embedded `$id` resource scopes are conservatively
 unsupported by this traversal and make local-reference reachability incomplete.
 Unvisited branches are not declared unreachable when reachability is incomplete.
+Header types and mappings follow local `$ref`, `allOf`, `anyOf`, and `oneOf`
+through at most 64 schema levels (including the starting node) and 2,048 visits
+per evaluation. Type constraints intersect across references and `allOf`; the
+type union of `anyOf`/`oneOf` branches bounds their alternatives. Annotation
+branches retain their own type constraints and inherit same-value constraints
+from the enclosing slot. This is declared-type analysis, not full JSON Schema
+validation or proof of `oneOf` exclusivity. Repeated declarations of the same
+header within one slot count once; separate slots sharing a header still emit
+duplicate-header findings. Credential-looking property names are checked even
+when the mapping lives in a referenced or composed branch.
+Unresolved references, cycles, dynamic references, malformed composition/type
+declarations, and depth or work exhaustion retain `tool_schema_incomplete`
+warnings with `check: metadata`, making coverage `partial`. Findings from
+resolved branches remain available. Report fields and `schema_version` are unchanged.
 
 `config_health_findings` is an additive top-level list for pre-connection config
 diagnostics. Findings include `finding_type`, `severity`, optional
