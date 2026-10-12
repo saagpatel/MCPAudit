@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Follow local `$ref`, `allOf`, `anyOf`, and `oneOf` in static schema header
+  type and per-property checks, with bounded depth and work. Preserve incomplete
+  metadata coverage for unresolved, malformed, cyclic, or exhausted branches.
+  Retain known header-type violations when an unrelated alternative is unresolved.
 - Add a regression test requiring publish workflows to disable `setup-uv`
   caching and omit `actions/cache`; document the false-positive dispositions
   for code-scanning alerts #42, #43, #44, and #47 in the release checklist.

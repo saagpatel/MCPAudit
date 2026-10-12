@@ -1512,6 +1512,20 @@ Unresolved or ambiguous local references emit the same warning with reason
 `local_ref_unresolved`. Embedded `$id` resource scopes are conservatively
 unsupported by this traversal and make local-reference reachability incomplete.
 Unvisited branches are not declared unreachable when reachability is incomplete.
+Header types and mappings follow local `$ref`, `allOf`, `anyOf`, and `oneOf`
+through at most 64 schema levels (including the starting node) and 2,048 visits
+per evaluation. Type constraints intersect across references and `allOf`; the
+type union of `anyOf`/`oneOf` branches bounds their alternatives. Annotation
+branches retain their own type constraints and inherit same-value constraints
+from the enclosing slot. This is declared-type analysis, not full JSON Schema
+validation or proof of `oneOf` exclusivity. Repeated declarations of the same
+header within one slot count once; separate slots sharing a header still emit
+duplicate-header findings. Credential-looking property names are checked even
+when the mapping lives in a referenced or composed branch.
+Unresolved references, cycles, dynamic references, malformed composition/type
+declarations, and depth or work exhaustion retain `tool_schema_incomplete`
+warnings with `check: metadata`, making coverage `partial`. Findings from
+resolved branches remain available. Report fields and `schema_version` are unchanged.
 
 `config_health_findings` is an additive top-level list for pre-connection config
 diagnostics. Findings include `finding_type`, `severity`, optional
