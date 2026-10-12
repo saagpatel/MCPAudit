@@ -692,7 +692,7 @@ def _verify_distribution(*, dist_dir: Path, version: str, commit: str, distribut
         members = archive.getmembers()
         _check_archive_names([info.name for info in members], prefix=str(prefix), name=sdist.name)
         if any(info.issym() or info.islnk() for info in members):
-            raise VerificationError(f"{sdist.name} must not contain links")
+            raise VerificationError(f"{sdist.name} must contain regular files without links")
         _check_sdist_project(
             _sdist_file(archive, prefix / "pyproject.toml"),
             distribution=distribution,
