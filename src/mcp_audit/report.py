@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import io
 import json
+import shutil
+import tempfile
 from pathlib import Path
+from typing import IO
 
 from pydantic_core import PydanticSerializationError, to_json
 from rich.console import Console
@@ -753,15 +756,43 @@ class ReportGenerator:
 
     def _render_redacted_json(self, report: AuditReport, path: Path) -> None:
         """Serialize a scan-local credential-redacted snapshot."""
-        redacted = report.model_dump(mode="json")
-        try:
-            text = to_json(redacted, indent=2, ensure_ascii=True).decode("ascii")
-        except (TypeError, PydanticSerializationError):
-            # Older Pydantic cores lack ensure_ascii; the stdlib also handles
-            # lone surrogates retained in arbitrary server-supplied schemas.
-            text = json.dumps(redacted, indent=2)
-        path.write_text(text)
+        # Stage with bounded memory so serialization failures leave outputs intact.
+        # Text-mode copying preserves newline translation and destination modes.
+        with tempfile.SpooledTemporaryFile(max_size=1024 * 1024, mode="w+", encoding="ascii") as staged:
+            try:
+                self._stream_redacted_json(report, staged)
+            except (TypeError, PydanticSerializationError):
+                # Older cores lack ensure_ascii; stdlib also handles lone
+                # surrogates. Restart the document, including earlier fields.
+                staged.seek(0)
+                staged.truncate()
+                json.dump(report.model_dump(mode="json"), staged, indent=2)
+            staged.seek(0)
+            with path.open("w") as output:
+                shutil.copyfileobj(staged, output)
         self._console.print(terminal_safe(f"JSON report written to {path}"), style="green")
+
+    def _stream_redacted_json(self, report: AuditReport, output: IO[str]) -> None:
+        # Preserve field order with an empty audit-list placeholder. Export each
+        # server once, without retaining a second full fleet graph/JSON string.
+        metadata = report.model_dump(mode="json", exclude={"audits": {"__all__"}})
+        output.write("{\n")
+        for index, (key, value) in enumerate(metadata.items()):
+            if index:
+                output.write(",\n")
+            output.write("  " + to_json(key, ensure_ascii=True).decode("ascii") + ": ")
+            if key == "audits" and report.audits:
+                output.write("[\n")
+                for audit_index, audit in enumerate(report.audits):
+                    if audit_index:
+                        output.write(",\n")
+                    encoded = to_json(audit.model_dump(mode="json"), indent=2, ensure_ascii=True)
+                    output.write("    " + encoded.decode("ascii").replace("\n", "\n    "))
+                output.write("\n  ]")
+            else:
+                encoded = to_json(value, indent=2, ensure_ascii=True)
+                output.write(encoded.decode("ascii").replace("\n", "\n  "))
+        output.write("\n}")
 
     def _render_policy_result(self, report: AuditReport) -> None:
         """Print local policy gate result if a policy was evaluated."""
