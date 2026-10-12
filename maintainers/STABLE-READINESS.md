@@ -19,26 +19,23 @@ tests, and install path agree.
 - Known limitations are documented in release notes and beta/stable readiness
   docs.
 
-## Current 2.10.1 Candidate State
+## Current 2.10.1 Release State
 
-The 2.10.1 source state is a backward-compatible patch candidate for structural
-credential redaction, signed-pin sequence gates, authorization-challenge
-parsing, read-only shadow review, optional counts-only OpenTelemetry export,
-and bounded lab improvements. Upgrade notes and remaining limitations are
-recorded in the changelog and [candidate notes](../docs/2.10-RELEASE-NOTES.md).
+The 2.10.1 source state is a backward-compatible patch release for residual
+credential-redaction edges, hostile-fleet scan performance, and test/CI
+reliability. Upgrade notes and remaining limitations are recorded in the
+changelog and [release notes](../docs/2.10-RELEASE-NOTES.md).
 The supported MCP dependency remains `mcp>=2.2.0,<3.0`. Existing 2.x
-audit-report and SARIF contracts remain additive. Package and lock metadata
-name candidate 2.10.1; `server.json`, Action examples, and pre-commit examples
-retain published 2.10.0. Publication remains `NO-GO`; source metadata does not
-prove public availability: release evidence must query PyPI, GitHub,
+audit-report and SARIF contracts remain additive. Package and lock metadata,
+`server.json`, Action examples, and pre-commit examples identify 2.10.1. That
+does not prove public availability: release evidence must query PyPI, GitHub,
 and the official MCP Registry separately.
 
 Release evidence must establish:
 
-- package, lock metadata, changelog candidate section, versioned candidate notes,
-  and `docs/release-state.json` agree on candidate 2.10.1; `server.json` and
-  Action/pre-commit examples retain published 2.10.0 until a separate reviewed
-  release-state flip. Publication evidence must still report PyPI, the GitHub
+- package, lock metadata, changelog release section, versioned release notes,
+  `docs/release-state.json`, `server.json`, and Action/pre-commit examples agree
+  on 2.10.1; publication evidence must still report PyPI, the GitHub
   tag, the Action ref, and the official Registry entry separately;
 - wheel and sdist metadata require `mcp>=2.2.0,<3.0` and expose `mcp-audit`,
   `mcp-audits`, and `proof-before-action`;
