@@ -336,6 +336,7 @@ async def _run_pin(
         ScanOptions(extra_config=extra_config, config_only=config_only),
         override_applier=override_applier,
         console=console,
+        _allow_sharding=False,
     )
     duplicate_names = _duplicate_server_names(report.audits)
     verifier, artifact_verifier = _make_registry_verifiers(verify_artifacts, download_artifacts)
@@ -452,6 +453,7 @@ async def _run_pin_refresh(
         ScanOptions(extra_config=extra_config, config_only=config_only),
         override_applier=override_applier,
         console=console,
+        _allow_sharding=False,
     )
 
     matching_audits = [audit for audit in report.audits if audit.server.name == server_name]

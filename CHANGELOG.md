@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- Shard the per-server stage of connected CLI scans of fleets larger than 256
+  servers across up to eight spawn workers on supported POSIX hosts, keeping fleet checks and report
+  finalization in the parent and enforcing the scan-wide connection limit.
+  Stateful pin, canary, LLM and package-verification modes retain the existing
+  single-process path, as do `--skip-connect` scans and library callers.
+  Missing worker results produce explicit failed audits
+  and an additive `worker_process_failed` warning.
+
 ### Fixed
 
 - Parse terminated OSC 8 hyperlinks structurally during report redaction:

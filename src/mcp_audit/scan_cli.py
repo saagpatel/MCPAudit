@@ -174,6 +174,8 @@ async def _run_scan(
             override_applier=override_applier,
             console=Console(file=diagnostics, force_terminal=False),
             config_paths=config_paths if json_output or sarif_output or html_output or card else None,
+            # Only the CLI has a spawn-safe entry point; library callers stay single-process.
+            _allow_sharding=True,
         )
     except ValueError as exc:
         # A caller-supplied --config path that is missing or unparseable must be
