@@ -174,10 +174,13 @@ def _worker_main(
             index_token = _SERVER_INDEX.set(index)
             try:
                 await _audit_one_guarded(context, local_index, server)
+                audit = context.audits[local_index]
+                if audit is None:
+                    raise RuntimeError("Internal scan incomplete: a server audit was not published.")
                 channel.send(
                     _Result(
                         index,
-                        context.audits[local_index],
+                        audit,
                         warnings,
                         context.completed[local_index],
                         {check: cells[local_index] for check, cells in context.package_coverage.items()},

@@ -39,6 +39,12 @@ async def _scan(options: ScanOptions, **kwargs: Any) -> AuditReport:
     return await engine.run_scan(options, _allow_sharding=True, **kwargs)
 
 
+def _published(context: _ScanContext) -> list[ServerAudit]:
+    audits = [audit for audit in context.audits if audit is not None]
+    assert len(audits) == len(context.audits)
+    return audits
+
+
 def _context(count: int, options: ScanOptions | None = None) -> _ScanContext:
     return engine._prepare_scan(
         options or ScanOptions(),
@@ -370,8 +376,9 @@ async def test_crash_preserves_results_and_siblings_and_reclaims_tokens(
     with anyio.fail_after(10):
         await fleet_workers.run_sharded(context, 2, lambda: advances.append(1))
     monkeypatch.setattr(fleet_workers, "_worker_main", original)
-    assert context.audits[0].connection_status == "skipped"
-    assert all(audit.connection_status == "failed" for audit in context.audits[1:])
+    audits = _published(context)
+    assert audits[0].connection_status == "skipped"
+    assert all(audit.connection_status == "failed" for audit in audits[1:])
     missing = [warning for warning in context.scan_warnings if warning.code == "worker_process_failed"]
     assert [warning.servers for warning in missing] == [["srv-0001"], ["srv-0002"]]
     assert len(advances) == 6
@@ -462,9 +469,10 @@ async def test_worker_start_failure_is_redacted_and_advances_all_servers(
     advances: list[int] = []
     await fleet_workers.run_sharded(context, 2, lambda: advances.append(1))
     assert len(advances) == 4
-    assert all(audit.connection_status == "failed" for audit in context.audits)
+    audits = _published(context)
+    assert all(audit.connection_status == "failed" for audit in audits)
     assert [warning.code for warning in context.scan_warnings] == ["worker_process_failed"] * 4
-    assert "synthetic-secret" not in json.dumps([audit.model_dump() for audit in context.audits])
+    assert "synthetic-secret" not in json.dumps([audit.model_dump() for audit in audits])
     assert mp.active_children() == []
 
 
