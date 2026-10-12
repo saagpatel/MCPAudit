@@ -62,6 +62,7 @@ _VALUE = (
 )
 _VALUE_CONTINUATION = re.compile(_VALUE)
 _ASSIGNMENT_PREFIX = re.compile(r"[\"']?\s*[:=]\s*")
+_FLAG_NAME_END = re.compile(r"[:=\s]")
 _ASSIGNMENT_VALUE = re.compile(rf"([\"']?\s*[:=]\s*)({_REDACTED_VALUE}|{_VALUE})")
 _FLAG_VALUE = re.compile(rf"(\s+)({_REDACTED_VALUE}|{_VALUE})")
 _FLAG_PREFIX = re.compile(r"\s*")
@@ -777,16 +778,15 @@ def _redaction_edits(
 
 
 def _reading_outcome(
-    value: str, window: list[_Segment], in_run: bytearray, budget: _Budget, suffix: str = ""
-) -> tuple[list[tuple[int, int, str, int | None]], bool] | None:
+    value: str, window: list[_Segment], in_run: bytearray, budget: _Budget
+) -> list[tuple[int, int, str, int | None]] | None:
     """Detect a window of raw text in every reading of its removed runs.
 
     Each reading is detected like any field: names are judged by
     ``_is_secret_name`` on their raw extent (adjacent removed runs included),
     so a flag, label, delimiter or userinfo decision is made over the same
     readings everywhere. Matches map back to raw spans widened over removed
-    runs. The boolean reports whether a match reached into ``suffix`` (text
-    after the window). An edit that reaches the end of the window carries
+    runs. An edit that reaches the end of the window carries
     where its value may continue: nowhere (an unquoted value ends at the
     whitespace there), from a raw offset (a quote or backslash spelled in
     retained text), or ``_TO_FIELD_END`` when an escape reading or
@@ -811,7 +811,6 @@ def _reading_outcome(
         return left, right
 
     edits: list[tuple[int, int, str, int | None]] = []
-    claims = False
     for reading in readings:
         if not any(reading.literal):
             continue  # The detection views already read every run as dropped.
@@ -826,9 +825,7 @@ def _reading_outcome(
             if _is_secret_name(value[left:right], budget):
                 labels.add(name.start())
         length = len(text)
-        for left, right, _ in _text_edits(text + suffix, raw=False, labels=frozenset(labels)):
-            claims = claims or (right > length and _secret_flag_without_value(text, frozenset(labels)))
-            right = min(right, length)
+        for left, right, _ in _text_edits(text, raw=False, labels=frozenset(labels)):
             if left >= right:
                 continue
             tail: int | None = None
@@ -842,7 +839,7 @@ def _reading_outcome(
                     while tail < end and in_run[tail]:
                         tail += 1
             edits.append((*widen(origins[left], origins[right - 1] + 1), _REDACTED, tail))
-    return edits, claims
+    return edits
 
 
 def _run_mask(value: str, segments: list[_Segment]) -> bytearray:
@@ -922,8 +919,8 @@ def _token_reading_edits(value: str, budget: _Budget) -> Iterator[tuple[int, int
             # Unenumerated: a quote anywhere in the window may open a value
             # that runs past it, so withhold to the end of the field.
             tail = _TO_FIELD_END if quoted[last + 1] > quoted[index] else None
-            outcome = [(start, end, _REDACTED, tail)], False
-        for left, right, replacement, tail in outcome[0]:
+            outcome = [(start, end, _REDACTED, tail)]
+        for left, right, replacement, tail in outcome:
             if right == end and tail is not None:
                 right = max(right, _continuation_end(value, tail, continuations, budget, printable_before))
             yield left, right, replacement
@@ -951,64 +948,141 @@ def _continuation_end(
 
 
 def _secret_flag_without_value(value: str, labels: frozenset[int]) -> bool:
-    """The flag's own name is secret, with no inline value or other trailing text."""
+    """The flag's own name is a secret label and the flag carries no inline value.
+
+    The name runs from the first name token after the leading dashes and any
+    punctuation (``--＝password``) up to the first inline delimiter or
+    whitespace. Anything after it is an inline value (``--format=token``), so
+    a label inside that value never makes the element a secret flag.
+    ``labels`` holds the secret label starts of ``value``.
+    """
     if not value.startswith("-"):
         return False
-    # Punctuation may precede the name (--＝password), but a complete ordinary
-    # name before a delimiter owns its inline value (--format=token).
-    name = next((name for name in _NAME_TOKEN.finditer(value) if name.group().lstrip("-")), None)
-    return name is not None and name.start() in labels and not value[name.end() :].strip()
-
-
-def _claims_next_argument(item: str) -> bool:
-    """Some reading of an argument takes the next argument as its value (assumed when unenumerable)."""
-    normalized, origins = _normalized_view(item)
-    if normalized.startswith("-"):
-        if origins is None:
-            return _is_secret_name(item)
-        labels = _RawMap(item, normalized, origins, literal=False).secret_labels(
-            _Budget(len(item), _LABEL_WORK_FLOOR)
-        )
-        if _secret_flag_without_value(normalized, labels):
-            return True
-    segments = _segments(item)
-    if not any(len(segment.choices) > 1 for segment in segments):
+    first = next((name for name in _NAME_TOKEN.finditer(value) if name.group().lstrip("-")), None)
+    if first is None:
         return False
-    budget = _Budget(len(item), _LABEL_WORK_FLOOR)
-    outcome = _reading_outcome(item, segments, _run_mask(item, segments), budget, " v")
-    return outcome is None or outcome[1]
+    end = _FLAG_NAME_END.search(value, first.start())
+    if end is not None and value[end.start() :].strip():
+        return False
+    stop = len(value) if end is None else end.start()
+    return any(first.start() <= start < stop for start in labels)
 
 
-def _inline_secret_assignment(value: str, labels: frozenset[int]) -> bool:
-    """An inline delimiter follows a secret label in this detection reading."""
-    return any(
-        name.start() in labels and _ASSIGNMENT_PREFIX.match(value, name.end()) is not None
-        for name in _NAME_TOKEN.finditer(value)
+def _inline_secret_values(value: str, labels: frozenset[int]) -> Iterator[int]:
+    """Where the value starts after each secret label followed by an inline delimiter."""
+    for name in _NAME_TOKEN.finditer(value):
+        if name.start() in labels and (prefix := _ASSIGNMENT_PREFIX.match(value, name.end())) is not None:
+            yield prefix.end()
+
+
+def _plain_labels(text: str, budget: _Budget) -> frozenset[int]:
+    """Secret-label starts judged on the detection text's own name tokens."""
+    return frozenset(
+        name.start() for name in _NAME_TOKEN.finditer(text) if _is_secret_name(name.group(), budget)
     )
 
 
-def _argv_inline_secret(item: str, normalized: str) -> bool:
-    """Withhold an indivisible argv element when alternate readings supply an assignment."""
+@dataclass(frozen=True)
+class _ArgvReading:
+    """One reading of an argv element: NFKC detection text and its secret-label starts.
+
+    ``pieces`` is the per-character normalization; it differs from ``text``
+    when normalization composes or reorders across characters (no raw map).
+    Only a per-character reading (``structural``) decides flag pairing: a
+    composed view can absorb a delimiter the argument parser sees
+    (``=`` + U+0338 composes to ``≠``).
+    """
+
+    text: str
+    labels: frozenset[int]
+    pieces: str
+    structural: bool = True
+
+
+def _argv_readings(
+    item: str, normalized: str, origins: list[tuple[int, int]] | None
+) -> list[_ArgvReading] | None:
+    """Every reading of an argv element, or None when they cannot be enumerated.
+
+    Readings are the control-stripped NFKC view and every combination of
+    escape-sequence readings, as for free text. Labels are judged on raw
+    extents where a reading has a per-character map; without one, on the
+    reading's own name tokens, so a missing map never turns an element's
+    whole text into a label. The enumeration is charged to one budget linear
+    in the element's length.
+    """
+    budget = _Budget(len(item), _LABEL_WORK_FLOOR)
+    if origins is None:
+        result = [_ArgvReading(normalized, _plain_labels(normalized, budget), normalized, structural=False)]
+    else:
+        result = [
+            _ArgvReading(normalized, _RawMap(item, normalized, origins).secret_labels(budget), normalized)
+        ]
     if normalized == item:
-        return False
+        return result  # No removed bytes and no normalization: the element is its only reading.
     segments = _segments(item)
     count = _reading_count(segments)
-    budget = _Budget(len(item), _LABEL_WORK_FLOOR)
-    readings = _readings(segments) if budget.charge(count * len(item)) else None
+    readings = _readings(segments) if count <= _MAX_READINGS and budget.charge(count * len(item)) else None
     if readings is None:
-        return True
+        return None
     for reading in readings:
         pieces = [normalize_text(char) for char in reading.text]
-        text = "".join(pieces)
-        if text != normalize_text(reading.text):
-            return True
-        origins = [
+        joined = "".join(pieces)
+        text = normalize_text(reading.text)
+        if joined != text:
+            result.append(_ArgvReading(text, _plain_labels(text, budget), joined, structural=False))
+            result.append(_ArgvReading(joined, _plain_labels(joined, budget), joined))
+            continue
+        spans = [
             (origin, origin + 1) for piece, origin in zip(pieces, reading.origins, strict=True) for _ in piece
         ]
-        labels = _RawMap(item, text, origins, literal=True).secret_labels(budget)
-        if _inline_secret_assignment(text, labels):
-            return True
-    return False
+        result.append(
+            _ArgvReading(text, _RawMap(item, text, spans, literal=True).secret_labels(budget), joined)
+        )
+    return result
+
+
+_WORD_RUN = re.compile(r"\S+")
+
+
+def _argv_uncovered_secret(item: str, normalized: str, readings: list[_ArgvReading]) -> bool:
+    """Some reading has a secret label and an inline delimiter whose value redaction leaves partly visible.
+
+    One argv element is one shell word, so whitespace inside it does not end
+    a value. When removed bytes or normalization make up the readings, any
+    such assignment withholds the element: the raw extent of its value depends
+    on the reading. Otherwise the element is its only reading, and free-text
+    redaction decides the value's first whitespace-free run (an authority
+    port, a JSON value, the scheme of ``Authorization: Bearer``); every later
+    run in the element must lie inside a raw redaction edit.
+    """
+    if normalized != item:
+        return any(next(_inline_secret_values(r.text, r.labels), None) is not None for r in readings)
+    start = next(_inline_secret_values(item, readings[0].labels), len(item))
+    runs = list(_WORD_RUN.finditer(item, start))[1:]
+    if not runs:
+        return False
+    edits = _redaction_edits(item)
+    return edits is None or any(not _within(edits, run.start(), run.end()) for run in runs)
+
+
+def _argv_undetected(item: str, readings: list[_ArgvReading]) -> bool:
+    """No reading of the element, raw or normalized, holds anything redaction would replace.
+
+    Free text without a per-character map is withheld whole. An argv element
+    is retained instead when no reading (composed or per-character) and not the
+    raw text itself has a credential, a URL or a secret assignment: there is
+    nothing to place a raw boundary around.
+    """
+    views: list[tuple[str, frozenset[int] | None, bool]] = [(item, None, True)]
+    for reading in readings:
+        views.append((reading.text, reading.labels, False))
+        if reading.pieces != reading.text:
+            views.append((reading.pieces, None, False))
+    return all(
+        _URL.search(text) is None and next(_text_edits(text, raw=raw, labels=labels), None) is None
+        for text, labels, raw in views
+    )
 
 
 def _removed_runs(value: str) -> Iterator[str]:
@@ -1360,7 +1434,15 @@ def _redact_properties(
 
 
 def redact_argv(value: list[object]) -> list[object]:
-    """Use argv boundaries, including values that start with a dash."""
+    """Use argv boundaries, including values that start with a dash.
+
+    Each element is one shell word. It is withheld whole when some reading
+    of it gives a secret label and an inline delimiter whose value redaction
+    would not replace whole (whitespace inside the word does not end the
+    value). It takes the next element as its value only when its own flag
+    name, read in some reading, is a secret label and it carries no inline
+    value; a label inside an inline value never claims the next element.
+    """
     result: list[object] = []
     secret_value = False
     for item in value:
@@ -1372,6 +1454,7 @@ def redact_argv(value: list[object]) -> list[object]:
             result.append(_redact_json(item))
             continue
         normalized, origins = _normalized_view(item)
+        readings = _argv_readings(item, normalized, origins)
         name = _NAME_TOKEN.match(normalized)
         if (
             name is not None
@@ -1392,15 +1475,24 @@ def redact_argv(value: list[object]) -> list[object]:
                 result.append(_REDACTED)
             else:
                 result.append(redact_text(item[: origins[delimiter][1]] + _REDACTED))
-        elif _argv_inline_secret(item, normalized):
+        elif readings is None or _argv_uncovered_secret(item, normalized, readings):
             result.append(_REDACTED)
         else:
-            result.append(redact_text(item))
+            redacted = redact_text(item)
+            # Without a per-character map free text is withheld whole; an
+            # element with nothing to redact in any reading keeps its text.
+            if redacted == _REDACTED and origins is None and _argv_undetected(item, readings):
+                redacted = item
+            result.append(redacted)
+        # Unenumerable readings are assumed to claim the next element.
         secret_value = (
             normalized.startswith("-")
             and _NAME_TOKEN.fullmatch(normalized) is not None
             and _is_secret_name(item)
-        ) or _claims_next_argument(item)
+        ) or (
+            readings is None
+            or any(r.structural and _secret_flag_without_value(r.text, r.labels) for r in readings)
+        )
     return result
 
 

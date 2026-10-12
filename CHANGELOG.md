@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   escape-supplied delimiters; preserve following flags when an ordinary option's
   inline value is a secret label such as `--format=token`;
   pair normalized secret flags such as `--＝password` with their next argument.
+  Withhold URL-prefixed argv elements whose raw secret assignment carries a
+  multi-word value (`https://host/--password=one two secret`,
+  `https://host/mcp?password=one two secret`), and decide flag pairing by the
+  flag name alone, so an option whose inline value contains a secret label and
+  composes under NFKC (`--format=token` plus combining characters) no longer
+  hides itself or the next flag from reports, pins and provenance drift.
   Keep existing ESC ESC control-stripping semantics because restarting at the
   second ESC adds withholding for benign long OSC payloads.
 - Add a regression test requiring publish workflows to disable `setup-uv`

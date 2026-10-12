@@ -175,7 +175,10 @@ def test_secret_named_url_endpoint_drift_is_preserved(tmp_path: Path, host: str,
     assert all(changed_url in finding.current for finding in findings)
 
 
-@pytest.mark.parametrize("option", ["--format=token", "--format＝token", "--format=\x1b[0mtoken"])
+@pytest.mark.parametrize(
+    "option",
+    ["--format=token", "--format＝token", "--format=\x1b[0mtoken", "--format=token\u1100\u1161"],
+)
 def test_secret_named_inline_option_value_preserves_flag_drift(tmp_path: Path, option: str) -> None:
     cfg = make_server_config(args=[option, "--verbose"])
     store = PinStore(tmp_path / "pins.yaml")

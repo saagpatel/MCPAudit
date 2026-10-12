@@ -465,6 +465,27 @@
     "forbidden": ["one two", "v7KpQ9d2M", "Z8nR4t6Vc"]
   },
   {
+    "id": "url-prefixed-raw-path-argv-secret",
+    "kind": "args",
+    "source": ["https://example.com/--password=one two v7KpQ9d2MZ8nR4t6Vc", "--port", "8080"],
+    "expected": ["<redacted>", "--port", "8080"],
+    "forbidden": ["one two", "v7KpQ9d2M", "Z8nR4t6Vc"]
+  },
+  {
+    "id": "url-prefixed-raw-query-argv-secret",
+    "kind": "args",
+    "source": ["https://example.com/mcp?password=one two v7KpQ9d2MZ8nR4t6Vc", "--port", "8080"],
+    "expected": ["<redacted>", "--port", "8080"],
+    "forbidden": ["one two", "v7KpQ9d2M", "Z8nR4t6Vc"]
+  },
+  {
+    "id": "ordinary-inline-option-composed-value",
+    "kind": "args",
+    "source": ["--format=token\u1100\u1161", "--no-sandbox"],
+    "expected": ["--format=token\u1100\u1161", "--no-sandbox"],
+    "forbidden": []
+  },
+  {
     "id": "ordinary-url-escape-reading-without-assignment",
     "kind": "args",
     "source": ["https://example.com/\u001b[31mdocs\u001b[0m", "--port", "8080"],
