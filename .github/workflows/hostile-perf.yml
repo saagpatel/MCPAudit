@@ -25,7 +25,8 @@ jobs:
           python-version: "3.11"
       - name: Install dependencies
         run: uv sync --dev --locked
-      - name: Run all five hostile performance cases
+      # Session calibration scales time ceilings for this runner; RSS and coverage stay fixed.
+      - name: Calibrate runner and run all hostile performance cases
         env:
           PERF_PROFILE: ${{ inputs.profile || 'baseline' }}
         run: >-

@@ -40,6 +40,11 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         help="Cumulative performance targets; promote the default as the planned fixes land.",
     )
     parser.addoption("--perf-output", type=Path, help="Directory for synthetic performance measurements.")
+    parser.addoption(
+        "--perf-no-calibration",
+        action="store_true",
+        help="Disable runner calibration and reproduce the raw published time budgets.",
+    )
 
 
 @pytest.fixture

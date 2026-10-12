@@ -45,7 +45,7 @@ errors fail the gate rather than claiming zero leftovers.
 
 ## Performance regression gate
 
-Run the five cases explicitly (ordinary pytest runs deselect the `perf` marker):
+Run the seven cases explicitly (ordinary pytest runs deselect the `perf` marker):
 
 ```sh
 uv run --offline --no-sync pytest tests/test_hostile_perf.py -m perf -q -s \
@@ -66,11 +66,53 @@ Description cases also require analyzer invocation and tool-count coverage, plus
 the expected per-tool `file_read` findings. The orphan case requires ledger
 records for both servers and the child before accepting its cleanup measurement.
 
-The approved Phase 0 acceptance is the **baseline** profile. The limits come
-from the published 2.8.0 stress run (14-core macOS, 48 GB RAM); they are absolute
-ceilings, without an automatic tolerance or recalibration. Different runner
-hardware/SDK versions can fail these limits and require investigation; do not
-increase a limit to obtain a green run.
+The approved Phase 0 acceptance is the **baseline** profile. Case values remain
+the published 2.8.0 stress ceilings (14-core macOS, 48 GB RAM). Each perf session
+first runs a fixed calibration workload three times in disposable directories,
+using the same allowlisted environment as the cases:
+
+- Process component: 64 sequential fixture processes, then 64 processes in two
+  batches of 32. Each uses the case interpreter with `-I -S`, completes an
+  initialize and ten-tool listing round trip, then exits on stdin EOF.
+- CPU component: sixteen redaction + JSON report renders of a fixed synthetic
+  report with 4,000 tools and repeated descriptions/schemas. Rendering uses the
+  project's own `ReportGenerator`, a null output device and an in-memory console;
+  imports and report construction are outside this component's timer.
+
+Take the median for each component, then use
+`factor = max(1.0, process_median / REFERENCE.process, cpu_median / REFERENCE.cpu)`.
+The larger ratio is conservative and avoids weights that could dilute either
+cost. Scale wall and analysis ceilings in every profile, the hard runner deadline
+(including its ten-second margin), scanner session deadlines (rounded up because
+the CLI accepts integer seconds), bounded shutdown waits and the frame comparison's
+additive time allowance. The timeout-2 subcase keeps its reference timeout of two
+seconds before scaling. Observation/cleanup grace periods remain fixed; they are
+measurement semantics, not acceptance ceilings. RSS, tool/server counts, statuses,
+coverage and leftover requirements never scale. Factors never fall below one.
+
+Every `metrics.json`, including timeout-2 and smaller-frame subcases, and the
+printed summaries contain `calibration`: enabled state, all three component
+samples, median seconds, reference seconds and factor. Raw measured times remain
+unchanged. Add `--perf-no-calibration` to skip calibration and use factor one;
+disabled artifacts record empty samples/medians and retain reference seconds.
+Calibration failure fails the session; it never silently falls back to raw limits.
+Calibration subprocesses have a fixed 120-second safety deadline and owned
+process-group cleanup if interrupted.
+
+`REFERENCE` is the component-wise median of five isolated runs on Apple Silicon
+with Python 3.11 and no concurrent test/lint workloads. The measurements are
+recorded below. Do not increase case values or change `REFERENCE` to absorb a
+regression. Calibration accommodates runner speed; it does not justify changes
+to the reference workload or excuse a failed gate.
+
+| Reference run | Process seconds | CPU seconds |
+| --- | --- | --- |
+| 1 | 1.6553525409544818 | 1.2310757920495234 |
+| 2 | 1.6327827080385760 | 1.2441715829772875 |
+| 3 | 1.6467457920080050 | 1.2312097090180032 |
+| 4 | 1.6466256250278093 | 1.2334843749995343 |
+| 5 | 1.6417177499970421 | 1.2264155829907395 |
+| Median (`REFERENCE`) | **1.6466256250278093** | **1.2312097090180032** |
 
 | Case | Baseline ceiling | Cumulative target profile |
 | --- | --- | --- |

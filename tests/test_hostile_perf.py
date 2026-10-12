@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import signal
 import subprocess
@@ -10,6 +11,7 @@ import sys
 import time
 from dataclasses import dataclass, replace
 from pathlib import Path
+from statistics import median
 from typing import cast
 
 import pytest
@@ -17,6 +19,85 @@ import pytest
 FIXTURES = Path(__file__).parent / "fixtures"
 PROFILES = ("baseline", "p1-9", "p3-7", "p3-8")
 MIB = 1024 * 1024
+
+# Median of five isolated calibration runs on Apple Silicon, Python 3.11,
+# with no concurrent test/lint workloads. Component seconds, not total time.
+REFERENCE = {"process": 1.6466256250278093, "cpu": 1.2312097090180032}
+
+
+@dataclass(frozen=True)
+class Calibration:
+    runs: tuple[dict[str, float], ...] = ()
+
+    @property
+    def seconds(self) -> dict[str, float]:
+        return {key: median(run[key] for run in self.runs) for key in REFERENCE} if self.runs else {}
+
+    @property
+    def factor(self) -> float:
+        # Max avoids weights that could dilute a slow process or CPU component.
+        return max([1.0, *(value / REFERENCE[key] for key, value in self.seconds.items())])
+
+    def metrics(self) -> dict[str, object]:
+        return {
+            "enabled": bool(self.runs),
+            "runs_seconds": list(self.runs),
+            "seconds": self.seconds,
+            "reference_seconds": dict(REFERENCE),
+            "factor": self.factor,
+        }
+
+
+RAW_CALIBRATION = Calibration()
+
+
+def calibration_run(root: Path) -> dict[str, float]:
+    root = root.resolve()
+    root.mkdir(parents=True)
+    process = subprocess.Popen(
+        [sys.executable, str(FIXTURES / "perf_calibrate.py"), str(root)],
+        cwd=root,
+        env=isolated_env(root),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+    )
+    try:
+        stdout, _ = process.communicate(timeout=120)
+        assert process.returncode == 0, "Calibration process failed."
+    finally:
+        # Also stop fixture children if calibration aborts during a handshake.
+        if process_exists(process.pid, group=True):
+            os.killpg(process.pid, signal.SIGKILL)
+        process.wait(timeout=5)
+    values: object = json.loads(stdout)
+    assert isinstance(values, dict) and set(values) == set(REFERENCE), "Incomplete calibration."
+    measured: dict[str, float] = {}
+    for key in REFERENCE:
+        value = values[key]
+        assert isinstance(value, (int, float)) and math.isfinite(value) and value > 0
+        measured[key] = float(value)
+    return measured
+
+
+def calibrate(root: Path | None) -> Calibration:
+    return (
+        RAW_CALIBRATION
+        if root is None
+        else Calibration(tuple(calibration_run(root / str(i)) for i in range(3)))
+    )
+
+
+@pytest.fixture(scope="session")
+def perf_calibration(pytestconfig: pytest.Config, tmp_path_factory: pytest.TempPathFactory) -> Calibration:
+    root = (
+        None
+        if pytestconfig.getoption("--perf-no-calibration")
+        else tmp_path_factory.mktemp("perf-calibration")
+    )
+    calibration = calibrate(root)
+    print(json.dumps({"calibration": calibration.metrics()}, sort_keys=True))
+    return calibration
 
 
 @dataclass(frozen=True)
@@ -34,6 +115,7 @@ class Case:
 
 # Exact published measurements (RSS was reported in MiB by the stress runner).
 # Do not increase these to accommodate a failed run: record the regression.
+# REFERENCE must not be changed to absorb a regression either.
 CASES = (
     Case("scale_500", ("normal", "--tools", "10"), 5.8, 213, servers=500, tools=5000),
     Case("desc_5mb_x1", ("normal", "--tools", "1", "--desc-bytes", "5000000"), 18.8, analysis=18),
@@ -103,7 +185,9 @@ def cleanup_groups(groups: list[int]) -> None:
             time.sleep(0.1)
 
 
-def run_case(root: Path, case: Case, *, timeout: int | None = None) -> dict[str, object]:
+def run_case(
+    root: Path, case: Case, *, calibration: Calibration = RAW_CALIBRATION, timeout: int | None = None
+) -> dict[str, object]:
     assert not any(root.iterdir()), "Use a fresh performance case directory."
     env = isolated_env(root)
     fixture = str(FIXTURES / "hostile_server.py")
@@ -134,6 +218,8 @@ def run_case(root: Path, case: Case, *, timeout: int | None = None) -> dict[str,
     override.write_text("")
     report_path = root / "report.json"
     timing_path = root / "timing.json"
+    # The scanner CLI accepts whole seconds; round up its calibrated deadline.
+    session_timeout = math.ceil((case.timeout if timeout is None else timeout) * calibration.factor)
     command = [
         sys.executable,
         str(FIXTURES / "perf_scan.py"),
@@ -145,7 +231,7 @@ def run_case(root: Path, case: Case, *, timeout: int | None = None) -> dict[str,
         "--override-config",
         str(override),
         "--timeout",
-        str(case.timeout if timeout is None else timeout),
+        str(session_timeout),
         "--json",
         str(report_path),
     ]
@@ -154,19 +240,24 @@ def run_case(root: Path, case: Case, *, timeout: int | None = None) -> dict[str,
         # than the default 16 MiB frame rejection covered by oversized_50mb.
         command.extend(["--max-frame-bytes", "32000000"])
     start = time.perf_counter()
-    measured: dict[str, object] = {"case": case.name, "timeout": case.timeout if timeout is None else timeout}
+    measured: dict[str, object] = {
+        "case": case.name,
+        "timeout": session_timeout,
+        "calibration": calibration.metrics(),
+        "deadline_seconds": (case.wall + 10) * calibration.factor,
+    }
     process = subprocess.Popen(
         command, cwd=root, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, start_new_session=True
     )
     groups: list[int] = []
     try:
         try:
-            _, stderr = process.communicate(timeout=case.wall + 10)
+            _, stderr = process.communicate(timeout=(case.wall + 10) * calibration.factor)
             measured["deadline_exceeded"] = False
         except subprocess.TimeoutExpired:
             measured["deadline_exceeded"] = True
             os.killpg(process.pid, signal.SIGKILL)
-            _, stderr = process.communicate(timeout=5)
+            _, stderr = process.communicate(timeout=5 * calibration.factor)
         measured["wall_seconds"] = time.perf_counter() - start
         measured["exit_code"] = process.returncode
         measured["stderr_bytes"] = len(stderr)
@@ -193,7 +284,7 @@ def run_case(root: Path, case: Case, *, timeout: int | None = None) -> dict[str,
     finally:
         if process.poll() is None:
             os.killpg(process.pid, signal.SIGKILL)
-            process.wait(timeout=5)
+            process.wait(timeout=5 * calibration.factor)
         if not groups:
             _, groups, _ = read_ledger(root)
         try:
@@ -229,13 +320,15 @@ def assert_oversized_rejected(metrics: dict[str, object]) -> None:
     assert metrics["total_tools"] == 0, metrics
 
 
-def assert_frame_rejection_bounded(large_seconds: float, small_seconds: float) -> None:
+def assert_frame_rejection_bounded(large_seconds: float, small_seconds: float, factor: float = 1.0) -> None:
     # Both frames exceed the 16 MiB limit, so rejection reads the same prefix:
     # 2.5x the bytes may cost at most 2x the time (linear would be 2.5x).
-    assert large_seconds <= 2 * small_seconds + 0.1, (large_seconds, small_seconds)
+    assert large_seconds <= 2 * small_seconds + 0.1 * factor, (large_seconds, small_seconds)
 
 
-def assert_limits(metrics: dict[str, object], case: Case, profile: str) -> None:
+def assert_limits(
+    metrics: dict[str, object], case: Case, profile: str, calibration: Calibration = RAW_CALIBRATION
+) -> None:
     stage = PROFILES.index(profile)
     assert metrics["deadline_exceeded"] is False, metrics
     assert metrics["exit_code"] == 0, metrics
@@ -269,9 +362,9 @@ def assert_limits(metrics: dict[str, object], case: Case, profile: str) -> None:
     if case.name == "pages_20k":
         assert metrics["statuses"] == ["connected"] and metrics["warning_codes"] == [], metrics
         assert number(metrics, "peak_rss_bytes") < 500_000_000, metrics
-    assert number(metrics, "wall_seconds") <= wall, metrics
+    assert number(metrics, "wall_seconds") <= wall * calibration.factor, metrics
     if analysis is not None:
-        assert number(metrics, "analysis_seconds") <= analysis, metrics
+        assert number(metrics, "analysis_seconds") <= analysis * calibration.factor, metrics
     if rss is not None:
         assert number(metrics, "peak_rss_bytes") <= rss * MIB, metrics
     assert number(metrics, "recorded_processes") >= case.servers, metrics
@@ -281,14 +374,16 @@ def assert_limits(metrics: dict[str, object], case: Case, profile: str) -> None:
 
 @pytest.mark.perf
 @pytest.mark.parametrize("case", CASES, ids=lambda case: case.name)
-def test_hostile_performance(case: Case, tmp_path: Path, pytestconfig: pytest.Config) -> None:
+def test_hostile_performance(
+    case: Case, tmp_path: Path, pytestconfig: pytest.Config, perf_calibration: Calibration
+) -> None:
     if os.name != "posix" or sys.platform not in {"darwin", "linux"}:
         pytest.fail("Performance gate requires Linux or macOS process groups and peak-RSS accounting.")
     output: Path | None = pytestconfig.getoption("--perf-output")
     root = tmp_path if output is None else output.resolve() / case.name
     root.mkdir(parents=True, exist_ok=True)
     profile: str = pytestconfig.getoption("--perf-profile")
-    metrics = run_case(root, case)
+    metrics = run_case(root, case, calibration=perf_calibration)
     metrics["profile"] = profile
     (root / "metrics.json").write_text(json.dumps(metrics, indent=2) + "\n")
     print_metrics(metrics)
@@ -296,23 +391,23 @@ def test_hostile_performance(case: Case, tmp_path: Path, pytestconfig: pytest.Co
         smaller_root = root / "frame20"
         smaller_root.mkdir()
         smaller_case = replace(case, name="oversized_20mb", args=("oversized", "--frame-bytes", "20000000"))
-        smaller_metrics = run_case(smaller_root, smaller_case)
+        smaller_metrics = run_case(smaller_root, smaller_case, calibration=perf_calibration)
         print_metrics(smaller_metrics)
         assert_oversized_rejected(smaller_metrics)
         assert_frame_rejection_bounded(
-            number(metrics, "wall_seconds"), number(smaller_metrics, "wall_seconds")
+            number(metrics, "wall_seconds"), number(smaller_metrics, "wall_seconds"), perf_calibration.factor
         )
     short: dict[str, object] | None = None
     if case.name == "scale_500":
         short_root = root / "timeout2"
         short_root.mkdir()
-        short = run_case(short_root, case, timeout=2)
+        short = run_case(short_root, case, calibration=perf_calibration, timeout=2)
         print_metrics(short)
-    assert_limits(metrics, case, profile)
+    assert_limits(metrics, case, profile, perf_calibration)
     if short is not None:
         assert short["deadline_exceeded"] is False and short["exit_code"] == 0, short
         assert number(short, "leftover_processes") == number(short, "leftover_groups") == 0, short
-        assert number(short, "wall_seconds") <= case.wall, short
+        assert number(short, "wall_seconds") <= case.wall * perf_calibration.factor, short
         assert number(short, "recorded_processes") == 500, short
         assert number(short, "peak_rss_bytes") <= 213 * MIB, short
         if profile != "baseline":

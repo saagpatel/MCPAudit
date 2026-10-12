@@ -125,6 +125,9 @@ uv run pytest tests/test_hostile_perf.py -m perf -q -s -p no:cacheprovider \
 Use a fresh output directory. See the
 [hostile-server threat model](docs/HOSTILE-SERVER-THREAT-MODEL.md) for baseline
 limits, retained measurements, fixture isolation, and cumulative target profiles.
+Each session calibrates fixture startup/stdio and synthetic report CPU costs,
+scaling time ceilings upward for the runner while preserving RSS and coverage
+limits. Add `--perf-no-calibration` to reproduce raw published time ceilings.
 Other explicit marker selections that should exclude this lane need `and not perf`.
 
 The named-server stdio smoke uses temporary home and working directories,
