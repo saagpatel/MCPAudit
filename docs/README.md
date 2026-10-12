@@ -17,7 +17,7 @@
 
 ## Reference
 
-- [2.10.0 release and upgrade notes](2.10-RELEASE-NOTES.md)
+- [2.10.1 candidate and upgrade notes](2.10-RELEASE-NOTES.md)
 - [Annotation and scoring migration](SCORING-MIGRATION.md)
 - [Detection references](.)
 - [Experimental labs](labs/README.md)
