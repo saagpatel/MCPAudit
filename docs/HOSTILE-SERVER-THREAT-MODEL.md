@@ -45,18 +45,18 @@ errors fail the gate rather than claiming zero leftovers.
 
 ## Performance regression gate
 
-Run the seven cases explicitly (ordinary pytest runs deselect the `perf` marker):
+Run the eight cases explicitly (ordinary pytest runs deselect the `perf` marker):
 
 ```sh
 uv run --offline --no-sync pytest tests/test_hostile_perf.py -m perf -q -s \
   -p no:cacheprovider --perf-profile=baseline --perf-output=build/perf
 ```
 
-Use a fresh output directory each time. Each case saves wall seconds, scanner
+Use a fresh output directory each time. Each connected case saves wall seconds, scanner
 peak RSS in bytes, permission-analysis seconds, connection/tool counts, status
 and failure reasons, recorded-process counts and ledger roles, leftover processes and groups,
 and exit/deadline state. The 500-server case also records a separate timeout-2
-run. RSS is the scanner process high-water mark, not aggregate fixture memory.
+run. RSS is the measured process high-water mark, not aggregate fixture memory.
 Wall time includes scanner interpreter startup and report rendering; the 5 MB
 target measures permission analysis only. Post-scan process observation has a
 0.5-second grace, matching the original stress runner. A missing measurement,
@@ -123,8 +123,9 @@ to the reference workload or excuse a failed gate.
 | `oversized_50mb` | 191.7 s wall, 3217 MiB RSS; connected with one tool | `p3-7`: < 1 s wall, < 300 MB RSS, failed with frame-size reason |
 | `pages_20k` | 20 pages of 1,000 tools | ≤ 9 s wall, < 500 MB RSS; all 20,000 tools retained with complete metadata |
 | `spawn_child_exit` (plus healthy sibling) | timeout 2 + 4.5 s wall; at most one leftover process/group | `p3-8`: same wall bound, zero leftovers |
+| `escape_dense` (1 MiB mixed CSI/OSC/bare-ESC field) | 10 s wall, 512 MiB RSS; complete-field redaction and stable withholding | Same ceiling in every profile |
 
-Other cases always require zero leftovers. Baseline timeout-2 permits only
+Other connected cases always require zero leftovers. Baseline timeout-2 permits only
 connected/timeout statuses; it does not certify full coverage. Description and
 frame sizes are decimal bytes (5,000,000; 1,000,000 × 20; 50,000,000).
 The `desc_1mb_x20` analysis lane explicitly uses `--max-frame-bytes 32000000`
@@ -133,6 +134,16 @@ The default 16 MiB rejection is tested separately by `oversized_50mb`, now
 enforced in every profile. Listing text caps still apply in the description lane.
 Future memory targets use decimal MB; baseline RSS uses the stress runner's MiB.
 The orphan allowance is an explicit known baseline defect, not a safety claim.
+
+`escape_dense` runs the redactor directly in a disposable subprocess, without
+server connections, because connected listings cap retained item text below
+1 MiB. Its ASCII fixture is exactly 1,048,576 bytes, including ordinary context,
+mixed short escape sequences and a synthetic credential. Metrics require the
+full input size, a smaller redacted output, credential withholding and stable
+re-redaction; no connection or permission-analysis coverage is claimed for this
+case. The ordinary operation-count unit test uses the same fixture at 64 KiB,
+256 KiB and 1 MiB, both with whitespace and with adjacent sequences, to guard
+the linear bound independently of runner speed.
 
 Profiles are cumulative: `p3-7` includes `p1-9`, and `p3-8` includes both.
 As each fixing phase lands, promote the default in `tests/conftest.py` and the
