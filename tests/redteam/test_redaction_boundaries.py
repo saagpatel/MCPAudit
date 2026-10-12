@@ -868,11 +868,14 @@ def test_covered_argv_values_keep_their_structure(argument: str, expected: str) 
     assert redact_argv(once) == once
 
 
-@pytest.mark.parametrize("prefix", ["mode=fast", "--verbose", "--color=red"])
+@pytest.mark.parametrize(
+    "prefix", ["mode=fast", "--verbose", "--color=red", "--session-name", "--author", "--design"]
+)
 def test_esc_esc_restart_reading_adds_no_withholding_without_a_label(prefix: str) -> None:
     for payload in ("a" * 65, "x=1", "a" * 65 + "=b c"):
         text = f"{prefix}\x1b\x1b]{payload}\x07"
         assert redact_argv([text, "on"]) == [text, "on"]
+        assert redact_argv([text, "--no-sandbox"]) == [text, "--no-sandbox"]
 
 
 @pytest.mark.parametrize(

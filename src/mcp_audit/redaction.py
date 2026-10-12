@@ -33,7 +33,6 @@ _SECRET_NAME = re.compile(
 _SECRET_LABELS = re.compile(f"(?=({_SECRET_NAME.pattern}))", re.IGNORECASE)
 # A secret-label stem anywhere, component anchors dropped: a suffix reading
 # may start inside a token (``xauth`` read from ``auth``).
-_LABEL_STEM = re.compile(f"{_SECRET_NAME.pattern}|auth|sig", re.IGNORECASE)
 # Escape framing and controls; what is left of a removed run is its printable bytes.
 _RUN_FRAMING = re.compile(r"\x1b[\[\]\\]?|[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 # Readings of one whitespace-free chunk before it is ambiguous.
@@ -1048,21 +1047,6 @@ def _source_readings(source: str, budget: _Budget) -> list[_ArgvReading] | None:
     return result
 
 
-def _label_may_assign(source: str) -> bool:
-    """Coarse test for a source whose readings cannot be enumerated.
-
-    In its dropped or fully literal view, a secret-label stem (judged without
-    token boundaries, since a suffix reading can start mid-token) is followed
-    somewhere by an inline delimiter, or the view is a flag holding one.
-    """
-    for view in (_normalized_view(source)[0], _normalized_view(source, literal=True)[0]):
-        if (stem := _LABEL_STEM.search(view)) is not None and (
-            view.startswith("-") or _INLINE_DELIMITER.search(view, stem.end()) is not None
-        ):
-            return True
-    return False
-
-
 def _argv_readings(
     item: str, normalized: str, origins: list[tuple[int, int]] | None
 ) -> list[_ArgvReading] | None:
@@ -1075,8 +1059,8 @@ def _argv_readings(
     per-character map; without one, on the reading's own name tokens, so a
     missing map never turns an element's whole text into a label. The
     enumeration is charged to one budget linear in the element's length. The
-    restart reading only adds detection: when it cannot be enumerated it
-    counts only if a coarse test finds a secret label it could assign.
+    restart reading only adds detection: when it cannot be enumerated it is
+    skipped (D18: a long restarted OSC adds no withholding).
     """
     budget = _Budget(len(item), _LABEL_WORK_FLOOR)
     if origins is None:
@@ -1094,7 +1078,7 @@ def _argv_readings(
     if (restarted := _restarted(item)) != item:
         readings = _source_readings(restarted, budget)
         if readings is None:
-            return None if _label_may_assign(restarted) else result
+            return result  # D18: a restart reading that cannot be enumerated adds no withholding.
         result += readings
     return result
 

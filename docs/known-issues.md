@@ -16,6 +16,13 @@
   text. Free-text fields (descriptions, schema text) do not yet add the
   restart reading: a label separated from its delimiter only by a restarted
   sequence, such as `token ESC ESC ]x BEL: value`, can keep its value there.
+  A restarted sequence whose payload exceeds 64 printable bytes is not read
+  for argv detection either (it adds no withholding, per the rule above), so a
+  label and delimiter exposed only through such a sequence keep their value.
+- Argv elements that begin with a URL still keep part of a secret value when
+  the value starts with a separator (`--password=,SECRET`) or when a later
+  `name=` word follows the first value word (`--password=one&a=b&SECRET`).
+  These cases behave the same as in 2.10.1.
 - A fresh CI trust store has no rollback high-water mark until its first
   verification. In a one-shot CI job, set `require.pin_min_sequence` (or
   `--pin-min-sequence`) outside the pin file to refuse an older signed pin
