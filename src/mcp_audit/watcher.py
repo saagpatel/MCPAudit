@@ -87,7 +87,7 @@ async def _watch_loop(
         _error_console.print("[red]watchfiles not installed. Run: pip install 'mcp-audits[watch]'[/red]")
         raise SystemExit(1) from None
 
-    from mcp_audit.cli import _parse_clients
+    from mcp_audit.client_filter import _parse_clients
     from mcp_audit.engine import ScanOptions, run_scan
     from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
 
