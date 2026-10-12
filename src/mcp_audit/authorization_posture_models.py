@@ -3,14 +3,35 @@
 from __future__ import annotations
 
 import hashlib
-import ipaddress
 from datetime import UTC, datetime
-from typing import Any, Final, Literal
-from urllib.parse import unquote, urlsplit
+from typing import Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from mcp_audit.lab_primitives import model_json_bytes
+from mcp_audit.oauth_urls import (
+    MAX_AUTHORIZATION_SERVERS as MAX_AUTHORIZATION_SERVERS,
+)
+from mcp_audit.oauth_urls import (
+    MAX_FETCHES as MAX_FETCHES,
+)
+from mcp_audit.oauth_urls import (
+    MAX_URL_LENGTH as MAX_URL_LENGTH,
+)
+from mcp_audit.oauth_urls import (
+    canonical_json_bytes as canonical_json_bytes,
+)
+from mcp_audit.oauth_urls import (
+    expected_authorization_metadata_url as _expected_authorization_metadata_url,
+)
+from mcp_audit.oauth_urls import (
+    expected_resource_metadata_url as _expected_resource_metadata_url,
+)
+from mcp_audit.oauth_urls import (
+    origin as _origin,
+)
+from mcp_audit.oauth_urls import (
+    require_https_url as _require_https_url,
+)
 
 INPUT_SCHEMA: Final = "McpAuthorizationPostureV1"
 INPUT_CONTRACT_VERSION: Final = "1.0.0"
@@ -26,54 +47,14 @@ SPEC_REFERENCE_SETS: Final = [
     SPEC_REFERENCES,
     [reference.replace("2026-07-28", "2025-11-25") for reference in SPEC_REFERENCES],
 ]
-MAX_URL_LENGTH: Final = 2_048
 MAX_REASON_CODES: Final = 32
 MAX_SCOPES: Final = 64
-MAX_AUTHORIZATION_SERVERS: Final = 8
-MAX_FETCHES: Final = 32
 
 
 class StrictModel(BaseModel):
     """Forbid undeclared fields and implicit coercion."""
 
     model_config = ConfigDict(extra="forbid", strict=True)
-
-
-def _require_https_url(value: str, *, query_allowed: bool = True) -> str:
-    if not value or value != value.strip() or len(value) > MAX_URL_LENGTH:
-        raise ValueError("URL is empty, padded, or too long")
-    if "\\" in value or any(ord(character) < 32 for character in value):
-        raise ValueError("URL contains a forbidden character")
-    try:
-        parsed = urlsplit(value)
-        hostname = parsed.hostname
-        port = parsed.port
-    except ValueError as exc:
-        raise ValueError("URL authority is malformed") from exc
-    if parsed.scheme.lower() != "https" or not hostname:
-        raise ValueError("URL must use HTTPS and include a host")
-    if parsed.username is not None or parsed.password is not None or parsed.fragment:
-        raise ValueError("URL user information and fragments are forbidden")
-    if not query_allowed and parsed.query:
-        raise ValueError("URL query is forbidden")
-    try:
-        normalized_host = hostname.rstrip(".").encode("idna").decode("ascii").lower()
-    except UnicodeError as exc:
-        raise ValueError("URL host is invalid") from exc
-    if normalized_host == "localhost" or normalized_host.endswith(".localhost"):
-        raise ValueError("localhost URL authorities are forbidden")
-    try:
-        ipaddress.ip_address(normalized_host)
-    except ValueError:
-        pass
-    else:
-        raise ValueError("IP-literal URL authorities are forbidden")
-    decoded_path = unquote(parsed.path or "/")
-    if "\\" in decoded_path or any(ord(character) < 32 for character in decoded_path):
-        raise ValueError("URL path contains a forbidden character")
-    if port is not None and not 1 <= port <= 65_535:
-        raise ValueError("URL port is outside the valid range")
-    return value
 
 
 def _require_timestamp(value: str) -> str:
@@ -101,43 +82,6 @@ def _require_header(value: str | None) -> str | None:
     if value is not None and (len(value) > 8_192 or "\r" in value or "\n" in value):
         raise ValueError("header value is invalid")
     return value
-
-
-def _origin(value: str) -> str:
-    parsed = urlsplit(value)
-    return f"{parsed.scheme.lower()}://{parsed.netloc.lower()}"
-
-
-def _expected_resource_metadata_url(resource: str, discovery: str) -> str | None:
-    if discovery == "www-authenticate":
-        return None
-    parsed = urlsplit(resource)
-    origin = _origin(resource)
-    resource_path = parsed.path.rstrip("/")
-    if discovery == "well-known-path" and resource_path:
-        return f"{origin}/.well-known/oauth-protected-resource{resource_path}"
-    if discovery == "well-known-root":
-        return f"{origin}/.well-known/oauth-protected-resource"
-    raise ValueError("protected-resource discovery does not match the resource path")
-
-
-def _expected_authorization_metadata_url(issuer: str, discovery: str) -> str:
-    parsed = urlsplit(issuer)
-    origin = _origin(issuer)
-    issuer_path = parsed.path.strip("/")
-    if not issuer_path:
-        if discovery == "rfc8414":
-            return f"{origin}/.well-known/oauth-authorization-server"
-        if discovery == "openid-connect":
-            return f"{origin}/.well-known/openid-configuration"
-        raise ValueError("authorization-server discovery does not match a root issuer")
-    if discovery == "rfc8414-path-insertion":
-        return f"{origin}/.well-known/oauth-authorization-server/{issuer_path}"
-    if discovery == "openid-connect-path-insertion":
-        return f"{origin}/.well-known/openid-configuration/{issuer_path}"
-    if discovery == "openid-connect-path-append":
-        return f"{origin}/{issuer_path}/.well-known/openid-configuration"
-    raise ValueError("authorization-server discovery does not match an issuer path")
 
 
 class ProducerSpecification(StrictModel):
@@ -543,11 +487,6 @@ class AuthorizationPostureReport(StrictModel):
     supported_inputs: list[str] = Field(min_length=1)
     unsupported_inputs: list[str] = Field(min_length=1)
     claim_ceiling: list[str] = Field(min_length=1)
-
-
-def canonical_json_bytes(value: BaseModel | dict[str, Any] | list[Any]) -> bytes:
-    """Return canonical UTF-8 bytes with one terminal newline."""
-    return model_json_bytes(value, allow_nan=True)
 
 
 def sha256_bytes(value: bytes) -> str:

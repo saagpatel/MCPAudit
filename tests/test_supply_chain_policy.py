@@ -10,13 +10,13 @@ FULL_COMMIT_SHA = re.compile(r"[0-9a-f]{40}")
 # Changing any row is an explicit supply-chain review event, not a shape-only update.
 REVIEWED_ACTION_RELEASES = {
     "actions/checkout": ("3d3c42e5aac5ba805825da76410c181273ba90b1", "v7.0.1"),
-    "actions/download-artifact": ("3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c", "v8.0.1"),
+    "actions/download-artifact": ("9000827ccba6bdab643e8b6fd33ac0654aef8333", "v8.0.2"),
     "actions/setup-python": ("5fda3b95a4ea91299a34e894583c3862153e4b97", "v7.0.0"),
-    "actions/upload-artifact": ("043fb46d1a93c77aae656e7c1c64a875d1fc6a0a", "v7.0.1"),
-    "astral-sh/setup-uv": ("c18668ad3cf93ea998bef934396af7bb5c839dc7", "v10.2.0"),
-    "github/codeql-action/analyze": ("2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2", "v4.38.2"),
-    "github/codeql-action/init": ("2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2", "v4.38.2"),
-    "github/codeql-action/upload-sarif": ("2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2", "v4.38.2"),
+    "actions/upload-artifact": ("cf430e030ddbb5b0abf93d22962f4752f3646cd9", "v7.0.2"),
+    "astral-sh/setup-uv": ("1c37ad07a6a961277cf70c0d37d6f313000f5884", "v10.3.0"),
+    "github/codeql-action/analyze": ("24c54180a607b1449ed407dd24f251e4e9147c8d", "v4.38.3"),
+    "github/codeql-action/init": ("24c54180a607b1449ed407dd24f251e4e9147c8d", "v4.38.3"),
+    "github/codeql-action/upload-sarif": ("24c54180a607b1449ed407dd24f251e4e9147c8d", "v4.38.3"),
     "google/clusterfuzzlite/actions/build_fuzzers": (
         "884713a6c30a92e5e8544c39945cd7cb630abcd1",
         "v1",

@@ -1,4 +1,8 @@
-"""Credential-free discovery on connected targets; public, pinned metadata GETs only."""
+"""Credential-free discovery on connected targets; public, pinned metadata GETs only.
+
+Response, json_object, post_url and request_sync are internal-but-shared helpers
+for the conformance lab, which must use the same core version.
+"""
 
 from __future__ import annotations
 
@@ -17,18 +21,18 @@ from urllib.parse import urlsplit
 
 import anyio
 
-from mcp_audit.authorization_posture_models import (
-    MAX_AUTHORIZATION_SERVERS,
-    MAX_FETCHES,
-    _expected_authorization_metadata_url,
-    _expected_resource_metadata_url,
-    _origin,
-    _require_https_url,
-)
 from mcp_audit.models import (
     AuthorizationFetch,
     AuthorizationFinding,
     AuthorizationProbeObservation,
+)
+from mcp_audit.oauth_urls import (
+    MAX_AUTHORIZATION_SERVERS,
+    MAX_FETCHES,
+    expected_authorization_metadata_url,
+    expected_resource_metadata_url,
+    origin,
+    require_https_url,
 )
 from mcp_audit.redaction import redact_text, redact_url
 from mcp_audit.taxonomy import AUTHORIZATION_FINDINGS
@@ -45,7 +49,9 @@ _EQUALS = frozenset("=")
 
 
 @dataclass
-class _Response:
+class Response:
+    """Bounded response evidence shared by authorization and conformance probes."""
+
     status: int
     challenges: list[str]
     session_id_present: bool
@@ -197,7 +203,9 @@ def _challenges(headers: list[str]) -> tuple[list[dict[str, str]], bool]:
     return challenges, incomplete
 
 
-def _json_object(raw: bytes) -> dict[str, object] | None:
+def json_object(raw: bytes) -> dict[str, object] | None:
+    """Decode a JSON object, rejecting duplicate members and malformed input."""
+
     def unique(pairs: list[tuple[str, object]]) -> dict[str, object]:
         result: dict[str, object] = {}
         for key, value in pairs:
@@ -213,7 +221,8 @@ def _json_object(raw: bytes) -> dict[str, object] | None:
     return value if isinstance(value, dict) else None
 
 
-def _post_url(url: str) -> None:
+def post_url(url: str) -> None:
+    """Validate a credential-free HTTP(S) endpoint before a probe POST."""
     parsed = urlsplit(url)
     if (
         len(url) > 2_048
@@ -273,7 +282,7 @@ class _PinnedHTTPConnection(http.client.HTTPConnection):
         self.sock = _pinned_socket(self.address, self.port, self.request_timeout)
 
 
-def _request_sync(
+def request_sync(
     url: str,
     method: str,
     address: str,
@@ -281,7 +290,8 @@ def _request_sync(
     *,
     request_headers: dict[str, str] | None = None,
     request_body: bytes | None = None,
-) -> _Response:
+) -> Response:
+    """Make one bounded request to a caller-validated URL at a pinned address."""
     started = time.monotonic()
     parsed = urlsplit(url)
     host = parsed.hostname
@@ -344,7 +354,7 @@ def _request_sync(
         streamed = response.getheader("Content-Type", "").split(";", 1)[0].lower() == "text/event-stream"
         # An open SSE stream is not a bounded JSON document; close after the headers.
         data = b"" if streamed else response.read(MAX_BODY_BYTES + 1)
-        return _Response(
+        return Response(
             response.status,
             [value for key, value in response.getheaders() if key.lower() == "www-authenticate"],
             response.getheader("Mcp-Session-Id") is not None,
@@ -358,11 +368,11 @@ def _request_sync(
         connection.close()
 
 
-async def _request(url: str, method: Literal["POST", "GET"], timeout: float) -> _Response:
+async def _request(url: str, method: Literal["POST", "GET"], timeout: float) -> Response:
     if method == "GET":
-        _require_https_url(url, query_allowed=False)
+        require_https_url(url, query_allowed=False)
     else:
-        _post_url(url)
+        post_url(url)
     parsed = urlsplit(url)
     assert parsed.hostname is not None
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
@@ -379,7 +389,7 @@ async def _request(url: str, method: Literal["POST", "GET"], timeout: float) -> 
     if remaining <= 0:
         raise TimeoutError("request deadline")
     return await anyio.to_thread.run_sync(
-        partial(_request_sync, url, method, addresses[0][4][0], remaining), abandon_on_cancel=True
+        partial(request_sync, url, method, addresses[0][4][0], remaining), abandon_on_cancel=True
     )
 
 
@@ -407,7 +417,7 @@ class _Metadata:
         if response.status != 200:
             record.reason = "http_status"
             return None
-        document = _json_object(response.body)
+        document = json_object(response.body)
         record.reason = "json_object" if document is not None else "invalid_json"
         return document
 
@@ -466,7 +476,7 @@ async def probe_authorization(
             elif response.streamed:
                 observation.warnings.append("probe_stream_not_read")
             else:
-                payload = _json_object(response.body)
+                payload = json_object(response.body)
                 error = payload.get("error") if payload else None
                 code = error.get("code") if isinstance(error, dict) else None
                 if type(code) is int:
@@ -498,7 +508,7 @@ async def _review_metadata(
                 findings.append(_finding("MCPAUTH012", "protected-resource metadata endpoint"))
         # Match the producer contract: a challenge may not widen the resource authority.
         locations = list(dict.fromkeys(locations))
-        if len(locations) != 1 or _origin(locations[0]) != _origin(url):
+        if len(locations) != 1 or origin(locations[0]) != origin(url):
             observation.warnings.append("challenge_metadata_outside_resource_authority")
             return
     else:
@@ -509,7 +519,7 @@ async def _review_metadata(
                 if urlsplit(url).path.strip("/")
                 else ["well-known-root"]
             )
-            if (discovered_location := _expected_resource_metadata_url(url, discovery)) is not None
+            if (discovered_location := expected_resource_metadata_url(url, discovery)) is not None
         ]
     resource: dict[str, object] | None = None
     for location in locations:
@@ -544,7 +554,7 @@ async def _review_metadata(
         if not isinstance(issuer, str):
             continue
         try:
-            _require_https_url(issuer, query_allowed=False)
+            require_https_url(issuer, query_allowed=False)
         except ValueError:
             if urlsplit(issuer).scheme == "http":
                 findings.append(_finding("MCPAUTH012", "authorization-server issuer"))
@@ -557,7 +567,7 @@ async def _review_metadata(
         )
         metadata: dict[str, object] | None = None
         for discovery in discovery_methods:
-            metadata = await fetcher.fetch(_expected_authorization_metadata_url(issuer, discovery))
+            metadata = await fetcher.fetch(expected_authorization_metadata_url(issuer, discovery))
             if metadata is not None:
                 break
         if metadata is None:
