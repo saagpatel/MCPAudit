@@ -322,3 +322,44 @@ def test_publish_workflows_disable_actions_cache() -> None:
                 assert not uses.startswith("actions/cache")
                 if uses.startswith("astral-sh/setup-uv"):
                     assert step.get("with", {}).get("enable-cache") is False
+
+
+def _rewrite_sdist(dist: Path, extra: list[tuple[str, bytes]]) -> None:
+    sdist = dist / release.distribution_names(VERSION)[1]
+    with tarfile.open(sdist, "r:gz") as archive:
+        members = [(info, archive.extractfile(info)) for info in archive.getmembers()]
+        originals = [(info, stream.read() if stream else b"") for info, stream in members]
+    with tarfile.open(sdist, "w:gz") as archive:
+        for info, content in originals:
+            archive.addfile(info, io.BytesIO(content))
+        for name, content in extra:
+            info = tarfile.TarInfo(name)
+            info.size = len(content)
+            archive.addfile(info, io.BytesIO(content))
+
+
+@pytest.mark.parametrize(
+    "alias",
+    [
+        f"./mcp_audits-{VERSION}/pyproject.toml",
+        f"mcp_audits-{VERSION}//pyproject.toml",
+        f"mcp_audits-{VERSION}/./pyproject.toml",
+        f"mcp_audits-{VERSION}/pyproject.toml",
+        f"mcp_audits-{VERSION}/src/../pyproject.toml",
+        f"/mcp_audits-{VERSION}/pyproject.toml",
+        "other-root/pyproject.toml",
+    ],
+)
+def test_sdist_member_aliases_cannot_shadow_checked_files(distributions: Path, alias: str) -> None:
+    unpinned = b'[project]\nname = "mcp-audits"\ndependencies = ["mcp-audits>=0"]\n'
+    _rewrite_sdist(distributions, [(alias, unpinned)])
+    with pytest.raises(release.VerificationError, match="canonical path|more than once"):
+        release.verify_distributions(dist_dir=distributions, version=VERSION, commit=COMMIT)
+
+
+def test_wheel_duplicate_members_are_rejected(distributions: Path) -> None:
+    wheel = distributions / release.distribution_names(VERSION)[0]
+    with zipfile.ZipFile(wheel, "a") as archive, pytest.warns(UserWarning, match="Duplicate name"):
+        archive.writestr("mcp_audit/_build_provenance.json", b'{"commit": "0", "dirty": true}')
+    with pytest.raises(release.VerificationError, match="more than once"):
+        release.verify_distributions(dist_dir=distributions, version=VERSION, commit=COMMIT)

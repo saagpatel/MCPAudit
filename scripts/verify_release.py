@@ -613,6 +613,30 @@ def _check_sdist_project(raw: bytes, *, distribution: Distribution, version: str
     _check_distribution_metadata(metadata.encode(), version=version, name=name, distribution=distribution)
 
 
+def _check_archive_names(names: list[str], *, prefix: str, name: str) -> None:
+    """Every member has one canonical spelling under the root, so what is checked is what installs.
+
+    Archive readers return the first or last of duplicate names while extraction
+    normalizes ``./x`` and ``a//b`` onto the same path, so an alias could show the
+    verifier one file and the installer another.
+    """
+    seen: set[str] = set()
+    for raw in names:
+        member = raw.rstrip("/")
+        path = PurePosixPath(member)
+        if (
+            not member
+            or path.is_absolute()
+            or str(path) != member
+            or any(part in {"", ".", ".."} for part in member.split("/"))
+            or (prefix and path.parts[0] != prefix)
+        ):
+            raise VerificationError(f"{name} member {raw!r} is not a canonical path under the release root")
+        if member in seen:
+            raise VerificationError(f"{name} member {raw!r} appears more than once")
+        seen.add(member)
+
+
 def _sdist_file(archive: tarfile.TarFile, member: PurePosixPath) -> bytes:
     try:
         info = archive.getmember(str(member))
@@ -644,6 +668,7 @@ def _verify_distribution(*, dist_dir: Path, version: str, commit: str, distribut
     if not wheel.is_file() or not sdist.is_file():
         raise VerificationError("expected wheel and sdist are missing")
     with zipfile.ZipFile(wheel) as archive:
+        _check_archive_names(archive.namelist(), prefix="", name=wheel.name)
         _check_distribution_metadata(
             archive.read(f"{stem}-{version}.dist-info/METADATA"),
             version=version,
@@ -664,6 +689,10 @@ def _verify_distribution(*, dist_dir: Path, version: str, commit: str, distribut
         )
     with tarfile.open(sdist, mode="r:gz") as archive:
         prefix = PurePosixPath(f"{stem}-{version}")
+        members = archive.getmembers()
+        _check_archive_names([info.name for info in members], prefix=str(prefix), name=sdist.name)
+        if any(info.issym() or info.islnk() for info in members):
+            raise VerificationError(f"{sdist.name} must not contain links")
         _check_sdist_project(
             _sdist_file(archive, prefix / "pyproject.toml"),
             distribution=distribution,
