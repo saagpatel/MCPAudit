@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Requested pin checks with withheld baselines now report partial coverage with
+  reason `pin_baseline_withheld`. The opt-in policy boolean
+  `fail_on.pin_baseline_withheld` fails these checks; its default remains off.
+- Pin warnings name the refresh command and the coming 3.0 withholding of v1
+  baselines even without trusted keys. The 3.0 proposal specifies default
+  failure and mixed-row exclusion; 2.x v1 comparisons remain available.
 - `check` accepts `scan`'s optional detectors, higher-reach opt-ins, canary
   controls, timeout/concurrency tuning, verbose detail, identifier redaction,
   and extended SARIF profile. Static review remains the default; canary requires

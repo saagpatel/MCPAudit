@@ -836,7 +836,8 @@ class PinStore:
                 code="pin_schema_outdated",
                 message=(
                     f"{server_name} has schema v1 pins; annotations, title, outputSchema, icons "
-                    "and meta are not covered. Run "
+                    "and meta are not covered. MCPAudit 3.0 will withhold v1 baselines even "
+                    "when no trusted pin keys exist. Run "
                     f"`mcp-audit pin --refresh {server_name} --apply` after review."
                 ),
                 check="pin_check",

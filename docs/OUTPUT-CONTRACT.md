@@ -1338,7 +1338,8 @@ The report top level also includes:
     verification, HIGH MCP027, or is an unsigned legacy v1 pin while trusted keys
     exist, so this baseline comparison was not run; also emitted for `pin_check`
     and `canary_check`; named in `servers` and never also reported as
-    `pin_baseline_stale`),
+    `pin_baseline_stale`; the message names `mcp-audit pin --refresh SERVER`
+    and the coming 3.0 withholding of keyless v1 baselines),
     `integrity_comparison_incomplete` (with `check: integrity_check`; pinned
     paths excluded by sensitive-path protection or unavailable path resolution.
     The message reports counts, never excluded paths or their saved/current hashes),
@@ -1410,6 +1411,11 @@ Config-only scans record metadata and metadata-dependent checks as `not_run`
 with reason `connections disabled`; permission inference from configuration
 is `partial`. Baseline-dependent checks record missing per-server baselines
 as `not_run`. No configured servers leaves server-dependent checks `not_run`.
+An explicitly withheld pin baseline is distinguished from an absent one:
+a requested `pin_check` records `partial` with reason `pin_baseline_withheld`,
+even if every baseline was withheld or connections were disabled. The warning
+still identifies the affected servers; no saved-baseline comparison is claimed.
+This uses existing coverage fields and leaves `schema_version` unchanged.
 A canary with no eligible tools has runtime `not_run`; failed or truncated
 listings and incomplete exercises are `partial`. Pagination failures never
 admit an incomplete page set as an empty, successfully checked inventory.
@@ -1423,7 +1429,8 @@ and requested trifecta and escalation checks `partial` for the affected server.
 With `check: escalation_check`, only escalation coverage is affected; incomplete
 pinned schemas do not degrade current permission coverage. Separate agent-visible
 text inspection, metadata inventory, and configuration health are unaffected by
-property traversal limits. Checks without an available baseline remain `not_run`.
+property traversal limits. Checks with an absent baseline remain `not_run`;
+withheld pin baselines use the `partial` exception described above.
 `description_truncated` makes permissions, capabilities, and requested SSRF,
 egress, trifecta, and escalation checks `partial` for the affected server.
 This is conservative per-server coverage because the warning does not identify
@@ -1461,6 +1468,16 @@ Policies may opt in with YAML `fail_on.coverage: true` (a boolean), or Python
 unknown legacy coverage, independently of severity; `not_requested` checks
 do not fail the gate. Coverage violations use existing SARIF `MCP010` and
 the existing policy exit code `2`. Existing policies retain their behavior.
+
+The narrower opt-in YAML boolean `fail_on.pin_baseline_withheld: true` (Python
+`PolicyConfig(fail_on_pin_baseline_withheld=True)`) fails only requested pin
+checks whose warning has `code: pin_baseline_withheld` and `check: pin_check`.
+It adds a HIGH per-server violation with rule `fail_on.pin_baseline_withheld`,
+reported through existing policy fields, SARIF `MCP010`, and policy exit `2`.
+Other withheld checks and merely missing pins do not trigger this gate. Its
+default is `false` in 2.12; the 3.0 proposal makes withheld requested pin checks
+fail by default. Keyless v1 comparisons and mixed-row drift remain unchanged
+in 2.x; their reduced field coverage continues to emit `pin_schema_outdated`.
 
 `description_truncated` warnings use `check: "permission_analysis"`, name the
 affected server, and give a count of truncated fields without including their
