@@ -842,7 +842,10 @@ Terminal status prints only this authenticated key for CI; the existing JSON
 `public_key` remains untrusted embedded metadata. Status also adds `verification`
 (the nullable verification state) and `baseline_usable` (false when scans withhold
 the baseline); terminal status shows them in a Verification column, marked
-"(withheld)". Ordinary pin writes, refresh, rotation and re-signing refuse failed
+"(withheld)". Status JSON also includes a `warnings` array, using the scan
+warning shape (`code`, `message`, `check`, `servers`); v1 entries include the
+`pin_schema_outdated` migration warning here and in terminal status. Ordinary
+pin writes, refresh, rotation and re-signing refuse failed
 baseline verification, except for the explicit unsigned v2 refresh migration
 described below.
 
