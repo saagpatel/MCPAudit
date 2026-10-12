@@ -19,6 +19,7 @@ from mcp_audit.engine import ScanOptions, run_scan
 from mcp_audit.models import ClientType
 from mcp_audit.report import ReportGenerator
 from mcp_audit.review_discovery import review_sources, server_identity
+from mcp_audit.scan_cli import _merge_host_args
 from mcp_audit.terminal_summary import summary_console
 from mcp_audit.terminal_text import strip_controls, terminal_safe
 
@@ -89,6 +90,89 @@ def _source_options(command: Callable[P, T]) -> Callable[P, T]:
     return command
 
 
+def _analysis_options(command: Callable[P, T]) -> Callable[P, T]:
+    for option in (
+        click.option("--inject-check", is_flag=True, help="Check metadata for instruction-shaped text."),
+        click.option("--ssrf-check", is_flag=True, help="Flag caller-controlled fetch targets."),
+        click.option("--ssrf-allowlist", metavar="HOSTS", help="Comma-separated trusted fixed-target hosts."),
+        click.option(
+            "--egress-check", is_flag=True, help="Audit outbound destinations; includes SSRF analysis."
+        ),
+        click.option("--egress-allowlist", metavar="HOSTS", help="Comma-separated trusted egress hosts."),
+        click.option(
+            "--multi-tenant-hosts", metavar="HOSTS", help="Extra multi-tenant hosts for egress analysis."
+        ),
+        click.option("--pin-check", is_flag=True, help="Check tool schema drift against stored pins."),
+        click.option(
+            "--trifecta-check", is_flag=True, help="Detect per-server and fleet toxic-flow exposure."
+        ),
+        click.option("--shadow-check", is_flag=True, help="Detect cross-server tool-name shadowing."),
+        click.option("--escalation-check", is_flag=True, help="Check capability escalation against pins."),
+        click.option("--provenance-check", is_flag=True, help="Check launch-config drift against pins."),
+        click.option("--integrity-check", is_flag=True, help="Check on-disk launch-artifact hash drift."),
+        click.option(
+            "--verify-artifacts", is_flag=True, help="Network: verify registry hashes against pins."
+        ),
+        click.option(
+            "--download-artifacts", is_flag=True, help="Network: download and verify package bytes."
+        ),
+        click.option("--llm-analysis", is_flag=True, help="LLM classification (requires ANTHROPIC_API_KEY)."),
+        click.option(
+            "--canary-check", is_flag=True, help="Exercise a selected explicit-config server for drift."
+        ),
+        click.option(
+            "--canary-calls",
+            default=5,
+            type=click.IntRange(1, 100),
+            show_default=True,
+            help="Maximum benign exercise calls per server.",
+        ),
+        click.option(
+            "--canary-identities",
+            type=click.IntRange(1, 2),
+            metavar="N",
+            help="Canary identities; default 2 for stdio, 1 for HTTP/SSE.",
+        ),
+        click.option(
+            "--canary-safe-tool",
+            "canary_safe_tools",
+            multiple=True,
+            metavar="SERVER/TOOL",
+            help="Mark an empty-argument tool safe; destructive hints still veto calls.",
+        ),
+        click.option(
+            "--timeout",
+            default=10,
+            show_default=True,
+            help="Per-server session budget in seconds; excludes queue wait.",
+        ),
+        click.option(
+            "--max-concurrency",
+            default=32,
+            type=click.IntRange(min=1),
+            show_default=True,
+            help="Maximum simultaneous server sessions.",
+        ),
+        click.option(
+            "--connect-project-configs",
+            is_flag=True,
+            help="Allow project-scope connections; --connect already selects one explicit identity.",
+        ),
+        click.option("--skip-connect", is_flag=True, hidden=True),
+        click.option("--config-only", is_flag=True, hidden=True),
+        click.option("--verbose", is_flag=True, help="Show per-tool permission details."),
+        click.option("--redact", is_flag=True, help="Scrub identifiers from JSON, SARIF and HTML artifacts."),
+        click.option(
+            "--sarif-profile",
+            type=click.Choice(["compatibility", "extended"]),
+            default="compatibility",
+            help="Extended SARIF includes configuration-health findings.",
+        ),
+    ):
+        command = option(command)
+    return command
+
+
 def _print_sources(out: Console, paths: list[tuple[str, str]]) -> None:
     for path, status in paths:
         out.print(terminal_safe(f"{status}: {path}"))
@@ -98,6 +182,7 @@ def _print_sources(out: Console, paths: list[tuple[str, str]]) -> None:
 
 @click.command()
 @_source_options
+@_analysis_options
 @click.option("--connect", is_flag=True, help="Connect only to the explicitly selected server identity.")
 @click.option("--server", "server_id", metavar="CLIENT:SCOPE:NAME", help="Exact identity from inspect.")
 @click.option("--json", "json_stdout", is_flag=True, help="Emit only AuditReport JSON on stdout.")
@@ -111,14 +196,18 @@ def _print_sources(out: Console, paths: list[tuple[str, str]]) -> None:
 )
 @click.option("--show-host", is_flag=True, help="Include the hostname in HTML (hidden by default).")
 @click.option("--policy", type=click.Path(path_type=Path), help="Evaluate this explicit local policy.")
-@click.option("--pin-file", type=click.Path(path_type=Path), help="Use this pin baseline for policy checks.")
+@click.option(
+    "--pin-file", type=click.Path(path_type=Path), help="Use this pin baseline for detectors and policy."
+)
 @click.option(
     "--pin-min-sequence",
     type=click.IntRange(min=1),
     help="Require a trusted signed pin manifest at or above this sequence (policy exit 2 on failure).",
 )
 @click.option(
-    "--override-config", type=click.Path(path_type=Path), help="Ignore YAML (default: ~/.mcp-audit.yaml)."
+    "--override-config",
+    type=click.Path(path_type=Path),
+    help="Permission overrides and ignores YAML (default for discovery: ~/.mcp-audit.yaml).",
 )
 @click.option(
     "--ignore", "ignore_rules", multiple=True, metavar="MCP0xx", help="Ignore a finding rule for this run."
@@ -170,8 +259,45 @@ def check(
     max_frame_bytes: int,
     max_surface_bytes: int,
     sdk_stdio_fallback: bool,
+    inject_check: bool,
+    ssrf_check: bool,
+    ssrf_allowlist: str | None,
+    egress_check: bool,
+    egress_allowlist: str | None,
+    multi_tenant_hosts: str | None,
+    pin_check: bool,
+    trifecta_check: bool,
+    shadow_check: bool,
+    escalation_check: bool,
+    provenance_check: bool,
+    integrity_check: bool,
+    verify_artifacts: bool,
+    download_artifacts: bool,
+    llm_analysis: bool,
+    canary_check: bool,
+    canary_calls: int,
+    canary_identities: int | None,
+    canary_safe_tools: tuple[str, ...],
+    timeout: int,
+    max_concurrency: int,
+    connect_project_configs: bool,
+    skip_connect: bool,
+    config_only: bool,
+    verbose: bool,
+    redact: bool,
+    sarif_profile: str,
 ) -> None:
     """Review configs statically; runtime security is not checked by default."""
+    if skip_connect and connect:
+        raise click.UsageError("--skip-connect cannot be combined with --connect.")
+    if config_only and (config is None or include_discovered):
+        raise click.UsageError(
+            "--config-only requires --config and cannot be combined with --include-discovered."
+        )
+    if canary_check and (not connect or config is None or include_discovered):
+        raise click.UsageError(
+            "--canary-check requires --config FILE and --connect --server, without discovery."
+        )
     if connect and not server_id:
         raise _recovery_error(
             "--connect requires a selected server identity",
@@ -199,7 +325,7 @@ def check(
     written: list[Path] = []
     stage = "input validation"
     try:
-        from mcp_audit.overrides import load_override_config
+        from mcp_audit.overrides import OverrideApplier, OverrideConfig, load_override_config
         from mcp_audit.suppressions import apply_suppressions, validate_ignore_rule
 
         for rule in ignore_rules:
@@ -208,7 +334,9 @@ def check(
         if ignore_path is None and (config is None or include_discovered):
             ignore_path = Path.home() / ".mcp-audit.yaml"
         try:
-            ignores = load_override_config(ignore_path).ignore if ignore_path is not None else []
+            override_applier = OverrideApplier(
+                load_override_config(ignore_path) if ignore_path is not None else OverrideConfig()
+            )
         except (OSError, ValueError, yaml.YAMLError) as exc:
             raise _recovery_error(
                 f"cannot load finding overrides ({type(exc).__name__})",
@@ -282,23 +410,57 @@ def check(
             run_scan,
             ScanOptions(
                 skip_connect=not connect,
+                timeout=timeout,
+                max_concurrency=max_concurrency,
+                pin_file=pin_file,
+                ssrf_check=ssrf_check,
+                ssrf_allowlist=ssrf_allowlist,
+                egress_check=egress_check,
+                egress_allowlist=_merge_host_args(
+                    egress_allowlist, policy_config.egress_allowlist if policy_config else []
+                ),
+                multi_tenant_hosts=_merge_host_args(
+                    multi_tenant_hosts, policy_config.multi_tenant_hosts if policy_config else []
+                ),
+                egress_server_allowlists=(
+                    {
+                        name: rule.egress_allowlist
+                        for name, rule in policy_config.server_rules.items()
+                        if rule.egress_allowlist
+                    }
+                    if policy_config
+                    else None
+                ),
+                pin_check=pin_check,
+                escalation_check=escalation_check,
+                provenance_check=provenance_check,
+                integrity_check=integrity_check,
+                verify_artifacts=verify_artifacts,
+                download_artifacts=download_artifacts,
+                llm_analysis=llm_analysis,
+                canary_check=canary_check,
+                canary_calls=canary_calls,
+                canary_identities=canary_identities,
+                canary_safe_tools=canary_safe_tools,
                 max_frame_bytes=max_frame_bytes,
                 max_surface_bytes=max_surface_bytes,
                 sdk_stdio_fallback=sdk_stdio_fallback,
-                connect_project_configs=connect,
+                connect_project_configs=connect or connect_project_configs,
                 config_only=config is not None and not include_discovered,
-                inject_check=card is not None and connect,
-                trifecta_check=card is not None and connect,
-                shadow_check=card is not None and connect,
+                inject_check=inject_check or (card is not None and connect),
+                trifecta_check=trifecta_check or (card is not None and connect),
+                shadow_check=shadow_check or (card is not None and connect),
             ),
             servers=servers,
             parse_errors=sources.errors,
+            override_applier=override_applier,
+            _allow_sharding=True,
         )
         stage = "scan"
         report = anyio.run(operation)
         scanned = True
         stage = "report post-processing"
-        apply_suppressions(report, ignores, cli_rules=ignore_rules, cli_reason=ignore_reason)
+        apply_suppressions(report, cli_rules=ignore_rules, cli_reason=ignore_reason)
         if policy_config is not None:
             from mcp_audit.policy import evaluate_policy
 
@@ -314,12 +476,17 @@ def check(
                 selected_pin_store = PinStore(path=pin_file)
             report.policy_result = evaluate_policy(report, policy_config, pin_store=selected_pin_store)
         safe_report = report.redacted()
-        payload = json.dumps(safe_report.model_dump(mode="json"), indent=2)
+        out_report = (
+            report._redacted_copy(safe_report.model_dump(mode="json"), identifiers=True)
+            if redact
+            else safe_report
+        )
+        payload = json.dumps(out_report.model_dump(mode="json"), indent=2)
         if not json_stdout:
             stage = "terminal rendering"
             ReportGenerator(out).render_terminal(
                 report,
-                verbose=details,
+                verbose=verbose or details,
                 details=details,
                 explicit_config=config is not None and not include_discovered,
             )
@@ -335,15 +502,16 @@ def check(
             stage = "--sarif destination"
             from mcp_audit.sarif import SarifGenerator
 
-            sarif.write_text(json.dumps(SarifGenerator().generate(safe_report), indent=2), encoding="utf-8")
+            sarif.write_text(
+                json.dumps(SarifGenerator().generate(out_report, profile=sarif_profile), indent=2),
+                encoding="utf-8",
+            )
             written.append(sarif)
         if html:
             stage = "--html destination"
             from mcp_audit.htmlreport import HtmlReportGenerator
 
-            html.write_text(
-                HtmlReportGenerator().generate(safe_report, show_host=show_host), encoding="utf-8"
-            )
+            html.write_text(HtmlReportGenerator().generate(out_report, show_host=show_host), encoding="utf-8")
             written.append(html)
         if card is not None:
             stage = "--card destination"
