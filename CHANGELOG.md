@@ -47,6 +47,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   payload before the cut delimiter that holds a value withholds the element.
   Keep existing ESC ESC control-stripping semantics because restarting at the
   second ESC adds withholding for benign long OSC payloads.
+- Avoid duplicate escape suffix construction and per-character ASCII
+  normalization in redaction views. Add a full-field 1 MiB mixed CSI/OSC/ESC
+  hostile performance case and deterministic linear-work regression tests.
 
 ### Tests
 

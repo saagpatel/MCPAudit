@@ -238,7 +238,12 @@ def _sequence_choices(value: str, start: int, end: int) -> tuple[tuple[_Choice, 
         index for left, right in _printable_spans(value, start, end) for index in range(left, right)
     )
     choices: dict[str, _Choice] = {"": ("", (), True)}
-    for length in (*range(1, min(len(printable), _MAX_SUFFIX) + 1), len(printable)):
+    lengths = (
+        range(1, len(printable) + 1)
+        if len(printable) <= _MAX_SUFFIX
+        else (*range(1, _MAX_SUFFIX + 1), len(printable))
+    )
+    for length in lengths:
         indexes = printable[len(printable) - length :]
         text = "".join(value[index] for index in indexes)
         choices.setdefault(text, (text, indexes, True))
@@ -637,12 +642,15 @@ def _normalized_view(value: str, *, literal: bool = False) -> tuple[str, list[tu
     pieces: list[str] = []
     origins: list[tuple[int, int]] = []
     spans = list(_literal_spans(value) if literal else control_free_spans(value))
+    source = "".join(value[start:end] for start, end in spans)
+    if source.isascii():
+        return source, [(index, index + 1) for start, end in spans for index in range(start, end)]
     for start, end in spans:
         for index in range(start, end):
             piece = normalize_text(value[index])
             pieces.append(piece)
             origins.extend([(index, index + 1)] * len(piece))
-    normalized = normalize_text("".join(value[start:end] for start, end in spans))
+    normalized = normalize_text(source)
     # Cross-character composition/reordering has no per-codepoint mapping.
     # Withhold recognized credentials rather than guess their source offsets.
     return normalized, origins if "".join(pieces) == normalized else None
