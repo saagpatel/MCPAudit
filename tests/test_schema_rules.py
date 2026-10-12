@@ -549,6 +549,7 @@ def test_camel_case_credential_names_match(name: str) -> None:
         ("ref_siblings", ["credential_header", "credential_header"], False),
         ("shared_slots", ["header_duplicate"], False),
         ("unresolved_branch", ["credential_header"], True),
+        ("unresolved_header_type", ["header_type"], True),
     ],
 )
 def test_schema_composition_fixtures(surface: str, case: str, kinds: list[str], incomplete: bool) -> None:
@@ -557,6 +558,47 @@ def test_schema_composition_fixtures(surface: str, case: str, kinds: list[str], 
     reasons: list[str] = []
     assert [finding.kind for finding in scan_tool_schema(tool, incomplete_reasons=reasons)] == kinds
     assert bool(reasons) is incomplete
+
+
+@pytest.mark.parametrize("surface", ["input_schema", "output_schema"])
+@pytest.mark.parametrize("keyword", ["anyOf", "oneOf"])
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("wrapper", ["direct", "allOf", "ref"])
+def test_unresolved_alternative_preserves_resolved_header_type(
+    surface: str, keyword: str, reverse: bool, wrapper: str
+) -> None:
+    fixtures = json.loads((Path(__file__).parent / "fixtures" / "schema_composition.json").read_text())
+    prop = fixtures["unresolved_header_type"]["properties"]["v"]
+    branches = prop.pop("anyOf")
+    prop[keyword] = branches[::-1] if reverse else branches
+    schema = fixtures["unresolved_header_type"]
+    if wrapper == "allOf":
+        schema["properties"]["v"] = {"allOf": [prop]}
+    elif wrapper == "ref":
+        schema["$defs"] = {"value": prop}
+        schema["properties"]["v"] = {"$ref": "#/$defs/value"}
+    tool = ToolInfo.model_validate({"name": "fixture", surface: schema})
+    reasons: list[str] = []
+    assert [finding.kind for finding in scan_tool_schema(tool, incomplete_reasons=reasons)] == ["header_type"]
+    assert "local_ref_unresolved" in reasons
+
+
+@pytest.mark.parametrize("surface", ["input_schema", "output_schema"])
+@pytest.mark.parametrize("constraint", ["allOf", "ref", "annotation"])
+def test_unresolved_applicable_constraint_does_not_assert_header_type(surface: str, constraint: str) -> None:
+    fixtures = json.loads((Path(__file__).parent / "fixtures" / "schema_composition.json").read_text())
+    schema = fixtures["unresolved_header_type"]
+    prop = schema["properties"]["v"]
+    if constraint == "allOf":
+        schema["properties"]["v"] = {"allOf": [prop, {"$ref": "#/$defs/missing"}]}
+    elif constraint == "ref":
+        prop["$ref"] = "#/$defs/missing"
+    else:
+        prop["x-mcp-header"] = prop["anyOf"][0].pop("x-mcp-header")
+    tool = ToolInfo.model_validate({"name": "fixture", surface: schema})
+    reasons: list[str] = []
+    assert scan_tool_schema(tool, incomplete_reasons=reasons) == []
+    assert "local_ref_unresolved" in reasons
 
 
 @pytest.mark.parametrize("keyword", ["allOf", "anyOf", "oneOf"])

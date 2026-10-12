@@ -62,6 +62,16 @@
     },
     "$defs": {"text": {"type": "string", "x-mcp-header": "X-Value"}}
   },
+  "unresolved_header_type": {
+    "properties": {
+      "v": {
+        "anyOf": [
+          {"type": "object", "x-mcp-header": "X"},
+          {"$ref": "#/$defs/missing"}
+        ]
+      }
+    }
+  },
   "unresolved_branch": {
     "properties": {
       "api_token": {

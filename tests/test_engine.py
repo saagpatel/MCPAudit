@@ -119,9 +119,16 @@ def test_run_scan_reports_incomplete_tool_schema_metadata(
 
 
 @pytest.mark.parametrize("surface", ["input_schema", "output_schema"])
-@pytest.mark.parametrize("case,state", [("nested_ref", "complete"), ("unresolved_branch", "partial")])
+@pytest.mark.parametrize(
+    "case,state,kinds",
+    [
+        ("nested_ref", "complete", ["credential_header"]),
+        ("unresolved_branch", "partial", ["credential_header"]),
+        ("unresolved_header_type", "partial", ["header_type"]),
+    ],
+)
 def test_run_scan_schema_composition_metadata_coverage(
-    monkeypatch: pytest.MonkeyPatch, surface: str, case: str, state: str
+    monkeypatch: pytest.MonkeyPatch, surface: str, case: str, state: str, kinds: list[str]
 ) -> None:
     fixtures = json.loads((Path(__file__).parent / "fixtures" / "schema_composition.json").read_text())
     tool = ToolInfo.model_validate({"name": "fixture", surface: fixtures[case]})
@@ -136,7 +143,7 @@ def test_run_scan_schema_composition_metadata_coverage(
 
     monkeypatch.setattr(engine, "ServerConnector", FixtureConnector)
     report = anyio.run(partial(run_scan, ScanOptions(), servers=[server]))
-    assert [finding.kind for finding in report.audits[0].schema_findings] == ["credential_header"]
+    assert [finding.kind for finding in report.audits[0].schema_findings] == kinds
     assert report.coverage["metadata"].state == state
     warnings = [warning for warning in report.warnings if warning.code == "tool_schema_incomplete"]
     assert bool(warnings) is (state == "partial")

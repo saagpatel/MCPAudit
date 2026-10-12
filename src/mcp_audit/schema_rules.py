@@ -86,11 +86,12 @@ _MAX_REF_HOPS = 64
 _COMPOSITION_KEYWORDS = ("allOf", "anyOf", "oneOf")
 _ALL_TYPES = _PRIMITIVE_TYPES | {"object", "array", "null"}
 _UNSUPPORTED_REFERENCES = ("$dynamicRef", "$recursiveRef")
+_HeaderTypes = dict[int, tuple[set[str], bool]]
 
 
 def _effective_header_types(
     root: dict[str, object], node: dict[str, object], anchors: dict[str, dict[str, object] | None] | None
-) -> tuple[dict[int, set[str]], bool]:
+) -> tuple[_HeaderTypes, bool]:
     """Bounded type constraints: intersect refs/allOf, union anyOf/oneOf alternatives.
 
     This is type coverage, not full JSON Schema validation. In particular, oneOf
@@ -98,9 +99,24 @@ def _effective_header_types(
     """
     remaining = _MAX_SCHEMA_NODES
 
-    def visit(
-        current: object, depth: int, active: frozenset[int]
-    ) -> tuple[set[str], dict[int, set[str]], bool]:
+    def combine_headers(
+        groups: list[tuple[_HeaderTypes, bool]], types: set[str], *, alternatives: bool = False
+    ) -> _HeaderTypes:
+        unresolved = sum(not resolved for _headers, resolved in groups)
+        result: _HeaderTypes = {}
+        for headers, resolved in groups:
+            siblings_resolved = alternatives or unresolved == int(not resolved)
+            for identity, (allowed, header_resolved) in headers.items():
+                allowed = allowed & types
+                header_resolved &= siblings_resolved
+                if identity in result:
+                    previous_types, previous_resolved = result[identity]
+                    allowed |= previous_types
+                    header_resolved &= previous_resolved
+                result[identity] = allowed, header_resolved
+        return result
+
+    def visit(current: object, depth: int, active: frozenset[int]) -> tuple[set[str], _HeaderTypes, bool]:
         nonlocal remaining
         remaining -= 1
         if remaining < 0 or depth >= _MAX_REF_HOPS:
@@ -111,8 +127,10 @@ def _effective_header_types(
             return set(), {}, False
         active = active | {id(current)}
         types = set(_ALL_TYPES)
-        header_types = {id(current): set(_ALL_TYPES)} if "x-mcp-header" in current else {}
         resolved = not any(key in current for key in _UNSUPPORTED_REFERENCES)
+        header_types: _HeaderTypes = (
+            {id(current): (set(_ALL_TYPES), resolved)} if "x-mcp-header" in current else {}
+        )
         if "type" in current:
             raw_type = current["type"]
             if isinstance(raw_type, str) and raw_type in _ALL_TYPES:
@@ -124,41 +142,51 @@ def _effective_header_types(
             ):
                 types = {value for value in raw_type if isinstance(value, str)}
             else:
-                return set(), header_types, False
+                return (
+                    set(),
+                    {identity: (allowed, False) for identity, (allowed, _) in header_types.items()},
+                    False,
+                )
             # Integers are also numbers; expansion makes intersections accurate.
             if "number" in types:
                 types.add("integer")
+        groups = [(header_types, resolved)]
         if "$ref" in current:
             ref = current["$ref"]
             target = _local_ref(root, ref, anchors) if isinstance(ref, str) else None
             child_types, child_headers, child_resolved = visit(target, depth + 1, active)
             types &= child_types
-            for identity, allowed in child_headers.items():
-                header_types.setdefault(identity, set()).update(allowed)
-            resolved &= child_resolved
+            groups.append((child_headers, child_resolved))
         for keyword in _COMPOSITION_KEYWORDS:
             if keyword not in current:
                 continue
             branches = current[keyword]
             if not isinstance(branches, list) or not branches:
-                resolved = False
+                groups.append(({}, False))
                 continue
             combined = set(_ALL_TYPES) if keyword == "allOf" else set()
+            branch_groups: list[tuple[_HeaderTypes, bool]] = []
             for branch in branches:
                 child_types, child_headers, child_resolved = visit(branch, depth + 1, active)
                 if keyword == "allOf":
                     combined &= child_types
                 else:
                     combined |= child_types
-                for identity, allowed in child_headers.items():
-                    header_types.setdefault(identity, set()).update(allowed)
-                resolved &= child_resolved
+                branch_groups.append((child_headers, child_resolved))
                 if remaining < 0:
                     break
             types &= combined
+            groups.append(
+                (
+                    combine_headers(branch_groups, combined, alternatives=keyword != "allOf"),
+                    all(child_resolved for _headers, child_resolved in branch_groups),
+                )
+            )
         # A header retains the constraints of its own alternative, then inherits
         # same-value constraints from references, siblings, and enclosing nodes.
-        return types, {identity: allowed & types for identity, allowed in header_types.items()}, resolved
+        # Unresolved alternatives affect coverage, but only applicable constraints
+        # affect the resolution of an individual header declaration.
+        return types, combine_headers(groups, types), all(resolved for _headers, resolved in groups)
 
     _types, header_types, resolved = visit(node, 0, frozenset())
     return header_types, resolved
@@ -333,7 +361,7 @@ def _schema_rules(
     headers: dict[str, str] = {}
     uses: list[tuple[str | None, list[dict[str, object]]]] = []
     contexts: dict[int, list[dict[str, object]]] = {}
-    type_cache: dict[int, tuple[dict[int, set[str]], bool]] = {}
+    type_cache: dict[int, tuple[_HeaderTypes, bool]] = {}
     same_value_children: set[int] = set()
     for node in reachable:
         ref = node.get("$ref")
@@ -400,12 +428,12 @@ def _schema_rules(
             if id(context) not in type_cache:
                 type_cache[id(context)] = _effective_header_types(schema, context, reference_anchors)
             header_types, resolved = type_cache[id(context)]
-            types = header_types.get(id(node))
-            if not resolved or types is None:
+            types, header_resolved = header_types.get(id(node), (set(), False))
+            if not resolved or not header_resolved:
                 reason = "x-mcp-header type could not be resolved through local refs or composition"
                 if reason not in incomplete_reasons:
                     incomplete_reasons.append(reason)
-            elif not types or not types <= _PRIMITIVE_TYPES:
+            if header_resolved and (not types or not types <= _PRIMITIVE_TYPES):
                 invalid_type = True
         if invalid_type:
             findings.append(
