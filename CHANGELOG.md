@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Warn on legacy v1 pin reads with a `pin --refresh SERVER` migration hint;
+  `pin --status` includes the warning in terminal and JSON output. v1 pin support
+  is deprecated and planned for removal in 3.0.
 - Keep release supply tests aligned with the candidate or published version selected by release state.
 
 ## [2.10.1] - 2026-10-11
