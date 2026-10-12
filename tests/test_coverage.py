@@ -30,6 +30,7 @@ from mcp_audit.models import (
     ServerAudit,
     ServerConfig,
 )
+from mcp_audit.pinning import PinStore
 from mcp_audit.policy import PolicyConfig, evaluate_policy, load_policy
 from mcp_audit.sarif import SarifGenerator
 from mcp_audit.text_limits import MAX_FIELD_BYTES
@@ -554,6 +555,105 @@ async def test_bounded_clean_canary_and_unrequested_checks_pass_coverage_gate() 
     assert report.coverage["runtime_security"].state == "complete"
     assert report.coverage["inject_check"].state == "not_requested"
     assert evaluate_policy(report, PolicyConfig(fail_on_coverage=True)).passed
+
+
+@pytest.mark.parametrize("requested,executed", [(True, True), (True, False), (False, True)])
+@pytest.mark.parametrize("affected", [False, True])
+def test_withheld_canary_warning_maps_to_runtime_coverage_only(
+    requested: bool, executed: bool, affected: bool
+) -> None:
+    audit = ServerAudit(
+        server=make_server_config(name="fixture"),
+        connection_status="connected",
+        canary=CanarySummary(requested_calls=1, completed_calls=1, status="complete"),
+    )
+    coverage = coverage_module.build_coverage(
+        [audit],
+        requested={"runtime_security"} if requested else set(),
+        skip_connect=False,
+        warnings=[
+            ScanWarning(
+                code="pin_baseline_withheld",
+                message="Synthetic saved baseline withheld.",
+                check="canary_check",
+                servers=["fixture" if affected else "other-fixture"],
+            )
+        ],
+        baselines={},
+        completed=[
+            {"metadata", "permissions", "capabilities"} | ({"runtime_security"} if executed else set())
+        ],
+        package_coverage={},
+        discovery_incomplete=False,
+        config_health_inspected=True,
+    )
+    expected = (
+        "not_requested"
+        if not requested
+        else "not_run"
+        if not executed
+        else "partial"
+        if affected
+        else "complete"
+    )
+    assert coverage["runtime_security"].state == expected
+    if expected == "partial":
+        assert coverage["runtime_security"].reason == "pin_baseline_withheld"
+    assert coverage["metadata"].state == "complete"
+    assert coverage["permissions"].state == "complete"
+    assert coverage["capabilities"].state == "complete"
+    assert "canary_check" not in coverage
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("baseline", ["withheld_v2", "withheld_v1", "usable_v2", "absent"])
+async def test_withheld_canary_baseline_is_visible_in_json_and_sarif_coverage(
+    tmp_path: Path, baseline: str
+) -> None:
+    from mcp_audit.pin_signing import generate_keypair
+
+    config = make_server_config(
+        name="fixture", command=sys.executable, args=[str(FIXTURES / "deadbugz_server.py"), "clean"]
+    )
+    pins = tmp_path / "pins.yaml"
+    trust = tmp_path / "trusted.json"
+    store = PinStore(pins, trusted_keys_path=trust)
+    if baseline == "withheld_v1":
+        pins.write_text(
+            "servers:\n  fixture:\n    tools:\n      status:\n        pin_schema: 1\n        snapshot: {}\n"
+        )
+    elif baseline != "absent":
+        captured = await ServerConnector(timeout=15).connect(config)
+        assert captured.connection_status == "connected"
+        store.pin_server(config.name, captured.tools)
+    withheld = baseline.startswith("withheld")
+    if withheld:
+        generate_keypair(tmp_path / "keys", trust)
+    store = PinStore(pins, trusted_keys_path=trust)
+    assert store.baseline_usable(config.name) is not withheld
+    before = pins.read_bytes() if pins.exists() else None
+
+    report = await run_scan(ScanOptions(canary_check=True, timeout=15), servers=[config], pin_store=store)
+    summary = report.audits[0].canary
+    assert summary is not None and summary.status == "complete"
+    assert summary.completed_calls == summary.call_budget == 5
+    assert summary.baseline_source == ("pin" if baseline == "usable_v2" else "session")
+    warnings = [warning for warning in report.warnings if warning.code == "pin_baseline_withheld"]
+    assert len(warnings) == (1 if withheld else 0)
+    if withheld:
+        assert warnings[0].check == "canary_check" and warnings[0].servers == [config.name]
+    expected = {"state": "partial", "reason": "pin_baseline_withheld"} if withheld else None
+    serialized = report.redacted().model_dump(mode="json")
+    sarif = SarifGenerator().generate(report)["runs"][0]["properties"]["mcpAuditCoverage"]
+    if expected is not None:
+        assert serialized["coverage"]["runtime_security"] == expected
+        assert sarif["runtime_security"] == expected
+    else:
+        assert serialized["coverage"]["runtime_security"]["state"] == "complete"
+        assert sarif["runtime_security"]["state"] == "complete"
+    assert report.coverage["metadata"].state == "complete"
+    assert evaluate_policy(report, PolicyConfig(fail_on_coverage=True)).passed is not withheld
+    assert (pins.read_bytes() if pins.exists() else None) == before
 
 
 @pytest.mark.anyio

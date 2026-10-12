@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 
 import anyio
 
-from mcp_audit.probe import _json_object, _post_url, _request_sync, _Response
+from mcp_audit.probe import Response, json_object, post_url, request_sync
 
 PROTOCOL_VERSION = "2026-07-28"
 BAD_ORIGIN = "https://mcpaudit-conformance.invalid"
@@ -44,10 +44,10 @@ def _headers(method: str = "server/discover") -> dict[str, str]:
     }
 
 
-def _error_code(response: _Response) -> int | None:
+def _error_code(response: Response) -> int | None:
     if response.oversized or response.streamed:
         return None
-    raw = _json_object(response.body)
+    raw = json_object(response.body)
     if raw is None or raw.get("jsonrpc") != "2.0" or type(raw.get("id")) is not int or raw["id"] != 1:
         return None
     error = raw.get("error")
@@ -57,10 +57,10 @@ def _error_code(response: _Response) -> int | None:
     return code if type(code) is int and isinstance(error.get("message"), str) else None
 
 
-def _modern_control(response: _Response | None) -> bool:
+def _modern_control(response: Response | None) -> bool:
     if response is None or response.status != 200 or response.oversized or response.streamed:
         return False
-    raw = _json_object(response.body)
+    raw = json_object(response.body)
     if raw is None or raw.get("jsonrpc") != "2.0" or type(raw.get("id")) is not int or raw["id"] != 1:
         return False
     result = raw.get("result")
@@ -72,7 +72,7 @@ def _modern_control(response: _Response | None) -> bool:
     )
 
 
-def _result(probe: str, variant: str, response: _Response | None) -> dict[str, object]:
+def _result(probe: str, variant: str, response: Response | None) -> dict[str, object]:
     status = response.status if response is not None else None
     code = _error_code(response) if response is not None else None
     verdict = "unknown"
@@ -96,12 +96,12 @@ def _result(probe: str, variant: str, response: _Response | None) -> dict[str, o
 
 async def _send(
     url: str, address: str, timeout: float, headers: dict[str, str], body: bytes
-) -> _Response | None:
+) -> Response | None:
     try:
         with anyio.fail_after(timeout):
             return await anyio.to_thread.run_sync(
                 partial(
-                    _request_sync, url, "POST", address, timeout, request_headers=headers, request_body=body
+                    request_sync, url, "POST", address, timeout, request_headers=headers, request_body=body
                 ),
                 abandon_on_cancel=True,
             )
@@ -114,7 +114,7 @@ async def run_conformance_probe(url: str, timeout: float) -> dict[str, object]:
     """Use one pinned address, a positive control, three T7 variants and loopback T9."""
     if not 0.1 <= timeout <= 30:
         raise ValueError("invalid request deadline")
-    _post_url(url)
+    post_url(url)
     parsed = urlsplit(url)
     host = parsed.hostname
     assert host is not None

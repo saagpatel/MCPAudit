@@ -12,7 +12,7 @@ from click.testing import CliRunner
 
 from mcp_audit.cli import main
 from mcp_audit.conformance_probe import BAD_ORIGIN, PROTOCOL_VERSION, run_conformance_probe
-from mcp_audit.probe import MAX_BODY_BYTES, _Response
+from mcp_audit.probe import MAX_BODY_BYTES, Response
 from tests.fixtures.conformance_server import ConformancePeer, ConformanceServer
 
 
@@ -36,13 +36,13 @@ def peer(
             *,
             request_headers: dict[str, str],
             request_body: bytes,
-        ) -> _Response:
+        ) -> Response:
             status, body = fixture.respond(
                 {key.lower(): value for key, value in request_headers.items()}, json.loads(request_body)
             )
-            return _Response(status, [], True, body[:MAX_BODY_BYTES], len(body) > MAX_BODY_BYTES)
+            return Response(status, [], True, body[:MAX_BODY_BYTES], len(body) > MAX_BODY_BYTES)
 
-        monkeypatch.setattr("mcp_audit.conformance_probe._request_sync", respond)
+        monkeypatch.setattr("mcp_audit.conformance_probe.request_sync", respond)
         yield fixture
         return
     with ConformanceServer(getattr(request, "param", "compliant")) as server:
@@ -178,7 +178,7 @@ async def test_connection_failure_is_unknown_without_echoing_exception(
     def unavailable(*args: object, **kwargs: object) -> None:
         raise OSError("private-fixture-marker")
 
-    monkeypatch.setattr("mcp_audit.conformance_probe._request_sync", unavailable)
+    monkeypatch.setattr("mcp_audit.conformance_probe.request_sync", unavailable)
     report = await run_conformance_probe("http://127.0.0.1:1/mcp", 0.1)
     assert report["control_status"] is None
     assert "private-fixture-marker" not in json.dumps(report)

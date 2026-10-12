@@ -37,6 +37,11 @@ def _warning_reasons(check: str, audit: ServerAudit, warnings: list[ScanWarning]
         if (
             warning.check == check
             or (
+                warning.code == "pin_baseline_withheld"
+                and warning.check == "canary_check"
+                and check == "runtime_security"
+            )
+            or (
                 warning.code == "permission_schema_incomplete"
                 and warning.check == "permission_analysis"
                 and check in {"permissions", "trifecta_check", "escalation_check"}
