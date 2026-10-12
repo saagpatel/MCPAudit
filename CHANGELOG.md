@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Add a regression test requiring publish workflows to disable `setup-uv`
+  caching and omit `actions/cache`; document the false-positive dispositions
+  for code-scanning alerts #42, #43, #44, and #47 in the release checklist.
+
 ## [2.10.1] - 2026-10-11
 
 ### Security
