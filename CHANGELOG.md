@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- Shard the per-server stage of fleets larger than 256 servers across up to
+  eight spawn workers on supported POSIX hosts, keeping fleet checks and report
+  finalization in the parent and enforcing the scan-wide connection limit.
+  Stateful pin, canary, LLM and package-verification modes retain the existing
+  single-process path. Missing worker results produce explicit failed audits
+  and an additive `worker_process_failed` warning.
+
 ### Fixed
 
 - Follow local `$ref`, `allOf`, `anyOf`, and `oneOf` in static schema header

@@ -1329,6 +1329,11 @@ The report top level also includes:
     permission was denied; `check: connection`, cleanup remains unverified),
     `analysis_timeout` (the remaining per-server wall clock expired during analysis;
     incomplete findings are discarded and the connection status is `timeout`),
+    `worker_process_failed` (a large-fleet worker could not start or exited
+    without returning this server's result; `check: connection`, names the
+    affected server, sets its connection status to `failed`, and retains no
+    incomplete findings or completed-check claims; returned results and sibling
+    workers are preserved),
     `description_truncated` (permission keyword or SSRF fetch-verb input
     exceeded the 256 KiB UTF-8 per-field limit; suffix evidence was not inspected).
     The vocabulary is additive — consumers must tolerate unknown codes.
