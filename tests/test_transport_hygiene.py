@@ -62,6 +62,8 @@ def _process_group_ps_output(group: int) -> str:
             text=True,
             timeout=5,
         )
+    except subprocess.TimeoutExpired:
+        return "ps -g timed out after 5s"
     except OSError as exc:
         return f"ps -g could not run: {exc}"
     output = "\n".join(part for part in (result.stdout.strip(), result.stderr.strip()) if part)
@@ -194,6 +196,25 @@ async def test_process_group_teardown_failure_includes_assertion_and_ps_output(
     assert "assert not _group_exists(4321)" in message
     assert "ps -g 4321 output:" in message
     assert "4321  1  4321 S fixture-process" in message
+
+
+@pytest.mark.anyio
+async def test_process_group_teardown_failure_survives_ps_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("tests.test_transport_hygiene._group_exists", lambda group: True)
+
+    def slow_ps(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise subprocess.TimeoutExpired(command, 5)
+
+    monkeypatch.setattr("tests.test_transport_hygiene.subprocess.run", slow_ps)
+
+    with pytest.raises(pytest.fail.Exception) as failure:
+        await _assert_process_group_exited(4321, timeout=0)
+
+    message = str(failure.value)
+    assert "assert not _group_exists(4321)" in message
+    assert "ps -g timed out" in message
 
 
 @pytest.mark.anyio
