@@ -26,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `check --connect-all` explicitly connects to the reviewed fleet, with project
+  servers included only through `--connect-project-configs`. It conflicts with
+  `--connect`, `--server`, and hidden `--skip-connect`, preserves canary's
+  explicit-file/no-discovery restriction, and uses the existing concurrency,
+  per-session timeout and eligible large-fleet CLI sharding limits.
 - Requested pin checks with withheld baselines now report partial coverage with
   reason `pin_baseline_withheld`. The opt-in policy boolean
   `fail_on.pin_baseline_withheld` fails these checks; its default remains off.
@@ -42,7 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   connection and discovery constraints. Report destinations protect effective
   pin baselines, including the default path and filesystem aliases, whenever
   detectors or policy consume pins. `--connect-project-configs` requires
-  `--connect`; static project checks retain their connection warning.
+  `--connect` or `--connect-all`; static project checks retain their connection warning.
 
 ## [2.11.0] - 2026-10-12
 
