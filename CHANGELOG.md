@@ -7,16 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- Shard the per-server stage of connected CLI scans of fleets larger than 256
+  servers across up to eight spawn workers on supported POSIX hosts, keeping fleet checks and report
+  finalization in the parent and enforcing the scan-wide connection limit.
+  Stateful pin, canary, LLM and package-verification modes retain the existing
+  single-process path, as do `--skip-connect` scans and library callers.
+  Missing worker results produce explicit failed audits
+  and an additive `worker_process_failed` warning.
+
 ### Fixed
 
-- Reduce config-only report redaction overhead with a conservative printable-ASCII
-  argv shortcut, pass-local argv memoization, and typed copies of validated report
-  models. Avoid repeated empty-metadata analysis, coverage model construction,
-  config tagging copies, and JSON conversions. Preserve credential redaction,
-  report formatting, and performance thresholds.
-- Complete the calibrated performance gate with 100,000 config-only servers,
-  a 1 MiB description under `--ssrf-check`, and hostile-server wall bounds with
-  zero leftover processes or groups in every profile.
+- Parse terminated OSC 8 hyperlinks structurally during report redaction:
+  redact URI credentials as typed URLs and detect link text without escape
+  framing, preserving long plain links. Keep the conservative fallback for
+  malformed frames and other escapes longer than 64 printable characters.
 - Follow local `$ref`, `allOf`, `anyOf`, and `oneOf` in static schema header
   type and per-property checks, with bounded depth and work. Preserve incomplete
   metadata coverage for unresolved, malformed, cyclic, or exhausted branches.
@@ -42,6 +48,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   payload before the cut delimiter that holds a value withholds the element.
   Keep existing ESC ESC control-stripping semantics because restarting at the
   second ESC adds withholding for benign long OSC payloads.
+- Avoid duplicate escape suffix construction and per-character ASCII
+  normalization in redaction views. Add a full-field 1 MiB mixed CSI/OSC/ESC
+  hostile performance case and deterministic linear-work regression tests.
+- Reduce config-only report redaction overhead with a conservative printable-ASCII
+  argv shortcut, pass-local argv memoization, and typed copies of validated report
+  models. Avoid repeated empty-metadata analysis, coverage model construction,
+  config tagging copies, and JSON conversions. Preserve credential redaction,
+  report formatting, and performance thresholds.
+- Complete the calibrated performance gate with 100,000 config-only servers,
+  a 1 MiB description under `--ssrf-check`, and hostile-server wall bounds with
+  zero leftover processes or groups in every profile.
 
 ### Tests
 

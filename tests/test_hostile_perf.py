@@ -149,6 +149,8 @@ CASES = (
             "silent-after-eof",
         )
     ),
+    # New full-field redaction ceiling, separate from historical scan measurements.
+    Case("escape_dense", (), 10, 512, servers=0, tools=0),
 )
 
 
@@ -215,6 +217,8 @@ def run_case(
 ) -> dict[str, object]:
     assert not any(root.iterdir()), "Use a fresh performance case directory."
     env = isolated_env(root)
+    if case.name == "escape_dense":
+        return run_escape_dense(root, case, env, calibration)
     fixture = str(FIXTURES / "hostile_server.py")
     configs: dict[str, object] = {
         f"srv{i:04d}": {
@@ -324,6 +328,48 @@ def run_case(
     return measured
 
 
+def run_escape_dense(
+    root: Path, case: Case, env: dict[str, str], calibration: Calibration
+) -> dict[str, object]:
+    # Connected listings cap item text below 1 MiB; exercise the complete field
+    # directly, in an isolated process with the same allowlisted environment.
+    timing_path = root / "timing.json"
+    deadline = (case.wall + 10) * calibration.factor
+    measured: dict[str, object] = {
+        "case": case.name,
+        "calibration": calibration.metrics(),
+        "deadline_seconds": deadline,
+    }
+    start = time.perf_counter()
+    process = subprocess.Popen(
+        [sys.executable, str(FIXTURES / "perf_redact.py"), str(timing_path)],
+        cwd=root,
+        env={**env, "PYTHONPATH": str(FIXTURES.parent.parent)},
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+    )
+    try:
+        try:
+            _, stderr = process.communicate(timeout=deadline)
+            measured["deadline_exceeded"] = False
+        except subprocess.TimeoutExpired:
+            measured["deadline_exceeded"] = True
+            os.killpg(process.pid, signal.SIGKILL)
+            _, stderr = process.communicate(timeout=5 * calibration.factor)
+        measured["wall_seconds"] = time.perf_counter() - start
+        measured["exit_code"] = process.returncode
+        measured["stderr_bytes"] = len(stderr)
+        if timing_path.exists():
+            measured.update(json.loads(timing_path.read_text()))
+    finally:
+        if process_exists(process.pid, group=True):
+            os.killpg(process.pid, signal.SIGKILL)
+        process.wait(timeout=5 * calibration.factor)
+        (root / "metrics.json").write_text(json.dumps(measured, indent=2) + "\n")
+    return measured
+
+
 def number(metrics: dict[str, object], key: str) -> float:
     value = metrics[key]
     assert isinstance(value, (int, float)), f"Missing numeric measurement: {key}"
@@ -369,6 +415,15 @@ def assert_limits(
     stage = PROFILES.index(profile)
     assert metrics["deadline_exceeded"] is False, metrics
     assert metrics["exit_code"] == 0, metrics
+    if case.name == "escape_dense":
+        assert number(metrics, "redaction_input_bytes") == MIB, metrics
+        assert 0 < number(metrics, "redaction_output_bytes") < MIB, metrics
+        assert metrics["credential_withheld"] is True and metrics["stable"] is True, metrics
+        assert 0 < number(metrics, "redaction_seconds") <= case.wall * calibration.factor, metrics
+        assert number(metrics, "wall_seconds") <= case.wall * calibration.factor, metrics
+        assert case.rss_mib is not None
+        assert number(metrics, "peak_rss_bytes") <= case.rss_mib * MIB, metrics
+        return
     wall = case.wall
     rss = case.rss_mib
     analysis = case.analysis

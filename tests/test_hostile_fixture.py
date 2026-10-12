@@ -21,6 +21,39 @@ from tests.test_hostile_perf import (
 
 
 @pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("redaction_input_bytes", 256 * 1024),
+        ("redaction_output_bytes", 1024 * 1024),
+        ("credential_withheld", False),
+        ("stable", False),
+        ("redaction_seconds", 0),
+        ("wall_seconds", 11),
+        ("peak_rss_bytes", 513 * 1024 * 1024),
+    ],
+)
+def test_escape_dense_gate_rejects_missing_coverage_or_regressions(key: str, value: object) -> None:
+    case = next(case for case in CASES if case.name == "escape_dense")
+    metrics: dict[str, object] = {
+        "deadline_exceeded": False,
+        "exit_code": 0,
+        "redaction_input_bytes": 1024 * 1024,
+        "redaction_output_bytes": 18,
+        "credential_withheld": True,
+        "stable": True,
+        "redaction_seconds": 1,
+        "wall_seconds": 2,
+        "peak_rss_bytes": 128 * 1024 * 1024,
+    }
+    assert_limits(metrics, case, "baseline")
+    with pytest.raises(AssertionError):
+        assert_limits({**metrics, key: value}, case, "baseline")
+    del metrics[key]
+    with pytest.raises(KeyError):
+        assert_limits(metrics, case, "baseline")
+
+
+@pytest.mark.parametrize(
     "mode",
     [
         "normal",

@@ -2,8 +2,9 @@
 
 import json
 from collections import Counter
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Literal
+from typing import Literal, SupportsIndex
 
 import json5
 import pytest
@@ -16,6 +17,79 @@ from mcp_audit.discovery.base import ConfigParseError
 from mcp_audit.models import ClientType, ServerConfig, ToolInfo
 from mcp_audit.rules.patterns import PERMISSION_PATTERNS
 from tests.conftest import make_tool
+from tests.fixtures.escape_dense import MIB, escape_dense_field
+
+
+@pytest.mark.parametrize("separated", [False, True], ids=["adjacent", "spaced"])
+def test_escape_dense_redaction_work_is_linear(monkeypatch: pytest.MonkeyPatch, separated: bool) -> None:
+    work = 0
+    text_edits, choices = redaction._text_edits, redaction._sequence_choices
+    normalize_text = normalize.normalize_text
+
+    def counted_edits(
+        value: str, *, raw: bool = True, labels: frozenset[int] | None = None
+    ) -> Iterator[tuple[int, int, str]]:
+        nonlocal work
+        work += len(value)
+        return text_edits(value, raw=raw, labels=labels)
+
+    def counted_choices(value: str, start: int, end: int) -> tuple[tuple[redaction._Choice, ...], bool]:
+        nonlocal work
+        result, complete = choices(value, start, end)
+        work += end - start + sum(len(text) for text, _, _ in result)
+        return result, complete
+
+    def counted_normalize(value: str) -> str:
+        nonlocal work
+        work += len(value)
+        return normalize_text(value)
+
+    monkeypatch.setattr(redaction, "_text_edits", counted_edits)
+    monkeypatch.setattr(redaction, "_sequence_choices", counted_choices)
+    monkeypatch.setattr(redaction, "normalize_text", counted_normalize)
+    for size in (MIB // 16, MIB // 4, MIB):
+        field = escape_dense_field(size, separated=separated)
+        assert len(field.encode("utf-8")) == size
+        assert all(sequence in field for sequence in ("\x1b[31m", "\x1b]note\x07", "\x1b:"))
+        work = 0
+        assert redaction.redact_text(field) == ("context <redacted>" if separated else "<redacted>")
+        # Count scanned detection/normalization characters and copied reading
+        # choices, rather than elapsed time. A 16x input cannot do quadratic work.
+        assert work <= 40 * size + (1 << 20), (size, work)
+
+
+@pytest.mark.parametrize("literal", [False, True])
+def test_ascii_redaction_view_does_not_normalize_codepoints(
+    monkeypatch: pytest.MonkeyPatch, literal: bool
+) -> None:
+    def unexpected_normalize(value: str) -> str:
+        pytest.fail("ASCII view normalization is the identity")
+
+    monkeypatch.setattr(redaction, "normalize_text", unexpected_normalize)
+    field = "a\x1b[31mb\x1b]note\x07\x1b:c"
+    text, origins = redaction._normalized_view(field, literal=literal)
+    assert text == ("a31mbnote:c" if literal else "abc")
+    assert origins is not None
+    assert "".join(field[start:end] for start, end in origins) == text
+
+
+@pytest.mark.parametrize("size", [0, 1, 4, redaction._MAX_SUFFIX, redaction._MAX_SUFFIX + 1])
+def test_escape_suffix_choices_do_not_copy_the_full_payload_twice(size: int) -> None:
+    visits = 0
+
+    class CountedText(str):
+        def __getitem__(self, key: SupportsIndex | slice) -> str:
+            nonlocal visits
+            result = super().__getitem__(key)
+            visits += len(result)
+            return result
+
+    field = CountedText("\x1b]" + "a" * size + "\x07")
+    choices, complete = redaction._sequence_choices(field, 0, len(field))
+    suffix = min(size, redaction._MAX_SUFFIX)
+    assert visits == suffix * (suffix + 1) // 2 + (size if size > suffix else 0)
+    assert complete == (size <= redaction._MAX_SUFFIX)
+    assert choices[-1][0] == "a" * size
 
 
 def test_ascii_normalization_does_not_visit_codepoints(monkeypatch: pytest.MonkeyPatch) -> None:

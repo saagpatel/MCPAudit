@@ -48,7 +48,16 @@ the first secret label or URL in that whitespace-free token (or from the start
 of an existing replacement there) through the end of the token is withheld.
 A removed run may have consumed printable bytes (a CSI or C1 final byte, its
 parameters and intermediates, an OSC payload, or the byte after a bare ESC).
-Each escape sequence in a removed run reads as dropped or as any suffix of
+Terminated OSC 8 hyperlinks are parsed separately: their URI uses typed URL
+redaction (userinfo, query values and fragments), their parameters receive
+ordinary text redaction, and their framing is excluded from ordinary text
+detection. Link text is detected together with surrounding text, including
+labels or values split by hyperlink frames. Safe frames and endpoint spelling
+remain in machine-readable text; human-facing control stripping is unchanged.
+Both ESC `]` and C1 OSC introducers and BEL, ESC `\` and C1 ST terminators
+are recognized. Unterminated or control-bearing OSC 8 frames retain the
+conservative escape-reading fallback.
+Every other escape sequence in a removed run reads as dropped or as any suffix of
 its printable bytes (the sequence may have been meant to end earlier than the
 parser ended it). Detection also reads the whole
 field with those bytes kept, and reads each whitespace-free token together
@@ -1329,6 +1338,11 @@ The report top level also includes:
     permission was denied; `check: connection`, cleanup remains unverified),
     `analysis_timeout` (the remaining per-server wall clock expired during analysis;
     incomplete findings are discarded and the connection status is `timeout`),
+    `worker_process_failed` (a large-fleet worker could not start or exited
+    without returning this server's result; `check: connection`, names the
+    affected server, sets its connection status to `failed`, and retains no
+    incomplete findings or completed-check claims; returned results and sibling
+    workers are preserved),
     `description_truncated` (permission keyword or SSRF fetch-verb input
     exceeded the 256 KiB UTF-8 per-field limit; suffix evidence was not inspected).
     The vocabulary is additive — consumers must tolerate unknown codes.
