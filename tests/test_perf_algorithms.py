@@ -10,10 +10,11 @@ import json5
 import pytest
 from pydantic import BaseModel
 
-from mcp_audit import analyzer, normalize, redaction
-from mcp_audit.discovery import _config
+from mcp_audit import analyzer, engine, normalize, redaction
+from mcp_audit.agent_text import agent_visible_text
+from mcp_audit.discovery import _config, _entry
 from mcp_audit.discovery.base import ConfigParseError
-from mcp_audit.models import ClientType, ToolInfo
+from mcp_audit.models import ClientType, ServerConfig, ToolInfo
 from mcp_audit.rules.patterns import PERMISSION_PATTERNS
 from tests.conftest import make_tool
 from tests.fixtures.escape_dense import MIB, escape_dense_field
@@ -127,6 +128,41 @@ def test_jsonc_fallback_counts_duplicate_keys_only_once() -> None:
     assert "1 duplicate object key(s)" in str(issues[0])
 
 
+@pytest.mark.parametrize("project", [False, True])
+def test_server_map_classifies_shared_path_once(monkeypatch: pytest.MonkeyPatch, project: bool) -> None:
+    calls = 0
+
+    def classify(path: Path) -> bool:
+        nonlocal calls
+        calls += 1
+        return project
+
+    monkeypatch.setattr(_entry, "is_project_config", classify)
+    servers = _entry.parse_server_map(
+        {f"fixture-{i}": {"command": "fixture"} for i in range(100)},
+        "synthetic-config.json",
+        ClientType.CLAUDE_CODE,
+    )
+    assert calls == 1
+    assert len(servers) == 100
+    assert {server.scope for server in servers} == {"project" if project else "workstation"}
+
+
+def test_explicit_config_tags_validated_models_without_copying(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = tmp_path / "synthetic-config.json"
+    config.write_text(json.dumps({"mcpServers": {"fixture/name": {"command": "fixture"}}}))
+
+    def unexpected_copy(*args: object, **kwargs: object) -> None:
+        pytest.fail("Freshly parsed models need no copies for source and pointer tags")
+
+    monkeypatch.setattr(ServerConfig, "model_copy", unexpected_copy)
+    [server] = engine._parse_extra_config(config)
+    assert server.config_source == "explicit file; parsed as Claude-style config"
+    assert server.config_pointer == "/mcpServers/fixture~1name"
+
+
 def test_keyword_scoring_does_not_revisit_unmatched_rules(monkeypatch: pytest.MonkeyPatch) -> None:
     class CountScores(dict[str, int]):
         calls = 0
@@ -152,6 +188,22 @@ def test_keyword_scoring_does_not_revisit_unmatched_rules(monkeypatch: pytest.Mo
         assert scores.calls == 0
     finally:
         analyzer._category_rules.cache_clear()
+
+
+def test_empty_tool_analysis_does_not_allocate_keyword_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    def unexpected_cache(*args: object, **kwargs: object) -> None:
+        pytest.fail("Empty tool metadata needs no keyword cache")
+
+    engine = analyzer.PermissionAnalyzer()
+    monkeypatch.setattr(analyzer, "lru_cache", unexpected_cache)
+    assert engine.analyze_server([]) == []
+    assert engine.analyze_server([], agent_texts=[]) == []
+
+
+def test_empty_tool_analysis_still_rejects_mismatched_texts() -> None:
+    text = agent_visible_text(make_tool("fixture"))
+    with pytest.raises(ValueError, match="zip"):
+        analyzer.PermissionAnalyzer().analyze_server([], agent_texts=[text])
 
 
 def test_report_redaction_reuses_short_fields_only_within_operation(

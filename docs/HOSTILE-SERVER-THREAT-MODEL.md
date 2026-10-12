@@ -45,7 +45,7 @@ errors fail the gate rather than claiming zero leftovers.
 
 ## Performance regression gate
 
-Run the eight cases explicitly (ordinary pytest runs deselect the `perf` marker):
+Run the registered cases explicitly (ordinary pytest runs deselect the `perf` marker):
 
 ```sh
 uv run --offline --no-sync pytest tests/test_hostile_perf.py -m perf -q -s \
@@ -55,10 +55,19 @@ uv run --offline --no-sync pytest tests/test_hostile_perf.py -m perf -q -s \
 Use a fresh output directory each time. Each connected case saves wall seconds, scanner
 peak RSS in bytes, permission-analysis seconds, connection/tool counts, status
 and failure reasons, recorded-process counts and ledger roles, leftover processes and groups,
-and exit/deadline state. The 500-server case also records a separate timeout-2
+and exit/deadline state. The SSRF case also records the detector's tool counts,
+retained description byte counts and finding patterns, so skipped analysis
+cannot satisfy its timing gate. The 500-server case also records a separate timeout-2
 run. RSS is the measured process high-water mark, not aggregate fixture memory.
 Wall time includes scanner interpreter startup and report rendering; the 5 MB
-target measures permission analysis only. Post-scan process observation has a
+target measures permission analysis only. The 1 MiB SSRF target conservatively
+measures total scanner wall time, including startup and rendering. Its fixture
+sends exactly 1,048,576 ASCII description bytes, including a fetch verb and a
+URL-shaped schema parameter. Existing 256 KiB listing-text caps remain in place;
+the gate requires the retained prefix (262,079 description bytes after the
+fixture's 65 structural bytes), `partial` status, a high SSRF finding and an explicit
+`surface_truncated` warning. It does not claim analysis of the discarded suffix.
+Post-scan process observation has a
 0.5-second grace, matching the original stress runner. A missing measurement,
 nonzero scanner exit, wrong tool count, or regression fails the test. A separate
 hard deadline bounds the runner even if the scanner stalls outside its timeout.
@@ -86,7 +95,9 @@ cost. Scale wall and analysis ceilings in every profile, the hard runner deadlin
 (including its ten-second margin), scanner session deadlines (rounded up because
 the CLI accepts integer seconds), bounded shutdown waits and the frame comparison's
 additive time allowance. The timeout-2 subcase keeps its reference timeout of two
-seconds before scaling. Observation/cleanup grace periods remain fixed; they are
+seconds before scaling. Hostile wall acceptance uses the actual rounded scanner
+timeout plus `4.5 * factor` seconds, so timeout rounding is not lost when scaling
+the shutdown allowance. Observation/cleanup grace periods remain fixed; they are
 measurement semantics, not acceptance ceilings. RSS, tool/server counts, statuses,
 coverage and leftover requirements never scale. Factors never fall below one.
 
@@ -122,7 +133,10 @@ to the reference workload or excuse a failed gate.
 | `desc_1mb_x20` | 75 s wall, 1282 MiB RSS | `p1-9`: ≤ 3 s wall, < 400 MB RSS |
 | `oversized_50mb` | 191.7 s wall, 3217 MiB RSS; connected with one tool | `p3-7`: < 1 s wall, < 300 MB RSS, failed with frame-size reason |
 | `pages_20k` | 20 pages of 1,000 tools | ≤ 9 s wall, < 500 MB RSS; all 20,000 tools retained with complete metadata |
-| `spawn_child_exit` (plus healthy sibling) | timeout 2 + 4.5 s wall; at most one leftover process/group | `p3-8`: same wall bound, zero leftovers |
+| `spawn_child_exit` (plus healthy sibling) | timeout 2 + 4.5 s wall; zero leftover processes/groups | Enforced in every profile |
+| `scale_100k_skip` | 100,000 servers with `--skip-connect`: ≤ 10 s wall | Enforced in every profile; all servers discovered and skipped, no fixture processes started |
+| `ssrf_1mib` | One 1 MiB description with `--ssrf-check`: < 1 s wall | Enforced in every profile; SSRF analysis and finding required |
+| `hostile_*` | timeout 2 + 4.5 s wall; zero leftover processes/groups | Enforced in every profile for stalled initialization/listing, slow bytes, wrong response IDs, notification/stderr floods and shutdown-resistant servers |
 | `escape_dense` (1 MiB mixed CSI/OSC/bare-ESC field) | 10 s wall, 512 MiB RSS; complete-field redaction and stable withholding | Same ceiling in every profile |
 
 Other connected cases always require zero leftovers. Baseline timeout-2 permits only
@@ -133,7 +147,9 @@ to admit its 20 MB response and preserve its twenty-tool analysis contract.
 The default 16 MiB rejection is tested separately by `oversized_50mb`, now
 enforced in every profile. Listing text caps still apply in the description lane.
 Future memory targets use decimal MB; baseline RSS uses the stress runner's MiB.
-The orphan allowance is an explicit known baseline defect, not a safety claim.
+The historical orphan allowance is no longer accepted in any profile. Hostile
+cases use the same pre-cleanup observation and ledger checks as the other cases;
+detached grandchildren remain outside the process-group guarantee.
 
 `escape_dense` runs the redactor directly in a disposable subprocess, without
 server connections, because connected listings cap retained item text below
@@ -151,5 +167,5 @@ nightly/dispatch defaults in `.github/workflows/hostile-perf.yml`. Tight targets
 can already be selected on demand and fail normally; they are not skipped or
 xfail assertions. The nightly workflow runs all registered cases and uploads metrics
 even on failure. P1-9 adds the detector/concurrency repairs and the 2000-server
-gate; other §5a scenarios remain separate (100k config-only servers or the
-SSRF tokenizer).
+gate; the remaining §5a config-only, SSRF and hostile-session targets are now
+registered in the same calibrated nightly/dispatch gate.

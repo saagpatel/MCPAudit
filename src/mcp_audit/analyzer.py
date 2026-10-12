@@ -163,6 +163,8 @@ class PermissionAnalyzer:
         agent_texts: list[AgentText] | None = None,
     ) -> list[PermissionFinding]:
         """Return all permission findings across all tools on a server."""
+        if not tools and not agent_texts:
+            return []
         findings: list[PermissionFinding] = []
         texts = agent_texts if agent_texts is not None else map(agent_visible_text, tools)
         # Repeated short schema words are common across a server's tools. Keep

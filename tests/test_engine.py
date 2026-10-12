@@ -31,14 +31,99 @@ from mcp_audit.models import (
     LLMAnalysisReasonCode,
     LLMAnalysisStatus,
     LLMAnalysisSummary,
+    PermissionFinding,
     PromptInfo,
     ResourceInfo,
+    RiskScore,
     ScanWarning,
     ServerAudit,
     ServerConfig,
     ToolInfo,
 )
+from mcp_audit.overrides import OverrideApplier, OverrideConfig, PermissionOverride, ServerToolOverride
+from mcp_audit.scorer import RiskScorer
 from tests.conftest import make_server_config
+
+
+@pytest.mark.anyio
+async def test_scan_rejects_an_unpublished_result_slot(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def unpublished(*args: object) -> None:
+        return None
+
+    monkeypatch.setattr(engine, "_analyze_server", unpublished)
+    with pytest.raises(RuntimeError, match="audit was not published"):
+        await run_scan(
+            ScanOptions(skip_connect=True), servers=[make_server_config(name="fixture", command="fixture")]
+        )
+
+
+@pytest.mark.anyio
+async def test_empty_config_score_template_is_scan_local(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = 0
+    original = RiskScorer.score_server
+
+    def counted(self: RiskScorer, permissions: list[PermissionFinding]) -> RiskScore:
+        nonlocal calls
+        calls += 1
+        return original(self, permissions)
+
+    monkeypatch.setattr(RiskScorer, "score_server", counted)
+    servers = [make_server_config(name=f"fixture-{i}", command="fixture") for i in range(10)]
+    first = await run_scan(ScanOptions(skip_connect=True), servers=servers)
+    assert calls == 1
+    scores = [audit.risk_score for audit in first.audits]
+    assert all(score is not None and score.composite == 0 for score in scores)
+    assert len({id(score) for score in scores}) == len(scores)
+    second = await run_scan(ScanOptions(skip_connect=True), servers=servers)
+    assert calls == 2
+    assert second.audits[0].risk_score is not first.audits[0].risk_score
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("optional", [False, True])
+async def test_inline_config_analysis_matches_task_group(
+    monkeypatch: pytest.MonkeyPatch, optional: bool
+) -> None:
+    options = ScanOptions(skip_connect=True, inject_check=optional, ssrf_check=optional)
+    servers = [
+        make_server_config(name="ordinary", command="fixture", args=["normal"]),
+        make_server_config(name="network", command="curl", args=["https://fixture.example"]),
+        make_server_config(name="project", command="fixture").model_copy(
+            update={"project_path": "synthetic-project", "scope": "project"}
+        ),
+    ]
+    applier = OverrideApplier(
+        OverrideConfig(
+            overrides=[
+                ServerToolOverride(
+                    server="ordinary", tool="*", permissions=PermissionOverride(file_write=True)
+                )
+            ]
+        )
+    )
+    inline = await run_scan(options, servers=servers, override_applier=applier)
+    monkeypatch.setattr(engine, "_can_scan_inline", lambda opts: False)
+    monkeypatch.setattr(engine, "_can_analyze_config_only", lambda opts, audit: False)
+    scheduled = await run_scan(options, servers=servers, override_applier=applier)
+    excluded = {"scan_timestamp", "scan_duration_seconds"}
+    assert inline.model_dump(mode="json", exclude=excluded) == scheduled.model_dump(
+        mode="json", exclude=excluded
+    )
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        ScanOptions(skip_connect=True, llm_analysis=True),
+        ScanOptions(skip_connect=True, verify_artifacts=True),
+        ScanOptions(skip_connect=True, download_artifacts=True),
+    ],
+    ids=["llm_analysis", "verify_artifacts", "download_artifacts"],
+)
+def test_inline_config_analysis_excludes_async_modes(options: ScanOptions) -> None:
+    assert engine._can_scan_inline(ScanOptions(skip_connect=True))
+    assert not engine._can_scan_inline(ScanOptions())
+    assert not engine._can_scan_inline(options)
 
 
 @pytest.mark.anyio
@@ -822,7 +907,6 @@ async def test_length_changing_lowercase_does_not_fail_server_analysis(
 @pytest.mark.anyio
 async def test_analyzer_exception_group_reports_redacted_leaf_causes(monkeypatch: pytest.MonkeyPatch) -> None:
     from mcp_audit.analyzer import PermissionAnalyzer
-    from mcp_audit.models import PermissionFinding
 
     def exploding(
         self: PermissionAnalyzer,

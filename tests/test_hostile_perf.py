@@ -19,6 +19,9 @@ import pytest
 FIXTURES = Path(__file__).parent / "fixtures"
 PROFILES = ("baseline", "p1-9", "p3-7", "p3-8")
 MIB = 1024 * 1024
+# The SSRF fixture consumes 65 bytes of the 256 KiB item budget for its
+# identifiers and schema keys/values before retaining description text.
+SSRF_RETAINED_BYTES = 256 * 1024 - 65
 
 # Median of five isolated calibration runs on Apple Silicon, Python 3.11,
 # with no concurrent test/lint workloads. Component seconds, not total time.
@@ -111,6 +114,8 @@ class Case:
     tools: int = 1
     timeout: int = 10
     leftovers: int = 0
+    cli_args: tuple[str, ...] = ()
+    hostile: bool = False
 
 
 # Exact published measurements (RSS was reported in MiB by the stress runner).
@@ -121,9 +126,29 @@ CASES = (
     Case("desc_5mb_x1", ("normal", "--tools", "1", "--desc-bytes", "5000000"), 18.8, analysis=18),
     Case("desc_1mb_x20", ("normal", "--tools", "20", "--desc-bytes", "1000000"), 75, 1282, tools=20),
     Case("oversized_50mb", ("oversized", "--frame-bytes", "50000000"), 191.7, 3217),
-    Case("spawn_child_exit", ("spawn-child-exit",), 6.5, timeout=2, leftovers=1),
+    Case("spawn_child_exit", ("spawn-child-exit",), 6.5, timeout=2, hostile=True),
     Case("scale_2000", ("normal", "--tools", "10"), 16, servers=2000, tools=20000),
     Case("pages_20k", ("normal", "--tools", "20000", "--pages", "20"), 9, tools=20000),
+    Case("scale_100k_skip", ("normal",), 10, servers=100_000, tools=0, cli_args=("--skip-connect",)),
+    Case(
+        "ssrf_1mib",
+        ("ssrf-description", "--desc-bytes", str(MIB)),
+        1,
+        cli_args=("--ssrf-check",),
+    ),
+    *(
+        Case(f"hostile_{mode}", (mode, "--ignore-sigterm"), 6.5, timeout=2, hostile=True)
+        for mode in (
+            "silent",
+            "slow-bytes",
+            "wrong-id",
+            "wrong-id-list",
+            "notification-flood",
+            "stderr-flood",
+            "hang-after-handshake",
+            "silent-after-eof",
+        )
+    ),
     # New full-field redaction ceiling, separate from historical scan measurements.
     Case("escape_dense", (), 10, 512, servers=0, tools=0),
 )
@@ -155,7 +180,31 @@ def process_exists(pid: int, *, group: bool = False) -> bool:
     except ProcessLookupError:
         return False
     # Permission errors are a failed measurement, never a false zero.
-    return True
+    return _live_on_linux(pid, group=group)
+
+
+def _proc_stat(path: Path) -> tuple[str, int] | None:
+    """State and process group from /proc/<pid>/stat, or None if it vanished."""
+    try:
+        fields = path.read_text().rpartition(")")[2].split()
+    except (FileNotFoundError, ProcessLookupError):
+        return None
+    return fields[0], int(fields[2])
+
+
+def _live_on_linux(pid: int, *, group: bool, proc: Path = Path("/proc")) -> bool:
+    # A zombie is dead: it keeps kill(pid, 0) succeeding only until an init
+    # that does not reap promptly collects it. Count live processes only.
+    if not (proc / "self" / "stat").exists():
+        return True  # No procfs: the signal probe is the measurement.
+    if not group:
+        stat = _proc_stat(proc / str(pid) / "stat")
+        return stat is not None and stat[0] not in {"Z", "X"}
+    for entry in proc.iterdir():
+        if entry.name.isdigit() and (stat := _proc_stat(entry / "stat")) is not None:
+            if stat[1] == pid and stat[0] not in {"Z", "X"}:
+                return True
+    return False
 
 
 def read_ledger(root: Path) -> tuple[list[int], list[int], list[str]]:
@@ -238,6 +287,7 @@ def run_case(
         str(session_timeout),
         "--json",
         str(report_path),
+        *case.cli_args,
     ]
     if case.name == "desc_1mb_x20":
         # This 20 MB frame exercises retained item text and analysis, rather
@@ -269,11 +319,15 @@ def run_case(
             measured.update(json.loads(timing_path.read_text()))
         if report_path.exists():
             report = json.loads(report_path.read_text())
+            measured["discovered"] = report["servers_discovered"]
             measured["connected"] = report["servers_connected"]
             measured["total_tools"] = report["total_tools"]
             measured["statuses"] = [a["connection_status"] for a in report["audits"]]
             measured["errors"] = [a["connection_error"] for a in report["audits"]]
             measured["warning_codes"] = [warning["code"] for warning in report["warnings"]]
+            measured["ssrf_patterns"] = [
+                [finding["pattern_name"] for finding in audit["ssrf_findings"]] for audit in report["audits"]
+            ]
             measured["file_read_tools"] = [
                 [f["tool_name"] for f in a["permissions"] if f["category"] == "file_read"]
                 for a in report["audits"]
@@ -348,7 +402,14 @@ def number(metrics: dict[str, object], key: str) -> float:
 
 def print_metrics(metrics: dict[str, object]) -> None:
     # Full coverage/status/error arrays remain in the artifact, not the console log.
-    arrays = {"statuses", "errors", "analysis_tool_counts", "process_roles", "file_read_tools"}
+    arrays = {
+        "statuses",
+        "errors",
+        "analysis_tool_counts",
+        "process_roles",
+        "file_read_tools",
+        "ssrf_patterns",
+    }
     summary = {key: value for key, value in metrics.items() if key not in arrays}
     print(json.dumps(summary, sort_keys=True))
 
@@ -408,6 +469,18 @@ def assert_limits(
         roles = metrics["process_roles"]
         assert isinstance(roles, list) and sorted(roles) == ["child", "server", "server"], metrics
         assert number(metrics, "recorded_processes") == 3, metrics
+    elif case.hostile:
+        statuses = metrics["statuses"]
+        assert isinstance(statuses, list) and len(statuses) == 1, metrics
+        assert statuses[0] in {"connected", "timeout", "failed"}, metrics
+        assert metrics["process_roles"] == ["server"], metrics
+    elif "--skip-connect" in case.cli_args:
+        assert metrics["discovered"] == case.servers, metrics
+        assert metrics["connected"] == metrics["total_tools"] == 0, metrics
+        statuses = metrics["statuses"]
+        assert isinstance(statuses, list) and len(statuses) == case.servers, metrics
+        assert set(statuses) == {"skipped"}, metrics
+        assert number(metrics, "recorded_processes") == 0, metrics
     else:
         assert metrics["connected"] == case.servers and metrics["total_tools"] == case.tools, metrics
     if case.name in {"desc_5mb_x1", "desc_1mb_x20"}:
@@ -417,12 +490,25 @@ def assert_limits(
     if case.name == "pages_20k":
         assert metrics["statuses"] == ["connected"] and metrics["warning_codes"] == [], metrics
         assert number(metrics, "peak_rss_bytes") < 500_000_000, metrics
-    assert number(metrics, "wall_seconds") <= wall * calibration.factor, metrics
+    if case.name == "ssrf_1mib":
+        assert metrics["statuses"] == ["partial"], metrics
+        assert metrics["ssrf_tool_counts"] == [1], metrics
+        assert metrics["ssrf_description_bytes"] == [SSRF_RETAINED_BYTES], metrics
+        assert metrics["ssrf_patterns"] == [["url_param_with_fetch_verb"]], metrics
+        assert "surface_truncated" in cast(list[str], metrics["warning_codes"]), metrics
+        assert number(metrics, "wall_seconds") < wall * calibration.factor, metrics
+    else:
+        if case.hostile:
+            wall = number(metrics, "timeout") + 4.5 * calibration.factor
+        else:
+            wall *= calibration.factor
+        assert number(metrics, "wall_seconds") <= wall, metrics
     if analysis is not None:
         assert number(metrics, "analysis_seconds") <= analysis * calibration.factor, metrics
     if rss is not None:
         assert number(metrics, "peak_rss_bytes") <= rss * MIB, metrics
-    assert number(metrics, "recorded_processes") >= case.servers, metrics
+    if "--skip-connect" not in case.cli_args:
+        assert number(metrics, "recorded_processes") >= case.servers, metrics
     assert number(metrics, "leftover_processes") <= leftovers, metrics
     assert number(metrics, "leftover_groups") <= leftovers, metrics
 
@@ -476,3 +562,21 @@ def test_frame_rejection_bound_rejects_size_dependent_timing() -> None:
     for large in (2.5, 6.25):  # linear and quadratic growth from 20 MB to 50 MB
         with pytest.raises(AssertionError):
             assert_frame_rejection_bounded(large, 1.0)
+
+
+def test_zombies_do_not_count_as_leftovers(tmp_path: Path) -> None:
+    def stat(pid: int, state: str, pgrp: int) -> None:
+        (tmp_path / str(pid)).mkdir()
+        (tmp_path / str(pid) / "stat").write_text(f"{pid} (fixture (x)) {state} 1 {pgrp} {pgrp} 0\n")
+
+    (tmp_path / "self").mkdir()
+    (tmp_path / "self" / "stat").write_text("1 (self) S 0 1 1 0\n")
+    stat(4100, "Z", 4100)
+    stat(4101, "S", 4200)
+    stat(4102, "Z", 4200)
+    assert not _live_on_linux(4100, group=False, proc=tmp_path)
+    assert _live_on_linux(4101, group=False, proc=tmp_path)
+    assert not _live_on_linux(4999, group=False, proc=tmp_path)
+    assert not _live_on_linux(4100, group=True, proc=tmp_path)
+    assert _live_on_linux(4200, group=True, proc=tmp_path)
+    assert _live_on_linux(4100, group=False, proc=tmp_path / "missing")

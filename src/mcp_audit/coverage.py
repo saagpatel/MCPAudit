@@ -70,6 +70,25 @@ def _aggregate(entries: list[CheckCoverage]) -> CheckCoverage:
     return CheckCoverage(state=state, reason="; ".join(reasons) or "completed for all configured servers")
 
 
+def _skip_connect_entries(
+    check: str, audits: list[ServerAudit], completed: list[set[str]]
+) -> list[CheckCoverage] | None:
+    """Aggregate static base checks without allocating identical per-row models."""
+    if check not in {"metadata", "permissions", "capabilities"}:
+        return None
+    unique: dict[tuple[CoverageState, str], None] = {}
+    for index in range(len(audits)):
+        state: CoverageState
+        if check not in completed[index]:
+            state, reason = "not_run", "check execution unavailable"
+        elif check == "permissions":
+            state, reason = "partial", "configuration-derived permissions only; metadata not checked"
+        else:
+            state, reason = "not_run", "connections disabled"
+        unique[state, reason] = None
+    return [CheckCoverage(state=state, reason=reason) for state, reason in unique]
+
+
 def build_coverage(
     audits: list[ServerAudit],
     *,
@@ -95,6 +114,18 @@ def build_coverage(
     for check in ("metadata", "permissions", "capabilities", *OPTIONAL_CHECKS):
         if check in OPTIONAL_CHECKS and check not in requested:
             coverage[check] = CheckCoverage(state="not_requested", reason="check not requested")
+            continue
+        static_entries = (
+            _skip_connect_entries(check, audits, completed)
+            if skip_connect and check not in package_coverage
+            else None
+        )
+        if static_entries is not None:
+            # These base checks are already partial/not-run with connections
+            # disabled, so warnings cannot degrade a complete entry here.
+            coverage[check] = _aggregate(static_entries)
+            if check == "metadata":
+                coverage[check] = CheckCoverage(state="not_run", reason="connections disabled")
             continue
         entries: list[CheckCoverage] = []
         for index, audit in enumerate(audits):

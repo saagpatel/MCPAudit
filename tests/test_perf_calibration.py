@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import subprocess
 import time
 from pathlib import Path
@@ -168,3 +169,106 @@ def test_session_calibration_runs_three_samples(tmp_path: Path, monkeypatch: pyt
     result = perf.calibrate(tmp_path)
     assert calls == [tmp_path / str(i) for i in range(3)]
     assert result.factor == 2
+
+
+@pytest.mark.parametrize("profile", perf.PROFILES)
+@pytest.mark.parametrize("factor", [1.0, 1.25, 2.0])
+def test_skip_connect_gate_requires_full_fleet_without_processes(profile: str, factor: float) -> None:
+    case = next(case for case in perf.CASES if case.name == "scale_100k_skip")
+    result = calibration(factor, factor)
+    metrics: dict[str, object] = {
+        "deadline_exceeded": False,
+        "exit_code": 0,
+        "wall_seconds": 10 * factor,
+        "discovered": 100_000,
+        "connected": 0,
+        "total_tools": 0,
+        "statuses": ["skipped"] * 100_000,
+        "recorded_processes": 0,
+        "leftover_processes": 0,
+        "leftover_groups": 0,
+    }
+    perf.assert_limits(metrics, case, profile, result)
+    for key, value in (
+        ("wall_seconds", 10 * factor + 0.01),
+        ("discovered", 99_999),
+        ("connected", 1),
+        ("total_tools", 1),
+        ("statuses", ["skipped"] * 99_999),
+        ("statuses", ["connected"] + ["skipped"] * 99_999),
+        ("recorded_processes", 1),
+        ("leftover_groups", 1),
+    ):
+        with pytest.raises(AssertionError):
+            perf.assert_limits({**metrics, key: value}, case, profile, result)
+
+
+@pytest.mark.parametrize("profile", perf.PROFILES)
+@pytest.mark.parametrize("factor", [1.0, 1.25, 2.0])
+def test_ssrf_gate_is_strict_and_requires_executed_analysis(profile: str, factor: float) -> None:
+    case = next(case for case in perf.CASES if case.name == "ssrf_1mib")
+    result = calibration(factor, factor)
+    metrics: dict[str, object] = {
+        "deadline_exceeded": False,
+        "exit_code": 0,
+        "wall_seconds": 0.99 * factor,
+        "connected": 1,
+        "total_tools": 1,
+        "statuses": ["partial"],
+        "ssrf_tool_counts": [1],
+        "ssrf_description_bytes": [perf.SSRF_RETAINED_BYTES],
+        "ssrf_patterns": [["url_param_with_fetch_verb"]],
+        "warning_codes": ["surface_truncated"],
+        "recorded_processes": 1,
+        "leftover_processes": 0,
+        "leftover_groups": 0,
+    }
+    perf.assert_limits(metrics, case, profile, result)
+    for key, value in (
+        ("wall_seconds", factor),
+        ("connected", 0),
+        ("total_tools", 0),
+        ("statuses", ["timeout"]),
+        ("ssrf_tool_counts", []),
+        ("ssrf_description_bytes", [0]),
+        ("ssrf_patterns", [[]]),
+        ("warning_codes", []),
+        ("leftover_processes", 1),
+        ("leftover_groups", 1),
+    ):
+        with pytest.raises(AssertionError):
+            perf.assert_limits({**metrics, key: value}, case, profile, result)
+
+
+@pytest.mark.parametrize("profile", perf.PROFILES)
+@pytest.mark.parametrize("factor", [1.0, 1.25, 2.0])
+@pytest.mark.parametrize("case", [case for case in perf.CASES if case.hostile], ids=lambda case: case.name)
+def test_hostile_gate_scales_grace_and_requires_zero_leftovers(
+    profile: str, factor: float, case: perf.Case
+) -> None:
+    result = calibration(factor, factor)
+    timeout = math.ceil(case.timeout * factor)
+    wall = timeout + 4.5 * factor
+    orphan = case.name == "spawn_child_exit"
+    metrics: dict[str, object] = {
+        "deadline_exceeded": False,
+        "exit_code": 0,
+        "timeout": timeout,
+        "wall_seconds": wall,
+        "connected": 1 if orphan else 0,
+        "total_tools": 1 if orphan else 0,
+        "statuses": ["failed", "connected"] if orphan else ["timeout"],
+        "process_roles": ["child", "server", "server"] if orphan else ["server"],
+        "recorded_processes": 3 if orphan else 1,
+        "leftover_processes": 0,
+        "leftover_groups": 0,
+    }
+    perf.assert_limits(metrics, case, profile, result)
+    for key, value in (
+        ("wall_seconds", wall + 0.01),
+        ("recorded_processes", 0),
+        ("leftover_processes", 1),
+        ("leftover_groups", 1),
+    ):
+        with pytest.raises(AssertionError):
+            perf.assert_limits({**metrics, key: value}, case, profile, result)

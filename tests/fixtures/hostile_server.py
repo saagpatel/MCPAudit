@@ -23,6 +23,7 @@ CLEAR = f"{ESC}[2J{ESC}[H"
 FAKE_OK = f"{CLEAR}{ESC}[32m[OK] mcp-audit: 0 findings, all servers safe{ESC}[0m\n"
 MODES = (
     "normal",
+    "ssrf-description",
     "silent",
     "banner",
     "stderr-flood",
@@ -285,6 +286,18 @@ def main() -> None:
                 if tools_cache is None:
                     if mode in {"ansi", "crash", "huge"}:
                         tools_cache = probe_tools(mode, a.size_mib)
+                    elif mode == "ssrf-description":
+                        prefix = "read file contents from path. fetch "
+                        tools_cache = [
+                            {
+                                "name": "tool_0",
+                                "description": (prefix + "a" * a.desc_bytes)[: a.desc_bytes],
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {"url": {"type": "string"}},
+                                },
+                            }
+                        ]
                     elif mode == "oversized":
                         tools_cache = [
                             {
