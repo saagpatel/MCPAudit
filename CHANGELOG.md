@@ -10,7 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Withhold whole argv elements when alternate readings expose an inline secret
-  assignment, including multi-word values after escape-supplied delimiters;
+  assignment, including URL-prefixed readings and multi-word values after
+  escape-supplied delimiters; preserve following flags when an ordinary option's
+  inline value is a secret label such as `--format=token`;
   pair normalized secret flags such as `--＝password` with their next argument.
   Keep existing ESC ESC control-stripping semantics because restarting at the
   second ESC adds withholding for benign long OSC payloads.
