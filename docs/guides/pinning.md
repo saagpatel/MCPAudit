@@ -46,9 +46,12 @@ Overwriting an already signed entry requires a private key. A successful signed
 write records a per-server `signature_required` expectation and the newest
 `pinned_at` in the separate trust store; subsequent verification also records
 them. Removing a signature (even along with all signing metadata or by changing
-tool entries to v1) cannot downgrade that expectation. Genuine legacy v1
-baselines always remain usable with a `pin_schema_outdated` warning; unsigned v2
-baselines remain usable with a `pin_unsigned` warning only while no key is trusted.
+tool entries to v1) cannot downgrade that expectation. Genuine legacy v1 pins
+emit a `pin_schema_outdated` warning whenever read, including `pin --status`,
+and refresh reviews show a `pin --refresh SERVER` migration hint. Their baseline
+remains usable only while no key is trusted; with trusted keys it is withheld.
+Unsigned v2 baselines remain usable with a `pin_unsigned` warning only while no
+key is trusted.
 To migrate an existing unsigned v2 server, generate a key, review the live
 surface, then apply the signed refresh without clearing the old pin first:
 
@@ -100,6 +103,9 @@ with the pins; `pin --clear SERVER` re-signs it.
 Genuine legacy v1 entries (v1 tool pins with no v2 markers) still only warn, but
 with a trusted key their baseline is withheld from comparisons
 (`pin_baseline_withheld`) because nothing authenticates it.
+Support for reading v1 pins is deprecated and is planned for removal in MCPAudit
+3.0. Run `mcp-audit pin --refresh SERVER`, review the proposed changes, then
+apply them with `mcp-audit pin --refresh SERVER --apply` before upgrading.
 Every signed write, refresh, re-sign, rotation and signed clear increments the
 manifest's signed positive-integer `sequence`, starting at 1. For one-shot CI,
 set a minimum independently of the pin file being checked:
