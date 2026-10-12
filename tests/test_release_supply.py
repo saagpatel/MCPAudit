@@ -16,7 +16,7 @@ import yaml
 
 from scripts import verify_release as release
 
-VERSION = "2.10.1"
+VERSION = "2.10.0"
 COMMIT = "a" * 40
 WORKFLOW_SHA = "b" * 40
 
