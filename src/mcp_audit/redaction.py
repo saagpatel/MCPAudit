@@ -952,12 +952,56 @@ def _continuation_end(
 
 def _claims_next_argument(item: str) -> bool:
     """Some reading of an argument takes the next argument as its value (assumed when unenumerable)."""
+    normalized, origins = _normalized_view(item)
+    if normalized.startswith("-"):
+        if origins is None:
+            return _is_secret_name(item)
+        labels = _RawMap(item, normalized, origins, literal=False).secret_labels(
+            _Budget(len(item), _LABEL_WORK_FLOOR)
+        )
+        names = list(_NAME_TOKEN.finditer(normalized))
+        if names and names[-1].start() in labels and not _inline_secret_assignment(normalized, labels):
+            return True
     segments = _segments(item)
     if not any(len(segment.choices) > 1 for segment in segments):
         return False
     budget = _Budget(len(item), _LABEL_WORK_FLOOR)
     outcome = _reading_outcome(item, segments, _run_mask(item, segments), budget, " v")
     return outcome is None or outcome[1]
+
+
+def _inline_secret_assignment(value: str, labels: frozenset[int]) -> bool:
+    """An inline delimiter follows a secret label in this detection reading."""
+    if _URL.match(value) is not None:
+        return False
+    return any(
+        name.start() in labels and _ASSIGNMENT_PREFIX.match(value, name.end()) is not None
+        for name in _NAME_TOKEN.finditer(value)
+    )
+
+
+def _argv_inline_secret(item: str, normalized: str) -> bool:
+    """Withhold an indivisible argv element when alternate readings supply an assignment."""
+    if normalized == item:
+        return False
+    segments = _segments(item)
+    count = _reading_count(segments)
+    budget = _Budget(len(item), _LABEL_WORK_FLOOR)
+    readings = _readings(segments) if budget.charge(count * len(item)) else None
+    if readings is None:
+        return True
+    for reading in readings:
+        pieces = [normalize_text(char) for char in reading.text]
+        text = "".join(pieces)
+        if text != normalize_text(reading.text):
+            return True
+        origins = [
+            (origin, origin + 1) for piece, origin in zip(pieces, reading.origins, strict=True) for _ in piece
+        ]
+        labels = _RawMap(item, text, origins, literal=True).secret_labels(budget)
+        if _inline_secret_assignment(text, labels):
+            return True
+    return False
 
 
 def _removed_runs(value: str) -> Iterator[str]:
@@ -1341,6 +1385,8 @@ def redact_argv(value: list[object]) -> list[object]:
                 result.append(_REDACTED)
             else:
                 result.append(redact_text(item[: origins[delimiter][1]] + _REDACTED))
+        elif _argv_inline_secret(item, normalized):
+            result.append(_REDACTED)
         else:
             result.append(redact_text(item))
         secret_value = (

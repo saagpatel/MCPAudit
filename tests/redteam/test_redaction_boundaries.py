@@ -684,6 +684,93 @@ _DELIMITER_ESCAPES = {
 
 @pytest.mark.parametrize("escape", list(_DELIMITER_ESCAPES.values()), ids=list(_DELIMITER_ESCAPES))
 @pytest.mark.parametrize("delimiter", [":", "=", "：", "＝"])
+def test_inline_argv_escape_readings_withhold_the_whole_element(escape: str, delimiter: str) -> None:
+    argument = f"--password{escape.format(delimiter=delimiter)}one two {_SWEEP_SECRET}"
+    args: list[object] = [argument, "--port", "8080"]
+    once = redact_argv(args)
+    assert once[0] == "<redacted>"
+    assert once[-1] == "8080"
+    assert redact_argv(once) == once
+    snapshot = PinStore(Path("unused"))._config_snapshot(make_server_config(args=[str(arg) for arg in args]))
+    assert _SWEEP_SECRET not in json.dumps(snapshot)
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    [
+        "--\x1b]xpassword=\x07",
+        "--pass\x1b[1mword\x1b]x=\x07",
+        "--pa\x1b[ssword\x1b]x:\x07",
+        "--password" + _OVER_READING_CAP + "\x1b]x=\x07",
+    ],
+)
+def test_mixed_inline_argv_readings_keep_no_multiword_value(prefix: str) -> None:
+    once = redact_argv([prefix + f"one two {_SWEEP_SECRET}"])
+    assert once == ["<redacted>"]
+    assert redact_argv(once) == once
+
+
+@pytest.mark.parametrize("label", ["password", "api_key", "token", "secret", "authorization"])
+@pytest.mark.parametrize(
+    "insert",
+    [value for value in INSERTS.values() if "\x1b" not in value and "\x9b" not in value],
+)
+def test_non_escape_obfuscation_in_a_flag_never_exposes_its_next_argument(label: str, insert: str) -> None:
+    # The label remains recognizable; punctuation before it must not break
+    # structural pairing just because it fails the free-text name grammar.
+    argument = "--" + insert + label
+    args: list[object] = [argument, _SWEEP_SECRET, "--port", "8080"]
+    once = redact_argv(args)
+    assert once[1] == "<redacted>", argument
+    assert once[2:] == ["--port", "8080"]
+    assert redact_argv(once) == once
+
+
+@pytest.mark.parametrize("argument", ["--＝password", "－－ｐａｓｓｗｏｒｄ", "--：password"])
+def test_normalized_secret_flags_are_paired_on_all_report_surfaces(argument: str, tmp_path: Path) -> None:
+    _assert_surfaces("ordinary fixture text", [argument, _SWEEP_SECRET], None, _forbidden(""), tmp_path)
+
+
+@pytest.mark.parametrize("escape", ["\x1b]x=\x07", "\x1b[=", "\x1b=", "\x1b]x＝\x07"])
+def test_inline_argv_readings_are_withheld_on_all_report_surfaces(escape: str, tmp_path: Path) -> None:
+    _assert_surfaces(
+        "ordinary fixture text",
+        [f"--password{escape}one two {_SWEEP_SECRET}"],
+        None,
+        _forbidden(""),
+        tmp_path,
+    )
+
+
+@pytest.mark.parametrize("prefix", ["mode=fast", "--verbose"])
+def test_esc_esc_retains_current_readings_without_new_withholding(prefix: str) -> None:
+    # Restarting the second ESC turns this harmless text into an OSC longer
+    # than the suffix cap, adding whole-field and next-argument withholding.
+    # D18 permits that terminal change only if no new withholding is needed.
+    text = prefix + "\x1b\x1b]" + "a" * 65 + "\x07"
+    assert redact_text(text) == text
+    assert redact_argv([text, "on"]) == [text, "on"]
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--＝port", "8080"],
+        ["--tokens", "5", "--tokenizer", "bpe", "--session-name", "demo"],
+        ["--tokens\x1b[0m=5", "--verbose"],
+        ["--tokenizer\x1b[0m=bpe", "--verbose"],
+        ["--session-name\x1b[0m=demo", "--verbose"],
+        ["--color=one two red", "--verbose"],
+        ["--color\x1b]x=\x07one two red", "--verbose"],
+        ["https://fixture.example/password/docs", "--port", "8080"],
+    ],
+)
+def test_ordinary_argv_structure_remains_visible(args: list[str]) -> None:
+    assert redact_argv(cast(list[object], args)) == args
+
+
+@pytest.mark.parametrize("escape", list(_DELIMITER_ESCAPES.values()), ids=list(_DELIMITER_ESCAPES))
+@pytest.mark.parametrize("delimiter", [":", "=", "：", "＝"])
 def test_escaped_delimiter_standing_alone_between_label_and_value(escape: str, delimiter: str) -> None:
     forbidden = re.compile("|".join(_forbidden("")))
     for label in ("password", "token", "api_key"):
