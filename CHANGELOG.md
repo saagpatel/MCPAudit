@@ -16,6 +16,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add a regression test requiring publish workflows to disable `setup-uv`
   caching and omit `actions/cache`; document the false-positive dispositions
   for code-scanning alerts #42, #43, #44, and #47 in the release checklist.
+- Withhold whole argv elements when alternate readings expose an inline secret
+  assignment, including URL-prefixed readings and multi-word values after
+  escape-supplied delimiters; preserve following flags when an ordinary option's
+  inline value is a secret label such as `--format=token`;
+  pair normalized secret flags such as `--＝password` with their next argument.
+  Withhold URL-prefixed argv elements whose raw secret assignment carries a
+  multi-word value (`https://host/--password=one two secret`,
+  `https://host/mcp?password=one two secret`), and decide flag pairing by the
+  flag name alone, so an option whose inline value contains a secret label and
+  composes under NFKC (`--format=token` plus combining characters) no longer
+  hides itself or the next flag from reports, pins and provenance drift.
+  Argv detection also reads ESC ESC as a terminal does (restarting the
+  sequence) and treats `&`, `;`, `,` and `|` inside an element like whitespace,
+  so `--password ESC ESC ]=one two secret BEL` and
+  `https://host/mcp?password=one&two&secret` are withheld whole; an escape
+  payload before the cut delimiter that holds a value withholds the element.
+  Keep existing ESC ESC control-stripping semantics because restarting at the
+  second ESC adds withholding for benign long OSC payloads.
 
 ### Tests
 

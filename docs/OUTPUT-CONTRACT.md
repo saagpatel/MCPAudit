@@ -584,7 +584,21 @@ dictionary values under secret-named keys and string literals in a secret schema
 property's `default`, `example`, `examples`, `const`, and `enum`, including
 nested schema composition branches; non-string values and structure
 are retained. Inline secret argv assignments redact the whole remainder of the
-element. A secret flag consumes the following argv element even when that
+element unless an escape payload before the delimiter holds value text in some
+reading, which withholds the element. An argv element is one shell word, so a
+value runs to its end: an element is withheld whole when a reading of it (raw,
+control-stripped, NFKC-normalized, an escape-sequence reading, or the terminal
+reading in which ESC ESC restarts the sequence) gives a secret label and an
+inline delimiter and either the readings differ from the raw element or
+free-text redaction would leave a later word of the value visible, URL prefix or
+not. Value words split at whitespace and at every character that ends a value
+in the free-text or URL grammars (`,` `;` `&` `|` quotes and brackets); a later
+word that starts a new `name=` assignment after such a separator belongs to
+that assignment. Pairing is decided by the flag's own name, read in each per-character
+NFKC reading from the first name after the leading dashes and punctuation up to
+the first inline delimiter: recognizable secret flags such as `--＝password`
+consume the following element, and an option whose inline value merely contains
+a secret label (`--format=token`) never does. A secret flag consumes the following argv element even when that
 element starts with `-`, consistently in reports and default pin snapshots.
 That slot is ambiguous and is withheld as a credential; provenance cannot infer
 a gained option there. Options outside secret-value slots remain distinguishable.

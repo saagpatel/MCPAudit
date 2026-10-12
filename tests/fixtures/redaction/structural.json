@@ -409,6 +409,90 @@
     "forbidden": ["planted-retained-fw-credential"]
   },
   {
+    "id": "ordinary-inline-option-secret-named-value",
+    "kind": "args",
+    "source": ["--format=token", "--verbose"],
+    "expected": ["--format=token", "--verbose"],
+    "forbidden": []
+  },
+  {
+    "id": "ordinary-inline-option-fullwidth-delimiter",
+    "kind": "args",
+    "source": ["--format＝token", "--no-sandbox"],
+    "expected": ["--format＝token", "--no-sandbox"],
+    "forbidden": []
+  },
+  {
+    "id": "ordinary-inline-option-escape-supplied-value",
+    "kind": "args",
+    "source": ["--format=\u001b[0mtoken", "--no-sandbox"],
+    "expected": ["--format=\u001b[0mtoken", "--no-sandbox"],
+    "forbidden": []
+  },
+  {
+    "id": "url-prefixed-inline-argv-secret",
+    "kind": "args",
+    "source": ["https://example.com/\u001b]0;--password=\u0007one two v7KpQ9d2MZ8nR4t6Vc", "--port", "8080"],
+    "expected": ["<redacted>", "--port", "8080"],
+    "forbidden": ["one two", "v7KpQ9d2M", "Z8nR4t6Vc"]
+  },
+  {
+    "id": "url-prefixed-fullwidth-inline-argv-secret",
+    "kind": "args",
+    "source": ["https://example.com/\u001b]0;--password＝\u0007one two v7KpQ9d2MZ8nR4t6Vc", "--port", "8080"],
+    "expected": ["<redacted>", "--port", "8080"],
+    "forbidden": ["one two", "v7KpQ9d2M", "Z8nR4t6Vc"]
+  },
+  {
+    "id": "bare-escape-inline-argv-secret",
+    "kind": "args",
+    "source": ["--password\u001b=one two v7KpQ9d2MZ8nR4t6Vc", "--port", "8080"],
+    "expected": ["<redacted>", "--port", "8080"],
+    "forbidden": ["one two", "v7KpQ9d2M", "Z8nR4t6Vc"]
+  },
+  {
+    "id": "normalized-secret-flag-leading-delimiter",
+    "kind": "args",
+    "source": ["--＝password", "v7KpQ9d2MZ8nR4t6Vc", "--port", "8080"],
+    "expected": ["--＝password", "<redacted>", "--port", "8080"],
+    "forbidden": ["v7KpQ9d2M", "Z8nR4t6Vc"]
+  },
+  {
+    "id": "url-prefixed-normalized-inline-argv-secret",
+    "kind": "args",
+    "source": ["https://example.com/password＝one two v7KpQ9d2MZ8nR4t6Vc", "--port", "8080"],
+    "expected": ["<redacted>", "--port", "8080"],
+    "forbidden": ["one two", "v7KpQ9d2M", "Z8nR4t6Vc"]
+  },
+  {
+    "id": "url-prefixed-raw-path-argv-secret",
+    "kind": "args",
+    "source": ["https://example.com/--password=one two v7KpQ9d2MZ8nR4t6Vc", "--port", "8080"],
+    "expected": ["<redacted>", "--port", "8080"],
+    "forbidden": ["one two", "v7KpQ9d2M", "Z8nR4t6Vc"]
+  },
+  {
+    "id": "url-prefixed-raw-query-argv-secret",
+    "kind": "args",
+    "source": ["https://example.com/mcp?password=one two v7KpQ9d2MZ8nR4t6Vc", "--port", "8080"],
+    "expected": ["<redacted>", "--port", "8080"],
+    "forbidden": ["one two", "v7KpQ9d2M", "Z8nR4t6Vc"]
+  },
+  {
+    "id": "ordinary-inline-option-composed-value",
+    "kind": "args",
+    "source": ["--format=token\u1100\u1161", "--no-sandbox"],
+    "expected": ["--format=token\u1100\u1161", "--no-sandbox"],
+    "forbidden": []
+  },
+  {
+    "id": "ordinary-url-escape-reading-without-assignment",
+    "kind": "args",
+    "source": ["https://example.com/\u001b[31mdocs\u001b[0m", "--port", "8080"],
+    "expected": ["https://example.com/\u001b[31mdocs\u001b[0m", "--port", "8080"],
+    "forbidden": []
+  },
+  {
     "id": "escape-backslash-inside-quoted-value",
     "kind": "text",
     "source": "password \u001b]x=\u0007 \"a b \u001b]\\\u0007\" planted-escaped-credential\" tail",
