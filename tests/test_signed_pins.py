@@ -22,6 +22,7 @@ from mcp_audit.models import PinVerificationState, ProtocolObservation, ServerAu
 from mcp_audit.overrides import OverrideConfig
 from mcp_audit.pin_signing import PinSigningError, generate_keypair, sign_document
 from mcp_audit.pinning import PinStore
+from mcp_audit.policy import PolicyConfig, evaluate_policy
 from mcp_audit.report import ReportGenerator
 from tests.conftest import make_server_config
 
@@ -199,7 +200,13 @@ def test_engine_surfaces_failed_verification_and_withholds_baseline(
     assert captured == [None]
     assert "pin_integrity_failed" in {w.code for w in report.warnings}
     if not canary:
-        assert report.coverage["pin_check"].state == "not_run"
+        assert report.coverage["pin_check"].state == "partial"
+        assert report.coverage["pin_check"].reason == "pin_baseline_withheld"
+        result = evaluate_policy(report, PolicyConfig(fail_on_pin_baseline_withheld=True))
+        assert not result.passed
+        assert [v.rule for v in result.violations] == ["fail_on.pin_baseline_withheld"]
+    else:
+        assert evaluate_policy(report, PolicyConfig(fail_on_pin_baseline_withheld=True)).passed
 
 
 def test_unsigned_escape_hatch_and_v1_warning(signed_store: PinStore) -> None:

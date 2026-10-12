@@ -103,6 +103,18 @@ with the pins; `pin --clear SERVER` re-signs it.
 Genuine legacy v1 entries (v1 tool pins with no v2 markers) still only warn, but
 with a trusted key their baseline is withheld from comparisons
 (`pin_baseline_withheld`) because nothing authenticates it.
+For a requested pin check, a withheld baseline records partial coverage with
+reason `pin_baseline_withheld`. To fail CI specifically on this case, opt in:
+
+```yaml
+fail_on:
+  pin_baseline_withheld: true
+```
+
+This gate defaults to off in 2.12 and applies only to requested pin checks,
+independently of drift findings. Keyless v1 baselines still compare in 2.x;
+3.0 will withhold them too and fail requested pin checks by default. The proposed
+3.0 exclusion of mixed v1 rows from NEW/REMOVED drift is not active in 2.12.
 Support for reading v1 pins is deprecated and is planned for removal in MCPAudit
 3.0. Run `mcp-audit pin --refresh SERVER`, review the proposed changes, then
 apply them with `mcp-audit pin --refresh SERVER --apply` before upgrading.

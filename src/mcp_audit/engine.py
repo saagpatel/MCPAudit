@@ -1105,7 +1105,9 @@ def _finalize_scan(context: _ScanContext) -> AuditReport:
                 f"{flag}: {len(withheld)} server(s) have pin baselines that cannot be trusted "
                 "(failed integrity verification, MCP027, or an unsigned legacy v1 pin while "
                 f"trusted keys exist) and were not compared: {', '.join(withheld)}. "
-                "Restore a signed baseline, or re-review and re-pin.",
+                "Restore a signed baseline, or review with `mcp-audit pin --refresh SERVER` "
+                "before applying. In MCPAudit 3.0, v1 baselines will also be withheld when "
+                "no trusted pin keys exist.",
                 check=check_field,
                 servers=withheld,
             )
