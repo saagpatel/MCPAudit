@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import io
 import json
+import sys
+import warnings
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -71,6 +73,27 @@ class TestGetWatchPaths:
     def test_empty_when_nothing_discovered(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(watcher, "discover_all_configs", lambda clients, parse_errors=None: [])
         assert watcher._get_watch_paths() == []
+
+
+class TestWatchClientFilter:
+    async def test_uses_core_parser_without_deprecated_cli_shim(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from types import ModuleType
+
+        from mcp_audit import overrides
+        from mcp_audit.overrides import OverrideConfig
+
+        watchfiles = ModuleType("watchfiles")
+        monkeypatch.setitem(sys.modules, "watchfiles", watchfiles)
+        monkeypatch.setattr(overrides, "load_override_config", lambda path: OverrideConfig())
+        monkeypatch.setattr(watcher, "_get_watch_paths", lambda: [])
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            await watcher._watch_loop(None, None, True, "cursor", 10, False, None, "/dev/null")
+
+        assert not [warning for warning in caught if issubclass(warning.category, DeprecationWarning)]
 
 
 class TestRenderDiff:

@@ -11,8 +11,8 @@ import yaml
 from rich.console import Console
 
 from mcp_audit.artifact_paths import validate_artifact_paths
+from mcp_audit.client_filter import _parse_clients
 from mcp_audit.engine import ScanOptions, run_scan
-from mcp_audit.models import ClientType
 from mcp_audit.overrides import DEFAULT_OVERRIDE_PATH, OverrideApplier, load_override_config
 from mcp_audit.redaction import redact_text
 from mcp_audit.report import ReportGenerator, error_console
@@ -273,18 +273,3 @@ def _merge_host_args(cli_value: str | None, policy_hosts: list[str]) -> str | No
     parts = [cli_value] if cli_value else []
     parts.extend(policy_hosts)
     return ",".join(parts) if parts else None
-
-
-def _parse_clients(clients_str: str | None) -> list[ClientType] | None:
-    if not clients_str:
-        return None
-    result: list[ClientType] = []
-    for part in clients_str.split(","):
-        part = part.strip()
-        try:
-            result.append(ClientType(part))
-        except ValueError:
-            valid = ", ".join(c.value for c in ClientType)
-            error_console.print(terminal_safe(f"Unknown client '{part}'. Valid values: {valid}"), style="red")
-            raise SystemExit(1) from None
-    return result or None
