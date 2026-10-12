@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
 
@@ -262,9 +265,8 @@ def test_anchor_cycle_is_finite_and_reachable_headers_are_checked() -> None:
     incomplete: list[str] = []
     assert [finding.kind for finding in scan_tool_schema(tool, incomplete_reasons=incomplete)] == [
         "header_invalid",
-        "header_type",
     ]
-    assert incomplete == []
+    assert incomplete
 
 
 @pytest.mark.parametrize("keyword", ["examples", "default", "const", "enum", "x-instance-data"])
@@ -327,7 +329,7 @@ def test_incomplete_reachability_does_not_misclassify_a_referenced_header() -> N
     assert incomplete == ["node_budget_exceeded"]
 
 
-def test_exact_schema_budget_and_reference_cycle_do_not_report_exhaustion() -> None:
+def test_exact_schema_budget_does_not_report_exhaustion_for_reference_cycle() -> None:
     tool = ToolInfo(
         name="fixture",
         input_schema={
@@ -337,7 +339,7 @@ def test_exact_schema_budget_and_reference_cycle_do_not_report_exhaustion() -> N
     )
     incomplete: list[str] = []
     assert scan_tool_schema(tool, incomplete_reasons=incomplete) == []
-    assert incomplete == []
+    assert incomplete == ["x-mcp-header use could not be resolved for a property"]
 
 
 def test_header_type_follows_local_references() -> None:
@@ -360,7 +362,9 @@ def test_header_type_follows_local_references() -> None:
             "$defs": {"a": {"$ref": "#/$defs/b"}, "b": {"$ref": "#/$defs/a"}},
         },
     )
-    assert [f.kind for f in scan_tool_schema(cyclic)] == ["header_type"]
+    reasons: list[str] = []
+    assert scan_tool_schema(cyclic, incomplete_reasons=reasons) == []
+    assert reasons
     broken = ToolInfo(
         name="t",
         input_schema={
@@ -368,22 +372,23 @@ def test_header_type_follows_local_references() -> None:
             "properties": {"value": {"$ref": "#/$defs/missing", "x-mcp-header": "X"}},
         },
     )
-    reasons: list[str] = []
+    reasons = []
     assert "header_type" not in [f.kind for f in scan_tool_schema(broken, incomplete_reasons=reasons)]
     assert reasons
 
 
-def test_composed_header_type_is_incomplete_not_flagged() -> None:
+@pytest.mark.parametrize("keyword", ["allOf", "anyOf", "oneOf"])
+def test_composed_header_type_is_resolved(keyword: str) -> None:
     tool = ToolInfo(
         name="t",
         input_schema={
             "type": "object",
-            "properties": {"value": {"allOf": [{"type": "string"}], "x-mcp-header": "X-Value"}},
+            "properties": {"value": {keyword: [{"type": "string"}], "x-mcp-header": "X-Value"}},
         },
     )
     reasons: list[str] = []
-    assert "header_type" not in [f.kind for f in scan_tool_schema(tool, incomplete_reasons=reasons)]
-    assert reasons
+    assert scan_tool_schema(tool, incomplete_reasons=reasons) == []
+    assert reasons == []
 
 
 def test_schema_findings_reach_the_default_summary() -> None:
@@ -435,17 +440,18 @@ def test_inline_credential_header_evidence_names_the_parameter() -> None:
     assert any("api_token" in f.evidence[0] for f in scan_tool_schema(tool) if f.kind == "credential_header")
 
 
-def test_composed_header_annotation_is_incomplete_not_silent() -> None:
+@pytest.mark.parametrize("keyword", ["allOf", "anyOf", "oneOf"])
+def test_composed_header_annotation_is_checked(keyword: str) -> None:
     tool = ToolInfo(
         name="t",
         input_schema={
             "type": "object",
-            "properties": {"api_token": {"allOf": [{"type": "string", "x-mcp-header": "Authorization"}]}},
+            "properties": {"api_token": {keyword: [{"type": "string", "x-mcp-header": "Authorization"}]}},
         },
     )
     reasons: list[str] = []
-    scan_tool_schema(tool, incomplete_reasons=reasons)
-    assert reasons
+    assert [f.kind for f in scan_tool_schema(tool, incomplete_reasons=reasons)] == ["credential_header"]
+    assert reasons == []
 
 
 def test_long_local_reference_chain_reaches_header() -> None:
@@ -476,7 +482,7 @@ def test_distinct_schema_findings_stay_distinct_summary_actions() -> None:
     assert report.ensure_review_summary().action_count == 2
 
 
-def test_composition_beside_ref_is_incomplete() -> None:
+def test_composition_beside_ref_is_checked() -> None:
     tool = ToolInfo(
         name="t",
         input_schema={
@@ -491,8 +497,8 @@ def test_composition_beside_ref_is_incomplete() -> None:
         },
     )
     reasons: list[str] = []
-    scan_tool_schema(tool, incomplete_reasons=reasons)
-    assert reasons
+    assert [f.kind for f in scan_tool_schema(tool, incomplete_reasons=reasons)] == ["credential_header"]
+    assert reasons == []
 
 
 @pytest.mark.parametrize(
@@ -530,3 +536,258 @@ def test_camel_case_credential_names_match(name: str) -> None:
         },
     )
     assert "credential_header" in [f.kind for f in scan_tool_schema(tool)]
+
+
+@pytest.mark.parametrize("surface", ["input_schema", "output_schema"])
+@pytest.mark.parametrize(
+    ("case", "kinds", "incomplete"),
+    [
+        ("allOf", ["credential_header"], False),
+        ("anyOf", ["credential_header"], False),
+        ("oneOf", ["credential_header"], False),
+        ("nested_ref", ["credential_header"], False),
+        ("ref_siblings", ["credential_header", "credential_header"], False),
+        ("shared_slots", ["header_duplicate"], False),
+        ("unresolved_branch", ["credential_header"], True),
+        ("unresolved_header_type", ["header_type"], True),
+    ],
+)
+def test_schema_composition_fixtures(surface: str, case: str, kinds: list[str], incomplete: bool) -> None:
+    fixtures = json.loads((Path(__file__).parent / "fixtures" / "schema_composition.json").read_text())
+    tool = ToolInfo.model_validate({"name": "fixture", surface: fixtures[case]})
+    reasons: list[str] = []
+    assert [finding.kind for finding in scan_tool_schema(tool, incomplete_reasons=reasons)] == kinds
+    assert bool(reasons) is incomplete
+
+
+@pytest.mark.parametrize("surface", ["input_schema", "output_schema"])
+@pytest.mark.parametrize("keyword", ["anyOf", "oneOf"])
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("wrapper", ["direct", "allOf", "ref"])
+def test_unresolved_alternative_preserves_resolved_header_type(
+    surface: str, keyword: str, reverse: bool, wrapper: str
+) -> None:
+    fixtures = json.loads((Path(__file__).parent / "fixtures" / "schema_composition.json").read_text())
+    prop = fixtures["unresolved_header_type"]["properties"]["v"]
+    branches = prop.pop("anyOf")
+    prop[keyword] = branches[::-1] if reverse else branches
+    schema = fixtures["unresolved_header_type"]
+    if wrapper == "allOf":
+        schema["properties"]["v"] = {"allOf": [prop]}
+    elif wrapper == "ref":
+        schema["$defs"] = {"value": prop}
+        schema["properties"]["v"] = {"$ref": "#/$defs/value"}
+    tool = ToolInfo.model_validate({"name": "fixture", surface: schema})
+    reasons: list[str] = []
+    assert [finding.kind for finding in scan_tool_schema(tool, incomplete_reasons=reasons)] == ["header_type"]
+    assert "local_ref_unresolved" in reasons
+
+
+@pytest.mark.parametrize("surface", ["input_schema", "output_schema"])
+@pytest.mark.parametrize("constraint", ["allOf", "ref", "annotation"])
+def test_unresolved_applicable_constraint_does_not_assert_header_type(surface: str, constraint: str) -> None:
+    fixtures = json.loads((Path(__file__).parent / "fixtures" / "schema_composition.json").read_text())
+    schema = fixtures["unresolved_header_type"]
+    prop = schema["properties"]["v"]
+    if constraint == "allOf":
+        schema["properties"]["v"] = {"allOf": [prop, {"$ref": "#/$defs/missing"}]}
+    elif constraint == "ref":
+        prop["$ref"] = "#/$defs/missing"
+    else:
+        prop["x-mcp-header"] = prop["anyOf"][0].pop("x-mcp-header")
+    tool = ToolInfo.model_validate({"name": "fixture", surface: schema})
+    reasons: list[str] = []
+    assert scan_tool_schema(tool, incomplete_reasons=reasons) == []
+    assert "local_ref_unresolved" in reasons
+
+
+@pytest.mark.parametrize("keyword", ["allOf", "anyOf", "oneOf"])
+@pytest.mark.parametrize("bad_type", ["object", "array", "null"])
+def test_composition_does_not_accept_nonprimitive_header_types(keyword: str, bad_type: str) -> None:
+    tool = ToolInfo(
+        name="fixture",
+        input_schema={
+            "properties": {
+                "value": {keyword: [{"type": "string"}, {"type": bad_type}], "x-mcp-header": "X-Value"}
+            }
+        },
+    )
+    reasons: list[str] = []
+    assert [finding.kind for finding in scan_tool_schema(tool, incomplete_reasons=reasons)] == ["header_type"]
+    assert reasons == []
+
+
+@pytest.mark.parametrize("keyword", ["allOf", "anyOf", "oneOf"])
+def test_composition_checks_invalid_and_duplicate_headers(keyword: str) -> None:
+    tool = ToolInfo(
+        name="fixture",
+        input_schema={
+            "properties": {
+                "a": {keyword: [{"type": "string", "x-mcp-header": "X-Value"}]},
+                "b": {keyword: [{"type": "string", "x-mcp-header": "x-value"}]},
+                "c": {keyword: [{"type": "string", "x-mcp-header": "Bad Header"}]},
+            }
+        },
+    )
+    reasons: list[str] = []
+    assert sorted(finding.kind for finding in scan_tool_schema(tool, incomplete_reasons=reasons)) == [
+        "header_duplicate",
+        "header_invalid",
+    ]
+    assert reasons == []
+
+
+@pytest.mark.parametrize("surface", ["input_schema", "output_schema"])
+def test_root_composition_inherits_sibling_type_constraints(surface: str) -> None:
+    schema = {"allOf": [{"type": "string"}, {"x-mcp-header": "X-Value"}]}
+    tool = ToolInfo.model_validate({"name": "fixture", surface: schema})
+    reasons: list[str] = []
+    assert scan_tool_schema(tool, incomplete_reasons=reasons) == []
+    assert reasons == []
+
+
+@pytest.mark.parametrize("keyword", ["anyOf", "oneOf"])
+def test_header_branch_type_does_not_inherit_unrelated_alternative(keyword: str) -> None:
+    schema: dict[str, object] = {
+        "properties": {
+            "value": {keyword: [{"type": "string", "x-mcp-header": "X-Value"}, {"type": "object"}]}
+        }
+    }
+    reasons: list[str] = []
+    assert scan_tool_schema(ToolInfo(name="fixture", input_schema=schema), incomplete_reasons=reasons) == []
+    assert reasons == []
+
+
+@pytest.mark.parametrize("keyword", ["anyOf", "oneOf"])
+def test_nested_annotation_inherits_only_its_alternative_constraints(keyword: str) -> None:
+    schema: dict[str, object] = {
+        "properties": {
+            "value": {
+                keyword: [
+                    {"allOf": [{"type": "string"}, {"x-mcp-header": "X-Value"}]},
+                    {"type": "object"},
+                ]
+            }
+        }
+    }
+    reasons: list[str] = []
+    assert scan_tool_schema(ToolInfo(name="fixture", input_schema=schema), incomplete_reasons=reasons) == []
+    assert reasons == []
+
+
+@pytest.mark.parametrize(
+    "branch",
+    [
+        {"$ref": "#/$defs/missing"},
+        {"$ref": "https://schemas.example.test/value"},
+        {"$ref": "#/$defs/cycle"},
+        {"$dynamicRef": "#value"},
+        {"$recursiveRef": "#"},
+        {"$ref": None},
+        {"allOf": []},
+        {"anyOf": {}},
+        {"oneOf": [None]},
+        {"type": ["string", None]},
+    ],
+)
+@pytest.mark.parametrize("direct_type", [False, True])
+def test_unresolved_composition_never_silently_passes(branch: dict[str, object], direct_type: bool) -> None:
+    prop: dict[str, object] = {"allOf": [branch], "x-mcp-header": "X-Value"}
+    if direct_type:
+        prop["type"] = "string"
+    tool = ToolInfo(
+        name="fixture",
+        input_schema={
+            "properties": {"value": prop},
+            "$defs": {"cycle": {"$ref": "#/$defs/cycle"}},
+        },
+    )
+    reasons: list[str] = []
+    findings = scan_tool_schema(tool, incomplete_reasons=reasons)
+    assert reasons
+    assert "header_type" not in [finding.kind for finding in findings]
+
+
+@pytest.mark.parametrize("kind", ["composition", "ref"])
+@pytest.mark.parametrize("depth,complete", [(63, True), (64, False)])
+def test_header_composition_depth_boundary(kind: str, depth: int, complete: bool) -> None:
+    prop: dict[str, object] = {"type": "string", "x-mcp-header": "Authorization"}
+    definitions: dict[str, object] = {}
+    for index in range(depth):
+        if kind == "composition":
+            prop = {"allOf": [prop]}
+        else:
+            definitions[f"r{index}"] = prop
+            prop = {"$ref": f"#/$defs/r{index}"}
+    tool = ToolInfo(name="fixture", input_schema={"properties": {"api_token": prop}, "$defs": definitions})
+    reasons: list[str] = []
+    findings = scan_tool_schema(tool, incomplete_reasons=reasons)
+    assert ("credential_header" in [finding.kind for finding in findings]) is complete
+    assert bool(reasons) is not complete
+
+
+def test_repeated_composition_refs_obey_work_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mcp_audit import schema_rules
+
+    monkeypatch.setattr(schema_rules, "_MAX_SCHEMA_NODES", 20)
+    definitions: dict[str, object] = {"leaf": {"type": "string", "x-mcp-header": "X-Value"}}
+    prop: dict[str, object] = {"$ref": "#/$defs/leaf"}
+    for index in range(5):
+        definitions[f"r{index}"] = prop
+        prop = {"anyOf": [{"$ref": f"#/$defs/r{index}"}, {"$ref": f"#/$defs/r{index}"}]}
+    reasons: list[str] = []
+    scan_tool_schema(
+        ToolInfo(name="fixture", input_schema={"properties": {"value": prop}, "$defs": definitions}),
+        incomplete_reasons=reasons,
+    )
+    assert reasons
+
+
+@pytest.mark.parametrize(
+    "branches,kind",
+    [
+        ([{"type": "number"}, {"type": "integer"}], None),
+        ([True, {"type": "string"}], None),
+        ([False, {"type": "string"}], "header_type"),
+        ([{"type": ["string", "object"]}, {"type": "string"}], None),
+    ],
+)
+def test_allof_type_intersection(branches: list[object], kind: str | None) -> None:
+    tool = ToolInfo(
+        name="fixture",
+        input_schema={"properties": {"value": {"allOf": branches, "x-mcp-header": "X-Value"}}},
+    )
+    reasons: list[str] = []
+    assert [finding.kind for finding in scan_tool_schema(tool, incomplete_reasons=reasons)] == (
+        [kind] if kind else []
+    )
+    assert reasons == []
+
+
+@pytest.mark.parametrize("schema", [{"anyOf": []}, {"oneOf": [None]}, {"$dynamicRef": "#value"}])
+def test_unresolved_root_composition_records_incomplete_coverage(schema: dict[str, object]) -> None:
+    reasons: list[str] = []
+    assert scan_tool_schema(ToolInfo(name="fixture", input_schema=schema), incomplete_reasons=reasons) == []
+    assert reasons
+
+
+def test_external_root_reference_records_incomplete_header_coverage() -> None:
+    tool = ToolInfo(name="fixture", input_schema={"$ref": "https://schemas.example.test/value"})
+    reasons: list[str] = []
+    assert [finding.kind for finding in scan_tool_schema(tool, incomplete_reasons=reasons)] == [
+        "external_ref"
+    ]
+    assert reasons == ["x-mcp-header use could not be resolved for a property"]
+
+
+def test_unused_composed_definition_does_not_create_credential_findings() -> None:
+    schema = {
+        "$defs": {"unused": {"anyOf": [{"type": "string", "x-mcp-header": "Authorization"}]}},
+        "properties": {"api_token": {"type": "string"}},
+    }
+    reasons: list[str] = []
+    tool = ToolInfo.model_validate({"name": "fixture", "input_schema": schema})
+    assert [finding.kind for finding in scan_tool_schema(tool, incomplete_reasons=reasons)] == [
+        "header_unreachable"
+    ]
+    assert reasons == []
