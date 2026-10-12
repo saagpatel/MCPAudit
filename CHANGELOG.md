@@ -28,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The MCP `scan_mcp_servers` tool accepts `connect` (default `true` in 2.12).
+  `connect=false` requests a static audit, and `skip_connect=true` continues to
+  disable connections. The tool description announces that 3.0 will default
+  to static auditing and require explicit `connect=true` for connections.
 - Requested pin checks with withheld baselines now report partial coverage with
   reason `pin_baseline_withheld`. The opt-in policy boolean
   `fail_on.pin_baseline_withheld` fails these checks; its default remains off.
