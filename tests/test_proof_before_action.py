@@ -2649,7 +2649,10 @@ def test_cli_version_reports_installed_distribution_version() -> None:
     result = CliRunner().invoke(main, ["--version"])
 
     assert result.exit_code == 0
-    assert f"proof-before-action, version {__version__}" in result.output
+    assert result.stdout == f"proof-before-action, version {__version__}\n"
+    assert "In 3.0" in result.stderr
+    assert "uv tool install mcp-audits-proof" in result.stderr
+    assert "a uv tool extra does not expose its scripts" in result.stderr
 
 
 def test_capsule_index_rejects_path_expansion() -> None:

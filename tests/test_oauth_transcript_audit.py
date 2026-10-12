@@ -639,7 +639,7 @@ def test_schema_command_matches_live_strict_model(
 ) -> None:
     result = CliRunner().invoke(main, ["oauth-transcript", "schema", contract])
     assert result.exit_code == 0, result.output
-    schema = json.loads(result.output)
+    schema = json.loads(result.stdout)
     assert schema == model.model_json_schema()
     checked_in = json.loads((Path("examples/schemas") / schema_name).read_text(encoding="utf-8"))
     assert checked_in == schema

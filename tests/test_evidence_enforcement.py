@@ -15,6 +15,7 @@ from pydantic import ValidationError
 
 import mcp_audit.evidence_enforcement as enforcement
 from mcp_audit import cli
+from mcp_audit._command_registry import LAB_INSTALL_NOTICE
 from mcp_audit.evidence_enforcement import (
     TARGET_RUNTIME_VERSION,
     ApprovalBindingError,
@@ -678,7 +679,11 @@ def test_cli_usage_error_is_exit_2_with_one_json_object() -> None:
     assert result.exit_code == 2
     assert len(result.stdout.strip().splitlines()) == 1
     assert json.loads(result.stdout)["error"]["code"] == "invalid_input"
-    assert result.stderr.strip() == "input validation failed"
+    assert result.stderr == (
+        "Notice: 'mcp-audit enforcement-fixture' is removed in 3.0. "
+        f"Use 'mcp-audit lab enforcement-fixture' instead. {LAB_INSTALL_NOTICE}\n"
+        "input validation failed\n"
+    )
 
 
 def test_cli_policy_outcome_is_exit_1_with_one_json_object(tmp_path: Path) -> None:

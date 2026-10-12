@@ -242,7 +242,7 @@ def test_symlink_input_is_rejected(tmp_path: Path) -> None:
 def test_schema_command_matches_live_strict_model(contract: str, model: type[object]) -> None:
     result = CliRunner().invoke(main, ["agent-ui", "schema", contract])
     assert result.exit_code == 0, result.output
-    schema = json.loads(result.output)
+    schema = json.loads(result.stdout)
     assert schema == model.model_json_schema()  # type: ignore[attr-defined]
     assert schema["additionalProperties"] is False
 

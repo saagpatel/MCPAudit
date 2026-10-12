@@ -377,11 +377,11 @@ def test_cli_exit_contract_and_safe_artifact_writes(tmp_path: Path) -> None:
 
     ready_result = runner.invoke(main, ["authorization-posture", "review", str(ready)])
     assert ready_result.exit_code == 0
-    assert json.loads(ready_result.output)["disposition"] == "policy-review-only"
+    assert json.loads(ready_result.stdout)["disposition"] == "policy-review-only"
 
     unknown_result = runner.invoke(main, ["authorization-posture", "review", str(unknown)])
     assert unknown_result.exit_code == 1
-    assert json.loads(unknown_result.output)["disposition"] == "blocked"
+    assert json.loads(unknown_result.stdout)["disposition"] == "blocked"
 
     invalid_result = runner.invoke(main, ["authorization-posture", "review", str(invalid)])
     assert invalid_result.exit_code == 2
@@ -394,7 +394,8 @@ def test_cli_exit_contract_and_safe_artifact_writes(tmp_path: Path) -> None:
         ["authorization-posture", "review", str(ready), "--json", str(report_path)],
     )
     assert written.exit_code == 0
-    assert written.output == ""
+    assert written.stdout == ""
+    assert "Use 'mcp-audit lab authorization-posture' instead." in written.stderr
     assert json.loads(report_path.read_text(encoding="utf-8"))["disposition"] == "policy-review-only"
 
     no_clobber = runner.invoke(
@@ -441,8 +442,8 @@ def test_schema_commands_are_strict_and_versioned() -> None:
     input_result = runner.invoke(main, ["authorization-posture", "schema", "input"])
     report_result = runner.invoke(main, ["authorization-posture", "schema", "report"])
     assert input_result.exit_code == report_result.exit_code == 0
-    input_schema = json.loads(input_result.output)
-    report_schema = json.loads(report_result.output)
+    input_schema = json.loads(input_result.stdout)
+    report_schema = json.loads(report_result.stdout)
     assert input_schema["additionalProperties"] is False
     assert input_schema["properties"]["schema_version"]["const"] == "McpAuthorizationPostureV1"
     assert report_schema["additionalProperties"] is False
