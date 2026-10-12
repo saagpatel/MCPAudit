@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Warn on hidden compatibility command use except `pin`, and show the 3.0 labs
+  and direct Proof install commands in lab help and Proof version output.
+- Guard lazy command imports only for missing `mcp_audit_labs` or
+  `proof_before_action` modules, with an install hint and exit 2; unrelated
+  import failures still propagate.
+
 - Move shared authorization URL helpers and canonical posture JSON encoding into
   core, so connected authorization probes do not load lab contracts. Expose the
   probe helpers used by conformance labs and guard the core import boundary.
