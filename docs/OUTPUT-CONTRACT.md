@@ -378,9 +378,32 @@ same report model and `schema_version`, including additive `ux_summary`.
 Legacy `scan --json PATH`
 continues to write a file and retains its existing output behavior.
 
+`check` accepts the same optional detector flags, package verification/download
+and LLM modes, canary tuning, timeout and concurrency limits as `scan`. These
+options do not enable connections: the default remains static. Canary requires
+an explicit `--config FILE`, no `--include-discovered`, and a selected
+`--connect --server` connection. `--pin-file` selects the baseline for detectors
+as well as policy evaluation. `--verbose` enables per-tool terminal detail;
+`--details` continues to show full findings and source coverage.
+
+Permission overrides and saved ignore entries are applied through the shared
+override pipeline before policy evaluation. Explicit-file checks load overrides
+only when `--override-config` is supplied; discovery checks also load the default
+override file. Policy egress and multi-tenant hosts merge with CLI lists, and
+per-server policy egress allowlists augment the global allowlist.
+`check --redact` scrubs identifiers from JSON stdout, JSON files, SARIF and HTML,
+while keeping local terminal output readable. It takes precedence over HTML
+`--show-host`. `--sarif-profile extended` includes configuration-health rules;
+the default remains `compatibility`. Report fields and `schema_version` are unchanged.
+
+Hidden compatibility flags preserve static safety: `--skip-connect` conflicts
+with `--connect`, and `--config-only` requires `--config` and conflicts with
+`--include-discovered`. Neither flag enables connections or additional discovery.
+
 Bare invocation runs the static `check` path. `--config FILE` excludes discovery
-unless `--include-discovered` is explicit. Saved overrides and remembered
-preferences are not loaded; an explicit policy evaluates evidence without
+unless `--include-discovered` is explicit. Saved overrides are not loaded for
+explicit-file checks unless selected; remembered preferences are not loaded.
+An explicit policy evaluates evidence without
 enabling extra checks. Connections require `--connect --server CLIENT:SCOPE:NAME`
 and exactly one matching entry with no collected config diagnostics. Setup and
 artifact-write errors exit 1; artifact path validation errors exit 2 before any
@@ -389,7 +412,7 @@ and JSON stdout have been written. Exit 0 does not certify security.
 
 Both `check` and legacy `scan` reject artifact destinations that alias any
 encountered configuration or policy input, or another artifact destination.
-Legacy `scan` also protects its override input. Validation covers resolved
+Both commands also protect their selected override input. Validation covers resolved
 symlinks and hard links, including empty or malformed discovered configs;
 the error names the output flag. Existing distinct artifact files may still
 be overwritten. Report fields and `schema_version` are unchanged.

@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `check` accepts `scan`'s optional detectors, higher-reach opt-ins, canary
+  controls, timeout/concurrency tuning, verbose detail, identifier redaction,
+  and extended SARIF profile. Static review remains the default; canary requires
+  a selected connection from an explicit config without discovery.
+- `check` applies permission overrides as well as ignores, merges policy and
+  CLI egress hosts, and honors per-server policy allowlists and detector pin files.
+  Hidden `--skip-connect` and `--config-only` compatibility flags enforce their
+  connection and discovery constraints.
+
 ## [2.11.0] - 2026-10-12
 
 ### Upgrade notes
