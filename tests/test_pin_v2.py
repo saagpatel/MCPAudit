@@ -220,6 +220,27 @@ def test_mixed_file_only_explicitly_pinned_tools_upgrade(tmp_path: Path) -> None
     assert store.legacy_tool_names("fixture") == set()
 
 
+@pytest.mark.parametrize("server_name", ["fixture[/yellow]", "[bold]fixture[/bold]"])
+def test_legacy_status_warning_renders_markup_names_literally(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, server_name: str
+) -> None:
+    store = _legacy(tmp_path)
+    data = yaml.safe_load(store.path.read_text())
+    data["servers"][server_name] = data["servers"].pop("fixture")
+    store.path.write_text(yaml.safe_dump(data))
+    store = PinStore(store.path)
+    original = store.path.read_bytes()
+    (warning,) = store.schema_warnings(server_name)
+    output = io.StringIO()
+    monkeypatch.setattr(pin_cli, "console", Console(file=output, width=600, highlight=False))
+
+    pin_cli._render_pin_status(store, json_status=False)
+
+    assert warning.message in output.getvalue()
+    assert server_name in output.getvalue()
+    assert store.path.read_bytes() == original
+
+
 @pytest.mark.parametrize("as_json", [False, True])
 def test_legacy_refresh_labels_uncovered_fields_without_writing(
     tmp_path: Path,

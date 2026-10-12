@@ -909,7 +909,7 @@ def _render_pin_status(store: object, json_status: bool) -> None:
     console.print(table)
     for status in statuses:
         for warning in store.schema_warnings(status.server_name):
-            console.print(f"[yellow]{terminal_safe(warning.message)}[/yellow]")
+            console.print(terminal_safe(warning.message), style="yellow")
     for status in statuses:
         public_key = store.signing_status(status.server_name).get("trusted_public_key")
         if (
