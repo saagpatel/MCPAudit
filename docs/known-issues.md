@@ -23,6 +23,11 @@
   the value starts with a separator (`--password=,SECRET`) or when a later
   `name=` word follows the first value word (`--password=one&a=b&SECRET`).
   These cases behave the same as in 2.10.1.
+- Large-fleet sharding (more than 256 servers, stateless options only) runs
+  server stages in worker processes. If a worker is killed in the instant
+  between starting an MCP server and registering its process group, that
+  group is not known to the parent and is not reaped. This matches the
+  existing exposure when the scanner itself is killed mid-spawn.
 - A fresh CI trust store has no rollback high-water mark until its first
   verification. In a one-shot CI job, set `require.pin_min_sequence` (or
   `--pin-min-sequence`) outside the pin file to refuse an older signed pin
