@@ -19,6 +19,7 @@
 
 - [2.10.1 release and upgrade notes](2.10-RELEASE-NOTES.md)
 - [Annotation and scoring migration](SCORING-MIGRATION.md)
+- [3.0 boundary proposal](3.0-BOUNDARY-PROPOSAL.md)
 - [Detection references](.)
 - [Experimental labs](labs/README.md)
 
