@@ -83,74 +83,139 @@ def _local_ref(
 
 
 _MAX_REF_HOPS = 64
+_COMPOSITION_KEYWORDS = ("allOf", "anyOf", "oneOf")
+_ALL_TYPES = _PRIMITIVE_TYPES | {"object", "array", "null"}
+_UNSUPPORTED_REFERENCES = ("$dynamicRef", "$recursiveRef")
 
 
-def _effective_types(
+def _effective_header_types(
     root: dict[str, object], node: dict[str, object], anchors: dict[str, dict[str, object] | None] | None
-) -> tuple[set[str], bool]:
-    """Declared types, following local $ref chains (bounded, cycle-safe). False when unresolved."""
-    seen: set[int] = set()
-    current: object = node
-    for _ in range(_MAX_REF_HOPS):
-        if not isinstance(current, dict):
-            return set(), False  # unresolvable reference
-        if id(current) in seen:
-            return set(), True  # a cycle that never declares a type declares none
-        seen.add(id(current))
-        raw_type = current.get("type")
-        if isinstance(raw_type, str):
-            return {raw_type}, True
-        if isinstance(raw_type, list):
-            return {value for value in raw_type if isinstance(value, str)}, True
-        ref = current.get("$ref")
-        if not isinstance(ref, str):
-            # Composition can constrain the type; report incomplete rather than guess.
-            return set(), not any(key in current for key in ("allOf", "anyOf", "oneOf"))
-        current = _local_ref(root, ref, anchors)
-    return set(), False
+) -> tuple[dict[int, set[str]], bool]:
+    """Bounded type constraints: intersect refs/allOf, union anyOf/oneOf alternatives.
 
-
-def _property_header(
-    root: dict[str, object], prop: object, anchors: dict[str, dict[str, object] | None] | None
-) -> tuple[object | None, bool]:
-    """(x-mcp-header, resolved) for a property, directly or through a bounded local $ref chain.
-
-    Composition without a direct annotation, or an exhausted chain, is unresolved: the
-    caller records incomplete analysis rather than treating the property as headerless.
+    This is type coverage, not full JSON Schema validation. In particular, oneOf
+    exclusivity cannot enlarge the union of the declared branch types.
     """
+    remaining = _MAX_SCHEMA_NODES
+
+    def visit(
+        current: object, depth: int, active: frozenset[int]
+    ) -> tuple[set[str], dict[int, set[str]], bool]:
+        nonlocal remaining
+        remaining -= 1
+        if remaining < 0 or depth >= _MAX_REF_HOPS:
+            return set(), {}, False
+        if isinstance(current, bool):
+            return set(_ALL_TYPES) if current else set(), {}, True
+        if not isinstance(current, dict) or id(current) in active:
+            return set(), {}, False
+        active = active | {id(current)}
+        types = set(_ALL_TYPES)
+        header_types = {id(current): set(_ALL_TYPES)} if "x-mcp-header" in current else {}
+        resolved = not any(key in current for key in _UNSUPPORTED_REFERENCES)
+        if "type" in current:
+            raw_type = current["type"]
+            if isinstance(raw_type, str) and raw_type in _ALL_TYPES:
+                types = {raw_type}
+            elif (
+                isinstance(raw_type, list)
+                and raw_type
+                and all(isinstance(value, str) and value in _ALL_TYPES for value in raw_type)
+            ):
+                types = {value for value in raw_type if isinstance(value, str)}
+            else:
+                return set(), header_types, False
+            # Integers are also numbers; expansion makes intersections accurate.
+            if "number" in types:
+                types.add("integer")
+        if "$ref" in current:
+            ref = current["$ref"]
+            target = _local_ref(root, ref, anchors) if isinstance(ref, str) else None
+            child_types, child_headers, child_resolved = visit(target, depth + 1, active)
+            types &= child_types
+            for identity, allowed in child_headers.items():
+                header_types.setdefault(identity, set()).update(allowed)
+            resolved &= child_resolved
+        for keyword in _COMPOSITION_KEYWORDS:
+            if keyword not in current:
+                continue
+            branches = current[keyword]
+            if not isinstance(branches, list) or not branches:
+                resolved = False
+                continue
+            combined = set(_ALL_TYPES) if keyword == "allOf" else set()
+            for branch in branches:
+                child_types, child_headers, child_resolved = visit(branch, depth + 1, active)
+                if keyword == "allOf":
+                    combined &= child_types
+                else:
+                    combined |= child_types
+                for identity, allowed in child_headers.items():
+                    header_types.setdefault(identity, set()).update(allowed)
+                resolved &= child_resolved
+                if remaining < 0:
+                    break
+            types &= combined
+        # A header retains the constraints of its own alternative, then inherits
+        # same-value constraints from references, siblings, and enclosing nodes.
+        return types, {identity: allowed & types for identity, allowed in header_types.items()}, resolved
+
+    _types, header_types, resolved = visit(node, 0, frozenset())
+    return header_types, resolved
+
+
+def _property_headers(
+    root: dict[str, object], prop: object, anchors: dict[str, dict[str, object] | None] | None
+) -> tuple[list[dict[str, object]], bool]:
+    """Header declarations for one instance slot, through local refs and composition.
+
+    Each declaration is returned once per slot even when alternatives reach it.
+    Nested properties and instance payloads describe other values.
+    """
+    stack = [(prop, 0, frozenset[int]())]
     seen: set[int] = set()
-    current = prop
-    for _ in range(_MAX_REF_HOPS):
-        if not isinstance(current, dict) or id(current) in seen:
-            return None, isinstance(current, dict)
-        seen.add(id(current))
-        if "x-mcp-header" in current:
-            header: object = current["x-mcp-header"]
-            return header, True
-        if any(_may_hold_header(current.get(key)) for key in ("allOf", "anyOf", "oneOf")):
-            return None, False  # an applicator may carry the header; do not guess
-        ref = current.get("$ref")
-        if not isinstance(ref, str):
-            return None, True
-        current = _local_ref(root, ref, anchors)
-    return None, False
-
-
-def _may_hold_header(value: object, budget: int = 2_000) -> bool:
-    """True when a composition subtree has an x-mcp-header or a $ref that could hide one (bounded)."""
-    stack = [value]
+    headers: list[dict[str, object]] = []
+    resolved = True
+    remaining = _MAX_SCHEMA_NODES
     while stack:
-        budget -= 1
-        if budget < 0:
-            return True
-        current = stack.pop()
-        if isinstance(current, dict):
-            if "x-mcp-header" in current or "$ref" in current:
-                return True
-            stack.extend(current.values())
-        elif isinstance(current, list):
-            stack.extend(current)
-    return False
+        current, depth, active = stack.pop()
+        remaining -= 1
+        if remaining < 0:
+            return headers, False
+        if depth >= _MAX_REF_HOPS:
+            resolved = False
+            continue
+        if isinstance(current, bool):
+            continue
+        if not isinstance(current, dict) or id(current) in active:
+            resolved = False
+            continue
+        # A repeated DAG node is covered, but a recursive path is unresolved.
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        active = active | {id(current)}
+        if "x-mcp-header" in current:
+            headers.append(current)
+        if any(key in current for key in _UNSUPPORTED_REFERENCES):
+            resolved = False
+        if "$ref" in current:
+            ref = current["$ref"]
+            target = _local_ref(root, ref, anchors) if isinstance(ref, str) else None
+            stack.append((target, depth + 1, active))
+        for keyword in _COMPOSITION_KEYWORDS:
+            if keyword not in current:
+                continue
+            branches = current[keyword]
+            if not isinstance(branches, list) or not branches:
+                resolved = False
+                continue
+            # Bound pending work as well as visits, including sibling applicators.
+            available = max(0, remaining - len(stack))
+            if len(branches) > available:
+                resolved = False
+            stack.extend((branch, depth + 1, active) for branch in branches[:available])
+    return headers, resolved
 
 
 def _value_slots(node: dict[str, object]) -> Iterator[tuple[str | None, object]]:
@@ -266,6 +331,45 @@ def _schema_rules(
             incomplete_reasons.append(reason)
     reachable_ids = {id(node) for node in reachable}
     headers: dict[str, str] = {}
+    uses: list[tuple[str | None, list[dict[str, object]]]] = []
+    contexts: dict[int, list[dict[str, object]]] = {}
+    type_cache: dict[int, tuple[dict[int, set[str]], bool]] = {}
+    same_value_children: set[int] = set()
+    for node in reachable:
+        ref = node.get("$ref")
+        target = _local_ref(schema, ref, reference_anchors) if isinstance(ref, str) else None
+        if isinstance(target, dict):
+            same_value_children.add(id(target))
+        for keyword in _COMPOSITION_KEYWORDS:
+            branches = node.get(keyword)
+            if isinstance(branches, list):
+                same_value_children.update(
+                    id(branch) for branch in branches[:_MAX_SCHEMA_NODES] if isinstance(branch, dict)
+                )
+    # Root and standalone schema branches also provide same-value constraints.
+    for node in reachable:
+        if node is schema or id(node) not in same_value_children:
+            declarations, resolved = _property_headers(schema, node, reference_anchors)
+            if not resolved and (
+                declarations
+                or any(key in node for key in ("$ref", *_COMPOSITION_KEYWORDS, *_UNSUPPORTED_REFERENCES))
+            ):
+                reason = "x-mcp-header use could not be resolved for a property"
+                if not reachability_incomplete and reason not in incomplete_reasons:
+                    incomplete_reasons.append(reason)
+            for declaration in declarations:
+                contexts.setdefault(id(declaration), []).append(node)
+    for node in reachable:
+        for name, slot in _value_slots(node):
+            declarations, resolved = _property_headers(schema, slot, reference_anchors)
+            if not resolved:
+                reason = "x-mcp-header use could not be resolved for a property"
+                if not reachability_incomplete and reason not in incomplete_reasons:
+                    incomplete_reasons.append(reason)
+            uses.append((name, declarations))
+            if isinstance(slot, dict):
+                for declaration in declarations:
+                    contexts.setdefault(id(declaration), []).append(slot)
     for node in all_nodes:
         if "x-mcp-header" not in node:
             continue
@@ -290,13 +394,20 @@ def _schema_rules(
                     evidence=["x-mcp-header must be an RFC token string"],
                 )
             )
-        types, resolved = _effective_types(schema, node, reference_anchors)
-        if not resolved:
-            reason = "x-mcp-header type could not be resolved through a local $ref"
-            if reason not in incomplete_reasons:
-                incomplete_reasons.append(reason)
-            continue
-        if not types or not types <= _PRIMITIVE_TYPES:
+        invalid_type = False
+        # Constraints may live beside an annotation in another allOf branch.
+        for context in contexts.get(id(node), [node]):
+            if id(context) not in type_cache:
+                type_cache[id(context)] = _effective_header_types(schema, context, reference_anchors)
+            header_types, resolved = type_cache[id(context)]
+            types = header_types.get(id(node))
+            if not resolved or types is None:
+                reason = "x-mcp-header type could not be resolved through local refs or composition"
+                if reason not in incomplete_reasons:
+                    incomplete_reasons.append(reason)
+            elif not types or not types <= _PRIMITIVE_TYPES:
+                invalid_type = True
+        if invalid_type:
             findings.append(
                 SchemaFinding(
                     tool_name=tool.name,
@@ -314,17 +425,15 @@ def _schema_rules(
             )
     # Header checks apply per instance slot: a shared definition reached through a
     # local $ref counts once for each property, item or pattern slot that uses it.
-    for node in reachable:
-        for name, slot in _value_slots(node):
-            header, header_resolved = _property_header(schema, slot, reference_anchors)
-            if not header_resolved:
-                # An unresolved reference is already reported by the reachability walk.
-                reason = "x-mcp-header use could not be resolved for a property"
-                if not reachability_incomplete and reason not in incomplete_reasons:
-                    incomplete_reasons.append(reason)
-                continue
+    for name, declarations in uses:
+        slot_headers: set[str] = set()
+        for declaration in declarations:
+            header = declaration["x-mcp-header"]
             if not isinstance(header, str) or not _HEADER_TOKEN.fullmatch(header):
                 continue
+            if header.casefold() in slot_headers:
+                continue
+            slot_headers.add(header.casefold())
             if header.casefold() in headers:
                 findings.append(
                     SchemaFinding(

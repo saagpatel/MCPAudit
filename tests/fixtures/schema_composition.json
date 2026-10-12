@@ -1,0 +1,75 @@
+{
+  "allOf": {
+    "properties": {
+      "api_token": {
+        "allOf": [
+          {"$ref": "#/$defs/text"},
+          {"x-mcp-header": "Authorization"}
+        ]
+      }
+    },
+    "$defs": {"text": {"type": "string"}}
+  },
+  "anyOf": {
+    "properties": {
+      "api_token": {
+        "anyOf": [
+          {"type": "string", "x-mcp-header": "Authorization"},
+          {"type": "boolean", "x-mcp-header": "authorization"}
+        ]
+      }
+    }
+  },
+  "oneOf": {
+    "properties": {
+      "api_token": {
+        "oneOf": [
+          {"$ref": "#/$defs/text"},
+          {"type": "integer", "x-mcp-header": "Authorization"}
+        ]
+      }
+    },
+    "$defs": {"text": {"type": "string", "x-mcp-header": "Authorization"}}
+  },
+  "nested_ref": {
+    "properties": {"api_token": {"$ref": "#/$defs/value"}},
+    "$defs": {
+      "value": {
+        "allOf": [
+          {"type": ["string", "number"]},
+          {"anyOf": [{"$ref": "#/$defs/text"}, {"oneOf": [{"type": "integer"}]}]},
+          {"x-mcp-header": "Authorization"}
+        ]
+      },
+      "text": {"type": "string"}
+    }
+  },
+  "ref_siblings": {
+    "properties": {
+      "api_token": {
+        "$ref": "#/$defs/plain",
+        "type": "string",
+        "x-mcp-header": "Authorization",
+        "allOf": [{"type": "string", "x-mcp-header": "X-Token"}]
+      }
+    },
+    "$defs": {"plain": {"type": "string"}}
+  },
+  "shared_slots": {
+    "properties": {
+      "a": {"anyOf": [{"$ref": "#/$defs/text"}, {"$ref": "#/$defs/text"}]},
+      "b": {"oneOf": [{"$ref": "#/$defs/text"}]}
+    },
+    "$defs": {"text": {"type": "string", "x-mcp-header": "X-Value"}}
+  },
+  "unresolved_branch": {
+    "properties": {
+      "api_token": {
+        "anyOf": [
+          {"type": "string", "x-mcp-header": "Authorization"},
+          {"$ref": "#/$defs/missing"}
+        ]
+      }
+    }
+  }
+}

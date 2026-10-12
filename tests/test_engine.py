@@ -9,6 +9,7 @@ cli._run_scan_core compatibility shim.
 from __future__ import annotations
 
 import io
+import json
 import sys
 from functools import partial
 from pathlib import Path
@@ -115,6 +116,35 @@ def test_run_scan_reports_incomplete_tool_schema_metadata(
     serialized = report.model_dump(mode="json")
     assert serialized["coverage"]["metadata"]["state"] == "partial"
     assert warning.model_dump(mode="json") in serialized["warnings"]
+
+
+@pytest.mark.parametrize("surface", ["input_schema", "output_schema"])
+@pytest.mark.parametrize("case,state", [("nested_ref", "complete"), ("unresolved_branch", "partial")])
+def test_run_scan_schema_composition_metadata_coverage(
+    monkeypatch: pytest.MonkeyPatch, surface: str, case: str, state: str
+) -> None:
+    fixtures = json.loads((Path(__file__).parent / "fixtures" / "schema_composition.json").read_text())
+    tool = ToolInfo.model_validate({"name": "fixture", surface: fixtures[case]})
+    server = make_server_config(name="schema-fixture", command="fixture")
+
+    class FixtureConnector:
+        def __init__(self, timeout: float, **_limits: object) -> None:
+            self.scan_warnings: list[ScanWarning] = []
+
+        async def connect(self, _server: ServerConfig) -> ServerAudit:
+            return ServerAudit(server=server, connection_status="connected", tools=[tool])
+
+    monkeypatch.setattr(engine, "ServerConnector", FixtureConnector)
+    report = anyio.run(partial(run_scan, ScanOptions(), servers=[server]))
+    assert [finding.kind for finding in report.audits[0].schema_findings] == ["credential_header"]
+    assert report.coverage["metadata"].state == state
+    warnings = [warning for warning in report.warnings if warning.code == "tool_schema_incomplete"]
+    assert bool(warnings) is (state == "partial")
+    if warnings:
+        assert warnings[0].check == "metadata"
+        assert warnings[0].servers == [server.name]
+        assert "local_ref_unresolved" in warnings[0].message
+    assert report.schema_version == 1
 
 
 def test_scan_options_defaults_mirror_flagless_scan() -> None:
