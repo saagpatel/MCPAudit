@@ -16,7 +16,7 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel
 
 from mcp_audit.normalize import normalize_text
-from mcp_audit.terminal_text import control_free_spans, strip_controls
+from mcp_audit.terminal_text import control_free_spans, escape_spans, strip_controls
 
 _REDACTED = "<redacted>"
 _MAX_PASSES = 4
@@ -52,6 +52,8 @@ _TO_FIELD_END = -1
 # enumerated: every window holding it is ambiguous and withheld, which is
 # never less conservative than enumerating it, and keeps the cost linear.
 _MAX_SUFFIX = 64
+# Only terminated OSC 8 frames with control-free parameters and URI are typed.
+_OSC8 = re.compile(r"(?:\x1b\]|\x9d)8;([^\x00-\x1f\x7f-\x9f;]*);([^\x00-\x1f\x7f-\x9f]*)(?:\x07|\x1b\\|\x9c)")
 # A value is a run of quoted and unquoted segments, as in a shell word, so a
 # replacement never stops where a second pass would continue. A backslash
 # escapes the next character; an unterminated quoted segment runs to the end
@@ -770,6 +772,13 @@ def _redaction_edits(
     or normalized offset is ever emitted. ``raw_edits`` may carry the field's
     already computed raw-pass union.
     """
+    frames = [
+        match
+        for start, end in escape_spans(value)
+        if (match := _OSC8.fullmatch(value, start, end)) is not None
+    ]
+    if frames:
+        return _osc8_edits(value, frames)
     if raw_edits is None:
         raw_edits = _union_edits(_text_edits(value))
     normalized = normalize_text(strip_controls(value))
@@ -787,6 +796,32 @@ def _redaction_edits(
     # Mixed readings (one run dropped, another literal) and the decisions they
     # change (flag, delimiter, label) are checked token by token.
     return _union_edits([*edits, *literal, *_token_reading_edits(value, budget)])
+
+
+def _osc8_edits(value: str, frames: list[re.Match[str]]) -> list[tuple[int, int, str]] | None:
+    """Detect ordinary text without hyperlink frames; redact each URI as a URL field."""
+    origins: list[int] = []
+    edits: list[tuple[int, int, str]] = []
+    cursor = 0
+    for frame in frames:
+        origins.extend(range(cursor, frame.start()))
+        cursor = frame.end()
+        for group, redactor in ((1, redact_text), (2, redact_url)):
+            raw = frame.group(group)
+            # An empty URI closes a link. Parameter values remain ordinary text.
+            safe = redactor(raw) if raw else raw
+            if safe != raw:
+                edits.append((frame.start(group), frame.end(group), safe))
+    origins.extend(range(cursor, len(value)))
+    ordinary = "".join(value[index] for index in origins)
+    detected = _redaction_edits(ordinary)
+    if detected is None:
+        return None
+    for start, end, replacement in detected:
+        left = origins[start] if start < len(origins) else len(value)
+        right = origins[end - 1] + 1 if start < end else left
+        edits.append((left, right, replacement))
+    return _union_edits(edits)
 
 
 def _reading_outcome(

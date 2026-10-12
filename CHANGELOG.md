@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Parse terminated OSC 8 hyperlinks structurally during report redaction:
+  redact URI credentials as typed URLs and detect link text without escape
+  framing, preserving long plain links. Keep the conservative fallback for
+  malformed frames and other escapes longer than 64 printable characters.
 - Follow local `$ref`, `allOf`, `anyOf`, and `oneOf` in static schema header
   type and per-property checks, with bounded depth and work. Preserve incomplete
   metadata coverage for unresolved, malformed, cyclic, or exhausted branches.

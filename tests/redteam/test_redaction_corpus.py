@@ -122,7 +122,11 @@ def test_structural_redaction_corpus(case: dict[str, object], tmp_path: Path, id
     if kind == "text":
         assert audit.tools[0].name == audit.tools[0].description == case["expected"]
         assert redact_text(cast(str, case["source"])) == case["expected"]
-        assert audit.injection_findings[0].matched_span is None
+        assert audit.injection_findings[0].matched_span == (
+            None
+            if case["source"] != case["expected"]
+            else report.audits[0].injection_findings[0].matched_span
+        )
     else:
         assert audit.injection_findings[0].matched_span == report.audits[0].injection_findings[0].matched_span
     if kind == "args":
@@ -180,6 +184,8 @@ def test_structural_redaction_corpus(case: dict[str, object], tmp_path: Path, id
         for secret in forbidden:
             assert isinstance(secret, str)
             assert secret not in output
+        for retained in cast(list[str], case.get("retained", [])):
+            assert retained in output
 
 
 def test_metadata_lists_are_not_argv_and_env_maps_have_no_values() -> None:
