@@ -31,12 +31,23 @@ def _version_for_state(state: object) -> str:
     return version
 
 
-def _release_version() -> str:
+def _release_state() -> dict[str, object]:
     state = json.loads(Path("docs/release-state.json").read_text(encoding="utf-8"))
-    return _version_for_state(state)
+    assert isinstance(state, dict)
+    return state
 
 
-VERSION = _release_version()
+def _published_version(state: object) -> str:
+    assert isinstance(state, dict)
+    version = state.get("published_version")
+    assert isinstance(version, str)
+    return version
+
+
+# Artifacts carry the version being built; server.json stays at the published
+# version until promotion, so descriptor and registry probes use that one.
+VERSION = _version_for_state(_release_state())
+PUBLISHED_VERSION = _published_version(_release_state())
 COMMIT = "a" * 40
 WORKFLOW_SHA = "b" * 40
 
@@ -50,6 +61,17 @@ def test_release_version_uses_state_identity(status: str, expected: str) -> None
         _version_for_state({"status": status, "candidate_version": "91.2.3", "published_version": "44.5.6"})
         == expected
     )
+
+
+def test_candidate_state_keeps_descriptor_probes_on_published_version() -> None:
+    state = {"status": "candidate", "candidate_version": "91.2.3", "published_version": "44.5.6"}
+    assert _version_for_state(state) == "91.2.3"
+    assert _published_version(state) == "44.5.6"
+
+
+def test_descriptor_matches_published_version() -> None:
+    raw = json.loads(Path("server.json").read_text())
+    assert raw["version"] == PUBLISHED_VERSION
 
 
 @pytest.fixture
@@ -216,15 +238,15 @@ def test_probe_release_rejects_wrong_package_descriptor(field: str, value: objec
     assert isinstance(package, dict)
     package[field] = value
     with pytest.raises(release.VerificationError, match="exact release tuple"):
-        release.verify_descriptor(raw, version=VERSION)
+        release.verify_descriptor(raw, version=PUBLISHED_VERSION)
 
 
 def test_descriptor_rejects_extra_packages_and_remotes() -> None:
     raw = _descriptor()
-    release.verify_descriptor(raw, version=VERSION)
+    release.verify_descriptor(raw, version=PUBLISHED_VERSION)
     for field, value in (("packages", _packages(raw) * 2), ("remotes", [{"type": "sse"}])):
         with pytest.raises(release.VerificationError, match="exact release tuple"):
-            release.verify_descriptor({**raw, field: value}, version=VERSION)
+            release.verify_descriptor({**raw, field: value}, version=PUBLISHED_VERSION)
 
 
 def test_registry_readback_reuses_exact_descriptor_assertion() -> None:
@@ -237,13 +259,13 @@ def test_registry_readback_reuses_exact_descriptor_assertion() -> None:
             }
         },
     }
-    release.verify_registry(raw, version=VERSION)
+    release.verify_registry(raw, version=PUBLISHED_VERSION)
     changed = copy.deepcopy(raw)
     server = changed["server"]
     assert isinstance(server, dict)
     server["repository"] = {"url": "https://example.invalid", "source": "github"}
     with pytest.raises(release.VerificationError, match="exact release tuple"):
-        release.verify_registry(changed, version=VERSION)
+        release.verify_registry(changed, version=PUBLISHED_VERSION)
 
 
 @pytest.mark.parametrize("mutation", ["digest", "filename", "yanked", "extra"])
