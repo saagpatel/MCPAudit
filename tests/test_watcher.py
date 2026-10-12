@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import io
 import json
-import sys
 import warnings
 from datetime import UTC, datetime
 from pathlib import Path
@@ -76,24 +75,18 @@ class TestGetWatchPaths:
 
 
 class TestWatchClientFilter:
-    async def test_uses_core_parser_without_deprecated_cli_shim(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        from types import ModuleType
+    def test_uses_core_parser_without_deprecated_cli_shim(self) -> None:
+        import inspect
+        import re
 
-        from mcp_audit import overrides
-        from mcp_audit.overrides import OverrideConfig
+        source = inspect.getsource(watcher)
+        assert re.search(r"mcp_audit\.cli\b", source) is None
+        assert "from mcp_audit.client_filter import _parse_clients" in source
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            from mcp_audit.client_filter import _parse_clients
 
-        watchfiles = ModuleType("watchfiles")
-        monkeypatch.setitem(sys.modules, "watchfiles", watchfiles)
-        monkeypatch.setattr(overrides, "load_override_config", lambda path: OverrideConfig())
-        monkeypatch.setattr(watcher, "_get_watch_paths", lambda: [])
-
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
-            await watcher._watch_loop(None, None, True, "cursor", 10, False, None, "/dev/null")
-
-        assert not [warning for warning in caught if issubclass(warning.category, DeprecationWarning)]
+            assert _parse_clients("cursor") is not None
 
 
 class TestRenderDiff:
