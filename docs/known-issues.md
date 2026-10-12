@@ -4,12 +4,25 @@
   fallback for free text. Arbitrary unlabeled secrets may remain unrecognized;
   review field reports before sharing. Redacted tool schemas are display
   evidence and must not be used as replacement execution schemas.
-- Two free-text redaction edge cases remain open for a 2.10.x follow-up: an
-  argv element whose inline `=` or `:` is supplied only by a terminal escape
-  sequence (`--password<ESC-seq>=one two secret`) can keep the last word of a
-  multi-word value, and a flag containing a fullwidth delimiter
-  (`--＝password SECRET`) is not paired with its value. Plain
-  `--password=...` and `--password value` are unaffected.
+- Terminal control stripping still treats ESC ESC as one escape rather than
+  abandoning the first and restarting at the second. Restart semantics would
+  add redaction withholding for benign long OSC payloads, so the current
+  behavior is retained. For example, `mode=fast` or `--verbose` followed by
+  ESC ESC `]`, 65 `a` characters, and BEL is currently retained by redaction;
+  restart semantics would withhold the whole field and the next argv element.
+  Argv redaction also reads each element as a terminal would (restarting at
+  the second ESC) for detection only, so a secret label and inline delimiter
+  exposed by that reading withhold the element without changing displayed
+  text. Free-text fields (descriptions, schema text) do not yet add the
+  restart reading: a label separated from its delimiter only by a restarted
+  sequence, such as `token ESC ESC ]x BEL: value`, can keep its value there.
+  A restarted sequence whose payload exceeds 64 printable bytes is not read
+  for argv detection either (it adds no withholding, per the rule above), so a
+  label and delimiter exposed only through such a sequence keep their value.
+- Argv elements that begin with a URL still keep part of a secret value when
+  the value starts with a separator (`--password=,SECRET`) or when a later
+  `name=` word follows the first value word (`--password=one&a=b&SECRET`).
+  These cases behave the same as in 2.10.1.
 - A fresh CI trust store has no rollback high-water mark until its first
   verification. In a one-shot CI job, set `require.pin_min_sequence` (or
   `--pin-min-sequence`) outside the pin file to refuse an older signed pin
