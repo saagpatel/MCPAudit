@@ -180,7 +180,31 @@ def process_exists(pid: int, *, group: bool = False) -> bool:
     except ProcessLookupError:
         return False
     # Permission errors are a failed measurement, never a false zero.
-    return True
+    return _live_on_linux(pid, group=group)
+
+
+def _proc_stat(path: Path) -> tuple[str, int] | None:
+    """State and process group from /proc/<pid>/stat, or None if it vanished."""
+    try:
+        fields = path.read_text().rpartition(")")[2].split()
+    except (FileNotFoundError, ProcessLookupError):
+        return None
+    return fields[0], int(fields[2])
+
+
+def _live_on_linux(pid: int, *, group: bool, proc: Path = Path("/proc")) -> bool:
+    # A zombie is dead: it keeps kill(pid, 0) succeeding only until an init
+    # that does not reap promptly collects it. Count live processes only.
+    if not (proc / "self" / "stat").exists():
+        return True  # No procfs: the signal probe is the measurement.
+    if not group:
+        stat = _proc_stat(proc / str(pid) / "stat")
+        return stat is not None and stat[0] not in {"Z", "X"}
+    for entry in proc.iterdir():
+        if entry.name.isdigit() and (stat := _proc_stat(entry / "stat")) is not None:
+            if stat[1] == pid and stat[0] not in {"Z", "X"}:
+                return True
+    return False
 
 
 def read_ledger(root: Path) -> tuple[list[int], list[int], list[str]]:
@@ -538,3 +562,21 @@ def test_frame_rejection_bound_rejects_size_dependent_timing() -> None:
     for large in (2.5, 6.25):  # linear and quadratic growth from 20 MB to 50 MB
         with pytest.raises(AssertionError):
             assert_frame_rejection_bounded(large, 1.0)
+
+
+def test_zombies_do_not_count_as_leftovers(tmp_path: Path) -> None:
+    def stat(pid: int, state: str, pgrp: int) -> None:
+        (tmp_path / str(pid)).mkdir()
+        (tmp_path / str(pid) / "stat").write_text(f"{pid} (fixture (x)) {state} 1 {pgrp} {pgrp} 0\n")
+
+    (tmp_path / "self").mkdir()
+    (tmp_path / "self" / "stat").write_text("1 (self) S 0 1 1 0\n")
+    stat(4100, "Z", 4100)
+    stat(4101, "S", 4200)
+    stat(4102, "Z", 4200)
+    assert not _live_on_linux(4100, group=False, proc=tmp_path)
+    assert _live_on_linux(4101, group=False, proc=tmp_path)
+    assert not _live_on_linux(4999, group=False, proc=tmp_path)
+    assert not _live_on_linux(4100, group=True, proc=tmp_path)
+    assert _live_on_linux(4200, group=True, proc=tmp_path)
+    assert _live_on_linux(4100, group=False, proc=tmp_path / "missing")
