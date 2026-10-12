@@ -120,7 +120,7 @@ Use a separate reviewed PR after the candidate has landed:
 Merging a candidate or release-state PR does not authorize tagging or
 publication.
 
-## Publish (Separately Authorized)
+## Publish the Current Unsplit Package (Separately Authorized)
 
 1. Obtain separate publication approval naming the exact 40-character merge
    commit and `vX.Y.Z` tag. Confirm the `pypi` environment requires a named
@@ -171,6 +171,121 @@ publication.
 
 Never re-run or bypass a failed publish gate. Repair the release state through a
 new reviewed commit and obtain a new exact approval.
+
+## Three-Distribution Release Train (Groundwork; Not Active Yet)
+
+The current package is still unsplit. The following contract takes effect when
+the separate distribution projects land; it does not authorize publication or
+change the current workflows. Before activation, refactor their tag-first gates
+to verify an approved commit before publication and create the tag afterwards.
+Do not use the unsplit workflow's tag-first sequence for a split release.
+
+All three distributions use one version and one clean source commit. Publish in
+this order: **mcp-audits (core), mcp-audits-labs, mcp-audits-proof**. Core extras
+`[labs]`, `[proof]`, and `[all]` pin the relevant satellites with `==X.Y.Z`;
+satellites pin core with `==X.Y.Z`. Verify every wheel and sdist before upload.
+For `uv tool`, install `mcp-audits-proof` directly to put `proof-before-action`
+on PATH; installing core with an extra does not expose the extra's scripts.
+Include this instruction in every split-install or migration notice.
+
+Pass a reviewed JSON contract with `--distributions FILE` to every verifier
+invocation (including publication checks). It is a list in publication order;
+each entry has `name`, `module`, `module_root`, `project`, and `scripts`. Paths
+are relative to the checkout, and `project` identifies that distribution's
+pyproject. For example, the future layout could use:
+
+```json
+[
+  {"name": "mcp-audits", "module": "mcp_audit", "module_root": "src",
+   "project": "pyproject.toml",
+   "scripts": {"mcp-audit": "mcp_audit.cli:main", "mcp-audits": "mcp_audit.cli:main"}},
+  {"name": "mcp-audits-labs", "module": "mcp_audit_labs", "module_root": "src",
+   "project": "distributions/labs/pyproject.toml", "scripts": {}},
+  {"name": "mcp-audits-proof", "module": "proof_before_action", "module_root": "src",
+   "project": "distributions/proof/pyproject.toml",
+   "scripts": {"proof-before-action": "proof_before_action.proof_cli:main"}}
+]
+```
+
+This is an example contract, not an implemented layout or entry point. The
+default remains the current single package and its three scripts. The backend
+uses each build project's `[tool.uv.build-backend]` `module-name` and
+`module-root` (default `src`) to locate its provenance file and tracked sources.
+Keep the wrapper beside that build project's pyproject; the actual split must
+arrange those build roots. The source verifier requires all three project
+versions in the checkout's shared `uv.lock`.
+Proof derives its checkout path from its Python package; a changed source
+layout can supply `_producer_state(source_path=Path(...))` explicitly. Installed
+Proof still uses its own adjacent embedded provenance first.
+
+1. Build all six artifacts from the same approved clean commit and verify
+   them together in one `dist/` directory. Use the same contract for metadata,
+   scripts, provenance, manifest creation, and artifact rechecks. Retain the
+   manifest and its independently approved SHA-256; it names all six files.
+2. Run isolated wheel and sdist install smokes for each distribution and for
+   the exact-pinned extras. Prepare all trusted-publisher destinations before
+   the first upload. Obtain exact source and control-revision approval.
+3. Upload core, then labs, then proof, using only the approved artifacts.
+   Read back each distribution's exact-version PyPI JSON, filenames, non-yanked
+   status and SHA-256. For the verifier's `--publication-check pypi`, provide
+   one JSON object keyed by all three distribution names, whose values are the
+   respective PyPI responses; verify against the approved six-file manifest.
+4. **No tag, GitHub Release, Registry entry, or Action ref advances until all
+   three pinned wheels and sdists are published and verified.** Only then
+   create the tag at the approved commit, attach the durable manifest to the
+   GitHub Release, and run the gated Registry and Action-ref updates. Check
+   the exact package, Action and hook readbacks; no moving ref is build proof.
+
+### Partial-Publication Recovery
+
+If any upload or readback fails, freeze every public release pointer. Record
+which of the six approved files exist, their digests and yanked status. Retain
+the previous complete release as the documented package, Action and hook
+rollback target. A partly published version can have unavailable exact pins;
+do not advertise it as installable.
+
+For a transient failure, read back already uploaded files against the original
+manifest. If they match, obtain approval to resume only missing files in
+core/labs/proof order, with the original source, control revision and bytes.
+Never rebuild, overwrite files, blindly rerun the entire upload, or use
+`--skip-existing` as verification. Recheck all six files before advancing any
+pointer. An existing filename with a different digest stops recovery.
+
+If any published artifact is wrong or completion is impossible, do not reuse
+the version. With explicit approval, yank the partial release's uploaded files
+with a reason; deletion is not rollback. Prepare a new lockstep patch version,
+update every exact pin through review, rebuild all six artifacts and repeat the
+full approval and verification gates. Record the abandoned version and link
+the recovery release in its notes. Neither a yank nor a retry establishes a
+complete release by itself.
+
+## `release/2.x` Security Maintenance
+
+Create `release/2.x` from the last supported 2.x release commit before 3.0
+development diverges. Keep its own `docs/release-state.json`, pyproject,
+lockfile, changelog, Registry descriptor, Action and hook references on that
+branch; never copy main's 3.x release state into it. Backport only reviewed
+security fixes for the package, Action and hook, with branch-local patch
+versions and the ordinary release gates. Do not merge main wholesale.
+
+Support ends **120 calendar days after 3.0.0**. Publish the explicit end date
+and the package, Action and hook backport surfaces in the 3.0.0 notes. After
+that date, stop 2.x security releases unless the owner approves a new policy.
+
+Run `scripts/verify_release.py --root CHECKOUT --release-branch release/2.x`
+against the branch checkout. It checks that checkout's release state and
+requires a 2.x version; with `--require-publishable`, the approved commit must
+be an ancestor of `origin/release/2.x`. Publication environment readbacks must
+allow exactly `release/2.x`, with the same reviewer and bypass protections as
+main. The default verifier continues to require main. Use the branch's own
+unsplit contract unless a separately approved 2.x packaging change exists.
+
+The current workflows allow only main. Before the first maintenance release,
+review branch-specific workflow dispatch, source/control binding and a
+protected environment with exactly the maintenance-branch policy. Keep main's
+environment main-only. Do not weaken either gate to a wildcard or silently
+dispatch maintenance releases through main. Run dry-run and exact-artifact
+gates on that branch, then verify its package, Action and hook after release.
 
 ## Post-Publication Install Smoke
 

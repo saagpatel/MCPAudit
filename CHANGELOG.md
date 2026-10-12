@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Release-tooling groundwork for configurable package provenance, lockstep
+  distribution and script verification, and a branch-specific 2.x release gate.
+  Document the future core/labs/proof publication order and partial recovery;
+  the current package remains unsplit.
+
 - Requested pin checks with withheld baselines now report partial coverage with
   reason `pin_baseline_withheld`. The opt-in policy boolean
   `fail_on.pin_baseline_withheld` fails these checks; its default remains off.
