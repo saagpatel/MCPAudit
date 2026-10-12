@@ -95,7 +95,7 @@ def test_cli_invalid_json_returns_machine_readable_input_failure(tmp_path: Path)
     )
 
     assert result.exit_code == 2
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["accepted"] is False
     assert payload["error"]["code"] == "SF-INPUT-INVALID"
 
@@ -128,7 +128,7 @@ def test_cli_contract_drift_blocks_before_missing_artifact_access(tmp_path: Path
     )
 
     assert result.exit_code == 1
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["accepted"] is False
     assert payload["contract"]["issues"][0]["change"] == "additive"
     assert "preinstall" not in payload
@@ -159,6 +159,6 @@ def test_cli_rejects_oversized_schema_with_structured_input_failure(tmp_path: Pa
         ],
     )
     assert result.exit_code == 2
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["error"]["code"] == "SF-INPUT-INVALID"
     assert "input limit" in payload["error"]["message"]

@@ -202,7 +202,7 @@ def test_cli_lists_runs_builtins_supplied_json_and_schemas(tmp_path: Path) -> No
         ["session-resume", "run", "successful-resume-control", "--format", "json"],
     )
     assert machine.exit_code == 0, machine.output
-    assert json.loads(machine.output)["schema_version"] == "mcpaudit.session-resume.report.v1"
+    assert json.loads(machine.stdout)["schema_version"] == "mcpaudit.session-resume.report.v1"
 
     scenario_path = tmp_path / "supplied.json"
     scenario_path.write_bytes(scenario_json_bytes(load_builtin_scenarios()["disconnect-before-acceptance"]))
@@ -211,12 +211,12 @@ def test_cli_lists_runs_builtins_supplied_json_and_schemas(tmp_path: Path) -> No
         ["session-resume", "run", str(scenario_path), "--format", "json"],
     )
     assert supplied.exit_code == 0, supplied.output
-    assert json.loads(supplied.output)["scenario_id"] == "disconnect-before-acceptance"
+    assert json.loads(supplied.stdout)["scenario_id"] == "disconnect-before-acceptance"
 
     for contract in ("scenario", "transcript", "report", "suite-report"):
         schema = runner.invoke(main, ["session-resume", "schema", contract])
         assert schema.exit_code == 0, schema.output
-        assert json.loads(schema.output)["type"] == "object"
+        assert json.loads(schema.stdout)["type"] == "object"
 
 
 def test_cli_rejects_unknown_or_conflicting_selection() -> None:
