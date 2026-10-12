@@ -175,6 +175,24 @@ def test_secret_named_url_endpoint_drift_is_preserved(tmp_path: Path, host: str,
     assert all(changed_url in finding.current for finding in findings)
 
 
+@pytest.mark.parametrize("option", ["--format=token", "--format＝token", "--format=\x1b[0mtoken"])
+def test_secret_named_inline_option_value_preserves_flag_drift(tmp_path: Path, option: str) -> None:
+    cfg = make_server_config(args=[option, "--verbose"])
+    store = PinStore(tmp_path / "pins.yaml")
+    store.pin_server(cfg.name, [], cfg)
+    baseline = PinStore(tmp_path / "pins.yaml").baseline_config(cfg.name)
+    assert baseline is not None
+    assert baseline["args"] == cfg.args
+    analyzer = ProvenanceAnalyzer()
+    assert analyzer.analyze_server(cfg, baseline) == []
+    changed = cfg.model_copy(update={"args": [option, "--no-sandbox"]})
+    findings = analyzer.analyze_server(changed, baseline)
+    assert [finding.kind for finding in findings] == [ProvenanceKind.ARGS]
+    assert findings[0].severity == ProvenanceSeverity.HIGH
+    assert findings[0].gained_flags == ["--no-sandbox"]
+    assert "--no-sandbox" in findings[0].current
+
+
 def test_dangerous_flag_outside_secret_value_slot_is_reported_as_drift(tmp_path: Path) -> None:
     cfg = make_server_config(command=None, args=["--token", "old", "--port", "8080"])
     store = PinStore(tmp_path / "pins.yaml")

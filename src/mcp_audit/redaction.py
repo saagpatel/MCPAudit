@@ -827,7 +827,7 @@ def _reading_outcome(
                 labels.add(name.start())
         length = len(text)
         for left, right, _ in _text_edits(text + suffix, raw=False, labels=frozenset(labels)):
-            claims = claims or right > length
+            claims = claims or (right > length and _secret_flag_without_value(text, frozenset(labels)))
             right = min(right, length)
             if left >= right:
                 continue
@@ -950,6 +950,16 @@ def _continuation_end(
     return end
 
 
+def _secret_flag_without_value(value: str, labels: frozenset[int]) -> bool:
+    """The flag's own name is secret, with no inline value or other trailing text."""
+    if not value.startswith("-"):
+        return False
+    # Punctuation may precede the name (--＝password), but a complete ordinary
+    # name before a delimiter owns its inline value (--format=token).
+    name = next((name for name in _NAME_TOKEN.finditer(value) if name.group().lstrip("-")), None)
+    return name is not None and name.start() in labels and not value[name.end() :].strip()
+
+
 def _claims_next_argument(item: str) -> bool:
     """Some reading of an argument takes the next argument as its value (assumed when unenumerable)."""
     normalized, origins = _normalized_view(item)
@@ -959,8 +969,7 @@ def _claims_next_argument(item: str) -> bool:
         labels = _RawMap(item, normalized, origins, literal=False).secret_labels(
             _Budget(len(item), _LABEL_WORK_FLOOR)
         )
-        names = list(_NAME_TOKEN.finditer(normalized))
-        if names and names[-1].start() in labels and not _inline_secret_assignment(normalized, labels):
+        if _secret_flag_without_value(normalized, labels):
             return True
     segments = _segments(item)
     if not any(len(segment.choices) > 1 for segment in segments):
@@ -972,8 +981,6 @@ def _claims_next_argument(item: str) -> bool:
 
 def _inline_secret_assignment(value: str, labels: frozenset[int]) -> bool:
     """An inline delimiter follows a secret label in this detection reading."""
-    if _URL.match(value) is not None:
-        return False
     return any(
         name.start() in labels and _ASSIGNMENT_PREFIX.match(value, name.end()) is not None
         for name in _NAME_TOKEN.finditer(value)
