@@ -38,13 +38,13 @@ def test_release_versions_are_consistent_across_surfaces() -> None:
     readme = Path("README.md").read_text(encoding="utf-8")
     adoption = Path("docs/ADOPTION-GUIDE.md").read_text(encoding="utf-8")
 
-    assert version == "2.10.0"
+    assert version == "2.10.1"
     assert state == {
         "schema_version": "mcp-audit.release-state.v1",
-        "candidate_version": "2.10.0",
-        "published_version": version,
-        "previous_version": "2.9.0",
-        "status": "release",
+        "candidate_version": "2.10.1",
+        "published_version": "2.10.0",
+        "previous_version": "2.10.0",
+        "status": "candidate",
     }
     assert server["version"] == state["published_version"]
     assert server["packages"][0]["version"] == state["published_version"]
@@ -52,10 +52,12 @@ def test_release_versions_are_consistent_across_surfaces() -> None:
     assert "## [2.8.0] - 2026-10-06" in changelog
     assert "## [2.8.1] - 2026-10-06" in changelog
     assert "## [2.9.0] - 2026-10-10" in changelog
-    assert f"## [{version}] - 2026-10-11" in changelog
-    assert f"## [{version}] - Unreleased" not in changelog
-    assert f"[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v{version}...HEAD" in changelog
-    assert f"[{version}]: https://github.com/saagpatel/MCPAudit/compare/v2.9.0...v{version}" in changelog
+    assert "## [2.10.0] - 2026-10-11" in changelog
+    assert f"## [{version}] - Unreleased" in changelog
+    assert f"## [{version}] - 2026-10-11" not in changelog
+    assert "[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v2.10.0...HEAD" in changelog
+    assert f"[{version}]: https://github.com/saagpatel/MCPAudit/compare/v2.10.0...HEAD" in changelog
+    assert "[2.10.0]: https://github.com/saagpatel/MCPAudit/compare/v2.9.0...v2.10.0" in changelog
     assert "[2.8.0]: https://github.com/saagpatel/MCPAudit/compare/v2.7.0...v2.8.0" in changelog
     assert f"saagpatel/MCPAudit@v{state['published_version']}" in readme
     assert f"saagpatel/MCPAudit@v{state['published_version']}" in adoption
@@ -87,7 +89,7 @@ def test_release_metadata_verifier_passes() -> None:
         timeout=30,
     )
     assert result.returncode == 0, result.stderr
-    assert "release metadata verified for 2.10.0" in result.stdout
+    assert "release metadata verified for 2.10.1" in result.stdout
 
 
 def test_release_verifier_requires_public_tag_in_precommit_usage_comment(
@@ -121,9 +123,9 @@ def test_release_state_cannot_keep_a_stale_published_version(
         "_release_state",
         lambda: {
             "schema_version": "mcp-audit.release-state.v1",
-            "candidate_version": "2.10.0",
-            "published_version": "2.8.0",
-            "previous_version": "2.8.0",
+            "candidate_version": "2.10.1",
+            "published_version": "2.10.0",
+            "previous_version": "2.10.0",
             "status": "release",
         },
     )
@@ -143,9 +145,9 @@ def test_candidate_version_cannot_equal_published_version(
         "_release_state",
         lambda: {
             "schema_version": "mcp-audit.release-state.v1",
-            "candidate_version": "2.10.0",
-            "published_version": "2.10.0",
-            "previous_version": "2.10.0",
+            "candidate_version": "2.10.1",
+            "published_version": "2.10.1",
+            "previous_version": "2.10.1",
             "status": "candidate",
         },
     )
@@ -164,9 +166,9 @@ def test_candidate_previous_version_must_equal_published_version(
         "_release_state",
         lambda: {
             "schema_version": "mcp-audit.release-state.v1",
-            "candidate_version": "2.10.0",
-            "published_version": "2.8.0",
-            "previous_version": "2.7.0",
+            "candidate_version": "2.10.1",
+            "published_version": "2.10.0",
+            "previous_version": "2.9.0",
             "status": "candidate",
         },
     )

@@ -5,14 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-### Changed
-
-- Tests/CI: calibrate hostile performance time ceilings to the runner using
-  median fixture startup/stdio and synthetic report CPU measurements. Preserve
-  published case values, RSS and coverage requirements; record calibration in
-  every case artifact and support raw runs with `--perf-no-calibration`.
+## [2.10.1] - Unreleased
 
 ### Security
 
@@ -26,6 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Redact token-only URL userinfo separated from its `@` by spaces, tabs, or
   Unicode spaces in free text (`https://token @host`). A free-text URL
   authority followed only by spaces and `@` is now withheld.
+
+### Changed
+
+- Tests/CI: calibrate hostile performance time ceilings to the runner using
+  median fixture startup/stdio and synthetic report CPU measurements. Preserve
+  published case values, RSS and coverage requirements; record calibration in
+  every case artifact and support raw runs with `--perf-no-calibration`.
 
 ### Fixed
 
@@ -48,6 +48,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unchanged.
 - Make direct red-team fixture sampling deterministic so global RNG consumption
   cannot make detector parity classify a randomly gated tool differently.
+
+### Known issues
+
+- See [Known issues](docs/known-issues.md) for the remaining argv
+  escape-supplied inline delimiter and fullwidth flag delimiter redaction edges.
+
+### Release boundary details
+
+Release status: candidate
+Publication decision: NO-GO
+
+MCPAudit 2.10.1 is a patch candidate for review and CI validation only. This
+source state does not authorize tagging, publication, Registry mutation,
+deployment, or claims of downstream adoption. The release-state flip belongs
+in a separate reviewed PR after the candidate lands.
+
+Published-version metadata, the Registry descriptor, Action examples, and
+pre-commit examples remain at 2.10.0. Retain `mcp-audits==2.10.0` as the
+rollback pin and verify installed command identity after rollback. Source
+metadata and local tests are not publication readback.
 
 ## [2.10.0] - 2026-10-11
 
@@ -2357,6 +2377,7 @@ real workstations; API surface may still shift before the `1.0.0` stable cut.
 - `mcp-audit` CLI entry point
 
 [Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v2.10.0...HEAD
+[2.10.1]: https://github.com/saagpatel/MCPAudit/compare/v2.10.0...HEAD
 [2.10.0]: https://github.com/saagpatel/MCPAudit/compare/v2.9.0...v2.10.0
 [2.9.0]: https://github.com/saagpatel/MCPAudit/compare/v2.8.1...v2.9.0
 [2.8.1]: https://github.com/saagpatel/MCPAudit/compare/v2.8.0...v2.8.1
