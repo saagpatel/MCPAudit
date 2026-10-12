@@ -10,6 +10,12 @@
   behavior is retained. For example, `mode=fast` or `--verbose` followed by
   ESC ESC `]`, 65 `a` characters, and BEL is currently retained by redaction;
   restart semantics would withhold the whole field and the next argv element.
+  Argv redaction also reads each element as a terminal would (restarting at
+  the second ESC) for detection only, so a secret label and inline delimiter
+  exposed by that reading withhold the element without changing displayed
+  text. Free-text fields (descriptions, schema text) do not yet add the
+  restart reading: a label separated from its delimiter only by a restarted
+  sequence, such as `token ESC ESC ]x BEL: value`, can keep its value there.
 - A fresh CI trust store has no rollback high-water mark until its first
   verification. In a one-shot CI job, set `require.pin_min_sequence` (or
   `--pin-min-sequence`) outside the pin file to refuse an older signed pin

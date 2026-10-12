@@ -810,6 +810,74 @@ def test_argv_element_with_spaced_secret_value_is_withheld_whole(argument: str) 
 @pytest.mark.parametrize(
     "argument",
     [
+        # ESC ESC: a terminal abandons the first ESC and reads an OSC.
+        "--password\x1b\x1b]=one two {secret}\x07",
+        "--password\x1b\x1b]x=\x07one two {secret}",
+        "--password\x1b\x1b\x1b]=one two {secret}\x07",
+        "--password\x1b\x1b]＝one two {secret}\x07",
+        "--password\x1b\x1b]:one two {secret}\x1b\\",
+        "https://example.com/--password\x1b\x1b]=one two {secret}\x07",
+        # Separators other than whitespace inside one argv element.
+        "https://example.com/mcp?password=one&two&{secret}",
+        "https://example.com/--password=one&two&{secret}",
+        "https://example.com/mcp?token=one;two;{secret}",
+        "https://example.com/--password=one,two,{secret}",
+        "https://example.com/--password=one;two {secret}",
+        "x api_key=one&two&{secret}",
+        # An escape payload before the raw delimiter holds a value of its own.
+        "--password\x1b]=one two {secret}\x07=rest",
+        "--password\x1b\x1b]=one two {secret}\x07=rest",
+    ],
+)
+def test_argv_value_past_any_separator_is_withheld_whole(argument: str) -> None:
+    args: list[object] = [argument.format(secret=_SWEEP_SECRET), "--port", "8080"]
+    once = redact_argv(args)
+    assert once[0] == "<redacted>"
+    # An escape-only reading can leave a bare secret flag, which claims --port.
+    assert once[-1] == "8080"
+    assert redact_argv(once) == once
+    snapshot = _argv_snapshot(args)
+    assert _SWEEP_SECRET not in snapshot
+    assert "two" not in snapshot
+
+
+@pytest.mark.parametrize(
+    "argument, expected",
+    [
+        (
+            "https://example.com/mcp?password={secret}&mode=fast",
+            "https://example.com/mcp?password=<redacted>&mode=<redacted>",
+        ),
+        ("https://example.com/mcp?token=one,two|{secret}", "https://example.com/mcp?token=<redacted>"),
+        (
+            '--config={{"password":"{secret}","model":"small"}}',
+            '--config={{"password":<redacted>,"model":"small"}}',
+        ),
+        ("--header=Authorization: Bearer {secret}", "--header=Authorization: Bearer <redacted>"),
+        (
+            "https://token.example.test:8443/mcp?password={secret}",
+            "https://token.example.test:8443/mcp?password=<redacted>",
+        ),
+        ("--ｐａｓｓｗｏｒｄ={secret}", "--ｐａｓｓｗｏｒｄ=<redacted>"),
+        ("--to\x9bken={secret}", "--to\x9bken=<redacted>"),
+    ],
+)
+def test_covered_argv_values_keep_their_structure(argument: str, expected: str) -> None:
+    once = redact_argv([argument.format(secret=_SWEEP_SECRET), "--no-sandbox"])
+    assert once == [expected.format(), "--no-sandbox"]
+    assert redact_argv(once) == once
+
+
+@pytest.mark.parametrize("prefix", ["mode=fast", "--verbose", "--color=red"])
+def test_esc_esc_restart_reading_adds_no_withholding_without_a_label(prefix: str) -> None:
+    for payload in ("a" * 65, "x=1", "a" * 65 + "=b c"):
+        text = f"{prefix}\x1b\x1b]{payload}\x07"
+        assert redact_argv([text, "on"]) == [text, "on"]
+
+
+@pytest.mark.parametrize(
+    "argument",
+    [
         "https://example.com/--password={secret}",
         "https://example.com/mcp?password={secret}&x=1",
         "https://token.example.test:8443/mcp?password={secret}",

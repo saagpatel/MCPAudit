@@ -31,6 +31,9 @@ _SECRET_NAME = re.compile(
 )
 # Every (overlapping) secret-label match, so a literal byte is never hidden by a neighbour.
 _SECRET_LABELS = re.compile(f"(?=({_SECRET_NAME.pattern}))", re.IGNORECASE)
+# A secret-label stem anywhere, component anchors dropped: a suffix reading
+# may start inside a token (``xauth`` read from ``auth``).
+_LABEL_STEM = re.compile(f"{_SECRET_NAME.pattern}|auth|sig", re.IGNORECASE)
 # Escape framing and controls; what is left of a removed run is its printable bytes.
 _RUN_FRAMING = re.compile(r"\x1b[\[\]\\]?|[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 # Readings of one whitespace-free chunk before it is ambiguous.
@@ -63,6 +66,16 @@ _VALUE = (
 _VALUE_CONTINUATION = re.compile(_VALUE)
 _ASSIGNMENT_PREFIX = re.compile(r"[\"']?\s*[:=]\s*")
 _FLAG_NAME_END = re.compile(r"[:=\s]")
+_INLINE_DELIMITER = re.compile(r"[:=]")
+# A word of an argv value: it ends at whitespace and at every character that
+# ends a value in the free-text value grammar (_VALUE: , ; & quotes and a
+# closing bracket), a URL (_URL: quotes and angle brackets) or a query value
+# (_QUERY_VALUE: & ;), plus the shell pipe. A redaction marker is part of a
+# word, so a redacted element reads as it did before redaction.
+_ARGV_VALUE_WORD = re.compile(r"(?:<redacted>|[^\s,;&|<>\"'}\]])++")
+_NEW_ASSIGNMENT = re.compile(rf"[A-Za-z0-9_.-]++{_ASSIGNMENT_PREFIX.pattern}")
+# An ESC immediately before another introducer, which a terminal abandons.
+_ABANDONED_ESCAPE = re.compile("\x1b(?=[\x1b\x9b\x9d])")
 _ASSIGNMENT_VALUE = re.compile(rf"([\"']?\s*[:=]\s*)({_REDACTED_VALUE}|{_VALUE})")
 _FLAG_VALUE = re.compile(rf"(\s+)({_REDACTED_VALUE}|{_VALUE})")
 _FLAG_PREFIX = re.compile(r"\s*")
@@ -968,11 +981,11 @@ def _secret_flag_without_value(value: str, labels: frozenset[int]) -> bool:
     return any(first.start() <= start < stop for start in labels)
 
 
-def _inline_secret_values(value: str, labels: frozenset[int]) -> Iterator[int]:
-    """Where the value starts after each secret label followed by an inline delimiter."""
+def _inline_secret_values(value: str, labels: frozenset[int]) -> Iterator[tuple[int, int]]:
+    """Label start and value start of each secret label followed by an inline delimiter."""
     for name in _NAME_TOKEN.finditer(value):
         if name.start() in labels and (prefix := _ASSIGNMENT_PREFIX.match(value, name.end())) is not None:
-            yield prefix.end()
+            yield name.start(), prefix.end()
 
 
 def _plain_labels(text: str, budget: _Budget) -> frozenset[int]:
@@ -999,32 +1012,25 @@ class _ArgvReading:
     structural: bool = True
 
 
-def _argv_readings(
-    item: str, normalized: str, origins: list[tuple[int, int]] | None
-) -> list[_ArgvReading] | None:
-    """Every reading of an argv element, or None when they cannot be enumerated.
+def _restarted(item: str) -> str:
+    """The element as a terminal parses it: an ESC before another introducer is abandoned.
 
-    Readings are the control-stripped NFKC view and every combination of
-    escape-sequence readings, as for free text. Labels are judged on raw
-    extents where a reading has a per-character map; without one, on the
-    reading's own name tokens, so a missing map never turns an element's
-    whole text into a label. The enumeration is charged to one budget linear
-    in the element's length.
+    ``control_free_spans`` reads ESC ESC (or ESC and a C1 introducer) as one
+    two-byte escape, so the byte after it stays text (D18 keeps that for
+    display). A terminal restarts at the second introducer instead, so the
+    sequence that follows is a CSI or OSC there. Detection reads both.
     """
-    budget = _Budget(len(item), _LABEL_WORK_FLOOR)
-    if origins is None:
-        result = [_ArgvReading(normalized, _plain_labels(normalized, budget), normalized, structural=False)]
-    else:
-        result = [
-            _ArgvReading(normalized, _RawMap(item, normalized, origins).secret_labels(budget), normalized)
-        ]
-    if normalized == item:
-        return result  # No removed bytes and no normalization: the element is its only reading.
-    segments = _segments(item)
+    return _ABANDONED_ESCAPE.sub("", item)
+
+
+def _source_readings(source: str, budget: _Budget) -> list[_ArgvReading] | None:
+    """Every escape-sequence reading of ``source``, or None when they cannot be enumerated."""
+    segments = _segments(source)
     count = _reading_count(segments)
-    readings = _readings(segments) if count <= _MAX_READINGS and budget.charge(count * len(item)) else None
+    readings = _readings(segments) if count <= _MAX_READINGS and budget.charge(count * len(source)) else None
     if readings is None:
         return None
+    result: list[_ArgvReading] = []
     for reading in readings:
         pieces = [normalize_text(char) for char in reading.text]
         joined = "".join(pieces)
@@ -1037,12 +1043,60 @@ def _argv_readings(
             (origin, origin + 1) for piece, origin in zip(pieces, reading.origins, strict=True) for _ in piece
         ]
         result.append(
-            _ArgvReading(text, _RawMap(item, text, spans, literal=True).secret_labels(budget), joined)
+            _ArgvReading(text, _RawMap(source, text, spans, literal=True).secret_labels(budget), joined)
         )
     return result
 
 
-_WORD_RUN = re.compile(r"\S+")
+def _label_may_assign(source: str) -> bool:
+    """Coarse test for a source whose readings cannot be enumerated.
+
+    In its dropped or fully literal view, a secret-label stem (judged without
+    token boundaries, since a suffix reading can start mid-token) is followed
+    somewhere by an inline delimiter, or the view is a flag holding one.
+    """
+    for view in (_normalized_view(source)[0], _normalized_view(source, literal=True)[0]):
+        if (stem := _LABEL_STEM.search(view)) is not None and (
+            view.startswith("-") or _INLINE_DELIMITER.search(view, stem.end()) is not None
+        ):
+            return True
+    return False
+
+
+def _argv_readings(
+    item: str, normalized: str, origins: list[tuple[int, int]] | None
+) -> list[_ArgvReading] | None:
+    """Every reading of an argv element, or None when they cannot be enumerated.
+
+    Readings are the control-stripped NFKC view and every combination of
+    escape-sequence readings, as for free text, of the element as
+    ``control_free_spans`` parses it and as a terminal does (ESC ESC
+    restarting). Labels are judged on raw extents where a reading has a
+    per-character map; without one, on the reading's own name tokens, so a
+    missing map never turns an element's whole text into a label. The
+    enumeration is charged to one budget linear in the element's length. The
+    restart reading only adds detection: when it cannot be enumerated it
+    counts only if a coarse test finds a secret label it could assign.
+    """
+    budget = _Budget(len(item), _LABEL_WORK_FLOOR)
+    if origins is None:
+        result = [_ArgvReading(normalized, _plain_labels(normalized, budget), normalized, structural=False)]
+    else:
+        result = [
+            _ArgvReading(normalized, _RawMap(item, normalized, origins).secret_labels(budget), normalized)
+        ]
+    if normalized == item:
+        return result  # No removed bytes and no normalization: the element is its only reading.
+    parsed = _source_readings(item, budget)
+    if parsed is None:
+        return None
+    result += parsed
+    if (restarted := _restarted(item)) != item:
+        readings = _source_readings(restarted, budget)
+        if readings is None:
+            return None if _label_may_assign(restarted) else result
+        result += readings
+    return result
 
 
 def _argv_uncovered_secret(item: str, normalized: str, readings: list[_ArgvReading]) -> bool:
@@ -1051,19 +1105,49 @@ def _argv_uncovered_secret(item: str, normalized: str, readings: list[_ArgvReadi
     One argv element is one shell word, so whitespace inside it does not end
     a value. When removed bytes or normalization make up the readings, any
     such assignment withholds the element: the raw extent of its value depends
-    on the reading. Otherwise the element is its only reading, and free-text
-    redaction decides the value's first whitespace-free run (an authority
-    port, a JSON value, the scheme of ``Authorization: Bearer``); every later
-    run in the element must lie inside a raw redaction edit.
+    on the reading. Otherwise the element is its only reading. Its value runs
+    to the end of the element, split into words at whitespace and at every
+    character that ends a value in the free-text or URL grammars. Free-text
+    redaction decides the first word (an authority port, a JSON value, the
+    scheme of ``Authorization: Bearer``); every later word must lie inside a
+    raw redaction edit, until a word after a non-space separator starts a new
+    ``name=`` assignment (a query or JSON neighbour), which owns the rest.
     """
     if normalized != item:
         return any(next(_inline_secret_values(r.text, r.labels), None) is not None for r in readings)
-    start = next(_inline_secret_values(item, readings[0].labels), len(item))
-    runs = list(_WORD_RUN.finditer(item, start))[1:]
-    if not runs:
+    found = list(_inline_secret_values(item, readings[0].labels))
+    if not found:
         return False
     edits = _redaction_edits(item)
-    return edits is None or any(not _within(edits, run.start(), run.end()) for run in runs)
+    if edits is None:
+        return True
+    # Each assignment's words run up to the next secret label, which checks
+    # its own: every word is visited once.
+    limits = [label for label, _ in found[1:]] + [len(item)]
+    for (_, start), limit in zip(found, limits, strict=True):
+        words = _ARGV_VALUE_WORD.finditer(item, start, max(start, limit))
+        previous = next(words, None)
+        if previous is None:
+            continue
+        for word in words:
+            gap = item[previous.end() : word.start()]
+            if not gap.isspace() and _NEW_ASSIGNMENT.match(item, word.start(), limit) is not None:
+                break
+            if not _within(edits, word.start(), word.end()):
+                return True
+            previous = word
+    return False
+
+
+def _prefix_holds_value(prefix: str) -> bool:
+    """Some reading of a kept argv prefix has a secret assignment with value text (or none can be read)."""
+    normalized, origins = _normalized_view(prefix)
+    readings = _argv_readings(prefix, normalized, origins)
+    return readings is None or any(
+        start < len(reading.text)
+        for reading in readings
+        for _, start in _inline_secret_values(reading.text, reading.labels)
+    )
 
 
 def _argv_undetected(item: str, readings: list[_ArgvReading]) -> bool:
@@ -1467,14 +1551,20 @@ def redact_argv(value: list[object]) -> list[object]:
             # replace the whole remaining value, including removed controls.
             # A delimiter that shares its raw character with a neighbor has no
             # raw boundary, so the argument is withheld.
+            # No reading of the kept prefix may hold value bytes: an escape
+            # payload there can carry a delimiter and value of its own.
             delimiter = name.end()
-            if origins is None or any(
-                0 <= neighbor < len(origins) and origins[neighbor] == origins[delimiter]
-                for neighbor in (delimiter - 1, delimiter + 1)
+            if (
+                origins is None
+                or any(
+                    0 <= neighbor < len(origins) and origins[neighbor] == origins[delimiter]
+                    for neighbor in (delimiter - 1, delimiter + 1)
+                )
+                or _prefix_holds_value(prefix := item[: origins[delimiter][1]])
             ):
                 result.append(_REDACTED)
             else:
-                result.append(redact_text(item[: origins[delimiter][1]] + _REDACTED))
+                result.append(redact_text(prefix + _REDACTED))
         elif readings is None or _argv_uncovered_secret(item, normalized, readings):
             result.append(_REDACTED)
         else:

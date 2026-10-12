@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   flag name alone, so an option whose inline value contains a secret label and
   composes under NFKC (`--format=token` plus combining characters) no longer
   hides itself or the next flag from reports, pins and provenance drift.
+  Argv detection also reads ESC ESC as a terminal does (restarting the
+  sequence) and treats `&`, `;`, `,` and `|` inside an element like whitespace,
+  so `--password ESC ESC ]=one two secret BEL` and
+  `https://host/mcp?password=one&two&secret` are withheld whole; an escape
+  payload before the cut delimiter that holds a value withholds the element.
   Keep existing ESC ESC control-stripping semantics because restarting at the
   second ESC adds withholding for benign long OSC payloads.
 - Add a regression test requiring publish workflows to disable `setup-uv`
