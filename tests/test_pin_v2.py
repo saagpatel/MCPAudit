@@ -251,8 +251,10 @@ def test_legacy_refresh_labels_uncovered_fields_without_writing(
         }
         assert all(row["summary"] == "not previously covered" for row in payload["uncovered_fields"])
         assert payload["drift"] == [] and payload["escalation"] == []
+        assert "mcp-audit pin --refresh SERVER" in payload["baseline_note"]
     else:
         assert "not previously covered" in output and "outputSchema" in output
+        assert "mcp-audit pin --refresh SERVER" in output
     assert store.path.read_bytes() == original
 
 
