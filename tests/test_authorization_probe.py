@@ -641,10 +641,10 @@ async def test_all_dns_addresses_must_be_public(monkeypatch: pytest.MonkeyPatch,
 async def test_fetch_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     count = 0
 
-    async def response(url: str, method: Literal["POST", "GET"], timeout: float) -> probe._Response:
+    async def response(url: str, method: Literal["POST", "GET"], timeout: float) -> probe.Response:
         nonlocal count
         count += 1
-        return probe._Response(404, [], False, b"", False)
+        return probe.Response(404, [], False, b"", False)
 
     monkeypatch.setattr(probe, "_request", response)
     observation = AuthorizationProbeObservation()
@@ -702,7 +702,7 @@ async def test_probe_stall_reserves_sdk_budget_and_retains_evidence(
     ready(peer)
     completed_request = probe._request
 
-    async def stalled_request(url: str, method: Literal["POST", "GET"], timeout: float) -> probe._Response:
+    async def stalled_request(url: str, method: Literal["POST", "GET"], timeout: float) -> probe.Response:
         if url.endswith(stalled_path):
             await anyio.sleep_forever()
         return await completed_request(url, method, timeout)
@@ -749,9 +749,9 @@ async def test_outer_cancellation_retains_incremental_probe_evidence(
     findings: list[AuthorizationFinding] = []
     metadata_started = anyio.Event()
 
-    async def request(url: str, method: Literal["POST", "GET"], timeout: float) -> probe._Response:
+    async def request(url: str, method: Literal["POST", "GET"], timeout: float) -> probe.Response:
         if method == "POST":
-            return probe._Response(401, ['Bearer realm="mcp"'], False, b"{}", False)
+            return probe.Response(401, ['Bearer realm="mcp"'], False, b"{}", False)
         metadata_started.set()
         await anyio.sleep_forever()
         raise AssertionError("unreachable")
@@ -788,7 +788,7 @@ async def test_probe_warnings_survive_successful_sdk_and_report_projections(
         peer.routes[PRM_PATH] = (503, {}, b"{}")
     elif failure == "unavailable":
 
-        async def unavailable(url: str, method: Literal["POST", "GET"], timeout: float) -> probe._Response:
+        async def unavailable(url: str, method: Literal["POST", "GET"], timeout: float) -> probe.Response:
             raise OSError("synthetic unavailable probe")
 
         monkeypatch.setattr(probe, "_request", unavailable)
@@ -932,15 +932,15 @@ async def test_advertised_metadata_is_used_or_review_is_skipped(monkeypatch: pyt
     prm = json.dumps({"resource": "https://mcp.fixture.test/other"}).encode()
     clean = json.dumps({"resource": RESOURCE, "authorization_servers": [ISSUER]}).encode()
 
-    async def respond(url: str, method: Literal["POST", "GET"], timeout: float) -> probe._Response:
+    async def respond(url: str, method: Literal["POST", "GET"], timeout: float) -> probe.Response:
         if method == "POST":
-            return probe._Response(401, list(challenge), False, b"{}", False)
+            return probe.Response(401, list(challenge), False, b"{}", False)
         gets.append(url)
         if url.endswith("/bad-prm"):
-            return probe._Response(200, [], False, prm, False)
+            return probe.Response(200, [], False, prm, False)
         if "/.well-known/oauth-protected-resource" in url:
-            return probe._Response(200, [], False, clean, False)
-        return probe._Response(200, [], False, json.dumps(healthy_metadata()).encode(), False)
+            return probe.Response(200, [], False, clean, False)
+        return probe.Response(200, [], False, json.dumps(healthy_metadata()).encode(), False)
 
     monkeypatch.setattr(probe, "_request", respond)
     shapes = _adversarial_challenges()
