@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Add a regression test requiring publish workflows to disable `setup-uv`
+  caching and omit `actions/cache`; document the false-positive dispositions
+  for code-scanning alerts #42, #43, #44, and #47 in the release checklist.
+
 ### Changed
 
 - Keep release supply tests aligned with the candidate or published version selected by release state.

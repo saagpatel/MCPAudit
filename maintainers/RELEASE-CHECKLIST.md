@@ -48,6 +48,14 @@ being uploaded manually.
 
 ## Exact-Candidate Security Readback
 
+For the 2.11.0 Phase 0 code-scanning readback, record alerts #42, #43, and
+#44 as false positives: the PyPI and MCP Registry publish workflows do not use
+the Actions cache, and every `setup-uv` step disables its cache. Record alert
+#47 as a false positive because the pin-parse warning logs only the exception
+class and position, not the parsed input. The maintainer records these
+dispositions through the GitHub API; this note and the regression test do not
+dismiss alerts.
+
 The advisory workflow and release gate query every public PyPI package/version
 in the lock, including extras. OSV request size, response size, query count, and
 request timeout are bounded. An unavailable or malformed feed exits 2 and fails

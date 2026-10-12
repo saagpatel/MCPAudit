@@ -284,10 +284,15 @@ def test_workflow_isolates_consumer_copies_and_uploads_explicit_paths() -> None:
     upload = next(step for step in jobs["build"]["steps"] if "upload-artifact" in step.get("uses", ""))
     assert "*" not in upload["with"]["path"]
     assert len(upload["with"]["path"].splitlines()) == 3
-    # No release job reads or writes the Actions cache: no actions/cache step, and
-    # every setup-uv step disables its cache (`cache-mode` is not a workflow key).
-    for path in (".github/workflows/publish.yml", ".github/workflows/publish-mcp-registry.yml"):
-        for job in yaml.safe_load(Path(path).read_text())["jobs"].values():
+
+
+def test_publish_workflows_disable_actions_cache() -> None:
+    paths = sorted(Path(".github/workflows").glob("publish*.yml"))
+    assert paths
+
+    for path in paths:
+        workflow = yaml.safe_load(path.read_text())
+        for job in workflow["jobs"].values():
             assert "cache-mode" not in job
             for step in job.get("steps", []):
                 uses = step.get("uses", "")
