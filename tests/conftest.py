@@ -8,7 +8,7 @@ import pytest
 
 from mcp_audit.models import ClientType, ServerConfig, ToolAnnotations, ToolInfo, TransportType
 from mcp_audit.pinning import PinStore
-from mcp_audit.probe import _request, _Response
+from mcp_audit.probe import Response, _request
 
 _MAX_PARAM_ID_STRING_LENGTH = 64
 
@@ -24,7 +24,7 @@ def pytest_make_parametrize_id(config: pytest.Config, val: object, argname: str)
 def local_authorization_probe_only(monkeypatch: pytest.MonkeyPatch) -> None:
     """Existing mocked connectors must not cause new public-network probe traffic."""
 
-    async def local_request(url: str, method: Literal["POST", "GET"], timeout: float) -> _Response:
+    async def local_request(url: str, method: Literal["POST", "GET"], timeout: float) -> Response:
         if urlsplit(url).hostname not in {"localhost", "127.0.0.1", "::1"}:
             raise OSError("external probe disabled in tests")
         return await _request(url, method, timeout)

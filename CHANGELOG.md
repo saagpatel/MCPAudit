@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mark canary `runtime_security` coverage as partial when a saved pin baseline
   is withheld, even if the in-session exercise completes.
 
+### Changed
+
+- Move shared authorization URL helpers and canonical posture JSON encoding into
+  core, so connected authorization probes do not load lab contracts. Expose the
+  probe helpers used by conformance labs and guard the core import boundary.
+
 ## [2.11.0] - 2026-10-12
 
 ### Upgrade notes
