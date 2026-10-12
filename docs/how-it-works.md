@@ -57,8 +57,8 @@ the frame cap; it retains the listing caps. See the [output contract](OUTPUT-CON
 
 ## Large fleets
 
-On POSIX hosts supporting spawn and process-group cleanup, fleets larger than
-256 servers run their per-server connection, enumeration and analysis stages
+When run from the `mcp-audit scan` CLI on POSIX hosts supporting spawn and
+process-group cleanup, connected scans of fleets larger than 256 servers run their per-server connection, enumeration and analysis stages
 in `min(cpu_count or 1, ceil(server_count / 256), 8)` worker processes, provided
 that gives at least two workers. Slices are contiguous; audits return in input
 order. Each worker uses `max(1, ceil(max_concurrency / workers))` local slots;
@@ -73,6 +73,8 @@ and custom override appliers silently retain the single-process path. Pin
 verification can update rollback tracking, and package verifiers share a
 scan-wide registry cache; these modes do not have a separate read-only worker
 baseline protocol. Unsupported hosts and single-core hosts also retain that path.
+`--skip-connect` scans never shard (they spawn no process), and library
+callers of `run_scan` and the `mcp_audit.api` entry points stay single-process.
 There is no public sharding option.
 
 Workers capture stderr and reap their own MCP process groups. The parent tracks
