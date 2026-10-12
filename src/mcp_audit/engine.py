@@ -20,6 +20,8 @@ import shlex
 import socket
 import time
 from collections.abc import Callable
+from contextlib import AbstractAsyncContextManager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from itertools import chain
@@ -133,7 +135,7 @@ class _ScanContext:
     parse_errors: list[ConfigParseError]
     scan_warnings: list[ScanWarning]
     connector: ServerConnector
-    connection_limiter: anyio.CapacityLimiter
+    connection_limiter: AbstractAsyncContextManager[object]
     analyzer: PermissionAnalyzer
     scorer: RiskScorer
     llm_analyzer: LLMAnalyzer | None
@@ -159,8 +161,113 @@ class _ScanContext:
         self, code: str, message: str, *, check: str | None = None, servers: list[str] | None = None
     ) -> None:
         # Preserve arrival order on the console; finalization sorts report data only.
-        self.scan_warnings.append(ScanWarning(code=code, message=message, check=check, servers=servers or []))
+        warning = ScanWarning(code=code, message=message, check=check, servers=servers or [])
+        sink = _SERVER_WARNING_SINK.get()
+        (sink if sink is not None else self.scan_warnings).append(warning)
         self.out.print(terminal_safe(message), style="yellow")
+
+
+_SERVER_WARNING_SINK: ContextVar[list[ScanWarning] | None] = ContextVar("server_warning_sink", default=None)
+
+
+@dataclass(frozen=True)
+class _WorkerSetup:
+    """Only initialized, stateless per-server components cross the spawn boundary.
+
+    Discovery, policy parsing and all baseline decisions have already run in
+    the parent. Runtime resources and fleet-only analyzers never cross it.
+    """
+
+    opts: ScanOptions
+    applier: OverrideApplier
+    analyzer: PermissionAnalyzer
+    scorer: RiskScorer
+    injection_detector: InjectionDetector | None
+    ssrf_detector: SsrfDetector | None
+    egress_detector: EgressDetector | None
+    egress_server_allow: dict[str, set[str]]
+    trifecta_analyzer: TrifectaAnalyzer | None
+
+    @classmethod
+    def from_context(cls, context: _ScanContext) -> _WorkerSetup:
+        return cls(
+            context.opts,
+            context.applier,
+            context.analyzer,
+            context.scorer,
+            context.injection_detector,
+            context.ssrf_detector,
+            context.egress_detector,
+            context.egress_server_allow,
+            context.trifecta_analyzer,
+        )
+
+    def context(
+        self, servers: list[ServerConfig], limiter: AbstractAsyncContextManager[object]
+    ) -> _ScanContext:
+        connector = ServerConnector(
+            timeout=float(self.opts.timeout),
+            max_frame_bytes=self.opts.max_frame_bytes,
+            max_surface_bytes=self.opts.max_surface_bytes,
+            sdk_stdio_fallback=self.opts.sdk_stdio_fallback,
+        )
+        connector.scan_warnings = []
+        return _ScanContext(
+            opts=self.opts,
+            applier=self.applier,
+            out=Console(quiet=True),
+            start=time.monotonic(),
+            servers=servers,
+            parse_errors=[],
+            scan_warnings=[],
+            connector=connector,
+            connection_limiter=limiter,
+            analyzer=self.analyzer,
+            scorer=self.scorer,
+            llm_analyzer=None,
+            llm_unavailable_summary=None,
+            injection_detector=self.injection_detector,
+            ssrf_detector=self.ssrf_detector,
+            ssrf_allow=set(),
+            egress_detector=self.egress_detector,
+            egress_server_allow=self.egress_server_allow,
+            trifecta_analyzer=self.trifecta_analyzer,
+            shadowing_analyzer=None,
+            escalation_analyzer=None,
+            provenance_analyzer=None,
+            integrity_analyzer=None,
+            package_verifier=None,
+            artifact_verifier=None,
+            pin_store=None,
+            audits=[ServerAudit(server=server, connection_status="pending") for server in servers],
+            completed=[set() for _ in servers],
+            package_coverage={},
+        )
+
+
+async def _audit_one_guarded(context: _ScanContext, idx: int, srv: ServerConfig) -> None:
+    # An analyzer crash must not cancel sibling audits or retain partial evidence.
+    try:
+        await _analyze_server(context, idx, srv)
+    except TimeoutError:
+        context.audits[idx] = ServerAudit(
+            server=srv,
+            connection_status="timeout",
+            connection_error="Per-server wall-clock budget exhausted; analysis is incomplete.",
+        )
+        context.completed[idx].clear()
+        context.warn(
+            "analysis_timeout",
+            "Per-server wall-clock budget exhausted; analysis is incomplete.",
+            check="permission_analysis",
+            servers=[srv.name],
+        )
+    except Exception as exc:
+        context.audits[idx] = ServerAudit(
+            server=srv,
+            connection_status="failed",
+            connection_error=redact_text(f"analysis error: {describe_exception(exc)}"),
+        )
 
 
 async def run_scan(
@@ -172,6 +279,7 @@ async def run_scan(
     override_applier: OverrideApplier | None = None,
     console: Console | None = None,
     pin_store: PinStore | None = None,
+    _allow_sharding: bool = True,
 ) -> AuditReport:
     """Run the scan pipeline and return an :class:`AuditReport`.
 
@@ -236,35 +344,18 @@ async def run_scan(
         task_id = progress.add_task(f"Auditing {len(servers)} server(s)...", total=len(servers))
 
         async def audit_one_guarded(idx: int, srv: ServerConfig) -> None:
-            # An analyzer crash must not cancel sibling audits or retain partial evidence.
-            try:
-                await _analyze_server(context, idx, srv)
-                progress.advance(task_id)
-            except TimeoutError:
-                context.audits[idx] = ServerAudit(
-                    server=srv,
-                    connection_status="timeout",
-                    connection_error="Per-server wall-clock budget exhausted; analysis is incomplete.",
-                )
-                context.completed[idx].clear()
-                context.warn(
-                    "analysis_timeout",
-                    "Per-server wall-clock budget exhausted; analysis is incomplete.",
-                    check="permission_analysis",
-                    servers=[srv.name],
-                )
-                progress.advance(task_id)
-            except Exception as exc:
-                context.audits[idx] = ServerAudit(
-                    server=srv,
-                    connection_status="failed",
-                    connection_error=redact_text(f"analysis error: {describe_exception(exc)}"),
-                )
-                progress.advance(task_id)
+            await _audit_one_guarded(context, idx, srv)
+            progress.advance(task_id)
 
-        async with anyio.create_task_group() as tg:
-            for i, srv in enumerate(servers):
-                tg.start_soon(audit_one_guarded, i, srv)
+        from mcp_audit.fleet_workers import run_sharded, worker_count
+
+        workers = worker_count(context) if _allow_sharding else 0
+        if workers:
+            await run_sharded(context, workers, lambda: progress.advance(task_id))
+        else:
+            async with anyio.create_task_group() as tg:
+                for i, srv in enumerate(servers):
+                    tg.start_soon(audit_one_guarded, i, srv)
 
     return _finalize_scan(context)
 

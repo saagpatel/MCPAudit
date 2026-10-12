@@ -7,6 +7,7 @@ import signal
 import sys
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from typing import TextIO
 
 import anyio
@@ -31,6 +32,9 @@ from mcp.shared.message import SessionMessage
 
 DEFAULT_MAX_FRAME_BYTES = 16 * 1024 * 1024
 DEFAULT_MAX_SURFACE_BYTES = 64 * 1024 * 1024
+
+# Workers register owned groups with the parent for cleanup after a worker crash.
+_GROUP_OBSERVER: ContextVar[Callable[[int, bool], None] | None] = ContextVar("group_observer", default=None)
 
 
 class FrameSizeError(ValueError):
@@ -133,6 +137,18 @@ async def bounded_stdio_client(
     process = await _create_platform_compatible_process(
         command, server.args, get_default_environment() | (server.env or {}), errlog, server.cwd
     )
+    observer = _GROUP_OBSERVER.get()
+    if observer is not None:
+        # SIGKILL between SDK spawn and this registration remains an ownership
+        # gap; the parent can only clean groups whose registration was delivered.
+        try:
+            observer(process.pid, True)
+        except BaseException:
+            # Registration can fail if the parent closes its pipe. Teardown
+            # must still cover the newly created process before propagating it.
+            with anyio.CancelScope(shield=True):
+                await _stop_process_group(process, on_orphans)
+            raise
     read_writer, read = anyio.create_memory_object_stream[SessionMessage | Exception](0)
     write, write_reader = anyio.create_memory_object_stream[SessionMessage](0)
     writer_done = anyio.Event()
@@ -205,5 +221,13 @@ async def bounded_stdio_client(
                 with anyio.move_on_after(0.5):
                     await writer_done.wait()
                 await _stop_process_group(process, on_orphans)
+                if observer is not None:
+                    try:
+                        os.killpg(process.pid, 0)
+                    except ProcessLookupError:
+                        observer(process.pid, False)
+                    except PermissionError:
+                        # Keep the parent's ownership record for another cleanup attempt.
+                        on_orphans("Process-group verification was denied; cleanup is unverified.")
                 await _aclose_all(read, write, read_writer, write_reader)
             tasks.cancel_scope.cancel()
