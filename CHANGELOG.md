@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Complete the calibrated performance gate with 100,000 config-only servers,
+  a 1 MiB description under `--ssrf-check`, and hostile-server wall bounds with
+  zero leftover processes or groups in every profile.
 - Follow local `$ref`, `allOf`, `anyOf`, and `oneOf` in static schema header
   type and per-property checks, with bounded depth and work. Preserve incomplete
   metadata coverage for unresolved, malformed, cyclic, or exhausted branches.

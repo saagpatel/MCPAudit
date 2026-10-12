@@ -9,13 +9,22 @@ from pathlib import Path
 
 import pytest
 
-from tests.test_hostile_perf import CASES, FIXTURES, Case, assert_limits, isolated_env, run_case
+from tests.test_hostile_perf import (
+    CASES,
+    FIXTURES,
+    SSRF_RETAINED_BYTES,
+    Case,
+    assert_limits,
+    isolated_env,
+    run_case,
+)
 
 
 @pytest.mark.parametrize(
     "mode",
     [
         "normal",
+        "ssrf-description",
         "notifications",
         "infinite-pages",
         "malformed-list",
@@ -53,6 +62,8 @@ def test_hostile_wire_payloads(mode: str, tmp_path: Path) -> None:
             str(tmp_path),
             "--tools",
             "2",
+            "--desc-bytes",
+            "1048576" if mode == "ssrf-description" else "0",
             "--frame-bytes",
             "64",
             "--size-mib",
@@ -83,6 +94,11 @@ def test_hostile_wire_payloads(mode: str, tmp_path: Path) -> None:
         assert tools[0]["name"] == "status[/bold]"
     elif mode in {"huge", "oversized"}:
         assert len(tools[0]["description"]) == (1024 * 1024 if mode == "huge" else 64)
+    elif mode == "ssrf-description":
+        assert len(tools) == 1
+        assert len(tools[0]["description"].encode("utf-8")) == 1024 * 1024
+        assert "fetch" in tools[0]["description"]
+        assert tools[0]["inputSchema"]["properties"] == {"url": {"type": "string"}}
     elif mode == "infinite-pages":
         assert responses[1]["result"]["nextCursor"] == "1"
     else:
@@ -159,6 +175,7 @@ def test_orphan_gate_requires_child_and_both_server_records(profile: str, roles:
         "deadline_exceeded": False,
         "exit_code": 0,
         "wall_seconds": 1.0,
+        "timeout": 2,
         "connected": 1,
         "total_tools": 1,
         "statuses": ["failed", "connected"],
@@ -239,3 +256,25 @@ def test_frame_target_requires_failure_reason() -> None:
     }
     with pytest.raises(AssertionError):
         assert_limits(metrics, CASES[3], "p3-7")
+
+
+def test_scanner_runner_skip_connect_does_not_start_fixtures(tmp_path: Path) -> None:
+    case = Case("skip_smoke", ("normal",), 10, servers=2, tools=0, cli_args=("--skip-connect",))
+    metrics = run_case(tmp_path, case)
+    assert_limits(metrics, case, "baseline")
+    assert metrics["discovered"] == 2
+    assert metrics["process_roles"] == []
+
+
+def test_scanner_runner_observes_ssrf_analysis(tmp_path: Path) -> None:
+    case = next(case for case in CASES if case.name == "ssrf_1mib")
+    metrics = run_case(tmp_path, case)
+    # Timing acceptance belongs to the isolated perf lane, not the broad suite.
+    assert metrics["exit_code"] == 0 and metrics["deadline_exceeded"] is False
+    assert metrics["ssrf_tool_counts"] == [1]
+    assert metrics["statuses"] == ["partial"]
+    assert metrics["ssrf_description_bytes"] == [SSRF_RETAINED_BYTES]
+    assert metrics["ssrf_patterns"] == [["url_param_with_fetch_verb"]]
+    warning_codes = metrics["warning_codes"]
+    assert isinstance(warning_codes, list) and "surface_truncated" in warning_codes
+    assert metrics["leftover_processes"] == metrics["leftover_groups"] == 0
