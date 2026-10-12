@@ -219,7 +219,7 @@ def test_schema_contracts_are_versioned_closed_and_machine_readable() -> None:
     for contract in ("scenario", "report"):
         result = runner.invoke(main, ["result-parcel", "schema", contract])
         assert result.exit_code == 0, result.output
-        assert json.loads(result.output)["additionalProperties"] is False
+        assert json.loads(result.stdout)["additionalProperties"] is False
 
 
 def test_cli_supports_builtins_supplied_json_human_and_json() -> None:
@@ -227,7 +227,7 @@ def test_cli_supports_builtins_supplied_json_human_and_json() -> None:
 
     builtins_result = runner.invoke(main, ["result-parcel", "builtins"])
     assert builtins_result.exit_code == 0
-    assert builtins_result.output.splitlines() == [
+    assert builtins_result.stdout.splitlines() == [
         "large-inline",
         "large-resource-link",
         "small-inline",
@@ -252,7 +252,7 @@ def test_cli_supports_builtins_supplied_json_human_and_json() -> None:
         ],
     )
     assert machine.exit_code == 1, machine.output
-    assert json.loads(machine.output)["findings"][0]["evidence_code"] == ("integrity_digest_mismatch")
+    assert json.loads(machine.stdout)["findings"][0]["evidence_code"] == ("integrity_digest_mismatch")
 
 
 def test_cli_generates_large_synthetic_metadata_and_rejects_ambiguous_input() -> None:
@@ -271,7 +271,7 @@ def test_cli_generates_large_synthetic_metadata_and_rejects_ambiguous_input() ->
         ],
     )
     assert generated.exit_code == 0, generated.output
-    assert json.loads(generated.output)["payload"]["size_bytes"] == 8_388_608
+    assert json.loads(generated.stdout)["payload"]["size_bytes"] == 8_388_608
 
     ambiguous = runner.invoke(
         main,

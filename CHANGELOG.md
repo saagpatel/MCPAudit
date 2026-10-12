@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Warn on hidden compatibility command use except `pin`, and show the 3.0 labs
+  and direct Proof install commands in lab help and Proof version output.
+- Guard lazy command imports only for missing `mcp_audit_labs` or
+  `proof_before_action` modules, with an install hint and exit 2; unrelated
+  import failures still propagate.
+
 - Move shared authorization URL helpers and canonical posture JSON encoding into
   core, so connected authorization probes do not load lab contracts. Expose the
   probe helpers used by conformance labs and guard the core import boundary.
@@ -28,6 +34,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pin warnings name the refresh command and the coming 3.0 withholding of v1
   baselines even without trusted keys. The 3.0 proposal specifies default
   failure and mixed-row exclusion; 2.x v1 comparisons remain available.
+- `check` accepts `scan`'s optional detectors, higher-reach opt-ins, canary
+  controls, timeout/concurrency tuning, verbose detail, identifier redaction,
+  and extended SARIF profile. Static review remains the default; canary requires
+  a selected connection from an explicit config without discovery.
+- `check` applies permission overrides as well as ignores, merges policy and
+  CLI egress hosts, and honors per-server policy allowlists and detector pin files.
+  Hidden `--skip-connect` and `--config-only` compatibility flags enforce their
+  connection and discovery constraints. Report destinations protect effective
+  pin baselines, including the default path and filesystem aliases, whenever
+  detectors or policy consume pins. `--connect-project-configs` requires
+  `--connect`; static project checks retain their connection warning.
 
 ## [2.11.0] - 2026-10-12
 

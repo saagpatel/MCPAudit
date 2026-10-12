@@ -815,7 +815,7 @@ def test_malformed_result_type_is_structured_unknown(
     trace_path.write_text(json.dumps(payload), encoding="utf-8")
     result = CliRunner().invoke(main, ["cache-contract", "scan", str(trace_path)])
     assert result.exit_code == 1, result.output
-    cli_report = json.loads(result.output)
+    cli_report = json.loads(result.stdout)
     assert cli_report["verdict"] == "unknown"
     assert {finding["evidence"] for finding in cli_report["findings"]} == {"unsupported_result_type"}
 
@@ -1009,7 +1009,7 @@ def test_invalid_cache_metadata_types_are_rejected(
     trace_path.write_text(json.dumps(payload), encoding="utf-8")
     result = CliRunner().invoke(main, ["cache-contract", "scan", str(trace_path)])
     assert result.exit_code == 1, result.output
-    cli_report = json.loads(result.output)
+    cli_report = json.loads(result.stdout)
     assert cli_report["verdict"] == "fail"
     assert {finding["rule_id"] for finding in cli_report["findings"]} == {"MCPCACHE002"}
 
@@ -1535,7 +1535,7 @@ def test_oversized_path_and_cli_emit_structured_unknown(tmp_path: Path) -> None:
 
     result = CliRunner().invoke(main, ["cache-contract", "scan", str(trace_path)])
     assert result.exit_code == 1, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["verdict"] == "unknown"
     assert payload["findings"][0]["evidence"] == "input_size_limit_exceeded"
 
@@ -1804,7 +1804,7 @@ def test_strict_schemas_are_versioned_and_closed() -> None:
 def test_offline_cli_smokes(name: str, exit_code: int) -> None:
     result = CliRunner().invoke(main, ["cache-contract", "scan", str(FIXTURES / name)])
     assert result.exit_code == exit_code, result.output
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["schema_version"] == "mcpaudit.cache-contract.report.v1"
 
 
@@ -1812,4 +1812,4 @@ def test_offline_cli_smokes(name: str, exit_code: int) -> None:
 def test_cli_emits_contract_schema(contract: str) -> None:
     result = CliRunner().invoke(main, ["cache-contract", "schema", contract])
     assert result.exit_code == 0, result.output
-    assert json.loads(result.output)["additionalProperties"] is False
+    assert json.loads(result.stdout)["additionalProperties"] is False
