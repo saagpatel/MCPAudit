@@ -8,7 +8,7 @@ import json
 import os
 from collections import Counter
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import pytest
 from pydantic_core import to_json
@@ -28,13 +28,13 @@ GOLDEN = {
         "terminal": "0dbc2a76e8d00cb0132463ac7e9f96b1ae2400464520f747d47706bf41c40d98",
         "json": "026339d485f60e1dd5b02bcff7e77b6e3b13ac4fde3dc6ce8666a5874006489b",
         "html": "ac05406211d621963519be1ba3b2a613ae950233031e418281328ad4a7b30df9",
-        "sarif": "c25c7e61d488ddbd3767b0095bb5c96f1858bbbd71bbd9d5ed614a587a6df0d4",
+        "sarif": "63b7924e4ccc76c4b8b64df10362a34a6d6767df15dad9fa8c78c6396fe54957",
     },
     "config_only_report": {
         "terminal": "883073684e3dad99c3d1473169969f6be3862bd2217a2801791272633d704bb1",
         "json": "9662889625ed5dcc829d58897a88c17169249c4b39407b80fd208572142df9bc",
         "html": "d6a68006cace935cc6328659c5d30d947c3118b5feb56ed7d40b89c5cf174f0f",
-        "sarif": "766e20fcdb49888a7ce723700b5f84dfd16f7ff60c5cf249b616b5f1f941e449",
+        "sarif": "0636a00191a2afa12cc3e02f219cd05e2fa869cd5af1dc97e8439d06a36cb58c",
     },
 }
 KEYWORD_GOLDEN = {
@@ -60,6 +60,13 @@ def test_fixture_permission_analysis_preserves_parent_golden(fixture: str) -> No
     )
 
 
+def _sarif_without_tool_version(report: AuditReport) -> dict[str, Any]:
+    # SARIF embeds the installed package version; pin it so the hash tracks rendering only.
+    sarif = SarifGenerator().generate(report)
+    sarif["runs"][0]["tool"]["driver"]["version"] = "0.0.0"
+    return sarif
+
+
 @pytest.mark.parametrize("fixture", GOLDEN)
 def test_report_surfaces_preserve_parent_goldens(tmp_path: Path, fixture: str) -> None:
     report = fixture_report(fixture)
@@ -73,7 +80,7 @@ def test_report_surfaces_preserve_parent_goldens(tmp_path: Path, fixture: str) -
         "terminal": terminal_text,
         "json": path.read_text(),
         "html": HtmlReportGenerator().generate(report),
-        "sarif": json.dumps(SarifGenerator().generate(report), sort_keys=True),
+        "sarif": json.dumps(_sarif_without_tool_version(report), sort_keys=True),
     }
     assert {name: hashlib.sha256(value.encode()).hexdigest() for name, value in outputs.items()} == GOLDEN[
         fixture
