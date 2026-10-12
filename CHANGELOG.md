@@ -25,6 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Keep release supply tests aligned with the candidate or published version selected by release state.
 
+### Documentation
+
+- Propose the 3.0 boundary for owner sign-off in `docs/3.0-BOUNDARY-PROPOSAL.md`:
+  the core, labs, and Proof Before Action package split, `scan` becoming an
+  alias of `check`, removal of `monitor`, `_run_scan_core`, and v1 pins, the
+  user-facing breaking changes, and the 2.x deprecation timeline. No behavior
+  changes.
+
 ## [2.10.1] - 2026-10-11
 
 ### Security
