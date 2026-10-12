@@ -26,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Every legacy `scan` run emits one stderr translation notice without changing
+  its exit code. A frozen, option-only table distinguishes preserved coverage,
+  explicit config-only narrowing, and possible silent coverage loss; unsupported
+  spellings and discovery shapes report why no exact `check` translation exists.
 - Requested pin checks with withheld baselines now report partial coverage with
   reason `pin_baseline_withheld`. The opt-in policy boolean
   `fail_on.pin_baseline_withheld` fails these checks; its default remains off.
