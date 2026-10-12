@@ -23,7 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Release-tooling groundwork for configurable package provenance, lockstep
   distribution and script verification, and a branch-specific 2.x release gate.
   Document the future core/labs/proof publication order and partial recovery;
-  the current package remains unsplit.
+  the current package remains unsplit. Verify sdist rebuild dependencies and
+  package roots against the contract, support flat package layouts, and include
+  GUI commands in installed-script ownership checks.
 
 - Requested pin checks with withheld baselines now report partial coverage with
   reason `pin_baseline_withheld`. The opt-in policy boolean

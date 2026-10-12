@@ -85,7 +85,7 @@ def distributions(tmp_path: Path) -> Path:
     ).encode()
     provenance = json.dumps({"commit": COMMIT, "dirty": False}).encode()
     entries = "[console_scripts]\n" + "".join(f"{k} = {v}\n" for k, v in release.EXPECTED_SCRIPTS.items())
-    project = "[project.scripts]\n" + "".join(f'{k} = "{v}"\n' for k, v in release.EXPECTED_SCRIPTS.items())
+    project = Path("pyproject.toml").read_text(encoding="utf-8")
     wheel, sdist = release.distribution_names(VERSION)
     with zipfile.ZipFile(dist / wheel, "w") as archive:
         archive.writestr(f"mcp_audits-{VERSION}.dist-info/METADATA", metadata)
@@ -94,6 +94,7 @@ def distributions(tmp_path: Path) -> Path:
     with tarfile.open(dist / sdist, "w:gz") as archive:
         for name, content in (
             ("PKG-INFO", metadata),
+            ("src/mcp_audit/__init__.py", b""),
             ("src/mcp_audit/_build_provenance.json", provenance),
             ("pyproject.toml", project.encode()),
         ):

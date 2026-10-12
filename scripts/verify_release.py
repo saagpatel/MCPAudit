@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import configparser
 import email.parser
 import hashlib
 import json
@@ -14,7 +15,7 @@ import sys
 import tarfile
 import tomllib
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import NamedTuple
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -345,8 +346,7 @@ def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object
 
     if project.get("name") != DISTRIBUTION_NAME:
         raise VerificationError("project metadata has the wrong distribution name")
-    if project.get("scripts") != DISTRIBUTIONS[0].scripts:
-        raise VerificationError("project metadata has the wrong console entry points")
+    _check_project_scripts(project, distribution=DISTRIBUTIONS[0], name="project metadata")
 
     if RELEASE_BRANCH == "release/2.x" and not version.startswith("2."):
         raise VerificationError("release/2.x requires a 2.x project version")
@@ -356,8 +356,7 @@ def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object
             raise VerificationError("distribution projects must have lockstep names and versions")
         if _locked_project_version(distribution.name) != version:
             raise VerificationError("uv.lock distribution versions must be lockstep")
-        if other.get("scripts", {}) != distribution.scripts:
-            raise VerificationError("distribution project console entry points do not match the contract")
+        _check_project_scripts(other, distribution=distribution, name="distribution project")
         if f"mcp-audits=={version}" not in other.get("dependencies", []):
             raise VerificationError("satellite distributions must pin the exact core version")
     if len(DISTRIBUTIONS) == 3:
@@ -485,9 +484,26 @@ def _check_distribution_metadata(
         raise VerificationError(f"{name} has the wrong version")
     requirements = metadata.get_all("Requires-Dist", [])
     normalized_requirements = {requirement.replace(" ", "") for requirement in requirements}
+    lockstep: set[str] = set()
     if distribution.name != DISTRIBUTION_NAME:
-        if f"mcp-audits=={version}" not in normalized_requirements:
-            raise VerificationError(f"{name} must pin the exact core version")
+        lockstep.add(f"mcp-audits=={version}")
+    elif len(DISTRIBUTIONS) == 3:
+        for extra, packages in (
+            ("labs", ("mcp-audits-labs",)),
+            ("proof", ("mcp-audits-proof",)),
+            ("all", ("mcp-audits-labs", "mcp-audits-proof")),
+        ):
+            lockstep.update(f'{package}=={version};extra=="{extra}"' for package in packages)
+    observed_lockstep: set[str] = set()
+    for requirement in normalized_requirements:
+        match = re.match(r"[A-Za-z0-9][A-Za-z0-9._-]*", requirement)
+        if match is not None:
+            package = re.sub(r"[-_.]+", "-", match[0]).lower()
+            if package in {item.name for item in DISTRIBUTIONS}:
+                observed_lockstep.add((package + requirement[match.end() :]).replace("'", '"'))
+    if observed_lockstep != lockstep:
+        raise VerificationError(f"{name} must pin the exact lockstep distribution versions")
+    if distribution.name != DISTRIBUTION_NAME:
         return
     if not ({"mcp>=2.2.0,<3.0", "mcp<3.0,>=2.2.0"} & normalized_requirements):
         raise VerificationError(f"{name} does not retain the tested MCP SDK range")
@@ -498,16 +514,6 @@ def _check_distribution_metadata(
         raise VerificationError(f"{name} does not retain the click>=8.3.3 security floor")
     if "anyio>=4.14.2" not in normalized:
         raise VerificationError(f"{name} does not retain the anyio>=4.14.2 security floor")
-    if len(DISTRIBUTIONS) == 3:
-        for extra, packages in (
-            ("labs", ("mcp-audits-labs",)),
-            ("proof", ("mcp-audits-proof",)),
-            ("all", ("mcp-audits-labs", "mcp-audits-proof")),
-        ):
-            for package in packages:
-                expected = f'{package}=={version};extra=="{extra}"'
-                if expected not in {item.replace("'", '"') for item in normalized}:
-                    raise VerificationError(f"{name} extras must pin exact lockstep satellite versions")
 
 
 def _check_provenance(raw: bytes, *, commit: str, name: str) -> None:
@@ -517,17 +523,108 @@ def _check_provenance(raw: bytes, *, commit: str, name: str) -> None:
 
 
 def _check_entry_points(raw: bytes, *, name: str, scripts: dict[str, str] | None = None) -> None:
-    observed: dict[str, str] = {}
-    in_console_scripts = False
-    for line in raw.decode("utf-8").splitlines():
-        if line.startswith("["):
-            in_console_scripts = line.strip() == "[console_scripts]"
-            continue
-        if in_console_scripts and "=" in line:
-            command, target = line.split("=", maxsplit=1)
-            observed[command.strip()] = target.strip()
+    class EntryPointParser(configparser.ConfigParser):
+        def optionxform(self, optionstr: str) -> str:
+            return optionstr
+
+    parser = EntryPointParser(interpolation=None)
+    try:
+        parser.read_string(raw.decode("utf-8"))
+    except (UnicodeDecodeError, configparser.Error) as exc:
+        raise VerificationError(f"{name} entry points are invalid") from exc
+    observed = _installed_scripts(
+        dict(parser.items("console_scripts")) if parser.has_section("console_scripts") else {},
+        dict(parser.items("gui_scripts")) if parser.has_section("gui_scripts") else {},
+        name=name,
+    )
     if observed != (DISTRIBUTIONS[0].scripts if scripts is None else scripts):
-        raise VerificationError(f"{name} console entry points do not match the release contract")
+        raise VerificationError(
+            f"{name} console entry points and GUI entry points do not match the release contract"
+        )
+
+
+def _installed_scripts(console: object, gui: object, *, name: str) -> dict[str, str]:
+    scripts: dict[str, str] = {}
+    for table in (console, gui):
+        if not isinstance(table, dict):
+            raise VerificationError(f"{name} script table is invalid")
+        for command, target in table.items():
+            if not isinstance(command, str) or not isinstance(target, str):
+                raise VerificationError(f"{name} script entry is invalid")
+            if command in scripts:
+                raise VerificationError(f"{name} installed scripts must have unique owners")
+            scripts[command] = target
+    return scripts
+
+
+def _check_project_scripts(project: dict[str, object], *, distribution: Distribution, name: str) -> None:
+    scripts = _installed_scripts(project.get("scripts", {}), project.get("gui-scripts", {}), name=name)
+    if scripts != distribution.scripts:
+        raise VerificationError(
+            f"{name} console entry points and GUI entry points do not match the release contract"
+        )
+
+
+def _check_sdist_project(raw: bytes, *, distribution: Distribution, version: str, name: str) -> None:
+    try:
+        data = tomllib.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
+        raise VerificationError(f"{name} pyproject.toml is invalid") from exc
+    project = data.get("project")
+    if not isinstance(project, dict):
+        raise VerificationError(f"{name} project table is invalid")
+    if project.get("name") != distribution.name or project.get("version") != version:
+        raise VerificationError(f"{name} project identity does not match the release contract")
+    _check_project_scripts(project, distribution=distribution, name=name)
+    tool = data.get("tool")
+    uv = tool.get("uv") if isinstance(tool, dict) else None
+    settings = uv.get("build-backend") if isinstance(uv, dict) else None
+    if (
+        not isinstance(settings, dict)
+        or settings.get("module-name") != distribution.module
+        or settings.get("module-root", "src") != distribution.module_root
+    ):
+        raise VerificationError(f"{name} build module-name/module-root do not match the release contract")
+
+    dependencies = project.get("dependencies", [])
+    extras = project.get("optional-dependencies", {})
+    if not isinstance(dependencies, list) or not isinstance(extras, dict):
+        raise VerificationError(f"{name} project dependencies are invalid")
+    requirements: list[str] = []
+    for extra, values in [(None, dependencies), *extras.items()]:
+        if not isinstance(values, list) or (
+            extra is not None
+            and (not isinstance(extra, str) or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", extra) is None)
+        ):
+            raise VerificationError(f"{name} project dependencies are invalid")
+        for value in values:
+            if not isinstance(value, str) or "\n" in value or "\r" in value:
+                raise VerificationError(f"{name} project dependency is invalid")
+            if extra is not None:
+                # Existing markers remain conditions, never unconditional lockstep pins.
+                requirement, separator, marker = value.partition(";")
+                value = (
+                    f'{requirement}; ({marker}) and extra == "{extra}"'
+                    if separator
+                    else f'{value}; extra == "{extra}"'
+                )
+            requirements.append(f"Requires-Dist: {value}\n")
+    metadata = f"Name: {distribution.name}\nVersion: {version}\n" + "".join(requirements)
+    _check_distribution_metadata(metadata.encode(), version=version, name=name, distribution=distribution)
+
+
+def _sdist_file(archive: tarfile.TarFile, member: PurePosixPath) -> bytes:
+    try:
+        info = archive.getmember(str(member))
+    except KeyError as exc:
+        raise VerificationError(f"sdist {member.name} is missing from the contracted root") from exc
+    if not info.isfile():
+        raise VerificationError(f"sdist {member.name} must be a regular file")
+    stream = archive.extractfile(info)
+    if stream is None:
+        raise VerificationError(f"sdist {member.name} is missing")
+    with stream:
+        return stream.read()
 
 
 def verify_distributions(*, dist_dir: Path, version: str, commit: str) -> list[tuple[str, str]]:
@@ -566,23 +663,36 @@ def _verify_distribution(*, dist_dir: Path, version: str, commit: str, distribut
             scripts=distribution.scripts,
         )
     with tarfile.open(sdist, mode="r:gz") as archive:
-        prefix = f"{stem}-{version}"
-        metadata_file = archive.extractfile(f"{prefix}/PKG-INFO")
-        provenance_file = archive.extractfile(
-            f"{prefix}/{distribution.module_root}/{module}/_build_provenance.json"
+        prefix = PurePosixPath(f"{stem}-{version}")
+        _check_sdist_project(
+            _sdist_file(archive, prefix / "pyproject.toml"),
+            distribution=distribution,
+            version=version,
+            name=sdist.name,
         )
-        if metadata_file is None or provenance_file is None:
-            raise VerificationError("sdist metadata or provenance is missing")
+        package = prefix / distribution.module_root / module
+        has_package_source = False
+        for info in archive.getmembers():
+            member = PurePosixPath(info.name)
+            if member in package.parents and not info.isdir():
+                raise VerificationError("sdist package ancestors must be directories without links")
+            if member.is_relative_to(package):
+                if ".." in member.parts or not (info.isfile() or info.isdir()):
+                    raise VerificationError(
+                        "sdist package tree must stay under the contracted root without links"
+                    )
+                has_package_source |= info.isfile() and member.suffix == ".py"
+        if not has_package_source:
+            raise VerificationError("sdist package tree is missing from the contracted root")
         _check_distribution_metadata(
-            metadata_file.read(), version=version, name=sdist.name, distribution=distribution
+            _sdist_file(archive, prefix / "PKG-INFO"),
+            version=version,
+            name=sdist.name,
+            distribution=distribution,
         )
-        _check_provenance(provenance_file.read(), commit=commit, name=sdist.name)
-        pyproject_file = archive.extractfile(f"{prefix}/pyproject.toml")
-        if pyproject_file is None:
-            raise VerificationError("sdist pyproject.toml is missing")
-        scripts = tomllib.loads(pyproject_file.read().decode("utf-8")).get("project", {}).get("scripts", {})
-        if scripts != distribution.scripts:
-            raise VerificationError("sdist console entry points do not match the release contract")
+        _check_provenance(
+            _sdist_file(archive, package / "_build_provenance.json"), commit=commit, name=sdist.name
+        )
 
 
 def _parser() -> argparse.ArgumentParser:

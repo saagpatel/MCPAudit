@@ -9,7 +9,7 @@ import subprocess
 import sys
 import tarfile
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 
@@ -40,7 +40,10 @@ def _contract() -> list[dict[str, object]]:
     return [item._asdict() for item in TRAIN]
 
 
-@pytest.mark.parametrize("module,source", [("mcp_audit", "src"), ("proof_before_action", "python")])
+@pytest.mark.parametrize(
+    "module,source",
+    [("mcp_audit", "src"), ("proof_before_action", "python"), ("mcp_audit", ""), ("mcp_audit", ".")],
+)
 def test_backend_uses_configured_package_and_cleans_provenance(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -62,7 +65,7 @@ def test_backend_uses_configured_package_and_cleans_provenance(
         output = {
             "rev-parse": COMMIT.encode(),
             "status": b"",
-            "ls-files": f"{source}/{module}/__init__.py\0".encode(),
+            "ls-files": f"{PurePosixPath(source) / module / '__init__.py'}\0".encode(),
         }[args[0]]
         return subprocess.CompletedProcess(args, 0, output, b"")
 
@@ -75,7 +78,7 @@ def test_backend_uses_configured_package_and_cleans_provenance(
                 "commit": COMMIT,
                 "dirty": False,
             }
-            assert ("ls-files", "-z", "--", f"{source}/{module}") in calls
+            assert ("ls-files", "-z", "--", str(PurePosixPath(source) / module)) in calls
             raise RuntimeError("fixture build failed")
     assert not provenance.exists()
     (package / "untracked.py").write_text("")
@@ -171,9 +174,25 @@ def train_artifacts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         wheel, sdist = release.distribution_names(VERSION, item.name)
         stem = item.name.replace("-", "_")
         scripts = "[console_scripts]\n" + "".join(f"{key} = {value}\n" for key, value in item.scripts.items())
-        project = "[project.scripts]\n" + "".join(
-            f'{key} = "{value}"\n' for key, value in item.scripts.items()
+        dependencies = (
+            ["mcp>=2.2.0,<3.0", "cryptography>=50.0.0,<51.0", "click>=8.3.3,<9.0", "anyio>=4.14.2"]
+            if item.name == "mcp-audits"
+            else [f"mcp-audits=={VERSION}"]
         )
+        project = (
+            f'[project]\nname="{item.name}"\nversion="{VERSION}"\n'
+            f"dependencies={json.dumps(dependencies)}\n[project.scripts]\n"
+        ) + "".join(f'{key} = "{value}"\n' for key, value in item.scripts.items())
+        if item.name == "mcp-audits":
+            project += "[project.optional-dependencies]\n" + "".join(
+                f"{extra}={json.dumps([f'mcp-audits-{package}=={VERSION}' for package in packages])}\n"
+                for extra, packages in (
+                    ("labs", ("labs",)),
+                    ("proof", ("proof",)),
+                    ("all", ("labs", "proof")),
+                )
+            )
+        project += f'[tool.uv.build-backend]\nmodule-name="{item.module}"\nmodule-root="{item.module_root}"\n'
         with zipfile.ZipFile(dist / wheel, "w") as archive:
             archive.writestr(f"{stem}-{VERSION}.dist-info/METADATA", metadata)
             archive.writestr(f"{stem}-{VERSION}.dist-info/entry_points.txt", scripts)
@@ -181,6 +200,7 @@ def train_artifacts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         with tarfile.open(dist / sdist, "w:gz") as archive:
             for name, content in (
                 ("PKG-INFO", metadata.encode()),
+                (f"{item.module_root}/{item.module}/__init__.py", b""),
                 (f"{item.module_root}/{item.module}/_build_provenance.json", provenance),
                 ("pyproject.toml", project.encode()),
             ):
@@ -204,6 +224,166 @@ def test_all_six_artifacts_and_manifest_are_verified(train_artifacts: Path) -> N
     del hashes[release.distribution_names(VERSION, TRAIN[2].name)[1]]
     with pytest.raises(release.VerificationError, match="exactly"):
         release.verify_manifest(manifest, version=VERSION, commit=COMMIT)
+
+
+def _sdist_entries(path: Path) -> dict[str, bytes]:
+    with tarfile.open(path, "r:gz") as archive:
+        entries = {}
+        for member in archive.getmembers():
+            stream = archive.extractfile(member)
+            assert stream is not None
+            with stream:
+                entries[member.name] = stream.read()
+        return entries
+
+
+def _write_sdist(path: Path, entries: dict[str, bytes]) -> None:
+    with tarfile.open(path, "w:gz") as archive:
+        for name, content in entries.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(content)
+            archive.addfile(info, io.BytesIO(content))
+
+
+@pytest.mark.parametrize("module_root", ["", "."])
+def test_sdist_accepts_flat_package_layouts(
+    train_artifacts: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    module_root: str,
+) -> None:
+    labs = TRAIN[1]._replace(module_root=module_root)
+    contract = train_artifacts.parent / "flat-contract.json"
+    contract.write_text(json.dumps([item._asdict() for item in (TRAIN[0], labs, TRAIN[2])]))
+    monkeypatch.setattr(release, "DISTRIBUTIONS", release.load_distributions(contract))
+    sdist = train_artifacts / release.distribution_names(VERSION, labs.name)[1]
+    entries = _sdist_entries(sdist)
+    prefix = PurePosixPath(f"mcp_audits_labs-{VERSION}")
+    project = str(prefix / "pyproject.toml")
+    entries[project] = entries[project].replace(b'module-root="src"', f'module-root="{module_root}"'.encode())
+    for filename in ("__init__.py", "_build_provenance.json"):
+        entries[str(prefix / labs.module / filename)] = entries.pop(
+            str(prefix / "src" / labs.module / filename)
+        )
+    _write_sdist(sdist, entries)
+    assert len(release.verify_distributions(dist_dir=train_artifacts, version=VERSION, commit=COMMIT)) == 6
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["pin", "additional-pin", "module", "root", "payload", "package", "provenance", "invalid-toml"],
+)
+def test_sdist_rebuild_inputs_must_match_contract(train_artifacts: Path, mutation: str) -> None:
+    labs = TRAIN[1]
+    sdist = train_artifacts / release.distribution_names(VERSION, labs.name)[1]
+    entries = _sdist_entries(sdist)
+    prefix = f"mcp_audits_labs-{VERSION}"
+    project = f"{prefix}/pyproject.toml"
+    if mutation in {"pin", "payload"}:
+        entries[project] = entries[project].replace(b"mcp-audits==3.0.0", b"mcp-audits>=0")
+    if mutation == "additional-pin":
+        entries[project] = entries[project].replace(
+            b'"mcp-audits==3.0.0"', b'"mcp-audits==3.0.0", "mcp-audits>=0"'
+        )
+    if mutation == "module":
+        entries[project] = entries[project].replace(b'module-name="mcp_audit_labs"', b'module-name="payload"')
+    if mutation in {"root", "payload"}:
+        entries[project] = entries[project].replace(b'module-root="src"', b'module-root="payload"')
+        entries[f"{prefix}/payload/{labs.module}/__init__.py"] = b"# different code\n"
+        entries[f"{prefix}/payload/{labs.module}/_build_provenance.json"] = entries[
+            f"{prefix}/src/{labs.module}/_build_provenance.json"
+        ]
+    if mutation in {"package", "provenance"}:
+        filename = "__init__.py" if mutation == "package" else "_build_provenance.json"
+        entries[f"{prefix}/payload/{labs.module}/{filename}"] = entries.pop(
+            f"{prefix}/src/{labs.module}/{filename}"
+        )
+    if mutation == "invalid-toml":
+        entries[project] = b"[project\n"
+    _write_sdist(sdist, entries)
+    # PKG-INFO and the wheel remain valid; only rebuild inputs have changed.
+    with pytest.raises(release.VerificationError):
+        release.verify_distributions(dist_dir=train_artifacts, version=VERSION, commit=COMMIT)
+
+
+def test_sdist_core_extras_must_pin_lockstep_versions(train_artifacts: Path) -> None:
+    sdist = train_artifacts / release.distribution_names(VERSION)[1]
+    entries = _sdist_entries(sdist)
+    project = f"mcp_audits-{VERSION}/pyproject.toml"
+    entries[project] = entries[project].replace(b"mcp-audits-labs==3.0.0", b"mcp-audits-labs>=0")
+    _write_sdist(sdist, entries)
+    with pytest.raises(release.VerificationError, match="exact lockstep"):
+        release.verify_distributions(dist_dir=train_artifacts, version=VERSION, commit=COMMIT)
+
+
+@pytest.mark.parametrize("kind", [tarfile.SYMTYPE, tarfile.LNKTYPE])
+@pytest.mark.parametrize("filename", ["__init__.py", "_build_provenance.json", "linked.py", "source-root"])
+def test_sdist_package_tree_rejects_links(train_artifacts: Path, kind: bytes, filename: str) -> None:
+    sdist = train_artifacts / release.distribution_names(VERSION, TRAIN[1].name)[1]
+    entries = _sdist_entries(sdist)
+    package = f"mcp_audits_labs-{VERSION}/src/mcp_audit_labs"
+    entries.pop(f"{package}/{filename}", None)
+    with tarfile.open(sdist, "w:gz") as archive:
+        for name, content in entries.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(content)
+            archive.addfile(info, io.BytesIO(content))
+        link = tarfile.TarInfo(
+            f"mcp_audits_labs-{VERSION}/src" if filename == "source-root" else f"{package}/{filename}"
+        )
+        link.type = kind
+        link.linkname = "../../payload.py"
+        archive.addfile(link)
+    with pytest.raises(release.VerificationError, match="regular file|without links"):
+        release.verify_distributions(dist_dir=train_artifacts, version=VERSION, commit=COMMIT)
+
+
+@pytest.mark.parametrize("artifact", ["wheel", "sdist"])
+@pytest.mark.parametrize("collision", [False, True])
+def test_gui_script_ownership_is_enforced(train_artifacts: Path, artifact: str, collision: bool) -> None:
+    labs = TRAIN[1]
+    command = "proof-before-action" if collision else "unexpected-gui"
+    target = "proof_before_action.proof_cli:main"
+    wheel_name, sdist_name = release.distribution_names(VERSION, labs.name)
+    if artifact == "wheel":
+        wheel = train_artifacts / wheel_name
+        with zipfile.ZipFile(wheel) as archive:
+            entries = {name: archive.read(name) for name in archive.namelist()}
+        entries[f"mcp_audits_labs-{VERSION}.dist-info/entry_points.txt"] = (
+            f"[gui_scripts]\n{command} = {target}\n".encode()
+        )
+        with zipfile.ZipFile(wheel, "w") as archive:
+            for name, content in entries.items():
+                archive.writestr(name, content)
+    else:
+        sdist = train_artifacts / sdist_name
+        entries = _sdist_entries(sdist)
+        entries[f"mcp_audits_labs-{VERSION}/pyproject.toml"] += (
+            f'[project.gui-scripts]\n{command} = "{target}"\n'.encode()
+        )
+        _write_sdist(sdist, entries)
+    with pytest.raises(release.VerificationError, match="GUI entry points"):
+        release.verify_distributions(dist_dir=train_artifacts, version=VERSION, commit=COMMIT)
+
+
+@pytest.mark.parametrize("duplicate", [False, True])
+def test_script_contract_covers_console_and_gui_union(duplicate: bool) -> None:
+    proof = TRAIN[2]
+    command, target = next(iter(proof.scripts.items()))
+    console = proof.scripts if duplicate else {}
+    project: dict[str, object] = {"scripts": console, "gui-scripts": proof.scripts}
+    wheel = (
+        "[console_scripts]\n"
+        + (f"{command} = {target}\n" if duplicate else "")
+        + f"[gui_scripts]\n{command} = {target}\n"
+    ).encode()
+    if duplicate:
+        with pytest.raises(release.VerificationError, match="unique owners"):
+            release._check_project_scripts(project, distribution=proof, name="fixture project")
+        with pytest.raises(release.VerificationError, match="unique owners"):
+            release._check_entry_points(wheel, scripts=proof.scripts, name="fixture wheel")
+    else:
+        release._check_project_scripts(project, distribution=proof, name="fixture project")
+        release._check_entry_points(wheel, scripts=proof.scripts, name="fixture wheel")
 
 
 @pytest.mark.parametrize("mutation", ["missing", "version", "pin", "provenance", "scripts"])
@@ -272,7 +452,9 @@ def test_maintenance_environment_requires_exact_branch(monkeypatch: pytest.Monke
         )
 
 
-@pytest.mark.parametrize("mutation", ["none", "version", "lock", "scripts", "pin", "extra"])
+@pytest.mark.parametrize(
+    "mutation", ["none", "version", "lock", "scripts", "pin", "extra", "gui-collision", "core-gui-collision"]
+)
 def test_source_distribution_metadata_is_lockstep(
     monkeypatch: pytest.MonkeyPatch,
     mutation: str,
@@ -280,6 +462,8 @@ def test_source_distribution_metadata_is_lockstep(
     project = release._project()
     version = release._version()
     project["scripts"] = TRAIN[0].scripts
+    if mutation == "core-gui-collision":
+        project["gui-scripts"] = TRAIN[0].scripts
     project["optional-dependencies"] = {
         "labs": [f"mcp-audits-labs=={version}"],
         "proof": [f"mcp-audits-proof=={version}"],
@@ -307,6 +491,11 @@ def test_source_distribution_metadata_is_lockstep(
                     f'[project]\nname="{item.name}"\nversion="{other_version}"\n'
                     f'dependencies=["mcp-audits{pin}{version}"]\n[project.scripts]\n'
                     + "".join(f'{key}="{value}"\n' for key, value in scripts.items())
+                    + (
+                        '[project.gui-scripts]\nproof-before-action="proof_before_action.proof_cli:main"\n'
+                        if mutation == "gui-collision" and item == TRAIN[1]
+                        else ""
+                    )
                 )
         return original_read(path)
 
