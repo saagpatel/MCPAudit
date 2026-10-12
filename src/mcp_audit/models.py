@@ -1492,11 +1492,20 @@ class AuditReport(BaseModel):
         """Return a credential-redacted copy, optionally scrubbing field-report identifiers."""
         from mcp_audit.redaction import redact_model
 
-        data = redact_model(self)
+        # Batched serialization is cheaper for metadata-bearing reports; static
+        # reports avoid serializing and revalidating their plain model leaves.
+        typed = not identifiers and not any(
+            audit.tools or audit.prompts or audit.resources for audit in self.audits
+        )
+        data = redact_model(self, _typed=typed)
         return self._redacted_copy(data, identifiers=identifiers)
 
     def _redacted_copy(self, data: dict[str, object], *, identifiers: bool = False) -> "AuditReport":
-        """Validate already credential-redacted data, preserving review decisions."""
+        """Copy trusted redaction output using this validated report's field types.
+
+        This internal path accepts only redaction of this report, never config
+        input or server responses. Their normal validation remains unchanged.
+        """
         from mcp_audit.redaction import redact_identifiers
 
         if identifiers:
@@ -1520,3 +1529,29 @@ class AuditReport(BaseModel):
             if action_data["terminal"] is not None:
                 action_data["terminal"]["severity"] = action.severity
         return AuditReport.model_validate(data)
+
+
+def _copy_redacted_model(
+    source: ServerConfig | ServerAudit | RiskScore | NonToolRisk, data: dict[str, object]
+) -> BaseModel:
+    """Copy validated models whose redacted fields already have their final types."""
+    if isinstance(source, ServerConfig):
+        data.update(client=source.client, transport=source.transport)
+    if isinstance(source, ServerAudit):
+        copied = source.model_copy(update=data)
+        for key in ("protocol_findings", "authorization_findings", "pin_integrity_findings"):
+            if key not in data:
+                copied.__dict__[key] = []
+        copied.__pydantic_fields_set__ = set(data)
+        return copied
+    return source.model_copy(update=data)
+
+
+def _omit_unobserved_audit_fields(source: ServerAudit, data: dict[str, object]) -> None:
+    """Match the audit serializer's omitted defaults in a direct field view."""
+    for key in ("protocol", "authorization_probe", "pin_verification"):
+        if getattr(source, key) is None:
+            data.pop(key, None)
+    for key in ("protocol_findings", "authorization_findings", "pin_integrity_findings"):
+        if not getattr(source, key):
+            data.pop(key, None)

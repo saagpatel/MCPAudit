@@ -46,6 +46,7 @@ from mcp_audit.models import (
     LLMAnalysisStatus,
     LLMAnalysisSummary,
     PinIntegrityFinding,
+    RiskScore,
     ScanWarning,
     ServerAudit,
     ServerConfig,
@@ -151,9 +152,10 @@ class _ScanContext:
     package_verifier: PackageVerifier | None
     artifact_verifier: ArtifactVerifier | None
     pin_store: PinStore | None
-    audits: list[ServerAudit]
+    audits: list[ServerAudit | None]
     completed: list[set[str]]
     package_coverage: dict[str, list[CheckCoverage]]
+    empty_risk_score: RiskScore | None = None
 
     def warn(
         self, code: str, message: str, *, check: str | None = None, servers: list[str] | None = None
@@ -262,11 +264,34 @@ async def run_scan(
                 )
                 progress.advance(task_id)
 
-        async with anyio.create_task_group() as tg:
+        if _can_scan_inline(opts):
+            # Config analysis has no I/O to overlap. Avoid retaining one task
+            # per server, while allowing cancellation between bounded batches.
             for i, srv in enumerate(servers):
-                tg.start_soon(audit_one_guarded, i, srv)
+                await audit_one_guarded(i, srv)
+                if i % 128 == 0:
+                    await anyio.lowlevel.checkpoint()
+        else:
+            async with anyio.create_task_group() as tg:
+                for i, srv in enumerate(servers):
+                    tg.start_soon(audit_one_guarded, i, srv)
 
     return _finalize_scan(context)
+
+
+def _can_scan_inline(opts: ScanOptions) -> bool:
+    return opts.skip_connect and not (opts.llm_analysis or opts.verify_artifacts or opts.download_artifacts)
+
+
+def _can_analyze_config_only(opts: ScanOptions, audit: ServerAudit) -> bool:
+    return (
+        opts.skip_connect
+        and not (audit.tools or audit.prompts or audit.resources)
+        and not any(
+            getattr(opts, "canary_check" if check == "runtime_security" else check)
+            for check in OPTIONAL_CHECKS
+        )
+    )
 
 
 def _prepare_scan(
@@ -455,7 +480,7 @@ def _prepare_scan(
                 check="canary_check",
             )
 
-    audits: list[ServerAudit] = [ServerAudit(server=s, connection_status="pending") for s in servers]
+    audits: list[ServerAudit | None] = [None] * len(servers)
     completed: list[set[str]] = [set() for _ in servers]
     package_coverage = {
         check: [CheckCoverage(state="not_run", reason="verification execution unavailable") for _ in servers]
@@ -606,6 +631,39 @@ async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) ->
 
     if audit.connection_status in {"failed", "timeout"} and time.monotonic() >= deadline:
         audits[idx] = audit
+        return
+
+    if pin_store is None and _can_analyze_config_only(opts, audit):
+        # No metadata or optional checks: only config findings and overrides
+        # can contribute. Keep their deadline and the usual completion markers.
+        with analysis_budget(deadline):
+            static_schema_incomplete: list[str] = []
+            raw_findings = (
+                list(audit.permissions)
+                if audit.permissions
+                else analyzer.analyze_server(
+                    audit.tools, incomplete_reasons=static_schema_incomplete, agent_texts=[]
+                )
+            )
+            if static_schema_incomplete:
+                warn(
+                    "permission_schema_incomplete",
+                    "Permission schema analysis incomplete: " + "; ".join(static_schema_incomplete),
+                    check="permission_analysis",
+                    servers=[srv.name],
+                )
+            audit.permissions = applier.apply(srv.name, raw_findings)
+            if audit.permissions:
+                audit.risk_score = scorer.score_server(audit.permissions)
+            else:
+                # The empty score is a pure, validated scalar model. Its
+                # template belongs to this scan; each audit owns a fresh copy.
+                if context.empty_risk_score is None:
+                    context.empty_risk_score = scorer.score_server([])
+                audit.risk_score = context.empty_risk_score.model_copy()
+            audit.permission_alert_score = audit.risk_score.composite
+        audits[idx] = audit
+        completed[idx].update(("metadata", "permissions", "capabilities"))
         return
 
     with analysis_budget(deadline):
@@ -840,7 +898,11 @@ def _finalize_scan(context: _ScanContext) -> AuditReport:
     parse_errors = context.parse_errors
     scan_warnings = context.scan_warnings
     connector = context.connector
-    audits = context.audits
+    audits: list[ServerAudit] = []
+    for audit in context.audits:
+        if audit is None:
+            raise RuntimeError("Internal scan incomplete: a server audit was not published.")
+        audits.append(audit)
     completed = context.completed
     package_coverage = context.package_coverage
     pin_store = context.pin_store
@@ -1143,10 +1205,9 @@ def _parse_extra_config(path: Path, parse_errors: list[ConfigParseError] | None 
         servers = parse_config(
             path.read_text(encoding="utf-8-sig"), source=str(path), parse_errors=parse_errors
         )
-        return [
-            server.model_copy(update={"config_source": "explicit file; parsed as Claude-style config"})
-            for server in servers
-        ]
+        for server in servers:
+            server.config_source = "explicit file; parsed as Claude-style config"
+        return servers
     except OSError as exc:
         raise ValueError(f"Failed to read {path}: {redact_text(str(exc))}") from exc
     except UnicodeError as exc:

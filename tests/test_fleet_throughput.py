@@ -8,7 +8,7 @@ import json
 import os
 from collections import Counter
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import pytest
 from pydantic_core import to_json
@@ -109,18 +109,28 @@ def test_streamed_json_preserves_whole_document_format(tmp_path: Path, servers: 
 def test_streamed_json_serializes_each_audit_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     safe = fixture_report().redacted()
     expected = to_json(safe.model_dump(mode="json"), indent=2, ensure_ascii=True)
-    original = ServerAudit.model_dump
+    original = ReportGenerator._encode_audit
     calls: list[ServerAudit] = []
 
-    def dumped(self: ServerAudit, *, mode: Literal["json"]) -> dict[str, object]:
-        calls.append(self)
-        return original(self, mode=mode)
+    def encoded(self: ReportGenerator, audit: ServerAudit) -> bytes:
+        calls.append(audit)
+        return original(self, audit)
 
-    monkeypatch.setattr(ServerAudit, "model_dump", dumped)
+    monkeypatch.setattr(ReportGenerator, "_encode_audit", encoded)
     path = tmp_path / "report.json"
     ReportGenerator(Console(file=io.StringIO()))._render_redacted_json(safe, path)
     assert calls == safe.audits
     assert path.read_bytes() == expected.replace(b"\n", os.linesep.encode())
+
+
+def test_streamed_json_freezes_summary_before_omitting_audits() -> None:
+    safe = fixture_report().redacted().model_copy(update={"review_summary": None})
+    expected = to_json(safe.model_dump(mode="json"), indent=2, ensure_ascii=True)
+    fresh = safe.model_copy(update={"review_summary": None})
+    output = io.StringIO()
+    ReportGenerator(Console(file=io.StringIO()))._stream_redacted_json(fresh, output)
+    assert output.getvalue().encode("ascii") == expected
+    assert fresh.review_summary is not None
 
 
 def test_streamed_json_failure_preserves_existing_destination(
@@ -131,10 +141,10 @@ def test_streamed_json_failure_preserves_existing_destination(
     path.write_text("previous report")
     before = set(tmp_path.iterdir())
 
-    def failure(self: ServerAudit, *, mode: Literal["json"]) -> dict[str, object]:
+    def failure(self: ReportGenerator, audit: ServerAudit) -> bytes:
         raise ValueError("synthetic late serialization failure")
 
-    monkeypatch.setattr(ServerAudit, "model_dump", failure)
+    monkeypatch.setattr(ReportGenerator, "_encode_audit", failure)
     with pytest.raises(ValueError, match="synthetic late serialization failure"):
         ReportGenerator(Console(file=io.StringIO()))._render_redacted_json(safe, path)
     assert path.read_text() == "previous report"

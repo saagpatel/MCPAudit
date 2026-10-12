@@ -79,6 +79,8 @@ class OverrideApplier:
     def apply(self, server_name: str, findings: list[PermissionFinding]) -> list[PermissionFinding]:
         """Return findings with overrides applied. Does not mutate the input list."""
         # Fast path: no overrides configured
+        if not self._config.overrides:
+            return list(findings)
         server_overrides = [o for o in self._config.overrides if o.server == server_name or o.server == "*"]
         if not server_overrides:
             return list(findings)

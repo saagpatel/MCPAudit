@@ -100,6 +100,9 @@ class TestOverrideApplierRemove:
         applier = _applier(_override("srv", "tool1", shell_execution=False))
         result = applier.apply("srv", findings)
         assert result == findings
+        assert result is not findings
+        result.clear()
+        assert len(findings) == 1
 
     def test_wildcard_tool_removes_from_all_tools(self) -> None:
         findings = [

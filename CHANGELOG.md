@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Reduce config-only report redaction overhead with a conservative printable-ASCII
+  argv shortcut, pass-local argv memoization, and typed copies of validated report
+  models. Avoid repeated empty-metadata analysis, coverage model construction,
+  config tagging copies, and JSON conversions. Preserve credential redaction,
+  report formatting, and performance thresholds.
 - Complete the calibrated performance gate with 100,000 config-only servers,
   a 1 MiB description under `--ssrf-check`, and hostile-server wall bounds with
   zero leftover processes or groups in every profile.

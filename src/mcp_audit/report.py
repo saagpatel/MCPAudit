@@ -775,7 +775,8 @@ class ReportGenerator:
     def _stream_redacted_json(self, report: AuditReport, output: IO[str]) -> None:
         # Preserve field order with an empty audit-list placeholder. Export each
         # server once, without retaining a second full fleet graph/JSON string.
-        metadata = report.model_dump(mode="json", exclude={"audits": {"__all__"}})
+        report.ensure_review_summary()
+        metadata = report.model_copy(update={"audits": []}).model_dump(mode="json")
         output.write("{\n")
         for index, (key, value) in enumerate(metadata.items()):
             if index:
@@ -786,13 +787,16 @@ class ReportGenerator:
                 for audit_index, audit in enumerate(report.audits):
                     if audit_index:
                         output.write(",\n")
-                    encoded = to_json(audit.model_dump(mode="json"), indent=2, ensure_ascii=True)
+                    encoded = self._encode_audit(audit)
                     output.write("    " + encoded.decode("ascii").replace("\n", "\n    "))
                 output.write("\n  ]")
             else:
                 encoded = to_json(value, indent=2, ensure_ascii=True)
                 output.write(encoded.decode("ascii").replace("\n", "\n  "))
         output.write("\n}")
+
+    def _encode_audit(self, audit: ServerAudit) -> bytes:
+        return audit.__pydantic_serializer__.to_json(audit, indent=2, ensure_ascii=True)
 
     def _render_policy_result(self, report: AuditReport) -> None:
         """Print local policy gate result if a policy was evaluated."""

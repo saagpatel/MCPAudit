@@ -23,16 +23,19 @@ _MAX_PASSES = 4
 _REPORT_REDACTOR: ContextVar[Callable[[str], str] | None] = ContextVar("report_redactor", default=None)
 _NAME_TOKEN = re.compile(r"[A-Za-z0-9_.-]+")
 _SESSION_LABEL = re.compile(r"(?<![A-Za-z0-9])session[_-]name(?=$|[_.-])", re.IGNORECASE)
+_TOKEN_LABEL = r"token"
+_COMPONENT_LABEL = r"(?:auth|sig)"
+_OTHER_SECRET_LABELS = (
+    r"api[_-]?key|secret|password|passwd|pwd|credential|signature|private[_-]?key|"
+    r"access[_-]?key|session|authorization|authentication"
+)
 _SECRET_NAME = re.compile(
-    r"token(?!s(?:$|[_.-])|izer(?:$|[_.-]))|api[_-]?key|secret|password|passwd|pwd|credential|"
-    r"signature|private[_-]?key|access[_-]?key|session|authorization|authentication|"
-    r"(?:^|[_.-])(?:auth|sig)(?:$|[_.-])",
+    rf"{_TOKEN_LABEL}(?!s(?:$|[_.-])|izer(?:$|[_.-]))|{_OTHER_SECRET_LABELS}|"
+    rf"(?:^|[_.-]){_COMPONENT_LABEL}(?:$|[_.-])",
     re.IGNORECASE,
 )
 # Every (overlapping) secret-label match, so a literal byte is never hidden by a neighbour.
 _SECRET_LABELS = re.compile(f"(?=({_SECRET_NAME.pattern}))", re.IGNORECASE)
-# A secret-label stem anywhere, component anchors dropped: a suffix reading
-# may start inside a token (``xauth`` read from ``auth``).
 # Escape framing and controls; what is left of a removed run is its printable bytes.
 _RUN_FRAMING = re.compile(r"\x1b[\[\]\\]?|[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 # Readings of one whitespace-free chunk before it is ambiguous.
@@ -105,6 +108,14 @@ _SECRET_VALUE = re.compile(
 )
 _JWT_HEADER = re.compile(r"eyJ[A-Za-z0-9_-]*")
 _JWT_TAIL = re.compile(r"\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}")
+# Over-approximate every label and free-text detector. Printable ASCII has
+# exactly one reading; without these stems/patterns it cannot redact or pair.
+# Label exceptions and component anchors deliberately do not narrow this check.
+_ARGV_RISK = re.compile(
+    rf"[^\x20-\x7e]|{_TOKEN_LABEL}|{_OTHER_SECRET_LABELS}|{_COMPONENT_LABEL}|"
+    rf"://|Bearer|Basic|{_SECRET_VALUE.pattern}|{_JWT_HEADER.pattern}",
+    re.IGNORECASE,
+)
 
 # Field-report identifier scrubbing (opt-in, separate from credential redaction).
 _UNIX_HOME = re.compile(r"(/(?:Users|home)/)[^/\s:\"']+")
@@ -1340,6 +1351,8 @@ def _redact_text(value: str) -> str:
     detectors read the field (a removed '//' ends a URL), so passes repeat
     until the output is stable; a field that does not settle is withheld.
     """
+    if _argv_safe_ascii(value):
+        return value
     for _ in range(_MAX_PASSES):
         edits = _redaction_edits(value)
         if edits is None:
@@ -1521,6 +1534,9 @@ def redact_argv(value: list[object]) -> list[object]:
         if not isinstance(item, str):
             result.append(_redact_json(item))
             continue
+        if _argv_safe_ascii(item):
+            result.append(item)
+            continue
         normalized, origins = _normalized_view(item)
         readings = _argv_readings(item, normalized, origins)
         name = _NAME_TOKEN.match(normalized)
@@ -1570,6 +1586,10 @@ def redact_argv(value: list[object]) -> list[object]:
     return result
 
 
+def _argv_safe_ascii(value: str) -> bool:
+    return _ARGV_RISK.search(value) is None
+
+
 def redact_url(value: str) -> str:
     """Parse a complete URL field; retain endpoint shape, never authentication data."""
     # A field the free-text URL span would not cover whole has no raw boundary.
@@ -1617,27 +1637,86 @@ def redact_data(value: Any) -> Any:
     return redact_argv(value) if isinstance(value, list) else _redact_json(value)
 
 
-def redact_model(model: BaseModel) -> dict[str, object]:
+def redact_model(model: BaseModel, *, _typed: bool = False) -> dict[str, object]:
     """One structural pass over a typed report, preserving declared field names."""
-    from mcp_audit.models import ServerConfig
+    from mcp_audit.models import (
+        AuditReport,
+        NonToolRisk,
+        RiskScore,
+        ServerAudit,
+        ServerConfig,
+        _copy_redacted_model,
+        _omit_unobserved_audit_fields,
+    )
+
+    if _typed and isinstance(model, AuditReport):
+        model.ensure_review_summary()
+
+    @lru_cache(maxsize=4096)
+    def cached_argv(args: tuple[str, ...]) -> tuple[object, ...]:
+        return tuple(redact_argv(list(args)))
 
     def walk(source: object, data: object) -> object:
-        # These containers belong to model_dump, not the caller's model.
+        if isinstance(data, str):
+            return cached(data) if len(data) <= 1024 else _redact_text(data)
+        if _typed and type(data) is RiskScore:
+            # Validated risk dimensions are scalars; none can carry display text.
+            assert isinstance(data, RiskScore)
+            return data.model_copy()
+        # Plain report models need no JSON round trip. Less frequent models
+        # retain their serializers, including arbitrary JSON metadata fields.
+        if _typed and isinstance(data, BaseModel):
+            data = (
+                data.__dict__.copy()
+                if type(data) in (AuditReport, ServerAudit, ServerConfig, RiskScore, NonToolRisk)
+                else data.model_dump(mode="json")
+            )
         if isinstance(source, BaseModel) and isinstance(data, dict):
+            plain_audit = _typed and type(source) is ServerAudit
+            if plain_audit:
+                assert isinstance(source, ServerAudit)
+                _omit_unobserved_audit_fields(source, data)
             matched_text = data.get("matched_text")
+            is_config = isinstance(source, ServerConfig)
             for key, item in data.items():
-                if isinstance(source, ServerConfig) and key == "args" and isinstance(item, list):
-                    data[key] = redact_argv(item)
-                elif isinstance(source, ServerConfig) and key == "url" and isinstance(item, str):
-                    data[key] = redact_url(item)
-                elif key == "config_pointer" and isinstance(item, str):
-                    data[key] = _redact_config_pointer(item)
-                else:
+                if item is None:
+                    continue
+                if isinstance(item, str):
+                    if is_config and key == "url":
+                        data[key] = redact_url(item)
+                    elif key == "config_pointer":
+                        data[key] = _redact_config_pointer(item)
+                    else:
+                        data[key] = cached(item) if len(item) <= 1024 else _redact_text(item)
+                    continue
+                if isinstance(item, list) and not item:
+                    if _typed:
+                        data[key] = []
+                    continue
+                if is_config and key == "args" and isinstance(item, list):
+                    assert isinstance(source, ServerConfig)
+                    # Copy the cached result: sibling reports must not share lists.
+                    data[key] = list(cached_argv(tuple(source.args)))
+                elif _typed and isinstance(item, dict) and not item:
+                    data[key] = {}
+                elif isinstance(item, (str, list, tuple, dict, BaseModel)) and item:
                     data[key] = walk(getattr(source, key), item)
+                    if plain_audit and isinstance(data[key], (list, dict)) and data[key]:
+                        plain_audit = False
             if data.get("matched_span") is not None and data.get("matched_text") != matched_text:
                 data["matched_span"] = None
+            if _typed and type(source) in (ServerConfig, RiskScore, NonToolRisk):
+                assert isinstance(source, (ServerConfig, RiskScore, NonToolRisk))
+                return _copy_redacted_model(source, data)
+            if plain_audit:
+                assert isinstance(source, ServerAudit)
+                return _copy_redacted_model(source, data)
             return data
+        if _typed and isinstance(data, tuple):
+            data = list(data)
         if isinstance(source, (list, tuple)) and isinstance(data, list):
+            if data is source:
+                data = list(data)
             for index, (raw, item) in enumerate(zip(source, data, strict=True)):
                 data[index] = walk(raw, item)
             return data
@@ -1657,16 +1736,20 @@ def redact_model(model: BaseModel) -> dict[str, object]:
     cached = lru_cache(maxsize=4096)(_redact_text)
     token = _REPORT_REDACTOR.set(cached)
     try:
-        data = walk(model, model.model_dump(mode="json"))
+        data = walk(model, model if _typed else model.model_dump(mode="json"))
     finally:
         _REPORT_REDACTOR.reset(token)
         cached.cache_clear()
+        cached_argv.cache_clear()
     assert isinstance(data, dict)
     return data
 
 
 def _redact_config_pointer(pointer: str) -> str:
     """Redact credentials inside each JSON Pointer token, which ``~1`` escaping hides."""
+    if "~" not in pointer and _argv_safe_ascii(pointer):
+        # With no escaped delimiters, every token is a safe ASCII substring.
+        return pointer
     return "/".join(
         redact_text(token.replace("~1", "/").replace("~0", "~")).replace("~", "~0").replace("/", "~1")
         for token in pointer.split("/")
