@@ -92,7 +92,7 @@ def test_cli_versions_match_project_metadata() -> None:
     assert audit.exit_code == 0
     assert proof.exit_code == 0
     assert audit.output.strip() == f"mcp-audit, version {version}"
-    assert proof.output.strip() == f"proof-before-action, version {version}"
+    assert proof.stdout.strip() == f"proof-before-action, version {version}"
 
 
 def test_release_metadata_verifier_passes() -> None:

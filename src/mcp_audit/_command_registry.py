@@ -7,10 +7,35 @@ from collections.abc import Mapping
 from copy import copy
 from dataclasses import dataclass
 from importlib import import_module
+from types import ModuleType
 from typing import Any
 
 import click
 from click.shell_completion import CompletionItem
+
+LAB_INSTALL_NOTICE = (
+    "In 3.0, install labs with: uv tool install 'mcp-audits[labs]'. "
+    "For proof-before-action on PATH, install Proof directly with: "
+    "uv tool install mcp-audits-proof (a uv tool extra does not expose its scripts)."
+)
+PROOF_INSTALL_NOTICE = (
+    "In 3.0, for proof-before-action on PATH, install Proof directly with: "
+    "uv tool install mcp-audits-proof (a uv tool extra does not expose its scripts)."
+)
+
+
+def _import_command_module(module: str) -> ModuleType:
+    try:
+        return import_module(module)
+    except ImportError as exc:
+        top_level = (exc.name or "").split(".", 1)[0]
+        if top_level == "mcp_audit_labs":
+            notice = LAB_INSTALL_NOTICE
+        elif top_level == "proof_before_action":
+            notice = PROOF_INSTALL_NOTICE
+        else:
+            raise
+        raise click.UsageError(f"Optional distribution missing. {notice}") from exc
 
 
 @dataclass(frozen=True)
@@ -57,7 +82,7 @@ class LazyGroup(click.Group):
                 return LazyGroup(name=cmd_name, help=spec.help, registry=spec.children)
             command = spec.implementation
         else:
-            command = getattr(import_module(spec.module), spec.attribute)
+            command = getattr(_import_command_module(spec.module), spec.attribute)
         if not isinstance(command, click.Command):
             raise TypeError(f"registry entry {cmd_name!r} is not a Click command")
         # Aliases must not mutate the canonical implementation's metadata.
@@ -65,6 +90,26 @@ class LazyGroup(click.Group):
         command.name = cmd_name
         command.hidden = spec.hidden
         return command
+
+    def resolve_command(
+        self, ctx: click.Context, args: list[str]
+    ) -> tuple[str | None, click.Command | None, list[str]]:
+        spec = self.registry.get(args[0])
+        if spec is not None and spec.hidden and args[0] != "pin" and not ctx.resilient_parsing:
+            name = args[0]
+            if name in LAB_COMMANDS:
+                replacement = f"Use 'mcp-audit lab {name}' instead."
+            elif name.startswith("safeforge-"):
+                replacement = f"Use 'mcp-audit safeforge {name.removeprefix('safeforge-')}' instead."
+            elif name == "skillscan":
+                replacement = "Use 'mcp-audit skills scan' instead."
+            else:
+                replacement = ""
+            click.echo(
+                f"Notice: 'mcp-audit {name}' is removed in 3.0. {replacement} {LAB_INSTALL_NOTICE}",
+                err=True,
+            )
+        return super().resolve_command(ctx, args)
 
     def format_commands(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
         sections: dict[str, list[tuple[str, str]]] = {}
@@ -148,7 +193,18 @@ LAB_COMMANDS = {
 }
 
 
-@click.group(cls=LazyGroup, registry=LAB_COMMANDS, invoke_without_command=True)
+@click.group(
+    cls=LazyGroup,
+    registry=LAB_COMMANDS,
+    invoke_without_command=True,
+    epilog=(
+        "In 3.0, install labs with:\n\n\b\n"
+        "  uv tool install 'mcp-audits[labs]'\n\n"
+        "For proof-before-action on PATH, install Proof directly "
+        "(a uv tool extra does not expose its scripts):\n\n\b\n"
+        "  uv tool install mcp-audits-proof"
+    ),
+)
 @click.option(
     "--conformance-probe", is_flag=True, help="Send negative T7/T9 requests to the explicit --url only."
 )
@@ -181,7 +237,7 @@ def lab(ctx: click.Context, conformance_probe: bool, url: str | None, timeout: f
 
     import anyio
 
-    from mcp_audit.conformance_probe import run_conformance_probe
+    run_conformance_probe = _import_command_module("mcp_audit.conformance_probe").run_conformance_probe
 
     try:
         report = anyio.run(run_conformance_probe, url, timeout)
