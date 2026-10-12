@@ -53,6 +53,32 @@ def _group_exists(group: int) -> bool:
     return True
 
 
+def _process_group_ps_output(group: int) -> str:
+    try:
+        result = subprocess.run(
+            ["ps", "-g", str(group), "-o", "pid=,ppid=,pgid=,stat=,command="],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=5,
+        )
+    except OSError as exc:
+        return f"ps -g could not run: {exc}"
+    output = "\n".join(part for part in (result.stdout.strip(), result.stderr.strip()) if part)
+    return output or "(ps -g returned no process details)"
+
+
+async def _assert_process_group_exited(group: int, timeout: float = 2) -> None:
+    deadline = time.monotonic() + timeout
+    while _group_exists(group) and time.monotonic() < deadline:
+        await asyncio.sleep(0.05)
+    if _group_exists(group):
+        pytest.fail(
+            f"assert not _group_exists({group}): process group remained after {timeout:g}s\n"
+            f"ps -g {group} output:\n{_process_group_ps_output(group)}"
+        )
+
+
 async def _connect_http_probe(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
     try:
         headers = await reader.readuntil(b"\r\n\r\n")
@@ -140,10 +166,34 @@ async def test_shutdown_removes_the_entire_stdio_process_group(
     )
     assert audit.connection_status in {"failed", "timeout"}
     group = _process_group(tmp_path)
-    deadline = time.monotonic() + 2
-    while _group_exists(group) and time.monotonic() < deadline:
-        await asyncio.sleep(0.05)
-    assert not _group_exists(group)
+    await _assert_process_group_exited(group)
+
+
+@pytest.mark.anyio
+async def test_process_group_teardown_failure_includes_assertion_and_ps_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("tests.test_transport_hygiene._group_exists", lambda group: True)
+
+    def fake_ps(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        assert command[:3] == ["ps", "-g", "4321"]
+        assert kwargs["capture_output"] is True
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout="4321  1  4321 S fixture-process\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr("tests.test_transport_hygiene.subprocess.run", fake_ps)
+
+    with pytest.raises(pytest.fail.Exception) as failure:
+        await _assert_process_group_exited(4321, timeout=0)
+
+    message = str(failure.value)
+    assert "assert not _group_exists(4321)" in message
+    assert "ps -g 4321 output:" in message
+    assert "4321  1  4321 S fixture-process" in message
 
 
 @pytest.mark.anyio
