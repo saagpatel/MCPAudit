@@ -19,17 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Guard lazy command imports only for missing `mcp_audit_labs` or
   `proof_before_action` modules, with an install hint and exit 2; unrelated
   import failures still propagate.
-
 - Move shared authorization URL helpers and canonical posture JSON encoding into
   core, so connected authorization probes do not load lab contracts. Expose the
   probe helpers used by conformance labs and guard the core import boundary.
+- Move shared client filter parsing out of the legacy scan module and warn when
+  callers access deprecated `mcp_audit.cli` scan shims.
 
 ### Added
 
-- Every legacy `scan` run emits one stderr translation notice without changing
-  its exit code. A frozen, option-only table distinguishes preserved coverage,
-  explicit config-only narrowing, and possible silent coverage loss; unsupported
-  spellings and discovery shapes report why no exact `check` translation exists.
+- The MCP `scan_mcp_servers` tool accepts `connect` (default `true` in 2.12).
+  `connect=false` requests a static audit, and `skip_connect=true` continues to
+  disable connections. The tool description announces that 3.0 will default
+  to static auditing and require explicit `connect=true` for connections.
 - Requested pin checks with withheld baselines now report partial coverage with
   reason `pin_baseline_withheld`. The opt-in policy boolean
   `fail_on.pin_baseline_withheld` fails these checks; its default remains off.
@@ -47,6 +48,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pin baselines, including the default path and filesystem aliases, whenever
   detectors or policy consume pins. `--connect-project-configs` requires
   `--connect`; static project checks retain their connection warning.
+- Every legacy `scan` run emits one stderr translation notice without changing
+  its exit code. A frozen, option-only table distinguishes preserved coverage,
+  explicit config-only narrowing, and possible silent coverage loss; unsupported
+  spellings and discovery shapes report why no exact `check` translation exists.
 
 ## [2.11.0] - 2026-10-12
 

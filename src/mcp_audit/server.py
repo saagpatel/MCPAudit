@@ -143,9 +143,16 @@ def _build_mcp_server() -> Any:
     )
 
     @app.tool()  # type: ignore[untyped-decorator]
-    async def scan_mcp_servers(skip_connect: bool = False) -> str:
-        """Run a full audit of all discovered MCP servers. Returns JSON report."""
-        report = await _scan(ScanOptions(skip_connect=skip_connect))
+    async def scan_mcp_servers(skip_connect: bool = False, connect: bool = True) -> str:
+        """Run a full audit of all discovered MCP servers. Returns JSON report.
+
+        In 2.12, connections remain enabled by default. Set connect=false for a
+        static audit; skip_connect=true always disables connections.
+        In 3.0, this tool will default to static auditing and require an explicit
+        connect=true to connect to configured servers, which can start local
+        programs or contact configured endpoints.
+        """
+        report = await _scan(ScanOptions(skip_connect=skip_connect or not connect))
         report = report.redacted()
         return report.model_dump_json(indent=2)
 
