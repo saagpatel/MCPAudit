@@ -5,37 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.12.0] - Unreleased
 
-### Changed
+### Upgrade notes
 
-- Update CI examples and the synthetic smoke command to use `check` grammar;
-  document `pin` as a visible alias for `baseline pin`.
-- State that MCPAudit 3.0 withholds v1 pin baselines regardless of trusted-key
-  availability, and name the pin refresh command in remediation.
+- Consumers must tolerate the additive `review_source_skipped` and
+  `no_sources_reviewed` warning codes. Skipped sources and zero accepted sources
+  do not establish a completed review.
+- The pre-commit hook uses static `check` with discovery and injection checks.
+  The Action selects expanded `check` grammar by installed capability and keeps
+  legacy `scan` arguments for older installs, translating or rejecting legacy
+  free-form arguments with a command notice.
+- Every `scan` run prints its translation notice to stderr only, without
+  changing the exit code or report output.
+- `pin` is now a visible alias for `baseline pin`.
+- Defaults, exit codes, and `schema_version` remain unchanged. The new
+  `fail_on.pin_baseline_withheld` policy gate is opt-in and defaults off.
 
-### Fixed
+### Known issues
 
-- Mark canary `runtime_security` coverage as partial when a saved pin baseline
-  is withheld, even if the in-session exercise completes.
-
-### Changed
-
-- Run the pre-commit hook on static `check` with discovery and injection checks.
-  The Action probes for expanded `check` capabilities, keeps legacy `scan`
-  arguments for older installs, and translates or rejects legacy free-form
-  arguments with a command notice. Document release tags and the 2.x security
-  backport window for the package, Action and hook.
-- Warn on hidden compatibility command use except `pin`, and show the 3.0 labs
-  and direct Proof install commands in lab help and Proof version output.
-- Guard lazy command imports only for missing `mcp_audit_labs` or
-  `proof_before_action` modules, with an install hint and exit 2; unrelated
-  import failures still propagate.
-- Move shared authorization URL helpers and canonical posture JSON encoding into
-  core, so connected authorization probes do not load lab contracts. Expose the
-  probe helpers used by conformance labs and guard the core import boundary.
-- Move shared client filter parsing out of the legacy scan module and warn when
-  callers access deprecated `mcp_audit.cli` scan shims.
+- See [Known issues](docs/known-issues.md) for remaining limitations.
 
 ### Added
 
@@ -102,6 +91,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `check`'s source acceptance limits. Discovered sources rejected by those limits
   emit `review_source_skipped` on stderr and in JSON/SARIF reports.
 
+### Changed
+
+- Update CI examples and the synthetic smoke command to use `check` grammar;
+  document `pin` as a visible alias for `baseline pin`.
+- State that MCPAudit 3.0 withholds v1 pin baselines regardless of trusted-key
+  availability, and name the pin refresh command in remediation.
+
+- Run the pre-commit hook on static `check` with discovery and injection checks.
+  The Action probes for expanded `check` capabilities, keeps legacy `scan`
+  arguments for older installs, and translates or rejects legacy free-form
+  arguments with a command notice. Document release tags and the 2.x security
+  backport window for the package, Action and hook.
+- Warn on hidden compatibility command use except `pin`, and show the 3.0 labs
+  and direct Proof install commands in lab help and Proof version output.
+- Guard lazy command imports only for missing `mcp_audit_labs` or
+  `proof_before_action` modules, with an install hint and exit 2; unrelated
+  import failures still propagate.
+- Move shared authorization URL helpers and canonical posture JSON encoding into
+  core, so connected authorization probes do not load lab contracts. Expose the
+  probe helpers used by conformance labs and guard the core import boundary.
+- Move shared client filter parsing out of the legacy scan module and warn when
+  callers access deprecated `mcp_audit.cli` scan shims.
+
+### Fixed
+
+- Mark canary `runtime_security` coverage as partial when a saved pin baseline
+  is withheld, even if the in-session exercise completes.
+
 ### Documentation
 
 - Record the owner-approved 3.0 boundary decisions in
@@ -111,6 +128,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   semantics; the keyless pin, Action `args`, import-path, and `serve` default
   breaks; the `watch` exit-code quirk; 2.12 shipped and planned status; and the
   120-day 2.x security window on `release/2.x`. No behavior changes.
+
+### Release boundary details
+
+Release status: candidate
+Publication decision: NO-GO
+
+MCPAudit 2.12.0 is a candidate for review and CI validation only. This source
+state does not authorize tagging, publication, Registry mutation, deployment,
+or claims of downstream adoption. The release-state flip belongs in a separate
+reviewed PR after the candidate lands.
+
+Published-version metadata, the Registry descriptor, Action examples, and
+pre-commit examples remain at 2.11.0. Retain `mcp-audits==2.11.0` as the rollback
+pin and verify installed command identity after rollback. Source metadata and
+local tests are not publication readback.
 
 ## [2.11.0] - 2026-10-12
 
@@ -2624,6 +2656,7 @@ real workstations; API surface may still shift before the `1.0.0` stable cut.
 - `mcp-audit` CLI entry point
 
 [Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v2.11.0...HEAD
+[2.12.0]: https://github.com/saagpatel/MCPAudit/compare/v2.11.0...HEAD
 [2.11.0]: https://github.com/saagpatel/MCPAudit/compare/v2.10.1...v2.11.0
 [2.10.1]: https://github.com/saagpatel/MCPAudit/compare/v2.10.0...v2.10.1
 [2.10.0]: https://github.com/saagpatel/MCPAudit/compare/v2.9.0...v2.10.0
