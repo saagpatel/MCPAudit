@@ -4,8 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import configparser
+import csv
 import email.parser
 import hashlib
+import io
 import json
 import re
 import stat
@@ -14,7 +18,12 @@ import sys
 import tarfile
 import tomllib
 import zipfile
-from pathlib import Path
+from collections.abc import Iterable
+from pathlib import Path, PurePosixPath
+from typing import TYPE_CHECKING, NamedTuple
+
+if TYPE_CHECKING:
+    from packaging.requirements import Requirement
 
 ROOT = Path(__file__).resolve().parents[1]
 RELEASE_STATE_PATH = ROOT / "docs/release-state.json"
@@ -29,16 +38,90 @@ EXPECTED_SCRIPTS = {
 SERVER_NAME = "io.github.saagpatel/mcp-audit"
 REPOSITORY = {"url": "https://github.com/saagpatel/MCPAudit", "source": "github"}
 MANIFEST_SCHEMA = "mcp-audits.release-manifest.v1"
+EXTRA_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+PROVENANCE_FILE = "_build_provenance.json"
+SECURITY_FLOORS = (
+    ("mcp>=2.2.0,<3.0", "the tested MCP SDK range"),
+    ("cryptography>=50.0.0,<51.0", "the cryptography>=50.0.0 security floor"),
+    ("click>=8.3.3,<9.0", "the click>=8.3.3 security floor"),
+    ("anyio>=4.14.2", "the anyio>=4.14.2 security floor"),
+)
 
 
-def distribution_names(version: str) -> tuple[str, str]:
+class Distribution(NamedTuple):
+    name: str
+    module: str
+    project: str
+    scripts: dict[str, str]
+    module_root: str = "src"
+
+
+DISTRIBUTIONS: tuple[Distribution, ...] = (
+    Distribution(DISTRIBUTION_NAME, "mcp_audit", "pyproject.toml", EXPECTED_SCRIPTS),
+)
+RELEASE_BRANCH = "main"
+
+
+def load_distributions(path: Path) -> tuple[Distribution, ...]:
+    """Load an explicit release contract; the unsplit train remains the default."""
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, list) or not raw:
+        raise VerificationError("distribution contract must be a nonempty list")
+    distributions = []
+    commands: set[str] = set()
+    for entry in raw:
+        if not isinstance(entry, dict) or set(entry) != {
+            "name",
+            "module",
+            "project",
+            "scripts",
+            "module_root",
+        }:
+            raise VerificationError("distribution contract fields are invalid")
+        name, module, project, scripts, module_root = (
+            entry[key] for key in ("name", "module", "project", "scripts", "module_root")
+        )
+        if (
+            not isinstance(name, str)
+            or not isinstance(module, str)
+            or not all(part.isidentifier() for part in module.split("."))
+            or not isinstance(project, str)
+            or not isinstance(module_root, str)
+            or any(Path(value).is_absolute() or ".." in Path(value).parts for value in (project, module_root))
+            or not project.endswith("pyproject.toml")
+            or not isinstance(scripts, dict)
+            or not all(isinstance(key, str) and isinstance(value, str) for key, value in scripts.items())
+        ):
+            raise VerificationError("distribution contract values are invalid")
+        if commands.intersection(scripts):
+            raise VerificationError("distribution scripts must have unique owners")
+        commands.update(scripts)
+        distributions.append(Distribution(name, module, project, scripts, module_root))
+    if [item.name for item in distributions] not in (
+        ["mcp-audits"],
+        ["mcp-audits", "mcp-audits-labs", "mcp-audits-proof"],
+    ):
+        raise VerificationError("distribution contract must follow core, labs, proof publication order")
+    if distributions[0].project != "pyproject.toml":
+        raise VerificationError("core project must be the repository pyproject.toml")
+    return tuple(distributions)
+
+
+def distribution_names(version: str, distribution: str = DISTRIBUTION_NAME) -> tuple[str, str]:
     if VERSION_RE.fullmatch(version) is None:
         raise VerificationError("invalid distribution version")
-    return f"mcp_audits-{version}-py3-none-any.whl", f"mcp_audits-{version}.tar.gz"
+    if RELEASE_BRANCH == "release/2.x" and not version.startswith("2."):
+        raise VerificationError("release/2.x requires a 2.x distribution version")
+    stem = distribution.replace("-", "_")
+    return f"{stem}-{version}-py3-none-any.whl", f"{stem}-{version}.tar.gz"
+
+
+def _all_distribution_names(version: str) -> tuple[str, ...]:
+    return tuple(name for item in DISTRIBUTIONS for name in distribution_names(version, item.name))
 
 
 def distribution_hashes(dist_dir: Path, version: str) -> list[tuple[str, str]]:
-    names = distribution_names(version)
+    names = _all_distribution_names(version)
     if dist_dir.is_symlink() or not dist_dir.is_dir():
         raise VerificationError("distribution directory must be a regular directory")
     paths = list(dist_dir.iterdir())
@@ -94,7 +177,7 @@ def verify_manifest(
     ):
         raise VerificationError("release manifest identity does not match approval")
     files = raw.get("files")
-    if not isinstance(files, dict) or set(files) != set(distribution_names(version)):
+    if not isinstance(files, dict) or set(files) != set(_all_distribution_names(version)):
         raise VerificationError("release manifest must name exactly the wheel and sdist")
     hashes: dict[str, str] = {}
     for name, digest in files.items():
@@ -104,11 +187,13 @@ def verify_manifest(
     return hashes
 
 
-def verify_pypi(raw: object, *, version: str, hashes: dict[str, str]) -> None:
+def verify_pypi(
+    raw: object, *, version: str, hashes: dict[str, str], distribution: str = DISTRIBUTION_NAME
+) -> None:
     if not isinstance(raw, dict):
         raise VerificationError("PyPI response must be an object")
     info, urls = raw.get("info"), raw.get("urls")
-    if not isinstance(info, dict) or info.get("name") != DISTRIBUTION_NAME or info.get("version") != version:
+    if not isinstance(info, dict) or info.get("name") != distribution or info.get("version") != version:
         raise VerificationError("PyPI release identity is invalid")
     if not isinstance(urls, list) or len(urls) != 2:
         raise VerificationError("PyPI release must contain exactly two files")
@@ -181,14 +266,14 @@ def _version() -> str:
     return version
 
 
-def _locked_project_version() -> str:
+def _locked_project_version(distribution: str = DISTRIBUTION_NAME) -> str:
     lock = tomllib.loads(_read_text("uv.lock"))
     for package in lock.get("package", []):
-        if isinstance(package, dict) and package.get("name") == "mcp-audits":
+        if isinstance(package, dict) and package.get("name") == distribution:
             version = package.get("version")
             if isinstance(version, str) and VERSION_RE.fullmatch(version):
                 return version
-    raise VerificationError("uv.lock is missing the mcp-audits project version")
+    raise VerificationError(f"uv.lock is missing the {distribution} project version")
 
 
 def _run_git(*args: str) -> str:
@@ -234,16 +319,16 @@ def verify_environment_protection(raw: object, branch_policies: object = None) -
     if raw.get("can_admins_bypass") is not False:
         raise VerificationError("PyPI environment permits administrator bypass")
     if raw.get("deployment_branch_policy") != {"protected_branches": False, "custom_branch_policies": True}:
-        raise VerificationError("PyPI environment requires custom main-only deployment branches")
+        raise VerificationError("PyPI environment requires custom deployment branches")
     branches = branch_policies.get("branch_policies") if isinstance(branch_policies, dict) else None
     if (
         not isinstance(branches, list)
         or len(branches) != 1
         or not isinstance(branches[0], dict)
-        or branches[0].get("name") != "main"
+        or branches[0].get("name") != RELEASE_BRANCH
         or branches[0].get("type") != "branch"
     ):
-        raise VerificationError("PyPI environment deployment policy must allow only the main branch")
+        raise VerificationError(f"PyPI environment deployment policy must allow only {RELEASE_BRANCH}")
     rules = raw.get("protection_rules")
     if not isinstance(rules, list):
         raise VerificationError("PyPI environment protection rules are unavailable")
@@ -276,8 +361,30 @@ def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object
 
     if project.get("name") != DISTRIBUTION_NAME:
         raise VerificationError("project metadata has the wrong distribution name")
-    if project.get("scripts") != EXPECTED_SCRIPTS:
-        raise VerificationError("project metadata has the wrong console entry points")
+    _check_project_scripts(project, distribution=DISTRIBUTIONS[0], name="project metadata")
+
+    if RELEASE_BRANCH == "release/2.x" and not version.startswith("2."):
+        raise VerificationError("release/2.x requires a 2.x project version")
+    for distribution in DISTRIBUTIONS[1:]:
+        other = tomllib.loads(_read_text(distribution.project)).get("project", {})
+        if other.get("name") != distribution.name or other.get("version") != version:
+            raise VerificationError("distribution projects must have lockstep names and versions")
+        if _locked_project_version(distribution.name) != version:
+            raise VerificationError("uv.lock distribution versions must be lockstep")
+        _check_project_scripts(other, distribution=distribution, name="distribution project")
+        if f"mcp-audits=={version}" not in other.get("dependencies", []):
+            raise VerificationError("satellite distributions must pin the exact core version")
+    if len(DISTRIBUTIONS) == 3:
+        extras = project.get("optional-dependencies")
+        expected_extras = {
+            "labs": [f"mcp-audits-labs=={version}"],
+            "proof": [f"mcp-audits-proof=={version}"],
+            "all": [f"mcp-audits-labs=={version}", f"mcp-audits-proof=={version}"],
+        }
+        if not isinstance(extras, dict) or any(
+            extras.get(key) != value for key, value in expected_extras.items()
+        ):
+            raise VerificationError("core extras must pin exact lockstep satellite versions")
 
     if state.get("schema_version") != "mcp-audit.release-state.v1":
         raise VerificationError("release-state.json schema is unsupported")
@@ -374,30 +481,77 @@ def verify_git_binding(*, tag: str | None, commit: str, require_landed: bool) ->
         if _run_git("rev-parse", f"refs/tags/{tag}^{{commit}}") != commit:
             raise VerificationError("release tag does not resolve to the approved commit")
     if require_landed:
-        _run_git("merge-base", "--is-ancestor", commit, "origin/main")
+        _run_git("merge-base", "--is-ancestor", commit, f"origin/{RELEASE_BRANCH}")
 
 
 def _parse_metadata(raw: bytes) -> email.message.Message:
     return email.parser.BytesParser().parsebytes(raw)
 
 
-def _check_distribution_metadata(raw: bytes, *, version: str, name: str) -> None:
+def _requirement(raw: str, *, name: str) -> Requirement:
+    # Imported here so the publication checks keep running on a bare interpreter.
+    from packaging.requirements import InvalidRequirement, Requirement
+
+    try:
+        return Requirement(raw)
+    except InvalidRequirement as exc:
+        raise VerificationError(f"{name} requirement {raw!r} is invalid") from exc
+
+
+def _requirement_key(requirement: Requirement) -> tuple[object, ...]:
+    """What an installer acts on: packaging normalizes spacing, never quoted marker values."""
+    from packaging.utils import canonicalize_name
+
+    return (
+        canonicalize_name(requirement.name),
+        requirement.url or "",
+        frozenset(canonicalize_name(extra) for extra in requirement.extras),
+        requirement.specifier,
+        "" if requirement.marker is None else str(requirement.marker),
+    )
+
+
+def _check_requirements(
+    requirements: Iterable[Requirement], *, version: str, name: str, distribution: Distribution
+) -> None:
+    observed = {_requirement_key(requirement) for requirement in requirements}
+    lockstep: list[str] = []
+    if distribution.name != DISTRIBUTION_NAME:
+        lockstep.append(f"mcp-audits=={version}")
+    elif len(DISTRIBUTIONS) == 3:
+        for extra, packages in (
+            ("labs", ("mcp-audits-labs",)),
+            ("proof", ("mcp-audits-proof",)),
+            ("all", ("mcp-audits-labs", "mcp-audits-proof")),
+        ):
+            lockstep.extend(f'{package}=={version}; extra == "{extra}"' for package in packages)
+    names = {item.name for item in DISTRIBUTIONS}
+    if {key for key in observed if key[0] in names} != {
+        _requirement_key(_requirement(raw, name=name)) for raw in lockstep
+    }:
+        raise VerificationError(f"{name} must pin the exact lockstep distribution versions")
+    if distribution.name != DISTRIBUTION_NAME:
+        return
+    for raw, label in SECURITY_FLOORS:
+        if _requirement_key(_requirement(raw, name=name)) not in observed:
+            raise VerificationError(f"{name} does not retain {label}")
+
+
+def _check_distribution_metadata(
+    raw: bytes, *, version: str, name: str, distribution: Distribution | None = None
+) -> None:
+    distribution = distribution or DISTRIBUTIONS[0]
     metadata = _parse_metadata(raw)
-    if metadata.get("Name") != DISTRIBUTION_NAME:
+    if metadata.get("Name") != distribution.name:
         raise VerificationError(f"{name} has the wrong distribution name")
     if metadata.get("Version") != version:
         raise VerificationError(f"{name} has the wrong version")
-    requirements = metadata.get_all("Requires-Dist", [])
-    normalized_requirements = {requirement.replace(" ", "") for requirement in requirements}
-    if not ({"mcp>=2.2.0,<3.0", "mcp<3.0,>=2.2.0"} & normalized_requirements):
-        raise VerificationError(f"{name} does not retain the tested MCP SDK range")
-    normalized = normalized_requirements
-    if "cryptography>=50.0.0,<51.0" not in normalized:
-        raise VerificationError(f"{name} does not retain the cryptography>=50.0.0 security floor")
-    if "click>=8.3.3,<9.0" not in normalized:
-        raise VerificationError(f"{name} does not retain the click>=8.3.3 security floor")
-    if "anyio>=4.14.2" not in normalized:
-        raise VerificationError(f"{name} does not retain the anyio>=4.14.2 security floor")
+    _check_requirements(
+        (_requirement(str(value), name=name) for value in metadata.get_all("Requires-Dist", [])),
+        version=version,
+        name=name,
+        distribution=distribution,
+    )
 
 
 def _check_provenance(raw: bytes, *, commit: str, name: str) -> None:
@@ -406,62 +560,300 @@ def _check_provenance(raw: bytes, *, commit: str, name: str) -> None:
         raise VerificationError(f"{name} is not bound to the clean approved commit")
 
 
-def _check_entry_points(raw: bytes, *, name: str) -> None:
-    observed: dict[str, str] = {}
-    in_console_scripts = False
-    for line in raw.decode("utf-8").splitlines():
-        if line.startswith("["):
-            in_console_scripts = line.strip() == "[console_scripts]"
-            continue
-        if in_console_scripts and "=" in line:
-            command, target = line.split("=", maxsplit=1)
-            observed[command.strip()] = target.strip()
-    if observed != EXPECTED_SCRIPTS:
-        raise VerificationError(f"{name} console entry points do not match the release contract")
+def _check_entry_points(raw: bytes, *, name: str, scripts: dict[str, str] | None = None) -> None:
+    class EntryPointParser(configparser.ConfigParser):
+        def optionxform(self, optionstr: str) -> str:
+            return optionstr
+
+    parser = EntryPointParser(interpolation=None)
+    try:
+        parser.read_string(raw.decode("utf-8"))
+    except (UnicodeDecodeError, configparser.Error) as exc:
+        raise VerificationError(f"{name} entry points are invalid") from exc
+    observed = _installed_scripts(
+        dict(parser.items("console_scripts")) if parser.has_section("console_scripts") else {},
+        dict(parser.items("gui_scripts")) if parser.has_section("gui_scripts") else {},
+        name=name,
+    )
+    if observed != (DISTRIBUTIONS[0].scripts if scripts is None else scripts):
+        raise VerificationError(
+            f"{name} console entry points and GUI entry points do not match the release contract"
+        )
+
+
+def _installed_scripts(console: object, gui: object, *, name: str) -> dict[str, str]:
+    scripts: dict[str, str] = {}
+    for table in (console, gui):
+        if not isinstance(table, dict):
+            raise VerificationError(f"{name} script table is invalid")
+        for command, target in table.items():
+            if not isinstance(command, str) or not isinstance(target, str):
+                raise VerificationError(f"{name} script entry is invalid")
+            if command in scripts:
+                raise VerificationError(f"{name} installed scripts must have unique owners")
+            scripts[command] = target
+    return scripts
+
+
+def _check_project_scripts(project: dict[str, object], *, distribution: Distribution, name: str) -> None:
+    scripts = _installed_scripts(project.get("scripts", {}), project.get("gui-scripts", {}), name=name)
+    if scripts != distribution.scripts:
+        raise VerificationError(
+            f"{name} console entry points and GUI entry points do not match the release contract"
+        )
+
+
+def _check_sdist_project(raw: bytes, *, distribution: Distribution, version: str, name: str) -> None:
+    try:
+        data = tomllib.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
+        raise VerificationError(f"{name} pyproject.toml is invalid") from exc
+    project = data.get("project")
+    if not isinstance(project, dict):
+        raise VerificationError(f"{name} project table is invalid")
+    if project.get("name") != distribution.name or project.get("version") != version:
+        raise VerificationError(f"{name} project identity does not match the release contract")
+    _check_project_scripts(project, distribution=distribution, name=name)
+    tool = data.get("tool")
+    uv = tool.get("uv") if isinstance(tool, dict) else None
+    settings = uv.get("build-backend") if isinstance(uv, dict) else None
+    if (
+        not isinstance(settings, dict)
+        or settings.get("module-name") != distribution.module
+        or settings.get("module-root", "src") != distribution.module_root
+    ):
+        raise VerificationError(f"{name} build module-name/module-root do not match the release contract")
+
+    dependencies = project.get("dependencies", [])
+    extras = project.get("optional-dependencies", {})
+    if not isinstance(dependencies, list) or not isinstance(extras, dict):
+        raise VerificationError(f"{name} project dependencies are invalid")
+    from packaging.markers import Marker
+
+    requirements: list[Requirement] = []
+    for extra, values in [(None, dependencies), *extras.items()]:
+        if not isinstance(values, list) or (
+            extra is not None and (not isinstance(extra, str) or EXTRA_RE.fullmatch(extra) is None)
+        ):
+            raise VerificationError(f"{name} project dependencies are invalid")
+        for value in values:
+            if not isinstance(value, str):
+                raise VerificationError(f"{name} project dependency is invalid")
+            requirement = _requirement(value, name=name)
+            if extra is not None:
+                # Existing markers remain conditions, never unconditional lockstep pins.
+                condition = f'extra == "{extra}"'
+                marker = requirement.marker
+                requirement.marker = Marker(condition if marker is None else f"({marker}) and {condition}")
+            requirements.append(requirement)
+    _check_requirements(requirements, version=version, name=name, distribution=distribution)
+
+
+def _check_archive_names(names: list[str], *, prefix: str, name: str) -> None:
+    """Every member has one canonical spelling under the root, so what is checked is what installs.
+
+    Archive readers return the first or last of duplicate names while extraction
+    normalizes ``./x`` and ``a//b`` onto the same path, so an alias could show the
+    verifier one file and the installer another.
+    """
+    seen: set[str] = set()
+    for raw in names:
+        member = raw.rstrip("/")
+        path = PurePosixPath(member)
+        if (
+            not member
+            or path.is_absolute()
+            or str(path) != member
+            or any(part in {"", ".", ".."} for part in member.split("/"))
+            or (prefix and path.parts[0] != prefix)
+        ):
+            raise VerificationError(f"{name} member {raw!r} is not a canonical path under the release root")
+        if member in seen:
+            raise VerificationError(f"{name} member {raw!r} appears more than once")
+        seen.add(member)
+
+
+def _sdist_file(archive: tarfile.TarFile, member: PurePosixPath) -> bytes:
+    try:
+        info = archive.getmember(str(member))
+    except KeyError as exc:
+        raise VerificationError(f"sdist {member.name} is missing from the contracted root") from exc
+    if not info.isfile():
+        raise VerificationError(f"sdist {member.name} must be a regular file")
+    stream = archive.extractfile(info)
+    if stream is None:
+        raise VerificationError(f"sdist {member.name} is missing")
+    with stream:
+        return stream.read()
+
+
+def _commit_files(commit: str, paths: Iterable[str]) -> dict[str, bytes]:
+    """Return the bytes of each requested path that is a regular file at the approved commit."""
+    wanted = set(paths)
+    objects: dict[str, str] = {}
+    for entry in _run_git("ls-tree", "-r", "-z", "--full-tree", commit).split("\0"):
+        fields, _, path = entry.partition("\t")
+        mode, kind, oid = (fields.split(" ") + ["", "", ""])[:3]
+        if path in wanted and kind == "blob" and mode in {"100644", "100755"}:
+            objects[path] = oid
+    if not objects:
+        return {}
+    result = subprocess.run(
+        ["git", "-C", str(ROOT), "cat-file", "--batch"],
+        input="".join(f"{oid}\n" for oid in objects.values()).encode(),
+        check=False,
+        capture_output=True,
+        timeout=60,
+    )
+    if result.returncode != 0:
+        raise VerificationError("approved commit contents are unreadable")
+    blobs: dict[str, bytes] = {}
+    position = 0
+    for _ in objects:
+        header_end = result.stdout.index(b"\n", position)
+        oid, kind, size = result.stdout[position:header_end].decode().split(" ")
+        if kind != "blob":
+            raise VerificationError("approved commit contents are unreadable")
+        start = header_end + 1
+        blobs[oid] = result.stdout[start : start + int(size)]
+        position = start + int(size) + 1
+    return {path: blobs[oid] for path, oid in objects.items()}
+
+
+def _check_commit_content(
+    contents: dict[str, bytes], sources: dict[str, str], *, commit: str, name: str
+) -> None:
+    """Every member is byte-identical to its source path at the approved commit."""
+    approved = _commit_files(commit, sources.values())
+    for member, source in sources.items():
+        if approved.get(source) != contents[member]:
+            raise VerificationError(f"{name} member {member!r} does not match the approved commit")
+
+
+def _check_record(archive: zipfile.ZipFile, record: str, *, name: str) -> None:
+    """RECORD drives uninstall, so it must name exactly the wheel's files with their digests."""
+    try:
+        rows = list(csv.reader(io.StringIO(archive.read(record).decode("utf-8"))))
+    except (KeyError, UnicodeDecodeError, csv.Error) as exc:
+        raise VerificationError(f"{name} RECORD is missing or invalid") from exc
+    files = {info.filename for info in archive.infolist() if not info.is_dir()}
+    listed = {row[0]: row[1:] for row in rows if len(row) == 3}
+    if len(listed) != len(rows) or set(listed) != files:
+        raise VerificationError(f"{name} RECORD must list exactly the wheel's files")
+    for path in files - {record}:
+        content = archive.read(path)
+        digest = base64.urlsafe_b64encode(hashlib.sha256(content).digest()).rstrip(b"=").decode()
+        if listed[path] != [f"sha256={digest}", str(len(content))]:
+            raise VerificationError(f"{name} RECORD digest for {path!r} does not match")
+    if listed[record] != ["", ""]:
+        raise VerificationError(f"{name} RECORD must not list a digest for itself")
 
 
 def verify_distributions(*, dist_dir: Path, version: str, commit: str) -> list[tuple[str, str]]:
     hashes = distribution_hashes(dist_dir, version)
-    wheel = dist_dir / f"mcp_audits-{version}-py3-none-any.whl"
-    sdist = dist_dir / f"mcp_audits-{version}.tar.gz"
-    if not wheel.is_file() or not sdist.is_file():
-        raise VerificationError("expected wheel and sdist are missing")
-    with zipfile.ZipFile(wheel) as archive:
-        _check_distribution_metadata(
-            archive.read(f"mcp_audits-{version}.dist-info/METADATA"),
-            version=version,
-            name=wheel.name,
-        )
-        _check_provenance(
-            archive.read("mcp_audit/_build_provenance.json"),
-            commit=commit,
-            name=wheel.name,
-        )
-        _check_entry_points(
-            archive.read(f"mcp_audits-{version}.dist-info/entry_points.txt"),
-            name=wheel.name,
-        )
-    with tarfile.open(sdist, mode="r:gz") as archive:
-        prefix = f"mcp_audits-{version}"
-        metadata_file = archive.extractfile(f"{prefix}/PKG-INFO")
-        provenance_file = archive.extractfile(f"{prefix}/src/mcp_audit/_build_provenance.json")
-        if metadata_file is None or provenance_file is None:
-            raise VerificationError("sdist metadata or provenance is missing")
-        _check_distribution_metadata(metadata_file.read(), version=version, name=sdist.name)
-        _check_provenance(provenance_file.read(), commit=commit, name=sdist.name)
-        pyproject_file = archive.extractfile(f"{prefix}/pyproject.toml")
-        if pyproject_file is None:
-            raise VerificationError("sdist pyproject.toml is missing")
-        scripts = tomllib.loads(pyproject_file.read().decode("utf-8")).get("project", {}).get("scripts")
-        if scripts != {
-            "mcp-audit": "mcp_audit.cli:main",
-            "mcp-audits": "mcp_audit.cli:main",
-            "proof-before-action": "mcp_audit.proof_cli:main",
-        }:
-            raise VerificationError("sdist console entry points do not match the release contract")
+    for distribution in DISTRIBUTIONS:
+        _verify_distribution(dist_dir=dist_dir, version=version, commit=commit, distribution=distribution)
     if distribution_hashes(dist_dir, version) != hashes:
         raise VerificationError("distribution set or digests changed during verification")
     return hashes
+
+
+def _verify_distribution(*, dist_dir: Path, version: str, commit: str, distribution: Distribution) -> None:
+    wheel_name, sdist_name = distribution_names(version, distribution.name)
+    wheel, sdist = dist_dir / wheel_name, dist_dir / sdist_name
+    stem = distribution.name.replace("-", "_")
+    module = distribution.module.replace(".", "/")
+    # Paths at the approved commit: the build project's directory and its module source root.
+    project_dir = PurePosixPath(distribution.project).parent
+    source_root = project_dir / distribution.module_root
+    if not wheel.is_file() or not sdist.is_file():
+        raise VerificationError("expected wheel and sdist are missing")
+    with zipfile.ZipFile(wheel) as archive:
+        _check_archive_names(archive.namelist(), prefix="", name=wheel.name)
+        dist_info = f"{stem}-{version}.dist-info"
+        _check_distribution_metadata(
+            archive.read(f"{dist_info}/METADATA"),
+            version=version,
+            name=wheel.name,
+            distribution=distribution,
+        )
+        _check_provenance(archive.read(f"{module}/{PROVENANCE_FILE}"), commit=commit, name=wheel.name)
+        _check_entry_points(
+            archive.read(f"{dist_info}/entry_points.txt")
+            if f"{dist_info}/entry_points.txt" in archive.namelist()
+            else b"",
+            name=wheel.name,
+            scripts=distribution.scripts,
+        )
+        # A wheel installs its generated dist-info and the contracted module, nothing else:
+        # no .data/ (scripts, headers, data), no other top-level packages or .pth files.
+        sources: dict[str, str] = {}
+        for info in archive.infolist():
+            path = info.filename.rstrip("/")
+            if stat.S_IFMT(info.external_attr >> 16) not in (0, stat.S_IFREG, stat.S_IFDIR):
+                raise VerificationError(f"{wheel.name} must contain regular files without links")
+            if path == dist_info or path.startswith(f"{dist_info}/"):
+                continue
+            if info.is_dir() and (path == module or f"{module}/".startswith(f"{path}/")):
+                continue
+            if not path.startswith(f"{module}/"):
+                raise VerificationError(
+                    f"{wheel.name} member {info.filename!r} is outside the contracted module and dist-info"
+                )
+            if not info.is_dir() and path != f"{module}/{PROVENANCE_FILE}":
+                sources[path] = str(source_root / path)
+        _check_commit_content(
+            {path: archive.read(path) for path in sources}, sources, commit=commit, name=wheel.name
+        )
+        _check_record(archive, f"{dist_info}/RECORD", name=wheel.name)
+    with tarfile.open(sdist, mode="r:gz") as archive:
+        prefix = PurePosixPath(f"{stem}-{version}")
+        members = archive.getmembers()
+        _check_archive_names([info.name for info in members], prefix=str(prefix), name=sdist.name)
+        if any(not (info.isfile() or info.isdir()) for info in members):
+            raise VerificationError(f"{sdist.name} must contain regular files without links")
+        pyproject = _sdist_file(archive, prefix / "pyproject.toml")
+        _check_sdist_project(pyproject, distribution=distribution, version=version, name=sdist.name)
+        package = prefix / distribution.module_root / module
+        if not any(
+            info.isfile() and PurePosixPath(info.name).is_relative_to(package) and info.name.endswith(".py")
+            for info in members
+        ):
+            raise VerificationError("sdist package tree is missing from the contracted root")
+        _check_distribution_metadata(
+            _sdist_file(archive, prefix / "PKG-INFO"),
+            version=version,
+            name=sdist.name,
+            distribution=distribution,
+        )
+        _check_provenance(_sdist_file(archive, package / PROVENANCE_FILE), commit=commit, name=sdist.name)
+        # Everything a rebuild reads (pyproject, in-tree backend, sources) is the approved tree.
+        # Generated by the build: PKG-INFO and provenance (checked above), and uv_build's
+        # normalized pyproject.toml, which must parse identically while .orig keeps the bytes.
+        project_source = str(project_dir / "pyproject.toml")
+        generated = {prefix / "PKG-INFO", prefix / "pyproject.toml", package / PROVENANCE_FILE}
+        sources = {
+            info.name: project_source
+            if PurePosixPath(info.name) == prefix / "pyproject.toml.orig"
+            else str(project_dir / PurePosixPath(info.name).relative_to(prefix))
+            for info in members
+            if info.isfile() and PurePosixPath(info.name) not in generated
+        }
+        _check_commit_content(
+            {member: _sdist_file(archive, PurePosixPath(member)) for member in sources},
+            sources,
+            commit=commit,
+            name=sdist.name,
+        )
+        approved_project = _commit_files(commit, [project_source]).get(project_source)
+        try:
+            same_project = approved_project is not None and tomllib.loads(
+                pyproject.decode("utf-8")
+            ) == tomllib.loads(approved_project.decode("utf-8"))
+        except (UnicodeDecodeError, tomllib.TOMLDecodeError):
+            same_project = False
+        if not same_project:
+            raise VerificationError(f"{sdist.name} pyproject.toml does not match the approved commit")
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -481,6 +873,8 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--require-publishable", action="store_true")
     parser.add_argument("--dist-dir", type=Path)
+    parser.add_argument("--distributions", type=Path, help="reviewed JSON distribution/script contract")
+    parser.add_argument("--release-branch", choices=("main", "release/2.x"), default="main")
     parser.add_argument("--branch-policies-json", type=Path)
     parser.add_argument("--workflow-sha", help="exact workflow/control revision, separate from source commit")
     parser.add_argument("--manifest", type=Path, help="approved release manifest to recheck")
@@ -527,15 +921,30 @@ def _publication_check(args: argparse.Namespace) -> None:
         if args.publication_check == "pypi":
             if args.manifest_sha256 is None:
                 raise VerificationError("PyPI verification requires separately approved manifest SHA-256")
-            verify_pypi(_load_json(args.response_json), version=version, hashes=hashes)
+            responses = _load_json(args.response_json)
+            if len(DISTRIBUTIONS) == 1:
+                responses = {DISTRIBUTION_NAME: responses}
+            if not isinstance(responses, dict) or set(responses) != {item.name for item in DISTRIBUTIONS}:
+                raise VerificationError("PyPI readback must include every distribution")
+            for distribution in DISTRIBUTIONS:
+                verify_pypi(
+                    responses[distribution.name],
+                    version=version,
+                    hashes={name: hashes[name] for name in distribution_names(version, distribution.name)},
+                    distribution=distribution.name,
+                )
         elif args.dist_dir is None or dict(distribution_hashes(args.dist_dir, version)) != hashes:
             raise VerificationError("distribution digests do not match the approved manifest")
 
 
 def main() -> int:
+    global DISTRIBUTIONS, RELEASE_BRANCH
     args = _parser().parse_args()
     _set_root(args.root)
     try:
+        RELEASE_BRANCH = args.release_branch
+        if args.distributions is not None:
+            DISTRIBUTIONS = load_distributions(args.distributions)
         if args.publication_check is not None:
             _publication_check(args)
             print(f"publication {args.publication_check} verified")

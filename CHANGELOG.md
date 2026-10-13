@@ -48,6 +48,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pin baselines, including the default path and filesystem aliases, whenever
   detectors or policy consume pins. `--connect-project-configs` requires
   `--connect`; static project checks retain their connection warning.
+- Release-tooling groundwork for configurable package provenance, lockstep
+  distribution and script verification, and a branch-specific 2.x release gate.
+  Built wheels and sdists must match the approved commit file for file (sdists
+  carry the exact pyproject, in-tree build backend and sources; wheels carry
+  only dist-info and the contracted module, with no `.data/` members), and
+  requirement pins are compared as parsed requirements, so whitespace inside a
+  marker value cannot pose as the contracted extra.
+  Document the future core/labs/proof publication order and partial recovery;
+  the current package remains unsplit. Verify sdist rebuild dependencies and
+  package roots against the contract, support flat package layouts, and include
+  GUI commands in installed-script ownership checks.
 - Every legacy `scan` run emits one stderr translation notice without changing
   its exit code. A frozen, option-only table distinguishes preserved option mapping,
   explicit config-only narrowing, and possible silent coverage loss; unsupported
