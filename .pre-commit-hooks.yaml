@@ -7,16 +7,15 @@
 #       hooks:
 #         - id: mcp-audit
 #
-# The hook triggers when a repo-local MCP config changes and audits it
-# config-only (never spawns or connects to servers). Discovery is relative to
-# the repo root, so it covers Claude Code's `.mcp.json` and VS Code's
-# `.vscode/mcp.json`.
+# The hook triggers when a repo-local MCP config changes and statically checks
+# supported workstation/project configs (never spawns or connects to servers).
+# Project discovery is relative to the repo root.
 - id: mcp-audit
   name: Audit MCP server configs
   description: >-
-    Scan repo-local MCP server configuration files for permission,
-    prompt-injection, and config-health risks. Config-only; never connects.
-  entry: mcp-audit scan --skip-connect --inject-check
+    Check discovered MCP server configuration files for permission,
+    prompt-injection, and config-health risks. Static; never connects.
+  entry: mcp-audit check --include-discovered --inject-check
   language: python
   files: (^|/)(\.mcp\.json|\.vscode/mcp\.json)$
   pass_filenames: false

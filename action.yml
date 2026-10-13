@@ -23,8 +23,10 @@ inputs:
     default: ""
   args:
     description: >-
-      Extra arguments appended verbatim to `mcp-audit scan` (e.g.
-      "--inject-check --ssrf-check --trifecta-check").
+      Extra arguments for the installed command's grammar, split with shell
+      quoting (never evaluated). Expanded check-capable installs use check;
+      older installs use scan. Legacy --json PATH and single --clients NAME
+      are translated for check with a command notice.
     required: false
     default: ""
   skip-connect:
@@ -137,33 +139,10 @@ runs:
         SARIF: ${{ inputs.sarif }}
         JSON: ${{ inputs.json }}
         EXTRA_ARGS: ${{ inputs.args }}
+        MCP_AUDIT_ACTION_PATH: ${{ github.action_path }}
       run: |
-        set -uo pipefail
-        scan_args=()
-        [ "${SKIP_CONNECT}" = "true" ] && scan_args+=(--skip-connect)
-        [ -n "${CLIENTS}" ] && scan_args+=(--clients "${CLIENTS}")
-        [ -n "${CONFIG}" ] && scan_args+=(--config "${CONFIG}" --config-only)
-        [ -n "${SARIF}" ] && scan_args+=(--sarif "${SARIF}")
-        [ -n "${JSON}" ] && scan_args+=(--json "${JSON}")
-        [ -n "${POLICY}" ] && scan_args+=(--policy "${POLICY}")
-        # `args` is trusted workflow-author input (the documented way to pass
-        # extra scan flags); intentional word-split so "--a --b" -> two argv.
-        # shellcheck disable=SC2206
-        extra=( ${EXTRA_ARGS} )
-
-        # Faithful, shell-reproducible echo of the actual argv.
-        printf '+ mcp-audit scan'; printf ' %q' "${scan_args[@]}" "${extra[@]}"; printf '\n'
-        mcp-audit scan "${scan_args[@]}" "${extra[@]}"
-        code=$?
-
-        {
-          echo "exit-code=${code}"
-          echo "sarif-file=${SARIF}"
-          echo "json-file=${JSON}"
-        } >> "${GITHUB_OUTPUT}"
-
-        # Do not fail here — let the upload step run first, then gate below.
-        exit 0
+        set -euo pipefail
+        python "${MCP_AUDIT_ACTION_PATH}/scripts/run_action.py"
 
     - name: Check for SARIF artifact
       id: sarif-check
