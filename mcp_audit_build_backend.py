@@ -5,15 +5,30 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import tomllib
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, cast
 
 _ROOT = Path(__file__).resolve().parent
-_PACKAGE_ROOT = _ROOT / "src/mcp_audit"
-_PROVENANCE_PATH = _PACKAGE_ROOT / "_build_provenance.json"
 _SCHEMA = "mcp-audits.build-provenance.v1"
+
+
+def _package_root() -> Path:
+    settings = tomllib.loads((_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["uv"][
+        "build-backend"
+    ]
+    module = settings["module-name"]
+    source = settings.get("module-root", "src")
+    if not isinstance(module, str) or not all(part.isidentifier() for part in module.split(".")):
+        raise RuntimeError("build provenance requires one Python module-name")
+    if not isinstance(source, str) or Path(source).is_absolute() or ".." in Path(source).parts:
+        raise RuntimeError("build provenance module-root must stay inside the project")
+    package = _ROOT / source / Path(*module.split("."))
+    if not package.resolve().is_relative_to(_ROOT.resolve()):
+        raise RuntimeError("build provenance package root escapes the project")
+    return package
 
 
 def build_sdist(
@@ -103,23 +118,24 @@ def prepare_metadata_for_build_editable(
 
 @contextmanager
 def _generated_provenance() -> Iterator[None]:
-    if _PROVENANCE_PATH.exists():
+    provenance_path = _package_root() / "_build_provenance.json"
+    if provenance_path.exists():
         if _git_root() is not None:
             raise RuntimeError(
                 "source checkout contains pre-generated build provenance; refusing an ambiguous build"
             )
-        _validate_provenance(_PROVENANCE_PATH)
+        _validate_provenance(provenance_path)
         yield
         return
     payload = _source_provenance()
-    _PROVENANCE_PATH.write_text(
+    provenance_path.write_text(
         json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
         encoding="utf-8",
     )
     try:
         yield
     finally:
-        _PROVENANCE_PATH.unlink(missing_ok=True)
+        provenance_path.unlink(missing_ok=True)
 
 
 def _source_provenance() -> dict[str, str | bool | None]:
@@ -140,18 +156,19 @@ def _source_provenance() -> dict[str, str | bool | None]:
         }
     commit = commit_result.stdout.decode().strip()
     dirty = bool(status_result.stdout)
-    tracked_result = _git("ls-files", "-z", "--", "src/mcp_audit")
+    package_root = _package_root()
+    tracked_result = _git("ls-files", "-z", "--", package_root.relative_to(_ROOT).as_posix())
     if tracked_result.returncode != 0:
         dirty = True
     else:
         tracked = {item for item in tracked_result.stdout.decode().split("\0") if item}
         actual = {
             path.relative_to(_ROOT).as_posix()
-            for path in _PACKAGE_ROOT.rglob("*")
+            for path in package_root.rglob("*")
             if path.is_file()
             and "__pycache__" not in path.parts
             and path.suffix not in {".pyc", ".pyo"}
-            and path != _PROVENANCE_PATH
+            and path != package_root / "_build_provenance.json"
         }
         if not actual.issubset(tracked):
             dirty = True
@@ -189,7 +206,14 @@ def _git_root() -> Path | None:
         root = Path(result.stdout.decode().strip()).resolve()
     except (OSError, UnicodeError):
         return None
-    return root if root == _ROOT else None
+    if root == _ROOT:
+        return root
+    if not _ROOT.is_relative_to(root):
+        return None
+    # Nested distribution projects must belong to this checkout, not an
+    # untracked sdist extracted under an unrelated ancestor repository.
+    project = _git("ls-files", "--error-unmatch", "--", "pyproject.toml")
+    return root if project.returncode == 0 else None
 
 
 def _git(*args: str) -> subprocess.CompletedProcess[bytes]:
