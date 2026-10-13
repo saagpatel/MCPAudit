@@ -25,14 +25,27 @@ Remove generated `dist/` artifacts after the build check unless the release is
 being uploaded manually.
 
 `--dist-dir` binds the artifacts to the approved commit's content, not only to
-its provenance file. Every sdist file must be byte-identical to that path at the
-commit, apart from the build-generated `PKG-INFO`, provenance file, and uv_build's
+its provenance file. A reference wheel and sdist build from `git archive COMMIT`
+in a temporary clean export determines the complete packaged file sets using
+the approved backend's include and exclude rules. The reference build runs
+`uv build --offline --no-create-gitignore`, so its build requirements must already
+be cached; an unavailable reference build fails verification. Every non-generated
+path must be present, extra paths are rejected, and every sdist file must be
+byte-identical to that path at the commit, apart from the build-generated
+`PKG-INFO`, provenance file, and uv_build's
 normalized `pyproject.toml` (which must parse identically to the commit's, while
 `pyproject.toml.orig` keeps its exact bytes). A wheel may hold only its
 `.dist-info/` and the contracted module, each module file byte-identical to the
 commit's source and every file listed in `RECORD`; `.data/` members are
-rejected. Requirements are compared as parsed `packaging` requirements, so a
-quoted marker value such as `extra == "labs "` never passes as `labs`.
+rejected. Wheel `METADATA` and sdist `PKG-INFO` must declare exactly the dependencies
+and optional dependencies from the approved commit's `pyproject.toml`, combining
+optional requirements' existing markers with their extra markers. The reference
+build supplies the backend's normalized marker expressions; dependency names,
+URLs, extras, specifiers, and declaration counts are checked against the committed
+pyproject independently. Extra, missing, and duplicate requirements fail.
+Requirements are compared as parsed `packaging`
+requirements (canonical name, URL, extras, specifier set, and normalized marker),
+so a quoted marker value such as `extra == "labs "` never passes as `labs`.
 
 ## Candidate Metadata Check
 

@@ -42,10 +42,10 @@ class TestCompositeAction:
         assert runs["using"] == "composite"
         assert isinstance(runs["steps"], list) and runs["steps"]
 
-    def test_installs_published_package_and_runs_scan(self) -> None:
+    def test_installs_published_package_and_runs_adapter(self) -> None:
         text = ACTION_PATH.read_text(encoding="utf-8")
         assert "mcp-audits" in text
-        assert "mcp-audit scan" in text
+        assert 'python "${MCP_AUDIT_ACTION_PATH}/scripts/run_action.py"' in text
 
     def test_defaults_to_config_only(self) -> None:
         assert _action()["inputs"]["skip-connect"]["default"] == "true"
@@ -84,7 +84,7 @@ class TestPreCommitHook:
         hook = next(h for h in hooks if h["id"] == "mcp-audit")
         assert hook["language"] == "python"
         assert hook["pass_filenames"] is False
-        assert "--skip-connect" in hook["entry"]
+        assert hook["entry"] == "mcp-audit check --include-discovered --inject-check"
 
     def test_triggers_on_repo_local_configs(self) -> None:
         hooks = yaml.safe_load(PRECOMMIT_PATH.read_text(encoding="utf-8"))

@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Run the pre-commit hook on static `check` with discovery and injection checks.
+  The Action probes for expanded `check` capabilities, keeps legacy `scan`
+  arguments for older installs, and translates or rejects legacy free-form
+  arguments with a command notice. Document release tags and the 2.x security
+  backport window for the package, Action and hook.
 - Warn on hidden compatibility command use except `pin`, and show the 3.0 labs
   and direct Proof install commands in lab help and Proof version output.
 - Guard lazy command imports only for missing `mcp_audit_labs` or
@@ -54,11 +59,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--connect`; static project checks retain their connection warning.
 - Release-tooling groundwork for configurable package provenance, lockstep
   distribution and script verification, and a branch-specific 2.x release gate.
-  Built wheels and sdists must match the approved commit file for file (sdists
+  Built wheels and sdists must contain the complete file set selected by a
+  reference build of the approved commit in a clean Git export, with missing
+  and extra paths rejected, and match that commit file for file (sdists
   carry the exact pyproject, in-tree build backend and sources; wheels carry
   only dist-info and the contracted module, with no `.data/` members), and
-  requirement pins are compared as parsed requirements, so whitespace inside a
-  marker value cannot pose as the contracted extra.
+  `Requires-Dist` must equal the commit's dependencies and optional dependencies
+  with their extra markers, with extra, missing, and duplicate requirements
+  rejected. Wheel dist-info members must exactly match the reference paths, with
+  WHEEL and licenses byte-identical to the reference and licenses bound to commit blobs.
+  Requirements are compared as parsed requirements, so whitespace
+  inside a marker value cannot pose as the contracted extra.
   Document the future core/labs/proof publication order and partial recovery;
   the current package remains unsplit. Verify sdist rebuild dependencies and
   package roots against the contract, support flat package layouts, and include

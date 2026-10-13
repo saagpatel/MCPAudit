@@ -7,6 +7,7 @@ import copy
 import hashlib
 import io
 import json
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -79,10 +80,6 @@ def test_descriptor_matches_published_version() -> None:
     assert raw["version"] == PUBLISHED_VERSION
 
 
-def _head(path: str) -> bytes:
-    return subprocess.run(["git", "show", f"HEAD:{path}"], capture_output=True, check=True).stdout
-
-
 def _write_wheel(path: Path, entries: dict[str, bytes]) -> None:
     """Write a wheel whose RECORD lists every member with its digest."""
     record = f"mcp_audits-{VERSION}.dist-info/RECORD"
@@ -101,43 +98,54 @@ def _write_wheel(path: Path, entries: dict[str, bytes]) -> None:
 
 def _wheel_entries(path: Path) -> dict[str, bytes]:
     with zipfile.ZipFile(path) as archive:
-        return {name: archive.read(name) for name in archive.namelist()}
+        return {
+            info.filename: archive.read(info.filename) for info in archive.infolist() if not info.is_dir()
+        }
 
 
-@pytest.fixture
-def distributions(tmp_path: Path) -> Path:
-    dist = tmp_path / "dist"
-    dist.mkdir()
-    metadata = (
-        f"Name: mcp-audits\nVersion: {VERSION}\nRequires-Dist: mcp>=2.2.0,<3.0\n"
-        "Requires-Dist: cryptography>=50.0.0,<51.0\nRequires-Dist: click>=8.3.3,<9.0\n"
-        "Requires-Dist: anyio>=4.14.2\n"
-    ).encode()
-    provenance = json.dumps({"commit": COMMIT, "dirty": False}).encode()
-    entries = "[console_scripts]\n" + "".join(f"{k} = {v}\n" for k, v in release.EXPECTED_SCRIPTS.items())
-    wheel, sdist = release.distribution_names(VERSION)
-    _write_wheel(
-        dist / wheel,
-        {
-            f"mcp_audits-{VERSION}.dist-info/METADATA": metadata,
-            f"mcp_audits-{VERSION}.dist-info/entry_points.txt": entries.encode(),
-            "mcp_audit/__init__.py": _head("src/mcp_audit/__init__.py"),
-            "mcp_audit/_build_provenance.json": provenance,
-        },
+@pytest.fixture(scope="session")
+def head_distributions(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Use a real HEAD build as the complete template for each synthetic mutation."""
+    root = tmp_path_factory.mktemp("head-build")
+    source = root / "source"
+    source.mkdir()
+    export = subprocess.run(["git", "archive", "HEAD"], capture_output=True, check=True).stdout
+    with tarfile.open(fileobj=io.BytesIO(export)) as archive:
+        archive.extractall(source, filter="data")
+    dist = root / "dist"
+    subprocess.run(
+        ["uv", "build", "--offline", "--no-create-gitignore", "--out-dir", str(dist)],
+        cwd=source,
+        capture_output=True,
+        check=True,
     )
+    # Exports have no Git identity. Supply the approved identity only for the
+    # fabricated fixtures; the production verifier still checks it separately.
+    provenance = json.dumps({"commit": COMMIT, "dirty": False}).encode()
+    wheel, sdist = release.distribution_names(VERSION)
+    entries = _wheel_entries(dist / wheel)
+    entries["mcp_audit/_build_provenance.json"] = provenance
+    _write_wheel(dist / wheel, entries)
+    with tarfile.open(dist / sdist, "r:gz") as archive:
+        entries = {}
+        for info in archive.getmembers():
+            if info.isfile():
+                stream = archive.extractfile(info)
+                assert stream is not None
+                with stream:
+                    entries[info.name] = stream.read()
+    entries[f"mcp_audits-{VERSION}/src/mcp_audit/_build_provenance.json"] = provenance
     with tarfile.open(dist / sdist, "w:gz") as archive:
-        for name, content in (
-            ("PKG-INFO", metadata),
-            ("src/mcp_audit/__init__.py", _head("src/mcp_audit/__init__.py")),
-            ("src/mcp_audit/_build_provenance.json", provenance),
-            ("pyproject.toml", _head("pyproject.toml")),
-            ("pyproject.toml.orig", _head("pyproject.toml")),
-            ("mcp_audit_build_backend.py", _head("mcp_audit_build_backend.py")),
-        ):
-            info = tarfile.TarInfo(f"mcp_audits-{VERSION}/{name}")
+        for name, content in entries.items():
+            info = tarfile.TarInfo(name)
             info.size = len(content)
             archive.addfile(info, io.BytesIO(content))
     return dist
+
+
+@pytest.fixture
+def distributions(tmp_path: Path, head_distributions: Path) -> Path:
+    return Path(shutil.copytree(head_distributions, tmp_path / "dist"))
 
 
 def _manifest(dist: Path) -> dict[str, object]:
@@ -403,6 +411,136 @@ def test_wheel_duplicate_members_are_rejected(distributions: Path) -> None:
 
 def test_fixture_matches_the_approved_commit(distributions: Path) -> None:
     assert len(release.verify_distributions(dist_dir=distributions, version=VERSION, commit=COMMIT)) == 2
+
+
+def _replace_sdist_members(path: Path, replacements: dict[str, bytes | None]) -> None:
+    with tarfile.open(path, "r:gz") as archive:
+        entries = {}
+        for info in archive.getmembers():
+            stream = archive.extractfile(info)
+            assert stream is not None
+            with stream:
+                entries[info.name] = stream.read()
+    for name, content in replacements.items():
+        if content is None:
+            del entries[name]
+        else:
+            entries[name] = content
+    with tarfile.open(path, "w:gz") as archive:
+        for name, content in entries.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(content)
+            archive.addfile(info, io.BytesIO(content))
+
+
+@pytest.mark.parametrize(
+    ("artifact", "member"),
+    [
+        ("wheel", "mcp_audit/cli.py"),
+        ("wheel", "mcp_audit/fixtures/demo-mcp-config.json"),
+        ("wheel", f"mcp_audits-{VERSION}.dist-info/WHEEL"),
+        ("wheel", f"mcp_audits-{VERSION}.dist-info/licenses/LICENSE"),
+        ("sdist", "src/mcp_audit/rules/result_injection.py"),
+        ("sdist", "src/mcp_audit/fixtures/demo-mcp-config.json"),
+        ("sdist", "mcp_audit_build_backend.py"),
+        ("sdist", "pyproject.toml.orig"),
+    ],
+)
+def test_packaged_files_cannot_be_omitted(distributions: Path, artifact: str, member: str) -> None:
+    wheel, sdist = release.distribution_names(VERSION)
+    if artifact == "wheel":
+        entries = _wheel_entries(distributions / wheel)
+        del entries[member]
+        _write_wheel(distributions / wheel, entries)
+    else:
+        _replace_sdist_members(distributions / sdist, {f"mcp_audits-{VERSION}/{member}": None})
+    with pytest.raises(release.VerificationError, match=member):
+        release.verify_distributions(dist_dir=distributions, version=VERSION, commit=COMMIT)
+
+
+def test_wheel_extra_dist_info_member_is_rejected(distributions: Path) -> None:
+    wheel = distributions / release.distribution_names(VERSION)[0]
+    entries = _wheel_entries(wheel)
+    member = f"mcp_audits-{VERSION}.dist-info/unapproved.txt"
+    entries[member] = b"not in the reference build\n"
+    _write_wheel(wheel, entries)
+    with pytest.raises(release.VerificationError, match="unapproved.txt.*extra"):
+        release.verify_distributions(dist_dir=distributions, version=VERSION, commit=COMMIT)
+
+
+@pytest.mark.parametrize("member", ["WHEEL", "licenses/LICENSE"])
+def test_wheel_install_metadata_matches_reference(distributions: Path, member: str) -> None:
+    wheel = distributions / release.distribution_names(VERSION)[0]
+    entries = _wheel_entries(wheel)
+    path = f"mcp_audits-{VERSION}.dist-info/{member}"
+    if member == "WHEEL":
+        assert b"Root-Is-Purelib: true" in entries[path]
+        entries[path] = entries[path].replace(b"Root-Is-Purelib: true", b"Root-Is-Purelib: false")
+    else:
+        entries[path] += b"unapproved license amendment\n"
+    _write_wheel(wheel, entries)
+    with pytest.raises(release.VerificationError, match=f"{member}.*reference build"):
+        release.verify_distributions(dist_dir=distributions, version=VERSION, commit=COMMIT)
+
+
+def test_wheel_license_also_matches_approved_commit(
+    distributions: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    wheel = distributions / release.distribution_names(VERSION)[0]
+    entries = _wheel_entries(wheel)
+    license_path = f"mcp_audits-{VERSION}.dist-info/licenses/LICENSE"
+    entries[license_path] += b"unapproved license amendment\n"
+    _write_wheel(wheel, entries)
+    reference_wheel, reference_sdist, requirements = release._reference_build(
+        commit=COMMIT, distribution=release.DISTRIBUTIONS[0]
+    )
+    # Even matching backend output cannot replace the approved source license.
+    reference_wheel[license_path] = entries[license_path]
+    monkeypatch.setattr(
+        release, "_reference_build", lambda **kwargs: (reference_wheel, reference_sdist, requirements)
+    )
+    with pytest.raises(release.VerificationError, match="licenses/LICENSE.*approved commit"):
+        release.verify_distributions(dist_dir=distributions, version=VERSION, commit=COMMIT)
+
+
+@pytest.mark.parametrize("artifact", ["wheel", "sdist"])
+@pytest.mark.parametrize("mutation", ["extra", "looser-floor", "duplicate", "missing", "missing-extra"])
+def test_requires_dist_is_exactly_the_committed_set(
+    distributions: Path, artifact: str, mutation: str
+) -> None:
+    wheel, sdist = release.distribution_names(VERSION)
+    if artifact == "wheel":
+        entries = _wheel_entries(distributions / wheel)
+        member = f"mcp_audits-{VERSION}.dist-info/METADATA"
+        metadata = entries[member]
+    else:
+        member = f"mcp_audits-{VERSION}/PKG-INFO"
+        with tarfile.open(distributions / sdist, "r:gz") as archive:
+            stream = archive.extractfile(member)
+            assert stream is not None
+            with stream:
+                metadata = stream.read()
+    headers, separator, body = metadata.partition(b"\n\n")
+    if mutation in {"extra", "looser-floor", "duplicate"}:
+        requirement = {
+            "extra": b"attacker-bootstrap==1.0.0",
+            "looser-floor": b"anyio>=1.0",
+            "duplicate": b"anyio>=4.14.2",
+        }[mutation]
+        headers += b"\nRequires-Dist: " + requirement
+    else:
+        prefix = b"Requires-Dist: rich" if mutation == "missing" else b"Requires-Dist: watchfiles"
+        lines = headers.splitlines()
+        assert any(line.startswith(prefix) for line in lines)
+        headers = b"\n".join(line for line in lines if not line.startswith(prefix))
+    changed = headers + separator + body
+    if artifact == "wheel":
+        entries[member] = changed
+        _write_wheel(distributions / wheel, entries)
+    else:
+        _replace_sdist_members(distributions / sdist, {member: changed})
+    with pytest.raises(release.VerificationError, match="Requires-Dist"):
+        release.verify_distributions(dist_dir=distributions, version=VERSION, commit=COMMIT)
 
 
 def test_sdist_build_backend_must_be_the_approved_one(distributions: Path) -> None:

@@ -132,8 +132,9 @@ and preserves the validation, JSON, and SARIF artifacts for review.
 ## Pre-commit Hook
 
 The hook triggers when a repo-local `.mcp.json` or `.vscode/mcp.json` changes
-and scans discovered workstation/project configs. It is config-only (it never
-spawns or connects to servers):
+and checks discovered workstation/project configs. From 2.12, its entry is
+`mcp-audit check --include-discovered --inject-check`. It is static (it never
+spawns or connects to servers). Published 2.11 refs retain the legacy entry:
 
 ```yaml
 repos:
@@ -142,6 +143,10 @@ repos:
     hooks:
       - id: mcp-audit
 ```
+
+The [CI guide](guides/ci.md#command-grammar-and-release-tags) records the Action
+grammar, exact release tag policy, and security-only backports for the package,
+Action and hook through 120 calendar days after 3.0.0.
 
 ## Pin Baselines
 
