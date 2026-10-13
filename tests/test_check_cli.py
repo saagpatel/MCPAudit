@@ -15,7 +15,8 @@ from mcp_audit import artifact_paths, check_cli, cli, engine, scan_cli, suppress
 from mcp_audit.check_cli import demo
 from mcp_audit.connector import ServerConnector
 from mcp_audit.discovery.vscode import VSCodeDiscoverer
-from mcp_audit.review_discovery import MAX_CONFIG_BYTES, review_sources
+from mcp_audit.models import ClientType
+from mcp_audit.review_discovery import MAX_CONFIG_BYTES, MAX_CONTAINERS, MAX_DEPTH, review_sources
 
 ROOT = Path(__file__).resolve().parents[1]
 SANDBOX = ROOT / "examples/sandbox/fixtures/synthetic-mcp-config.json"
@@ -73,6 +74,7 @@ def test_bare_empty_home_spawns_nothing_and_offers_next_commands(monkeypatch: py
 def test_empty_home_has_no_config_findings_or_partial_coverage(args: list[str]) -> None:
     sources = review_sources()
     assert not sources.errors
+    assert not sources.warnings
     assert sources.paths
     assert all(status == "absent" for _, status in sources.paths)
     result = CliRunner().invoke(cli.main, args)
@@ -81,6 +83,7 @@ def test_empty_home_has_no_config_findings_or_partial_coverage(args: list[str]) 
     assert payload["servers_discovered"] == 0
     assert payload["config_health_findings"] == []
     assert payload["coverage"]["config_health"]["state"] == "complete"
+    assert not payload["warnings"]
     assert all(entry["state"] != "partial" for entry in payload["coverage"].values())
 
 
@@ -88,6 +91,7 @@ def test_one_valid_home_config_with_other_clients_absent_is_healthy() -> None:
     config = _config(Path.home() / ".cursor/mcp.json")
     sources = review_sources()
     assert not sources.errors
+    assert not sources.warnings
     assert (str(config), "checked: 1 entries") in sources.paths
     assert all(path == str(config) or status == "absent" for path, status in sources.paths)
     result = CliRunner().invoke(cli.main, ["check", "--json"])
@@ -96,6 +100,7 @@ def test_one_valid_home_config_with_other_clients_absent_is_healthy() -> None:
     assert payload["servers_discovered"] == 1
     assert payload["config_health_findings"] == []
     assert payload["coverage"]["config_health"]["state"] == "complete"
+    assert not payload["warnings"]
 
 
 @pytest.mark.parametrize("present", [False, True])
@@ -603,7 +608,59 @@ def test_symlinks_skipped_by_discovery_but_explicit_selection_allowed(tmp_path: 
     sources = review_sources()
     assert not sources.servers
     assert any("symlink skipped" in error.reason for error in sources.errors)
+    assert sources.warnings[0].code == "review_source_skipped"
+    assert str(cursor) in sources.warnings[0].message
     assert len(review_sources(cursor).servers) == 1
+
+
+@pytest.mark.parametrize("kind", ["oversized", "nesting", "containers", "symlink"])
+@pytest.mark.parametrize("sarif_profile", ["compatibility", "extended"])
+def test_source_limits_warn_on_stderr_json_and_sarif(tmp_path: Path, kind: str, sarif_profile: str) -> None:
+    path = Path.home() / ".cursor/mcp.json"
+    path.parent.mkdir()
+    if kind == "symlink":
+        path.symlink_to(_config(tmp_path / "target.json"))
+        reason = "symlink skipped"
+    else:
+        contents = {
+            "oversized": " " * (MAX_CONFIG_BYTES + 1),
+            "nesting": '{"mcpServers": {}, "unused": ' + "[" * MAX_DEPTH + "0" + "]" * MAX_DEPTH + "}",
+            "containers": json.dumps({"mcpServers": {}, "unused": [{}] * MAX_CONTAINERS}),
+        }[kind]
+        path.write_text(contents)
+        reason = "byte limit" if kind == "oversized" else "nesting or container limit"
+    sources = review_sources(clients=(ClientType.CURSOR,))
+    assert not sources.servers
+    assert len(sources.warnings) == 1
+    assert reason in sources.warnings[0].message
+    assert str(path) in sources.warnings[0].message
+    sarif = tmp_path / "report.sarif"
+    result = CliRunner().invoke(
+        cli.main,
+        [
+            "check",
+            "--client",
+            "cursor",
+            "--override-config",
+            "/dev/null",
+            "--json",
+            "--sarif",
+            str(sarif),
+            "--sarif-profile",
+            sarif_profile,
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.stdout)
+    assert payload["warnings"] == [sources.warnings[0].model_dump()]
+    assert payload["warnings"][0]["message"] in result.stderr
+    assert payload["coverage"]["config_health"]["state"] == "partial"
+    notifications = json.loads(sarif.read_text())["runs"][0]["invocations"][0]["toolExecutionNotifications"]
+    assert any(
+        notice["descriptor"]["id"] == "MCP-REVIEW-SOURCE-SKIPPED"
+        and notice["properties"] == payload["warnings"][0]
+        for notice in notifications
+    )
 
 
 @pytest.mark.parametrize(

@@ -1,8 +1,9 @@
 """Frozen, option-only legacy scan translation shared with the 3.0 interceptor.
 
-No discovery or execution belongs here. ``narrowed`` means the caller explicitly
-selected --config-only; it is still exact for that scan invocation. Possible
-implicit coverage loss always takes precedence and withholds the command.
+No discovery or execution belongs here. ``preserved`` and ``narrowed`` describe
+option mapping only; review source limits can still reduce coverage. ``narrowed``
+means the caller explicitly selected --config-only. Known implicit coverage loss
+always takes precedence and withholds the command.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from types import MappingProxyType
 from typing import Literal
 
 from mcp_audit.redaction import redact_text
+from mcp_audit.review_discovery import MAX_CONFIG_BYTES, MAX_CONTAINERS, MAX_DEPTH, MAX_SERVERS
 
 Coverage = Literal["preserved", "narrowed", "would-silently-shrink"]
 OptionKind = Literal["flag", "value", "repeat"]
@@ -103,7 +105,13 @@ class ScanTranslation:
         """Render one stderr line; unsafe argument values never enter reasons."""
         if self.check_argv is None:
             return "scan: no exact check translation exists: " + "; ".join(self.reasons)
-        return "scan: exact check translation: " + shlex.join(self.check_argv)
+        return (
+            "scan: options map exactly to check (source coverage is not guaranteed; "
+            f"check enforces a {MAX_SERVERS}-server cap per source and across accepted sources, "
+            f"{MAX_CONFIG_BYTES}-byte source limit, nesting depth {MAX_DEPTH}, "
+            f"{MAX_CONTAINERS} containers, and symlink refusal for discovered sources): "
+            + shlex.join(self.check_argv)
+        )
 
 
 def classify_scan_options(options: Mapping[str, object]) -> ScanTranslation:

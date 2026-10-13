@@ -480,6 +480,10 @@ def check(
         )
         stage = "scan"
         report = anyio.run(operation)
+        report.warnings.extend(sources.warnings)
+        report.warnings.sort(
+            key=lambda warning: (tuple(sorted(warning.servers)), warning.code, warning.message)
+        )
         scanned = True
         stage = "report post-processing"
         apply_suppressions(report, cli_rules=ignore_rules, cli_reason=ignore_reason)
@@ -493,6 +497,9 @@ def check(
                 selected_pin_store = PinStore(path=pin_file)
             report.policy_result = evaluate_policy(report, policy_config, pin_store=selected_pin_store)
         safe_report = report.redacted()
+        for warning in safe_report.warnings:
+            if warning.code == "review_source_skipped":
+                click.echo(str(terminal_safe(warning.message)), err=True)
         out_report = (
             report._redacted_copy(safe_report.model_dump(mode="json"), identifiers=True)
             if redact

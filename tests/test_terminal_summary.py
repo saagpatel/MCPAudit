@@ -345,7 +345,8 @@ def test_scan_details_and_json_stdout_are_compatible() -> None:
     assert "Top Permissions" not in summary.stdout
     assert "Top" in detailed.stdout and "Permissions" in detailed.stdout
     for scan_result in (summary, detailed):
-        assert scan_result.stderr.startswith("scan: exact check translation: mcp-audit check ")
+        assert scan_result.stderr.startswith("scan: options map exactly to check (")
+        assert "): mcp-audit check " in scan_result.stderr
         assert len(scan_result.stderr.splitlines()) == 1
     result = CliRunner().invoke(main, ["check", "--config", str(FIXTURE), "--json", "--color", "always"])
     assert result.exit_code == 0, result.output

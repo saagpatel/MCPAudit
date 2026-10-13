@@ -14,6 +14,7 @@ import pytest
 from click.testing import CliRunner
 
 from mcp_audit import _core_cli, check_cli, cli, discovery, review_discovery
+from mcp_audit.discovery.claude_desktop import ClaudeDesktopDiscoverer
 from mcp_audit.scan_translation import OPTION_TABLE, OptionTranslation, classify_scan_options
 
 EXPLICIT: dict[str, object] = {
@@ -48,6 +49,17 @@ def test_preserved_discovery_always_includes_discovered(client: str) -> None:
     assert "--include-discovered" in result.check_argv
     assert "--skip-connect" in result.check_argv
     assert "--inject-check" in result.check_argv
+    assert "options map exactly" in result.notice()
+    assert "source coverage is not guaranteed" in result.notice()
+    assert "exact check translation:" not in result.notice()
+    for limit in (
+        f"{review_discovery.MAX_SERVERS}-server cap per source",
+        f"{review_discovery.MAX_CONFIG_BYTES}-byte source limit",
+        f"nesting depth {review_discovery.MAX_DEPTH}",
+        f"{review_discovery.MAX_CONTAINERS} containers",
+        "symlink refusal for discovered sources",
+    ):
+        assert limit in result.notice()
     with check_cli.check.make_context("check", list(result.check_argv[2:])) as context:
         assert context.params["include_discovered"] is True
         assert context.params["skip_connect"] is True
@@ -209,7 +221,7 @@ def test_notice_is_one_stderr_line_and_never_changes_legacy_execution_or_exit(
     assert result.exit_code == exit_code, result.output
     assert result.stdout == "legacy output\n"
     assert len(result.stderr.splitlines()) == 1
-    assert ("no exact" if untranslatable else "exact check translation:") in result.stderr
+    assert ("no exact" if untranslatable else "options map exactly") in result.stderr
     assert len(calls) == 1
     assert calls[0][0] == ("report.json" if untranslatable else None)
     assert calls[0][3] is True  # skip-connect retains its original engine position
@@ -257,3 +269,64 @@ def test_invalid_config_only_still_emits_notice_and_keeps_existing_exit() -> Non
     assert result.exit_code == 1
     assert result.stderr.splitlines()[0].startswith("scan: no exact check translation exists:")
     assert result.stderr.splitlines()[1] == "Error: --config-only requires --config PATH."
+
+
+@pytest.mark.parametrize("sarif_profile", ["compatibility", "extended"])
+@pytest.mark.parametrize("json_stdout", [False, True])
+def test_translated_check_warns_when_legacy_source_exceeds_server_cap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sarif_profile: str, json_stdout: bool
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.chdir(tmp_path)
+    fixture = tmp_path / "claude-desktop.json"
+    fixture.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    f"fixture-{index}": {"command": "never-launch-fixture"}
+                    for index in range(review_discovery.MAX_SERVERS + 1)
+                }
+            }
+        )
+    )
+    monkeypatch.setattr(ClaudeDesktopDiscoverer, "config_paths", lambda self: [fixture])
+    assert len(ClaudeDesktopDiscoverer().parse(fixture)) == review_discovery.MAX_SERVERS + 1
+    output = tmp_path / "report.json"
+    sarif = tmp_path / "report.sarif"
+    translation = classify_scan_options(
+        {
+            "skip_connect": True,
+            "clients": "claude_desktop",
+            "override_config_path": "/dev/null",
+            "sarif_output": sarif,
+            "sarif_profile": sarif_profile,
+        }
+    )
+    assert translation.coverage == "preserved"
+    assert f"{review_discovery.MAX_SERVERS}-server cap per source" in translation.notice()
+    assert translation.check_argv is not None
+    args = [*translation.check_argv[1:], "--output-json", str(output)]
+    if json_stdout:
+        args.append("--json")
+    result = CliRunner().invoke(cli.main, args)
+    assert result.exit_code == 0, result.output
+    payload = json.loads(output.read_text())
+    if json_stdout:
+        assert json.loads(result.stdout) == payload
+    assert payload["schema_version"] == 1
+    assert payload["servers_discovered"] == 0
+    assert payload["coverage"]["config_health"]["state"] == "partial"
+    warning = payload["warnings"][0]
+    assert warning["code"] == "review_source_skipped"
+    assert warning["check"] == "config_health"
+    assert warning["servers"] == []
+    assert str(fixture) in warning["message"]
+    assert f"{review_discovery.MAX_SERVERS}-server review limit" in warning["message"]
+    assert warning["message"] in result.stderr
+    notifications = json.loads(sarif.read_text())["runs"][0]["invocations"][0]["toolExecutionNotifications"]
+    assert any(
+        notice["descriptor"]["id"] == "MCP-REVIEW-SOURCE-SKIPPED"
+        and notice["properties"] == warning
+        and notice["message"]["text"] == warning["message"]
+        for notice in notifications
+    )

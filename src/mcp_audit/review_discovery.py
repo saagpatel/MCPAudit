@@ -12,7 +12,7 @@ from mcp_audit.discovery._config import decode_config
 from mcp_audit.discovery._entry import parse_server_map
 from mcp_audit.discovery.base import ConfigParseError
 from mcp_audit.discovery.claude_code import parse_mapping
-from mcp_audit.models import ClientType, ServerConfig
+from mcp_audit.models import ClientType, ScanWarning, ServerConfig
 
 MAX_CONFIG_BYTES = 1_048_576
 MAX_DEPTH = 64
@@ -25,6 +25,11 @@ class ReviewSources:
     servers: list[ServerConfig] = field(default_factory=list)
     errors: list[ConfigParseError] = field(default_factory=list)
     paths: list[tuple[str, str]] = field(default_factory=list)
+    warnings: list[ScanWarning] = field(default_factory=list)
+
+
+class _SourceLimitError(ValueError):
+    """A source rejected by review's additional acceptance limits."""
 
 
 def _check_structure(text: str) -> None:
@@ -54,7 +59,7 @@ def _check_structure(text: str) -> None:
             depth += 1
             containers += 1
             if depth > MAX_DEPTH or containers > MAX_CONTAINERS:
-                raise ValueError("config exceeds nesting or container limit")
+                raise _SourceLimitError("config exceeds nesting or container limit")
         elif char in "}]":
             depth -= 1
         index += 1
@@ -64,17 +69,17 @@ def _read_bounded(path: Path, *, explicit: bool) -> str:
     if explicit:
         path = path.resolve(strict=True)
     elif any(part.is_symlink() for part in (path, *path.parents)):
-        raise ValueError("symlink skipped; select it explicitly with --config")
+        raise _SourceLimitError("symlink skipped; select it explicitly with --config")
     descriptor = os.open(path, os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_NOFOLLOW", 0))
     with os.fdopen(descriptor, "rb") as stream:
         info = os.fstat(stream.fileno())
         if not stat.S_ISREG(info.st_mode):
             raise ValueError("config path is not a regular file")
         if info.st_size > MAX_CONFIG_BYTES:
-            raise ValueError("config exceeds 1 MiB limit")
+            raise _SourceLimitError(f"config exceeds {MAX_CONFIG_BYTES}-byte limit")
         content = stream.read(MAX_CONFIG_BYTES + 1)
     if len(content) > MAX_CONFIG_BYTES:
-        raise ValueError("config exceeds 1 MiB limit")
+        raise _SourceLimitError(f"config exceeds {MAX_CONFIG_BYTES}-byte limit")
     text = content.decode("utf-8-sig")
     _check_structure(text)
     return text
@@ -136,7 +141,7 @@ def _parse_source(
     ):
         servers = [server.model_copy(update={"scope": "project"}) for server in servers]
     if len(servers) + len(sources.servers) > MAX_SERVERS:
-        raise ValueError("config exceeds 1000-server review limit")
+        raise _SourceLimitError(f"config exceeds {MAX_SERVERS}-server review limit")
     if explicit:
         servers = [
             server.model_copy(update={"config_source": "explicit file; parsed as Claude-style config"})
@@ -198,6 +203,15 @@ def review_sources(
             )
             if explicit:
                 raise ValueError(f"Cannot review {path}: {reason}") from None
+            if isinstance(exc, _SourceLimitError):
+                sources.warnings.append(
+                    ScanWarning(
+                        code="review_source_skipped",
+                        message=f"Review source skipped: {path}: {reason}. "
+                        "Review the source limits; this source was not audited.",
+                        check="config_health",
+                    )
+                )
             sources.errors.append(ConfigParseError(str(path), client, reason))
             sources.paths.append((str(path), f"skipped: {reason}"))
         else:
