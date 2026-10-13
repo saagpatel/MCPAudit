@@ -284,11 +284,13 @@ def _pack_train(repo: Path, dist: Path, train: tuple[release.Distribution, ...],
         wheel, sdist = release.distribution_names(VERSION, item.name)
         stem = item.name.replace("-", "_")
         scripts = "[console_scripts]\n" + "".join(f"{key} = {value}\n" for key, value in item.scripts.items())
+        reference_wheel, _, _ = release._reference_build(commit=commit, distribution=item)
         _write_wheel(
             dist / wheel,
             {
                 f"{stem}-{VERSION}.dist-info/METADATA": metadata,
                 f"{stem}-{VERSION}.dist-info/entry_points.txt": scripts.encode(),
+                f"{stem}-{VERSION}.dist-info/WHEEL": reference_wheel[f"{stem}-{VERSION}.dist-info/WHEEL"],
                 **{
                     str(PurePosixPath(name).relative_to(package.parent)): data
                     for name, data in sources.items()

@@ -784,7 +784,7 @@ def verify_distributions(*, dist_dir: Path, version: str, commit: str) -> list[t
 
 def _reference_build(
     *, commit: str, distribution: Distribution
-) -> tuple[set[str], set[str], list[Requirement]]:
+) -> tuple[dict[str, bytes], set[str], list[Requirement]]:
     """Build committed files and PEP 621 requirements, never using the tested artifacts.
 
     The backend also normalizes combined optional-dependency markers (including
@@ -819,7 +819,9 @@ def _reference_build(
         if len(wheels) != 1 or len(sdists) != 1:
             raise VerificationError(f"{distribution.name} reference build must produce one wheel and sdist")
         with zipfile.ZipFile(wheels[0]) as wheel:
-            wheel_members = {info.filename for info in wheel.infolist() if not info.is_dir()}
+            wheel_members = {
+                info.filename: wheel.read(info.filename) for info in wheel.infolist() if not info.is_dir()
+            }
             (metadata_path,) = [path for path in wheel_members if path.endswith(".dist-info/METADATA")]
             metadata = _parse_metadata(wheel.read(metadata_path))
             requirements = [
@@ -872,6 +874,31 @@ def _verify_distribution(*, dist_dir: Path, version: str, commit: str, distribut
     with zipfile.ZipFile(wheel) as archive:
         _check_archive_names(archive.namelist(), prefix="", name=wheel.name)
         dist_info = f"{stem}-{version}.dist-info"
+        # A wheel installs its generated dist-info and the contracted module, nothing else:
+        # no .data/ (scripts, headers, data), no other top-level packages or .pth files.
+        sources: dict[str, str] = {}
+        for info in archive.infolist():
+            path = info.filename.rstrip("/")
+            if stat.S_IFMT(info.external_attr >> 16) not in (0, stat.S_IFREG, stat.S_IFDIR):
+                raise VerificationError(f"{wheel.name} must contain regular files without links")
+            if path == dist_info or path.startswith(f"{dist_info}/"):
+                if not info.is_dir() and path.startswith(f"{dist_info}/licenses/"):
+                    # The backend preserves project-relative license paths under licenses/.
+                    sources[path] = str(project_dir / path.removeprefix(f"{dist_info}/licenses/"))
+                continue
+            if info.is_dir() and (path == module or f"{module}/".startswith(f"{path}/")):
+                continue
+            if not path.startswith(f"{module}/"):
+                raise VerificationError(
+                    f"{wheel.name} member {info.filename!r} is outside the contracted module and dist-info"
+                )
+            if not info.is_dir() and path != f"{module}/{PROVENANCE_FILE}":
+                sources[path] = str(source_root / path)
+        _check_member_set(
+            {info.filename for info in archive.infolist() if not info.is_dir()},
+            set(reference_wheel),
+            name=wheel.name,
+        )
         _check_distribution_metadata(
             archive.read(f"{dist_info}/METADATA"),
             version=version,
@@ -887,29 +914,14 @@ def _verify_distribution(*, dist_dir: Path, version: str, commit: str, distribut
             name=wheel.name,
             scripts=distribution.scripts,
         )
-        # A wheel installs its generated dist-info and the contracted module, nothing else:
-        # no .data/ (scripts, headers, data), no other top-level packages or .pth files.
-        sources: dict[str, str] = {}
-        for info in archive.infolist():
-            path = info.filename.rstrip("/")
-            if stat.S_IFMT(info.external_attr >> 16) not in (0, stat.S_IFREG, stat.S_IFDIR):
-                raise VerificationError(f"{wheel.name} must contain regular files without links")
-            if path == dist_info or path.startswith(f"{dist_info}/"):
-                continue
-            if info.is_dir() and (path == module or f"{module}/".startswith(f"{path}/")):
-                continue
-            if not path.startswith(f"{module}/"):
-                raise VerificationError(
-                    f"{wheel.name} member {info.filename!r} is outside the contracted module and dist-info"
-                )
-            if not info.is_dir() and path != f"{module}/{PROVENANCE_FILE}":
-                sources[path] = str(source_root / path)
-        _check_member_set(
-            set(sources),
-            {path for path in reference_wheel if path.startswith(f"{module}/")}
-            - {f"{module}/{PROVENANCE_FILE}"},
-            name=wheel.name,
-        )
+        # WHEEL and licenses are byte-identical; generated metadata and RECORD
+        # keep their dedicated semantic and digest checks.
+        for path, content in reference_wheel.items():
+            if path == f"{dist_info}/WHEEL" or path.startswith(f"{dist_info}/licenses/"):
+                if archive.read(path) != content:
+                    raise VerificationError(
+                        f"{wheel.name} member {path!r} does not match the reference build"
+                    )
         _check_commit_content(
             {path: archive.read(path) for path in sources}, sources, commit=commit, name=wheel.name
         )

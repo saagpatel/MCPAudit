@@ -438,6 +438,8 @@ def _replace_sdist_members(path: Path, replacements: dict[str, bytes | None]) ->
     [
         ("wheel", "mcp_audit/cli.py"),
         ("wheel", "mcp_audit/fixtures/demo-mcp-config.json"),
+        ("wheel", f"mcp_audits-{VERSION}.dist-info/WHEEL"),
+        ("wheel", f"mcp_audits-{VERSION}.dist-info/licenses/LICENSE"),
         ("sdist", "src/mcp_audit/rules/result_injection.py"),
         ("sdist", "src/mcp_audit/fixtures/demo-mcp-config.json"),
         ("sdist", "mcp_audit_build_backend.py"),
@@ -453,6 +455,51 @@ def test_packaged_files_cannot_be_omitted(distributions: Path, artifact: str, me
     else:
         _replace_sdist_members(distributions / sdist, {f"mcp_audits-{VERSION}/{member}": None})
     with pytest.raises(release.VerificationError, match=member):
+        release.verify_distributions(dist_dir=distributions, version=VERSION, commit=COMMIT)
+
+
+def test_wheel_extra_dist_info_member_is_rejected(distributions: Path) -> None:
+    wheel = distributions / release.distribution_names(VERSION)[0]
+    entries = _wheel_entries(wheel)
+    member = f"mcp_audits-{VERSION}.dist-info/unapproved.txt"
+    entries[member] = b"not in the reference build\n"
+    _write_wheel(wheel, entries)
+    with pytest.raises(release.VerificationError, match="unapproved.txt.*extra"):
+        release.verify_distributions(dist_dir=distributions, version=VERSION, commit=COMMIT)
+
+
+@pytest.mark.parametrize("member", ["WHEEL", "licenses/LICENSE"])
+def test_wheel_install_metadata_matches_reference(distributions: Path, member: str) -> None:
+    wheel = distributions / release.distribution_names(VERSION)[0]
+    entries = _wheel_entries(wheel)
+    path = f"mcp_audits-{VERSION}.dist-info/{member}"
+    if member == "WHEEL":
+        assert b"Root-Is-Purelib: true" in entries[path]
+        entries[path] = entries[path].replace(b"Root-Is-Purelib: true", b"Root-Is-Purelib: false")
+    else:
+        entries[path] += b"unapproved license amendment\n"
+    _write_wheel(wheel, entries)
+    with pytest.raises(release.VerificationError, match=f"{member}.*reference build"):
+        release.verify_distributions(dist_dir=distributions, version=VERSION, commit=COMMIT)
+
+
+def test_wheel_license_also_matches_approved_commit(
+    distributions: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    wheel = distributions / release.distribution_names(VERSION)[0]
+    entries = _wheel_entries(wheel)
+    license_path = f"mcp_audits-{VERSION}.dist-info/licenses/LICENSE"
+    entries[license_path] += b"unapproved license amendment\n"
+    _write_wheel(wheel, entries)
+    reference_wheel, reference_sdist, requirements = release._reference_build(
+        commit=COMMIT, distribution=release.DISTRIBUTIONS[0]
+    )
+    # Even matching backend output cannot replace the approved source license.
+    reference_wheel[license_path] = entries[license_path]
+    monkeypatch.setattr(
+        release, "_reference_build", lambda **kwargs: (reference_wheel, reference_sdist, requirements)
+    )
+    with pytest.raises(release.VerificationError, match="licenses/LICENSE.*approved commit"):
         release.verify_distributions(dist_dir=distributions, version=VERSION, commit=COMMIT)
 
 

@@ -57,7 +57,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only dist-info and the contracted module, with no `.data/` members), and
   `Requires-Dist` must equal the commit's dependencies and optional dependencies
   with their extra markers, with extra, missing, and duplicate requirements
-  rejected. Requirements are compared as parsed requirements, so whitespace
+  rejected. Wheel dist-info members must exactly match the reference paths, with
+  WHEEL and licenses byte-identical to the reference and licenses bound to commit blobs.
+  Requirements are compared as parsed requirements, so whitespace
   inside a marker value cannot pose as the contracted extra.
   Document the future core/labs/proof publication order and partial recovery;
   the current package remains unsplit. Verify sdist rebuild dependencies and
