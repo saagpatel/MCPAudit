@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock, patch
+import logging
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import anyio
 import pytest
 
 from mcp_audit.llm_analyzer import LLMAnalyzer, _needs_llm
@@ -28,6 +30,8 @@ def _mock_analyzer() -> LLMAnalyzer:
         analyzer = LLMAnalyzer.__new__(LLMAnalyzer)
         analyzer._model = "claude-haiku-4-5-20251001"
         analyzer._client = MagicMock()
+        analyzer._client.messages.create = AsyncMock()
+        analyzer._client.close = AsyncMock()
     return analyzer
 
 
@@ -98,6 +102,48 @@ class TestAnalyzeServer:
 
         findings = await analyzer.analyze_server(tools, [])
         assert findings == []
+
+    async def test_provider_failure_does_not_log_error_text(self, caplog: pytest.LogCaptureFixture) -> None:
+        analyzer = _mock_analyzer()
+        analyzer._client.messages.create.side_effect = RuntimeError("sensitive-provider-response")
+        with caplog.at_level(logging.WARNING, logger="mcp_audit.llm_analyzer"):
+            await analyzer.analyze_server([make_tool("t")], [])
+        assert "RuntimeError" in caplog.text
+        assert "sensitive-provider-response" not in caplog.text
+
+    async def test_pending_provider_request_is_cancellable_without_blocking_sibling(self) -> None:
+        analyzer = _mock_analyzer()
+        progressed = anyio.Event()
+        started = anyio.Event()
+
+        async def wait_for_provider(**kwargs: object) -> MagicMock:
+            started.set()
+            await anyio.sleep_forever()
+            raise AssertionError("unreachable")
+
+        analyzer._client.messages.create.side_effect = wait_for_provider
+
+        async def request() -> None:
+            try:
+                with anyio.fail_after(0.02):
+                    await analyzer.analyze_server([make_tool("t")], [])
+            except TimeoutError:
+                pass
+
+        async def sibling() -> None:
+            await anyio.sleep(0)
+            progressed.set()
+
+        async with anyio.create_task_group() as group:
+            group.start_soon(request)
+            group.start_soon(sibling)
+        assert progressed.is_set()
+        assert started.is_set()
+
+    async def test_client_close_is_awaited(self) -> None:
+        analyzer = _mock_analyzer()
+        await analyzer.aclose()
+        analyzer._client.close.assert_awaited_once()
 
     async def test_empty_tool_list_no_api_call(self) -> None:
         analyzer = _mock_analyzer()

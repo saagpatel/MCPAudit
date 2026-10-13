@@ -31,6 +31,7 @@ logger.addFilter(TerminalSafeLogFilter())
 
 DEFAULT_MODEL = "claude-haiku-4-5-20251001"
 _BATCH_SIZE = 20
+_REQUEST_TIMEOUT_SECONDS = 10.0
 _VALID_CATEGORIES = {category.value for category in PermissionCategory}
 _SOURCE_TRUST = FindingSourceTrust.UNTRUSTED_SERVER_METADATA
 
@@ -118,8 +119,12 @@ class LLMAnalyzer:
             import anthropic  # type: ignore[import-not-found, unused-ignore]
         except ImportError as exc:
             raise ImportError("anthropic package not installed. Run: pip install 'mcp-audits[llm]'") from exc
-        self._client: Any = anthropic.Anthropic(api_key=api_key)
+        self._client: Any = anthropic.AsyncAnthropic(api_key=api_key, timeout=_REQUEST_TIMEOUT_SECONDS)
         self._model = model
+
+    async def aclose(self) -> None:
+        """Close the async provider client's connection pool."""
+        await self._client.close()
 
     def unavailable_summary(self, reason_code: LLMAnalysisReasonCode) -> LLMAnalysisSummary:
         """Build an explicit whole-server UNKNOWN result for setup failures."""
@@ -217,14 +222,14 @@ class LLMAnalyzer:
         """Call the provider for one structured batch and admit only exact output."""
         payload, id_to_name = _build_payload(tools)
         try:
-            response = self._client.messages.create(
+            response = await self._client.messages.create(
                 model=self._model,
                 max_tokens=2048,
                 system=_SYSTEM_INSTRUCTIONS,
                 messages=[{"role": "user", "content": payload}],
             )
         except Exception as exc:
-            logger.warning("LLM analysis failed for batch: %s", exc)
+            logger.warning("LLM analysis failed for batch (%s)", type(exc).__name__)
             return _BatchOutcome([], LLMAnalysisReasonCode.PROVIDER_ERROR)
 
         stop_reason = getattr(response, "stop_reason", None)
