@@ -46,7 +46,7 @@ The current lane selections are:
 
 | Lane | Command | Current expected result | Prerequisite and claim boundary |
 | --- | --- | --- | --- |
-| Portable behavior | `make check` | Runs Ruff lint, format check, mypy, and pytest | Python 3.11–3.15 and a writable test root; service-backed integration lanes run separately in CI. |
+| Portable behavior | `make check` | Runs Ruff lint, format check, mypy, and pytest | Python 3.11–3.14 and a writable test root; service-backed integration lanes run separately in CI. |
 | Proof Before Action pre-runtime rejection | `uv run pytest -p no:cacheprovider -q tests/test_proof_before_action.py::test_sensitive_repository_input_is_blocked_before_execution tests/test_proof_before_action.py::test_literal_config_secret_and_sensitive_argv_are_redacted_or_blocked` | 5 passed; 0 skipped | Does not need Docker. It proves only that sensitive inputs are rejected before runtime inspection. |
 | Proof Before Action Docker execution | `uv run pytest -p no:cacheprovider -q -m skipif tests/test_proof_before_action.py tests/test_proof_attempt_evidence.py` | 24 passed when ready | Requires a reachable Docker daemon and the exact local `node:24-slim` image. Twenty-four skips mean the optional prerequisite is unavailable, not verified. Do not pull the image merely to turn a local result green. |
 | ProofOS PostgreSQL | `uv run pytest -p no:cacheprovider -q -m skipif research/test_proofos_postgres.py` | 6 passed when ready | Requires PostgreSQL 16 server binaries and a writable socket-capable temporary root. Six skips mean the optional prerequisite is unavailable. The tests manage only disposable local processes; they do not prove production database safety. |
@@ -178,7 +178,7 @@ You can also use `make` if you prefer — see the [Makefile](Makefile) for all a
 2. **Make your changes**, keeping commits small and focused.
    - Follow [Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`
 
-3. **Add or update tests** for any changed behavior. The CI matrix runs against Python 3.11 through 3.15 — keep compatibility in mind.
+3. **Add or update tests** for any changed behavior. The CI matrix runs against Python 3.11 through 3.14 — keep compatibility in mind.
 
 4. **Update CHANGELOG.md** under the `[Unreleased]` section.
 

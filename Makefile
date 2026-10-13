@@ -19,25 +19,25 @@ install:
 
 check:
 	@command -v uv >/dev/null 2>&1 || { echo "uv is required; install it from https://docs.astral.sh/uv/" >&2; exit 127; }
-	uv run ruff check .
-	uv run ruff format --check
-	uv run mypy .
-	uv run pytest -q
+	uv run --locked ruff check .
+	uv run --locked ruff format --check
+	uv run --locked mypy .
+	uv run --locked pytest -q
 
 test:
-	uv run pytest tests/ -v
+	uv run --locked pytest tests/ -v
 
 lint:
-	uv run ruff check .
-	uv run ruff format --check
-	uv run mypy .
+	uv run --locked ruff check .
+	uv run --locked ruff format --check
+	uv run --locked mypy .
 
 format:
-	uv run ruff check --fix src/ tests/
-	uv run ruff format src/ tests/
+	uv run --locked ruff check --fix src/ tests/
+	uv run --locked ruff format src/ tests/
 
 typecheck:
-	uv run mypy .
+	uv run --locked mypy .
 
 clean:
 	rm -rf dist/ build/ .mypy_cache/ .ruff_cache/ .pytest_cache/
@@ -45,4 +45,4 @@ clean:
 	find . -type f -name "*.pyc" -delete
 
 audit:
-	uv run mcp-audit check
+	uv run --locked mcp-audit check

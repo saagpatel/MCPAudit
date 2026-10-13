@@ -13,13 +13,17 @@ MCPAudit reviews MCP client and server configuration, reports declared access an
 
 ## Setup
 
-Use Python 3.15.0 and the pinned uv version declared in `pyproject.toml`.
+Use Python 3.14.8 and `uv`.
 
 ```sh
 uv sync --locked --dev
 uv run mcp-audit --help
-uv run mcp-audit check --config ./fixture.json
+uv run mcp-audit check --config examples/sandbox/fixtures/synthetic-mcp-config.json \
+  --config-only --skip-connect --override-config /dev/null
 ```
+
+The explicit fixture, `--config-only`, and empty override keep this smoke test
+on synthetic input without discovering workstation configs or connecting.
 
 ## Checks
 

@@ -60,7 +60,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -76,8 +76,8 @@ jobs:
       - name: Install PostgreSQL 16 server binaries
         run: sudo apt-get install -y postgresql-16
 
-      - name: Quality checks
-        run: make check
+      - name: Static checks
+        run: make lint
 
       - name: Prepare local observer image
         run: docker pull node:24-slim

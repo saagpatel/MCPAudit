@@ -81,7 +81,7 @@ def test_ci_cli_examples_use_check_grammar() -> None:
 
 
 def test_check_grammar_docs_use_current_command() -> None:
-    assert "uv run mcp-audit check" in Path("Makefile").read_text()
+    assert "uv run --locked mcp-audit check" in Path("Makefile").read_text()
     assert "uv run mcp-audit scan" not in Path("Makefile").read_text()
     assert "mcp-audit check --config ./fixture.json" in Path("docs/guides/ci.md").read_text()
     assert "uv run mcp-audit check" in Path("AGENTS.md").read_text()
