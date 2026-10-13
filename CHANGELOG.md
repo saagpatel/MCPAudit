@@ -27,7 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `check --connect-all` explicitly connects to the reviewed fleet, with project
-  servers included only through `--connect-project-configs`. It conflicts with
+  servers (including explicit `.cursor/mcp.json` files outside the home config)
+  included only through `--connect-project-configs`. It conflicts with
   `--connect`, `--server`, and hidden `--skip-connect`, preserves canary's
   explicit-file/no-discovery restriction, and uses the existing concurrency,
   per-session timeout and eligible large-fleet CLI sharding limits.

@@ -114,13 +114,19 @@ def test_explicit_fleet_connects_all_local_fixtures_without_discovery(
 
 @pytest.mark.parametrize("project_opt_in", [False, True])
 @pytest.mark.parametrize("explicit", [False, True])
+@pytest.mark.parametrize("project_file", [".mcp.json", ".cursor/mcp.json"])
 def test_fleet_project_guard_keeps_skipped_audits_and_requires_opt_in(
-    project_opt_in: bool, explicit: bool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    project_opt_in: bool,
+    explicit: bool,
+    project_file: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # .mcp.json is project-scope even when selected explicitly.
-    project_config = _config(tmp_path / ".mcp.json", ("project-fixture",))
+    project_config = _config(tmp_path / project_file, ("project-fixture",))
+    client = "cursor" if project_file == ".cursor/mcp.json" else "claude-code"
     if not explicit:
-        _config(Path.home() / ".claude.json", ("workstation-fixture",))
+        home_file = ".cursor/mcp.json" if client == "cursor" else ".claude.json"
+        _config(Path.home() / home_file, ("workstation-fixture",))
     connected: list[str] = []
     original = ServerConnector.connect
 
@@ -139,7 +145,7 @@ def test_fleet_project_guard_keeps_skipped_audits_and_requires_opt_in(
             "--override-config",
             os.devnull,
             "--json",
-            *(["--config", str(project_config)] if explicit else ["--client", "claude-code"]),
+            *(["--config", str(project_config)] if explicit else ["--client", client]),
             *(["--connect-project-configs"] if project_opt_in else []),
         ],
     )
