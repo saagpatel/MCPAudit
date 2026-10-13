@@ -341,9 +341,13 @@ def test_scan_details_and_json_stdout_are_compatible() -> None:
     summary = CliRunner().invoke(main, args)
     detailed = CliRunner().invoke(main, [*args, "--details"])
     assert summary.exit_code == detailed.exit_code == 0
-    assert summary.output.startswith("MCPAudit · Preview")
-    assert "Top Permissions" not in summary.output
-    assert "Top" in detailed.output and "Permissions" in detailed.output
+    assert summary.stdout.startswith("MCPAudit · Preview")
+    assert "Top Permissions" not in summary.stdout
+    assert "Top" in detailed.stdout and "Permissions" in detailed.stdout
+    for scan_result in (summary, detailed):
+        assert scan_result.stderr.startswith("scan: options map exactly to check (")
+        assert "): mcp-audit check " in scan_result.stderr
+        assert len(scan_result.stderr.splitlines()) == 1
     result = CliRunner().invoke(main, ["check", "--config", str(FIXTURE), "--json", "--color", "always"])
     assert result.exit_code == 0, result.output
     data = json.loads(result.stdout)

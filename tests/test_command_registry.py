@@ -458,6 +458,7 @@ mcp_audit/safeforge_coordinator.py
 mcp_audit/safeforge_runtime.py
 mcp_audit/sarif.py
 mcp_audit/scan_cli.py
+mcp_audit/scan_translation.py
 mcp_audit/schema_rules.py
 mcp_audit/scorer.py
 mcp_audit/server.py

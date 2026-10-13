@@ -69,3 +69,16 @@ Click's option and command typo suggestions remain enabled. For example,
 Legacy `scan --json PATH` continues to write JSON to the named path. In
 particular, `mcp-audit scan --json -` treats `-` as the output filename; it
 does not redirect JSON to stdout. Use `check --json` for JSON stdout.
+
+Every legacy `scan` run prints one translation notice to stderr, without
+changing its behavior or exit code. The notice gives a shell-quoted exact
+`check` command when the parsed options preserve coverage, or explains why no
+exact translation exists. `--config-only --skip-connect` intentionally narrows
+to the explicit file; supply `--override-config` to retain the same overrides.
+Discovery translations include `--include-discovered`. Legacy Claude Code
+discovery can include other projects, and `check` adds Cursor project sources,
+so those shapes cannot be declared exact from options alone. Connected scans,
+explicit files combined with discovery (which may deduplicate a source),
+`--json PATH`, comma-separated `--clients`, unknown options, and arguments that
+cannot be safely printed exactly are also refused by the translator. This
+notice does not run `check` or perform extra discovery.

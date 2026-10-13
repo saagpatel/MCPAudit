@@ -72,6 +72,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pin baselines, including the default path and filesystem aliases, whenever
   detectors or policy consume pins. `--connect-project-configs` requires
   `--connect` or `--connect-all`; static project checks retain their connection warning.
+- Every legacy `scan` run emits one stderr translation notice without changing
+  its exit code. A frozen, option-only table distinguishes preserved option mapping,
+  explicit config-only narrowing, and possible silent coverage loss; unsupported
+  spellings and discovery shapes report why no exact `check` translation exists.
+  Mapped options do not establish equivalent source coverage: the notice names
+  `check`'s source acceptance limits. Discovered sources rejected by those limits
+  emit `review_source_skipped` on stderr and in JSON/SARIF reports.
 
 ## [2.11.0] - 2026-10-12
 
