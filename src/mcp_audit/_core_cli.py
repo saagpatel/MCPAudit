@@ -23,6 +23,7 @@ from mcp_audit.models import (
 from mcp_audit.overrides import OverrideApplier
 from mcp_audit.report import error_console
 from mcp_audit.scan_cli import _run_scan as _run_scan
+from mcp_audit.scan_translation import classify_scan_options
 from mcp_audit.taxonomy import config_health_rule_id, finding_url, render_finding_reference
 from mcp_audit.terminal_text import strip_controls, terminal_safe
 
@@ -335,7 +336,9 @@ def discover(client_filter: str | None, verbose: bool) -> None:
 @click.option(
     "--previous", type=click.Path(path_type=Path), help="Compare the card with this local report JSON."
 )
+@click.pass_context
 def scan(
+    ctx: click.Context,
     json_output: str | None,
     sarif_output: str | None,
     sarif_profile: str,
@@ -385,6 +388,7 @@ def scan(
     previous: Path | None,
 ) -> None:
     """Full audit: discover servers, connect, enumerate tools, score risk, report."""
+    click.echo(classify_scan_options(ctx.params).notice(), err=True)
     if config_only and not extra_config:
         raise click.ClickException("--config-only requires --config PATH.")
 
