@@ -265,6 +265,7 @@ async def _audit_one_guarded(context: _ScanContext, idx: int, srv: ServerConfig)
             servers=[srv.name],
         )
     except Exception as exc:
+        context.completed[idx].clear()
         context.audits[idx] = ServerAudit(
             server=srv,
             connection_status="failed",
@@ -333,38 +334,42 @@ async def run_scan(
 
     context = _prepare_scan(opts, servers, parse_errors, applier, out, start, pin_store)
 
-    # Discovery -> setup/pins -> ordered per-server stages -> fleet/finalization.
-    # Disabled progress avoids refresh threads for silent library consumers.
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        TimeElapsedColumn(),
-        console=out,
-        transient=True,
-        disable=console is None,
-    ) as progress:
-        task_id = progress.add_task(f"Auditing {len(servers)} server(s)...", total=len(servers))
+    try:
+        # Discovery -> setup/pins -> ordered per-server stages -> fleet/finalization.
+        # Disabled progress avoids refresh threads for silent library consumers.
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            TimeElapsedColumn(),
+            console=out,
+            transient=True,
+            disable=console is None,
+        ) as progress:
+            task_id = progress.add_task(f"Auditing {len(servers)} server(s)...", total=len(servers))
 
-        async def audit_one_guarded(idx: int, srv: ServerConfig) -> None:
-            await _audit_one_guarded(context, idx, srv)
-            progress.advance(task_id)
+            async def audit_one_guarded(idx: int, srv: ServerConfig) -> None:
+                await _audit_one_guarded(context, idx, srv)
+                progress.advance(task_id)
 
-        from mcp_audit.fleet_workers import run_sharded, worker_count
+            from mcp_audit.fleet_workers import run_sharded, worker_count
 
-        workers = worker_count(context) if _allow_sharding else 0
-        if workers:
-            await run_sharded(context, workers, lambda: progress.advance(task_id))
-        elif _can_scan_inline(opts):
-            # Config analysis has no I/O to overlap. Avoid retaining one task
-            # per server, while allowing cancellation between bounded batches.
-            for i, srv in enumerate(servers):
-                await audit_one_guarded(i, srv)
-                if i % 128 == 0:
-                    await anyio.lowlevel.checkpoint()
-        else:
-            async with anyio.create_task_group() as tg:
+            workers = worker_count(context) if _allow_sharding else 0
+            if workers:
+                await run_sharded(context, workers, lambda: progress.advance(task_id))
+            elif _can_scan_inline(opts):
+                # Config analysis has no I/O to overlap. Avoid retaining one task
+                # per server, while allowing cancellation between bounded batches.
                 for i, srv in enumerate(servers):
-                    tg.start_soon(audit_one_guarded, i, srv)
+                    await audit_one_guarded(i, srv)
+                    if i % 128 == 0:
+                        await anyio.lowlevel.checkpoint()
+            else:
+                async with anyio.create_task_group() as tg:
+                    for i, srv in enumerate(servers):
+                        tg.start_soon(audit_one_guarded, i, srv)
+    finally:
+        if context.llm_analyzer is not None:
+            await context.llm_analyzer.aclose()
 
     return _finalize_scan(context)
 
