@@ -83,7 +83,7 @@ def test_empty_home_has_no_config_findings_or_partial_coverage(args: list[str]) 
     assert payload["servers_discovered"] == 0
     assert payload["config_health_findings"] == []
     assert payload["coverage"]["config_health"]["state"] == "complete"
-    assert not payload["warnings"]
+    assert [warning["code"] for warning in payload["warnings"]] == ["no_sources_reviewed"]
     assert all(entry["state"] != "partial" for entry in payload["coverage"].values())
 
 

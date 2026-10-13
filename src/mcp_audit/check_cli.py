@@ -16,7 +16,7 @@ from rich.console import Console
 from mcp_audit.artifact_paths import validate_artifact_paths
 from mcp_audit.checkup import generate_card, load_previous, sticker
 from mcp_audit.engine import ScanOptions, run_scan
-from mcp_audit.models import ClientType
+from mcp_audit.models import ClientType, ScanWarning
 from mcp_audit.report import ReportGenerator
 from mcp_audit.review_discovery import review_sources, server_identity
 from mcp_audit.scan_cli import _merge_host_args
@@ -491,6 +491,15 @@ def check(
         stage = "scan"
         report = anyio.run(operation)
         report.warnings.extend(sources.warnings)
+        if not any(status.startswith("checked:") for _, status in sources.paths):
+            report.warnings.append(
+                ScanWarning(
+                    code="no_sources_reviewed",
+                    message="No config sources were reviewed. Select --config FILE or --project PATH "
+                    "to review the intended sources; an empty run does not establish a clean review.",
+                    check="config_health",
+                )
+            )
         report.warnings.sort(
             key=lambda warning: (tuple(sorted(warning.servers)), warning.code, warning.message)
         )

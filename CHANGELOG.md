@@ -32,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Synthetic acceptance coverage for legacy `scan`/mapped `check` server sets,
+  redacted JSON, SARIF profiles, overrides, policy egress merging and exit codes.
+  A `check` run with no accepted config sources adds the non-fatal
+  `no_sources_reviewed` warning to JSON and SARIF; accepted empty maps remain reviewed.
 - The MCP `scan_mcp_servers` tool accepts `connect` (default `true` in 2.12).
   `connect=false` requests a static audit, and `skip_connect=true` continues to
   disable connections. The tool description announces that 3.0 will default
