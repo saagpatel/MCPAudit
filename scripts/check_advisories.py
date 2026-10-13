@@ -55,7 +55,9 @@ def load_queries(lock_path: Path, constraints_path: Path | None) -> list[dict[st
             raise AdvisoryCheckError("registry package is missing its name or version")
         versions.add((name, version))
 
-    if constraints_path is not None and constraints_path.exists():
+    if constraints_path is not None:
+        if not constraints_path.is_file():
+            raise AdvisoryCheckError("build constraints file is missing")
         try:
             lines = constraints_path.read_text(encoding="utf-8").splitlines()
         except OSError as exc:
@@ -173,10 +175,6 @@ def main() -> int:
         help="read a saved OSV batch response fixture instead of contacting OSV",
     )
     args = parser.parse_args()
-    constraints_missing = not args.build_constraints.exists()
-    if constraints_missing:
-        print("build-input coverage unavailable: build-constraints.txt missing", file=sys.stderr)
-
     try:
         queries = load_queries(args.lock, args.build_constraints)
         if not queries:

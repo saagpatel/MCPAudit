@@ -42,14 +42,14 @@ def test_load_queries_covers_registry_lock_entries_and_build_pin(tmp_path: Path)
     lock_path = tmp_path / "uv.lock"
     constraints_path = tmp_path / "build-constraints.txt"
     write_lock(lock_path)
-    constraints_path.write_text("uv-build==0.12.24 --hash=sha256:" + "a" * 64 + "\n", encoding="utf-8")
+    constraints_path.write_text("uv-build==0.13.0\n", encoding="utf-8")
 
     queries = check_advisories.load_queries(lock_path, constraints_path)
 
     assert queries == [
         {"package": {"name": "click", "ecosystem": "PyPI"}, "version": "8.3.3"},
         {"package": {"name": "optional-extra", "ecosystem": "PyPI"}, "version": "1.2.3"},
-        {"package": {"name": "uv-build", "ecosystem": "PyPI"}, "version": "0.12.24"},
+        {"package": {"name": "uv-build", "ecosystem": "PyPI"}, "version": "0.13.0"},
     ]
 
 
@@ -82,6 +82,13 @@ def test_build_constraints_must_be_exactly_pinned(tmp_path: Path) -> None:
 
     with pytest.raises(check_advisories.AdvisoryCheckError, match="exact name==version pin"):
         check_advisories.load_queries(lock_path, constraints_path)
+
+
+def test_build_constraints_must_exist_when_selected(tmp_path: Path) -> None:
+    lock_path = tmp_path / "uv.lock"
+    write_lock(lock_path)
+    with pytest.raises(check_advisories.AdvisoryCheckError, match="build constraints file is missing"):
+        check_advisories.load_queries(lock_path, tmp_path / "missing-build-constraints.txt")
 
 
 def test_osv_batch_request_is_bounded_and_uses_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -197,9 +204,9 @@ def test_response_json_is_explicit_offline_fixture_mode(
         "argv",
         ["check_advisories.py", "--lock", str(lock_path), "--response-json", str(fixture_path)],
     )
+    monkeypatch.setattr(check_advisories, "ROOT", tmp_path)
 
-    assert check_advisories.main() == 0
+    assert check_advisories.main() == 2
     captured = capsys.readouterr()
-    assert "fixture mode" in captured.out
-    assert "checked 2 locked public PyPI package versions" in captured.out
-    assert "build-input coverage unavailable: build-constraints.txt missing" in captured.err
+    assert "fixture mode" not in captured.out
+    assert "build constraints file is missing" in captured.err

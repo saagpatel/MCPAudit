@@ -62,13 +62,16 @@ proof-before-action = "mcp_audit.proof_cli:main"
 mcp-audits = "mcp_audit.cli:main"
 
 [build-system]
-requires = ["uv_build>=0.11.2,<0.13.0"]
+requires = ["uv_build==0.13.0"]
 build-backend = "mcp_audit_build_backend"
 backend-path = ["."]
 
 [tool.uv.build-backend]
 module-name = "mcp_audit"
 source-include = ["mcp_audit_build_backend.py"]
+
+[tool.uv]
+required-version = "==0.13.0"
 
 [tool.mypy]
 strict = true
@@ -98,7 +101,6 @@ markers = [
 dev = [
     "mypy>=1.19.1",
     "pytest>=9.0.2",
-    "pytest-anyio>=0.0.0",
     "pytest-cov>=6.0",
     "ruff>=0.15.8",
     "types-pyyaml>=6.0.12.20260408",
