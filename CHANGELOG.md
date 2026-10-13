@@ -91,6 +91,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `check`'s source acceptance limits. Discovered sources rejected by those limits
   emit `review_source_skipped` on stderr and in JSON/SARIF reports.
 
+### Documentation
+
+- Record the owner-approved 3.0 boundary decisions in
+  `docs/3.0-BOUNDARY-PROPOSAL.md`: the Q1 to Q9 outcomes with their conditions,
+  `serve` tool reach (D20) and the reserved PyPI names (D21); the corrected
+  `scan` to `check` mapping and legacy interceptor rules; v1 pin withholding
+  semantics; the keyless pin, Action `args`, import-path, and `serve` default
+  breaks; the `watch` exit-code quirk; 2.12 shipped and planned status; and the
+  120-day 2.x security window on `release/2.x`. No behavior changes.
+
 ## [2.11.0] - 2026-10-12
 
 ### Upgrade notes
