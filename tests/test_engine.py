@@ -829,6 +829,25 @@ def test_cli_run_scan_core_shim_warns_and_delegates(monkeypatch: pytest.MonkeyPa
     assert [audit.server.name for audit in report.audits] == ["srv"]
 
 
+def test_cli_private_scan_shims_warn_on_access() -> None:
+    from mcp_audit import cli
+
+    with pytest.warns(DeprecationWarning, match="mcp_audit.cli._run_scan.*mcp_audit.scan_cli._run_scan"):
+        assert callable(cli._run_scan)
+    with pytest.warns(
+        DeprecationWarning,
+        match="mcp_audit.cli._parse_clients.*mcp_audit.client_filter._parse_clients",
+    ):
+        assert callable(cli._parse_clients)
+
+
+def test_shared_client_filter_parses_known_clients() -> None:
+    from mcp_audit.client_filter import _parse_clients
+    from mcp_audit.models import ClientType
+
+    assert _parse_clients("claude_code,cursor") == [ClientType.CLAUDE_CODE, ClientType.CURSOR]
+
+
 async def test_run_scan_surfaces_discovery_parse_errors(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_discover(
         clients: list[ClientType] | None = None,

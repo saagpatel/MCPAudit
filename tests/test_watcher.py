@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import warnings
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -71,6 +72,21 @@ class TestGetWatchPaths:
     def test_empty_when_nothing_discovered(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(watcher, "discover_all_configs", lambda clients, parse_errors=None: [])
         assert watcher._get_watch_paths() == []
+
+
+class TestWatchClientFilter:
+    def test_uses_core_parser_without_deprecated_cli_shim(self) -> None:
+        import inspect
+        import re
+
+        source = inspect.getsource(watcher)
+        assert re.search(r"mcp_audit\.cli\b", source) is None
+        assert "from mcp_audit.client_filter import _parse_clients" in source
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            from mcp_audit.client_filter import _parse_clients
+
+            assert _parse_clients("cursor") is not None
 
 
 class TestRenderDiff:

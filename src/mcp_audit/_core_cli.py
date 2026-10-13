@@ -10,6 +10,7 @@ import anyio
 import click
 from rich.console import Console
 
+from mcp_audit.client_filter import _parse_clients as _parse_clients
 from mcp_audit.confighealth import config_health_findings
 from mcp_audit.discovery import ConfigParseError, discover_all_configs
 from mcp_audit.engine import ScanOptions, run_scan
@@ -21,7 +22,6 @@ from mcp_audit.models import (
 )
 from mcp_audit.overrides import OverrideApplier
 from mcp_audit.report import error_console
-from mcp_audit.scan_cli import _parse_clients as _parse_clients
 from mcp_audit.scan_cli import _run_scan as _run_scan
 from mcp_audit.taxonomy import config_health_rule_id, finding_url, render_finding_reference
 from mcp_audit.terminal_text import strip_controls, terminal_safe
