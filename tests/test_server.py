@@ -257,6 +257,21 @@ class TestBuildMcpServer:
         app = _build_mcp_server()
         assert app.name == "mcp-audit"
 
+    def test_scan_tool_exposes_connect_default_and_3_0_notice(self) -> None:
+        tools = asyncio.run(_build_mcp_server().list_tools())
+        tool = next(tool for tool in tools if tool.name == "scan_mcp_servers")
+        properties = tool.input_schema["properties"]
+        assert properties["connect"]["type"] == "boolean"
+        assert properties["connect"]["default"] is True
+        assert properties["skip_connect"]["default"] is False
+        assert not tool.input_schema.get("required")
+        assert tool.description is not None
+        assert "In 2.12, connections remain enabled by default" in tool.description
+        assert "connect=false" in tool.description
+        assert "skip_connect=true always disables connections" in tool.description
+        assert "In 3.0, this tool will default to static auditing" in tool.description
+        assert "connect=true" in tool.description
+
 
 @pytest.mark.anyio
 async def test_get_injection_findings_uses_connected_scan(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -456,8 +471,22 @@ async def test_scan_mcp_servers_returns_full_report_and_threads_skip_connect(
 
 
 @pytest.mark.anyio
-async def test_scan_mcp_servers_still_dispatches_all_discovered_entries(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(
+    ("arguments", "expected_connect"),
+    [
+        ({}, True),
+        ({"connect": True}, True),
+        ({"connect": False}, False),
+        ({"skip_connect": False}, True),
+        ({"skip_connect": True}, False),
+        ({"connect": True, "skip_connect": False}, True),
+        ({"connect": False, "skip_connect": False}, False),
+        ({"connect": True, "skip_connect": True}, False),
+        ({"connect": False, "skip_connect": True}, False),
+    ],
+)
+async def test_scan_mcp_servers_connection_choice_preserves_discovered_entries(
+    monkeypatch: pytest.MonkeyPatch, arguments: dict[str, bool], expected_connect: bool
 ) -> None:
     import mcp_audit.engine as engine_module
     import mcp_audit.overrides as overrides_module
@@ -482,9 +511,16 @@ async def test_scan_mcp_servers_still_dispatches_all_discovered_entries(
     monkeypatch.setattr(ServerConnector, "connect", record_connect)
     monkeypatch.setattr(overrides_module, "load_override_config", lambda: OverrideConfig())
 
-    payload = _tool_json(await _build_mcp_server().call_tool("scan_mcp_servers", {}))
-    assert attempts == servers
+    payload = _tool_json(await _build_mcp_server().call_tool("scan_mcp_servers", arguments))
+    assert attempts == (servers if expected_connect else [])
+    assert payload["schema_version"] == 1
+    assert payload["servers_discovered"] == len(servers)
+    assert payload["servers_connected"] == (len(servers) if expected_connect else 0)
     assert [audit["server"]["name"] for audit in payload["audits"]] == ["first", "second"]
+    assert all(
+        audit["connection_status"] == ("connected" if expected_connect else "skipped")
+        for audit in payload["audits"]
+    )
 
 
 @pytest.mark.anyio
