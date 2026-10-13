@@ -69,7 +69,24 @@ def test_ci_examples_are_valid_yaml() -> None:
 def test_ci_examples_install_published_package() -> None:
     for example_path in CI_EXAMPLES:
         text = example_path.read_text()
-        assert ("mcp-audits" in text and "mcp-audit scan" in text) or "saagpatel/MCPAudit@" in text
+        assert ("mcp-audits" in text and "mcp-audit check" in text) or "saagpatel/MCPAudit@" in text
+
+
+def test_ci_cli_examples_use_check_grammar() -> None:
+    for example_path in CI_EXAMPLES:
+        text = example_path.read_text()
+        assert "mcp-audit scan" not in text
+        assert "--json PATH" not in text
+        assert "--json mcp-audit-" not in text
+
+
+def test_check_grammar_docs_use_current_command() -> None:
+    assert "uv run mcp-audit check" in Path("Makefile").read_text()
+    assert "uv run mcp-audit scan" not in Path("Makefile").read_text()
+    assert "mcp-audit check --config ./fixture.json" in Path("docs/guides/ci.md").read_text()
+    assert "uv run mcp-audit check" in Path("AGENTS.md").read_text()
+    assert "uv run mcp-audit scan" not in Path("AGENTS.md").read_text()
+    assert "mcp-audit scan" not in Path("README.md").read_text()
 
 
 def test_ci_examples_install_uv_before_uvx() -> None:

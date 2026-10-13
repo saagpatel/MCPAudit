@@ -39,7 +39,7 @@ channel, then require a signed manifest sequence in protected policy or with
 `--pin-min-sequence`:
 
 ```sh
-mcp-audit scan --config ./fixture.json --config-only --skip-connect \
+mcp-audit check --config ./fixture.json --config-only --skip-connect \
   --override-config /dev/null --pin-file ./pins.yaml --pin-min-sequence 12
 ```
 
