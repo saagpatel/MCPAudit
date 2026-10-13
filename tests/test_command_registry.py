@@ -168,7 +168,8 @@ def test_side_product_aliases_share_callbacks_and_help(legacy: str, canonical: l
     assert old_help.exit_code == new_help.exit_code == 0
     # Usage intentionally names the spelling used; all option/help text stays identical.
     assert old_help.stdout.split("\n", 1)[1] == new_help.stdout.split("\n", 1)[1]
-    assert old.hidden and not new.hidden
+    # `pin` stays a visible alias (2.12 Q7); the other compatibility spellings stay hidden.
+    assert old.hidden == (legacy != "pin") and not new.hidden
 
 
 @pytest.mark.parametrize("family", ["preinstall", "run", "skills", "baseline"])
@@ -259,7 +260,7 @@ def test_pin_is_a_visible_alias_for_baseline_pin() -> None:
     assert (alias.module, alias.attribute) == (canonical.module, canonical.attribute)
     help_text = CliRunner().invoke(main, ["--help"]).stdout
     assert "pin" in help_text
-    assert "alias for baseline pin" in help_text
+    assert "alias for baseline pin" in " ".join(help_text.split())
 
 
 def test_lab_help_shows_future_installs_without_importing_labs(monkeypatch: pytest.MonkeyPatch) -> None:
