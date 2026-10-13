@@ -200,8 +200,10 @@ def _project_toml(item: release.Distribution) -> str:
             f"{extra}={json.dumps([f'mcp-audits-{package}=={VERSION}' for package in packages])}\n"
             for extra, packages in EXTRAS
         )
+        project += 'conditional=[\'fixture-pkg[cli]>=1,<2; python_version < "3.12" or os_name == "nt"\']\n'
     return (
         project + f'[tool.uv.build-backend]\nmodule-name="{item.module}"\nmodule-root="{item.module_root}"\n'
+        'source-include=["mcp_audit_build_backend.py"]\n'
     )
 
 
@@ -216,7 +218,8 @@ def _commit_train(repo: Path, train: tuple[release.Distribution, ...]) -> str:
             module = target.partition(":")[0].removeprefix(f"{item.module}.")
             (package / f"{module}.py").write_text("def main() -> None:\n    pass\n")
         (base / "pyproject.toml").write_text(_project_toml(item))
-        (base / "mcp_audit_build_backend.py").write_text('"""Fixture in-tree build backend."""\n')
+        (base / "mcp_audit_build_backend.py").write_bytes(Path(backend.__file__).read_bytes())
+    (repo / ".gitignore").write_text("__pycache__/\n")
     if not (repo / ".git").exists():
         _git(repo, "init", "-q")
     _git(repo, "add", "-A")
@@ -258,6 +261,11 @@ def _metadata(item: release.Distribution) -> str:
     for extra, packages in EXTRAS:
         for package in packages:
             metadata += f'Requires-Dist: mcp-audits-{package}=={VERSION}; extra == "{extra}"\n'
+    metadata += (
+        "Requires-Dist: fixture-pkg[cli]>=1,<2; "
+        '(python_full_version < "3.12" and extra == "conditional") '
+        'or (os_name == "nt" and extra == "conditional")\n'
+    )
     return metadata
 
 
@@ -276,11 +284,13 @@ def _pack_train(repo: Path, dist: Path, train: tuple[release.Distribution, ...],
         wheel, sdist = release.distribution_names(VERSION, item.name)
         stem = item.name.replace("-", "_")
         scripts = "[console_scripts]\n" + "".join(f"{key} = {value}\n" for key, value in item.scripts.items())
+        reference_wheel, _, _ = release._reference_build(commit=commit, distribution=item)
         _write_wheel(
             dist / wheel,
             {
                 f"{stem}-{VERSION}.dist-info/METADATA": metadata,
                 f"{stem}-{VERSION}.dist-info/entry_points.txt": scripts.encode(),
+                f"{stem}-{VERSION}.dist-info/WHEEL": reference_wheel[f"{stem}-{VERSION}.dist-info/WHEEL"],
                 **{
                     str(PurePosixPath(name).relative_to(package.parent)): data
                     for name, data in sources.items()
@@ -291,6 +301,7 @@ def _pack_train(repo: Path, dist: Path, train: tuple[release.Distribution, ...],
         entries = {
             "PKG-INFO": metadata,
             "pyproject.toml": (base / "pyproject.toml").read_bytes(),
+            "pyproject.toml.orig": (base / "pyproject.toml").read_bytes(),
             "mcp_audit_build_backend.py": (base / "mcp_audit_build_backend.py").read_bytes(),
             **sources,
             f"{package}/_build_provenance.json": provenance,
@@ -334,6 +345,25 @@ def test_all_six_artifacts_and_manifest_are_verified(train_artifacts: Path) -> N
     del hashes[release.distribution_names(VERSION, TRAIN[2].name)[1]]
     with pytest.raises(release.VerificationError, match="exactly"):
         release.verify_manifest(manifest, version=VERSION, commit=_commit(train_artifacts))
+
+
+def test_real_build_verifies_clean_committed_train(train_artifacts: Path) -> None:
+    repo = train_artifacts.parent / "repo"
+    for item in TRAIN:
+        subprocess.run(
+            ["uv", "build", "--offline", "--no-create-gitignore", "--out-dir", str(train_artifacts)],
+            cwd=repo / PurePosixPath(item.project).parent,
+            check=True,
+            capture_output=True,
+        )
+    assert (
+        len(
+            release.verify_distributions(
+                dist_dir=train_artifacts, version=VERSION, commit=_commit(train_artifacts)
+            )
+        )
+        == 6
+    )
 
 
 def _sdist_entries(path: Path) -> dict[str, bytes]:
