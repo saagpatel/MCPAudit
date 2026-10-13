@@ -14,6 +14,7 @@ channels (JSON stdout, MCP stdio framing) stay clean.
 
 from __future__ import annotations
 
+import logging
 import os
 import platform
 import shlex
@@ -62,6 +63,8 @@ from mcp_audit.scorer import RiskScorer
 from mcp_audit.stdio_transport import DEFAULT_MAX_FRAME_BYTES, DEFAULT_MAX_SURFACE_BYTES
 from mcp_audit.terminal_text import terminal_safe
 from mcp_audit.text_limits import MAX_FIELD_BYTES, bounded_text
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -369,7 +372,12 @@ async def run_scan(
                         tg.start_soon(audit_one_guarded, i, srv)
     finally:
         if context.llm_analyzer is not None:
-            await context.llm_analyzer.aclose()
+            with anyio.CancelScope(shield=True):
+                try:
+                    with anyio.move_on_after(1):
+                        await context.llm_analyzer.aclose()
+                except BaseException as exc:
+                    logger.warning("LLM analyzer cleanup failed: %s", type(exc).__name__)
 
     return _finalize_scan(context)
 

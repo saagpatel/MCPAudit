@@ -904,6 +904,43 @@ async def test_run_scan_surfaces_discovery_parse_errors(monkeypatch: pytest.Monk
     assert "/tmp/broken.json" in failures[0].summary
 
 
+@pytest.mark.anyio
+async def test_run_scan_cancellation_uses_shielded_bounded_analyzer_cleanup(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    from types import SimpleNamespace
+
+    started = anyio.Event()
+    closed = anyio.Event()
+
+    class Analyzer:
+        async def aclose(self) -> None:
+            await anyio.sleep(0.01)
+            closed.set()
+            raise ValueError("do not include this detail in logs")
+
+    analyzer = Analyzer()
+    monkeypatch.setattr(
+        engine, "_prepare_scan", lambda *args, **kwargs: SimpleNamespace(llm_analyzer=analyzer)
+    )
+    monkeypatch.setattr(engine, "_can_scan_inline", lambda options: False)
+
+    async def block_scan(context: object, index: int, server: ServerConfig) -> None:
+        started.set()
+        await anyio.sleep_forever()
+
+    monkeypatch.setattr(engine, "_audit_one_guarded", block_scan)
+
+    async with anyio.create_task_group() as tasks:
+        tasks.start_soon(partial(run_scan, ScanOptions(), servers=[make_server_config(name="blocked")]))
+        await started.wait()
+        tasks.cancel_scope.cancel()
+
+    assert closed.is_set()
+    assert "ValueError" in caplog.text
+    assert "do not include this detail" not in caplog.text
+
+
 async def test_one_failing_server_does_not_kill_the_scan(monkeypatch: pytest.MonkeyPatch) -> None:
     """A per-server analysis crash becomes a failed audit, not a dead fleet scan."""
     boom = make_server_config(name="boom")
