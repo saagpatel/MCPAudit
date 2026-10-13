@@ -8,12 +8,14 @@ that never launches or wraps a real MCP server.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Final
 
 FIXTURE_GATEWAY_VERSION: Final = "1.0.0"
+logger = logging.getLogger(__name__)
 
 
 class ApprovalStatus(StrEnum):
@@ -106,7 +108,8 @@ class FixtureGateway:
         approval: ApprovalStatus | None = None
         try:
             allowed, reason, approval = self._evaluate(agent_id, tool_name, params)
-        except Exception:
+        except Exception as exc:
+            logger.warning("Fixture gateway evaluation failed (%s); denying access", type(exc).__name__)
             allowed = False
             reason = "Internal fixture gateway error - access denied (fail closed)"
             approval = None

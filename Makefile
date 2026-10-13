@@ -1,4 +1,4 @@
-.PHONY: install test lint format typecheck clean audit help
+.PHONY: install check test lint format typecheck clean audit help
 
 # Default target
 help:
@@ -6,6 +6,7 @@ help:
 	@echo ""
 	@echo "  install    Install all dependencies (including dev)"
 	@echo "  test       Run the full test suite"
+	@echo "  check      Run the full non-mutating local quality gate"
 	@echo "  lint       Run ruff lint + format check + mypy"
 	@echo "  format     Auto-format source files with ruff"
 	@echo "  typecheck  Run mypy type checking (strict)"
@@ -14,22 +15,29 @@ help:
 	@echo ""
 
 install:
-	uv sync --dev
+	uv sync --locked --dev
+
+check:
+	@command -v uv >/dev/null 2>&1 || { echo "uv is required; install it from https://docs.astral.sh/uv/" >&2; exit 127; }
+	uv run --locked ruff check .
+	uv run --locked ruff format --check
+	uv run --locked mypy .
+	uv run --locked pytest -q
 
 test:
-	uv run pytest tests/ -v
+	uv run --locked pytest tests/ -v
 
 lint:
-	uv run ruff check src/ tests/
-	uv run ruff format --check src/ tests/
-	uv run mypy src/ --strict
+	uv run --locked ruff check .
+	uv run --locked ruff format --check
+	uv run --locked mypy .
 
 format:
-	uv run ruff check --fix src/ tests/
-	uv run ruff format src/ tests/
+	uv run --locked ruff check --fix src/ tests/
+	uv run --locked ruff format src/ tests/
 
 typecheck:
-	uv run mypy src/ --strict
+	uv run --locked mypy .
 
 clean:
 	rm -rf dist/ build/ .mypy_cache/ .ruff_cache/ .pytest_cache/
@@ -37,4 +45,4 @@ clean:
 	find . -type f -name "*.pyc" -delete
 
 audit:
-	uv run mcp-audit check
+	uv run --locked mcp-audit check

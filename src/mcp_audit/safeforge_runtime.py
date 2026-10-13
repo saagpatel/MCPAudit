@@ -899,7 +899,7 @@ if child == 0:
 os.waitpid(child, 0)
 raise SystemExit(1)"""
 
-_PROTOCOL_CODE = r"""import asyncio, json
+_PROTOCOL_CODE = r"""import asyncio, json, sys
 from fastmcp import Client
 from server import mcp
 async def main():
@@ -908,11 +908,13 @@ async def main():
         tools = await client.list_tools()
         try:
             prompts = await client.list_prompts()
-        except Exception:
+        except Exception as exc:
+            print(f"list_prompts failed: {type(exc).__name__}", file=sys.stderr)
             prompts = []
         try:
             resources = await client.list_resources()
-        except Exception:
+        except Exception as exc:
+            print(f"list_resources failed: {type(exc).__name__}", file=sys.stderr)
             resources = []
         call = await client.call_tool("echo", {"message": "safeforge"})
         print(json.dumps({

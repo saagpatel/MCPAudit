@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import importlib.metadata
 import json
+import logging
 import os
 import stat
 from collections.abc import Callable, Iterator
@@ -28,6 +29,8 @@ from mcp_audit.fixture_gateway import (
     GatewayConfig,
 )
 from mcp_audit.models import AUDIT_REPORT_SCHEMA_VERSION, AuditReport
+
+logger = logging.getLogger(__name__)
 
 OBSERVED_EVIDENCE_SCHEMA: Final = "mcpaudit.observed-evidence.v1"
 POLICY_RECOMMENDATION_SCHEMA: Final = "mcpaudit.policy-recommendation.v1"
@@ -811,7 +814,11 @@ def _apply_fixture_policy_locked(
             try:
                 try:
                     compensated = read_fixture_state(state_dir, recommendation.subject)
-                except Exception:
+                except Exception as read_exc:
+                    logger.warning(
+                        "Could not read intermediate fixture state during compensation (%s)",
+                        type(read_exc).__name__,
+                    )
                     _atomic_write(state_dir / "state.json", canonical_json_bytes(current))
                     compensated = read_fixture_state(state_dir, recommendation.subject)
                 if state_digest(compensated) != state_digest(current):

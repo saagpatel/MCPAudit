@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import multiprocessing as mp
 import os
@@ -32,6 +33,7 @@ MIN_WORKERS = 2
 _POLL_SECONDS = 0.002
 _SHUTDOWN_SECONDS = 2.0
 _SERVER_INDEX: ContextVar[int] = ContextVar("worker_server_index")
+logger = logging.getLogger(__name__)
 
 
 def worker_count(context: _ScanContext) -> int:
@@ -359,8 +361,11 @@ async def run_sharded(context: _ScanContext, count: int, advance: Callable[[], N
                 worker.groups.add(process.pid)
                 worker.reader = threading.Thread(target=_read_worker, args=(worker,))
                 worker.reader.start()
-            except Exception:
+            except Exception as exc:
                 # Includes spawn/pickling failures; use the same redacted missing-result path.
+                logger.warning(
+                    "Could not start scan worker (%s); marking its results missing", type(exc).__name__
+                )
                 worker.finished = True
                 _missing_results(worker, context, advance)
             finally:

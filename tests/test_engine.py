@@ -26,6 +26,7 @@ from mcp_audit.discovery import ConfigParseError
 from mcp_audit.engine import ScanOptions, run_scan
 from mcp_audit.models import (
     AUDIT_REPORT_SCHEMA_VERSION,
+    CheckCoverage,
     ClientType,
     ConnectionMode,
     LLMAnalysisReasonCode,
@@ -55,6 +56,38 @@ async def test_scan_rejects_an_unpublished_result_slot(monkeypatch: pytest.Monke
         await run_scan(
             ScanOptions(skip_connect=True), servers=[make_server_config(name="fixture", command="fixture")]
         )
+
+
+@pytest.mark.anyio
+async def test_failed_analysis_clears_published_completion_state(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from mcp_audit import pinning
+
+    server = make_server_config(name="fixture", command="fixture")
+    store = pinning.PinStore(path=tmp_path / "pins.yaml")
+    store.pin_server(server.name, [], server_config=server)
+    monkeypatch.setattr(pinning, "PinStore", lambda: store)
+
+    async def fail_after_publish(context: engine._ScanContext, idx: int, srv: ServerConfig) -> None:
+        context.audits[idx] = ServerAudit(server=srv, connection_status="skipped")
+        context.completed[idx].update(
+            {"metadata", "permissions", "capabilities", "provenance_check", "verify_artifacts"}
+        )
+        context.package_coverage["verify_artifacts"][idx] = CheckCoverage(
+            state="complete", reason="synthetic publication"
+        )
+        raise RuntimeError("verifier failed")
+
+    monkeypatch.setattr(engine, "_analyze_server", fail_after_publish)
+    report = await run_scan(
+        ScanOptions(skip_connect=True, provenance_check=True, verify_artifacts=True),
+        servers=[server],
+    )
+
+    assert report.coverage["provenance_check"].state != "complete"
+    assert report.coverage["verify_artifacts"].state != "complete"
+    assert report.audits[0].connection_status == "failed"
 
 
 @pytest.mark.anyio
@@ -596,6 +629,9 @@ def test_incomplete_llm_result_reaches_machine_output_and_warning(
         def __init__(self, api_key: str) -> None:
             assert api_key == "synthetic-test-key"
 
+        async def aclose(self) -> None:
+            return None
+
         async def analyze_server_with_status(
             self, tools: object, findings: object
         ) -> llm_module.LLMAnalysisOutcome:
@@ -866,6 +902,43 @@ async def test_run_scan_surfaces_discovery_parse_errors(monkeypatch: pytest.Monk
     ]
     assert len(failures) == 1
     assert "/tmp/broken.json" in failures[0].summary
+
+
+@pytest.mark.anyio
+async def test_run_scan_cancellation_uses_shielded_bounded_analyzer_cleanup(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    from types import SimpleNamespace
+
+    started = anyio.Event()
+    closed = anyio.Event()
+
+    class Analyzer:
+        async def aclose(self) -> None:
+            await anyio.sleep(0.01)
+            closed.set()
+            raise ValueError("do not include this detail in logs")
+
+    analyzer = Analyzer()
+    monkeypatch.setattr(
+        engine, "_prepare_scan", lambda *args, **kwargs: SimpleNamespace(llm_analyzer=analyzer)
+    )
+    monkeypatch.setattr(engine, "_can_scan_inline", lambda options: False)
+
+    async def block_scan(context: object, index: int, server: ServerConfig) -> None:
+        started.set()
+        await anyio.sleep_forever()
+
+    monkeypatch.setattr(engine, "_audit_one_guarded", block_scan)
+
+    async with anyio.create_task_group() as tasks:
+        tasks.start_soon(partial(run_scan, ScanOptions(), servers=[make_server_config(name="blocked")]))
+        await started.wait()
+        tasks.cancel_scope.cancel()
+
+    assert closed.is_set()
+    assert "ValueError" in caplog.text
+    assert "do not include this detail" not in caplog.text
 
 
 async def test_one_failing_server_does_not_kill_the_scan(monkeypatch: pytest.MonkeyPatch) -> None:

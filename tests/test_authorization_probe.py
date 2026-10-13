@@ -721,7 +721,8 @@ async def test_probe_stall_reserves_sdk_budget_and_retains_evidence(
     monkeypatch.setattr(probe, "_request", stalled_request)
     monkeypatch.setattr(ServerConnector, "_connect_http", enumerate_tools)
     config = make_server_config(transport=TransportType.HTTP, command=None, url=RESOURCE)
-    audit = await ServerConnector(timeout=0.1).connect(config)
+    # A realistic budget: the stalled probe gets half (1 s) and the SDK keeps the rest.
+    audit = await ServerConnector(timeout=2.0).connect(config)
     assert sdk_called
     assert audit.connection_status == ("timeout" if sdk_times_out else "connected")
     if not sdk_times_out:
@@ -996,3 +997,30 @@ def test_probe_tls_context_refuses_legacy_protocols() -> None:
 
     connection = _PinnedHTTPSConnection("example.test", 443, "203.0.113.10", timeout=1)
     assert connection.tls_context.minimum_version == ssl.TLSVersion.TLSv1_2
+
+
+@pytest.mark.anyio
+async def test_probe_budget_is_capped_at_half_the_remaining_connection_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The reservation arithmetic itself, without depending on scheduler timing."""
+    from mcp_audit import probe as probe_module
+
+    seen: list[float] = []
+
+    async def record_probe(url: str, *, timeout: float, observation: object, findings: object) -> None:
+        seen.append(timeout)
+
+    async def enumerate_tools(self: ServerConnector, config: ServerConfig) -> _ServerCapabilities:
+        return _ServerCapabilities([make_tool(name="fixture-tool")], [], [])
+
+    monkeypatch.setattr(probe_module, "probe_authorization", record_probe)
+    monkeypatch.setattr(ServerConnector, "_connect_http", enumerate_tools)
+    config = make_server_config(transport=TransportType.HTTP, command=None, url=RESOURCE)
+
+    await ServerConnector(timeout=4.0).connect(config)
+    await ServerConnector(timeout=30.0).connect(config)
+
+    assert len(seen) == 2
+    assert 1.9 <= seen[0] <= 2.0  # half of the ~4 s remaining
+    assert seen[1] == 5.0  # capped at five seconds

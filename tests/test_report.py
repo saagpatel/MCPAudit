@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import re
+import shutil
+import stat
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -60,6 +63,35 @@ def test_json_encoder_preserves_unicode_and_nonfinite_schema_values(
     rendered = path.read_text()
     assert rendered.isascii()
     assert json.dumps(json.loads(rendered), sort_keys=True) == expected
+
+
+def test_json_write_failure_preserves_existing_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "report.json"
+    path.write_text("old report", encoding="utf-8")
+
+    def fail_after_partial_write(source: object, output: object) -> None:
+        output.write("partial")  # type: ignore[attr-defined]
+        raise OSError("synthetic write failure")
+
+    monkeypatch.setattr(shutil, "copyfileobj", fail_after_partial_write)
+    with pytest.raises(OSError, match="synthetic write failure"):
+        ReportGenerator(console=Console(file=io.StringIO())).render_json(_base_report(), path)
+    assert path.read_text(encoding="utf-8") == "old report"
+
+
+def test_json_report_preserves_existing_destination_mode(tmp_path: Path) -> None:
+    path = tmp_path / "report.json"
+    path.write_text("old", encoding="utf-8")
+    path.chmod(0o640)
+    ReportGenerator(console=Console(file=io.StringIO())).render_json(_base_report(), path)
+    assert stat.S_IMODE(path.stat().st_mode) == 0o640
+
+
+def test_json_report_writes_directly_to_dev_null() -> None:
+    ReportGenerator(console=Console(file=io.StringIO())).render_json(_base_report(), Path(os.devnull))
+    assert stat.S_ISCHR(Path(os.devnull).stat().st_mode)
 
 
 def _make_console() -> tuple[Console, io.StringIO]:

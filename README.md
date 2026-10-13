@@ -126,25 +126,24 @@ Configs are parsed in full, but environment variable values are discarded
 during parsing and never reported; reports keep key names for context. The [output contract](docs/OUTPUT-CONTRACT.md) lists stable fields and
 the limits of these outputs.
 
+## Status
+
+### Stack
+
+MCPAudit uses Python 3.11+, `uv`, pytest, Ruff, and mypy. JSON, SARIF, and HTML reports are versioned public surfaces. Run `make check` before proposing changes.
+
+### Known risks
+
+Static findings describe configured access and served metadata; they do not prove how a server behaves later. Secret redaction is best-effort. The deprecated `monitor` command has a protocol-framing defect: it does not implement the MCP stdio framing required for a safe proxy, and remains scheduled for removal in 3.0. See the [3.0 boundary proposal](docs/3.0-BOUNDARY-PROPOSAL.md).
+
+### Next steps
+
+Use explicit synthetic fixtures for local changes, preserve read-only defaults, and keep coverage claims tied to completed checks. Re-enable Python 3.15 after an rpds-py/PyO3 lock refresh. The 3.0 package split and deprecated-surface removal remain planned work.
+
 ## More documentation
 
-The [documentation index](docs/README.md) links current guides and references.
-The [sandbox walkthrough](docs/guides/sandbox.md) is safe to try without
-connecting to a server. Experimental fixture-based work is grouped under
-[labs](docs/labs/README.md); maintainer-only procedures are in
-[`maintainers/`](maintainers/), with older 1.x material in [`archive/`](archive/).
-
-## Learn more
-
-- [Pinning and drift checks](docs/guides/pinning.md) and [shadow review](docs/guides/shadow.md)
-- [Trust packet walkthrough](docs/guides/trust-packet.md) and the
-  [MCP trust packet](docs/MCP-TRUST-PACKET.md)
-- [Adjusting permission findings](docs/guides/suppressing.md)
-- [Sandbox walkthrough](docs/guides/sandbox.md) using the
-  [`examples/sandbox/`](examples/sandbox/) fixtures
-- [Output contract](docs/OUTPUT-CONTRACT.md), including the optional [OpenTelemetry integration](docs/OUTPUT-CONTRACT.md#opentelemetry-integration)
-- [Documentation index](docs/README.md)
-
-Experimental, fixture-based tools are documented in [the labs](docs/labs).
-Maintainer procedures and project history live in [`maintainers/`](maintainers/)
-and [`archive/`](archive/).
+Explore [pinning](docs/guides/pinning.md), [shadow review](docs/guides/shadow.md),
+[suppressing findings](docs/guides/suppressing.md), the [trust packet guide](docs/guides/trust-packet.md),
+[MCP trust packet](docs/MCP-TRUST-PACKET.md), [output contract](docs/OUTPUT-CONTRACT.md), and
+[sandbox fixtures](examples/sandbox/). See the [documentation index](docs/README.md), [labs](docs/labs/README.md),
+maintainer procedures in [`maintainers/`](maintainers/), and older material in [`archive/`](archive/).
