@@ -741,15 +741,20 @@ def test_selected_null_project_is_diagnostic_and_blocks_connection(
     assert any("skipped other project scopes" in status for _, status in sources.paths)
 
 
-def test_cursor_explicit_format_matches_scan_and_home_stays_workstation(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("relative", [False, True])
+def test_cursor_explicit_project_scope_and_home_stays_workstation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, relative: bool
 ) -> None:
-    config = _config(tmp_path / ".cursor/mcp.json")
-    assert review_sources(config).servers[0].scope == "workstation"
+    config = _config(tmp_path / "project/.cursor/mcp.json")
+    selected = Path("project/.cursor/mcp.json") if relative else config
+    assert review_sources(selected).servers[0].scope == "project"
+    monkeypatch.chdir(config.parent.parent)
     assert review_sources().servers[0].scope == "project"
     home = Path.home()
-    _config(home / ".cursor/mcp.json", "home-cursor")
+    home_config = _config(home / ".cursor/mcp.json", "home-cursor")
     monkeypatch.chdir(home)
+    selected_home = Path(".cursor/mcp.json") if relative else home_config
+    assert review_sources(selected_home).servers[0].scope == "workstation"
     sources = review_sources()
     assert [server.scope for server in sources.servers] == ["workstation"]
 
