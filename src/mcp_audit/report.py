@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import shutil
 import tempfile
 from pathlib import Path
@@ -768,8 +769,22 @@ class ReportGenerator:
                 staged.truncate()
                 json.dump(report.model_dump(mode="json"), staged, indent=2)
             staged.seek(0)
-            with path.open("w") as output:
-                shutil.copyfileobj(staged, output)
+            if path == Path(os.devnull):
+                with path.open("w") as output:
+                    shutil.copyfileobj(staged, output)
+                return
+            path.parent.mkdir(parents=True, exist_ok=True)
+            fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+            try:
+                with os.fdopen(fd, "w", encoding="ascii") as output:
+                    shutil.copyfileobj(staged, output)
+                os.replace(temp_name, path)
+            except BaseException:
+                try:
+                    os.unlink(temp_name)
+                except OSError:
+                    pass
+                raise
         self._console.print(terminal_safe(f"JSON report written to {path}"), style="green")
 
     def _stream_redacted_json(self, report: AuditReport, output: IO[str]) -> None:

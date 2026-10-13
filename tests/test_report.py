@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import re
+import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -60,6 +61,22 @@ def test_json_encoder_preserves_unicode_and_nonfinite_schema_values(
     rendered = path.read_text()
     assert rendered.isascii()
     assert json.dumps(json.loads(rendered), sort_keys=True) == expected
+
+
+def test_json_write_failure_preserves_existing_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "report.json"
+    path.write_text("old report", encoding="utf-8")
+
+    def fail_after_partial_write(source: object, output: object) -> None:
+        output.write("partial")  # type: ignore[attr-defined]
+        raise OSError("synthetic write failure")
+
+    monkeypatch.setattr(shutil, "copyfileobj", fail_after_partial_write)
+    with pytest.raises(OSError, match="synthetic write failure"):
+        ReportGenerator(console=Console(file=io.StringIO())).render_json(_base_report(), path)
+    assert path.read_text(encoding="utf-8") == "old report"
 
 
 def _make_console() -> tuple[Console, io.StringIO]:
