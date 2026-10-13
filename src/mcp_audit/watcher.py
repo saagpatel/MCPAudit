@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import tempfile
 from pathlib import Path
 
 import anyio
@@ -11,8 +13,9 @@ import click
 from rich.console import Console
 from rich.text import Text
 
+from mcp_audit.artifact_paths import validate_artifact_paths
 from mcp_audit.discovery import discover_all_configs
-from mcp_audit.models import AuditReport
+from mcp_audit.models import AuditReport, ClientType, ServerAudit
 from mcp_audit.report import ReportGenerator
 from mcp_audit.report import error_console as _error_console
 from mcp_audit.terminal_text import TerminalSafeLogFilter, strip_controls, terminal_safe
@@ -104,7 +107,10 @@ async def _watch_loop(
     )
     gen = ReportGenerator(console=_console)
 
-    watch_paths = _get_watch_paths()
+    watch_paths = _get_watch_paths(client_list, Path(extra_config) if extra_config else None)
+    from mcp_audit.pinning import DEFAULT_PIN_PATH
+
+    _validate_watch_outputs(json_output, sarif_output, [*watch_paths, cfg_path, DEFAULT_PIN_PATH])
     if not watch_paths:
         _console.print("[yellow]No config files found to watch.[/yellow]")
         return
@@ -132,9 +138,9 @@ async def _watch_loop(
         prev_report = new_report
 
 
-def _get_watch_paths() -> list[Path]:
+def _get_watch_paths(clients: list[ClientType] | None = None, extra_config: Path | None = None) -> list[Path]:
     """Return deduplicated list of existing MCP config file paths."""
-    servers = discover_all_configs(None)
+    servers = discover_all_configs(clients)
     paths: list[Path] = []
     seen: set[str] = set()
     for s in servers:
@@ -143,25 +149,37 @@ def _get_watch_paths() -> list[Path]:
             if p.exists():
                 paths.append(p)
                 seen.add(s.config_path)
+    if extra_config is not None and extra_config.exists() and extra_config not in paths:
+        paths.append(extra_config)
     return paths
 
 
 def _render_diff(prev: AuditReport, curr: AuditReport) -> None:
     """Show added/removed servers and significant risk score changes."""
-    prev_names = {a.server.name: a for a in prev.audits}
-    curr_names = {a.server.name: a for a in curr.audits}
+
+    def identity(audit: ServerAudit) -> tuple[str, str, str]:
+        server = audit.server
+        return (server.client.value, server.scope, server.name)
+
+    prev_names = {identity(a): a for a in prev.audits}
+    curr_names = {identity(a): a for a in curr.audits}
 
     added = set(curr_names) - set(prev_names)
     removed = set(prev_names) - set(curr_names)
 
-    for name in sorted(added):
-        _console.print(Text.assemble("  ", (strip_controls(f"+ {name}"), "green"), " (new server)"))
-    for name in sorted(removed):
-        _console.print(Text.assemble("  ", (strip_controls(f"- {name}"), "red"), " (removed)"))
+    for client, scope, name in sorted(added):
+        _console.print(
+            Text.assemble("  ", (strip_controls(f"+ {client}:{scope}:{name}"), "green"), " (new server)")
+        )
+    for client, scope, name in sorted(removed):
+        _console.print(
+            Text.assemble("  ", (strip_controls(f"- {client}:{scope}:{name}"), "red"), " (removed)")
+        )
 
-    for name in sorted(set(prev_names) & set(curr_names)):
-        prev_score = prev_names[name].risk_score
-        curr_score = curr_names[name].risk_score
+    for identity_key in sorted(set(prev_names) & set(curr_names)):
+        client, scope, name = identity_key
+        prev_score = prev_names[identity_key].risk_score
+        curr_score = curr_names[identity_key].risk_score
         if prev_score and curr_score:
             delta = curr_score.composite - prev_score.composite
             if abs(delta) >= 0.5:
@@ -172,7 +190,7 @@ def _render_diff(prev: AuditReport, curr: AuditReport) -> None:
                         "  ",
                         (
                             strip_controls(
-                                f"{name}: {prev_score.composite:.1f} → "
+                                f"{client}:{scope}:{name}: {prev_score.composite:.1f} → "
                                 f"{curr_score.composite:.1f} ({sign}{delta:.1f})"
                             ),
                             color,
@@ -190,4 +208,33 @@ def _write_outputs(report: AuditReport, json_output: str | None, sarif_output: s
         from mcp_audit.sarif import SarifGenerator
 
         sarif_doc = SarifGenerator().generate(report)
-        Path(sarif_output).write_text(json.dumps(sarif_doc, indent=2))
+        _atomic_write_text(Path(sarif_output), json.dumps(sarif_doc, indent=2))
+
+
+def _validate_watch_outputs(json_output: str | None, sarif_output: str | None, inputs: list[Path]) -> None:
+    try:
+        validate_artifact_paths(
+            [
+                ("--json", Path(json_output) if json_output else None),
+                ("--sarif", Path(sarif_output) if sarif_output else None),
+            ],
+            inputs,
+        )
+    except click.BadParameter as exc:
+        _error_console.print(terminal_safe(exc.format_message()), style="red")
+        raise SystemExit(2) from None
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as output:
+            output.write(text)
+        os.replace(temp_name, path)
+    except BaseException:
+        try:
+            os.unlink(temp_name)
+        except OSError:
+            pass
+        raise

@@ -73,6 +73,27 @@ class TestGetWatchPaths:
         monkeypatch.setattr(watcher, "discover_all_configs", lambda clients, parse_errors=None: [])
         assert watcher._get_watch_paths() == []
 
+    def test_includes_explicit_config_without_discovered_servers(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        explicit = tmp_path / "explicit.json"
+        explicit.write_text("{}")
+        monkeypatch.setattr(watcher, "discover_all_configs", lambda clients, parse_errors=None: [])
+        assert watcher._get_watch_paths([], explicit) == [explicit]
+
+    def test_passes_client_filter_to_discovery(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        config = tmp_path / "cursor.json"
+        config.write_text("{}")
+        seen: list[object] = []
+
+        def discover(clients: object, parse_errors: object = None) -> list[object]:
+            seen.append(clients)
+            return [make_server_config().model_copy(update={"config_path": str(config)})]
+
+        monkeypatch.setattr(watcher, "discover_all_configs", discover)
+        watcher._get_watch_paths([make_server_config().client])
+        assert seen == [[make_server_config().client]]
+
 
 class TestWatchClientFilter:
     def test_uses_core_parser_without_deprecated_cli_shim(self) -> None:
@@ -94,8 +115,8 @@ class TestRenderDiff:
         buf = _capture_console(monkeypatch)
         watcher._render_diff(_report([_audit("old")]), _report([_audit("new")]))
         out = buf.getvalue()
-        assert "+ new" in out
-        assert "- old" in out
+        assert "+ claude_code:workstation:new" in out
+        assert "- claude_code:workstation:old" in out
 
     def test_reports_significant_risk_delta_only(self, monkeypatch: pytest.MonkeyPatch) -> None:
         buf = _capture_console(monkeypatch)
@@ -110,6 +131,17 @@ class TestRenderDiff:
         buf = _capture_console(monkeypatch)
         watcher._render_diff(_report([_audit("srv")]), _report([_audit("srv")]))
         assert buf.getvalue() == ""
+
+    def test_same_server_name_in_different_clients_is_distinct(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        buf = _capture_console(monkeypatch)
+        old = _audit("same").model_copy(update={"server": make_server_config(name="same")})
+        from mcp_audit.models import ClientType
+
+        cursor = make_server_config(name="same", client=ClientType.CURSOR)
+        new = _audit("same").model_copy(update={"server": cursor})
+        watcher._render_diff(_report([old]), _report([new]))
+        assert "- claude_code:workstation:same" in buf.getvalue()
+        assert "+ cursor:workstation:same" in buf.getvalue()
 
 
 class TestWriteOutputs:

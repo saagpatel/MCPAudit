@@ -467,7 +467,11 @@ async def test_watch_reverifies_on_every_rescan(
     monkeypatch.setattr(pinning, "PinStore", LocalStore)
     monkeypatch.setattr(overrides, "load_override_config", lambda *args: OverrideConfig())
     monkeypatch.setattr(ServerConnector, "connect", connect)
-    monkeypatch.setattr(watcher, "_get_watch_paths", lambda: [signed_store.path.parent / "config.json"])
+    monkeypatch.setattr(
+        watcher,
+        "_get_watch_paths",
+        lambda clients=None, extra_config=None: [signed_store.path.parent / "config.json"],
+    )
     monkeypatch.setattr(ReportGenerator, "render_terminal", render)
     await watcher._watch_loop(None, None, False, None, 10, False, None, None)
     assert [audit.pin_verification.state for audit in captured if audit.pin_verification] == [

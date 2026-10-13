@@ -93,6 +93,16 @@ def test_artifacts_cannot_overwrite_inputs(
     assert not safe_paths[1].exists()
 
 
+@pytest.mark.parametrize("kind", ["direct", "symlink", "hardlink"])
+def test_watch_outputs_cannot_alias_selected_config(tmp_path: Path, kind: str) -> None:
+    from mcp_audit.watcher import _validate_watch_outputs
+
+    config, _, _ = _inputs(tmp_path)
+    output = _alias(config, tmp_path / "watch-output", kind)
+    with pytest.raises(SystemExit, match="2"):
+        _validate_watch_outputs(str(output), None, [config])
+
+
 @pytest.mark.parametrize("flag", FLAGS["scan"])
 @pytest.mark.parametrize("kind", ["direct", "symlink", "hardlink"])
 def test_scan_artifacts_cannot_overwrite_override(tmp_path: Path, flag: str, kind: str) -> None:
