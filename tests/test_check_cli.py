@@ -652,13 +652,18 @@ def test_source_limits_warn_on_stderr_json_and_sarif(tmp_path: Path, kind: str, 
     )
     assert result.exit_code == 0, result.output
     payload = json.loads(result.stdout)
-    assert payload["warnings"] == [sources.warnings[0].model_dump()]
-    assert payload["warnings"][0]["message"] in result.stderr
+    # The only source was skipped, so the run also reports that nothing was reviewed.
+    assert sorted(warning["code"] for warning in payload["warnings"]) == [
+        "no_sources_reviewed",
+        "review_source_skipped",
+    ]
+    skipped = next(w for w in payload["warnings"] if w["code"] == "review_source_skipped")
+    assert skipped == sources.warnings[0].model_dump()
+    assert skipped["message"] in result.stderr
     assert payload["coverage"]["config_health"]["state"] == "partial"
     notifications = json.loads(sarif.read_text())["runs"][0]["invocations"][0]["toolExecutionNotifications"]
     assert any(
-        notice["descriptor"]["id"] == "MCP-REVIEW-SOURCE-SKIPPED"
-        and notice["properties"] == payload["warnings"][0]
+        notice["descriptor"]["id"] == "MCP-REVIEW-SOURCE-SKIPPED" and notice["properties"] == skipped
         for notice in notifications
     )
 
