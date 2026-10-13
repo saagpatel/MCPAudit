@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import io
 import json
+import os
+import stat
+import sys
+import threading
+import types
 import warnings
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -65,12 +71,18 @@ class TestGetWatchPaths:
             make_server_config(name="b").model_copy(update={"config_path": str(existing)}),
             make_server_config(name="c").model_copy(update={"config_path": str(missing)}),
         ]
-        monkeypatch.setattr(watcher, "discover_all_configs", lambda clients, parse_errors=None: servers)
+        monkeypatch.setattr(
+            watcher,
+            "discover_all_configs",
+            lambda clients, parse_errors=None, config_paths=None: servers,
+        )
 
         assert watcher._get_watch_paths() == [existing]
 
     def test_empty_when_nothing_discovered(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(watcher, "discover_all_configs", lambda clients, parse_errors=None: [])
+        monkeypatch.setattr(
+            watcher, "discover_all_configs", lambda clients, parse_errors=None, config_paths=None: []
+        )
         assert watcher._get_watch_paths() == []
 
     def test_includes_explicit_config_without_discovered_servers(
@@ -78,7 +90,9 @@ class TestGetWatchPaths:
     ) -> None:
         explicit = tmp_path / "explicit.json"
         explicit.write_text("{}")
-        monkeypatch.setattr(watcher, "discover_all_configs", lambda clients, parse_errors=None: [])
+        monkeypatch.setattr(
+            watcher, "discover_all_configs", lambda clients, parse_errors=None, config_paths=None: []
+        )
         assert watcher._get_watch_paths([], explicit) == [explicit]
 
     def test_passes_client_filter_to_discovery(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -86,7 +100,9 @@ class TestGetWatchPaths:
         config.write_text("{}")
         seen: list[object] = []
 
-        def discover(clients: object, parse_errors: object = None) -> list[object]:
+        def discover(
+            clients: object, parse_errors: object = None, config_paths: list[Path] | None = None
+        ) -> list[object]:
             seen.append(clients)
             return [make_server_config().model_copy(update={"config_path": str(config)})]
 
@@ -159,3 +175,60 @@ class TestWriteOutputs:
     def test_writes_nothing_when_paths_unset(self, tmp_path: Path) -> None:
         watcher._write_outputs(_report([]), None, None)
         assert list(tmp_path.iterdir()) == []
+
+    def test_watch_writer_writes_through_symlinks(self, tmp_path: Path) -> None:
+        target = tmp_path / "target.txt"
+        target.write_text("old", encoding="utf-8")
+        link = tmp_path / "link.txt"
+        link.symlink_to(target)
+        watcher._atomic_write_text(link, "new")
+        assert link.is_symlink()
+        assert target.read_text(encoding="utf-8") == "new"
+
+    def test_watch_writer_preserves_existing_file_mode(self, tmp_path: Path) -> None:
+        path = tmp_path / "report.json"
+        path.write_text("old", encoding="utf-8")
+        path.chmod(0o640)
+        watcher._atomic_write_text(path, "new")
+        assert stat.S_IMODE(path.stat().st_mode) == 0o640
+
+    def test_watch_writer_writes_directly_to_fifo(self, tmp_path: Path) -> None:
+        fifo = tmp_path / "output.fifo"
+        os.mkfifo(fifo)
+        received: list[str] = []
+
+        def read_fifo() -> None:
+            with fifo.open(encoding="utf-8") as source:
+                received.append(source.read())
+
+        reader = threading.Thread(target=read_fifo)
+        reader.start()
+        watcher._atomic_write_text(fifo, "watch report")
+        reader.join(timeout=2)
+        assert not reader.is_alive()
+        assert received == ["watch report"]
+
+    @pytest.mark.anyio
+    async def test_watch_rejects_output_targeting_malformed_discovered_config(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        malformed = tmp_path / "malformed.json"
+        malformed.write_text("{", encoding="utf-8")
+
+        def discover(
+            clients: object,
+            parse_errors: object = None,
+            config_paths: list[Path] | None = None,
+        ) -> list[object]:
+            assert config_paths is not None
+            config_paths.append(malformed)
+            return []
+
+        async def changes(*paths: str) -> AsyncIterator[set[tuple[int, str]]]:
+            yield set()
+
+        monkeypatch.setattr(watcher, "discover_all_configs", discover)
+        monkeypatch.setitem(sys.modules, "watchfiles", types.SimpleNamespace(awatch=changes))
+        with pytest.raises(SystemExit, match="2"):
+            await watcher._watch_loop(str(malformed), None, True, None, 10, False, None, "/dev/null")
+        assert malformed.read_text(encoding="utf-8") == "{"

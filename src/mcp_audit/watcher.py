@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import stat
 import tempfile
 from pathlib import Path
 
@@ -107,7 +108,8 @@ async def _watch_loop(
     )
     gen = ReportGenerator(console=_console)
 
-    watch_paths = _get_watch_paths(client_list, Path(extra_config) if extra_config else None)
+    extra_path = Path(extra_config) if extra_config else None
+    watch_paths = _get_watch_paths(client_list, extra_path)
     from mcp_audit.pinning import DEFAULT_PIN_PATH
 
     _validate_watch_outputs(json_output, sarif_output, [*watch_paths, cfg_path, DEFAULT_PIN_PATH])
@@ -126,6 +128,9 @@ async def _watch_loop(
         _error_console.print(terminal_safe(f"{exc}"), style="red")
         raise SystemExit(1) from exc
     gen.render_terminal(report, verbose=verbose)
+    _validate_watch_outputs(
+        json_output, sarif_output, [*_get_watch_paths(client_list, extra_path), cfg_path, DEFAULT_PIN_PATH]
+    )
     _write_outputs(report, json_output, sarif_output)
 
     prev_report = report
@@ -134,21 +139,27 @@ async def _watch_loop(
         new_report = await run_scan(scan_options, override_applier=override_applier, console=_console)
         _render_diff(prev_report, new_report)
         gen.render_terminal(new_report, verbose=verbose)
+        _validate_watch_outputs(
+            json_output,
+            sarif_output,
+            [*_get_watch_paths(client_list, extra_path), cfg_path, DEFAULT_PIN_PATH],
+        )
         _write_outputs(new_report, json_output, sarif_output)
         prev_report = new_report
 
 
 def _get_watch_paths(clients: list[ClientType] | None = None, extra_config: Path | None = None) -> list[Path]:
     """Return deduplicated list of existing MCP config file paths."""
-    servers = discover_all_configs(clients)
+    discovered_paths: list[Path] = []
+    servers = discover_all_configs(clients, config_paths=discovered_paths)
+    discovered_paths.extend(Path(server.config_path) for server in servers)
     paths: list[Path] = []
     seen: set[str] = set()
-    for s in servers:
-        if s.config_path not in seen:
-            p = Path(s.config_path)
-            if p.exists():
-                paths.append(p)
-                seen.add(s.config_path)
+    for p in discovered_paths:
+        identity = str(p)
+        if identity not in seen and p.exists():
+            paths.append(p)
+            seen.add(identity)
     if extra_config is not None and extra_config.exists() and extra_config not in paths:
         paths.append(extra_config)
     return paths
@@ -227,10 +238,16 @@ def _validate_watch_outputs(json_output: str | None, sarif_output: str | None, i
 
 def _atomic_write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    if path.is_symlink() or (path.exists() and not stat.S_ISREG(path.stat().st_mode)):
+        path.write_text(text, encoding="utf-8")
+        return
+    mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else None
     fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as output:
             output.write(text)
+        if mode is not None:
+            os.chmod(temp_name, mode)
         os.replace(temp_name, path)
     except BaseException:
         try:

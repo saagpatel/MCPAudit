@@ -6,6 +6,7 @@ import io
 import json
 import os
 import shutil
+import stat
 import tempfile
 from pathlib import Path
 from typing import IO
@@ -758,7 +759,6 @@ class ReportGenerator:
     def _render_redacted_json(self, report: AuditReport, path: Path) -> None:
         """Serialize a scan-local credential-redacted snapshot."""
         # Stage with bounded memory so serialization failures leave outputs intact.
-        # Text-mode copying preserves newline translation and destination modes.
         with tempfile.SpooledTemporaryFile(max_size=1024 * 1024, mode="w+", encoding="ascii") as staged:
             try:
                 self._stream_redacted_json(report, staged)
@@ -769,15 +769,18 @@ class ReportGenerator:
                 staged.truncate()
                 json.dump(report.model_dump(mode="json"), staged, indent=2)
             staged.seek(0)
-            if path == Path(os.devnull):
+            if path.is_symlink() or (path.exists() and not stat.S_ISREG(path.stat().st_mode)):
                 with path.open("w") as output:
                     shutil.copyfileobj(staged, output)
                 return
+            mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else None
             path.parent.mkdir(parents=True, exist_ok=True)
             fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
             try:
                 with os.fdopen(fd, "w", encoding="ascii") as output:
                     shutil.copyfileobj(staged, output)
+                if mode is not None:
+                    os.chmod(temp_name, mode)
                 os.replace(temp_name, path)
             except BaseException:
                 try:
