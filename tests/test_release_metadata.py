@@ -72,6 +72,7 @@ def test_release_versions_are_consistent_across_surfaces() -> None:
     assert "## [2.9.0] - 2026-10-10" in changelog
     assert "## [2.10.1] - 2026-10-11" in changelog
     assert "## [2.11.0] - 2026-10-12" in changelog
+    assert "## [2.12.0] - 2026-10-12" in changelog
     assert "[2.10.0]: https://github.com/saagpatel/MCPAudit/compare/v2.9.0...v2.10.0" in changelog
     assert "[2.8.0]: https://github.com/saagpatel/MCPAudit/compare/v2.7.0...v2.8.0" in changelog
     assert f"saagpatel/MCPAudit@v{published_version}" in readme

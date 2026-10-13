@@ -105,7 +105,7 @@ permissions:
   security-events: write
 steps:
   - uses: actions/checkout@v6
-  - uses: saagpatel/MCPAudit@v2.11.0
+  - uses: saagpatel/MCPAudit@v2.12.0
     with:
       args: --inject-check --ssrf-check --trifecta-check
       # sarif defaults to mcp-audit.sarif and uploads to code scanning
@@ -139,7 +139,7 @@ spawns or connects to servers). Published 2.11 refs retain the legacy entry:
 ```yaml
 repos:
   - repo: https://github.com/saagpatel/MCPAudit
-    rev: v2.11.0
+    rev: v2.12.0
     hooks:
       - id: mcp-audit
 ```

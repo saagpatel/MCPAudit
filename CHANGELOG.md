@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.12.0] - Unreleased
+## [2.12.0] - 2026-10-12
 
 ### Upgrade notes
 
@@ -131,18 +131,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Release boundary details
 
-Release status: candidate
-Publication decision: NO-GO
+Release status: approved
+Publication decision: GO
 
-MCPAudit 2.12.0 is a candidate for review and CI validation only. This source
-state does not authorize tagging, publication, Registry mutation, deployment,
-or claims of downstream adoption. The release-state flip belongs in a separate
-reviewed PR after the candidate lands.
+MCPAudit 2.12.0 is a backward-compatible release for `check`/`scan` parity,
+explicit fleet connections, migration notices and import boundaries, partial
+pin coverage, capability-selected CI grammar, and commit-bound release
+verification. This document authorizes the exact release-state source for
+review and publication gating; tag, GitHub Release, PyPI, MCP Registry,
+runtime, deployment, adoption, and user-acceptance claims still require their
+own live readbacks.
 
-Published-version metadata, the Registry descriptor, Action examples, and
-pre-commit examples remain at 2.11.0. Retain `mcp-audits==2.11.0` as the rollback
-pin and verify installed command identity after rollback. Source metadata and
-local tests are not publication readback.
+Release metadata, the Registry descriptor, Action examples, pre-commit example,
+and `docs/release-state.json` identify 2.12.0. Until publication completes,
+those source references are proposed release identities rather than proof that
+any public artifact or Registry entry exists. Retain `mcp-audits==2.11.0` as the
+rollback pin and verify installed command identity after rollback.
 
 ## [2.11.0] - 2026-10-12
 
@@ -2655,8 +2659,8 @@ real workstations; API surface may still shift before the `1.0.0` stable cut.
 - Risk score output with pass/warn/fail thresholds
 - `mcp-audit` CLI entry point
 
-[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v2.11.0...HEAD
-[2.12.0]: https://github.com/saagpatel/MCPAudit/compare/v2.11.0...HEAD
+[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v2.12.0...HEAD
+[2.12.0]: https://github.com/saagpatel/MCPAudit/compare/v2.11.0...v2.12.0
 [2.11.0]: https://github.com/saagpatel/MCPAudit/compare/v2.10.1...v2.11.0
 [2.10.1]: https://github.com/saagpatel/MCPAudit/compare/v2.10.0...v2.10.1
 [2.10.0]: https://github.com/saagpatel/MCPAudit/compare/v2.9.0...v2.10.0

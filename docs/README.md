@@ -17,7 +17,7 @@
 
 ## Reference
 
-- [2.12.0 candidate and upgrade notes](2.12-RELEASE-NOTES.md)
+- [2.12.0 release and upgrade notes](2.12-RELEASE-NOTES.md)
 - [2.11.0 release and upgrade notes](2.11-RELEASE-NOTES.md)
 - [2.10.1 release and upgrade notes](2.10-RELEASE-NOTES.md)
 - [Annotation and scoring migration](SCORING-MIGRATION.md)
