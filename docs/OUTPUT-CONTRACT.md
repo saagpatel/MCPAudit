@@ -381,9 +381,10 @@ continues to write a file and retains its existing output behavior.
 `check` accepts the same optional detector flags, package verification/download
 and LLM modes, canary tuning, timeout and concurrency limits as `scan`. These
 options do not enable connections: the default remains static. Canary requires
-an explicit `--config FILE`, no `--include-discovered`, and a selected
-`--connect --server` connection. `--pin-file` selects the baseline for detectors
-as well as policy evaluation. `--verbose` enables per-tool terminal detail;
+an explicit `--config FILE`, no `--include-discovered`, and either a selected
+`--connect --server` connection or `--connect-all`. Project scope still requires
+the fleet's `--connect-project-configs` opt-in. `--pin-file` selects the baseline
+for detectors as well as policy evaluation. `--verbose` enables per-tool terminal detail;
 `--details` continues to show full findings and source coverage.
 
 Permission overrides and saved ignore entries are applied through the shared
@@ -397,15 +398,22 @@ while keeping local terminal output readable. It takes precedence over HTML
 the default remains `compatibility`. Report fields and `schema_version` are unchanged.
 
 Hidden compatibility flags preserve static safety: `--skip-connect` conflicts
-with `--connect`, and `--config-only` requires `--config` and conflicts with
-`--include-discovered`. Neither flag enables connections or additional discovery.
+with `--connect` and `--connect-all`, and `--config-only` requires `--config` and
+conflicts with `--include-discovered`. Neither flag enables connections or additional discovery.
 
 Bare invocation runs the static `check` path. `--config FILE` excludes discovery
 unless `--include-discovered` is explicit. Saved overrides are not loaded for
 explicit-file checks unless selected; remembered preferences are not loaded.
 An explicit policy evaluates evidence without
-enabling extra checks. Connections require `--connect --server CLIENT:SCOPE:NAME`
-and exactly one matching entry with no collected config diagnostics. Setup and
+enabling extra checks. Single-server connections require
+`--connect --server CLIENT:SCOPE:NAME` and exactly one matching entry with no
+collected config diagnostics. Fleet connections require `--connect-all`, which
+conflicts with `--connect` and `--server`. The fleet uses the same source selection
+as static review, retains skipped project audits and their warnings, and connects
+project servers only with `--connect-project-configs`. That opt-in requires either
+connection mode. `--max-concurrency` and per-session `--timeout` apply to the fleet;
+queue wait is excluded from the timeout. Eligible large fleets use the same CLI
+sharding path as legacy `scan`. No report fields or schema version change. Setup and
 artifact-write errors exit 1; artifact path validation errors exit 2 before any
 artifact is written. A failed policy exits 2 after requested artifacts
 and JSON stdout have been written. Exit 0 does not certify security.

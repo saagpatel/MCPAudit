@@ -118,7 +118,7 @@ def _analysis_options(command: Callable[P, T]) -> Callable[P, T]:
         ),
         click.option("--llm-analysis", is_flag=True, help="LLM classification (requires ANTHROPIC_API_KEY)."),
         click.option(
-            "--canary-check", is_flag=True, help="Exercise a selected explicit-config server for drift."
+            "--canary-check", is_flag=True, help="Exercise connected explicit-config servers for drift."
         ),
         click.option(
             "--canary-calls",
@@ -156,7 +156,7 @@ def _analysis_options(command: Callable[P, T]) -> Callable[P, T]:
         click.option(
             "--connect-project-configs",
             is_flag=True,
-            help="Allow project-scope connections; --connect already selects one explicit identity.",
+            help="Include project-scope servers in --connect-all; --connect selects one identity.",
         ),
         click.option("--skip-connect", is_flag=True, hidden=True),
         click.option("--config-only", is_flag=True, hidden=True),
@@ -184,6 +184,9 @@ def _print_sources(out: Console, paths: list[tuple[str, str]]) -> None:
 @_source_options
 @_analysis_options
 @click.option("--connect", is_flag=True, help="Connect only to the explicitly selected server identity.")
+@click.option(
+    "--connect-all", is_flag=True, help="Connect to the reviewed fleet; project servers require opt-in."
+)
 @click.option("--server", "server_id", metavar="CLIENT:SCOPE:NAME", help="Exact identity from inspect.")
 @click.option("--json", "json_stdout", is_flag=True, help="Emit only AuditReport JSON on stdout.")
 @click.option("--output-json", type=click.Path(path_type=Path), help="Write AuditReport JSON to FILE.")
@@ -240,6 +243,7 @@ def check(
     clients: tuple[ClientType, ...],
     details: bool,
     connect: bool,
+    connect_all: bool,
     server_id: str | None,
     json_stdout: bool,
     output_json: Path | None,
@@ -288,18 +292,21 @@ def check(
     sarif_profile: str,
 ) -> None:
     """Review configs statically; runtime security is not checked by default."""
-    connecting = connect
+    if connect_all and (connect or server_id):
+        raise click.UsageError("--connect-all cannot be combined with --connect or --server.")
+    connecting = connect or connect_all
     if connect_project_configs and not connecting:
-        raise click.UsageError("--connect-project-configs requires --connect.")
-    if skip_connect and connect:
-        raise click.UsageError("--skip-connect cannot be combined with --connect.")
+        raise click.UsageError("--connect-project-configs requires --connect or --connect-all.")
+    if skip_connect and connecting:
+        raise click.UsageError("--skip-connect cannot be combined with --connect or --connect-all.")
     if config_only and (config is None or include_discovered):
         raise click.UsageError(
             "--config-only requires --config and cannot be combined with --include-discovered."
         )
-    if canary_check and (not connect or config is None or include_discovered):
+    if canary_check and (not connecting or config is None or include_discovered):
         raise click.UsageError(
-            "--canary-check requires --config FILE and --connect --server, without discovery."
+            "--canary-check requires --config FILE and --connect --server or --connect-all, "
+            "without discovery."
         )
     if connect and not server_id:
         raise _recovery_error(
@@ -424,6 +431,9 @@ def check(
                 )
             servers = selected
             out.print(terminal_safe(f"Connecting to {server_id} from {servers[0].config_path}."))
+        elif connect_all:
+            out.print("Connecting to the reviewed fleet; project servers require --connect-project-configs.")
+        if connecting:
             out.print(
                 "Configured code may execute and access the network. "
                 "Auditor read-only intent is not a sandbox."
@@ -469,9 +479,9 @@ def check(
                 sdk_stdio_fallback=sdk_stdio_fallback,
                 connect_project_configs=connecting and (connect or connect_project_configs),
                 config_only=config is not None and not include_discovered,
-                inject_check=inject_check or (card is not None and connect),
-                trifecta_check=trifecta_check or (card is not None and connect),
-                shadow_check=shadow_check or (card is not None and connect),
+                inject_check=inject_check or (card is not None and connecting),
+                trifecta_check=trifecta_check or (card is not None and connecting),
+                shadow_check=shadow_check or (card is not None and connecting),
             ),
             servers=servers,
             parse_errors=sources.errors,

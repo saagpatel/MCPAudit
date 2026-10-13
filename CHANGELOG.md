@@ -59,6 +59,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the current package remains unsplit. Verify sdist rebuild dependencies and
   package roots against the contract, support flat package layouts, and include
   GUI commands in installed-script ownership checks.
+- `check --connect-all` explicitly connects to the reviewed fleet, with project
+  servers (including explicit `.cursor/mcp.json` files outside the home config)
+  included only through `--connect-project-configs`. It conflicts with
+  `--connect`, `--server`, and hidden `--skip-connect`, preserves canary's
+  explicit-file/no-discovery restriction, and uses the existing concurrency,
+  per-session timeout and eligible large-fleet CLI sharding limits.
+- `check` applies permission overrides as well as ignores, merges policy and
+  CLI egress hosts, and honors per-server policy allowlists and detector pin files.
+  Hidden `--skip-connect` and `--config-only` compatibility flags enforce their
+  connection and discovery constraints. Report destinations protect effective
+  pin baselines, including the default path and filesystem aliases, whenever
+  detectors or policy consume pins. `--connect-project-configs` requires
+  `--connect` or `--connect-all`; static project checks retain their connection warning.
 - Every legacy `scan` run emits one stderr translation notice without changing
   its exit code. A frozen, option-only table distinguishes preserved option mapping,
   explicit config-only narrowing, and possible silent coverage loss; unsupported
