@@ -20,7 +20,7 @@ jobs:
         run: python -m pip install mcp-audits
 
       - name: Audit MCP servers
-        run: mcp-audit scan --skip-connect --sarif mcp-audit.sarif
+        run: mcp-audit check --skip-connect --sarif mcp-audit.sarif
 
       - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@v4

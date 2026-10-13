@@ -91,7 +91,7 @@ def test_withheld_pin_coverage_and_policy(
     warning = next(w for w in report.warnings if w.code == "pin_baseline_withheld")
     assert warning.check == "pin_check" and warning.servers == ["fixture"]
     assert "mcp-audit pin --refresh SERVER" in warning.message
-    assert "no trusted pin keys exist" in warning.message
+    assert "whether or not trusted pin keys exist" in warning.message
     assert evaluate_policy(report, PolicyConfig()).passed
     assert evaluate_policy(report, PolicyConfig(fail_on_pin_baseline_withheld=False)).passed
     result = evaluate_policy(report, PolicyConfig(fail_on_pin_baseline_withheld=True))
@@ -112,7 +112,7 @@ def test_keyless_v1_still_compares_and_warns(legacy_store: PinStore, monkeypatch
     assert report.coverage["pin_check"].reason == "pin_schema_outdated"
     assert not any(w.code == "pin_baseline_withheld" for w in report.warnings)
     warning = next(w for w in report.warnings if w.code == "pin_schema_outdated")
-    assert "no trusted pin keys exist" in warning.message
+    assert "whether or not trusted pin keys exist" in warning.message
     assert "mcp-audit pin --refresh fixture --apply" in warning.message
     assert evaluate_policy(report, PolicyConfig(fail_on_pin_baseline_withheld=True)).passed
     assert legacy_store.path.read_bytes() == before

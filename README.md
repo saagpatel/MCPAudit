@@ -101,9 +101,9 @@ and inputs before enabling it in a repository.
 | Inspect one server | `mcp-audit check --connect --server ID` | Connects to one unambiguous identity |
 | Inspect a fleet | `mcp-audit check --connect-all` | Connects to workstation servers; add `--connect-project-configs` for projects |
 | Automate a policy | `mcp-audit check --policy FILE` | Evaluates a local policy |
+| Review a saved pin | `mcp-audit pin --status` | Shows baseline status; `pin` is the visible alias for `baseline pin` |
 
-The server `ID` is `CLIENT:SCOPE:NAME`; use the exact identity from `inspect` to avoid ambiguous selections.
-Connected checks can start configured local commands or contact their endpoints.
+The server `ID` is `CLIENT:SCOPE:NAME`; use the exact identity from `inspect` to avoid ambiguous selections. Connected checks can start configured local commands or contact their endpoints.
 
 `checkup` writes a local, counts-only share card with no names by default; see
 the [checkup guide](docs/guides/checkup.md).

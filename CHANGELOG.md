@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Update CI examples and the synthetic smoke command to use `check` grammar;
+  document `pin` as a visible alias for `baseline pin`.
+- State that MCPAudit 3.0 withholds v1 pin baselines regardless of trusted-key
+  availability, and name the pin refresh command in remediation.
+
 ### Fixed
 
 - Mark canary `runtime_security` coverage as partial when a saved pin baseline
