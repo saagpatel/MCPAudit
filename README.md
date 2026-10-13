@@ -18,8 +18,8 @@ not that a server is malicious or unsafe.
 
 > [!IMPORTANT]
 > The package is `mcp-audits`; the command is `mcp-audit`.
-> The default check is static. `check --connect` and legacy `scan` can start
-> configured local programs or contact configured endpoints. Package
+> The default check is static. `check --connect`, `--connect-all` and legacy `scan`
+> can start configured local programs or contact configured endpoints. Package
 > verification, downloads, and LLM analysis are separate opt-in operations.
 > MCPAudit does not edit configs, and reports environment variable key names,
 > never their values. Review generated reports before sharing them.
@@ -99,11 +99,11 @@ and inputs before enabling it in a repository.
 | Make a share card | `mcp-audit checkup --config FILE --card checkup.html` | Writes a local counts-only HTML Preview |
 | See discovered sources | `mcp-audit inspect` | Lists identities and source status |
 | Inspect one server | `mcp-audit check --connect --server ID` | Connects to one unambiguous identity |
+| Inspect a fleet | `mcp-audit check --connect-all` | Connects to workstation servers; add `--connect-project-configs` for projects |
 | Automate a policy | `mcp-audit check --policy FILE` | Evaluates a local policy |
 
-The `ID` for a connected check has the form `CLIENT:SCOPE:NAME`. Use the exact
-identity shown by `inspect`; the command refuses ambiguous selections. A
-connected check can start the configured local command or contact its endpoint.
+The server `ID` is `CLIENT:SCOPE:NAME`; use the exact identity from `inspect` to avoid ambiguous selections.
+Connected checks can start configured local commands or contact their endpoints.
 
 `checkup` writes a local, counts-only share card with no names by default; see
 the [checkup guide](docs/guides/checkup.md).

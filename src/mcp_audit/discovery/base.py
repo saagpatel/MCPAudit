@@ -19,8 +19,8 @@ def is_project_config(path: Path) -> bool:
         return True
     return (
         path.name == "mcp.json"
-        and path.parent.name == ".vscode"
-        and path != Path.home() / ".vscode" / "mcp.json"
+        and path.parent.name in (".vscode", ".cursor")
+        and path != Path.home() / path.parent.name / "mcp.json"
     )
 
 
