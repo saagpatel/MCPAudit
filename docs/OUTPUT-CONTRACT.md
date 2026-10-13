@@ -1350,6 +1350,15 @@ The report top level also includes:
     omitted a tool, or returned malformed output; no model findings were
     admitted),
     `option_ignored` (an option passed without the check that consumes it),
+    `review_source_skipped` (a discovered source rejected by `check`'s server,
+    byte, nesting/container limits or symlink refusal; `check: config_health`,
+    `servers: []`; the message names the source path and rejection reason,
+    never configuration contents. It is printed on stderr regardless of
+    `--details` or JSON mode and retained in JSON `warnings` and every SARIF
+    profile as an invocation notification with descriptor ID
+    `MCP-REVIEW-SOURCE-SKIPPED` and the warning fields in `properties`.
+    The existing config diagnostic also remains and marks enabled coverage
+    partial. Explicit invalid inputs still fail setup),
     `surface_listing_incomplete` (an initialized non-canary tool, prompt, or
     resource listing exceeded the 20-page limit, advertised or not, or an
     advertised prompt/resource listing was unavailable, or the cumulative
@@ -1400,6 +1409,15 @@ An unrequested canary remains `not_requested`, and an unrun exercise remains
 Missing keys and absent or empty coverage maps are unknown, never passed.
 Old reports load with an empty map; rendering does not infer completion from
 zero findings or connection counts. `schema_version` remains `1`.
+
+Legacy `scan` translation is based only on parsed options. Its `preserved`
+and `narrowed` outcomes mean the options map exactly, not that source coverage
+is equivalent. The notice names `check`'s additional acceptance limits using
+the review constants: the server cap per source and across accepted sources,
+source byte limit, nesting depth and container limits, and symlink refusal for
+discovered sources. Rejected discovered sources emit `review_source_skipped`;
+explicit limit violations remain setup errors. The shared translation notice
+and `check` warning path also apply to the 3.0 interceptor design.
 
 Completion requires evidence that the check executed over every applicable
 input. A collected configuration parse failure makes every enabled check
