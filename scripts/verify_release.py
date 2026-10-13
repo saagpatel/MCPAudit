@@ -16,8 +16,10 @@ import stat
 import subprocess
 import sys
 import tarfile
+import tempfile
 import tomllib
 import zipfile
+from collections import Counter
 from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, NamedTuple
@@ -538,20 +540,35 @@ def _check_requirements(
 
 
 def _check_distribution_metadata(
-    raw: bytes, *, version: str, name: str, distribution: Distribution | None = None
+    raw: bytes,
+    *,
+    version: str,
+    name: str,
+    distribution: Distribution,
+    expected: list[Requirement],
 ) -> None:
-    distribution = distribution or DISTRIBUTIONS[0]
     metadata = _parse_metadata(raw)
     if metadata.get("Name") != distribution.name:
         raise VerificationError(f"{name} has the wrong distribution name")
     if metadata.get("Version") != version:
         raise VerificationError(f"{name} has the wrong version")
-    _check_requirements(
-        (_requirement(str(value), name=name) for value in metadata.get_all("Requires-Dist", [])),
-        version=version,
-        name=name,
-        distribution=distribution,
-    )
+    requirements = [_requirement(str(value), name=name) for value in metadata.get_all("Requires-Dist", [])]
+    _check_requirements(requirements, version=version, name=name, distribution=distribution)
+    observed = [_requirement_key(requirement) for requirement in requirements]
+    observed_set = set(observed)
+    if len(observed) != len(observed_set):
+        raise VerificationError(f"{name} contains a duplicate Requires-Dist requirement")
+    approved = {_requirement_key(requirement) for requirement in expected}
+    if observed_set != approved:
+        extra = [
+            str(requirement) for requirement in requirements if _requirement_key(requirement) not in approved
+        ]
+        missing = [
+            str(requirement) for requirement in expected if _requirement_key(requirement) not in observed_set
+        ]
+        raise VerificationError(
+            f"{name} Requires-Dist differs from the approved commit: extra={extra}, missing={missing}"
+        )
 
 
 def _check_provenance(raw: bytes, *, commit: str, name: str) -> None:
@@ -624,6 +641,13 @@ def _check_sdist_project(raw: bytes, *, distribution: Distribution, version: str
     ):
         raise VerificationError(f"{name} build module-name/module-root do not match the release contract")
 
+    _check_requirements(
+        _project_requirements(project, name=name), version=version, name=name, distribution=distribution
+    )
+
+
+def _project_requirements(project: dict[str, object], *, name: str) -> list[Requirement]:
+    """Expand committed PEP 621 dependencies into the requirements emitted by the backend."""
     dependencies = project.get("dependencies", [])
     extras = project.get("optional-dependencies", {})
     if not isinstance(dependencies, list) or not isinstance(extras, dict):
@@ -646,7 +670,7 @@ def _check_sdist_project(raw: bytes, *, distribution: Distribution, version: str
                 marker = requirement.marker
                 requirement.marker = Marker(condition if marker is None else f"({marker}) and {condition}")
             requirements.append(requirement)
-    _check_requirements(requirements, version=version, name=name, distribution=distribution)
+    return requirements
 
 
 def _check_archive_names(names: list[str], *, prefix: str, name: str) -> None:
@@ -758,6 +782,66 @@ def verify_distributions(*, dist_dir: Path, version: str, commit: str) -> list[t
     return hashes
 
 
+def _reference_build(
+    *, commit: str, distribution: Distribution
+) -> tuple[set[str], set[str], list[Requirement]]:
+    """Build committed files and PEP 621 requirements, never using the tested artifacts.
+
+    The backend also normalizes combined optional-dependency markers (including
+    Boolean expressions and Python version markers), beyond packaging's syntax
+    normalization. Use its metadata from the clean export as the requirement oracle.
+    """
+    with tempfile.TemporaryDirectory(prefix="mcp-audits-reference-") as temporary:
+        export = Path(temporary) / "source"
+        export.mkdir()
+        result = subprocess.run(
+            ["git", "-C", str(ROOT), "archive", commit], capture_output=True, check=False, timeout=60
+        )
+        if result.returncode != 0:
+            raise VerificationError("approved commit could not be exported for the reference build")
+        with tarfile.open(fileobj=io.BytesIO(result.stdout)) as archive:
+            archive.extractall(export, filter="data")
+        output = Path(temporary) / "dist"
+        try:
+            result = subprocess.run(
+                ["uv", "build", "--offline", "--no-create-gitignore", "--out-dir", str(output)],
+                cwd=export / PurePosixPath(distribution.project).parent,
+                capture_output=True,
+                check=False,
+                timeout=120,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise VerificationError(f"{distribution.name} reference build could not run") from exc
+        if result.returncode != 0:
+            detail = result.stderr.decode(errors="replace").strip()
+            raise VerificationError(f"{distribution.name} reference build failed: {detail}")
+        wheels, sdists = list(output.glob("*.whl")), list(output.glob("*.tar.gz"))
+        if len(wheels) != 1 or len(sdists) != 1:
+            raise VerificationError(f"{distribution.name} reference build must produce one wheel and sdist")
+        with zipfile.ZipFile(wheels[0]) as wheel:
+            wheel_members = {info.filename for info in wheel.infolist() if not info.is_dir()}
+            (metadata_path,) = [path for path in wheel_members if path.endswith(".dist-info/METADATA")]
+            metadata = _parse_metadata(wheel.read(metadata_path))
+            requirements = [
+                _requirement(str(value), name=distribution.project)
+                for value in metadata.get_all("Requires-Dist", [])
+            ]
+        with tarfile.open(sdists[0], "r:gz") as sdist:
+            sdist_members = {
+                str(PurePosixPath(info.name).relative_to(PurePosixPath(info.name).parts[0]))
+                for info in sdist.getmembers()
+                if info.isfile()
+            }
+        return wheel_members, sdist_members, requirements
+
+
+def _check_member_set(observed: set[str], expected: set[str], *, name: str) -> None:
+    for path in sorted(expected - observed):
+        raise VerificationError(f"{name} member {path!r} is missing from the approved commit's build")
+    for path in sorted(observed - expected):
+        raise VerificationError(f"{name} member {path!r} is extra to the approved commit's build")
+
+
 def _verify_distribution(*, dist_dir: Path, version: str, commit: str, distribution: Distribution) -> None:
     wheel_name, sdist_name = distribution_names(version, distribution.name)
     wheel, sdist = dist_dir / wheel_name, dist_dir / sdist_name
@@ -766,6 +850,23 @@ def _verify_distribution(*, dist_dir: Path, version: str, commit: str, distribut
     # Paths at the approved commit: the build project's directory and its module source root.
     project_dir = PurePosixPath(distribution.project).parent
     source_root = project_dir / distribution.module_root
+    approved_project = _commit_files(commit, [distribution.project]).get(distribution.project)
+    if approved_project is None:
+        raise VerificationError(f"approved commit is missing {distribution.project}")
+    declared = _project_requirements(
+        tomllib.loads(approved_project.decode("utf-8"))["project"], name=distribution.project
+    )
+    reference_wheel, reference_sdist, requirements = _reference_build(
+        commit=commit, distribution=distribution
+    )
+    # Only marker normalization comes from the backend; dependency identities,
+    # URLs, extras, specifiers and declaration counts must come from pyproject.
+    if Counter(_requirement_key(requirement)[:-1] for requirement in requirements) != Counter(
+        _requirement_key(requirement)[:-1] for requirement in declared
+    ):
+        raise VerificationError(
+            f"{distribution.name} reference requirements differ from the committed pyproject"
+        )
     if not wheel.is_file() or not sdist.is_file():
         raise VerificationError("expected wheel and sdist are missing")
     with zipfile.ZipFile(wheel) as archive:
@@ -776,6 +877,7 @@ def _verify_distribution(*, dist_dir: Path, version: str, commit: str, distribut
             version=version,
             name=wheel.name,
             distribution=distribution,
+            expected=requirements,
         )
         _check_provenance(archive.read(f"{module}/{PROVENANCE_FILE}"), commit=commit, name=wheel.name)
         _check_entry_points(
@@ -802,6 +904,12 @@ def _verify_distribution(*, dist_dir: Path, version: str, commit: str, distribut
                 )
             if not info.is_dir() and path != f"{module}/{PROVENANCE_FILE}":
                 sources[path] = str(source_root / path)
+        _check_member_set(
+            set(sources),
+            {path for path in reference_wheel if path.startswith(f"{module}/")}
+            - {f"{module}/{PROVENANCE_FILE}"},
+            name=wheel.name,
+        )
         _check_commit_content(
             {path: archive.read(path) for path in sources}, sources, commit=commit, name=wheel.name
         )
@@ -815,16 +923,12 @@ def _verify_distribution(*, dist_dir: Path, version: str, commit: str, distribut
         pyproject = _sdist_file(archive, prefix / "pyproject.toml")
         _check_sdist_project(pyproject, distribution=distribution, version=version, name=sdist.name)
         package = prefix / distribution.module_root / module
-        if not any(
-            info.isfile() and PurePosixPath(info.name).is_relative_to(package) and info.name.endswith(".py")
-            for info in members
-        ):
-            raise VerificationError("sdist package tree is missing from the contracted root")
         _check_distribution_metadata(
             _sdist_file(archive, prefix / "PKG-INFO"),
             version=version,
             name=sdist.name,
             distribution=distribution,
+            expected=requirements,
         )
         _check_provenance(_sdist_file(archive, package / PROVENANCE_FILE), commit=commit, name=sdist.name)
         # Everything a rebuild reads (pyproject, in-tree backend, sources) is the approved tree.
@@ -839,6 +943,11 @@ def _verify_distribution(*, dist_dir: Path, version: str, commit: str, distribut
             for info in members
             if info.isfile() and PurePosixPath(info.name) not in generated
         }
+        _check_member_set(
+            {str(PurePosixPath(path).relative_to(prefix)) for path in sources},
+            reference_sdist - {str(path.relative_to(prefix)) for path in generated},
+            name=sdist.name,
+        )
         _check_commit_content(
             {member: _sdist_file(archive, PurePosixPath(member)) for member in sources},
             sources,
