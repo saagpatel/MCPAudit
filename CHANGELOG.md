@@ -19,19 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Guard lazy command imports only for missing `mcp_audit_labs` or
   `proof_before_action` modules, with an install hint and exit 2; unrelated
   import failures still propagate.
-
 - Move shared authorization URL helpers and canonical posture JSON encoding into
   core, so connected authorization probes do not load lab contracts. Expose the
   probe helpers used by conformance labs and guard the core import boundary.
+- Move shared client filter parsing out of the legacy scan module and warn when
+  callers access deprecated `mcp_audit.cli` scan shims.
 
 ### Added
 
-- `check --connect-all` explicitly connects to the reviewed fleet, with project
-  servers (including explicit `.cursor/mcp.json` files outside the home config)
-  included only through `--connect-project-configs`. It conflicts with
-  `--connect`, `--server`, and hidden `--skip-connect`, preserves canary's
-  explicit-file/no-discovery restriction, and uses the existing concurrency,
-  per-session timeout and eligible large-fleet CLI sharding limits.
+- The MCP `scan_mcp_servers` tool accepts `connect` (default `true` in 2.12).
+  `connect=false` requests a static audit, and `skip_connect=true` continues to
+  disable connections. The tool description announces that 3.0 will default
+  to static auditing and require explicit `connect=true` for connections.
 - Requested pin checks with withheld baselines now report partial coverage with
   reason `pin_baseline_withheld`. The opt-in policy boolean
   `fail_on.pin_baseline_withheld` fails these checks; its default remains off.
@@ -42,6 +41,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   controls, timeout/concurrency tuning, verbose detail, identifier redaction,
   and extended SARIF profile. Static review remains the default; canary requires
   a selected connection from an explicit config without discovery.
+- `check` applies permission overrides as well as ignores, merges policy and
+  CLI egress hosts, and honors per-server policy allowlists and detector pin files.
+  Hidden `--skip-connect` and `--config-only` compatibility flags enforce their
+  connection and discovery constraints. Report destinations protect effective
+  pin baselines, including the default path and filesystem aliases, whenever
+  detectors or policy consume pins. `--connect-project-configs` requires
+  `--connect`; static project checks retain their connection warning.
+- `check --connect-all` explicitly connects to the reviewed fleet, with project
+  servers (including explicit `.cursor/mcp.json` files outside the home config)
+  included only through `--connect-project-configs`. It conflicts with
+  `--connect`, `--server`, and hidden `--skip-connect`, preserves canary's
+  explicit-file/no-discovery restriction, and uses the existing concurrency,
+  per-session timeout and eligible large-fleet CLI sharding limits.
 - `check` applies permission overrides as well as ignores, merges policy and
   CLI egress hosts, and honors per-server policy allowlists and detector pin files.
   Hidden `--skip-connect` and `--config-only` compatibility flags enforce their
