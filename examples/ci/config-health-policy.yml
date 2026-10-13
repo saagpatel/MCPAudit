@@ -25,9 +25,9 @@ jobs:
 
       - name: Audit MCP config without connecting
         run: |
-          mcp-audit scan \
+          mcp-audit check \
             --skip-connect \
-            --json mcp-audit.json \
+            --output-json mcp-audit.json \
             --policy mcp-audit-policy.yaml
 
       - name: Upload JSON report

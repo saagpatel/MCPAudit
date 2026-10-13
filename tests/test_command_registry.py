@@ -168,7 +168,8 @@ def test_side_product_aliases_share_callbacks_and_help(legacy: str, canonical: l
     assert old_help.exit_code == new_help.exit_code == 0
     # Usage intentionally names the spelling used; all option/help text stays identical.
     assert old_help.stdout.split("\n", 1)[1] == new_help.stdout.split("\n", 1)[1]
-    assert old.hidden and not new.hidden
+    # `pin` stays a visible alias (2.12 Q7); the other compatibility spellings stay hidden.
+    assert old.hidden == (legacy != "pin") and not new.hidden
 
 
 @pytest.mark.parametrize("family", ["preinstall", "run", "skills", "baseline"])
@@ -240,15 +241,26 @@ def test_monitor_is_hidden_and_warns_before_legacy_callback(monkeypatch: pytest.
 
 
 @pytest.mark.parametrize("name", [name for name, spec in COMMANDS.items() if spec.hidden])
-def test_hidden_alias_help_notices_except_pin(name: str) -> None:
+def test_hidden_alias_help_notices(name: str) -> None:
     result = CliRunner().invoke(main, [name, "--help"])
     assert result.exit_code == 0, result.output
-    if name == "pin":
-        assert result.stderr == ""
-    else:
-        assert f"'mcp-audit {name}' is removed in 3.0" in result.stderr
-        assert LAB_INSTALL_NOTICE in result.stderr
+    assert f"'mcp-audit {name}' is removed in 3.0" in result.stderr
+    assert LAB_INSTALL_NOTICE in result.stderr
     assert "uv tool install" not in result.stdout
+
+
+def test_pin_is_a_visible_alias_for_baseline_pin() -> None:
+    alias = COMMANDS["pin"]
+    baseline = COMMANDS["baseline"]
+    assert isinstance(alias, CommandSpec)
+    assert isinstance(baseline, NamespaceSpec)
+    canonical = baseline.children["pin"]
+    assert isinstance(canonical, CommandSpec)
+    assert not alias.hidden
+    assert (alias.module, alias.attribute) == (canonical.module, canonical.attribute)
+    help_text = CliRunner().invoke(main, ["--help"]).stdout
+    assert "pin" in help_text
+    assert "alias for baseline pin" in " ".join(help_text.split())
 
 
 def test_lab_help_shows_future_installs_without_importing_labs(monkeypatch: pytest.MonkeyPatch) -> None:

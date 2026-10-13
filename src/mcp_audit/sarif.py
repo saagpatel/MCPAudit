@@ -338,7 +338,12 @@ class SarifGenerator:
             }
             for warning in report.warnings
             if warning.code
-            in {"project_config_not_connected", "authorization_probe_incomplete", "review_source_skipped"}
+            in {
+                "project_config_not_connected",
+                "authorization_probe_incomplete",
+                "review_source_skipped",
+                "no_sources_reviewed",
+            }
         )
         if canaries or coverage_notifications:
             invocation: dict[str, Any] = {"executionSuccessful": True}

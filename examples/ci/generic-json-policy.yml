@@ -18,9 +18,9 @@ jobs:
 
       - name: Audit MCP servers
         run: |
-          mcp-audit scan \
+          mcp-audit check \
             --skip-connect \
-            --json mcp-audit.json \
+            --output-json mcp-audit.json \
             --policy examples/policies/balanced-team-ci.yaml
 
       - name: Upload JSON report

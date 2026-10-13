@@ -290,6 +290,13 @@ COMMANDS: dict[str, CommandSpec | NamespaceSpec] = {
     ),
     "watch": CommandSpec("mcp_audit.watcher", "watch_command", "Watch configuration changes and re-scan."),
     "baseline": NamespaceSpec("Manage saved tool schema baselines.", BASELINE_COMMANDS),
+    "pin": CommandSpec(
+        "mcp_audit.pin_cli",
+        "pin_command",
+        "Create, review, refresh, or clear pin baselines (alias for baseline pin).",
+        "Everyday",
+        subcommands=("keygen", "rotate-key", "trust-key"),
+    ),
     "skills": NamespaceSpec("Review local skills and bundles.", SKILLS_COMMANDS),
     "safeforge": NamespaceSpec("Verify and run forge handoffs.", SAFEFORGE_COMMANDS),
     "lab": NamespaceSpec(
@@ -318,7 +325,6 @@ for _name, _spec in (
     ("safeforge-preinstall", SAFEFORGE_COMMANDS["preinstall"]),
     ("safeforge-run", SAFEFORGE_COMMANDS["run"]),
     ("skillscan", SKILLS_COMMANDS["scan"]),
-    ("pin", BASELINE_COMMANDS["pin"]),
 ):
     COMMANDS[_name] = CommandSpec(
         _spec.module,

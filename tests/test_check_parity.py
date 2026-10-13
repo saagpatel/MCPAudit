@@ -12,11 +12,13 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from mcp_audit import check_cli, cli, engine, pinning
+from mcp_audit import _core_cli, check_cli, cli, engine, pinning
 from mcp_audit.connector import ServerConnector
 from mcp_audit.engine import ScanOptions
 from mcp_audit.models import AuditReport, ResourceInfo, ServerAudit, ServerConfig
 from mcp_audit.overrides import OverrideApplier
+from mcp_audit.redaction import redact_identifiers
+from mcp_audit.scan_translation import classify_scan_options
 from mcp_audit.taxonomy import config_health_rule_id
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -44,13 +46,14 @@ def isolated_review(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
 
 
-def _config(path: Path, *, args: list[str] | None = None) -> Path:
+def _config(path: Path, *, args: list[str] | None = None, name: str = "fixture") -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(
             {
                 "mcpServers": {
-                    "fixture": {
-                        "command": "never-launch-this-fixture",
+                    name: {
+                        "command": "never-launch-this-command",
                         "args": args or [],
                     }
                 }
@@ -58,6 +61,294 @@ def _config(path: Path, *, args: list[str] | None = None) -> Path:
         )
     )
     return path
+
+
+def _stable_report(report: AuditReport) -> dict[str, object]:
+    return report.model_dump(mode="json", exclude={"scan_timestamp", "scan_duration_seconds"})
+
+
+@pytest.mark.parametrize(
+    "shape", ["explicit-only", "explicit-discovered", "project-outside-cwd", "multi-client", "vscode"]
+)
+def test_redacted_server_set_and_json_match_mapped_check(
+    shape: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def forbidden(*args: object, **kwargs: object) -> None:
+        raise AssertionError("parity fixtures must never launch or connect")
+
+    monkeypatch.setattr(ServerConnector, "connect", forbidden)
+    monkeypatch.setattr(subprocess, "Popen", forbidden)
+    monkeypatch.setattr(socket, "gethostname", lambda: "synthetic-host")
+    home = Path.home()
+    _config(home / ".cursor/mcp.json", name="cursor-fixture")
+    _config(home / ".vscode/mcp.json", name="vscode-fixture")
+    _config(tmp_path / ".mcp.json", name="cwd-only")
+    explicit = _config(tmp_path / "explicit.json", name="explicit-fixture")
+    project = _config(tmp_path / "outside/.mcp.json", name="project-fixture")
+    common = ["--skip-connect", "--override-config", "/dev/null", "--redact"]
+    scan_scope: list[str]
+    check_scope: list[str]
+    expected: set[tuple[str, str, str]]
+    if shape in {"explicit-only", "project-outside-cwd"}:
+        selected = project if shape == "project-outside-cwd" else explicit
+        scan_scope = check_scope = ["--config", str(selected), "--config-only"]
+        expected = {("claude_code", "project" if selected == project else "workstation", "server-01")}
+        selected_paths = [selected]
+    elif shape == "explicit-discovered":
+        scan_scope = ["--config", str(explicit), "--clients", "vscode"]
+        check_scope = ["--config", str(explicit), "--include-discovered", "--client", "vscode"]
+        expected = {("claude_code", "workstation", "server-01"), ("vscode", "workstation", "server-02")}
+        selected_paths = [explicit, home / ".vscode/mcp.json"]
+    elif shape == "multi-client":
+        scan_scope = ["--clients", "cursor,vscode"]
+        check_scope = ["--include-discovered", "--client", "cursor", "--client", "vscode"]
+        expected = {("cursor", "workstation", "server-01"), ("vscode", "workstation", "server-02")}
+        selected_paths = [home / ".cursor/mcp.json", home / ".vscode/mcp.json"]
+    else:
+        scan_scope = ["--clients", "vscode"]
+        check_scope = ["--include-discovered", "--client", "vscode"]
+        expected = {("vscode", "workstation", "server-01")}
+        selected_paths = [home / ".vscode/mcp.json"]
+    with _core_cli.scan.make_context("scan", [*common, *scan_scope]) as context:
+        translation = classify_scan_options(context.params)
+    check_options = [*common, *check_scope]
+    if shape in {"explicit-discovered", "multi-client"}:
+        # These manual mappings are fixture-specific; the frozen table must not
+        # promise them for arbitrary overlapping sources or comma-separated clients.
+        assert translation.check_argv is None
+    else:
+        assert translation.check_argv is not None
+        check_options = list(translation.check_argv[2:])
+    scan_path = tmp_path / "scan.json"
+    check_path = tmp_path / "check.json"
+    scan = CliRunner().invoke(cli.main, ["scan", *common, *scan_scope, "--json", str(scan_path)])
+    check = CliRunner().invoke(
+        cli.main, ["check", *check_options, "--json", "--output-json", str(check_path)]
+    )
+    assert scan.exit_code == check.exit_code == 0, scan.output + check.output
+    scan_report = AuditReport.model_validate_json(scan_path.read_text())
+    check_report = AuditReport.model_validate_json(check.stdout)
+    assert json.loads(check.stdout) == json.loads(check_path.read_text())
+    for report in (scan_report, check_report):
+        assert {(a.server.client.value, a.server.scope, a.server.name) for a in report.audits} == expected
+        assert {a.server.config_path for a in report.audits} == {
+            redact_identifiers(str(path)) for path in selected_paths
+        }
+        assert report.servers_discovered == len(expected)
+        assert all(a.connection_status == "skipped" for a in report.audits)
+        assert report.connection_mode.value == "skipped"
+    if shape == "explicit-discovered":
+        # Legacy scan appends explicit sources; check reviews them first. Keep
+        # that observable order contract while comparing each redacted audit.
+        assert [a.server.client.value for a in scan_report.audits] == ["vscode", "claude_code"]
+        assert [a.server.client.value for a in check_report.audits] == ["claude_code", "vscode"]
+        scan_report.audits.reverse()
+    assert _stable_report(scan_report) == _stable_report(check_report)
+    for content in (scan_path.read_text(), check.stdout):
+        assert "synthetic-host" not in content
+        assert "cwd-only" not in content
+        assert "-fixture" not in content
+
+
+@pytest.mark.parametrize("profile", ["compatibility", "extended"])
+@pytest.mark.parametrize("fail_policy", [False, True])
+def test_redacted_overrides_policy_egress_sarif_and_exit_parity(
+    profile: str, fail_policy: bool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def forbidden(*args: object, **kwargs: object) -> None:
+        raise AssertionError("parity fixtures must never launch or connect")
+
+    monkeypatch.setattr(ServerConnector, "connect", forbidden)
+    monkeypatch.setattr(subprocess, "Popen", forbidden)
+    monkeypatch.setattr(socket, "gethostname", lambda: "synthetic-host")
+    config = tmp_path / "fixture.json"
+    config.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "fixture": {
+                        "command": "bash",
+                        "args": [
+                            "-lc",
+                            "node server.js --endpoint https://search.example.invalid/mcp",
+                            "/Users/example-user/synthetic-host",
+                        ],
+                    }
+                }
+            }
+        )
+    )
+    static_audit = ServerConnector.skip_connect_audit
+
+    def fixture_metadata(self: ServerConnector, server: ServerConfig) -> ServerAudit:
+        audit = static_audit(self, server)
+        # Synthetic served metadata exercises the real egress detector without
+        # implying that a config-only scan normally obtains resource listings.
+        audit.resources = [
+            ResourceInfo(uri=f"https://{host}/data")
+            for host in (
+                "cli.example",
+                "policy.example",
+                "server.example",
+                "outside.example",
+            )
+        ]
+        return audit
+
+    monkeypatch.setattr(ServerConnector, "skip_connect_audit", fixture_metadata)
+    override = tmp_path / "override.yaml"
+    override.write_text(
+        "overrides:\n  - server: fixture\n    tool: '*'\n    permissions:\n      destructive: true\n"
+        "    notes: synthetic-host /Users/example-user/fixture\n"
+    )
+    policy = tmp_path / "policy.yaml"
+    policy.write_text(
+        "egress_allowlist: [policy.example]\nmulti_tenant_hosts: [policy.example]\n"
+        "servers:\n  fixture:\n    egress_allowlist: [server.example]\n"
+        + ("fail_on:\n  egress: medium\n" if fail_policy else "")
+    )
+    scan_sarif = tmp_path / "scan.sarif"
+    shared = [
+        "--config",
+        str(config),
+        "--config-only",
+        "--skip-connect",
+        "--redact",
+        "--override-config",
+        str(override),
+        "--policy",
+        str(policy),
+        "--egress-check",
+        "--egress-allowlist",
+        "cli.example",
+        "--multi-tenant-hosts",
+        "cli.example",
+        "--sarif-profile",
+        profile,
+        "--sarif",
+        str(scan_sarif),
+    ]
+    with _core_cli.scan.make_context("scan", list(shared)) as context:
+        translation = classify_scan_options(context.params)
+    assert translation.check_argv is not None
+    scan_path = tmp_path / "scan.json"
+    scan = CliRunner().invoke(cli.main, ["scan", *shared, "--json", str(scan_path)])
+    check_sarif = tmp_path / "check.sarif"
+    mapped = list(translation.check_argv[1:])
+    mapped[mapped.index("--sarif") + 1] = str(check_sarif)
+    check = CliRunner().invoke(cli.main, [*mapped, "--json"])
+    assert scan.exit_code == check.exit_code == (2 if fail_policy else 0), scan.output + check.output
+    actual = AuditReport.model_validate_json(check.stdout)
+    expected = AuditReport.model_validate_json(scan_path.read_text())
+    assert _stable_report(actual) == _stable_report(expected)
+    assert actual.audits[0].server.name == "server-01"
+    assert actual.policy_result is not None and actual.policy_result.passed is not fail_policy
+    assert any(p.confidence.value == "manual" for p in actual.audits[0].permissions)
+    assert {(f.destination_host, f.kind.value) for f in actual.audits[0].egress_findings} == {
+        ("cli.example", "trusted_destination_residual"),
+        ("policy.example", "trusted_destination_residual"),
+        ("outside.example", "destination_outside_allowlist"),
+    }
+    assert json.loads(scan_sarif.read_text()) == json.loads(check_sarif.read_text())
+    rules = {config_health_rule_id(f.finding_type) for f in actual.config_health_findings}
+    assert rules
+    emitted = {row["ruleId"] for row in json.loads(check_sarif.read_text())["runs"][0]["results"]}
+    assert bool(rules & emitted) is (profile == "extended")
+    for content in (check.stdout, scan_path.read_text(), scan_sarif.read_text(), check_sarif.read_text()):
+        assert "synthetic-host" not in content
+        assert "example-user" not in content
+
+
+@pytest.mark.parametrize(
+    ("args", "reason"),
+    [
+        ([], "connected coverage"),
+        (["--config", "fixture.json", "--config-only"], "connected coverage"),
+        (["--skip-connect", "--inject-check"], "other project scopes"),
+        (["--skip-connect", "--clients", "claude_code"], "other project scopes"),
+        (["--skip-connect", "--clients", "cursor"], "Cursor project discovery"),
+        (["--skip-connect", "--config", "fixture.json", "--clients", "vscode"], "overlapping sources"),
+        (
+            ["--skip-connect", "--config", "fixture.json", "--config-only", "--json", "report.json"],
+            "--json PATH",
+        ),
+        (["--skip-connect", "--clients", "cursor,vscode"], "comma-separated"),
+    ],
+)
+def test_parsed_coverage_losing_scan_forms_withhold_translation_without_discovery(
+    args: list[str], reason: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def forbidden(*args: object, **kwargs: object) -> None:
+        raise AssertionError("classification must not inspect sources or execute either command")
+
+    monkeypatch.setattr(check_cli, "review_sources", forbidden)
+    monkeypatch.setattr(engine, "discover_all_configs", forbidden)
+    monkeypatch.setattr(_core_cli, "_run_scan", forbidden)
+    monkeypatch.setattr(check_cli, "run_scan", forbidden)
+    monkeypatch.setattr(Path, "read_text", forbidden)
+    with _core_cli.scan.make_context("scan", [*args, "--override-config", "/dev/null"]) as context:
+        translation = classify_scan_options(context.params)
+    assert translation.coverage == "would-silently-shrink"
+    assert translation.check_argv is None
+    assert reason in translation.notice()
+
+
+@pytest.mark.parametrize("source_state", ["absent", "rejected", "empty", "populated"])
+@pytest.mark.parametrize("profile", ["compatibility", "extended"])
+def test_no_sources_reviewed_warning_is_additive_and_nonfatal(
+    source_state: str, profile: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def forbidden(*args: object, **kwargs: object) -> None:
+        raise AssertionError("zero-source checks must never launch or connect")
+
+    monkeypatch.setattr(ServerConnector, "connect", forbidden)
+    monkeypatch.setattr(subprocess, "Popen", forbidden)
+    config = Path.home() / ".cursor/mcp.json"
+    config.parent.mkdir()
+    if source_state == "rejected":
+        config.write_text("{")
+    elif source_state == "empty":
+        config.write_text('{"mcpServers": {}}')
+    elif source_state == "populated":
+        _config(config)
+    sarif = tmp_path / "report.sarif"
+    output = tmp_path / "report.json"
+    result = CliRunner().invoke(
+        cli.main,
+        [
+            "check",
+            "--client",
+            "cursor",
+            "--override-config",
+            "/dev/null",
+            "--json",
+            "--output-json",
+            str(output),
+            "--sarif",
+            str(sarif),
+            "--sarif-profile",
+            profile,
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout) == json.loads(output.read_text())
+    report = AuditReport.model_validate_json(result.stdout)
+    warnings = [w for w in report.warnings if w.code == "no_sources_reviewed"]
+    assert bool(warnings) is (source_state in {"absent", "rejected"})
+    if warnings:
+        assert len(warnings) == 1
+        assert warnings[0].check == "config_health"
+        assert warnings[0].servers == []
+        assert "--config FILE" in warnings[0].message
+    assert report.schema_version == 1
+    assert report.servers_discovered == (1 if source_state == "populated" else 0)
+    assert bool(report.config_health_findings) is (source_state == "rejected")
+    assert report.coverage["config_health"].state == ("partial" if source_state == "rejected" else "complete")
+    notifications = json.loads(sarif.read_text())["runs"][0]["invocations"][0]["toolExecutionNotifications"]
+    emitted = [n for n in notifications if n.get("descriptor", {}).get("id") == "MCP-NO-SOURCES-REVIEWED"]
+    assert len(emitted) == len(warnings)
+    if emitted:
+        assert emitted[0]["properties"] == warnings[0].model_dump()
 
 
 @pytest.mark.parametrize("explicit_baseline", [False, True])
@@ -474,6 +765,7 @@ def test_tuning_and_selected_pin_file_reach_the_engine(
     "args",
     [
         ["--skip-connect", "--connect", "--server", "claude_code:workstation:fixture"],
+        ["--skip-connect", "--connect-all"],
         ["--config-only"],
         ["--config-only", "--config", str(SANDBOX), "--include-discovered"],
         ["--canary-check", "--config", str(SANDBOX)],
@@ -505,6 +797,13 @@ def test_invalid_scope_or_limits_reject_before_discovery(
     monkeypatch.setattr(check_cli, "review_sources", forbidden)
     result = CliRunner().invoke(cli.main, ["check", *args])
     assert result.exit_code == 2, result.output
+    if "--skip-connect" in args:
+        assert "--skip-connect cannot be combined with --connect or --connect-all" in result.stderr
+    elif "--config-only" in args:
+        assert (
+            "--config-only requires --config and cannot be combined with --include-discovered"
+            in result.stderr
+        )
 
 
 def test_hidden_flags_are_noops_and_keep_explicit_file_static() -> None:
@@ -537,7 +836,7 @@ def test_canary_controls_use_only_selected_local_fixture(tmp_path: Path) -> None
                             "flip",
                         ],
                     },
-                    "unselected": {"command": "never-launch-this-fixture"},
+                    "unselected": {"command": "never-launch-this-command"},
                 }
             }
         )

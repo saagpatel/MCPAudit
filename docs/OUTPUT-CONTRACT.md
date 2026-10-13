@@ -1107,7 +1107,7 @@ or timeout.
 
 Additive, optional fields for compatibility with older reports:
 
-- `client_identity`: the presented MCP client name/version, e.g. `mcp-audit/2.11.0`;
+- `client_identity`: the presented MCP client name/version, e.g. `mcp-audit/2.12.0`;
   MCPAudit presents this explicit identity on stdio, Streamable HTTP, and SSE,
   in canary and ordinary connected scans. Older reports load with an empty string
   (identity unrecorded), not the current package identity.
@@ -1358,6 +1358,12 @@ The report top level also includes:
     omitted a tool, or returned malformed output; no model findings were
     admitted),
     `option_ignored` (an option passed without the check that consumes it),
+    `no_sources_reviewed` (`check` accepted no config sources; absent or rejected
+    sources do not establish a clean review. An accepted empty server map is
+    still a reviewed source. Uses `check: config_health`, `servers: []`, and
+    remains non-fatal in 2.x without changing coverage states or `schema_version`.
+    JSON retains the warning; both SARIF profiles include an invocation
+    notification with descriptor ID `MCP-NO-SOURCES-REVIEWED`),
     `review_source_skipped` (a discovered source rejected by `check`'s server,
     byte, nesting/container limits or symlink refusal; `check: config_health`,
     `servers: []`; the message names the source path and rejection reason,

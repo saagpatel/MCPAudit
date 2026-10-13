@@ -34,12 +34,12 @@ uv run mypy .
 uv run mcp-audit --help
 
 # Synthetic config-only smoke: no workstation config discovery or server connections.
-uv run mcp-audit scan \
+uv run mcp-audit check \
   --config examples/sandbox/fixtures/synthetic-mcp-config.json \
   --config-only --skip-connect --override-config /dev/null
 ```
 
-`--skip-connect` alone still discovers workstation MCP configs. The explicit fixture, `--config-only`, and empty override above keep this smoke confined to synthetic input. On Windows, replace `/dev/null` with a task-owned empty YAML file. Bare `scan` and `make audit` inspect workstation configs and may connect to servers; use them only when the task calls for that scope.
+`--skip-connect` alone still discovers workstation MCP configs. The explicit fixture, `--config-only`, and empty override above keep this smoke confined to synthetic input. On Windows, replace `/dev/null` with a task-owned empty YAML file. Bare `check` and `make audit` inspect workstation configs; use them only when the task calls for that scope.
 
 For broader verification, use `uv run pytest -p no:cacheprovider -q tests/`. The [CONTRIBUTING test lanes](CONTRIBUTING.md#running-tests) define Docker, PostgreSQL, Node, and macOS prerequisites. Tests can launch disposable fixture processes; skipped capabilities remain unverified. Run package/build checks when packaging is affected, using the [release checklist](maintainers/RELEASE-CHECKLIST.md).
 

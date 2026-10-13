@@ -19,26 +19,28 @@ tests, and install path agree.
 - Known limitations are documented in release notes and beta/stable readiness
   docs.
 
-## Current 2.11.0 Release State
+## Current 2.12.0 Candidate State
 
-The 2.11.0 source state is a backward-compatible release. Its primary
-capability groups are structural argv and OSC 8 redaction, large-fleet scan and
-report performance, legacy v1 pin migration warnings, and bounded local
-schema-header traversal. The 3.0 boundary is a proposal only; none of its
-breaking changes ship in 2.11.
+The 2.12.0 source state is a candidate for review and CI validation only.
+Its primary capability groups are `check`/`scan` parity, explicit fleet
+connections, migration notices and import boundaries, partial pin coverage,
+capability-selected CI grammar, and commit-bound release verification.
+The 3.0 boundary decisions are recorded; the package split and breaking
+changes do not ship in 2.12.
 Upgrade notes and remaining limitations are recorded in the changelog and
-[release notes](../docs/2.11-RELEASE-NOTES.md). The supported MCP dependency
+[candidate notes](../docs/2.12-RELEASE-NOTES.md). The supported MCP dependency
 remains `mcp>=2.2.0,<3.0`. Existing 2.x audit-report and SARIF contracts remain
-additive. Package and lock metadata, `server.json`, Action examples, and
-pre-commit examples identify 2.11.0. That does not prove public availability:
-release evidence must query PyPI, GitHub, and the official MCP Registry
-separately.
+additive. Package and lock metadata name 2.12.0; `server.json`, Action examples,
+and pre-commit examples retain published 2.11.0. Publication remains `NO-GO`;
+source metadata does not prove public availability. Release evidence must query
+each external surface separately.
 
 Release evidence must establish:
 
-- package, lock metadata, changelog release section, versioned release notes,
-  `docs/release-state.json`, `server.json`, and Action/pre-commit examples agree
-  on 2.11.0; publication evidence must still report PyPI, the GitHub
+- package, lock metadata, changelog candidate section, versioned candidate notes,
+  and `docs/release-state.json` agree on candidate 2.12.0; `server.json` and
+  Action/pre-commit examples retain published 2.11.0 until a separate reviewed
+  release-state flip. Publication evidence must still report PyPI, the GitHub
   tag, the Action ref, and the official Registry entry separately;
 - wheel and sdist metadata require `mcp>=2.2.0,<3.0` and expose `mcp-audit`,
   `mcp-audits`, and `proof-before-action`;
