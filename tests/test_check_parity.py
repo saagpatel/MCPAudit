@@ -53,7 +53,7 @@ def _config(path: Path, *, args: list[str] | None = None, name: str = "fixture")
             {
                 "mcpServers": {
                     name: {
-                        "command": "never-launch-this-fixture",
+                        "command": "never-launch-this-command",
                         "args": args or [],
                     }
                 }
@@ -198,7 +198,7 @@ def test_redacted_overrides_policy_egress_sarif_and_exit_parity(
     monkeypatch.setattr(ServerConnector, "skip_connect_audit", fixture_metadata)
     override = tmp_path / "override.yaml"
     override.write_text(
-        "overrides:\n  - server: fixture\n    tool: '*'\n    permissions:\n      network: true\n"
+        "overrides:\n  - server: fixture\n    tool: '*'\n    permissions:\n      destructive: true\n"
         "    notes: synthetic-host /Users/example-user/fixture\n"
     )
     policy = tmp_path / "policy.yaml"
@@ -228,7 +228,7 @@ def test_redacted_overrides_policy_egress_sarif_and_exit_parity(
         "--sarif",
         str(scan_sarif),
     ]
-    with _core_cli.scan.make_context("scan", shared) as context:
+    with _core_cli.scan.make_context("scan", list(shared)) as context:
         translation = classify_scan_options(context.params)
     assert translation.check_argv is not None
     scan_path = tmp_path / "scan.json"
@@ -836,7 +836,7 @@ def test_canary_controls_use_only_selected_local_fixture(tmp_path: Path) -> None
                             "flip",
                         ],
                     },
-                    "unselected": {"command": "never-launch-this-fixture"},
+                    "unselected": {"command": "never-launch-this-command"},
                 }
             }
         )

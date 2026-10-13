@@ -316,8 +316,9 @@ def test_translated_check_warns_when_legacy_source_exceeds_server_cap(
     assert payload["schema_version"] == 1
     assert payload["servers_discovered"] == 0
     assert payload["coverage"]["config_health"]["state"] == "partial"
-    warning = payload["warnings"][0]
-    assert warning["code"] == "review_source_skipped"
+    # The capped source was the only one, so the run also reports that nothing was reviewed.
+    assert sorted(w["code"] for w in payload["warnings"]) == ["no_sources_reviewed", "review_source_skipped"]
+    warning = next(w for w in payload["warnings"] if w["code"] == "review_source_skipped")
     assert warning["check"] == "config_health"
     assert warning["servers"] == []
     assert str(fixture) in warning["message"]
