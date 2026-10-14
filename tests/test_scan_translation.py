@@ -13,7 +13,7 @@ import click
 import pytest
 from click.testing import CliRunner
 
-from mcp_audit import _core_cli, check_cli, cli, discovery, review_discovery
+from mcp_audit import _core_cli, check_cli, cli, discovery, review_discovery, scan_cli
 from mcp_audit.discovery.claude_desktop import ClaudeDesktopDiscoverer
 from mcp_audit.scan_translation import OPTION_TABLE, OptionTranslation, classify_scan_options
 
@@ -214,7 +214,7 @@ def test_notice_is_one_stderr_line_and_never_changes_legacy_execution_or_exit(
     def forbidden(*args: object, **kwargs: object) -> None:
         raise AssertionError("the notice must not invoke check")
 
-    monkeypatch.setattr(_core_cli, "_run_scan", legacy)
+    monkeypatch.setattr(scan_cli, "_run_scan", legacy)
     monkeypatch.setattr(check_cli, "run_scan", forbidden)
     args = ["scan", *SAFE_ARGS, *(["--json", "report.json"] if untranslatable else [])]
     result = CliRunner().invoke(cli.main, args)

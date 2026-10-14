@@ -10,7 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Breaking
 
 - Removed the deprecated `monitor` command and module, the frozen `_run_scan_core`
-  compatibility function, and the `mcp_audit.cli` private-name compatibility shim.
+  compatibility function, the `mcp_audit.cli` private-name compatibility shim, and the
+  `_run_scan`/`_parse_clients` re-exports from `mcp_audit._core_cli`. Library callers use
+  `mcp_audit.engine.run_scan(ScanOptions(...))` and `mcp_audit.client_filter._parse_clients`;
+  there is no replacement for `monitor` (use `shadow`, `watch`, or `check --pin-check`).
 
 ## [2.12.0] - 2026-10-12
 
