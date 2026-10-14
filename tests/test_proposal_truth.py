@@ -25,7 +25,7 @@ def test_section_4_documents_d22_static_translation_truth() -> None:
 
     assert "Once D22 lands, unfiltered static forms become" in section_4
     assert "`--scan-compatible-sources`" in section_4
-    assert "plain `check` retains its stricter,\nsuperset-safe behavior" in section_4
+    assert "plain `check` retains its stricter, superset-safe behavior" in " ".join(section_4.split())
 
 
 def test_section_8_records_d22_b_and_its_selector_contract() -> None:
