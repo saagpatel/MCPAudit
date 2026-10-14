@@ -31,13 +31,14 @@ from mcp_audit.terminal_text import strip_controls, terminal_safe
 
 console = Console()
 
-_UNVERIFIED_LEGACY_NOTE = (
-    "Compared against an unverified legacy (v1) baseline: trusted pin keys exist but nothing "
-    "authenticates this entry. Review before signing with `mcp-audit pin --refresh SERVER`."
+_LEGACY_V1_NOTE = (
+    "Legacy v1 baseline is not compared: every current tool is shown as new, as for a "
+    "first pin. Review the full surface with `mcp-audit pin --refresh SERVER`, then apply "
+    "with `mcp-audit pin --refresh SERVER --apply` to replace it with a v2 baseline."
 )
-_LEGACY_V1_MIGRATION_NOTE = (
-    "Legacy v1 baseline has reduced schema coverage. Review and migrate it with "
-    "`mcp-audit pin --refresh SERVER`, then apply with "
+_MIXED_V1_NOTE = (
+    "Schema v1 tool rows in this baseline are not compared and count as uncovered. "
+    "Review them with `mcp-audit pin --refresh SERVER`, then apply with "
     "`mcp-audit pin --refresh SERVER --apply`."
 )
 _UNSIGNED_V2_MIGRATION_NOTE = (
@@ -512,23 +513,22 @@ async def _run_pin_refresh(
             error_console.print(terminal_safe(verification_error), style="red")
         return
 
-    # Review must show the comparison even when scans withhold the baseline:
-    # an unauthenticated legacy v1 pin is compared and clearly labeled.
-    unverified_legacy = store.unverified_legacy_baseline(audit.server.name)
+    # A genuine v1 baseline is never compared (3.0 does not hash v1), so the
+    # review shows the full current surface, as for a first pin.
+    legacy_entry = store.legacy_entry(audit.server.name)
     baseline_note = (
         _UNSIGNED_V2_MIGRATION_NOTE
         if migrate_unsigned_v2
-        else _UNVERIFIED_LEGACY_NOTE
-        if unverified_legacy
-        else _LEGACY_V1_MIGRATION_NOTE
+        else _LEGACY_V1_NOTE
+        if legacy_entry
+        else _MIXED_V1_NOTE
         if store.legacy_tool_names(audit.server.name)
         else None
     )
-    findings = store.check_drift(
-        audit.server.name,
-        audit.tools,
-        review_unverified_legacy=True,
-        review_unsigned_v2=migrate_unsigned_v2,
+    findings = (
+        store.new_pin_review(audit.server.name, audit.tools)
+        if legacy_entry
+        else store.check_drift(audit.server.name, audit.tools, review_unsigned_v2=migrate_unsigned_v2)
     )
     uncovered_fields = store.uncovered_field_rows(audit.server.name, audit.tools)
     escalation_findings, provenance_findings = _refresh_security_deltas(
@@ -639,9 +639,7 @@ def _refresh_security_deltas(
     escalation_findings: list[EscalationFinding] = []
     provenance_findings: list[ProvenanceFinding] = []
 
-    baseline_tools = store.baseline_tools(
-        audit.server.name, review_unverified_legacy=True, review_unsigned_v2=review_unsigned_v2
-    )
+    baseline_tools = store.baseline_tools(audit.server.name, review_unsigned_v2=review_unsigned_v2)
     if baseline_tools:
         escalation_findings = EscalationAnalyzer().analyze_server(
             audit.server.name,
@@ -650,9 +648,7 @@ def _refresh_security_deltas(
             uncovered_annotations=store.legacy_tool_names(audit.server.name),
         )
 
-    baseline_config = store.baseline_config(
-        audit.server.name, review_unverified_legacy=True, review_unsigned_v2=review_unsigned_v2
-    )
+    baseline_config = store.baseline_config(audit.server.name, review_unsigned_v2=review_unsigned_v2)
     if baseline_config:
         provenance_findings = ProvenanceAnalyzer().analyze_server(audit.server, baseline_config)
 
@@ -762,6 +758,12 @@ def _render_pin_refresh_review(
     if baseline_note is not None:
         console.print(terminal_safe(baseline_note), style="bold yellow")
     if not (drift_findings or escalation_findings or provenance_findings):
+        if baseline_note == _LEGACY_V1_NOTE:
+            console.print(
+                "[yellow]The legacy v1 baseline is not compared and the server exposes no tools; "
+                "--apply writes an empty v2 baseline.[/yellow]"
+            )
+            return
         if baseline_note is not None:
             console.print(
                 "[yellow]The pin baseline could not be verified; no differences from the unverified "

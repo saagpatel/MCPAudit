@@ -315,7 +315,8 @@ class PinStore:
                 missing_required_signature = signature_required(server_name, self._trusted_keys_path)
                 # Public-key-only CI has no per-server expectation on first use:
                 # once any key is trusted, an unsigned v2 entry is a stripped
-                # signature, not a legacy pin. True v1 entries still only warn.
+                # signature, not a legacy pin. Genuine v1 entries only warn
+                # (and are withheld from comparison).
                 if not missing_required_signature and not _is_legacy_entry(entry):
                     unsigned_under_trusted_keys = has_active_trusted_key(self._trusted_keys_path)
             except PinSigningError:
@@ -394,7 +395,7 @@ class PinStore:
         return result
 
     def baseline_trusted(self, server_name: str) -> bool:
-        """Unsigned and legacy pins remain usable; failed signatures never do."""
+        """Unsigned and v1 pins are not MCP027 failures; failed signatures are."""
         result = self.verification(server_name)
         return result is None or result.state not in {
             PinVerificationState.UNTRUSTED_SIGNER,
@@ -554,20 +555,23 @@ class PinStore:
     def baseline_usable(self, server_name: str) -> bool:
         """Whether saved data may serve as a comparison baseline.
 
-        Stricter than :meth:`baseline_trusted`: an unsigned legacy v1 entry still
-        only warns (never MCP027), but while trusted keys exist it is
-        unauthenticated, attacker-substitutable data and is withheld.
+        Stricter than :meth:`baseline_trusted`: a genuine legacy v1 entry still
+        only warns (never MCP027), but it is never compared, whether or not
+        trusted keys exist. An unsigned mixed entry (``schema_outdated`` too)
+        stays usable for its v2 rows.
         """
         if not self.baseline_trusted(server_name):
             return False
-        result = self.verification(server_name)
-        if result is None or result.state != PinVerificationState.SCHEMA_OUTDATED:
-            return True
-        return not self._keys_trusted()
+        return not self.legacy_entry(server_name)
 
-    def unverified_legacy_baseline(self, server_name: str) -> bool:
-        """A saved legacy baseline that verifies cleanly but is withheld as unauthenticated."""
-        return self.baseline_trusted(server_name) and not self.baseline_usable(server_name)
+    def legacy_entry(self, server_name: str) -> bool:
+        """A genuine v1 entry (v1 tool pins, no v2 marker): 3.0 never compares it.
+
+        Only an explicit ``pin --refresh SERVER --apply`` replaces it; reads never
+        rewrite the pin file.
+        """
+        entry: object = self._data.get("servers", {}).get(server_name)
+        return isinstance(entry, dict) and _is_legacy_entry(entry)
 
     def unsigned_v2_migration_allowed(self, server_name: str) -> bool:
         """Allow explicit refresh review of v2 pins that were never required to be signed.
@@ -606,13 +610,9 @@ class PinStore:
             return False
         return True
 
-    def _review_gate(
-        self, server_name: str, review_unverified_legacy: bool, review_unsigned_v2: bool = False
-    ) -> bool:
+    def _review_gate(self, server_name: str, review_unsigned_v2: bool = False) -> bool:
         if review_unsigned_v2 and self.unsigned_v2_migration_allowed(server_name):
             return True
-        if review_unverified_legacy:
-            return self.baseline_trusted(server_name)
         return self.baseline_usable(server_name)
 
     def _keys_trusted(self) -> bool:
@@ -771,7 +771,7 @@ class PinStore:
             signed: list[str] = []
             for server, entry in self._data.get("servers", {}).items():
                 # Signed and mixed v1/v2 entries must move to the new key before the
-                # old one retires; only genuinely legacy unsigned entries are left as-is.
+                # old one retires; a genuine v1 entry is never rewritten here.
                 if _resigned_by_rotation(entry) and self._sign_entry(server, entry):
                     signed.append(server)
             self._sign_manifest()
@@ -794,7 +794,7 @@ class PinStore:
                     raise PinSigningError(
                         "Cannot re-sign an untrusted pin baseline; restore or re-review it first."
                     )
-            # Validate the active key even when only legacy entries exist.
+            # Validate the active key even when only v1 entries exist.
             metadata = sign_document({}, self._signing_key)
             signer = metadata["signer"]
             assert isinstance(signer, dict) and isinstance(signer["public_key"], str)
@@ -827,18 +827,23 @@ class PinStore:
         }
 
     def schema_warnings(self, server_name: str) -> list[ScanWarning]:
-        """Expose reduced legacy coverage without changing or re-hashing pins."""
-        if not self.legacy_tool_names(server_name) or not self.baseline_trusted(server_name):
+        """Name the uncovered v1 tool rows without changing or re-hashing pins."""
+        legacy = self.legacy_tool_names(server_name)
+        if not legacy or not self.baseline_trusted(server_name):
             # A rejected entry gets only tampered/withheld guidance, never refresh advice.
             return []
+        scope = (
+            "is a schema v1 pin baseline, which is not compared"
+            if self.legacy_entry(server_name)
+            else "has schema v1 tool pins, which are not compared and count as uncovered"
+        )
         return [
             ScanWarning(
                 code="pin_schema_outdated",
                 message=(
-                    f"{server_name} has schema v1 pins; annotations, title, outputSchema, icons "
-                    "and meta are not covered. MCPAudit 3.0 will withhold v1 baselines "
-                    "whether or not trusted pin keys exist. Run "
-                    f"`mcp-audit pin --refresh {server_name} --apply` after review."
+                    f"{server_name} {scope}: {', '.join(sorted(legacy))}. Run "
+                    f"`mcp-audit pin --refresh {server_name}` to review the current tool surface, "
+                    f"then `mcp-audit pin --refresh {server_name} --apply`."
                 ),
                 check="pin_check",
                 servers=[server_name],
@@ -894,7 +899,7 @@ class PinStore:
             if "servers" not in self._data:
                 self._data["servers"] = {}
             if not self.baseline_usable(server_name):
-                # Never carry unauthenticated legacy rows or hashes into a new signed baseline.
+                # Never carry a withheld (v1 or unauthenticated) entry into the new baseline.
                 self._data["servers"][server_name] = {"tools": {}}
             server_entry: dict[str, Any] = self._data["servers"].setdefault(server_name, {"tools": {}})
             tool_entries: dict[str, Any] = server_entry.setdefault("tools", {})
@@ -973,61 +978,51 @@ class PinStore:
             if signed:
                 self._record_signed([server_name])
 
+    def new_pin_review(self, server_name: str, tools: list[ToolInfo]) -> list[DriftFinding]:
+        """Every current tool as ``NEW``: the review shown before a first pin.
+
+        ``pin --refresh`` uses this for a genuine v1 entry, whose baseline is
+        never compared, so the operator reviews the full current surface.
+        """
+        return [self._new_finding(server_name, tool) for tool in tools]
+
     def check_drift(
         self,
         server_name: str,
         tools: list[ToolInfo],
         *,
-        review_unverified_legacy: bool = False,
         review_unsigned_v2: bool = False,
     ) -> list[DriftFinding]:
         """Compare current tool hashes against stored pins. Returns drift findings.
 
-        ``review_unverified_legacy`` is for operator refresh review only: it
-        also compares against a withheld (unauthenticated legacy v1) baseline.
-        ``review_unsigned_v2`` permits eligible unsigned v2 migration review only.
-        Neither option changes scan trust or allows known signed-integrity failures.
+        A withheld baseline (failed verification or a genuine v1 entry) yields
+        no findings. In a mixed entry the v1 rows are uncovered: their tools are
+        excluded from NEW, CHANGED and REMOVED, and ``pin_schema_outdated``
+        names them. ``review_unsigned_v2`` permits eligible unsigned v2 migration
+        review only; it never allows known signed-integrity failures.
         """
-        if not self._review_gate(server_name, review_unverified_legacy, review_unsigned_v2):
+        if not self._review_gate(server_name, review_unsigned_v2):
             return []
         servers: dict[str, Any] = self._data.get("servers", {})
         server_entry: dict[str, Any] = servers.get(server_name, {})
         pinned_tools: dict[str, Any] = server_entry.get("tools", {})
+        legacy = self.legacy_tool_names(server_name)
 
         findings: list[DriftFinding] = []
-        current_names = {t.name for t in tools}
-        pinned_names = set(pinned_tools.keys())
+        current_names = {t.name for t in tools} - legacy
+        pinned_names = set(pinned_tools.keys()) - legacy
 
-        # NEW: in current scan but not pinned
         for tool in tools:
+            if tool.name in legacy:
+                continue
             if tool.name not in pinned_names:
-                findings.append(
-                    DriftFinding(
-                        server_name=server_name,
-                        tool_name=tool.name,
-                        status=DriftStatus.NEW,
-                        stored_hash=None,
-                        current_hash=self.compute_hash(tool),
-                        pinned_at=None,
-                        summary="Tool is present now but was not in the pin baseline.",
-                        details=self._new_tool_details(tool),
-                        remediation="Review the tool capability and run `mcp-audit pin` after approval.",
-                    )
-                )
+                # NEW: in current scan but not pinned
+                findings.append(self._new_finding(server_name, tool))
             else:
                 # CHANGED: hash mismatch
                 pin_entry: dict[str, Any] = pinned_tools[tool.name]
                 stored_hash: str = pin_entry.get("hash", "")
-                snapshot = pin_entry.get("snapshot")
-                current_hash = (
-                    _legacy_tool_hash(
-                        tool,
-                        empty_input_as_none=not isinstance(snapshot, dict)
-                        or snapshot.get("input_schema") is None,
-                    )
-                    if pin_entry.get("pin_schema", 1) == 1
-                    else self.compute_hash(tool)
-                )
+                current_hash = self.compute_hash(tool)
                 if stored_hash != current_hash:
                     pinned_at = self._parse_datetime(pin_entry.get("pinned_at"))
                     findings.append(
@@ -1108,15 +1103,14 @@ class PinStore:
         servers: dict[str, Any] = self._data.get("servers", {})
         return len(servers.get(server_name, {}).get("tools", {}))
 
-    def baseline_tools(
-        self, server_name: str, *, review_unverified_legacy: bool = False, review_unsigned_v2: bool = False
-    ) -> list[ToolInfo]:
+    def baseline_tools(self, server_name: str, *, review_unsigned_v2: bool = False) -> list[ToolInfo]:
         """Reconstruct pinned tools as ``ToolInfo`` from stored snapshots.
 
-        Restores all covered fields, including annotations. Legacy snapshots
-        retain absent fields as None. Empty list if the server is not pinned.
+        Restores all covered fields, including annotations. Uncovered v1 rows of
+        a mixed entry retain absent fields as None. Empty list if the server is
+        not pinned or its baseline is withheld.
         """
-        if not self._review_gate(server_name, review_unverified_legacy, review_unsigned_v2):
+        if not self._review_gate(server_name, review_unsigned_v2):
             return []
         servers: dict[str, Any] = self._data.get("servers", {})
         pinned_tools: dict[str, Any] = servers.get(server_name, {}).get("tools", {})
@@ -1142,11 +1136,11 @@ class PinStore:
     ) -> dict[str, dict[str, object]] | None:
         """Use the v2 pin rows; warn and fall back when their snapshots are corrupt.
 
-        A mixed entry (trusted v2 rows plus retained legacy v1 rows) still
-        compares its v2 rows. Legacy tool names are listed under
-        :data:`CANARY_UNCOVERED_TOOLS_KEY` so the first-listing comparison
-        excludes them instead of reporting them as new; ``pin_schema_outdated``
-        already warns that their newer fields are not covered.
+        A genuine v1 entry is withheld. A mixed entry (trusted v2 rows plus
+        retained v1 rows) still compares its v2 rows. Legacy tool names are
+        listed under :data:`CANARY_UNCOVERED_TOOLS_KEY` so the first-listing
+        comparison excludes them instead of reporting them as new;
+        ``pin_schema_outdated`` already names them as uncovered.
         """
         if not self.baseline_usable(server_name):
             return None
@@ -1191,16 +1185,14 @@ class PinStore:
             baseline[CANARY_UNCOVERED_TOOLS_KEY] = {name: True for name in sorted(legacy)}
         return baseline
 
-    def baseline_config(
-        self, server_name: str, *, review_unverified_legacy: bool = False, review_unsigned_v2: bool = False
-    ) -> dict[str, Any] | None:
+    def baseline_config(self, server_name: str, *, review_unsigned_v2: bool = False) -> dict[str, Any] | None:
         """Return the pinned launch-config snapshot for a server, or None.
 
         None when the server is unpinned OR was pinned before config snapshots
         existed (older baselines) — callers must treat None as "no provenance
         comparison possible" and skip silently.
         """
-        if not self._review_gate(server_name, review_unverified_legacy, review_unsigned_v2):
+        if not self._review_gate(server_name, review_unsigned_v2):
             return None
         servers: dict[str, Any] = self._data.get("servers", {})
         snapshot = servers.get(server_name, {}).get("config_snapshot")
@@ -1400,6 +1392,19 @@ class PinStore:
             details.append("input schema present")
         return details
 
+    def _new_finding(self, server_name: str, tool: ToolInfo) -> DriftFinding:
+        return DriftFinding(
+            server_name=server_name,
+            tool_name=tool.name,
+            status=DriftStatus.NEW,
+            stored_hash=None,
+            current_hash=self.compute_hash(tool),
+            pinned_at=None,
+            summary="Tool is present now but was not in the pin baseline.",
+            details=self._new_tool_details(tool),
+            remediation="Review the tool capability and run `mcp-audit pin` after approval.",
+        )
+
     def _changed_tool_details(self, pin_entry: dict[str, Any], tool: ToolInfo) -> list[str]:
         previous = pin_entry.get("snapshot")
         current = self._tool_snapshot(tool)
@@ -1408,25 +1413,25 @@ class PinStore:
             return ["pin hash changed; previous schema snapshot unavailable"]
 
         previous = redact_data(previous)
-        if pin_entry.get("pin_schema", 1) == 1 and previous.get("input_schema") is None:
-            if current["input_schema"] == {}:
-                current["input_schema"] = None
         details: list[str] = []
         if previous.get("description") != current["description"]:
             details.append("description changed")
         if previous.get("input_schema") != current["input_schema"]:
             details.append("input schema changed")
-        if pin_entry.get("pin_schema", 1) == 2:
-            for field in ("annotations", "title", "output_schema", "icons", "meta"):
-                if previous.get(field) != current[field]:
-                    details.append(f"{field} changed")
+        for field in ("annotations", "title", "output_schema", "icons", "meta"):
+            if previous.get(field) != current[field]:
+                details.append(f"{field} changed")
         if not details:
             details.append("tool metadata changed")
         return details
 
 
 def _resigned_by_rotation(entry: object) -> bool:
-    """Rotation/re-signing covers signed and v2 (including mixed) entries, never bare v1."""
+    """Rotation/re-signing covers signed and v2 (including mixed) entries.
+
+    A genuine v1 entry is never hashed or rewritten by 3.0 except through an
+    explicit refresh, so it is left as-is (and stays withheld).
+    """
     return isinstance(entry, dict) and ("signature" in entry or not _is_legacy_entry(entry))
 
 
@@ -1446,14 +1451,6 @@ def surface_hash(value: object) -> str:
     if isinstance(value, ToolInfo):
         value = canonical_tool_surface(value)
     return "sha256:" + hashlib.sha256(canonical_json_bytes(value)).hexdigest()
-
-
-def _legacy_tool_hash(tool: ToolInfo, *, empty_input_as_none: bool) -> str:
-    # The v1 connector converted served {} schemas to None. Retain that shape
-    # for those snapshots while preserving explicitly stored empty schemas.
-    schema = None if empty_input_as_none and tool.input_schema == {} else tool.input_schema
-    value = {"name": tool.name, "description": tool.description, "inputSchema": schema}
-    return "sha256:" + hashlib.sha256(canonical_json_bytes(value, legacy=True)).hexdigest()
 
 
 def surface_field_diff(before: object, after: object, path: str = "") -> list[SurfaceFieldChange]:
