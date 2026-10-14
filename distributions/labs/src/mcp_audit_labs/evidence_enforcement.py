@@ -21,14 +21,14 @@ from typing import Annotated, Any, Final, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
-from mcp_audit.fixture_gateway import (
+from mcp_audit.models import AUDIT_REPORT_SCHEMA_VERSION, AuditReport
+from mcp_audit_labs.fixture_gateway import (
     FIXTURE_GATEWAY_VERSION,
     ApprovalStatus,
     FixtureGateway,
     FixturePolicy,
     GatewayConfig,
 )
-from mcp_audit.models import AUDIT_REPORT_SCHEMA_VERSION, AuditReport
 
 logger = logging.getLogger(__name__)
 

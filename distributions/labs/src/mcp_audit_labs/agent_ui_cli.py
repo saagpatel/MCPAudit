@@ -8,14 +8,14 @@ from pathlib import Path
 import click
 from pydantic import BaseModel
 
-from mcp_audit._artifacts import _write_artifacts
-from mcp_audit.agent_ui_models import (
+from mcp_audit_labs._artifacts import _write_artifacts
+from mcp_audit_labs.agent_ui_models import (
     A2UIFixtureManifest,
     A2UIMessage,
     AgentUIReport,
     MCPAppsFixture,
 )
-from mcp_audit.agent_ui_scanner import (
+from mcp_audit_labs.agent_ui_scanner import (
     AgentUIInputError,
     render_agent_ui_html,
     report_json_bytes,

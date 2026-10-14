@@ -17,8 +17,8 @@ from typing import Any, Final
 
 from pydantic import ValidationError
 
-from mcp_audit.lab_primitives import read_bounded_descriptor, strict_json_loads
-from mcp_audit.task_time_machine_models import (
+from mcp_audit_labs.lab_primitives import read_bounded_descriptor, strict_json_loads
+from mcp_audit_labs.task_time_machine_models import (
     CURRENT_PROTOCOL_VERSION,
     MAX_EVENTS,
     MAX_INPUT_BYTES,

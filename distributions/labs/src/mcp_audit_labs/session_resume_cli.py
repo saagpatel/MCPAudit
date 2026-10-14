@@ -12,7 +12,8 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
-from mcp_audit.session_resume_lab import (
+from mcp_audit.terminal_text import strip_controls, terminal_safe
+from mcp_audit_labs.session_resume_lab import (
     SessionResumeInputError,
     load_builtin_scenarios,
     load_scenario_path,
@@ -20,13 +21,12 @@ from mcp_audit.session_resume_lab import (
     run_builtin_suite,
     run_scenario,
 )
-from mcp_audit.session_resume_models import (
+from mcp_audit_labs.session_resume_models import (
     SessionResumeReport,
     SessionResumeScenario,
     SessionResumeSuiteReport,
     SessionResumeTranscript,
 )
-from mcp_audit.terminal_text import strip_controls, terminal_safe
 
 console = Console()
 

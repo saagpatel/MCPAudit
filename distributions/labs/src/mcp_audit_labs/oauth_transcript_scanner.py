@@ -14,8 +14,8 @@ from urllib.parse import urlsplit, urlunsplit
 
 from pydantic import ValidationError
 
-from mcp_audit.lab_primitives import read_bounded_descriptor, strict_json_loads, validate_json_nesting
-from mcp_audit.oauth_transcript_models import (
+from mcp_audit_labs.lab_primitives import read_bounded_descriptor, strict_json_loads, validate_json_nesting
+from mcp_audit_labs.oauth_transcript_models import (
     MAX_OBSERVATIONS,
     MAX_URL_LENGTH,
     AudienceEvidenceSource,

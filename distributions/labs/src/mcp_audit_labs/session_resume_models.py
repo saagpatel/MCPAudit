@@ -12,7 +12,7 @@ from typing import Annotated, Final, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from mcp_audit.lab_primitives import model_json_bytes
+from mcp_audit_labs.lab_primitives import model_json_bytes
 
 SCENARIO_SCHEMA: Final = "mcpaudit.session-resume.scenario.v1"
 TRANSCRIPT_SCHEMA: Final = "mcpaudit.session-resume.transcript.v1"

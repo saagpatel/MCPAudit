@@ -9,8 +9,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-from mcp_audit.safeforge_consumer import SafeForgePreinstallResult, consume_forge_receipt
-from mcp_audit.safeforge_contract_linter import ForgeReceiptContractLint, lint_forge_receipt_schema
+from mcp_audit_labs.safeforge_consumer import SafeForgePreinstallResult, consume_forge_receipt
+from mcp_audit_labs.safeforge_contract_linter import ForgeReceiptContractLint, lint_forge_receipt_schema
 
 
 class SafeForgeCoordinatorResult(BaseModel):

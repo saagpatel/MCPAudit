@@ -8,8 +8,8 @@ from pathlib import Path
 import click
 from pydantic import BaseModel
 
-from mcp_audit.cache_contract_models import CacheAuditReport, CacheTrace
-from mcp_audit.cache_contract_scanner import (
+from mcp_audit_labs.cache_contract_models import CacheAuditReport, CacheTrace
+from mcp_audit_labs.cache_contract_scanner import (
     CacheContractInputError,
     report_json_bytes,
     scan_cache_path,

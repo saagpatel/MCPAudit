@@ -10,7 +10,8 @@ from typing import Any
 import click
 from pydantic import ValidationError
 
-from mcp_audit.evidence_enforcement import (
+from mcp_audit.models import AuditReport
+from mcp_audit_labs.evidence_enforcement import (
     ApprovalBindingError,
     ApprovedPolicyIntentV1,
     ObservedEvidenceV1,
@@ -28,7 +29,6 @@ from mcp_audit.evidence_enforcement import (
     rollback_fixture_policy,
     state_digest,
 )
-from mcp_audit.models import AuditReport
 
 
 class JsonEnforcementGroup(click.Group):

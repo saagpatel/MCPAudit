@@ -10,7 +10,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from mcp_audit.authorization_posture_models import (
+from mcp_audit_labs.authorization_posture_models import (
     MAX_AUTHORIZATION_SERVERS,
     MAX_FETCHES,
     MAX_URL_LENGTH,
@@ -24,7 +24,7 @@ from mcp_audit.authorization_posture_models import (
     canonical_json_bytes,
     sha256_bytes,
 )
-from mcp_audit.lab_primitives import read_bounded_descriptor, strict_json_loads, validate_json_nesting
+from mcp_audit_labs.lab_primitives import read_bounded_descriptor, strict_json_loads, validate_json_nesting
 
 MAX_INPUT_BYTES = 1_048_576
 MAX_JSON_DEPTH = 32

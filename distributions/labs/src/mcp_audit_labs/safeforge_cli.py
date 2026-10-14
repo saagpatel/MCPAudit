@@ -47,7 +47,7 @@ def safeforge_preinstall(
     coordinator_dirty: bool,
 ) -> None:
     """Verify a forge handoff and run config-only audit without execution."""
-    from mcp_audit.safeforge_coordinator import run_safeforge_preinstall
+    from mcp_audit_labs.safeforge_coordinator import run_safeforge_preinstall
 
     try:
         producer_payload = _load_safeforge_json(producer_schema, _MAX_SAFEFORGE_SCHEMA_BYTES)
@@ -111,7 +111,7 @@ def safeforge_run(
     coordinator_dirty: bool,
 ) -> None:
     """Verify, materialize, execute, audit, grade, and finalize in a disposable sandbox."""
-    from mcp_audit.safeforge_runtime import run_safeforge_pipeline
+    from mcp_audit_labs.safeforge_runtime import run_safeforge_pipeline
 
     try:
         producer_payload = _load_safeforge_json(producer_schema, _MAX_SAFEFORGE_SCHEMA_BYTES)

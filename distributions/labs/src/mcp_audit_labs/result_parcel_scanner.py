@@ -11,8 +11,8 @@ from typing import Any, Final, Literal
 
 from pydantic import ValidationError
 
-from mcp_audit.lab_primitives import read_bounded_descriptor, strict_json_loads
-from mcp_audit.result_parcel_models import (
+from mcp_audit_labs.lab_primitives import read_bounded_descriptor, strict_json_loads
+from mcp_audit_labs.result_parcel_models import (
     CURRENT_PROTOCOL_VERSION,
     INLINE_ADVISORY_BYTES,
     MAX_FINDINGS,

@@ -1,1 +1,1 @@
-"""mcp-audits-labs workspace scaffold; modules move in a later phase."""
+"""Optional offline labs, conformance probes, and SafeForge for MCPAudit."""

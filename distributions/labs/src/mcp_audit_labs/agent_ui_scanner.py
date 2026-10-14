@@ -14,7 +14,7 @@ from urllib.parse import urlsplit
 
 from pydantic import ValidationError
 
-from mcp_audit.agent_ui_models import (
+from mcp_audit_labs.agent_ui_models import (
     A2UI_CATALOG_ID,
     A2UIActionContract,
     A2UIFixtureEnvelope,
@@ -32,7 +32,7 @@ from mcp_audit.agent_ui_models import (
     canonical_json_bytes,
     sha256_bytes,
 )
-from mcp_audit.lab_primitives import read_bounded_descriptor, strict_json_loads, validate_json_nesting
+from mcp_audit_labs.lab_primitives import read_bounded_descriptor, strict_json_loads, validate_json_nesting
 
 _MAX_INPUT_BYTES = 1_048_576
 _MAX_JSONL_LINES = 256

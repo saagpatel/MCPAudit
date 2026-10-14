@@ -6,7 +6,7 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as package_version
 from typing import Any
 
-from mcp_audit.oauth_transcript_models import (
+from mcp_audit_labs.oauth_transcript_models import (
     FindingOutcome,
     FindingSeverity,
     OAuthTranscriptReport,

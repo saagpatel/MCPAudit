@@ -23,7 +23,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from mcp_audit.safeforge import (
+from mcp_audit_labs.safeforge import (
     ArtifactReference,
     AuditEvidence,
     Coverage,
@@ -41,8 +41,8 @@ from mcp_audit.safeforge import (
     StageState,
     validate_safeforge_manifest,
 )
-from mcp_audit.safeforge_consumer import ForgeReceiptV0Input, _verify_artifact_root
-from mcp_audit.safeforge_coordinator import SafeForgeCoordinatorResult, run_safeforge_preinstall
+from mcp_audit_labs.safeforge_consumer import ForgeReceiptV0Input, _verify_artifact_root
+from mcp_audit_labs.safeforge_coordinator import SafeForgeCoordinatorResult, run_safeforge_preinstall
 
 _SANDBOX_EXEC = Path("/usr/bin/sandbox-exec")
 _UV = Path("/opt/homebrew/bin/uv")

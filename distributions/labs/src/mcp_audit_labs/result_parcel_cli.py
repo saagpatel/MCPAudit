@@ -8,8 +8,8 @@ from pathlib import Path
 import click
 from pydantic import BaseModel, ValidationError
 
-from mcp_audit.result_parcel_models import ParcelAnalysisReport, ParcelScenario, canonical_json_bytes
-from mcp_audit.result_parcel_scanner import (
+from mcp_audit_labs.result_parcel_models import ParcelAnalysisReport, ParcelScenario, canonical_json_bytes
+from mcp_audit_labs.result_parcel_scanner import (
     ParcelInputError,
     analyze_scenario,
     builtin_scenarios,

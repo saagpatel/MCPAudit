@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from mcp_audit.lab_primitives import model_json_bytes
+from mcp_audit_labs.lab_primitives import model_json_bytes
 
 FIXTURE_SCHEMA: Final = "mcpaudit.oauth-transcript.fixture.v1"
 REPORT_SCHEMA: Final = "mcpaudit.oauth-transcript.report.v1"

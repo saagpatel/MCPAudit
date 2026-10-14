@@ -12,7 +12,7 @@ from typing import Annotated, Any, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from mcp_audit.lab_primitives import model_json_bytes
+from mcp_audit_labs.lab_primitives import model_json_bytes
 
 MCP_APPS_FIXTURE_SCHEMA: Final = "mcpaudit.agent-ui.mcp-apps-fixture.v1"
 A2UI_FIXTURE_SCHEMA: Final = "mcpaudit.agent-ui.a2ui-fixture.v1"

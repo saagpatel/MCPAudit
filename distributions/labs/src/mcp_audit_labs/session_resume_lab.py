@@ -13,8 +13,8 @@ from typing import Final, Literal
 
 from pydantic import ValidationError
 
-from mcp_audit.lab_primitives import read_bounded_descriptor, strict_json_loads
-from mcp_audit.session_resume_models import (
+from mcp_audit_labs.lab_primitives import read_bounded_descriptor, strict_json_loads
+from mcp_audit_labs.session_resume_models import (
     MAX_INPUT_BYTES,
     MAX_JSON_DEPTH,
     AcceptRequestStep,
@@ -170,7 +170,7 @@ def load_builtin_scenarios() -> dict[str, SessionResumeScenario]:
     """Load the checked-in synthetic fixture corpus from package resources."""
 
     try:
-        raw = resources.files("mcp_audit").joinpath("session_resume_scenarios_v1.json").read_bytes()
+        raw = resources.files("mcp_audit_labs").joinpath("session_resume_scenarios_v1.json").read_bytes()
         payload = strict_json_loads(raw)
     except (OSError, json.JSONDecodeError, ValueError, RecursionError) as exc:
         raise SessionResumeInputError("built-in scenario corpus is unavailable or malformed") from exc

@@ -20,7 +20,8 @@ from mcp.types import (
 )
 from pydantic import ValidationError
 
-from mcp_audit.cache_contract_models import (
+from mcp_audit.canonical import compact_json_bytes
+from mcp_audit_labs.cache_contract_models import (
     CURRENT_PROTOCOL_VERSION,
     MAX_FINDINGS,
     MAX_INPUT_BYTES,
@@ -46,8 +47,7 @@ from mcp_audit.cache_contract_models import (
     UseEvent,
     canonical_json_bytes,
 )
-from mcp_audit.canonical import compact_json_bytes
-from mcp_audit.lab_primitives import read_bounded_descriptor, strict_json_loads
+from mcp_audit_labs.lab_primitives import read_bounded_descriptor, strict_json_loads
 
 SUPPORTED_METHODS: Final = frozenset(
     {

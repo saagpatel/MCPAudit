@@ -8,14 +8,14 @@ from pathlib import Path
 import click
 from pydantic import BaseModel
 
-from mcp_audit.task_time_machine import (
+from mcp_audit_labs.task_time_machine import (
     TaskTimeMachineInputError,
     builtin_scenarios,
     result_json_bytes,
     scan_scenario_path,
     simulate_scenario,
 )
-from mcp_audit.task_time_machine_models import TaskScenario, TaskSimulationResult
+from mcp_audit_labs.task_time_machine_models import TaskScenario, TaskSimulationResult
 
 BUILTIN_NAMES = tuple(sorted(builtin_scenarios()))
 

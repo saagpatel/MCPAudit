@@ -9,7 +9,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from mcp_audit.safeforge_consumer import ForgeReceiptV0Input
+from mcp_audit_labs.safeforge_consumer import ForgeReceiptV0Input
 
 _ANNOTATION_KEYS = {"default", "description", "examples", "title"}
 _MAX_SCHEMA_DEPTH = 64

@@ -15,7 +15,7 @@ from mcp_audit import __version__
 from mcp_audit.api import scan_config_only
 from mcp_audit.models import AuditReport
 from mcp_audit.report import scrub_report_identifiers
-from mcp_audit.safeforge import (
+from mcp_audit_labs.safeforge import (
     ArtifactInventory,
     ArtifactReference,
     AuditEvidence,
