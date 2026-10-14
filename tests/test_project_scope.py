@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from mcp_audit import cli, engine, overrides, pinning, scan_cli, watcher
+from mcp_audit import cli, engine, overrides, pinning, watcher
 from mcp_audit.connector import ServerConnector
 from mcp_audit.discovery import discover_all_configs
 from mcp_audit.engine import ScanOptions, run_scan
@@ -33,7 +33,6 @@ def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     checkout.mkdir()
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
     monkeypatch.chdir(checkout)
-    monkeypatch.setattr(scan_cli, "DEFAULT_OVERRIDE_PATH", home / "overrides.yaml")
     real_load = overrides.load_override_config
     monkeypatch.setattr(
         overrides, "load_override_config", lambda path=home / "overrides.yaml": real_load(path)
@@ -97,7 +96,9 @@ def test_cloned_project_scan_never_spawns(workspace: Path, monkeypatch: pytest.M
     sentinel = workspace / "spawned"
     clone = _clone_fixture(workspace, json.dumps({"mcpServers": {"fixture": _entry(sentinel)}}).encode())
     monkeypatch.chdir(clone)
-    result = CliRunner().invoke(cli.main, ["scan", "--json", "report.json", "--override-config", "/dev/null"])
+    result = CliRunner().invoke(
+        cli.main, ["check", "--output-json", "report.json", "--override-config", "/dev/null"]
+    )
     assert result.exit_code == 0, result.output
     assert not sentinel.exists()
     report = json.loads((clone / "report.json").read_text())
@@ -117,12 +118,12 @@ def test_scan_flag_and_explicit_project_config(
 ) -> None:
     sentinel = workspace / "spawned"
     _write_config(workspace / relative, sentinel)
-    flags = ["--connect-project-configs"] if opt_in else []
+    flags = ["--connect-all", "--connect-project-configs"] if opt_in and not skip else []
     if skip:
         flags.append("--skip-connect")
     result = CliRunner().invoke(
         cli.main,
-        ["scan", "--config", relative, "--config-only", "--override-config", "/dev/null", *flags],
+        ["check", "--config", relative, "--config-only", "--override-config", "/dev/null", *flags],
     )
     assert result.exit_code == 0, result.output
     assert sentinel.exists() is (opt_in and not skip)

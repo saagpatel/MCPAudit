@@ -12,8 +12,36 @@ from unittest.mock import patch
 from mcp_audit.agent_text import AgentText
 from mcp_audit.analyzer import PermissionAnalyzer
 from mcp_audit.cli import main
-from mcp_audit.models import PermissionFinding, ResourceInfo, SsrfFinding, ToolInfo
+from mcp_audit.discovery import ConfigParseError
+from mcp_audit.engine import _parse_extra_config
+from mcp_audit.models import ClientType, PermissionFinding, ResourceInfo, SsrfFinding, ToolInfo
+from mcp_audit.review_discovery import ReviewSources
 from mcp_audit.ssrf import SsrfDetector
+
+
+def engine_sources(
+    config: Path | None,
+    include_discovered: bool,
+    project: Path | None,
+    clients: tuple[ClientType, ...],
+    *,
+    scan_compatible: bool = False,
+) -> ReviewSources:
+    """TEST ONLY: supply explicit library stress input above check's source caps.
+
+    This fixture bypasses only review-source admission. It proves engine and
+    report behavior for a pre-parsed synthetic fleet, not CLI source admission
+    at this size. Ordinary workloads still use the real check source parser.
+    """
+    if config is None or include_discovered or project is not None or clients or scan_compatible:
+        raise ValueError("Fixture engine sources require an explicit config without discovery or filters.")
+    errors: list[ConfigParseError] = []
+    servers = _parse_extra_config(config, errors)
+    return ReviewSources(
+        servers=servers,
+        errors=errors,
+        paths=[(str(config), "checked: synthetic fixture engine source")],
+    )
 
 
 def run() -> None:
@@ -47,19 +75,30 @@ def run() -> None:
             analysis_seconds += time.perf_counter() - start
 
     metrics_path = Path(sys.argv[1])
+    argv = sys.argv[2:]
+    injected_sources = "--engine-sources" in argv
+    if injected_sources:
+        if argv.count("--engine-sources") != 1 or argv[0] != "check" or "--config-only" not in argv:
+            raise ValueError("Fixture --engine-sources requires check --config FILE --config-only.")
+        argv.remove("--engine-sources")
     start = time.perf_counter()
     try:
         with (
             patch.object(PermissionAnalyzer, "analyze_server", timed),
             patch.object(SsrfDetector, "scan_server", observed_ssrf),
         ):
-            main(args=sys.argv[2:], standalone_mode=False)
+            if injected_sources:
+                with patch("mcp_audit.check_cli.review_sources", engine_sources):
+                    main(args=argv, standalone_mode=False)
+            else:
+                main(args=argv, standalone_mode=False)
     finally:
         rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
         metrics_path.write_text(
             json.dumps(
                 {
                     "cli_seconds": time.perf_counter() - start,
+                    "source_mode": "fixture-engine-sources" if injected_sources else "check",
                     "analysis_seconds": analysis_seconds,
                     "analysis_invocations": len(analysis_tool_counts),
                     "analysis_tool_counts": analysis_tool_counts,

@@ -13,9 +13,10 @@ from typing import cast
 
 import anyio
 import pytest
+from click.testing import CliRunner
 from pydantic import ValidationError
 
-from mcp_audit import __version__, engine, scan_cli
+from mcp_audit import __version__, check_cli, cli, engine
 from mcp_audit.api import parse_config
 from mcp_audit.engine import ScanOptions
 from mcp_audit.htmlreport import HtmlReportGenerator
@@ -181,7 +182,7 @@ def test_cli_adapter_files_match_pre_extraction_sha256(
     async def fixture_scan(*_: object, **__: object) -> AuditReport:
         return report.model_copy(deep=True)
 
-    monkeypatch.setattr(scan_cli, "run_scan", fixture_scan)
+    monkeypatch.setattr(check_cli, "run_scan", fixture_scan)
     override_path = tmp_path / "empty-overrides.yaml"
     override_path.write_text("{}\n")
     output_paths = {
@@ -189,37 +190,36 @@ def test_cli_adapter_files_match_pre_extraction_sha256(
         "report.sarif": tmp_path / "report.sarif",
         "report.html": tmp_path / "report.html",
     }
-    try:
-        anyio.run(
-            partial(
-                scan_cli._run_scan,
-                json_output=str(output_paths["report.json"]),
-                sarif_output=str(output_paths["report.sarif"]),
-                html_output=str(output_paths["report.html"]),
-                skip_connect=True,
-                clients=None,
-                timeout=10,
-                verbose=False,
-                extra_config=str(ROOT / cast(list[str], FIXTURE["example_config_inputs"])[0]),
-                override_config_path=str(override_path),
-                policy_path=None,
-                config_only=True,
-                color="never",
-            )
-        )
-        exit_code = 0
-    except SystemExit as exc:
-        exit_code = int(exc.code or 0)
+    result = CliRunner().invoke(
+        cli.main,
+        [
+            "check",
+            "--config",
+            str(ROOT / cast(list[str], FIXTURE["example_config_inputs"])[0]),
+            "--config-only",
+            "--skip-connect",
+            "--override-config",
+            str(override_path),
+            "--color",
+            "never",
+            "--output-json",
+            str(output_paths["report.json"]),
+            "--sarif",
+            str(output_paths["report.sarif"]),
+            "--html",
+            str(output_paths["report.html"]),
+        ],
+    )
 
     baseline = cast(dict[str, object], FIXTURE["baseline_output_sha256"])
-    cli_files = cast(dict[str, object], baseline["cli_files"])
+    cli_files = cast(dict[str, object], baseline["check_files"])
     expected = cast(dict[str, object], cli_files[relative_path])
     observed = {
         path.name: hashlib.sha256(_location_free(path.read_bytes())).hexdigest()
         for path in output_paths.values()
     }
     assert observed == {name: expected[name] for name in output_paths}
-    assert exit_code == expected["exit_code"]
+    assert result.exit_code == expected["exit_code"], result.output
 
 
 def test_run_scan_remains_under_150_lines() -> None:
@@ -271,52 +271,24 @@ def test_cli_policy_evaluation_and_load_error_exit_codes(
     async def fixture_scan(*_: object, **__: object) -> AuditReport:
         return report.model_copy(deep=True)
 
-    monkeypatch.setattr(scan_cli, "run_scan", fixture_scan)
+    monkeypatch.setattr(check_cli, "run_scan", fixture_scan)
     policy_path = ROOT / "examples/policies/ci-strict.yaml"
-    try:
-        anyio.run(
-            partial(
-                scan_cli._run_scan,
-                None,
-                None,
-                None,
-                True,
-                None,
-                10,
-                False,
-                str(ROOT / "examples/configs/popular-public-servers.json"),
-                str(override_path),
-                str(policy_path),
-                config_only=True,
-                color="never",
-            )
-        )
-        policy_exit_code = 0
-    except SystemExit as exc:
-        policy_exit_code = int(exc.code or 0)
-    assert policy_exit_code == 2
+    common = [
+        "check",
+        "--config",
+        str(ROOT / "examples/configs/popular-public-servers.json"),
+        "--config-only",
+        "--skip-connect",
+        "--override-config",
+        str(override_path),
+        "--color",
+        "never",
+    ]
+    result = CliRunner().invoke(cli.main, [*common, "--policy", str(policy_path)])
+    assert result.exit_code == 2, result.output
 
     invalid_policy = tmp_path / "invalid-policy.yaml"
     invalid_policy.write_text("fail_on: [\n")
-    try:
-        anyio.run(
-            partial(
-                scan_cli._run_scan,
-                None,
-                None,
-                None,
-                True,
-                None,
-                10,
-                False,
-                str(ROOT / "examples/configs/popular-public-servers.json"),
-                str(override_path),
-                str(invalid_policy),
-                config_only=True,
-                color="never",
-            )
-        )
-        load_error_exit_code = 0
-    except SystemExit as exc:
-        load_error_exit_code = int(exc.code or 0)
-    assert load_error_exit_code == 1
+    result = CliRunner().invoke(cli.main, [*common, "--policy", str(invalid_policy)])
+    assert result.exit_code == 1, result.output
+    assert "cannot load policy" in result.stderr

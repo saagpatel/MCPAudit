@@ -75,6 +75,10 @@ def test_help_all_enumerates_every_canonical_and_legacy_path() -> None:
     ordinary_rows = {line.strip().split("  ")[0] for line in ordinary.output.splitlines()}
     all_rows = {line.strip().split("  ")[0] for line in exhaustive.output.splitlines()}
     for name, spec in COMMANDS.items():
+        if name == "scan":
+            assert name not in all_rows
+            assert name not in ordinary_rows
+            continue
         assert name in all_rows
         assert (name in ordinary_rows) is not spec.hidden
         if isinstance(spec, NamespaceSpec):
@@ -235,7 +239,7 @@ def test_monitor_command_and_module_are_removed() -> None:
     assert importlib.util.find_spec("mcp_audit.monitor") is None
 
 
-@pytest.mark.parametrize("name", [name for name, spec in COMMANDS.items() if spec.hidden])
+@pytest.mark.parametrize("name", [name for name, spec in COMMANDS.items() if spec.hidden and name != "scan"])
 def test_hidden_alias_help_notices(name: str) -> None:
     result = CliRunner().invoke(main, [name, "--help"])
     assert result.exit_code == 0, result.output
@@ -463,7 +467,6 @@ mcp_audit/safeforge_contract_linter.py
 mcp_audit/safeforge_coordinator.py
 mcp_audit/safeforge_runtime.py
 mcp_audit/sarif.py
-mcp_audit/scan_cli.py
 mcp_audit/scan_translation.py
 mcp_audit/schema_rules.py
 mcp_audit/scorer.py
