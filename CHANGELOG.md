@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Under the compatibility selector, VS Code configs with a malformed `mcp`
   section retain earlier server-entry diagnostics before losing the file,
   matching legacy discovery. Plain `check` behavior is unchanged.
+- Under the compatibility selector, an unreadable discovered source uses
+  `scan`'s `unreadable config file: ...` reason. The translation notice now
+  states that a source skipped by check's limits is reported as a
+  config-health finding (so `fail_on.config_health` can exit 2 where `scan`
+  exited 0), and the migration guide documents the zero-source
+  `no_sources_reviewed` warning and `scan`'s duplicate `~/.vscode/mcp.json`
+  parse when run from the home directory.
 - Correct the 3.0 proposal's 2.12 release statuses and record D22's opt-in
   scan-compatible source selection for translated static checks.
 

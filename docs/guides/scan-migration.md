@@ -29,8 +29,23 @@ The notice promises exact option mapping, with explicit source-limit caveats.
 Check still refuses discovered symlinks, sources larger than 1,048,576 bytes,
 nesting deeper than 64, more than 20,000 containers, and more than 1,000 servers
 per source or across accepted sources. These sources produce
-`review_source_skipped` and partial coverage; the report does not establish
-exact source coverage. This includes a symlinked or oversized `~/.claude.json`.
+`review_source_skipped`, a high-severity `config_parse_failure` config-health
+finding and partial coverage; the report does not establish exact source
+coverage. This includes a symlinked or oversized `~/.claude.json`. Because
+the skipped source is a finding, a `fail_on.config_health` policy makes the
+translated `check` exit 2 where `scan`, which read the file, exited 0.
+
+Three other differences remain visible in the report:
+
+- With no config sources at all (an empty home directory, as on most CI
+  runners), the server set is empty and the exit code is unchanged, but
+  `check` adds the non-fatal `no_sources_reviewed` warning that `scan` never
+  emitted.
+- Run from the home directory, `scan` parses `~/.vscode/mcp.json` twice (as the
+  user file and as the cwd file), duplicating its config-health diagnostics;
+  `check` parses it once.
+- An unreadable discovered source is reported with `scan`'s wording
+  (`unreadable config file: ...`) under the selector.
 
 `scan --config FILE --skip-connect` without `--config-only` still has no exact
 translation because explicit and discovered sources can overlap. Config-only
