@@ -262,7 +262,7 @@ def test_pin_withheld_policy_loads_boolean(tmp_path: Path, value: str) -> None:
     path.write_text(f"fail_on:\n  pin_baseline_withheld: {value}\n")
     assert load_policy(path).fail_on_pin_baseline_withheld is (value == "true")
     path.write_text("{}\n")
-    assert not load_policy(path).fail_on_pin_baseline_withheld
+    assert load_policy(path).fail_on_pin_baseline_withheld is None
 
 
 @pytest.mark.parametrize("value", ['"true"', "1", "null", "[]"])
