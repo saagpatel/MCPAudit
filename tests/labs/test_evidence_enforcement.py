@@ -55,6 +55,7 @@ from mcp_audit.models import (
     ToolInfo,
     TransportType,
 )
+from tests.test_pin_integrity_reporting import _report as pin_integrity_report
 
 NOW = datetime(2026, 7, 20, 12, 0, tzinfo=UTC)
 DIGEST_A = "sha256:" + "a" * 64
@@ -1143,3 +1144,15 @@ def test_unsupported_translation_causes_no_state_change(tmp_path: Path) -> None:
     with pytest.raises(PolicyOutcomeError, match="unsupported"):
         apply_fixture_policy(evidence, constrained, approval, state_dir)
     assert not state_dir.exists()
+
+
+def test_pin_integrity_marks_observed_evidence_as_drifted() -> None:
+    evidence = observed_evidence_from_report(
+        pin_integrity_report(),
+        origin="fixture://pin-integrity",
+        server_name="synthetic-server",
+        canonical_source_sha256="sha256:" + "0" * 64,
+        provenance=["synthetic-pin-integrity-fixture"],
+    )
+
+    assert evidence.drifted

@@ -12,6 +12,7 @@ from typing import Any
 
 import pytest
 from click.testing import CliRunner
+from mcp_audit_labs import authorization_posture_models
 from mcp_audit_labs.authorization_posture_models import (
     SPEC_PROFILE,
     SPEC_REFERENCES,
@@ -27,6 +28,7 @@ from mcp_audit_labs.authorization_posture_scanner import (
 )
 from pydantic import ValidationError
 
+from mcp_audit import oauth_urls
 from mcp_audit.cli import main
 
 
@@ -472,3 +474,7 @@ def test_input_model_rejects_non_strict_types() -> None:
     payload["fetches"][0]["status"] = "200"
     with pytest.raises(ValidationError):
         McpAuthorizationPostureV1.model_validate(payload, strict=True)
+
+
+def test_posture_models_reuse_core_canonical_json_bytes() -> None:
+    assert authorization_posture_models.canonical_json_bytes is oauth_urls.canonical_json_bytes

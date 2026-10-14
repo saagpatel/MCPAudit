@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Literal
 
 import pytest
-from mcp_audit_labs.evidence_enforcement import observed_evidence_from_report
 from rich.console import Console
 
 from mcp_audit.finding_display import finding_views
@@ -172,18 +171,6 @@ def test_pin_integrity_can_be_suppressed_only_with_explicit_reason() -> None:
     assert len(report.suppressed) == 1
     assert report.suppressed[0].rule_id == "MCP027"
     assert not unsuppressed_report(report).audits[0].pin_integrity_findings
-
-
-def test_pin_integrity_marks_observed_evidence_as_drifted() -> None:
-    evidence = observed_evidence_from_report(
-        _report(),
-        origin="fixture://pin-integrity",
-        server_name="synthetic-server",
-        canonical_source_sha256="sha256:" + "0" * 64,
-        provenance=["synthetic-pin-integrity-fixture"],
-    )
-
-    assert evidence.drifted
 
 
 def test_pin_verification_state_vocabulary_is_complete() -> None:
