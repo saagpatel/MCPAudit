@@ -113,7 +113,13 @@ def discover(client_filter: str | None, verbose: bool) -> None:
 
 
 @click.command(hidden=True)
-@click.option("--json", "json_output", default=None, metavar="PATH", help="Write JSON report to PATH.")
+@click.option(
+    "--json",
+    "json_output",
+    default=None,
+    metavar="PATH",
+    help="Refused in 3.0; use check --output-json PATH.",
+)
 @click.option(
     "--sarif", "sarif_output", default=None, metavar="PATH", help="Write SARIF 2.1.0 report to PATH."
 )  # noqa: E501
@@ -126,7 +132,12 @@ def discover(client_filter: str | None, verbose: bool) -> None:
 @click.option(
     "--html", "html_output", default=None, metavar="PATH", help="Write a self-contained HTML report to PATH."
 )  # noqa: E501
-@click.option("--skip-connect", is_flag=True, default=False, help="Skip server connections, config only.")
+@click.option(
+    "--skip-connect",
+    is_flag=True,
+    default=False,
+    help="Required for scan to run; translated to check.",
+)
 @click.option(
     "--connect-project-configs",
     is_flag=True,
