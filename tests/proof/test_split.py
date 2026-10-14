@@ -118,3 +118,20 @@ def test_split_checkout_producer_provenance_is_present() -> None:
     assert commit == expected
     assert isinstance(dirty, bool)
     assert source == "source-checkout"
+
+
+def test_package_version_falls_back_when_distribution_metadata_is_missing() -> None:
+    import importlib
+
+    import proof_before_action
+
+    def missing(name: str) -> str:
+        raise importlib.metadata.PackageNotFoundError(name)
+
+    try:
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(importlib.metadata, "version", missing)
+            assert importlib.reload(proof_before_action).__version__ == "0.0.0"
+    finally:
+        importlib.reload(proof_before_action)
+    assert proof_before_action.__version__ == importlib.metadata.version("mcp-audits-proof")
