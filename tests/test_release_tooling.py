@@ -155,8 +155,9 @@ def test_distribution_contract_is_explicit_and_ordered(tmp_path: Path, mutation:
 
 
 EXTRAS = (("labs", ("labs",)), ("proof", ("proof",)), ("all", ("labs", "proof")))
+BUILD_CONSTRAINTS = (Path(__file__).resolve().parents[1] / "build-constraints.txt").read_text()
 BUILD_SYSTEM = (
-    '[build-system]\nrequires = ["uv_build>=0.11.2,<0.13.0"]\n'
+    f'[build-system]\nrequires = ["{BUILD_CONSTRAINTS.strip()}"]\n'
     'build-backend = "mcp_audit_build_backend"\nbackend-path = ["."]\n'
 )
 
@@ -220,6 +221,7 @@ def _commit_train(repo: Path, train: tuple[release.Distribution, ...]) -> str:
         (base / "pyproject.toml").write_text(_project_toml(item))
         (base / "mcp_audit_build_backend.py").write_bytes(Path(backend.__file__).read_bytes())
     (repo / ".gitignore").write_text("__pycache__/\n")
+    (repo / "build-constraints.txt").write_text(BUILD_CONSTRAINTS)
     if not (repo / ".git").exists():
         _git(repo, "init", "-q")
     _git(repo, "add", "-A")
@@ -351,7 +353,16 @@ def test_real_build_verifies_clean_committed_train(train_artifacts: Path) -> Non
     repo = train_artifacts.parent / "repo"
     for item in TRAIN:
         subprocess.run(
-            ["uv", "build", "--offline", "--no-create-gitignore", "--out-dir", str(train_artifacts)],
+            [
+                "uv",
+                "build",
+                "--offline",
+                "--no-create-gitignore",
+                "--build-constraints",
+                str(repo / "build-constraints.txt"),
+                "--out-dir",
+                str(train_artifacts),
+            ],
             cwd=repo / PurePosixPath(item.project).parent,
             check=True,
             capture_output=True,
@@ -364,6 +375,45 @@ def test_real_build_verifies_clean_committed_train(train_artifacts: Path) -> Non
         )
         == 6
     )
+
+
+def test_reference_build_passes_the_committed_build_constraints(
+    train_artifacts: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[list[str]] = []
+    real_run = subprocess.run
+
+    def recording_run(args: list[str], **kwargs: object) -> object:
+        calls.append(list(args))
+        return real_run(args, **kwargs)  # type: ignore[call-overload]
+
+    monkeypatch.setattr(subprocess, "run", recording_run)
+    release._reference_build(commit=_commit(train_artifacts), distribution=TRAIN[0])
+
+    (build,) = [call for call in calls if call[:2] == ["uv", "build"]]
+    constraints = Path(build[build.index("--build-constraints") + 1])
+    assert constraints.name == "build-constraints.txt"
+    assert constraints.parent.name == "source"
+
+
+def test_reference_build_requires_committed_build_constraints(train_artifacts: Path) -> None:
+    repo = train_artifacts.parent / "repo"
+    _git(repo, "rm", "-q", "build-constraints.txt")
+    _git(repo, "commit", "-q", "-m", "drop constraints")
+    commit = _git(repo, "rev-parse", "HEAD")
+
+    with pytest.raises(release.VerificationError, match="build-constraints.txt"):
+        release._reference_build(commit=commit, distribution=TRAIN[0])
+
+
+def test_reference_build_is_constrained_by_the_committed_pin(train_artifacts: Path) -> None:
+    repo = train_artifacts.parent / "repo"
+    (repo / "build-constraints.txt").write_text("uv_build==0.0.1\n")
+    _git(repo, "commit", "-q", "-am", "conflicting constraint")
+    commit = _git(repo, "rev-parse", "HEAD")
+
+    with pytest.raises(release.VerificationError, match="reference build failed"):
+        release._reference_build(commit=commit, distribution=TRAIN[0])
 
 
 def _sdist_entries(path: Path) -> dict[str, bytes]:

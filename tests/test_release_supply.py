@@ -114,7 +114,16 @@ def head_distributions(tmp_path_factory: pytest.TempPathFactory) -> Path:
         archive.extractall(source, filter="data")
     dist = root / "dist"
     subprocess.run(
-        ["uv", "build", "--offline", "--no-create-gitignore", "--out-dir", str(dist)],
+        [
+            "uv",
+            "build",
+            "--offline",
+            "--no-create-gitignore",
+            "--build-constraints",
+            str(source / "build-constraints.txt"),
+            "--out-dir",
+            str(dist),
+        ],
         cwd=source,
         capture_output=True,
         check=True,
@@ -351,6 +360,24 @@ def test_workflow_isolates_consumer_copies_and_uploads_explicit_paths() -> None:
     upload = next(step for step in jobs["build"]["steps"] if "upload-artifact" in step.get("uses", ""))
     assert "*" not in upload["with"]["path"]
     assert len(upload["with"]["path"].splitlines()) == 3
+
+
+def test_publish_build_and_advisory_gate_use_the_same_build_constraints() -> None:
+    workflow = yaml.safe_load(Path(".github/workflows/publish.yml").read_text())
+    steps = {step.get("name"): step for step in workflow["jobs"]["build"]["steps"]}
+    constraints = "--build-constraints ../release-controls/build-constraints.txt"
+    gate = " ".join(steps["Run release quality gate"]["run"].replace("\\\n", " ").split())
+    assert f"check_advisories.py --lock uv.lock {constraints}" in gate
+    build = " ".join(steps["Build wheel and sdist"]["run"].replace("\\\n", " ").split())
+    assert build == f"uv build --clear --no-create-gitignore {constraints}"
+    builds = [step for step in workflow["jobs"]["build"]["steps"] if "uv build" in step.get("run", "")]
+    assert builds == [steps["Build wheel and sdist"]]
+    names = list(steps)
+    identical = steps["Require identical build constraints"]
+    assert identical["working-directory"] == "release-source"
+    assert "cmp -s ../release-controls/build-constraints.txt build-constraints.txt" in identical["run"]
+    assert "exit 1" in identical["run"]
+    assert names.index("Require identical build constraints") < names.index("Build wheel and sdist")
 
 
 def test_publish_workflows_disable_actions_cache() -> None:
