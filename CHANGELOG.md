@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Breaking
+
+- Schema v1 pin baselines are never compared, whether or not trusted pin keys
+  exist. A genuine v1 server entry is withheld from every pin-based check
+  (`--pin-check`, `--canary-check`, `--escalation-check`, `--provenance-check`,
+  `--integrity-check`, `--verify-artifacts`, `--download-artifacts`) with the
+  `pin_baseline_withheld` warning and partial coverage, never a pass; it does
+  not satisfy `require.pins`. A keyless 2.x install still compared v1 entries;
+  that comparison stops. The pin file is never rewritten on read.
+- In a mixed entry (v2 rows plus retained v1 rows) the v2 rows still compare;
+  the v1 rows are excluded from `NEW`, `CHANGED` and `REMOVED` drift and from
+  the canary first-listing comparison, and `pin_schema_outdated` names them as
+  uncovered.
+- `pin --refresh SERVER` no longer hashes or diffs a v1 baseline: it shows the
+  full current tool surface for review as a new pin (every tool `new`,
+  `baseline_verified: false`), and `--apply` replaces the entry with a v2
+  baseline, signed when a trusted key is configured. Review the diff against
+  the v1 hash on 2.11 or 2.12 before upgrading.
+- The legacy v1 hash form (`canonical_json_bytes(..., legacy=True)`) and the
+  `review_unverified_legacy` refresh option are removed from the library API.
+  `PinStore.legacy_entry(server)` reports a genuine v1 entry.
+- The `pin_baseline_withheld` and `pin_schema_outdated` warning texts are in the
+  present tense and no longer announce a future 3.0 change; the
+  `pin_schema_outdated` message lists the uncovered v1 tool names.
+
 ## [2.12.0] - 2026-10-12
 
 ### Upgrade notes

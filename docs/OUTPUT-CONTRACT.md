@@ -790,9 +790,10 @@ Tool entries retain all existing fields and add nullable `title`, `output_schema
 `schema_version` remains 1. Pin hashes use `mcpaudit.tool-surface.v2`: default-filled
 annotations, omitted null/empty optional fields, served schemas, sorted compact
 UTF-8 JSON with a trailing newline and rejected NaN/Infinity. Canary tool
-comparisons use the same normalized tool form and serializer. Legacy pins still
-compare only name, description and input schema with their original v1 bytes;
-scans never upgrade them. See [Pin Maintenance](../maintainers/PIN-MAINTENANCE.md) for migration.
+comparisons use the same normalized tool form and serializer. Legacy v1 pins are
+never compared (3.0 does not hash v1) and scans never upgrade or rewrite them;
+`pin --refresh` reviews the full current surface as a new pin. See
+[Pin Maintenance](../maintainers/PIN-MAINTENANCE.md) for migration.
 
 Saved-pin consumers add `pin_verification: {state, kid}` per server when a
 baseline exists. States are `verified`, `unsigned`, `untrusted_signer`,
@@ -814,10 +815,12 @@ verify a server (no pin-based check ran), `fail_on.pin_integrity` verifies the
 selected pin store directly. Policies without signed pins, and report
 `schema_version`, are unchanged. Genuine legacy v1 pins warn (`pin_schema_outdated`)
 and do not produce `MCP027` unless signing expectations or a signed manifest with
-missing trust establish a failure; they remain the comparison baseline only while
-no key is trusted. With a trusted key they are unauthenticated, so their baseline is
-withheld (`pin_baseline_withheld`, no drift/escalation/canary/provenance
-comparison, `require.pins` unmet, enabled comparison gates fail). A v1 entry for a
+missing trust establish a failure; they are never a comparison baseline, whether
+or not a key is trusted, so their baseline is withheld (`pin_baseline_withheld`,
+no drift/escalation/canary/provenance comparison, `require.pins` unmet, enabled
+comparison gates fail). In a mixed entry the v2 rows compare and the v1 rows are
+excluded from `NEW`, `CHANGED` and `REMOVED` drift; `pin_schema_outdated` lists
+the excluded tool names as uncovered. A v1 entry for a
 server with a recorded signing expectation or rollback high-water mark is a
 downgrade and is `tampered_entry`. Unsigned v2 pins warn (`pin_unsigned`) and remain usable only
 while the separate trust store holds no usable trusted key (active, or retired
@@ -902,11 +905,12 @@ annotations do not establish deltas. These hint names also appear in terminal,
 HTML, SARIF result properties and `get_escalation_findings` output.
 `pin --refresh --json` adds `uncovered_fields` rows with `tool_name`, `field`
 and `summary: "not previously covered"` for each newly covered v1 tool field.
-It also adds `baseline_verified` and nullable `baseline_note`. A legacy v1
-baseline withheld by scans (trusted keys, nothing authenticating the entry) is
-still compared in refresh review so every difference is shown, with
-`baseline_verified: false` and a note; terminal review labels it and never
-reports "No drift found" against an unverified baseline.
+It also adds `baseline_verified` and nullable `baseline_note`. A genuine legacy
+v1 baseline is not compared in refresh review either: every current tool is
+reported as `new`, as for a first pin, with `baseline_verified: false` and a
+note; terminal review labels it and never reports "No drift found". A mixed
+entry's v1 rows are uncovered and carry the same `baseline_verified: false`
+note while its v2 rows compare.
 Unsigned v2 migration review uses the same fields (`baseline_verified: false`
 and an unsigned migration `baseline_note`) while scans continue to withhold the
 entry with `MCP027` under trusted keys. Only entries without signing metadata,
@@ -1330,9 +1334,9 @@ The report top level also includes:
     `pin_rolled_back` (verified pin predates the locally recorded newest pin timestamp),
     `pin_rollback_tracking_unavailable` (verification succeeded but the local timestamp
     store could not be read or updated; rollback detection was not established),
-    `pin_schema_outdated` (a compared server has v1 tool entries; annotations,
-    title, outputSchema, icons and meta were not covered; original v1 drift
-    comparisons remain active, and refresh review is required for v2 coverage),
+    `pin_schema_outdated` (a pinned server has v1 tool entries, named in the
+    message; they are never compared and count as uncovered, and refresh
+    review is required for v2 coverage),
     `pin_baseline_corrupted` (a pin baseline file exists but could not be
     parsed, or saved v2 canary tool snapshots are invalid or incomplete — materially
     different from "missing", since it can mask a wiped or tampered baseline.
@@ -1343,11 +1347,11 @@ The report top level also includes:
     `pin_baseline_stale` (pinned servers whose baseline predates the capture
     this check compares against; named in `servers`),
     `pin_baseline_withheld` (servers whose pin baseline failed integrity
-    verification, HIGH MCP027, or is an unsigned legacy v1 pin while trusted keys
-    exist, so this baseline comparison was not run; also emitted for `pin_check`
-    and `canary_check`; named in `servers` and never also reported as
-    `pin_baseline_stale`; the message names `mcp-audit pin --refresh SERVER`
-    and the coming 3.0 withholding of keyless v1 baselines),
+    verification, HIGH MCP027, or is a genuine legacy v1 pin, whether or not
+    trusted keys exist, so this baseline comparison was not run; also emitted
+    for `pin_check` and `canary_check`; named in `servers` and never also
+    reported as `pin_baseline_stale`; the message names
+    `mcp-audit pin --refresh SERVER`),
     `integrity_comparison_incomplete` (with `check: integrity_check`; pinned
     paths excluded by sensitive-path protection or unavailable path resolution.
     The message reports counts, never excluded paths or their saved/current hashes),
@@ -1507,9 +1511,10 @@ checks whose warning has `code: pin_baseline_withheld` and `check: pin_check`.
 It adds a HIGH per-server violation with rule `fail_on.pin_baseline_withheld`,
 reported through existing policy fields, SARIF `MCP010`, and policy exit `2`.
 Other withheld checks and merely missing pins do not trigger this gate. Its
-default is `false` in 2.12; the 3.0 proposal makes withheld requested pin checks
-fail by default. Keyless v1 comparisons and mixed-row drift remain unchanged
-in 2.x; their reduced field coverage continues to emit `pin_schema_outdated`.
+default is `false`. A genuine v1 baseline is withheld whether or not trusted
+keys exist, so with this gate a keyless install with a v1 pin now fails the
+requested pin check; mixed-entry v1 rows are excluded from drift and emit
+`pin_schema_outdated`.
 
 `description_truncated` warnings use `check: "permission_analysis"`, name the
 affected server, and give a count of truncated fields without including their

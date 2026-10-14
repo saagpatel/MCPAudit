@@ -49,7 +49,7 @@ them. Removing a signature (even along with all signing metadata or by changing
 tool entries to v1) cannot downgrade that expectation. Genuine legacy v1 pins
 emit a `pin_schema_outdated` warning whenever read, including `pin --status`,
 and refresh reviews show a `pin --refresh SERVER` migration hint. Their baseline
-remains usable only while no key is trusted; with trusted keys it is withheld.
+is never compared, whether or not a key is trusted; it is withheld.
 Unsigned v2 baselines remain usable with a `pin_unsigned` warning only while no
 key is trusted.
 To migrate an existing unsigned v2 server, generate a key, review the live
@@ -100,9 +100,13 @@ The pin file also carries a signed manifest of its signed servers, so deleting o
 renaming a signed entry, emptying `servers`, removing the manifest, or splicing in
 a signed entry from another pin file is `MCP027` there too. Commit the manifest
 with the pins; `pin --clear SERVER` re-signs it.
-Genuine legacy v1 entries (v1 tool pins with no v2 markers) still only warn, but
-with a trusted key their baseline is withheld from comparisons
-(`pin_baseline_withheld`) because nothing authenticates it.
+Genuine legacy v1 entries (v1 tool pins with no v2 markers) still only warn,
+never `MCP027`, but their baseline is withheld from every pin-based comparison
+(`pin_baseline_withheld`), whether or not a key is trusted: MCPAudit 3.0 does
+not hash v1. The pin file is never rewritten on read. In a mixed entry (v2 rows
+plus retained v1 rows) the v2 rows still compare; the v1 rows are excluded from
+`NEW`, `CHANGED` and `REMOVED` drift and from the canary first-listing
+comparison, and `pin_schema_outdated` names them as uncovered.
 For a requested pin check, a withheld baseline records partial coverage with
 reason `pin_baseline_withheld`. To fail CI specifically on this case, opt in:
 
@@ -111,13 +115,13 @@ fail_on:
   pin_baseline_withheld: true
 ```
 
-This gate defaults to off in 2.12 and applies only to requested pin checks,
-independently of drift findings. Keyless v1 baselines still compare in 2.x;
-3.0 will withhold them too and fail requested pin checks by default. The proposed
-3.0 exclusion of mixed v1 rows from NEW/REMOVED drift is not active in 2.12.
-Support for reading v1 pins is deprecated and is planned for removal in MCPAudit
-3.0. Run `mcp-audit pin --refresh SERVER`, review the proposed changes, then
-apply them with `mcp-audit pin --refresh SERVER --apply` before upgrading.
+This gate applies only to requested pin checks, independently of drift
+findings. A remaining v1 entry has no comparable baseline:
+`mcp-audit pin --refresh SERVER` shows the full current tool surface for
+review as if the server were newly pinned (every tool is `new`), and
+`mcp-audit pin --refresh SERVER --apply` replaces the entry with a v2 baseline,
+signed when a trusted key is configured. To review a diff against the v1 hash,
+run the refresh on 2.11 or 2.12 before upgrading.
 Every signed write, refresh, re-sign, rotation and signed clear increments the
 manifest's signed positive-integer `sequence`, starting at 1. For one-shot CI,
 set a minimum independently of the pin file being checked:
@@ -156,9 +160,9 @@ copying and re-signing saved registry hashes. Restore a trusted backup, or
 explicitly clear the server's pin and review a fresh baseline before re-pinning.
 
 `pin --pin-file ./pins.yaml rotate-key` re-verifies signed entries and re-signs
-every signed or v2 entry (including mixed entries with legacy v1 rows) with a new key. The old public key remains trusted for 30 days;
+every signed or v2 entry (including mixed entries with retained v1 rows) with a new key. The old public key remains trusted for 30 days;
 `rotate-key --grace-days N` changes that rotation's grace period. Publish the
-new public key to CI's trust store. Legacy v1 entries remain unchanged until
-an explicit refresh review. Older valid signed baselines produce
+new public key to CI's trust store. Genuine v1 entries are never re-hashed or
+rewritten by rotation; only an explicit refresh replaces them. Older valid signed baselines produce
 `pin_rolled_back` when their timestamp predates the newest locally written or
 verified baseline. Missing or unwritable timestamp storage produces an explicit warning.
