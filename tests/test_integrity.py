@@ -126,11 +126,21 @@ async def test_existing_pin_exclusions_never_hash_or_export_protected_entries(
     baseline = {str(pinned_path): protected_baseline_hash}
     if include_safe:
         baseline[str(visible)] = hashlib.sha256(b"synthetic old artifact").hexdigest()
-    # Model an older on-disk pin captured before these paths were excluded.
+    # Model an older (2.9+) on-disk pin captured before these paths were excluded.
+    # The entry-level v2 marker keeps it a usable baseline; an unmarked zero-tool
+    # entry is a 2.0-2.8 v1 pin and is withheld instead (see the test below).
     pin_file = tmp_path / "pins.yaml"
     pin_file.write_text(
         yaml.safe_dump(
-            {"servers": {"fixture": {"tools": {}, "config_snapshot": {"artifact_hashes": baseline}}}}
+            {
+                "servers": {
+                    "fixture": {
+                        "pin_schema": 2,
+                        "tools": {},
+                        "config_snapshot": {"artifact_hashes": baseline},
+                    }
+                }
+            }
         ),
         encoding="utf-8",
     )
@@ -179,6 +189,35 @@ async def test_existing_pin_exclusions_never_hash_or_export_protected_entries(
     assert str(pinned_path) not in exported
     assert protected_baseline_hash not in exported
     assert hashlib.sha256(b"synthetic protected fixture").hexdigest() not in exported
+    assert pin_file.read_bytes() == saved_pin
+
+
+@pytest.mark.anyio
+async def test_unmarked_zero_tool_pin_is_withheld_from_integrity_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    protected = home / ".config" / "gh" / "hosts.yml"
+    protected.parent.mkdir(parents=True)
+    protected.write_bytes(b"synthetic protected fixture")
+    pin_file = tmp_path / "pins.yaml"
+    entry = {"tools": {}, "config_snapshot": {"artifact_hashes": {str(protected): "a" * 64}}}
+    pin_file.write_text(yaml.safe_dump({"servers": {"fixture": entry}}), encoding="utf-8")
+    saved_pin = pin_file.read_bytes()
+    store = PinStore(path=pin_file)
+    assert store.legacy_entry("fixture") and store.baseline_artifacts("fixture") is None
+    monkeypatch.setattr(pinning, "PinStore", lambda: PinStore(path=pin_file))
+    monkeypatch.setattr(integrity, "hash_file", lambda path: pytest.fail(f"hashed {path.name}"))
+    config = make_server_config(name="fixture", command="synthetic-command-not-on-path")
+    report = await run_scan(ScanOptions(skip_connect=True, integrity_check=True), servers=[config])
+    assert report.audits[0].integrity_findings == []
+    withheld = [w for w in report.warnings if w.code == "pin_baseline_withheld"]
+    assert [(w.check, w.servers) for w in withheld] == [("integrity_check", ["fixture"])]
+    assert "pin_schema_outdated" in {w.code for w in report.warnings}
+    assert report.coverage["integrity_check"].state != "complete"
+    assert str(protected) not in report.model_dump_json()
     assert pin_file.read_bytes() == saved_pin
 
 

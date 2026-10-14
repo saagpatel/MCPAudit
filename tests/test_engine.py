@@ -2,8 +2,7 @@
 
 Covers the contract the CLI, MCP server, api.py, and downstream packages
 (mcp-trust, shadow-mcp) rely on: ScanOptions defaults, silence-by-default
-output discipline, the AuditReport schema_version marker, and the deprecated
-cli._run_scan_core compatibility shim.
+output discipline, and the AuditReport schema_version marker.
 """
 
 from __future__ import annotations
@@ -846,35 +845,16 @@ def test_schema_version_pins_top_level_field_set() -> None:
     }
 
 
-def test_cli_run_scan_core_shim_warns_and_delegates(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The old private entry point still works (shadow-mcp compat) but warns."""
-    from functools import partial
+def test_cli_private_scan_shims_are_removed() -> None:
+    from mcp_audit import _core_cli, cli
 
-    from mcp_audit import cli
-    from mcp_audit.overrides import OverrideApplier, OverrideConfig
+    for name in ("_run_scan_core", "_run_scan", "_parse_clients"):
+        with pytest.raises(AttributeError, match=name):
+            getattr(cli, name)
+        with pytest.raises(AttributeError, match=name):
+            getattr(_core_cli, name)
 
-    monkeypatch.setattr(
-        engine, "discover_all_configs", lambda clients, parse_errors=None: [make_server_config(name="srv")]
-    )
-
-    with pytest.warns(DeprecationWarning, match="mcp_audit.engine.run_scan.*removal in 3.0"):
-        report = anyio.run(
-            partial(cli._run_scan_core, True, None, 10, None, OverrideApplier(OverrideConfig()))
-        )
-
-    assert [audit.server.name for audit in report.audits] == ["srv"]
-
-
-def test_cli_private_scan_shims_warn_on_access() -> None:
-    from mcp_audit import cli
-
-    with pytest.warns(DeprecationWarning, match="mcp_audit.cli._run_scan.*mcp_audit.scan_cli._run_scan"):
-        assert callable(cli._run_scan)
-    with pytest.warns(
-        DeprecationWarning,
-        match="mcp_audit.cli._parse_clients.*mcp_audit.client_filter._parse_clients",
-    ):
-        assert callable(cli._parse_clients)
+    assert "__getattr__" not in vars(cli)
 
 
 def test_shared_client_filter_parses_known_clients() -> None:
