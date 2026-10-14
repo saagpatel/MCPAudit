@@ -29,6 +29,11 @@ class AdvisoryCheckError(Exception):
     """Raised when the lock, constraints, or OSV response cannot be checked."""
 
 
+def canonical_name(name: str) -> str:
+    """PEP 503 normalization, so OSV sees ``uv-build`` for a ``uv_build`` pin."""
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
 def load_queries(lock_path: Path, constraints_path: Path | None) -> list[dict[str, object]]:
     try:
         lock = tomllib.loads(lock_path.read_text(encoding="utf-8"))
@@ -53,7 +58,7 @@ def load_queries(lock_path: Path, constraints_path: Path | None) -> list[dict[st
         name, version = package.get("name"), package.get("version")
         if not isinstance(name, str) or not isinstance(version, str):
             raise AdvisoryCheckError("registry package is missing its name or version")
-        versions.add((name, version))
+        versions.add((canonical_name(name), version))
 
     if constraints_path is not None and constraints_path.exists():
         try:
@@ -70,7 +75,7 @@ def load_queries(lock_path: Path, constraints_path: Path | None) -> list[dict[st
                     f"build constraint line {line_number} must be an exact name==version pin"
                 )
             name, version = match.groups()
-            versions.add((name, version))
+            versions.add((canonical_name(name), version))
 
     if len(versions) > MAX_QUERIES:
         raise AdvisoryCheckError(f"package query count exceeds limit ({MAX_QUERIES})")

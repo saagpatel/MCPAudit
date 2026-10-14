@@ -372,6 +372,12 @@ def test_publish_build_and_advisory_gate_use_the_same_build_constraints() -> Non
     assert build == f"uv build --clear --no-create-gitignore {constraints}"
     builds = [step for step in workflow["jobs"]["build"]["steps"] if "uv build" in step.get("run", "")]
     assert builds == [steps["Build wheel and sdist"]]
+    names = list(steps)
+    identical = steps["Require identical build constraints"]
+    assert identical["working-directory"] == "release-source"
+    assert "cmp -s ../release-controls/build-constraints.txt build-constraints.txt" in identical["run"]
+    assert "exit 1" in identical["run"]
+    assert names.index("Require identical build constraints") < names.index("Build wheel and sdist")
 
 
 def test_publish_workflows_disable_actions_cache() -> None:

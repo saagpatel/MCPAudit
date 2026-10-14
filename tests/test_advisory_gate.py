@@ -56,6 +56,20 @@ def test_load_queries_covers_registry_lock_entries_and_build_pin(tmp_path: Path)
     ]
 
 
+def test_load_queries_canonicalizes_package_names(tmp_path: Path) -> None:
+    lock_path = tmp_path / "uv.lock"
+    constraints_path = tmp_path / "build-constraints.txt"
+    write_lock(lock_path)
+    constraints_path.write_text("uv_build==0.12.24\n", encoding="utf-8")
+
+    queries = check_advisories.load_queries(lock_path, constraints_path)
+
+    names = [query["package"]["name"] for query in queries]  # type: ignore[index]
+    assert "uv-build" in names
+    assert "uv_build" not in names
+    assert check_advisories.canonical_name("Foo.Bar__baz") == "foo-bar-baz"
+
+
 def test_load_queries_keeps_multiple_locked_versions(tmp_path: Path) -> None:
     lock_path = tmp_path / "uv.lock"
     write_lock(lock_path)

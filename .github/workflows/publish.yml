@@ -112,6 +112,14 @@ jobs:
         working-directory: release-source
         run: uv run python tests/validation/validate_patterns.py
 
+      - name: Require identical build constraints
+        working-directory: release-source
+        run: |
+          cmp -s ../release-controls/build-constraints.txt build-constraints.txt || {
+            echo "::error::release-controls and the approved commit carry different build-constraints.txt" >&2
+            exit 1
+          }
+
       - name: Build wheel and sdist
         working-directory: release-source
         run: |
