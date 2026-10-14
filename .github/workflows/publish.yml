@@ -114,7 +114,9 @@ jobs:
 
       - name: Build wheel and sdist
         working-directory: release-source
-        run: uv build --clear --no-create-gitignore
+        run: |
+          uv build --clear --no-create-gitignore \
+            --build-constraints ../release-controls/build-constraints.txt
 
       - name: Verify built distributions
         env:
