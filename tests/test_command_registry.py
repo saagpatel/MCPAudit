@@ -190,6 +190,57 @@ def test_pin_is_a_visible_alias_for_baseline_pin() -> None:
     assert "alias for baseline pin" in " ".join(help_text.split())
 
 
+@pytest.mark.parametrize("family", ["preinstall", "run", "skills"])
+def test_side_product_namespaced_paths_emit_output(
+    family: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    if family in {"preinstall", "run"}:
+        invalid = tmp_path / "invalid.json"
+        invalid.write_text("[]", encoding="utf-8")
+        args = [
+            "safeforge",
+            family,
+            "--producer-schema",
+            str(invalid),
+            "--receipt",
+            str(invalid),
+            "--artifact-root",
+            str(tmp_path),
+            "--run-id",
+            "synthetic-run",
+            "--created-at",
+            "2026-01-01T00:00:00Z",
+            "--coordinator-revision",
+            "synthetic",
+        ]
+        expected_exit = 2
+    else:
+        skill = tmp_path / "skill"
+        skill.mkdir()
+        (skill / "SKILL.md").write_text(
+            "---\nname: synthetic\ndescription: Offline fixture\n---\nUse local fixtures.\n", encoding="utf-8"
+        )
+        args = ["skills", "scan", str(skill)]
+        expected_exit = 0
+    result = CliRunner().invoke(main, args)
+    assert result.exit_code == expected_exit, result.output
+    assert result.stdout_bytes
+    assert b"removed in 3.0" not in result.stderr_bytes
+
+
+def test_pin_alias_keeps_baseline_pin_output_bytes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    args = ["--status", "--json", "--pin-file", str(tmp_path / "pins.yaml")]
+    runner = CliRunner()
+    alias = runner.invoke(main, ["pin", *args])
+    canonical = runner.invoke(main, ["baseline", "pin", *args])
+    assert alias.exit_code == canonical.exit_code == 0
+    assert alias.stdout_bytes
+    assert alias.stdout_bytes == canonical.stdout_bytes
+    assert alias.stderr_bytes == canonical.stderr_bytes
+
+
 def test_lab_help_shows_future_installs_without_importing_labs(monkeypatch: pytest.MonkeyPatch) -> None:
     def forbidden_import(name: str) -> None:
         raise AssertionError(f"help imported {name}")

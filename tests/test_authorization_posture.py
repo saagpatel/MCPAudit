@@ -395,7 +395,7 @@ def test_cli_exit_contract_and_safe_artifact_writes(tmp_path: Path) -> None:
     )
     assert written.exit_code == 0
     assert written.stdout == ""
-    assert "Use 'mcp-audit lab authorization-posture' instead." in written.stderr
+    assert "removed in 3.0" not in written.stderr
     assert json.loads(report_path.read_text(encoding="utf-8"))["disposition"] == "policy-review-only"
 
     no_clobber = runner.invoke(
