@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Release builds pin `uv_build==0.12.24` exactly in `pyproject.toml` and in a new
+  `build-constraints.txt`. The publish workflow build and the release verifier's
+  reference build both pass `--build-constraints build-constraints.txt`.
+- The release advisory gate (`scripts/check_advisories.py`) exits 2 when the build
+  constraints file is missing, instead of warning and passing without build-input
+  coverage.
+
 ## [2.12.0] - 2026-10-12
 
 ### Upgrade notes
