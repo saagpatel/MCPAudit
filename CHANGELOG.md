@@ -29,6 +29,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- `scan` is now a hidden interceptor over `check`. Forms classified as
+  preserved or explicitly narrowed print one notice and run the printed
+  command through check's parser, output and exit handling. Forms that could
+  silently lose coverage print an inexact replacement and exit 2 without
+  scanning; bare `scan`, connected defaults and `--json PATH` are refused.
+  The legacy adapter is removed. Terminal artifacts use check's separate
+  `Wrote PATH` lines, and cards and recovery errors use check's output.
 - The MCP `scan_mcp_servers` tool exposed by `serve` is static by default:
   `connect` now defaults to `false`. Pass `connect=true` to connect to
   configured servers; `skip_connect=true` still disables connections. Every

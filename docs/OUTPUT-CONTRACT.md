@@ -3,6 +3,37 @@
 MCPAudit reports are designed for local review and CI ingestion. Keep this
 contract stable unless a release note calls out a breaking change.
 
+## Legacy scan interceptor (3.0)
+
+`scan` remains registered but is hidden from both top-level help views. It no
+longer has a separate execution or rendering path. The frozen option classifier
+runs before source reads. `would-silently-shrink` prints its reason and a
+shell-quoted replacement command on stderr, labelled **not exact**, then exits
+2 without scanning or writing artifacts. For example, bare `scan` suggests
+`mcp-audit check --include-discovered --connect-all`; the suggestion requires
+manual review and is never executed automatically. Unsafe argument values are
+withheld from both lines.
+
+`preserved` and explicitly `narrowed` forms print one translation notice on
+stderr, then parse and invoke the printed argv through `check`. Their stdout,
+artifact writing, validation and exit codes are those of `check`. In particular:
+
+- Terminal output uses check's summary and requested details. Each artifact
+  gets its own `Wrote PATH` line using the selected path, rather than scan's
+  combined basename list. `--card` uses check's card and sticker output.
+  Recheck suggestions use `check`, with explicit connection flags when the
+  finding requires a connected review.
+- Legacy `--json PATH` is refused with exit 2 and suggests `--output-json PATH`.
+  Use `check --json` for JSON-only stdout or `check --output-json PATH` for a
+  file. Accepted scan forms retain human-readable stdout.
+- Usage validation exits 2; input/output recovery errors exit 1 with check's
+  failed stage, recovery, scanned state and written paths. Policy failures
+  write requested reports before exit 2. Successful checks exit 0.
+
+The report schemas, `schema_version` and file formats are unchanged. Existing
+check source-limit diagnostics and its non-fatal `no_sources_reviewed` warning
+also apply to translated scans. See the [migration guide](guides/scan-migration.md).
+
 ## Report redaction
 
 Terminal, JSON, SARIF, and HTML consume the credential-redacted typed report
