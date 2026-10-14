@@ -95,7 +95,7 @@ class LazyGroup(click.Group):
         self, ctx: click.Context, args: list[str]
     ) -> tuple[str | None, click.Command | None, list[str]]:
         spec = self.registry.get(args[0])
-        if spec is not None and spec.hidden and args[0] != "pin" and not ctx.resilient_parsing:
+        if spec is not None and spec.hidden and args[0] not in {"pin", "scan"} and not ctx.resilient_parsing:
             name = args[0]
             if name in LAB_COMMANDS:
                 replacement = f"Use 'mcp-audit lab {name}' instead."
@@ -115,7 +115,7 @@ class LazyGroup(click.Group):
         sections: dict[str, list[tuple[str, str]]] = {}
         show_all = bool(ctx.meta.get("help_all"))
         for name, spec in self.registry.items():
-            if spec.hidden and not show_all:
+            if spec.hidden and (not show_all or name == "scan"):
                 continue
             section = "Compatibility aliases" if spec.hidden else spec.section
             rows = sections.setdefault(section, [])
@@ -284,7 +284,7 @@ COMMANDS: dict[str, CommandSpec | NamespaceSpec] = {
         "Review saved pins and tool surfaces without a proxy.",
         "Integrations",
     ),
-    "scan": CommandSpec("mcp_audit._core_cli", "scan", "Full legacy audit with explicit scan modes."),
+    "scan": CommandSpec("mcp_audit._core_cli", "scan", "Translate legacy options to check.", hidden=True),
     "discover": CommandSpec(
         "mcp_audit._core_cli", "discover", "Discover configured servers without connections."
     ),

@@ -13,7 +13,8 @@ MCP_TRUST_PACKET_DOC = Path("docs/MCP-TRUST-PACKET.md")
 SOLO_EVIDENCE_DOC = Path("maintainers/SOLO-EVIDENCE.md")
 README = Path("README.md")
 FIELD_REPORT_COMMAND = (
-    "uvx --from mcp-audits mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact"
+    "uvx --from mcp-audits mcp-audit check --include-discovered "
+    "--output-json mcp-audit-field-report.json --redact"
 )
 
 

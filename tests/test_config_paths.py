@@ -254,27 +254,36 @@ def test_cli_empty_states(tmp_path: Path, text: str, message: str, exit_code: in
     config.write_text(text)
     result = CliRunner().invoke(
         main,
-        ["scan", "--config", str(config), "--config-only", "--skip-connect", "--override-config", os.devnull],
+        [
+            "check",
+            "--config",
+            str(config),
+            "--config-only",
+            "--skip-connect",
+            "--override-config",
+            os.devnull,
+        ],
     )
     assert result.exit_code == exit_code, result.output
     assert message in result.output
 
 
 def test_cli_unreadable_empty_state(tmp_path: Path) -> None:
+    from mcp_audit.review_discovery import _read_bounded
+
     config = tmp_path / "unreadable.json"
     config.touch()
-    read_text = Path.read_text
 
-    def read(path: Path, encoding: str | None = None, errors: str | None = None) -> str:
+    def read(path: Path, *, explicit: bool) -> str:
         if path == config:
             raise PermissionError("synthetic permission denial")
-        return read_text(path, encoding=encoding, errors=errors)
+        return _read_bounded(path, explicit=explicit)
 
-    with patch.object(Path, "read_text", read):
+    with patch("mcp_audit.review_discovery._read_bounded", read):
         result = CliRunner().invoke(
             main,
             [
-                "scan",
+                "check",
                 "--config",
                 str(config),
                 "--config-only",
@@ -284,4 +293,6 @@ def test_cli_unreadable_empty_state(tmp_path: Path) -> None:
             ],
         )
     assert result.exit_code == 1
-    assert "Failed to read" in result.output
+    assert "Cannot review" in result.output
+    assert "unreadable config: PermissionError" in result.output
+    assert "Scanned: no" in result.output

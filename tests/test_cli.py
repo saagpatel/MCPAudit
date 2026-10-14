@@ -12,12 +12,36 @@ import pytest
 from click.testing import CliRunner
 
 from mcp_audit import _core_cli as core_cli
-from mcp_audit import cli, engine, pin_cli, scan_cli
+from mcp_audit import check_cli, cli, engine, pin_cli
 from mcp_audit.confighealth import config_health_findings
 from mcp_audit.engine import ScanOptions
-from mcp_audit.models import AuditReport, ServerAudit, TransportType
+from mcp_audit.models import AuditReport, ClientType, ServerAudit, TransportType
+from mcp_audit.overrides import OverrideConfig
 from mcp_audit.pinning import PinStore
+from mcp_audit.review_discovery import ReviewSources, review_sources
 from tests.conftest import make_server_config, make_tool
+
+
+@pytest.fixture(autouse=True)
+def isolated_check_sources(monkeypatch: pytest.MonkeyPatch) -> None:
+    real_review = review_sources
+
+    def review(
+        config: Path | None,
+        include_discovered: bool,
+        project: Path | None,
+        clients: tuple[ClientType, ...],
+        *,
+        scan_compatible: bool = False,
+    ) -> ReviewSources:
+        return (
+            real_review(config, include_discovered, project, clients, scan_compatible=scan_compatible)
+            if config is not None
+            else ReviewSources()
+        )
+
+    monkeypatch.setattr(check_cli, "review_sources", review)
+    monkeypatch.setattr("mcp_audit.overrides.load_override_config", lambda *a: OverrideConfig())
 
 
 def _report(audits: list[ServerAudit]) -> AuditReport:
@@ -47,18 +71,19 @@ def test_scan_max_concurrency_reaches_current_run_scan_entrypoint(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     config = tmp_path / "synthetic.json"
-    config.write_text("{}")
-    forwarded: list[object] = []
+    config.write_text('{"mcpServers": {}}')
+    forwarded: list[ScanOptions] = []
 
-    async def fake_run_scan(*args: object, **kwargs: object) -> None:
-        forwarded.extend(args)
+    async def fake_run_scan(options: ScanOptions, **kwargs: object) -> AuditReport:
+        forwarded.append(options)
+        return _report([])
 
-    monkeypatch.setattr(scan_cli, "_run_scan", fake_run_scan)
+    monkeypatch.setattr(check_cli, "run_scan", fake_run_scan)
 
     result = CliRunner().invoke(
         cli.main,
         [
-            "scan",
+            "check",
             "--config",
             str(config),
             "--config-only",
@@ -70,18 +95,20 @@ def test_scan_max_concurrency_reaches_current_run_scan_entrypoint(
     )
 
     assert result.exit_code == 0, result.output
-    assert forwarded[-2:] == [7, False]  # max_concurrency, connect_project_configs
+    assert len(forwarded) == 1
+    assert forwarded[0].max_concurrency == 7
+    assert forwarded[0].connect_project_configs is False
 
 
 def test_scan_max_concurrency_rejects_zero() -> None:
-    result = CliRunner().invoke(cli.main, ["scan", "--max-concurrency", "0"])
+    result = CliRunner().invoke(cli.main, ["check", "--max-concurrency", "0"])
 
     assert result.exit_code != 0
     assert "Invalid value for '--max-concurrency'" in result.output
 
 
 def test_scan_help_describes_session_timeout_budget() -> None:
-    result = CliRunner().invoke(cli.main, ["scan", "--help"])
+    result = CliRunner().invoke(cli.main, ["check", "--help"])
     help_text = " ".join(result.output.split())
 
     assert result.exit_code == 0
@@ -91,7 +118,7 @@ def test_scan_help_describes_session_timeout_budget() -> None:
 
 
 def test_scan_help_describes_inject_check_as_instruction_shaped_text() -> None:
-    result = CliRunner().invoke(cli.main, ["scan", "--help"])
+    result = CliRunner().invoke(cli.main, ["check", "--help"])
     help_text = " ".join(result.output.split())
 
     assert result.exit_code == 0, result.output
@@ -110,7 +137,7 @@ def test_debug_installs_transport_secret_filter_once_at_main(monkeypatch: pytest
         calls += 1
 
     monkeypatch.setattr(connector, "install_transport_log_filters", install_filters)
-    result = CliRunner().invoke(cli.main, ["--debug", "scan", "--help"])
+    result = CliRunner().invoke(cli.main, ["--debug", "check", "--help"])
 
     assert result.exit_code == 0, result.output
     assert calls == 1
@@ -119,12 +146,12 @@ def test_debug_installs_transport_secret_filter_once_at_main(monkeypatch: pytest
 def test_error_messages_route_to_stderr_not_stdout() -> None:
     # Machine-parseable stdout (json/sarif pipelines) must never be polluted
     # by human-facing error text.
-    result = CliRunner().invoke(cli.main, ["scan", "--skip-connect", "--clients", "bogus"])
+    result = CliRunner().invoke(cli.main, ["check", "--skip-connect", "--client", "bogus"])
 
-    assert result.exit_code == 1
-    assert "Unknown client" in result.stderr
+    assert result.exit_code == 2
+    assert "Invalid value for '--client'" in result.stderr
     # result.output interleaves both streams; result.stdout is stdout alone.
-    assert "Unknown client" not in result.stdout
+    assert "Invalid value" not in result.stdout
 
 
 def test_redact_scrubs_planted_identifiers_across_all_file_formats(
@@ -143,16 +170,16 @@ def test_redact_scrubs_planted_identifiers_across_all_file_formats(
         report.hostname = "secret-host.local"
         return report
 
-    monkeypatch.setattr(scan_cli, "run_scan", fake_run_scan)
+    monkeypatch.setattr(check_cli, "run_scan", fake_run_scan)
     outputs = {ext: tmp_path / f"out.{ext}" for ext in ("json", "sarif", "html")}
 
     result = CliRunner().invoke(
         cli.main,
         [
-            "scan",
+            "check",
             "--skip-connect",
             "--redact",
-            "--json",
+            "--output-json",
             str(outputs["json"]),
             "--sarif",
             str(outputs["sarif"]),
@@ -162,7 +189,8 @@ def test_redact_scrubs_planted_identifiers_across_all_file_formats(
     )
 
     assert result.exit_code == 0
-    assert "Wrote out.json · out.sarif · out.html" in result.output
+    for path in outputs.values():
+        assert f"Wrote {path}" in result.output.replace("\n", "")
     for ext, path in outputs.items():
         text = path.read_text()
         assert "alice" not in text, f"{ext} leaked username"
@@ -181,7 +209,7 @@ def test_scan_writes_report_files_when_no_servers_discovered(
 
     result = CliRunner().invoke(
         cli.main,
-        ["scan", "--skip-connect", "--sarif", str(sarif_path), "--json", str(json_path)],
+        ["check", "--skip-connect", "--sarif", str(sarif_path), "--output-json", str(json_path)],
     )
 
     assert result.exit_code == 0, result.output
@@ -194,17 +222,17 @@ def test_scan_writes_report_files_when_no_servers_discovered(
 
 
 def test_scan_config_only_requires_config() -> None:
-    result = CliRunner().invoke(cli.main, ["scan", "--config-only"])
+    result = CliRunner().invoke(cli.main, ["check", "--config-only"])
 
     assert result.exit_code != 0
-    assert "--config-only requires --config PATH" in result.output
+    assert "--config-only requires --config" in result.output
 
 
 def test_scan_missing_config_path_is_a_hard_error(monkeypatch: pytest.MonkeyPatch) -> None:
     # A typo'd --config path must error out, not silently scan nothing and pass gates.
     monkeypatch.setattr(engine, "discover_all_configs", lambda *a, **k: [])
 
-    result = CliRunner().invoke(cli.main, ["scan", "--skip-connect", "--config", "/nope/missing.json"])
+    result = CliRunner().invoke(cli.main, ["check", "--skip-connect", "--config", "/nope/missing.json"])
 
     assert result.exit_code != 0
     assert "not found" in result.output
@@ -371,9 +399,9 @@ def test_scan_reports_duplicate_server_names(monkeypatch: pytest.MonkeyPatch) ->
         report.config_health_findings = config_health_findings([first_server, second_server])
         return report
 
-    monkeypatch.setattr(scan_cli, "run_scan", fake_run_scan)
+    monkeypatch.setattr(check_cli, "run_scan", fake_run_scan)
 
-    result = CliRunner().invoke(cli.main, ["scan", "--skip-connect"])
+    result = CliRunner().invoke(cli.main, ["check", "--skip-connect"])
 
     assert result.exit_code == 0
     assert "config warnings" in result.output
@@ -660,8 +688,13 @@ def test_provenance_check_warns_on_stale_pinned_server(
     PinStore(path=pin_file).pin_server("legacy", [make_tool("t")])  # 2-arg: no config_snapshot
     monkeypatch.setattr(pinning, "PinStore", lambda *a, **k: PinStore(path=pin_file))
     monkeypatch.setattr(engine, "discover_all_configs", lambda *a, **k: [make_server_config(name="legacy")])
+    monkeypatch.setattr(
+        check_cli,
+        "review_sources",
+        lambda *a, **k: ReviewSources(servers=[make_server_config(name="legacy")]),
+    )
 
-    result = CliRunner().invoke(cli.main, ["scan", "--skip-connect", "--provenance-check"])
+    result = CliRunner().invoke(cli.main, ["check", "--skip-connect", "--provenance-check", "--details"])
 
     assert result.exit_code == 0, result.output
     assert "predate launch-config snapshots" in result.output
@@ -671,7 +704,7 @@ def test_scan_integrity_check_flag_runs(monkeypatch: pytest.MonkeyPatch) -> None
     # Flag-level smoke: --integrity-check threads through click -> _run_scan ->
     # engine.run_scan (instantiating the analyzer + pin store) without error.
     monkeypatch.setattr(engine, "discover_all_configs", lambda *a, **k: [])
-    result = CliRunner().invoke(cli.main, ["scan", "--integrity-check", "--skip-connect"])
+    result = CliRunner().invoke(cli.main, ["check", "--integrity-check", "--skip-connect"])
     assert result.exit_code == 0, result.output
     assert "No MCP servers found." in result.output
 
@@ -915,9 +948,9 @@ def test_scan_redact_flag_scrubs_json(monkeypatch: pytest.MonkeyPatch, tmp_path:
         report.hostname = "secret-host.local"
         return report
 
-    monkeypatch.setattr(scan_cli, "run_scan", fake_run_scan)
+    monkeypatch.setattr(check_cli, "run_scan", fake_run_scan)
     out = tmp_path / "report.json"
-    result = CliRunner().invoke(cli.main, ["scan", "--skip-connect", "--json", str(out), "--redact"])
+    result = CliRunner().invoke(cli.main, ["check", "--skip-connect", "--output-json", str(out), "--redact"])
 
     assert result.exit_code == 0
     text = out.read_text()
@@ -936,9 +969,9 @@ def test_scan_without_redact_keeps_identifiers(monkeypatch: pytest.MonkeyPatch, 
         report.hostname = "secret-host.local"
         return report
 
-    monkeypatch.setattr(scan_cli, "run_scan", fake_run_scan)
+    monkeypatch.setattr(check_cli, "run_scan", fake_run_scan)
     out = tmp_path / "report.json"
-    result = CliRunner().invoke(cli.main, ["scan", "--skip-connect", "--json", str(out)])
+    result = CliRunner().invoke(cli.main, ["check", "--skip-connect", "--output-json", str(out)])
 
     assert result.exit_code == 0
     # opt-in: without --redact, identifiers remain (credential redaction still applies)
@@ -971,7 +1004,7 @@ def test_scan_policy_required_pins_uses_selected_pin_file(
         default_store.pin_server("srv", [make_tool("read_file")])
 
     config = tmp_path / "synthetic.json"
-    config.write_text("{}\n", encoding="utf-8")
+    config.write_text('{"mcpServers": {}}\n', encoding="utf-8")
     policy = tmp_path / "policy.yaml"
     policy.write_text(
         "servers:\n  srv:\n    require_pin: true\n"
@@ -984,11 +1017,11 @@ def test_scan_policy_required_pins_uses_selected_pin_file(
     async def fake_run_scan(*args: object, **kwargs: object) -> AuditReport:
         return _report([audit])
 
-    monkeypatch.setattr(scan_cli, "run_scan", fake_run_scan)
+    monkeypatch.setattr(check_cli, "run_scan", fake_run_scan)
     result = CliRunner().invoke(
         cli.main,
         [
-            "scan",
+            "check",
             "--config",
             str(config),
             "--config-only",
@@ -1018,9 +1051,9 @@ def test_scan_redact_flag_aliases_server_names(monkeypatch: pytest.MonkeyPatch, 
     async def fake_run_scan(*args: object, **kwargs: object) -> AuditReport:
         return _report([audit])
 
-    monkeypatch.setattr(scan_cli, "run_scan", fake_run_scan)
+    monkeypatch.setattr(check_cli, "run_scan", fake_run_scan)
     out = tmp_path / "report.json"
-    result = CliRunner().invoke(cli.main, ["scan", "--skip-connect", "--json", str(out), "--redact"])
+    result = CliRunner().invoke(cli.main, ["check", "--skip-connect", "--output-json", str(out), "--redact"])
 
     assert result.exit_code == 0
     text = out.read_text()

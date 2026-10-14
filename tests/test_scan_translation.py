@@ -13,7 +13,7 @@ import click
 import pytest
 from click.testing import CliRunner
 
-from mcp_audit import _core_cli, check_cli, cli, discovery, review_discovery, scan_cli
+from mcp_audit import _core_cli, check_cli, cli, discovery, review_discovery
 from mcp_audit.discovery.claude_desktop import ClaudeDesktopDiscoverer
 from mcp_audit.scan_translation import OPTION_TABLE, OptionTranslation, classify_scan_options
 
@@ -186,6 +186,63 @@ def test_shell_quoting_round_trips_without_interpreting_argument_text() -> None:
     assert str(path) in result.check_argv
 
 
+@pytest.mark.parametrize("clients", ["claude-code", "Cursor", "claude-code,vs-code"])
+def test_unsupported_client_spelling_is_named_and_never_widens_to_every_client(clients: str) -> None:
+    result = classify_scan_options({"skip_connect": True, "clients": clients})
+    assert result.coverage == "would-silently-shrink"
+    assert result.check_argv is None
+    assert "unsupported client spelling" in result.notice()
+    assert "--client claude_code" in result.notice()
+    for client in ("claude_code", "claude_desktop", "cursor", "vscode", "windsurf"):
+        assert client in result.notice()
+    assert ("comma-separated" in result.notice()) == ("," in clients)
+    # No runnable replacement: check without a valid selector would review every client.
+    assert result.replacement_argv == ()
+    assert "no replacement command is offered" in result.replacement_notice()
+
+
+@pytest.mark.parametrize("skip_connect", [True, False])
+def test_unsupported_client_spelling_never_suggests_connecting_everything(skip_connect: bool) -> None:
+    result = classify_scan_options({"skip_connect": skip_connect, "clients": "claude-code"})
+    assert result.replacement_argv == ()
+    assert "--connect-all" not in result.replacement_notice()
+
+
+def test_comma_separated_supported_clients_keep_their_reason_and_discovery() -> None:
+    result = classify_scan_options({"skip_connect": True, "clients": "cursor,vscode"})
+    assert result.coverage == "would-silently-shrink"
+    assert "comma-separated selections are untranslatable" in result.notice()
+    assert "unsupported client spelling" not in result.notice()
+    assert result.replacement_argv[-4:] == (
+        "--client",
+        "vscode",
+        "--include-discovered",
+        "--scan-compatible-sources",
+    )
+
+
+@pytest.mark.parametrize("clients", ["cursor,vscode", "cursor, vscode,cursor"])
+def test_inexact_replacement_preserves_values_that_look_like_option_names(clients: str) -> None:
+    result = classify_scan_options(
+        {
+            **EXPLICIT,
+            "skip_connect": False,
+            "json_output": "--client",
+            "clients": clients,
+            "ignore_reason": "--skip-connect",
+        }
+    )
+    assert result.coverage == "would-silently-shrink"
+    printed = shlex.split(result.replacement_notice().split(": ", 2)[2])
+    assert printed == list(result.replacement_argv)
+    with check_cli.check.make_context("check", printed[2:]) as context:
+        assert context.params["output_json"] == Path("--client")
+        assert context.params["ignore_reason"] == "--skip-connect"
+        assert [client.value for client in context.params["clients"]] == ["cursor", "vscode"]
+        assert context.params["connect_all"] is True
+        assert context.params["skip_connect"] is False
+
+
 @pytest.mark.parametrize(
     "argument", ["line\nbreak", "tab\tvalue", "escape\x1b[31m", "bidi\u202evalue", "token=synthetic-secret"]
 )
@@ -198,31 +255,31 @@ def test_unsafe_argument_values_are_withheld_without_echoing_them(argument: str)
 
 
 @pytest.mark.parametrize("exit_code", [0, 1, 2, 130])
-@pytest.mark.parametrize("untranslatable", [False, True])
-def test_notice_is_one_stderr_line_and_never_changes_legacy_execution_or_exit(
-    exit_code: int, untranslatable: bool, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("discovered", [False, True])
+def test_notice_reparses_printed_argv_and_preserves_check_exit(
+    exit_code: int, discovered: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    calls: list[tuple[object, ...]] = []
+    calls: list[dict[str, object]] = []
 
-    async def legacy(*args: object, **kwargs: object) -> None:
-        calls.append(args)
-        click.echo("legacy output")
-        raise SystemExit(exit_code)
+    def checked(**kwargs: object) -> None:
+        calls.append(kwargs)
+        click.echo("check output")
+        raise click.exceptions.Exit(exit_code)
 
-    def forbidden(*args: object, **kwargs: object) -> None:
-        raise AssertionError("the notice must not invoke check")
-
-    monkeypatch.setattr(scan_cli, "_run_scan", legacy)
-    monkeypatch.setattr(check_cli, "run_scan", forbidden)
-    args = ["scan", *SAFE_ARGS, *(["--json", "report.json"] if untranslatable else [])]
+    monkeypatch.setattr(check_cli.check, "callback", checked)
+    args = ["scan", *(["--skip-connect"] if discovered else SAFE_ARGS)]
     result = CliRunner().invoke(cli.main, args)
     assert result.exit_code == exit_code, result.output
-    assert result.stdout == "legacy output\n"
+    assert result.stdout == "check output\n"
     assert len(result.stderr.splitlines()) == 1
-    assert ("no exact" if untranslatable else "options map exactly") in result.stderr
+    assert "options map exactly" in result.stderr
     assert len(calls) == 1
-    assert calls[0][0] == ("report.json" if untranslatable else None)
-    assert calls[0][3] is True  # skip-connect retains its original engine position
+    printed = shlex.split(result.stderr.strip().split(": ", 2)[2])
+    with check_cli.check.make_context("check", printed[2:]) as context:
+        assert calls[0] == context.params
+    assert calls[0]["config"] == (None if discovered else Path("fixture.json"))
+    assert calls[0]["clients"] == ()
+    assert calls[0]["include_discovered"] is discovered
 
 
 def test_synthetic_scan_and_its_translation_select_the_same_servers(
@@ -262,11 +319,12 @@ def test_synthetic_scan_and_its_translation_select_the_same_servers(
     assert json.loads(scan_sarif.read_text()) == json.loads(check_sarif.read_text())
 
 
-def test_invalid_config_only_still_emits_notice_and_keeps_existing_exit() -> None:
+def test_invalid_config_only_refuses_before_check() -> None:
     result = CliRunner().invoke(cli.main, ["scan", "--config-only", "--skip-connect"])
-    assert result.exit_code == 1
+    assert result.exit_code == 2
     assert result.stderr.splitlines()[0].startswith("scan: no exact check translation exists:")
-    assert result.stderr.splitlines()[1] == "Error: --config-only requires --config PATH."
+    assert "replacement command (not exact" in result.stderr.splitlines()[1]
+    assert result.stdout == ""
 
 
 @pytest.mark.parametrize("sarif_profile", ["compatibility", "extended"])
