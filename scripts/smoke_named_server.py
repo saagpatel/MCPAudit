@@ -427,7 +427,7 @@ def check_identity(executable: Path, expected_commit: str | None) -> None:
             assert package.is_relative_to(executable.parent.parent) and "site-packages" in package.parts
             assert identity["provenance"]["commit"] == expected_commit
             assert identity["provenance"]["dirty"] is False
-        for command in ("mcp-audit", "mcp-audits", "proof-before-action"):
+        for command in ("mcp-audit", "mcp-audits"):
             version = subprocess.run(
                 [str(executable.parent / command), "--version"],
                 cwd=home,

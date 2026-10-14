@@ -14,21 +14,19 @@ from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType
 
+import proof_before_action.proof_capsule as proof_capsule_module
 import pytest
 from click.testing import CliRunner
-
-import mcp_audit.proof_capsule as proof_capsule_module
-import mcp_audit_build_backend as build_backend
-from mcp_audit import __version__
-from mcp_audit.proof_capsule import (
+from proof_before_action import __version__
+from proof_before_action.proof_capsule import (
     build_capsule,
     compare_bill,
     export_capsule,
     render_offline_html,
     verify_capsule,
 )
-from mcp_audit.proof_cli import main
-from mcp_audit.proof_models import (
+from proof_before_action.proof_cli import main
+from proof_before_action.proof_models import (
     CAPSULE_INDEX_SCHEMA,
     CAPSULE_SCHEMA,
     ActionDeclaration,
@@ -40,7 +38,7 @@ from mcp_audit.proof_models import (
     canonical_json_bytes,
     sha256_bytes,
 )
-from mcp_audit.proof_observer import (
+from proof_before_action.proof_observer import (
     ObservationBlocked,
     _cleanup_docker_resource,
     _cleanup_local_root,
@@ -54,7 +52,9 @@ from mcp_audit.proof_observer import (
     _verify_expected_image_id,
     observe_command,
 )
-from mcp_audit.proof_trust import build_release_trust_manifest
+from proof_before_action.proof_trust import build_release_trust_manifest
+
+import mcp_audit_build_backend as build_backend
 
 DOCKER_READY = (
     shutil.which("docker") is not None
@@ -233,7 +233,7 @@ def test_cleanup_readback_fails_closed_for_nonzero_docker_and_remaining_local_ro
         stdout=b"",
         stderr=b"daemon unavailable",
     )
-    monkeypatch.setattr("mcp_audit.proof_observer._run", lambda argv, timeout: failed)
+    monkeypatch.setattr("proof_before_action.proof_observer._run", lambda argv, timeout: failed)
     assert (
         _cleanup_docker_resource(["docker", "rm", "-f", "fixture"], timeout=20)
         == "Docker cleanup command failed with exit code 1"
@@ -1113,7 +1113,7 @@ def test_loopback_network_attempt_is_detected_without_external_contact(tmp_path:
 
 
 def test_declaration_omission_is_deterministic(tmp_path: Path) -> None:
-    from mcp_audit.proof_models import (
+    from proof_before_action.proof_models import (
         CommandEvidence,
         DatabaseChange,
         FileChange,
@@ -1314,8 +1314,10 @@ def test_declaration_omission_is_deterministic(tmp_path: Path) -> None:
         )
 
 
-def test_verifier_recomputes_semantic_capsule_bindings(tmp_path: Path) -> None:
-    from mcp_audit.proof_models import (
+def test_verifier_recomputes_semantic_capsule_bindings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from proof_before_action.proof_models import (
         CommandEvidence,
         IsolationEvidence,
         NetworkEvidence,
@@ -1380,7 +1382,9 @@ def test_verifier_recomputes_semantic_capsule_bindings(tmp_path: Path) -> None:
         None,
         subject_snapshot=observation.subject_snapshot,
     )
+    monkeypatch.setattr(proof_capsule_module, "__version__", "9.8.7")
     capsule = build_capsule(declaration, observation, comparison, trust_manifest)
+    assert capsule.payload.producer.version == "9.8.7"
     output = tmp_path / "capsule"
     export_capsule(capsule, output)
     original_index = json.loads((output / "capsule-index.json").read_bytes())
@@ -2084,7 +2088,7 @@ def test_installed_module_does_not_inherit_an_unrelated_ancestor_commit(
     ancestor = tmp_path / "caller"
     ancestor.mkdir()
     subprocess.run(["git", "init", "-q", str(ancestor)], check=True)
-    installed_module = ancestor / ".venv/lib/python3.11/site-packages/mcp_audit/proof_capsule.py"
+    installed_module = ancestor / ".venv/lib/python3.11/site-packages/proof_before_action/proof_capsule.py"
     installed_module.parent.mkdir(parents=True)
     installed_module.write_text("# installed fixture\n", encoding="utf-8")
     monkeypatch.setattr(
@@ -2100,7 +2104,7 @@ def test_installed_module_uses_embedded_build_provenance(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    installed_module = tmp_path / "site-packages/mcp_audit/proof_capsule.py"
+    installed_module = tmp_path / "site-packages/proof_before_action/proof_capsule.py"
     installed_module.parent.mkdir(parents=True)
     installed_module.write_text("# installed fixture\n", encoding="utf-8")
     (installed_module.parent / "_build_provenance.json").write_text(
@@ -2126,17 +2130,14 @@ def test_installed_module_uses_embedded_build_provenance(
     )
 
 
-@pytest.mark.parametrize("package", ["mcp_audit", "proof_before_action"])
-def test_proof_checkout_provenance_follows_its_package(
+def test_proof_checkout_provenance_uses_the_split_repo_layout(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    package: str,
 ) -> None:
-    module = tmp_path / "src" / package / "proof_capsule.py"
+    module = tmp_path / "distributions/proof/src/proof_before_action/proof_capsule.py"
     module.parent.mkdir(parents=True)
     module.write_text("# synthetic source\n")
     monkeypatch.setattr(proof_capsule_module, "__file__", str(module))
-    monkeypatch.setattr(proof_capsule_module, "__package__", package)
 
     def run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         assert command[:3] == ["git", "-C", str(tmp_path)]
@@ -2650,15 +2651,14 @@ def test_cli_version_reports_installed_distribution_version() -> None:
 
     assert result.exit_code == 0
     assert result.stdout == f"proof-before-action, version {__version__}\n"
-    assert "In 3.0" in result.stderr
+    assert "In 3.0" not in result.stderr
     assert "uv tool install mcp-audits-proof" in result.stderr
     assert "a uv tool extra does not expose its scripts" in result.stderr
 
 
 def test_capsule_index_rejects_path_expansion() -> None:
+    from proof_before_action.proof_models import CapsuleIndex
     from pydantic import ValidationError
-
-    from mcp_audit.proof_models import CapsuleIndex
 
     with pytest.raises(ValidationError, match="exactly capsule.json and report.html"):
         CapsuleIndex.model_validate(

@@ -445,11 +445,6 @@ mcp_audit/pinning.py
 mcp_audit/pkgverify.py
 mcp_audit/policy.py
 mcp_audit/probe.py
-mcp_audit/proof_capsule.py
-mcp_audit/proof_cli.py
-mcp_audit/proof_models.py
-mcp_audit/proof_observer.py
-mcp_audit/proof_trust.py
 mcp_audit/protocol.py
 mcp_audit/provenance.py
 mcp_audit/redaction.py
