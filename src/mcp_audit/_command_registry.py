@@ -305,12 +305,6 @@ COMMANDS: dict[str, CommandSpec | NamespaceSpec] = {
         "Labs",
         implementation=lab,
     ),
-    "monitor": CommandSpec(
-        "mcp_audit.monitor",
-        "monitor_command",
-        "Deprecated; scheduled for removal in 3.0.",
-        hidden=True,
-    ),
 }
 
 for _name, _spec in LAB_COMMANDS.items():

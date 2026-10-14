@@ -51,6 +51,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `pin_baseline_withheld` and `pin_schema_outdated` warning texts are in the
   present tense and no longer announce a future 3.0 change; the
   `pin_schema_outdated` message lists the uncovered v1 tool names.
+- Removed the deprecated `monitor` command and module, the frozen `_run_scan_core`
+  compatibility function, the `mcp_audit.cli` private-name compatibility shim, and the
+  `_run_scan`/`_parse_clients` re-exports from `mcp_audit._core_cli`. Library callers use
+  `mcp_audit.engine.run_scan(ScanOptions(...))` and `mcp_audit.client_filter._parse_clients`;
+  there is no replacement for `monitor` (use `shadow`, `watch`, or `check --pin-check`).
 
 ### Added
 
