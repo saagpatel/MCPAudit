@@ -9,13 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Scaffold a uv workspace with lockstep labs and independent Proof member
-  packages, `labs`, `proof` and `all` core extras that pin the satellites
-  exactly, and workspace-wide development installs. The `watch`, `llm` and
-  `otel` requirements are unchanged. Existing modules and console scripts remain
-  in core until the module moves. Release verification admits the complete `all`
-  extra, admits satellite references only as exact pins in those extras, rejects
-  a Proof core dependency, and selects each reference build explicitly by package.
+- Static discovering `scan` translations now append
+  `--include-discovered --scan-compatible-sources`, including Claude Code,
+  Cursor, unfiltered scans and the 2.11 hook form. Synthetic parity tests use
+  unchanged library discovery to compare redacted servers, counts, stable JSON
+  and policy exits; source-limit exceptions remain explicit in the notice.
+- Under the compatibility selector, VS Code configs with a malformed `mcp`
+  section retain earlier server-entry diagnostics before losing the file,
+  matching legacy discovery. Plain `check` behavior is unchanged.
+- Under the compatibility selector, an unreadable discovered source uses
+  `scan`'s `unreadable config file: ...` reason. The translation notice now
+  states that a source skipped by check's limits is reported as a
+  config-health finding (so `fail_on.config_health` can exit 2 where `scan`
+  exited 0), and the migration guide documents the zero-source
+  `no_sources_reviewed` warning and `scan`'s duplicate `~/.vscode/mcp.json`
+  parse when run from the home directory.
 - Correct the 3.0 proposal's 2.12 release statuses and record D22's opt-in
   scan-compatible source selection for translated static checks.
 - Release builds pin `uv_build==0.12.24` exactly in `pyproject.toml` and in a new
@@ -24,6 +32,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The release advisory gate (`scripts/check_advisories.py`) exits 2 when the build
   constraints file is missing, instead of warning and passing without build-input
   coverage.
+- Scaffold a uv workspace with lockstep labs and independent Proof member
+  packages, `labs`, `proof` and `all` core extras that pin the satellites
+  exactly, and workspace-wide development installs. The `watch`, `llm` and
+  `otel` requirements are unchanged. Existing modules and console scripts remain
+  in core until the module moves. Release verification admits the complete `all`
+  extra, admits satellite references only as exact pins in those extras, rejects
+  a Proof core dependency, and selects each reference build explicitly by package.
 
 ### Breaking
 
@@ -89,6 +104,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   raw served text while the snapshot is redacted, fields where credential
   redaction withheld served text are flagged in the terminal and listed in the
   additive `current_surface_redacted` array, without exposing the hidden text.
+- Restore the PR, weekly scheduled, and manually dispatched OSV dependency advisory workflow.
+- `check --include-discovered --scan-compatible-sources`, a hidden selector
+  that reproduces the legacy `scan` server selection: every Claude Code
+  project scope (a malformed project entry loses the whole file, as in
+  `scan`), no Cursor project file, an empty result for a present file without
+  a server map, and `scan`'s server-level dedup, subject to `check`'s source
+  limits (size, nesting depth, server cap, symlink refusal). It is rejected
+  with `--config`, `--project`, `--config-only`, `--connect` and
+  `--connect-all`. Without the flag, `check` discovery and output are
+  unchanged.
 
 ## [2.12.0] - 2026-10-12
 
