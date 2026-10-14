@@ -14,6 +14,7 @@ import click
 from rich.console import Console
 from rich.text import Text
 
+from mcp_audit.canonical import compact_json_bytes
 from mcp_audit.confighealth import duplicate_server_config_counts
 from mcp_audit.discovery import discover_all_configs
 from mcp_audit.engine import ScanOptions, run_scan
@@ -46,6 +47,10 @@ _UNSIGNED_V2_MIGRATION_NOTE = (
     "--apply replaces this entry with a fresh signed baseline using a trusted signing key. "
     "Run `mcp-audit pin keygen` if you do not have one."
 )
+
+
+# Longest rendered value per surface field in a terminal refresh preview.
+_SURFACE_FIELD_LIMIT = 400
 
 
 class _PinServerOptions(TypedDict, total=False):
@@ -533,6 +538,12 @@ async def _run_pin_refresh(
         findings = store.check_drift(audit.server.name, audit.tools, review_unsigned_v2=migrate_unsigned_v2)
         findings += store.new_pin_review(audit.server.name, [t for t in audit.tools if t.name in legacy])
     uncovered_fields = store.uncovered_field_rows(audit.server.name, audit.tools)
+    # Every tool reviewed as new shows the redacted surface --apply would store,
+    # so an injected description or a new input property is visible before apply.
+    new_names = {finding.tool_name for finding in findings if finding.status == DriftStatus.NEW}
+    new_surfaces = {
+        tool.name: store.tool_review_surface(tool) for tool in audit.tools if tool.name in new_names
+    }
     escalation_findings, provenance_findings = _refresh_security_deltas(
         store, audit, review_unsigned_v2=migrate_unsigned_v2
     )
@@ -573,6 +584,7 @@ async def _run_pin_refresh(
                 artifact_warnings=art_capture.warnings,
                 uncovered_fields=uncovered_fields,
                 baseline_note=baseline_note,
+                new_surfaces=new_surfaces,
             )
         )
         return
@@ -587,6 +599,7 @@ async def _run_pin_refresh(
         escalation_findings,
         provenance_findings,
         baseline_note=baseline_note,
+        new_surfaces=new_surfaces,
     )
     if uncovered_fields:
         from rich.table import Table
@@ -680,9 +693,11 @@ def _pin_refresh_json(
     artifact_warnings: list[str] | None = None,
     uncovered_fields: list[dict[str, str]] | None = None,
     baseline_note: str | None = None,
+    new_surfaces: dict[str, dict[str, object]] | None = None,
 ) -> str:
     import json
 
+    new_surfaces = new_surfaces or {}
     escalation_findings = escalation_findings or []
     provenance_findings = provenance_findings or []
     artifact_warnings = artifact_warnings or []
@@ -702,6 +717,8 @@ def _pin_refresh_json(
                 "summary": finding.summary,
                 "details": finding.details,
                 "remediation": finding.remediation,
+                # Additive: the redacted surface --apply would store for a new tool.
+                "current_surface": new_surfaces.get(finding.tool_name),
             }
             for finding in drift_findings
         ],
@@ -743,9 +760,11 @@ def _render_pin_refresh_review(
     provenance_findings: list[ProvenanceFinding] | None = None,
     *,
     baseline_note: str | None = None,
+    new_surfaces: dict[str, dict[str, object]] | None = None,
 ) -> None:
     from rich.table import Table
 
+    new_surfaces = new_surfaces or {}
     escalation_findings = escalation_findings or []
     provenance_findings = provenance_findings or []
     counts = {status: 0 for status in DriftStatus}
@@ -803,6 +822,7 @@ def _render_pin_refresh_review(
             )
 
         console.print(table)
+        _render_new_tool_surfaces(drift_findings, new_surfaces)
 
     _render_refresh_security_section(
         "Capability escalation",
@@ -812,6 +832,34 @@ def _render_pin_refresh_review(
         "Launch-config / provenance drift",
         [(f.rule_id, f.severity.value, f.server_name, f.summary) for f in provenance_findings],
     )
+
+
+def _render_new_tool_surfaces(
+    drift_findings: list[DriftFinding], new_surfaces: dict[str, dict[str, object]]
+) -> None:
+    """Print the redacted surface of each tool reviewed as new, one bounded line per field."""
+    for finding in drift_findings:
+        surface = new_surfaces.get(finding.tool_name)
+        if finding.status != DriftStatus.NEW or surface is None:
+            continue
+        console.print(
+            Text.assemble(
+                ("New tool surface", "bold"),
+                terminal_safe(f" ({finding.tool_name}), as --apply would store it:"),
+            )
+        )
+        for field, value in surface.items():
+            console.print(
+                Text.assemble(("  ", ""), (field, "cyan"), ": ", terminal_safe(_bounded_json(value))),
+                soft_wrap=True,
+            )
+
+
+def _bounded_json(value: object) -> str:
+    rendered = compact_json_bytes(value, allow_nan=True).decode("utf-8")
+    if len(rendered) <= _SURFACE_FIELD_LIMIT:
+        return rendered
+    return f"{rendered[:_SURFACE_FIELD_LIMIT]}… ({len(rendered) - _SURFACE_FIELD_LIMIT} more chars)"
 
 
 def _render_refresh_security_section(

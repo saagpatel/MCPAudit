@@ -1379,6 +1379,14 @@ class PinStore:
         except ValueError:
             return None
 
+    def tool_review_surface(self, tool: ToolInfo) -> dict[str, Any]:
+        """The credential-redacted surface a pin write would store for ``tool``.
+
+        Refresh previews show it for every tool reviewed as new, so an operator
+        sees exactly what ``--apply`` will trust.
+        """
+        return self._tool_snapshot(tool)
+
     def _tool_snapshot(self, tool: ToolInfo) -> dict[str, Any]:
         """Return the reviewable tool fields stored alongside the pin hash."""
         return {
