@@ -7,7 +7,6 @@ from pathlib import Path
 
 import yaml
 
-
 WORKFLOW = Path(".github/workflows/dependency-advisories.yml")
 
 
@@ -19,12 +18,13 @@ def test_dependency_advisory_workflow_contract() -> None:
     assert workflow["on"] == {
         "pull_request": {"branches": ["main"]},
         "schedule": [{"cron": "17 12 * * 1"}],
-        "workflow_dispatch": None,
+        "workflow_dispatch": "",
     }
     assert workflow["permissions"] == {"contents": "read"}
 
     job = workflow["jobs"]["osv"]
     assert job["permissions"] == {"contents": "read"}
+    assert job["timeout-minutes"] == "5"
     assert job["steps"] == [
         {
             "name": "Check out repository",
