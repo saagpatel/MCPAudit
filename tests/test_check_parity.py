@@ -264,9 +264,6 @@ def test_redacted_overrides_policy_egress_sarif_and_exit_parity(
     [
         ([], "connected coverage"),
         (["--config", "fixture.json", "--config-only"], "connected coverage"),
-        (["--skip-connect", "--inject-check"], "other project scopes"),
-        (["--skip-connect", "--clients", "claude_code"], "other project scopes"),
-        (["--skip-connect", "--clients", "cursor"], "Cursor project discovery"),
         (["--skip-connect", "--config", "fixture.json", "--clients", "vscode"], "overlapping sources"),
         (
             ["--skip-connect", "--config", "fixture.json", "--config-only", "--json", "report.json"],

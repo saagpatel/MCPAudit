@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Static discovering `scan` translations now append
+  `--include-discovered --scan-compatible-sources`, including Claude Code,
+  Cursor, unfiltered scans and the 2.11 hook form. Synthetic parity tests use
+  unchanged library discovery to compare redacted servers, counts, stable JSON
+  and policy exits; source-limit exceptions remain explicit in the notice.
+- Under the compatibility selector, VS Code configs with a malformed `mcp`
+  section retain earlier server-entry diagnostics before losing the file,
+  matching legacy discovery. Plain `check` behavior is unchanged.
 - Correct the 3.0 proposal's 2.12 release statuses and record D22's opt-in
   scan-compatible source selection for translated static checks.
 

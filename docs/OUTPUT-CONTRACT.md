@@ -1433,6 +1433,21 @@ discovered sources. Rejected discovered sources emit `review_source_skipped`;
 explicit limit violations remain setup errors. The shared translation notice
 and `check` warning path also apply to the 3.0 interceptor design.
 
+Discovering static translations append
+`--include-discovered --scan-compatible-sources`. The hidden selector is
+supported throughout 3.x because notices print it; see the
+[static scan migration guide](guides/scan-migration.md). Subject to the source
+limits above, it preserves every Claude Code project scope, excludes Cursor's
+project file, includes cwd `.mcp.json` and `.vscode/mcp.json`, and deduplicates
+servers by `(name, client, config path, project path)`. A malformed Claude Code
+sibling project loses the whole file. A file with no server map is accepted
+empty, avoiding a new config-health finding or policy failure. For VS Code,
+entry diagnostics from earlier maps are collected before a malformed `mcp`
+section discards the file, matching library discovery. Plain `check` retains
+its existing discovery and diagnostics. No report fields or schema version
+change. Explicit `--config` without `--config-only` remains untranslatable;
+the selector cannot be emitted with `--config`.
+
 Completion requires evidence that the check executed over every applicable
 input. A collected configuration parse failure makes every enabled check
 `partial`, including configuration health and fleet checks: servers in the
