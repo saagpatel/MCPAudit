@@ -510,7 +510,8 @@ def test_publish_gate_runs_corpus_and_exact_distribution_install_smokes() -> Non
     assert 'for package in "$wheel" "$sdist"' in build_job
     assert 'release_version="${RELEASE_TAG#v}"' in build_job
     assert "mcp-audit, version $release_version" in build_job
-    assert "proof-before-action, version $release_version" in build_job
+    assert 'test ! -e "$smoke/bin/proof-before-action"' in build_job
+    assert "proof-before-action, version $release_version" not in build_job
     assert '"$smoke/bin/python" -I scripts/smoke_installed_artifact.py' in build_job
 
 
