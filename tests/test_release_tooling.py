@@ -155,6 +155,8 @@ def test_distribution_contract_is_explicit_and_ordered(tmp_path: Path, mutation:
 
 
 EXTRAS = (("labs", ("labs",)), ("proof", ("proof",)), ("all", ("labs", "proof")))
+OPTIONAL = {"watch": "watchfiles==1.1.1", "llm": "anthropic==0.87.0", "otel": "opentelemetry-api==1.44.0"}
+PROOF_DEPENDENCIES = ["click>=8.3.3,<9.0", "pydantic>=2.0", "pyyaml>=6.0"]
 BUILD_CONSTRAINTS = (Path(__file__).resolve().parents[1] / "build-constraints.txt").read_text()
 BUILD_SYSTEM = (
     f'[build-system]\nrequires = ["{BUILD_CONSTRAINTS.strip()}"]\n'
@@ -191,15 +193,21 @@ def _project_toml(item: release.Distribution) -> str:
         ["mcp>=2.2.0,<3.0", "cryptography>=50.0.0,<51.0", "click>=8.3.3,<9.0", "anyio>=4.14.2"]
         if item.name == "mcp-audits"
         else [f"mcp-audits=={VERSION}"]
+        if item.name == "mcp-audits-labs"
+        else PROOF_DEPENDENCIES
     )
     project = (
         f'{BUILD_SYSTEM}[project]\nname="{item.name}"\nversion="{VERSION}"\n'
         f"dependencies={json.dumps(dependencies)}\n[project.scripts]\n"
     ) + "".join(f'{key} = "{value}"\n' for key, value in item.scripts.items())
     if item.name == "mcp-audits":
+        extras = {
+            extra: [f"mcp-audits-{package}=={VERSION}" for package in packages] for extra, packages in EXTRAS
+        }
+        extras["all"].extend(OPTIONAL.values())
+        extras.update({extra: [value] for extra, value in OPTIONAL.items()})
         project += "[project.optional-dependencies]\n" + "".join(
-            f"{extra}={json.dumps([f'mcp-audits-{package}=={VERSION}' for package in packages])}\n"
-            for extra, packages in EXTRAS
+            f"{extra}={json.dumps(values)}\n" for extra, values in extras.items()
         )
         project += 'conditional=[\'fixture-pkg[cli]>=1,<2; python_version < "3.12" or os_name == "nt"\']\n'
     return (
@@ -218,7 +226,11 @@ def _commit_train(repo: Path, train: tuple[release.Distribution, ...]) -> str:
         for target in item.scripts.values():
             module = target.partition(":")[0].removeprefix(f"{item.module}.")
             (package / f"{module}.py").write_text("def main() -> None:\n    pass\n")
-        (base / "pyproject.toml").write_text(_project_toml(item))
+        project = _project_toml(item)
+        if item == train[0] and len(train) == 3:
+            members = [str(PurePosixPath(other.project).parent) for other in train[1:]]
+            project += f"\n[tool.uv.workspace]\nmembers={json.dumps(members)}\n"
+        (base / "pyproject.toml").write_text(project)
         (base / "mcp_audit_build_backend.py").write_bytes(Path(backend.__file__).read_bytes())
     (repo / ".gitignore").write_text("__pycache__/\n")
     (repo / "build-constraints.txt").write_text(BUILD_CONSTRAINTS)
@@ -254,8 +266,10 @@ def _wheel_entries(path: Path) -> dict[str, bytes]:
 
 def _metadata(item: release.Distribution) -> str:
     metadata = f"Name: {item.name}\nVersion: {VERSION}\n"
-    if item.name != "mcp-audits":
+    if item.name == "mcp-audits-labs":
         return metadata + f"Requires-Dist: mcp-audits=={VERSION}\n"
+    if item.name == "mcp-audits-proof":
+        return metadata + "".join(f"Requires-Dist: {value}\n" for value in PROOF_DEPENDENCIES)
     metadata += (
         "Requires-Dist: mcp>=2.2.0,<3.0\nRequires-Dist: cryptography>=50.0.0,<51.0\n"
         "Requires-Dist: click>=8.3.3,<9.0\nRequires-Dist: anyio>=4.14.2\n"
@@ -263,6 +277,9 @@ def _metadata(item: release.Distribution) -> str:
     for extra, packages in EXTRAS:
         for package in packages:
             metadata += f'Requires-Dist: mcp-audits-{package}=={VERSION}; extra == "{extra}"\n'
+    for extra, value in OPTIONAL.items():
+        metadata += f'Requires-Dist: {value}; extra == "{extra}"\n'
+        metadata += f'Requires-Dist: {value}; extra == "all"\n'
     metadata += (
         "Requires-Dist: fixture-pkg[cli]>=1,<2; "
         '(python_full_version < "3.12" and extra == "conditional") '
@@ -358,6 +375,8 @@ def test_real_build_verifies_clean_committed_train(train_artifacts: Path) -> Non
                 "build",
                 "--offline",
                 "--no-create-gitignore",
+                "--package",
+                item.name,
                 "--build-constraints",
                 str(repo / "build-constraints.txt"),
                 "--out-dir",
@@ -377,23 +396,26 @@ def test_real_build_verifies_clean_committed_train(train_artifacts: Path) -> Non
     )
 
 
-def test_reference_build_passes_the_committed_build_constraints(
-    train_artifacts: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("distribution", TRAIN)
+def test_reference_build_selects_member_and_passes_committed_build_constraints(
+    train_artifacts: Path, monkeypatch: pytest.MonkeyPatch, distribution: release.Distribution
 ) -> None:
-    calls: list[list[str]] = []
+    calls: list[tuple[list[str], object]] = []
     real_run = subprocess.run
 
     def recording_run(args: list[str], **kwargs: object) -> object:
-        calls.append(list(args))
+        calls.append((list(args), kwargs.get("cwd")))
         return real_run(args, **kwargs)  # type: ignore[call-overload]
 
     monkeypatch.setattr(subprocess, "run", recording_run)
-    release._reference_build(commit=_commit(train_artifacts), distribution=TRAIN[0])
+    release._reference_build(commit=_commit(train_artifacts), distribution=distribution)
 
-    (build,) = [call for call in calls if call[:2] == ["uv", "build"]]
+    ((build, cwd),) = [call for call in calls if call[0][:2] == ["uv", "build"]]
+    assert build[build.index("--package") + 1] == distribution.name
     constraints = Path(build[build.index("--build-constraints") + 1])
     assert constraints.name == "build-constraints.txt"
     assert constraints.parent.name == "source"
+    assert cwd == constraints.parent / PurePosixPath(distribution.project).parent
 
 
 def test_reference_build_requires_committed_build_constraints(train_artifacts: Path) -> None:
@@ -582,7 +604,7 @@ def test_script_contract_covers_console_and_gui_union(duplicate: bool) -> None:
         release._check_entry_points(wheel, scripts=proof.scripts, name="fixture wheel")
 
 
-@pytest.mark.parametrize("mutation", ["missing", "version", "pin", "provenance", "scripts"])
+@pytest.mark.parametrize("mutation", ["missing", "version", "core-dependency", "provenance", "scripts"])
 def test_partial_or_inconsistent_train_fails(train_artifacts: Path, mutation: str) -> None:
     proof = TRAIN[2]
     wheel = train_artifacts / release.distribution_names(VERSION, proof.name)[0]
@@ -594,8 +616,8 @@ def test_partial_or_inconsistent_train_fails(train_artifacts: Path, mutation: st
         for name, content in entries.items():
             if mutation == "version" and name.endswith("/METADATA"):
                 entries[name] = content.replace(b"Version: 3.0.0", b"Version: 3.0.1")
-            if mutation == "pin" and name.endswith("/METADATA"):
-                entries[name] = content.replace(b"mcp-audits==3.0.0", b"mcp-audits>=3.0.0")
+            if mutation == "core-dependency" and name.endswith("/METADATA"):
+                entries[name] = content + b"Requires-Dist: mcp-audits==3.0.0\n"
             if mutation == "provenance" and name.endswith("_build_provenance.json"):
                 entries[name] = json.dumps({"commit": "c" * 40, "dirty": False}).encode()
             if mutation == "scripts" and name.endswith("entry_points.txt"):
@@ -651,7 +673,22 @@ def test_maintenance_environment_requires_exact_branch(monkeypatch: pytest.Monke
 
 
 @pytest.mark.parametrize(
-    "mutation", ["none", "version", "lock", "scripts", "pin", "extra", "gui-collision", "core-gui-collision"]
+    "mutation",
+    [
+        "none",
+        "version",
+        "lock",
+        "scripts",
+        "pin",
+        "extra",
+        "gui-collision",
+        "core-gui-collision",
+        "proof-core",
+        "proof-unexpected",
+        "proof-missing",
+        "all-missing-optional",
+        "all-unpinned",
+    ],
 )
 def test_source_distribution_metadata_is_lockstep(
     monkeypatch: pytest.MonkeyPatch,
@@ -662,13 +699,19 @@ def test_source_distribution_metadata_is_lockstep(
     project["scripts"] = TRAIN[0].scripts
     if mutation == "core-gui-collision":
         project["gui-scripts"] = TRAIN[0].scripts
-    project["optional-dependencies"] = {
+    extras = {
         "labs": [f"mcp-audits-labs=={version}"],
         "proof": [f"mcp-audits-proof=={version}"],
-        "all": [f"mcp-audits-labs=={version}", f"mcp-audits-proof=={version}"],
+        "all": [f"mcp-audits-labs=={version}", f"mcp-audits-proof=={version}", *OPTIONAL.values()],
+        **{extra: [value] for extra, value in OPTIONAL.items()},
     }
+    project["optional-dependencies"] = extras
     if mutation == "extra":
         project["optional-dependencies"] = {"labs": [f"mcp-audits-labs>={version}"]}
+    elif mutation == "all-missing-optional":
+        extras["all"].remove(OPTIONAL["llm"])
+    elif mutation == "all-unpinned":
+        extras["all"][-1] = "opentelemetry-api>=1.44"
     monkeypatch.setattr(release, "DISTRIBUTIONS", TRAIN)
     monkeypatch.setattr(release, "_project", lambda: project)
     original_read = release._read_text
@@ -685,9 +728,17 @@ def test_source_distribution_metadata_is_lockstep(
                 other_version = "9.0.0" if mutation == "version" else version
                 pin = ">=" if mutation == "pin" else "=="
                 scripts = {} if mutation == "scripts" else item.scripts
+                dependencies = [f"mcp-audits{pin}{version}"] if item == TRAIN[1] else PROOF_DEPENDENCIES
+                if item == TRAIN[2]:
+                    if mutation == "proof-core":
+                        dependencies = [*dependencies, f"mcp-audits=={version}"]
+                    elif mutation == "proof-unexpected":
+                        dependencies = [*dependencies, "rich>=15"]
+                    elif mutation == "proof-missing":
+                        dependencies = dependencies[:-1]
                 return (
                     f'[project]\nname="{item.name}"\nversion="{other_version}"\n'
-                    f'dependencies=["mcp-audits{pin}{version}"]\n[project.scripts]\n'
+                    f"dependencies={json.dumps(dependencies)}\n[project.scripts]\n"
                     + "".join(f'{key}="{value}"\n' for key, value in scripts.items())
                     + (
                         '[project.gui-scripts]\nproof-before-action="proof_before_action.proof_cli:main"\n'

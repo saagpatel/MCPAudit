@@ -375,19 +375,14 @@ def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object
         if _locked_project_version(distribution.name) != version:
             raise VerificationError("uv.lock distribution versions must be lockstep")
         _check_project_scripts(other, distribution=distribution, name="distribution project")
-        if f"mcp-audits=={version}" not in other.get("dependencies", []):
-            raise VerificationError("satellite distributions must pin the exact core version")
+        _check_requirements(
+            _project_requirements(other, name=distribution.project),
+            version=version,
+            name=distribution.project,
+            distribution=distribution,
+        )
     if len(DISTRIBUTIONS) == 3:
-        extras = project.get("optional-dependencies")
-        expected_extras = {
-            "labs": [f"mcp-audits-labs=={version}"],
-            "proof": [f"mcp-audits-proof=={version}"],
-            "all": [f"mcp-audits-labs=={version}", f"mcp-audits-proof=={version}"],
-        }
-        if not isinstance(extras, dict) or any(
-            extras.get(key) != value for key, value in expected_extras.items()
-        ):
-            raise VerificationError("core extras must pin exact lockstep satellite versions")
+        _check_core_extras(project, version=version, name="project metadata")
 
     if state.get("schema_version") != "mcp-audit.release-state.v1":
         raise VerificationError("release-state.json schema is unsupported")
@@ -517,11 +512,12 @@ def _requirement_key(requirement: Requirement) -> tuple[object, ...]:
 def _check_requirements(
     requirements: Iterable[Requirement], *, version: str, name: str, distribution: Distribution
 ) -> None:
+    requirements = list(requirements)
     observed = {_requirement_key(requirement) for requirement in requirements}
     lockstep: list[str] = []
-    if distribution.name != DISTRIBUTION_NAME:
+    if distribution.name == "mcp-audits-labs":
         lockstep.append(f"mcp-audits=={version}")
-    elif len(DISTRIBUTIONS) == 3:
+    elif distribution.name == DISTRIBUTION_NAME and len(DISTRIBUTIONS) == 3:
         for extra, packages in (
             ("labs", ("mcp-audits-labs",)),
             ("proof", ("mcp-audits-proof",)),
@@ -534,10 +530,57 @@ def _check_requirements(
     }:
         raise VerificationError(f"{name} must pin the exact lockstep distribution versions")
     if distribution.name != DISTRIBUTION_NAME:
+        if distribution.name == "mcp-audits-proof" and (
+            {key[0] for key in observed} != {"click", "pydantic", "pyyaml"}
+            or any(
+                requirement.url or requirement.extras or requirement.marker for requirement in requirements
+            )
+        ):
+            raise VerificationError(f"{name} Proof dependencies must be only click, pydantic and pyyaml")
         return
     for raw, label in SECURITY_FLOORS:
         if _requirement_key(_requirement(raw, name=name)) not in observed:
             raise VerificationError(f"{name} does not retain {label}")
+
+
+def _check_core_extras(project: dict[str, object], *, version: str, name: str) -> None:
+    extras = project.get("optional-dependencies")
+    if not isinstance(extras, dict):
+        raise VerificationError(f"{name} core extras are missing")
+    expected = {
+        "labs": [f"mcp-audits-labs=={version}"],
+        "proof": [f"mcp-audits-proof=={version}"],
+    }
+    for extra, package in (("watch", "watchfiles"), ("llm", "anthropic"), ("otel", "opentelemetry-api")):
+        values = extras.get(extra)
+        if not isinstance(values, list) or len(values) != 1 or not isinstance(values[0], str):
+            raise VerificationError(f"{name} {extra} extra must contain one exact pin")
+        requirement = _requirement(values[0], name=name)
+        pins = list(requirement.specifier)
+        if (
+            requirement.name != package
+            or requirement.url
+            or requirement.marker
+            or requirement.extras
+            or len(pins) != 1
+            or pins[0].operator != "=="
+            or "*" in pins[0].version
+        ):
+            raise VerificationError(f"{name} {extra} extra must contain one exact pin")
+        expected[extra] = values
+    expected["all"] = [value for values in expected.values() for value in values]
+    for extra, values in expected.items():
+        actual = extras.get(extra)
+        if not isinstance(actual, list) or any(not isinstance(value, str) for value in actual):
+            raise VerificationError(
+                f"{name} core extras must pin exact lockstep satellites and optional deps"
+            )
+        wanted = {_requirement_key(_requirement(value, name=name)) for value in values}
+        observed = {_requirement_key(_requirement(value, name=name)) for value in actual}
+        if observed != wanted or len(actual) != len(wanted):
+            raise VerificationError(
+                f"{name} core extras must pin exact lockstep satellites and optional deps"
+            )
 
 
 def _check_distribution_metadata(
@@ -645,6 +688,8 @@ def _check_sdist_project(raw: bytes, *, distribution: Distribution, version: str
     _check_requirements(
         _project_requirements(project, name=name), version=version, name=name, distribution=distribution
     )
+    if distribution.name == DISTRIBUTION_NAME and len(DISTRIBUTIONS) == 3:
+        _check_core_extras(project, version=version, name=name)
 
 
 def _project_requirements(project: dict[str, object], *, name: str) -> list[Requirement]:
@@ -813,6 +858,8 @@ def _reference_build(
                     "build",
                     "--offline",
                     "--no-create-gitignore",
+                    "--package",
+                    distribution.name,
                     "--build-constraints",
                     str(constraints),
                     "--out-dir",
