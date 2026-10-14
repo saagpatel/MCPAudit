@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Correct the 3.0 proposal's 2.12 release statuses and record D22's opt-in
+  scan-compatible source selection for translated static checks.
+
 ### Breaking
 
 - The MCP `scan_mcp_servers` tool exposed by `serve` is static by default:
