@@ -186,6 +186,34 @@ def test_shell_quoting_round_trips_without_interpreting_argument_text() -> None:
     assert str(path) in result.check_argv
 
 
+@pytest.mark.parametrize("clients", ["claude-code", "Cursor", "claude-code,vs-code"])
+def test_unsupported_client_spelling_is_named_and_never_widens_to_every_client(clients: str) -> None:
+    result = classify_scan_options({"skip_connect": True, "clients": clients})
+    assert result.coverage == "would-silently-shrink"
+    assert result.check_argv is None
+    assert "unsupported client spelling" in result.notice()
+    assert "--client claude_code" in result.notice()
+    for client in ("claude_code", "claude_desktop", "cursor", "vscode", "windsurf"):
+        assert client in result.notice()
+    assert ("comma-separated" in result.notice()) == ("," in clients)
+    assert "--include-discovered" not in result.replacement_argv
+    assert "--scan-compatible-sources" not in result.replacement_argv
+    assert "--client" not in result.replacement_argv
+
+
+def test_comma_separated_supported_clients_keep_their_reason_and_discovery() -> None:
+    result = classify_scan_options({"skip_connect": True, "clients": "cursor,vscode"})
+    assert result.coverage == "would-silently-shrink"
+    assert "comma-separated selections are untranslatable" in result.notice()
+    assert "unsupported client spelling" not in result.notice()
+    assert result.replacement_argv[-4:] == (
+        "--client",
+        "vscode",
+        "--include-discovered",
+        "--scan-compatible-sources",
+    )
+
+
 @pytest.mark.parametrize("clients", ["cursor,vscode", "cursor, vscode,cursor"])
 def test_inexact_replacement_preserves_values_that_look_like_option_names(clients: str) -> None:
     result = classify_scan_options(

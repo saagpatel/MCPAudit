@@ -169,10 +169,25 @@ def classify_scan_options(options: Mapping[str, object]) -> ScanTranslation:
     if values["json_output"] is not None:
         reasons.append("--json PATH is not an exact compatibility spelling (check uses --output-json PATH)")
     clients = values["clients"]
-    if clients is not None and clients not in _CLIENTS:
-        reasons.append(
-            "--clients must name one supported client; comma-separated selections are untranslatable"
+    # Supported names found in a --clients value; empty means nothing usable was named.
+    selected_clients: tuple[str, ...] = ()
+    if isinstance(clients, str) and clients not in _CLIENTS:
+        selected_clients = tuple(
+            client
+            for client in dict.fromkeys(part.strip() for part in clients.split(","))
+            if client in _CLIENTS
         )
+        if "," in clients:
+            reasons.append(
+                "--clients must name one supported client; comma-separated selections are untranslatable"
+            )
+        if not selected_clients:
+            reasons.append(
+                "--clients uses an unsupported client spelling; supported spellings are "
+                + ", ".join(_CLIENTS)
+                + " (for example --client claude_code)"
+            )
+    unsupported_clients = isinstance(clients, str) and clients not in _CLIENTS and not selected_clients
     if not config_only:
         argv.append("--include-discovered")
         if values["extra_config"] is not None:
@@ -196,9 +211,7 @@ def classify_scan_options(options: Mapping[str, object]) -> ScanTranslation:
             # The exact classifier stays frozen; only the manual suggestion
             # expands supported comma-separated client names.
             option_groups = [group for group in option_groups if group[0] != "--client"] + [
-                ("--client", client)
-                for client in dict.fromkeys(part.strip() for part in clients.split(","))
-                if client in _CLIENTS
+                ("--client", client) for client in selected_clients
             ]
         if config_only and not values["extra_config"]:
             option_groups = [group for group in option_groups if group[0] != "--config-only"]
@@ -210,7 +223,8 @@ def classify_scan_options(options: Mapping[str, object]) -> ScanTranslation:
         if connecting:
             option_groups = [group for group in option_groups if group[0] != "--skip-connect"]
         replacement = ["mcp-audit", "check", *(part for group in option_groups for part in group)]
-        if not config_only or not values["extra_config"]:
+        # Never widen an unsupported client selection to every discovered client.
+        if (not config_only or not values["extra_config"]) and not unsupported_clients:
             replacement.append("--include-discovered")
             if not connecting and values["extra_config"] is None:
                 replacement.append("--scan-compatible-sources")
