@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from mcp_audit import _core_cli, check_cli, cli, engine, pinning
+from mcp_audit import _core_cli, check_cli, cli, engine, pinning, scan_cli
 from mcp_audit.connector import ServerConnector
 from mcp_audit.engine import ScanOptions
 from mcp_audit.models import AuditReport, ResourceInfo, ServerAudit, ServerConfig
@@ -280,7 +280,7 @@ def test_parsed_coverage_losing_scan_forms_withhold_translation_without_discover
 
     monkeypatch.setattr(check_cli, "review_sources", forbidden)
     monkeypatch.setattr(engine, "discover_all_configs", forbidden)
-    monkeypatch.setattr(_core_cli, "_run_scan", forbidden)
+    monkeypatch.setattr(scan_cli, "_run_scan", forbidden)
     monkeypatch.setattr(check_cli, "run_scan", forbidden)
     monkeypatch.setattr(Path, "read_text", forbidden)
     with _core_cli.scan.make_context("scan", [*args, "--override-config", "/dev/null"]) as context:

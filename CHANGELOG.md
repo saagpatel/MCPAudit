@@ -26,6 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parse when run from the home directory.
 - Correct the 3.0 proposal's 2.12 release statuses and record D22's opt-in
   scan-compatible source selection for translated static checks.
+- Release builds pin `uv_build==0.12.24` exactly in `pyproject.toml` and in a new
+  `build-constraints.txt`. The publish workflow build and the release verifier's
+  reference build both pass `--build-constraints build-constraints.txt`.
+- The release advisory gate (`scripts/check_advisories.py`) exits 2 when the build
+  constraints file is missing, instead of warning and passing without build-input
+  coverage.
 
 ### Breaking
 
@@ -66,6 +72,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `pin_baseline_withheld` and `pin_schema_outdated` warning texts are in the
   present tense and no longer announce a future 3.0 change; the
   `pin_schema_outdated` message lists the uncovered v1 tool names.
+- Removed the deprecated `monitor` command and module, the frozen `_run_scan_core`
+  compatibility function, the `mcp_audit.cli` private-name compatibility shim, and the
+  `_run_scan`/`_parse_clients` re-exports from `mcp_audit._core_cli`. Library callers use
+  `mcp_audit.engine.run_scan(ScanOptions(...))` and `mcp_audit.client_filter._parse_clients`;
+  there is no replacement for `monitor` (use `shadow`, `watch`, or `check --pin-check`).
 
 ### Added
 
