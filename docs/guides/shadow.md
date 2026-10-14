@@ -54,5 +54,3 @@ These checks do not prove a baseline was safe, that a server stayed unchanged
 between reviews, or that future tool calls will match the listed metadata.
 
 Library integrations should use `mcp_audit.engine.run_scan(ScanOptions(...))`.
-The deprecated `mcp_audit.cli._run_scan_core` remains frozen through 2.x for
-downstream compatibility and is scheduled for removal in 3.0.
