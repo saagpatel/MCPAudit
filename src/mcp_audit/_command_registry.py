@@ -27,7 +27,13 @@ PROOF_INSTALL_NOTICE = (
 def _import_command_module(module: str) -> ModuleType:
     try:
         return import_module(module)
-    except ImportError as exc:
+    except ModuleNotFoundError as exc:
+        # Only a missing optional distribution earns the install hint. A plain
+        # ImportError (e.g. "cannot import name X", circular imports) is a
+        # defect and propagates. A missing submodule such as
+        # "mcp_audit_labs.missing_submodule" means an installed labs version
+        # that does not match core; it also gets the hint (exit 2), since
+        # reinstalling the matching distribution is the fix.
         top_level = (exc.name or "").split(".", 1)[0]
         if top_level == "mcp_audit_labs":
             notice = LAB_INSTALL_NOTICE

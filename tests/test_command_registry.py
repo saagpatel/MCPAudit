@@ -321,7 +321,15 @@ assert (
 
 
 @pytest.mark.parametrize("args", GUARDED_PATHS)
-@pytest.mark.parametrize("missing", ["mcp_audit_labs", "mcp_audit_labs.agent_ui_cli"])
+@pytest.mark.parametrize(
+    "missing",
+    [
+        "mcp_audit_labs",
+        "mcp_audit_labs.agent_ui_cli",
+        # Version skew: labs installed but missing a submodule core expects.
+        "mcp_audit_labs.missing_submodule",
+    ],
+)
 def test_missing_labs_exit_two_with_installs(
     args: list[str], missing: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -354,12 +362,37 @@ def test_future_proof_distribution_guard(missing: str, monkeypatch: pytest.Monke
 
 @pytest.mark.parametrize("args", GUARDED_PATHS)
 @pytest.mark.parametrize(
-    "missing", [None, "anyio", "mcp_audit", "mcp_audit_labs_extra", "proof_before_action_extra"]
+    "error",
+    [
+        *(
+            ImportError("synthetic implementation defect", name=missing)
+            for missing in (
+                None,
+                "anyio",
+                "mcp_audit",
+                "mcp_audit_labs_extra",
+                "proof_before_action_extra",
+                "mcp_audit_labs",
+                "proof_before_action",
+            )
+        ),
+        ImportError(
+            "cannot import name 'x' from 'mcp_audit_labs.lab_primitives'",
+            name="mcp_audit_labs.lab_primitives",
+        ),
+        ImportError(
+            "cannot import name 'x' from partially initialized module 'mcp_audit_labs.agent_ui_cli' "
+            "(most likely due to a circular import)",
+            name="mcp_audit_labs.agent_ui_cli",
+        ),
+        ModuleNotFoundError("synthetic missing dependency", name="anyio"),
+        ModuleNotFoundError("synthetic missing dependency", name="mcp_audit_labs_extra"),
+    ],
+    ids=repr,
 )
 def test_unrelated_import_errors_propagate(
-    args: list[str], missing: str | None, monkeypatch: pytest.MonkeyPatch
+    args: list[str], error: ImportError, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    error = ImportError("synthetic implementation defect", name=missing)
 
     def broken_import(name: str) -> None:
         raise error
