@@ -196,9 +196,16 @@ def test_unsupported_client_spelling_is_named_and_never_widens_to_every_client(c
     for client in ("claude_code", "claude_desktop", "cursor", "vscode", "windsurf"):
         assert client in result.notice()
     assert ("comma-separated" in result.notice()) == ("," in clients)
-    assert "--include-discovered" not in result.replacement_argv
-    assert "--scan-compatible-sources" not in result.replacement_argv
-    assert "--client" not in result.replacement_argv
+    # No runnable replacement: check without a valid selector would review every client.
+    assert result.replacement_argv == ()
+    assert "no replacement command is offered" in result.replacement_notice()
+
+
+@pytest.mark.parametrize("skip_connect", [True, False])
+def test_unsupported_client_spelling_never_suggests_connecting_everything(skip_connect: bool) -> None:
+    result = classify_scan_options({"skip_connect": skip_connect, "clients": "claude-code"})
+    assert result.replacement_argv == ()
+    assert "--connect-all" not in result.replacement_notice()
 
 
 def test_comma_separated_supported_clients_keep_their_reason_and_discovery() -> None:

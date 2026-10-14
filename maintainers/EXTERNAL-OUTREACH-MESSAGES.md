@@ -26,7 +26,7 @@ If it surfaces anything interesting on your setup, the most helpful thing you
 could do is drop a redacted report. One command, no server is launched and
 nothing is contacted:
 
-uvx --from mcp-audits mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
+uvx --from mcp-audits mcp-audit check --include-discovered --output-json mcp-audit-field-report.json --redact
 
 Then open a redacted field-report issue here:
 https://github.com/saagpatel/MCPAudit/issues/new?template=field_report.md
@@ -46,7 +46,7 @@ https://mcp-audit.saagarpatel.dev to paste a config and get a config-only trust
 report. A redacted report from a different MCP setup or consumer path would help
 me a lot toward beta readiness.
 
-uvx --from mcp-audits mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
+uvx --from mcp-audits mcp-audit check --include-discovered --output-json mcp-audit-field-report.json --redact
 
 Then open a redacted field-report issue here:
 https://github.com/saagpatel/MCPAudit/issues/new?template=field_report.md
@@ -73,7 +73,7 @@ the lethal trifecta, schema drift, SARIF + a GitHub Action.
 It is pre-beta and I want real scrutiny. If you can spare two minutes, a
 redacted config-only report is the single most useful thing:
 
-uvx --from mcp-audits mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
+uvx --from mcp-audits mcp-audit check --include-discovered --output-json mcp-audit-field-report.json --redact
 then: https://github.com/saagpatel/MCPAudit/issues/new?template=field_report.md
 
 False positives, heuristics, anything that looks wrong: all fair game.

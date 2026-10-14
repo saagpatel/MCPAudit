@@ -104,6 +104,11 @@ class ScanTranslation:
 
     def replacement_notice(self) -> str:
         """Offer a manual migration target without promising equivalent coverage."""
+        if not self.replacement_argv:
+            return (
+                "scan: no replacement command is offered; correct the --clients spelling "
+                "(supported: " + ", ".join(_CLIENTS) + ") and rerun"
+            )
         return "scan: replacement command (not exact; review before running): " + shlex.join(
             self.replacement_argv
         )
@@ -230,6 +235,10 @@ def classify_scan_options(options: Mapping[str, object]) -> ScanTranslation:
                 replacement.append("--scan-compatible-sources")
         if connecting:
             replacement.append("--connect-all")
+        if unsupported_clients:
+            # check without a valid source selector reviews every supported client, so any
+            # runnable suggestion would widen the selection; offer none (fail closed).
+            replacement = []
         return ScanTranslation(
             "would-silently-shrink", None, tuple(dict.fromkeys(reasons)), tuple(replacement)
         )
