@@ -40,13 +40,13 @@ def test_table_is_frozen_and_covers_every_registered_scan_option() -> None:
         OPTION_TABLE["--config"].check_option = "--new"  # type: ignore[misc]
 
 
-@pytest.mark.parametrize("client", ["claude_desktop", "vscode", "windsurf"])
-def test_preserved_discovery_always_includes_discovered(client: str) -> None:
+@pytest.mark.parametrize("client", [None, "claude_code", "claude_desktop", "cursor", "vscode", "windsurf"])
+def test_preserved_discovery_always_includes_discovered(client: str | None) -> None:
     options: dict[str, object] = {"skip_connect": True, "clients": client, "inject_check": True}
     result = classify_scan_options(options)
     assert result.coverage == "preserved"
     assert result.check_argv is not None
-    assert "--include-discovered" in result.check_argv
+    assert result.check_argv[-2:] == ("--include-discovered", "--scan-compatible-sources")
     assert "--skip-connect" in result.check_argv
     assert "--inject-check" in result.check_argv
     assert "options map exactly" in result.notice()
@@ -62,6 +62,7 @@ def test_preserved_discovery_always_includes_discovered(client: str) -> None:
         assert limit in result.notice()
     with check_cli.check.make_context("check", list(result.check_argv[2:])) as context:
         assert context.params["include_discovered"] is True
+        assert context.params["scan_compatible_sources"] is True
         assert context.params["skip_connect"] is True
 
 
@@ -87,9 +88,6 @@ def test_explicit_config_only_is_intentional_narrowing_with_an_exact_command() -
     [
         ({}, "connected coverage"),
         ({"extra_config": "fixture.json", "config_only": True}, "connected coverage"),
-        ({"skip_connect": True, "inject_check": True}, "other project scopes"),
-        ({"skip_connect": True, "clients": "claude_code"}, "other project scopes"),
-        ({"skip_connect": True, "clients": "cursor"}, "Cursor project discovery"),
         ({"skip_connect": True, "clients": "vscode", "extra_config": "fixture.json"}, "overlapping sources"),
         ({**EXPLICIT, "json_output": "report.json"}, "--json PATH"),
         ({**EXPLICIT, "clients": "vscode,windsurf"}, "comma-separated"),
@@ -135,7 +133,7 @@ def test_classifier_never_reads_paths_or_runs_either_discovery(monkeypatch: pyte
     monkeypatch.setattr(Path, "resolve", forbidden)
     monkeypatch.setattr(Path, "home", forbidden)
     assert classify_scan_options(EXPLICIT).coverage == "narrowed"
-    assert classify_scan_options({"skip_connect": True}).coverage == "would-silently-shrink"
+    assert classify_scan_options({"skip_connect": True}).coverage == "preserved"
     assert classify_scan_options({"skip_connect": True, "clients": "vscode"}).coverage == "preserved"
 
 

@@ -128,11 +128,14 @@ def _parse_source(
         maps: list[tuple[object, str]] = []
         keys = ("mcpServers", "servers") if client == ClientType.VSCODE else ("mcpServers",)
         maps.extend((data[key], f"/{key}") for key in keys if key in data)
+        invalid_mcp_section = False
         if client == ClientType.VSCODE and "mcp" in data:
             section = data["mcp"]
             if not isinstance(section, dict):
-                raise ValueError("mcp section is not an object")
-            if "servers" in section:
+                if not scan_compatible:
+                    raise ValueError("mcp section is not an object")
+                invalid_mcp_section = True
+            elif "servers" in section:
                 maps.append((section["servers"], "/mcp/servers"))
         if (
             not maps
@@ -142,6 +145,9 @@ def _parse_source(
             raise ValueError("unsupported config: no MCP server map")
         for mapping, pointer in maps:
             servers.extend(parse_server_map(mapping, str(path), client, sources.errors, map_pointer=pointer))
+        if invalid_mcp_section:
+            # Scan collects entry diagnostics before discarding the whole file.
+            raise ValueError("mcp section is not an object")
     if (
         client == ClientType.CURSOR
         and path == project / ".cursor" / "mcp.json"
@@ -227,13 +233,15 @@ def review_sources(
                 raise ValueError(f"Config file not found: {path}") from None
             sources.paths.append((str(path), "absent"))
         except (OSError, UnicodeError, ValueError, ConfigParseError) as exc:
+            # The selector uses scan's wording so the finding text matches.
+            unreadable = "unreadable config file" if scan_compatible else "unreadable config"
             reason = (
                 exc.reason
                 if isinstance(exc, ConfigParseError)
                 else (
                     str(exc)
                     if isinstance(exc, ValueError) and not isinstance(exc, UnicodeError)
-                    else f"unreadable config: {type(exc).__name__}"
+                    else f"{unreadable}: {type(exc).__name__}"
                 )
             )
             if explicit:
