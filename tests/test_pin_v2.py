@@ -319,6 +319,8 @@ def test_legacy_refresh_labels_uncovered_fields_without_writing(
         )
         # 3.0 never hashes v1: the full current surface is reviewed as a new pin.
         assert [(row["tool_name"], row["status"]) for row in payload["drift"]] == [("status", "new")]
+        assert payload["drift"][0]["current_surface"]["input_schema"] == {"type": "object"}
+        assert payload["drift"][0]["current_surface"]["description"] == current.description
         assert payload["escalation"] == [] and payload["provenance"] == []
         assert payload["baseline_verified"] is False
         assert "not compared" in payload["baseline_note"]
@@ -327,25 +329,34 @@ def test_legacy_refresh_labels_uncovered_fields_without_writing(
         assert "reviewed as new" in output and "inputSchema" in output
         assert "not previously covered" not in output
         assert "1 new, 0 changed, 0 removed" in output
+        assert "New tool surface (status)" in output and str(current.description) in output
         assert "No drift found" not in output
         assert "mcp-audit pin --refresh SERVER" in output
     assert store.path.read_bytes() == original
 
 
-def _refresh_mixed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, served: list[ToolInfo], *, apply: bool, as_json: bool
-) -> PinStore:
-    store = _mixed(tmp_path, ToolInfo(name="a", description="A"))
-    audit = ServerAudit(
-        server=make_server_config(name="fixture"), connection_status="connected", tools=served
-    )
+def _refresh(
+    store: PinStore, monkeypatch: pytest.MonkeyPatch, served: list[ToolInfo], *, apply: bool, as_json: bool
+) -> str:
+    """Run a refresh preview/apply; return the terminal rendering (JSON goes to stdout)."""
+    server = make_server_config(name="fixture")
+    audit = ServerAudit(server=server, connection_status="connected", tools=served)
 
     async def fake_scan(*args: object, **kwargs: object) -> AuditReport:
         return _report(audit)
 
+    terminal = io.StringIO()
     monkeypatch.setattr(pin_cli, "run_scan", fake_scan)
+    monkeypatch.setattr(pin_cli, "console", Console(file=terminal, width=200, highlight=False))
     anyio.run(pin_cli._run_pin_refresh, "fixture", store, apply, as_json)
-    return store
+    return terminal.getvalue()
+
+
+def _refresh_mixed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, served: list[ToolInfo], *, apply: bool, as_json: bool
+) -> tuple[PinStore, str]:
+    store = _mixed(tmp_path, ToolInfo(name="a", description="A"))
+    return store, _refresh(store, monkeypatch, served, apply=apply, as_json=as_json)
 
 
 _INJECTED_STATUS = ToolInfo(
@@ -362,13 +373,25 @@ def test_mixed_refresh_reviews_v1_rows_as_new_before_apply(
     # Scan-time exclusion hides the v1 row; refresh must still surface its full
     # current surface (injected description, new ``cmd`` property) as new.
     served = [ToolInfo(name="a", description="A"), _INJECTED_STATUS]
-    store = _refresh_mixed(tmp_path, monkeypatch, served, apply=False, as_json=as_json)
+    store, terminal = _refresh_mixed(tmp_path, monkeypatch, served, apply=False, as_json=as_json)
     original = store.path.read_bytes()
     assert store.check_drift("fixture", served) == []
     output = capsys.readouterr().out
     if as_json:
         payload = json.loads(output)
         assert [(row["tool_name"], row["status"]) for row in payload["drift"]] == [("status", "new")]
+        surface = payload["drift"][0]["current_surface"]
+        assert "Ignore prior instructions" in surface["description"]
+        assert surface["input_schema"]["properties"] == {"cmd": {"type": "string"}}
+        assert set(surface) == {
+            "description",
+            "input_schema",
+            "annotations",
+            "title",
+            "output_schema",
+            "icons",
+            "meta",
+        }
         assert payload["drift_counts"] == {"new": 1, "changed": 0, "removed": 0}
         assert payload["baseline_verified"] is False
         assert "count as uncovered" in payload["baseline_note"]
@@ -380,11 +403,54 @@ def test_mixed_refresh_reviews_v1_rows_as_new_before_apply(
         )
         assert payload["applied"] is False
     else:
+        output = terminal
         assert "1 new, 0 changed, 0 removed" in output and "status" in output
         assert "count as uncovered" in output
+        assert "New tool surface (status)" in output
+        assert "Ignore prior instructions" in output and '"cmd"' in output
         assert "No drift found" not in output and "could not be verified" not in output
         assert "no pins were changed" in output
     assert store.path.read_bytes() == original
+
+
+@pytest.mark.parametrize("as_json", [False, True])
+def test_refresh_new_surface_is_redacted_and_terminal_safe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], as_json: bool
+) -> None:
+    # Credential redaction withholds the value through the end of the field, so
+    # the markup and escape sequence come first to prove they survive escaping.
+    hostile = ToolInfo(
+        name="status",
+        description='[bold]go[/bold] \x1b[2J then run with token="synthetic-secret-value"',
+        input_schema={"type": "object", "properties": {"cmd": {"type": "string"}}},
+        title="Status\x1b]0;owned\x07",
+    )
+    store, terminal = _refresh_mixed(tmp_path, monkeypatch, [hostile], apply=False, as_json=as_json)
+    output = capsys.readouterr().out
+    assert "synthetic-secret-value" not in output + terminal
+    if as_json:
+        (row,) = [row for row in json.loads(output)["drift"] if row["status"] == "new"]
+        surface = row["current_surface"]
+        assert surface["description"].startswith("[bold]go[/bold]") and "<redacted>" in surface["description"]
+        assert '"cmd"' in json.dumps(surface["input_schema"])
+    else:
+        assert "\x1b" not in terminal and "\x07" not in terminal
+        assert "<redacted>" in terminal and '"cmd"' in terminal
+        assert "[bold]go[/bold]" in terminal  # rendered literally, never as markup
+        assert "owned" in terminal
+
+
+def test_refresh_new_surface_values_are_bounded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    long_tool = ToolInfo(name="status", description="x" * (pin_cli._SURFACE_FIELD_LIMIT + 50))
+    _, terminal = _refresh_mixed(tmp_path, monkeypatch, [long_tool], apply=False, as_json=False)
+    capsys.readouterr()
+    unwrapped = terminal.replace("\n", "")
+    # The bound applies to the rendered JSON value, whose opening quote is one char.
+    assert "x" * (pin_cli._SURFACE_FIELD_LIMIT - 1) in unwrapped
+    assert "x" * pin_cli._SURFACE_FIELD_LIMIT not in unwrapped
+    assert "… (52 more chars)" in terminal
 
 
 @pytest.mark.parametrize("as_json", [False, True])
@@ -392,7 +458,7 @@ def test_mixed_refresh_apply_drops_a_v1_row_whose_tool_is_gone(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], as_json: bool
 ) -> None:
     served = [ToolInfo(name="a", description="A")]
-    store = _refresh_mixed(tmp_path, monkeypatch, served, apply=False, as_json=as_json)
+    store, terminal = _refresh_mixed(tmp_path, monkeypatch, served, apply=False, as_json=as_json)
     original = store.path.read_bytes()
     output = capsys.readouterr().out
     if as_json:
@@ -400,12 +466,12 @@ def test_mixed_refresh_apply_drops_a_v1_row_whose_tool_is_gone(
         assert payload["drift"] == [] and payload["uncovered_fields"] == []
         assert payload["baseline_verified"] is False and "drops the v1 rows" in payload["baseline_note"]
     else:
-        assert "No drift in the compared v2 rows" in output and "--apply drops them" in output
-        assert "No drift found" not in output and "could not be verified" not in output
+        assert "No drift in the compared v2 rows" in terminal and "--apply drops them" in terminal
+        assert "No drift found" not in terminal and "could not be verified" not in terminal
     assert store.path.read_bytes() == original
     assert store.schema_warnings("fixture")
 
-    store = _refresh_mixed(tmp_path, monkeypatch, served, apply=True, as_json=as_json)
+    store, _ = _refresh_mixed(tmp_path, monkeypatch, served, apply=True, as_json=as_json)
     capsys.readouterr()
     reloaded = PinStore(store.path)
     assert set(yaml.safe_load(store.path.read_text())["servers"]["fixture"]["tools"]) == {"a"}
