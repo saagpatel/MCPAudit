@@ -72,7 +72,7 @@ fail-closed policy/runtime outcome, and `2` means invalid input.
 Prepare evidence, recommendation, and a deterministic no-write diff:
 
 ```sh
-mcp-audit enforcement-fixture prepare \
+mcp-audit lab enforcement-fixture prepare \
   --audit-report examples/enforcement-fixture/synthetic-audit-report.json \
   --origin fixture://mcpaudit/evidence-enforcement \
   --server-name synthetic-policy-server \
@@ -93,7 +93,7 @@ Save the nested `evidence` and `recommendation` objects as canonical JSON files.
 Approval is an explicit, separate operator action:
 
 ```sh
-mcp-audit enforcement-fixture approve \
+mcp-audit lab enforcement-fixture approve \
   --recommendation recommendation.json \
   --approved-at 2026-07-20T12:01:00Z \
   --expires-at 2026-07-20T13:00:00Z \
@@ -103,7 +103,7 @@ mcp-audit enforcement-fixture approve \
 Save the emitted `approval` object, then apply:
 
 ```sh
-mcp-audit enforcement-fixture apply \
+mcp-audit lab enforcement-fixture apply \
   --evidence evidence.json \
   --recommendation recommendation.json \
   --approval approval.json \
@@ -121,7 +121,7 @@ successful rollback revokes the approval digest, so the same approval cannot be
 used to apply again:
 
 ```sh
-mcp-audit enforcement-fixture rollback \
+mcp-audit lab enforcement-fixture rollback \
   --origin fixture://mcpaudit/evidence-enforcement \
   --server-name synthetic-policy-server \
   --rollback-id rollback-fixture-001 \

@@ -1,6 +1,6 @@
 # MCP Result Parcel Lab
 
-`mcp-audit result-parcel` is an offline decision laboratory for result
+`mcp-audit lab result-parcel` is an offline decision laboratory for result
 representation, retrieval, retention, and disclosure tradeoffs. It analyzes
 synthetic JSON scenarios. It does not run an MCP client or server, fetch a
 resource, inspect a credential, allocate the declared payload, or contact an
@@ -73,8 +73,8 @@ recommendation rather than an invented failure or complete pass.
 Emit the authoritative machine-readable schemas:
 
 ```sh
-uv run mcp-audit result-parcel schema scenario
-uv run mcp-audit result-parcel schema report
+uv run mcp-audit lab result-parcel schema scenario
+uv run mcp-audit lab result-parcel schema report
 ```
 
 The report is deterministic canonical JSON when `--format json` is selected.
@@ -90,22 +90,22 @@ It includes:
 
 ```sh
 # 1. Discover built-ins.
-uv run mcp-audit result-parcel builtins
+uv run mcp-audit lab result-parcel builtins
 
 # 2. Compare a small inline parcel with an 8 MiB inline parcel.
-uv run mcp-audit result-parcel analyze --builtin small-inline
-uv run mcp-audit result-parcel analyze --builtin large-inline
+uv run mcp-audit lab result-parcel analyze --builtin small-inline
+uv run mcp-audit lab result-parcel analyze --builtin large-inline
 
 # 3. Compare the same large size as a retained resource link.
-uv run mcp-audit result-parcel analyze --builtin large-resource-link
+uv run mcp-audit lab result-parcel analyze --builtin large-resource-link
 
 # 4. Reproduce a supplied failure path in canonical JSON.
-uv run mcp-audit result-parcel analyze \
+uv run mcp-audit lab result-parcel analyze \
   tests/fixtures/result_parcel/integrity-mismatch.json --format json
 
 # 5. Generate a one-terabyte synthetic metadata scenario without allocating
 #    one terabyte, save stdout if desired, then analyze the saved JSON.
-uv run mcp-audit result-parcel generate-large \
+uv run mcp-audit lab result-parcel generate-large \
   --scenario-id one-terabyte-metadata \
   --size-bytes 1099511627776 \
   --mode resource_link
