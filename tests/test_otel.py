@@ -22,6 +22,7 @@ from opentelemetry.trace import (
 )
 from opentelemetry.util.types import Attributes, AttributeValue
 from packaging.requirements import Requirement
+from packaging.specifiers import SpecifierSet
 
 from mcp_audit.models import (
     AuditReport,
@@ -101,7 +102,7 @@ def test_otel_extra_declares_the_api_dependency() -> None:
             and requirement.marker is not None
             and requirement.marker.evaluate({"extra": extra})
         )
-        assert str(api.specifier) == "==1.44.0"
+        assert api.specifier == SpecifierSet(">=1.44,<2")
         assert api.marker is not None
         assert not api.marker.evaluate({"extra": ""})
 

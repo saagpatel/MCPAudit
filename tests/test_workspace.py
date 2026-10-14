@@ -14,6 +14,12 @@ from packaging.requirements import Requirement
 
 ROOT = Path(__file__).resolve().parents[1]
 MEMBERS = {"labs": "mcp_audit_labs", "proof": "proof_before_action"}
+# The 2.12 requirement strings; only cross-distribution requirements are exact pins (Q3).
+OPTIONAL_EXTRAS = {
+    "watch": ["watchfiles>=1.1.1"],
+    "llm": ["anthropic>=0.40"],
+    "otel": ["opentelemetry-api>=1.44,<2"],
+}
 
 
 def test_workspace_members_and_dependency_direction() -> None:
@@ -44,20 +50,15 @@ def test_workspace_members_and_dependency_direction() -> None:
         assert root["tool"]["uv"]["sources"][f"mcp-audits-{member}"] == {"workspace": True}
 
 
-def test_core_extras_are_exact_and_all_is_the_union() -> None:
+def test_core_extras_pin_satellites_and_all_is_the_union() -> None:
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
     extras = project["optional-dependencies"]
     for member in MEMBERS:
         assert extras[member] == [f"mcp-audits-{member}=={project['version']}"]
-    parts = ("labs", "proof", "watch", "llm", "otel")
-    assert set(extras["all"]) == {value for part in parts for value in extras[part]}
-    assert len(extras["all"]) == 5
-    for extra in (*parts, "all"):
-        for value in extras[extra]:
-            requirement = Requirement(value)
-            (pin,) = requirement.specifier
-            assert pin.operator == "==" and "*" not in pin.version
-            assert requirement.url is None and requirement.marker is None
+    for extra, values in OPTIONAL_EXTRAS.items():
+        assert extras[extra] == values
+    parts = ("labs", "proof", *OPTIONAL_EXTRAS)
+    assert extras["all"] == [value for part in parts for value in extras[part]]
 
 
 def test_ci_and_make_install_sync_every_package() -> None:

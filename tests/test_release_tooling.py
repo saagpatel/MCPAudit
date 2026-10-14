@@ -13,6 +13,7 @@ import zipfile
 from pathlib import Path, PurePosixPath
 
 import pytest
+from packaging.requirements import Requirement
 
 import mcp_audit_build_backend as backend
 from scripts import verify_release as release
@@ -155,7 +156,7 @@ def test_distribution_contract_is_explicit_and_ordered(tmp_path: Path, mutation:
 
 
 EXTRAS = (("labs", ("labs",)), ("proof", ("proof",)), ("all", ("labs", "proof")))
-OPTIONAL = {"watch": "watchfiles==1.1.1", "llm": "anthropic==0.87.0", "otel": "opentelemetry-api==1.44.0"}
+OPTIONAL = {"watch": "watchfiles>=1.1.1", "llm": "anthropic>=0.40", "otel": "opentelemetry-api>=1.44,<2"}
 PROOF_DEPENDENCIES = ["click>=8.3.3,<9.0", "pydantic>=2.0", "pyyaml>=6.0"]
 BUILD_CONSTRAINTS = (Path(__file__).resolve().parents[1] / "build-constraints.txt").read_text()
 BUILD_SYSTEM = (
@@ -529,6 +530,45 @@ def test_sdist_core_extras_must_pin_lockstep_versions(train_artifacts: Path) -> 
         )
 
 
+SATELLITE_REFERENCES = {
+    "none": [],
+    "extras": [
+        f'mcp-audits-{package}=={VERSION}; extra == "{extra}"'
+        for extra, packages in EXTRAS
+        for package in packages
+    ],
+    "labs-extra": [f'mcp-audits-labs=={VERSION}; extra == "labs"'],
+    "base-dependency": [f"mcp-audits-labs=={VERSION}"],
+    "other-extra": [f'mcp-audits-proof=={VERSION}; extra == "watch"'],
+    "range": [f'mcp-audits-labs>={VERSION}; extra == "labs"'],
+    "other-version": ['mcp-audits-proof==9.9.9; extra == "proof"'],
+    "self": [f"mcp-audits=={VERSION}"],
+}
+
+
+@pytest.mark.parametrize("split", [False, True])
+@pytest.mark.parametrize("case", list(SATELLITE_REFERENCES))
+def test_core_admits_satellites_only_as_exact_pins_in_their_extras(
+    monkeypatch: pytest.MonkeyPatch, split: bool, case: str
+) -> None:
+    monkeypatch.setattr(release, "DISTRIBUTIONS", TRAIN if split else TRAIN[:1])
+    floors = [raw for raw, _label in release.SECURITY_FLOORS]
+    requirements = [Requirement(raw) for raw in [*floors, *SATELLITE_REFERENCES[case]]]
+    # The unsplit contract may omit the extras; the three-distribution contract must declare them.
+    if case == "extras" or (case in {"none", "labs-extra"} and not split):
+        release._check_requirements(requirements, version=VERSION, name="core", distribution=TRAIN[0])
+    else:
+        with pytest.raises(release.VerificationError, match="core must pin the exact lockstep"):
+            release._check_requirements(requirements, version=VERSION, name="core", distribution=TRAIN[0])
+
+
+@pytest.mark.parametrize("dependency", ["mcp-audits==3.0.0", "mcp-audits-labs==3.0.0"])
+def test_proof_rejects_any_lockstep_distribution_dependency(dependency: str) -> None:
+    requirements = [Requirement(raw) for raw in [*PROOF_DEPENDENCIES, dependency]]
+    with pytest.raises(release.VerificationError, match="Proof must not depend on mcp-audits"):
+        release._check_requirements(requirements, version=VERSION, name="proof", distribution=TRAIN[2])
+
+
 @pytest.mark.parametrize("kind", [tarfile.SYMTYPE, tarfile.LNKTYPE])
 @pytest.mark.parametrize("filename", ["__init__.py", "_build_provenance.json", "linked.py", "source-root"])
 def test_sdist_package_tree_rejects_links(train_artifacts: Path, kind: bytes, filename: str) -> None:
@@ -604,7 +644,16 @@ def test_script_contract_covers_console_and_gui_union(duplicate: bool) -> None:
         release._check_entry_points(wheel, scripts=proof.scripts, name="fixture wheel")
 
 
-@pytest.mark.parametrize("mutation", ["missing", "version", "core-dependency", "provenance", "scripts"])
+PARTIAL_TRAIN_ERRORS = {
+    "missing": "exactly the expected wheel and sdist",
+    "version": "has the wrong version",
+    "core-dependency": "Proof must not depend on mcp-audits",
+    "provenance": "not bound to the clean approved commit",
+    "scripts": "entry points do not match the release contract",
+}
+
+
+@pytest.mark.parametrize("mutation", list(PARTIAL_TRAIN_ERRORS))
 def test_partial_or_inconsistent_train_fails(train_artifacts: Path, mutation: str) -> None:
     proof = TRAIN[2]
     wheel = train_artifacts / release.distribution_names(VERSION, proof.name)[0]
@@ -625,7 +674,7 @@ def test_partial_or_inconsistent_train_fails(train_artifacts: Path, mutation: st
         with zipfile.ZipFile(wheel, "w") as archive:
             for name, content in entries.items():
                 archive.writestr(name, content)
-    with pytest.raises(release.VerificationError):
+    with pytest.raises(release.VerificationError, match=PARTIAL_TRAIN_ERRORS[mutation]):
         release.verify_distributions(
             dist_dir=train_artifacts, version=VERSION, commit=_commit(train_artifacts)
         )
@@ -672,24 +721,25 @@ def test_maintenance_environment_requires_exact_branch(monkeypatch: pytest.Monke
         )
 
 
-@pytest.mark.parametrize(
-    "mutation",
-    [
-        "none",
-        "version",
-        "lock",
-        "scripts",
-        "pin",
-        "extra",
-        "gui-collision",
-        "core-gui-collision",
-        "proof-core",
-        "proof-unexpected",
-        "proof-missing",
-        "all-missing-optional",
-        "all-unpinned",
-    ],
-)
+LOCKSTEP_ERRORS = {
+    "none": "",
+    "version": "lockstep names and versions",
+    "lock": "uv.lock distribution versions must be lockstep",
+    "scripts": "entry points do not match the release contract",
+    "pin": "labs/pyproject.toml must pin the exact lockstep",
+    "extra": "core extra 'proof' is missing",
+    "gui-collision": "GUI entry points do not match the release contract",
+    "core-gui-collision": "installed scripts must have unique owners",
+    "proof-core": "Proof must not depend on mcp-audits",
+    "proof-unexpected": "Proof dependencies must be only",
+    "proof-missing": "Proof dependencies must be only",
+    "all-missing-optional": "all extra must equal the union",
+    "all-extra-optional": "all extra must equal the union",
+    "satellite-unpinned": "labs extra must pin the exact lockstep satellite",
+}
+
+
+@pytest.mark.parametrize("mutation", list(LOCKSTEP_ERRORS))
 def test_source_distribution_metadata_is_lockstep(
     monkeypatch: pytest.MonkeyPatch,
     mutation: str,
@@ -710,8 +760,10 @@ def test_source_distribution_metadata_is_lockstep(
         project["optional-dependencies"] = {"labs": [f"mcp-audits-labs>={version}"]}
     elif mutation == "all-missing-optional":
         extras["all"].remove(OPTIONAL["llm"])
-    elif mutation == "all-unpinned":
-        extras["all"][-1] = "opentelemetry-api>=1.44"
+    elif mutation == "all-extra-optional":
+        extras["all"].append("rich>=15")
+    elif mutation == "satellite-unpinned":
+        extras["labs"] = [f"mcp-audits-labs>={version}"]
     monkeypatch.setattr(release, "DISTRIBUTIONS", TRAIN)
     monkeypatch.setattr(release, "_project", lambda: project)
     original_read = release._read_text
@@ -752,7 +804,7 @@ def test_source_distribution_metadata_is_lockstep(
     if mutation == "none":
         assert release.verify_metadata(require_publishable=False)[0] == version
     else:
-        with pytest.raises(release.VerificationError):
+        with pytest.raises(release.VerificationError, match=LOCKSTEP_ERRORS[mutation]):
             release.verify_metadata(require_publishable=False)
 
 
