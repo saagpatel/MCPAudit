@@ -266,7 +266,8 @@ class TestBuildMcpServer:
         assert properties["skip_connect"]["default"] is False
         assert not tool.input_schema.get("required")
         assert tool.description is not None
-        assert "In 2.12, connections remain enabled by default" in tool.description
+        assert "connections remain enabled by default" in tool.description
+        assert "In 2.12" not in tool.description
         assert "connect=false" in tool.description
         assert "skip_connect=true always disables connections" in tool.description
         assert "In 3.0, this tool will default to static auditing" in tool.description
