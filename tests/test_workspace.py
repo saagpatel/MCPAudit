@@ -5,6 +5,7 @@ from __future__ import annotations
 import email.parser
 import re
 import subprocess
+import sys
 import tarfile
 import tomllib
 import zipfile
@@ -15,6 +16,17 @@ from packaging.requirements import Requirement
 
 ROOT = Path(__file__).resolve().parents[1]
 MEMBERS = {"labs": "mcp_audit_labs", "proof": "proof_before_action"}
+LAB_MODULES = """
+_artifacts lab_primitives conformance_probe enforcement_cli evidence_enforcement fixture_gateway
+agent_ui_cli agent_ui_models agent_ui_scanner
+authorization_posture_cli authorization_posture_models authorization_posture_scanner
+cache_contract_cli cache_contract_models cache_contract_scanner
+oauth_transcript_cli oauth_transcript_models oauth_transcript_sarif oauth_transcript_scanner
+result_parcel_cli result_parcel_models result_parcel_scanner
+session_resume_cli session_resume_lab session_resume_models
+task_time_machine task_time_machine_cli task_time_machine_models
+safeforge safeforge_cli safeforge_consumer safeforge_contract_linter safeforge_coordinator safeforge_runtime
+""".split()
 # The 2.12 requirement strings; only cross-distribution requirements are exact pins (Q3).
 OPTIONAL_EXTRAS = {
     "watch": ["watchfiles>=1.1.1"],
@@ -159,3 +171,43 @@ def test_lock_contains_editable_members_and_exact_extra_requirements() -> None:
         "anthropic",
         "opentelemetry-api",
     }
+
+
+def test_labs_artifacts_contain_all_moved_modules_and_load_bundled_scenarios(
+    workspace_artifacts: dict[str, Path],
+) -> None:
+    assert len(LAB_MODULES) == len(set(LAB_MODULES)) == 34
+    expected = {f"mcp_audit_labs/{name}.py" for name in LAB_MODULES} | {
+        "mcp_audit_labs/__init__.py",
+        "mcp_audit_labs/_build_provenance.json",
+        "mcp_audit_labs/session_resume_scenarios_v1.json",
+    }
+    output = workspace_artifacts["labs"]
+    (wheel,) = output.glob("*.whl")
+    with zipfile.ZipFile(wheel) as archive:
+        assert {
+            name
+            for name in archive.namelist()
+            if name.startswith("mcp_audit_labs/") and not name.endswith("/")
+        } == expected
+    (sdist,) = output.glob("*.tar.gz")
+    with tarfile.open(sdist) as archive:
+        assert {
+            info.name.split("/src/", 1)[1]
+            for info in archive.getmembers()
+            if "/src/" in info.name and info.isfile()
+        } == expected
+    for name in LAB_MODULES:
+        assert not (ROOT / "src" / "mcp_audit" / f"{name}.py").exists()
+    assert not (ROOT / "src/mcp_audit/session_resume_scenarios_v1.json").exists()
+    script = (
+        "import sys; sys.path.insert(0, sys.argv[1]); "
+        "import mcp_audit_labs; "
+        "assert sys.argv[1] in mcp_audit_labs.__file__; "
+        "from mcp_audit_labs.session_resume_lab import load_builtin_scenarios, run_builtin_suite; "
+        "assert load_builtin_scenarios(); assert run_builtin_suite()"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script, str(wheel)], capture_output=True, text=True, check=False
+    )
+    assert result.returncode == 0, result.stderr

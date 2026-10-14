@@ -5,10 +5,10 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
+from mcp_audit_labs.authorization_posture_models import canonical_json_bytes
 from pydantic import BaseModel, Field
 
 from mcp_audit import oauth_urls
-from mcp_audit.authorization_posture_models import canonical_json_bytes
 
 
 @pytest.mark.parametrize(

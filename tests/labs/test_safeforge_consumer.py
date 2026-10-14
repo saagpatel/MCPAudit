@@ -11,12 +11,12 @@ from typing import Any
 
 import anyio
 import pytest
+from mcp_audit_labs.safeforge import StageId
+from mcp_audit_labs.safeforge_consumer import SafeForgePreinstallResult, consume_forge_receipt
 
 from mcp_audit.api import scan_config_only as real_scan_config_only
 from mcp_audit.connector import ServerConnector
 from mcp_audit.models import AuditReport
-from mcp_audit.safeforge import StageId
-from mcp_audit.safeforge_consumer import SafeForgePreinstallResult, consume_forge_receipt
 
 _NOW = datetime(2026, 7, 10, 12, 0, tzinfo=UTC)
 _FILES = {
@@ -214,7 +214,7 @@ async def test_receipt_schema_failure_blocks_before_audit(
     async def _forbidden(*args: object, **kwargs: object) -> object:
         raise AssertionError("config audit must not run")
 
-    monkeypatch.setattr("mcp_audit.safeforge_consumer.scan_config_only", _forbidden)
+    monkeypatch.setattr("mcp_audit_labs.safeforge_consumer.scan_config_only", _forbidden)
     root = _write_artifact_root(tmp_path)
     receipt = _receipt(root)
     receipt["api_token"] = "not-accepted"
@@ -359,7 +359,7 @@ async def test_zero_audit_report_is_rejected(tmp_path: Path, monkeypatch: pytest
         report = await real_scan_config_only(config, source=source)
         return report.model_copy(update={"audits": [], "servers_discovered": 0})
 
-    monkeypatch.setattr("mcp_audit.safeforge_consumer.scan_config_only", _zero_audits)
+    monkeypatch.setattr("mcp_audit_labs.safeforge_consumer.scan_config_only", _zero_audits)
     root = _write_artifact_root(tmp_path)
     result = await _consume(_receipt(root), root)
     assert not result.accepted

@@ -5,8 +5,8 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-from mcp_audit.safeforge_consumer import ForgeReceiptV0Input
-from mcp_audit.safeforge_contract_linter import ContractChange, lint_forge_receipt_schema
+from mcp_audit_labs.safeforge_consumer import ForgeReceiptV0Input
+from mcp_audit_labs.safeforge_contract_linter import ContractChange, lint_forge_receipt_schema
 
 
 def _schema() -> dict[str, Any]:

@@ -7,9 +7,7 @@ from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
-
-from mcp_audit.cli import main
-from mcp_audit.session_resume_lab import (
+from mcp_audit_labs.session_resume_lab import (
     SessionResumeInputError,
     load_builtin_scenarios,
     load_scenario_path,
@@ -18,7 +16,9 @@ from mcp_audit.session_resume_lab import (
     run_scenario,
     scenario_json_bytes,
 )
-from mcp_audit.session_resume_models import DeliveryClassification, SessionResumeScenario
+from mcp_audit_labs.session_resume_models import DeliveryClassification, SessionResumeScenario
+
+from mcp_audit.cli import main
 
 REQUIRED_FAULTS = {
     "disconnect-before-acceptance",

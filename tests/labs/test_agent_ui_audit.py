@@ -6,23 +6,23 @@ import socket
 import subprocess
 from pathlib import Path
 
+import mcp_audit_labs._artifacts as artifacts
 import pytest
 from click.testing import CliRunner
-from pydantic import ValidationError
-
-import mcp_audit._artifacts as artifacts
-from mcp_audit.agent_ui_models import (
+from mcp_audit_labs.agent_ui_models import (
     A2UIFixtureManifest,
     A2UIMessage,
     AgentUIReport,
     MCPAppsFixture,
 )
-from mcp_audit.agent_ui_scanner import (
+from mcp_audit_labs.agent_ui_scanner import (
     AgentUIInputError,
     render_agent_ui_html,
     report_json_bytes,
     scan_agent_ui_path,
 )
+from pydantic import ValidationError
+
 from mcp_audit.cli import main
 
 FIXTURE_ROOT = Path("tests/fixtures/agent_ui")

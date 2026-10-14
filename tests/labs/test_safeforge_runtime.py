@@ -11,10 +11,9 @@ from copy import deepcopy
 from pathlib import Path
 
 import pytest
-
-from mcp_audit.safeforge import StageId
-from mcp_audit.safeforge_consumer import ForgeReceiptV0Input
-from mcp_audit.safeforge_runtime import (
+from mcp_audit_labs.safeforge import StageId
+from mcp_audit_labs.safeforge_consumer import ForgeReceiptV0Input
+from mcp_audit_labs.safeforge_runtime import (
     _FORK_PROBE_CODE,
     _LIMITS,
     _digest_bytes,
@@ -204,7 +203,7 @@ def test_runtime_only_capability_mutations_fail_closed(mutation: object, code: s
 def test_declared_or_dynamic_egress_is_blocked_before_materialization(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("mcp_audit.safeforge_runtime._SANDBOX_EXEC", tmp_path / "missing")
+    monkeypatch.setattr("mcp_audit_labs.safeforge_runtime._SANDBOX_EXEC", tmp_path / "missing")
     for declared, observed in [(["example.invalid"], ["network"]), ([], ["network"])]:
         receipt = _receipt()
         receipt.toolbom[0].declared.egress_destinations = declared
@@ -219,7 +218,7 @@ def test_declared_or_dynamic_egress_is_blocked_before_materialization(
 def test_filesystem_capability_is_blocked_before_materialization(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr("mcp_audit.safeforge_runtime._SANDBOX_EXEC", tmp_path / "missing")
+    monkeypatch.setattr("mcp_audit_labs.safeforge_runtime._SANDBOX_EXEC", tmp_path / "missing")
     receipt = _receipt()
     receipt.toolbom[0].observed_capabilities = ["filesystem"]
     receipt.toolbom[0].declared.permissions = ["filesystem"]

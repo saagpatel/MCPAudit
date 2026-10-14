@@ -12,21 +12,21 @@ from typing import Any
 
 import pytest
 from click.testing import CliRunner
-from pydantic import ValidationError
-
-from mcp_audit.authorization_posture_models import (
+from mcp_audit_labs.authorization_posture_models import (
     SPEC_PROFILE,
     SPEC_REFERENCES,
     AuthorizationPostureReport,
     McpAuthorizationPostureV1,
     ProducerSpecification,
 )
-from mcp_audit.authorization_posture_scanner import (
+from mcp_audit_labs.authorization_posture_scanner import (
     AuthorizationPostureInputError,
     parse_authorization_posture_bytes,
     report_json_bytes,
     review_authorization_posture_path,
 )
+from pydantic import ValidationError
+
 from mcp_audit.cli import main
 
 

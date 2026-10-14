@@ -10,20 +10,20 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from mcp_audit_labs.agent_ui_scanner import scan_agent_ui_path
+from mcp_audit_labs.cache_contract_scanner import scan_cache_path
+from mcp_audit_labs.lab_primitives import read_bounded_descriptor, strict_json_loads, validate_json_nesting
+from mcp_audit_labs.oauth_transcript_scanner import scan_oauth_transcript_path
+from mcp_audit_labs.result_parcel_scanner import scan_scenario_path as scan_parcel_path
+from mcp_audit_labs.session_resume_lab import SessionResumeInputError, load_scenario_path, run_builtin_suite
+from mcp_audit_labs.task_time_machine import load_scenario_path as load_task_path
+from mcp_audit_labs.task_time_machine import scan_scenario_path as scan_task_path
+from mcp_audit_labs.task_time_machine_models import TaskScenario
 from pydantic import BaseModel, ConfigDict, Field
 
-from mcp_audit.agent_ui_scanner import scan_agent_ui_path
-from mcp_audit.cache_contract_scanner import scan_cache_path
 from mcp_audit.canonical import canonical_json_bytes, compact_json_bytes
-from mcp_audit.lab_primitives import read_bounded_descriptor, strict_json_loads, validate_json_nesting
-from mcp_audit.oauth_transcript_scanner import scan_oauth_transcript_path
-from mcp_audit.result_parcel_scanner import scan_scenario_path as scan_parcel_path
-from mcp_audit.session_resume_lab import SessionResumeInputError, load_scenario_path, run_builtin_suite
-from mcp_audit.task_time_machine import load_scenario_path as load_task_path
-from mcp_audit.task_time_machine import scan_scenario_path as scan_task_path
-from mcp_audit.task_time_machine_models import TaskScenario
 
-FIXTURES = Path(__file__).parent / "fixtures"
+FIXTURES = Path(__file__).parents[1] / "fixtures"
 SERIALIZERS = [
     ("agent_ui", True, True),
     ("authorization_posture", False, True),
@@ -123,7 +123,7 @@ class _ConfiguredAliasFixture(_AliasFixture):
 def test_lab_serializers_preserve_exact_model_bytes_and_number_policy(
     module_name: str, by_alias: bool, allow_nan: bool
 ) -> None:
-    module = importlib.import_module(f"mcp_audit.{module_name}_models")
+    module = importlib.import_module(f"mcp_audit_labs.{module_name}_models")
     serializer: Callable[[BaseModel | dict[str, object] | list[object]], bytes] = module.canonical_json_bytes
     model = _AliasFixture(wire_label="café", wire_values=[None, True, 1.25, {"z": 2, "a": "line\n"}])
     expected = (
@@ -190,13 +190,13 @@ def test_tool_pin_legacy_and_current_canonical_bytes_are_unchanged() -> None:
 def test_fixture_report_canonical_bytes_match_before_extraction(
     module_name: str, scanner: Callable[[Path], BaseModel], fixture: str, expected: str
 ) -> None:
-    module = importlib.import_module(f"mcp_audit.{module_name}_models")
+    module = importlib.import_module(f"mcp_audit_labs.{module_name}_models")
     serializer: Callable[[BaseModel], bytes] = module.canonical_json_bytes
     assert hashlib.sha256(serializer(scanner(FIXTURES / fixture))).hexdigest() == expected
 
 
 def test_session_resume_suite_canonical_bytes_match_before_extraction() -> None:
-    from mcp_audit.session_resume_lab import report_json_bytes
+    from mcp_audit_labs.session_resume_lab import report_json_bytes
 
     assert hashlib.sha256(report_json_bytes(run_builtin_suite())).hexdigest() == (
         "70c2bba92f116363b709c92c17449a4a10ae2ae13cc6a6470e2965dc45f8a88c"

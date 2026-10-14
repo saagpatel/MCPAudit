@@ -12,15 +12,13 @@ from typing import Any
 
 import pytest
 from click.testing import CliRunner
-
-from mcp_audit.cli import main
-from mcp_audit.result_parcel_models import (
+from mcp_audit_labs.result_parcel_models import (
     MAX_DECLARED_PAYLOAD_BYTES,
     MAX_INPUT_BYTES,
     ParcelAnalysisReport,
     ParcelScenario,
 )
-from mcp_audit.result_parcel_scanner import (
+from mcp_audit_labs.result_parcel_scanner import (
     ParcelInputError,
     analyze_scenario,
     builtin_scenarios,
@@ -29,7 +27,9 @@ from mcp_audit.result_parcel_scanner import (
     scan_scenario_path,
 )
 
-FIXTURES = Path(__file__).parent / "fixtures" / "result_parcel"
+from mcp_audit.cli import main
+
+FIXTURES = Path(__file__).parents[1] / "fixtures" / "result_parcel"
 
 
 @pytest.mark.parametrize(
@@ -161,7 +161,9 @@ def test_lab_modules_import_no_network_or_credential_clients() -> None:
         "result_parcel_scanner.py",
         "result_parcel_cli.py",
     ):
-        source = (Path(__file__).parents[1] / "src" / "mcp_audit" / name).read_text()
+        source = (
+            Path(__file__).parents[2] / "distributions" / "labs" / "src" / "mcp_audit_labs" / name
+        ).read_text()
         tree = ast.parse(source)
         imported = {
             alias.name.split(".", 1)[0]

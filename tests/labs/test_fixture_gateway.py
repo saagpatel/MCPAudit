@@ -3,8 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-
-from mcp_audit.fixture_gateway import ApprovalStatus, FixtureGateway, FixturePolicy
+from mcp_audit_labs.fixture_gateway import ApprovalStatus, FixtureGateway, FixturePolicy
 
 
 @pytest.fixture

@@ -10,8 +10,7 @@ from typing import Any
 
 import pytest
 from click.testing import CliRunner
-
-from mcp_audit.cache_contract_models import (
+from mcp_audit_labs.cache_contract_models import (
     MAX_EVENTS,
     MAX_FINDINGS,
     MAX_INPUT_BYTES,
@@ -23,15 +22,16 @@ from mcp_audit.cache_contract_models import (
     CacheAuditReport,
     CacheTrace,
 )
-from mcp_audit.cache_contract_scanner import (
+from mcp_audit_labs.cache_contract_scanner import (
     CacheContractInputError,
     report_json_bytes,
     scan_cache_bytes,
     scan_cache_path,
 )
+
 from mcp_audit.cli import main
 
-FIXTURES = Path(__file__).parent / "fixtures" / "cache_contract"
+FIXTURES = Path(__file__).parents[1] / "fixtures" / "cache_contract"
 
 
 def _report(name: str) -> CacheAuditReport:

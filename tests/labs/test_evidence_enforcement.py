@@ -9,14 +9,10 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import mcp_audit_labs.evidence_enforcement as enforcement
 import pytest
 from click.testing import CliRunner
-from pydantic import ValidationError
-
-import mcp_audit.evidence_enforcement as enforcement
-from mcp_audit import cli
-from mcp_audit._command_registry import LAB_INSTALL_NOTICE
-from mcp_audit.evidence_enforcement import (
+from mcp_audit_labs.evidence_enforcement import (
     TARGET_RUNTIME_VERSION,
     ApprovalBindingError,
     ApprovedPolicyIntentV1,
@@ -43,7 +39,11 @@ from mcp_audit.evidence_enforcement import (
     state_digest,
     verify_target_runtime,
 )
-from mcp_audit.fixture_gateway import FIXTURE_GATEWAY_VERSION
+from mcp_audit_labs.fixture_gateway import FIXTURE_GATEWAY_VERSION
+from pydantic import ValidationError
+
+from mcp_audit import cli
+from mcp_audit._command_registry import LAB_INSTALL_NOTICE
 from mcp_audit.models import (
     AUDIT_REPORT_SCHEMA_VERSION,
     AuditReport,
@@ -65,7 +65,7 @@ SERVER = "synthetic-policy-server"
 @pytest.fixture(autouse=True)
 def _fixed_enforcement_clock(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "mcp_audit.evidence_enforcement._utc_now",
+        "mcp_audit_labs.evidence_enforcement._utc_now",
         lambda: NOW + timedelta(minutes=2),
     )
 
@@ -437,7 +437,7 @@ def test_identical_reapplication_is_noop_with_same_effective_digest(
     first = apply_fixture_policy(evidence, recommendation, approval, state_dir)
     state_mtime = (state_dir / "state.json").stat().st_mtime_ns
     monkeypatch.setattr(
-        "mcp_audit.evidence_enforcement._utc_now",
+        "mcp_audit_labs.evidence_enforcement._utc_now",
         lambda: NOW + timedelta(minutes=3),
     )
     second = apply_fixture_policy(evidence, recommendation, approval, state_dir)
@@ -546,7 +546,7 @@ def test_expired_approval_blocks_application(
         operator_label="fixture-operator",
     )
     monkeypatch.setattr(
-        "mcp_audit.evidence_enforcement._utc_now",
+        "mcp_audit_labs.evidence_enforcement._utc_now",
         lambda: NOW + timedelta(minutes=6),
     )
     with pytest.raises(ApprovalBindingError, match="expired"):
@@ -583,7 +583,7 @@ def test_runtime_version_is_exactly_pinned() -> None:
 
 def test_runtime_version_drift_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "mcp_audit.evidence_enforcement.FIXTURE_GATEWAY_VERSION",
+        "mcp_audit_labs.evidence_enforcement.FIXTURE_GATEWAY_VERSION",
         "1.0.1",
     )
 
@@ -746,7 +746,7 @@ def test_connected_but_stale_evidence_cannot_recommend_or_apply(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "mcp_audit.evidence_enforcement._utc_now",
+        "mcp_audit_labs.evidence_enforcement._utc_now",
         lambda: NOW + timedelta(minutes=16),
     )
     stale = _evidence()
@@ -762,10 +762,10 @@ def test_connected_but_stale_evidence_cannot_recommend_or_apply(
         )
     assert default.subject == stale.subject
 
-    monkeypatch.setattr("mcp_audit.evidence_enforcement._utc_now", lambda: NOW)
+    monkeypatch.setattr("mcp_audit_labs.evidence_enforcement._utc_now", lambda: NOW)
     state_dir, evidence, recommendation, approval = _bundle(tmp_path)
     monkeypatch.setattr(
-        "mcp_audit.evidence_enforcement._utc_now",
+        "mcp_audit_labs.evidence_enforcement._utc_now",
         lambda: NOW + timedelta(minutes=16),
     )
     with pytest.raises(PolicyOutcomeError, match="stale"):
@@ -801,7 +801,7 @@ def test_application_uses_trusted_clock_and_rejects_future_approval(
 
     state_dir, evidence, recommendation, approval = _bundle(tmp_path)
     monkeypatch.setattr(
-        "mcp_audit.evidence_enforcement._utc_now",
+        "mcp_audit_labs.evidence_enforcement._utc_now",
         lambda: NOW + timedelta(seconds=30),
     )
     with pytest.raises(ApprovalBindingError, match="future-dated"):
@@ -867,7 +867,7 @@ def test_unexpected_cli_exception_is_one_fail_closed_json(
         raise RuntimeError("planted-secret")
 
     monkeypatch.setattr(
-        "mcp_audit.enforcement_cli.approve_recommendation",
+        "mcp_audit_labs.enforcement_cli.approve_recommendation",
         fail_unexpectedly,
     )
     result = CliRunner().invoke(

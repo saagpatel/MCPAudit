@@ -9,9 +9,9 @@ from collections.abc import Iterator
 
 import pytest
 from click.testing import CliRunner
+from mcp_audit_labs.conformance_probe import BAD_ORIGIN, PROTOCOL_VERSION, run_conformance_probe
 
 from mcp_audit.cli import main
-from mcp_audit.conformance_probe import BAD_ORIGIN, PROTOCOL_VERSION, run_conformance_probe
 from mcp_audit.probe import MAX_BODY_BYTES, Response
 from tests.fixtures.conformance_server import ConformancePeer, ConformanceServer
 
@@ -42,7 +42,7 @@ def peer(
             )
             return Response(status, [], True, body[:MAX_BODY_BYTES], len(body) > MAX_BODY_BYTES)
 
-        monkeypatch.setattr("mcp_audit.conformance_probe.request_sync", respond)
+        monkeypatch.setattr("mcp_audit_labs.conformance_probe.request_sync", respond)
         yield fixture
         return
     with ConformanceServer(getattr(request, "param", "compliant")) as server:
@@ -145,7 +145,7 @@ async def test_t9_never_sends_origin_to_non_loopback_url(
     ) -> list[tuple[int, int, int, str, tuple[str, int]]]:
         return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", peer.server_port))]
 
-    monkeypatch.setattr("mcp_audit.conformance_probe.anyio.getaddrinfo", local_address)
+    monkeypatch.setattr("mcp_audit_labs.conformance_probe.anyio.getaddrinfo", local_address)
     report = await run_conformance_probe(f"http://remote.example.test:{peer.server_port}/mcp", 2)
     observations = report["observations"]
     assert isinstance(observations, list)
@@ -165,8 +165,8 @@ async def test_localhost_cannot_resolve_outside_loopback(monkeypatch: pytest.Mon
     async def forbidden_send(*args: object, **kwargs: object) -> None:
         raise AssertionError("non-loopback localhost resolution must not be contacted")
 
-    monkeypatch.setattr("mcp_audit.conformance_probe.anyio.getaddrinfo", bad_address)
-    monkeypatch.setattr("mcp_audit.conformance_probe._send", forbidden_send)
+    monkeypatch.setattr("mcp_audit_labs.conformance_probe.anyio.getaddrinfo", bad_address)
+    monkeypatch.setattr("mcp_audit_labs.conformance_probe._send", forbidden_send)
     report = await run_conformance_probe("http://localhost/mcp", 2)
     assert report["control_status"] is None
 
@@ -178,7 +178,7 @@ async def test_connection_failure_is_unknown_without_echoing_exception(
     def unavailable(*args: object, **kwargs: object) -> None:
         raise OSError("private-fixture-marker")
 
-    monkeypatch.setattr("mcp_audit.conformance_probe.request_sync", unavailable)
+    monkeypatch.setattr("mcp_audit_labs.conformance_probe.request_sync", unavailable)
     report = await run_conformance_probe("http://127.0.0.1:1/mcp", 0.1)
     assert report["control_status"] is None
     assert "private-fixture-marker" not in json.dumps(report)
@@ -200,7 +200,7 @@ def test_lab_never_probes_without_explicit_flag_and_url_or_alongside_topic(
     async def forbidden_probe(*args: object, **kwargs: object) -> None:
         raise AssertionError("unexpected negative probe")
 
-    monkeypatch.setattr("mcp_audit.conformance_probe.run_conformance_probe", forbidden_probe)
+    monkeypatch.setattr("mcp_audit_labs.conformance_probe.run_conformance_probe", forbidden_probe)
     result = CliRunner().invoke(main, ["lab", *args])
     assert result.exit_code == (0 if args in ([], ["--help"]) else 2), result.output
 

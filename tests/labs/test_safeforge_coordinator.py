@@ -8,10 +8,10 @@ from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
+from mcp_audit_labs.safeforge_consumer import ForgeReceiptV0Input, SafeForgePreinstallResult
+from mcp_audit_labs.safeforge_coordinator import run_safeforge_preinstall
 
 from mcp_audit.cli import main
-from mcp_audit.safeforge_consumer import ForgeReceiptV0Input, SafeForgePreinstallResult
-from mcp_audit.safeforge_coordinator import run_safeforge_preinstall
 
 _NOW = datetime(2026, 7, 10, 18, 0, tzinfo=UTC)
 
@@ -22,7 +22,7 @@ async def test_contract_drift_blocks_before_artifact_or_consumer_access(
     async def _forbidden(*args: object, **kwargs: object) -> object:
         raise AssertionError("receipt consumer must not run after contract drift")
 
-    monkeypatch.setattr("mcp_audit.safeforge_coordinator.consume_forge_receipt", _forbidden)
+    monkeypatch.setattr("mcp_audit_labs.safeforge_coordinator.consume_forge_receipt", _forbidden)
     schema = ForgeReceiptV0Input.model_json_schema()
     schema["properties"]["new_optional_field"] = {"type": "string"}
 
@@ -51,7 +51,7 @@ async def test_exact_contract_delegates_to_preinstall_consumer(
         observed["kwargs"] = kwargs
         return SafeForgePreinstallResult(accepted=True)
 
-    monkeypatch.setattr("mcp_audit.safeforge_coordinator.consume_forge_receipt", _consume)
+    monkeypatch.setattr("mcp_audit_labs.safeforge_coordinator.consume_forge_receipt", _consume)
     result = await run_safeforge_preinstall(
         ForgeReceiptV0Input.model_json_schema(),
         {"receipt_version": "0.1.0"},

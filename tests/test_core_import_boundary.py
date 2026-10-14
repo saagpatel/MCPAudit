@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1] / "src"
 NON_CORE_PREFIXES = (
+    "mcp_audit._artifacts",
     "mcp_audit.agent_ui",
     "mcp_audit.authorization_posture",
     "mcp_audit.cache_contract",
@@ -73,7 +74,7 @@ def test_core_import_graph_excludes_labs_and_proof() -> None:
                     and isinstance(node, ast.Call)
                     and isinstance(node.func, ast.Name)
                     and node.func.id == "_import_command_module"
-                    and target == "mcp_audit.conformance_probe"
+                    and target == "mcp_audit_labs.conformance_probe"
                 ):
                     continue
                 violations.append(f"{module}:{node.lineno} -> {target}")
@@ -87,3 +88,37 @@ def test_authorization_probe_import_does_not_load_labs_or_proof() -> None:
     )
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stderr
+
+
+def test_labs_do_not_import_deleted_legacy_cli_symbols() -> None:
+    labs = ROOT.parent / "distributions" / "labs" / "src" / "mcp_audit_labs"
+    # X-2 removes monitor, the legacy scan engine, and the cli compatibility
+    # exports. Labs use the engine/api and public probe helpers instead.
+    deleted_modules = {"mcp_audit.monitor", "mcp_audit.scan_cli", "mcp_audit._core_cli"}
+    deleted_symbols = {"_run_scan_core", "_run_scan", "_parse_clients"}
+    violations: list[str] = []
+    for path in sorted(labs.glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                targets = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                prefix = node.module or ""
+                targets = [prefix, *(f"{prefix}.{alias.name}" for alias in node.names)]
+            elif (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id in {"import_module", "__import__"}
+                and node.args
+                and isinstance(node.args[0], ast.Constant)
+                and isinstance(node.args[0].value, str)
+            ):
+                targets = [node.args[0].value]
+            else:
+                continue
+            for target in targets:
+                if any(target == name or target.startswith(name + ".") for name in deleted_modules) or (
+                    target.startswith("mcp_audit.cli.") and target.rsplit(".", 1)[-1] in deleted_symbols
+                ):
+                    violations.append(f"{path.name}:{node.lineno} -> {target}")
+    assert not violations, "Labs import deleted legacy CLI symbols:\n" + "\n".join(violations)

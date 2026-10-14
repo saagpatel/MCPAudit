@@ -11,18 +11,18 @@ from typing import Any
 
 import pytest
 from click.testing import CliRunner
-from pydantic import BaseModel, ValidationError
-
-from mcp_audit.cli import main
-from mcp_audit.oauth_transcript_models import OAuthTranscriptFixture, OAuthTranscriptReport
-from mcp_audit.oauth_transcript_sarif import oauth_report_to_sarif
-from mcp_audit.oauth_transcript_scanner import (
+from mcp_audit_labs.oauth_transcript_models import OAuthTranscriptFixture, OAuthTranscriptReport
+from mcp_audit_labs.oauth_transcript_sarif import oauth_report_to_sarif
+from mcp_audit_labs.oauth_transcript_scanner import (
     OAuthTranscriptInputError,
     parse_oauth_transcript_bytes,
     parse_oauth_transcript_path,
     report_json_bytes,
     scan_oauth_transcript_path,
 )
+from pydantic import BaseModel, ValidationError
+
+from mcp_audit.cli import main
 
 FIXTURE_ROOT = Path("tests/fixtures/oauth_transcript")
 SENTINEL_SECRET = "SYNTHETIC_SECRET_DO_NOT_LEAK_7f6ab42"

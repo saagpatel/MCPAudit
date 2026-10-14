@@ -8,9 +8,9 @@ from pathlib import Path
 from typing import Literal
 
 import pytest
+from mcp_audit_labs.evidence_enforcement import observed_evidence_from_report
 from rich.console import Console
 
-from mcp_audit.evidence_enforcement import observed_evidence_from_report
 from mcp_audit.finding_display import finding_views
 from mcp_audit.htmlreport import HtmlReportGenerator
 from mcp_audit.models import (

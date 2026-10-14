@@ -7,19 +7,19 @@ from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
-
-from mcp_audit.cli import main
-from mcp_audit.task_time_machine import (
+from mcp_audit_labs.task_time_machine import (
     builtin_scenarios,
     parse_scenario_bytes,
     result_json_bytes,
     scan_scenario_path,
     simulate_scenario,
 )
-from mcp_audit.task_time_machine_cli import render_human
-from mcp_audit.task_time_machine_models import TaskScenario, TaskSimulationResult
+from mcp_audit_labs.task_time_machine_cli import render_human
+from mcp_audit_labs.task_time_machine_models import TaskScenario, TaskSimulationResult
 
-FIXTURES = Path(__file__).parent / "fixtures" / "task_time_machine"
+from mcp_audit.cli import main
+
+FIXTURES = Path(__file__).parents[1] / "fixtures" / "task_time_machine"
 
 
 @pytest.mark.parametrize(

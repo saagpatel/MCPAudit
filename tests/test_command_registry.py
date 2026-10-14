@@ -41,6 +41,7 @@ def test_startup_and_registry_help_import_only_five_core_modules(args: list[str]
         f"args = {args!r}; "
         "result = CliRunner().invoke(main, args) if args is not None else None; "
         "assert result is None or result.exit_code == 0, result.output; "
+        "assert not any(name.startswith('mcp_audit_labs') for name in sys.modules); "
         "print(json.dumps(sorted(name for name in sys.modules "
         "if name == 'mcp_audit' or name.startswith('mcp_audit.'))))"
     )
@@ -279,14 +280,44 @@ def test_lab_help_shows_future_installs_without_importing_labs(monkeypatch: pyte
 
 
 GUARDED_PATHS = [
-    ["lab", "agent-ui", "--help"],
-    ["agent-ui", "--help"],
+    *[["lab", name, "--help"] for name in LAB_COMMANDS],
+    *[[name, "--help"] for name in LAB_COMMANDS],
     ["safeforge", "preinstall", "--help"],
     ["safeforge", "run", "--help"],
     ["safeforge-preinstall", "--help"],
     ["safeforge-run", "--help"],
     ["lab", "--conformance-probe", "--url", "http://127.0.0.1:1/mcp"],
 ]
+
+
+@pytest.mark.parametrize("args", GUARDED_PATHS)
+def test_live_dispatch_without_labs_preserves_the_212_install_notice(args: list[str]) -> None:
+    script = """
+import importlib.abc
+import sys
+
+class MissingLabs(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == 'mcp_audit_labs' or fullname.startswith('mcp_audit_labs.'):
+            raise ModuleNotFoundError('synthetic missing distribution', name=fullname)
+
+sys.meta_path.insert(0, MissingLabs())
+from click.testing import CliRunner
+from mcp_audit.cli import main
+result = CliRunner().invoke(main, ARGS)
+assert result.exit_code == 2, (result.exit_code, result.output)
+assert result.stdout == '', result.stdout
+assert (
+    "Optional distribution missing. In 3.0, install labs with: "
+    "uv tool install 'mcp-audits[labs]'. "
+) in result.stderr
+assert (
+    'For proof-before-action on PATH, install Proof directly with: '
+    'uv tool install mcp-audits-proof (a uv tool extra does not expose its scripts).'
+) in result.stderr
+""".replace("ARGS", repr(args))
+    result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr
 
 
 @pytest.mark.parametrize("args", GUARDED_PATHS)
@@ -346,8 +377,8 @@ def test_shared_artifact_writer_does_not_import_agent_ui(module: str) -> None:
         [
             sys.executable,
             "-c",
-            f"import sys; import mcp_audit.{module}; "
-            "assert not any(name.startswith('mcp_audit.agent_ui') for name in sys.modules)",
+            f"import sys; import mcp_audit_labs.{module}; "
+            "assert not any(name.startswith('mcp_audit_labs.agent_ui') for name in sys.modules)",
         ],
         check=False,
         capture_output=True,
@@ -377,31 +408,20 @@ def test_wheel_contains_listed_runtime_files_and_no_postgres_research(tmp_path: 
 
 EXPECTED_WHEEL_FILES = """
 mcp_audit/__init__.py
-mcp_audit/_artifacts.py
 mcp_audit/_build_provenance.json
 mcp_audit/_command_registry.py
 mcp_audit/_core_cli.py
 mcp_audit/agent_text.py
-mcp_audit/agent_ui_cli.py
-mcp_audit/agent_ui_models.py
-mcp_audit/agent_ui_scanner.py
 mcp_audit/analysis_budget.py
 mcp_audit/analyzer.py
 mcp_audit/api.py
 mcp_audit/artifact_paths.py
-mcp_audit/authorization_posture_cli.py
-mcp_audit/authorization_posture_models.py
-mcp_audit/authorization_posture_scanner.py
-mcp_audit/cache_contract_cli.py
-mcp_audit/cache_contract_models.py
-mcp_audit/cache_contract_scanner.py
 mcp_audit/canonical.py
 mcp_audit/check_cli.py
 mcp_audit/checkup.py
 mcp_audit/cli.py
 mcp_audit/client_filter.py
 mcp_audit/confighealth.py
-mcp_audit/conformance_probe.py
 mcp_audit/connector.py
 mcp_audit/coverage.py
 mcp_audit/discovery/__init__.py
@@ -414,12 +434,9 @@ mcp_audit/discovery/cursor.py
 mcp_audit/discovery/vscode.py
 mcp_audit/discovery/windsurf.py
 mcp_audit/egress.py
-mcp_audit/enforcement_cli.py
 mcp_audit/engine.py
 mcp_audit/escalation.py
-mcp_audit/evidence_enforcement.py
 mcp_audit/finding_display.py
-mcp_audit/fixture_gateway.py
 mcp_audit/fixtures/demo-mcp-config.json
 mcp_audit/fix_cli.py
 mcp_audit/fleet_workers.py
@@ -427,16 +444,11 @@ mcp_audit/htmlreport.py
 mcp_audit/http_transport.py
 mcp_audit/injection.py
 mcp_audit/integrity.py
-mcp_audit/lab_primitives.py
 mcp_audit/llm_analyzer.py
 mcp_audit/models.py
 mcp_audit/monitor.py
 mcp_audit/normalize.py
 mcp_audit/oauth_urls.py
-mcp_audit/oauth_transcript_cli.py
-mcp_audit/oauth_transcript_models.py
-mcp_audit/oauth_transcript_sarif.py
-mcp_audit/oauth_transcript_scanner.py
 mcp_audit/otel.py
 mcp_audit/overrides.py
 mcp_audit/pin_cli.py
@@ -454,30 +466,17 @@ mcp_audit/protocol.py
 mcp_audit/provenance.py
 mcp_audit/redaction.py
 mcp_audit/report.py
-mcp_audit/result_parcel_cli.py
-mcp_audit/result_parcel_models.py
-mcp_audit/result_parcel_scanner.py
 mcp_audit/review_discovery.py
 mcp_audit/rules/__init__.py
 mcp_audit/rules/patterns.py
 mcp_audit/rules/result_injection.py
 mcp_audit/rules/weights.py
-mcp_audit/safeforge.py
-mcp_audit/safeforge_cli.py
-mcp_audit/safeforge_consumer.py
-mcp_audit/safeforge_contract_linter.py
-mcp_audit/safeforge_coordinator.py
-mcp_audit/safeforge_runtime.py
 mcp_audit/sarif.py
 mcp_audit/scan_cli.py
 mcp_audit/scan_translation.py
 mcp_audit/schema_rules.py
 mcp_audit/scorer.py
 mcp_audit/server.py
-mcp_audit/session_resume_cli.py
-mcp_audit/session_resume_lab.py
-mcp_audit/session_resume_models.py
-mcp_audit/session_resume_scenarios_v1.json
 mcp_audit/shadowing.py
 mcp_audit/shadow_cli.py
 mcp_audit/skillscan.py
@@ -487,9 +486,6 @@ mcp_audit/ssrf.py
 mcp_audit/stdio_transport.py
 mcp_audit/surface_limits.py
 mcp_audit/suppressions.py
-mcp_audit/task_time_machine.py
-mcp_audit/task_time_machine_cli.py
-mcp_audit/task_time_machine_models.py
 mcp_audit/taxonomy.py
 mcp_audit/terminal_summary.py
 mcp_audit/terminal_text.py

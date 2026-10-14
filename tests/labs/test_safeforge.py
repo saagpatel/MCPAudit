@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from mcp_audit.safeforge import (
+from mcp_audit_labs.safeforge import (
     RESEARCH_MVP_STAGE_ORDER,
     SafeForgeManifest,
     StageId,
