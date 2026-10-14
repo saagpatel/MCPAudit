@@ -9,9 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
-- Removed the hidden top-level aliases for lab topics, SafeForge preinstall/run,
-  and skill scanning. Use the `lab`, `safeforge`, and `skills` command groups;
-  `pin` remains a visible alias for `baseline pin`.
+- Removed 11 hidden top-level command aliases. Each removed spelling is now an
+  unknown command; use the replacement:
+  - `agent-ui` -> `mcp-audit lab agent-ui`
+  - `authorization-posture` -> `mcp-audit lab authorization-posture`
+  - `cache-contract` -> `mcp-audit lab cache-contract`
+  - `enforcement-fixture` -> `mcp-audit lab enforcement-fixture`
+  - `oauth-transcript` -> `mcp-audit lab oauth-transcript`
+  - `result-parcel` -> `mcp-audit lab result-parcel`
+  - `session-resume` -> `mcp-audit lab session-resume`
+  - `task-time-machine` -> `mcp-audit lab task-time-machine`
+  - `safeforge-preinstall` -> `mcp-audit safeforge preinstall`
+  - `safeforge-run` -> `mcp-audit safeforge run`
+  - `skillscan` -> `mcp-audit skills scan`
+
+  `pin` stays as a visible alias for `baseline pin`.
 - Removed the deprecated `monitor` command and module, the frozen `_run_scan_core`
   compatibility function, the `mcp_audit.cli` private-name compatibility shim, and the
   `_run_scan`/`_parse_clients` re-exports from `mcp_audit._core_cli`. Library callers use
