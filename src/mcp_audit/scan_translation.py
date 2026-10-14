@@ -109,8 +109,8 @@ class ScanTranslation:
             "scan: options map exactly to check (source coverage is not guaranteed; "
             f"check enforces a {MAX_SERVERS}-server cap per source and across accepted sources, "
             f"{MAX_CONFIG_BYTES}-byte source limit, nesting depth {MAX_DEPTH}, "
-            f"{MAX_CONTAINERS} containers, and symlink refusal for discovered sources): "
-            + shlex.join(self.check_argv)
+            f"{MAX_CONTAINERS} containers, and symlink refusal for discovered sources; "
+            "a skipped source is reported as a config-health finding): " + shlex.join(self.check_argv)
         )
 
 
@@ -171,10 +171,8 @@ def classify_scan_options(options: Mapping[str, object]) -> ScanTranslation:
             reasons.append(
                 "scan appends explicit sources; check deduplicates them, so overlapping sources can be lost"
             )
-        if clients in (None, "claude_code"):
-            reasons.append("Claude Code discovery can include other project scopes that check cannot select")
-        if clients in (None, "cursor"):
-            reasons.append("check adds Cursor project discovery, so the selected server set can differ")
+        else:
+            argv.append("--scan-compatible-sources")
     if values["connect_project_configs"] is True:
         reasons.append("--connect-project-configs requires an explicit check connection selection")
     if values["canary_check"] is True:
