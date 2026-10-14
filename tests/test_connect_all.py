@@ -84,9 +84,14 @@ def test_explicit_fleet_connects_all_local_fixtures_without_discovery(
     config = _config(tmp_path / "fleet.json", ("first", "second"))
 
     def explicit_only(
-        config: Path | None, include_discovered: bool, project: Path | None, clients: tuple[ClientType, ...]
+        config: Path | None,
+        include_discovered: bool,
+        project: Path | None,
+        clients: tuple[ClientType, ...],
+        *,
+        scan_compatible: bool = False,
     ) -> ReviewSources:
-        assert config is not None and not include_discovered
+        assert config is not None and not include_discovered and not scan_compatible
         return review_sources(config, include_discovered, project, clients)
 
     monkeypatch.setattr(check_cli, "review_sources", explicit_only)

@@ -14,9 +14,17 @@ from click.testing import CliRunner
 from mcp_audit import artifact_paths, check_cli, cli, engine, scan_cli, suppressions
 from mcp_audit.check_cli import demo
 from mcp_audit.connector import ServerConnector
+from mcp_audit.discovery import ConfigParseError, discover_all_configs
+from mcp_audit.discovery.claude_desktop import ClaudeDesktopDiscoverer
 from mcp_audit.discovery.vscode import VSCodeDiscoverer
 from mcp_audit.models import ClientType
-from mcp_audit.review_discovery import MAX_CONFIG_BYTES, MAX_CONTAINERS, MAX_DEPTH, review_sources
+from mcp_audit.review_discovery import (
+    MAX_CONFIG_BYTES,
+    MAX_CONTAINERS,
+    MAX_DEPTH,
+    ReviewSources,
+    review_sources,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 SANDBOX = ROOT / "examples/sandbox/fixtures/synthetic-mcp-config.json"
@@ -842,3 +850,211 @@ def test_malformed_policy_and_artifact_failure_are_setup_errors(tmp_path: Path) 
     )
     assert result.exit_code == 1, result.output
     assert not result.stdout
+
+
+def _scan_identity(server: object) -> tuple[str, str, str, str | None, str]:
+    from mcp_audit.models import ServerConfig
+
+    assert isinstance(server, ServerConfig)
+    return (server.name, server.client.value, server.config_path, server.project_path, server.scope)
+
+
+def _scan_oracle() -> tuple[set[tuple[str, str, str, str | None, str]], list[str]]:
+    """Scan's library discovery path: the independent oracle for the selector."""
+    parse_errors: list[ConfigParseError] = []
+    servers = discover_all_configs(parse_errors=parse_errors)
+    return {_scan_identity(server) for server in servers}, sorted(error.reason for error in parse_errors)
+
+
+def test_scan_compatible_sources_reproduce_scan_selection(tmp_path: Path) -> None:
+    home = Path.home()
+    home.joinpath(".claude.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {"global": {"command": "fixture"}},
+                "projects": {
+                    str(tmp_path): {"mcpServers": {"current": {"command": "fixture"}}},
+                    "/synthetic/project-a": {"mcpServers": {"other-a": {"command": "fixture"}}},
+                    "/synthetic/project-b": {"mcpServers": {"other-b": {"command": "fixture"}}},
+                },
+            }
+        )
+    )
+    _config(tmp_path / ".mcp.json", "shared")
+    _config(tmp_path / ".vscode/mcp.json", "vscode-project")
+    _config(home / ".cursor/mcp.json", "cursor-global")
+    _config(tmp_path / ".cursor/mcp.json", "cursor-project")
+    expected, expected_errors = _scan_oracle()
+    assert {name for name, *_ in expected} == {
+        "global",
+        "current",
+        "other-a",
+        "other-b",
+        "shared",
+        "vscode-project",
+        "cursor-global",
+    }
+    compatible = review_sources(include_discovered=True, scan_compatible=True)
+    assert {_scan_identity(server) for server in compatible.servers} == expected
+    assert sorted(error.reason for error in compatible.errors) == expected_errors == []
+    assert not any("skipped other project scopes" in status for _, status in compatible.paths)
+    assert str(tmp_path / ".cursor" / "mcp.json") not in {path for path, _ in compatible.paths}
+    assert str(home / ".cursor" / "mcp.json") in {path for path, _ in compatible.paths}
+    plain = review_sources(include_discovered=True)
+    assert {server.name for server in plain.servers} == {
+        "global",
+        "current",
+        "shared",
+        "vscode-project",
+        "cursor-global",
+        "cursor-project",
+    }
+    assert any("skipped other project scopes" in status for _, status in plain.paths)
+
+
+def test_scan_compatible_sources_lose_whole_file_on_malformed_sibling_project(tmp_path: Path) -> None:
+    config = Path.home() / ".claude.json"
+    config.write_text(
+        json.dumps(
+            {
+                "mcpServers": {"global": {"command": "fixture"}},
+                "projects": {
+                    str(tmp_path): {"mcpServers": {"current": {"command": "fixture"}}},
+                    "/synthetic/unselected-project": None,
+                },
+            }
+        )
+    )
+    expected, expected_errors = _scan_oracle()
+    assert expected == set()
+    assert expected_errors == ["project entry is not an object"]
+    compatible = review_sources(include_discovered=True, scan_compatible=True)
+    assert not compatible.servers
+    assert [error.reason for error in compatible.errors] == expected_errors
+    assert (str(config), "skipped: project entry is not an object") in compatible.paths
+    plain = review_sources(include_discovered=True)
+    assert {server.name for server in plain.servers} == {"global", "current"}
+    assert not plain.errors
+
+
+def test_scan_compatible_sources_dedup_overlapping_vscode_maps(tmp_path: Path) -> None:
+    config = tmp_path / ".vscode/mcp.json"
+    config.parent.mkdir(parents=True)
+    entry = {"command": "fixture"}
+    config.write_text(
+        json.dumps({"mcpServers": {"twice": entry}, "servers": {"twice": entry, "once": entry}})
+    )
+    expected, expected_errors = _scan_oracle()
+    assert {name for name, *_ in expected} == {"twice", "once"} and not expected_errors
+    compatible = review_sources(include_discovered=True, scan_compatible=True)
+    assert {_scan_identity(server) for server in compatible.servers} == expected
+    assert [server.config_pointer for server in compatible.servers] == [
+        "/mcpServers/twice",
+        "/servers/once",
+    ]
+    assert (str(config), "checked: 2 entries") in compatible.paths
+    plain = review_sources(include_discovered=True)
+    assert [server.name for server in plain.servers] == ["twice", "twice", "once"]
+
+
+@pytest.mark.parametrize(
+    ("path", "contents"),
+    [
+        (".mcp.json", "{}"),
+        (".vscode/mcp.json", "{}"),
+        ("home/.cursor/mcp.json", "{}"),
+        ("home/.vscode/mcp.json", "{}"),
+        ("home/.codeium/windsurf/mcp_config.json", "{}"),
+        ("claude-desktop", "{}"),
+        ("home/.claude.json", '{"theme": "dark"}'),
+    ],
+)
+def test_scan_compatible_sources_treat_missing_server_map_as_empty(
+    tmp_path: Path, path: str, contents: str
+) -> None:
+    config = ClaudeDesktopDiscoverer().config_paths()[0] if path == "claude-desktop" else tmp_path / path
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(contents)
+    expected, expected_errors = _scan_oracle()
+    assert expected == set() and not expected_errors
+    compatible = review_sources(include_discovered=True, scan_compatible=True)
+    assert not compatible.servers
+    assert not compatible.errors
+    assert (str(config), "checked: 0 entries") in compatible.paths
+    # Plain check keeps its no-map diagnostic for every dedicated MCP file;
+    # only the general ~/.claude.json settings file was already accepted empty.
+    plain_diagnostic = path != "home/.claude.json"
+    plain = review_sources(include_discovered=True)
+    assert not plain.servers
+    assert any("no MCP server map" in error.reason for error in plain.errors) is plain_diagnostic
+    policy = tmp_path / "policy.yaml"
+    policy.write_text("fail_on:\n  config_health: low\n")
+    common = ["--include-discovered", "--override-config", "/dev/null", "--policy", str(policy), "--json"]
+    plain_run = CliRunner().invoke(cli.main, ["check", *common])
+    assert plain_run.exit_code == (2 if plain_diagnostic else 0), plain_run.output
+    assert bool(json.loads(plain_run.stdout)["config_health_findings"]) is plain_diagnostic
+    compatible_run = CliRunner().invoke(cli.main, ["check", *common, "--scan-compatible-sources"])
+    assert compatible_run.exit_code == 0, compatible_run.output
+    payload = json.loads(compatible_run.stdout)
+    assert not payload["config_health_findings"]
+    assert payload["servers_discovered"] == 0
+    assert "no_sources_reviewed" not in {warning["code"] for warning in payload["warnings"]}
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--scan-compatible-sources"],
+        ["--scan-compatible-sources", "--config", str(SANDBOX)],
+        ["--scan-compatible-sources", "--config", str(SANDBOX), "--include-discovered"],
+        ["--scan-compatible-sources", "--include-discovered", "--project", "."],
+        ["--scan-compatible-sources", "--config", str(SANDBOX), "--config-only"],
+        ["--scan-compatible-sources", "--config", str(SANDBOX), "--config-only", "--include-discovered"],
+        [
+            "--scan-compatible-sources",
+            "--include-discovered",
+            "--connect",
+            "--server",
+            "cursor:workstation:x",
+        ],
+        ["--scan-compatible-sources", "--include-discovered", "--connect-all"],
+    ],
+)
+def test_scan_compatible_sources_reject_conflicting_options_before_discovery(
+    args: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def forbidden(*args: object, **kwargs: object) -> None:
+        raise AssertionError("option conflicts must fail before discovery")
+
+    monkeypatch.setattr(check_cli, "review_sources", forbidden)
+    result = CliRunner().invoke(cli.main, ["check", *args])
+    assert result.exit_code == 2, result.output
+    assert "--scan-compatible-sources requires --include-discovered" in result.stderr
+    assert "--config, --project, --config-only, --connect or --connect-all" in result.stderr
+
+
+def test_scan_compatible_sources_flag_is_hidden_and_off_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    help_result = CliRunner().invoke(cli.main, ["check", "--help"])
+    assert help_result.exit_code == 0
+    assert "scan-compatible" not in help_result.output
+    calls: list[bool] = []
+
+    def recording(
+        config: Path | None = None,
+        include_discovered: bool = False,
+        project: Path | None = None,
+        clients: tuple[ClientType, ...] = (),
+        *,
+        scan_compatible: bool = False,
+    ) -> ReviewSources:
+        calls.append(scan_compatible)
+        return review_sources(config, include_discovered, project, clients, scan_compatible=scan_compatible)
+
+    monkeypatch.setattr(check_cli, "review_sources", recording)
+    plain = CliRunner().invoke(cli.main, ["check", "--include-discovered", "--json"])
+    compatible = CliRunner().invoke(
+        cli.main, ["check", "--include-discovered", "--scan-compatible-sources", "--json"]
+    )
+    assert plain.exit_code == compatible.exit_code == 0, plain.output + compatible.output
+    assert calls == [False, True]
+    assert _normalized(plain.stdout) == _normalized(compatible.stdout)

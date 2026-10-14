@@ -20,6 +20,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   other `serve` tool keeps its reach, and each tool description now states it,
   including that a withheld pin baseline is partial coverage, not a failure.
 
+### Added
+
+- `check --include-discovered --scan-compatible-sources`, a hidden selector
+  that reproduces the legacy `scan` server selection: every Claude Code
+  project scope (a malformed project entry loses the whole file, as in
+  `scan`), no Cursor project file, an empty result for a present file without
+  a server map, and `scan`'s server-level dedup, subject to `check`'s source
+  limits (size, nesting depth, server cap, symlink refusal). It is rejected
+  with `--config`, `--project`, `--config-only`, `--connect` and
+  `--connect-all`. Without the flag, `check` discovery and output are
+  unchanged.
+
 ## [2.12.0] - 2026-10-12
 
 ### Upgrade notes
