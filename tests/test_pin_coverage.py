@@ -103,7 +103,9 @@ def test_withheld_pin_coverage_and_policy(
     assert store.path.read_bytes() == before
 
 
-def test_keyless_v1_is_withheld_and_warns(legacy_store: PinStore, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_keyless_v1_is_withheld_and_warns(
+    legacy_store: PinStore, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     # 3.0: a genuine v1 baseline is never compared, even without trusted keys.
     assert not legacy_store._keys_trusted()
     assert legacy_store.legacy_entry("fixture") and not legacy_store.baseline_usable("fixture")
@@ -122,7 +124,58 @@ def test_keyless_v1_is_withheld_and_warns(legacy_store: PinStore, monkeypatch: p
     assert "is not compared: status" in warning.message
     assert "mcp-audit pin --refresh fixture --apply" in warning.message
     assert not evaluate_policy(report, PolicyConfig(fail_on_pin_baseline_withheld=True)).passed
+    policy = load_policy(
+        _policy_file(tmp_path, "fail_on:\n  drift: true\nrequire:\n  pins:\n    servers: [fixture]\n")
+    )
+    result = evaluate_policy(report, policy, pin_store=legacy_store)
+    messages = {v.rule: v.message for v in result.violations}
+    assert set(messages) == {"fail_on.drift", "require.pins"}
+    for message in messages.values():
+        assert "is a schema v1 pin, which is never compared" in message
+        assert "trusted keys" not in message and "unauthenticated" not in message
     assert legacy_store.path.read_bytes() == before
+
+
+def _policy_file(tmp_path: Path, body: str) -> Path:
+    path = tmp_path / "policy.yaml"
+    path.write_text(body)
+    return path
+
+
+@pytest.mark.parametrize(
+    "marker",
+    [{"pin_schema": 2}, {"protocol": {"negotiated_version": None, "era": "unknown"}}],
+    ids=["pin_schema", "protocol"],
+)
+def test_v1_rows_under_a_v2_entry_marker_are_withheld(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, marker: dict[str, object]
+) -> None:
+    import yaml
+
+    legacy = yaml.safe_load((FIXTURES / "legacy-v1.yaml").read_text())
+    path = tmp_path / "pins.yaml"
+    path.write_text(
+        yaml.safe_dump({"servers": {"fixture": {**marker, "tools": legacy["servers"]["fixture"]["tools"]}}})
+    )
+    store = PinStore(path)
+    before = path.read_bytes()
+    assert not store.legacy_entry("fixture") and store.v1_baseline("fixture")
+    assert store.baseline_trusted("fixture") and not store.baseline_usable("fixture")
+    assert store.tool_count("fixture") == 0
+    assert store.check_drift("fixture", [ToolInfo(name="status")]) == []
+    assert store.canary_baseline("fixture") is None
+    report = _scan_fixture(monkeypatch, store)
+    assert report.audits[0].drift_findings == [] and report.audits[0].pin_integrity_findings == []
+    withheld = next(w for w in report.warnings if w.code == "pin_baseline_withheld")
+    assert withheld.check == "pin_check" and withheld.servers == ["fixture"]
+    assert report.coverage["pin_check"].reason == "pin_baseline_withheld"
+    outdated = next(w for w in report.warnings if w.code == "pin_schema_outdated")
+    assert "is a schema v1 pin baseline, which is not compared: status" in outdated.message
+    policy = load_policy(_policy_file(tmp_path, "require:\n  pins:\n    servers: [fixture]\n"))
+    (violation,) = evaluate_policy(report, policy, pin_store=store).violations
+    assert violation.rule == "require.pins"
+    assert "is a schema v1 pin, which is never compared" in violation.message
+    assert path.read_bytes() == before
 
 
 def test_other_withheld_checks_do_not_trigger_pin_gate(
