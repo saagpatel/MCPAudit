@@ -9,7 +9,7 @@ top-level topic names remain hidden aliases through 2.x. `mcp-audit --help-all`
 lists all command paths, including aliases; shell completion includes them too.
 SafeForge uses `mcp-audit safeforge preinstall|run`, local skill review uses
 `mcp-audit skills scan`, and pin management uses `mcp-audit baseline pin` with
-the existing pin options. `monitor` is hidden and deprecated for removal in 3.0.
+the existing pin options.
 The PostgreSQL exemplar lives in the repository's `research/` directory and is
 not included in the installed wheel.
 

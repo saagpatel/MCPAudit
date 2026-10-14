@@ -134,7 +134,7 @@ MCPAudit uses Python 3.11+, `uv`, pytest, Ruff, and mypy. JSON, SARIF, and HTML 
 
 ### Known risks
 
-Static findings describe configured access and served metadata; they do not prove how a server behaves later. Secret redaction is best-effort. The deprecated `monitor` command has a protocol-framing defect: it does not implement the MCP stdio framing required for a safe proxy, and remains scheduled for removal in 3.0. See the [3.0 boundary proposal](docs/3.0-BOUNDARY-PROPOSAL.md).
+Static findings describe configured access and served metadata; they do not prove how a server behaves later. Secret redaction is best-effort. See the [3.0 boundary proposal](docs/3.0-BOUNDARY-PROPOSAL.md) for the release's compatibility changes.
 
 ### Next steps
 

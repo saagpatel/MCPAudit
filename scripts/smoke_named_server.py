@@ -351,16 +351,18 @@ async def run_case(executable: Path, mock: Path, case: str) -> int:
         try:
             await session.initialize()
             if case == "fleet":
-                report = payload(await session.call("scan_mcp_servers", {}))
+                report = payload(await session.call("scan_mcp_servers", {"connect": True}))
                 summary_contract(report)
                 assert report["servers_discovered"] == report["servers_connected"] == 2
                 assert {audit["server"]["name"] for audit in report["audits"]} == {"Target", "Other"}
                 expected = [1, 1]
             elif case == "skip-connect":
-                report = payload(await session.call("scan_mcp_servers", {"skip_connect": True}))
-                summary_contract(report)
-                assert report["servers_discovered"] == 2 and report["servers_connected"] == 0
-                assert all(audit["connection_status"] == "skipped" for audit in report["audits"])
+                # 3.0 (D20): no arguments is a static audit; skip_connect still wins over connect.
+                for arguments in ({}, {"skip_connect": True}, {"skip_connect": True, "connect": True}):
+                    report = payload(await session.call("scan_mcp_servers", arguments))
+                    summary_contract(report)
+                    assert report["servers_discovered"] == 2 and report["servers_connected"] == 0
+                    assert all(audit["connection_status"] == "skipped" for audit in report["audits"])
             elif case in {"unique", "override", "failed", "timeout"}:
                 audit = payload(await session.call("check_server", {"name": "Target"}))
                 audit_contract(audit, case if case in {"failed", "timeout"} else "connected")

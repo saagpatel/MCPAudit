@@ -224,20 +224,15 @@ def test_side_product_aliases_keep_output_bytes(family: str, tmp_path: Path) -> 
     assert legacy.stdout_bytes
 
 
-def test_monitor_is_hidden_and_warns_before_legacy_callback(monkeypatch: pytest.MonkeyPatch) -> None:
-    from mcp_audit import monitor
+def test_monitor_command_and_module_are_removed() -> None:
+    import importlib.util
 
-    calls: list[str] = []
-
-    async def fixture_monitor(server_name: str, log_path: str | None) -> None:
-        calls.append(server_name)
-
-    monkeypatch.setattr(monitor, "_run_monitor", fixture_monitor)
     result = CliRunner().invoke(main, ["monitor", "synthetic-peer"])
-    assert result.exit_code == 0, result.output
-    assert calls == ["synthetic-peer"]
-    assert "DeprecationWarning" in result.stderr
-    assert "3.0" in result.stderr
+
+    assert result.exit_code == 2
+    assert "No such command 'monitor'" in result.output
+    assert "monitor" not in COMMANDS
+    assert importlib.util.find_spec("mcp_audit.monitor") is None
 
 
 @pytest.mark.parametrize("name", [name for name, spec in COMMANDS.items() if spec.hidden])
@@ -430,7 +425,6 @@ mcp_audit/integrity.py
 mcp_audit/lab_primitives.py
 mcp_audit/llm_analyzer.py
 mcp_audit/models.py
-mcp_audit/monitor.py
 mcp_audit/normalize.py
 mcp_audit/oauth_urls.py
 mcp_audit/oauth_transcript_cli.py
