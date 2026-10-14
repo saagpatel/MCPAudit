@@ -6,7 +6,7 @@ candidate, or stable release.
 ## Local Verifier
 
 ```bash
-uv sync --dev --locked
+uv sync --all-packages --dev --locked
 uv run pytest
 uv run ruff check
 uv run mypy .

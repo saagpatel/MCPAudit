@@ -88,7 +88,7 @@ jobs:
 
       - name: Install locked dependencies
         working-directory: release-source
-        run: uv sync --dev --locked
+        run: uv sync --all-packages --dev --locked
 
       - name: Prepare Proof Before Action test image
         working-directory: release-source

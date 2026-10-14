@@ -10,7 +10,7 @@ behavior `UNKNOWN`. It never starts or contacts an MCP server.
 From a fresh clone:
 
 ```bash
-uv sync --locked
+uv sync --all-packages --locked
 
 # See the bundled scenarios.
 uv run mcp-audit task-time-machine list
@@ -41,7 +41,7 @@ not whether the synthetic work succeeded.
 Focused and full verification:
 
 ```bash
-uv run pytest -q tests/test_task_time_machine.py
+uv run pytest -q tests/labs/test_task_time_machine.py
 uv run pytest -q
 uv run ruff check .
 uv run mypy .
