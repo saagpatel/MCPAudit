@@ -818,9 +818,13 @@ and do not produce `MCP027` unless signing expectations or a signed manifest wit
 missing trust establish a failure; they are never a comparison baseline, whether
 or not a key is trusted, so their baseline is withheld (`pin_baseline_withheld`,
 no drift/escalation/canary/provenance comparison, `require.pins` unmet, enabled
-comparison gates fail). In a mixed entry the v2 rows compare and the v1 rows are
-excluded from `NEW`, `CHANGED` and `REMOVED` drift; `pin_schema_outdated` lists
-the excluded tool names as uncovered. A v1 entry for a
+comparison gates fail). An entry whose tool rows are all v1 under an
+entry-level `pin_schema: 2` or `protocol` marker is withheld the same way and
+counts zero tools for `require.pins`. In a mixed entry the v2 rows compare, only
+the v2 rows count for `require.pins`, and the v1 rows are excluded from `NEW`,
+`CHANGED` and `REMOVED` drift; `pin_schema_outdated` lists the excluded tool
+names as uncovered. Policy violations for a withheld v1 baseline state that it
+"is a schema v1 pin, which is never compared". A v1 entry for a
 server with a recorded signing expectation or rollback high-water mark is a
 downgrade and is `tampered_entry`. Unsigned v2 pins warn (`pin_unsigned`) and remain usable only
 while the separate trust store holds no usable trusted key (active, or retired
@@ -904,13 +908,17 @@ openWorldHint false→true. Hint removal uses MCP defaults. Uncovered legacy
 annotations do not establish deltas. These hint names also appear in terminal,
 HTML, SARIF result properties and `get_escalation_findings` output.
 `pin --refresh --json` adds `uncovered_fields` rows with `tool_name`, `field`
-and `summary: "not previously covered"` for each newly covered v1 tool field.
-It also adds `baseline_verified` and nullable `baseline_note`. A genuine legacy
-v1 baseline is not compared in refresh review either: every current tool is
+and `summary: "not compared; schema v1 row reviewed as new"` for every field
+(description, inputSchema, annotations, title, outputSchema, icons, meta) of a
+served tool whose saved row is v1. It also adds `baseline_verified` and
+nullable `baseline_note`. A v1 baseline (all tool rows v1, with or without an
+entry-level v2 marker) is not compared in refresh review: every current tool is
 reported as `new`, as for a first pin, with `baseline_verified: false` and a
-note; terminal review labels it and never reports "No drift found". A mixed
-entry's v1 rows are uncovered and carry the same `baseline_verified: false`
-note while its v2 rows compare.
+note; terminal review labels it and never reports "No drift found". In a mixed
+entry the v2 rows compare and every served tool with a v1 row is reported as
+`new` with its full current surface, with `baseline_verified: false` and a
+mixed-entry note. `--apply` writes v2 rows for the observed tools and drops
+retained v1 rows, including rows for tools no longer served.
 Unsigned v2 migration review uses the same fields (`baseline_verified: false`
 and an unsigned migration `baseline_note`) while scans continue to withhold the
 entry with `MCP027` under trusted keys. Only entries without signing metadata,

@@ -120,8 +120,11 @@ findings. A remaining v1 entry has no comparable baseline:
 `mcp-audit pin --refresh SERVER` shows the full current tool surface for
 review as if the server were newly pinned (every tool is `new`), and
 `mcp-audit pin --refresh SERVER --apply` replaces the entry with a v2 baseline,
-signed when a trusted key is configured. To review a diff against the v1 hash,
-run the refresh on 2.11 or 2.12 before upgrading.
+signed when a trusted key is configured. For a mixed entry, refresh diffs the
+v2 rows and shows every served tool with a v1 row as `new` with its full
+current surface; `--apply` drops the retained v1 rows, including rows for tools
+no longer served. To review a diff against the v1 hash, run the refresh on 2.11
+or 2.12 before upgrading.
 Every signed write, refresh, re-sign, rotation and signed clear increments the
 manifest's signed positive-integer `sequence`, starting at 1. For one-shot CI,
 set a minimum independently of the pin file being checked:

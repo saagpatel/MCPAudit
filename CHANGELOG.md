@@ -23,8 +23,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `pin --refresh SERVER` no longer hashes or diffs a v1 baseline: it shows the
   full current tool surface for review as a new pin (every tool `new`,
   `baseline_verified: false`), and `--apply` replaces the entry with a v2
-  baseline, signed when a trusted key is configured. Review the diff against
-  the v1 hash on 2.11 or 2.12 before upgrading.
+  baseline, signed when a trusted key is configured. In a mixed entry every
+  served tool with a v1 row is shown as `new` with its full current surface,
+  and `--apply` (like any `pin` write to that server) drops the retained v1
+  rows, including rows for tools no longer served. `uncovered_fields` rows now
+  cover every field of such a tool with summary
+  `not compared; schema v1 row reviewed as new`. Review the diff against the
+  v1 hash on 2.11 or 2.12 before upgrading.
+- An entry whose tool rows are all v1 under an entry-level `pin_schema: 2` or
+  `protocol` marker is withheld like a genuine v1 entry; `require.pins` counts
+  only v2 rows. Policy violations for a withheld v1 baseline say it "is a
+  schema v1 pin, which is never compared".
 - The legacy v1 hash form (`canonical_json_bytes(..., legacy=True)`) and the
   `review_unverified_legacy` refresh option are removed from the library API.
   `PinStore.legacy_entry(server)` reports a genuine v1 entry.
