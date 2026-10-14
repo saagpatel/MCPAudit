@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Restore the PR, weekly scheduled, and manually dispatched OSV dependency advisory workflow.
+
 ### Changed
 
 - Correct the 3.0 proposal's 2.12 release statuses and record D22's opt-in
