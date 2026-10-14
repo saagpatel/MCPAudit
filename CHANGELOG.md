@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Correct the 3.0 proposal's 2.12 release statuses and record D22's opt-in
+  scan-compatible source selection for translated static checks.
+
 ### Breaking
 
 - Removed 11 hidden top-level command aliases. Each removed spelling is now an
@@ -24,11 +29,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `skillscan` -> `mcp-audit skills scan`
 
   `pin` stays as a visible alias for `baseline pin`.
+- The MCP `scan_mcp_servers` tool exposed by `serve` is static by default:
+  `connect` now defaults to `false`. Pass `connect=true` to connect to
+  configured servers; `skip_connect=true` still disables connections. Every
+  other `serve` tool keeps its reach, and each tool description now states it,
+  including that a withheld pin baseline is partial coverage, not a failure.
+- Schema v1 pin baselines are never compared, whether or not trusted pin keys
+  exist. A genuine v1 server entry is withheld from every pin-based check
+  (`--pin-check`, `--canary-check`, `--escalation-check`, `--provenance-check`,
+  `--integrity-check`, `--verify-artifacts`, `--download-artifacts`) with the
+  `pin_baseline_withheld` warning and partial coverage, never a pass; it does
+  not satisfy `require.pins`. A keyless 2.x install still compared v1 entries;
+  that comparison stops. The pin file is never rewritten on read.
+- In a mixed entry (v2 rows plus retained v1 rows) the v2 rows still compare;
+  the v1 rows are excluded from `NEW`, `CHANGED` and `REMOVED` drift and from
+  the canary first-listing comparison, and `pin_schema_outdated` names them as
+  uncovered.
+- `pin --refresh SERVER` no longer hashes or diffs a v1 baseline: it shows the
+  full current tool surface for review as a new pin (every tool `new`,
+  `baseline_verified: false`), and `--apply` replaces the entry with a v2
+  baseline, signed when a trusted key is configured. In a mixed entry every
+  served tool with a v1 row is shown as `new` with its full current surface,
+  and `--apply` (like any `pin` write to that server) drops the retained v1
+  rows, including rows for tools no longer served. `uncovered_fields` rows now
+  cover every field of such a tool with summary
+  `not compared; schema v1 row reviewed as new`. Review the diff against the
+  v1 hash on 2.11 or 2.12 before upgrading.
+- An entry whose tool rows are all v1 under an entry-level `pin_schema: 2` or
+  `protocol` marker is withheld like a genuine v1 entry, and so is an unmarked
+  entry with no tool rows (a 2.0-2.8 zero-tool pin; 2.9+ empty entries carry
+  the marker and stay usable); `require.pins` counts only v2 rows. Policy violations for a withheld v1 baseline say it "is a
+  schema v1 pin, which is never compared".
+- The legacy v1 hash form (`canonical_json_bytes(..., legacy=True)`) and the
+  `review_unverified_legacy` refresh option are removed from the library API.
+  `PinStore.legacy_entry(server)` reports a genuine v1 entry.
+- The `pin_baseline_withheld` and `pin_schema_outdated` warning texts are in the
+  present tense and no longer announce a future 3.0 change; the
+  `pin_schema_outdated` message lists the uncovered v1 tool names.
 - Removed the deprecated `monitor` command and module, the frozen `_run_scan_core`
   compatibility function, the `mcp_audit.cli` private-name compatibility shim, and the
   `_run_scan`/`_parse_clients` re-exports from `mcp_audit._core_cli`. Library callers use
   `mcp_audit.engine.run_scan(ScanOptions(...))` and `mcp_audit.client_filter._parse_clients`;
   there is no replacement for `monitor` (use `shadow`, `watch`, or `check --pin-check`).
+
+### Added
+
+- `check --include-discovered --scan-compatible-sources`, a hidden selector
+  that reproduces the legacy `scan` server selection: every Claude Code
+  project scope (a malformed project entry loses the whole file, as in
+  `scan`), no Cursor project file, an empty result for a present file without
+  a server map, and `scan`'s server-level dedup, subject to `check`'s source
+  limits (size, nesting depth, server cap, symlink refusal). It is rejected
+  with `--config`, `--project`, `--config-only`, `--connect` and
+  `--connect-all`. Without the flag, `check` discovery and output are
+  unchanged.
+- `pin --refresh` previews show the credential-redacted surface a pin write
+  would store for every tool reviewed as new: JSON `drift` rows gain an
+  additive `current_surface` object, and the terminal review prints each field
+  bounded and terminal-safe. An injected description or a new input property
+  on a v1-row tool is visible before `--apply`. Because the pin hash covers the
+  raw served text while the snapshot is redacted, fields where credential
+  redaction withheld served text are flagged in the terminal and listed in the
+  additive `current_surface_redacted` array, without exposing the hidden text.
 
 ## [2.12.0] - 2026-10-12
 

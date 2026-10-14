@@ -257,20 +257,88 @@ class TestBuildMcpServer:
         app = _build_mcp_server()
         assert app.name == "mcp-audit"
 
-    def test_scan_tool_exposes_connect_default_and_3_0_notice(self) -> None:
+    def test_scan_tool_defaults_to_static_and_states_reach(self) -> None:
         tools = asyncio.run(_build_mcp_server().list_tools())
         tool = next(tool for tool in tools if tool.name == "scan_mcp_servers")
         properties = tool.input_schema["properties"]
         assert properties["connect"]["type"] == "boolean"
-        assert properties["connect"]["default"] is True
+        assert properties["connect"]["default"] is False
         assert properties["skip_connect"]["default"] is False
         assert not tool.input_schema.get("required")
         assert tool.description is not None
-        assert "In 2.12, connections remain enabled by default" in tool.description
-        assert "connect=false" in tool.description
-        assert "skip_connect=true always disables connections" in tool.description
-        assert "In 3.0, this tool will default to static auditing" in tool.description
+        assert "static by default" in tool.description
         assert "connect=true" in tool.description
+        assert "skip_connect=true always disables connections, even with connect=true" in tool.description
+        assert "2.12" not in tool.description
+        assert "will default" not in tool.description
+
+    @pytest.mark.parametrize(
+        "tool_name",
+        [
+            "get_high_risk_servers",
+            "check_server",
+            "get_injection_findings",
+            "get_ssrf_findings",
+            "get_trifecta_findings",
+            "get_shadowing_findings",
+            "get_escalation_findings",
+            "get_provenance_findings",
+        ],
+    )
+    def test_connecting_tool_descriptions_state_connection_reach(self, tool_name: str) -> None:
+        tools = asyncio.run(_build_mcp_server().list_tools())
+        description = next(tool for tool in tools if tool.name == tool_name).description
+        assert description is not None
+        assert "Reach: connects to" in description
+        assert "start" in description and "endpoint" in description
+        assert "project_config_not_connected" in description
+        assert "static" not in description
+
+    @pytest.mark.parametrize(
+        ("tool_name", "registry"),
+        [
+            ("list_discovered_servers", False),
+            ("get_integrity_findings", False),
+            ("get_package_verify_findings", True),
+            ("get_artifact_verify_findings", True),
+        ],
+    )
+    def test_static_tool_descriptions_state_static_reach(self, tool_name: str, registry: bool) -> None:
+        tools = asyncio.run(_build_mcp_server().list_tools())
+        description = next(tool for tool in tools if tool.name == tool_name).description
+        assert description is not None
+        assert "Reach: static" in description
+        assert "Reach: connects to" not in description
+        assert ("package registries only" in description) is registry
+
+    @pytest.mark.parametrize(
+        ("tool_name", "pin_checks"),
+        [
+            ("scan_mcp_servers", False),
+            ("get_high_risk_servers", False),
+            ("check_server", True),
+            ("get_injection_findings", False),
+            ("get_ssrf_findings", False),
+            ("get_trifecta_findings", False),
+            ("get_shadowing_findings", False),
+            ("get_escalation_findings", True),
+            ("get_provenance_findings", True),
+            ("get_integrity_findings", True),
+            ("get_package_verify_findings", True),
+            ("get_artifact_verify_findings", True),
+            ("list_discovered_servers", False),
+        ],
+    )
+    def test_pin_check_tool_descriptions_state_withheld_is_partial_coverage(
+        self, tool_name: str, pin_checks: bool
+    ) -> None:
+        tools = asyncio.run(_build_mcp_server().list_tools())
+        description = next(tool for tool in tools if tool.name == tool_name).description
+        assert description is not None
+        stated = "withheld pin baseline (`pin_baseline_withheld`) appears as partial coverage" in description
+        assert stated is pin_checks
+        if pin_checks:
+            assert "not as a tool failure" in description
 
 
 @pytest.mark.anyio
@@ -459,6 +527,48 @@ async def test_findings_tools_surface_coverage_warnings(monkeypatch: pytest.Monk
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("tool_name", "check"),
+    [
+        ("check_server", "pin_check"),
+        ("get_escalation_findings", "escalation_check"),
+        ("get_provenance_findings", "provenance_check"),
+        ("get_integrity_findings", "integrity_check"),
+        ("get_package_verify_findings", "verify_artifacts"),
+        ("get_artifact_verify_findings", "download_artifacts"),
+    ],
+)
+async def test_pin_check_tools_report_withheld_baseline_as_warning_not_failure(
+    monkeypatch: pytest.MonkeyPatch, tool_name: str, check: str
+) -> None:
+    import mcp_audit.server as server_module
+
+    target = make_server_config(name="target")
+    warning = ScanWarning(
+        code="pin_baseline_withheld",
+        message="synthetic withheld baseline",
+        check=check,
+        servers=["target"],
+    )
+    seen = _stub_run_scan(
+        monkeypatch,
+        _report_with([ServerAudit(server=target, connection_status="connected")], warnings=[warning]),
+    )
+    monkeypatch.setattr(server_module, "discover_all_configs", lambda *args: [target])
+
+    arguments = {"name": "target"} if tool_name == "check_server" else {}
+    result = await _build_mcp_server().call_tool(tool_name, arguments)
+    assert getattr(result, "is_error", False) is False
+    payload = _tool_json(result)
+    assert getattr(seen["options"], check) is True
+    [emitted] = payload["warnings"]
+    assert emitted["code"] == "pin_baseline_withheld"
+    assert emitted["check"] == check
+    if tool_name != "check_server":
+        assert payload["findings"] == []
+
+
+@pytest.mark.anyio
 async def test_scan_mcp_servers_returns_full_report_and_threads_skip_connect(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -474,10 +584,10 @@ async def test_scan_mcp_servers_returns_full_report_and_threads_skip_connect(
 @pytest.mark.parametrize(
     ("arguments", "expected_connect"),
     [
-        ({}, True),
+        ({}, False),
         ({"connect": True}, True),
         ({"connect": False}, False),
-        ({"skip_connect": False}, True),
+        ({"skip_connect": False}, False),
         ({"skip_connect": True}, False),
         ({"connect": True, "skip_connect": False}, True),
         ({"connect": False, "skip_connect": False}, False),
