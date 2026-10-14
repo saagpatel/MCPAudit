@@ -337,7 +337,7 @@ class PinStore:
                 "but trusted pin keys exist, so its signature was removed or never written. Restore a "
                 f"signed baseline, or review `mcp-audit pin --refresh {server_name}` for unsigned migration."
             )
-        elif "signature" not in entry and self.legacy_tool_names(server_name):
+        elif "signature" not in entry and (self.legacy_tool_names(server_name) or _is_legacy_entry(entry)):
             result = PinVerification(state=PinVerificationState.SCHEMA_OUTDATED)
         else:
             try:
@@ -685,7 +685,7 @@ class PinStore:
             except (PinSigningError, ValueError):
                 trusted_public_key = None
         return {
-            "schema": entry.get("pin_schema", 1 if self.legacy_tool_names(server_name) else 2),
+            "schema": entry.get("pin_schema", 1 if self.legacy_entry(server_name) else 2),
             "signed": bool(signature),
             "kid": signature.get("kid") if isinstance(signature, dict) else None,
             "public_key": signer.get("public_key") if isinstance(signer, dict) else None,
@@ -850,7 +850,7 @@ class PinStore:
     def schema_warnings(self, server_name: str) -> list[ScanWarning]:
         """Name the uncovered v1 tool rows without changing or re-hashing pins."""
         legacy = self.legacy_tool_names(server_name)
-        if not legacy or not self.baseline_trusted(server_name):
+        if not (legacy or self.legacy_entry(server_name)) or not self.baseline_trusted(server_name):
             # A rejected entry gets only tampered/withheld guidance, never refresh advice.
             return []
         scope = (
@@ -858,11 +858,12 @@ class PinStore:
             if self.v1_baseline(server_name)
             else "has schema v1 tool pins, which are not compared and count as uncovered"
         )
+        rows = ", ".join(sorted(legacy)) if legacy else "no tool rows (a 2.x zero-tool pin)"
         return [
             ScanWarning(
                 code="pin_schema_outdated",
                 message=(
-                    f"{server_name} {scope}: {', '.join(sorted(legacy))}. Run "
+                    f"{server_name} {scope}: {rows}. Run "
                     f"`mcp-audit pin --refresh {server_name}` to review the current tool surface, "
                     f"then `mcp-audit pin --refresh {server_name} --apply`."
                 ),
@@ -1380,12 +1381,35 @@ class PinStore:
             return None
 
     def tool_review_surface(self, tool: ToolInfo) -> dict[str, Any]:
-        """The credential-redacted surface a pin write would store for ``tool``.
+        """The credential-redacted snapshot a pin write would store for ``tool``.
 
-        Refresh previews show it for every tool reviewed as new, so an operator
-        sees exactly what ``--apply`` will trust.
+        Refresh previews show it for every tool reviewed as new. It is not the
+        whole of what ``--apply`` trusts: the pin hash covers the raw served
+        surface, so text withheld by credential redaction (which can include
+        injected instructions after a ``token=`` or under an ``api_key``) is
+        trusted by the hash but invisible here. :meth:`withheld_surface_fields`
+        names the fields where that happened.
         """
         return self._tool_snapshot(tool)
+
+    def withheld_surface_fields(self, tool: ToolInfo) -> dict[str, int]:
+        """Surface fields whose redacted snapshot differs from the served value.
+
+        Maps field name to the number of values credential redaction withheld,
+        so a preview can flag text the pin hash covers without exposing it.
+        """
+        raw: dict[str, Any] = {
+            "description": tool.description,
+            "input_schema": tool.input_schema,
+            "annotations": tool.annotations.model_dump() if tool.annotations else None,
+            "title": tool.title,
+            "output_schema": tool.output_schema,
+            "icons": tool.icons,
+            "meta": tool.meta,
+        }
+        redacted = self._tool_snapshot(tool)
+        withheld = {field: _withheld_values(raw[field], redacted[field]) for field in redacted}
+        return {field: count for field, count in withheld.items() if count}
 
     def _tool_snapshot(self, tool: ToolInfo) -> dict[str, Any]:
         """Return the reviewable tool fields stored alongside the pin hash."""
@@ -1462,6 +1486,15 @@ class PinStore:
         return details
 
 
+def _withheld_values(raw: object, redacted: object) -> int:
+    """Count leaf values that differ between a served value and its redaction."""
+    if isinstance(raw, dict) and isinstance(redacted, dict):
+        return sum(_withheld_values(raw.get(key), redacted.get(key)) for key in raw.keys() | redacted.keys())
+    if isinstance(raw, list) and isinstance(redacted, list) and len(raw) == len(redacted):
+        return sum(_withheld_values(before, after) for before, after in zip(raw, redacted, strict=True))
+    return 0 if raw == redacted else 1
+
+
 def _resigned_by_rotation(entry: object) -> bool:
     """Rotation/re-signing covers signed and v2 (including mixed) entries.
 
@@ -1472,14 +1505,17 @@ def _resigned_by_rotation(entry: object) -> bool:
 
 
 def _is_legacy_entry(entry: dict[str, Any]) -> bool:
-    """A genuine v1 entry: v1 tool pins and no marker only v2 writers produce."""
+    """A genuine v1 entry: v1 tool pins and no marker only v2 writers produce.
+
+    An unmarked entry with no tool rows is v1 too: MCPAudit 2.0 through 2.8
+    wrote a zero-tool server as a bare ``tools: {}`` entry, and only 2.9+
+    writers add the entry-level ``pin_schema: 2`` and ``protocol`` markers.
+    """
     tools = entry.get("tools", {})
     if not isinstance(tools, dict) or entry.get("pin_schema") == 2 or "protocol" in entry:
         return False
     tool_entries = [tool for tool in tools.values() if isinstance(tool, dict)]
-    return bool(tool_entries) and all(
-        tool.get("pin_schema", 1) == 1 and "canonical_form" not in tool for tool in tool_entries
-    )
+    return all(tool.get("pin_schema", 1) == 1 and "canonical_form" not in tool for tool in tool_entries)
 
 
 def surface_hash(value: object) -> str:
