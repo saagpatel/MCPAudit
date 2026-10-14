@@ -123,7 +123,12 @@ review as if the server were newly pinned (every tool is `new`), and
 signed when a trusted key is configured. For a mixed entry, refresh diffs the
 v2 rows and shows every served tool with a v1 row as `new` with its full
 current surface; `--apply` drops the retained v1 rows, including rows for tools
-no longer served. To review a diff against the v1 hash, run the refresh on 2.11
+no longer served. The surface shown for a new tool is the credential-redacted
+snapshot the pin stores, while the pin hash covers the raw served text. When
+redaction withheld part of a field (for example everything after a `token=` or
+the value of an `api_key`), the preview flags that field and `--json` lists it
+in `current_surface_redacted`; the hidden text can carry injected instructions
+that `--apply` would trust, so inspect the server directly before applying. To review a diff against the v1 hash, run the refresh on 2.11
 or 2.12 before upgrading.
 Every signed write, refresh, re-sign, rotation and signed clear increments the
 manifest's signed positive-integer `sequence`, starting at 1. For one-shot CI,

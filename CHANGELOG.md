@@ -36,8 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `not compared; schema v1 row reviewed as new`. Review the diff against the
   v1 hash on 2.11 or 2.12 before upgrading.
 - An entry whose tool rows are all v1 under an entry-level `pin_schema: 2` or
-  `protocol` marker is withheld like a genuine v1 entry; `require.pins` counts
-  only v2 rows. Policy violations for a withheld v1 baseline say it "is a
+  `protocol` marker is withheld like a genuine v1 entry, and so is an unmarked
+  entry with no tool rows (a 2.0-2.8 zero-tool pin; 2.9+ empty entries carry
+  the marker and stay usable); `require.pins` counts only v2 rows. Policy violations for a withheld v1 baseline say it "is a
   schema v1 pin, which is never compared".
 - The legacy v1 hash form (`canonical_json_bytes(..., legacy=True)`) and the
   `review_unverified_legacy` refresh option are removed from the library API.
@@ -52,7 +53,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   would store for every tool reviewed as new: JSON `drift` rows gain an
   additive `current_surface` object, and the terminal review prints each field
   bounded and terminal-safe. An injected description or a new input property
-  on a v1-row tool is visible before `--apply`.
+  on a v1-row tool is visible before `--apply`. Because the pin hash covers the
+  raw served text while the snapshot is redacted, fields where credential
+  redaction withheld served text are flagged in the terminal and listed in the
+  additive `current_surface_redacted` array, without exposing the hidden text.
 
 ## [2.12.0] - 2026-10-12
 

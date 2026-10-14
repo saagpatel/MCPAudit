@@ -820,7 +820,9 @@ or not a key is trusted, so their baseline is withheld (`pin_baseline_withheld`,
 no drift/escalation/canary/provenance comparison, `require.pins` unmet, enabled
 comparison gates fail). An entry whose tool rows are all v1 under an
 entry-level `pin_schema: 2` or `protocol` marker is withheld the same way and
-counts zero tools for `require.pins`. In a mixed entry the v2 rows compare, only
+counts zero tools for `require.pins`, as is an unmarked entry with no tool rows
+(the shape MCPAudit 2.0-2.8 wrote for a zero-tool server; 2.9+ marks empty
+entries, which remain usable empty v2 baselines). In a mixed entry the v2 rows compare, only
 the v2 rows count for `require.pins`, and the v1 rows are excluded from `NEW`,
 `CHANGED` and `REMOVED` drift; `pin_schema_outdated` lists the excluded tool
 names as uncovered. Policy violations for a withheld v1 baseline state that it
@@ -910,13 +912,23 @@ HTML, SARIF result properties and `get_escalation_findings` output.
 `pin --refresh --json` adds `uncovered_fields` rows with `tool_name`, `field`
 and `summary: "not compared; schema v1 row reviewed as new"` for every field
 (description, inputSchema, annotations, title, outputSchema, icons, meta) of a
-served tool whose saved row is v1. Each `drift` row carries an additive
-`current_surface`: for a `new` row, the credential-redacted surface a pin write
-would store (`description`, `input_schema`, `annotations`, `title`,
-`output_schema`, `icons`, `meta`, all nullable); `null` for other statuses.
-Terminal review prints the same redacted surface, terminal-safe, one line per
-field, each value bounded to 400 characters. It also adds `baseline_verified`
-and nullable `baseline_note`. A v1 baseline (all tool rows v1, with or without an
+served tool whose saved row is v1. Each `drift` row carries two additive
+fields. `current_surface` is, for a `new` row, the credential-redacted snapshot
+a pin write would store (`description`, `input_schema`, `annotations`, `title`,
+`output_schema`, `icons`, `meta`, all nullable), and `null` for other statuses.
+It is not the whole of what `--apply` trusts: the pin hash covers the raw served
+surface, so text withheld by credential redaction (which can include injected
+instructions after a `token=` or under an `api_key`) is trusted by the hash but
+absent from the snapshot. `current_surface_redacted` therefore lists, for a
+`new` row, the sorted field names whose served value differs from the redacted
+snapshot (`[]` when nothing was withheld); it is `null` for other statuses. The
+withheld text is never emitted. Terminal review prints the same redacted
+snapshot, terminal-safe, one line per field, each value bounded to 400
+characters (the truncation marker points to `pin --refresh SERVER --json` for
+the full value), and under each affected field a line stating how many values
+credential redaction withheld and that the pin hash covers the served text, so
+the server is inspected before `--apply`. It also adds `baseline_verified` and
+nullable `baseline_note`. A v1 baseline (all tool rows v1, with or without an
 entry-level v2 marker) is not compared in refresh review: every current tool is
 reported as `new`, as for a first pin, with `baseline_verified: false` and a
 note; terminal review labels it and never reports "No drift found". In a mixed

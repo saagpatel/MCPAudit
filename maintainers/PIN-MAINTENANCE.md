@@ -12,7 +12,9 @@ safe. Tool rows with no marker or `pin_schema: 1` are schema v1 rows. MCPAudit
 3.0 does not hash v1: those rows are never compared, whether or not a trusted
 key exists, and scans never upgrade or rewrite them. A server entry whose tool
 rows are all v1 (with or without an entry-level `pin_schema: 2` or `protocol`
-marker) has no comparable baseline: it is withheld from every pin-based check
+marker), or an unmarked entry with no tool rows (how 2.0-2.8 pinned a
+zero-tool server; 2.9+ marks empty entries, which stay usable), has no
+comparable baseline: it is withheld from every pin-based check
 with `pin_baseline_withheld`, counts zero tools for `require.pins`, and
 `pin_schema_outdated` names its rows. In a mixed entry the v2 rows compare and
 the v1 rows are excluded from `NEW`, `CHANGED` and `REMOVED` drift and from the
