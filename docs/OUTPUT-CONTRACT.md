@@ -449,7 +449,10 @@ Project entries retain config-inferred permissions and `connection_status:
 "skipped"` unless `ScanOptions.connect_project_configs` is true. CLI `scan` and
 `watch` expose this as `--connect-project-configs`; `--skip-connect` takes
 precedence over the opt-in. `pin`, pin refresh, and all `serve` tools use the
-same project-skipping default. Workstation entries still connect by default.
+same project-skipping default. Workstation entries connect by default in the
+library, CLI `scan`/`watch`, `pin`, and the `serve` tools listed as connecting in
+[`serve` tool reach](#serve-tool-reach); `scan_mcp_servers` is static unless
+called with `connect=true`.
 A project-only scan that skips all entries has `connection_mode: "skipped"`;
 a mixed scan that attempts workstation connections has `"attempted"`.
 
