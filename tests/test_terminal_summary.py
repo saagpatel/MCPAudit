@@ -169,6 +169,8 @@ def test_hidden_text_grade_and_connected_recheck_preserve_check() -> None:
     output = " ".join(_render(report, explicit_config=True).split())
     assert "--inject-check" in output
     assert "./reviewed-mcp-config.json" in output
+    assert "--connect-all" in output
+    assert "--connect-project-configs" not in output
     assert "Copy only the listed entries" in output
     assert "may execute code and access the network" in output
     assert "claude_code" not in output

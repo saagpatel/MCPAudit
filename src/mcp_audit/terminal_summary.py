@@ -246,7 +246,7 @@ def _recheck(action: Action) -> str:
             "--override-config /dev/null",
         ]
         if action.connected:
-            parts.append("--connect-all --connect-project-configs")
+            parts.append("--connect-all")
         else:
             parts.append("--skip-connect")
         parts.extend(action.flags)
