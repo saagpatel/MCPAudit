@@ -15,6 +15,7 @@ from mcp_audit import artifact_paths, check_cli, cli, engine, scan_cli, suppress
 from mcp_audit.check_cli import demo
 from mcp_audit.connector import ServerConnector
 from mcp_audit.discovery import ConfigParseError, discover_all_configs
+from mcp_audit.discovery.claude_desktop import ClaudeDesktopDiscoverer
 from mcp_audit.discovery.vscode import VSCodeDiscoverer
 from mcp_audit.models import ClientType
 from mcp_audit.review_discovery import (
@@ -897,7 +898,8 @@ def test_scan_compatible_sources_reproduce_scan_selection(tmp_path: Path) -> Non
     assert {_scan_identity(server) for server in compatible.servers} == expected
     assert sorted(error.reason for error in compatible.errors) == expected_errors == []
     assert not any("skipped other project scopes" in status for _, status in compatible.paths)
-    assert not any(path.endswith(".cursor/mcp.json") and "project" in path for path, _ in compatible.paths)
+    assert str(tmp_path / ".cursor" / "mcp.json") not in {path for path, _ in compatible.paths}
+    assert str(home / ".cursor" / "mcp.json") in {path for path, _ in compatible.paths}
     plain = review_sources(include_discovered=True)
     assert {server.name for server in plain.servers} == {
         "global",
@@ -955,26 +957,42 @@ def test_scan_compatible_sources_dedup_overlapping_vscode_maps(tmp_path: Path) -
     assert [server.name for server in plain.servers] == ["twice", "twice", "once"]
 
 
-@pytest.mark.parametrize("path", [".mcp.json", ".vscode/mcp.json", "home/.cursor/mcp.json"])
-def test_scan_compatible_sources_treat_missing_server_map_as_empty(tmp_path: Path, path: str) -> None:
-    config = tmp_path / path
+@pytest.mark.parametrize(
+    ("path", "contents"),
+    [
+        (".mcp.json", "{}"),
+        (".vscode/mcp.json", "{}"),
+        ("home/.cursor/mcp.json", "{}"),
+        ("home/.vscode/mcp.json", "{}"),
+        ("home/.codeium/windsurf/mcp_config.json", "{}"),
+        ("claude-desktop", "{}"),
+        ("home/.claude.json", '{"theme": "dark"}'),
+    ],
+)
+def test_scan_compatible_sources_treat_missing_server_map_as_empty(
+    tmp_path: Path, path: str, contents: str
+) -> None:
+    config = ClaudeDesktopDiscoverer().config_paths()[0] if path == "claude-desktop" else tmp_path / path
     config.parent.mkdir(parents=True, exist_ok=True)
-    config.write_text("{}")
+    config.write_text(contents)
     expected, expected_errors = _scan_oracle()
     assert expected == set() and not expected_errors
     compatible = review_sources(include_discovered=True, scan_compatible=True)
     assert not compatible.servers
     assert not compatible.errors
     assert (str(config), "checked: 0 entries") in compatible.paths
-    assert any(
-        "no MCP server map" in error.reason for error in review_sources(include_discovered=True).errors
-    )
+    # Plain check keeps its no-map diagnostic for every dedicated MCP file;
+    # only the general ~/.claude.json settings file was already accepted empty.
+    plain_diagnostic = path != "home/.claude.json"
+    plain = review_sources(include_discovered=True)
+    assert not plain.servers
+    assert any("no MCP server map" in error.reason for error in plain.errors) is plain_diagnostic
     policy = tmp_path / "policy.yaml"
     policy.write_text("fail_on:\n  config_health: low\n")
     common = ["--include-discovered", "--override-config", "/dev/null", "--policy", str(policy), "--json"]
-    plain = CliRunner().invoke(cli.main, ["check", *common])
-    assert plain.exit_code == 2, plain.output
-    assert json.loads(plain.stdout)["config_health_findings"]
+    plain_run = CliRunner().invoke(cli.main, ["check", *common])
+    assert plain_run.exit_code == (2 if plain_diagnostic else 0), plain_run.output
+    assert bool(json.loads(plain_run.stdout)["config_health_findings"]) is plain_diagnostic
     compatible_run = CliRunner().invoke(cli.main, ["check", *common, "--scan-compatible-sources"])
     assert compatible_run.exit_code == 0, compatible_run.output
     payload = json.loads(compatible_run.stdout)
@@ -988,6 +1006,7 @@ def test_scan_compatible_sources_treat_missing_server_map_as_empty(tmp_path: Pat
     [
         ["--scan-compatible-sources"],
         ["--scan-compatible-sources", "--config", str(SANDBOX)],
+        ["--scan-compatible-sources", "--config", str(SANDBOX), "--include-discovered"],
         ["--scan-compatible-sources", "--include-discovered", "--project", "."],
         ["--scan-compatible-sources", "--config", str(SANDBOX), "--config-only"],
         ["--scan-compatible-sources", "--config", str(SANDBOX), "--config-only", "--include-discovered"],
@@ -1011,6 +1030,7 @@ def test_scan_compatible_sources_reject_conflicting_options_before_discovery(
     result = CliRunner().invoke(cli.main, ["check", *args])
     assert result.exit_code == 2, result.output
     assert "--scan-compatible-sources requires --include-discovered" in result.stderr
+    assert "--config, --project, --config-only, --connect or --connect-all" in result.stderr
 
 
 def test_scan_compatible_sources_flag_is_hidden_and_off_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
