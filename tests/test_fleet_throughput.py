@@ -26,7 +26,7 @@ from tests.conftest import make_tool
 # X-2 updates only the sample terminal hash for explicit check recheck commands.
 GOLDEN = {
     "sample_audit_report": {
-        "terminal": "097e9ac2194a04da391679dd8362298fdab9c27524d25d582e5074185616692e",
+        "terminal": "80845a853b92300b3bb8090f344fa9743a4517b171c2b8119dd46bdc794d595a",
         "json": "026339d485f60e1dd5b02bcff7e77b6e3b13ac4fde3dc6ce8666a5874006489b",
         "html": "ac05406211d621963519be1ba3b2a613ae950233031e418281328ad4a7b30df9",
         "sarif": "63b7924e4ccc76c4b8b64df10362a34a6d6767df15dad9fa8c78c6396fe54957",
