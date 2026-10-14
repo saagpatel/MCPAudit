@@ -146,8 +146,8 @@ def _build_mcp_server() -> Any:
     async def scan_mcp_servers(skip_connect: bool = False, connect: bool = True) -> str:
         """Run a full audit of all discovered MCP servers. Returns JSON report.
 
-        Connections remain enabled by default. Set connect=false for a static
-        audit; skip_connect=true always disables connections.
+        In 2.12, connections remain enabled by default. Set connect=false for a
+        static audit; skip_connect=true always disables connections.
         In 3.0, this tool will default to static auditing and require an explicit
         connect=true to connect to configured servers, which can start local
         programs or contact configured endpoints.
