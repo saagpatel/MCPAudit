@@ -32,6 +32,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The release advisory gate (`scripts/check_advisories.py`) exits 2 when the build
   constraints file is missing, instead of warning and passing without build-input
   coverage.
+- Scaffold a uv workspace with lockstep labs and independent Proof member
+  packages, `labs`, `proof` and `all` core extras that pin the satellites
+  exactly, and workspace-wide development installs. The `watch`, `llm` and
+  `otel` requirements are unchanged. Existing modules and console scripts remain
+  in core until the module moves. Release verification admits the complete `all`
+  extra, admits satellite references only as exact pins in those extras, rejects
+  a Proof core dependency, and selects each reference build explicitly by package.
 
 ### Breaking
 
@@ -98,9 +105,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   redaction withheld served text are flagged in the terminal and listed in the
   additive `current_surface_redacted` array, without exposing the hidden text.
 - Restore the PR, weekly scheduled, and manually dispatched OSV dependency advisory workflow.
-
-### Added
-
 - `check --include-discovered --scan-compatible-sources`, a hidden selector
   that reproduces the legacy `scan` server selection: every Claude Code
   project scope (a malformed project entry loses the whole file, as in

@@ -18,7 +18,7 @@ If your change affects how MCPAudit detects or scores threats (prompt injection 
 ```bash
 git clone https://github.com/saagpatel/MCPAudit.git
 cd MCPAudit
-uv sync --locked --dev
+uv sync --all-packages --locked --dev
 ```
 
 ### Running the tool locally
