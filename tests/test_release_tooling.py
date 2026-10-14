@@ -387,7 +387,7 @@ def test_reference_build_passes_the_committed_build_constraints(
         calls.append(list(args))
         return real_run(args, **kwargs)  # type: ignore[call-overload]
 
-    monkeypatch.setattr(release.subprocess, "run", recording_run)
+    monkeypatch.setattr(subprocess, "run", recording_run)
     release._reference_build(commit=_commit(train_artifacts), distribution=TRAIN[0])
 
     (build,) = [call for call in calls if call[:2] == ["uv", "build"]]
