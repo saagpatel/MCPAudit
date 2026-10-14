@@ -27,7 +27,7 @@ jobs:
           version: "0.13.0"
 
       - name: Install locked dependencies
-        run: uv sync --dev --locked
+        run: uv sync --all-packages --dev --locked
 
       - name: Report and verify the runner boundary
         shell: bash
@@ -64,11 +64,11 @@ jobs:
           trap cleanup EXIT
 
           nodes=(
-            tests/test_safeforge_runtime.py::test_supervisor_kills_hanging_shutdown_resistant_process_group
-            tests/test_safeforge_runtime.py::test_supervisor_enforces_process_count
-            tests/test_safeforge_runtime.py::test_supervisor_enforces_memory_and_disk
-            tests/test_safeforge_runtime.py::test_kernel_denies_artifact_root_escape_and_network
-            tests/test_safeforge_runtime.py::test_generated_code_profile_kernel_denies_child_processes
+            tests/labs/test_safeforge_runtime.py::test_supervisor_kills_hanging_shutdown_resistant_process_group
+            tests/labs/test_safeforge_runtime.py::test_supervisor_enforces_process_count
+            tests/labs/test_safeforge_runtime.py::test_supervisor_enforces_memory_and_disk
+            tests/labs/test_safeforge_runtime.py::test_kernel_denies_artifact_root_escape_and_network
+            tests/labs/test_safeforge_runtime.py::test_generated_code_profile_kernel_denies_child_processes
           )
 
           uv run pytest -p no:cacheprovider --collect-only -q "${nodes[@]}" \
@@ -78,11 +78,11 @@ jobs:
           from pathlib import Path
 
           expected = [
-              "tests/test_safeforge_runtime.py::test_supervisor_kills_hanging_shutdown_resistant_process_group",
-              "tests/test_safeforge_runtime.py::test_supervisor_enforces_process_count",
-              "tests/test_safeforge_runtime.py::test_supervisor_enforces_memory_and_disk",
-              "tests/test_safeforge_runtime.py::test_kernel_denies_artifact_root_escape_and_network",
-              "tests/test_safeforge_runtime.py::test_generated_code_profile_kernel_denies_child_processes",
+              "tests/labs/test_safeforge_runtime.py::test_supervisor_kills_hanging_shutdown_resistant_process_group",
+              "tests/labs/test_safeforge_runtime.py::test_supervisor_enforces_process_count",
+              "tests/labs/test_safeforge_runtime.py::test_supervisor_enforces_memory_and_disk",
+              "tests/labs/test_safeforge_runtime.py::test_kernel_denies_artifact_root_escape_and_network",
+              "tests/labs/test_safeforge_runtime.py::test_generated_code_profile_kernel_denies_child_processes",
           ]
           observed = [
               line
