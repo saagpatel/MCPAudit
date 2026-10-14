@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from functools import partial
 from pathlib import Path
 
-import anyio
 import click
 from rich.console import Console
 
@@ -114,7 +112,7 @@ def discover(client_filter: str | None, verbose: bool) -> None:
     _render_config_health_findings(config_health_findings(servers, parse_errors))
 
 
-@click.command()
+@click.command(hidden=True)
 @click.option("--json", "json_output", default=None, metavar="PATH", help="Write JSON report to PATH.")
 @click.option(
     "--sarif", "sarif_output", default=None, metavar="PATH", help="Write SARIF 2.1.0 report to PATH."
@@ -380,65 +378,17 @@ def scan(
     names: bool,
     previous: Path | None,
 ) -> None:
-    """Full audit: discover servers, connect, enumerate tools, score risk, report."""
-    from mcp_audit.scan_cli import _run_scan
+    """Translate supported legacy options to check; refuse implicit coverage loss."""
+    from mcp_audit.check_cli import check
 
-    click.echo(classify_scan_options(ctx.params).notice(), err=True)
-    if config_only and not extra_config:
-        raise click.ClickException("--config-only requires --config PATH.")
-
-    anyio.run(
-        partial(
-            _run_scan,
-            max_frame_bytes=max_frame_bytes,
-            max_surface_bytes=max_surface_bytes,
-            sdk_stdio_fallback=sdk_stdio_fallback,
-            canary_identities=canary_identities,
-            show_host=show_host,
-            details=details,
-            color=color,
-            ignore_rules=ignore_rules,
-            ignore_reason=ignore_reason,
-            card=card,
-            names=names,
-            previous=previous,
-            pin_file=pin_file,
-            pin_min_sequence=pin_min_sequence,
-        ),
-        json_output,
-        sarif_output,
-        html_output,
-        skip_connect,
-        clients,
-        timeout,
-        verbose,
-        extra_config,
-        override_config_path,
-        policy_path,
-        inject_check,
-        ssrf_check,
-        ssrf_allowlist,
-        egress_check,
-        egress_allowlist,
-        multi_tenant_hosts,
-        pin_check,
-        trifecta_check,
-        shadow_check,
-        escalation_check,
-        provenance_check,
-        integrity_check,
-        verify_artifacts,
-        download_artifacts,
-        llm_analysis,
-        config_only,
-        redact,
-        canary_check,
-        canary_calls,
-        canary_safe_tools,
-        sarif_profile,
-        max_concurrency,
-        connect_project_configs,
-    )
+    translation = classify_scan_options(ctx.params)
+    click.echo(translation.notice(), err=True)
+    if translation.coverage == "would-silently-shrink":
+        click.echo(translation.replacement_notice(), err=True)
+        ctx.exit(2)
+    assert translation.check_argv is not None
+    with check.make_context("check", list(translation.check_argv[2:]), parent=ctx.parent) as check_ctx:
+        check.invoke(check_ctx)
 
 
 def _truncate(s: str, max_len: int) -> str:

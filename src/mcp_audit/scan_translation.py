@@ -100,6 +100,13 @@ class ScanTranslation:
     coverage: Coverage
     check_argv: tuple[str, ...] | None
     reasons: tuple[str, ...] = ()
+    replacement_argv: tuple[str, ...] = ()
+
+    def replacement_notice(self) -> str:
+        """Offer a manual migration target without promising equivalent coverage."""
+        return "scan: replacement command (not exact; review before running): " + shlex.join(
+            self.replacement_argv
+        )
 
     def notice(self) -> str:
         """Render one stderr line; unsafe argument values never enter reasons."""
@@ -126,14 +133,14 @@ def classify_scan_options(options: Mapping[str, object]) -> ScanTranslation:
     if options.keys() - known:
         reasons.append("an option is absent from the frozen scan table")
     values = {rule.parameter: options.get(rule.parameter, rule.default) for rule in OPTION_TABLE.values()}
-    argv = ["mcp-audit", "check"]
+    option_groups: list[tuple[str, ...]] = []
     for spelling, rule in OPTION_TABLE.items():
         value = values[rule.parameter]
         if rule.kind == "flag":
             if not isinstance(value, bool):
                 reasons.append(f"{spelling} is not a parsed boolean")
             elif value:
-                argv.append(rule.check_option)
+                option_groups.append((rule.check_option,))
             continue
         if value is None:
             continue
@@ -151,8 +158,9 @@ def classify_scan_options(options: Mapping[str, object]) -> ScanTranslation:
             if not argument.isprintable() or redact_text(argument) != argument:
                 reasons.append(f"{spelling} cannot be safely printed as an exact single-line command")
             else:
-                argv.extend((rule.check_option, argument))
+                option_groups.append((rule.check_option, argument))
 
+    argv = ["mcp-audit", "check", *(part for group in option_groups for part in group)]
     config_only = values["config_only"] is True
     if config_only and not values["extra_config"]:
         reasons.append("--config-only requires --config")
@@ -184,5 +192,31 @@ def classify_scan_options(options: Mapping[str, object]) -> ScanTranslation:
             "config-only scan reads default overrides; supply --override-config for an exact translation"
         )
     if reasons:
-        return ScanTranslation("would-silently-shrink", None, tuple(dict.fromkeys(reasons)))
+        if isinstance(clients, str) and clients not in _CLIENTS:
+            # The exact classifier stays frozen; only the manual suggestion
+            # expands supported comma-separated client names.
+            option_groups = [group for group in option_groups if group[0] != "--client"] + [
+                ("--client", client)
+                for client in dict.fromkeys(part.strip() for part in clients.split(","))
+                if client in _CLIENTS
+            ]
+        if config_only and not values["extra_config"]:
+            option_groups = [group for group in option_groups if group[0] != "--config-only"]
+        connecting = (
+            values["skip_connect"] is not True
+            or values["canary_check"] is True
+            or values["connect_project_configs"] is True
+        )
+        if connecting:
+            option_groups = [group for group in option_groups if group[0] != "--skip-connect"]
+        replacement = ["mcp-audit", "check", *(part for group in option_groups for part in group)]
+        if not config_only or not values["extra_config"]:
+            replacement.append("--include-discovered")
+            if not connecting and values["extra_config"] is None:
+                replacement.append("--scan-compatible-sources")
+        if connecting:
+            replacement.append("--connect-all")
+        return ScanTranslation(
+            "would-silently-shrink", None, tuple(dict.fromkeys(reasons)), tuple(replacement)
+        )
     return ScanTranslation("narrowed" if config_only else "preserved", tuple(argv))
