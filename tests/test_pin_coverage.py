@@ -91,7 +91,6 @@ def test_withheld_pin_coverage_and_policy(
     warning = next(w for w in report.warnings if w.code == "pin_baseline_withheld")
     assert warning.check == "pin_check" and warning.servers == ["fixture"]
     assert "mcp-audit pin --refresh SERVER" in warning.message
-    assert "whether or not trusted pin keys exist" in warning.message
     assert evaluate_policy(report, PolicyConfig()).passed
     assert evaluate_policy(report, PolicyConfig(fail_on_pin_baseline_withheld=False)).passed
     result = evaluate_policy(report, PolicyConfig(fail_on_pin_baseline_withheld=True))
@@ -104,17 +103,25 @@ def test_withheld_pin_coverage_and_policy(
     assert store.path.read_bytes() == before
 
 
-def test_keyless_v1_still_compares_and_warns(legacy_store: PinStore, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_keyless_v1_is_withheld_and_warns(legacy_store: PinStore, monkeypatch: pytest.MonkeyPatch) -> None:
+    # 3.0: a genuine v1 baseline is never compared, even without trusted keys.
+    assert not legacy_store._keys_trusted()
+    assert legacy_store.legacy_entry("fixture") and not legacy_store.baseline_usable("fixture")
     before = legacy_store.path.read_bytes()
     report = _scan_fixture(monkeypatch, legacy_store)
-    assert report.audits[0].drift_findings
+    assert report.audits[0].drift_findings == []
+    assert report.audits[0].pin_integrity_findings == []
     assert report.coverage["pin_check"].state == "partial"
-    assert report.coverage["pin_check"].reason == "pin_schema_outdated"
-    assert not any(w.code == "pin_baseline_withheld" for w in report.warnings)
+    assert report.coverage["pin_check"].reason == "pin_baseline_withheld"
+    withheld = next(w for w in report.warnings if w.code == "pin_baseline_withheld")
+    assert withheld.check == "pin_check" and withheld.servers == ["fixture"]
+    assert "schema v1 pin, which is never compared" in withheld.message
+    assert "mcp-audit pin --refresh SERVER" in withheld.message
+    assert "3.0 will" not in withheld.message
     warning = next(w for w in report.warnings if w.code == "pin_schema_outdated")
-    assert "whether or not trusted pin keys exist" in warning.message
+    assert "is not compared: status" in warning.message
     assert "mcp-audit pin --refresh fixture --apply" in warning.message
-    assert evaluate_policy(report, PolicyConfig(fail_on_pin_baseline_withheld=True)).passed
+    assert not evaluate_policy(report, PolicyConfig(fail_on_pin_baseline_withheld=True)).passed
     assert legacy_store.path.read_bytes() == before
 
 

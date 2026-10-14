@@ -55,6 +55,17 @@ def _legacy(tmp_path: Path) -> PinStore:
     return PinStore(path)
 
 
+def _mixed(tmp_path: Path, *tools: ToolInfo) -> PinStore:
+    """An unsigned v2 entry that retains the fixture's v1 ``status`` row."""
+    store = PinStore(tmp_path / "pins.yaml")
+    store.pin_server("fixture", list(tools))
+    raw = yaml.safe_load(store.path.read_text())
+    legacy = yaml.safe_load((FIXTURES / "legacy-v1.yaml").read_text())
+    raw["servers"]["fixture"]["tools"]["status"] = legacy["servers"]["fixture"]["tools"]["status"]
+    store.path.write_text(yaml.safe_dump(raw))
+    return PinStore(store.path)
+
+
 def test_canonical_bytes_match_golden_and_both_hash_apis(tmp_path: Path) -> None:
     tool = _tool()
     golden = (FIXTURES / "tool-v2.canonical.json").read_bytes()
@@ -184,16 +195,17 @@ def test_security_annotation_deltas_are_explicit_high(
     assert field in output.getvalue()
 
 
-def test_legacy_fixture_compares_v1_and_warns_without_rewrite(
+def test_legacy_fixture_is_withheld_and_warns_without_rewrite(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     store = _legacy(tmp_path)
     original = store.path.read_bytes()
     current = _tool().model_copy(update={"input_schema": {"type": "object"}})
+    # Never compared: neither a match nor a change is reported against v1 rows.
     assert store.check_drift("fixture", [current]) == []
-    (finding,) = store.check_drift("fixture", [current.model_copy(update={"description": "Changed status."})])
-    assert finding.stored_hash == "sha256:f875330d79c3925e1dec0e0b46aad06aa24f60ac4967358d28bc4a09c1678a11"
-    assert finding.details == ["description changed"]
+    assert store.check_drift("fixture", [current.model_copy(update={"description": "Changed status."})]) == []
+    assert store.baseline_tools("fixture") == [] and store.canary_baseline("fixture") is None
+    assert store.tool_count("fixture") == 0
     monkeypatch.setattr(pinning, "PinStore", lambda: store)
     report = anyio.run(
         partial(
@@ -204,20 +216,57 @@ def test_legacy_fixture_compares_v1_and_warns_without_rewrite(
     )
     (warning,) = [warning for warning in report.warnings if warning.code == "pin_schema_outdated"]
     assert warning.servers == ["fixture"]
+    assert "is not compared: status" in warning.message
     assert "--refresh fixture --apply" in warning.message
+    (withheld,) = [warning for warning in report.warnings if warning.code == "pin_baseline_withheld"]
+    assert withheld.check == "pin_check" and withheld.servers == ["fixture"]
     assert store.path.read_bytes() == original
 
 
-def test_mixed_file_only_explicitly_pinned_tools_upgrade(tmp_path: Path) -> None:
+def test_mixed_entry_excludes_v1_rows_from_drift_and_lists_them_uncovered(tmp_path: Path) -> None:
+    store = _mixed(tmp_path, ToolInfo(name="new", description="New"))
+    assert store.legacy_tool_names("fixture") == {"status"} and not store.legacy_entry("fixture")
+    assert store.baseline_usable("fixture")
+    original = store.path.read_bytes()
+    status = ToolInfo(name="status", description="Changed status.", input_schema={"type": "object"})
+    new = ToolInfo(name="new", description="New")
+    # The v1 row is neither CHANGED nor REMOVED nor NEW; the v2 row still compares.
+    assert store.check_drift("fixture", [status, new]) == []
+    assert store.check_drift("fixture", [new]) == []
+    assert [f.status.value for f in store.check_drift("fixture", [])] == ["removed"]
+    assert [(f.tool_name, f.status.value) for f in store.check_drift("fixture", [status])] == [
+        ("new", "removed")
+    ]
+    findings = store.check_drift("fixture", [status, new.model_copy(update={"description": "Changed"})])
+    assert [(f.tool_name, f.status.value) for f in findings] == [("new", "changed")]
+    findings = store.check_drift("fixture", [status, new, ToolInfo(name="extra")])
+    assert [(f.tool_name, f.status.value) for f in findings] == [("extra", "new")]
+    (warning,) = store.schema_warnings("fixture")
+    assert warning.code == "pin_schema_outdated"
+    assert "not compared and count as uncovered: status" in warning.message
+    baseline = store.canary_baseline("fixture")
+    assert baseline is not None and set(baseline["tools"]) == {"new"}
+    assert set(baseline[pinning.CANARY_UNCOVERED_TOOLS_KEY]) == {"status"}
+    assert store.path.read_bytes() == original
+
+
+def test_pinning_replaces_a_v1_entry_and_upgrades_mixed_rows_only_explicitly(tmp_path: Path) -> None:
     store = _legacy(tmp_path)
     entry = yaml.safe_load(store.path.read_text())["servers"]["fixture"]["tools"]["status"]
     store.pin_server("other", [_tool()])
     assert yaml.safe_load(store.path.read_text())["servers"]["fixture"]["tools"]["status"] == entry
     assert store.legacy_tool_names("fixture") == {"status"}
+    # A genuine v1 entry is never carried forward: pinning replaces it wholesale.
     store.pin_server("fixture", [ToolInfo(name="new")])
-    assert store.legacy_tool_names("fixture") == {"status"}
-    store.pin_server("fixture", [_tool()])
     assert store.legacy_tool_names("fixture") == set()
+    assert set(yaml.safe_load(store.path.read_text())["servers"]["fixture"]["tools"]) == {"new"}
+    # A retained v1 row in a mixed entry upgrades only when its tool is pinned.
+    mixed = _mixed(tmp_path, ToolInfo(name="new"))
+    assert mixed.legacy_tool_names("fixture") == {"status"}
+    mixed.pin_server("fixture", [ToolInfo(name="new")])
+    assert mixed.legacy_tool_names("fixture") == {"status"}
+    mixed.pin_server("fixture", [_tool()])
+    assert mixed.legacy_tool_names("fixture") == set()
 
 
 @pytest.mark.parametrize("server_name", ["fixture[/yellow]", "[bold]fixture[/bold]"])
@@ -271,17 +320,26 @@ def test_legacy_refresh_labels_uncovered_fields_without_writing(
             "meta",
         }
         assert all(row["summary"] == "not previously covered" for row in payload["uncovered_fields"])
-        assert payload["drift"] == [] and payload["escalation"] == []
+        # 3.0 never hashes v1: the full current surface is reviewed as a new pin.
+        assert [(row["tool_name"], row["status"]) for row in payload["drift"]] == [("status", "new")]
+        assert payload["escalation"] == [] and payload["provenance"] == []
+        assert payload["baseline_verified"] is False
+        assert "not compared" in payload["baseline_note"]
         assert "mcp-audit pin --refresh SERVER" in payload["baseline_note"]
     else:
         assert "not previously covered" in output and "outputSchema" in output
+        assert "1 new, 0 changed, 0 removed" in output
+        assert "No drift found" not in output
         assert "mcp-audit pin --refresh SERVER" in output
     assert store.path.read_bytes() == original
 
 
 def test_legacy_escalation_ignores_uncovered_hints_but_retains_text_deltas(tmp_path: Path) -> None:
-    store = _legacy(tmp_path)
-    baseline = store.baseline_tools("fixture")
+    # A genuine v1 entry has no baseline; a mixed entry restores its v1 row uncovered.
+    assert _legacy(tmp_path).baseline_tools("fixture") == []
+    store = _mixed(tmp_path, ToolInfo(name="other"))
+    baseline = [tool for tool in store.baseline_tools("fixture") if tool.name == "status"]
+    assert len(baseline) == 1 and baseline[0].annotations is None
     current = baseline[0].model_copy(
         update={"annotations": ToolAnnotations(read_only_hint=False, destructive_hint=True)}
     )
@@ -297,24 +355,6 @@ def test_legacy_escalation_ignores_uncovered_hints_but_retains_text_deltas(tmp_p
         "fixture", baseline, [changed], uncovered_annotations=store.legacy_tool_names("fixture")
     )
     assert any(finding.kind.value == "capability" for finding in findings)
-
-
-@pytest.mark.parametrize("schema", [None, {}])
-def test_legacy_empty_schema_conversion_does_not_create_upgrade_drift(
-    tmp_path: Path, schema: dict[str, object] | None
-) -> None:
-    store = _legacy(tmp_path)
-    raw = yaml.safe_load(store.path.read_text())
-    entry = raw["servers"]["fixture"]["tools"]["status"]
-    entry["snapshot"]["input_schema"] = schema
-    payload = {"name": "status", "description": "Report synthetic status.", "inputSchema": schema}
-    entry["hash"] = "sha256:" + hashlib.sha256(canonical_json_bytes(payload, legacy=True)).hexdigest()
-    store.path.write_text(yaml.safe_dump(raw))
-    reloaded = PinStore(store.path)
-    current = ToolInfo(name="status", description="Report synthetic status.", input_schema={})
-    assert reloaded.check_drift("fixture", [current]) == []
-    (finding,) = reloaded.check_drift("fixture", [current.model_copy(update={"description": "Changed."})])
-    assert finding.details == ["description changed"]
 
 
 def test_icon_null_optionals_and_annotation_title_are_omitted() -> None:

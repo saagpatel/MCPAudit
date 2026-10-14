@@ -732,16 +732,20 @@ def test_v1_entry_with_recorded_high_water_is_a_downgrade(tmp_path: Path) -> Non
     assert loaded.schema_warnings("fixture") == []
 
 
-def test_genuine_v1_without_keys_is_unchanged(tmp_path: Path) -> None:
+def test_genuine_v1_without_keys_is_withheld(tmp_path: Path) -> None:
     pins = tmp_path / "pins.yaml"
     pins.write_text(yaml.safe_dump({"servers": {}}))
     _edit(pins, _legacy_substitute)
+    before = pins.read_bytes()
     loaded = PinStore(pins, trusted_keys_path=tmp_path / "no-trust.json")
     assert loaded.verification("fixture").state == "schema_outdated"  # type: ignore[union-attr]
-    assert loaded.baseline_usable("fixture")
-    assert loaded.tool_count("fixture") == 1
-    assert [f.status.value for f in loaded.check_drift("fixture", [TOOL])] == ["changed"]
+    assert loaded.baseline_trusted("fixture")  # D8: v1 warns, never MCP027
+    assert loaded.legacy_entry("fixture") and not loaded.baseline_usable("fixture")
+    assert loaded.tool_count("fixture") == 0
+    assert loaded.check_drift("fixture", [TOOL]) == []
+    assert loaded.baseline_tools("fixture") == [] and loaded.canary_baseline("fixture") is None
     assert [w.code for w in loaded.schema_warnings("fixture")] == ["pin_schema_outdated"]
+    assert pins.read_bytes() == before
 
 
 @pytest.mark.parametrize("failure", [OSError, PinSigningError])
@@ -819,48 +823,48 @@ def legacy_pin_with_trusted_key(tmp_path: Path) -> Path:
         )
     )
     store = PinStore(pins)
-    assert store.unverified_legacy_baseline("fixture")
+    assert store.legacy_entry("fixture") and not store.baseline_usable("fixture")
     return pins
 
 
-def test_refresh_reviews_withheld_legacy_baseline_instead_of_clean_match(
+def test_refresh_reviews_v1_baseline_as_a_new_pin(
     legacy_pin_with_trusted_key: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # 3.0 never hashes v1: the pinned "status" row is not compared or reported
+    # removed; every current tool is shown as new, as for a first pin.
+    before = legacy_pin_with_trusted_key.read_bytes()
     live = [ToolInfo(name="status_v2", description="Status v2")]
     code, output = _refresh_cli(monkeypatch, legacy_pin_with_trusted_key, live)
     assert code == 0, output
     assert "No drift found" not in output
-    assert "unverified legacy (v1) baseline" in output
-    assert "1 new, 0 changed, 1 removed" in output
+    assert "Legacy v1 baseline is not compared" in output
+    assert "1 new, 0 changed, 0 removed" in output
 
     code, output = _refresh_cli(monkeypatch, legacy_pin_with_trusted_key, live, "--json")
     payload = json.loads(output)
-    assert payload["drift_counts"]["new"] == 1 and payload["drift_counts"]["removed"] == 1
+    assert payload["drift_counts"] == {"new": 1, "changed": 0, "removed": 0}
+    assert payload["drift"][0]["tool_name"] == "status_v2"
     assert payload["baseline_verified"] is False
-    assert "unverified legacy" in payload["baseline_note"]
-    # Scan semantics are unchanged: the baseline is still withheld there.
+    assert "not compared" in payload["baseline_note"]
+    assert legacy_pin_with_trusted_key.read_bytes() == before
+    # Scan semantics: the baseline is withheld there.
     assert PinStore(legacy_pin_with_trusted_key).check_drift("fixture", live) == []
 
 
-def test_refresh_never_claims_a_match_against_an_unverified_baseline(
+def test_refresh_never_claims_a_match_against_a_v1_baseline(
     legacy_pin_with_trusted_key: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    store = PinStore(legacy_pin_with_trusted_key)
     status = ToolInfo(name="status", description="Status")
-    _edit(
-        legacy_pin_with_trusted_key,
-        lambda d: _servers(d)["fixture"]["tools"]["status"].update(  # type: ignore[index]
-            hash=store.check_drift("fixture", [status], review_unverified_legacy=True)[0].current_hash
-        ),
-    )
-    assert (
-        PinStore(legacy_pin_with_trusted_key).check_drift("fixture", [status], review_unverified_legacy=True)
-        == []
-    )
     code, output = _refresh_cli(monkeypatch, legacy_pin_with_trusted_key, [status])
     assert code == 0, output
     assert "No drift found" not in output
-    assert "could not be verified" in output
+    assert "1 new, 0 changed, 0 removed" in output
+    code, output = _refresh_cli(monkeypatch, legacy_pin_with_trusted_key, [])
+    assert code == 0, output
+    assert "No drift found" not in output and "exposes no tools" in output
+    code, output = _refresh_cli(monkeypatch, legacy_pin_with_trusted_key, [], "--json")
+    payload = json.loads(output)
+    assert payload["drift"] == [] and payload["baseline_verified"] is False
 
 
 def test_refresh_apply_replaces_legacy_rows_with_signed_live_surface(
@@ -874,6 +878,43 @@ def test_refresh_apply_replaces_legacy_rows_with_signed_live_surface(
     assert set(yaml.safe_load(legacy_pin_with_trusted_key.read_text())["servers"]["fixture"]["tools"]) == {
         "status_v2"
     }
+
+
+def test_refresh_apply_migrates_v1_entry_under_a_signed_manifest(
+    legacy_pin_with_trusted_key: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mcp_audit import pin_signing
+
+    pins = legacy_pin_with_trusted_key
+    trust = pin_signing.DEFAULT_TRUSTED_KEYS_PATH
+    # A signed peer entry gives the file a signed manifest; the v1 entry stays beside it.
+    PinStore(pins).pin_server("peer", [TOOL])
+    loaded = PinStore(pins)
+    assert loaded.verified_manifest_sequence() == 1
+    assert loaded.verification("peer").state == "verified"  # type: ignore[union-attr]
+    assert loaded.verification("fixture").state == "schema_outdated"  # type: ignore[union-attr]
+    assert loaded.legacy_entry("fixture") and not loaded.baseline_usable("fixture")
+    assert "fixture" not in yaml.safe_load(pins.read_text())["manifest"]["servers"]
+
+    live = [ToolInfo(name="status_v2", description="Status v2")]
+    code, output = _refresh_cli(monkeypatch, pins, live, "--json", "--apply")
+    assert code == 0, output
+    payload = json.loads(output)
+    assert payload["applied"] is True and payload["error"] is None
+    assert payload["drift_counts"] == {"new": 1, "changed": 0, "removed": 0}
+
+    data = yaml.safe_load(pins.read_text())
+    entry = data["servers"]["fixture"]
+    assert entry["pin_schema"] == 2 and "signature" in entry
+    assert set(entry["tools"]) == {"status_v2"} and entry["tools"]["status_v2"]["pin_schema"] == 2
+    assert set(data["manifest"]["servers"]) == {"fixture", "peer"}
+    migrated = PinStore(pins, trusted_keys_path=trust)
+    assert migrated.verified_manifest_sequence() == 2
+    assert migrated.verification("fixture").state == "verified"  # type: ignore[union-attr]
+    assert migrated.verification("peer").state == "verified"  # type: ignore[union-attr]
+    assert migrated.baseline_usable("fixture") and migrated.legacy_tool_names("fixture") == set()
+    assert migrated.check_drift("fixture", live) == []
+    assert signature_required("fixture", trust)
 
 
 def test_refresh_of_tampered_baseline_is_still_refused(
