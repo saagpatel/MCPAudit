@@ -1093,9 +1093,9 @@ def _finalize_scan(context: _ScanContext) -> AuditReport:
                     check=check_field,
                 )
 
-    # A baseline withheld after failed verification (MCP027), or an
-    # unauthenticated legacy v1 pin while trusted keys exist, is not a stale
-    # pin: report it as withheld, never as "predates capture, re-pin".
+    # A baseline withheld after failed verification (MCP027), or a genuine
+    # v1 pin (never compared, whether or not trusted keys exist), is not a
+    # stale pin: report it as withheld, never as "predates capture, re-pin".
     withheld: list[str] = []
     if pin_store is not None:
         withheld = sorted(
@@ -1116,11 +1116,10 @@ def _finalize_scan(context: _ScanContext) -> AuditReport:
             warn(
                 "pin_baseline_withheld",
                 f"{flag}: {len(withheld)} server(s) have pin baselines that cannot be trusted "
-                "(failed integrity verification, MCP027, or an unsigned legacy v1 pin while "
-                f"trusted keys exist) and were not compared: {', '.join(withheld)}. "
+                "(failed integrity verification, MCP027, or a schema v1 pin, which is never "
+                f"compared) and were not compared: {', '.join(withheld)}. "
                 "Restore a signed baseline, or review with `mcp-audit pin --refresh SERVER` "
-                "before applying. MCPAudit 3.0 will withhold v1 baselines whether or not "
-                "trusted pin keys exist.",
+                "before applying.",
                 check=check_field,
                 servers=withheld,
             )
