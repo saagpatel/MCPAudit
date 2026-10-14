@@ -14,6 +14,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- Removed 11 hidden top-level command aliases. Each removed spelling is now an
+  unknown command; use the replacement:
+  - `agent-ui` -> `mcp-audit lab agent-ui`
+  - `authorization-posture` -> `mcp-audit lab authorization-posture`
+  - `cache-contract` -> `mcp-audit lab cache-contract`
+  - `enforcement-fixture` -> `mcp-audit lab enforcement-fixture`
+  - `oauth-transcript` -> `mcp-audit lab oauth-transcript`
+  - `result-parcel` -> `mcp-audit lab result-parcel`
+  - `session-resume` -> `mcp-audit lab session-resume`
+  - `task-time-machine` -> `mcp-audit lab task-time-machine`
+  - `safeforge-preinstall` -> `mcp-audit safeforge preinstall`
+  - `safeforge-run` -> `mcp-audit safeforge run`
+  - `skillscan` -> `mcp-audit skills scan`
+
+  `pin` stays as a visible alias for `baseline pin`.
 - The MCP `scan_mcp_servers` tool exposed by `serve` is static by default:
   `connect` now defaults to `false`. Pass `connect=true` to connect to
   configured servers; `skip_connect=true` still disables connections. Every

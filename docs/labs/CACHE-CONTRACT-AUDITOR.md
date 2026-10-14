@@ -14,9 +14,9 @@ report.
 ## Command
 
 ```bash
-mcp-audit cache-contract scan tests/fixtures/cache_contract/refresh-negative.json
-mcp-audit cache-contract schema trace
-mcp-audit cache-contract schema report
+mcp-audit lab cache-contract scan tests/fixtures/cache_contract/refresh-negative.json
+mcp-audit lab cache-contract schema trace
+mcp-audit lab cache-contract schema report
 ```
 
 Exit codes:

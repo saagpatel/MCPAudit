@@ -2,7 +2,7 @@
 
 ## Experimental fixture enforcement
 
-The `enforcement-fixture` commands are a program-owned synthetic compatibility
+The `lab enforcement-fixture` commands are a program-owned synthetic compatibility
 harness, not a production enforcement gateway. They are exact-pinned to
 the `mcpaudit-fixture-gateway-v1` adapter contract version `1.0.0`, reject
 unsupported translation, and may write only to explicitly named fixture-state
@@ -16,7 +16,7 @@ configuration or treat their proof as authority for a real server. See
 
 ## Experimental Agent UI contract audit
 
-The `agent-ui` commands accept only program-owned synthetic MCP Apps/OpenAI
+The `lab agent-ui` commands accept only program-owned synthetic MCP Apps/OpenAI
 metadata fixtures and A2UI v0.9 JSONL fixtures. They do not read widget HTML or
 JavaScript, contact an MCP server, call tools, fetch resources or catalogs,
 authenticate, install plugins, or process real user data. Symlink inputs are
@@ -37,7 +37,7 @@ safety. See `docs/labs/AGENT-UI-CONTRACT-AUDITOR.md`.
 
 ## Experimental OAuth transcript audit
 
-The `oauth-transcript` commands accept only strict, program-owned synthetic
+The `lab oauth-transcript` commands accept only strict, program-owned synthetic
 fixtures with conspicuous redaction markers and reserved `.example` URLs. They
 do not read environment files, browser data, OAuth stores, keychains, cookies,
 private logs, raw transcripts, or credential-bearing configuration. They do not
@@ -60,7 +60,7 @@ production security. See `docs/labs/OAUTH-TRANSCRIPT-AUDITOR.md`.
 
 ## Experimental authorization posture adoption
 
-The `authorization-posture` commands accept one strict, bounded
+The `lab authorization-posture` commands accept one strict, bounded
 `McpAuthorizationPostureV1` JSON artifact. They do not fetch its URLs, resolve
 DNS, contact the Registry, authorization server, identity provider, or MCP
 endpoint, read credential stores, authenticate, run OAuth, start a scan, or
