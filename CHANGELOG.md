@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- `check` and `shadow` now exit 2 after rendering or writing reports when any
+  requested pin-dependent check has a withheld baseline: pin, canary,
+  escalation, provenance, integrity, artifact verification or artifact download.
+  `policy_result` records the failure even without `--policy`. An explicit
+  `fail_on.pin_baseline_withheld: false` is accepted but ignored with a loader
+  warning. `watch` continues and renders the warning on every scan; library
+  scans and policy evaluation retain their existing behavior.
 - The MCP `scan_mcp_servers` tool exposed by `serve` is static by default:
   `connect` now defaults to `false`. Pass `connect=true` to connect to
   configured servers; `skip_connect=true` still disables connections. Every

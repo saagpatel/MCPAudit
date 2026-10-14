@@ -746,10 +746,20 @@ gate requires both server records and the child record. See the
 
 ## Exit Codes
 
-- `0`: scan completed and no configured policy gate failed.
+- `0`: scan completed and no applicable policy gate failed.
 - `1`: command setup failed, such as invalid client or policy config.
 - `2`: artifact path validation failed before any artifact was written, or the
-  scan completed and requested report artifacts were written but `--policy` failed.
+  scan completed and requested report artifacts were written but a policy gate failed.
+  In `check` (including translated `scan` invocations) and `shadow`, any requested
+  pin-dependent check with a withheld baseline fails with `2`, even without
+  `--policy`. JSON, SARIF, HTML and card outputs requested by `check` are written
+  before this exit; `shadow` renders its terminal or JSON report before exiting.
+  Output-write failures retain their existing error behavior.
+
+`watch` does not exit for its implicit pin check's withheld baseline: the initial
+scan and every rescan write reports with incomplete coverage and render the
+`pin_baseline_withheld` warning. Library callers of `run_scan`, library policy
+evaluation, and `serve` do not acquire this one-shot CLI gate.
 
 Subcommands with standalone experimental contracts document their own exit
 codes below; they do not change the stable scan exit contract.
@@ -1398,7 +1408,9 @@ The report top level also includes:
     `pin_baseline_withheld` (servers whose pin baseline failed integrity
     verification, HIGH MCP027, or is a genuine legacy v1 pin, whether or not
     trusted keys exist, so this baseline comparison was not run; also emitted
-    for `pin_check` and `canary_check`; named in `servers` and never also
+    for all seven pin-dependent checks: `pin_check`, `canary_check`,
+    `escalation_check`, `provenance_check`, `integrity_check`, `verify_artifacts`
+    and `download_artifacts`; named in `servers` and never also
     reported as `pin_baseline_stale`; the message names
     `mcp-audit pin --refresh SERVER`),
     `integrity_comparison_incomplete` (with `check: integrity_check`; pinned
@@ -1554,16 +1566,34 @@ unknown legacy coverage, independently of severity; `not_requested` checks
 do not fail the gate. Coverage violations use existing SARIF `MCP010` and
 the existing policy exit code `2`. Existing policies retain their behavior.
 
-The narrower opt-in YAML boolean `fail_on.pin_baseline_withheld: true` (Python
-`PolicyConfig(fail_on_pin_baseline_withheld=True)`) fails only requested pin
-checks whose warning has `code: pin_baseline_withheld` and `check: pin_check`.
-It adds a HIGH per-server violation with rule `fail_on.pin_baseline_withheld`,
-reported through existing policy fields, SARIF `MCP010`, and policy exit `2`.
-Other withheld checks and merely missing pins do not trigger this gate. Its
-default is `false`. A genuine v1 baseline is withheld whether or not trusted
-keys exist, so with this gate a keyless install with a v1 pin now fails the
-requested pin check; mixed-entry v1 rows are excluded from drift and emit
-`pin_schema_outdated`.
+In `check` and `shadow`, withheld baselines unconditionally fail requested
+`pin_check`, `canary_check`, `escalation_check`, `provenance_check`,
+`integrity_check`, `verify_artifacts` and `download_artifacts` checks. The gate
+matches both the requested option and its `pin_baseline_withheld` warning's
+`check` key; an unrequested check's warning does not fail the run. It adds one
+HIGH violation per affected audit with rule `fail_on.pin_baseline_withheld`,
+the affected check names and `audit_index`, using existing policy fields and
+SARIF `MCP010`. `policy_result` is populated and `passed` is `false` even
+without `--policy`. Configured policy violations are retained alongside it.
+
+The policy loader retains three internal states for
+`fail_on.pin_baseline_withheld`: unset, `true`, and `false`. Unset and `true`
+both fail in these CLIs; an explicit YAML `false` is accepted but ignored,
+and the loader logs a warning naming the ignored setting and the `check` and
+`shadow` commands. This diagnostic does not add a coverage warning or change
+the report schema. Non-boolean values remain invalid policy input.
+
+Merely missing pins do not trigger this gate unless integrity verification
+withholds their baseline (for example, a missing signed manifest with trusted
+keys). A genuine v1 baseline is withheld whether or not trusted keys exist;
+mixed-entry v1 rows are excluded from drift and emit `pin_schema_outdated`.
+The gate does not change coverage classification: a withheld requested pin
+check is `partial`; canary uses `runtime_security`; other comparisons can
+remain `not_run` when their baseline or execution is unavailable. These
+incomplete states still fail the one-shot gate. `watch` retains partial pin
+coverage, renders the warning on every loop and continues. Library policy
+evaluation retains its opt-in `PolicyConfig(fail_on_pin_baseline_withheld=True)`
+gate for warnings with `check: pin_check`; library scans and `serve` are unaffected.
 
 `description_truncated` warnings use `check: "permission_analysis"`, name the
 affected server, and give a count of truncated fields without including their
