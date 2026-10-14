@@ -373,6 +373,7 @@ def test_wheel_contains_listed_runtime_files_and_no_postgres_research(tmp_path: 
 EXPECTED_WHEEL_FILES = """
 mcp_audit/__init__.py
 mcp_audit/_artifacts.py
+mcp_audit/_cli_policy.py
 mcp_audit/_build_provenance.json
 mcp_audit/_command_registry.py
 mcp_audit/_core_cli.py
