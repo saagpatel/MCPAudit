@@ -302,13 +302,15 @@ def check(
     if skip_connect and connecting:
         raise click.UsageError("--skip-connect cannot be combined with --connect or --connect-all.")
     if scan_compatible_sources and (
-        not include_discovered or project is not None or config_only or connecting
+        not include_discovered or config is not None or project is not None or config_only or connecting
     ):
-        # Scan's selection spans every project scope, so identities omit the
+        # Scan appends an explicit file after discovery; check parses it in
+        # explicit mode and dedups it against discovered sources. Scan's
+        # selection also spans every project scope, so identities omit the
         # project path and a connection selection would be ambiguous.
         raise click.UsageError(
             "--scan-compatible-sources requires --include-discovered and cannot be combined with "
-            "--project, --config-only, --connect or --connect-all."
+            "--config, --project, --config-only, --connect or --connect-all."
         )
     if config_only and (config is None or include_discovered):
         raise click.UsageError(

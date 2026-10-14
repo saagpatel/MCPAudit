@@ -173,7 +173,9 @@ def review_sources(
     malformed project entry loses the whole file, as in scan), no Cursor
     project file, an empty result for a present file without a server map, and
     scan's server-level dedup by (name, client, config path, project path).
-    Review's source limits still apply, so a symlinked candidate is skipped.
+    The reproduction is subject to check's source limits: a candidate over the
+    size, nesting-depth or server cap, or reached through a symlink, is still
+    skipped with a diagnostic where scan would have read it.
     """
     sources = ReviewSources()
     project = Path(os.path.abspath(project or Path.cwd()))
