@@ -46,6 +46,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   present tense and no longer announce a future 3.0 change; the
   `pin_schema_outdated` message lists the uncovered v1 tool names.
 
+### Added
+
+- `pin --refresh` previews show the credential-redacted surface a pin write
+  would store for every tool reviewed as new: JSON `drift` rows gain an
+  additive `current_surface` object, and the terminal review prints each field
+  bounded and terminal-safe. An injected description or a new input property
+  on a v1-row tool is visible before `--apply`.
+
 ## [2.12.0] - 2026-10-12
 
 ### Upgrade notes

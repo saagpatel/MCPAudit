@@ -910,8 +910,13 @@ HTML, SARIF result properties and `get_escalation_findings` output.
 `pin --refresh --json` adds `uncovered_fields` rows with `tool_name`, `field`
 and `summary: "not compared; schema v1 row reviewed as new"` for every field
 (description, inputSchema, annotations, title, outputSchema, icons, meta) of a
-served tool whose saved row is v1. It also adds `baseline_verified` and
-nullable `baseline_note`. A v1 baseline (all tool rows v1, with or without an
+served tool whose saved row is v1. Each `drift` row carries an additive
+`current_surface`: for a `new` row, the credential-redacted surface a pin write
+would store (`description`, `input_schema`, `annotations`, `title`,
+`output_schema`, `icons`, `meta`, all nullable); `null` for other statuses.
+Terminal review prints the same redacted surface, terminal-safe, one line per
+field, each value bounded to 400 characters. It also adds `baseline_verified`
+and nullable `baseline_note`. A v1 baseline (all tool rows v1, with or without an
 entry-level v2 marker) is not compared in refresh review: every current tool is
 reported as `new`, as for a first pin, with `baseline_verified: false` and a
 note; terminal review labels it and never reports "No drift found". In a mixed
