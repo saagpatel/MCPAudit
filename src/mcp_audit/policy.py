@@ -292,7 +292,8 @@ def evaluate_policy(
                             f"Server '{server_name}' pin baseline failed integrity verification "
                             f"(MCP027 {integrity_states[0]}) and cannot satisfy require.pins."
                             if integrity_states
-                            else f"Server '{server_name}' pin baseline was withheld as unauthenticated "
+                            else f"Server '{server_name}' pin baseline "
+                            f"{_withheld_reason(resolved_pin_store, server_name)} "
                             "and cannot satisfy require.pins."
                             if server_name in withheld_servers
                             else f"Server '{server_name}' is required to have a pin baseline."
@@ -610,7 +611,7 @@ def evaluate_policy(
             reason = (
                 f"failed integrity verification (MCP027 {audit.pin_integrity_findings[0].state})"
                 if audit.pin_integrity_findings
-                else "is an unauthenticated legacy v1 pin while trusted keys exist"
+                else _withheld_reason(resolved_pin_store, server_name)
             )
             for gate, enabled in (
                 ("drift", fail_on_drift),
@@ -725,6 +726,14 @@ def _pin_integrity_state(pin_store: object | None, server_name: str) -> str | No
     result = verification(server_name)
     state = getattr(result, "state", None)
     return str(state) if state is not None else "tampered_entry"
+
+
+def _withheld_reason(pin_store: object | None, server_name: str) -> str:
+    """Why a scan withheld this server's baseline, in the present tense."""
+    v1_baseline = getattr(pin_store, "v1_baseline", None)
+    if callable(v1_baseline) and v1_baseline(server_name):
+        return "is a schema v1 pin, which is never compared"
+    return "was withheld from comparison"
 
 
 def _pin_tool_count(pin_store: object | None, server_name: str) -> int:
