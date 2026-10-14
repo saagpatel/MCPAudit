@@ -217,7 +217,7 @@ def test_schema_contracts_are_versioned_closed_and_machine_readable() -> None:
 
     runner = CliRunner()
     for contract in ("scenario", "report"):
-        result = runner.invoke(main, ["result-parcel", "schema", contract])
+        result = runner.invoke(main, ["lab", "result-parcel", "schema", contract])
         assert result.exit_code == 0, result.output
         assert json.loads(result.stdout)["additionalProperties"] is False
 
@@ -225,7 +225,7 @@ def test_schema_contracts_are_versioned_closed_and_machine_readable() -> None:
 def test_cli_supports_builtins_supplied_json_human_and_json() -> None:
     runner = CliRunner()
 
-    builtins_result = runner.invoke(main, ["result-parcel", "builtins"])
+    builtins_result = runner.invoke(main, ["lab", "result-parcel", "builtins"])
     assert builtins_result.exit_code == 0
     assert builtins_result.stdout.splitlines() == [
         "large-inline",
@@ -235,7 +235,7 @@ def test_cli_supports_builtins_supplied_json_human_and_json() -> None:
 
     human = runner.invoke(
         main,
-        ["result-parcel", "analyze", "--builtin", "small-inline", "--format", "human"],
+        ["lab", "result-parcel", "analyze", "--builtin", "small-inline", "--format", "human"],
     )
     assert human.exit_code == 0, human.output
     assert "Recommendation: suitable — inline" in human.output
@@ -244,6 +244,7 @@ def test_cli_supports_builtins_supplied_json_human_and_json() -> None:
     machine = runner.invoke(
         main,
         [
+            "lab",
             "result-parcel",
             "analyze",
             str(FIXTURES / "integrity-mismatch.json"),
@@ -260,6 +261,7 @@ def test_cli_generates_large_synthetic_metadata_and_rejects_ambiguous_input() ->
     generated = runner.invoke(
         main,
         [
+            "lab",
             "result-parcel",
             "generate-large",
             "--scenario-id",
@@ -276,6 +278,7 @@ def test_cli_generates_large_synthetic_metadata_and_rejects_ambiguous_input() ->
     ambiguous = runner.invoke(
         main,
         [
+            "lab",
             "result-parcel",
             "analyze",
             str(FIXTURES / "small-inline.json"),
