@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import platform
 import shlex
 import socket
@@ -60,7 +61,11 @@ def _translation(args: list[str]) -> ScanTranslation:
 
 def _check(translation: ScanTranslation) -> tuple[AuditReport, int]:
     assert translation.check_argv is not None
-    result = CliRunner().invoke(cli.main, [*translation.check_argv[1:], "--json"])
+    return _check_argv(translation.check_argv)
+
+
+def _check_argv(argv: tuple[str, ...] | list[str]) -> tuple[AuditReport, int]:
+    result = CliRunner().invoke(cli.main, [*argv[1:], "--json"])
     assert result.exit_code in (0, 2), result.output
     return AuditReport.model_validate_json(result.stdout), result.exit_code
 
@@ -184,10 +189,16 @@ def test_translation_matches_library_discovery_report_and_exit(shape: str, tmp_p
         assert plain.exit_code == 2, plain.output
         assert len(AuditReport.model_validate_json(plain.stdout).config_health_findings) == 1
     assert "synthetic-host" not in json.dumps(_stable(actual))
+    # --redact aliases names, so compare real names through an unredacted run.
+    unredacted = _check_argv([a for a in _translation(args).check_argv or () if a != "--redact"])[0]
+    assert {a.server.name for a in unredacted.audits} == expected_names
 
 
+@pytest.mark.parametrize("policy", [False, True], ids=["no-policy", "config-health-policy"])
 @pytest.mark.parametrize("limit", ["symlink", "bytes", "depth"])
-def test_translation_documents_sources_skipped_by_review_limits(limit: str, tmp_path: Path) -> None:
+def test_translation_documents_sources_skipped_by_review_limits(
+    limit: str, policy: bool, tmp_path: Path
+) -> None:
     data: dict[str, object] = {"mcpServers": _servers("beyond-review-limit")}
     source = Path.home() / ".claude.json"
     if limit == "symlink":
@@ -213,17 +224,69 @@ def test_translation_documents_sources_skipped_by_review_limits(limit: str, tmp_
     _write(tmp_path / ".mcp.json", {"mcpServers": _servers("accepted")})
     oracle = anyio.run(partial(engine.run_scan, engine.ScanOptions(skip_connect=True)))
     assert {a.server.name for a in oracle.audits} == {"beyond-review-limit", "accepted"}
-    translation = _translation(["--skip-connect", "--override-config", "/dev/null", "--redact"])
+    args = ["--skip-connect", "--override-config", "/dev/null", "--redact"]
+    if policy:
+        policy_path = tmp_path / "policy.yaml"
+        policy_path.write_text("fail_on:\n  config_health: low\n")
+        oracle.policy_result = evaluate_policy(oracle, load_policy(policy_path))
+        args.extend(("--policy", str(policy_path)))
+    translation = _translation(args)
     assert statement in translation.notice()
+    assert "a skipped source is reported as a config-health finding" in translation.notice()
     actual, exit_code = _check(translation)
     expected = oracle.redacted(identifiers=True)
     assert actual.servers_discovered == 1 and expected.servers_discovered == 2
     assert _server_set(actual) != _server_set(expected)
     assert _stable(actual) != _stable(expected)
-    assert exit_code == 0 and oracle.policy_result is None
     warning = next(w for w in actual.warnings if w.code == "review_source_skipped")
     assert warning.check == "config_health" and reason in warning.message
     assert actual.coverage["config_health"].state == "partial"
+    # The skipped source is loud, never silent: a HIGH config-health finding
+    # that scan (which read the file) does not report.
+    finding = next(f for f in actual.config_health_findings if reason in f.model_dump_json())
+    assert finding.finding_type == "config_parse_failure" and finding.severity.value == "high"
+    assert expected.config_health_findings == []
+    oracle_exit = 2 if oracle.policy_result is not None and not oracle.policy_result.passed else 0
+    assert oracle_exit == 0
+    assert exit_code == (2 if policy else 0)
+
+
+def test_zero_source_hook_translation_differs_only_by_no_sources_warning() -> None:
+    # Empty HOME and cwd: the usual CI runner for the 2.11 hook form.
+    oracle = anyio.run(partial(engine.run_scan, engine.ScanOptions(skip_connect=True, inject_check=True)))
+    expected = oracle.redacted(identifiers=True)
+    args = ["--skip-connect", "--override-config", "/dev/null", "--redact", "--inject-check"]
+    actual, exit_code = _check(_translation(args))
+    assert _server_set(actual) == _server_set(expected) == set()
+    assert actual.servers_discovered == expected.servers_discovered == 0
+    assert exit_code == 0 and oracle.policy_result is None
+    # Owner decision O-1 keeps the non-fatal warning; it is the only difference.
+    assert [w.code for w in actual.warnings if w not in expected.warnings] == ["no_sources_reviewed"]
+    actual.warnings = [w for w in actual.warnings if w.code != "no_sources_reviewed"]
+    assert _stable(actual) == _stable(expected)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads files regardless of mode bits")
+def test_unreadable_source_uses_scan_wording_only_under_the_selector(tmp_path: Path) -> None:
+    source = tmp_path / ".mcp.json"
+    _write(source, {"mcpServers": _servers("unreadable")})
+    # One accepted source keeps the comparison free of no_sources_reviewed.
+    _write(Path.home() / ".cursor/mcp.json", {"mcpServers": _servers("accepted")})
+    source.chmod(0)
+    try:
+        oracle = anyio.run(partial(engine.run_scan, engine.ScanOptions(skip_connect=True)))
+        expected = oracle.redacted(identifiers=True)
+        args = ["--skip-connect", "--override-config", "/dev/null", "--redact"]
+        actual, exit_code = _check(_translation(args))
+        plain, plain_exit = _check_argv(["mcp-audit", "check", "--include-discovered", *args])
+    finally:
+        source.chmod(0o600)
+    assert "unreadable config file: PermissionError" in json.dumps(_stable(expected))
+    assert _stable(actual) == _stable(expected)
+    assert exit_code == plain_exit == 0
+    plain_text = json.dumps(_stable(plain))
+    assert "unreadable config: PermissionError" in plain_text
+    assert "unreadable config file:" not in plain_text
 
 
 @pytest.mark.parametrize(
@@ -235,6 +298,9 @@ def test_printed_notice_round_trips_to_identical_check_options(
     async def no_execution(*args: object, **kwargs: object) -> None:
         pass
 
+    # raising=False is deliberate: X-1 removes this re-export and X-2 replaces
+    # scan with the interceptor, which must not fail this round trip. The
+    # autouse fixture still forbids connections and subprocesses.
     monkeypatch.setattr(_core_cli, "_run_scan", no_execution, raising=False)
     args = ["--skip-connect", "--override-config", "/dev/null", *scope]
     expected = _translation(args)
@@ -250,3 +316,11 @@ def test_printed_notice_round_trips_to_identical_check_options(
         assert actual_options == context.params
     assert actual_options["include_discovered"] is True
     assert actual_options["scan_compatible_sources"] is True
+    assert actual_options["skip_connect"] is True
+    assert actual_options["override_config"] == Path("/dev/null")
+    assert actual_options["inject_check"] is ("--inject-check" in scope)
+    expected_clients = {
+        "claude_code": (ClientType.CLAUDE_CODE,),
+        "cursor": (ClientType.CURSOR,),
+    }.get(scope[1] if scope[:1] == ["--clients"] else "", ())
+    assert actual_options["clients"] == expected_clients

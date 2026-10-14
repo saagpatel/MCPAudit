@@ -109,8 +109,8 @@ class ScanTranslation:
             "scan: options map exactly to check (source coverage is not guaranteed; "
             f"check enforces a {MAX_SERVERS}-server cap per source and across accepted sources, "
             f"{MAX_CONFIG_BYTES}-byte source limit, nesting depth {MAX_DEPTH}, "
-            f"{MAX_CONTAINERS} containers, and symlink refusal for discovered sources): "
-            + shlex.join(self.check_argv)
+            f"{MAX_CONTAINERS} containers, and symlink refusal for discovered sources; "
+            "a skipped source is reported as a config-health finding): " + shlex.join(self.check_argv)
         )
 
 

@@ -233,13 +233,15 @@ def review_sources(
                 raise ValueError(f"Config file not found: {path}") from None
             sources.paths.append((str(path), "absent"))
         except (OSError, UnicodeError, ValueError, ConfigParseError) as exc:
+            # The selector uses scan's wording so the finding text matches.
+            unreadable = "unreadable config file" if scan_compatible else "unreadable config"
             reason = (
                 exc.reason
                 if isinstance(exc, ConfigParseError)
                 else (
                     str(exc)
                     if isinstance(exc, ValueError) and not isinstance(exc, UnicodeError)
-                    else f"unreadable config: {type(exc).__name__}"
+                    else f"{unreadable}: {type(exc).__name__}"
                 )
             )
             if explicit:
