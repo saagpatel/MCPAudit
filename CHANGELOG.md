@@ -97,6 +97,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   raw served text while the snapshot is redacted, fields where credential
   redaction withheld served text are flagged in the terminal and listed in the
   additive `current_surface_redacted` array, without exposing the hidden text.
+- Restore the PR, weekly scheduled, and manually dispatched OSV dependency advisory workflow.
 
 ### Added
 
