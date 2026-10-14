@@ -7,8 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+- Move Proof Before Action's five modules from `mcp_audit.proof_*` to
+  `proof_before_action.proof_*` in `mcp-audits-proof`. The `proof-before-action`
+  command now belongs to that distribution; install it with
+  `uv tool install mcp-audits-proof` to expose the command on PATH.
+
 ### Changed
 
+- Proof uses its own installed version and install notice, and source-checkout
+  producer provenance resolves the split module path from the repository root.
 - Scaffold a uv workspace with lockstep labs and independent Proof member
   packages, `labs`, `proof` and `all` core extras that pin the satellites
   exactly, and workspace-wide development installs. The `watch`, `llm` and
