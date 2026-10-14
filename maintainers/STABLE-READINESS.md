@@ -41,8 +41,9 @@ Release evidence must establish:
   `docs/release-state.json`, `server.json`, and Action/pre-commit examples agree
   on 2.12.0; publication evidence must still report PyPI, the GitHub
   tag, the Action ref, and the official Registry entry separately;
-- wheel and sdist metadata require `mcp>=2.2.0,<3.0` and expose `mcp-audit`,
-  `mcp-audits`, and `proof-before-action`;
+- wheel and sdist metadata require `mcp>=2.2.0,<3.0` and expose `mcp-audit`
+  and `mcp-audits`; core must not provide `proof-before-action`, which the
+  `mcp-audits-proof` wheel and sdist expose instead;
 - focused capability tests, output-contract checks, the full quality gate, the
   release verifier, and wheel/sdist install smokes pass from an exact clean
   release commit;
