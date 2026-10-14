@@ -188,6 +188,7 @@ def _print_sources(out: Console, paths: list[tuple[str, str]]) -> None:
     "--connect-all", is_flag=True, help="Connect to the reviewed fleet; project servers require opt-in."
 )
 @click.option("--server", "server_id", metavar="CLIENT:SCOPE:NAME", help="Exact identity from inspect.")
+@click.option("--scan-compatible-sources", is_flag=True, hidden=True)
 @click.option("--json", "json_stdout", is_flag=True, help="Emit only AuditReport JSON on stdout.")
 @click.option("--output-json", type=click.Path(path_type=Path), help="Write AuditReport JSON to FILE.")
 @click.option("--sarif", type=click.Path(path_type=Path), help="Write SARIF to FILE.")
@@ -245,6 +246,7 @@ def check(
     connect: bool,
     connect_all: bool,
     server_id: str | None,
+    scan_compatible_sources: bool,
     json_stdout: bool,
     output_json: Path | None,
     sarif: Path | None,
@@ -299,6 +301,15 @@ def check(
         raise click.UsageError("--connect-project-configs requires --connect or --connect-all.")
     if skip_connect and connecting:
         raise click.UsageError("--skip-connect cannot be combined with --connect or --connect-all.")
+    if scan_compatible_sources and (
+        not include_discovered or project is not None or config_only or connecting
+    ):
+        # Scan's selection spans every project scope, so identities omit the
+        # project path and a connection selection would be ambiguous.
+        raise click.UsageError(
+            "--scan-compatible-sources requires --include-discovered and cannot be combined with "
+            "--project, --config-only, --connect or --connect-all."
+        )
     if config_only and (config is None or include_discovered):
         raise click.UsageError(
             "--config-only requires --config and cannot be combined with --include-discovered."
@@ -355,7 +366,9 @@ def check(
                 scanned=False,
             ) from None
         stage = "config discovery and parsing"
-        sources = review_sources(config, include_discovered, project, clients)
+        sources = review_sources(
+            config, include_discovered, project, clients, scan_compatible=scan_compatible_sources
+        )
         previous_report = load_previous(previous)
         policy_config = None
         if policy:
