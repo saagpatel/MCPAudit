@@ -5,12 +5,15 @@ from __future__ import annotations
 import io
 import json
 import sys
+import tomllib
 import urllib.error
 from pathlib import Path
 from typing import Any
 from urllib import request
 
 import pytest
+from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
 
 from scripts import check_advisories
 
@@ -203,3 +206,34 @@ def test_response_json_is_explicit_offline_fixture_mode(
     assert "fixture mode" in captured.out
     assert "checked 2 locked public PyPI package versions" in captured.out
     assert "build-input coverage unavailable: build-constraints.txt missing" in captured.err
+
+
+def _build_pin_projects() -> list[Path]:
+    """The root project plus every workspace member that carries its own build system."""
+    return [
+        check_advisories.ROOT / "pyproject.toml",
+        *sorted(check_advisories.ROOT.glob("distributions/*/pyproject.toml")),
+    ]
+
+
+def test_uv_build_pin_agrees_across_pyproject_and_build_constraints() -> None:
+    constraints = (check_advisories.ROOT / "build-constraints.txt").read_text(encoding="utf-8")
+    pins: dict[str, str] = {}
+    for raw_line in constraints.splitlines():
+        line = raw_line.partition("#")[0].strip()
+        if not line:
+            continue
+        match = check_advisories.PIN_RE.fullmatch(line)
+        assert match is not None, f"build constraint {line!r} must be an exact pin"
+        name, version = match.groups()
+        pins[canonicalize_name(name)] = version
+    assert set(pins) == {"uv-build"}
+
+    projects = _build_pin_projects()
+    assert projects
+    for project in projects:
+        build_system = tomllib.loads(project.read_text(encoding="utf-8"))["build-system"]
+        requirements = [Requirement(value) for value in build_system["requires"]]
+        uv_build = [item for item in requirements if canonicalize_name(item.name) == "uv-build"]
+        assert len(uv_build) == 1, project
+        assert str(uv_build[0].specifier) == f"=={pins['uv-build']}", project
