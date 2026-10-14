@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import email.parser
+import re
 import subprocess
 import tarfile
 import tomllib
@@ -37,7 +38,10 @@ def test_workspace_members_and_dependency_direction() -> None:
         for filename in ("mcp_audit_build_backend.py", "LICENSE"):
             assert (base / filename).read_bytes() == (ROOT / filename).read_bytes()
         assert data["project"]["readme"] == "README.md"
-        assert (base / "README.md").read_text().replace("](../../", "](") == (ROOT / "README.md").read_text()
+        readme = (base / "README.md").read_text()
+        assert readme.startswith(f"# mcp-audits-{member}\n")
+        links = re.findall(r"\]\(([^)]*)\)", readme)
+        assert links and all(link.startswith("https://github.com/saagpatel/MCPAudit/") for link in links)
         assert data["project"]["license-files"] == ["LICENSE"]
         dependencies = [Requirement(value) for value in data["project"]["dependencies"]]
         if member == "labs":

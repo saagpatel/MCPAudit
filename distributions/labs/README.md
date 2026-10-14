@@ -1,149 +1,35 @@
-# mcp-audit
+# mcp-audits-labs
 
-<!-- mcp-name: io.github.saagpatel/mcp-audit -->
+The MCPAudit offline labs and SafeForge, packaged separately from the core
+`mcp-audits` review CLI. It shares the `mcp-audits` version and pins
+`mcp-audits` to that exact version.
 
-[![PyPI](https://img.shields.io/pypi/v/mcp-audits?style=flat-square&logo=pypi&logoColor=white&label=PyPI)](https://pypi.org/project/mcp-audits/)
-[![Python](https://img.shields.io/pypi/pyversions/mcp-audits?style=flat-square&logo=python&logoColor=white)](https://pypi.org/project/mcp-audits/)
-[![CI](https://img.shields.io/github/actions/workflow/status/saagpatel/MCPAudit/ci.yml?style=flat-square&logo=githubactions&logoColor=white&label=CI)](https://github.com/saagpatel/MCPAudit/actions/workflows/ci.yml)
-[![CodeQL](https://img.shields.io/github/actions/workflow/status/saagpatel/MCPAudit/codeql.yml?style=flat-square&logo=github&label=CodeQL)](https://github.com/saagpatel/MCPAudit/actions/workflows/codeql.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
+## Install
 
-> **See what your AI tools' MCP servers can reach.**
-
-MCPAudit reviews MCP server configuration and, when asked, lists the tools a
-server exposes. It highlights declared capabilities, instruction-shaped text
-heuristics, and changes from a saved pin so you can decide what to investigate.
-Findings are review signals: a high score means broader capability exposure,
-not that a server is malicious or unsafe.
-
-> [!IMPORTANT]
-> The package is `mcp-audits`; the command is `mcp-audit`.
-> The default check is static. `check --connect`, `--connect-all` and legacy `scan`
-> can start configured local programs or contact configured endpoints. Package
-> verification, downloads, and LLM analysis are separate opt-in operations.
-> MCPAudit does not edit configs, and reports environment variable key names,
-> never their values. Review generated reports before sharing them.
-
-## Try it
+Install it through the core package's extra:
 
 ```sh
-mcp-audit                              # static review of supported configs
-mcp-audit check --config ./mcp.json    # review this file only; no connections
-mcp-audit demo                         # see a bundled synthetic example
-mcp-audit explain MCP007               # explain a finding offline; no config reads
+uv tool install 'mcp-audits[labs]'
 ```
 
-Install with [uv](https://docs.astral.sh/uv/):
+## Use
+
+The labs have no console scripts of their own. They run through the core CLI:
 
 ```sh
-uv tool install mcp-audits
+mcp-audit lab <topic> --help
+mcp-audit safeforge preinstall|run
 ```
 
-Or run without installing:
+The labs explore bounded, synthetic, or experimental evidence contracts. Their
+results do not establish production behavior or general ecosystem coverage.
 
-```sh
-uvx --from mcp-audits mcp-audit demo
-```
+## Documentation
 
-## What to do with a finding
+- [Experimental labs](https://github.com/saagpatel/MCPAudit/blob/main/docs/labs/README.md)
+- [SafeForge runtime threat model](https://github.com/saagpatel/MCPAudit/blob/main/docs/labs/SAFEFORGE-RUNTIME-THREAT-MODEL.md)
+- [MCPAudit](https://github.com/saagpatel/MCPAudit/blob/main/README.md)
 
-Start with the suggested action and inspect the named capability or evidence.
-For example, if a filesystem server can write broadly, restrict its configured
-directory and review the report again. Pattern-based instruction checks can
-miss reworded or obfuscated text and can also need human review. A clean report
-is not a safety certificate.
+## License
 
-```text
-Review the server's configured access, narrow it if needed, then run the check again.
-```
-
-Use [Start here](../../docs/start-here.md) for a guided walkthrough and
-[Reading results](../../docs/reading-results.md) to interpret scores, findings, and
-coverage. [How it works](../../docs/how-it-works.md) explains the check boundary.
-
-Each rule's meaning, possible consequences, manual fix and confidence limits are
-in the [finding reference](../../docs/findings/index.md); `mcp-audit explain MCP013`
-prints the same entry offline. Explicit `--config` sources are labeled
-"explicit file; parsed as Claude-style config"; the parser identity does not
-establish which client uses that file.
-
-Static tool metadata checks also flag malformed MCP header annotations,
-credential parameters mapped to headers, external schema references and
-unexpected icon sources. These checks inspect served metadata without fetching
-schemas or icons.
-
-## Use in CI
-
-MCPAudit can write SARIF and evaluate local policy files. Begin with
-config-only CI, then enable connected checks only where the workflow should
-start those servers. See the [CI guide](../../docs/guides/ci.md) and
-[policy examples](../../examples/policies/README.md).
-
-For a pinned release example, the composite Action can upload SARIF to GitHub
-code scanning:
-
-```yaml
-- uses: saagpatel/MCPAudit@v2.12.0
-```
-
-The release checklist calls out Action references so maintainers can update
-examples when a new public release is available. Review the action's permissions
-and inputs before enabling it in a repository.
-
-## Choose a review path
-
-| Goal | Starting point | What it does |
-| --- | --- | --- |
-| Learn the output | `mcp-audit demo` | Uses bundled synthetic input |
-| Review one file | `mcp-audit check --config FILE` | Static check of the selected config |
-| Make a share card | `mcp-audit checkup --config FILE --card checkup.html` | Writes a local counts-only HTML Preview |
-| See discovered sources | `mcp-audit inspect` | Lists identities and source status |
-| Inspect one server | `mcp-audit check --connect --server ID` | Connects to one unambiguous identity |
-| Inspect a fleet | `mcp-audit check --connect-all` | Connects to workstation servers; add `--connect-project-configs` for projects |
-| Automate a policy | `mcp-audit check --policy FILE` | Evaluates a local policy |
-| Review a saved pin | `mcp-audit pin --status` | Shows baseline status; `pin` is the visible alias for `baseline pin` |
-
-The server `ID` is `CLIENT:SCOPE:NAME`; use the exact identity from `inspect` to avoid ambiguous selections. Connected checks can start configured local commands or contact their endpoints.
-
-`checkup` writes a local, counts-only share card with no names by default; see
-the [checkup guide](../../docs/guides/checkup.md).
-
-## Keep the evidence in context
-
-Configuration-based findings describe declared access. A connected listing
-adds the tool metadata the server provides, but does not prove what the server
-will do later. Connected HTTP scans also send one credential-free
-`server/discover` request and, on 401, review bounded public authorization
-metadata. The probe never uses configuration header values and does not run
-with `--skip-connect` or for project sources without connection opt-in.
-These observations do not prove a completed OAuth flow. The optional canary is bounded and exercises only eligible
-tools under its documented limits. See [How it works](../../docs/how-it-works.md)
-for the boundary between those observations.
-
-Reports can contain configuration shape, tool names, and evidence text. Secret
-redaction is best-effort ([known issues](../../docs/known-issues.md)); review a report before sharing it.
-Configs are parsed in full, but environment variable values are discarded
-during parsing and never reported; reports keep key names for context. The [output contract](../../docs/OUTPUT-CONTRACT.md) lists stable fields and
-the limits of these outputs.
-
-## Status
-
-### Stack
-
-MCPAudit uses Python 3.11+, `uv`, pytest, Ruff, and mypy. JSON, SARIF, and HTML reports are versioned public surfaces. Run `make check` before proposing changes.
-
-### Known risks
-
-Static findings describe configured access and served metadata; they do not prove how a server behaves later. Secret redaction is best-effort. The deprecated `monitor` command has a protocol-framing defect: it does not implement the MCP stdio framing required for a safe proxy, and remains scheduled for removal in 3.0. See the [3.0 boundary proposal](../../docs/3.0-BOUNDARY-PROPOSAL.md).
-
-### Next steps
-
-Use explicit synthetic fixtures for local changes, preserve read-only defaults, and keep coverage claims tied to completed checks. Re-enable Python 3.15 after an rpds-py/PyO3 lock refresh. The 3.0 package split and deprecated-surface removal remain planned work.
-
-## More documentation
-
-Explore [pinning](../../docs/guides/pinning.md), [shadow review](../../docs/guides/shadow.md),
-[suppressing findings](../../docs/guides/suppressing.md), the [trust packet guide](../../docs/guides/trust-packet.md),
-[MCP trust packet](../../docs/MCP-TRUST-PACKET.md), [output contract](../../docs/OUTPUT-CONTRACT.md), and
-[sandbox fixtures](../../examples/sandbox/). See the [documentation index](../../docs/README.md), [labs](../../docs/labs/README.md),
-maintainer procedures in [`maintainers/`](../../maintainers/), and older material in [`archive/`](../../archive/).
+MIT. See [LICENSE](https://github.com/saagpatel/MCPAudit/blob/main/LICENSE).
