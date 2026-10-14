@@ -338,14 +338,16 @@ class TestCheckDrift:
         assert len(findings) == 1
         assert "input schema changed" in findings[0].details
 
-    def test_changed_finding_handles_legacy_pins_without_snapshot(self, tmp_path: Path) -> None:
+    def test_changed_finding_handles_v2_pins_without_snapshot(self, tmp_path: Path) -> None:
         pin_file = tmp_path / "pins.yaml"
         pin_file.write_text(
             """
 servers:
   srv:
+    pin_schema: 2
     tools:
       read_file:
+        pin_schema: 2
         hash: sha256:old
         pinned_at: '2026-01-01T00:00:00+00:00'
 """

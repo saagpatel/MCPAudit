@@ -1,8 +1,7 @@
-"""Core command implementations and the frozen scan compatibility shim."""
+"""Core command implementations for the legacy scan and discover commands."""
 
 from __future__ import annotations
 
-import warnings
 from functools import partial
 from pathlib import Path
 
@@ -10,19 +9,13 @@ import anyio
 import click
 from rich.console import Console
 
-from mcp_audit.client_filter import _parse_clients as _parse_clients
 from mcp_audit.confighealth import config_health_findings
 from mcp_audit.discovery import ConfigParseError, discover_all_configs
-from mcp_audit.engine import ScanOptions, run_scan
 from mcp_audit.models import (
-    AuditReport,
     ClientType,
     ConfigHealthFinding,
-    ServerConfig,
 )
-from mcp_audit.overrides import OverrideApplier
 from mcp_audit.report import error_console
-from mcp_audit.scan_cli import _run_scan as _run_scan
 from mcp_audit.scan_translation import classify_scan_options
 from mcp_audit.taxonomy import config_health_rule_id, finding_url, render_finding_reference
 from mcp_audit.terminal_text import strip_controls, terminal_safe
@@ -388,6 +381,8 @@ def scan(
     previous: Path | None,
 ) -> None:
     """Full audit: discover servers, connect, enumerate tools, score risk, report."""
+    from mcp_audit.scan_cli import _run_scan
+
     click.echo(classify_scan_options(ctx.params).notice(), err=True)
     if config_only and not extra_config:
         raise click.ClickException("--config-only requires --config PATH.")
@@ -444,74 +439,6 @@ def scan(
         max_concurrency,
         connect_project_configs,
     )
-
-
-async def _run_scan_core(
-    skip_connect: bool,
-    clients: list[ClientType] | None,
-    timeout: int,
-    extra_config: str | None,
-    override_applier: OverrideApplier,
-    inject_check: bool = False,
-    ssrf_check: bool = False,
-    ssrf_allowlist: str | None = None,
-    egress_check: bool = False,
-    egress_allowlist: str | None = None,
-    multi_tenant_hosts: str | None = None,
-    egress_server_allowlists: dict[str, list[str]] | None = None,
-    pin_check: bool = False,
-    trifecta_check: bool = False,
-    shadow_check: bool = False,
-    escalation_check: bool = False,
-    provenance_check: bool = False,
-    integrity_check: bool = False,
-    verify_artifacts: bool = False,
-    download_artifacts: bool = False,
-    llm_analysis: bool = False,
-    config_only: bool = False,
-    servers: list[ServerConfig] | None = None,
-) -> AuditReport:
-    """Deprecated compatibility alias for :func:`mcp_audit.engine.run_scan`.
-
-    The scan pipeline moved to :mod:`mcp_audit.engine`; this wrapper keeps the
-    old private entry point working for external callers (e.g. shadow-mcp)
-    through 2.x; removal is scheduled for 3.0. It preserves the historical
-    behavior of printing progress + advisory warnings to the CLI console.
-
-    FROZEN SURFACE: never extend this signature. New scan options go on
-    :class:`mcp_audit.engine.ScanOptions` only — a flag added here but not
-    forwarded in the kwargs block below would be silently ignored.
-    """
-    warnings.warn(
-        "mcp_audit.cli._run_scan_core is deprecated; use mcp_audit.engine.run_scan "
-        "with mcp_audit.engine.ScanOptions instead. Scheduled for removal in 3.0.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    options = ScanOptions(
-        skip_connect=skip_connect,
-        config_only=config_only,
-        clients=clients,
-        timeout=timeout,
-        extra_config=extra_config,
-        inject_check=inject_check,
-        ssrf_check=ssrf_check,
-        egress_check=egress_check,
-        pin_check=pin_check,
-        trifecta_check=trifecta_check,
-        shadow_check=shadow_check,
-        escalation_check=escalation_check,
-        provenance_check=provenance_check,
-        integrity_check=integrity_check,
-        verify_artifacts=verify_artifacts,
-        download_artifacts=download_artifacts,
-        llm_analysis=llm_analysis,
-        ssrf_allowlist=ssrf_allowlist,
-        egress_allowlist=egress_allowlist,
-        multi_tenant_hosts=multi_tenant_hosts,
-        egress_server_allowlists=egress_server_allowlists,
-    )
-    return await run_scan(options, servers=servers, override_applier=override_applier, console=console)
 
 
 def _truncate(s: str, max_len: int) -> str:
