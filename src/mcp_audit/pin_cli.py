@@ -544,6 +544,11 @@ async def _run_pin_refresh(
     new_surfaces = {
         tool.name: store.tool_review_surface(tool) for tool in audit.tools if tool.name in new_names
     }
+    # The pin hash covers the raw served text; name the fields where credential
+    # redaction withheld part of it so it is inspected before --apply.
+    new_withheld = {
+        tool.name: store.withheld_surface_fields(tool) for tool in audit.tools if tool.name in new_names
+    }
     escalation_findings, provenance_findings = _refresh_security_deltas(
         store, audit, review_unsigned_v2=migrate_unsigned_v2
     )
@@ -585,6 +590,7 @@ async def _run_pin_refresh(
                 uncovered_fields=uncovered_fields,
                 baseline_note=baseline_note,
                 new_surfaces=new_surfaces,
+                new_withheld=new_withheld,
             )
         )
         return
@@ -600,6 +606,7 @@ async def _run_pin_refresh(
         provenance_findings,
         baseline_note=baseline_note,
         new_surfaces=new_surfaces,
+        new_withheld=new_withheld,
     )
     if uncovered_fields:
         from rich.table import Table
@@ -694,10 +701,12 @@ def _pin_refresh_json(
     uncovered_fields: list[dict[str, str]] | None = None,
     baseline_note: str | None = None,
     new_surfaces: dict[str, dict[str, object]] | None = None,
+    new_withheld: dict[str, dict[str, int]] | None = None,
 ) -> str:
     import json
 
     new_surfaces = new_surfaces or {}
+    new_withheld = new_withheld or {}
     escalation_findings = escalation_findings or []
     provenance_findings = provenance_findings or []
     artifact_warnings = artifact_warnings or []
@@ -717,8 +726,14 @@ def _pin_refresh_json(
                 "summary": finding.summary,
                 "details": finding.details,
                 "remediation": finding.remediation,
-                # Additive: the redacted surface --apply would store for a new tool.
+                # Additive: the redacted surface --apply would store for a new tool,
+                # and the fields where redaction withheld served text the hash covers.
                 "current_surface": new_surfaces.get(finding.tool_name),
+                "current_surface_redacted": (
+                    sorted(new_withheld.get(finding.tool_name, {}))
+                    if finding.tool_name in new_surfaces
+                    else None
+                ),
             }
             for finding in drift_findings
         ],
@@ -761,10 +776,12 @@ def _render_pin_refresh_review(
     *,
     baseline_note: str | None = None,
     new_surfaces: dict[str, dict[str, object]] | None = None,
+    new_withheld: dict[str, dict[str, int]] | None = None,
 ) -> None:
     from rich.table import Table
 
     new_surfaces = new_surfaces or {}
+    new_withheld = new_withheld or {}
     escalation_findings = escalation_findings or []
     provenance_findings = provenance_findings or []
     counts = {status: 0 for status in DriftStatus}
@@ -822,7 +839,7 @@ def _render_pin_refresh_review(
             )
 
         console.print(table)
-        _render_new_tool_surfaces(drift_findings, new_surfaces)
+        _render_new_tool_surfaces(drift_findings, new_surfaces, new_withheld)
 
     _render_refresh_security_section(
         "Capability escalation",
@@ -835,17 +852,24 @@ def _render_pin_refresh_review(
 
 
 def _render_new_tool_surfaces(
-    drift_findings: list[DriftFinding], new_surfaces: dict[str, dict[str, object]]
+    drift_findings: list[DriftFinding],
+    new_surfaces: dict[str, dict[str, object]],
+    new_withheld: dict[str, dict[str, int]],
 ) -> None:
-    """Print the redacted surface of each tool reviewed as new, one bounded line per field."""
+    """Print the redacted snapshot of each tool reviewed as new, one bounded line per field.
+
+    A field whose served text was partly withheld by credential redaction is
+    flagged, never shown: the pin hash still covers that text.
+    """
     for finding in drift_findings:
         surface = new_surfaces.get(finding.tool_name)
         if finding.status != DriftStatus.NEW or surface is None:
             continue
+        withheld = new_withheld.get(finding.tool_name, {})
         console.print(
             Text.assemble(
                 ("New tool surface", "bold"),
-                terminal_safe(f" ({finding.tool_name}), as --apply would store it:"),
+                terminal_safe(f" ({finding.tool_name}), the redacted snapshot --apply would store:"),
             )
         )
         for field, value in surface.items():
@@ -853,13 +877,23 @@ def _render_new_tool_surfaces(
                 Text.assemble(("  ", ""), (field, "cyan"), ": ", terminal_safe(_bounded_json(value))),
                 soft_wrap=True,
             )
+            if field in withheld:
+                console.print(
+                    f"    {withheld[field]} value(s) withheld by credential redaction; the pin hash "
+                    "covers the served text; inspect the server before --apply.",
+                    style="bold yellow",
+                    soft_wrap=True,
+                )
 
 
 def _bounded_json(value: object) -> str:
     rendered = compact_json_bytes(value, allow_nan=True).decode("utf-8")
     if len(rendered) <= _SURFACE_FIELD_LIMIT:
         return rendered
-    return f"{rendered[:_SURFACE_FIELD_LIMIT]}… ({len(rendered) - _SURFACE_FIELD_LIMIT} more chars)"
+    return (
+        f"{rendered[:_SURFACE_FIELD_LIMIT]}… ({len(rendered) - _SURFACE_FIELD_LIMIT} more chars; "
+        "see `pin --refresh SERVER --json` for the full value)"
+    )
 
 
 def _render_refresh_security_section(
