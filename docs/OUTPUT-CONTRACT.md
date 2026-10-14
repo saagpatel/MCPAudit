@@ -401,6 +401,17 @@ Hidden compatibility flags preserve static safety: `--skip-connect` conflicts
 with `--connect` and `--connect-all`, and `--config-only` requires `--config` and
 conflicts with `--include-discovered`. Neither flag enables connections or additional discovery.
 
+## Command aliases
+
+`pin` remains a visible alias for `baseline pin`. The former top-level lab topic
+commands (`agent-ui`, `authorization-posture`, `cache-contract`,
+`enforcement-fixture`, `oauth-transcript`, `result-parcel`, `session-resume`,
+and `task-time-machine`) are available only under `lab`. `safeforge-preinstall`,
+`safeforge-run`, and `skillscan` are removed; use `safeforge preinstall`,
+`safeforge run`, and `skills scan`. Removed spellings are unknown commands and
+produce no compatibility notice. `--help-all` remains available and lists
+registered command paths; ordinary help has no compatibility-alias section.
+
 Bare invocation runs the static `check` path. `--config FILE` excludes discovery
 unless `--include-discovered` is explicit. Saved overrides are not loaded for
 explicit-file checks unless selected; remembered preferences are not loaded.
@@ -1670,9 +1681,9 @@ The generated JSON Schema for the current model is checked in at
 `examples/schemas/audit-report.schema.json` and is tested against the live
 Pydantic model.
 
-## Skillscan v1 (`skillscan-report/v1`)
+## Skillscan v1 (`skills scan`, `skillscan-report/v1`)
 
-The `skillscan` command statically scans an agent skill directory or MCP-server
+The `skills scan` command statically scans an agent skill directory or MCP-server
 bundle (`.mcpb`/`.zip`) offline — it never executes bundle content and never
 touches the network — and, with `--json-out`, emits a `skillscan-report/v1`
 document. The report is designed to be sealed by an external verifier
@@ -2195,7 +2206,7 @@ code-observed filesystem/network behavior. Filesystem access requires the
 egress. An unresolved producer security warning is not preinstall-eligible and
 cannot be converted into a passed static stage.
 
-The `mcp-audit safeforge-preinstall` command composes those two boundaries. It
+The `mcp-audit safeforge preinstall` command composes those two boundaries. It
 requires `--producer-schema`, `--receipt`, `--artifact-root`, `--run-id`,
 `--created-at`, and `--coordinator-revision`. Contract linting runs before the
 artifact path is inspected. Standard output is always one JSON object: exit `0`
@@ -2204,7 +2215,7 @@ fail-closed contract or preinstall decision, and exit `2` means the command
 inputs could not be parsed. The command has no connected, install, sandbox,
 grading, policy, publication, or finalization mode.
 
-`mcp-audit safeforge-run` resumes that accepted preinstall envelope through
+`mcp-audit safeforge run` resumes that accepted preinstall envelope through
 `sandbox.prepare`, `sandbox.materialize`, `audit.connected`, `trust.grade`,
 `runtime.policy.bind`, `publication.dry_run`, and `receipt.finalize`. Standard
 output remains one strict JSON object. Exit `0` requires an `eligible` final
