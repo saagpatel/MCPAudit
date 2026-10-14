@@ -449,7 +449,10 @@ Project entries retain config-inferred permissions and `connection_status:
 "skipped"` unless `ScanOptions.connect_project_configs` is true. CLI `scan` and
 `watch` expose this as `--connect-project-configs`; `--skip-connect` takes
 precedence over the opt-in. `pin`, pin refresh, and all `serve` tools use the
-same project-skipping default. Workstation entries still connect by default.
+same project-skipping default. Workstation entries connect by default in the
+library, CLI `scan`/`watch`, `pin`, and the `serve` tools listed as connecting in
+[`serve` tool reach](#serve-tool-reach); `scan_mcp_servers` is static unless
+called with `connect=true`.
 A project-only scan that skips all entries has `connection_mode: "skipped"`;
 a mixed scan that attempts workstation connections has `"attempted"`.
 
@@ -474,6 +477,27 @@ These fields are present even for an empty result list or an empty warning list.
 The published output schemas retain `result` and add `warnings`.
 Warnings use the same report redaction as the existing warning-bearing tools;
 no audit-report field or `schema_version` changes.
+
+### `serve` tool reach
+
+From 3.0, `scan_mcp_servers` is static by default: its `connect` argument
+defaults to `false`, so a call without arguments reads configuration and
+connects to no server. `connect=true` connects to workstation-scope servers;
+`skip_connect=true` always disables connections, even with `connect=true`. The
+report shape is unchanged. Every other tool keeps its 2.x reach, and its
+description states it:
+
+| Reach | Tools |
+|---|---|
+| Connects to workstation-scope servers | `get_high_risk_servers`, `check_server` (the named server only), `get_injection_findings`, `get_ssrf_findings`, `get_trifecta_findings`, `get_shadowing_findings`, `get_escalation_findings`, `get_provenance_findings` |
+| Static, no network | `list_discovered_servers`, `get_integrity_findings` |
+| Static toward MCP servers; contacts npm/PyPI registries only | `get_package_verify_findings`, `get_artifact_verify_findings` |
+
+Tools that run pin-dependent checks (`check_server`, and the escalation,
+provenance, integrity, package-verify and artifact-verify findings) return a
+withheld pin baseline as a `pin_baseline_withheld` warning, which is partial
+coverage, not a tool error. `serve` loads no policy and sets no exit code, so a
+withheld baseline never fails a tool call.
 
 ## Missing tool annotations
 

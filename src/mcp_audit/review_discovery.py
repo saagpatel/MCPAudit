@@ -92,6 +92,7 @@ def _parse_source(
     project: Path,
     *,
     explicit: bool,
+    scan_compatible: bool = False,
 ) -> list[ServerConfig]:
     text = _read_bounded(path, explicit=explicit)
     data = decode_config(
@@ -101,14 +102,17 @@ def _parse_source(
         sources.errors,
         jsonc=explicit or client in (ClientType.CURSOR, ClientType.VSCODE),
     )
+    # Scan accepts a present file without a server map as empty; review's
+    # diagnostic would make the same run partial. Only the selector skips it.
     if (
         not explicit
+        and not scan_compatible
         and client == ClientType.CLAUDE_CODE
         and path.name != ".claude.json"
         and not any(key in data for key in ("mcpServers", "projects"))
     ):
         raise ValueError("unsupported config: no MCP server map")
-    if not explicit and client == ClientType.CLAUDE_CODE:
+    if not explicit and not scan_compatible and client == ClientType.CLAUDE_CODE:
         # Only the selected project's MCP section is admitted. Never traverse
         # other project paths recorded in the global client file.
         projects = data.get("projects")
@@ -130,7 +134,11 @@ def _parse_source(
                 raise ValueError("mcp section is not an object")
             if "servers" in section:
                 maps.append((section["servers"], "/mcp/servers"))
-        if not maps and not (client == ClientType.VSCODE and path.name == "settings.json"):
+        if (
+            not maps
+            and not scan_compatible
+            and not (client == ClientType.VSCODE and path.name == "settings.json")
+        ):
             raise ValueError("unsupported config: no MCP server map")
         for mapping, pointer in maps:
             servers.extend(parse_server_map(mapping, str(path), client, sources.errors, map_pointer=pointer))
@@ -155,8 +163,20 @@ def review_sources(
     include_discovered: bool = False,
     project: Path | None = None,
     clients: tuple[ClientType, ...] = (),
+    *,
+    scan_compatible: bool = False,
 ) -> ReviewSources:
-    """Read an explicit file only, or the fixed supported-client allowlist."""
+    """Read an explicit file only, or the fixed supported-client allowlist.
+
+    ``scan_compatible`` reproduces the legacy ``scan`` server selection instead
+    of review's project-bounded one: every Claude Code project scope (so one
+    malformed project entry loses the whole file, as in scan), no Cursor
+    project file, an empty result for a present file without a server map, and
+    scan's server-level dedup by (name, client, config path, project path).
+    The reproduction is subject to check's source limits: a candidate over the
+    size, nesting-depth or server cap, or reached through a symlink, is still
+    skipped with a diagnostic where scan would have read it.
+    """
     sources = ReviewSources()
     project = Path(os.path.abspath(project or Path.cwd()))
     candidates: list[tuple[Path, ClientType, bool]] = []
@@ -174,9 +194,14 @@ def review_sources(
                     path = project / ".vscode" / "mcp.json"
                 candidates.append((path, client, False))
         cursor_project = project / ".cursor" / "mcp.json"
-        if ClientType.CURSOR in selected_clients and cursor_project != Path.home() / ".cursor" / "mcp.json":
+        if (
+            ClientType.CURSOR in selected_clients
+            and not scan_compatible
+            and cursor_project != Path.home() / ".cursor" / "mcp.json"
+        ):
             candidates.append((cursor_project, ClientType.CURSOR, False))
     seen: set[Path] = set()
+    seen_servers: set[tuple[str, str, str, str | None]] = set()
     for path, client, explicit in candidates:
         identity = path.absolute()
         if identity in seen:
@@ -186,7 +211,17 @@ def review_sources(
             if not explicit:
                 # Missing adapter candidates are not evidence to open or parse.
                 path.lstat()
-            servers = _parse_source(path, client, sources, project, explicit=explicit)
+            servers = _parse_source(
+                path, client, sources, project, explicit=explicit, scan_compatible=scan_compatible
+            )
+            if scan_compatible:
+                kept: list[ServerConfig] = []
+                for server in servers:
+                    key = (server.name, server.client.value, server.config_path, server.project_path)
+                    if key not in seen_servers:
+                        seen_servers.add(key)
+                        kept.append(server)
+                servers = kept
         except FileNotFoundError:
             if explicit:
                 raise ValueError(f"Config file not found: {path}") from None

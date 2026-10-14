@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- The MCP `scan_mcp_servers` tool exposed by `serve` is static by default:
+  `connect` now defaults to `false`. Pass `connect=true` to connect to
+  configured servers; `skip_connect=true` still disables connections. Every
+  other `serve` tool keeps its reach, and each tool description now states it,
+  including that a withheld pin baseline is partial coverage, not a failure.
 - Schema v1 pin baselines are never compared, whether or not trusted pin keys
   exist. A genuine v1 server entry is withheld from every pin-based check
   (`--pin-check`, `--canary-check`, `--escalation-check`, `--provenance-check`,
@@ -49,6 +54,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `check --include-discovered --scan-compatible-sources`, a hidden selector
+  that reproduces the legacy `scan` server selection: every Claude Code
+  project scope (a malformed project entry loses the whole file, as in
+  `scan`), no Cursor project file, an empty result for a present file without
+  a server map, and `scan`'s server-level dedup, subject to `check`'s source
+  limits (size, nesting depth, server cap, symlink refusal). It is rejected
+  with `--config`, `--project`, `--config-only`, `--connect` and
+  `--connect-all`. Without the flag, `check` discovery and output are
+  unchanged.
 - `pin --refresh` previews show the credential-redacted surface a pin write
   would store for every tool reviewed as new: JSON `drift` rows gain an
   additive `current_surface` object, and the terminal review prints each field
