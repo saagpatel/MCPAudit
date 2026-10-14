@@ -47,6 +47,9 @@ PIN_MANIFEST_SCHEMA = "mcpaudit.pin-manifest.v1"
 # Reserved key in a canary pin baseline: legacy v1 tool names whose live
 # surface is not covered by the signed v2 rows and is excluded from comparison.
 CANARY_UNCOVERED_TOOLS_KEY = "uncovered_legacy_tools"
+# Refresh review summary for each field of a v1 tool row: nothing was compared.
+UNCOVERED_V1_FIELD_SUMMARY = "not compared; schema v1 row reviewed as new"
+_V1_UNCOVERED_FIELDS = ("description", "inputSchema", "annotations", "title", "outputSchema", "icons", "meta")
 
 
 def canonical_tool_surface(tool: ToolInfo) -> dict[str, object]:
@@ -562,7 +565,7 @@ class PinStore:
         """
         if not self.baseline_trusted(server_name):
             return False
-        return not self.legacy_entry(server_name)
+        return not self.v1_baseline(server_name)
 
     def legacy_entry(self, server_name: str) -> bool:
         """A genuine v1 entry (v1 tool pins, no v2 marker): 3.0 never compares it.
@@ -572,6 +575,18 @@ class PinStore:
         """
         entry: object = self._data.get("servers", {}).get(server_name)
         return isinstance(entry, dict) and _is_legacy_entry(entry)
+
+    def v1_baseline(self, server_name: str) -> bool:
+        """An entry with v1 tool rows and no v2 rows: nothing comparable is saved.
+
+        Covers a genuine v1 entry and one that carries an entry-level v2 marker
+        (``pin_schema: 2`` or ``protocol``) over v1-only tool rows; neither may
+        serve as a baseline or satisfy ``require.pins``.
+        """
+        if self.legacy_entry(server_name):
+            return True
+        legacy = self.legacy_tool_names(server_name)
+        return bool(legacy) and not self._v2_tool_names(server_name)
 
     def unsigned_v2_migration_allowed(self, server_name: str) -> bool:
         """Allow explicit refresh review of v2 pins that were never required to be signed.
@@ -814,6 +829,12 @@ class PinStore:
 
     def legacy_tool_names(self, server_name: str) -> set[str]:
         """Tools whose pins predate annotation coverage, including mixed files."""
+        return self._tool_names_with_schema(server_name, 1)
+
+    def _v2_tool_names(self, server_name: str) -> set[str]:
+        return self._tool_names_with_schema(server_name, 2)
+
+    def _tool_names_with_schema(self, server_name: str, schema: int) -> set[str]:
         server = self._data.get("servers", {}).get(server_name, {})
         if not isinstance(server, dict):
             return set()
@@ -823,7 +844,7 @@ class PinStore:
         return {
             name
             for name, entry in entries.items()
-            if isinstance(entry, dict) and entry.get("pin_schema", 1) == 1
+            if isinstance(entry, dict) and entry.get("pin_schema", 1) == schema
         }
 
     def schema_warnings(self, server_name: str) -> list[ScanWarning]:
@@ -834,7 +855,7 @@ class PinStore:
             return []
         scope = (
             "is a schema v1 pin baseline, which is not compared"
-            if self.legacy_entry(server_name)
+            if self.v1_baseline(server_name)
             else "has schema v1 tool pins, which are not compared and count as uncovered"
         )
         return [
@@ -851,13 +872,17 @@ class PinStore:
         ]
 
     def uncovered_field_rows(self, server_name: str, tools: list[ToolInfo]) -> list[dict[str, str]]:
-        """Refresh review rows for fields absent from the old hash contract."""
+        """Refresh review rows for every field of a tool whose saved row is v1.
+
+        No field of a v1 row is compared (3.0 does not hash v1), so the whole
+        current surface, description and inputSchema included, is reviewed as new.
+        """
         legacy = self.legacy_tool_names(server_name)
         return [
-            {"tool_name": tool.name, "field": field, "summary": "not previously covered"}
+            {"tool_name": tool.name, "field": field, "summary": UNCOVERED_V1_FIELD_SUMMARY}
             for tool in tools
             if tool.name in legacy
-            for field in ("annotations", "title", "outputSchema", "icons", "meta")
+            for field in _V1_UNCOVERED_FIELDS
         ]
 
     def pin_server(
@@ -903,6 +928,10 @@ class PinStore:
                 self._data["servers"][server_name] = {"tools": {}}
             server_entry: dict[str, Any] = self._data["servers"].setdefault(server_name, {"tools": {}})
             tool_entries: dict[str, Any] = server_entry.setdefault("tools", {})
+            for name in self.legacy_tool_names(server_name):
+                # Retained v1 rows of a mixed entry are never compared; a reviewed
+                # write drops them rather than carrying uncovered rows forward.
+                del tool_entries[name]
             for tool in tools:
                 tool_entries[tool.name] = {
                     "pin_schema": 2,
@@ -1096,12 +1125,11 @@ class PinStore:
         return list(self._data.get("servers", {}).keys())
 
     def tool_count(self, server_name: str) -> int:
-        """Return number of pinned tools for a server."""
+        """Return the number of comparable (v2) pinned tools for a server."""
         if not self.baseline_usable(server_name):
-            # A baseline that failed verification must not satisfy require.pins.
+            # A withheld baseline (failed verification, v1) must not satisfy require.pins.
             return 0
-        servers: dict[str, Any] = self._data.get("servers", {})
-        return len(servers.get(server_name, {}).get("tools", {}))
+        return len(self._v2_tool_names(server_name))
 
     def baseline_tools(self, server_name: str, *, review_unsigned_v2: bool = False) -> list[ToolInfo]:
         """Reconstruct pinned tools as ``ToolInfo`` from stored snapshots.

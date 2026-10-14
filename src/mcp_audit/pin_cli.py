@@ -37,9 +37,9 @@ _LEGACY_V1_NOTE = (
     "with `mcp-audit pin --refresh SERVER --apply` to replace it with a v2 baseline."
 )
 _MIXED_V1_NOTE = (
-    "Schema v1 tool rows in this baseline are not compared and count as uncovered. "
-    "Review them with `mcp-audit pin --refresh SERVER`, then apply with "
-    "`mcp-audit pin --refresh SERVER --apply`."
+    "Schema v1 tool rows in this baseline are not compared and count as uncovered: tools "
+    "with a v1 row are shown as new with their full current surface. Review them, then apply "
+    "with `mcp-audit pin --refresh SERVER --apply`, which drops the v1 rows."
 )
 _UNSIGNED_V2_MIGRATION_NOTE = (
     "Compared against an unverified unsigned v2 baseline. Review the current tools and launch config; "
@@ -513,23 +513,25 @@ async def _run_pin_refresh(
             error_console.print(terminal_safe(verification_error), style="red")
         return
 
-    # A genuine v1 baseline is never compared (3.0 does not hash v1), so the
-    # review shows the full current surface, as for a first pin.
-    legacy_entry = store.legacy_entry(audit.server.name)
+    # A v1 baseline is never compared (3.0 does not hash v1), so the review
+    # shows the full current surface, as for a first pin. In a mixed entry the
+    # v2 rows compare and every tool with a retained v1 row is reviewed as new.
+    v1_baseline = store.v1_baseline(audit.server.name)
+    legacy = store.legacy_tool_names(audit.server.name)
     baseline_note = (
         _UNSIGNED_V2_MIGRATION_NOTE
         if migrate_unsigned_v2
         else _LEGACY_V1_NOTE
-        if legacy_entry
+        if v1_baseline
         else _MIXED_V1_NOTE
-        if store.legacy_tool_names(audit.server.name)
+        if legacy
         else None
     )
-    findings = (
-        store.new_pin_review(audit.server.name, audit.tools)
-        if legacy_entry
-        else store.check_drift(audit.server.name, audit.tools, review_unsigned_v2=migrate_unsigned_v2)
-    )
+    if v1_baseline:
+        findings = store.new_pin_review(audit.server.name, audit.tools)
+    else:
+        findings = store.check_drift(audit.server.name, audit.tools, review_unsigned_v2=migrate_unsigned_v2)
+        findings += store.new_pin_review(audit.server.name, [t for t in audit.tools if t.name in legacy])
     uncovered_fields = store.uncovered_field_rows(audit.server.name, audit.tools)
     escalation_findings, provenance_findings = _refresh_security_deltas(
         store, audit, review_unsigned_v2=migrate_unsigned_v2
@@ -762,6 +764,12 @@ def _render_pin_refresh_review(
             console.print(
                 "[yellow]The legacy v1 baseline is not compared and the server exposes no tools; "
                 "--apply writes an empty v2 baseline.[/yellow]"
+            )
+            return
+        if baseline_note == _MIXED_V1_NOTE:
+            console.print(
+                "[yellow]No drift in the compared v2 rows. The retained v1 rows are not compared "
+                "and no served tool matches them; --apply drops them.[/yellow]"
             )
             return
         if baseline_note is not None:
