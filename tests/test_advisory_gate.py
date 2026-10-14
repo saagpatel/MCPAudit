@@ -192,20 +192,65 @@ def test_response_json_is_explicit_offline_fixture_mode(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     lock_path = tmp_path / "uv.lock"
+    constraints_path = tmp_path / "build-constraints.txt"
+    fixture_path = tmp_path / "response.json"
+    write_lock(lock_path)
+    constraints_path.write_text("uv_build==0.12.24\n", encoding="utf-8")
+    fixture_path.write_text(
+        json.dumps({"results": [{"vulns": []}, {"vulns": []}, {"vulns": []}]}), encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "check_advisories.py",
+            "--lock",
+            str(lock_path),
+            "--build-constraints",
+            str(constraints_path),
+            "--response-json",
+            str(fixture_path),
+        ],
+    )
+
+    assert check_advisories.main() == 0
+    captured = capsys.readouterr()
+    assert "fixture mode" in captured.out
+    assert "checked 3 locked public PyPI package versions" in captured.out
+    assert captured.err == ""
+
+
+def test_missing_build_constraints_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    lock_path = tmp_path / "uv.lock"
+    missing_path = tmp_path / "build-constraints.txt"
     fixture_path = tmp_path / "response.json"
     write_lock(lock_path)
     fixture_path.write_text(json.dumps({"results": [{"vulns": []}, {"vulns": []}]}), encoding="utf-8")
     monkeypatch.setattr(
         sys,
         "argv",
-        ["check_advisories.py", "--lock", str(lock_path), "--response-json", str(fixture_path)],
+        [
+            "check_advisories.py",
+            "--lock",
+            str(lock_path),
+            "--build-constraints",
+            str(missing_path),
+            "--response-json",
+            str(fixture_path),
+        ],
     )
 
-    assert check_advisories.main() == 0
+    assert check_advisories.main() == 2
     captured = capsys.readouterr()
-    assert "fixture mode" in captured.out
-    assert "checked 2 locked public PyPI package versions" in captured.out
-    assert "build-input coverage unavailable: build-constraints.txt missing" in captured.err
+    assert "no advisories found" not in captured.out
+    assert "build-constraints.txt" in captured.err
+    assert "missing" in captured.err
+
+
+def test_default_build_constraints_is_the_committed_file() -> None:
+    assert (check_advisories.ROOT / "build-constraints.txt").is_file()
 
 
 def _build_pin_projects() -> list[Path]:

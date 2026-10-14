@@ -84,8 +84,9 @@ in the lock, including extras. OSV request size, response size, query count, and
 request timeout are bounded. An unavailable or malformed feed exits 2 and fails
 the gate; an advisory exits 1. No exception or suppression list is applied.
 Saved-response fixture checks are offline tests, not current advisory evidence.
-When exact build constraints are present, their package pins are included; missing
-constraints are explicitly reported as unavailable build-input coverage. Toolchain
+The exact build pins in `build-constraints.txt` are always included; a missing
+constraints file exits 2 and fails the gate. Every release and reference build is
+constrained by the same file. Toolchain
 and image pins require separate verified upstream checksum evidence before release.
 
 - Record the exact candidate commit and re-query open Dependabot, code-scanning,

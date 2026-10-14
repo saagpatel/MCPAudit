@@ -165,7 +165,7 @@ def main() -> int:
         "--build-constraints",
         type=Path,
         default=ROOT / "build-constraints.txt",
-        help="exact-pinned build constraints file (read only if present)",
+        help="exact-pinned build constraints file (required)",
     )
     parser.add_argument(
         "--response-json",
@@ -173,9 +173,12 @@ def main() -> int:
         help="read a saved OSV batch response fixture instead of contacting OSV",
     )
     args = parser.parse_args()
-    constraints_missing = not args.build_constraints.exists()
-    if constraints_missing:
-        print("build-input coverage unavailable: build-constraints.txt missing", file=sys.stderr)
+    if not args.build_constraints.is_file():
+        print(
+            f"advisory check unavailable: build constraints file {args.build_constraints} is missing",
+            file=sys.stderr,
+        )
+        return 2
 
     try:
         queries = load_queries(args.lock, args.build_constraints)
