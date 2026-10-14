@@ -93,10 +93,17 @@ def test_otel_extra_declares_the_api_dependency() -> None:
     package = metadata("mcp-audits")
     assert "otel" in (package.get_all("Provides-Extra") or [])
     requirements = [Requirement(value) for value in package.get_all("Requires-Dist") or []]
-    api = next(requirement for requirement in requirements if requirement.name == "opentelemetry-api")
-    assert api.marker is not None
-    assert api.marker.evaluate({"extra": "otel"})
-    assert not api.marker.evaluate({"extra": ""})
+    for extra in ("otel", "all"):
+        api = next(
+            requirement
+            for requirement in requirements
+            if requirement.name == "opentelemetry-api"
+            and requirement.marker is not None
+            and requirement.marker.evaluate({"extra": extra})
+        )
+        assert str(api.specifier) == "==1.44.0"
+        assert api.marker is not None
+        assert not api.marker.evaluate({"extra": ""})
 
 
 def test_server_spans_and_rule_count_events(report: AuditReport) -> None:
