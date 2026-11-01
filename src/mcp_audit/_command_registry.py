@@ -19,7 +19,7 @@ LAB_INSTALL_NOTICE = (
     "uv tool install mcp-audits-proof (a uv tool extra does not expose its scripts)."
 )
 PROOF_INSTALL_NOTICE = (
-    "In 3.0, for proof-before-action on PATH, install Proof directly with: "
+    "For proof-before-action on PATH, install Proof directly with: "
     "uv tool install mcp-audits-proof (a uv tool extra does not expose its scripts)."
 )
 

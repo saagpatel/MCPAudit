@@ -14,8 +14,9 @@ from typing import Any, cast
 
 import pytest
 from click.testing import CliRunner
+from proof_before_action import proof_cli
 
-from mcp_audit import cli, proof_cli
+from mcp_audit import cli
 
 RELEASE_VERIFIER: dict[str, Any] = runpy.run_path(
     "scripts/verify_release.py",
@@ -221,8 +222,7 @@ def test_candidate_state_is_never_publishable(tmp_path: Path) -> None:
         'dependencies = ["mcp>=2.2.0,<3.0", "cryptography>=50.0.0,<51.0", '
         '"click>=8.3.3,<9.0", "anyio>=4.14.2"]\n'
         '[project.scripts]\nmcp-audit = "mcp_audit.cli:main"\n'
-        'mcp-audits = "mcp_audit.cli:main"\n'
-        'proof-before-action = "mcp_audit.proof_cli:main"\n',
+        'mcp-audits = "mcp_audit.cli:main"\n',
         encoding="utf-8",
     )
     (tmp_path / "uv.lock").write_text(
@@ -292,7 +292,6 @@ def test_release_entry_points_are_exact() -> None:
         b"""[console_scripts]
 mcp-audit = mcp_audit.cli:main
 mcp-audits = mcp_audit.cli:main
-proof-before-action = mcp_audit.proof_cli:main
 """,
         name="fixture.whl",
     )
@@ -511,7 +510,8 @@ def test_publish_gate_runs_corpus_and_exact_distribution_install_smokes() -> Non
     assert 'for package in "$wheel" "$sdist"' in build_job
     assert 'release_version="${RELEASE_TAG#v}"' in build_job
     assert "mcp-audit, version $release_version" in build_job
-    assert "proof-before-action, version $release_version" in build_job
+    assert 'test ! -e "$smoke/bin/proof-before-action"' in build_job
+    assert "proof-before-action, version $release_version" not in build_job
     assert '"$smoke/bin/python" -I scripts/smoke_installed_artifact.py' in build_job
 
 

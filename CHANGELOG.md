@@ -48,9 +48,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in core until the module moves. Release verification admits the complete `all`
   extra, admits satellite references only as exact pins in those extras, rejects
   a Proof core dependency, and selects each reference build explicitly by package.
+- Proof uses its own installed version and install notice, and source-checkout
+  producer provenance resolves the split module path from the repository root.
 
 ### Breaking
 
+- Move Proof Before Action's five modules from `mcp_audit.proof_*` to
+  `proof_before_action.proof_*` in `mcp-audits-proof`. The `proof-before-action`
+  command now belongs to that distribution; install it with
+  `uv tool install mcp-audits-proof` to expose the command on PATH.
 - `check` and `shadow` now exit 2 after rendering or writing reports when any
   requested pin-dependent check has a withheld baseline: pin, canary,
   escalation, provenance, integrity, artifact verification or artifact download.
