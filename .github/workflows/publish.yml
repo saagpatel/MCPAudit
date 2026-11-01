@@ -185,8 +185,14 @@ jobs:
 
       - name: Build wheel and sdist
         working-directory: release-source
+        # One package per build, in contract order: parallel --all-packages builds can see a
+        # sibling's transient _build_provenance.json and record a clean tree as dirty.
         run: |
-          uv build --all-packages --clear --no-create-gitignore \
+          uv build --package mcp-audits --clear --no-create-gitignore --out-dir dist \
+            --build-constraints ../release-controls/build-constraints.txt
+          uv build --package mcp-audits-labs --no-create-gitignore --out-dir dist \
+            --build-constraints ../release-controls/build-constraints.txt
+          uv build --package mcp-audits-proof --no-create-gitignore --out-dir dist \
             --build-constraints ../release-controls/build-constraints.txt
 
       - name: Verify built distributions
