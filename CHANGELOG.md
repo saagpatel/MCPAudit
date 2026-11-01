@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `_build_provenance.json` is gitignored, so a parallel `uv build --all-packages`
+  no longer sees a sibling package's transient provenance and marks a clean
+  checkout dirty. Release builds stay serial.
 - The publish workflow's PyPI readback waits up to two minutes for a just-uploaded
   release to appear in PyPI's JSON API. Only a missing release or a correct
   subset of its files is retried; any other mismatch still fails at once.
