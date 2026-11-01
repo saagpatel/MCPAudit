@@ -156,7 +156,12 @@ def test_mcp_trust_packet_is_discoverable_and_safe() -> None:
 
 
 def test_strict_policy_example_exits_two() -> None:
-    command = shutil.which("mcp-audit")
+    # Resolve the console script beside this interpreter so a global install
+    # on PATH cannot shadow the environment under test.
+    bin_dir = Path(sys.executable).parent
+    command = next(
+        (path for path in (bin_dir / "mcp-audit", bin_dir / "mcp-audit.exe") if path.is_file()), None
+    )
     assert command is not None
     result = subprocess.run(
         [
@@ -350,8 +355,9 @@ def test_golden_rollout_doc_is_linked_and_staged() -> None:
     readme = Path("README.md").read_text()
     adoption = Path("docs/ADOPTION-GUIDE.md").read_text()
 
-    assert "mcp-audit scan --skip-connect" in rollout
-    assert "mcp-audit scan --inject-check" in rollout
+    assert "mcp-audit check --include-discovered --output-json" in rollout
+    assert "mcp-audit check --include-discovered --connect-all --inject-check" in rollout
+    assert "mcp-audit scan" not in rollout
     assert "mcp-audit pin" in rollout
     assert "--policy examples/policies/balanced-team-ci.yaml" in rollout
     assert "maintainers/" in readme

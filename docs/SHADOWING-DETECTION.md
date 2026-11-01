@@ -165,9 +165,9 @@ JSON.
 
 ```bash
 # Detect tool-name shadowing across all configured MCP servers
-mcp-audit scan --shadow-check
+mcp-audit check --include-discovered --connect-all --shadow-check
 
 # Export JSON + SARIF and gate CI
-mcp-audit scan --shadow-check --json mcp-audit.json --sarif mcp-audit.sarif \
+mcp-audit check --include-discovered --connect-all --shadow-check --output-json mcp-audit.json --sarif mcp-audit.sarif \
   --policy examples/policies/shadowing-aware-ci.yaml
 ```

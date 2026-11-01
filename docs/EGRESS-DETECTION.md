@@ -1,6 +1,6 @@
 # Egress Detection
 
-`mcp-audit scan --egress-check` audits **where** an MCP server may send data. Where
+`mcp-audit check --egress-check` audits **where** an MCP server may send data. Where
 SSRF asks "can a caller steer where the server connects?", egress asks "is the
 destination one we trust?" — it flags outbound destinations outside a caller-supplied
 allowlist, caller-controlled (unbounded) destinations, and the residual risk of an
@@ -79,10 +79,10 @@ destination host (or `caller-controlled` when unbounded), the kind, and the evid
 
 ```bash
 # Flag everything outside the allowlist; api.anthropic.com is trusted but raises a residual.
-mcp-audit scan --egress-check --egress-allowlist api.anthropic.com,internal.corp.example
+mcp-audit check --include-discovered --connect-all --egress-check --egress-allowlist api.anthropic.com,internal.corp.example
 
 # Extend the curated multi-tenant host set.
-mcp-audit scan --egress-check --egress-allowlist data.partner.example --multi-tenant-hosts data.partner.example
+mcp-audit check --include-discovered --connect-all --egress-check --egress-allowlist data.partner.example --multi-tenant-hosts data.partner.example
 ```
 
 A policy file can also supply `egress_allowlist` and `multi_tenant_hosts`; these merge

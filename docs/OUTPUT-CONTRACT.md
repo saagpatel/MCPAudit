@@ -347,9 +347,9 @@ with a release-note deprecation window and a breaking-version boundary.
 
 ### Terminal summary and presentation grade
 
-Terminal `check` and `scan` output starts with a summary; `--details` retains
-the legacy tables and complete findings. `--verbose` on `scan` also retains
-the tables and tool breakdown. The summary shows recorded coverage, all finding
+Terminal `check` output, including accepted legacy `scan` forms, starts with a
+summary; `--details` retains the legacy tables and complete findings, and
+`--verbose` adds per-tool permission details. The summary shows recorded coverage, all finding
 and warning totals, at most three numbered manual action cards, and execution
 disclosure. Cards include server/client attribution, recorded source paths,
 plain-English titles, observations, consequences, manual steps, confidence limits

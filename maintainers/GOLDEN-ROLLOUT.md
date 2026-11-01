@@ -10,7 +10,7 @@ Start without spawning or contacting MCP servers:
 
 ```bash
 mcp-audit discover
-mcp-audit scan --skip-connect --json mcp-audit-config-review.json
+mcp-audit check --include-discovered --output-json mcp-audit-config-review.json
 ```
 
 Review discovered server names, commands, transports, package runners, remote
@@ -31,10 +31,11 @@ inventory consumers.
 After the configured servers look expected, inspect live MCP metadata:
 
 ```bash
-mcp-audit scan --inject-check --json mcp-audit-connected.json
+mcp-audit check --include-discovered --connect-all --inject-check \
+  --output-json mcp-audit-connected.json
 ```
 
-Connected scans may start stdio servers or contact HTTP/SSE servers. Review
+Connected reviews may start stdio servers or contact HTTP/SSE servers. Review
 tool findings, prompt/resource findings, and `non_tool_risk` separately from
 `risk_score.composite`.
 
@@ -44,7 +45,8 @@ Once a server set is reviewed, snapshot tool schemas:
 
 ```bash
 mcp-audit pin
-mcp-audit scan --pin-check --json mcp-audit-pinned.json
+mcp-audit check --include-discovered --connect-all --pin-check \
+  --output-json mcp-audit-pinned.json
 ```
 
 Use server-scoped maintenance commands for later changes:
@@ -72,10 +74,10 @@ refer to the intended scope.
 Start with the policy that matches the trust level of the environment:
 
 ```bash
-mcp-audit scan \
+mcp-audit check --include-discovered --connect-all \
   --inject-check \
   --pin-check \
-  --json mcp-audit-policy.json \
+  --output-json mcp-audit-policy.json \
   --policy examples/policies/balanced-team-ci.yaml
 ```
 
@@ -86,8 +88,9 @@ servers.
 Use `examples/ci/config-health-policy.yml` when CI should fail on setup health
 without connecting to MCP servers.
 
-Exit code `2` means the scan completed and reports were written, but the local
-policy failed.
+Exit code `2` after the review means reports were written, but the local
+policy failed. A requested `--pin-check` with a withheld baseline also exits
+`2` this way; refresh the pin with `mcp-audit pin --refresh SERVER`.
 
 ## 5. Keep The Loop Calibrated
 

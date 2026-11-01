@@ -1,6 +1,6 @@
 # Launch-Artifact Integrity Detection (`--integrity-check`)
 
-`mcp-audit scan --integrity-check` hashes the **on-disk artifact** a server
+`mcp-audit check --integrity-check` hashes the **on-disk artifact** a server
 launches and flags drift against the pin baseline. It closes a gap left by the
 schema (`--pin-check`) and provenance (`--provenance-check`) checks: those compare
 tool schemas and the launch *config strings*, but the command string can stay
@@ -19,7 +19,7 @@ resolvable on-disk launch artifact:
   bare name resolved on `PATH` via `which`), and
 - any **argument that is an existing local file** (e.g. a script path).
 
-On a later `scan --integrity-check`, each pinned path is re-hashed and compared:
+On a later `check --integrity-check`, each pinned path is re-hashed and compared:
 
 | Rule | Condition | Severity |
 |------|-----------|----------|
@@ -59,10 +59,10 @@ rest of MCPAudit: env/header credentials are recorded by key name only.
 mcp-audit pin
 
 # Later, flag any on-disk launch-artifact drift.
-mcp-audit scan --integrity-check
+mcp-audit check --include-discovered --integrity-check
 
 # Gate CI on it (opt-in; not covered by the broad fail_on.severity shortcut).
-mcp-audit scan --integrity-check --json mcp-audit.json --policy examples/policies/integrity-aware-ci.yaml
+mcp-audit check --include-discovered --integrity-check --output-json mcp-audit.json --policy examples/policies/integrity-aware-ci.yaml
 ```
 
 A non-empty `MCP024` finding means a file the server launches changed since you

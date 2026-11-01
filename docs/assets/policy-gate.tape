@@ -1,12 +1,12 @@
 # policy-gate.tape - MCPAudit CI policy gate demo
 #
 # Produces docs/assets/policy-gate.gif: a zero-touch scan against the public
-# fixture with the strict example policy, showing Policy Gate Failed and the
+# fixture with the strict example policy, showing Policy Gate: FAILED and the
 # real process exit code (`2`).
 #
 # SAFETY
-#   Uses --config examples/configs/popular-public-servers.json --config-only
-#   --skip-connect, so no real workstation configs are read, no MCP servers are
+#   Uses check --config examples/configs/popular-public-servers.json, which
+#   reviews only that file statically, so no real workstation configs are read, no MCP servers are
 #   spawned, and no network calls are made.
 
 Output docs/assets/policy-gate.gif
