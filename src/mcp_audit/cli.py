@@ -25,7 +25,7 @@ def _help_all(ctx: click.Context, param: click.Parameter, value: bool) -> None:
     is_eager=True,
     expose_value=False,
     callback=_help_all,
-    help="Show all command paths, including compatibility aliases.",
+    help="Show all command paths, including nested subcommands.",
 )
 @click.option("--details", is_flag=True, help="Show details for the bare static review.")
 @click.option("--json", "json_stdout", is_flag=True, help="Emit JSON for the bare static review.")

@@ -512,7 +512,7 @@ def test_credential_looking_input_is_rejected_without_reflection(tmp_path: Path)
         parse_oauth_transcript_bytes(raw)
     assert "credential-looking input rejected" in str(caught.value)
     assert SENTINEL_SECRET not in str(caught.value)
-    result = CliRunner().invoke(main, ["oauth-transcript", "scan", str(path)])
+    result = CliRunner().invoke(main, ["lab", "oauth-transcript", "scan", str(path)])
     assert result.exit_code == 2
     assert SENTINEL_SECRET not in result.output
     assert SENTINEL_SECRET not in (result.exception and str(result.exception) or "")
@@ -529,7 +529,7 @@ def test_credential_looking_input_is_rejected_without_reflection(tmp_path: Path)
     secret_field_path.write_text(json.dumps(secret_field), encoding="utf-8")
     cli_error = CliRunner().invoke(
         main,
-        ["oauth-transcript", "scan", str(secret_field_path)],
+        ["lab", "oauth-transcript", "scan", str(secret_field_path)],
     )
     assert cli_error.exit_code == 2
     assert cli_error.exception is not None
@@ -637,7 +637,7 @@ def test_schema_command_matches_live_strict_model(
     model: type[BaseModel],
     schema_name: str,
 ) -> None:
-    result = CliRunner().invoke(main, ["oauth-transcript", "schema", contract])
+    result = CliRunner().invoke(main, ["lab", "oauth-transcript", "schema", contract])
     assert result.exit_code == 0, result.output
     schema = json.loads(result.stdout)
     assert schema == model.model_json_schema()
@@ -701,7 +701,7 @@ def test_offline_cli_smoke_matrix(
     expected_exit: int,
     expected_verdict: str,
 ) -> None:
-    result = CliRunner().invoke(main, ["oauth-transcript", "scan", str(_fixture(name))])
+    result = CliRunner().invoke(main, ["lab", "oauth-transcript", "scan", str(_fixture(name))])
     assert result.exit_code == expected_exit, result.output
     report = OAuthTranscriptReport.model_validate_json(result.stdout_bytes, strict=True)
     assert report.verdict == expected_verdict
@@ -711,6 +711,7 @@ def test_cli_writes_json_and_sarif_and_refuses_implicit_overwrite(tmp_path: Path
     json_path = tmp_path / "report.json"
     sarif_path = tmp_path / "report.sarif"
     args = [
+        "lab",
         "oauth-transcript",
         "scan",
         str(_fixture("mcpoauth001-negative.json")),

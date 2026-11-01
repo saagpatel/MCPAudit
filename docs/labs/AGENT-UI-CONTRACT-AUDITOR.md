@@ -13,14 +13,14 @@ data.
 ## Command
 
 ```bash
-mcp-audit agent-ui scan tests/fixtures/agent_ui/mcpui001-authority-vulnerable.json \
+mcp-audit lab agent-ui scan tests/fixtures/agent_ui/mcpui001-authority-vulnerable.json \
   --json agent-ui-report.json \
   --html agent-ui-report.html
 
-mcp-audit agent-ui schema mcp-apps-fixture
-mcp-audit agent-ui schema a2ui-fixture-manifest
-mcp-audit agent-ui schema a2ui-message
-mcp-audit agent-ui schema report
+mcp-audit lab agent-ui schema mcp-apps-fixture
+mcp-audit lab agent-ui schema a2ui-fixture-manifest
+mcp-audit lab agent-ui schema a2ui-message
+mcp-audit lab agent-ui schema report
 ```
 
 `--json` writes the canonical machine-readable report. `--html` writes an inert,

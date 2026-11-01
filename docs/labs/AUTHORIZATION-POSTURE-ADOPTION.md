@@ -1,6 +1,6 @@
 # MCP Authorization Posture Adoption
 
-`mcp-audit authorization-posture` is an experimental offline consumer for the
+`mcp-audit lab authorization-posture` is an experimental offline consumer for the
 portable `McpAuthorizationPostureV1` JSON contract. It lets MCPAudit accept a
 saved, credential-free public-metadata posture produced by another tool without
 repeating that tool's network activity or inheriting authority to contact the
@@ -13,14 +13,14 @@ possible disposition is `policy-review-only`.
 
 ```bash
 # Canonical advisory JSON to stdout
-mcp-audit authorization-posture review posture.json
+mcp-audit lab authorization-posture review posture.json
 
 # Descriptor-bound atomic output; existing files are not replaced by default
-mcp-audit authorization-posture review posture.json --json report.json
+mcp-audit lab authorization-posture review posture.json --json report.json
 
 # Authoritative strict contracts
-mcp-audit authorization-posture schema input
-mcp-audit authorization-posture schema report
+mcp-audit lab authorization-posture schema input
+mcp-audit lab authorization-posture schema report
 ```
 
 Exit codes are:
