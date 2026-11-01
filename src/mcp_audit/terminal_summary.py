@@ -240,12 +240,14 @@ def _recheck(action: Action) -> str:
             else (paths[0] if paths else "./reviewed-mcp-config.json")
         )
         parts = [
-            "mcp-audit scan --config",
+            "mcp-audit check --config",
             shlex.quote(source),
             "--config-only",
             "--override-config /dev/null",
         ]
-        if not action.connected:
+        if action.connected:
+            parts.append("--connect-all")
+        else:
             parts.append("--skip-connect")
         parts.extend(action.flags)
         return " \\\n     ".join(parts)

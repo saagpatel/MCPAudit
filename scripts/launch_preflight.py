@@ -20,7 +20,9 @@ EXPECTED_WORKFLOWS = {"CI", "Self Audit", "CodeQL"}
 TITLE = "Show HN: mcp-audit \u2013 see what your MCP servers can actually touch"
 REPO_URL = "https://github.com/saagpatel/MCPAudit"
 HN_SUBMIT_PAGE_URL = "https://news.ycombinator.com/submit"
-FIELD_REPORT_COMMAND = "mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact"
+FIELD_REPORT_COMMAND = (
+    "mcp-audit check --include-discovered --output-json mcp-audit-field-report.json --redact"
+)
 FIELD_REPORT_ISSUE = "https://github.com/saagpatel/MCPAudit/issues/new?template=field_report.md"
 PYPI_JSON_URL = f"https://pypi.org/pypi/{PACKAGE_NAME}/json"
 PYPI_PROJECT_URL = f"https://pypi.org/project/{PACKAGE_NAME}/"

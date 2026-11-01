@@ -14,7 +14,7 @@ from mcp_audit.discovery import _DISCOVERERS
 from mcp_audit.discovery.cursor import CursorDiscoverer
 
 SANDBOX = Path(__file__).resolve().parents[1] / "examples/sandbox/fixtures/synthetic-mcp-config.json"
-FLAGS = {"check": ("--output-json", "--sarif", "--html"), "scan": ("--json", "--sarif", "--html")}
+FLAGS = {"check": ("--output-json", "--sarif", "--html")}
 OUTPUT_CASES = [(command, flag) for command, flags in FLAGS.items() for flag in flags]
 PAIR_CASES = [
     (command, first, second)
@@ -45,7 +45,7 @@ def _inputs(tmp_path: Path) -> tuple[Path, Path, Path]:
 
 def _args(command: str, config: Path, policy: Path, override: Path) -> list[str]:
     args = [command, "--config", str(config), "--policy", str(policy)]
-    if command == "scan":
+    if command == "check":
         args.extend(["--config-only", "--skip-connect", "--override-config", str(override)])
     return args
 
@@ -103,20 +103,20 @@ def test_watch_outputs_cannot_alias_selected_config(tmp_path: Path, kind: str) -
         _validate_watch_outputs(str(output), None, [config])
 
 
-@pytest.mark.parametrize("flag", FLAGS["scan"])
+@pytest.mark.parametrize("flag", FLAGS["check"])
 @pytest.mark.parametrize("kind", ["direct", "symlink", "hardlink"])
 def test_scan_artifacts_cannot_overwrite_override(tmp_path: Path, flag: str, kind: str) -> None:
     config, policy, override = _inputs(tmp_path)
     before = override.read_bytes()
     output = _alias(override, tmp_path / "alias", kind)
-    result = CliRunner().invoke(main, [*_args("scan", config, policy, override), flag, str(output)])
+    result = CliRunner().invoke(main, [*_args("check", config, policy, override), flag, str(output)])
     assert result.exit_code == 2, result.output
     assert flag in result.stderr
     assert "aliases an input file" in result.stderr
     assert override.read_bytes() == before
 
 
-@pytest.mark.parametrize("flag", [*FLAGS["scan"], "--card"])
+@pytest.mark.parametrize("flag", [*FLAGS["check"], "--card"])
 @pytest.mark.parametrize("kind", ["direct", "symlink", "hardlink"])
 def test_scan_artifacts_cannot_overwrite_selected_pin_baseline(tmp_path: Path, flag: str, kind: str) -> None:
     config, policy, override = _inputs(tmp_path)
@@ -125,11 +125,11 @@ def test_scan_artifacts_cannot_overwrite_selected_pin_baseline(tmp_path: Path, f
     before = pin_file.read_bytes()
     output = _alias(pin_file, tmp_path / "pin-alias", kind)
     other = tmp_path / "untouched-artifact"
-    other_flag = "--sarif" if flag == "--json" else "--json"
+    other_flag = "--sarif" if flag == "--output-json" else "--output-json"
     result = CliRunner().invoke(
         main,
         [
-            *_args("scan", config, policy, override),
+            *_args("check", config, policy, override),
             "--pin-file",
             str(pin_file),
             flag,
@@ -163,10 +163,17 @@ def test_discovered_configs_without_servers_are_protected(
     before = discovered.read_bytes()
     monkeypatch.setattr(CursorDiscoverer, "config_paths", lambda self: [discovered])
     output = _alias(discovered, tmp_path / "alias", kind)
-    if command == "check":
-        args = [*_args(command, config, policy, override), "--include-discovered"]
-    else:
-        args = [command, "--config", str(config), "--skip-connect", "--override-config", str(override)]
+    args = [
+        command,
+        "--config",
+        str(config),
+        "--policy",
+        str(policy),
+        "--skip-connect",
+        "--override-config",
+        str(override),
+        "--include-discovered",
+    ]
     other = tmp_path / "other-artifact"
     other_flag = next(option for option in FLAGS[command] if option != flag)
     result = CliRunner().invoke(main, [*args, other_flag, str(other), flag, str(output)])

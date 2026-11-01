@@ -5,11 +5,10 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-import anyio
 import pytest
+from click.testing import CliRunner
 
-from mcp_audit import _core_cli as core_cli
-from mcp_audit import scan_cli
+from mcp_audit import check_cli, cli
 from mcp_audit.models import (
     ArtifactVerifyFinding,
     ArtifactVerifyKind,
@@ -613,7 +612,7 @@ servers:
 def test_scan_threads_per_server_egress_allowlist_from_policy(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """``_run_scan`` derives the per-server egress allowlist map from ``policy.server_rules``
+    """``check`` derives the per-server egress allowlist map from ``policy.server_rules``
     and threads it into the engine's ``run_scan`` options. Regression guard for the map-building
     half of the wiring; the apply half (map → detector) is covered in test_egress_integration."""
     policy_path = tmp_path / "policy.yaml"
@@ -647,22 +646,24 @@ servers:
             scan_duration_seconds=0.0,
         )
 
-    monkeypatch.setattr(scan_cli, "run_scan", fake_run_scan)
-    monkeypatch.setattr(core_cli, "discover_all_configs", lambda clients, parse_errors=None: [])
-
-    anyio.run(
-        scan_cli._run_scan,
-        None,  # json_output
-        None,  # sarif_output
-        None,  # html_output
-        True,  # skip_connect
-        None,  # clients
-        10,  # timeout
-        False,  # verbose
-        None,  # extra_config
-        None,  # override_config_path
-        str(policy_path),  # policy_path
+    monkeypatch.setattr(check_cli, "run_scan", fake_run_scan)
+    config = tmp_path / "synthetic.json"
+    config.write_text('{"mcpServers": {}}')
+    result = CliRunner().invoke(
+        cli.main,
+        [
+            "check",
+            "--config",
+            str(config),
+            "--config-only",
+            "--skip-connect",
+            "--override-config",
+            "/dev/null",
+            "--policy",
+            str(policy_path),
+        ],
     )
+    assert result.exit_code == 0, result.output
 
     # Only servers with a non-empty per-server egress_allowlist appear in the map.
     options = captured["options"]
@@ -872,23 +873,26 @@ deny:
     async def fake_run_scan(*args: object, **kwargs: object) -> AuditReport:
         return _audit_report(audit)
 
-    monkeypatch.setattr(scan_cli, "run_scan", fake_run_scan)
-
-    with pytest.raises(SystemExit) as exc:
-        anyio.run(
-            scan_cli._run_scan,
-            str(json_path),
-            None,  # sarif_output
-            None,  # html_output
-            True,  # skip_connect
-            None,  # clients
-            10,  # timeout
-            False,  # verbose
-            None,  # extra_config
-            None,  # override_config_path
+    monkeypatch.setattr(check_cli, "run_scan", fake_run_scan)
+    config = tmp_path / "synthetic.json"
+    config.write_text('{"mcpServers": {}}')
+    result = CliRunner().invoke(
+        cli.main,
+        [
+            "check",
+            "--config",
+            str(config),
+            "--config-only",
+            "--skip-connect",
+            "--override-config",
+            "/dev/null",
+            "--policy",
             str(policy_path),
-        )
+            "--output-json",
+            str(json_path),
+        ],
+    )
 
-    assert exc.value.code == 2
+    assert result.exit_code == 2, result.output
     assert json_path.exists()
     assert '"policy_result"' in json_path.read_text()
