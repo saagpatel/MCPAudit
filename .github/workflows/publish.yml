@@ -56,7 +56,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: "3.11"
           version: "0.13.0"
@@ -115,7 +115,7 @@ jobs:
           persist-credentials: false
           path: release-source
 
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: "3.11"
           version: "0.13.0"
@@ -259,7 +259,7 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: "3.11"
           version: "0.13.0"
@@ -348,7 +348,7 @@ jobs:
           fetch-depth: 0
           path: release-source
           persist-credentials: false
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: "3.11"
           version: "0.13.0"
@@ -477,7 +477,7 @@ jobs:
             --environment-json "$RUNNER_TEMP/pypi-environment.json" \
             --branch-policies-json "$RUNNER_TEMP/pypi-branches.json"
 
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: "3.11"
           version: "0.13.0"
@@ -515,7 +515,7 @@ jobs:
 
       - name: Publish mcp-audits
         if: steps.stage.outputs.mcp-audits == 'true'
-        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
         with:
           packages-dir: staged/mcp-audits/
           attestations: true
@@ -531,7 +531,7 @@ jobs:
 
       - name: Publish mcp-audits-labs
         if: steps.stage.outputs.mcp-audits-labs == 'true'
-        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
         with:
           packages-dir: staged/mcp-audits-labs/
           attestations: true
@@ -547,7 +547,7 @@ jobs:
 
       - name: Publish mcp-audits-proof
         if: steps.stage.outputs.mcp-audits-proof == 'true'
-        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
         with:
           packages-dir: staged/mcp-audits-proof/
           attestations: true
