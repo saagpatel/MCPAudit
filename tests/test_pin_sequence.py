@@ -332,7 +332,9 @@ def test_clear_preserves_signed_manifest_and_mcp027_after_trust_and_key_deletion
             str(report),
         ],
     )
-    assert result.exit_code == 0, result.output
+    # The tampered baseline is withheld, so the requested pin check fails the run (P-2)
+    # after the report is written.
+    assert result.exit_code == 2, result.output
     audit = json.loads(report.read_text())["audits"][0]
     assert audit["pin_integrity_findings"][0]["rule_id"] == "MCP027"
     assert audit["pin_integrity_findings"][0]["severity"] == "high"

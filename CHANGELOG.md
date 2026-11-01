@@ -7,8 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Raise the optional OpenTelemetry API minimum to 1.45.1 to address the
+  unbounded `tracestate` parsing advisory.
+
 ### Changed
 
+- Compatibility SARIF emits one warning-level `MCP-CH-CONFIG-PARSE-FAILURE`
+  result per skipped discovered source, with its reason, source location and
+  `--config FILE` remedy, including translated static scans. Existing skip
+  notifications, exit codes and extended-profile results are unchanged.
 - Static discovering `scan` translations now append
   `--include-discovered --scan-compatible-sources`, including Claude Code,
   Cursor, unfiltered scans and the 2.11 hook form. Synthetic parity tests use
@@ -48,6 +57,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   still dispatches `lab` and `safeforge` lazily; without labs these commands
   exit 2 with the existing install notice, including the direct Proof install
   needed to put `proof-before-action` on PATH.
+- `check` and `shadow` now exit 2 after rendering or writing reports when any
+  requested pin-dependent check has a withheld baseline: pin, canary,
+  escalation, provenance, integrity, artifact verification or artifact download.
+  `policy_result` records the failure even without `--policy`. An explicit
+  `fail_on.pin_baseline_withheld: false` is accepted but ignored with a loader
+  warning. `watch` continues and renders the warning on every scan; library
+  scans and policy evaluation retain their existing behavior.
 - `scan` is now a hidden interceptor over `check`. Forms classified as
   preserved or explicitly narrowed print one notice and run the printed
   command through check's parser, output and exit handling. Forms that could

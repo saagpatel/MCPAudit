@@ -31,7 +31,7 @@ safeforge safeforge_cli safeforge_consumer safeforge_contract_linter safeforge_c
 OPTIONAL_EXTRAS = {
     "watch": ["watchfiles>=1.1.1"],
     "llm": ["anthropic>=0.40"],
-    "otel": ["opentelemetry-api>=1.44,<2"],
+    "otel": ["opentelemetry-api>=1.45.1,<2"],
 }
 
 
