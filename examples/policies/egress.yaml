@@ -1,5 +1,5 @@
 # CI gate for teams that want to control *where* MCP servers may send data.
-# Run with: mcp-audit scan --egress-check --json mcp-audit.json --policy this.yaml
+# Run with: mcp-audit check --include-discovered --connect-all --egress-check --output-json mcp-audit.json --policy this.yaml
 #
 # Egress gating is opt-in: the broad fail_on.severity shortcut does NOT cover it,
 # so it must be requested explicitly via fail_on.egress. Pair with --egress-check on

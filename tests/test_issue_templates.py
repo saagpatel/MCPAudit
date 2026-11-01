@@ -22,10 +22,13 @@ def test_feedback_template_collects_fixture_ready_context() -> None:
     text = FEEDBACK_TEMPLATE.read_text()
 
     assert "## Reproduction mode" in text
-    assert "`scan --skip-connect`" in text
-    assert "`scan --inject-check`" in text
-    assert "`scan --pin-check`" in text
-    assert "`scan --policy`" in text
+    assert "static `check`" in text
+    assert "connected `check`" in text
+    assert "`check --inject-check`" in text
+    assert "`check --pin-check`" in text
+    assert "`check --policy`" in text
+    assert "legacy `scan` translation notice or refusal" in text
+    assert "`scan --skip-connect`" not in text
     assert "JSON or SARIF consumer parsing" in text
     assert "Dashboard or CI status-page integration" in text
     assert "## Expected regression assertion" in text

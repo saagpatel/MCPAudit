@@ -16,7 +16,7 @@ MCPAudit reviews MCP client and server configuration, reports declared access an
 Use Python 3.14.8 and `uv`.
 
 ```sh
-uv sync --locked --dev
+uv sync --all-packages --locked --dev
 uv run mcp-audit --help
 uv run mcp-audit check --config examples/sandbox/fixtures/synthetic-mcp-config.json \
   --config-only --skip-connect --override-config /dev/null

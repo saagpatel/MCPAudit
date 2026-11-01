@@ -3,7 +3,7 @@
 #
 # Run with:
 #   mcp-audit pin                        # once, to capture the approved baseline (incl. artifact hashes)
-#   mcp-audit scan --integrity-check --json mcp-audit.json --policy integrity-aware-ci.yaml
+#   mcp-audit check --include-discovered --integrity-check --output-json mcp-audit.json --policy integrity-aware-ci.yaml
 #
 # Integrity gating is opt-in: the broad fail_on.severity shortcut does NOT cover
 # it, so it must be requested explicitly via fail_on.integrity. Pair with

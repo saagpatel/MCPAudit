@@ -42,10 +42,8 @@ hosts under `.example`, placeholder env values, and static tool metadata.
 Run the real MCPAudit engine against the toy config:
 
 ```bash
-uv run mcp-audit scan \
+uv run mcp-audit check \
   --config examples/sandbox/fixtures/synthetic-mcp-config.json \
-  --config-only \
-  --skip-connect \
   --override-config /dev/null
 ```
 
@@ -62,12 +60,10 @@ To refresh the static report fixture after intentional scanner or fixture
 changes, generate a fresh JSON report and normalize volatile fields:
 
 ```bash
-uv run mcp-audit scan \
+uv run mcp-audit check \
   --config examples/sandbox/fixtures/synthetic-mcp-config.json \
-  --config-only \
-  --skip-connect \
   --override-config /dev/null \
-  --json /tmp/mcpaudit-sandbox-report.raw.json
+  --output-json /tmp/mcpaudit-sandbox-report.raw.json
 ```
 
 Keep `scan_timestamp`, `hostname`, and `scan_duration_seconds` deterministic in

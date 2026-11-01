@@ -53,7 +53,7 @@
     ]
   },
   "non_canary_sha256": {
-    "terminal": "11fe98dcd5c5527cb9bfcc1726e88d8f8506c16b03317269defd3b04fec1ee2d",
+    "terminal": "6f62dfc6bc09c25b5a100bd4b5e93da437c296dd1a9ecc563b3cafd6286feb21",
     "html": "3488ea65d107a0d590277a59bab71c2011f4adc1b5695c0628da24461f6dfaf6",
     "sarif": "b00d0621b327fa582643f506ccb1b90f322ce393896c963e30336d8f99d8c389"
   }

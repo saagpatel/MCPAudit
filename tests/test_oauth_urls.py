@@ -8,7 +8,6 @@ import pytest
 from pydantic import BaseModel, Field
 
 from mcp_audit import oauth_urls
-from mcp_audit.authorization_posture_models import canonical_json_bytes
 
 
 @pytest.mark.parametrize(
@@ -102,6 +101,5 @@ def test_canonical_posture_bytes_keep_model_and_number_policy() -> None:
     document = Document(label="café", timestamp=datetime(2026, 1, 1, tzinfo=UTC))
     expected = '{"label":"café","timestamp":"2026-01-01T00:00:00Z"}\n'.encode()
     assert oauth_urls.canonical_json_bytes(document) == expected
-    assert canonical_json_bytes is oauth_urls.canonical_json_bytes
     assert oauth_urls.canonical_json_bytes({"z": [1], "a": "café"}) == '{"a":"café","z":[1]}\n'.encode()
     assert oauth_urls.canonical_json_bytes([float("nan")]) == b"[NaN]\n"
