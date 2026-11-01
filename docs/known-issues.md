@@ -56,5 +56,4 @@
   `review_source_skipped` tool execution notification, without a result, and
   keeps `executionSuccessful: true`. JSON reports, stderr and the `extended`
   SARIF profile (which includes config-health results) show it in full. Select a skipped source explicitly with
-  `--config FILE`. Making the skip visible in compatibility SARIF is planned
-  before 3.0.0.
+  `--config FILE`.
