@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   coverage, and queries OSV with canonical PyPI names (`uv-build`).
 - The OSV dependency advisory workflow runs on pull requests to `release/2.x` as
   well as `main`, and a contract test pins its triggers, permissions and steps.
+- Raise the optional `otel` extra's OpenTelemetry API minimum to 1.45.1 to address
+  the unbounded `tracestate` parsing advisory, and lock `opentelemetry-api` 1.45.2.
 
 ## [2.12.0] - 2026-10-12
 

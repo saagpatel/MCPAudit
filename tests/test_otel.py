@@ -22,6 +22,7 @@ from opentelemetry.trace import (
 )
 from opentelemetry.util.types import Attributes, AttributeValue
 from packaging.requirements import Requirement
+from packaging.specifiers import SpecifierSet
 
 from mcp_audit.models import (
     AuditReport,
@@ -94,6 +95,8 @@ def test_otel_extra_declares_the_api_dependency() -> None:
     assert "otel" in (package.get_all("Provides-Extra") or [])
     requirements = [Requirement(value) for value in package.get_all("Requires-Dist") or []]
     api = next(requirement for requirement in requirements if requirement.name == "opentelemetry-api")
+    # 1.45.1 is the floor past the unbounded ``tracestate`` parsing advisory.
+    assert api.specifier == SpecifierSet(">=1.45.1,<2")
     assert api.marker is not None
     assert api.marker.evaluate({"extra": "otel"})
     assert not api.marker.evaluate({"extra": ""})
