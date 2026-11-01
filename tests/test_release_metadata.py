@@ -1153,6 +1153,74 @@ def test_checklist_activates_the_commit_first_three_distribution_train() -> None
     expected = {"version", "commit", "dry_run", "resume", "run_id", "manifest_sha256", "control_sha"}
     assert set(inputs) == expected
 
+    # The documented upload order is the workflow's: each upload is immediately read back.
+    contract = json.loads(Path("release/distributions.json").read_text(encoding="utf-8"))
+    order = [entry["name"] for entry in contract]
+    steps = workflow["jobs"]["publish"]["steps"]
+    assert _upload_readback_pairs(steps) == order
+    uploads = [step.get("with", {}).get("packages-dir") for step in steps]
+    first, second = (uploads.index(f"staged/{name}/") for name in order[:2])
+    # Swapping two whole upload+readback pairs breaks the order check.
+    swapped_pairs = [*steps]
+    swapped_pairs[first : first + 2], swapped_pairs[second : second + 2] = (
+        steps[second : second + 2],
+        steps[first : first + 2],
+    )
+    assert _upload_readback_pairs(swapped_pairs) != order
+    # Swapping only the uploads separates each upload from its own readback.
+    swapped_uploads = [*steps]
+    swapped_uploads[first], swapped_uploads[second] = steps[second], steps[first]
+    with pytest.raises(AssertionError, match="immediately read back"):
+        _upload_readback_pairs(swapped_uploads)
+
+
+def test_checklist_freezes_main_version_for_every_control_checkout_step() -> None:
+    publish = _markdown_section(CHECKLIST.read_text(encoding="utf-8"), PUBLISH_HEADING)
+    intro = publish.split("\n### ", 1)[0]
+    assert "No version-bump PR may land on `main` until the whole train" in intro
+    for section in ("### Dry Run and Publication", "### Resume", "### Tag, GitHub Release and Registry"):
+        text = " ".join(_markdown_section(publish, section).split())
+        assert "Main's `project.version` must still equal `X.Y.Z`" in text, section
+    assert "`docs/3.0-RELEASE-NOTES.md`" in publish
+    assert "pending" in _markdown_section(publish, "### Owner Prerequisites")
+
+    # The claim holds in the workflows: every verifier call without --root uses the controls checkout.
+    for path in (".github/workflows/publish.yml", ".github/workflows/publish-mcp-registry.yml"):
+        workflow = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+        for job in workflow["jobs"].values():
+            steps = job.get("steps", [])
+            if not any("verify_release.py" in step.get("run", "") for step in steps):
+                continue
+            checkouts = [step for step in steps if str(step.get("uses", "")).startswith("actions/checkout@")]
+            controls = [step for step in checkouts if step["with"]["ref"] == "${{ github.sha }}"]
+            assert len(controls) == 1
+            controls_path = controls[0]["with"].get("path", ".")
+            for step in steps:
+                run = step.get("run", "")
+                if "verify_release.py" not in run or "--root" in run:
+                    continue
+                script = re.search(r"(\S*)scripts/verify_release\.py", run)
+                assert script is not None
+                prefix = script.group(1)
+                cwd = step.get("working-directory", ".")
+                resolved = os.path.normpath(os.path.join(cwd, prefix or "."))
+                assert resolved == os.path.normpath(controls_path), (path, step.get("name"))
+
+
+def _upload_readback_pairs(steps: list[dict[str, Any]]) -> list[str]:
+    """Return distributions in upload order, requiring each upload's next step to read it back."""
+    names: list[str] = []
+    for index, step in enumerate(steps):
+        packages_dir = step.get("with", {}).get("packages-dir")
+        if packages_dir is None:
+            continue
+        name = str(packages_dir).removeprefix("staged/").removesuffix("/")
+        readback = steps[index + 1].get("run", "") if index + 1 < len(steps) else ""
+        through = re.findall(r"--published-through (\S+)", readback)
+        assert through == [name], f"upload of {name} is not immediately read back through it"
+        names.append(name)
+    return names
+
 
 def test_checklist_names_owner_prerequisites_and_rehearsal_order() -> None:
     publish = _markdown_section(CHECKLIST.read_text(encoding="utf-8"), PUBLISH_HEADING)
