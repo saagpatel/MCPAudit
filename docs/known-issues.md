@@ -46,3 +46,14 @@
 - Legacy v1 pins do not cover annotation-only changes, title, output schema,
   icons, or metadata. Review `pin --refresh` before upgrading to v2; current
   v2 pins cover these fields, including security-relevant annotation deltas.
+- A translated `scan --skip-connect` runs `check`, which applies its source
+  limits: a discovered source that is a symlink (or under one), larger than
+  1,048,576 bytes, deeper than nesting depth 64, or over the 1,000-server cap
+  is skipped with a `review_source_skipped` warning and a HIGH
+  `config_parse_failure` config-health finding, where 2.x `scan` read it. The
+  run exits 0 unless a policy sets `fail_on.config_health`, and the default
+  `--sarif-profile compatibility` output does not list that finding and reports
+  `executionSuccessful: true`. JSON reports, stderr and the `extended` SARIF
+  profile show the skip. Select a skipped source explicitly with
+  `--config FILE`. Making the skip visible in compatibility SARIF is planned
+  before 3.0.0.
