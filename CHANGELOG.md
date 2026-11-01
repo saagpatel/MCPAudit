@@ -249,8 +249,10 @@ examples, pre-commit example, and `docs/release-state.json` identify 3.0.0.
 Until publication completes, those source references are proposed release
 identities rather than proof that any public artifact or Registry entry exists.
 Retain `mcp-audits==2.12.0` as the rollback pin and verify installed command
-identity after rollback; a rollback to 2.12.0 also needs
-`pip uninstall mcp-audits-labs mcp-audits-proof` if either was installed.
+identity after rollback; a rollback to 2.12.0 first runs
+`pip uninstall mcp-audits-labs mcp-audits-proof` if either was installed, then
+installs the pin (both 2.12.0 core and 3.0.0 Proof own the `proof-before-action`
+script, so uninstalling Proof after the downgrade would remove it).
 
 ## [2.12.0] - 2026-10-12
 

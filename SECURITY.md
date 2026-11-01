@@ -189,9 +189,9 @@ themselves. See
 
 | Version | Supported |
 |---------|-----------|
-| 2.x | Yes |
-| 1.x | Security fixes only |
-| 0.x and earlier | No |
+| 3.x | Yes |
+| 2.x | Security fixes only, until 2027-03-01 |
+| 1.x and earlier | No |
 | Pre-release builds (alpha/beta/RC) | No |
 
 ---
