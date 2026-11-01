@@ -195,17 +195,25 @@ The release is bound to an approved commit and version, not to a tag. Main's
 existing `vX.Y.Z` tag, and refuses any 2.x version. The tag is created only
 after all six files are published and verified.
 
-**Main's version is frozen until the whole train completes.** Every verifier
-call in `publish.yml` and `publish-mcp-registry.yml` that does not pass
-`--root` runs from the release-controls checkout at `github.sha` (the
-dispatched `main` head), and the verifier requires the tag to equal that
-checkout's `project.version`. Main's `project.version` must therefore equal the
-release version for the publishing run, for any [resume](#resume), and for the
-Registry dispatch. No version-bump PR may land on `main` until the whole train
-is complete: all six files, the `vX.Y.Z` tag, the GitHub Release and the
-Registry entry. Otherwise every such step fails closed, resume becomes
-impossible, and only the abandoned-version route in
-[Partial-Publication Recovery](#partial-publication-recovery) remains.
+**What main must hold steady during the train.** Every verifier call in
+`publish.yml` (build, consumer smoke, resume and publish) passes `--root` at the
+approved commit's `release-source` checkout, so the publishing run and any
+[resume](#resume) read `project.version` from the approved commit, not from
+`main`. They do require `release/distributions.json` and `build-constraints.txt`
+to stay byte-identical between `main` (the release-controls checkout at
+`github.sha`) and the approved commit; either file changing on `main`
+mid-train makes those jobs fail closed. The `Publish to MCP Registry` workflow
+still runs unrooted verifier calls from the release-controls checkout, which
+require the tag to equal that checkout's `project.version`, so **main's
+`project.version` must still equal the release version when the Registry
+workflow is dispatched**. Do not land a version-bump PR on `main` before the
+Registry entry is published, and do not land release-tooling changes (the
+contract, build constraints, `scripts/verify_release.py`,
+`scripts/release_publish.py` or the release workflows) on `main` until the
+whole train is complete: all six files, the `vX.Y.Z` tag, the GitHub Release
+and the Registry entry. If the contract or build constraints diverge before
+publication finishes, resume becomes impossible and only the abandoned-version
+route in [Partial-Publication Recovery](#partial-publication-recovery) remains.
 
 ### Owner Prerequisites
 
@@ -268,9 +276,10 @@ end without publication authority.
    logged. To publish the exact dry-run bytes instead, use [Resume](#resume)
    against the dry-run run. OIDC capability is granted to the entire job; its
    earlier steps already possess that capability before hash verification.
-   Main's `project.version` must still equal `X.Y.Z` when this run is
-   dispatched and must not move until the whole train completes (see the
-   section introduction above).
+   This run's verifier calls are rooted at the approved commit, so it does not
+   depend on main's `project.version`; `release/distributions.json` and
+   `build-constraints.txt` on `main` must still be byte-identical to the
+   approved commit's (see the section introduction above).
 5. The `publish` job re-reads the environment, rechecks the landed source and
    the absent tag, downloads the retained candidates, verifies them against the
    manifest, and stages each distribution in its own folder. It then uploads
@@ -361,7 +370,8 @@ Only after the publish job's six-file check succeeds:
    environment-bound OIDC job can run. The publish job rechecks the shared
    environment policy, the three-way PyPI readback and the exact descriptor
    immediately before login.
-   Main's `project.version` must still equal `X.Y.Z` for this dispatch: its
+   Main's `project.version` must still equal `X.Y.Z` for this dispatch: this
+   is the one step of the train that depends on it. The Registry workflow's
    unrooted verifier calls run from the release-controls checkout at
    `github.sha` and require the tag to equal that checkout's version, so a
    version bump landed on main before this step makes every check fail closed
@@ -379,11 +389,12 @@ new reviewed commit and obtain a new exact approval.
 ### Resume
 
 Recovery is a dispatch of the same `Publish to PyPI` workflow from `main` with
-`resume: true` and the original approvals. Main's `project.version` must still
-equal `X.Y.Z` when the resume is dispatched: the resume and publish jobs'
-unrooted verifier calls run from the release-controls checkout at `github.sha`
-and require the tag to equal its version. If a version bump has landed on
-main, resume is impossible and only the abandoned-version route in
+`resume: true` and the original approvals. The resume and publish jobs root
+every verifier call at the approved commit (`--root release-source`), so a
+version bump on main does not block resume. Resume does require
+`release/distributions.json` and `build-constraints.txt` on `main` to be
+byte-identical to the approved commit's; if either has diverged, resume is
+impossible and only the abandoned-version route in
 [Partial-Publication Recovery](#partial-publication-recovery) remains.
 
 | Input | Value | Where it comes from |

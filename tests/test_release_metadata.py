@@ -1174,37 +1174,66 @@ def test_checklist_activates_the_commit_first_three_distribution_train() -> None
         _upload_readback_pairs(swapped_uploads)
 
 
-def test_checklist_freezes_main_version_for_every_control_checkout_step() -> None:
+def test_checklist_scopes_main_version_freeze_to_the_registry_dispatch() -> None:
     publish = _markdown_section(CHECKLIST.read_text(encoding="utf-8"), PUBLISH_HEADING)
-    intro = publish.split("\n### ", 1)[0]
-    assert "No version-bump PR may land on `main` until the whole train" in intro
-    for section in ("### Dry Run and Publication", "### Resume", "### Tag, GitHub Release and Registry"):
+    intro = " ".join(publish.split("\n### ", 1)[0].split())
+    assert "Do not land a version-bump PR on `main` before the Registry entry is published" in intro
+    assert "do not land release-tooling changes" in intro
+    for section in ("### Dry Run and Publication", "### Resume"):
         text = " ".join(_markdown_section(publish, section).split())
-        assert "Main's `project.version` must still equal `X.Y.Z`" in text, section
+        assert "Main's `project.version` must still equal" not in text, section
+        assert "byte-identical" in text, section
+        assert "`release/distributions.json` and `build-constraints.txt`" in text, section
+    registry = " ".join(_markdown_section(publish, "### Tag, GitHub Release and Registry").split())
+    assert "Main's `project.version` must still equal `X.Y.Z` for this dispatch" in registry
     assert "`docs/3.0-RELEASE-NOTES.md`" in publish
     assert "pending" in _markdown_section(publish, "### Owner Prerequisites")
 
-    # The claim holds in the workflows: every verifier call without --root uses the controls checkout.
-    for path in (".github/workflows/publish.yml", ".github/workflows/publish-mcp-registry.yml"):
-        workflow = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
-        for job in workflow["jobs"].values():
-            steps = job.get("steps", [])
-            if not any("verify_release.py" in step.get("run", "") for step in steps):
+    # publish.yml: every verifier call in consumer-smoke, resume and publish is rooted at the approved commit.
+    workflow = yaml.safe_load(Path(".github/workflows/publish.yml").read_text(encoding="utf-8"))
+    for job_name in ("consumer-smoke", "resume", "publish"):
+        job = workflow["jobs"][job_name]
+        source = [
+            step
+            for step in job["steps"]
+            if str(step.get("uses", "")).startswith("actions/checkout@")
+            and step["with"]["ref"] == "${{ inputs.commit }}"
+        ]
+        assert [step["with"]["path"] for step in source] == ["release-source"], job_name
+        calls = [step for step in job["steps"] if "verify_release.py" in step.get("run", "")]
+        assert calls, job_name
+        for step in calls:
+            cwd = os.path.normpath(step.get("working-directory", "."))
+            for invocation in _verifier_invocations(step["run"]):
+                root = re.search(r"--root (\S+)", invocation)
+                assert root is not None, (job_name, step.get("name"))
+                resolved = os.path.normpath(os.path.join(cwd, root.group(1)))
+                assert resolved == "release-source", (job_name, step.get("name"))
+
+    # publish-mcp-registry.yml: unrooted verifier calls run from the controls (main) checkout.
+    registry_workflow = yaml.safe_load(
+        Path(".github/workflows/publish-mcp-registry.yml").read_text(encoding="utf-8")
+    )
+    unrooted = 0
+    for job in registry_workflow["jobs"].values():
+        steps = job.get("steps", [])
+        if not any("verify_release.py" in step.get("run", "") for step in steps):
+            continue
+        checkouts = [step for step in steps if str(step.get("uses", "")).startswith("actions/checkout@")]
+        controls = [step for step in checkouts if step["with"]["ref"] == "${{ github.sha }}"]
+        assert len(controls) == 1
+        controls_path = controls[0]["with"].get("path", ".")
+        for step in steps:
+            run = step.get("run", "")
+            if "verify_release.py" not in run or "--root" in run:
                 continue
-            checkouts = [step for step in steps if str(step.get("uses", "")).startswith("actions/checkout@")]
-            controls = [step for step in checkouts if step["with"]["ref"] == "${{ github.sha }}"]
-            assert len(controls) == 1
-            controls_path = controls[0]["with"].get("path", ".")
-            for step in steps:
-                run = step.get("run", "")
-                if "verify_release.py" not in run or "--root" in run:
-                    continue
-                script = re.search(r"(\S*)scripts/verify_release\.py", run)
-                assert script is not None
-                prefix = script.group(1)
-                cwd = step.get("working-directory", ".")
-                resolved = os.path.normpath(os.path.join(cwd, prefix or "."))
-                assert resolved == os.path.normpath(controls_path), (path, step.get("name"))
+            script = re.search(r"(\S*)scripts/verify_release\.py", run)
+            assert script is not None
+            cwd = step.get("working-directory", ".")
+            resolved = os.path.normpath(os.path.join(cwd, script.group(1) or "."))
+            assert resolved == os.path.normpath(controls_path), step.get("name")
+            unrooted += 1
+    assert unrooted > 0
 
 
 def _upload_readback_pairs(steps: list[dict[str, Any]]) -> list[str]:
