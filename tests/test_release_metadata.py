@@ -21,6 +21,7 @@ from proof_before_action import proof_cli
 
 from mcp_audit import cli
 from scripts import verify_release as release
+from tests.test_release_supply import _release_root
 
 RELEASE_VERIFIER: dict[str, Any] = runpy.run_path(
     "scripts/verify_release.py",
@@ -795,11 +796,11 @@ def test_every_registry_verifier_invocation_passes_the_release_contract() -> Non
 
 @pytest.mark.parametrize("drift", [False, True])
 def test_rooted_registry_metadata_step_binds_source_to_controls_contract(tmp_path: Path, drift: bool) -> None:
-    source = tmp_path / "release-source"
-    (source / "release").mkdir(parents=True)
-    (source / "pyproject.toml").write_bytes(Path("pyproject.toml").read_bytes())
-    contract = CONTRACT.read_bytes()
-    (source / "release/distributions.json").write_bytes(contract + (b" " if drift else b""))
+    # The tag must equal the checkout version, so the v3.0.0 run binds a 3.0.0 source stub.
+    source = _release_root(tmp_path / "release-source", "3.0.0")
+    if drift:
+        with (source / release.CONTRACT_PATH).open("ab") as stream:
+            stream.write(b" ")
 
     result = subprocess.run(
         [
@@ -823,6 +824,7 @@ def test_rooted_registry_metadata_step_binds_source_to_controls_contract(tmp_pat
     )
 
     assert result.returncode != 0
+    assert "does not match the checkout project.version" not in result.stderr, result.stderr
     binding = "source and release-controls distribution contracts must be byte-identical"
     assert (binding in result.stderr) is drift, result.stderr
 
@@ -982,7 +984,11 @@ def test_registry_keyed_pypi_readback_runs_against_the_verifier(
     workspace, runner_temp, fixtures, shims = (tmp_path / part for part in ("ws", "rt", "fx", "bin"))
     for directory in (workspace, runner_temp, fixtures, shims):
         directory.mkdir()
-    (workspace / "release-controls").symlink_to(Path.cwd(), target_is_directory=True)
+    # Unrooted steps resolve the checkout from the verifier's own location, so the trusted
+    # controls stub carries a real copy of the verifier beside a 3.0.0 project version.
+    controls = _release_root(workspace / "release-controls", version)
+    (controls / "scripts").mkdir()
+    (controls / "scripts/verify_release.py").write_bytes(Path("scripts/verify_release.py").read_bytes())
     manifest = fixtures / "release-manifest.json"
     manifest.write_text(
         json.dumps(
