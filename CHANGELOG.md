@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Publish dispatch now binds an approved commit and version before tagging, builds
+  and smokes all six split artifacts and pinned extras, retains candidates for
+  90 days, and reads back each ordered PyPI upload. Explicit recovery verifies
+  the original run, control revision and manifest before staging only missing
+  files; dry runs rehearse a partial upload and retained-byte recovery offline.
+
 - Release verification supports partial PyPI readbacks between split-package
   uploads with `--publication-check pypi --published-through NAME`, which checks
   the contract-order prefix up to and including `NAME` (core; core and Labs; all
