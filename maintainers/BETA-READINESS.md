@@ -61,8 +61,11 @@ uv run ruff format --check
 uv lock --check
 git diff --check
 uv run python tests/validation/validate_patterns.py
-uv build --clear
+uv build --clear --build-constraints build-constraints.txt
 ```
+
+Release builds pin the build backend through `build-constraints.txt`; the
+[release checklist](RELEASE-CHECKLIST.md) is the current release procedure.
 
 Clean-install smoke checks should verify both `uvx --prerelease allow` and a
 temporary virtual environment with `pip install mcp-audits`.

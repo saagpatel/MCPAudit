@@ -35,9 +35,9 @@ two external redacted field reports are accepted.
 ```text
 The safe first run is config-only:
 
-uvx --from mcp-audits mcp-audit scan --skip-connect
+uvx --from mcp-audits mcp-audit check --include-discovered
 
-With --skip-connect it does not spawn MCP servers or contact remote endpoints; it
+The default check does not spawn MCP servers or contact remote endpoints; it
 reasons from the local config. If you are sharing a report publicly, use:
 
 mcp-audit check --include-discovered --output-json mcp-audit-field-report.json --redact

@@ -135,11 +135,11 @@ MCPAudit uses Python 3.11+, `uv`, pytest, Ruff, and mypy. JSON, SARIF, and HTML 
 
 ### Known risks
 
-Static findings describe configured access and served metadata; they do not prove how a server behaves later. Secret redaction is best-effort. See the [3.0 boundary proposal](docs/3.0-BOUNDARY-PROPOSAL.md) for the release's compatibility changes.
+Static findings describe configured access and served metadata; they do not prove how a server behaves later. Secret redaction is best-effort. Upgrading from 2.x? Read the [3.0 migration guide](docs/3.0-MIGRATION.md); the [3.0 boundary proposal](docs/3.0-BOUNDARY-PROPOSAL.md) records the decisions behind it.
 
 ### Next steps
 
-Use explicit synthetic fixtures for local changes, preserve read-only defaults, and keep coverage claims tied to completed checks. Re-enable Python 3.15 after an rpds-py/PyO3 lock refresh. The 3.0 package split and deprecated-surface removal remain planned work.
+Use explicit synthetic fixtures for local changes, preserve read-only defaults, and keep coverage claims tied to completed checks. Re-enable Python 3.15 after an rpds-py/PyO3 lock refresh.
 
 ## More documentation
 

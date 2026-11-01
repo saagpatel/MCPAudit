@@ -137,6 +137,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `docs/3.0-MIGRATION.md` lists every 3.0 break with its replacement and how
+  to detect it on 2.12: the `scan` flag mapping and the supported
+  `--scan-compatible-sources` selector, accepted-`scan` output differences,
+  hook and Action behavior, the labs and Proof installs and import-path map,
+  v1 pin withholding and the withheld-baseline exit, `serve` tool reach, source
+  limits, zero-source runs and exit codes. Documentation, examples, the
+  feedback template and the Cursor bootstrap smoke use `check` grammar, and
+  the suppression guide states that `check` applies permission overrides.
 - `check --include-discovered --scan-compatible-sources`, a hidden selector
   that reproduces the legacy `scan` server selection: every Claude Code
   project scope (a malformed project entry loses the whole file, as in
@@ -155,15 +163,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   redaction withheld served text are flagged in the terminal and listed in the
   additive `current_surface_redacted` array, without exposing the hidden text.
 - Restore the PR, weekly scheduled, and manually dispatched OSV dependency advisory workflow.
-- `check --include-discovered --scan-compatible-sources`, a hidden selector
-  that reproduces the legacy `scan` server selection: every Claude Code
-  project scope (a malformed project entry loses the whole file, as in
-  `scan`), no Cursor project file, an empty result for a present file without
-  a server map, and `scan`'s server-level dedup, subject to `check`'s source
-  limits (size, nesting depth, server cap, symlink refusal). It is rejected
-  with `--config`, `--project`, `--config-only`, `--connect` and
-  `--connect-all`. Without the flag, `check` discovery and output are
-  unchanged.
 
 ## [2.12.0] - 2026-10-12
 

@@ -7,7 +7,7 @@ Its load-bearing guarantee: it reuses the exact scan engine
 (:func:`mcp_audit.engine.run_scan` in ``skip_connect`` / ``config_only`` mode)
 while NEVER spawning a server process and NEVER making a network request. Only
 declared configuration is inferred — the same conservative static analysis as
-``mcp-audit scan --config <file> --config-only --skip-connect``.
+``mcp-audit check --config <file> --override-config /dev/null``.
 """
 
 from __future__ import annotations
@@ -75,7 +75,7 @@ async def scan_config_only(
 ) -> AuditReport:
     """Run a static, no-spawn, no-network scan of an in-memory MCP config.
 
-    Equivalent to ``mcp-audit scan --config <file> --config-only --skip-connect``
+    Equivalent to ``mcp-audit check --config <file> --override-config /dev/null``
     operating on a config already in memory: every server is analyzed from its
     declared configuration only. No server process is launched and no network
     request is made.

@@ -1,7 +1,7 @@
 """The scan engine — the public library core behind every mcp-audit surface.
 
 :func:`run_scan` is the one sanctioned entry point into the scan pipeline
-(discover -> connect -> analyze -> score). The CLI (``mcp-audit scan``), the
+(discover -> connect -> analyze -> score). The CLI (``mcp-audit check``), the
 MCP server tools, and the in-memory :mod:`mcp_audit.api` are all thin
 consumers of it; downstream packages should import from here rather than
 reaching into :mod:`mcp_audit.cli`.
@@ -71,8 +71,9 @@ logger = logging.getLogger(__name__)
 class ScanOptions:
     """Configuration for one :func:`run_scan` invocation.
 
-    Defaults mirror ``mcp-audit scan`` with no flags: discover everything,
-    connect to workstation configs, run only the always-on permission analysis + risk scoring.
+    Library defaults keep the 2.x behavior for library callers: discover
+    everything, connect to workstation configs, and run only the always-on
+    permission analysis + risk scoring.
     """
 
     # Scan shape
