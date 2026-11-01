@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
+from hashlib import sha256
+from pathlib import Path
 
 import pytest
 
-from mcp_audit.models import AuditReport, CheckCoverage, ConfigHealthFinding, ConfigHealthSeverity
+from mcp_audit.models import (
+    AuditReport,
+    CheckCoverage,
+    ConfigHealthFinding,
+    ConfigHealthSeverity,
+    ScanWarning,
+)
 from mcp_audit.sarif import SarifGenerator
 
 
@@ -114,6 +123,54 @@ def test_compatibility_profile_omits_config_health_findings(
 
     assert run["results"] == []
     assert all(not rule["id"].startswith("MCP-CH-") for rule in run["tool"]["driver"]["rules"])
+
+
+def test_no_skip_compatibility_bytes_are_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("mcp_audit.sarif.pkg_version", lambda _: "0.0.0")
+    report = AuditReport.model_validate_json(
+        Path("tests/fixtures/reports/config_only_report.json").read_text()
+    )
+    assert not any(warning.code == "review_source_skipped" for warning in report.warnings)
+    output = json.dumps(SarifGenerator().generate(report), sort_keys=True).encode()
+    # Captured from the compatibility renderer before source skips became results.
+    assert sha256(output).hexdigest() == "0636a00191a2afa12cc3e02f219cd05e2fa869cd5af1dc97e8439d06a36cb58c"
+
+
+def test_compatibility_emits_each_skip_but_not_unrelated_parse_failures(empty_report: AuditReport) -> None:
+    for path, reason in (("/fixture/link.json", "symlink skipped"), ("/fixture/large.json", "byte limit")):
+        empty_report.warnings.append(
+            ScanWarning(code="review_source_skipped", message=f"Review source skipped: {path}: {reason}.")
+        )
+        empty_report.config_health_findings.append(
+            ConfigHealthFinding(
+                finding_type="config_parse_failure",
+                severity=ConfigHealthSeverity.HIGH,
+                summary=reason,
+                remediation="Repair config.",
+                config_paths=[path],
+            )
+        )
+    empty_report.config_health_findings.append(
+        ConfigHealthFinding(
+            finding_type="config_parse_failure",
+            severity=ConfigHealthSeverity.HIGH,
+            summary="Malformed JSON.",
+            remediation="Repair config.",
+            config_paths=["/fixture/malformed.json"],
+        )
+    )
+    run = SarifGenerator().generate(empty_report)["runs"][0]
+    assert len(run["results"]) == 2
+    assert {result["ruleId"] for result in run["results"]} == {"MCP-CH-CONFIG-PARSE-FAILURE"}
+    assert all(result["level"] == "warning" for result in run["results"])
+    assert all("--config FILE" in result["message"]["text"] for result in run["results"])
+    assert [
+        result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"] for result in run["results"]
+    ] == [
+        "file:///fixture/link.json",
+        "file:///fixture/large.json",
+    ]
+    assert sum(rule["id"] == "MCP-CH-CONFIG-PARSE-FAILURE" for rule in run["tool"]["driver"]["rules"]) == 1
 
 
 def test_extended_profile_emits_stable_config_health_rule_and_result(

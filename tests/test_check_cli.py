@@ -621,13 +621,23 @@ def test_symlinks_skipped_by_discovery_but_explicit_selection_allowed(tmp_path: 
     assert len(review_sources(cursor).servers) == 1
 
 
-@pytest.mark.parametrize("kind", ["oversized", "nesting", "containers", "symlink"])
+@pytest.mark.parametrize("kind", ["oversized", "nesting", "containers", "symlink", "symlinked-parent"])
 @pytest.mark.parametrize("sarif_profile", ["compatibility", "extended"])
-def test_source_limits_warn_on_stderr_json_and_sarif(tmp_path: Path, kind: str, sarif_profile: str) -> None:
+@pytest.mark.parametrize("redact", [False, True])
+def test_source_limits_warn_on_stderr_json_and_sarif(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: str, sarif_profile: str, redact: bool
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "Users" / "fixture-user"))
     path = Path.home() / ".cursor/mcp.json"
-    path.parent.mkdir()
+    path.parent.parent.mkdir(parents=True)
+    if kind == "symlinked-parent":
+        target = _config(tmp_path / "target/mcp.json")
+        path.parent.symlink_to(target.parent, target_is_directory=True)
+    else:
+        path.parent.mkdir()
     if kind == "symlink":
         path.symlink_to(_config(tmp_path / "target.json"))
+    if kind in {"symlink", "symlinked-parent"}:
         reason = "symlink skipped"
     else:
         contents = {
@@ -647,6 +657,8 @@ def test_source_limits_warn_on_stderr_json_and_sarif(tmp_path: Path, kind: str, 
         cli.main,
         [
             "check",
+            "--include-discovered",
+            "--skip-connect",
             "--client",
             "cursor",
             "--override-config",
@@ -656,6 +668,7 @@ def test_source_limits_warn_on_stderr_json_and_sarif(tmp_path: Path, kind: str, 
             str(sarif),
             "--sarif-profile",
             sarif_profile,
+            *(["--redact"] if redact else []),
         ],
     )
     assert result.exit_code == 0, result.output
@@ -666,14 +679,30 @@ def test_source_limits_warn_on_stderr_json_and_sarif(tmp_path: Path, kind: str, 
         "review_source_skipped",
     ]
     skipped = next(w for w in payload["warnings"] if w["code"] == "review_source_skipped")
-    assert skipped == sources.warnings[0].model_dump()
-    assert skipped["message"] in result.stderr
+    if not redact:
+        assert skipped == sources.warnings[0].model_dump()
+    assert sources.warnings[0].message in result.stderr
     assert payload["coverage"]["config_health"]["state"] == "partial"
-    notifications = json.loads(sarif.read_text())["runs"][0]["invocations"][0]["toolExecutionNotifications"]
+    run = json.loads(sarif.read_text())["runs"][0]
+    assert run["invocations"][0]["executionSuccessful"] is True
+    notifications = run["invocations"][0]["toolExecutionNotifications"]
     assert any(
         notice["descriptor"]["id"] == "MCP-REVIEW-SOURCE-SKIPPED" and notice["properties"] == skipped
         for notice in notifications
     )
+    [finding] = run["results"]
+    assert finding["ruleId"] == "MCP-CH-CONFIG-PARSE-FAILURE"
+    assert finding["level"] == ("warning" if sarif_profile == "compatibility" else "error")
+    assert reason in finding["message"]["text"]
+    if sarif_profile == "compatibility":
+        assert "--config FILE" in finding["message"]["text"]
+    assert sum(rule["id"] == finding["ruleId"] for rule in run["tool"]["driver"]["rules"]) == 1
+    [health] = payload["config_health_findings"]
+    assert finding["locations"] == [
+        {"physicalLocation": {"artifactLocation": {"uri": Path(health["config_paths"][0]).as_uri()}}}
+    ]
+    if redact:
+        assert "fixture-user" not in sarif.read_text()
 
 
 @pytest.mark.parametrize(

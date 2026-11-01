@@ -21,6 +21,7 @@ from mcp_audit.models import (
     CheckCoverage,
     Confidence,
     ConfigHealthFinding,
+    ConfigHealthSeverity,
     DriftFinding,
     EgressFinding,
     EgressKind,
@@ -208,11 +209,36 @@ def _unique_config_health_findings(
     return [by_type[finding_type] for finding_type in sorted(by_type)]
 
 
+def _skipped_source_findings(report: AuditReport) -> list[ConfigHealthFinding]:
+    """Project each source-skip warning without including unrelated parse failures."""
+    findings: list[ConfigHealthFinding] = []
+    for warning in report.warnings:
+        if warning.code != "review_source_skipped":
+            continue
+        paths = [
+            path
+            for finding in report.config_health_findings
+            if finding.finding_type == "config_parse_failure"
+            for path in finding.config_paths
+            if warning.message.startswith(f"Review source skipped: {path}: ")
+        ]
+        findings.append(
+            ConfigHealthFinding(
+                finding_type="config_parse_failure",
+                severity=ConfigHealthSeverity.MEDIUM,
+                summary=f"{warning.message} Select this source explicitly with --config FILE.",
+                remediation="Select this source explicitly with --config FILE.",
+                config_paths=paths,
+            )
+        )
+    return findings
+
+
 class SarifGenerator:
     """Converts an AuditReport into a SARIF 2.1.0 document."""
 
     def generate(self, report: AuditReport, *, profile: str = "compatibility") -> dict[str, Any]:
-        """Return SARIF, optionally adding config-health findings in the extended profile."""
+        """Return SARIF with source skips, or all config-health findings in extended mode."""
         return self._generate_redacted(report.redacted(), profile=profile)
 
     def _generate_redacted(self, report: AuditReport, *, profile: str = "compatibility") -> dict[str, Any]:
@@ -224,6 +250,9 @@ class SarifGenerator:
         except PackageNotFoundError:
             tool_version = "0.0.0"
 
+        config_health = (
+            report.config_health_findings if profile == "extended" else _skipped_source_findings(report)
+        )
         document: dict[str, Any] = {
             "version": "2.1.0",
             "$schema": _SARIF_SCHEMA,
@@ -234,12 +263,10 @@ class SarifGenerator:
                             "name": "mcp-audit",
                             "version": tool_version,
                             "informationUri": "https://github.com/saagpatel/MCPAudit",
-                            "rules": self._make_rules(
-                                report.config_health_findings if profile == "extended" else []
-                            ),
+                            "rules": self._make_rules(config_health),
                         }
                     },
-                    "results": self._make_results(report, include_config_health=profile == "extended"),
+                    "results": self._make_results(report, config_health=config_health),
                 }
             ],
         }
@@ -607,7 +634,7 @@ class SarifGenerator:
         )
 
     def _make_results(
-        self, report: AuditReport, *, include_config_health: bool = False
+        self, report: AuditReport, *, config_health: list[ConfigHealthFinding] | None = None
     ) -> list[dict[str, Any]]:
         """One result per (server, tool, category) triple, plus injection findings."""
         results: list[dict[str, Any]] = []
@@ -685,10 +712,7 @@ class SarifGenerator:
         if report.policy_result is not None:
             for violation in report.policy_result.violations:
                 results.append(self._make_policy_result(violation))
-        if include_config_health:
-            results.extend(
-                self._make_config_health_result(finding) for finding in report.config_health_findings
-            )
+        results.extend(self._make_config_health_result(finding) for finding in config_health or [])
         for result in results:
             message = result.get("message")
             if isinstance(message, dict) and isinstance(message.get("text"), str):
