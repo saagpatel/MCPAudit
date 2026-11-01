@@ -10,7 +10,7 @@ additive `non_tool_risk` field.
 - Prompt and resource capability findings are visible in terminal, JSON, SARIF,
   and local policy gates.
 - Prompt and resource injection findings are visible in terminal, JSON, SARIF,
-  and local policy gates when `scan --inject-check` is used.
+  and local policy gates when `check --inject-check` is used.
 - Prompt and resource capability or injection findings contribute to
   `non_tool_risk` in JSON and terminal output.
 - Prompt and resource findings do not currently change

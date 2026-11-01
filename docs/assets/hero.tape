@@ -6,9 +6,9 @@
 #
 # HOW TO RECORD
 #   1. brew install vhs                       (pulls ttyd; needs ffmpeg)
-#   2. uv tool install mcp-permission-audit
+#   2. uv tool install mcp-audits
 #   3. PRE-WARM off-camera so npx/uvx packages are cached and the GIF is fast:
-#        mcp-audit scan --config docs/assets/hero-demo-config.json --config-only --ssrf-check
+#        mcp-audit check --config docs/assets/hero-demo-config.json --connect-all --ssrf-check
 #   4. Record from the repo root so the relative paths resolve:
 #        vhs docs/assets/hero.tape
 #
@@ -43,7 +43,7 @@ Type "clear" Enter
 Show
 
 Sleep 600ms
-Type "mcp-audit scan --config docs/assets/hero-demo-config.json --config-only --ssrf-check"
+Type "mcp-audit check --config docs/assets/hero-demo-config.json --connect-all --ssrf-check"
 Sleep 800ms
 Enter
 
@@ -55,6 +55,6 @@ Sleep 3s
 
 # OFFLINE FALLBACK: for a fully offline, deterministic GIF (no servers spawned,
 # no network), swap the Type line for:
-#   Type "mcp-audit scan --config docs/assets/hero-demo-config.json --config-only --skip-connect"
+#   Type "mcp-audit check --config docs/assets/hero-demo-config.json"
 # It renders identically every run but shows status `skipped`, 0 tools, and
 # inferred-from-config risk instead of the connected table + SSRF block.

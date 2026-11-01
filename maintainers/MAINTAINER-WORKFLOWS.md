@@ -19,7 +19,7 @@ Keep Codex runs conservative around security-sensitive surfaces:
 
 - do not read credential-bearing local configs, raw logs, cookies, keychains, or
   private transcripts;
-- prefer `mcp-audit scan --skip-connect` fixtures before connected scans;
+- prefer static `mcp-audit check --config FILE` fixtures before connected checks;
 - never invent adoption, user counts, external validation, or benchmark claims;
 - treat code-scanning alerts as work items to fix, dismiss with evidence, or
   document as intentional test/demo fixtures.

@@ -3,7 +3,7 @@
 #
 # Run with:
 #   mcp-audit pin --verify-artifacts     # once, to capture approved registry hashes
-#   mcp-audit scan --verify-artifacts --json mcp-audit.json --policy package-verify-ci.yaml
+#   mcp-audit check --include-discovered --verify-artifacts --output-json mcp-audit.json --policy package-verify-ci.yaml
 #
 # Package-verification gating is opt-in: the broad fail_on.severity shortcut does
 # NOT cover it, so it must be requested explicitly via fail_on.package_verify. Pair
