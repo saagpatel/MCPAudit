@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
+import yaml
 from click.testing import CliRunner
 from proof_before_action import proof_cli
 
@@ -1102,10 +1103,242 @@ def test_registry_publisher_binary_is_version_and_hash_pinned() -> None:
 def test_candidate_checklist_verifies_exact_built_artifacts_before_install() -> None:
     checklist = Path("maintainers/RELEASE-CHECKLIST.md").read_text(encoding="utf-8")
 
-    build = checklist.index("uv build --clear")
+    build = checklist.index("uv build --all-packages --clear")
     verify_artifacts = checklist.index("--dist-dir dist")
     install_wheel = checklist.index("uv pip install")
 
     assert 'candidate_commit="$(git rev-parse HEAD)"' in checklist
     assert '--commit "$candidate_commit"' in checklist
     assert build < verify_artifacts < install_wheel
+
+
+def _markdown_section(text: str, heading: str) -> str:
+    """Return one heading's body, up to the next heading of the same or higher level."""
+    level = heading.split(" ", 1)[0]
+    start = text.index(f"\n{heading}\n") + 1
+    pattern = re.compile(rf"^#{{1,{len(level)}}} ", re.MULTILINE)
+    following = [match.start() for match in pattern.finditer(text[start + len(heading) :])]
+    end = start + len(heading) + following[0] if following else len(text)
+    return text[start:end]
+
+
+CHECKLIST = Path("maintainers/RELEASE-CHECKLIST.md")
+PUBLISH_HEADING = "## Publish a 3.x Release (Commit-First, Separately Authorized)"
+
+
+def test_checklist_activates_the_commit_first_three_distribution_train() -> None:
+    checklist = CHECKLIST.read_text(encoding="utf-8")
+
+    for retired in ("Groundwork", "Not Active Yet", "Current Unsplit Package", "exactly two"):
+        assert retired not in checklist
+    assert "\n## Three-Distribution Release Train\n" in checklist
+    publish = _markdown_section(checklist, PUBLISH_HEADING)
+    dispatch = publish.index("dispatch `Publish to PyPI` with the exact\n   `commit` and `version`")
+    dry_run = publish.index("`dry_run: true`")
+    real_run = publish.index("`dry_run: false`")
+    six_files = publish.index("requires the complete six-file publication")
+    tag = publish.index("lightweight `vX.Y.Z` tag at the approved commit")
+    tag_check = publish.index("--publication-check tag")
+    release_create = publish.index('gh release create "vX.Y.Z" --verify-tag --latest')
+    registry = publish.index("dispatch `Publish to MCP Registry`")
+    smoke = publish.index("(#post-publication-install-smoke)")
+    assert dispatch < dry_run < real_run < six_files < smoke < tag < tag_check < release_create < registry
+    assert "environment approval" in publish
+    assert '"$tmp/release/release-manifest.json"' in publish[release_create:registry]
+    assert "--distributions release/distributions.json" in publish[tag_check - 200 : tag_check]
+
+    # The documented dispatch is the workflow's real interface: no tag input exists.
+    workflow = yaml.safe_load(Path(".github/workflows/publish.yml").read_text(encoding="utf-8"))
+    inputs = workflow[True]["workflow_dispatch"]["inputs"]
+    expected = {"version", "commit", "dry_run", "resume", "run_id", "manifest_sha256", "control_sha"}
+    assert set(inputs) == expected
+
+    # The documented upload order is the workflow's: each upload is immediately read back.
+    contract = json.loads(Path("release/distributions.json").read_text(encoding="utf-8"))
+    order = [entry["name"] for entry in contract]
+    steps = workflow["jobs"]["publish"]["steps"]
+    assert _upload_readback_pairs(steps) == order
+    uploads = [step.get("with", {}).get("packages-dir") for step in steps]
+    first, second = (uploads.index(f"staged/{name}/") for name in order[:2])
+    # Swapping two whole upload+readback pairs breaks the order check.
+    swapped_pairs = [*steps]
+    swapped_pairs[first : first + 2], swapped_pairs[second : second + 2] = (
+        steps[second : second + 2],
+        steps[first : first + 2],
+    )
+    assert _upload_readback_pairs(swapped_pairs) != order
+    # Swapping only the uploads separates each upload from its own readback.
+    swapped_uploads = [*steps]
+    swapped_uploads[first], swapped_uploads[second] = steps[second], steps[first]
+    with pytest.raises(AssertionError, match="immediately read back"):
+        _upload_readback_pairs(swapped_uploads)
+
+
+def test_checklist_scopes_main_version_freeze_to_the_registry_dispatch() -> None:
+    publish = _markdown_section(CHECKLIST.read_text(encoding="utf-8"), PUBLISH_HEADING)
+    intro = " ".join(publish.split("\n### ", 1)[0].split())
+    assert "Do not land a version-bump PR on `main` before the Registry entry is published" in intro
+    assert "do not land release-tooling changes" in intro
+    for section in ("### Dry Run and Publication", "### Resume"):
+        text = " ".join(_markdown_section(publish, section).split())
+        assert "Main's `project.version` must still equal" not in text, section
+        assert "byte-identical" in text, section
+        assert "`release/distributions.json` and `build-constraints.txt`" in text, section
+    registry = " ".join(_markdown_section(publish, "### Tag, GitHub Release and Registry").split())
+    assert "Main's `project.version` must still equal `X.Y.Z` for this dispatch" in registry
+    assert "`docs/3.0-RELEASE-NOTES.md`" in publish
+    assert "pending" in _markdown_section(publish, "### Owner Prerequisites")
+
+    # publish.yml: every verifier call in consumer-smoke, resume and publish is rooted at the approved commit.
+    workflow = yaml.safe_load(Path(".github/workflows/publish.yml").read_text(encoding="utf-8"))
+    for job_name in ("consumer-smoke", "resume", "publish"):
+        job = workflow["jobs"][job_name]
+        source = [
+            step
+            for step in job["steps"]
+            if str(step.get("uses", "")).startswith("actions/checkout@")
+            and step["with"]["ref"] == "${{ inputs.commit }}"
+        ]
+        assert [step["with"]["path"] for step in source] == ["release-source"], job_name
+        calls = [step for step in job["steps"] if "verify_release.py" in step.get("run", "")]
+        assert calls, job_name
+        for step in calls:
+            cwd = os.path.normpath(step.get("working-directory", "."))
+            for invocation in _verifier_invocations(step["run"]):
+                root = re.search(r"--root (\S+)", invocation)
+                assert root is not None, (job_name, step.get("name"))
+                resolved = os.path.normpath(os.path.join(cwd, root.group(1)))
+                assert resolved == "release-source", (job_name, step.get("name"))
+
+    # publish-mcp-registry.yml: unrooted verifier calls run from the controls (main) checkout.
+    registry_workflow = yaml.safe_load(
+        Path(".github/workflows/publish-mcp-registry.yml").read_text(encoding="utf-8")
+    )
+    unrooted = 0
+    for job in registry_workflow["jobs"].values():
+        steps = job.get("steps", [])
+        if not any("verify_release.py" in step.get("run", "") for step in steps):
+            continue
+        checkouts = [step for step in steps if str(step.get("uses", "")).startswith("actions/checkout@")]
+        controls = [step for step in checkouts if step["with"]["ref"] == "${{ github.sha }}"]
+        assert len(controls) == 1
+        controls_path = controls[0]["with"].get("path", ".")
+        for step in steps:
+            run = step.get("run", "")
+            if "verify_release.py" not in run or "--root" in run:
+                continue
+            script = re.search(r"(\S*)scripts/verify_release\.py", run)
+            assert script is not None
+            cwd = step.get("working-directory", ".")
+            resolved = os.path.normpath(os.path.join(cwd, script.group(1) or "."))
+            assert resolved == os.path.normpath(controls_path), step.get("name")
+            unrooted += 1
+    assert unrooted > 0
+
+
+def _upload_readback_pairs(steps: list[dict[str, Any]]) -> list[str]:
+    """Return distributions in upload order, requiring each upload's next step to read it back."""
+    names: list[str] = []
+    for index, step in enumerate(steps):
+        packages_dir = step.get("with", {}).get("packages-dir")
+        if packages_dir is None:
+            continue
+        name = str(packages_dir).removeprefix("staged/").removesuffix("/")
+        readback = steps[index + 1].get("run", "") if index + 1 < len(steps) else ""
+        through = re.findall(r"--published-through (\S+)", readback)
+        assert through == [name], f"upload of {name} is not immediately read back through it"
+        names.append(name)
+    return names
+
+
+def test_checklist_names_owner_prerequisites_and_rehearsal_order() -> None:
+    publish = _markdown_section(CHECKLIST.read_text(encoding="utf-8"), PUBLISH_HEADING)
+    prerequisites = _markdown_section(publish, "### Owner Prerequisites")
+    rehearsal = _markdown_section(publish, "### Rehearsal Before the First Split Release")
+
+    for name in ("`mcp-audits-labs`", "`mcp-audits-proof`", "`publish.yml`", "`pypi`\n  environment"):
+        assert name in prerequisites
+    assert "only after item S-2" in rehearsal
+    assert "`mcp-audit lab agent-ui --help` to exit 2" in rehearsal
+    smoke = Path("scripts/smoke_release.py").read_text(encoding="utf-8")
+    assert '"lab", "agent-ui", "--help"' in smoke
+    assert "expected=2" in smoke
+
+
+def test_checklist_documents_resume_inputs_and_their_sources() -> None:
+    publish = _markdown_section(CHECKLIST.read_text(encoding="utf-8"), PUBLISH_HEADING)
+    resume = _markdown_section(publish, "### Resume")
+
+    assert "`resume: true`" in resume
+    rows = {
+        "`run_id`": "original run",
+        "`manifest_sha256`": "approval packet",
+        "`control_sha`": "original release-controls SHA",
+    }
+    for name, source in rows.items():
+        row = next(line for line in resume.splitlines() if line.startswith(f"| {name} "))
+        assert source in row
+    assert "against a dry-run original publishes those previously dry-run\nbytes" in resume
+    assert "never rebuilds" in resume
+    assert "`--skip-existing`" in resume
+    assert "stages only the files that are missing" in resume
+    assert "yanked file" in resume
+    assert "expire after 90 days" in resume
+
+    workflow = Path(".github/workflows/publish.yml").read_text(encoding="utf-8")
+    assert "retention-days: 90" in workflow
+    assert "skip-existing" not in workflow
+
+
+def test_checklist_freezes_public_pointers_in_the_interim_install_state() -> None:
+    publish = _markdown_section(CHECKLIST.read_text(encoding="utf-8"), PUBLISH_HEADING)
+    interim = _markdown_section(publish, "### Interim Install State")
+
+    assert "While core is published but labs and proof are not,\n`mcp-audits[labs]==X.Y.Z`" in interim
+    assert "cannot resolve" in interim
+    assert "**Every public pointer stays frozen until all six files verify:**" in interim
+    for pointer in ("tag", "GitHub Release", "Registry entry", "Action ref", "hook ref"):
+        assert pointer in interim
+
+
+def test_post_publication_smoke_runs_proof_from_the_proof_distribution() -> None:
+    smoke = _markdown_section(CHECKLIST.read_text(encoding="utf-8"), "## Post-Publication Install Smoke")
+    commands = smoke[smoke.index("```bash") : smoke.rindex("```")].replace("\\\n", " ")
+    lines = [" ".join(line.split()) for line in commands.splitlines() if "uvx" in line]
+
+    assert all("--refresh" in line for line in lines)
+    assert any('--from "mcp-audits==X.Y.Z" mcp-audit --version' in line for line in lines)
+    assert any('--from "mcp-audits[labs]==X.Y.Z" mcp-audit lab' in line for line in lines)
+    proof = [line for line in lines if "proof-before-action" in line]
+    assert proof
+    assert all('--from "mcp-audits-proof==X.Y.Z" proof-before-action' in line for line in proof)
+
+
+def test_checklist_2x_section_matches_main_workflows() -> None:
+    maintenance = _markdown_section(
+        CHECKLIST.read_text(encoding="utf-8"), "## `release/2.x` Security Maintenance"
+    )
+
+    assert "refuses\nany 2.x version" in maintenance
+    assert "`pypi-2x`" in maintenance
+    assert "branch-local `publish.yml`" in maintenance
+    for name in ("publish.yml", "publish-mcp-registry.yml"):
+        workflow = Path(f".github/workflows/{name}").read_text(encoding="utf-8")
+        assert '= "refs/heads/main"' in workflow
+        assert "pypi-2x" not in workflow
+    dispatch = runpy.run_path("scripts/release_publish.py", run_name="release_publish_doc_test")
+    with pytest.raises(release.VerificationError, match="split release contract"):
+        dispatch["validate_dispatch"]("a" * 40, "2.12.1", False, "", "", "")
+
+
+def test_ci_guide_documents_the_core_only_3x_action_and_exact_tag() -> None:
+    guide = _markdown_section(Path("docs/guides/ci.md").read_text(encoding="utf-8"), "## The 3.x Action")
+
+    assert "installs the core `mcp-audits` distribution only" in guide
+    assert "`lab` commands through `args` are not supported" in guide
+    assert "The 3.0.0 Action tag is exactly `v3.0.0`" in guide
+    assert "There is no moving `v3`\ntag, and none will be created" in guide
+    assert "lightweight tag at the approved commit only after\nall six" in guide
+    action = Path("action.yml").read_text(encoding="utf-8")
+    assert 'python -m pip install --upgrade "mcp-audits==${MCP_AUDIT_VERSION}"' in action
+    assert "mcp-audits[" not in action

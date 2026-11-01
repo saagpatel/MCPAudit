@@ -78,6 +78,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   90 days, and reads back each ordered PyPI upload. Explicit recovery verifies
   the original run, control revision and manifest before staging only missing
   files; dry runs rehearse a partial upload and retained-byte recovery offline.
+- The release checklist activates the three-distribution train with a
+  commit-first 3.x publish: dispatch on commit and version, a dry run, then the
+  approved run; the lightweight tag, GitHub Release, Registry workflow and a
+  `uvx --refresh` smoke of core, `mcp-audits[labs]` and `mcp-audits-proof` follow
+  only after all six files verify. It documents `resume=true` recovery inputs,
+  the interim install state, and the owner's trusted-publisher prerequisites.
+  Main's `project.version` must stay at the release version only until the
+  Registry dispatch; publish and resume need only the distribution contract
+  and build constraints to match the approved commit byte for byte.
+  The CI guide records the core-only 3.x Action and the exact `v3.0.0` tag with
+  no moving `v3` tag. Documentation only.
 
 ### Breaking
 
