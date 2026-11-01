@@ -3,35 +3,39 @@
 from __future__ import annotations
 
 import json
-from importlib.metadata import version
 from pathlib import Path
 
 import click
 import yaml
 from pydantic import BaseModel, ValidationError
 
-from mcp_audit._command_registry import PROOF_INSTALL_NOTICE
-from mcp_audit.proof_capsule import (
+from proof_before_action import __version__
+from proof_before_action.proof_capsule import (
     build_capsule,
     compare_bill,
     export_capsule,
     verify_capsule,
 )
-from mcp_audit.proof_models import (
+from proof_before_action.proof_models import (
     ActionDeclaration,
     CapsuleIndex,
     EvidenceCapsule,
     Observation,
     ReleaseTrustManifest,
 )
-from mcp_audit.proof_observer import ObservationBlocked, observe_command
-from mcp_audit.proof_trust import build_release_trust_manifest
+from proof_before_action.proof_observer import ObservationBlocked, observe_command
+from proof_before_action.proof_trust import build_release_trust_manifest
+
+PROOF_INSTALL_NOTICE = (
+    "For proof-before-action on PATH, install Proof directly with: "
+    "uv tool install mcp-audits-proof (a uv tool extra does not expose its scripts)."
+)
 
 
 def _version_notice(ctx: click.Context, param: click.Parameter, value: bool) -> None:
     if value and not ctx.resilient_parsing:
         click.echo(PROOF_INSTALL_NOTICE, err=True)
-        click.echo(f"proof-before-action, version {version('mcp-audits')}")
+        click.echo(f"proof-before-action, version {__version__}")
         ctx.exit()
 
 

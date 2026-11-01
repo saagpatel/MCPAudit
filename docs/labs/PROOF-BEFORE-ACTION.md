@@ -92,7 +92,9 @@ and floating-point substitutes are invalid rather than coerced.
 Wheel and source-distribution builds use the repository's uv-backed PEP 517
 wrapper to embed the exact source revision and pre-build dirty state. Installed
 commands read only that packaged metadata; source checkouts use Git only when
-the executing module is under that checkout's exact `src/mcp_audit` path. This
+the executing module is the checkout's exact
+`distributions/proof/src/proof_before_action/proof_capsule.py`, resolved
+relative to the repository root. This
 prevents an installed virtual environment from inheriting an unrelated ancestor
 repository as its producer.
 

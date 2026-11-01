@@ -11,8 +11,8 @@ import subprocess
 from pathlib import Path
 from typing import Any, Literal
 
-from mcp_audit import __version__
-from mcp_audit.proof_models import (
+from proof_before_action import __version__
+from proof_before_action.proof_models import (
     ATTEMPT_EVIDENCE_RULE_IDS,
     CAPSULE_INDEX_SCHEMA,
     CAPSULE_INDEX_SCHEMA_V1,
@@ -694,7 +694,7 @@ def _producer_state(
     if embedded is not None:
         return (*embedded, "build-metadata")
     module_path = Path(__file__).resolve()
-    source_path = source_path or Path("src") / Path(*__package__.split(".")) / "proof_capsule.py"
+    source_path = source_path or Path("distributions/proof/src/proof_before_action/proof_capsule.py")
     if source_path.is_absolute() or ".." in source_path.parts or len(source_path.parts) < 2:
         return None, None, None
     try:

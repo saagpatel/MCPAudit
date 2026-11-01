@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 from urllib.parse import urlsplit, urlunsplit
 
-from mcp_audit.proof_models import (
+from proof_before_action.proof_models import (
     DependencyOccurrence,
     DiscoveryDiagnostic,
     ReleaseTrustManifest,
