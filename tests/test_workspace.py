@@ -1,4 +1,4 @@
-"""Acceptance checks for the package split scaffolding, before modules move."""
+"""Acceptance checks for the uv workspace and three-distribution package layout."""
 
 from __future__ import annotations
 
