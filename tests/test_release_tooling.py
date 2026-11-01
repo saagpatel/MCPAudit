@@ -825,6 +825,11 @@ def test_publication_cli_requires_every_pypi_readback(train_artifacts: Path, mut
     )
     contract = train_artifacts.parent / "distributions.json"
     contract.write_bytes((Path(__file__).resolve().parents[1] / "release/distributions.json").read_bytes())
+    # Tag and checkout versions must agree, so the readback runs on a VERSION checkout stub.
+    root = train_artifacts.parent / "root"
+    (root / "release").mkdir(parents=True)
+    (root / "pyproject.toml").write_text(f'[project]\nversion="{VERSION}"\n')
+    (root / release.CONTRACT_PATH).write_bytes(contract.read_bytes())
     responses: dict[str, object] = {}
     for item in TRAIN:
         responses[item.name] = {
@@ -862,6 +867,8 @@ def test_publication_cli_requires_every_pypi_readback(train_artifacts: Path, mut
             "scripts/verify_release.py",
             "--publication-check",
             "pypi",
+            "--root",
+            str(root),
             "--tag",
             f"v{VERSION}",
             "--commit",

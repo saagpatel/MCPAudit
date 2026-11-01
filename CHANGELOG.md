@@ -21,7 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   keys, and reports `partial readback; not release completion`. A final
   `--publication-check tag` requires all six published files and the release
   tag at the approved landed commit. Every version outside 2.x, not only 3.x,
-  requires the three-distribution contract.
+  requires the three-distribution contract. The split rule applies when either
+  the `--tag` version or the checkout's `project.version` is outside 2.x, and
+  the two must be equal whenever both are present, so a 2.x tag can no longer
+  bypass the contract on a 3.x checkout.
 - Compatibility SARIF emits one warning-level `MCP-CH-CONFIG-PARSE-FAILURE`
   result per skipped discovered source, with its reason, source location and
   `--config FILE` remedy, including translated static scans. Existing skip

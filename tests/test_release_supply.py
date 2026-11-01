@@ -295,8 +295,21 @@ def _pypi_response(item: release.Distribution, version: str, hashes: dict[str, s
     }
 
 
+def _release_root(path: Path, version: str) -> Path:
+    """A checkout stub carrying only the project version and the reviewed contract."""
+    (path / "release").mkdir(parents=True)
+    (path / "pyproject.toml").write_text(f'[project]\nversion="{version}"\n')
+    (path / release.CONTRACT_PATH).write_bytes(CONTRACT.read_bytes())
+    return path
+
+
 @pytest.fixture
-def publication_inputs(tmp_path: Path) -> tuple[list[str], dict[str, object]]:
+def publication_inputs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[list[str], dict[str, object]]:
+    # In-process main() rebinds the module root from --root; restore it afterwards.
+    monkeypatch.setattr(release, "ROOT", release.ROOT)
+    monkeypatch.setattr(release, "RELEASE_STATE_PATH", release.RELEASE_STATE_PATH)
     version = "3.0.0"
     hashes = {
         name: hashlib.sha256(name.encode()).hexdigest()
@@ -316,6 +329,9 @@ def publication_inputs(tmp_path: Path) -> tuple[list[str], dict[str, object]]:
         )
     )
     args = [
+        # Tag and checkout versions must agree, so the 3.0.0 readback runs on a 3.0.0 checkout.
+        "--root",
+        str(_release_root(tmp_path / "root", version)),
         "--tag",
         f"v{version}",
         "--commit",
@@ -494,6 +510,126 @@ def test_published_through_selector_is_only_for_intermediate_pypi_readbacks(
         "release verification failed: --published-through requires --publication-check pypi"
         in capsys.readouterr().err
     )
+
+
+ENVIRONMENT = {
+    "can_admins_bypass": False,
+    "deployment_branch_policy": {"protected_branches": False, "custom_branch_policies": True},
+    "protection_rules": [
+        {
+            "type": "required_reviewers",
+            "prevent_self_review": False,
+            "reviewers": [{"type": "User", "reviewer": {"login": "saagpatel"}}],
+        }
+    ],
+}
+
+
+@pytest.mark.parametrize("mode", ["environment", "artifacts", "pypi", "tag", "descriptor", "registry"])
+@pytest.mark.parametrize("checkout", ["2.0.0", "3.0.0"], ids=["2x-checkout", "3x-checkout"])
+def test_2x_tag_cannot_bypass_split_contract_on_3x_checkout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    mode: str,
+    checkout: str,
+) -> None:
+    # Every input here is a valid unsplit 2.0.0 publication, so the 2.x checkout
+    # passes; a 3.x checkout must still refuse the 2.x tag and its unsplit contract.
+    version = "2.0.0"
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "pyproject.toml").write_text(f'[project]\nversion="{checkout}"\n')
+    contract = tmp_path / "unsplit.json"
+    contract.write_text(json.dumps([TRAIN[0]._asdict()]))
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    for name in release.distribution_names(version):
+        (dist / name).write_bytes(name.encode())
+    hashes = {name: hashlib.sha256(name.encode()).hexdigest() for name in release.distribution_names(version)}
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "schema_version": release.MANIFEST_SCHEMA,
+                "version": version,
+                "commit": COMMIT,
+                "workflow_sha": WORKFLOW_SHA,
+                "files": hashes,
+            }
+        )
+    )
+    descriptor = _descriptor()
+    descriptor["version"] = version
+    package = _packages(descriptor)[0]
+    assert isinstance(package, dict)
+    package["version"] = version
+    meta = {"io.modelcontextprotocol.registry/official": {"status": "active", "isLatest": True}}
+    responses: dict[str, object] = {
+        "pypi": _pypi_response(TRAIN[0], version, hashes),
+        "descriptor": descriptor,
+        "registry": {"server": descriptor, "_meta": meta},
+    }
+    response = tmp_path / "response.json"
+    response.write_text(json.dumps(responses.get(mode if mode != "tag" else "pypi")))
+    environment, branches = tmp_path / "environment.json", tmp_path / "branches.json"
+    environment.write_text(json.dumps(ENVIRONMENT))
+    branches.write_text(json.dumps({"branch_policies": [{"name": "main", "type": "branch"}]}))
+    args = ["--root", str(root), "--distributions", str(contract), "--tag", f"v{version}", "--commit", COMMIT]
+    if mode == "environment":
+        args += ["--environment-json", str(environment), "--branch-policies-json", str(branches)]
+    elif mode == "artifacts":
+        args += ["--workflow-sha", WORKFLOW_SHA, "--dist-dir", str(dist), "--manifest", str(manifest)]
+    elif mode in {"pypi", "tag"}:
+        args += [
+            "--manifest",
+            str(manifest),
+            "--manifest-sha256",
+            hashlib.sha256(manifest.read_bytes()).hexdigest(),
+            "--response-json",
+            str(response),
+        ]
+    else:
+        args += ["--response-json", str(response)]
+
+    def git(*git_args: str) -> str:
+        if git_args in {("rev-parse", "HEAD"), ("rev-parse", f"refs/tags/v{version}^{{commit}}")}:
+            return COMMIT
+        return ""
+
+    monkeypatch.setattr(sys, "argv", ["verify_release.py", "--publication-check", mode, *args])
+    monkeypatch.setattr(release, "ROOT", release.ROOT)
+    monkeypatch.setattr(release, "RELEASE_STATE_PATH", release.RELEASE_STATE_PATH)
+    monkeypatch.setattr(release, "RELEASE_BRANCH", release.RELEASE_BRANCH)
+    monkeypatch.setattr(release, "_run_git", git)
+    if checkout == version:
+        assert release.main() == 0, capsys.readouterr().err
+        assert capsys.readouterr().out == f"publication {mode} verified\n"
+    else:
+        assert release.main() == 1
+        assert (
+            f"tag v{version} does not match the checkout project.version {checkout}"
+            in capsys.readouterr().err
+        )
+
+
+@pytest.mark.parametrize("publishable", [False, True], ids=["metadata", "require-publishable"])
+def test_metadata_path_rejects_tag_that_differs_from_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], publishable: bool
+) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "pyproject.toml").write_text('[project]\nversion="3.0.0"\n')
+    contract = tmp_path / "unsplit.json"
+    contract.write_text(json.dumps([TRAIN[0]._asdict()]))
+    argv = ["verify_release.py", "--root", str(root), "--distributions", str(contract)]
+    argv += ["--tag", "v2.0.0", "--commit", COMMIT] + (["--require-publishable"] if publishable else [])
+    monkeypatch.setattr(sys, "argv", argv)
+    monkeypatch.setattr(release, "ROOT", release.ROOT)
+    monkeypatch.setattr(release, "RELEASE_STATE_PATH", release.RELEASE_STATE_PATH)
+    monkeypatch.setattr(release, "RELEASE_BRANCH", release.RELEASE_BRANCH)
+    assert release.main() == 1
+    assert "tag v2.0.0 does not match the checkout project.version 3.0.0" in capsys.readouterr().err
 
 
 def _descriptor() -> dict[str, object]:
