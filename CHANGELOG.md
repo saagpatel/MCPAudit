@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Release builds pin `uv_build==0.13.6` in all three distributions' build
   requirements and in `build-constraints.txt`, which move together.
 
+### Fixed
+
+- `_build_provenance.json` is gitignored, so a parallel `uv build --all-packages`
+  no longer sees a sibling package's transient provenance and marks a clean
+  checkout dirty. Release builds stay serial.
+
 ## [3.0.0] - 2026-11-01
 
 ### Breaking

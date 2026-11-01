@@ -115,3 +115,16 @@ def test_output_contract_documents_every_sarif_rule_id() -> None:
 
     missing = source_ids - documented
     assert not missing, f"SARIF rule IDs undocumented in OUTPUT-CONTRACT.md: {sorted(missing)}"
+
+
+def test_transient_build_provenance_is_ignored_in_every_distribution() -> None:
+    """Parallel builds must not see a sibling's transient provenance as an untracked file."""
+    paths = [
+        "src/mcp_audit/_build_provenance.json",
+        "distributions/labs/src/mcp_audit_labs/_build_provenance.json",
+        "distributions/proof/src/proof_before_action/_build_provenance.json",
+    ]
+    for path in paths:
+        assert Path(path).parent.is_dir(), path
+    result = subprocess.run(["git", "check-ignore", "--no-index", *paths], capture_output=True, text=True)
+    assert result.stdout.split() == paths
