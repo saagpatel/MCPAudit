@@ -1,6 +1,6 @@
 [project]
 name = "mcp-audits-proof"
-version = "2.12.0"
+version = "3.0.0"
 description = "Proof Before Action — disposable observation and portable evidence"
 readme = "README.md"
 license = "MIT"
