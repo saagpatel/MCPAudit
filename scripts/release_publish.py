@@ -206,7 +206,12 @@ def _not_yet_visible(raw: object, hashes: dict[str, str]) -> bool:
     for entry in urls:
         digests = entry.get("digests") if isinstance(entry, dict) else None
         name = entry.get("filename") if isinstance(entry, dict) else None
-        if not isinstance(digests, dict) or name not in hashes or digests.get("sha256") != hashes[name]:
+        if (
+            not isinstance(digests, dict)
+            or not isinstance(name, str)
+            or name not in hashes
+            or digests.get("sha256") != hashes[name]
+        ):
             return False
     return True
 

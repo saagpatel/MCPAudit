@@ -707,6 +707,12 @@ def test_readback_fails_fast_on_wrong_content_and_after_bounded_wait(
     assert (len(requested), sleeps) == (3, [1.0, 1.0])
 
 
+def test_readback_treats_malformed_filenames_as_definitive() -> None:
+    hashes = {"a.whl": "1" * 64, "a.tar.gz": "2" * 64}
+    odd = {"urls": [{"filename": ["a.whl"], "digests": {"sha256": "1" * 64}}]}
+    assert publish._not_yet_visible(odd, hashes) is False
+
+
 def test_workflow_readback_wait_is_bounded() -> None:
     assert 60 <= (publish.READBACK_ATTEMPTS - 1) * publish.READBACK_DELAY_SECONDS <= 180
     source = Path("scripts/release_publish.py").read_text(encoding="utf-8")
