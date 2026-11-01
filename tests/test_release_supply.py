@@ -750,7 +750,8 @@ def test_publish_build_and_advisory_gate_use_the_same_build_constraints() -> Non
     names_in_order = [item.name for item in release.DISTRIBUTIONS]
     # Serial, one package per build in contract order: parallel builds race on provenance.
     assert [line for line in build if line] == [
-        f"uv build --package {name}{' --clear' if index == 0 else ''} --no-create-gitignore --out-dir dist {constraints}"
+        f"uv build --package {name}{' --clear' if index == 0 else ''} "
+        f"--no-create-gitignore --out-dir dist {constraints}"
         for index, name in enumerate(names_in_order)
     ]
     builds = [step for step in workflow["jobs"]["build"]["steps"] if "uv build" in step.get("run", "")]
