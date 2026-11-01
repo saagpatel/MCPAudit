@@ -82,7 +82,8 @@ jobs:
             --commit "$RELEASE_COMMIT" \
             --environment-json "$RUNNER_TEMP/pypi-environment.json" \
             --branch-policies-json "$RUNNER_TEMP/pypi-branches.json" \
-            --require-publishable
+            --require-publishable \
+            --tag-published
 
       - name: Require exact approved PyPI files and descriptor
         env:

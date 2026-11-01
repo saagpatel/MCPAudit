@@ -1111,6 +1111,14 @@ def _parser() -> argparse.ArgumentParser:
         help="release source checkout to verify",
     )
     parser.add_argument("--require-publishable", action="store_true")
+    parser.add_argument(
+        "--tag-published",
+        action="store_true",
+        help=(
+            "post-publication binding for the metadata check: the release tag must already exist "
+            "and resolve to the approved commit (3.x tags are created only after PyPI verifies)"
+        ),
+    )
     parser.add_argument("--dist-dir", type=Path)
     parser.add_argument("--distributions", type=Path, help="reviewed JSON distribution/script contract")
     parser.add_argument(
@@ -1234,6 +1242,10 @@ def main() -> int:
             if args.distributions is None:
                 raise VerificationError("3.x and later require --distributions")
             verify_contract_binding(args.distributions)
+        if args.tag_published and args.publication_check is not None:
+            raise VerificationError("--tag-published applies only to the metadata check")
+        if args.tag_published and (args.tag is None or args.commit is None):
+            raise VerificationError("--tag-published requires --tag and --commit")
         if args.published_through is not None and args.publication_check != "pypi":
             raise VerificationError("--published-through requires --publication-check pypi")
         if args.publication_check is not None:
@@ -1264,6 +1276,7 @@ def main() -> int:
                 tag=args.tag,
                 commit=args.commit,
                 require_landed=args.require_publishable,
+                published=args.tag_published,
             )
         if args.environment_json is not None:
             verify_environment_protection(
