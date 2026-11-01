@@ -1,7 +1,7 @@
 # CI gate for teams that want to block lethal-trifecta MCP servers.
 #
 # Run with:
-#   mcp-audit scan --trifecta-check --json mcp-audit.json --policy trifecta-aware-ci.yaml
+#   mcp-audit check --include-discovered --connect-all --trifecta-check --output-json mcp-audit.json --policy trifecta-aware-ci.yaml
 #
 # Trifecta gating is opt-in: the broad fail_on.severity shortcut does NOT cover
 # it, so it must be requested explicitly via fail_on.trifecta. Pair with

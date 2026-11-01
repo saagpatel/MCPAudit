@@ -25,13 +25,13 @@ not a universal security baseline.
 Use `local-review.yaml` for an initial workstation pass:
 
 ```bash
-mcp-audit scan --inject-check --json mcp-audit.json --policy examples/policies/local-review.yaml
+mcp-audit check --include-discovered --connect-all --inject-check --output-json mcp-audit.json --policy examples/policies/local-review.yaml
 ```
 
 Use `balanced-team-ci.yaml` when the team is still learning the server set:
 
 ```bash
-mcp-audit scan --inject-check --pin-check --json mcp-audit.json --policy examples/policies/balanced-team-ci.yaml
+mcp-audit check --include-discovered --connect-all --inject-check --pin-check --output-json mcp-audit.json --policy examples/policies/balanced-team-ci.yaml
 ```
 
 Use `approved-servers-ci.yaml` or `ci-strict.yaml` after the allowed server set
@@ -42,7 +42,7 @@ or resources whose interface lets a caller steer a server-side request target.
 Run the scan with `--ssrf-check` so SSRF findings are produced:
 
 ```bash
-mcp-audit scan --ssrf-check --json mcp-audit.json --policy examples/policies/ssrf-aware-ci.yaml
+mcp-audit check --include-discovered --connect-all --ssrf-check --output-json mcp-audit.json --policy examples/policies/ssrf-aware-ci.yaml
 ```
 
 Use `egress.yaml` when you want to fail CI on *where* servers can send data —
@@ -50,14 +50,14 @@ destinations outside your allowlist, unbounded caller-controlled targets, and th
 trusted-but-multi-tenant residual:
 
 ```bash
-mcp-audit scan --egress-check --json mcp-audit.json --policy examples/policies/egress.yaml
+mcp-audit check --include-discovered --connect-all --egress-check --output-json mcp-audit.json --policy examples/policies/egress.yaml
 ```
 
 Use `trifecta-aware-ci.yaml` when you want to fail CI on servers (or fleets)
 that assemble the lethal-trifecta attack surface. Run with `--trifecta-check`:
 
 ```bash
-mcp-audit scan --trifecta-check --json mcp-audit.json --policy examples/policies/trifecta-aware-ci.yaml
+mcp-audit check --include-discovered --connect-all --trifecta-check --output-json mcp-audit.json --policy examples/policies/trifecta-aware-ci.yaml
 ```
 
 Use `shadowing-aware-ci.yaml` when you want to fail CI if any two servers
@@ -65,7 +65,7 @@ expose colliding tool names (exact, case/separator-normalised, or homoglyph).
 Run with `--shadow-check`:
 
 ```bash
-mcp-audit scan --shadow-check --json mcp-audit.json --policy examples/policies/shadowing-aware-ci.yaml
+mcp-audit check --include-discovered --connect-all --shadow-check --output-json mcp-audit.json --policy examples/policies/shadowing-aware-ci.yaml
 ```
 
 Use `escalation-aware-ci.yaml` to fail CI when a previously-pinned tool gains a
@@ -74,7 +74,7 @@ Capture a baseline once with `mcp-audit pin`, then run with `--escalation-check`
 
 ```bash
 mcp-audit pin
-mcp-audit scan --escalation-check --json mcp-audit.json --policy examples/policies/escalation-aware-ci.yaml
+mcp-audit check --include-discovered --connect-all --escalation-check --output-json mcp-audit.json --policy examples/policies/escalation-aware-ci.yaml
 ```
 
 Use `provenance-aware-ci.yaml` to fail CI when a server's launch configuration
@@ -84,7 +84,7 @@ a baseline once with `mcp-audit pin`, then run with `--provenance-check`:
 
 ```bash
 mcp-audit pin
-mcp-audit scan --provenance-check --json mcp-audit.json --policy examples/policies/provenance-aware-ci.yaml
+mcp-audit check --include-discovered --provenance-check --output-json mcp-audit.json --policy examples/policies/provenance-aware-ci.yaml
 ```
 
 Use `integrity-aware-ci.yaml` to fail CI when the on-disk artifact a server
@@ -95,7 +95,7 @@ it runs is swapped. Capture a baseline once with `mcp-audit pin`, then run with
 
 ```bash
 mcp-audit pin
-mcp-audit scan --integrity-check --json mcp-audit.json --policy examples/policies/integrity-aware-ci.yaml
+mcp-audit check --include-discovered --integrity-check --output-json mcp-audit.json --policy examples/policies/integrity-aware-ci.yaml
 ```
 
 Use `package-verify-ci.yaml` to fail CI when the registry-published hash for a
@@ -106,7 +106,7 @@ contacts the registry. Capture a baseline once with `mcp-audit pin
 
 ```bash
 mcp-audit pin --verify-artifacts
-mcp-audit scan --verify-artifacts --json mcp-audit.json --policy examples/policies/package-verify-ci.yaml
+mcp-audit check --include-discovered --verify-artifacts --output-json mcp-audit.json --policy examples/policies/package-verify-ci.yaml
 ```
 
 ## Scoring And Config-Health Note

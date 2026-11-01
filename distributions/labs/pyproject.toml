@@ -1,7 +1,7 @@
 [project]
 name = "mcp-audits-labs"
 version = "2.12.0"
-description = "MCPAudit labs distribution scaffold"
+description = "Optional offline labs, conformance probes, and SafeForge for MCPAudit"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]

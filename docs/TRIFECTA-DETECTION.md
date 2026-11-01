@@ -1,6 +1,6 @@
 # Lethal Trifecta / Toxic Flow Detection
 
-`mcp-audit scan --trifecta-check` detects the canonical agent-exfiltration attack
+`mcp-audit check --trifecta-check` detects the canonical agent-exfiltration attack
 surface — the **lethal trifecta** — by checking whether the capabilities across a
 server (or fleet) cover all three legs of the classic toxic-flow attack pattern.
 
@@ -149,7 +149,7 @@ policy files keep their previous behavior unchanged.
 
 ```bash
 # Detect lethal-trifecta attack surface, write JSON + SARIF, gate in CI
-mcp-audit scan --trifecta-check --json audit.json --sarif audit.sarif --policy policy.yaml
+mcp-audit check --include-discovered --connect-all --trifecta-check --output-json audit.json --sarif audit.sarif --policy policy.yaml
 ```
 
 ## Rule of Two Posture

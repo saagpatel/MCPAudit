@@ -1,9 +1,11 @@
 # Suppress a reviewed finding
 
 Suppressions are explicit policy exceptions, not evidence that a capability is
-absent. Review the finding before recording an exception. `scan` and `check`
-read `ignore:` entries from `~/.mcp-audit.yaml`; `--override-config FILE` selects
-an explicit file, and `--override-config /dev/null` disables saved exceptions.
+absent. Review the finding before recording an exception. `check` reads
+`ignore:` entries from `~/.mcp-audit.yaml` unless it reviews only an explicit
+`--config FILE`;
+`--override-config FILE` selects an explicit file, and
+`--override-config /dev/null` disables saved exceptions.
 `check --config FILE` and `demo` retain their isolated input boundary: they do
 not load saved settings unless `--override-config FILE` is explicitly selected
 or discovery is requested with `--include-discovered`.
@@ -30,8 +32,8 @@ For a single run, repeat `--ignore` for each rule:
 ```sh
 mcp-audit check --config ./mcp.json --override-config /dev/null \
   --ignore MCP001
-mcp-audit scan --config ./reviewed-mcp-config.json --config-only \
-  --override-config /dev/null --shadow-check \
+mcp-audit check --config ./reviewed-mcp-config.json \
+  --override-config /dev/null --connect-all --shadow-check \
   --ignore MCP015 --ignore-reason "Reviewed intentional collision for this run"
 ```
 
@@ -79,10 +81,10 @@ overrides:
     notes: "Reviewed: this tool reads only its documented status file."
 ```
 
-The legacy `scan` path reads `~/.mcp-audit.yaml`; use
-`--override-config FILE` to select an explicit override file. The newer static
-`check` path loads only `ignore:` entries, not legacy permission overrides.
-An explicit legacy override can remove
+`check` applies `overrides:` entries from the same file as `ignore:` entries:
+`~/.mcp-audit.yaml` by default, or the file selected with
+`--override-config FILE`. `check --config FILE` loads no saved overrides unless
+`--override-config FILE` is explicit. An override can remove
 only the matching permission category for the selected tool. It does not hide
 other rule families or establish that the capability is absent at runtime.
 

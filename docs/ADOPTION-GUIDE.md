@@ -13,20 +13,20 @@ Start without spawning or contacting servers:
 
 ```bash
 uvx --from mcp-audits mcp-audit discover
-uvx --from mcp-audits mcp-audit scan --skip-connect
+uvx --from mcp-audits mcp-audit check --include-discovered
 ```
 
-When you are ready to inspect live MCP metadata, run a connected scan:
+When you are ready to inspect live MCP metadata, run a connected review:
 
 ```bash
-mcp-audit scan --inject-check
+mcp-audit check --include-discovered --connect-all --inject-check
 ```
 
-To audit one explicit config file without also scanning workstation-discovered
-configs, use `--config-only`:
+To audit one explicit config file without also reviewing workstation-discovered
+configs, pass `--config` alone:
 
 ```bash
-mcp-audit scan --config ./mcp.json --config-only --inject-check
+mcp-audit check --config ./mcp.json --connect-all --inject-check
 ```
 
 Review prompt/resource findings separately from the composite score. They are
@@ -42,12 +42,12 @@ package-runner launches, or duplicated server names.
 Use a local policy file and keep reports even when the gate fails:
 
 ```bash
-mcp-audit scan \
-  --json mcp-audit.json \
+mcp-audit check --include-discovered --connect-all \
+  --output-json mcp-audit.json \
   --policy examples/policies/balanced-team-ci.yaml
 ```
 
-Exit code `2` means the scan completed and report artifacts were written, but
+Exit code `2` after the review means it completed and report artifacts were written, but
 the local policy failed.
 
 Use `fail_on.config_health` when CI should fail on config setup findings:
@@ -80,7 +80,7 @@ Export SARIF and upload it with GitHub's SARIF action:
 
 ```yaml
 - name: Audit MCP servers
-  run: mcp-audit scan --inject-check --sarif mcp-audit.sarif
+  run: mcp-audit check --include-discovered --connect-all --inject-check --sarif mcp-audit.sarif
 - name: Upload SARIF
   uses: github/codeql-action/upload-sarif@v4
   with:
@@ -88,7 +88,7 @@ Export SARIF and upload it with GitHub's SARIF action:
     category: mcp-audit
 ```
 
-Use `scan --skip-connect --sarif mcp-audit.sarif` for config-only CI where
+Use `check --include-discovered --sarif mcp-audit.sarif` for config-only CI where
 starting local MCP servers is not appropriate.
 
 A complete GitHub code-scanning workflow example is available at
@@ -154,7 +154,7 @@ Use pins after a server set is reviewed:
 
 ```bash
 mcp-audit pin
-mcp-audit scan --pin-check
+mcp-audit check --include-discovered --connect-all --pin-check
 mcp-audit pin --refresh github
 mcp-audit pin --refresh github --apply
 ```

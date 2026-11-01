@@ -116,7 +116,7 @@ class ReportGenerator:
             f"{review.action_count} review actions | "
             f"Estimated initial review: {review.review_minutes} minutes"
         )
-        self._console.print(Panel(summary, title="mcp-audit scan", expand=False))
+        self._console.print(Panel(summary, title="mcp-audit", expand=False))
 
         target_hunts = sum(bool(f.hunt_targets) for a in report.audits for f in a.injection_findings)
         if target_hunts:

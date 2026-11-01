@@ -7,9 +7,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from mcp_audit_labs.oauth_transcript_models import OAuthTranscriptFixture, OAuthTranscriptReport
 from pydantic import BaseModel
-
-from mcp_audit.oauth_transcript_models import OAuthTranscriptFixture, OAuthTranscriptReport
 
 ROOT = Path(__file__).parents[1] / "tests" / "fixtures" / "oauth_transcript"
 SCHEMA_ROOT = Path(__file__).parents[1] / "examples" / "schemas"

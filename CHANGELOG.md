@@ -14,25 +14,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Publish dispatch now binds an approved commit and version before tagging, builds
-  and smokes all six split artifacts and pinned extras, retains candidates for
-  90 days, and reads back each ordered PyPI upload. Explicit recovery verifies
-  the original run, control revision and manifest before staging only missing
-  files; dry runs rehearse a partial upload and retained-byte recovery offline.
-
-- Release verification supports partial PyPI readbacks between split-package
-  uploads with `--publication-check pypi --published-through NAME`, which checks
-  the contract-order prefix up to and including `NAME` (core; core and Labs; all
-  three) against the approved manifest, rejects a readback map with any other
-  keys, and reports `partial readback; not release completion`. A final
-  `--publication-check tag` requires all six published files and the release
-  tag at the approved landed commit. Every version outside 2.x, not only 3.x,
-  requires the three-distribution contract. The split rule applies when either
-  the `--tag` version or the checkout's `project.version` is outside 2.x, and
-  the two must be equal whenever both are present, so a 2.x tag can no longer
-  bypass the contract on a 3.x checkout. Before publication the release tag
-  must be absent both locally and on `origin` (`git ls-remote`); an unreadable
-  `origin` fails closed.
 - Compatibility SARIF emits one warning-level `MCP-CH-CONFIG-PARSE-FAILURE`
   result per skipped discovered source, with its reason, source location and
   `--config FILE` remedy, including translated static scans. Existing skip
@@ -69,13 +50,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a Proof core dependency, and selects each reference build explicitly by package.
 - Proof uses its own installed version and install notice, and source-checkout
   producer provenance resolves the split module path from the repository root.
+- A CI `install-shape` job builds each wheel and installs the core and Proof
+  wheels alone into fresh environments. Core-only runs `check`, exits 2 with the
+  labs install command for `lab` and `safeforge` subcommands, and has no
+  `proof-before-action`; Proof-only runs `proof-before-action --version` without
+  core. Self-audit explicitly builds the core wheel, and `mypy .` type-checks all
+  three package source trees.
+- Release verification supports partial PyPI readbacks between split-package
+  uploads with `--publication-check pypi --published-through NAME`, which checks
+  the contract-order prefix up to and including `NAME` (core; core and Labs; all
+  three) against the approved manifest, rejects a readback map with any other
+  keys, and reports `partial readback; not release completion`. A final
+  `--publication-check tag` requires all six published files and the release
+  tag at the approved landed commit. Every version outside 2.x, not only 3.x,
+  requires the three-distribution contract. The split rule applies when either
+  the `--tag` version or the checkout's `project.version` is outside 2.x, and
+  the two must be equal whenever both are present, so a 2.x tag can no longer
+  bypass the contract on a 3.x checkout. Before publication the release tag
+  must be absent both locally and on `origin` (`git ls-remote`); an unreadable
+  `origin` fails closed.
+- Publish dispatch now binds an approved commit and version before tagging, builds
+  and smokes all six split artifacts and pinned extras, retains candidates for
+  90 days, and reads back each ordered PyPI upload. Explicit recovery verifies
+  the original run, control revision and manifest before staging only missing
+  files; dry runs rehearse a partial upload and retained-byte recovery offline.
 
 ### Breaking
 
-- For 3.x, pre-upload commit checks refuse an existing release tag. An explicit
-  three-package release contract must match `release/distributions.json` in source
-  and release controls byte for byte; the source contract is also bound to the
-  approved commit. Missing and explicitly unsplit contracts fail verification.
+- Move the 34 lab and SafeForge modules and the session/resume scenario corpus
+  from `mcp_audit` to the optional `mcp_audit_labs` package. Install labs with
+  `uv tool install 'mcp-audits[labs]'` and update Python imports. The core CLI
+  still dispatches `lab` and `safeforge` lazily; without labs these commands
+  exit 2 with the existing install notice, including the direct Proof install
+  needed to put `proof-before-action` on PATH.
 - Move Proof Before Action's five modules from `mcp_audit.proof_*` to
   `proof_before_action.proof_*` in `mcp-audits-proof`. The `proof-before-action`
   command now belongs to that distribution; install it with
@@ -155,9 +162,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `_run_scan`/`_parse_clients` re-exports from `mcp_audit._core_cli`. Library callers use
   `mcp_audit.engine.run_scan(ScanOptions(...))` and `mcp_audit.client_filter._parse_clients`;
   there is no replacement for `monitor` (use `shadow`, `watch`, or `check --pin-check`).
+- Move the 34 lab and SafeForge modules and the session/resume scenario corpus
+  from `mcp_audit` to the optional `mcp_audit_labs` package. Install labs with
+  `uv tool install 'mcp-audits[labs]'` and update Python imports. The core CLI
+  still dispatches `lab` and `safeforge` lazily; without labs these commands
+  exit 2 with the existing install notice, including the direct Proof install
+  needed to put `proof-before-action` on PATH.
+- For 3.x, pre-upload commit checks refuse an existing release tag. An explicit
+  three-package release contract must match `release/distributions.json` in source
+  and release controls byte for byte; the source contract is also bound to the
+  approved commit. Missing and explicitly unsplit contracts fail verification.
 
 ### Added
 
+- `docs/3.0-MIGRATION.md` lists every 3.0 break with its replacement and how
+  to detect it on 2.12: the `scan` flag mapping and the supported
+  `--scan-compatible-sources` selector, accepted-`scan` output differences,
+  hook and Action behavior, the labs and Proof installs and import-path map,
+  v1 pin withholding and the withheld-baseline exit, `serve` tool reach, source
+  limits, zero-source runs and exit codes. Documentation, examples, the
+  feedback template and the Cursor bootstrap smoke use `check` grammar, and
+  the suppression guide states that `check` applies permission overrides.
 - `check --include-discovered --scan-compatible-sources`, a hidden selector
   that reproduces the legacy `scan` server selection: every Claude Code
   project scope (a malformed project entry loses the whole file, as in
@@ -176,15 +201,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   redaction withheld served text are flagged in the terminal and listed in the
   additive `current_surface_redacted` array, without exposing the hidden text.
 - Restore the PR, weekly scheduled, and manually dispatched OSV dependency advisory workflow.
-- `check --include-discovered --scan-compatible-sources`, a hidden selector
-  that reproduces the legacy `scan` server selection: every Claude Code
-  project scope (a malformed project entry loses the whole file, as in
-  `scan`), no Cursor project file, an empty result for a present file without
-  a server map, and `scan`'s server-level dedup, subject to `check`'s source
-  limits (size, nesting depth, server cap, symlink refusal). It is rejected
-  with `--config`, `--project`, `--config-only`, `--connect` and
-  `--connect-all`. Without the flag, `check` discovery and output are
-  unchanged.
 
 ## [2.12.0] - 2026-10-12
 

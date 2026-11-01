@@ -1,6 +1,6 @@
 # SSRF Detection
 
-`mcp-audit scan --ssrf-check` flags MCP tools and resources whose interface lets
+`mcp-audit check --ssrf-check` flags MCP tools and resources whose interface lets
 a caller steer where the **server** makes an outbound request — the classic
 server-side request forgery (SSRF) primitive that can reach internal services,
 link-local addresses, or cloud metadata endpoints.
@@ -98,5 +98,5 @@ servers:
 
 ```bash
 # Flag SSRF-prone tools/resources, write JSON + SARIF, gate in CI
-mcp-audit scan --ssrf-check --json audit.json --sarif audit.sarif --policy policy.yaml
+mcp-audit check --include-discovered --connect-all --ssrf-check --output-json audit.json --sarif audit.sarif --policy policy.yaml
 ```
