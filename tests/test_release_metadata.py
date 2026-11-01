@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import runpy
+import shlex
 import subprocess
 import sys
 import tomllib
@@ -13,6 +14,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
+import yaml
 from click.testing import CliRunner
 
 from mcp_audit import cli, proof_cli
@@ -451,7 +453,7 @@ def test_publication_requires_a_separate_manual_dispatch() -> None:
     assert "approval:" not in trigger
     assert "publish-mcp-audits" not in workflow
     assert "validate-dispatch-ref:" in validation_job
-    assert 'test "$DISPATCH_REF" = "refs/heads/main"' in validation_job
+    assert 'test "$DISPATCH_REF" = "refs/heads/release/2.x"' in validation_job
     assert "needs: validate-dispatch-ref" in build_job
 
 
@@ -485,7 +487,7 @@ def test_oidc_authority_is_confined_to_post_build_publish_job() -> None:
     assert "scripts/verify_release.py" in build_job
     assert "actions/upload-artifact@" in build_job
     assert "needs: [build, consumer-smoke]" in publish_job
-    assert "environment: pypi" in publish_job
+    assert "environment: pypi-2x\n" in publish_job
     assert workflow.count("actions: read") == 3
     assert workflow.count("GH_TOKEN: ${{ github.token }}") == 2
     assert workflow.count("Authorization: Bearer $GH_TOKEN") == 4
@@ -535,19 +537,90 @@ def test_registry_publication_is_manual_pypi_first_and_oidc_confined() -> None:
     assert "--root ." in validate_job
     assert "working-directory: release-source" in validate_job
     assert "https://pypi.org/pypi/mcp-audits/$release_version/json" in validate_job
-    assert "environments/pypi/deployment-branch-policies" in validate_job
+    assert "environments/pypi-2x/deployment-branch-policies" in validate_job
     assert 'mcp-publisher" validate server.json' in validate_job
     assert "needs: validate" in publish_job
-    assert "environment: pypi" in publish_job
+    assert "environment: pypi-2x\n" in publish_job
     assert "id-token: write" in publish_job
     assert "login github-oidc" in publish_job
     assert 'mcp-publisher" publish release-source/server.json' in publish_job
     assert 'test "$(git -C release-source rev-parse HEAD)" = "$RELEASE_COMMIT"' in publish_job
-    assert "/versions/$selector" in publish_job
+    assert "/versions/$release_version" in publish_job
+    assert 'for selector in "$release_version" latest' not in publish_job
+    assert "/versions/latest" not in publish_job
     assert "--publication-check registry" in publish_job
     assert publish_job.index("--publication-check descriptor") < publish_job.index("login github-oidc")
     assert "--publication-check pypi" in publish_job
     assert "--manifest-sha256" in publish_job
+
+
+@pytest.mark.parametrize("filename", ["publish.yml", "publish-mcp-registry.yml"])
+@pytest.mark.parametrize(
+    ("ref", "accepted"),
+    [
+        ("refs/heads/release/2.x", True),
+        ("refs/heads/main", False),
+        ("refs/heads/feature", False),
+        ("refs/tags/v2.12.1", False),
+    ],
+)
+def test_maintenance_dispatch_ref_is_exclusive(filename: str, ref: str, accepted: bool) -> None:
+    workflow = yaml.safe_load(Path(".github/workflows", filename).read_text())
+    first_job = next(iter(workflow["jobs"].values()))
+    guard = first_job["steps"][0]
+    assert guard["env"]["DISPATCH_REF"] == "${{ github.ref }}"
+    result = subprocess.run(
+        ["bash", "-c", guard["run"]],
+        env={"DISPATCH_REF": ref},
+        capture_output=True,
+        check=False,
+        timeout=10,
+    )
+    assert (result.returncode == 0) is accepted, result.stderr
+
+
+@pytest.mark.parametrize("filename", ["publish.yml", "publish-mcp-registry.yml"])
+def test_maintenance_publication_binds_every_verifier_and_environment(filename: str) -> None:
+    text = Path(".github/workflows", filename).read_text()
+    workflow = yaml.safe_load(text)
+    assert workflow["jobs"]["publish"]["environment"] == "pypi-2x"
+    assert "environments/pypi-2x" in text
+    assert re.search(r"environments/pypi(?:/|\")", text) is None
+    if filename == "publish-mcp-registry.yml":
+        assert workflow["env"]["RELEASE_ENVIRONMENT"] == "pypi-2x"
+        assert "for endpoint in pypi-2x pypi-2x/deployment-branch-policies; do" in text
+        assert '--environment-json "$RUNNER_TEMP/pypi-2x.json"' in text
+
+    verifier_commands = []
+    for job in workflow["jobs"].values():
+        for step in job.get("steps", []):
+            for line in step.get("run", "").replace("\\\n", " ").splitlines():
+                if "scripts/verify_release.py" in line:
+                    command = shlex.split(line)
+                    verifier_commands.append(command)
+                    assert command.count("--release-branch") == 1
+                    assert command[command.index("--release-branch") + 1] == "release/2.x"
+                    # The verifier's default is the single-distribution 2.x contract.
+                    assert "--distributions" not in command
+                    if "--require-publishable" in command:
+                        assert "--tag" in command
+                        assert "--commit" in command
+    assert verifier_commands
+    authorization = verifier_commands[0]
+    assert "--require-publishable" in authorization
+    assert authorization[authorization.index("--tag") + 1] == "$RELEASE_TAG"
+    assert authorization[authorization.index("--commit") + 1] == "$RELEASE_COMMIT"
+    assert "git fetch --force --tags origin release/2.x\n" in text
+    assert "origin main" not in text
+    assert "mcp-audits-labs" not in text
+    assert "mcp-audits-proof" not in text
+
+
+@pytest.mark.parametrize("filename", ["ci.yml", "codeql.yml"])
+@pytest.mark.parametrize("event", ["push", "pull_request"])
+def test_maintenance_branch_has_ci_and_codeql_coverage(filename: str, event: str) -> None:
+    workflow = yaml.load(Path(".github/workflows", filename).read_text(), Loader=yaml.BaseLoader)
+    assert "release/2.x" in workflow["on"][event]["branches"]
 
 
 def test_registry_publisher_binary_is_version_and_hash_pinned() -> None:

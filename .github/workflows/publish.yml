@@ -23,14 +23,14 @@ permissions:
 
 jobs:
   validate-dispatch-ref:
-    name: Refuse non-main workflow definitions
+    name: Refuse non-release/2.x workflow definitions
     runs-on: ubuntu-latest
     steps:
-      - name: Require workflow dispatch from main
+      - name: Require workflow dispatch from release/2.x
         env:
           DISPATCH_REF: ${{ github.ref }}
         run: |
-          test "$DISPATCH_REF" = "refs/heads/main"
+          test "$DISPATCH_REF" = "refs/heads/release/2.x"
 
   build:
     name: Verify and build exact release
@@ -64,11 +64,11 @@ jobs:
             --header "Accept: application/vnd.github+json" \
             --header "Authorization: Bearer $GH_TOKEN" \
             --header "X-GitHub-Api-Version: 2026-03-10" \
-            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/environments/pypi" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/environments/pypi-2x" \
             --output "$RUNNER_TEMP/pypi-environment.json"
           curl --fail --silent --show-error \
             --header "Authorization: Bearer $GH_TOKEN" \
-            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/environments/pypi/deployment-branch-policies" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/environments/pypi-2x/deployment-branch-policies" \
             --output "$RUNNER_TEMP/pypi-branches.json"
 
       - name: Verify release authorization binding
@@ -77,8 +77,9 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag }}
         working-directory: release-source
         run: |
-          git fetch --force --tags origin main
+          git fetch --force --tags origin release/2.x
           python ../release-controls/scripts/verify_release.py \
+            --release-branch release/2.x \
             --root . \
             --tag "$RELEASE_TAG" \
             --commit "$RELEASE_COMMIT" \
@@ -135,6 +136,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/candidate/dist"
           uv run python ../release-controls/scripts/verify_release.py \
+            --release-branch release/2.x \
             --root . \
             --tag "$RELEASE_TAG" \
             --commit "$RELEASE_COMMIT" \
@@ -198,6 +200,7 @@ jobs:
           WORKFLOW_SHA: ${{ github.sha }}
         run: |
           python scripts/verify_release.py --publication-check artifacts \
+            --release-branch release/2.x \
             --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" --workflow-sha "$WORKFLOW_SHA" \
             --dist-dir release/dist --manifest release/release-manifest.json
           cp release/release-manifest.json "$RUNNER_TEMP/approved-manifest.json"
@@ -224,6 +227,7 @@ jobs:
           WORKFLOW_SHA: ${{ github.sha }}
         run: |
           python scripts/verify_release.py --publication-check artifacts \
+            --release-branch release/2.x \
             --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" --workflow-sha "$WORKFLOW_SHA" \
             --dist-dir release/dist --manifest "$RUNNER_TEMP/approved-manifest.json"
 
@@ -232,7 +236,7 @@ jobs:
     needs: [build, consumer-smoke]
     if: ${{ !inputs.dry_run }}
     runs-on: ubuntu-latest
-    environment: pypi
+    environment: pypi-2x
     permissions:
       actions: read
       contents: read
@@ -252,13 +256,14 @@ jobs:
             --header "Accept: application/vnd.github+json" \
             --header "Authorization: Bearer $GH_TOKEN" \
             --header "X-GitHub-Api-Version: 2026-03-10" \
-            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/environments/pypi" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/environments/pypi-2x" \
             --output "$RUNNER_TEMP/pypi-environment.json"
           curl --fail --silent --show-error \
             --header "Authorization: Bearer $GH_TOKEN" \
-            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/environments/pypi/deployment-branch-policies" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/environments/pypi-2x/deployment-branch-policies" \
             --output "$RUNNER_TEMP/pypi-branches.json"
           python scripts/verify_release.py --publication-check environment \
+            --release-branch release/2.x \
             --environment-json "$RUNNER_TEMP/pypi-environment.json" \
             --branch-policies-json "$RUNNER_TEMP/pypi-branches.json"
 
@@ -275,6 +280,7 @@ jobs:
           WORKFLOW_SHA: ${{ github.sha }}
         run: |
           python scripts/verify_release.py --publication-check artifacts \
+            --release-branch release/2.x \
             --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" --workflow-sha "$WORKFLOW_SHA" \
             --dist-dir release/dist --manifest release/release-manifest.json
           cat release/release-manifest.json

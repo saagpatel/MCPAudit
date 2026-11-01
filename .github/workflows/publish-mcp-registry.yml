@@ -23,17 +23,17 @@ permissions:
 env:
   MCP_PUBLISHER_VERSION: v1.8.1
   MCP_PUBLISHER_SHA256: a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc
-  RELEASE_ENVIRONMENT: pypi
+  RELEASE_ENVIRONMENT: pypi-2x
 
 jobs:
   validate:
     name: Verify exact published release
     runs-on: ubuntu-latest
     steps:
-      - name: Require workflow dispatch from main
+      - name: Require workflow dispatch from release/2.x
         env:
           DISPATCH_REF: ${{ github.ref }}
-        run: test "$DISPATCH_REF" = "refs/heads/main"
+        run: test "$DISPATCH_REF" = "refs/heads/release/2.x"
 
       - name: Checkout trusted release controls
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -61,21 +61,22 @@ jobs:
             --header "Accept: application/vnd.github+json" \
             --header "Authorization: Bearer $GH_TOKEN" \
             --header "X-GitHub-Api-Version: 2026-03-10" \
-            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/environments/pypi" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/environments/pypi-2x" \
             --output "$RUNNER_TEMP/pypi-environment.json"
           curl -q --fail --silent --show-error \
             --header "Authorization: Bearer $GH_TOKEN" \
-            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/environments/pypi/deployment-branch-policies" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/environments/pypi-2x/deployment-branch-policies" \
             --output "$RUNNER_TEMP/pypi-branches.json"
 
-      - name: Verify tag, commit, main, and release metadata
+      - name: Verify tag, commit, release/2.x, and release metadata
         env:
           RELEASE_COMMIT: ${{ inputs.commit }}
           RELEASE_TAG: ${{ inputs.tag }}
         working-directory: release-source
         run: |
-          git fetch --force --tags origin main
+          git fetch --force --tags origin release/2.x
           python ../release-controls/scripts/verify_release.py \
+            --release-branch release/2.x \
             --root . \
             --tag "$RELEASE_TAG" \
             --commit "$RELEASE_COMMIT" \
@@ -98,10 +99,12 @@ jobs:
             "https://pypi.org/pypi/mcp-audits/$release_version/json" \
             --output "$RUNNER_TEMP/pypi-release.json"
           python release-controls/scripts/verify_release.py --publication-check pypi \
+            --release-branch release/2.x \
             --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" \
             --manifest "$RUNNER_TEMP/release-manifest.json" --manifest-sha256 "$MANIFEST_SHA256" \
             --response-json "$RUNNER_TEMP/pypi-release.json"
           python release-controls/scripts/verify_release.py --publication-check descriptor \
+            --release-branch release/2.x \
             --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" --response-json release-source/server.json
           echo "registry_workflow_sha=$WORKFLOW_SHA source_commit=$RELEASE_COMMIT"
           cat "$RUNNER_TEMP/release-manifest.json"
@@ -120,7 +123,7 @@ jobs:
     name: Publish approved descriptor
     needs: validate
     runs-on: ubuntu-latest
-    environment: pypi
+    environment: pypi-2x
     permissions:
       contents: read
       actions: read
@@ -157,7 +160,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          for endpoint in pypi pypi/deployment-branch-policies; do
+          for endpoint in pypi-2x pypi-2x/deployment-branch-policies; do
             output="${endpoint##*/}"
             curl -q --fail --silent --show-error \
               --header "Authorization: Bearer $GH_TOKEN" \
@@ -165,7 +168,8 @@ jobs:
               --output "$RUNNER_TEMP/$output.json"
           done
           python release-controls/scripts/verify_release.py --publication-check environment \
-            --environment-json "$RUNNER_TEMP/pypi.json" \
+            --release-branch release/2.x \
+            --environment-json "$RUNNER_TEMP/pypi-2x.json" \
             --branch-policies-json "$RUNNER_TEMP/deployment-branch-policies.json"
 
       - name: Reassert approval and descriptor immediately before OIDC
@@ -183,10 +187,12 @@ jobs:
             "https://pypi.org/pypi/mcp-audits/$release_version/json" \
             --output "$RUNNER_TEMP/pypi-release.json"
           python release-controls/scripts/verify_release.py --publication-check pypi \
+            --release-branch release/2.x \
             --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" \
             --manifest "$RUNNER_TEMP/release-manifest.json" --manifest-sha256 "$MANIFEST_SHA256" \
             --response-json "$RUNNER_TEMP/pypi-release.json"
           python release-controls/scripts/verify_release.py --publication-check descriptor \
+            --release-branch release/2.x \
             --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" --response-json release-source/server.json
           echo "registry_workflow_sha=$WORKFLOW_SHA source_commit=$RELEASE_COMMIT"
           cat "$RUNNER_TEMP/release-manifest.json"
@@ -196,18 +202,17 @@ jobs:
           "$RUNNER_TEMP/mcp-publisher" login github-oidc
           "$RUNNER_TEMP/mcp-publisher" publish release-source/server.json
 
-      - name: Verify exact and latest official Registry identities
+      - name: Verify exact official Registry identity
         env:
           RELEASE_TAG: ${{ inputs.tag }}
           RELEASE_COMMIT: ${{ inputs.commit }}
         run: |
           release_version="${RELEASE_TAG#v}"
           encoded_name="io.github.saagpatel%2Fmcp-audit"
-          for selector in "$release_version" latest; do
-            curl -q --fail --location --silent --show-error \
-              "https://registry.modelcontextprotocol.io/v0.1/servers/$encoded_name/versions/$selector" \
-              --output "$RUNNER_TEMP/registry-$selector.json"
-            python release-controls/scripts/verify_release.py --publication-check registry \
-              --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" \
-              --response-json "$RUNNER_TEMP/registry-$selector.json"
-          done
+          curl -q --fail --location --silent --show-error \
+            "https://registry.modelcontextprotocol.io/v0.1/servers/$encoded_name/versions/$release_version" \
+            --output "$RUNNER_TEMP/registry-release.json"
+          python release-controls/scripts/verify_release.py --publication-check registry \
+            --release-branch release/2.x \
+            --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" \
+            --response-json "$RUNNER_TEMP/registry-release.json"

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Bind maintenance publication workflows to `release/2.x` and the protected
+  `pypi-2x` environment, retaining the unsplit, tag-first 2.x release flow.
+  Registry readback verifies the exact active 2.x release without requiring it
+  to be latest. CI and CodeQL cover the maintenance branch.
+
 ### Security
 
 - Release builds pin `uv_build==0.12.24` exactly in `pyproject.toml` and in a new

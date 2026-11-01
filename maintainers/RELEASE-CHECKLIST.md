@@ -149,6 +149,13 @@ publication.
 
 ## Publish the Current Unsplit Package (Separately Authorized)
 
+On this `release/2.x` branch, every step below uses the branch-local
+workflows: read `pypi` as the `pypi-2x` environment (exactly one branch policy,
+`release/2.x`), read `main` as `release/2.x` for dispatch and ancestry (main is
+refused), dispatch `publish.yml` and `publish-mcp-registry.yml` with
+`--ref release/2.x`, and in the Registry readback confirm only the
+exact-version endpoint, because 3.x remains `latest`.
+
 1. Obtain separate publication approval naming the exact 40-character merge
    commit and `vX.Y.Z` tag. Confirm the `pypi` environment requires a named
    repository-owner reviewer, disables administrator bypass, and has exactly one
@@ -307,12 +314,16 @@ allow exactly `release/2.x`, with the same reviewer and bypass protections as
 main. The default verifier continues to require main. Use the branch's own
 unsplit contract unless a separately approved 2.x packaging change exists.
 
-The current workflows allow only main. Before the first maintenance release,
-review branch-specific workflow dispatch, source/control binding and a
-protected environment with exactly the maintenance-branch policy. Keep main's
-environment main-only. Do not weaken either gate to a wildcard or silently
-dispatch maintenance releases through main. Run dry-run and exact-artifact
-gates on that branch, then verify its package, Action and hook after release.
+This branch's `publish.yml` and `publish-mcp-registry.yml` accept dispatch only
+from `refs/heads/release/2.x`, bind to the `pypi-2x` environment, and pass
+`--release-branch release/2.x` to every verifier call. Before the first
+maintenance release, create the `pypi-2x` GitHub environment with exactly the
+`release/2.x` branch policy, the same reviewer and admin-bypass protections as
+`pypi`, and a matching PyPI trusted publisher; the workflows fail closed until
+both exist. Keep main's environment main-only. Do not weaken either gate to a
+wildcard or dispatch maintenance releases through main. Run dry-run and
+exact-artifact gates on this branch, then verify its package, Action and hook
+after release.
 
 ## Post-Publication Install Smoke
 
