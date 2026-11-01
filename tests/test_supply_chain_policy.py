@@ -4,6 +4,8 @@ import re
 import tomllib
 from pathlib import Path
 
+import yaml
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 FULL_COMMIT_SHA = re.compile(r"[0-9a-f]{40}")
 # Resolved from the named releases in each action's owning GitHub repository.
@@ -108,3 +110,22 @@ def test_external_github_actions_are_pinned_to_immutable_commits() -> None:
     assert observed_actions == set(REVIEWED_ACTION_RELEASES), (
         "reviewed action policy and repository use must stay in sync"
     )
+
+
+def test_publish_workflows_pin_the_same_uv_as_ci() -> None:
+    """Release jobs must not float to the latest uv: they use CI's pinned version."""
+
+    def uv_versions(path: str) -> list[object]:
+        workflow = yaml.safe_load((REPO_ROOT / path).read_text(encoding="utf-8"))
+        return [
+            step.get("with", {}).get("version")
+            for job in workflow["jobs"].values()
+            for step in job.get("steps", [])
+            if step.get("uses", "").startswith("astral-sh/setup-uv@")
+        ]
+
+    ci = set(uv_versions(".github/workflows/ci.yml"))
+    assert len(ci) == 1 and None not in ci
+    for path in (".github/workflows/publish.yml", ".github/workflows/publish-mcp-registry.yml"):
+        versions = uv_versions(path)
+        assert versions and set(versions) == ci, (path, versions)

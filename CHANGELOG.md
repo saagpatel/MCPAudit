@@ -21,6 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   release to appear in PyPI's JSON API. Only a missing release or a correct
   subset of its files is retried; any other mismatch still fails at once.
 
+### Security
+
+- The PyPI and MCP Registry publish jobs pin uv to CI's version (`0.13.0`)
+  instead of installing the latest uv at publish time.
+
 ## [3.0.0] - 2026-11-01
 
 ### Breaking

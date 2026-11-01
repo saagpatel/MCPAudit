@@ -59,6 +59,7 @@ jobs:
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: "3.11"
+          version: "0.13.0"
           enable-cache: false
       - name: Validate dispatch and recovery approvals
         id: dispatch
@@ -117,6 +118,7 @@ jobs:
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: "3.11"
+          version: "0.13.0"
           enable-cache: false
 
       - name: Read back protected PyPI environment
@@ -260,6 +262,7 @@ jobs:
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: "3.11"
+          version: "0.13.0"
           enable-cache: false
       - name: Download disposable copies of candidates
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -348,6 +351,7 @@ jobs:
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: "3.11"
+          version: "0.13.0"
           enable-cache: false
       - name: Read back protected PyPI environment
         env:
@@ -476,6 +480,7 @@ jobs:
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: "3.11"
+          version: "0.13.0"
           enable-cache: false
       - name: Recheck landed source and refuse an existing tag
         working-directory: release-source
