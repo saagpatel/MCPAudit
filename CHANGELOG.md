@@ -50,9 +50,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a Proof core dependency, and selects each reference build explicitly by package.
 - Proof uses its own installed version and install notice, and source-checkout
   producer provenance resolves the split module path from the repository root.
+- A CI `install-shape` job builds each wheel and installs the core and Proof
+  wheels alone into fresh environments. Core-only runs `check`, exits 2 with the
+  labs install command for `lab` and `safeforge` subcommands, and has no
+  `proof-before-action`; Proof-only runs `proof-before-action --version` without
+  core. Self-audit explicitly builds the core wheel, and `mypy .` type-checks all
+  three package source trees.
 
 ### Breaking
 
+- Move the 34 lab and SafeForge modules and the session/resume scenario corpus
+  from `mcp_audit` to the optional `mcp_audit_labs` package. Install labs with
+  `uv tool install 'mcp-audits[labs]'` and update Python imports. The core CLI
+  still dispatches `lab` and `safeforge` lazily; without labs these commands
+  exit 2 with the existing install notice, including the direct Proof install
+  needed to put `proof-before-action` on PATH.
+- Move Proof Before Action's five modules from `mcp_audit.proof_*` to
+  `proof_before_action.proof_*` in `mcp-audits-proof`. The `proof-before-action`
+  command now belongs to that distribution; install it with
+  `uv tool install mcp-audits-proof` to expose the command on PATH.
 - Move Proof Before Action's five modules from `mcp_audit.proof_*` to
   `proof_before_action.proof_*` in `mcp-audits-proof`. The `proof-before-action`
   command now belongs to that distribution; install it with

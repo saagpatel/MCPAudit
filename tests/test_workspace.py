@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import configparser
 import email.parser
+import json
+import os
 import re
 import subprocess
 import sys
@@ -163,6 +165,12 @@ def test_built_artifacts_have_portable_metadata_and_only_their_package(
         requirements = [Requirement(value) for value in parsed.get_all("Requires-Dist", [])]
         assert all(value.url is None for value in requirements)
         if member == "core":
+            base = {
+                value.name
+                for value in requirements
+                if value.marker is None or value.marker.evaluate({"extra": ""})
+            }
+            assert base and not base & {"mcp-audits-labs", "mcp-audits-proof"}
             for extra in ("labs", "proof", "all"):
                 selected = {
                     value.name
@@ -238,3 +246,140 @@ def test_labs_artifacts_contain_all_moved_modules_and_load_bundled_scenarios(
         [sys.executable, "-c", script, str(wheel)], capture_output=True, text=True, check=False
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_lint_and_typecheck_cover_every_member_source_tree() -> None:
+    makefile = (ROOT / "Makefile").read_text()
+    for target in ("check", "lint", "typecheck"):
+        recipe = re.search(rf"^{target}:\n((?:\t.*\n)+)", makefile, re.MULTILINE)
+        assert recipe is not None
+        assert "\tuv run --locked mypy .\n" in recipe.group(1)
+    assert "run: make lint" in (ROOT / ".github/workflows/ci.yml").read_text()
+    mypy = tomllib.loads((ROOT / "pyproject.toml").read_text())["tool"]["mypy"]
+    assert mypy["mypy_path"] == ["src", *(f"distributions/{member}/src" for member in MEMBERS)]
+    assert mypy["strict"] is True
+    assert "exclude" not in mypy and "files" not in mypy
+    for override in mypy.get("overrides", []):
+        modules = override["module"] if isinstance(override["module"], list) else [override["module"]]
+        assert not override.get("ignore_errors")
+        assert not any(name.split(".", 1)[0] in MEMBERS.values() for name in modules)
+    for module in MEMBERS.values():
+        assert list((ROOT / "distributions").glob(f"*/src/{module}/*.py"))
+
+
+def _locked_wheel_environment(package: str, wheel: Path, prefix: Path) -> Path:
+    """Install only *package*'s locked runtime dependencies, offline, then its built wheel."""
+    env = {**os.environ, "UV_PROJECT_ENVIRONMENT": str(prefix)}
+    env.pop("VIRTUAL_ENV", None)
+    subprocess.run(
+        [
+            "uv",
+            "sync",
+            "--offline",
+            "--locked",
+            "--package",
+            package,
+            "--no-dev",
+            "--no-install-project",
+            "--python",
+            sys.executable,
+        ],
+        cwd=ROOT,
+        env=env,
+        check=True,
+        capture_output=True,
+    )
+    python = prefix / "bin" / "python"
+    subprocess.run(
+        ["uv", "pip", "install", "--offline", "--no-deps", "--python", str(python), str(wheel)],
+        env=env,
+        check=True,
+        capture_output=True,
+    )
+    return prefix / "bin"
+
+
+def _probe(python: Path, script: str) -> dict[str, object]:
+    result = subprocess.run([str(python), "-c", script], capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr
+    observed = json.loads(result.stdout)
+    assert isinstance(observed, dict)
+    return observed
+
+
+SHAPE_PROBE = """
+import importlib.metadata, importlib.util, json
+present = {}
+for name in ("mcp-audits", "mcp-audits-labs", "mcp-audits-proof"):
+    try:
+        present[name] = importlib.metadata.version(name)
+    except importlib.metadata.PackageNotFoundError:
+        pass
+importable = {}
+for module in ("mcp_audit", "mcp_audit_labs", "proof_before_action"):
+    spec = importlib.util.find_spec(module)
+    if spec is not None:
+        importable[module] = spec.origin
+print(json.dumps({"distributions": present, "modules": importable}))
+"""
+
+
+def test_locked_core_wheel_environment_runs_check_and_gates_satellites(
+    workspace_artifacts: dict[str, Path], tmp_path: Path
+) -> None:
+    """A fresh env holding the core wheel and its locked deps, and no satellite distribution."""
+    version = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
+    (wheel,) = workspace_artifacts["core"].glob("*.whl")
+    prefix = tmp_path / "core"
+    scripts = _locked_wheel_environment("mcp-audits", wheel, prefix)
+    shape = _probe(scripts / "python", SHAPE_PROBE)
+    assert shape["distributions"] == {"mcp-audits": version}
+    modules = shape["modules"]
+    assert isinstance(modules, dict) and set(modules) == {"mcp_audit"}
+    assert Path(str(modules["mcp_audit"])).resolve().is_relative_to(prefix.resolve())
+
+    fixture = ROOT / "examples/sandbox/fixtures/synthetic-mcp-config.json"
+    check = subprocess.run(
+        [
+            str(scripts / "mcp-audit"),
+            "check",
+            "--config",
+            str(fixture),
+            "--config-only",
+            "--skip-connect",
+            "--override-config",
+            "/dev/null",
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert check.returncode == 0, check.stderr
+    for argv in (["lab", "agent-ui"], ["safeforge", "run"]):
+        result = subprocess.run(
+            [str(scripts / "mcp-audit"), *argv], cwd=tmp_path, capture_output=True, text=True, check=False
+        )
+        assert result.returncode == 2, (argv, result.stdout, result.stderr)
+        assert "uv tool install 'mcp-audits[labs]'" in result.stderr
+    assert not (scripts / "proof-before-action").exists()
+
+
+def test_locked_proof_wheel_environment_runs_without_core(
+    workspace_artifacts: dict[str, Path], tmp_path: Path
+) -> None:
+    """A fresh env holding the Proof wheel and its locked deps, and no core distribution."""
+    version = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
+    (wheel,) = workspace_artifacts["proof"].glob("*.whl")
+    prefix = tmp_path / "proof"
+    scripts = _locked_wheel_environment("mcp-audits-proof", wheel, prefix)
+    shape = _probe(scripts / "python", SHAPE_PROBE)
+    assert shape["distributions"] == {"mcp-audits-proof": version}
+    modules = shape["modules"]
+    assert isinstance(modules, dict) and set(modules) == {"proof_before_action"}
+    assert Path(str(modules["proof_before_action"])).resolve().is_relative_to(prefix.resolve())
+    result = subprocess.run(
+        [str(scripts / "proof-before-action"), "--version"], capture_output=True, text=True, check=False
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == f"proof-before-action, version {version}\n"
