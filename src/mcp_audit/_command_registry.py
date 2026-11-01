@@ -95,7 +95,7 @@ class LazyGroup(click.Group):
         sections: dict[str, list[tuple[str, str]]] = {}
         show_all = bool(ctx.meta.get("help_all"))
         for name, spec in self.registry.items():
-            if spec.hidden and not show_all:
+            if spec.hidden and (not show_all or name == "scan"):
                 continue
             rows = sections.setdefault(spec.section, [])
             rows.append((name, spec.help))
@@ -263,7 +263,7 @@ COMMANDS: dict[str, CommandSpec | NamespaceSpec] = {
         "Review saved pins and tool surfaces without a proxy.",
         "Integrations",
     ),
-    "scan": CommandSpec("mcp_audit._core_cli", "scan", "Full legacy audit with explicit scan modes."),
+    "scan": CommandSpec("mcp_audit._core_cli", "scan", "Translate legacy options to check.", hidden=True),
     "discover": CommandSpec(
         "mcp_audit._core_cli", "discover", "Discover configured servers without connections."
     ),

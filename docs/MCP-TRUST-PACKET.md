@@ -156,7 +156,7 @@ The external credibility step remains MCPAudit field evidence:
 ```bash
 python3 -m pip install --upgrade mcp-audits
 mcp-audit --version
-mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
+mcp-audit check --include-discovered --output-json mcp-audit-field-report.json --redact
 ```
 
 Then open a redacted field-report issue:

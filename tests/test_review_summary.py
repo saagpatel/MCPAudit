@@ -10,7 +10,7 @@ from click.testing import CliRunner
 from pydantic import ValidationError
 from rich.console import Console
 
-from mcp_audit import scan_cli, ux_summary
+from mcp_audit import check_cli, ux_summary
 from mcp_audit.coverage import OPTIONAL_CHECKS
 from mcp_audit.htmlreport import HtmlReportGenerator
 from mcp_audit.models import (
@@ -375,14 +375,14 @@ def test_real_config_only_cli_redaction_keeps_summary(tmp_path: Path, show_host:
         output = tmp_path / f"report-{redact}.json"
         html_output = tmp_path / f"report-{redact}.html"
         args = [
-            "scan",
+            "check",
             "--config",
             str(config),
             "--config-only",
             "--skip-connect",
             "--override-config",
             "/dev/null",
-            "--json",
+            "--output-json",
             str(output),
             "--html",
             str(html_output),
@@ -421,14 +421,14 @@ def test_cli_connected_fixture_preserves_config_health_grade(
     async def fake_run_scan(*args: object, **kwargs: object) -> AuditReport:
         return report
 
-    monkeypatch.setattr(scan_cli, "run_scan", fake_run_scan)
+    monkeypatch.setattr(check_cli, "run_scan", fake_run_scan)
     config = tmp_path / "config.json"
     config.write_text('{"mcpServers":{"fixture":{"command":"synthetic-server"}}}')
     for redact in (False, True):
         html_path = tmp_path / f"report-{redact}.html"
         json_path = tmp_path / f"report-{redact}.json"
         args = [
-            "scan",
+            "check",
             "--config",
             str(config),
             "--config-only",
@@ -437,7 +437,7 @@ def test_cli_connected_fixture_preserves_config_health_grade(
             "/dev/null",
             "--html",
             str(html_path),
-            "--json",
+            "--output-json",
             str(json_path),
         ]
         if redact:

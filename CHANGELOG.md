@@ -48,6 +48,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `proof_before_action.proof_*` in `mcp-audits-proof`. The `proof-before-action`
   command now belongs to that distribution; install it with
   `uv tool install mcp-audits-proof` to expose the command on PATH.
+- `scan` is now a hidden interceptor over `check`. Forms classified as
+  preserved or explicitly narrowed print one notice and run the printed
+  command through check's parser, output and exit handling. Forms that could
+  silently lose coverage print an inexact replacement and exit 2 without
+  scanning; bare `scan`, connected defaults and `--json PATH` are refused.
+  The legacy adapter is removed. Terminal artifacts use check's separate
+  `Wrote PATH` lines, and cards and recovery errors use check's output.
 - Removed 11 hidden top-level command aliases. Each removed spelling is now an
   unknown command; use the replacement:
   - `agent-ui` -> `mcp-audit lab agent-ui`

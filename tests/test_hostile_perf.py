@@ -16,6 +16,10 @@ from typing import cast
 
 import pytest
 
+from mcp_audit.models import ClientType
+from mcp_audit.review_discovery import MAX_CONFIG_BYTES, MAX_SERVERS, review_sources
+from tests.fixtures.perf_scan import engine_sources
+
 FIXTURES = Path(__file__).parent / "fixtures"
 PROFILES = ("baseline", "p1-9", "p3-7", "p3-8")
 MIB = 1024 * 1024
@@ -277,7 +281,7 @@ def run_case(
         sys.executable,
         str(FIXTURES / "perf_scan.py"),
         str(timing_path),
-        "scan",
+        "check",
         "--config",
         str(config),
         "--config-only",
@@ -285,10 +289,17 @@ def run_case(
         str(override),
         "--timeout",
         str(session_timeout),
-        "--json",
+        "--output-json",
         str(report_path),
         *case.cli_args,
     ]
+    if "--skip-connect" not in case.cli_args:
+        command.append("--connect-all")
+    if case.servers > MAX_SERVERS or config.stat().st_size > MAX_CONFIG_BYTES:
+        # TEST ONLY: large fleets measure pre-parsed library engine/report
+        # stress, not admission through check's bounded source parser. Keep
+        # normal-sized cases on the real parser and retain every stress gate.
+        command.append("--engine-sources")
     if case.name == "desc_1mb_x20":
         # This 20 MB frame exercises retained item text and analysis, rather
         # than the default 16 MiB frame rejection covered by oversized_50mb.
@@ -562,6 +573,59 @@ def test_frame_rejection_bound_rejects_size_dependent_timing() -> None:
     for large in (2.5, 6.25):  # linear and quadratic growth from 20 MB to 50 MB
         with pytest.raises(AssertionError):
             assert_frame_rejection_bounded(large, 1.0)
+
+
+@pytest.mark.parametrize("limit", ["servers", "bytes"])
+def test_fixture_engine_sources_preserve_stress_input_above_check_caps(tmp_path: Path, limit: str) -> None:
+    config = tmp_path / "synthetic.json"
+    count = MAX_SERVERS + 1 if limit == "servers" else 1
+    configs = {f"fixture-{i}": {"command": "synthetic"} for i in range(count)}
+    if limit == "bytes":
+        configs["fixture-0"]["command"] = "x" * (MAX_CONFIG_BYTES + 1)
+    config.write_text(json.dumps({"mcpServers": configs}))
+    before = config.read_bytes()
+
+    # The supported CLI source selector still enforces both limits. Only the
+    # fixture's explicit library workload can admit these synthetic sources.
+    with pytest.raises(ValueError, match="exceeds"):
+        review_sources(config, False, None, ())
+    sources = engine_sources(config, False, None, ())
+
+    assert len(sources.servers) == count
+    assert not sources.errors and not sources.warnings
+    assert sources.paths == [(str(config), "checked: synthetic fixture engine source")]
+    assert sources.servers[0].command == configs["fixture-0"]["command"]
+    assert config.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    "explicit,discovered,project,clients,compatible",
+    [
+        (False, False, False, (), False),
+        (True, True, False, (), False),
+        (True, False, True, (), False),
+        (True, False, False, (ClientType.CURSOR,), False),
+        (True, False, False, (), True),
+    ],
+)
+def test_fixture_engine_sources_reject_nonexplicit_or_filtered_modes(
+    tmp_path: Path,
+    explicit: bool,
+    discovered: bool,
+    project: bool,
+    clients: tuple[ClientType, ...],
+    compatible: bool,
+) -> None:
+    config = tmp_path / "absent-synthetic.json"
+    with pytest.raises(ValueError, match="explicit config without discovery or filters"):
+        engine_sources(
+            config if explicit else None,
+            discovered,
+            tmp_path if project else None,
+            clients,
+            scan_compatible=compatible,
+        )
+    assert not config.exists()
 
 
 def test_zombies_do_not_count_as_leftovers(tmp_path: Path) -> None:
