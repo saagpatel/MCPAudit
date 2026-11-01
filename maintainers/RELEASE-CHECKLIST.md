@@ -17,7 +17,11 @@ git diff --check
 uv lock --check
 uv run python scripts/verify_release.py --distributions release/distributions.json
 candidate_commit="$(git rev-parse HEAD)"
-uv build --all-packages --clear --no-create-gitignore \
+uv build --package mcp-audits --clear --no-create-gitignore --out-dir dist \
+  --build-constraints build-constraints.txt
+uv build --package mcp-audits-labs --no-create-gitignore --out-dir dist \
+  --build-constraints build-constraints.txt
+uv build --package mcp-audits-proof --no-create-gitignore --out-dir dist \
   --build-constraints build-constraints.txt
 uv run python scripts/verify_release.py \
   --distributions release/distributions.json \

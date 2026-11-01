@@ -1104,7 +1104,8 @@ def test_registry_publisher_binary_is_version_and_hash_pinned() -> None:
 def test_candidate_checklist_verifies_exact_built_artifacts_before_install() -> None:
     checklist = Path("maintainers/RELEASE-CHECKLIST.md").read_text(encoding="utf-8")
 
-    build = checklist.index("uv build --all-packages --clear")
+    build = checklist.index("uv build --package mcp-audits --clear")
+    assert "uv build --all-packages" not in checklist
     verify_artifacts = checklist.index("--dist-dir dist")
     install_wheel = checklist.index("uv pip install")
 

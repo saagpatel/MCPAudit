@@ -743,8 +743,17 @@ def test_publish_build_and_advisory_gate_use_the_same_build_constraints() -> Non
     constraints = "--build-constraints ../release-controls/build-constraints.txt"
     gate = " ".join(steps["Run release quality gate"]["run"].replace("\\\n", " ").split())
     assert f"check_advisories.py --lock uv.lock {constraints}" in gate
-    build = " ".join(steps["Build wheel and sdist"]["run"].replace("\\\n", " ").split())
-    assert build == f"uv build --all-packages --clear --no-create-gitignore {constraints}"
+    build = [
+        " ".join(line.split())
+        for line in steps["Build wheel and sdist"]["run"].replace("\\\n", " ").splitlines()
+    ]
+    names_in_order = [item.name for item in release.DISTRIBUTIONS]
+    # Serial, one package per build in contract order: parallel builds race on provenance.
+    assert [line for line in build if line] == [
+        f"uv build --package {name}{' --clear' if index == 0 else ''} "
+        f"--no-create-gitignore --out-dir dist {constraints}"
+        for index, name in enumerate(names_in_order)
+    ]
     builds = [step for step in workflow["jobs"]["build"]["steps"] if "uv build" in step.get("run", "")]
     assert builds == [steps["Build wheel and sdist"]]
     names = list(steps)
