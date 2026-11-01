@@ -178,6 +178,11 @@ publication.
    reviewers with administrator bypass disabled. The Registry workflow reuses
    this gate for a separate post-PyPI approval rather than creating a second,
    potentially unprotected environment on first use.
+On this `release/2.x` branch, steps 7-9 use the branch-local workflows: the
+environment is `pypi-2x` (exactly one branch policy, `release/2.x`), dispatch
+is from `release/2.x` (main is refused), and step 9 confirms only the
+exact-version Registry endpoint, because 3.x remains `latest`.
+
 8. From `main`, manually dispatch `Publish to MCP Registry` with the same exact
    tag, commit, and approved manifest SHA-256 only after PyPI and GitHub Release readback. Its validation job
    proves the PyPI prerequisite, release binding, protected environment, pinned
@@ -303,12 +308,16 @@ allow exactly `release/2.x`, with the same reviewer and bypass protections as
 main. The default verifier continues to require main. Use the branch's own
 unsplit contract unless a separately approved 2.x packaging change exists.
 
-The current workflows allow only main. Before the first maintenance release,
-review branch-specific workflow dispatch, source/control binding and a
-protected environment with exactly the maintenance-branch policy. Keep main's
-environment main-only. Do not weaken either gate to a wildcard or silently
-dispatch maintenance releases through main. Run dry-run and exact-artifact
-gates on that branch, then verify its package, Action and hook after release.
+This branch's `publish.yml` and `publish-mcp-registry.yml` accept dispatch only
+from `refs/heads/release/2.x`, bind to the `pypi-2x` environment, and pass
+`--release-branch release/2.x` to every verifier call. Before the first
+maintenance release, create the `pypi-2x` GitHub environment with exactly the
+`release/2.x` branch policy, the same reviewer and admin-bypass protections as
+`pypi`, and a matching PyPI trusted publisher; the workflows fail closed until
+both exist. Keep main's environment main-only. Do not weaken either gate to a
+wildcard or dispatch maintenance releases through main. Run dry-run and
+exact-artifact gates on this branch, then verify its package, Action and hook
+after release.
 
 ## Post-Publication Install Smoke
 

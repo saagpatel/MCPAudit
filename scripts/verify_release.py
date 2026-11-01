@@ -227,7 +227,7 @@ def verify_registry(raw: object, *, version: str) -> None:
     official = meta.get("io.modelcontextprotocol.registry/official") if isinstance(meta, dict) else None
     if not isinstance(official, dict) or official.get("status") != "active":
         raise VerificationError("Registry release must be active")
-    if not version.startswith("2.") and official.get("isLatest") is not True:
+    if RELEASE_BRANCH != "release/2.x" and official.get("isLatest") is not True:
         raise VerificationError("Registry release must be latest")
 
 

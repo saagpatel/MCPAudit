@@ -313,23 +313,22 @@ def test_registry_readback_reuses_exact_descriptor_assertion() -> None:
         release.verify_registry(changed, version=PUBLISHED_VERSION)
 
 
-@pytest.mark.parametrize("version", ["2.12.1", "3.0.0"])
+@pytest.mark.parametrize("branch", ["main", "release/2.x"])
 @pytest.mark.parametrize("latest", [True, False, None])
-def test_registry_latest_requirement_is_version_specific(version: str, latest: bool | None) -> None:
+def test_registry_latest_requirement_follows_the_release_branch(
+    monkeypatch: pytest.MonkeyPatch, branch: str, latest: bool | None
+) -> None:
+    monkeypatch.setattr(release, "RELEASE_BRANCH", branch)
     descriptor = _descriptor()
-    descriptor["version"] = version
-    package = _packages(descriptor)[0]
-    assert isinstance(package, dict)
-    package["version"] = version
     official: dict[str, object] = {"status": "active"}
     if latest is not None:
         official["isLatest"] = latest
     raw = {"server": descriptor, "_meta": {"io.modelcontextprotocol.registry/official": official}}
-    if version.startswith("2.") or latest is True:
-        release.verify_registry(raw, version=version)
+    if branch == "release/2.x" or latest is True:
+        release.verify_registry(raw, version=PUBLISHED_VERSION)
     else:
         with pytest.raises(release.VerificationError, match="latest"):
-            release.verify_registry(raw, version=version)
+            release.verify_registry(raw, version=PUBLISHED_VERSION)
 
 
 @pytest.mark.parametrize("official", [None, {}, {"status": "deleted", "isLatest": False}])
