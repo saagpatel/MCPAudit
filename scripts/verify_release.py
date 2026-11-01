@@ -505,6 +505,15 @@ def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object
     return version, state
 
 
+def _remote_tag_refs(tag: str) -> str:
+    """List origin's refs for exactly this tag and its peeled form; an unreadable origin fails closed."""
+    # A clone without fetched tags lists nothing locally, so the remote is authoritative.
+    try:
+        return _run_git("ls-remote", "--tags", "origin", f"refs/tags/{tag}", f"refs/tags/{tag}^{{}}")
+    except (VerificationError, subprocess.TimeoutExpired) as exc:
+        raise VerificationError(f"cannot confirm release tag {tag} is absent on origin: {exc}") from exc
+
+
 def verify_git_binding(
     *, tag: str | None, commit: str, require_landed: bool, published: bool = False
 ) -> None:
@@ -522,6 +531,8 @@ def verify_git_binding(
         verify_contract_binding(ROOT / CONTRACT_PATH, commit=commit)
         if not published and _run_git("tag", "--list", f"v{version}"):
             raise VerificationError("release tag must not exist before publication")
+        if not published and _remote_tag_refs(f"v{version}"):
+            raise VerificationError("release tag must not exist on origin before publication")
         if published and tag is None:
             raise VerificationError("post-publication verification requires the release tag")
     if tag is not None and (published or not _is_split_version(version)):

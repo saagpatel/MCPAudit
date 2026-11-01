@@ -24,7 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   requires the three-distribution contract. The split rule applies when either
   the `--tag` version or the checkout's `project.version` is outside 2.x, and
   the two must be equal whenever both are present, so a 2.x tag can no longer
-  bypass the contract on a 3.x checkout.
+  bypass the contract on a 3.x checkout. Before publication the release tag
+  must be absent both locally and on `origin` (`git ls-remote`); an unreadable
+  `origin` fails closed.
 - Compatibility SARIF emits one warning-level `MCP-CH-CONFIG-PARSE-FAILURE`
   result per skipped discovered source, with its reason, source location and
   `--config FILE` remedy, including translated static scans. Existing skip
