@@ -1142,7 +1142,7 @@ def test_checklist_activates_the_commit_first_three_distribution_train() -> None
     release_create = publish.index('gh release create "vX.Y.Z" --verify-tag --latest')
     registry = publish.index("dispatch `Publish to MCP Registry`")
     smoke = publish.index("(#post-publication-install-smoke)")
-    assert dispatch < dry_run < real_run < six_files < tag < tag_check < release_create < registry < smoke
+    assert dispatch < dry_run < real_run < six_files < smoke < tag < tag_check < release_create < registry
     assert "environment approval" in publish
     assert '"$tmp/release/release-manifest.json"' in publish[release_create:registry]
     assert "--distributions release/distributions.json" in publish[tag_check - 200 : tag_check]

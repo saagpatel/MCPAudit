@@ -309,7 +309,10 @@ cannot complete, follow
 
 Only after the publish job's six-file check succeeds:
 
-1. The owner creates the lightweight `vX.Y.Z` tag at the approved commit and
+1. Run the [post-publication install smoke](#post-publication-install-smoke)
+   before any public pointer moves. It needs only PyPI. If it fails, stop
+   here: no tag, GitHub Release or Registry entry names the broken version.
+2. The owner creates the lightweight `vX.Y.Z` tag at the approved commit and
    pushes it. Tag creation does not publish.
 
    ```bash
@@ -318,7 +321,7 @@ Only after the publish job's six-file check succeeds:
    git push origin "refs/tags/vX.Y.Z"
    ```
 
-2. Verify all six PyPI files and the tag together from a clean checkout of the
+3. Verify all six PyPI files and the tag together from a clean checkout of the
    approved commit. Keep the downloaded manifest and readbacks outside the
    checkout, because the verifier rejects a dirty tree.
 
@@ -342,7 +345,7 @@ Only after the publish job's six-file check succeeds:
    `run_id`, `control_sha` and `manifest_sha256` are the publishing run's
    values (for a resumed publication, the original run's; see
    [Resume](#resume)).
-3. Create the GitHub Release from the existing tag and attach the approved
+4. Create the GitHub Release from the existing tag and attach the approved
    manifest as a durable asset. Retain its independently reviewed SHA-256 for
    the Registry dispatch; the 90-day workflow artifact alone is not a durable
    approval record.
@@ -357,11 +360,11 @@ Only after the publish job's six-file check succeeds:
    notes file, not an existing repository file: for 3.0.0 it is
    `docs/3.0-RELEASE-NOTES.md`, created by the candidate PR.
 
-4. Confirm the protected `pypi` environment still has required reviewers with
+5. Confirm the protected `pypi` environment still has required reviewers with
    administrator bypass disabled. The Registry workflow reuses this gate for a
    separate post-PyPI approval rather than creating a second, potentially
    unprotected environment on first use.
-5. From `main`, manually dispatch `Publish to MCP Registry` with the exact
+6. From `main`, manually dispatch `Publish to MCP Registry` with the exact
    `vX.Y.Z` tag, the approved commit, and the approved manifest SHA-256. Its
    validation job downloads the manifest from the GitHub Release, reads back
    all three distributions from PyPI keyed by name, and proves the release
@@ -376,15 +379,17 @@ Only after the publish job's six-file check succeeds:
    `github.sha` and require the tag to equal that checkout's version, so a
    version bump landed on main before this step makes every check fail closed
    and the Registry entry cannot be published for this version.
-6. Confirm both the exact-version and `latest` official Registry endpoints name
+7. Confirm both the exact-version and `latest` official Registry endpoints name
    `io.github.saagpatel/mcp-audit` at the released version with the exact PyPI
    package tuple. Registry metadata does not prove artifact hashes,
    installation, runtime uptake, adoption, or human effectiveness.
-7. Run the [post-publication install smoke](#post-publication-install-smoke).
-   Only then may the release be announced as installable.
 
-Never re-run or bypass a failed publish gate. Repair the release state through a
-new reviewed commit and obtain a new exact approval.
+Only after step 7 may the release be announced as installable.
+
+Never re-run or bypass a failed verification gate (build, smoke, metadata or
+binding). Repair the release state through a new reviewed commit and obtain a
+new exact approval. A failed or interrupted upload is recovered only through
+[Resume](#resume) with the original approvals.
 
 ### Resume
 
@@ -488,8 +493,8 @@ through main.
 
 ## Post-Publication Install Smoke
 
-After the six-file readback and the tag check pass, smoke each published
-distribution from PyPI. Use an isolated cache and `--refresh` so the check
+After the six-file readback passes, and before the tag is created, smoke each
+published distribution from PyPI. Use an isolated cache and `--refresh` so the check
 cannot reuse a local candidate install or a stale index response:
 
 ```bash
