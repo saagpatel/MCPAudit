@@ -58,7 +58,7 @@ For field-report leads, point to:
 
 ```bash
 mcp-audit --version
-mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
+mcp-audit check --include-discovered --output-json mcp-audit-field-report.json --redact
 ```
 
 Ask contributors to review the file before posting and to state whether the

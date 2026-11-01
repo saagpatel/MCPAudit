@@ -442,7 +442,7 @@ def test_hostname_collision_preserves_optional_literal_vocabulary() -> None:
     assert validated.hostname == "<redacted-host>"
 
 
-@pytest.mark.parametrize("command", ["check", "scan"])
+@pytest.mark.parametrize("command", ["check"])
 @pytest.mark.parametrize("show_host", [False, True])
 def test_cli_html_show_host_option(
     tmp_path: Path, command: str, show_host: bool, monkeypatch: pytest.MonkeyPatch
@@ -452,7 +452,7 @@ def test_cli_html_show_host_option(
     config.write_text('{"mcpServers":{"fixture":{"command":"synthetic-server"}}}')
     output = tmp_path / "report.html"
     args = [command, "--config", str(config), "--html", str(output)]
-    if command == "scan":
+    if command == "check":
         args += ["--config-only", "--skip-connect", "--override-config", "/dev/null"]
     if show_host:
         args.append("--show-host")

@@ -11,7 +11,7 @@ from typing import cast
 import pytest
 from click.testing import CliRunner
 
-from mcp_audit import artifact_paths, check_cli, cli, engine, scan_cli, suppressions
+from mcp_audit import artifact_paths, check_cli, cli, engine, suppressions
 from mcp_audit.check_cli import demo
 from mcp_audit.connector import ServerConnector
 from mcp_audit.discovery import ConfigParseError, discover_all_configs
@@ -145,19 +145,19 @@ def test_denied_opens_only_diagnose_existing_configs(monkeypatch: pytest.MonkeyP
         "tests/fixtures/config_health/shell_remote_arg_config.json",
     ],
 )
-def test_check_matches_legacy_static_scan(fixture: str, tmp_path: Path) -> None:
+def test_check_static_file_and_stdout_reports_match(fixture: str, tmp_path: Path) -> None:
     output = tmp_path / "scan.json"
     scan = CliRunner().invoke(
         cli.main,
         [
-            "scan",
+            "check",
             "--config",
             str(ROOT / fixture),
             "--config-only",
             "--skip-connect",
             "--override-config",
             "/dev/null",
-            "--json",
+            "--output-json",
             str(output),
         ],
     )
@@ -176,7 +176,8 @@ def test_explicit_config_never_discovers_or_loads_saved_settings(
         raise AssertionError("saved settings and legacy discovery must not be consulted")
 
     monkeypatch.setattr(engine, "discover_all_configs", forbidden)
-    monkeypatch.setattr(scan_cli, "load_override_config", forbidden)
+
+    monkeypatch.setattr("mcp_audit.overrides.load_override_config", forbidden)
     monkeypatch.setattr(Path, "home", forbidden)
     result = CliRunner().invoke(cli.main, ["check", "--config", str(config), "--json"])
     assert result.exit_code == 0, result.output
@@ -431,7 +432,7 @@ def test_bare_json_and_details_and_grouped_help() -> None:
         assert help_result.exit_code == 0
         for heading in ("Everyday", "Integrations", "Advanced"):
             assert heading in help_result.output
-        assert "scan" in help_result.output
+        assert not any(line.strip().startswith("scan ") for line in help_result.output.splitlines())
     ambiguous = CliRunner().invoke(cli.main, ["--json", "scan"])
     assert ambiguous.exit_code == 2
 

@@ -26,11 +26,11 @@ def config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return config
 
 
-@pytest.mark.parametrize("command", ["checkup", "scan"])
+@pytest.mark.parametrize("command", ["checkup", "check"])
 def test_card_alias_static_privacy_and_sticker(config: Path, command: str, tmp_path: Path) -> None:
     card = tmp_path / "card.html"
     args = [command, "--config", str(config), "--override-config", "/dev/null", "--card", str(card)]
-    if command == "scan":
+    if command == "check":
         args += ["--config-only", "--skip-connect"]
     result = CliRunner().invoke(main, args)
     assert result.exit_code == 0, result.output
@@ -47,11 +47,11 @@ def test_checkup_default_file_and_opt_in_names(config: Path) -> None:
     assert "private-fixture-server" in Path("checkup.html").read_text()
 
 
-@pytest.mark.parametrize("command", ["checkup", "scan"])
+@pytest.mark.parametrize("command", ["checkup", "check"])
 def test_card_cannot_overwrite_config(config: Path, command: str) -> None:
     original = config.read_bytes()
     args = [command, "--config", str(config), "--card", str(config), "--override-config", "/dev/null"]
-    if command == "scan":
+    if command == "check":
         args += ["--config-only", "--skip-connect"]
     result = CliRunner().invoke(main, args)
     assert result.exit_code == 2, result.output

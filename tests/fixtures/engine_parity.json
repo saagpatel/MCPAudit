@@ -3,6 +3,7 @@
   "baseline_capture": {
     "engine_source": "git show ef11b92ecf098feaee982e17aedcf4c2b311d04e:src/mcp_audit/engine.py",
     "cli_source": "git show ef11b92ecf098feaee982e17aedcf4c2b311d04e:src/mcp_audit/cli.py",
+    "check_migration": "X-2 exercises check against the unchanged pre-extraction file hashes; terminal formatting is covered separately",
     "digest": "sha256 of UTF-8 rendered output file bytes",
     "normalization": [
       "scan_timestamp",
@@ -137,7 +138,7 @@
         "html": "e657b7d6d58c6fadc0db1264500a76d58170eebf36634e5e465cb6d27bea2a12"
       }
     },
-    "cli_files": {
+    "check_files": {
       "examples/enforcement-fixture/synthetic-audit-report.json": {
         "report.json": "0f7f975e7d61e2240246e301625887c7373272d5e7ddcc48f30f5248983540b9",
         "report.sarif": "2d35d4385107725ecd793695fa044e40f23cb0ea8451cd7353b0d6e82aedddab",

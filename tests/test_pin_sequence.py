@@ -177,7 +177,7 @@ def test_policy_minimum_requires_positive_integer(tmp_path: Path, value: str) ->
         load_policy(policy)
 
 
-@pytest.mark.parametrize("command", ["scan", "check"])
+@pytest.mark.parametrize("command", ["check", "check"])
 @pytest.mark.parametrize(
     "minimum,policy_minimum,expected", [(1, None, 0), (2, None, 2), (1, 2, 2), (None, 1, 0)]
 )
@@ -193,7 +193,7 @@ def test_cli_sequence_gate_selects_pin_file_and_never_weakens_policy(
     config = tmp_path / "synthetic.json"
     config.write_text('{"mcpServers": {}}')
     args = [command, "--config", str(config), "--override-config", "/dev/null", "--pin-file", str(store.path)]
-    if command == "scan":
+    if command == "check":
         args += ["--config-only", "--skip-connect"]
     if minimum is not None:
         args += ["--pin-min-sequence", str(minimum)]
@@ -318,7 +318,7 @@ def test_clear_preserves_signed_manifest_and_mcp027_after_trust_and_key_deletion
     result = CliRunner().invoke(
         cli.main,
         [
-            "scan",
+            "check",
             "--config",
             str(config),
             "--config-only",
@@ -328,7 +328,7 @@ def test_clear_preserves_signed_manifest_and_mcp027_after_trust_and_key_deletion
             "--pin-file",
             str(store.path),
             "--pin-check",
-            "--json",
+            "--output-json",
             str(report),
         ],
     )

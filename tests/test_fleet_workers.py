@@ -185,14 +185,14 @@ def test_large_synthetic_cli_json_and_exit_code_parity(
             CliRunner().invoke(
                 main,
                 [
-                    "scan",
+                    "check",
                     "--config",
                     str(config),
                     "--config-only",
                     "--skip-connect",
                     "--override-config",
                     os.devnull,
-                    "--json",
+                    "--output-json",
                     str(output),
                     "--inject-check",
                     "--trifecta-check",

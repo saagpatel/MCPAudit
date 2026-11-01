@@ -40,7 +40,7 @@ uvx --from mcp-audits mcp-audit scan --skip-connect
 With --skip-connect it does not spawn MCP servers or contact remote endpoints; it
 reasons from the local config. If you are sharing a report publicly, use:
 
-mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
+mcp-audit check --include-discovered --output-json mcp-audit-field-report.json --redact
 
 Still review before posting: don't include secrets, private paths, internal hosts,
 private URLs, or proprietary prompt/tool/schema text.
@@ -79,7 +79,7 @@ can fail CI through local YAML policy.
 Yes, if it is redacted and config-only. Please use:
 
 mcp-audit --version
-mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
+mcp-audit check --include-discovered --output-json mcp-audit-field-report.json --redact
 
 Then open a field-report issue:
 https://github.com/saagpatel/MCPAudit/issues/new?template=field_report.md
