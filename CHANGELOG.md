@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The PyPI publish workflow releases the three lockstep distributions commit-first: it dispatches on an approved commit and version, builds a six-file manifest with the exact build constraints, smokes every wheel and sdist plus the exact-pinned extras, uploads core, labs and proof in order with a PyPI readback after each, and supports `resume` from the original run's retained, manifest-verified bytes (never rebuilding) within the 90-day artifact retention. Recovery and publication verify against the approved commit's source, so a later version bump on main does not block them. The `vX.Y.Z` tag is created by the owner only after all six files verify.
+
 - Compatibility SARIF emits one warning-level `MCP-CH-CONFIG-PARSE-FAILURE`
   result per skipped discovered source, with its reason, source location and
   `--config FILE` remedy, including translated static scans. Existing skip
