@@ -116,7 +116,7 @@ def test_publish_workflows_pin_the_same_uv_as_ci() -> None:
     """Release jobs must not float to the latest uv: they use CI's pinned version."""
 
     def uv_versions(path: str) -> list[object]:
-        workflow = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+        workflow = yaml.safe_load((REPO_ROOT / path).read_text(encoding="utf-8"))
         return [
             step.get("with", {}).get("version")
             for job in workflow["jobs"].values()
