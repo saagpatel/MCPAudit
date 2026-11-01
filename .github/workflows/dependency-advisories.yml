@@ -2,7 +2,7 @@ name: Dependency advisories
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, release/2.x]
   schedule:
     - cron: "17 12 * * 1"
   workflow_dispatch:

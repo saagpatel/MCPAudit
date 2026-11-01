@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- Release builds pin `uv_build==0.12.24` exactly in `pyproject.toml` and in a new
+  `build-constraints.txt`. The publish workflow build and the release verifier's
+  reference build both pass `--build-constraints build-constraints.txt`, and the
+  publish build requires the trusted-controls and approved-commit copies to be
+  identical.
+- The release advisory gate (`scripts/check_advisories.py`) exits 2 when the build
+  constraints file is missing, instead of warning and passing without build-input
+  coverage, and queries OSV with canonical PyPI names (`uv-build`).
+- The OSV dependency advisory workflow runs on pull requests to `release/2.x` as
+  well as `main`, and a contract test pins its triggers, permissions and steps.
+- Raise the optional `otel` extra's OpenTelemetry API minimum to 1.45.1 to address
+  the unbounded `tracestate` parsing advisory, and lock `opentelemetry-api` 1.45.2.
+- Lock `certifi` 2026.10.23 (GHSA-6q48-6c7w-9gw2).
+
 ## [2.12.0] - 2026-10-12
 
 ### Upgrade notes
