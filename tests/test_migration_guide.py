@@ -31,7 +31,6 @@ SWEPT = [
     Path("maintainers/GOLDEN-ROLLOUT.md"),
     Path("maintainers/LAUNCH-RESPONSE-PLAYBOOK.md"),
     Path("maintainers/MAINTAINER-WORKFLOWS.md"),
-    Path(".cursor/environment.json"),
     *sorted(Path("examples/policies").glob("*")),
 ]
 
