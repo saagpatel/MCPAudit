@@ -41,9 +41,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a Proof core dependency, and selects each reference build explicitly by package.
 - Proof uses its own installed version and install notice, and source-checkout
   producer provenance resolves the split module path from the repository root.
-- Installed-wheel acceptance checks cover core-only command availability and
-  Proof-only version execution. Self-audit explicitly builds the core wheel, and
-  repository lint/type-check targets name all three package source trees.
+- A CI `install-shape` job builds each wheel and installs the core and Proof
+  wheels alone into fresh environments. Core-only runs `check`, exits 2 with the
+  labs install command for `lab` and `safeforge` subcommands, and has no
+  `proof-before-action`; Proof-only runs `proof-before-action --version` without
+  core. Self-audit explicitly builds the core wheel, and `mypy .` type-checks all
+  three package source trees.
 
 ### Breaking
 
