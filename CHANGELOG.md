@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   well as `main`, and a contract test pins its triggers, permissions and steps.
 - Raise the optional `otel` extra's OpenTelemetry API minimum to 1.45.1 to address
   the unbounded `tracestate` parsing advisory, and lock `opentelemetry-api` 1.45.2.
+- Lock `certifi` 2026.10.23 (GHSA-6q48-6c7w-9gw2).
 
 ## [2.12.0] - 2026-10-12
 
