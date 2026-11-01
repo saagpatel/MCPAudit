@@ -1,5 +1,12 @@
 # Known issues
 
+- Discovered sources rejected by `check`'s source limits can reduce coverage
+  compared with legacy `scan`. Both SARIF profiles now surface these skips as
+  results as well as invocation notifications, including translated static
+  scans. Compatibility emits warning-level `MCP-CH-CONFIG-PARSE-FAILURE` with
+  the skip reason and `--config FILE` remedy; extended retains its existing
+  error-level config-health result. `executionSuccessful: true` means the run
+  completed, not that coverage is complete; exit codes are unchanged.
 - Reports use structural credential redaction, with pattern matching as a
   fallback for free text. Arbitrary unlabeled secrets may remain unrecognized;
   review field reports before sharing. Redacted tool schemas are display
