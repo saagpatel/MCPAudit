@@ -153,8 +153,9 @@ def test_section_8_records_converged_implementation_details() -> None:
         assert fact in details, fact
 
 
-def test_section_9_is_unchanged_by_the_close_out() -> None:
+def test_section_9_keeps_the_out_of_scope_list_and_no_unbuilt_claim() -> None:
     section_9 = PROPOSAL.read_text(encoding="utf-8").split("## 9. Out of scope", maxsplit=1)[1]
 
     assert "An enforcing proxy (D13b)." in section_9
     assert "Retiring Proof Before Action v1 capsule" in section_9
+    assert "not yet built" not in section_9
