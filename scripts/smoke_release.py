@@ -13,11 +13,15 @@ if __name__ == "__main__":
 
 from scripts import verify_release as release
 
+LAB_NOTICE = "uv tool install 'mcp-audits[labs]'"
 
-def run(command: list[str], *, expected: int = 0) -> str:
+
+def run(command: list[str], *, expected: int = 0, stderr_contains: str = "") -> str:
     result = subprocess.run(command, capture_output=True, text=True, check=False, timeout=180)
     if result.returncode != expected:
         raise RuntimeError(f"smoke command {command!r} exited {result.returncode}: {result.stderr}")
+    if stderr_contains not in result.stderr:
+        raise RuntimeError(f"smoke command {command!r} stderr lacks {stderr_contains!r}: {result.stderr}")
     return result.stdout.strip()
 
 
@@ -85,8 +89,18 @@ def smoke(dist: Path, dependencies: Path, destination: Path, version: str, const
                 if run([str(environment / "bin" / command), "--version"]) != f"mcp-audit, version {version}":
                     raise RuntimeError("core command version mismatch")
             if "mcp_audit_labs" not in modules:
-                run([str(environment / "bin/mcp-audit"), "lab"], expected=2)
+                # Bare `lab` is a core group that prints help and exits 0, so probe a real topic.
+                # This exits 2 with the install notice only once lab modules move to
+                # mcp_audit_labs (item S-2).
+                run(
+                    [str(environment / "bin/mcp-audit"), "lab", "agent-ui", "--help"],
+                    expected=2,
+                    stderr_contains=LAB_NOTICE,
+                )
             run([python, "-I", str(Path(__file__).with_name("smoke_installed_artifact.py").resolve())])
+        elif (environment / "bin/mcp-audit").exists():
+            # Only the Proof artifacts reach here; Labs depends on core.
+            raise RuntimeError("Proof unexpectedly installed the core mcp-audit command")
         # Optional extras must really be importable, even when their release pins are indirect.
         for extra_name, module in {
             "watch": "watchfiles",

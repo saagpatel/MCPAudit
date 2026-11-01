@@ -301,9 +301,12 @@ def test_smoke_matrix_installs_six_artifacts_and_all_pinned_extras_offline(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     commands: list[tuple[list[str], int]] = []
+    notices: list[str] = []
 
-    def run(command: list[str], *, expected: int = 0) -> str:
+    def run(command: list[str], *, expected: int = 0, stderr_contains: str = "") -> str:
         commands.append((command, expected))
+        if stderr_contains:
+            notices.append(stderr_contains)
         if command[-1] == "--version":
             name = "proof-before-action" if command[0].endswith("proof-before-action") else "mcp-audit"
             return f"{name}, version {VERSION}"
@@ -334,12 +337,37 @@ def test_smoke_matrix_installs_six_artifacts_and_all_pinned_extras_offline(
     proof_versions = [c for c, _ in commands if c[0].endswith("proof-before-action") and c[-1] == "--version"]
     assert len(proof_versions) == 6  # Proof wheel/sdist plus core proof/all extras for both formats.
     assert any("mcp_audits_proof-" in c[-1] and c[-1].endswith(".whl") for c in installs)
-    lab_checks = [(c, expected) for c, expected in commands if c[-1] == "lab"]
+    lab_checks = [(c, expected) for c, expected in commands if c[-3:] == ["lab", "agent-ui", "--help"]]
     assert len(lab_checks) == 10 and all(expected == 2 for _, expected in lab_checks)
+    assert not any(c[-1] == "lab" for c, _ in commands)
+    assert notices == [smoke.LAB_NOTICE] * 10
+
+
+def test_smoke_lab_notice_matches_core_install_notice() -> None:
+    from mcp_audit._command_registry import LAB_INSTALL_NOTICE
+
+    assert smoke.LAB_NOTICE in LAB_INSTALL_NOTICE
+
+
+def test_smoke_fails_on_core_command_in_proof(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def run(command: list[str], *, expected: int = 0, stderr_contains: str = "") -> str:
+        if command[:2] == ["uv", "venv"]:
+            folder = Path(command[-1]) / "bin"
+            folder.mkdir(parents=True)
+            (folder / "mcp-audit").touch()
+        if command[-1] == "--version":
+            name = "proof-before-action" if command[0].endswith("proof-before-action") else "mcp-audit"
+            return f"{name}, version {VERSION}"
+        return VERSION
+
+    # Core and Labs environments legitimately carry mcp-audit; only the Proof ones must not.
+    monkeypatch.setattr(smoke, "run", run)
+    with pytest.raises(RuntimeError, match="Proof unexpectedly installed the core"):
+        smoke.smoke(tmp_path, tmp_path, tmp_path / "env", VERSION, Path("build-constraints.txt"))
 
 
 def test_smoke_fails_on_proof_command_in_core(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    def run(command: list[str], *, expected: int = 0) -> str:
+    def run(command: list[str], *, expected: int = 0, stderr_contains: str = "") -> str:
         if command[:2] == ["uv", "venv"]:
             folder = Path(command[-1]) / "bin"
             folder.mkdir(parents=True)
@@ -358,6 +386,48 @@ def test_smoke_run_enforces_exit_code(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(subprocess, "run", run)
     with pytest.raises(RuntimeError, match="exited 0"):
         smoke.run(["synthetic", "lab"], expected=2)
+
+
+def test_smoke_run_enforces_stderr_notice(monkeypatch: pytest.MonkeyPatch) -> None:
+    def run(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(["synthetic"], 2, "", "Error: No such command")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    with pytest.raises(RuntimeError, match="stderr lacks"):
+        smoke.run(["synthetic"], expected=2, stderr_contains=smoke.LAB_NOTICE)
+
+
+def _verify_release_calls_lacking_contract(workflow: dict[str, object]) -> list[str]:
+    """Return each verify_release.py invocation, continuations joined, that omits --distributions."""
+    missing = []
+    jobs = workflow["jobs"]
+    assert isinstance(jobs, dict)
+    for job in jobs.values():
+        for step in job["steps"]:
+            # Join continuations, then check each logical command line so a flag on a later
+            # command cannot satisfy an earlier flagless call.
+            for line in step.get("run", "").replace("\\\n", " ").splitlines():
+                command = " ".join(line.split())
+                for segment in command.split("verify_release.py")[1:]:
+                    if "--distributions" not in segment:
+                        missing.append(segment)
+    return missing
+
+
+@pytest.mark.parametrize(
+    "injected",
+    [
+        "python scripts/verify_release.py --root . --version 3.0.0",
+        "python scripts/verify_release.py --root . \\\n  --version 3.0.0\nsmoke --distributions x",
+        "python scripts/verify_release.py --distributions x && python scripts/verify_release.py --root .",
+    ],
+)
+def test_contract_flag_checker_rejects_flagless_verify_call(injected: str) -> None:
+    workflow = yaml.safe_load(Path(".github/workflows/publish.yml").read_text())
+    assert _verify_release_calls_lacking_contract(workflow) == []
+    broken = copy.deepcopy(workflow)
+    broken["jobs"]["publish"]["steps"].append({"name": "Injected", "run": injected})
+    assert len(_verify_release_calls_lacking_contract(broken)) == 1
 
 
 def test_workflow_contract_and_ordered_upload_failure_gates() -> None:
@@ -402,10 +472,7 @@ def test_workflow_contract_and_ordered_upload_failure_gates() -> None:
         for step in job["steps"]:
             assert "continue-on-error" not in step
             assert "always()" not in step.get("if", "")
-            for line in step.get("run", "").splitlines():
-                if "scripts/verify_release.py" in line:
-                    # Build's multiline calls put the contract directly on the next line.
-                    assert "--distributions" in line or "--root . --distributions" in step["run"]
+    assert _verify_release_calls_lacking_contract(workflow) == []
     prep = next(
         step
         for step in jobs["consumer-smoke"]["steps"]
