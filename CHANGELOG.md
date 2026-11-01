@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- The PyPI and MCP Registry publish jobs pin uv to CI's version (`0.13.0`)
+  instead of installing the latest uv at publish time.
+
 ### Changed
 
 - Release builds pin `uv_build==0.13.6` in all three distributions' build
