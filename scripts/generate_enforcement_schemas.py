@@ -5,14 +5,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from pydantic import BaseModel
-
-from mcp_audit.evidence_enforcement import (
+from mcp_audit_labs.evidence_enforcement import (
     ApprovedPolicyIntentV1,
     EffectiveStateV1,
     ObservedEvidenceV1,
     PolicyRecommendationV1,
 )
+from pydantic import BaseModel
 
 SCHEMAS: dict[str, type[BaseModel]] = {
     "observed-evidence-v1.schema.json": ObservedEvidenceV1,

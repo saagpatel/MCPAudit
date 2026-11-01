@@ -1,6 +1,6 @@
 # Registry Package Verification (`--verify-artifacts`)
 
-`mcp-audit scan --verify-artifacts` is the **network-gated** complement to the
+`mcp-audit check --verify-artifacts` is the **network-gated** complement to the
 offline integrity check (`--integrity-check`, MCP024). For package-runner launches
 — `npx pkg@1.2.3`, `uvx pkg==1.4.0` — the on-disk `command` is the *runner*
 (`npx`/`uvx`), not the server code. The meaningful artifact is the remote package,
@@ -21,14 +21,14 @@ so this check compares the **registry-published hash** for the exact pinned
   - npm: `https://registry.npmjs.org/<name>/<version>` → `dist.integrity`.
   - PyPI: `https://pypi.org/pypi/<name>/<version>/json` → the sorted set of
     per-file `sha256` digests (so any distribution file changing is caught).
-- **Compare (scan time).** `mcp-audit scan --verify-artifacts` re-resolves the
+- **Compare (scan time).** `mcp-audit check --verify-artifacts` re-resolves the
   packages, re-fetches the published hashes, and flags any that differ from the
   baseline (HIGH) or can't be fetched (MEDIUM).
 
 ## Scope and boundaries
 
 - **Network only when asked.** The registry is contacted **only** under
-  `--verify-artifacts` (on `pin` and `scan`). Every other mode stays offline-first
+  `--verify-artifacts` (on `pin` and `check`). Every other mode stays offline-first
   — consistent with `--llm-analysis` being the only other networked path.
 - **Exact version only.** The check keys by `package@version`. A version *float*
   (the config now launches a different version than pinned) is provenance's job
@@ -50,10 +50,10 @@ read or transmitted, and the baseline stores only `ecosystem:name:version → ha
 mcp-audit pin --verify-artifacts
 
 # Later, flag any registry-published hash drift for pinned versions.
-mcp-audit scan --verify-artifacts
+mcp-audit check --include-discovered --verify-artifacts
 
 # Gate CI on it (opt-in; not covered by the broad fail_on.severity shortcut).
-mcp-audit scan --verify-artifacts --json mcp-audit.json --policy examples/policies/package-verify-ci.yaml
+mcp-audit check --include-discovered --verify-artifacts --output-json mcp-audit.json --policy examples/policies/package-verify-ci.yaml
 ```
 
 ## The over-time / supply-chain check family

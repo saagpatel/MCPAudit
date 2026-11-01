@@ -3,7 +3,7 @@
 #
 # Run with:
 #   mcp-audit pin                         # once, to capture the approved baseline
-#   mcp-audit scan --provenance-check --json mcp-audit.json --policy provenance-aware-ci.yaml
+#   mcp-audit check --include-discovered --provenance-check --output-json mcp-audit.json --policy provenance-aware-ci.yaml
 #
 # Provenance gating is opt-in: the broad fail_on.severity shortcut does NOT cover
 # it, so it must be requested explicitly via fail_on.provenance. Pair with

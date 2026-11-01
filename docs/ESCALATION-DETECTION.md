@@ -19,7 +19,7 @@ per-server and fleet-wide checks.
 
 `mcp-audit pin` captures a baseline snapshot (tool description + input schema)
 that the operator has reviewed and approved. On a later
-`mcp-audit scan --escalation-check`, for every tool present in **both** the
+`mcp-audit check --escalation-check`, for every tool present in **both** the
 baseline and the current scan, mcp-audit:
 
 1. Re-derives the tool's capability set from the **pinned** description/schema and
@@ -126,7 +126,7 @@ no escalation findings are produced, so the gate has nothing to trip on. See
 mcp-audit pin
 
 # 2. On every later audit / in CI, compare against the approved baseline.
-mcp-audit scan --escalation-check --json mcp-audit.json --sarif mcp-audit.sarif \
+mcp-audit check --include-discovered --connect-all --escalation-check --output-json mcp-audit.json --sarif mcp-audit.sarif \
   --policy examples/policies/escalation-aware-ci.yaml
 
 # 3. When an escalation is intentional and trusted, re-review and refresh the pin.

@@ -25,7 +25,7 @@ detection is the launch-config layer of the over-time analysis (alongside
 
 `mcp-audit pin` now snapshots each server's launch config — `command`, `args`,
 `url`, `transport`, and env/header **key names only** (never values) — alongside
-the tool schemas. On a later `mcp-audit scan --provenance-check`, the current
+the tool schemas. On a later `mcp-audit check --provenance-check`, the current
 launch config is compared field-by-field against that snapshot and a finding is
 produced only for a genuine delta. An unchanged launch config yields nothing.
 
@@ -128,7 +128,7 @@ Pair with `--provenance-check` and an existing pin baseline. See
 mcp-audit pin
 
 # 2. On every later audit / in CI, compare against the approved baseline.
-mcp-audit scan --provenance-check --json mcp-audit.json --sarif mcp-audit.sarif \
+mcp-audit check --include-discovered --provenance-check --output-json mcp-audit.json --sarif mcp-audit.sarif \
   --policy examples/policies/provenance-aware-ci.yaml
 
 # 3. When a launch-config change is intentional and trusted, re-review and re-pin.

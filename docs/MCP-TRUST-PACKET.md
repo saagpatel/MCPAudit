@@ -73,6 +73,12 @@ Expected shape:
 - For a stdio scaffold, there should be no remote-endpoint config-health warning.
 - The generated JSON, SARIF, and HTML report files should all be written.
 
+These commands pin the smoke-checked `mcp-audits==2.2.0`. With 3.x, run
+`mcp-audit check --config FILE` with `--output-json PATH` in place of
+`scan --config FILE --config-only --skip-connect --json PATH`, keeping the
+other flags; the 3.0 `scan` interceptor refuses `--json PATH` with exit 2. See
+the [3.0 migration guide](3.0-MIGRATION.md).
+
 This is the cleanest first demo because it proves the handoff between generator and auditor without
 requiring hosted model access.
 

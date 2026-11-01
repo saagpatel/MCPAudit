@@ -5,12 +5,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from pydantic import BaseModel
-
-from mcp_audit.authorization_posture_models import (
+from mcp_audit_labs.authorization_posture_models import (
     AuthorizationPostureReport,
     McpAuthorizationPostureV1,
 )
+from pydantic import BaseModel
 
 
 def main() -> None:

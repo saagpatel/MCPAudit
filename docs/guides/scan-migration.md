@@ -63,3 +63,5 @@ stderr notice. Their terminal summary, details, `--card` sticker, separate
 legacy renderer is removed. Report file schemas stay unchanged. See the
 [output contract](../OUTPUT-CONTRACT.md#legacy-scan-interceptor-30) for these
 user-visible differences. `scan` is hidden from top-level help.
+
+For the other 3.0 changes, see the [3.0 migration guide](../3.0-MIGRATION.md).

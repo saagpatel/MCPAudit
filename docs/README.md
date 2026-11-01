@@ -7,6 +7,7 @@
 - [How it works](how-it-works.md)
 - [Reading results](reading-results.md)
 - [Continuous integration](guides/ci.md)
+- [Migrating from 2.x to 3.0](3.0-MIGRATION.md)
 - [Migrating static scan commands](guides/scan-migration.md)
 - [Pinning](guides/pinning.md)
 - [Trust packets](guides/trust-packet.md)

@@ -22,11 +22,12 @@ assignees: ''
 
 ## Reproduction mode
 
-- [ ] `scan --skip-connect`
-- [ ] connected `scan`
-- [ ] `scan --inject-check`
-- [ ] `scan --pin-check`
-- [ ] `scan --policy`
+- [ ] static `check` (`--config FILE` or `--include-discovered`)
+- [ ] connected `check` (`--connect --server ID` or `--connect-all`)
+- [ ] `check --inject-check`
+- [ ] `check --pin-check`
+- [ ] `check --policy`
+- [ ] legacy `scan` translation notice or refusal
 - [ ] `pin --status`, `pin --refresh`, or `pin --stale`
 - [ ] JSON or SARIF consumer parsing
 - [ ] Dashboard or CI status-page integration
