@@ -196,23 +196,35 @@ def stage(
     return {name: bool(filenames) for name, filenames in missing.items()}
 
 
-def _not_yet_visible(raw: object, hashes: dict[str, str]) -> bool:
-    """True only for a missing release or a correct strict subset of its files (propagation lag)."""
+def _not_yet_visible(raw: object, hashes: dict[str, str], *, distribution: str, version: str) -> bool:
+    """True only for a missing release, or a strict subset of its files that is otherwise valid.
+
+    Anything verify_pypi would reject for a reason other than missing files fails at once.
+    """
     if raw is None:
         return True
-    urls = raw.get("urls") if isinstance(raw, dict) else None
+    if not isinstance(raw, dict):
+        return False
+    info, urls = raw.get("info"), raw.get("urls")
+    if not isinstance(info, dict) or info.get("name") != distribution or info.get("version") != version:
+        return False
     if not isinstance(urls, list) or len(urls) >= len(hashes):
         return False
+    seen: set[str] = set()
     for entry in urls:
-        digests = entry.get("digests") if isinstance(entry, dict) else None
-        name = entry.get("filename") if isinstance(entry, dict) else None
+        if not isinstance(entry, dict):
+            return False
+        name, digests = entry.get("filename"), entry.get("digests")
+        if not isinstance(name, str) or name in seen or name not in hashes or not isinstance(digests, dict):
+            return False
+        kind = "bdist_wheel" if name.endswith(".whl") else "sdist"
         if (
-            not isinstance(digests, dict)
-            or not isinstance(name, str)
-            or name not in hashes
-            or digests.get("sha256") != hashes[name]
+            digests.get("sha256") != hashes[name]
+            or entry.get("yanked") is not False
+            or entry.get("packagetype") != kind
         ):
             return False
+        seen.add(name)
     return True
 
 
@@ -231,7 +243,7 @@ def readback(
         hashes = {name: files[name] for name in release.distribution_names(version, item.name)}
         raw = pypi_response(item.name, version, fetch=fetch)
         for _ in range(attempts - 1):
-            if not _not_yet_visible(raw, hashes):
+            if not _not_yet_visible(raw, hashes, distribution=item.name, version=version):
                 break
             sleep(delay)
             raw = pypi_response(item.name, version, fetch=fetch)

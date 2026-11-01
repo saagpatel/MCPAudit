@@ -13,6 +13,7 @@ import subprocess
 import sys
 import urllib.error
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 import yaml
@@ -707,10 +708,30 @@ def test_readback_fails_fast_on_wrong_content_and_after_bounded_wait(
     assert (len(requested), sleeps) == (3, [1.0, 1.0])
 
 
-def test_readback_treats_malformed_filenames_as_definitive() -> None:
-    hashes = {"a.whl": "1" * 64, "a.tar.gz": "2" * 64}
-    odd = {"urls": [{"filename": ["a.whl"], "digests": {"sha256": "1" * 64}}]}
-    assert publish._not_yet_visible(odd, hashes) is False
+def test_only_an_otherwise_valid_partial_release_counts_as_lag(
+    candidate: tuple[Path, dict[str, str], str],
+) -> None:
+    _, files, _ = candidate
+    name = TRAIN[0].name
+    hashes = {n: files[n] for n in release.distribution_names(VERSION, name)}
+
+    def visible(raw: object) -> bool:
+        return publish._not_yet_visible(raw, hashes, distribution=name, version=VERSION)
+
+    assert visible(None) and visible(response(name, files, count=1))
+    assert not visible(response(name, files))  # complete: verify decides
+    mutations: list[tuple[str, str, object]] = [
+        ("file", "yanked", True),
+        ("file", "packagetype", "bdist_egg"),
+        ("file", "filename", ["not", "a", "name"]),
+        ("info", "version", "9.9.9"),
+        ("info", "name", "someone-else"),
+    ]
+    for where, key, value in mutations:
+        raw = copy.deepcopy(response(name, files, count=1))
+        target = cast(list[dict[str, Any]], raw["urls"])[0] if where == "file" else raw["info"]
+        cast(dict[str, Any], target)[key] = value
+        assert not visible(raw), (where, key)
 
 
 def test_workflow_readback_wait_is_bounded() -> None:
