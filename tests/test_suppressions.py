@@ -10,7 +10,7 @@ import pytest
 from click.testing import CliRunner
 from pydantic import ValidationError
 
-from mcp_audit import check_cli, scan_cli
+from mcp_audit import check_cli
 from mcp_audit.cli import main
 from mcp_audit.engine import ScanOptions, run_scan
 from mcp_audit.models import AuditReport, CheckCoverage, InjectionFinding, InjectionSeverity
@@ -200,15 +200,11 @@ def test_ignore_reason_redacts_before_truncation() -> None:
     assert len(reason) <= 512
 
 
-@pytest.mark.parametrize("command", ["scan", "check"])
+@pytest.mark.parametrize("command", ["check"])
 def test_cli_synthetic_permission_ignore(command: str, tmp_path: Path) -> None:
     output = tmp_path / "report.json"
     args = [command, "--config", str(SYNTHETIC), "--override-config", "/dev/null", "--ignore", "MCP001"]
-    args += (
-        ["--config-only", "--skip-connect", "--json", str(output)]
-        if command == "scan"
-        else ["--output-json", str(output)]
-    )
+    args += ["--config-only", "--skip-connect", "--output-json", str(output)]
     result = CliRunner().invoke(main, args)
     assert result.exit_code == 0, result.output
     report = AuditReport.model_validate_json(output.read_text())
@@ -218,7 +214,7 @@ def test_cli_synthetic_permission_ignore(command: str, tmp_path: Path) -> None:
     assert report.connection_mode == "skipped"
 
 
-@pytest.mark.parametrize("command", ["scan", "check"])
+@pytest.mark.parametrize("command", ["check"])
 def test_invalid_ignore_fails_before_scan(command: str, tmp_path: Path) -> None:
     result = CliRunner().invoke(
         main, [command, "--config", str(tmp_path / "absent.json"), "--ignore", "coverage"]
@@ -243,7 +239,7 @@ def test_legacy_json_defaults_to_no_suppressions() -> None:
     assert AuditReport.model_validate(raw).suppressed == []
 
 
-@pytest.mark.parametrize("command", ["scan", "check"])
+@pytest.mark.parametrize("command", ["check"])
 @pytest.mark.parametrize(
     "reason,allow,exit_code",
     [(None, True, 2), ("Reviewed collision", True, 0), ("Reviewed collision", False, 2)],
@@ -259,7 +255,7 @@ def test_cli_shadow_policy_contract(
     async def fixture_scan(*args: object, **kwargs: object) -> AuditReport:
         return _shadow_report()
 
-    monkeypatch.setattr(scan_cli if command == "scan" else check_cli, "run_scan", fixture_scan)
+    monkeypatch.setattr(check_cli, "run_scan", fixture_scan)
     policy = tmp_path / "policy.yaml"
     policy.write_text(f"allow_ignores: {str(allow).lower()}\nfail_on:\n  shadowing: true\n")
     output = tmp_path / "report.json"
@@ -274,11 +270,7 @@ def test_cli_shadow_policy_contract(
         "--ignore",
         "MCP015",
     ]
-    args += (
-        ["--config-only", "--skip-connect", "--json", str(output)]
-        if command == "scan"
-        else ["--output-json", str(output)]
-    )
+    args += ["--config-only", "--skip-connect", "--output-json", str(output)]
     if reason is not None:
         args += ["--ignore-reason", reason]
     result = CliRunner().invoke(main, args)
@@ -307,7 +299,7 @@ def test_suppressed_permission_does_not_change_risk_gate() -> None:
     assert any(v.rule == "max_risk" for v in result.violations)
 
 
-@pytest.mark.parametrize("command", ["scan", "check"])
+@pytest.mark.parametrize("command", ["check"])
 def test_cli_loads_explicit_saved_ignores(command: str, tmp_path: Path) -> None:
     ignore_path = tmp_path / "ignores.yaml"
     ignore_path.write_text(
@@ -315,11 +307,7 @@ def test_cli_loads_explicit_saved_ignores(command: str, tmp_path: Path) -> None:
     )
     output = tmp_path / "report.json"
     args = [command, "--config", str(SYNTHETIC), "--override-config", str(ignore_path)]
-    args += (
-        ["--config-only", "--skip-connect", "--json", str(output)]
-        if command == "scan"
-        else ["--output-json", str(output)]
-    )
+    args += ["--config-only", "--skip-connect", "--output-json", str(output)]
     result = CliRunner().invoke(main, args)
     assert result.exit_code == 0, result.output
     report = AuditReport.model_validate_json(output.read_text())

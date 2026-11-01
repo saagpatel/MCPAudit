@@ -161,11 +161,13 @@ def test_strict_policy_example_exits_two() -> None:
     result = subprocess.run(
         [
             command,
-            "scan",
+            "check",
             "--config",
             "examples/configs/popular-public-servers.json",
             "--config-only",
             "--skip-connect",
+            "--override-config",
+            "/dev/null",
             "--policy",
             "examples/policies/ci-strict.yaml",
         ],

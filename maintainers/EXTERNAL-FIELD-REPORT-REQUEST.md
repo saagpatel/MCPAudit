@@ -12,7 +12,7 @@ Could you help validate MCPAudit beta readiness by running one config-only field
 
 One command generates the report without a project or global install:
 
-uvx --from mcp-audits mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
+uvx --from mcp-audits mcp-audit check --include-discovered --output-json mcp-audit-field-report.json --redact
 
 Please also capture the resolved MCPAudit version:
 

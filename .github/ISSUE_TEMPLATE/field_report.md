@@ -21,7 +21,7 @@ Please use config-only mode for public field reports. The first command below
 generates the report without a project or global install.
 
 ```bash
-uvx --from mcp-audits mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
+uvx --from mcp-audits mcp-audit check --include-discovered --output-json mcp-audit-field-report.json --redact
 uvx --from mcp-audits mcp-audit --version
 ```
 

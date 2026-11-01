@@ -169,6 +169,8 @@ def test_hidden_text_grade_and_connected_recheck_preserve_check() -> None:
     output = " ".join(_render(report, explicit_config=True).split())
     assert "--inject-check" in output
     assert "./reviewed-mcp-config.json" in output
+    assert "--connect-all" in output
+    assert "--connect-project-configs" not in output
     assert "Copy only the listed entries" in output
     assert "may execute code and access the network" in output
     assert "claude_code" not in output
@@ -219,7 +221,7 @@ def test_generated_connected_recheck_runs_only_the_reviewed_local_fixture(
     args = shlex.split(command.replace("\\\n", ""))[1:]
     monkeypatch.chdir(tmp_path)
     output = tmp_path / "rechecked.json"
-    result = CliRunner().invoke(main, [*args, "--json", str(output)])
+    result = CliRunner().invoke(main, [*args, "--output-json", str(output)])
     assert result.exit_code == 0, result.output
     payload = json.loads(output.read_text())
     assert payload["servers_discovered"] == payload["servers_connected"] == 1
@@ -322,6 +324,7 @@ def test_color_and_non_tty(
     color: str, env: dict[str, str], ansi: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.setenv("TERM", "xterm-256color")
     result = CliRunner().invoke(main, ["check", "--config", str(FIXTURE), "--color", color], env=env)
     assert result.exit_code == 0, result.output
     assert ("\x1b[" in result.stdout) is ansi
@@ -330,7 +333,7 @@ def test_color_and_non_tty(
 
 def test_scan_details_and_json_stdout_are_compatible() -> None:
     args = [
-        "scan",
+        "check",
         "--config",
         str(FIXTURE),
         "--config-only",
@@ -344,10 +347,8 @@ def test_scan_details_and_json_stdout_are_compatible() -> None:
     assert summary.stdout.startswith("MCPAudit · Preview")
     assert "Top Permissions" not in summary.stdout
     assert "Top" in detailed.stdout and "Permissions" in detailed.stdout
-    for scan_result in (summary, detailed):
-        assert scan_result.stderr.startswith("scan: options map exactly to check (")
-        assert "): mcp-audit check " in scan_result.stderr
-        assert len(scan_result.stderr.splitlines()) == 1
+    for check_result in (summary, detailed):
+        assert check_result.stderr == ""
     result = CliRunner().invoke(main, ["check", "--config", str(FIXTURE), "--json", "--color", "always"])
     assert result.exit_code == 0, result.output
     data = json.loads(result.stdout)

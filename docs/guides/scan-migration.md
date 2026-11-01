@@ -50,6 +50,16 @@ Three other differences remain visible in the report:
 `scan --config FILE --skip-connect` without `--config-only` still has no exact
 translation because explicit and discovered sources can overlap. Config-only
 translations require an explicit `--override-config` to preserve override
-selection. Connected scans and unsupported spellings continue to report why no
-exact translation exists; choose an explicit `check` connection selection when
-connections are intended.
+selection. Connected scans and unsupported spellings report why no exact
+translation exists, print a replacement command labelled **not exact**, and
+exit 2 before reading sources or writing reports. Review the replacement's
+source and connection selection before running it. For example, bare `scan`
+suggests `mcp-audit check --include-discovered --connect-all`, and
+`scan --json PATH` suggests `check --output-json PATH`.
+
+Accepted `scan` forms now invoke `check` through its argument parser after one
+stderr notice. Their terminal summary, details, `--card` sticker, separate
+`Wrote PATH` lines, recovery errors and exit codes come from `check`; the
+legacy renderer is removed. Report file schemas stay unchanged. See the
+[output contract](../OUTPUT-CONTRACT.md#legacy-scan-interceptor-30) for these
+user-visible differences. `scan` is hidden from top-level help.

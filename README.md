@@ -18,8 +18,9 @@ not that a server is malicious or unsafe.
 
 > [!IMPORTANT]
 > The package is `mcp-audits`; the command is `mcp-audit`.
-> The default check is static. `check --connect`, `--connect-all` and legacy `scan`
-> can start configured local programs or contact configured endpoints. Package
+> The default check is static. `check --connect` and `--connect-all` can start
+> configured local programs or contact configured endpoints. Legacy `scan` never
+> connects: it refuses connecting forms with exit 2 before discovery. Package
 > verification, downloads, and LLM analysis are separate opt-in operations.
 > MCPAudit does not edit configs, and reports environment variable key names,
 > never their values. Review generated reports before sharing them.

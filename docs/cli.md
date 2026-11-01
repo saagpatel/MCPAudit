@@ -64,21 +64,40 @@ Exit code: 1
 Click's option and command typo suggestions remain enabled. For example,
 `mcp-audit check --detials` suggests `--details`.
 
-## Legacy `scan --json`
+## Legacy `scan` interceptor
 
-Legacy `scan --json PATH` continues to write JSON to the named path. In
-particular, `mcp-audit scan --json -` treats `-` as the output filename; it
-does not redirect JSON to stdout. Use `check --json` for JSON stdout.
+In 3.0, `scan` is a hidden legacy interceptor over `check`; it has no separate
+scan or rendering path. Its frozen option classifier runs on the parsed options
+before any config discovery, source read, connection or report write. Every
+`scan` run prints one translation notice to stderr, and the classification
+decides what happens next:
 
-Every legacy `scan` run prints one translation notice to stderr, without
-changing its behavior or exit code. The notice gives a shell-quoted exact
-`check` command when the parsed options preserve coverage, or explains why no
-exact translation exists. `--config-only --skip-connect` intentionally narrows
-to the explicit file; supply `--override-config` to retain the same overrides.
-Discovery translations include `--include-discovered`. Legacy Claude Code
-discovery can include other projects, and `check` adds Cursor project sources,
-so those shapes cannot be declared exact from options alone. Connected scans,
-explicit files combined with discovery (which may deduplicate a source),
-`--json PATH`, comma-separated `--clients`, unknown options, and arguments that
-cannot be safely printed exactly are also refused by the translator. This
-notice does not run `check` or perform extra discovery.
+- **Refused (`would-silently-shrink`), exit 2.** The notice states why no exact
+  `check` translation exists. A second stderr line gives a shell-quoted
+  replacement command labelled **not exact**, or says that no replacement is
+  offered. Nothing is discovered, scanned, connected or written, and the
+  replacement is never executed. Refused forms are: `scan` without
+  `--skip-connect` (scan connected by default), `--json PATH` (including
+  `--json -`), a comma-separated or unsupported `--clients` value, `--config FILE`
+  without `--config-only`, `--connect-project-configs`, `--canary-check`,
+  `--config-only` without `--config` or without an explicit `--override-config`,
+  options outside the frozen translation table, and argument values that cannot
+  be printed safely on one line.
+  For example, bare `scan` suggests
+  `mcp-audit check --include-discovered --connect-all`, and `scan --json PATH`
+  suggests a command using `--output-json PATH`. An unsupported `--clients`
+  spelling gets no replacement, because any runnable suggestion would widen the
+  client selection.
+- **Accepted (`preserved` or `narrowed`).** The notice prints the exact
+  shell-quoted `check` argv, and `scan` then parses and runs that argv through
+  `check`. Stdout, report files, the `--card` card and sticker, recovery errors
+  and exit codes are those of `check`. Static discovery translations append
+  `--include-discovered --scan-compatible-sources`;
+  `--config FILE --config-only --skip-connect --override-config FILE`
+  intentionally narrows to the explicit file. The notice also names `check`'s
+  source limits, so it promises exact option mapping, not identical source
+  coverage.
+
+Use `check --json` for JSON on stdout and `check --output-json PATH` for a JSON
+file. See the [scan migration guide](guides/scan-migration.md) for replacement
+commands and the remaining report differences.

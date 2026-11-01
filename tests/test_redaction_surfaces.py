@@ -67,14 +67,14 @@ def test_cli_all_report_surfaces_redact_fixture_credentials(tmp_path: Path, fiel
     config.write_text(config_text, encoding="utf-8")
     outputs = {suffix: tmp_path / f"report.{suffix}" for suffix in ("json", "sarif", "html", "card")}
     args = [
-        "scan",
+        "check",
         "--config",
         str(config),
         "--config-only",
         "--skip-connect",
         "--override-config",
         "/dev/null",
-        "--json",
+        "--output-json",
         str(outputs["json"]),
         "--sarif",
         str(outputs["sarif"]),
@@ -93,28 +93,27 @@ def test_cli_all_report_surfaces_redact_fixture_credentials(tmp_path: Path, fiel
             stack.enter_context(patch.object(cls, name, autospec=True, side_effect=getattr(cls, name)))
             for cls, name in (
                 (ReportGenerator, "_render_redacted_terminal"),
-                (ReportGenerator, "_render_redacted_json"),
                 (SarifGenerator, "_generate_redacted"),
                 (HtmlReportGenerator, "_generate_redacted"),
             )
         ]
-        card_renderer = stack.enter_context(patch("mcp_audit.checkup.generate_card", wraps=generate_card))
+        card_renderer = stack.enter_context(patch("mcp_audit.check_cli.generate_card", wraps=generate_card))
         result = CliRunner().invoke(cli.main, args)
 
     assert result.exit_code == 0, result.output
-    assert redact_report.call_count == 1
+    # Check redacts its file payload once and each format's public renderer
+    # redacts independently. JSON is serialized from the safe model directly.
+    assert redact_report.call_count == 4
     snapshots = []
     for renderer in renderers:
         assert renderer.call_count == 1
         snapshots.append(renderer.call_args.args[1])
     assert card_renderer.call_count == 1
-    snapshots.append(card_renderer.call_args.args[0])
+    snapshots.append(AuditReport.model_validate_json(outputs["json"].read_text()))
     for snapshot in snapshots:
         assert isinstance(snapshot, AuditReport)
         for secret in _fixture_secrets():
             assert secret not in snapshot.model_dump_json(), "renderer received unredacted data"
-    if not field_report:
-        assert all(snapshot is snapshots[0] for snapshot in snapshots)
     for surface, path in outputs.items():
         rendered = path.read_text()
         for secret in _fixture_secrets():
@@ -145,14 +144,14 @@ def test_cli_project_warning_withholds_malformed_url(
     result = CliRunner().invoke(
         cli.main,
         [
-            "scan",
+            "check",
             "--config",
             str(config),
             "--config-only",
             "--skip-connect",
             "--override-config",
             "/dev/null",
-            "--json",
+            "--output-json",
             str(outputs["json"]),
             "--sarif",
             str(outputs["sarif"]),
@@ -192,7 +191,7 @@ def test_cli_redact_preserves_credential_redaction_for_secret_named_servers(
     result = CliRunner().invoke(
         cli.main,
         [
-            "scan",
+            "check",
             "--config",
             str(config_file),
             "--config-only",
@@ -200,7 +199,7 @@ def test_cli_redact_preserves_credential_redaction_for_secret_named_servers(
             "--override-config",
             "/dev/null",
             "--redact",
-            "--json",
+            "--output-json",
             str(output),
         ],
     )

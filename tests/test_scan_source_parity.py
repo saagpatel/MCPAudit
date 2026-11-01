@@ -38,7 +38,6 @@ def isolated_sources(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(ServerConnector, "connect", forbidden)
     monkeypatch.setattr(subprocess, "Popen", forbidden)
-    monkeypatch.setattr(_core_cli, "_run_scan", forbidden, raising=False)
 
 
 def _write(path: Path, data: dict[str, object]) -> None:
@@ -295,13 +294,6 @@ def test_unreadable_source_uses_scan_wording_only_under_the_selector(tmp_path: P
 def test_printed_notice_round_trips_to_identical_check_options(
     scope: list[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    async def no_execution(*args: object, **kwargs: object) -> None:
-        pass
-
-    # raising=False is deliberate: X-1 removes this re-export and X-2 replaces
-    # scan with the interceptor, which must not fail this round trip. The
-    # autouse fixture still forbids connections and subprocesses.
-    monkeypatch.setattr(_core_cli, "_run_scan", no_execution, raising=False)
     args = ["--skip-connect", "--override-config", "/dev/null", *scope]
     expected = _translation(args)
     result = CliRunner().invoke(cli.main, ["scan", *args])

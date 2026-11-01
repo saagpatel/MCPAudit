@@ -10,7 +10,7 @@ import pytest
 import yaml
 from click.testing import CliRunner
 
-from mcp_audit import cli, engine, pin_cli, scan_cli
+from mcp_audit import check_cli, cli, engine, pin_cli
 from mcp_audit.engine import ScanOptions
 from mcp_audit.escalation import EscalationAnalyzer
 from mcp_audit.models import AuditReport, EscalationKind, ProvenanceKind, ProvenanceSeverity, ToolInfo
@@ -58,11 +58,11 @@ def test_local_fixture_pin_and_scan_lifecycle(
     # --pin-check checks schemas; --provenance-check enables the args comparison.
     config_file = tmp_path / "mcp.json"
     config_file.write_text(json.dumps({"mcpServers": {cfg.name: {"command": cfg.command, "args": cfg.args}}}))
-    monkeypatch.setattr(scan_cli, "run_scan", engine.run_scan)
+    monkeypatch.setattr(check_cli, "run_scan", engine.run_scan)
     monkeypatch.setattr("mcp_audit.pinning.DEFAULT_PIN_PATH", pin_file)
     output = tmp_path / "report.json"
     scan_args = [
-        "scan",
+        "check",
         "--config",
         str(config_file),
         "--config-only",
@@ -71,7 +71,7 @@ def test_local_fixture_pin_and_scan_lifecycle(
         "/dev/null",
         "--pin-check",
         "--provenance-check",
-        "--json",
+        "--output-json",
         str(output),
     ]
     for legacy in (False, True):
