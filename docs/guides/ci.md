@@ -5,7 +5,7 @@ letting a local policy evaluate available configuration evidence.
 
 ```yaml
 - uses: actions/checkout@v6
-- uses: saagpatel/MCPAudit@v2.12.0
+- uses: saagpatel/MCPAudit@v3.0.0
   with:
     skip-connect: "true"
     sarif: mcp-audit.sarif
