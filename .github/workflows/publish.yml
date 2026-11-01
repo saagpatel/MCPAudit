@@ -88,7 +88,7 @@ jobs:
 
       - name: Install locked dependencies
         working-directory: release-source
-        run: uv sync --dev --locked
+        run: uv sync --all-packages --dev --locked
 
       - name: Prepare Proof Before Action test image
         working-directory: release-source
@@ -214,7 +214,7 @@ jobs:
             uv pip install --python "$smoke/bin/python" "$package"
             test "$("$smoke/bin/mcp-audit" --version)" = "mcp-audit, version $release_version"
             test "$("$smoke/bin/mcp-audits" --version)" = "mcp-audit, version $release_version"
-            test "$("$smoke/bin/proof-before-action" --version)" = "proof-before-action, version $release_version"
+            test ! -e "$smoke/bin/proof-before-action"
             "$smoke/bin/python" -I scripts/smoke_installed_artifact.py
           done
       - name: Recheck exact file set and digests after smoke

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,7 @@ from mcp_audit.models import (
 )
 
 _SEVERITY_RANK = {"low": 1, "medium": 2, "high": 3}
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -43,7 +45,7 @@ class PolicyConfig:
     fail_on_package_verify: bool = False
     fail_on_artifact_verify: bool = False
     fail_on_pin_integrity: bool = False
-    fail_on_pin_baseline_withheld: bool = False
+    fail_on_pin_baseline_withheld: bool | None = None
     pin_min_sequence: int | None = None
     required_pin_servers: list[str] = field(default_factory=list)
     denied_permissions: list[PermissionCategory] = field(default_factory=list)
@@ -105,9 +107,14 @@ def load_policy(path: Path) -> PolicyConfig:
     pin_integrity = fail_on.get("pin_integrity", False)
     if not isinstance(pin_integrity, bool):
         raise ValueError("fail_on.pin_integrity must be a boolean.")
-    pin_baseline_withheld = fail_on.get("pin_baseline_withheld", False)
-    if not isinstance(pin_baseline_withheld, bool):
+    pin_baseline_withheld = fail_on.get("pin_baseline_withheld")
+    if "pin_baseline_withheld" in fail_on and not isinstance(pin_baseline_withheld, bool):
         raise ValueError("fail_on.pin_baseline_withheld must be a boolean.")
+    if pin_baseline_withheld is False:
+        logger.warning(
+            "fail_on.pin_baseline_withheld: false is ignored by check and shadow; "
+            "requested checks with withheld pin baselines always fail."
+        )
     coverage = fail_on.get("coverage", False)
     if not isinstance(coverage, bool):
         raise ValueError("fail_on.coverage must be a boolean.")

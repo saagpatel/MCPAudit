@@ -86,7 +86,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          uv run pytest tests/ research/test_proofos_postgres.py -v --ignore=tests/test_connector.py --cov=mcp_audit --cov-branch \
+          uv run pytest tests/ research/test_proofos_postgres.py -v --ignore=tests/test_connector.py --cov=mcp_audit --cov=mcp_audit_labs --cov-branch \
             --junitxml="$RUNNER_TEMP/unit-results.xml" 2>&1 | tee "$RUNNER_TEMP/unit-pytest.log"
           grep -Eq '^=+ .* (passed|failed|error|skipped|xfailed|xpassed)(,| )' "$RUNNER_TEMP/unit-pytest.log"
           RESULTS_PATH="$RUNNER_TEMP/unit-results.xml" uv run python - <<'PY'
@@ -115,7 +115,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          uv run pytest tests/test_connector.py -v --cov=mcp_audit --cov-append --cov-branch \
+          uv run pytest tests/test_connector.py -v --cov=mcp_audit --cov=mcp_audit_labs --cov-append --cov-branch \
             2>&1 | tee "$RUNNER_TEMP/connector-pytest.log"
           grep -Eq '^=+ .* (passed|failed|error|skipped|xfailed|xpassed)(,| )' "$RUNNER_TEMP/connector-pytest.log"
 

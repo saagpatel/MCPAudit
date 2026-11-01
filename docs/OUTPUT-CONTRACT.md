@@ -3,6 +3,16 @@
 MCPAudit reports are designed for local review and CI ingestion. Keep this
 contract stable unless a release note calls out a breaking change.
 
+## Optional labs distribution
+
+The lab and SafeForge Python modules and session/resume corpus live in
+`mcp_audit_labs`, installed through `mcp-audits[labs]`. Core help and completion
+do not load labs. Invoking a lab, SafeForge, or conformance probe without that
+distribution exits 2 with the existing 2.12 install notice, including
+`uv tool install mcp-audits-proof` for the standalone Proof command on PATH.
+Unrelated import failures still propagate. This package move does not change
+lab report fields, report schemas, or the core `schema_version`.
+
 ## Legacy scan interceptor (3.0)
 
 `scan` remains registered but is hidden from both top-level help views. It no
@@ -791,7 +801,7 @@ gate requires both server records and the child record. See the
 
 ## Exit Codes
 
-- `0`: the review completed and no configured policy gate failed.
+- `0`: the review completed and no applicable policy gate failed.
 - `1`: command setup failed, such as invalid client or policy config.
 - `2`, before anything runs: usage or artifact path validation failed, or the
   legacy `scan` interceptor refused a `would-silently-shrink` form. In these
@@ -799,10 +809,20 @@ gate requires both server records and the child record. See the
   a refused `scan` prints its reason and a **not exact** replacement command
   (or none) on stderr.
 - `2`, after reports are written: the review completed, requested report
-  artifacts were written, and the `--policy` gate failed.
+  artifacts were written, and a policy gate failed. In `check` (and so in
+  accepted `scan` forms) and `shadow`, any requested pin-dependent check with a
+  withheld baseline fails this way even without `--policy`. JSON, SARIF, HTML
+  and card outputs requested by `check` are written before this exit; `shadow`
+  renders its terminal or JSON report before exiting. Output-write failures
+  retain their existing error behavior.
 
 Accepted legacy `scan` forms run `check` with the printed argv and exit with
 `check`'s code.
+
+`watch` does not exit for its implicit pin check's withheld baseline: the initial
+scan and every rescan write reports with incomplete coverage and render the
+`pin_baseline_withheld` warning. Library callers of `run_scan`, library policy
+evaluation, and `serve` do not acquire this one-shot CLI gate.
 
 Subcommands with standalone experimental contracts document their own exit
 codes below; they do not change the stable review exit contract.
@@ -1452,7 +1472,9 @@ The report top level also includes:
     `pin_baseline_withheld` (servers whose pin baseline failed integrity
     verification, HIGH MCP027, or is a genuine legacy v1 pin, whether or not
     trusted keys exist, so this baseline comparison was not run; also emitted
-    for `pin_check` and `canary_check`; named in `servers` and never also
+    for all seven pin-dependent checks: `pin_check`, `canary_check`,
+    `escalation_check`, `provenance_check`, `integrity_check`, `verify_artifacts`
+    and `download_artifacts`; named in `servers` and never also
     reported as `pin_baseline_stale`; the message names
     `mcp-audit pin --refresh SERVER`),
     `integrity_comparison_incomplete` (with `check: integrity_check`; pinned
@@ -1633,16 +1655,34 @@ unknown legacy coverage, independently of severity; `not_requested` checks
 do not fail the gate. Coverage violations use existing SARIF `MCP010` and
 the existing policy exit code `2`. Existing policies retain their behavior.
 
-The narrower opt-in YAML boolean `fail_on.pin_baseline_withheld: true` (Python
-`PolicyConfig(fail_on_pin_baseline_withheld=True)`) fails only requested pin
-checks whose warning has `code: pin_baseline_withheld` and `check: pin_check`.
-It adds a HIGH per-server violation with rule `fail_on.pin_baseline_withheld`,
-reported through existing policy fields, SARIF `MCP010`, and policy exit `2`.
-Other withheld checks and merely missing pins do not trigger this gate. Its
-default is `false`. A genuine v1 baseline is withheld whether or not trusted
-keys exist, so with this gate a keyless install with a v1 pin now fails the
-requested pin check; mixed-entry v1 rows are excluded from drift and emit
-`pin_schema_outdated`.
+In `check` and `shadow`, withheld baselines unconditionally fail requested
+`pin_check`, `canary_check`, `escalation_check`, `provenance_check`,
+`integrity_check`, `verify_artifacts` and `download_artifacts` checks. The gate
+matches both the requested option and its `pin_baseline_withheld` warning's
+`check` key; an unrequested check's warning does not fail the run. It adds one
+HIGH violation per affected audit with rule `fail_on.pin_baseline_withheld`,
+the affected check names and `audit_index`, using existing policy fields and
+SARIF `MCP010`. `policy_result` is populated and `passed` is `false` even
+without `--policy`. Configured policy violations are retained alongside it.
+
+The policy loader retains three internal states for
+`fail_on.pin_baseline_withheld`: unset, `true`, and `false`. Unset and `true`
+both fail in these CLIs; an explicit YAML `false` is accepted but ignored,
+and the loader logs a warning naming the ignored setting and the `check` and
+`shadow` commands. This diagnostic does not add a coverage warning or change
+the report schema. Non-boolean values remain invalid policy input.
+
+Merely missing pins do not trigger this gate unless integrity verification
+withholds their baseline (for example, a missing signed manifest with trusted
+keys). A genuine v1 baseline is withheld whether or not trusted keys exist;
+mixed-entry v1 rows are excluded from drift and emit `pin_schema_outdated`.
+The gate does not change coverage classification: a withheld requested pin
+check is `partial`; canary uses `runtime_security`; other comparisons can
+remain `not_run` when their baseline or execution is unavailable. These
+incomplete states still fail the one-shot gate. `watch` retains partial pin
+coverage, renders the warning on every loop and continues. Library policy
+evaluation retains its opt-in `PolicyConfig(fail_on_pin_baseline_withheld=True)`
+gate for warnings with `check: pin_check`; library scans and `serve` are unaffected.
 
 `description_truncated` warnings use `check: "permission_analysis"`, name the
 affected server, and give a count of truncated fields without including their
@@ -1880,6 +1920,13 @@ Proof Before Action is a separate strict evidence contract; it does not change
 - `proof-before-action.trust-manifest.v1`
 - `proof-before-action.capsule.v2`
 - `proof-before-action.capsule-index.v2`
+
+These contracts belong to the `mcp-audits-proof` distribution, under
+`proof_before_action`; the package split leaves their schemas unchanged.
+Capsule `producer.version` comes from that distribution's installed metadata.
+Checkout producer provenance resolves
+`distributions/proof/src/proof_before_action/proof_capsule.py` relative to the
+repository root; installed builds use their embedded build provenance.
 
 The verifier also supports historical
 `proof-before-action.observation.v1`,

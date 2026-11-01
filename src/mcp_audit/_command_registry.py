@@ -19,7 +19,7 @@ LAB_INSTALL_NOTICE = (
     "uv tool install mcp-audits-proof (a uv tool extra does not expose its scripts)."
 )
 PROOF_INSTALL_NOTICE = (
-    "In 3.0, for proof-before-action on PATH, install Proof directly with: "
+    "For proof-before-action on PATH, install Proof directly with: "
     "uv tool install mcp-audits-proof (a uv tool extra does not expose its scripts)."
 )
 
@@ -27,7 +27,13 @@ PROOF_INSTALL_NOTICE = (
 def _import_command_module(module: str) -> ModuleType:
     try:
         return import_module(module)
-    except ImportError as exc:
+    except ModuleNotFoundError as exc:
+        # Only a missing optional distribution earns the install hint. A plain
+        # ImportError (e.g. "cannot import name X", circular imports) is a
+        # defect and propagates. A missing submodule such as
+        # "mcp_audit_labs.missing_submodule" means an installed labs version
+        # that does not match core; it also gets the hint (exit 2), since
+        # reinstalling the matching distribution is the fix.
         top_level = (exc.name or "").split(".", 1)[0]
         if top_level == "mcp_audit_labs":
             notice = LAB_INSTALL_NOTICE
@@ -122,49 +128,49 @@ class LazyGroup(click.Group):
 
 LAB_COMMANDS = {
     "agent-ui": CommandSpec(
-        "mcp_audit.agent_ui_cli",
+        "mcp_audit_labs.agent_ui_cli",
         "agent_ui",
         "Audit synthetic Agent UI fixtures offline.",
         subcommands=("scan", "schema"),
     ),
     "authorization-posture": CommandSpec(
-        "mcp_audit.authorization_posture_cli",
+        "mcp_audit_labs.authorization_posture_cli",
         "authorization_posture",
         "Review saved authorization posture offline.",
         subcommands=("review", "schema"),
     ),
     "cache-contract": CommandSpec(
-        "mcp_audit.cache_contract_cli",
+        "mcp_audit_labs.cache_contract_cli",
         "cache_contract",
         "Audit saved cache contracts offline.",
         subcommands=("scan", "schema"),
     ),
     "enforcement-fixture": CommandSpec(
-        "mcp_audit.enforcement_cli",
+        "mcp_audit_labs.enforcement_cli",
         "enforcement_fixture",
         "Experimental fixture-only enforcement.",
         subcommands=("prepare", "approve", "apply", "rollback"),
     ),
     "oauth-transcript": CommandSpec(
-        "mcp_audit.oauth_transcript_cli",
+        "mcp_audit_labs.oauth_transcript_cli",
         "oauth_transcript",
         "Audit synthetic OAuth transcripts offline.",
         subcommands=("scan", "schema"),
     ),
     "result-parcel": CommandSpec(
-        "mcp_audit.result_parcel_cli",
+        "mcp_audit_labs.result_parcel_cli",
         "result_parcel",
         "Audit synthetic result parcels offline.",
         subcommands=("analyze", "builtins", "generate-large", "schema"),
     ),
     "session-resume": CommandSpec(
-        "mcp_audit.session_resume_cli",
+        "mcp_audit_labs.session_resume_cli",
         "session_resume",
         "Replay offline session/resume faults.",
         subcommands=("list", "run", "schema"),
     ),
     "task-time-machine": CommandSpec(
-        "mcp_audit.task_time_machine_cli",
+        "mcp_audit_labs.task_time_machine_cli",
         "task_time_machine",
         "Replay synthetic MCP task timelines.",
         subcommands=("list", "run", "schema"),
@@ -216,7 +222,7 @@ def lab(ctx: click.Context, conformance_probe: bool, url: str | None, timeout: f
 
     import anyio
 
-    run_conformance_probe = _import_command_module("mcp_audit.conformance_probe").run_conformance_probe
+    run_conformance_probe = _import_command_module("mcp_audit_labs.conformance_probe").run_conformance_probe
 
     try:
         report = anyio.run(run_conformance_probe, url, timeout)
@@ -227,9 +233,11 @@ def lab(ctx: click.Context, conformance_probe: bool, url: str | None, timeout: f
 
 SAFEFORGE_COMMANDS = {
     "preinstall": CommandSpec(
-        "mcp_audit.safeforge_cli", "safeforge_preinstall", "Verify a forge handoff without execution."
+        "mcp_audit_labs.safeforge_cli", "safeforge_preinstall", "Verify a forge handoff without execution."
     ),
-    "run": CommandSpec("mcp_audit.safeforge_cli", "safeforge_run", "Run the disposable SafeForge pipeline."),
+    "run": CommandSpec(
+        "mcp_audit_labs.safeforge_cli", "safeforge_run", "Run the disposable SafeForge pipeline."
+    ),
 }
 SKILLS_COMMANDS = {
     "scan": CommandSpec("mcp_audit.skillscan_cli", "skillscan", "Scan a skill directory or bundle offline."),

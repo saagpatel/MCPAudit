@@ -172,7 +172,7 @@ deployment, or nginx config — all are PyPI-specific releases.
 1. Verify `git branch -vv` shows `main` tracking `origin/main`.
    Already correct as of this disposition pass.
 2. No stash created this pass — working tree was clean.
-3. Re-run `uv sync && pytest` to confirm toolchain.
+3. Re-run `uv sync --all-packages && pytest` to confirm toolchain.
 4. Check PyPI for `mcp-permission-audit` page is current.
 5. Check `pip-audit` results for any new advisories in this tool's
    own dependency chain.
