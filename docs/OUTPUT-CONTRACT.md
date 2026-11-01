@@ -1921,6 +1921,13 @@ Proof Before Action is a separate strict evidence contract; it does not change
 - `proof-before-action.capsule.v2`
 - `proof-before-action.capsule-index.v2`
 
+These contracts belong to the `mcp-audits-proof` distribution, under
+`proof_before_action`; the package split leaves their schemas unchanged.
+Capsule `producer.version` comes from that distribution's installed metadata.
+Checkout producer provenance resolves
+`distributions/proof/src/proof_before_action/proof_capsule.py` relative to the
+repository root; installed builds use their embedded build provenance.
+
 The verifier also supports historical
 `proof-before-action.observation.v1`,
 `proof-before-action.capsule.v1`, and

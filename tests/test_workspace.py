@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import configparser
 import email.parser
 import re
 import subprocess
@@ -62,7 +63,7 @@ def test_workspace_members_and_dependency_direction() -> None:
         else:
             assert {value.name for value in dependencies} == {"click", "pydantic", "pyyaml"}
             assert len(dependencies) == 3
-            assert "scripts" not in data["project"]
+            assert data["project"]["scripts"] == {"proof-before-action": "proof_before_action.proof_cli:main"}
         assert root["tool"]["uv"]["sources"][f"mcp-audits-{member}"] == {"workspace": True}
 
 
@@ -124,6 +125,32 @@ def test_built_artifacts_have_portable_metadata_and_only_their_package(
         assert all(name.startswith(f"{module}/") or ".dist-info/" in name for name in names)
         (metadata,) = [name for name in names if name.endswith(".dist-info/METADATA")]
         wheel_metadata = archive.read(metadata)
+        entry_points = [name for name in names if name.endswith(".dist-info/entry_points.txt")]
+        scripts = configparser.ConfigParser()
+        if entry_points:
+            assert len(entry_points) == 1
+            scripts.read_string(archive.read(entry_points[0]).decode())
+        expected_scripts = (
+            {"mcp-audit": "mcp_audit.cli:main", "mcp-audits": "mcp_audit.cli:main"}
+            if member == "core"
+            else {"proof-before-action": "proof_before_action.proof_cli:main"}
+            if member == "proof"
+            else {}
+        )
+        observed_scripts = (
+            dict(scripts.items("console_scripts")) if scripts.has_section("console_scripts") else {}
+        )
+        assert observed_scripts == expected_scripts
+        if member in {"core", "proof"}:
+            proof_files = {
+                "proof_capsule.py",
+                "proof_cli.py",
+                "proof_models.py",
+                "proof_observer.py",
+                "proof_trust.py",
+            }
+            observed = {Path(name).name for name in names if name.startswith(f"{module}/proof_")}
+            assert observed == (proof_files if member == "proof" else set())
     with tarfile.open(sdist) as archive:
         assert all("distributions" not in Path(info.name).parts for info in archive.getmembers())
         (pkg_info,) = [info for info in archive.getmembers() if Path(info.name).name == "PKG-INFO"]

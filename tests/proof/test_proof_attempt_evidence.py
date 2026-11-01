@@ -15,11 +15,9 @@ from jsonschema import Draft202012Validator  # type: ignore[import-untyped]
 from jsonschema.exceptions import (  # type: ignore[import-untyped]
     ValidationError as JsonSchemaValidationError,
 )
-from pydantic import ValidationError
-
-from mcp_audit.proof_capsule import build_capsule, compare_bill, export_capsule, verify_capsule
-from mcp_audit.proof_cli import main
-from mcp_audit.proof_models import (
+from proof_before_action.proof_capsule import build_capsule, compare_bill, export_capsule, verify_capsule
+from proof_before_action.proof_cli import main
+from proof_before_action.proof_models import (
     CAPSULE_INDEX_SCHEMA,
     CAPSULE_INDEX_SCHEMA_V1,
     CAPSULE_SCHEMA,
@@ -36,12 +34,13 @@ from mcp_audit.proof_models import (
     canonical_json_bytes,
     sha256_bytes,
 )
-from mcp_audit.proof_observer import (
+from proof_before_action.proof_observer import (
     _attempt_evidence_receipts,
     _network_evidence,
     observe_command,
 )
-from mcp_audit.proof_trust import build_release_trust_manifest
+from proof_before_action.proof_trust import build_release_trust_manifest
+from pydantic import ValidationError
 
 DOCKER_READY = (
     shutil.which("docker") is not None

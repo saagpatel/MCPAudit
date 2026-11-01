@@ -35,7 +35,6 @@ DISTRIBUTION_NAME = "mcp-audits"
 EXPECTED_SCRIPTS = {
     "mcp-audit": "mcp_audit.cli:main",
     "mcp-audits": "mcp_audit.cli:main",
-    "proof-before-action": "mcp_audit.proof_cli:main",
 }
 SERVER_NAME = "io.github.saagpatel/mcp-audit"
 REPOSITORY = {"url": "https://github.com/saagpatel/MCPAudit", "source": "github"}

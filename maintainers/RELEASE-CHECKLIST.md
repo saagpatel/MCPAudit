@@ -63,7 +63,9 @@ so a quoted marker value such as `extra == "labs "` never passes as `labs`.
   confirm pinned versions match the public Action release.
 - `mcp-audit --version` reports the release version.
 - `mcp-audits` remains the PyPI distribution name and the installed
-  `mcp-audit`, `mcp-audits`, and `proof-before-action` commands are present.
+  `mcp-audit` and `mcp-audits` commands are present. Core must not provide
+  `proof-before-action`; that script ships only in the `mcp-audits-proof`
+  wheel and sdist, which report the release version.
 - Wheel and sdist metadata require `mcp>=2.2.0,<3.0`; their contents contain no
   private paths, development caches, or generated local evidence.
 - Wheel and sdist metadata retain the `anyio>=4.14.2` security floor.
@@ -116,7 +118,11 @@ UV_CACHE_DIR="$tmp/cache" uv pip install \
   --python "$tmp/wheel/bin/python" ./dist/mcp_audits-X.Y.Z-py3-none-any.whl
 "$tmp/wheel/bin/mcp-audit" --version
 "$tmp/wheel/bin/mcp-audits" --version
-"$tmp/wheel/bin/proof-before-action" --version
+test ! -e "$tmp/wheel/bin/proof-before-action"  # core must not provide it
+UV_CACHE_DIR="$tmp/cache" uv venv "$tmp/proof-wheel"
+UV_CACHE_DIR="$tmp/cache" uv pip install \
+  --python "$tmp/proof-wheel/bin/python" ./dist/mcp_audits_proof-X.Y.Z-py3-none-any.whl
+"$tmp/proof-wheel/bin/proof-before-action" --version
 ```
 
 ```bash
@@ -125,7 +131,11 @@ UV_CACHE_DIR="$tmp/cache" uv pip install \
   --python "$tmp/sdist/bin/python" ./dist/mcp_audits-X.Y.Z.tar.gz
 "$tmp/sdist/bin/mcp-audit" --version
 "$tmp/sdist/bin/mcp-audits" --version
-"$tmp/sdist/bin/proof-before-action" --version
+test ! -e "$tmp/sdist/bin/proof-before-action"  # core must not provide it
+UV_CACHE_DIR="$tmp/cache" uv venv "$tmp/proof-sdist"
+UV_CACHE_DIR="$tmp/cache" uv pip install \
+  --python "$tmp/proof-sdist/bin/python" ./dist/mcp_audits_proof-X.Y.Z.tar.gz
+"$tmp/proof-sdist/bin/proof-before-action" --version
 rm -r "$tmp"
 ```
 
@@ -322,6 +332,6 @@ check cannot reuse a local candidate install:
 ```bash
 tmp="$(mktemp -d)"
 UV_CACHE_DIR="$tmp" uvx --from "mcp-audits==X.Y.Z" mcp-audit --version
-UV_CACHE_DIR="$tmp" uvx --from "mcp-audits==X.Y.Z" proof-before-action --version
+UV_CACHE_DIR="$tmp" uvx --from "mcp-audits-proof==X.Y.Z" proof-before-action --version
 rm -r "$tmp"
 ```

@@ -19,7 +19,7 @@ import time
 from pathlib import Path, PurePosixPath
 from typing import Any, Literal, cast
 
-from mcp_audit.proof_models import (
+from proof_before_action.proof_models import (
     AttemptEvidence,
     AttemptEvidenceProvenance,
     CommandEvidence,
@@ -552,7 +552,7 @@ def _subject_snapshot_evidence(
     staged: Path,
     staged_tree: _FileSnapshot,
 ) -> SubjectSnapshotEvidence:
-    from mcp_audit.proof_trust import discover_repo_mcp
+    from proof_before_action.proof_trust import discover_repo_mcp
 
     dependencies, diagnostics = discover_repo_mcp(staged)
     staged_tree_sha256 = sha256_bytes(canonical_json_bytes(staged_tree))
