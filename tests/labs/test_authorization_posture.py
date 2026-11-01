@@ -377,15 +377,15 @@ def test_cli_exit_contract_and_safe_artifact_writes(tmp_path: Path) -> None:
     _write(unknown, _unknown_payload())
     invalid.write_text('{"sentinel":"SYNTHETIC_SECRET_DO_NOT_REFLECT"}', encoding="utf-8")
 
-    ready_result = runner.invoke(main, ["authorization-posture", "review", str(ready)])
+    ready_result = runner.invoke(main, ["lab", "authorization-posture", "review", str(ready)])
     assert ready_result.exit_code == 0
     assert json.loads(ready_result.stdout)["disposition"] == "policy-review-only"
 
-    unknown_result = runner.invoke(main, ["authorization-posture", "review", str(unknown)])
+    unknown_result = runner.invoke(main, ["lab", "authorization-posture", "review", str(unknown)])
     assert unknown_result.exit_code == 1
     assert json.loads(unknown_result.stdout)["disposition"] == "blocked"
 
-    invalid_result = runner.invoke(main, ["authorization-posture", "review", str(invalid)])
+    invalid_result = runner.invoke(main, ["lab", "authorization-posture", "review", str(invalid)])
     assert invalid_result.exit_code == 2
     assert "SYNTHETIC_SECRET" not in invalid_result.output
     assert invalid_result.exception is not None
@@ -393,21 +393,22 @@ def test_cli_exit_contract_and_safe_artifact_writes(tmp_path: Path) -> None:
 
     written = runner.invoke(
         main,
-        ["authorization-posture", "review", str(ready), "--json", str(report_path)],
+        ["lab", "authorization-posture", "review", str(ready), "--json", str(report_path)],
     )
     assert written.exit_code == 0
     assert written.stdout == ""
-    assert "Use 'mcp-audit lab authorization-posture' instead." in written.stderr
+    assert "removed in 3.0" not in written.stderr
     assert json.loads(report_path.read_text(encoding="utf-8"))["disposition"] == "policy-review-only"
 
     no_clobber = runner.invoke(
         main,
-        ["authorization-posture", "review", str(ready), "--json", str(report_path)],
+        ["lab", "authorization-posture", "review", str(ready), "--json", str(report_path)],
     )
     assert no_clobber.exit_code == 2
     forced = runner.invoke(
         main,
         [
+            "lab",
             "authorization-posture",
             "review",
             str(ready),
@@ -426,6 +427,7 @@ def test_cli_refuses_input_output_alias(tmp_path: Path) -> None:
     result = runner.invoke(
         main,
         [
+            "lab",
             "authorization-posture",
             "review",
             str(source),
@@ -441,8 +443,8 @@ def test_cli_refuses_input_output_alias(tmp_path: Path) -> None:
 
 def test_schema_commands_are_strict_and_versioned() -> None:
     runner = CliRunner()
-    input_result = runner.invoke(main, ["authorization-posture", "schema", "input"])
-    report_result = runner.invoke(main, ["authorization-posture", "schema", "report"])
+    input_result = runner.invoke(main, ["lab", "authorization-posture", "schema", "input"])
+    report_result = runner.invoke(main, ["lab", "authorization-posture", "schema", "report"])
     assert input_result.exit_code == report_result.exit_code == 0
     input_schema = json.loads(input_result.stdout)
     report_schema = json.loads(report_result.stdout)

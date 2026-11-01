@@ -3,38 +3,11 @@
 from __future__ import annotations
 
 import logging
-import warnings
-from importlib import import_module
-from typing import TYPE_CHECKING
 
 import click
 
 from mcp_audit._command_registry import COMMANDS, LazyGroup
 from mcp_audit.terminal_text import TerminalSafeLogFilter
-
-if TYPE_CHECKING:
-    from mcp_audit._core_cli import _parse_clients as _parse_clients
-    from mcp_audit._core_cli import _run_scan as _run_scan
-    from mcp_audit._core_cli import _run_scan_core as _run_scan_core
-
-
-def __getattr__(name: str) -> object:
-    # Retain the frozen private scan entrypoints for downstream callers in 2.x.
-    if name in {"_run_scan_core", "_run_scan", "_parse_clients"}:
-        if name != "_run_scan_core":
-            replacement = (
-                "mcp_audit.scan_cli._run_scan"
-                if name == "_run_scan"
-                else "mcp_audit.client_filter._parse_clients"
-            )
-            warnings.warn(
-                f"mcp_audit.cli.{name} is deprecated; use {replacement} instead. "
-                "Scheduled for removal in 3.0.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-        return getattr(import_module("mcp_audit._core_cli"), name)
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def _help_all(ctx: click.Context, param: click.Parameter, value: bool) -> None:
@@ -52,7 +25,7 @@ def _help_all(ctx: click.Context, param: click.Parameter, value: bool) -> None:
     is_eager=True,
     expose_value=False,
     callback=_help_all,
-    help="Show all command paths, including compatibility aliases.",
+    help="Show all command paths, including nested subcommands.",
 )
 @click.option("--details", is_flag=True, help="Show details for the bare static review.")
 @click.option("--json", "json_stdout", is_flag=True, help="Emit JSON for the bare static review.")

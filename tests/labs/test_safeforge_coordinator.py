@@ -78,7 +78,8 @@ def test_cli_invalid_json_returns_machine_readable_input_failure(tmp_path: Path)
     result = CliRunner().invoke(
         main,
         [
-            "safeforge-preinstall",
+            "safeforge",
+            "preinstall",
             "--producer-schema",
             str(schema),
             "--receipt",
@@ -111,7 +112,8 @@ def test_cli_contract_drift_blocks_before_missing_artifact_access(tmp_path: Path
     result = CliRunner().invoke(
         main,
         [
-            "safeforge-preinstall",
+            "safeforge",
+            "preinstall",
             "--producer-schema",
             str(schema),
             "--receipt",
@@ -143,7 +145,8 @@ def test_cli_rejects_oversized_schema_with_structured_input_failure(tmp_path: Pa
     result = CliRunner().invoke(
         main,
         [
-            "safeforge-preinstall",
+            "safeforge",
+            "preinstall",
             "--producer-schema",
             str(schema),
             "--receipt",

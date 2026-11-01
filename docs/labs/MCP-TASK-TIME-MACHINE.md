@@ -13,23 +13,23 @@ From a fresh clone:
 uv sync --all-packages --locked
 
 # See the bundled scenarios.
-uv run mcp-audit task-time-machine list
+uv run mcp-audit lab task-time-machine list
 
 # Human-readable transition explanation.
-uv run mcp-audit task-time-machine run --builtin happy-path
+uv run mcp-audit lab task-time-machine run --builtin happy-path
 
 # Canonical machine-readable result; repeat for byte-identical output.
-uv run mcp-audit task-time-machine run --builtin happy-path --json > /tmp/task-result-1.json
-uv run mcp-audit task-time-machine run --builtin happy-path --json > /tmp/task-result-2.json
+uv run mcp-audit lab task-time-machine run --builtin happy-path --json > /tmp/task-result-1.json
+uv run mcp-audit lab task-time-machine run --builtin happy-path --json > /tmp/task-result-2.json
 cmp /tmp/task-result-1.json /tmp/task-result-2.json
 
 # Run a checked-in user-style fixture.
-uv run mcp-audit task-time-machine run \
+uv run mcp-audit lab task-time-machine run \
   tests/fixtures/task_time_machine/input-required.json --json
 
 # Inspect the authoritative contracts.
-uv run mcp-audit task-time-machine schema scenario
-uv run mcp-audit task-time-machine schema result
+uv run mcp-audit lab task-time-machine schema scenario
+uv run mcp-audit lab task-time-machine schema result
 ```
 
 Exit `0` means all supported invariants passed. Exit `1` means a supported

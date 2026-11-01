@@ -8,6 +8,7 @@ from pathlib import Path
 
 import anyio
 import pytest
+import yaml
 from click.testing import CliRunner
 
 from mcp_audit import engine, pinning, scan_cli
@@ -91,7 +92,6 @@ def test_withheld_pin_coverage_and_policy(
     warning = next(w for w in report.warnings if w.code == "pin_baseline_withheld")
     assert warning.check == "pin_check" and warning.servers == ["fixture"]
     assert "mcp-audit pin --refresh SERVER" in warning.message
-    assert "whether or not trusted pin keys exist" in warning.message
     assert evaluate_policy(report, PolicyConfig()).passed
     assert evaluate_policy(report, PolicyConfig(fail_on_pin_baseline_withheld=False)).passed
     result = evaluate_policy(report, PolicyConfig(fail_on_pin_baseline_withheld=True))
@@ -104,18 +104,127 @@ def test_withheld_pin_coverage_and_policy(
     assert store.path.read_bytes() == before
 
 
-def test_keyless_v1_still_compares_and_warns(legacy_store: PinStore, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_keyless_v1_is_withheld_and_warns(
+    legacy_store: PinStore, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # 3.0: a genuine v1 baseline is never compared, even without trusted keys.
+    assert not legacy_store._keys_trusted()
+    assert legacy_store.legacy_entry("fixture") and not legacy_store.baseline_usable("fixture")
     before = legacy_store.path.read_bytes()
     report = _scan_fixture(monkeypatch, legacy_store)
-    assert report.audits[0].drift_findings
+    assert report.audits[0].drift_findings == []
+    assert report.audits[0].pin_integrity_findings == []
     assert report.coverage["pin_check"].state == "partial"
-    assert report.coverage["pin_check"].reason == "pin_schema_outdated"
-    assert not any(w.code == "pin_baseline_withheld" for w in report.warnings)
+    assert report.coverage["pin_check"].reason == "pin_baseline_withheld"
+    withheld = next(w for w in report.warnings if w.code == "pin_baseline_withheld")
+    assert withheld.check == "pin_check" and withheld.servers == ["fixture"]
+    assert "schema v1 pin, which is never compared" in withheld.message
+    assert "mcp-audit pin --refresh SERVER" in withheld.message
+    assert "3.0 will" not in withheld.message
     warning = next(w for w in report.warnings if w.code == "pin_schema_outdated")
-    assert "whether or not trusted pin keys exist" in warning.message
+    assert "is not compared: status" in warning.message
     assert "mcp-audit pin --refresh fixture --apply" in warning.message
-    assert evaluate_policy(report, PolicyConfig(fail_on_pin_baseline_withheld=True)).passed
+    assert not evaluate_policy(report, PolicyConfig(fail_on_pin_baseline_withheld=True)).passed
+    policy = load_policy(
+        _policy_file(tmp_path, "fail_on:\n  drift: true\nrequire:\n  pins:\n    servers: [fixture]\n")
+    )
+    result = evaluate_policy(report, policy, pin_store=legacy_store)
+    messages = {v.rule: v.message for v in result.violations}
+    assert set(messages) == {"fail_on.drift", "require.pins"}
+    for message in messages.values():
+        assert "is a schema v1 pin, which is never compared" in message
+        assert "trusted keys" not in message and "unauthenticated" not in message
     assert legacy_store.path.read_bytes() == before
+
+
+def _write_entry(tmp_path: Path, entry: dict[str, object]) -> PinStore:
+    path = tmp_path / "pins.yaml"
+    path.write_text(yaml.safe_dump({"servers": {"fixture": entry}}))
+    return PinStore(path)
+
+
+def test_unmarked_zero_tool_entry_is_a_withheld_v1_pin(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # MCPAudit 2.0-2.8 wrote a zero-tool server as a bare ``tools: {}`` entry
+    # with no entry-level v2 marker; nothing comparable is saved in it.
+    store = _write_entry(tmp_path, {"tools": {}, "config_snapshot": {"command": "fixture", "args": []}})
+    before = store.path.read_bytes()
+    assert store.legacy_entry("fixture") and store.v1_baseline("fixture")
+    assert store.baseline_trusted("fixture") and not store.baseline_usable("fixture")
+    assert store.verification("fixture").state == "schema_outdated"  # type: ignore[union-attr]
+    assert store.tool_count("fixture") == 0
+    assert store.check_drift("fixture", []) == [] and store.check_drift("fixture", [ToolInfo(name="x")]) == []
+    assert store.baseline_config("fixture") is None and store.canary_baseline("fixture") is None
+    (outdated,) = store.schema_warnings("fixture")
+    assert "is a schema v1 pin baseline, which is not compared: no tool rows" in outdated.message
+    report = _scan_fixture(monkeypatch, store)
+    assert report.audits[0].drift_findings == [] and report.audits[0].pin_integrity_findings == []
+    assert report.coverage["pin_check"].state == "partial"
+    assert report.coverage["pin_check"].reason == "pin_baseline_withheld"
+    codes = {(w.code, w.check) for w in report.warnings}
+    assert {("pin_baseline_withheld", "pin_check"), ("pin_schema_outdated", "pin_check")} <= codes
+    assert store.path.read_bytes() == before
+
+
+def test_marked_zero_tool_entry_stays_a_usable_v2_baseline(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A 2.9+ writer marks even an empty entry; an empty v2 baseline still compares.
+    written = PinStore(tmp_path / "written.yaml")
+    written.pin_server("fixture", [], make_server_config(name="fixture"))
+    entry = yaml.safe_load(written.path.read_text())["servers"]["fixture"]
+    assert entry["pin_schema"] == 2 and "protocol" in entry and entry["tools"] == {}
+    store = _write_entry(tmp_path, entry)
+    assert not store.legacy_entry("fixture") and not store.v1_baseline("fixture")
+    assert store.baseline_usable("fixture") and store.tool_count("fixture") == 0
+    assert store.schema_warnings("fixture") == []
+    assert store.check_drift("fixture", []) == []
+    assert [f.status.value for f in store.check_drift("fixture", [ToolInfo(name="status")])] == ["new"]
+    report = _scan_fixture(monkeypatch, store)
+    assert [f.status.value for f in report.audits[0].drift_findings] == ["new"]
+    assert report.coverage["pin_check"].state == "complete"
+    assert not {w.code for w in report.warnings} & {"pin_baseline_withheld", "pin_schema_outdated"}
+
+
+def _policy_file(tmp_path: Path, body: str) -> Path:
+    path = tmp_path / "policy.yaml"
+    path.write_text(body)
+    return path
+
+
+@pytest.mark.parametrize(
+    "marker",
+    [{"pin_schema": 2}, {"protocol": {"negotiated_version": None, "era": "unknown"}}],
+    ids=["pin_schema", "protocol"],
+)
+def test_v1_rows_under_a_v2_entry_marker_are_withheld(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, marker: dict[str, object]
+) -> None:
+    legacy = yaml.safe_load((FIXTURES / "legacy-v1.yaml").read_text())
+    path = tmp_path / "pins.yaml"
+    path.write_text(
+        yaml.safe_dump({"servers": {"fixture": {**marker, "tools": legacy["servers"]["fixture"]["tools"]}}})
+    )
+    store = PinStore(path)
+    before = path.read_bytes()
+    assert not store.legacy_entry("fixture") and store.v1_baseline("fixture")
+    assert store.baseline_trusted("fixture") and not store.baseline_usable("fixture")
+    assert store.tool_count("fixture") == 0
+    assert store.check_drift("fixture", [ToolInfo(name="status")]) == []
+    assert store.canary_baseline("fixture") is None
+    report = _scan_fixture(monkeypatch, store)
+    assert report.audits[0].drift_findings == [] and report.audits[0].pin_integrity_findings == []
+    withheld = next(w for w in report.warnings if w.code == "pin_baseline_withheld")
+    assert withheld.check == "pin_check" and withheld.servers == ["fixture"]
+    assert report.coverage["pin_check"].reason == "pin_baseline_withheld"
+    outdated = next(w for w in report.warnings if w.code == "pin_schema_outdated")
+    assert "is a schema v1 pin baseline, which is not compared: status" in outdated.message
+    policy = load_policy(_policy_file(tmp_path, "require:\n  pins:\n    servers: [fixture]\n"))
+    (violation,) = evaluate_policy(report, policy, pin_store=store).violations
+    assert violation.rule == "require.pins"
+    assert "is a schema v1 pin, which is never compared" in violation.message
+    assert path.read_bytes() == before
 
 
 def test_other_withheld_checks_do_not_trigger_pin_gate(

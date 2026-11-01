@@ -43,7 +43,6 @@ from mcp_audit_labs.fixture_gateway import FIXTURE_GATEWAY_VERSION
 from pydantic import ValidationError
 
 from mcp_audit import cli
-from mcp_audit._command_registry import LAB_INSTALL_NOTICE
 from mcp_audit.models import (
     AUDIT_REPORT_SCHEMA_VERSION,
     AuditReport,
@@ -291,6 +290,7 @@ def test_compiler_and_approval_refuse_noncanonical_fixture_decisions(
     cli_result = CliRunner().invoke(
         cli.main,
         [
+            "lab",
             "enforcement-fixture",
             "approve",
             "--recommendation",
@@ -625,6 +625,7 @@ def test_cli_success_emits_exactly_one_json_object_and_no_secret_values(tmp_path
     result = CliRunner().invoke(
         cli.main,
         [
+            "lab",
             "enforcement-fixture",
             "approve",
             "--recommendation",
@@ -652,6 +653,7 @@ def test_cli_invalid_input_is_exit_2_with_one_json_object(tmp_path: Path) -> Non
     result = CliRunner().invoke(
         cli.main,
         [
+            "lab",
             "enforcement-fixture",
             "approve",
             "--recommendation",
@@ -674,17 +676,13 @@ def test_cli_invalid_input_is_exit_2_with_one_json_object(tmp_path: Path) -> Non
 def test_cli_usage_error_is_exit_2_with_one_json_object() -> None:
     result = CliRunner().invoke(
         cli.main,
-        ["enforcement-fixture", "approve", "--recommendation", "/missing/fixture.json"],
+        ["lab", "enforcement-fixture", "approve", "--recommendation", "/missing/fixture.json"],
     )
 
     assert result.exit_code == 2
     assert len(result.stdout.strip().splitlines()) == 1
     assert json.loads(result.stdout)["error"]["code"] == "invalid_input"
-    assert result.stderr == (
-        "Notice: 'mcp-audit enforcement-fixture' is removed in 3.0. "
-        f"Use 'mcp-audit lab enforcement-fixture' instead. {LAB_INSTALL_NOTICE}\n"
-        "input validation failed\n"
-    )
+    assert result.stderr == "input validation failed\n"
 
 
 def test_cli_policy_outcome_is_exit_1_with_one_json_object(tmp_path: Path) -> None:
@@ -694,6 +692,7 @@ def test_cli_policy_outcome_is_exit_1_with_one_json_object(tmp_path: Path) -> No
     result = CliRunner().invoke(
         cli.main,
         [
+            "lab",
             "enforcement-fixture",
             "prepare",
             "--audit-report",
@@ -796,7 +795,7 @@ def test_application_uses_trusted_clock_and_rejects_future_approval(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     assert "now" not in inspect.signature(apply_fixture_policy).parameters
-    help_result = CliRunner().invoke(cli.main, ["enforcement-fixture", "apply", "--help"])
+    help_result = CliRunner().invoke(cli.main, ["lab", "enforcement-fixture", "apply", "--help"])
     assert help_result.exit_code == 0
     assert "--now" not in help_result.stdout
 
@@ -836,6 +835,7 @@ def test_secret_like_references_are_rejected_and_cli_redacts_values(tmp_path: Pa
     result = CliRunner().invoke(
         cli.main,
         [
+            "lab",
             "enforcement-fixture",
             "approve",
             "--recommendation",
@@ -874,6 +874,7 @@ def test_unexpected_cli_exception_is_one_fail_closed_json(
     result = CliRunner().invoke(
         cli.main,
         [
+            "lab",
             "enforcement-fixture",
             "approve",
             "--recommendation",

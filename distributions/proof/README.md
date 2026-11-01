@@ -7,6 +7,9 @@ declaration. It does not depend on `mcp-audits`, and it shares the
 
 ## Install
 
+Status: scaffolding. Until the Proof modules move into this distribution, this
+package is empty and `proof-before-action` is still provided by `mcp-audits`.
+
 Install it as its own tool so that `proof-before-action` is on your PATH:
 
 ```sh

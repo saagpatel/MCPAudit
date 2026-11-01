@@ -143,14 +143,14 @@ def _build_mcp_server() -> Any:
     )
 
     @app.tool()  # type: ignore[untyped-decorator]
-    async def scan_mcp_servers(skip_connect: bool = False, connect: bool = True) -> str:
+    async def scan_mcp_servers(skip_connect: bool = False, connect: bool = False) -> str:
         """Run a full audit of all discovered MCP servers. Returns JSON report.
 
-        In 2.12, connections remain enabled by default. Set connect=false for a
-        static audit; skip_connect=true always disables connections.
-        In 3.0, this tool will default to static auditing and require an explicit
-        connect=true to connect to configured servers, which can start local
-        programs or contact configured endpoints.
+        Reach: static by default; it reads configuration and connects to no server.
+        Pass connect=true to connect to discovered workstation-scope servers, which can
+        start configured local programs or contact configured endpoints. Project-scope
+        entries are never connected and are reported as `project_config_not_connected`
+        warnings. skip_connect=true always disables connections, even with connect=true.
         """
         report = await _scan(ScanOptions(skip_connect=skip_connect or not connect))
         report = report.redacted()
@@ -159,6 +159,10 @@ def _build_mcp_server() -> Any:
     @app.tool()  # type: ignore[untyped-decorator]
     async def get_high_risk_servers() -> Annotated[CallToolResult, _ListToolPayload]:
         """Return servers with composite risk score ≥ 7.0 as a JSON list of name/score objects.
+
+        Reach: connects to every discovered workstation-scope MCP server, which can start
+        configured local programs or contact configured endpoints. Project-scope entries
+        are not connected and are reported as `project_config_not_connected` warnings.
 
         Coverage warnings, including project_config_not_connected, are in
         structuredContent.warnings and a second text block alongside the list.
@@ -174,7 +178,14 @@ def _build_mcp_server() -> Any:
 
     @app.tool()  # type: ignore[untyped-decorator]
     async def check_server(name: str) -> str:
-        """Audit one uniquely named server. Returns JSON audit result."""
+        """Audit one uniquely named server, including its pin check. Returns JSON audit result.
+
+        Reach: connects to the named server when it is workstation-scope, which can start
+        its configured local program or contact its configured endpoint. A project-scope
+        entry is not connected and is reported as a `project_config_not_connected` warning.
+        A withheld pin baseline (`pin_baseline_withheld`) appears as partial coverage in
+        `warnings`, not as a tool failure.
+        """
         parse_errors: list[ConfigParseError] = []
         servers = discover_all_configs(None, parse_errors)
         if parse_errors:
@@ -199,7 +210,12 @@ def _build_mcp_server() -> Any:
 
     @app.tool()  # type: ignore[untyped-decorator]
     async def get_injection_findings() -> str:
-        """Return all prompt injection findings across all servers. Returns JSON `{findings, warnings}`."""
+        """Return all prompt injection findings across all servers. Returns JSON `{findings, warnings}`.
+
+        Reach: connects to every discovered workstation-scope MCP server, which can start
+        configured local programs or contact configured endpoints. Project-scope entries
+        are not connected and are reported as `project_config_not_connected` warnings.
+        """
         report = await _scan(ScanOptions(inject_check=True))
         report = report.redacted()
         all_findings = []
@@ -222,7 +238,12 @@ def _build_mcp_server() -> Any:
 
     @app.tool()  # type: ignore[untyped-decorator]
     async def get_ssrf_findings() -> str:
-        """Return all SSRF findings across all servers. Returns JSON `{findings, warnings}`."""
+        """Return all SSRF findings across all servers. Returns JSON `{findings, warnings}`.
+
+        Reach: connects to every discovered workstation-scope MCP server, which can start
+        configured local programs or contact configured endpoints. Project-scope entries
+        are not connected and are reported as `project_config_not_connected` warnings.
+        """
         report = await _scan(ScanOptions(ssrf_check=True))
         report = report.redacted()
         all_findings = []
@@ -243,7 +264,12 @@ def _build_mcp_server() -> Any:
 
     @app.tool()  # type: ignore[untyped-decorator]
     async def get_trifecta_findings() -> str:
-        """Return per-server and fleet-level lethal-trifecta findings. Returns JSON `{findings, warnings}`."""
+        """Return per-server and fleet-level lethal-trifecta findings. Returns JSON `{findings, warnings}`.
+
+        Reach: connects to every discovered workstation-scope MCP server, which can start
+        configured local programs or contact configured endpoints. Project-scope entries
+        are not connected and are reported as `project_config_not_connected` warnings.
+        """
         report = await _scan(ScanOptions(trifecta_check=True))
         report = report.redacted()
         all_findings = []
@@ -278,7 +304,12 @@ def _build_mcp_server() -> Any:
 
     @app.tool()  # type: ignore[untyped-decorator]
     async def get_shadowing_findings() -> str:
-        """Return all cross-server tool-name shadowing findings. Returns JSON `{findings, warnings}`."""
+        """Return all cross-server tool-name shadowing findings. Returns JSON `{findings, warnings}`.
+
+        Reach: connects to every discovered workstation-scope MCP server, which can start
+        configured local programs or contact configured endpoints. Project-scope entries
+        are not connected and are reported as `project_config_not_connected` warnings.
+        """
         report = await _scan(ScanOptions(shadow_check=True))
         report = report.redacted()
         all_findings = []
@@ -299,8 +330,14 @@ def _build_mcp_server() -> Any:
     async def get_escalation_findings() -> str:
         """Return capability-escalation findings vs the pin baseline. Returns JSON `{findings, warnings}`.
 
+        Reach: connects to every discovered workstation-scope MCP server, which can start
+        configured local programs or contact configured endpoints. Project-scope entries
+        are not connected and are reported as `project_config_not_connected` warnings.
+
         Requires a pin baseline (run `mcp-audit pin` first); without pins `findings` is
         empty and `warnings` carries a `pin_baseline_missing` entry explaining why.
+        A withheld pin baseline (`pin_baseline_withheld`) appears as partial coverage in
+        `warnings`, not as a tool failure.
         """
         report = await _scan(ScanOptions(escalation_check=True))
         report = report.redacted()
@@ -326,9 +363,15 @@ def _build_mcp_server() -> Any:
     async def get_provenance_findings() -> str:
         """Return launch-config provenance drift vs the pin baseline. Returns JSON `{findings, warnings}`.
 
+        Reach: connects to every discovered workstation-scope MCP server, which can start
+        configured local programs or contact configured endpoints. Project-scope entries
+        are not connected and are reported as `project_config_not_connected` warnings.
+
         Requires a pin baseline with a config snapshot (run `mcp-audit pin` first); without one
         `findings` is empty and `warnings` carries a `pin_baseline_missing` or
         `pin_baseline_stale` entry explaining why.
+        A withheld pin baseline (`pin_baseline_withheld`) appears as partial coverage in
+        `warnings`, not as a tool failure.
         """
         report = await _scan(ScanOptions(provenance_check=True))
         report = report.redacted()
@@ -353,8 +396,12 @@ def _build_mcp_server() -> Any:
     async def get_integrity_findings() -> str:
         """Return launch-artifact integrity drift vs the pin baseline. Returns JSON `{findings, warnings}`.
 
+        Reach: static and offline; connects to no MCP server and only hashes on-disk bytes.
+
         Requires a pin baseline that captured artifact hashes (run `mcp-audit pin` first); without
-        one `findings` is empty and `warnings` explains why. Offline — only on-disk bytes are hashed.
+        one `findings` is empty and `warnings` explains why.
+        A withheld pin baseline (`pin_baseline_withheld`) appears as partial coverage in
+        `warnings`, not as a tool failure.
         """
         # Integrity is purely offline (re-hashing on-disk artifacts vs the pin
         # store), so skip spawning/connecting to servers entirely.
@@ -381,9 +428,13 @@ def _build_mcp_server() -> Any:
     async def get_package_verify_findings() -> str:
         """Return registry package-hash drift vs the pin baseline. Returns JSON `{findings, warnings}`.
 
-        NETWORK: contacts the npm/PyPI registry. Requires a pin baseline captured with
-        `mcp-audit pin --verify-artifacts`; without one `findings` is empty and `warnings`
-        explains why. Does not connect to the audited MCP servers (skip_connect).
+        Reach: static toward MCP servers (connects to none); NETWORK: contacts the npm/PyPI
+        package registries only.
+
+        Requires a pin baseline captured with `mcp-audit pin --verify-artifacts`; without one
+        `findings` is empty and `warnings` explains why.
+        A withheld pin baseline (`pin_baseline_withheld`) appears as partial coverage in
+        `warnings`, not as a tool failure.
         """
         report = await _scan(ScanOptions(skip_connect=True, verify_artifacts=True))
         report = report.redacted()
@@ -410,9 +461,13 @@ def _build_mcp_server() -> Any:
     async def get_artifact_verify_findings() -> str:
         """Return byte-level artifact drift vs the pin baseline. Returns JSON `{findings, warnings}`.
 
-        NETWORK: downloads npm/PyPI artifact bytes and hashes them. Requires a pin baseline
-        captured with `mcp-audit pin --download-artifacts`; without one `findings` is empty
-        and `warnings` explains why. Does not connect to the audited MCP servers (skip_connect).
+        Reach: static toward MCP servers (connects to none); NETWORK: downloads artifact bytes
+        from the npm/PyPI package registries only and hashes them.
+
+        Requires a pin baseline captured with `mcp-audit pin --download-artifacts`; without one
+        `findings` is empty and `warnings` explains why.
+        A withheld pin baseline (`pin_baseline_withheld`) appears as partial coverage in
+        `warnings`, not as a tool failure.
         """
         report = await _scan(ScanOptions(skip_connect=True, download_artifacts=True))
         report = report.redacted()
@@ -438,6 +493,8 @@ def _build_mcp_server() -> Any:
     @app.tool()  # type: ignore[untyped-decorator]
     async def list_discovered_servers() -> Annotated[CallToolResult, _ListToolPayload]:
         """Return names and clients of discovered servers as a JSON list, with coverage warnings.
+
+        Reach: static; reads configuration and connects to no server.
 
         Warnings are in structuredContent.warnings and a second text block alongside the list.
         """

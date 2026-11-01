@@ -143,11 +143,10 @@ def test_lab_serializers_preserve_exact_model_bytes_and_number_policy(
             serializer({"number": float("nan")})
 
 
-def test_tool_pin_legacy_and_current_canonical_bytes_are_unchanged() -> None:
+def test_tool_pin_canonical_bytes_are_unchanged() -> None:
     value = {"z": "café", "a": [True, None]}
     assert compact_json_bytes(value) == '{"a":[true,null],"z":"café"}'.encode()
     assert canonical_json_bytes(value) == '{"a":[true,null],"z":"café"}\n'.encode()
-    assert canonical_json_bytes(value, legacy=True) == '{"a": [true, null], "z": "café"}'.encode()
 
 
 # These digests were captured with the pre-extraction serializers. They bind

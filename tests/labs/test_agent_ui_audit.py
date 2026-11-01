@@ -240,7 +240,7 @@ def test_symlink_input_is_rejected(tmp_path: Path) -> None:
     ],
 )
 def test_schema_command_matches_live_strict_model(contract: str, model: type[object]) -> None:
-    result = CliRunner().invoke(main, ["agent-ui", "schema", contract])
+    result = CliRunner().invoke(main, ["lab", "agent-ui", "schema", contract])
     assert result.exit_code == 0, result.output
     schema = json.loads(result.stdout)
     assert schema == model.model_json_schema()  # type: ignore[attr-defined]
@@ -261,6 +261,7 @@ def test_cli_writes_json_and_offline_html_and_refuses_implicit_overwrite(
     html_path = tmp_path / "report.html"
     runner = CliRunner()
     args = [
+        "lab",
         "agent-ui",
         "scan",
         str(_fixture("mcpui001-authority-positive.json")),
@@ -287,6 +288,7 @@ def test_cli_returns_nonzero_after_writing_vulnerable_reports(tmp_path: Path) ->
     result = CliRunner().invoke(
         main,
         [
+            "lab",
             "agent-ui",
             "scan",
             str(_fixture("mcpui006-external-vulnerable.json")),
@@ -304,7 +306,7 @@ def test_cli_returns_nonzero_after_writing_vulnerable_reports(tmp_path: Path) ->
 def test_cli_uses_exit_two_for_invalid_input(tmp_path: Path) -> None:
     invalid = tmp_path / "invalid.json"
     invalid.write_text("{", encoding="utf-8")
-    result = CliRunner().invoke(main, ["agent-ui", "scan", str(invalid)])
+    result = CliRunner().invoke(main, ["lab", "agent-ui", "scan", str(invalid)])
     assert result.exit_code == 2
     assert "invalid JSON fixture" in result.output
 
@@ -631,7 +633,7 @@ def test_deep_json_nesting_is_rejected_with_controlled_error(tmp_path: Path) -> 
     path.write_text('{"value":' + "[" * 65 + "0" + "]" * 65 + "}", encoding="utf-8")
     with pytest.raises(AgentUIInputError, match="nesting"):
         scan_agent_ui_path(path)
-    result = CliRunner().invoke(main, ["agent-ui", "scan", str(path)])
+    result = CliRunner().invoke(main, ["lab", "agent-ui", "scan", str(path)])
     assert result.exit_code == 2
     assert "nesting" in result.output
 
@@ -717,6 +719,7 @@ def test_cli_preflights_output_identity_and_complete_set(tmp_path: Path) -> None
     same_result = runner.invoke(
         main,
         [
+            "lab",
             "agent-ui",
             "scan",
             str(fixture),
@@ -732,7 +735,7 @@ def test_cli_preflights_output_identity_and_complete_set(tmp_path: Path) -> None
 
     alias_result = runner.invoke(
         main,
-        ["agent-ui", "scan", str(fixture), "--json", str(fixture), "--force"],
+        ["lab", "agent-ui", "scan", str(fixture), "--json", str(fixture), "--force"],
     )
     assert alias_result.exit_code == 2
     assert fixture.read_bytes() == original
@@ -743,6 +746,7 @@ def test_cli_preflights_output_identity_and_complete_set(tmp_path: Path) -> None
     partial_result = runner.invoke(
         main,
         [
+            "lab",
             "agent-ui",
             "scan",
             str(fixture),
@@ -779,6 +783,7 @@ def test_cli_rechecks_input_alias_against_opened_output_parent(
     result = CliRunner().invoke(
         main,
         [
+            "lab",
             "agent-ui",
             "scan",
             str(fixture),
@@ -823,6 +828,7 @@ def test_cli_no_force_commit_does_not_clobber_post_preflight_file(
     result = CliRunner().invoke(
         main,
         [
+            "lab",
             "agent-ui",
             "scan",
             str(_fixture("mcpui001-authority-positive.json")),
