@@ -15,7 +15,7 @@ help:
 	@echo ""
 
 install:
-	uv sync --locked --dev
+	uv sync --all-packages --locked --dev
 
 check:
 	@command -v uv >/dev/null 2>&1 || { echo "uv is required; install it from https://docs.astral.sh/uv/" >&2; exit 127; }
