@@ -145,6 +145,13 @@ publication.
 
 ## Publish the Current Unsplit Package (Separately Authorized)
 
+On this `release/2.x` branch, every step below uses the branch-local
+workflows: read `pypi` as the `pypi-2x` environment (exactly one branch policy,
+`release/2.x`), read `main` as `release/2.x` for dispatch and ancestry (main is
+refused), dispatch `publish.yml` and `publish-mcp-registry.yml` with
+`--ref release/2.x`, and in the Registry readback confirm only the
+exact-version endpoint, because 3.x remains `latest`.
+
 1. Obtain separate publication approval naming the exact 40-character merge
    commit and `vX.Y.Z` tag. Confirm the `pypi` environment requires a named
    repository-owner reviewer, disables administrator bypass, and has exactly one
@@ -178,11 +185,6 @@ publication.
    reviewers with administrator bypass disabled. The Registry workflow reuses
    this gate for a separate post-PyPI approval rather than creating a second,
    potentially unprotected environment on first use.
-On this `release/2.x` branch, steps 7-9 use the branch-local workflows: the
-environment is `pypi-2x` (exactly one branch policy, `release/2.x`), dispatch
-is from `release/2.x` (main is refused), and step 9 confirms only the
-exact-version Registry endpoint, because 3.x remains `latest`.
-
 8. From `main`, manually dispatch `Publish to MCP Registry` with the same exact
    tag, commit, and approved manifest SHA-256 only after PyPI and GitHub Release readback. Its validation job
    proves the PyPI prerequisite, release binding, protected environment, pinned
