@@ -280,7 +280,7 @@ def test_3x_publishable_check_accepts_commit_without_tag(
     monkeypatch.setattr(release, "verify_environment_protection", lambda *args: None)
     monkeypatch.setattr(release, "DISTRIBUTIONS", release.DISTRIBUTIONS)
     assert release.main() == 0
-    assert observed == [{"tag": None, "commit": "a" * 40, "require_landed": True}]
+    assert observed == [{"tag": None, "commit": "a" * 40, "require_landed": True, "published": False}]
 
 
 def test_release_verifier_requires_public_tag_in_precommit_usage_comment(
@@ -817,6 +817,126 @@ def test_rooted_registry_metadata_step_binds_source_to_controls_contract(tmp_pat
     assert result.returncode != 0
     binding = "source and release-controls distribution contracts must be byte-identical"
     assert (binding in result.stderr) is drift, result.stderr
+
+
+def _fixture_git(repo: Path, *args: str) -> str:
+    return subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "-c",
+            "user.name=fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-c",
+            "init.defaultBranch=main",
+            *args,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
+@pytest.mark.parametrize("tag_state", ["approved", "other", "absent"])
+def test_registry_metadata_step_requires_3x_tag_at_approved_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tag_state: str
+) -> None:
+    """The 3.x Registry run follows the owner's post-PyPI tag, so the tag must exist at the commit."""
+    [(_, step)] = [
+        (name, step)
+        for name, step in _registry_steps()
+        if name == "validate" and step.get("name") == "Verify tag, commit, main, and release metadata"
+    ]
+    assert step["working-directory"] == "release-source"
+    assert "git fetch --force --tags origin main" in step["run"]
+    [command] = _verifier_invocations(step["run"])
+    assert "--tag-published" in command
+
+    version = "3.0.0"
+    tag = f"v{version}"
+    source = tmp_path / "release-source"
+    (source / "release").mkdir(parents=True)
+    (tmp_path / "release-controls").symlink_to(Path.cwd(), target_is_directory=True)
+    (source / "pyproject.toml").write_text(f'[project]\nname = "mcp-audits"\nversion = "{version}"\n')
+    (source / "release/distributions.json").write_bytes(CONTRACT.read_bytes())
+    _fixture_git(source, "init", "-q")
+    _fixture_git(source, "add", "pyproject.toml", "release/distributions.json")
+    _fixture_git(source, "commit", "-q", "-m", "approved")
+    commit = _fixture_git(source, "rev-parse", "HEAD")
+    _fixture_git(source, "commit", "-q", "--allow-empty", "-m", "later")
+    other = _fixture_git(source, "rev-parse", "HEAD")
+    _fixture_git(source, "update-ref", "refs/remotes/origin/main", other)
+    _fixture_git(source, "checkout", "-q", "--detach", commit)
+    if tag_state != "absent":
+        _fixture_git(source, "tag", tag, commit if tag_state == "approved" else other)
+
+    runner_temp = tmp_path / "rt"
+    substitutions = {
+        '"$RELEASE_TAG"': tag,
+        '"$RELEASE_COMMIT"': commit,
+        '"$RUNNER_TEMP/pypi-environment.json"': str(runner_temp / "pypi-environment.json"),
+        '"$RUNNER_TEMP/pypi-branches.json"': str(runner_temp / "pypi-branches.json"),
+    }
+    argv = command.split()
+    assert argv[:2] == ["python", "../release-controls/scripts/verify_release.py"]
+    argv = [substitutions.get(arg, arg) for arg in argv[1:]]
+    assert not [arg for arg in argv if "$" in arg], argv
+
+    # Release-state and environment checks have their own coverage; this exercises real git binding.
+    monkeypatch.chdir(source)
+    monkeypatch.setattr(sys, "argv", argv)
+    monkeypatch.setattr(release, "verify_metadata", lambda **kwargs: (version, {}))
+    monkeypatch.setattr(release, "_load_json", lambda path: {})
+    monkeypatch.setattr(release, "verify_environment_protection", lambda *args: None)
+    monkeypatch.setattr(release, "DISTRIBUTIONS", release.DISTRIBUTIONS)
+    monkeypatch.setattr(release, "RELEASE_BRANCH", release.RELEASE_BRANCH)
+    monkeypatch.setattr(release, "ROOT", release.ROOT)
+    monkeypatch.setattr(release, "RELEASE_STATE_PATH", release.RELEASE_STATE_PATH)
+    status = release.main()
+    stderr = capsys.readouterr().err
+    if tag_state == "approved":
+        assert status == 0, stderr
+    else:
+        assert status == 1
+        expected = "unknown revision" if tag_state == "absent" else "does not resolve to the approved commit"
+        assert expected in stderr, stderr
+
+    # Without the post-publication flag the pre-publication binding refuses the existing tag.
+    if tag_state == "approved":
+        monkeypatch.setattr(sys, "argv", [arg for arg in argv if arg != "--tag-published"])
+        assert release.main() == 1
+        assert "release tag must not exist before publication" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "extra,message",
+    [
+        (["--commit", "a" * 40], "--tag-published requires --tag and --commit"),
+        (["--tag", "v3.0.0"], "--tag-published requires --tag and --commit"),
+        (
+            ["--tag", "v3.0.0", "--commit", "a" * 40, "--publication-check", "tag"],
+            "--tag-published applies only to the metadata check",
+        ),
+    ],
+)
+def test_tag_published_flag_requires_metadata_binding_inputs(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], extra: list[str], message: str
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["verify_release.py", "--distributions", str(CONTRACT), "--tag-published", *extra],
+    )
+    monkeypatch.setattr(release, "_version", lambda: "3.0.0")
+    monkeypatch.setattr(release, "DISTRIBUTIONS", release.DISTRIBUTIONS)
+    assert release.main() == 1
+    assert message in capsys.readouterr().err
 
 
 def _pypi_entry(name: str, digest: str) -> dict[str, object]:
