@@ -654,7 +654,7 @@ def test_readback_failure_prevents_later_distribution_checks(
     assert requested == [TRAIN[0].name]
 
 
-def _lagging_fetch(files: dict[str, str], stale: list[object]) -> tuple[list[str], object]:
+def _lagging_fetch(files: dict[str, str], stale: list[object]) -> tuple[list[str], publish.JsonFetch]:
     """Serve each queued stale state for core (None means 404) before its real response."""
     requested: list[str] = []
     queue = list(stale)
@@ -674,9 +674,7 @@ def _lagging_fetch(files: dict[str, str], stale: list[object]) -> tuple[list[str
 
 def test_readback_waits_through_pypi_propagation_lag(candidate: tuple[Path, dict[str, str], str]) -> None:
     _, files, _ = candidate
-    partial = copy.deepcopy(response(TRAIN[0].name, files))
-    partial["urls"] = partial["urls"][:1]
-    requested, fetch = _lagging_fetch(files, [None, partial])
+    requested, fetch = _lagging_fetch(files, [None, response(TRAIN[0].name, files, count=1)])
     sleeps: list[float] = []
 
     publish.readback(VERSION, TRAIN[0].name, files, fetch=fetch, attempts=4, delay=5.0, sleep=sleeps.append)
@@ -689,9 +687,11 @@ def test_readback_fails_fast_on_wrong_content_and_after_bounded_wait(
     candidate: tuple[Path, dict[str, str], str],
 ) -> None:
     _, files, _ = candidate
-    tampered = copy.deepcopy(response(TRAIN[0].name, files))
-    tampered["urls"][0]["digests"]["sha256"] = "0" * 64
-    tampered["urls"] = tampered["urls"][:1]
+    first = release.distribution_names(VERSION, TRAIN[0].name)[0]
+    tampered = {
+        "info": {"name": TRAIN[0].name, "version": VERSION},
+        "urls": [publish.file_entry(first, "0" * 64)],
+    }
     requested, fetch = _lagging_fetch(files, [tampered])
     sleeps: list[float] = []
     with pytest.raises(release.VerificationError):
