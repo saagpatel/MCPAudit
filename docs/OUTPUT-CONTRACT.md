@@ -2414,8 +2414,10 @@ translated static `scan` runs. The result names the reason and the remedy
 size, nesting/container and server limits). It locates the source using the
 matching config-health finding's `config_paths`, with the same URI conversion
 and identifier redaction as other config-file results. Older reports without
-source paths omit locations. The rule is included in `tool.driver.rules` only
-when present. The existing `MCP-REVIEW-SOURCE-SKIPPED` invocation notification
+source paths omit locations. The result and its rule keep
+`properties.severity: "high"`, matching the JSON config-health finding; only
+the SARIF `level` is `warning`. The rule is included in `tool.driver.rules` only
+when present, with a fixed generic `fullDescription` that names no path. The existing `MCP-REVIEW-SOURCE-SKIPPED` invocation notification
 and `executionSuccessful: true` remain; exit codes are unchanged. Runs without
 source skips retain byte-identical compatibility output.
 CLI `--sarif-profile extended` (Python `generate(report, profile="extended")`)
