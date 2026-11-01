@@ -189,17 +189,17 @@ def test_excessive_json_depth_fails_closed(tmp_path: Path) -> None:
 
 def test_cli_lists_runs_builtins_supplied_json_and_schemas(tmp_path: Path) -> None:
     runner = CliRunner()
-    listed = runner.invoke(main, ["session-resume", "list", "--json"])
+    listed = runner.invoke(main, ["lab", "session-resume", "list", "--json"])
     assert listed.exit_code == 0, listed.output
     assert "disconnect-before-acceptance" in listed.output
 
-    readable = runner.invoke(main, ["session-resume", "run", "dropped-event"])
+    readable = runner.invoke(main, ["lab", "session-resume", "run", "dropped-event"])
     assert readable.exit_code == 0, readable.output
     assert "lost-result-risk=observed" in readable.output
 
     machine = runner.invoke(
         main,
-        ["session-resume", "run", "successful-resume-control", "--format", "json"],
+        ["lab", "session-resume", "run", "successful-resume-control", "--format", "json"],
     )
     assert machine.exit_code == 0, machine.output
     assert json.loads(machine.stdout)["schema_version"] == "mcpaudit.session-resume.report.v1"
@@ -208,25 +208,25 @@ def test_cli_lists_runs_builtins_supplied_json_and_schemas(tmp_path: Path) -> No
     scenario_path.write_bytes(scenario_json_bytes(load_builtin_scenarios()["disconnect-before-acceptance"]))
     supplied = runner.invoke(
         main,
-        ["session-resume", "run", str(scenario_path), "--format", "json"],
+        ["lab", "session-resume", "run", str(scenario_path), "--format", "json"],
     )
     assert supplied.exit_code == 0, supplied.output
     assert json.loads(supplied.stdout)["scenario_id"] == "disconnect-before-acceptance"
 
     for contract in ("scenario", "transcript", "report", "suite-report"):
-        schema = runner.invoke(main, ["session-resume", "schema", contract])
+        schema = runner.invoke(main, ["lab", "session-resume", "schema", contract])
         assert schema.exit_code == 0, schema.output
         assert json.loads(schema.stdout)["type"] == "object"
 
 
 def test_cli_rejects_unknown_or_conflicting_selection() -> None:
     runner = CliRunner()
-    unknown = runner.invoke(main, ["session-resume", "run", "not-a-scenario"])
+    unknown = runner.invoke(main, ["lab", "session-resume", "run", "not-a-scenario"])
     assert unknown.exit_code == 2
     assert "unknown built-in scenario ID" in unknown.output
     conflict = runner.invoke(
         main,
-        ["session-resume", "run", "dropped-event", "--all"],
+        ["lab", "session-resume", "run", "dropped-event", "--all"],
     )
     assert conflict.exit_code == 2
 

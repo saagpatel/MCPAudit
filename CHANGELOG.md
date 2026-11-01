@@ -37,9 +37,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The release advisory gate (`scripts/check_advisories.py`) exits 2 when the build
   constraints file is missing, instead of warning and passing without build-input
   coverage.
+- Scaffold a uv workspace with lockstep labs and independent Proof member
+  packages, `labs`, `proof` and `all` core extras that pin the satellites
+  exactly, and workspace-wide development installs. The `watch`, `llm` and
+  `otel` requirements are unchanged. Existing modules and console scripts remain
+  in core until the module moves. Release verification admits the complete `all`
+  extra, admits satellite references only as exact pins in those extras, rejects
+  a Proof core dependency, and selects each reference build explicitly by package.
 
 ### Breaking
 
+- Removed 11 hidden top-level command aliases. Each removed spelling is now an
+  unknown command; use the replacement:
+  - `agent-ui` -> `mcp-audit lab agent-ui`
+  - `authorization-posture` -> `mcp-audit lab authorization-posture`
+  - `cache-contract` -> `mcp-audit lab cache-contract`
+  - `enforcement-fixture` -> `mcp-audit lab enforcement-fixture`
+  - `oauth-transcript` -> `mcp-audit lab oauth-transcript`
+  - `result-parcel` -> `mcp-audit lab result-parcel`
+  - `session-resume` -> `mcp-audit lab session-resume`
+  - `task-time-machine` -> `mcp-audit lab task-time-machine`
+  - `safeforge-preinstall` -> `mcp-audit safeforge preinstall`
+  - `safeforge-run` -> `mcp-audit safeforge run`
+  - `skillscan` -> `mcp-audit skills scan`
+
+  `pin` stays as a visible alias for `baseline pin`.
 - The MCP `scan_mcp_servers` tool exposed by `serve` is static by default:
   `connect` now defaults to `false`. Pass `connect=true` to connect to
   configured servers; `skip_connect=true` still disables connections. Every
@@ -103,9 +125,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   redaction withheld served text are flagged in the terminal and listed in the
   additive `current_surface_redacted` array, without exposing the hidden text.
 - Restore the PR, weekly scheduled, and manually dispatched OSV dependency advisory workflow.
-
-### Added
-
 - `check --include-discovered --scan-compatible-sources`, a hidden selector
   that reproduces the legacy `scan` server selection: every Claude Code
   project scope (a malformed project entry loses the whole file, as in
