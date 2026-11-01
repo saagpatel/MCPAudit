@@ -52,8 +52,9 @@
   is skipped with a `review_source_skipped` warning and a HIGH
   `config_parse_failure` config-health finding, where 2.x `scan` read it. The
   run exits 0 unless a policy sets `fail_on.config_health`, and the default
-  `--sarif-profile compatibility` output does not list that finding and reports
-  `executionSuccessful: true`. JSON reports, stderr and the `extended` SARIF
-  profile show the skip. Select a skipped source explicitly with
+  `--sarif-profile compatibility` output reports the skip only as a
+  `review_source_skipped` tool execution notification, without a result, and
+  keeps `executionSuccessful: true`. JSON reports, stderr and the `extended`
+  SARIF profile (which includes config-health results) show it in full. Select a skipped source explicitly with
   `--config FILE`. Making the skip visible in compatibility SARIF is planned
   before 3.0.0.
