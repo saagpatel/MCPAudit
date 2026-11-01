@@ -7,8 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Raise the optional OpenTelemetry API minimum to 1.45.1 to address the
+  unbounded `tracestate` parsing advisory.
+
 ### Changed
 
+- Compatibility SARIF emits one warning-level `MCP-CH-CONFIG-PARSE-FAILURE`
+  result per skipped discovered source, with its reason, source location and
+  `--config FILE` remedy, including translated static scans. Existing skip
+  notifications, exit codes and extended-profile results are unchanged.
 - Static discovering `scan` translations now append
   `--include-discovered --scan-compatible-sources`, including Claude Code,
   Cursor, unfiltered scans and the 2.11 hook form. Synthetic parity tests use

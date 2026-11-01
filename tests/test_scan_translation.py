@@ -380,7 +380,21 @@ def test_translated_check_warns_when_legacy_source_exceeds_server_cap(
     assert str(fixture) in warning["message"]
     assert f"{review_discovery.MAX_SERVERS}-server review limit" in warning["message"]
     assert warning["message"] in result.stderr
-    notifications = json.loads(sarif.read_text())["runs"][0]["invocations"][0]["toolExecutionNotifications"]
+    run = json.loads(sarif.read_text())["runs"][0]
+    assert run["invocations"][0]["executionSuccessful"] is True
+    [finding] = run["results"]
+    assert finding["ruleId"] == "MCP-CH-CONFIG-PARSE-FAILURE"
+    assert finding["level"] == ("warning" if sarif_profile == "compatibility" else "error")
+    if sarif_profile == "compatibility":
+        assert "--config FILE" in finding["message"]["text"]
+    assert finding["properties"]["severity"] == "high"
+    assert sum(rule["id"] == finding["ruleId"] for rule in run["tool"]["driver"]["rules"]) == 1
+    [health] = payload["config_health_findings"]
+    assert health["severity"] == "high"
+    assert finding["locations"] == [
+        {"physicalLocation": {"artifactLocation": {"uri": Path(health["config_paths"][0]).as_uri()}}}
+    ]
+    notifications = run["invocations"][0]["toolExecutionNotifications"]
     assert any(
         notice["descriptor"]["id"] == "MCP-REVIEW-SOURCE-SKIPPED"
         and notice["properties"] == warning

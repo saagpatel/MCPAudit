@@ -19,7 +19,7 @@ MEMBERS = {"labs": "mcp_audit_labs", "proof": "proof_before_action"}
 OPTIONAL_EXTRAS = {
     "watch": ["watchfiles>=1.1.1"],
     "llm": ["anthropic>=0.40"],
-    "otel": ["opentelemetry-api>=1.44,<2"],
+    "otel": ["opentelemetry-api>=1.45.1,<2"],
 }
 
 
