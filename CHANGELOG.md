@@ -91,27 +91,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `proof-before-action`; Proof-only runs `proof-before-action --version` without
   core. Self-audit explicitly builds the core wheel, and `mypy .` type-checks all
   three package source trees.
-- Release verification supports partial PyPI readbacks between split-package
-  uploads with `--publication-check pypi --published-through NAME`, which checks
-  the contract-order prefix up to and including `NAME` (core; core and Labs; all
-  three) against the approved manifest, rejects a readback map with any other
-  keys, and reports `partial readback; not release completion`. A final
-  `--publication-check tag` requires all six published files and the release
-  tag at the approved landed commit. Every version outside 2.x, not only 3.x,
-  requires the three-distribution contract. The split rule applies when either
-  the `--tag` version or the checkout's `project.version` is outside 2.x, and
-  the two must be equal whenever both are present, so a 2.x tag can no longer
-  bypass the contract on a 3.x checkout. Before publication the release tag
-  must be absent both locally and on `origin` (`git ls-remote`); an unreadable
-  `origin` fails closed.
 - The PyPI publish workflow releases the three lockstep distributions commit-first: it dispatches on an approved commit and version, builds a six-file manifest with the exact build constraints, smokes every wheel and sdist plus the exact-pinned extras, uploads core, labs and proof in order with a PyPI readback after each, and supports `resume` from the original run's retained, manifest-verified bytes (never rebuilding) within the 90-day artifact retention. Recovery and publication verify against the approved commit's source, so a later version bump on main does not block them. The `vX.Y.Z` tag is created by the owner only after all six files verify.
-- Publish dispatch now binds an approved commit and version before tagging, builds
-  and smokes all six split artifacts and pinned extras, retains candidates for
-  90 days, and reads back each ordered PyPI upload. Explicit recovery verifies
-  the original run, control revision and manifest before staging only missing
-  files; dry runs rehearse a partial upload and retained-byte recovery offline.
-- The PyPI publish workflow releases the three lockstep distributions commit-first: it dispatches on an approved commit and version, builds a six-file manifest with the exact build constraints, smokes every wheel and sdist plus the exact-pinned extras, uploads core, labs and proof in order with a PyPI readback after each, and supports `resume` from the original run's retained, manifest-verified bytes (never rebuilding) within the 90-day artifact retention. Recovery and publication verify against the approved commit's source, so a later version bump on main does not block them. The `vX.Y.Z` tag is created by the owner only after all six files verify.
-
 ### Breaking
 
 - For 3.x, pre-upload commit checks refuse an existing release tag. An explicit
