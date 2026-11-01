@@ -17,11 +17,19 @@ from click.testing import CliRunner
 from proof_before_action import proof_cli
 
 from mcp_audit import cli
+from scripts import verify_release as release
 
 RELEASE_VERIFIER: dict[str, Any] = runpy.run_path(
     "scripts/verify_release.py",
     run_name="release_verifier_test",
 )
+CONTRACT = Path("release/distributions.json")
+TRAIN = RELEASE_VERIFIER["load_distributions"](CONTRACT)
+
+
+@pytest.fixture(autouse=True)
+def split_contract(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(RELEASE_VERIFIER["verify_metadata"].__globals__, "DISTRIBUTIONS", TRAIN)
 
 
 def _project_version() -> str:
@@ -48,6 +56,14 @@ def test_release_versions_are_consistent_across_surfaces() -> None:
     adoption = Path("docs/ADOPTION-GUIDE.md").read_text(encoding="utf-8")
 
     assert _project_version() == version
+    for item in TRAIN:
+        project = tomllib.loads(Path(item.project).read_text())["project"]
+        assert project["name"] == item.name
+        assert project["version"] == version
+        assert project.get("scripts", {}) == item.scripts
+    lock = tomllib.loads(Path("uv.lock").read_text())
+    for item in TRAIN:
+        assert [entry["version"] for entry in lock["package"] if entry["name"] == item.name] == [version]
     if status == "release":
         assert published_version == version
         assert re.search(rf"^## \[{re.escape(version)}\] - \d{{4}}-\d{{2}}-\d{{2}}$", changelog, re.MULTILINE)
@@ -99,7 +115,7 @@ def test_cli_versions_match_project_metadata() -> None:
 
 def test_release_metadata_verifier_passes() -> None:
     result = subprocess.run(
-        [sys.executable, "scripts/verify_release.py"],
+        [sys.executable, "scripts/verify_release.py", "--distributions", str(CONTRACT)],
         check=False,
         capture_output=True,
         text=True,
@@ -107,6 +123,147 @@ def test_release_metadata_verifier_passes() -> None:
     )
     assert result.returncode == 0, result.stderr
     assert f"release metadata verified for {_project_version()}" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "mode", ["metadata", "environment", "artifacts", "pypi", "descriptor", "registry", "tag"]
+)
+@pytest.mark.parametrize("contract", ["missing", "unsplit"])
+def test_3x_cli_rejects_missing_or_unsplit_contract(tmp_path: Path, mode: str, contract: str) -> None:
+    (tmp_path / "pyproject.toml").write_text('[project]\nversion="3.0.0"\n')
+    command = [sys.executable, "scripts/verify_release.py", "--root", str(tmp_path)]
+    if mode != "metadata":
+        command.extend(["--publication-check", mode, "--tag", "v3.0.0", "--commit", "a" * 40])
+    if contract == "unsplit":
+        path = tmp_path / "unsplit.json"
+        path.write_text(json.dumps([TRAIN[0]._asdict()]))
+        command.extend(["--distributions", str(path)])
+    result = subprocess.run(command, capture_output=True, text=True, check=False, timeout=30)
+    assert result.returncode == 1
+    assert "3.x requires an explicit three-distribution contract" in result.stderr
+
+
+@pytest.mark.parametrize("version", ["3.0.0", "3.9.42"])
+def test_3x_library_metadata_and_manifest_reject_unsplit(
+    version: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(release, "DISTRIBUTIONS", (release.DISTRIBUTIONS[0],))
+    monkeypatch.setattr(release, "_version", lambda: version)
+    with pytest.raises(release.VerificationError, match="three-distribution"):
+        release.verify_metadata(require_publishable=False)
+    with pytest.raises(release.VerificationError, match="three-distribution"):
+        release.verify_manifest(
+            {
+                "schema_version": release.MANIFEST_SCHEMA,
+                "version": version,
+                "commit": "a" * 40,
+                "workflow_sha": "b" * 40,
+                "files": {},
+            },
+            version=version,
+            commit="a" * 40,
+        )
+
+
+@pytest.mark.parametrize("mutation", ["none", "source", "controls", "input", "commit", "missing"])
+def test_release_contract_is_identical_and_commit_bound(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str
+) -> None:
+    raw = CONTRACT.read_bytes()
+    source, controls = tmp_path / "source", tmp_path / "controls"
+    for root in (source, controls):
+        (root / "release").mkdir(parents=True)
+        (root / release.CONTRACT_PATH).write_bytes(raw)
+    supplied = tmp_path / "contract.json"
+    supplied.write_bytes(raw)
+    if mutation in {"source", "controls"}:
+        root = source if mutation == "source" else controls
+        (root / release.CONTRACT_PATH).write_bytes(raw + b"\n")
+    elif mutation == "input":
+        supplied.write_bytes(raw + b"\n")
+    elif mutation == "missing":
+        (source / release.CONTRACT_PATH).unlink()
+    monkeypatch.setattr(release, "ROOT", source)
+    monkeypatch.setattr(release, "CONTROL_ROOT", controls)
+
+    def committed(commit: str, paths: list[str]) -> dict[str, bytes]:
+        assert commit == "a" * 40 and paths == [release.CONTRACT_PATH]
+        return {release.CONTRACT_PATH: raw + (b"\n" if mutation == "commit" else b"")}
+
+    monkeypatch.setattr(release, "_commit_files", committed)
+    if mutation == "none":
+        release.verify_contract_binding(supplied, commit="a" * 40)
+    else:
+        with pytest.raises((release.VerificationError, OSError)):
+            release.verify_contract_binding(supplied, commit="a" * 40)
+
+
+@pytest.mark.parametrize("published", [False, True], ids=["before", "after"])
+@pytest.mark.parametrize("tag_state", ["absent", "approved", "other"])
+def test_3x_git_binding_is_commit_first(
+    monkeypatch: pytest.MonkeyPatch, published: bool, tag_state: str
+) -> None:
+    commit = "a" * 40
+    calls: list[tuple[str, ...]] = []
+
+    def git(*args: str) -> str:
+        calls.append(args)
+        if args == ("rev-parse", "HEAD"):
+            return commit
+        if args == ("tag", "--list", "v3.0.0"):
+            return "" if tag_state == "absent" else "v3.0.0"
+        if args == ("rev-parse", "refs/tags/v3.0.0^{commit}"):
+            if tag_state == "absent":
+                raise release.VerificationError("tag is missing")
+            return commit if tag_state == "approved" else "b" * 40
+        return ""
+
+    monkeypatch.setattr(release, "DISTRIBUTIONS", release.load_distributions(CONTRACT))
+    monkeypatch.setattr(release, "_version", lambda: "3.0.0")
+    monkeypatch.setattr(release, "_run_git", git)
+    monkeypatch.setattr(
+        release, "_commit_files", lambda *args: {release.CONTRACT_PATH: CONTRACT.read_bytes()}
+    )
+    valid = tag_state == ("approved" if published else "absent")
+    if valid:
+        release.verify_git_binding(
+            tag="v3.0.0" if published else None, commit=commit, require_landed=True, published=published
+        )
+        assert ("merge-base", "--is-ancestor", commit, "origin/main") in calls
+    else:
+        with pytest.raises(release.VerificationError):
+            release.verify_git_binding(
+                tag="v3.0.0" if published else None,
+                commit=commit,
+                require_landed=True,
+                published=published,
+            )
+
+
+def test_3x_publishable_check_accepts_commit_without_tag(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "verify_release.py",
+            "--require-publishable",
+            "--commit",
+            "a" * 40,
+            "--distributions",
+            str(CONTRACT),
+            "--environment-json",
+            "unused.json",
+        ],
+    )
+    monkeypatch.setattr(release, "_version", lambda: "3.0.0")
+    monkeypatch.setattr(release, "verify_metadata", lambda **kwargs: ("3.0.0", {}))
+    observed: list[dict[str, object]] = []
+    monkeypatch.setattr(release, "verify_git_binding", lambda **kwargs: observed.append(kwargs))
+    monkeypatch.setattr(release, "_load_json", lambda path: {})
+    monkeypatch.setattr(release, "verify_environment_protection", lambda *args: None)
+    monkeypatch.setattr(release, "DISTRIBUTIONS", release.DISTRIBUTIONS)
+    assert release.main() == 0
+    assert observed == [{"tag": None, "commit": "a" * 40, "require_landed": True}]
 
 
 def test_release_verifier_requires_public_tag_in_precommit_usage_comment(
@@ -200,7 +357,7 @@ def test_lock_version_must_equal_project_version(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setitem(
         RELEASE_VERIFIER["verify_metadata"].__globals__,
         "_locked_project_version",
-        lambda: "2.6.0",
+        lambda distribution="mcp-audits": "2.6.0" if distribution == "mcp-audits" else _project_version(),
     )
     with pytest.raises(
         RELEASE_VERIFIER["VerificationError"],
@@ -210,32 +367,30 @@ def test_lock_version_must_equal_project_version(monkeypatch: pytest.MonkeyPatch
 
 
 def test_candidate_state_is_never_publishable(tmp_path: Path) -> None:
-    """Pin the candidate refusal against a self-consistent synthetic candidate tree.
+    """Pin the candidate refusal against a self-consistent synthetic 3.x split tree.
 
     Every surface below has to agree with the injected candidate state, because
     the server.json, action-ref, dependency-floor, release-note, and changelog
     checks all run before the publishable gate is reached.
     """
     (tmp_path / "docs").mkdir()
-    (tmp_path / "pyproject.toml").write_text(
-        '[project]\nname = "mcp-audits"\nversion = "2.6.0"\n'
-        'dependencies = ["mcp>=2.2.0,<3.0", "cryptography>=50.0.0,<51.0", '
-        '"click>=8.3.3,<9.0", "anyio>=4.14.2"]\n'
-        '[project.scripts]\nmcp-audit = "mcp_audit.cli:main"\n'
-        'mcp-audits = "mcp_audit.cli:main"\n',
-        encoding="utf-8",
-    )
+    (tmp_path / "release").mkdir()
+    (tmp_path / "release/distributions.json").write_bytes(CONTRACT.read_bytes())
+    for item in TRAIN:
+        project = tmp_path / item.project
+        project.parent.mkdir(parents=True, exist_ok=True)
+        project.write_text(Path(item.project).read_text().replace(_project_version(), "3.0.0"))
     (tmp_path / "uv.lock").write_text(
-        'version = 1\n\n[[package]]\nname = "mcp-audits"\nversion = "2.6.0"\n',
+        "version = 1\n" + "".join(f'[[package]]\nname="{item.name}"\nversion="3.0.0"\n' for item in TRAIN),
         encoding="utf-8",
     )
     (tmp_path / "docs/release-state.json").write_text(
         json.dumps(
             {
                 "schema_version": "mcp-audit.release-state.v1",
-                "candidate_version": "2.6.0",
-                "published_version": "2.5.0",
-                "previous_version": "2.5.0",
+                "candidate_version": "3.0.0",
+                "published_version": "2.12.0",
+                "previous_version": "2.12.0",
                 "status": "candidate",
             }
         ),
@@ -245,14 +400,14 @@ def test_candidate_state_is_never_publishable(tmp_path: Path) -> None:
         json.dumps(
             {
                 "name": "io.github.saagpatel/mcp-audit",
-                "version": "2.5.0",
+                "version": "2.12.0",
                 "repository": {"url": "https://github.com/saagpatel/MCPAudit", "source": "github"},
                 "packages": [
                     {
                         "registryType": "pypi",
                         "registryBaseUrl": "https://pypi.org",
                         "identifier": "mcp-audits",
-                        "version": "2.5.0",
+                        "version": "2.12.0",
                         "runtimeHint": "uvx",
                         "transport": {"type": "stdio"},
                         "packageArguments": [{"type": "positional", "value": "serve"}],
@@ -263,17 +418,32 @@ def test_candidate_state_is_never_publishable(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     (tmp_path / "CHANGELOG.md").write_text(
-        "## [2.6.0] - Unreleased\n\n### Release boundary details\n\n"
-        "MCPAudit 2.6.0\nRelease status: candidate\nPublication decision: NO-GO\n"
-        "Retain mcp-audits==2.5.0.\n\n"
-        "[2.6.0]: https://github.com/saagpatel/MCPAudit/compare/v2.5.0...HEAD\n",
+        "## [3.0.0] - Unreleased\n\n### Release boundary details\n\n"
+        "MCPAudit 3.0.0\nRelease status: candidate\nPublication decision: NO-GO\n"
+        "Retain mcp-audits==2.12.0.\n\n"
+        "[3.0.0]: https://github.com/saagpatel/MCPAudit/compare/v2.12.0...HEAD\n",
         encoding="utf-8",
     )
-    (tmp_path / "README.md").write_text("uses: saagpatel/MCPAudit@v2.5.0\n", encoding="utf-8")
-    (tmp_path / ".pre-commit-hooks.yaml").write_text("#       rev: v2.5.0\n", encoding="utf-8")
+    (tmp_path / "README.md").write_text("uses: saagpatel/MCPAudit@v2.12.0\n", encoding="utf-8")
+    (tmp_path / ".pre-commit-hooks.yaml").write_text("#       rev: v2.12.0\n", encoding="utf-8")
     (tmp_path / "docs/ADOPTION-GUIDE.md").write_text(
-        "uses: saagpatel/MCPAudit@v2.5.0\nrev: v2.5.0\n", encoding="utf-8"
+        "uses: saagpatel/MCPAudit@v2.12.0\nrev: v2.12.0\n", encoding="utf-8"
     )
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/verify_release.py",
+            "--root",
+            str(tmp_path),
+            "--distributions",
+            str(CONTRACT),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
     original_root = RELEASE_VERIFIER["verify_metadata"].__globals__["ROOT"]
     RELEASE_VERIFIER["_set_root"](tmp_path)
     try:

@@ -824,7 +824,7 @@ def test_publication_cli_requires_every_pypi_readback(train_artifacts: Path, mut
         )
     )
     contract = train_artifacts.parent / "distributions.json"
-    contract.write_text(json.dumps(_contract()))
+    contract.write_bytes((Path(__file__).resolve().parents[1] / "release/distributions.json").read_bytes())
     responses: dict[str, object] = {}
     for item in TRAIN:
         responses[item.name] = {
