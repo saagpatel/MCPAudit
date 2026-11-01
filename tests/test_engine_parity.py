@@ -51,13 +51,13 @@ def _report_hashes(report: AuditReport) -> dict[str, str]:
 
 def _location_free(output: bytes) -> bytes:
     """Hash outputs independent of the checkout location (SARIF resolves paths to file URIs)."""
-    # The package version changes every release; parity is about engine behavior.
-    output = output.replace(__version__.encode(), b"<VERSION>")
+    # Replace checkout paths before the version, so a path containing the version stays intact.
     for root in {ROOT, Path.cwd().resolve()}:
         output = output.replace(root.as_uri().encode(), b"file:///REPO").replace(
             str(root).encode(), b"<REPO>"
         )
-    return output
+    # The package version changes every release; parity is about engine behavior.
+    return output.replace(__version__.encode(), b"<VERSION>")
 
 
 def _engine_hashes() -> dict[str, dict[str, str]]:

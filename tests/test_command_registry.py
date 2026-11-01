@@ -246,7 +246,7 @@ def test_pin_alias_keeps_baseline_pin_output_bytes(tmp_path: Path, monkeypatch: 
     assert alias.stderr_bytes == canonical.stderr_bytes
 
 
-def test_lab_help_shows_future_installs_without_importing_labs(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_lab_help_shows_installs_without_importing_labs(monkeypatch: pytest.MonkeyPatch) -> None:
     def forbidden_import(name: str) -> None:
         raise AssertionError(f"help imported {name}")
 
@@ -254,7 +254,7 @@ def test_lab_help_shows_future_installs_without_importing_labs(monkeypatch: pyte
     result = CliRunner().invoke(main, ["lab", "--help"])
     assert result.exit_code == 0, result.output
     help_text = " ".join(result.stdout.split())
-    assert "In 3.0" in help_text
+    assert "Install labs with:" in help_text
     assert "uv tool install 'mcp-audits[labs]'" in result.stdout
     assert "uv tool install mcp-audits-proof" in result.stdout
     assert "a uv tool extra does not expose its scripts" in help_text
@@ -287,7 +287,7 @@ result = CliRunner().invoke(main, ARGS)
 assert result.exit_code == 2, (result.exit_code, result.output)
 assert result.stdout == '', result.stdout
 assert (
-    "Optional distribution missing. In 3.0, install labs with: "
+    "Optional distribution missing. Install labs with: "
     "uv tool install 'mcp-audits[labs]'. "
 ) in result.stderr
 assert (
