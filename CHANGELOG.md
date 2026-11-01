@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The release checklist activates the three-distribution train with a
+  commit-first 3.x publish: dispatch on commit and version, a dry run, then the
+  approved run; the lightweight tag, GitHub Release, Registry workflow and a
+  `uvx --refresh` smoke of core, `mcp-audits[labs]` and `mcp-audits-proof` follow
+  only after all six files verify. It documents `resume=true` recovery inputs,
+  the interim install state, and the owner's trusted-publisher prerequisites.
+  The CI guide records the core-only 3.x Action and the exact `v3.0.0` tag with
+  no moving `v3` tag. Documentation only.
+
 - Publish dispatch now binds an approved commit and version before tagging, builds
   and smokes all six split artifacts and pinned extras, retains candidates for
   90 days, and reads back each ordered PyPI upload. Explicit recovery verifies
