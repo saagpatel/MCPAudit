@@ -15,7 +15,7 @@ The examples:
 Run them against any JSON report:
 
 ```bash
-mcp-audit scan --inject-check --json mcp-audit.json
+mcp-audit check --include-discovered --connect-all --inject-check --output-json mcp-audit.json
 python examples/consumers/parse_report.py mcp-audit.json
 python examples/consumers/dashboard_summary.py mcp-audit.json
 node examples/consumers/parse-report.mjs mcp-audit.json

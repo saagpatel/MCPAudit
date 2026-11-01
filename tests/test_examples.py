@@ -350,8 +350,9 @@ def test_golden_rollout_doc_is_linked_and_staged() -> None:
     readme = Path("README.md").read_text()
     adoption = Path("docs/ADOPTION-GUIDE.md").read_text()
 
-    assert "mcp-audit scan --skip-connect" in rollout
-    assert "mcp-audit scan --inject-check" in rollout
+    assert "mcp-audit check --include-discovered --output-json" in rollout
+    assert "mcp-audit check --include-discovered --connect-all --inject-check" in rollout
+    assert "mcp-audit scan" not in rollout
     assert "mcp-audit pin" in rollout
     assert "--policy examples/policies/balanced-team-ci.yaml" in rollout
     assert "maintainers/" in readme

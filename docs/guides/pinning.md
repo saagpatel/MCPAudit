@@ -6,7 +6,7 @@ you intend to trust.
 
 ```sh
 mcp-audit pin
-mcp-audit scan --pin-check
+mcp-audit check --include-discovered --connect-all --pin-check
 ```
 
 Pinning can start configured servers to obtain their tool surfaces. Run it only
@@ -84,8 +84,8 @@ key to the separate local trust store and verify the committed baseline:
 
 ```sh
 mcp-audit pin trust-key --add PUBLICHEX
-mcp-audit scan --config ./fixture.json --config-only --skip-connect \
-  --override-config /dev/null --pin-check --pin-file ./pins.yaml
+mcp-audit check --config ./fixture.json --override-config /dev/null \
+  --pin-check --pin-file ./pins.yaml
 ```
 
 This static command verifies baseline integrity but does not list live tools.
