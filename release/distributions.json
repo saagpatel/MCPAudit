@@ -1,0 +1,28 @@
+[
+  {
+    "name": "mcp-audits",
+    "module": "mcp_audit",
+    "module_root": "src",
+    "project": "pyproject.toml",
+    "scripts": {
+      "mcp-audit": "mcp_audit.cli:main",
+      "mcp-audits": "mcp_audit.cli:main"
+    }
+  },
+  {
+    "name": "mcp-audits-labs",
+    "module": "mcp_audit_labs",
+    "module_root": "src",
+    "project": "distributions/labs/pyproject.toml",
+    "scripts": {}
+  },
+  {
+    "name": "mcp-audits-proof",
+    "module": "proof_before_action",
+    "module_root": "src",
+    "project": "distributions/proof/pyproject.toml",
+    "scripts": {
+      "proof-before-action": "proof_before_action.proof_cli:main"
+    }
+  }
+]

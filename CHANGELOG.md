@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Release verification supports individual PyPI readbacks between split-package
+  uploads and a final `--publication-check tag` that requires all six published
+  files and the release tag at the approved landed commit.
 - Static discovering `scan` translations now append
   `--include-discovered --scan-compatible-sources`, including Claude Code,
   Cursor, unfiltered scans and the 2.11 hook form. Synthetic parity tests use
@@ -44,6 +47,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- For 3.x, pre-upload commit checks refuse an existing release tag. An explicit
+  three-package release contract must match `release/distributions.json` in source
+  and release controls byte for byte; the source contract is also bound to the
+  approved commit. Missing and explicitly unsplit contracts fail verification.
 - Move Proof Before Action's five modules from `mcp_audit.proof_*` to
   `proof_before_action.proof_*` in `mcp-audits-proof`. The `proof-before-action`
   command now belongs to that distribution; install it with

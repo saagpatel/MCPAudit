@@ -28,6 +28,8 @@ if TYPE_CHECKING:
     from packaging.requirements import Requirement
 
 ROOT = Path(__file__).resolve().parents[1]
+CONTROL_ROOT = ROOT
+CONTRACT_PATH = "release/distributions.json"
 RELEASE_STATE_PATH = ROOT / "docs/release-state.json"
 VERSION_RE = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 COMMIT_RE = re.compile(r"[0-9a-f]{40}")
@@ -72,7 +74,7 @@ OPTIONAL_EXTRAS = ("watch", "llm", "otel")
 
 
 def load_distributions(path: Path) -> tuple[Distribution, ...]:
-    """Load an explicit release contract; the unsplit train remains the default."""
+    """Load a release contract in publication order (unsplit is allowed only for 2.x)."""
     raw = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(raw, list) or not raw:
         raise VerificationError("distribution contract must be a nonempty list")
@@ -116,6 +118,24 @@ def load_distributions(path: Path) -> tuple[Distribution, ...]:
     return tuple(distributions)
 
 
+def _require_split_contract(version: str) -> None:
+    if version.startswith("3.") and tuple(item.name for item in DISTRIBUTIONS) != (
+        "mcp-audits",
+        "mcp-audits-labs",
+        "mcp-audits-proof",
+    ):
+        raise VerificationError("3.x requires an explicit three-distribution contract")
+
+
+def verify_contract_binding(path: Path, *, commit: str | None = None) -> None:
+    """Require identical reviewed, source and release-controls contracts."""
+    raw = path.read_bytes()
+    if raw != (CONTROL_ROOT / CONTRACT_PATH).read_bytes() or raw != (ROOT / CONTRACT_PATH).read_bytes():
+        raise VerificationError("source and release-controls distribution contracts must be byte-identical")
+    if commit is not None and _commit_files(commit, [CONTRACT_PATH]).get(CONTRACT_PATH) != raw:
+        raise VerificationError("distribution contract does not match the approved commit")
+
+
 def distribution_names(version: str, distribution: str = DISTRIBUTION_NAME) -> tuple[str, str]:
     if VERSION_RE.fullmatch(version) is None:
         raise VerificationError("invalid distribution version")
@@ -126,6 +146,7 @@ def distribution_names(version: str, distribution: str = DISTRIBUTION_NAME) -> t
 
 
 def _all_distribution_names(version: str) -> tuple[str, ...]:
+    _require_split_contract(version)
     return tuple(name for item in DISTRIBUTIONS for name in distribution_names(version, item.name))
 
 
@@ -361,6 +382,9 @@ def verify_environment_protection(raw: object, branch_policies: object = None) -
 def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object]]:
     project = _project()
     version = _version()
+    if RELEASE_BRANCH == "release/2.x" and not version.startswith("2."):
+        raise VerificationError("release/2.x requires a 2.x project version")
+    _require_split_contract(version)
     state = _release_state()
     server = json.loads(_read_text("server.json"))
     changelog = _read_text("CHANGELOG.md")
@@ -372,8 +396,6 @@ def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object
         raise VerificationError("project metadata has the wrong distribution name")
     _check_project_scripts(project, distribution=DISTRIBUTIONS[0], name="project metadata")
 
-    if RELEASE_BRANCH == "release/2.x" and not version.startswith("2."):
-        raise VerificationError("release/2.x requires a 2.x project version")
     for distribution in DISTRIBUTIONS[1:]:
         other = tomllib.loads(_read_text(distribution.project)).get("project", {})
         if other.get("name") != distribution.name or other.get("version") != version:
@@ -471,7 +493,9 @@ def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object
     return version, state
 
 
-def verify_git_binding(*, tag: str | None, commit: str, require_landed: bool) -> None:
+def verify_git_binding(
+    *, tag: str | None, commit: str, require_landed: bool, published: bool = False
+) -> None:
     version = _version()
     if COMMIT_RE.fullmatch(commit) is None:
         raise VerificationError("commit must be an exact lowercase 40-character Git object ID")
@@ -479,9 +503,16 @@ def verify_git_binding(*, tag: str | None, commit: str, require_landed: bool) ->
         raise VerificationError("checked-out HEAD does not match the approved commit")
     if _run_git("status", "--porcelain", "--untracked-files=all"):
         raise VerificationError("release checkout is dirty")
-    if tag is not None:
-        if tag != f"v{version}":
-            raise VerificationError(f"tag must be exactly v{version}")
+    if tag is not None and tag != f"v{version}":
+        raise VerificationError(f"tag must be exactly v{version}")
+    if version.startswith("3."):
+        _require_split_contract(version)
+        verify_contract_binding(ROOT / CONTRACT_PATH, commit=commit)
+        if not published and _run_git("tag", "--list", f"v{version}"):
+            raise VerificationError("release tag must not exist before publication")
+        if published and tag is None:
+            raise VerificationError("post-publication verification requires the release tag")
+    if tag is not None and (published or not version.startswith("3.")):
         if _run_git("rev-parse", f"refs/tags/{tag}^{{commit}}") != commit:
             raise VerificationError("release tag does not resolve to the approved commit")
     if require_landed:
@@ -1059,6 +1090,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--require-publishable", action="store_true")
     parser.add_argument("--dist-dir", type=Path)
     parser.add_argument("--distributions", type=Path, help="reviewed JSON distribution/script contract")
+    parser.add_argument(
+        "--distribution",
+        choices=sorted(KNOWN_DISTRIBUTIONS),
+        help="check one raw PyPI response between uploads; only with --publication-check pypi",
+    )
     parser.add_argument("--release-branch", choices=("main", "release/2.x"), default="main")
     parser.add_argument("--branch-policies-json", type=Path)
     parser.add_argument("--workflow-sha", help="exact workflow/control revision, separate from source commit")
@@ -1067,7 +1103,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--manifest-sha256", help="separately approved manifest digest")
     parser.add_argument("--response-json", type=Path)
     parser.add_argument(
-        "--publication-check", choices=("environment", "artifacts", "pypi", "descriptor", "registry")
+        "--publication-check",
+        choices=("environment", "artifacts", "pypi", "tag", "descriptor", "registry"),
+        help="tag verifies all PyPI readbacks and the tag at the approved landed commit",
     )
     return parser
 
@@ -1103,21 +1141,32 @@ def _publication_check(args: argparse.Namespace) -> None:
         hashes = verify_manifest(
             _load_json(args.manifest), version=version, commit=args.commit, workflow_sha=args.workflow_sha
         )
-        if args.publication_check == "pypi":
+        if args.publication_check in {"pypi", "tag"}:
             if args.manifest_sha256 is None:
                 raise VerificationError("PyPI verification requires separately approved manifest SHA-256")
             responses = _load_json(args.response_json)
-            if len(DISTRIBUTIONS) == 1:
+            selected = tuple(item for item in DISTRIBUTIONS if item.name == args.distribution)
+            if args.distribution is not None:
+                if not selected:
+                    raise VerificationError("selected distribution is not in the release contract")
+                responses = {args.distribution: responses}
+            else:
+                selected = DISTRIBUTIONS
+            if len(DISTRIBUTIONS) == 1 and args.distribution is None:
                 responses = {DISTRIBUTION_NAME: responses}
-            if not isinstance(responses, dict) or set(responses) != {item.name for item in DISTRIBUTIONS}:
+            if not isinstance(responses, dict) or set(responses) != {item.name for item in selected}:
                 raise VerificationError("PyPI readback must include every distribution")
-            for distribution in DISTRIBUTIONS:
+            for distribution in selected:
                 verify_pypi(
                     responses[distribution.name],
                     version=version,
                     hashes={name: hashes[name] for name in distribution_names(version, distribution.name)},
                     distribution=distribution.name,
                 )
+            if args.publication_check == "tag":
+                if _version() != version:
+                    raise VerificationError("tag version does not match the source checkout")
+                verify_git_binding(tag=args.tag, commit=args.commit, require_landed=True, published=True)
         elif args.dist_dir is None or dict(distribution_hashes(args.dist_dir, version)) != hashes:
             raise VerificationError("distribution digests do not match the approved manifest")
 
@@ -1128,8 +1177,17 @@ def main() -> int:
     _set_root(args.root)
     try:
         RELEASE_BRANCH = args.release_branch
+        DISTRIBUTIONS = (Distribution(DISTRIBUTION_NAME, "mcp_audit", "pyproject.toml", EXPECTED_SCRIPTS),)
         if args.distributions is not None:
             DISTRIBUTIONS = load_distributions(args.distributions)
+        version = args.tag[1:] if args.tag is not None else _version()
+        _require_split_contract(version)
+        if version.startswith("3."):
+            if args.distributions is None:
+                raise VerificationError("3.x requires --distributions")
+            verify_contract_binding(args.distributions)
+        if args.distribution is not None and args.publication_check != "pypi":
+            raise VerificationError("--distribution requires --publication-check pypi")
         if args.publication_check is not None:
             _publication_check(args)
             print(f"publication {args.publication_check} verified")
@@ -1137,8 +1195,14 @@ def main() -> int:
         version, _state = verify_metadata(require_publishable=args.require_publishable)
         if args.tag is not None and args.commit is None:
             raise VerificationError("--tag requires --commit")
-        if args.require_publishable and (args.tag is None or args.commit is None):
+        if (
+            args.require_publishable
+            and not version.startswith("3.")
+            and (args.tag is None or args.commit is None)
+        ):
             raise VerificationError("publish verification requires --tag and --commit")
+        if args.require_publishable and args.commit is None:
+            raise VerificationError("publish verification requires --commit")
         if args.require_publishable and args.environment_json is None:
             raise VerificationError("publish verification requires live PyPI environment state")
         if args.commit is not None:
