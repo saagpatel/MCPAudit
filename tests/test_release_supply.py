@@ -313,6 +313,51 @@ def test_registry_readback_reuses_exact_descriptor_assertion() -> None:
         release.verify_registry(changed, version=PUBLISHED_VERSION)
 
 
+@pytest.mark.parametrize("version", ["2.12.1", "3.0.0"])
+@pytest.mark.parametrize("latest", [True, False, None])
+def test_registry_latest_requirement_is_version_specific(version: str, latest: bool | None) -> None:
+    descriptor = _descriptor()
+    descriptor["version"] = version
+    package = _packages(descriptor)[0]
+    assert isinstance(package, dict)
+    package["version"] = version
+    official: dict[str, object] = {"status": "active"}
+    if latest is not None:
+        official["isLatest"] = latest
+    raw = {"server": descriptor, "_meta": {"io.modelcontextprotocol.registry/official": official}}
+    if version.startswith("2.") or latest is True:
+        release.verify_registry(raw, version=version)
+    else:
+        with pytest.raises(release.VerificationError, match="latest"):
+            release.verify_registry(raw, version=version)
+
+
+@pytest.mark.parametrize("official", [None, {}, {"status": "deleted", "isLatest": False}])
+def test_maintenance_registry_still_requires_active_status(official: object) -> None:
+    raw = {"server": _descriptor(), "_meta": {"io.modelcontextprotocol.registry/official": official}}
+    with pytest.raises(release.VerificationError, match="active"):
+        release.verify_registry(raw, version=PUBLISHED_VERSION)
+
+
+def test_maintenance_default_contract_is_unsplit() -> None:
+    assert release.DISTRIBUTIONS == (
+        release.Distribution(
+            "mcp-audits",
+            "mcp_audit",
+            "pyproject.toml",
+            {
+                "mcp-audit": "mcp_audit.cli:main",
+                "mcp-audits": "mcp_audit.cli:main",
+                "proof-before-action": "mcp_audit.proof_cli:main",
+            },
+        ),
+    )
+    assert release._all_distribution_names("2.12.1") == (
+        "mcp_audits-2.12.1-py3-none-any.whl",
+        "mcp_audits-2.12.1.tar.gz",
+    )
+
+
 @pytest.mark.parametrize("mutation", ["digest", "filename", "yanked", "extra"])
 def test_probe_release_binds_pypi_to_approved_manifest(distributions: Path, mutation: str) -> None:
     hashes = dict(release.distribution_hashes(distributions, VERSION))
