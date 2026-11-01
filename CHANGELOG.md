@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The release advisory gate (`scripts/check_advisories.py`) exits 2 when the build
   constraints file is missing, instead of warning and passing without build-input
   coverage, and queries OSV with canonical PyPI names (`uv-build`).
+- The OSV dependency advisory workflow runs on pull requests to `release/2.x` as
+  well as `main`, and a contract test pins its triggers, permissions and steps.
 
 ## [2.12.0] - 2026-10-12
 
