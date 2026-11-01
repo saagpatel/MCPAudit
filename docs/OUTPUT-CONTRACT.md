@@ -2404,7 +2404,20 @@ All profiles include `runs[].properties.mcpAuditCoverage` and invocation
 `toolExecutionNotifications` for partial, unrun, or unknown legacy coverage.
 These notifications describe completion rather than security findings;
 `executionSuccessful` does not imply complete coverage.
-The default `compatibility` profile retains existing rule and result families.
+The default `compatibility` profile retains existing rule and result families,
+and emits one warning-level `MCP-CH-CONFIG-PARSE-FAILURE` result for each
+`review_source_skipped` warning. This includes discovered sources rejected for
+symlinks (including symlinked ancestors), size above 1,048,576 bytes, nesting
+depth above 64, more than 20,000 containers, or more than 1,000 servers, including
+translated static `scan` runs. The result names the reason and the remedy
+`--config FILE` to select the source explicitly (explicit inputs still have
+size, nesting/container and server limits). It locates the source using the
+matching config-health finding's `config_paths`, with the same URI conversion
+and identifier redaction as other config-file results. Older reports without
+source paths omit locations. The rule is included in `tool.driver.rules` only
+when present. The existing `MCP-REVIEW-SOURCE-SKIPPED` invocation notification
+and `executionSuccessful: true` remain; exit codes are unchanged. Runs without
+source skips retain byte-identical compatibility output.
 CLI `--sarif-profile extended` (Python `generate(report, profile="extended")`)
 adds configuration-health results with stable IDs `MCP-CH-{FINDING-TYPE}`:
 the existing `finding_type` is uppercased, and underscores become hyphens
@@ -2414,6 +2427,8 @@ as `locations[].physicalLocation.artifactLocation.uri`, including parse failures
 with no parsed server. Results from old reports without source paths omit
 locations rather than inventing them. Scores and existing JSON config-health
 fields are unchanged.
+The extended profile is unchanged: its existing high-severity config parse
+failure is an error-level result, with no additional source-skip result.
 
 SARIF output uses stable MCP rule IDs:
 
