@@ -124,3 +124,110 @@ jobs:
 
       - name: Coverage gate
         run: uv run coverage report --fail-under=85
+
+  install-shape:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          python-version: "3.11"
+          version: "0.13.0"
+
+      - name: Build distribution wheels
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv build --package mcp-audits --wheel --build-constraints build-constraints.txt --out-dir dist
+          uv build --package mcp-audits-labs --wheel --build-constraints build-constraints.txt --out-dir dist
+          uv build --package mcp-audits-proof --wheel --build-constraints build-constraints.txt --out-dir dist
+          version="$(python3 -c 'import pathlib, tomllib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"])')"
+          echo "VERSION=${version}" >> "${GITHUB_ENV}"
+          ls -l dist
+
+      - name: Core-only install
+        shell: bash
+        run: |
+          set -euo pipefail
+          core="$RUNNER_TEMP/core"
+          uv venv "$core"
+          uv pip install --python "$core/bin/python" --find-links dist "dist/mcp_audits-${VERSION}-py3-none-any.whl"
+          uv pip list --python "$core/bin/python"
+
+          status=0
+          "$core/bin/mcp-audit" check --config "$PWD/examples/sandbox/fixtures/synthetic-mcp-config.json" \
+            --config-only --skip-connect --override-config /dev/null || status=$?
+          if [ "$status" -ne 0 ]; then
+            echo "core-only check exited $status, expected 0" >&2
+            exit 1
+          fi
+
+          notice="uv tool install 'mcp-audits[labs]'"
+          for command in "lab agent-ui" "safeforge run"; do
+            status=0
+            # shellcheck disable=SC2086
+            "$core/bin/mcp-audit" $command 2>"$RUNNER_TEMP/stderr.log" || status=$?
+            cat "$RUNNER_TEMP/stderr.log" >&2
+            if [ "$status" -ne 2 ]; then
+              echo "core-only '$command' exited $status, expected 2" >&2
+              exit 1
+            fi
+            if ! grep -qF "$notice" "$RUNNER_TEMP/stderr.log"; then
+              echo "core-only '$command' did not print the labs install command" >&2
+              exit 1
+            fi
+          done
+
+          if [ -e "$core/bin/proof-before-action" ] || PATH="$core/bin:/usr/bin:/bin" command -v proof-before-action; then
+            echo "proof-before-action is on PATH in a core-only install" >&2
+            exit 1
+          fi
+
+          "$core/bin/python" - <<'PY'
+          import importlib.metadata
+          import importlib.util
+
+          for distribution in ("mcp-audits-labs", "mcp-audits-proof"):
+              try:
+                  importlib.metadata.distribution(distribution)
+              except importlib.metadata.PackageNotFoundError:
+                  continue
+              raise SystemExit(f"{distribution} metadata is present in a core-only install")
+          for module in ("mcp_audit_labs", "proof_before_action"):
+              if importlib.util.find_spec(module) is not None:
+                  raise SystemExit(f"{module} is importable in a core-only install")
+          PY
+
+      - name: Proof-only install
+        shell: bash
+        run: |
+          set -euo pipefail
+          proof="$RUNNER_TEMP/proof"
+          uv venv "$proof"
+          uv pip install --python "$proof/bin/python" --find-links dist "dist/mcp_audits_proof-${VERSION}-py3-none-any.whl"
+          uv pip list --python "$proof/bin/python"
+
+          status=0
+          output="$("$proof/bin/proof-before-action" --version)" || status=$?
+          if [ "$status" -ne 0 ]; then
+            echo "proof-before-action --version exited $status, expected 0" >&2
+            exit 1
+          fi
+          if [ "$output" != "proof-before-action, version ${VERSION}" ]; then
+            echo "unexpected Proof version output: $output" >&2
+            exit 1
+          fi
+
+          if "$proof/bin/python" -c 'import mcp_audit'; then
+            echo "mcp_audit is importable in a Proof-only install" >&2
+            exit 1
+          fi
+          if "$proof/bin/python" -c 'import importlib.metadata as m; m.distribution("mcp-audits")'; then
+            echo "mcp-audits metadata is present in a Proof-only install" >&2
+            exit 1
+          fi
