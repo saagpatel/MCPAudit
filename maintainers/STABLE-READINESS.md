@@ -19,28 +19,32 @@ tests, and install path agree.
 - Known limitations are documented in release notes and beta/stable readiness
   docs.
 
-## Current 2.12.0 Release State
+## Current 3.0.0 Candidate State
 
-The 2.12.0 source state is a backward-compatible release. Its primary
-capability groups are `check`/`scan` parity, explicit fleet
-connections, migration notices and import boundaries, partial pin coverage,
-capability-selected CI grammar, and commit-bound release verification.
-The 3.0 boundary decisions are recorded; the package split and breaking
-changes do not ship in 2.12.
+The 3.0.0 source state is a candidate for review and CI validation only. It is
+the boundary release: the package splits into the lockstep `mcp-audits`,
+`mcp-audits-labs` and `mcp-audits-proof` distributions, `scan` becomes a
+legacy interceptor over `check` with the D22 exact translation, deprecated
+commands and aliases are removed, `serve`'s `scan_mcp_servers` is static by
+default, v1 pin baselines are withheld and fail requested pin-dependent
+checks, and release tooling publishes three distributions commit-first.
+Breaking changes are listed in the [migration guide](../docs/3.0-MIGRATION.md).
 Upgrade notes and remaining limitations are recorded in the changelog and
-[release notes](../docs/2.12-RELEASE-NOTES.md). The supported MCP dependency
-remains `mcp>=2.2.0,<3.0`. Existing 2.x audit-report and SARIF contracts remain
-additive. Package and lock metadata, `server.json`, Action examples, and
-pre-commit examples identify 2.12.0. That does not prove public availability:
-release evidence must query PyPI, GitHub, and the official MCP Registry
-separately.
+[candidate notes](../docs/3.0-RELEASE-NOTES.md). The supported MCP dependency
+remains `mcp>=2.2.0,<3.0`, and `schema_version` is unchanged. Package and lock
+metadata name 3.0.0 for all three distributions; `server.json`, Action
+examples, and pre-commit examples retain published 2.12.0. Publication remains
+`NO-GO`; source metadata does not prove public availability. Release evidence
+must query each external surface separately.
 
 Release evidence must establish:
 
-- package, lock metadata, changelog release section, versioned release notes,
-  `docs/release-state.json`, `server.json`, and Action/pre-commit examples agree
-  on 2.12.0; publication evidence must still report PyPI, the GitHub
-  tag, the Action ref, and the official Registry entry separately;
+- package, lock metadata for all three distributions, changelog candidate
+  section, versioned candidate notes, and `docs/release-state.json` agree on
+  candidate 3.0.0; `server.json` and Action/pre-commit examples retain
+  published 2.12.0 until a separate reviewed release-state flip. Publication
+  evidence must still report PyPI for all six files, the GitHub tag, the
+  Action ref, and the official Registry entry separately;
 - wheel and sdist metadata require `mcp>=2.2.0,<3.0` and expose `mcp-audit`
   and `mcp-audits`; core must not provide `proof-before-action`, which the
   `mcp-audits-proof` wheel and sdist expose instead;

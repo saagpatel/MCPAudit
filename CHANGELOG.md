@@ -5,93 +5,8 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [3.0.0] - Unreleased
 
-### Security
-
-- Raise the optional OpenTelemetry API minimum to 1.45.1 to address the
-  unbounded `tracestate` parsing advisory.
-
-### Changed
-
-- The release checklist activates the three-distribution train with a
-  commit-first 3.x publish: dispatch on commit and version, a dry run, then the
-  approved run; the lightweight tag, GitHub Release, Registry workflow and a
-  `uvx --refresh` smoke of core, `mcp-audits[labs]` and `mcp-audits-proof` follow
-  only after all six files verify. It documents `resume=true` recovery inputs,
-  the interim install state, and the owner's trusted-publisher prerequisites.
-  Main's `project.version` must stay at the release version only until the
-  Registry dispatch; publish and resume need only the distribution contract
-  and build constraints to match the approved commit byte for byte.
-  The CI guide records the core-only 3.x Action and the exact `v3.0.0` tag with
-  no moving `v3` tag. Documentation only.
-- Publish dispatch now binds an approved commit and version before tagging, builds
-  and smokes all six split artifacts and pinned extras, retains candidates for
-  90 days, and reads back each ordered PyPI upload. Explicit recovery verifies
-  the original run, control revision and manifest before staging only missing
-  files; dry runs rehearse a partial upload and retained-byte recovery offline.
-- MCP Registry publication verifies PyPI readbacks for all three contracted
-  distributions, keyed by distribution name, before validation and again before
-  OIDC publication.
-- Release verification supports partial PyPI readbacks between split-package
-  uploads with `--publication-check pypi --published-through NAME`, which checks
-  the contract-order prefix up to and including `NAME` (core; core and Labs; all
-  three) against the approved manifest, rejects a readback map with any other
-  keys, and reports `partial readback; not release completion`. A final
-  `--publication-check tag` requires all six published files and the release
-  tag at the approved landed commit. Every version outside 2.x, not only 3.x,
-  requires the three-distribution contract. The split rule applies when either
-  the `--tag` version or the checkout's `project.version` is outside 2.x, and
-  the two must be equal whenever both are present, so a 2.x tag can no longer
-  bypass the contract on a 3.x checkout. Before publication the release tag
-  must be absent both locally and on `origin` (`git ls-remote`); an unreadable
-  `origin` fails closed.
-- Compatibility SARIF emits one warning-level `MCP-CH-CONFIG-PARSE-FAILURE`
-  result per skipped discovered source, with its reason, source location and
-  `--config FILE` remedy, including translated static scans. Existing skip
-  notifications, exit codes and extended-profile results are unchanged.
-- Static discovering `scan` translations now append
-  `--include-discovered --scan-compatible-sources`, including Claude Code,
-  Cursor, unfiltered scans and the 2.11 hook form. Synthetic parity tests use
-  unchanged library discovery to compare redacted servers, counts, stable JSON
-  and policy exits; source-limit exceptions remain explicit in the notice.
-- Under the compatibility selector, VS Code configs with a malformed `mcp`
-  section retain earlier server-entry diagnostics before losing the file,
-  matching legacy discovery. Plain `check` behavior is unchanged.
-- Under the compatibility selector, an unreadable discovered source uses
-  `scan`'s `unreadable config file: ...` reason. The translation notice now
-  states that a source skipped by check's limits is reported as a
-  config-health finding (so `fail_on.config_health` can exit 2 where `scan`
-  exited 0), and the migration guide documents the zero-source
-  `no_sources_reviewed` warning and `scan`'s duplicate `~/.vscode/mcp.json`
-  parse when run from the home directory.
-- Correct the 3.0 proposal's 2.12 release statuses and record D22's opt-in
-  scan-compatible source selection for translated static checks.
-- Close out the 3.0 proposal: section 7 records each area in 3.0.0, and
-  section 8 marks D22 built and parity-proven, records owner decisions O-1 to
-  O-4, and records the implementation details that refined them.
-- Release builds pin `uv_build==0.12.24` exactly in `pyproject.toml` and in a new
-  `build-constraints.txt`. The publish workflow build and the release verifier's
-  reference build both pass `--build-constraints build-constraints.txt`.
-- The release advisory gate (`scripts/check_advisories.py`) exits 2 when the build
-  constraints file is missing, instead of warning and passing without build-input
-  coverage.
-- Scaffold a uv workspace with lockstep labs and independent Proof member
-  packages, `labs`, `proof` and `all` core extras that pin the satellites
-  exactly, and workspace-wide development installs. The `watch`, `llm` and
-  `otel` requirements are unchanged. Existing modules and console scripts remain
-  in core until the module moves. Release verification admits the complete `all`
-  extra, admits satellite references only as exact pins in those extras, rejects
-  a Proof core dependency, and selects each reference build explicitly by package.
-- Proof uses its own installed version and install notice, and source-checkout
-  producer provenance resolves the split module path from the repository root.
-- A CI `install-shape` job builds each wheel and installs the core and Proof
-  wheels alone into fresh environments. Core-only runs `check`, exits 2 with the
-  labs install command for `lab` and `safeforge` subcommands, and has no
-  `proof-before-action`; Proof-only runs `proof-before-action --version` without
-  core. Self-audit explicitly builds the core wheel, and `mypy .` type-checks all
-  three package source trees.
-- The PyPI publish workflow releases the three lockstep distributions commit-first: it dispatches on an approved commit and version, builds a six-file manifest with the exact build constraints, smokes every wheel and sdist plus the exact-pinned extras, uploads core, labs and proof in order with a PyPI readback after each, and supports `resume` from the original run's retained, manifest-verified bytes (never rebuilding) within the 90-day artifact retention. Recovery and publication verify against the approved commit's source, so a later version bump on main does not block them. The `vX.Y.Z` tag is created by the owner only after all six files verify.
 ### Breaking
 
 - For 3.x, pre-upload commit checks refuse an existing release tag. An explicit
@@ -180,6 +95,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `mcp_audit.engine.run_scan(ScanOptions(...))` and `mcp_audit.client_filter._parse_clients`;
   there is no replacement for `monitor` (use `shadow`, `watch`, or `check --pin-check`).
 
+### Upgrade notes
+
+- Read the [3.0 migration guide](docs/3.0-MIGRATION.md) before upgrading. It is
+  the authoritative list of every break, its replacement, and how to detect it
+  on 2.12.
+- Install Proof Before Action with `uv tool install mcp-audits-proof` and labs
+  with `uv tool install 'mcp-audits[labs]'`; `mcp-audits` alone installs core.
+- Bump the Action ref and its `version` input together, and the pre-commit
+  hook `rev` when ready. Use the exact `v3.0.0` tag or its reviewed commit;
+  there is no moving `v3` tag.
+- 2.x receives security-only fixes on `release/2.x` for 120 calendar days after
+  3.0.0, covering the package, Action and hook.
+- `schema_version` is unchanged. Consumers must tolerate the additive
+  compatibility SARIF skip results and the withheld-baseline exit 2.
+
+### Known issues
+
+- See [Known issues](docs/known-issues.md) for remaining limitations.
+
 ### Added
 
 - `docs/3.0-MIGRATION.md` lists every 3.0 break with its replacement and how
@@ -208,6 +142,109 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   redaction withheld served text are flagged in the terminal and listed in the
   additive `current_surface_redacted` array, without exposing the hidden text.
 - Restore the PR, weekly scheduled, and manually dispatched OSV dependency advisory workflow.
+
+### Changed
+
+- The release checklist activates the three-distribution train with a
+  commit-first 3.x publish: dispatch on commit and version, a dry run, then the
+  approved run; the lightweight tag, GitHub Release, Registry workflow and a
+  `uvx --refresh` smoke of core, `mcp-audits[labs]` and `mcp-audits-proof` follow
+  only after all six files verify. It documents `resume=true` recovery inputs,
+  the interim install state, and the owner's trusted-publisher prerequisites.
+  Main's `project.version` must stay at the release version only until the
+  Registry dispatch; publish and resume need only the distribution contract
+  and build constraints to match the approved commit byte for byte.
+  The CI guide records the core-only 3.x Action and the exact `v3.0.0` tag with
+  no moving `v3` tag. Documentation only.
+- Publish dispatch now binds an approved commit and version before tagging, builds
+  and smokes all six split artifacts and pinned extras, retains candidates for
+  90 days, and reads back each ordered PyPI upload. Explicit recovery verifies
+  the original run, control revision and manifest before staging only missing
+  files; dry runs rehearse a partial upload and retained-byte recovery offline.
+- MCP Registry publication verifies PyPI readbacks for all three contracted
+  distributions, keyed by distribution name, before validation and again before
+  OIDC publication.
+- Release verification supports partial PyPI readbacks between split-package
+  uploads with `--publication-check pypi --published-through NAME`, which checks
+  the contract-order prefix up to and including `NAME` (core; core and Labs; all
+  three) against the approved manifest, rejects a readback map with any other
+  keys, and reports `partial readback; not release completion`. A final
+  `--publication-check tag` requires all six published files and the release
+  tag at the approved landed commit. Every version outside 2.x, not only 3.x,
+  requires the three-distribution contract. The split rule applies when either
+  the `--tag` version or the checkout's `project.version` is outside 2.x, and
+  the two must be equal whenever both are present, so a 2.x tag can no longer
+  bypass the contract on a 3.x checkout. Before publication the release tag
+  must be absent both locally and on `origin` (`git ls-remote`); an unreadable
+  `origin` fails closed.
+- Compatibility SARIF emits one warning-level `MCP-CH-CONFIG-PARSE-FAILURE`
+  result per skipped discovered source, with its reason, source location and
+  `--config FILE` remedy, including translated static scans. Existing skip
+  notifications, exit codes and extended-profile results are unchanged.
+- Static discovering `scan` translations now append
+  `--include-discovered --scan-compatible-sources`, including Claude Code,
+  Cursor, unfiltered scans and the 2.11 hook form. Synthetic parity tests use
+  unchanged library discovery to compare redacted servers, counts, stable JSON
+  and policy exits; source-limit exceptions remain explicit in the notice.
+- Under the compatibility selector, VS Code configs with a malformed `mcp`
+  section retain earlier server-entry diagnostics before losing the file,
+  matching legacy discovery. Plain `check` behavior is unchanged.
+- Under the compatibility selector, an unreadable discovered source uses
+  `scan`'s `unreadable config file: ...` reason. The translation notice now
+  states that a source skipped by check's limits is reported as a
+  config-health finding (so `fail_on.config_health` can exit 2 where `scan`
+  exited 0), and the migration guide documents the zero-source
+  `no_sources_reviewed` warning and `scan`'s duplicate `~/.vscode/mcp.json`
+  parse when run from the home directory.
+- Correct the 3.0 proposal's 2.12 release statuses and record D22's opt-in
+  scan-compatible source selection for translated static checks.
+- Close out the 3.0 proposal: section 7 records each area in 3.0.0, and
+  section 8 marks D22 built and parity-proven, records owner decisions O-1 to
+  O-4, and records the implementation details that refined them.
+- Release builds pin `uv_build==0.12.24` exactly in `pyproject.toml` and in a new
+  `build-constraints.txt`. The publish workflow build and the release verifier's
+  reference build both pass `--build-constraints build-constraints.txt`.
+- The release advisory gate (`scripts/check_advisories.py`) exits 2 when the build
+  constraints file is missing, instead of warning and passing without build-input
+  coverage.
+- Scaffold a uv workspace with lockstep labs and independent Proof member
+  packages, `labs`, `proof` and `all` core extras that pin the satellites
+  exactly, and workspace-wide development installs. The `watch`, `llm` and
+  `otel` requirements are unchanged. Existing modules and console scripts remain
+  in core until the module moves. Release verification admits the complete `all`
+  extra, admits satellite references only as exact pins in those extras, rejects
+  a Proof core dependency, and selects each reference build explicitly by package.
+- Proof uses its own installed version and install notice, and source-checkout
+  producer provenance resolves the split module path from the repository root.
+- A CI `install-shape` job builds each wheel and installs the core and Proof
+  wheels alone into fresh environments. Core-only runs `check`, exits 2 with the
+  labs install command for `lab` and `safeforge` subcommands, and has no
+  `proof-before-action`; Proof-only runs `proof-before-action --version` without
+  core. Self-audit explicitly builds the core wheel, and `mypy .` type-checks all
+  three package source trees.
+- The PyPI publish workflow releases the three lockstep distributions commit-first: it dispatches on an approved commit and version, builds a six-file manifest with the exact build constraints, smokes every wheel and sdist plus the exact-pinned extras, uploads core, labs and proof in order with a PyPI readback after each, and supports `resume` from the original run's retained, manifest-verified bytes (never rebuilding) within the 90-day artifact retention. Recovery and publication verify against the approved commit's source, so a later version bump on main does not block them. The `vX.Y.Z` tag is created by the owner only after all six files verify.
+
+### Security
+
+- Raise the optional OpenTelemetry API minimum to 1.45.1 to address the
+  unbounded `tracestate` parsing advisory.
+
+### Release boundary details
+
+Release status: candidate
+Publication decision: NO-GO
+
+MCPAudit 3.0.0 is a candidate for review and CI validation only. This source
+state does not authorize tagging, publication, Registry mutation, deployment,
+or claims of downstream adoption. The release-state flip belongs in a separate
+reviewed PR after the candidate lands.
+
+Package and lock metadata name 3.0.0 for all three lockstep distributions
+(`mcp-audits`, `mcp-audits-labs`, `mcp-audits-proof`). Published-version
+metadata, the Registry descriptor, Action examples, and pre-commit examples
+remain at 2.12.0. Retain `mcp-audits==2.12.0` as the rollback pin and verify
+installed command identity after rollback. Source metadata and local tests are
+not publication readback.
 
 ## [2.12.0] - 2026-10-12
 
@@ -2864,6 +2901,7 @@ real workstations; API surface may still shift before the `1.0.0` stable cut.
 - `mcp-audit` CLI entry point
 
 [Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v2.12.0...HEAD
+[3.0.0]: https://github.com/saagpatel/MCPAudit/compare/v2.12.0...HEAD
 [2.12.0]: https://github.com/saagpatel/MCPAudit/compare/v2.11.0...v2.12.0
 [2.11.0]: https://github.com/saagpatel/MCPAudit/compare/v2.10.1...v2.11.0
 [2.10.1]: https://github.com/saagpatel/MCPAudit/compare/v2.10.0...v2.10.1
