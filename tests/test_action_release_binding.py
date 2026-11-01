@@ -126,7 +126,8 @@ def test_self_audit_builds_and_installs_the_local_versioned_wheel() -> None:
     build = next(step for step in steps if step.get("id") == "build")
     audit = next(step for step in steps if step.get("uses") == "./")
 
-    assert "uv build --wheel --out-dir dist" in build["run"]
+    assert "uv build --package mcp-audits --wheel --out-dir dist" in build["run"]
+    assert "mcp-audits-labs" not in build["run"] and "mcp-audits-proof" not in build["run"]
     assert "pyproject.toml" in build["run"]
     assert "mcp_audits-{version}-*.whl" in build["run"]
     setup_uv = next(step for step in steps if "astral-sh/setup-uv@" in step.get("uses", ""))
