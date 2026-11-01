@@ -171,6 +171,14 @@ def test_compatibility_emits_each_skip_but_not_unrelated_parse_failures(empty_re
         "file:///fixture/large.json",
     ]
     assert sum(rule["id"] == "MCP-CH-CONFIG-PARSE-FAILURE" for rule in run["tool"]["driver"]["rules"]) == 1
+    # Level is pinned to warning, but severity matches the JSON report's HIGH finding.
+    assert all(result["properties"]["severity"] == "high" for result in run["results"])
+    [rule] = [rule for rule in run["tool"]["driver"]["rules"] if rule["id"] == "MCP-CH-CONFIG-PARSE-FAILURE"]
+    assert rule["properties"]["severity"] == "high"
+    assert rule["fullDescription"]["text"] == (
+        "A discovered config source was skipped by review limits and not audited."
+    )
+    assert "/fixture/" not in json.dumps(rule)
 
 
 def test_extended_profile_emits_stable_config_health_rule_and_result(

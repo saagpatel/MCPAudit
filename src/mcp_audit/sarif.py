@@ -209,6 +209,9 @@ def _unique_config_health_findings(
     return [by_type[finding_type] for finding_type in sorted(by_type)]
 
 
+_SOURCE_SKIP_RULE_DESCRIPTION = "A discovered config source was skipped by review limits and not audited."
+
+
 def _skipped_source_findings(report: AuditReport) -> list[ConfigHealthFinding]:
     """Project each source-skip warning without including unrelated parse failures."""
     findings: list[ConfigHealthFinding] = []
@@ -225,7 +228,7 @@ def _skipped_source_findings(report: AuditReport) -> list[ConfigHealthFinding]:
         findings.append(
             ConfigHealthFinding(
                 finding_type="config_parse_failure",
-                severity=ConfigHealthSeverity.MEDIUM,
+                severity=ConfigHealthSeverity.HIGH,
                 summary=f"{warning.message} Select this source explicitly with --config FILE.",
                 remediation="Select this source explicitly with --config FILE.",
                 config_paths=paths,
@@ -250,8 +253,9 @@ class SarifGenerator:
         except PackageNotFoundError:
             tool_version = "0.0.0"
 
+        source_skips = profile == "compatibility"
         config_health = (
-            report.config_health_findings if profile == "extended" else _skipped_source_findings(report)
+            report.config_health_findings if not source_skips else _skipped_source_findings(report)
         )
         document: dict[str, Any] = {
             "version": "2.1.0",
@@ -263,10 +267,12 @@ class SarifGenerator:
                             "name": "mcp-audit",
                             "version": tool_version,
                             "informationUri": "https://github.com/saagpatel/MCPAudit",
-                            "rules": self._make_rules(config_health),
+                            "rules": self._make_rules(config_health, source_skips=source_skips),
                         }
                     },
-                    "results": self._make_results(report, config_health=config_health),
+                    "results": self._make_results(
+                        report, config_health=config_health, source_skips=source_skips
+                    ),
                 }
             ],
         }
@@ -419,7 +425,9 @@ class SarifGenerator:
             )
         return notifications
 
-    def _make_rules(self, config_health: list[ConfigHealthFinding] | None = None) -> list[dict[str, Any]]:
+    def _make_rules(
+        self, config_health: list[ConfigHealthFinding] | None = None, *, source_skips: bool = False
+    ) -> list[dict[str, Any]]:
         """One driver rule per PermissionCategory plus injection rules MCP007/MCP008."""
         perm_rules = [
             {
@@ -583,7 +591,9 @@ class SarifGenerator:
                 "id": _config_health_rule_id(finding.finding_type),
                 "name": f"ConfigHealth{finding.finding_type.title().replace('_', '')}",
                 "shortDescription": {"text": finding.finding_type.replace("_", " ").title()},
-                "fullDescription": {"text": finding.summary},
+                "fullDescription": {
+                    "text": _SOURCE_SKIP_RULE_DESCRIPTION if source_skips else finding.summary
+                },
                 "help": {"text": finding.remediation},
                 "helpUri": "https://github.com/saagpatel/MCPAudit#readme",
                 "properties": {"category": "config_health", "severity": finding.severity.value},
@@ -634,7 +644,11 @@ class SarifGenerator:
         )
 
     def _make_results(
-        self, report: AuditReport, *, config_health: list[ConfigHealthFinding] | None = None
+        self,
+        report: AuditReport,
+        *,
+        config_health: list[ConfigHealthFinding] | None = None,
+        source_skips: bool = False,
     ) -> list[dict[str, Any]]:
         """One result per (server, tool, category) triple, plus injection findings."""
         results: list[dict[str, Any]] = []
@@ -712,18 +726,29 @@ class SarifGenerator:
         if report.policy_result is not None:
             for violation in report.policy_result.violations:
                 results.append(self._make_policy_result(violation))
-        results.extend(self._make_config_health_result(finding) for finding in config_health or [])
+        results.extend(
+            self._make_config_health_result(finding, source_skip=source_skips)
+            for finding in config_health or []
+        )
         for result in results:
             message = result.get("message")
             if isinstance(message, dict) and isinstance(message.get("text"), str):
                 message["text"] = render_invisibles(message["text"])
         return results
 
-    def _make_config_health_result(self, finding: ConfigHealthFinding) -> dict[str, Any]:
+    def _make_config_health_result(
+        self, finding: ConfigHealthFinding, *, source_skip: bool = False
+    ) -> dict[str, Any]:
         rule_id = _config_health_rule_id(finding.finding_type)
+        # Compatibility source skips stay warnings while keeping the report's HIGH severity.
+        level = (
+            "warning"
+            if source_skip
+            else {"high": "error", "medium": "warning", "low": "note"}[finding.severity.value]
+        )
         result: dict[str, Any] = {
             "ruleId": rule_id,
-            "level": {"high": "error", "medium": "warning", "low": "note"}[finding.severity.value],
+            "level": level,
             "message": {"text": finding.summary},
             "partialFingerprints": {
                 "mcpAuditStableId": _stable_fingerprint(rule_id, finding.server_name or "", finding.summary)

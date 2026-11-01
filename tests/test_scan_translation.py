@@ -329,6 +329,13 @@ def test_translated_check_warns_when_legacy_source_exceeds_server_cap(
     assert finding["level"] == ("warning" if sarif_profile == "compatibility" else "error")
     if sarif_profile == "compatibility":
         assert "--config FILE" in finding["message"]["text"]
+    assert finding["properties"]["severity"] == "high"
+    assert sum(rule["id"] == finding["ruleId"] for rule in run["tool"]["driver"]["rules"]) == 1
+    [health] = payload["config_health_findings"]
+    assert health["severity"] == "high"
+    assert finding["locations"] == [
+        {"physicalLocation": {"artifactLocation": {"uri": Path(health["config_paths"][0]).as_uri()}}}
+    ]
     notifications = run["invocations"][0]["toolExecutionNotifications"]
     assert any(
         notice["descriptor"]["id"] == "MCP-REVIEW-SOURCE-SKIPPED"
