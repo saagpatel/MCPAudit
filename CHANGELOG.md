@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [3.0.0] - Unreleased
+## [3.0.0] - 2026-11-01
 
 ### Breaking
 
@@ -231,20 +231,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Release boundary details
 
-Release status: candidate
-Publication decision: NO-GO
+Release status: approved
+Publication decision: GO
 
-MCPAudit 3.0.0 is a candidate for review and CI validation only. This source
-state does not authorize tagging, publication, Registry mutation, deployment,
-or claims of downstream adoption. The release-state flip belongs in a separate
-reviewed PR after the candidate lands.
+MCPAudit 3.0.0 is the boundary release: the package split into three lockstep
+distributions, `scan` as a legacy interceptor over `check`, removal of
+deprecated commands and aliases, a static `scan_mcp_servers` default, withheld
+v1 pin baselines that fail requested pin-dependent checks, and commit-first
+three-distribution release tooling. This document authorizes the exact
+release-state source for review and publication gating; tag, GitHub Release,
+all three PyPI projects (`mcp-audits`, `mcp-audits-labs`, `mcp-audits-proof`),
+MCP Registry, runtime, deployment, adoption, and user-acceptance claims still
+require their own live readbacks.
 
-Package and lock metadata name 3.0.0 for all three lockstep distributions
-(`mcp-audits`, `mcp-audits-labs`, `mcp-audits-proof`). Published-version
-metadata, the Registry descriptor, Action examples, and pre-commit examples
-remain at 2.12.0. Retain `mcp-audits==2.12.0` as the rollback pin and verify
-installed command identity after rollback. Source metadata and local tests are
-not publication readback.
+Release metadata for all three distributions, the Registry descriptor, Action
+examples, pre-commit example, and `docs/release-state.json` identify 3.0.0.
+Until publication completes, those source references are proposed release
+identities rather than proof that any public artifact or Registry entry exists.
+Retain `mcp-audits==2.12.0` as the rollback pin and verify installed command
+identity after rollback; a rollback to 2.12.0 first runs
+`pip uninstall mcp-audits-labs mcp-audits-proof` if either was installed, then
+installs the pin (both 2.12.0 core and 3.0.0 Proof own the `proof-before-action`
+script, so uninstalling Proof after the downgrade would remove it).
 
 ## [2.12.0] - 2026-10-12
 
@@ -2900,8 +2908,8 @@ real workstations; API surface may still shift before the `1.0.0` stable cut.
 - Risk score output with pass/warn/fail thresholds
 - `mcp-audit` CLI entry point
 
-[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v2.12.0...HEAD
-[3.0.0]: https://github.com/saagpatel/MCPAudit/compare/v2.12.0...HEAD
+[Unreleased]: https://github.com/saagpatel/MCPAudit/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/saagpatel/MCPAudit/compare/v2.12.0...v3.0.0
 [2.12.0]: https://github.com/saagpatel/MCPAudit/compare/v2.11.0...v2.12.0
 [2.11.0]: https://github.com/saagpatel/MCPAudit/compare/v2.10.1...v2.11.0
 [2.10.1]: https://github.com/saagpatel/MCPAudit/compare/v2.10.0...v2.10.1
