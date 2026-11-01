@@ -30,14 +30,14 @@ test:
 lint:
 	uv run --locked ruff check .
 	uv run --locked ruff format --check
-	uv run --locked mypy src/ distributions/labs/src/ distributions/proof/src/
+	uv run --locked mypy .
 
 format:
 	uv run --locked ruff check --fix src/ tests/
 	uv run --locked ruff format src/ tests/
 
 typecheck:
-	uv run --locked mypy src/ distributions/labs/src/ distributions/proof/src/
+	uv run --locked mypy .
 
 clean:
 	rm -rf dist/ build/ .mypy_cache/ .ruff_cache/ .pytest_cache/
