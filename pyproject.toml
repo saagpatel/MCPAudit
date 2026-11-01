@@ -46,7 +46,7 @@ dependencies = [
 [project.optional-dependencies]
 watch = ["watchfiles>=1.1.1"]
 llm = ["anthropic>=0.40"]
-otel = ["opentelemetry-api>=1.44,<2"]
+otel = ["opentelemetry-api>=1.45.1,<2"]
 
 [project.urls]
 Homepage = "https://github.com/saagpatel/MCPAudit"

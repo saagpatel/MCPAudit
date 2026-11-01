@@ -97,6 +97,7 @@ def test_otel_extra_declares_the_api_dependency() -> None:
     assert api.marker is not None
     assert api.marker.evaluate({"extra": "otel"})
     assert not api.marker.evaluate({"extra": ""})
+    assert api.specifier == ">=1.45.1,<2"
 
 
 def test_server_spans_and_rule_count_events(report: AuditReport) -> None:
