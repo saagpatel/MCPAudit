@@ -190,7 +190,7 @@ async def test_sdk_fallback_bypasses_only_frame_cap_and_preserves_handshake() ->
     assert fallback.protocol == normal.protocol
 
 
-@pytest.mark.parametrize("command", ["scan", "check"])
+@pytest.mark.parametrize("command", ["check"])
 def test_cli_transmits_transport_options(
     command: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -202,7 +202,7 @@ def test_cli_transmits_transport_options(
         captured.append(options)
         raise ValueError("synthetic engine boundary")
 
-    module = "scan_cli" if command == "scan" else "check_cli"
+    module = "check_cli"
     monkeypatch.setattr(f"mcp_audit.{module}.run_scan", stop_at_engine)
     config = tmp_path / "synthetic.json"
     config.write_text('{"mcpServers":{}}')
@@ -218,7 +218,7 @@ def test_cli_transmits_transport_options(
         "5678",
         "--sdk-stdio-fallback",
     ]
-    if command == "scan":
+    if command == "check":
         args += ["--config-only", "--skip-connect"]
     result = CliRunner().invoke(main, args)
     assert result.exit_code == 1 and "synthetic engine boundary" in result.output
@@ -227,7 +227,7 @@ def test_cli_transmits_transport_options(
     assert options.sdk_stdio_fallback is True
 
 
-@pytest.mark.parametrize("command", ["scan", "check"])
+@pytest.mark.parametrize("command", ["check"])
 @pytest.mark.parametrize("flag", ["--max-frame-bytes", "--max-surface-bytes"])
 def test_cli_byte_caps_reject_zero(command: str, flag: str) -> None:
     from mcp_audit.cli import main

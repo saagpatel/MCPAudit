@@ -12,6 +12,36 @@ distribution exits 2 with the existing 2.12 install notice, including
 `uv tool install mcp-audits-proof` for the standalone Proof command on PATH.
 Unrelated import failures still propagate. This package move does not change
 lab report fields, report schemas, or the core `schema_version`.
+## Legacy scan interceptor (3.0)
+
+`scan` remains registered but is hidden from both top-level help views. It no
+longer has a separate execution or rendering path. The frozen option classifier
+runs before source reads. `would-silently-shrink` prints its reason and a
+shell-quoted replacement command on stderr, labelled **not exact**, then exits
+2 without scanning or writing artifacts. For example, bare `scan` suggests
+`mcp-audit check --include-discovered --connect-all`; the suggestion requires
+manual review and is never executed automatically. Unsafe argument values are
+withheld from both lines.
+
+`preserved` and explicitly `narrowed` forms print one translation notice on
+stderr, then parse and invoke the printed argv through `check`. Their stdout,
+artifact writing, validation and exit codes are those of `check`. In particular:
+
+- Terminal output uses check's summary and requested details. Each artifact
+  gets its own `Wrote PATH` line using the selected path, rather than scan's
+  combined basename list. `--card` uses check's card and sticker output.
+  Recheck suggestions use `check`, with explicit connection flags when the
+  finding requires a connected review.
+- Legacy `--json PATH` is refused with exit 2 and suggests `--output-json PATH`.
+  Use `check --json` for JSON-only stdout or `check --output-json PATH` for a
+  file. Accepted scan forms retain human-readable stdout.
+- Usage validation exits 2; input/output recovery errors exit 1 with check's
+  failed stage, recovery, scanned state and written paths. Policy failures
+  write requested reports before exit 2. Successful checks exit 0.
+
+The report schemas, `schema_version` and file formats are unchanged. Existing
+check source-limit diagnostics and its non-fatal `no_sources_reviewed` warning
+also apply to translated scans. See the [migration guide](guides/scan-migration.md).
 
 ## Report redaction
 
@@ -385,8 +415,9 @@ and no jokes on D/F (the renderer uses no jokes on any grade).
 this mode. `check --output-json FILE` writes the same document; `--sarif FILE`
 and `--html FILE` use the existing generators. These entry points share the
 same report model and `schema_version`, including additive `ux_summary`.
-Legacy `scan --json PATH`
-continues to write a file and retains its existing output behavior.
+Legacy `scan --json PATH` no longer writes a file: the interceptor refuses it
+with exit 2 before discovery and suggests `--output-json PATH` (see
+[Legacy scan interceptor (3.0)](#legacy-scan-interceptor-30)).
 
 `check` accepts the same optional detector flags, package verification/download
 and LLM modes, canary tuning, timeout and concurrency limits as `scan`. These
@@ -467,11 +498,13 @@ object. Config diagnostic summaries retain the redacted reason also in `details`
 `project`. Existing `project_path` values and `schema_version = 1` are unchanged.
 
 Project entries retain config-inferred permissions and `connection_status:
-"skipped"` unless `ScanOptions.connect_project_configs` is true. CLI `scan` and
-`watch` expose this as `--connect-project-configs`; `--skip-connect` takes
-precedence over the opt-in. `pin`, pin refresh, and all `serve` tools use the
+"skipped"` unless `ScanOptions.connect_project_configs` is true. CLI `watch`
+exposes this as `--connect-project-configs`; `--skip-connect` takes precedence
+over the opt-in. `check` accepts the opt-in only with `--connect` or
+`--connect-all`. Legacy `scan --connect-project-configs` is refused
+by the interceptor. `pin`, pin refresh, and all `serve` tools use the
 same project-skipping default. Workstation entries connect by default in the
-library, CLI `scan`/`watch`, `pin`, and the `serve` tools listed as connecting in
+library, CLI `watch`, `pin`, and the `serve` tools listed as connecting in
 [`serve` tool reach](#serve-tool-reach); `scan_mcp_servers` is static unless
 called with `connect=true`.
 A project-only scan that skips all entries has `connection_mode: "skipped"`;
@@ -767,13 +800,21 @@ gate requires both server records and the child record. See the
 
 ## Exit Codes
 
-- `0`: scan completed and no configured policy gate failed.
+- `0`: the review completed and no configured policy gate failed.
 - `1`: command setup failed, such as invalid client or policy config.
-- `2`: artifact path validation failed before any artifact was written, or the
-  scan completed and requested report artifacts were written but `--policy` failed.
+- `2`, before anything runs: usage or artifact path validation failed, or the
+  legacy `scan` interceptor refused a `would-silently-shrink` form. In these
+  cases nothing is discovered, scanned or connected and no report is written;
+  a refused `scan` prints its reason and a **not exact** replacement command
+  (or none) on stderr.
+- `2`, after reports are written: the review completed, requested report
+  artifacts were written, and the `--policy` gate failed.
+
+Accepted legacy `scan` forms run `check` with the printed argv and exit with
+`check`'s code.
 
 Subcommands with standalone experimental contracts document their own exit
-codes below; they do not change the stable scan exit contract.
+codes below; they do not change the stable review exit contract.
 
 ## Session Resume Fault Lab v1 (experimental)
 
@@ -1167,8 +1208,9 @@ These additions keep `schema_version` unchanged.
 
 ### Runtime canary fields (additive)
 
-`scan --canary-check` uses the existing `AuditReport` contract and scan exit
-codes. Each exercised audit includes `canary` with `requested_calls`,
+`check --canary-check` uses the existing `AuditReport` contract and the
+[review exit codes](#exit-codes); legacy `scan --canary-check` is refused by
+the interceptor. Each exercised audit includes `canary` with `requested_calls`,
 `completed_calls` (successful protocol `tools/call` responses),
 `prompt_get_calls` (attempted `prompts/get`, including errors),
 `baseline_hash` / `current_hash` (captured surface SHA256),
@@ -1504,8 +1546,8 @@ is equivalent. The notice names `check`'s additional acceptance limits using
 the review constants: the server cap per source and across accepted sources,
 source byte limit, nesting depth and container limits, and symlink refusal for
 discovered sources. Rejected discovered sources emit `review_source_skipped`;
-explicit limit violations remain setup errors. The shared translation notice
-and `check` warning path also apply to the 3.0 interceptor design.
+explicit limit violations remain setup errors. The 3.0 interceptor prints this
+notice and then runs the translated `check`, so `check`'s warning path applies.
 
 Discovering static translations append
 `--include-discovered --scan-compatible-sources`. The hidden selector is
@@ -2483,7 +2525,7 @@ Write SARIF for GitHub code scanning:
 
 ```yaml
 - name: Audit MCP servers
-  run: mcp-audit scan --sarif mcp-audit.sarif
+  run: mcp-audit check --include-discovered --sarif mcp-audit.sarif
 - name: Upload SARIF
   uses: github/codeql-action/upload-sarif@v4
   with:
@@ -2494,10 +2536,12 @@ Write SARIF for GitHub code scanning:
 Use JSON plus a local policy gate:
 
 ```bash
-mcp-audit scan --json mcp-audit.json --policy examples/policies/balanced-team-ci.yaml
+mcp-audit check --include-discovered --output-json mcp-audit.json --policy examples/policies/balanced-team-ci.yaml
 ```
 
-Exit code `2` means reports were written but the policy gate failed.
+Exit code `2` after this command means reports were written but the policy gate
+failed. A legacy `scan` form refused by the interceptor also exits `2`, but
+before anything is scanned or written; see [Exit Codes](#exit-codes).
 
 Copy-paste workflow examples live in `examples/ci/`:
 

@@ -43,7 +43,7 @@ launch-posts.md -> "Body / first comment"
 Field-report command that must appear in the first comment:
 
 ```bash
-mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
+mcp-audit check --include-discovered --output-json mcp-audit-field-report.json --redact
 ```
 
 ## Open Before Submit

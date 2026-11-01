@@ -58,7 +58,7 @@ under `tests/fixtures/reports/field/` and load through the current output model.
 External field reports should start with config-only output:
 
 ```bash
-uvx --from mcp-audits mcp-audit scan --skip-connect --json mcp-audit-field-report.json --redact
+uvx --from mcp-audits mcp-audit check --include-discovered --output-json mcp-audit-field-report.json --redact
 uvx --from mcp-audits mcp-audit --version
 ```
 

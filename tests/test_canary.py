@@ -180,7 +180,8 @@ def test_cli_canary_exports_existing_formats(tmp_path: Path) -> None:
     result = CliRunner().invoke(
         main,
         [
-            "scan",
+            "check",
+            "--connect-all",
             "--config",
             str(config),
             "--config-only",
@@ -191,7 +192,7 @@ def test_cli_canary_exports_existing_formats(tmp_path: Path) -> None:
             "15",
             "--canary-safe-tool",
             "fixture/status",
-            "--json",
+            "--output-json",
             str(outputs["json"]),
             "--sarif",
             str(outputs["sarif"]),
@@ -207,10 +208,10 @@ def test_cli_canary_exports_existing_formats(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("args", "message"),
     [
-        (["--canary-check"], "--canary-check requires --config PATH --config-only and a connection."),
+        (["--canary-check"], "--canary-check requires --config FILE and --connect --server or --connect-all"),
         (
             ["--canary-check", "--skip-connect"],
-            "--canary-check requires --config PATH --config-only and a connection.",
+            "--canary-check requires --config FILE and --connect --server or --connect-all",
         ),
         (
             ["--canary-check", "--canary-calls", "0"],
@@ -223,7 +224,7 @@ def test_cli_rejects_unsafe_canary_scope(
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    result = CliRunner().invoke(main, ["scan", *args])
+    result = CliRunner().invoke(main, ["check", *args])
     assert result.exit_code != 0
     assert message in result.output
 

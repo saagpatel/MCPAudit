@@ -258,7 +258,8 @@ def test_identity_count_cli_validation_and_forwarding(tmp_path: Path) -> None:
     )
     output = tmp_path / "report.json"
     args = [
-        "scan",
+        "check",
+        "--connect-all",
         "--config",
         str(config),
         "--config-only",
@@ -267,7 +268,7 @@ def test_identity_count_cli_validation_and_forwarding(tmp_path: Path) -> None:
         "--canary-check",
         "--canary-identities",
         "1",
-        "--json",
+        "--output-json",
         str(output),
     ]
     result = CliRunner().invoke(main, args)
@@ -275,7 +276,7 @@ def test_identity_count_cli_validation_and_forwarding(tmp_path: Path) -> None:
     audit = json.loads(output.read_text())["audits"][0]
     assert len(audit["canary"]["client_identities"]) == 1 and not audit["drift_findings"]
     for value in ("0", "3"):
-        result = CliRunner().invoke(main, ["scan", "--canary-identities", value])
+        result = CliRunner().invoke(main, ["check", "--connect-all", "--canary-identities", value])
         assert result.exit_code == 2 and "Invalid value for '--canary-identities'" in result.output
 
 

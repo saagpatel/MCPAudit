@@ -737,7 +737,7 @@ def test_coverage_policy_and_extended_sarif_cli(tmp_path: Path) -> None:
     result = CliRunner().invoke(
         main,
         [
-            "scan",
+            "check",
             "--config",
             "examples/sandbox/fixtures/synthetic-mcp-config.json",
             "--config-only",
