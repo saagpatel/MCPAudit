@@ -14,9 +14,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The release checklist activates the three-distribution train with a
+  commit-first 3.x publish: dispatch on commit and version, a dry run, then the
+  approved run; the lightweight tag, GitHub Release, Registry workflow and a
+  `uvx --refresh` smoke of core, `mcp-audits[labs]` and `mcp-audits-proof` follow
+  only after all six files verify. It documents `resume=true` recovery inputs,
+  the interim install state, and the owner's trusted-publisher prerequisites.
+  Main's `project.version` must stay at the release version only until the
+  Registry dispatch; publish and resume need only the distribution contract
+  and build constraints to match the approved commit byte for byte.
+  The CI guide records the core-only 3.x Action and the exact `v3.0.0` tag with
+  no moving `v3` tag. Documentation only.
+- Publish dispatch now binds an approved commit and version before tagging, builds
+  and smokes all six split artifacts and pinned extras, retains candidates for
+  90 days, and reads back each ordered PyPI upload. Explicit recovery verifies
+  the original run, control revision and manifest before staging only missing
+  files; dry runs rehearse a partial upload and retained-byte recovery offline.
 - MCP Registry publication verifies PyPI readbacks for all three contracted
   distributions, keyed by distribution name, before validation and again before
   OIDC publication.
+- Release verification supports partial PyPI readbacks between split-package
+  uploads with `--publication-check pypi --published-through NAME`, which checks
+  the contract-order prefix up to and including `NAME` (core; core and Labs; all
+  three) against the approved manifest, rejects a readback map with any other
+  keys, and reports `partial readback; not release completion`. A final
+  `--publication-check tag` requires all six published files and the release
+  tag at the approved landed commit. Every version outside 2.x, not only 3.x,
+  requires the three-distribution contract. The split rule applies when either
+  the `--tag` version or the checkout's `project.version` is outside 2.x, and
+  the two must be equal whenever both are present, so a 2.x tag can no longer
+  bypass the contract on a 3.x checkout. Before publication the release tag
+  must be absent both locally and on `origin` (`git ls-remote`); an unreadable
+  `origin` fails closed.
 - Compatibility SARIF emits one warning-level `MCP-CH-CONFIG-PARSE-FAILURE`
   result per skipped discovered source, with its reason, source location and
   `--config FILE` remedy, including translated static scans. Existing skip
@@ -78,9 +107,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   90 days, and reads back each ordered PyPI upload. Explicit recovery verifies
   the original run, control revision and manifest before staging only missing
   files; dry runs rehearse a partial upload and retained-byte recovery offline.
+- The PyPI publish workflow releases the three lockstep distributions commit-first: it dispatches on an approved commit and version, builds a six-file manifest with the exact build constraints, smokes every wheel and sdist plus the exact-pinned extras, uploads core, labs and proof in order with a PyPI readback after each, and supports `resume` from the original run's retained, manifest-verified bytes (never rebuilding) within the 90-day artifact retention. Recovery and publication verify against the approved commit's source, so a later version bump on main does not block them. The `vX.Y.Z` tag is created by the owner only after all six files verify.
 
 ### Breaking
 
+- For 3.x, pre-upload commit checks refuse an existing release tag. An explicit
+  three-package release contract must match `release/distributions.json` in source
+  and release controls byte for byte; the source contract is also bound to the
+  approved commit. Missing and explicitly unsplit contracts fail verification.
 - Move the 34 lab and SafeForge modules and the session/resume scenario corpus
   from `mcp_audit` to the optional `mcp_audit_labs` package. Install labs with
   `uv tool install 'mcp-audits[labs]'` and update Python imports. The core CLI
@@ -162,10 +196,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `_run_scan`/`_parse_clients` re-exports from `mcp_audit._core_cli`. Library callers use
   `mcp_audit.engine.run_scan(ScanOptions(...))` and `mcp_audit.client_filter._parse_clients`;
   there is no replacement for `monitor` (use `shadow`, `watch`, or `check --pin-check`).
-- For 3.x, pre-upload commit checks refuse an existing release tag. An explicit
-  three-package release contract must match `release/distributions.json` in source
-  and release controls byte for byte; the source contract is also bound to the
-  approved commit. Missing and explicitly unsplit contracts fail verification.
 
 ### Added
 

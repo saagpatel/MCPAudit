@@ -1,7 +1,9 @@
 # Release Checklist
 
-Use this checklist before tagging a public MCPAudit alpha, beta, release
-candidate, or stable release.
+Use this checklist before publishing a public MCPAudit alpha, beta, release
+candidate, or stable release. 3.x releases are commit-first: publication is
+bound to an approved commit and version, and the `vX.Y.Z` tag is created only
+after all six distribution files are published and verified.
 
 ## Local Verifier
 
@@ -13,10 +15,12 @@ uv run mypy .
 uv run ruff format --check
 git diff --check
 uv lock --check
-uv run python scripts/verify_release.py
+uv run python scripts/verify_release.py --distributions release/distributions.json
 candidate_commit="$(git rev-parse HEAD)"
-uv build --clear --no-create-gitignore --build-constraints build-constraints.txt
+uv build --all-packages --clear --no-create-gitignore \
+  --build-constraints build-constraints.txt
 uv run python scripts/verify_release.py \
+  --distributions release/distributions.json \
   --commit "$candidate_commit" \
   --dist-dir dist
 ```
@@ -69,8 +73,8 @@ so a quoted marker value such as `extra == "labs "` never passes as `labs`.
 - Wheel and sdist metadata require `mcp>=2.2.0,<3.0`; their contents contain no
   private paths, development caches, or generated local evidence.
 - Wheel and sdist metadata retain the `anyio>=4.14.2` security floor.
-- Record SHA-256 hashes for the exact wheel and sdist being considered for
-  publication.
+- Record SHA-256 hashes for the exact six files (a wheel and an sdist for each
+  of core, Labs and Proof) being considered for publication.
 
 ## Exact-Candidate Security Readback
 
@@ -157,149 +161,298 @@ Use a separate reviewed PR after the candidate has landed:
 Merging a candidate or release-state PR does not authorize tagging or
 publication.
 
-## Publish the Current Unsplit Package (Separately Authorized)
+## Three-Distribution Release Train
+
+Every release after 2.x ships as three lockstep distributions from one version
+and one clean source commit: **mcp-audits (core), mcp-audits-labs,
+mcp-audits-proof**, published in that order. Core extras `[labs]`, `[proof]`,
+and `[all]` pin the relevant satellites with `==X.Y.Z`; satellites pin core with
+`==X.Y.Z`. For `uv tool`, install `mcp-audits-proof` directly to put
+`proof-before-action` on PATH; installing core with an extra does not expose the
+extra's scripts. Include this instruction in every split-install or migration
+notice.
+
+The reviewed contract is the committed `release/distributions.json`. It is a
+list in publication order; each entry has `name`, `module`, `module_root`,
+`project`, and `scripts`, with paths relative to the checkout. Pass it with
+`--distributions release/distributions.json` to every verifier invocation,
+including publication checks. Any 3.x (or later) version fails closed without
+it, and an unsplit or reordered contract is rejected. The source copy, the
+release-controls copy and the copy at the approved commit must be byte
+identical. The backend uses each build project's `[tool.uv.build-backend]`
+`module-name` and `module-root` (default `src`) to locate its provenance file
+and tracked sources, and the source verifier requires all three project
+versions in the shared `uv.lock`. Installed Proof uses its own adjacent
+embedded provenance first.
+
+The `release/2.x` line keeps its unsplit contract on its own branch; see
+[2.x security maintenance](#release2x-security-maintenance).
+
+## Publish a 3.x Release (Commit-First, Separately Authorized)
+
+The release is bound to an approved commit and version, not to a tag. Main's
+`Publish to PyPI` workflow takes `commit` and `version` inputs, refuses an
+existing `vX.Y.Z` tag, and refuses any 2.x version. The tag is created only
+after all six files are published and verified.
+
+**What main must hold steady during the train.** Every verifier call in
+`publish.yml` (build, consumer smoke, resume and publish) passes `--root` at the
+approved commit's `release-source` checkout, so the publishing run and any
+[resume](#resume) read `project.version` from the approved commit, not from
+`main`. They do require `release/distributions.json` and `build-constraints.txt`
+to stay byte-identical between `main` (the release-controls checkout at
+`github.sha`) and the approved commit; either file changing on `main`
+mid-train makes those jobs fail closed. The `Publish to MCP Registry` workflow
+still runs unrooted verifier calls from the release-controls checkout, which
+require the tag to equal that checkout's `project.version`, so **main's
+`project.version` must still equal the release version when the Registry
+workflow is dispatched**. Do not land a version-bump PR on `main` before the
+Registry entry is published, and do not land release-tooling changes (the
+contract, build constraints, `scripts/verify_release.py`,
+`scripts/release_publish.py` or the release workflows) on `main` until the
+whole train is complete: all six files, the `vX.Y.Z` tag, the GitHub Release
+and the Registry entry. If the contract or build constraints diverge before
+publication finishes, resume becomes impossible and only the abandoned-version
+route in [Partial-Publication Recovery](#partial-publication-recovery) remains.
+
+### Owner Prerequisites
+
+- PyPI trusted publishers exist for `mcp-audits-labs` and `mcp-audits-proof`,
+  each bound to this repository, the `publish.yml` workflow and the `pypi`
+  environment, alongside the existing `mcp-audits` publisher. Neither
+  satellite project exists on PyPI yet, so the owner creates each as a
+  **pending** trusted publisher from the PyPI account's publishing settings
+  ("Add a new pending publisher": this repository, workflow `publish.yml`,
+  environment `pypi`); the pending publisher claims the project name on its
+  first upload. Prepare all three before the first live run: a missing
+  satellite publisher fails after core is already uploaded and leaves a
+  partial publication.
+- The `pypi` environment requires a named repository-owner reviewer, disables
+  administrator bypass, and has exactly one custom deployment policy for the
+  `main` branch (no tag or wildcard policies); otherwise stop with `NO-GO`.
+  Solo-maintainer approval remains permitted; stronger self-review protection
+  is accepted. This is not independent review, so the publication approval
+  must explicitly accept that limitation.
+
+### Rehearsal Before the First Split Release
+
+Run the pre-release rehearsal dry run only after item S-2 (labs moved into
+`mcp_audit_labs`) is on `main`. The consumer smoke expects core-only
+`mcp-audit lab agent-ui --help` to exit 2 with the Labs install notice, which
+holds only once the lab modules live in `mcp_audit_labs`. The dry run also
+rehearses a simulated partial upload and the retained-byte resume path end to
+end without publication authority.
+
+### Dry Run and Publication
 
 1. Obtain separate publication approval naming the exact 40-character merge
-   commit and `vX.Y.Z` tag. Confirm the `pypi` environment requires a named
-   repository-owner reviewer, disables administrator bypass, and has exactly one
-   custom deployment policy for the `main` branch (no tag or wildcard policies);
-   otherwise stop with `NO-GO`. Solo-maintainer approval remains permitted;
-   stronger self-review protection is accepted. This is not independent
-   review, so the publication approval must explicitly accept that limitation.
-2. Create the tag only after that approval. Tag creation does not publish.
-3. From the `main` branch, manually dispatch `Publish to PyPI` with the exact
-   tag and commit. Use the default `dry_run: true` first; it runs the build and
-   isolated consumer smoke without starting the OIDC publication job. A tag or
-   feature-branch dispatch fails before the build. A
-   typed confirmation is not authorization. The workflow reads back the live
-   environment protections and rechecks the tag/commit/main binding,
-   release-state gate, lockfile, tests, style, types, package metadata, and
-   clean build provenance.
-4. Review the build job's `release-manifest.json` and its SHA-256 before approval.
-   It binds exactly two version-derived filenames and digests to both the source
-   commit and workflow/control SHA. Dispatch with `dry_run: false` only for the
-   separately approved publication. The protected `publish` job independently
-   rechecks the file set and hashes. OIDC capability is granted to the entire job;
-   its earlier steps already possess that capability before hash verification.
-   Consumer install smokes run in a separate read-only job using disposable
-   copies, with no write authority over the retained publication candidates.
-5. Confirm the PyPI release JSON and simple index include the new version.
-6. Create or update the matching GitHub Release notes and attach the approved
-   `release-manifest.json` as a durable asset. Retain its independently reviewed
-   SHA-256 for the Registry dispatch; the short-lived workflow artifact alone is
-   not a durable approval record.
-7. Confirm the existing protected `pypi` release environment still has required
-   reviewers with administrator bypass disabled. The Registry workflow reuses
-   this gate for a separate post-PyPI approval rather than creating a second,
-   potentially unprotected environment on first use.
-8. From `main`, manually dispatch `Publish to MCP Registry` with the same exact
-   tag, commit, and approved manifest SHA-256 only after PyPI and GitHub Release readback. Its validation job
-   proves the PyPI prerequisite, release binding, protected environment, pinned
-   publisher hash, exact descriptor tuple, and non-yanked PyPI filenames and
-   SHA-256 values before the environment-bound OIDC
-   job can run.
-   The publish job rechecks the shared environment policy, approved PyPI manifest,
-   and exact descriptor immediately before login, then uses the same tuple
-   assertion for the official Registry readbacks.
-9. Confirm both the exact-version and `latest` official Registry endpoints name
-   `io.github.saagpatel/mcp-audit` at the released version with the exact PyPI package
-   tuple. Registry metadata does not prove artifact hashes, installation,
-   runtime uptake, adoption, or human effectiveness.
+   commit and the `X.Y.Z` version. Do not create the tag: every pre-publication
+   check fails with `release tag must not exist before publication` while
+   `vX.Y.Z` exists. Merging a candidate or release-state PR does not authorize
+   publication.
+2. From the `main` branch, manually dispatch `Publish to PyPI` with the exact
+   `commit` and `version`, leaving the default `dry_run: true`. A feature-branch
+   dispatch, a 2.x version, or recovery inputs without `resume` fail before the
+   build. A typed confirmation is not authorization. The build job reads back
+   the live environment protections and rechecks the commit/main binding,
+   absent tag, release-state gate, distribution contract, advisories, lockfile,
+   tests, style, types and clean build provenance, then builds all workspace
+   packages.
+3. Review the build job's `release-manifest.json` and the `manifest SHA-256`
+   it logs. The manifest binds exactly six version-derived filenames (a wheel
+   and an sdist for each distribution) and their digests to both the source
+   commit and the workflow/control SHA. The consumer smoke installs every
+   wheel and sdist and each exact-pinned extra offline from disposable copies,
+   runs `proof-before-action` wherever the Proof distribution is installed,
+   asserts that core and Labs alone do not provide it, and rechecks the file
+   set and digests afterwards.
+   The candidate artifact `mcp-audits-X.Y.Z` is retained for 90 days.
+4. Dispatch again with `dry_run: false` only for the separately approved
+   publication. The protected `publish` job waits for the owner's `pypi`
+   environment approval; approve it only after reviewing that run's manifest
+   and SHA-256. The run rebuilds, so its manifest digest may differ from the
+   dry run's (a changed control SHA or non-reproducible build output changes
+   it); either way, approve the digest that this publishing run's build job
+   logged. To publish the exact dry-run bytes instead, use [Resume](#resume)
+   against the dry-run run. OIDC capability is granted to the entire job; its
+   earlier steps already possess that capability before hash verification.
+   This run's verifier calls are rooted at the approved commit, so it does not
+   depend on main's `project.version`; `release/distributions.json` and
+   `build-constraints.txt` on `main` must still be byte-identical to the
+   approved commit's (see the section introduction above).
+5. The `publish` job re-reads the environment, rechecks the landed source and
+   the absent tag, downloads the retained candidates, verifies them against the
+   manifest, and stages each distribution in its own folder. It then uploads
+   core, reads back `mcp-audits` with `--publication-check pypi
+   --published-through mcp-audits`, uploads labs and reads back through
+   `mcp-audits-labs`, uploads proof and reads back through `mcp-audits-proof`,
+   and finally requires the complete six-file publication. It stops on the
+   first failure. If the version already partly exists on PyPI, a non-resume
+   run refuses to stage; use [Resume](#resume).
+
+### Interim Install State
+
+Between the core upload and the final six-file readback, the version is only
+partly installable. While core is published but labs and proof are not,
+`mcp-audits[labs]==X.Y.Z` (and `[proof]` and `[all]`) cannot resolve, and
+`mcp-audits-proof==X.Y.Z` does not exist. Plain `mcp-audits==X.Y.Z` may install.
+Do not advertise, announce or smoke the new version as installable in this
+state. **Every public pointer stays frozen until all six files verify:** no
+tag, GitHub Release, Registry entry, Action ref or hook ref advances, and the
+previous complete release remains the documented install, Action and hook
+target. References that the merged release state already names as `vX.Y.Z`
+do not resolve until the tag exists; do not point users at them. If the run
+cannot complete, follow
+[Partial-Publication Recovery](#partial-publication-recovery).
+
+### Tag, GitHub Release and Registry
+
+Only after the publish job's six-file check succeeds:
+
+1. The owner creates the lightweight `vX.Y.Z` tag at the approved commit and
+   pushes it. Tag creation does not publish.
+
+   ```bash
+   git fetch --force --tags origin main
+   git tag "vX.Y.Z" "$approved_commit"
+   git push origin "refs/tags/vX.Y.Z"
+   ```
+
+2. Verify all six PyPI files and the tag together from a clean checkout of the
+   approved commit. Keep the downloaded manifest and readbacks outside the
+   checkout, because the verifier rejects a dirty tree.
+
+   ```bash
+   tmp="$(mktemp -d)"
+   gh run download "$run_id" --name "mcp-audits-X.Y.Z" --dir "$tmp/release"
+   for name in mcp-audits mcp-audits-labs mcp-audits-proof; do
+     curl --fail --silent --show-error \
+       "https://pypi.org/pypi/$name/X.Y.Z/json" --output "$tmp/pypi-$name.json"
+   done
+   python3 -c 'import json, sys; print(json.dumps({n: json.load(open(f"{sys.argv[1]}/pypi-{n}.json")) for n in ("mcp-audits", "mcp-audits-labs", "mcp-audits-proof")}))' \
+     "$tmp" > "$tmp/pypi-readback.json"
+   git switch --detach "$approved_commit"
+   uv run --no-project --with packaging==26.0 python scripts/verify_release.py \
+     --distributions release/distributions.json --publication-check tag \
+     --tag "vX.Y.Z" --commit "$approved_commit" --workflow-sha "$control_sha" \
+     --manifest "$tmp/release/release-manifest.json" \
+     --manifest-sha256 "$manifest_sha256" --response-json "$tmp/pypi-readback.json"
+   ```
+
+   `run_id`, `control_sha` and `manifest_sha256` are the publishing run's
+   values (for a resumed publication, the original run's; see
+   [Resume](#resume)).
+3. Create the GitHub Release from the existing tag and attach the approved
+   manifest as a durable asset. Retain its independently reviewed SHA-256 for
+   the Registry dispatch; the 90-day workflow artifact alone is not a durable
+   approval record.
+
+   ```bash
+   gh release create "vX.Y.Z" --verify-tag --latest \
+     --title "vX.Y.Z" --notes-file RELEASE_NOTES.md \
+     "$tmp/release/release-manifest.json"
+   ```
+
+   `RELEASE_NOTES.md` is a placeholder for this version's reviewed release
+   notes file, not an existing repository file: for 3.0.0 it is
+   `docs/3.0-RELEASE-NOTES.md`, created by the candidate PR.
+
+4. Confirm the protected `pypi` environment still has required reviewers with
+   administrator bypass disabled. The Registry workflow reuses this gate for a
+   separate post-PyPI approval rather than creating a second, potentially
+   unprotected environment on first use.
+5. From `main`, manually dispatch `Publish to MCP Registry` with the exact
+   `vX.Y.Z` tag, the approved commit, and the approved manifest SHA-256. Its
+   validation job downloads the manifest from the GitHub Release, reads back
+   all three distributions from PyPI keyed by name, and proves the release
+   binding, protected environment, pinned publisher hash, exact descriptor
+   tuple, and non-yanked PyPI filenames and SHA-256 values before the
+   environment-bound OIDC job can run. The publish job rechecks the shared
+   environment policy, the three-way PyPI readback and the exact descriptor
+   immediately before login.
+   Main's `project.version` must still equal `X.Y.Z` for this dispatch: this
+   is the one step of the train that depends on it. The Registry workflow's
+   unrooted verifier calls run from the release-controls checkout at
+   `github.sha` and require the tag to equal that checkout's version, so a
+   version bump landed on main before this step makes every check fail closed
+   and the Registry entry cannot be published for this version.
+6. Confirm both the exact-version and `latest` official Registry endpoints name
+   `io.github.saagpatel/mcp-audit` at the released version with the exact PyPI
+   package tuple. Registry metadata does not prove artifact hashes,
+   installation, runtime uptake, adoption, or human effectiveness.
+7. Run the [post-publication install smoke](#post-publication-install-smoke).
+   Only then may the release be announced as installable.
 
 Never re-run or bypass a failed publish gate. Repair the release state through a
 new reviewed commit and obtain a new exact approval.
 
-## Three-Distribution Release Train (Groundwork; Not Active Yet)
+### Resume
 
-The current package is still unsplit. The following contract takes effect when
-the separate distribution projects land; it does not authorize publication or
-change the current workflows. Before activation, refactor their tag-first gates
-to verify an approved commit before publication and create the tag afterwards.
-Do not use the unsplit workflow's tag-first sequence for a split release.
+Recovery is a dispatch of the same `Publish to PyPI` workflow from `main` with
+`resume: true` and the original approvals. The resume and publish jobs root
+every verifier call at the approved commit (`--root release-source`), so a
+version bump on main does not block resume. Resume does require
+`release/distributions.json` and `build-constraints.txt` on `main` to be
+byte-identical to the approved commit's; if either has diverged, resume is
+impossible and only the abandoned-version route in
+[Partial-Publication Recovery](#partial-publication-recovery) remains.
 
-All three distributions use one version and one clean source commit. Publish in
-this order: **mcp-audits (core), mcp-audits-labs, mcp-audits-proof**. Core extras
-`[labs]`, `[proof]`, and `[all]` pin the relevant satellites with `==X.Y.Z`;
-satellites pin core with `==X.Y.Z`. Verify every wheel and sdist before upload.
-For `uv tool`, install `mcp-audits-proof` directly to put `proof-before-action`
-on PATH; installing core with an extra does not expose the extra's scripts.
-Include this instruction in every split-install or migration notice.
+| Input | Value | Where it comes from |
+| --- | --- | --- |
+| `version`, `commit` | Unchanged | The original approval. |
+| `resume` | `true` | Recovery inputs are rejected without it. |
+| `run_id` | The original run's ID | The original `Publish to PyPI` run whose build and consumer smoke succeeded (its run URL, or `gh run list --workflow publish.yml`). |
+| `manifest_sha256` | The approved manifest digest | The approval packet; it is the `manifest SHA-256` the original build job logged. |
+| `control_sha` | The original release-controls SHA | The original run's head SHA, logged by its build job as `workflow_sha` and recorded in the manifest's `workflow_sha`. |
 
-Pass a reviewed JSON contract with `--distributions FILE` to every verifier
-invocation (including publication checks). It is a list in publication order;
-each entry has `name`, `module`, `module_root`, `project`, and `scripts`. Paths
-are relative to the checkout, and `project` identifies that distribution's
-pyproject. For example, the future layout could use:
+Before any publication authority, the workflow verifies that `run_id` is a
+completed `workflow_dispatch` run of `.github/workflows/publish.yml` on `main`
+in this repository at exactly `control_sha`, that its build and consumer-smoke
+jobs succeeded, and that its `mcp-audits-X.Y.Z` artifact is still retained. It
+skips build and smoke, downloads the retained bytes, checks the manifest
+against `manifest_sha256`, the source commit and `control_sha`, and checks every
+file digest. It reads PyPI and stages only the files that are missing, because
+the publish action fails a whole directory if one filename already exists. A
+yanked file, an unexpected filename or any digest mismatch stops recovery.
+With `dry_run: true` it rehearses the recovery without publishing; with
+`dry_run: false` the `publish` job uploads the missing files in core, labs,
+proof order after the owner's environment approval, reads back after each, and
+requires all six files.
 
-```json
-[
-  {"name": "mcp-audits", "module": "mcp_audit", "module_root": "src",
-   "project": "pyproject.toml",
-   "scripts": {"mcp-audit": "mcp_audit.cli:main", "mcp-audits": "mcp_audit.cli:main"}},
-  {"name": "mcp-audits-labs", "module": "mcp_audit_labs", "module_root": "src",
-   "project": "distributions/labs/pyproject.toml", "scripts": {}},
-  {"name": "mcp-audits-proof", "module": "proof_before_action", "module_root": "src",
-   "project": "distributions/proof/pyproject.toml",
-   "scripts": {"proof-before-action": "proof_before_action.proof_cli:main"}}
-]
-```
+`resume: true` against a dry-run original publishes those previously dry-run
+bytes after the owner's environment approval. That is the supported way to
+publish exactly the artifacts reviewed in a dry run, and it means that dry
+run's manifest SHA-256 must be the approved one.
 
-This is an example contract, not an implemented layout or entry point. The
-default remains the current single package and its three scripts. The backend
-uses each build project's `[tool.uv.build-backend]` `module-name` and
-`module-root` (default `src`) to locate its provenance file and tracked sources.
-Keep the wrapper beside that build project's pyproject; the actual split must
-arrange those build roots. The source verifier requires all three project
-versions in the checkout's shared `uv.lock`.
-Proof derives its checkout path from its Python package; a changed source
-layout can supply `_producer_state(source_path=Path(...))` explicitly. Installed
-Proof still uses its own adjacent embedded provenance first.
-
-1. Build all six artifacts from the same approved clean commit and verify
-   them together in one `dist/` directory. Use the same contract for metadata,
-   scripts, provenance, manifest creation, and artifact rechecks. Retain the
-   manifest and its independently approved SHA-256; it names all six files.
-2. Run isolated wheel and sdist install smokes for each distribution and for
-   the exact-pinned extras. Prepare all trusted-publisher destinations before
-   the first upload. Obtain exact source and control-revision approval.
-3. Upload core, then labs, then proof, using only the approved artifacts.
-   Read back each distribution's exact-version PyPI JSON, filenames, non-yanked
-   status and SHA-256. For the verifier's `--publication-check pypi`, provide
-   one JSON object keyed by all three distribution names, whose values are the
-   respective PyPI responses; verify against the approved six-file manifest.
-4. **No tag, GitHub Release, Registry entry, or Action ref advances until all
-   three pinned wheels and sdists are published and verified.** Only then
-   create the tag at the approved commit, attach the durable manifest to the
-   GitHub Release, and run the gated Registry and Action-ref updates. Check
-   the exact package, Action and hook readbacks; no moving ref is build proof.
+Resume never rebuilds, never overwrites a file, never reruns the whole upload,
+and never uses `--skip-existing`. Retained artifacts expire after 90 days; an
+expired or missing artifact is an explicit failure, and the fix is a new
+lockstep patch version, not a rebuild of this one.
 
 ### Partial-Publication Recovery
 
-If any upload or readback fails, freeze every public release pointer. Record
-which of the six approved files exist, their digests and yanked status. Retain
-the previous complete release as the documented package, Action and hook
-rollback target. A partly published version can have unavailable exact pins;
-do not advertise it as installable.
+If any upload or readback fails, freeze every public release pointer (see
+[Interim Install State](#interim-install-state)). Record which of the six
+approved files exist, their digests and yanked status. Retain the previous
+complete release as the documented package, Action and hook rollback target.
 
-For a transient failure, read back already uploaded files against the original
-manifest. If they match, obtain approval to resume only missing files in
-core/labs/proof order, with the original source, control revision and bytes.
-Never rebuild, overwrite files, blindly rerun the entire upload, or use
-`--skip-existing` as verification. Recheck all six files before advancing any
-pointer. An existing filename with a different digest stops recovery.
+For a transient failure, obtain approval to [resume](#resume) with the original
+`run_id`, `manifest_sha256` and `control_sha`. Recheck all six files before
+advancing any pointer. An existing filename with a different digest stops
+recovery.
 
-If any published artifact is wrong or completion is impossible, do not reuse
-the version. With explicit approval, yank the partial release's uploaded files
-with a reason; deletion is not rollback. Prepare a new lockstep patch version,
-update every exact pin through review, rebuild all six artifacts and repeat the
-full approval and verification gates. Record the abandoned version and link
-the recovery release in its notes. Neither a yank nor a retry establishes a
-complete release by itself.
+If any published artifact is wrong or completion is impossible (including an
+expired retained artifact), do not reuse the version. With explicit approval,
+yank the partial release's uploaded files with a reason; deletion is not
+rollback. Prepare a new lockstep patch version, update every exact pin through
+review, rebuild all six artifacts and repeat the full approval and verification
+gates. Record the abandoned version and link the recovery release in its notes.
+Neither a yank nor a retry establishes a complete release by itself.
 
 ## `release/2.x` Security Maintenance
 
-Create `release/2.x` from the last supported 2.x release commit before 3.0
-development diverges. Keep its own `docs/release-state.json`, pyproject,
+`release/2.x` was cut from the last supported 2.x release commit before 3.0
+development diverged. Keep its own `docs/release-state.json`, pyproject,
 lockfile, changelog, Registry descriptor, Action and hook references on that
 branch; never copy main's 3.x release state into it. Backport only reviewed
 security fixes for the package, Action and hook, with branch-local patch
@@ -317,21 +470,39 @@ allow exactly `release/2.x`, with the same reviewer and bypass protections as
 main. The default verifier continues to require main. Use the branch's own
 unsplit contract unless a separately approved 2.x packaging change exists.
 
-The current workflows allow only main. Before the first maintenance release,
-review branch-specific workflow dispatch, source/control binding and a
-protected environment with exactly the maintenance-branch policy. Keep main's
-environment main-only. Do not weaken either gate to a wildcard or silently
-dispatch maintenance releases through main. Run dry-run and exact-artifact
-gates on that branch, then verify its package, Action and hook after release.
+Main's workflows never publish 2.x. Main's `Publish to PyPI` and
+`Publish to MCP Registry` accept dispatch only from `main` and require the
+approved commit to have landed on `main`, and main's `Publish to PyPI` refuses
+any 2.x version. Because `workflow_dispatch` runs the workflow file at the
+dispatched ref, `release/2.x` carries its own branch-local `publish.yml` and
+`publish-mcp-registry.yml`: they accept dispatch only from
+`refs/heads/release/2.x`, bind to the `pypi-2x` environment, and pass
+`--release-branch release/2.x` to every verifier call. Follow that branch's own
+`maintainers/RELEASE-CHECKLIST.md` for a maintenance release. Before the first
+one, the owner creates the `pypi-2x` environment with exactly the
+`release/2.x` branch policy and the same reviewer and admin-bypass protections
+as `pypi`, a PyPI trusted publisher on `mcp-audits` for `pypi-2x`, and a
+ruleset protecting `release/2.x` like main. Keep main's environment main-only.
+Do not weaken either gate to a wildcard or dispatch maintenance releases
+through main.
 
 ## Post-Publication Install Smoke
 
-After PyPI readback proves the new version exists, use an isolated cache so the
-check cannot reuse a local candidate install:
+After the six-file readback and the tag check pass, smoke each published
+distribution from PyPI. Use an isolated cache and `--refresh` so the check
+cannot reuse a local candidate install or a stale index response:
 
 ```bash
 tmp="$(mktemp -d)"
-UV_CACHE_DIR="$tmp" uvx --from "mcp-audits==X.Y.Z" mcp-audit --version
-UV_CACHE_DIR="$tmp" uvx --from "mcp-audits-proof==X.Y.Z" proof-before-action --version
+UV_CACHE_DIR="$tmp" uvx --refresh --from "mcp-audits==X.Y.Z" mcp-audit --version
+UV_CACHE_DIR="$tmp" uvx --refresh --from "mcp-audits[labs]==X.Y.Z" \
+  mcp-audit lab agent-ui --help
+UV_CACHE_DIR="$tmp" uvx --refresh --from "mcp-audits-proof==X.Y.Z" \
+  proof-before-action --version
 rm -r "$tmp"
 ```
+
+`proof-before-action` runs from `mcp-audits-proof`, never from core. A failure
+here is a release defect: keep the release unannounced and take the
+wrong-artifact path in
+[Partial-Publication Recovery](#partial-publication-recovery).
