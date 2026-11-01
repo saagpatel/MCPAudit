@@ -42,6 +42,7 @@ REPOSITORY = {"url": "https://github.com/saagpatel/MCPAudit", "source": "github"
 MANIFEST_SCHEMA = "mcp-audits.release-manifest.v1"
 EXTRA_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 PROVENANCE_FILE = "_build_provenance.json"
+BUILD_CONSTRAINTS = "build-constraints.txt"
 SECURITY_FLOORS = (
     ("mcp>=2.2.0,<3.0", "the tested MCP SDK range"),
     ("cryptography>=50.0.0,<51.0", "the cryptography>=50.0.0 security floor"),
@@ -799,10 +800,22 @@ def _reference_build(
             raise VerificationError("approved commit could not be exported for the reference build")
         with tarfile.open(fileobj=io.BytesIO(result.stdout)) as archive:
             archive.extractall(export, filter="data")
+        constraints = export / BUILD_CONSTRAINTS
+        if not constraints.is_file():
+            raise VerificationError(f"approved commit has no {BUILD_CONSTRAINTS} for the reference build")
         output = Path(temporary) / "dist"
         try:
             result = subprocess.run(
-                ["uv", "build", "--offline", "--no-create-gitignore", "--out-dir", str(output)],
+                [
+                    "uv",
+                    "build",
+                    "--offline",
+                    "--no-create-gitignore",
+                    "--build-constraints",
+                    str(constraints),
+                    "--out-dir",
+                    str(output),
+                ],
                 cwd=export / PurePosixPath(distribution.project).parent,
                 capture_output=True,
                 check=False,
