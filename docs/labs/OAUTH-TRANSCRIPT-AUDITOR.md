@@ -1,6 +1,6 @@
 # MCP OAuth Discovery and Audience Transcript Auditor
 
-`mcp-audit oauth-transcript` is an experimental, offline analyzer for
+`mcp-audit lab oauth-transcript` is an experimental, offline analyzer for
 explicitly synthetic and redacted MCP/OAuth HTTP transcript fixtures. It
 evaluates observable discovery, success/error response issuer, resource,
 audience, registration, credential, PKCE-method, and scope bindings. It never contacts an MCP server,
@@ -66,17 +66,17 @@ OAuth universally forbids downscoping.
 
 ```bash
 # Canonical JSON to stdout
-uv run mcp-audit oauth-transcript scan \
+uv run mcp-audit lab oauth-transcript scan \
   tests/fixtures/oauth_transcript/mcpoauth001-negative.json
 
 # Atomic no-clobber JSON and SARIF artifacts
-uv run mcp-audit oauth-transcript scan fixture.json \
+uv run mcp-audit lab oauth-transcript scan fixture.json \
   --json report.json \
   --sarif report.sarif
 
 # Authoritative strict contracts
-uv run mcp-audit oauth-transcript schema fixture
-uv run mcp-audit oauth-transcript schema report
+uv run mcp-audit lab oauth-transcript schema fixture
+uv run mcp-audit lab oauth-transcript schema report
 ```
 
 Exit codes are:

@@ -179,7 +179,7 @@ def test_symlink_fixture_is_refused(tmp_path: Path) -> None:
     target.write_bytes((FIXTURES / "happy-path.json").read_bytes())
     link = tmp_path / "link.json"
     link.symlink_to(target)
-    result = CliRunner().invoke(main, ["task-time-machine", "run", str(link), "--json"])
+    result = CliRunner().invoke(main, ["lab", "task-time-machine", "run", str(link), "--json"])
     assert result.exit_code == 2
     assert "scenario_input_open_failed" in result.output
 
@@ -233,8 +233,10 @@ def test_strict_schemas_are_versioned_and_closed() -> None:
 
 
 def test_cli_builtin_human_and_json_modes() -> None:
-    human = CliRunner().invoke(main, ["task-time-machine", "run", "--builtin", "happy-path"])
-    machine = CliRunner().invoke(main, ["task-time-machine", "run", "--builtin", "happy-path", "--json"])
+    human = CliRunner().invoke(main, ["lab", "task-time-machine", "run", "--builtin", "happy-path"])
+    machine = CliRunner().invoke(
+        main, ["lab", "task-time-machine", "run", "--builtin", "happy-path", "--json"]
+    )
     assert human.exit_code == 0
     assert "Transitions" in human.output
     assert machine.exit_code == 0
@@ -243,10 +245,10 @@ def test_cli_builtin_human_and_json_modes() -> None:
 
 def test_cli_runs_user_fixture_and_returns_one_for_unknown() -> None:
     success = CliRunner().invoke(
-        main, ["task-time-machine", "run", str(FIXTURES / "input-required.json"), "--json"]
+        main, ["lab", "task-time-machine", "run", str(FIXTURES / "input-required.json"), "--json"]
     )
     malformed = CliRunner().invoke(
-        main, ["task-time-machine", "run", str(FIXTURES / "malformed.json"), "--json"]
+        main, ["lab", "task-time-machine", "run", str(FIXTURES / "malformed.json"), "--json"]
     )
     assert success.exit_code == 0
     assert json.loads(success.stdout)["final_task"]["status"] == "completed"
@@ -256,13 +258,13 @@ def test_cli_runs_user_fixture_and_returns_one_for_unknown() -> None:
 
 @pytest.mark.parametrize("contract", ["scenario", "result"])
 def test_cli_emits_contract_schema(contract: str) -> None:
-    result = CliRunner().invoke(main, ["task-time-machine", "schema", contract])
+    result = CliRunner().invoke(main, ["lab", "task-time-machine", "schema", contract])
     assert result.exit_code == 0
     assert json.loads(result.stdout)["additionalProperties"] is False
 
 
 def test_cli_requires_exactly_one_input() -> None:
-    result = CliRunner().invoke(main, ["task-time-machine", "run"])
+    result = CliRunner().invoke(main, ["lab", "task-time-machine", "run"])
     assert result.exit_code == 2
     assert "exactly one" in result.output
 

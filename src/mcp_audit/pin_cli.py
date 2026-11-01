@@ -14,6 +14,7 @@ import click
 from rich.console import Console
 from rich.text import Text
 
+from mcp_audit.canonical import compact_json_bytes
 from mcp_audit.confighealth import duplicate_server_config_counts
 from mcp_audit.discovery import discover_all_configs
 from mcp_audit.engine import ScanOptions, run_scan
@@ -31,20 +32,25 @@ from mcp_audit.terminal_text import strip_controls, terminal_safe
 
 console = Console()
 
-_UNVERIFIED_LEGACY_NOTE = (
-    "Compared against an unverified legacy (v1) baseline: trusted pin keys exist but nothing "
-    "authenticates this entry. Review before signing with `mcp-audit pin --refresh SERVER`."
+_LEGACY_V1_NOTE = (
+    "Legacy v1 baseline is not compared: every current tool is shown as new, as for a "
+    "first pin. Review the full surface with `mcp-audit pin --refresh SERVER`, then apply "
+    "with `mcp-audit pin --refresh SERVER --apply` to replace it with a v2 baseline."
 )
-_LEGACY_V1_MIGRATION_NOTE = (
-    "Legacy v1 baseline has reduced schema coverage. Review and migrate it with "
-    "`mcp-audit pin --refresh SERVER`, then apply with "
-    "`mcp-audit pin --refresh SERVER --apply`."
+_MIXED_V1_NOTE = (
+    "Schema v1 tool rows in this baseline are not compared and count as uncovered: tools "
+    "with a v1 row are shown as new with their full current surface. Review them, then apply "
+    "with `mcp-audit pin --refresh SERVER --apply`, which drops the v1 rows."
 )
 _UNSIGNED_V2_MIGRATION_NOTE = (
     "Compared against an unverified unsigned v2 baseline. Review the current tools and launch config; "
     "--apply replaces this entry with a fresh signed baseline using a trusted signing key. "
     "Run `mcp-audit pin keygen` if you do not have one."
 )
+
+
+# Longest rendered value per surface field in a terminal refresh preview.
+_SURFACE_FIELD_LIMIT = 400
 
 
 class _PinServerOptions(TypedDict, total=False):
@@ -512,25 +518,37 @@ async def _run_pin_refresh(
             error_console.print(terminal_safe(verification_error), style="red")
         return
 
-    # Review must show the comparison even when scans withhold the baseline:
-    # an unauthenticated legacy v1 pin is compared and clearly labeled.
-    unverified_legacy = store.unverified_legacy_baseline(audit.server.name)
+    # A v1 baseline is never compared (3.0 does not hash v1), so the review
+    # shows the full current surface, as for a first pin. In a mixed entry the
+    # v2 rows compare and every tool with a retained v1 row is reviewed as new.
+    v1_baseline = store.v1_baseline(audit.server.name)
+    legacy = store.legacy_tool_names(audit.server.name)
     baseline_note = (
         _UNSIGNED_V2_MIGRATION_NOTE
         if migrate_unsigned_v2
-        else _UNVERIFIED_LEGACY_NOTE
-        if unverified_legacy
-        else _LEGACY_V1_MIGRATION_NOTE
-        if store.legacy_tool_names(audit.server.name)
+        else _LEGACY_V1_NOTE
+        if v1_baseline
+        else _MIXED_V1_NOTE
+        if legacy
         else None
     )
-    findings = store.check_drift(
-        audit.server.name,
-        audit.tools,
-        review_unverified_legacy=True,
-        review_unsigned_v2=migrate_unsigned_v2,
-    )
+    if v1_baseline:
+        findings = store.new_pin_review(audit.server.name, audit.tools)
+    else:
+        findings = store.check_drift(audit.server.name, audit.tools, review_unsigned_v2=migrate_unsigned_v2)
+        findings += store.new_pin_review(audit.server.name, [t for t in audit.tools if t.name in legacy])
     uncovered_fields = store.uncovered_field_rows(audit.server.name, audit.tools)
+    # Every tool reviewed as new shows the redacted surface --apply would store,
+    # so an injected description or a new input property is visible before apply.
+    new_names = {finding.tool_name for finding in findings if finding.status == DriftStatus.NEW}
+    new_surfaces = {
+        tool.name: store.tool_review_surface(tool) for tool in audit.tools if tool.name in new_names
+    }
+    # The pin hash covers the raw served text; name the fields where credential
+    # redaction withheld part of it so it is inspected before --apply.
+    new_withheld = {
+        tool.name: store.withheld_surface_fields(tool) for tool in audit.tools if tool.name in new_names
+    }
     escalation_findings, provenance_findings = _refresh_security_deltas(
         store, audit, review_unsigned_v2=migrate_unsigned_v2
     )
@@ -571,6 +589,8 @@ async def _run_pin_refresh(
                 artifact_warnings=art_capture.warnings,
                 uncovered_fields=uncovered_fields,
                 baseline_note=baseline_note,
+                new_surfaces=new_surfaces,
+                new_withheld=new_withheld,
             )
         )
         return
@@ -585,6 +605,8 @@ async def _run_pin_refresh(
         escalation_findings,
         provenance_findings,
         baseline_note=baseline_note,
+        new_surfaces=new_surfaces,
+        new_withheld=new_withheld,
     )
     if uncovered_fields:
         from rich.table import Table
@@ -639,9 +661,7 @@ def _refresh_security_deltas(
     escalation_findings: list[EscalationFinding] = []
     provenance_findings: list[ProvenanceFinding] = []
 
-    baseline_tools = store.baseline_tools(
-        audit.server.name, review_unverified_legacy=True, review_unsigned_v2=review_unsigned_v2
-    )
+    baseline_tools = store.baseline_tools(audit.server.name, review_unsigned_v2=review_unsigned_v2)
     if baseline_tools:
         escalation_findings = EscalationAnalyzer().analyze_server(
             audit.server.name,
@@ -650,9 +670,7 @@ def _refresh_security_deltas(
             uncovered_annotations=store.legacy_tool_names(audit.server.name),
         )
 
-    baseline_config = store.baseline_config(
-        audit.server.name, review_unverified_legacy=True, review_unsigned_v2=review_unsigned_v2
-    )
+    baseline_config = store.baseline_config(audit.server.name, review_unsigned_v2=review_unsigned_v2)
     if baseline_config:
         provenance_findings = ProvenanceAnalyzer().analyze_server(audit.server, baseline_config)
 
@@ -682,9 +700,13 @@ def _pin_refresh_json(
     artifact_warnings: list[str] | None = None,
     uncovered_fields: list[dict[str, str]] | None = None,
     baseline_note: str | None = None,
+    new_surfaces: dict[str, dict[str, object]] | None = None,
+    new_withheld: dict[str, dict[str, int]] | None = None,
 ) -> str:
     import json
 
+    new_surfaces = new_surfaces or {}
+    new_withheld = new_withheld or {}
     escalation_findings = escalation_findings or []
     provenance_findings = provenance_findings or []
     artifact_warnings = artifact_warnings or []
@@ -704,6 +726,14 @@ def _pin_refresh_json(
                 "summary": finding.summary,
                 "details": finding.details,
                 "remediation": finding.remediation,
+                # Additive: the redacted surface --apply would store for a new tool,
+                # and the fields where redaction withheld served text the hash covers.
+                "current_surface": new_surfaces.get(finding.tool_name),
+                "current_surface_redacted": (
+                    sorted(new_withheld.get(finding.tool_name, {}))
+                    if finding.tool_name in new_surfaces
+                    else None
+                ),
             }
             for finding in drift_findings
         ],
@@ -745,9 +775,13 @@ def _render_pin_refresh_review(
     provenance_findings: list[ProvenanceFinding] | None = None,
     *,
     baseline_note: str | None = None,
+    new_surfaces: dict[str, dict[str, object]] | None = None,
+    new_withheld: dict[str, dict[str, int]] | None = None,
 ) -> None:
     from rich.table import Table
 
+    new_surfaces = new_surfaces or {}
+    new_withheld = new_withheld or {}
     escalation_findings = escalation_findings or []
     provenance_findings = provenance_findings or []
     counts = {status: 0 for status in DriftStatus}
@@ -762,6 +796,18 @@ def _render_pin_refresh_review(
     if baseline_note is not None:
         console.print(terminal_safe(baseline_note), style="bold yellow")
     if not (drift_findings or escalation_findings or provenance_findings):
+        if baseline_note == _LEGACY_V1_NOTE:
+            console.print(
+                "[yellow]The legacy v1 baseline is not compared and the server exposes no tools; "
+                "--apply writes an empty v2 baseline.[/yellow]"
+            )
+            return
+        if baseline_note == _MIXED_V1_NOTE:
+            console.print(
+                "[yellow]No drift in the compared v2 rows. The retained v1 rows are not compared "
+                "and no served tool matches them; --apply drops them.[/yellow]"
+            )
+            return
         if baseline_note is not None:
             console.print(
                 "[yellow]The pin baseline could not be verified; no differences from the unverified "
@@ -793,6 +839,7 @@ def _render_pin_refresh_review(
             )
 
         console.print(table)
+        _render_new_tool_surfaces(drift_findings, new_surfaces, new_withheld)
 
     _render_refresh_security_section(
         "Capability escalation",
@@ -801,6 +848,51 @@ def _render_pin_refresh_review(
     _render_refresh_security_section(
         "Launch-config / provenance drift",
         [(f.rule_id, f.severity.value, f.server_name, f.summary) for f in provenance_findings],
+    )
+
+
+def _render_new_tool_surfaces(
+    drift_findings: list[DriftFinding],
+    new_surfaces: dict[str, dict[str, object]],
+    new_withheld: dict[str, dict[str, int]],
+) -> None:
+    """Print the redacted snapshot of each tool reviewed as new, one bounded line per field.
+
+    A field whose served text was partly withheld by credential redaction is
+    flagged, never shown: the pin hash still covers that text.
+    """
+    for finding in drift_findings:
+        surface = new_surfaces.get(finding.tool_name)
+        if finding.status != DriftStatus.NEW or surface is None:
+            continue
+        withheld = new_withheld.get(finding.tool_name, {})
+        console.print(
+            Text.assemble(
+                ("New tool surface", "bold"),
+                terminal_safe(f" ({finding.tool_name}), the redacted snapshot --apply would store:"),
+            )
+        )
+        for field, value in surface.items():
+            console.print(
+                Text.assemble(("  ", ""), (field, "cyan"), ": ", terminal_safe(_bounded_json(value))),
+                soft_wrap=True,
+            )
+            if field in withheld:
+                console.print(
+                    f"    {withheld[field]} value(s) withheld by credential redaction; the pin hash "
+                    "covers the served text; inspect the server before --apply.",
+                    style="bold yellow",
+                    soft_wrap=True,
+                )
+
+
+def _bounded_json(value: object) -> str:
+    rendered = compact_json_bytes(value, allow_nan=True).decode("utf-8")
+    if len(rendered) <= _SURFACE_FIELD_LIMIT:
+        return rendered
+    return (
+        f"{rendered[:_SURFACE_FIELD_LIMIT]}… ({len(rendered) - _SURFACE_FIELD_LIMIT} more chars; "
+        "see `pin --refresh SERVER --json` for the full value)"
     )
 
 

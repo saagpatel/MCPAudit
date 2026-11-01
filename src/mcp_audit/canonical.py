@@ -12,14 +12,6 @@ def compact_json_bytes(value: object, *, allow_nan: bool = False) -> bytes:
     ).encode("utf-8")
 
 
-def canonical_json_bytes(value: object, *, legacy: bool = False) -> bytes:
-    """Serialize v2 compact JSON; retain the original v1 bytes for comparison only."""
-    if not legacy:
-        return compact_json_bytes(value) + b"\n"
-    return json.dumps(
-        value,
-        sort_keys=True,
-        separators=(", ", ": "),
-        ensure_ascii=False,
-        allow_nan=True,
-    ).encode("utf-8")
+def canonical_json_bytes(value: object) -> bytes:
+    """Serialize the v2 compact JSON form with a trailing newline."""
+    return compact_json_bytes(value) + b"\n"

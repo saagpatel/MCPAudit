@@ -53,11 +53,7 @@ def test_scan_max_concurrency_reaches_current_run_scan_entrypoint(
     async def fake_run_scan(*args: object, **kwargs: object) -> None:
         forwarded.extend(args)
 
-    async def frozen_core_was_called(*args: object, **kwargs: object) -> None:
-        raise AssertionError("scan must use _run_scan, not the frozen compatibility shim")
-
-    monkeypatch.setattr(core_cli, "_run_scan", fake_run_scan)
-    monkeypatch.setattr(core_cli, "_run_scan_core", frozen_core_was_called)
+    monkeypatch.setattr(scan_cli, "_run_scan", fake_run_scan)
 
     result = CliRunner().invoke(
         cli.main,

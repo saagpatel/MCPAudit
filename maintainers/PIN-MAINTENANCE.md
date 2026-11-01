@@ -8,14 +8,17 @@ client config files, and pin maintenance should stay just as deliberate.
 New tool entries carry `pin_schema: 2` and
 `canonical_form: mcpaudit.tool-surface.v2`. The file also carries `pin_schema: 2`;
 each tool entry's marker determines its hash contract, so mixed files remain
-safe. Entries with no marker or `pin_schema: 1` retain the original v1 hash
-(name, description and input schema). Scans never upgrade or rewrite them.
-When a pin comparison is requested, `pin_schema_outdated` names affected servers
-and explains that the additional fields are not covered. Existing description
-and input-schema drift comparisons continue using the original spaced JSON bytes.
-The old connector stored served empty input schemas as null; v1 comparisons
-retain that representation when its saved snapshot used null, avoiding drift
-caused only by the v2 connector preserving the empty object.
+safe. Tool rows with no marker or `pin_schema: 1` are schema v1 rows. MCPAudit
+3.0 does not hash v1: those rows are never compared, whether or not a trusted
+key exists, and scans never upgrade or rewrite them. A server entry whose tool
+rows are all v1 (with or without an entry-level `pin_schema: 2` or `protocol`
+marker), or an unmarked entry with no tool rows (how 2.0-2.8 pinned a
+zero-tool server; 2.9+ marks empty entries, which stay usable), has no
+comparable baseline: it is withheld from every pin-based check
+with `pin_baseline_withheld`, counts zero tools for `require.pins`, and
+`pin_schema_outdated` names its rows. In a mixed entry the v2 rows compare and
+the v1 rows are excluded from `NEW`, `CHANGED` and `REMOVED` drift and from the
+canary first-listing comparison; `pin_schema_outdated` lists them as uncovered.
 
 The v2 tool form covers name, title, description, inputSchema, outputSchema,
 annotations, icons and meta (the wire `_meta`). Annotation hints are always
@@ -28,8 +31,8 @@ or filled with defaults; finite numbers retain their served JSON representation
 (1.0 differs from 1).
 
 Pins and canary surfaces share one serializer: sorted keys, compact separators,
-unescaped Unicode, no NaN/Infinity, UTF-8 and one trailing newline. V1 comparison
-uses the same serializer's legacy mode with spaces and no newline.
+unescaped Unicode, no NaN/Infinity, UTF-8 and one trailing newline. The spaced
+v1 serializer form is gone with v1 comparison.
 
 ## Signed Server Baselines
 
@@ -52,10 +55,10 @@ a key exists; missing explicit keys, unreadable keys, wrong ownership and wrong
 permissions refuse signing. `--unsigned` writes unsigned v2 pins only while no
 trusted key exists; once any key is trusted, unsigned v2 writes are refused
 because they would read back as tampered (`MCP027`). Legacy v1 entries keep the
-`pin_schema_outdated` warning and never fail verification, but while a key is
-trusted their baseline is withheld (`pin_baseline_withheld`) because nothing
-authenticates it; a reviewed `pin --refresh SERVER --apply` replaces it with a
-fresh signed v2 baseline without carrying over the legacy rows.
+`pin_schema_outdated` warning and never fail verification on their own, but
+their baseline is always withheld (`pin_baseline_withheld`); a reviewed
+`pin --refresh SERVER --apply` replaces it with a fresh v2 baseline (signed when
+a key is configured) without carrying over the v1 rows.
 
 Public keys are trusted separately in `~/.mcp-audit/trusted-pin-keys.json`,
 with key IDs `sha256(raw_public_key)[:16]`. Embedded public keys are never
@@ -80,22 +83,22 @@ trust store leaves signature verification usable but emits
 `pin_rollback_tracking_unavailable`.
 
 `pin --pin-file FILE rotate-key` verifies signed entries before changing keys
-and re-signs every signed or v2 entry, including mixed entries that retain legacy
-v1 tool rows (those rows are kept unchanged); only unsigned pure v1 entries are
-left as they are. It retains old private/public files under their old key
+and re-signs every signed or v2 entry, including mixed entries that retain v1
+tool rows (those rows are kept unchanged and stay uncovered); genuine v1 entries
+are never re-hashed and are left as they are. It retains old private/public files under their old key
 ID and marks the old trusted public key retired with a 30-day grace period
 (`rotate-key --grace-days N`, 0-3650, changes that rotation's grace). An invalid
 or out-of-range persisted grace makes the retired signer untrusted. During grace,
 verification proceeds with `pin_signed_by_retired_key`; after grace, the signer
 is untrusted and saved-baseline comparisons are skipped. Explicitly re-adding
 the same public key with `trust-key --add` re-trusts it and clears retirement.
-Legacy v1 tool entries are never upgraded by rotation.
+V1 tool rows are never upgraded by rotation; only a reviewed write replaces them.
 
 Scan pin checks, all other saved-baseline comparisons, the canary's first
 listing, `serve check_server`, and each watch rescan verify the loaded entry.
 Failures produce HIGH `MCP027` and withhold saved baselines; in-session canary
-comparisons continue. Unsigned v2 entries and v1 entries remain usable with
-warnings. Enable `fail_on.pin_integrity: true` to gate failures in policy.
+comparisons continue. Unsigned v2 entries remain usable with a warning while no
+key is trusted; v1 entries are never usable. Enable `fail_on.pin_integrity: true` to gate failures in policy.
 For a server the trust store expects to be signed, a missing entry or pin file
 also fails verification, and a failed baseline never satisfies `require.pins`.
 If it cannot be restored from backup, `pin --clear SERVER` removes the entry and
@@ -111,12 +114,18 @@ even though the canonical default already hashes as true. Legacy annotations
 were never reviewed, so they do not establish annotation or hint-derived
 capability deltas; description and schema capability deltas remain checked.
 
-`pin --refresh` shows each v1 tool's additional fields as **not previously
-covered**, including when its v1 hash still matches. JSON refresh previews add
-`uncovered_fields` rows with tool_name, field and summary. Previewing never
-upgrades entries; only explicitly pinning or applying a reviewed refresh writes
-v2 entries for the observed tools. Other legacy entries retain their v1 marker
-or lack of marker.
+`pin --refresh` never compares a v1 row. A server whose rows are all v1 is
+reviewed as a first pin: every current tool is `new`. In a mixed entry the v2
+rows are diffed as usual and every served tool whose saved row is v1 is shown
+as `new` with its full current surface, so an injected description or a new
+input property is reviewed before `--apply`. JSON previews add
+`uncovered_fields` rows (tool_name, field, summary
+`not compared; schema v1 row reviewed as new`) for every field of such a tool,
+description and inputSchema included. Previewing never writes; `--apply` (and
+any `pin` write to that server) replaces the entry's rows with v2 rows for the
+observed tools and drops retained v1 rows, including rows for tools the server
+no longer serves, so `pin_schema_outdated` clears. Other servers' v1 entries are
+untouched.
 
 ## Launch Argument Redaction
 

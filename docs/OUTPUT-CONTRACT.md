@@ -401,6 +401,17 @@ Hidden compatibility flags preserve static safety: `--skip-connect` conflicts
 with `--connect` and `--connect-all`, and `--config-only` requires `--config` and
 conflicts with `--include-discovered`. Neither flag enables connections or additional discovery.
 
+## Command aliases
+
+`pin` remains a visible alias for `baseline pin`. The former top-level lab topic
+commands (`agent-ui`, `authorization-posture`, `cache-contract`,
+`enforcement-fixture`, `oauth-transcript`, `result-parcel`, `session-resume`,
+and `task-time-machine`) are available only under `lab`. `safeforge-preinstall`,
+`safeforge-run`, and `skillscan` are removed; use `safeforge preinstall`,
+`safeforge run`, and `skills scan`. Removed spellings are unknown commands and
+produce no compatibility notice. `--help-all` remains available and lists
+registered command paths; ordinary help has no compatibility-alias section.
+
 Bare invocation runs the static `check` path. `--config FILE` excludes discovery
 unless `--include-discovered` is explicit. Saved overrides are not loaded for
 explicit-file checks unless selected; remembered preferences are not loaded.
@@ -449,7 +460,10 @@ Project entries retain config-inferred permissions and `connection_status:
 "skipped"` unless `ScanOptions.connect_project_configs` is true. CLI `scan` and
 `watch` expose this as `--connect-project-configs`; `--skip-connect` takes
 precedence over the opt-in. `pin`, pin refresh, and all `serve` tools use the
-same project-skipping default. Workstation entries still connect by default.
+same project-skipping default. Workstation entries connect by default in the
+library, CLI `scan`/`watch`, `pin`, and the `serve` tools listed as connecting in
+[`serve` tool reach](#serve-tool-reach); `scan_mcp_servers` is static unless
+called with `connect=true`.
 A project-only scan that skips all entries has `connection_mode: "skipped"`;
 a mixed scan that attempts workstation connections has `"attempted"`.
 
@@ -474,6 +488,27 @@ These fields are present even for an empty result list or an empty warning list.
 The published output schemas retain `result` and add `warnings`.
 Warnings use the same report redaction as the existing warning-bearing tools;
 no audit-report field or `schema_version` changes.
+
+### `serve` tool reach
+
+From 3.0, `scan_mcp_servers` is static by default: its `connect` argument
+defaults to `false`, so a call without arguments reads configuration and
+connects to no server. `connect=true` connects to workstation-scope servers;
+`skip_connect=true` always disables connections, even with `connect=true`. The
+report shape is unchanged. Every other tool keeps its 2.x reach, and its
+description states it:
+
+| Reach | Tools |
+|---|---|
+| Connects to workstation-scope servers | `get_high_risk_servers`, `check_server` (the named server only), `get_injection_findings`, `get_ssrf_findings`, `get_trifecta_findings`, `get_shadowing_findings`, `get_escalation_findings`, `get_provenance_findings` |
+| Static, no network | `list_discovered_servers`, `get_integrity_findings` |
+| Static toward MCP servers; contacts npm/PyPI registries only | `get_package_verify_findings`, `get_artifact_verify_findings` |
+
+Tools that run pin-dependent checks (`check_server`, and the escalation,
+provenance, integrity, package-verify and artifact-verify findings) return a
+withheld pin baseline as a `pin_baseline_withheld` warning, which is partial
+coverage, not a tool error. `serve` loads no policy and sets no exit code, so a
+withheld baseline never fails a tool call.
 
 ## Missing tool annotations
 
@@ -732,7 +767,7 @@ codes below; they do not change the stable scan exit contract.
 
 ## Session Resume Fault Lab v1 (experimental)
 
-`mcp-audit session-resume` is separate from `AuditReport`. Its strict contract
+`mcp-audit lab session-resume` is separate from `AuditReport`. Its strict contract
 identifiers are:
 
 - `mcpaudit.session-resume.scenario.v1`;
@@ -790,9 +825,10 @@ Tool entries retain all existing fields and add nullable `title`, `output_schema
 `schema_version` remains 1. Pin hashes use `mcpaudit.tool-surface.v2`: default-filled
 annotations, omitted null/empty optional fields, served schemas, sorted compact
 UTF-8 JSON with a trailing newline and rejected NaN/Infinity. Canary tool
-comparisons use the same normalized tool form and serializer. Legacy pins still
-compare only name, description and input schema with their original v1 bytes;
-scans never upgrade them. See [Pin Maintenance](../maintainers/PIN-MAINTENANCE.md) for migration.
+comparisons use the same normalized tool form and serializer. Legacy v1 pins are
+never compared (3.0 does not hash v1) and scans never upgrade or rewrite them;
+`pin --refresh` reviews the full current surface as a new pin. See
+[Pin Maintenance](../maintainers/PIN-MAINTENANCE.md) for migration.
 
 Saved-pin consumers add `pin_verification: {state, kid}` per server when a
 baseline exists. States are `verified`, `unsigned`, `untrusted_signer`,
@@ -814,10 +850,18 @@ verify a server (no pin-based check ran), `fail_on.pin_integrity` verifies the
 selected pin store directly. Policies without signed pins, and report
 `schema_version`, are unchanged. Genuine legacy v1 pins warn (`pin_schema_outdated`)
 and do not produce `MCP027` unless signing expectations or a signed manifest with
-missing trust establish a failure; they remain the comparison baseline only while
-no key is trusted. With a trusted key they are unauthenticated, so their baseline is
-withheld (`pin_baseline_withheld`, no drift/escalation/canary/provenance
-comparison, `require.pins` unmet, enabled comparison gates fail). A v1 entry for a
+missing trust establish a failure; they are never a comparison baseline, whether
+or not a key is trusted, so their baseline is withheld (`pin_baseline_withheld`,
+no drift/escalation/canary/provenance comparison, `require.pins` unmet, enabled
+comparison gates fail). An entry whose tool rows are all v1 under an
+entry-level `pin_schema: 2` or `protocol` marker is withheld the same way and
+counts zero tools for `require.pins`, as is an unmarked entry with no tool rows
+(the shape MCPAudit 2.0-2.8 wrote for a zero-tool server; 2.9+ marks empty
+entries, which remain usable empty v2 baselines). In a mixed entry the v2 rows compare, only
+the v2 rows count for `require.pins`, and the v1 rows are excluded from `NEW`,
+`CHANGED` and `REMOVED` drift; `pin_schema_outdated` lists the excluded tool
+names as uncovered. Policy violations for a withheld v1 baseline state that it
+"is a schema v1 pin, which is never compared". A v1 entry for a
 server with a recorded signing expectation or rollback high-water mark is a
 downgrade and is `tampered_entry`. Unsigned v2 pins warn (`pin_unsigned`) and remain usable only
 while the separate trust store holds no usable trusted key (active, or retired
@@ -901,12 +945,32 @@ openWorldHint false→true. Hint removal uses MCP defaults. Uncovered legacy
 annotations do not establish deltas. These hint names also appear in terminal,
 HTML, SARIF result properties and `get_escalation_findings` output.
 `pin --refresh --json` adds `uncovered_fields` rows with `tool_name`, `field`
-and `summary: "not previously covered"` for each newly covered v1 tool field.
-It also adds `baseline_verified` and nullable `baseline_note`. A legacy v1
-baseline withheld by scans (trusted keys, nothing authenticating the entry) is
-still compared in refresh review so every difference is shown, with
-`baseline_verified: false` and a note; terminal review labels it and never
-reports "No drift found" against an unverified baseline.
+and `summary: "not compared; schema v1 row reviewed as new"` for every field
+(description, inputSchema, annotations, title, outputSchema, icons, meta) of a
+served tool whose saved row is v1. Each `drift` row carries two additive
+fields. `current_surface` is, for a `new` row, the credential-redacted snapshot
+a pin write would store (`description`, `input_schema`, `annotations`, `title`,
+`output_schema`, `icons`, `meta`, all nullable), and `null` for other statuses.
+It is not the whole of what `--apply` trusts: the pin hash covers the raw served
+surface, so text withheld by credential redaction (which can include injected
+instructions after a `token=` or under an `api_key`) is trusted by the hash but
+absent from the snapshot. `current_surface_redacted` therefore lists, for a
+`new` row, the sorted field names whose served value differs from the redacted
+snapshot (`[]` when nothing was withheld); it is `null` for other statuses. The
+withheld text is never emitted. Terminal review prints the same redacted
+snapshot, terminal-safe, one line per field, each value bounded to 400
+characters (the truncation marker points to `pin --refresh SERVER --json` for
+the full value), and under each affected field a line stating how many values
+credential redaction withheld and that the pin hash covers the served text, so
+the server is inspected before `--apply`. It also adds `baseline_verified` and
+nullable `baseline_note`. A v1 baseline (all tool rows v1, with or without an
+entry-level v2 marker) is not compared in refresh review: every current tool is
+reported as `new`, as for a first pin, with `baseline_verified: false` and a
+note; terminal review labels it and never reports "No drift found". In a mixed
+entry the v2 rows compare and every served tool with a v1 row is reported as
+`new` with its full current surface, with `baseline_verified: false` and a
+mixed-entry note. `--apply` writes v2 rows for the observed tools and drops
+retained v1 rows, including rows for tools no longer served.
 Unsigned v2 migration review uses the same fields (`baseline_verified: false`
 and an unsigned migration `baseline_note`) while scans continue to withhold the
 entry with `MCP027` under trusted keys. Only entries without signing metadata,
@@ -1330,9 +1394,9 @@ The report top level also includes:
     `pin_rolled_back` (verified pin predates the locally recorded newest pin timestamp),
     `pin_rollback_tracking_unavailable` (verification succeeded but the local timestamp
     store could not be read or updated; rollback detection was not established),
-    `pin_schema_outdated` (a compared server has v1 tool entries; annotations,
-    title, outputSchema, icons and meta were not covered; original v1 drift
-    comparisons remain active, and refresh review is required for v2 coverage),
+    `pin_schema_outdated` (a pinned server has v1 tool entries, named in the
+    message; they are never compared and count as uncovered, and refresh
+    review is required for v2 coverage),
     `pin_baseline_corrupted` (a pin baseline file exists but could not be
     parsed, or saved v2 canary tool snapshots are invalid or incomplete — materially
     different from "missing", since it can mask a wiped or tampered baseline.
@@ -1343,11 +1407,11 @@ The report top level also includes:
     `pin_baseline_stale` (pinned servers whose baseline predates the capture
     this check compares against; named in `servers`),
     `pin_baseline_withheld` (servers whose pin baseline failed integrity
-    verification, HIGH MCP027, or is an unsigned legacy v1 pin while trusted keys
-    exist, so this baseline comparison was not run; also emitted for `pin_check`
-    and `canary_check`; named in `servers` and never also reported as
-    `pin_baseline_stale`; the message names `mcp-audit pin --refresh SERVER`
-    and the coming 3.0 withholding of keyless v1 baselines),
+    verification, HIGH MCP027, or is a genuine legacy v1 pin, whether or not
+    trusted keys exist, so this baseline comparison was not run; also emitted
+    for `pin_check` and `canary_check`; named in `servers` and never also
+    reported as `pin_baseline_stale`; the message names
+    `mcp-audit pin --refresh SERVER`),
     `integrity_comparison_incomplete` (with `check: integrity_check`; pinned
     paths excluded by sensitive-path protection or unavailable path resolution.
     The message reports counts, never excluded paths or their saved/current hashes),
@@ -1433,6 +1497,31 @@ discovered sources. Rejected discovered sources emit `review_source_skipped`;
 explicit limit violations remain setup errors. The shared translation notice
 and `check` warning path also apply to the 3.0 interceptor design.
 
+Discovering static translations append
+`--include-discovered --scan-compatible-sources`. The hidden selector is
+supported throughout 3.x because notices print it; see the
+[static scan migration guide](guides/scan-migration.md). Subject to the source
+limits above, it preserves every Claude Code project scope, excludes Cursor's
+project file, includes cwd `.mcp.json` and `.vscode/mcp.json`, and deduplicates
+servers by `(name, client, config path, project path)`. A malformed Claude Code
+sibling project loses the whole file. A file with no server map is accepted
+empty, avoiding a new config-health finding or policy failure. For VS Code,
+entry diagnostics from earlier maps are collected before a malformed `mcp`
+section discards the file, matching library discovery, and an unreadable
+discovered source uses scan's `unreadable config file: ...` reason. Plain
+`check` retains its existing discovery and diagnostics. No report fields or
+schema version change, but translated reports can differ from `scan` in three
+documented ways. A source skipped by the limits above adds
+`review_source_skipped` and a high-severity `config_parse_failure` finding, so
+a `fail_on.config_health` policy exits 2 where `scan`, which read the file,
+exited 0; the translation notice states that a skipped source is reported as a
+config-health finding. A run with no config sources adds the non-fatal
+`no_sources_reviewed` warning (exit unchanged). Run from the home directory,
+`scan` parses `~/.vscode/mcp.json` twice and duplicates its config-health
+diagnostics, while `check` parses it once. Explicit `--config` without
+`--config-only` remains untranslatable; the selector cannot be emitted with
+`--config`.
+
 Completion requires evidence that the check executed over every applicable
 input. A collected configuration parse failure makes every enabled check
 `partial`, including configuration health and fleet checks: servers in the
@@ -1507,9 +1596,10 @@ checks whose warning has `code: pin_baseline_withheld` and `check: pin_check`.
 It adds a HIGH per-server violation with rule `fail_on.pin_baseline_withheld`,
 reported through existing policy fields, SARIF `MCP010`, and policy exit `2`.
 Other withheld checks and merely missing pins do not trigger this gate. Its
-default is `false` in 2.12; the 3.0 proposal makes withheld requested pin checks
-fail by default. Keyless v1 comparisons and mixed-row drift remain unchanged
-in 2.x; their reduced field coverage continues to emit `pin_schema_outdated`.
+default is `false`. A genuine v1 baseline is withheld whether or not trusted
+keys exist, so with this gate a keyless install with a v1 pin now fails the
+requested pin check; mixed-entry v1 rows are excluded from drift and emit
+`pin_schema_outdated`.
 
 `description_truncated` warnings use `check: "permission_analysis"`, name the
 affected server, and give a count of truncated fields without including their
@@ -1670,9 +1760,9 @@ The generated JSON Schema for the current model is checked in at
 `examples/schemas/audit-report.schema.json` and is tested against the live
 Pydantic model.
 
-## Skillscan v1 (`skillscan-report/v1`)
+## Skillscan v1 (`skills scan`, `skillscan-report/v1`)
 
-The `skillscan` command statically scans an agent skill directory or MCP-server
+The `skills scan` command statically scans an agent skill directory or MCP-server
 bundle (`.mcpb`/`.zip`) offline — it never executes bundle content and never
 touches the network — and, with `--json-out`, emits a `skillscan-report/v1`
 document. The report is designed to be sealed by an external verifier
@@ -1843,7 +1933,7 @@ write one JSON object to standard output.
 
 ## Agent UI Contract Auditor v1 (experimental)
 
-The offline `mcp-audit agent-ui` command group is separate from connected MCP
+The offline `mcp-audit lab agent-ui` command group is separate from connected MCP
 scans and does not change `AuditReport` schema version `1`. Its strict contract
 identifiers are:
 
@@ -1852,7 +1942,7 @@ identifiers are:
 - `mcpaudit.agent-ui.a2ui-message.v0.9`
 - `mcpaudit.agent-ui.report.v1`
 
-Authoritative JSON Schemas are emitted with `mcp-audit agent-ui schema
+Authoritative JSON Schemas are emitted with `mcp-audit lab agent-ui schema
 CONTRACT`. Unknown fields are rejected. The emitted A2UI message schema includes
 strict discriminated shapes for every component in MCPAudit's fixed synthetic
 catalog; duplicate component IDs, invalid JSON Pointer escapes, excessive JSON
@@ -1902,7 +1992,7 @@ not claim translation or interoperability. See
 
 ## MCP OAuth Transcript Auditor v1 (experimental)
 
-The offline `mcp-audit oauth-transcript` command group is separate from normal
+The offline `mcp-audit lab oauth-transcript` command group is separate from normal
 MCP discovery and connected scans. It does not change `AuditReport` schema
 version `1`. Its strict contract identifiers are:
 
@@ -1912,7 +2002,7 @@ version `1`. Its strict contract identifiers are:
 Authoritative schemas are checked in at
 `examples/schemas/oauth-transcript-fixture-v1.schema.json` and
 `examples/schemas/oauth-transcript-report-v1.schema.json`, and are emitted by
-`mcp-audit oauth-transcript schema fixture|report`. Unknown fields are rejected.
+`mcp-audit lab oauth-transcript schema fixture|report`. Unknown fields are rejected.
 The specification profile is pinned to
 `mcp-authorization-2025-11-25+draft-2026-07-28`; the dated draft portion covers
 authorization-response issuer validation, issuer-bound client state, and DCR
@@ -1962,7 +2052,7 @@ real-world authorization, or production security. See
 
 ## MCP Authorization Posture Adoption v1 (experimental)
 
-The offline `mcp-audit authorization-posture` command group consumes a separate
+The offline `mcp-audit lab authorization-posture` command group consumes a separate
 portable producer contract and does not change `AuditReport` schema version
 `1`. Its strict identifiers are:
 
@@ -1972,7 +2062,7 @@ portable producer contract and does not change `AuditReport` schema version
 Authoritative schemas are checked in at
 `examples/schemas/authorization-posture-input-v1.schema.json` and
 `examples/schemas/authorization-posture-report-v1.schema.json`, and are emitted
-by `mcp-audit authorization-posture schema input|report`. Unknown fields and
+by `mcp-audit lab authorization-posture schema input|report`. Unknown fields and
 implicit type coercion are rejected.
 
 The review command validates the declared official-Registry binding, public
@@ -1996,14 +2086,14 @@ endpoint, use credentials, run OAuth, authorize a scan, or change a trust grade.
 `docs/labs/AUTHORIZATION-POSTURE-ADOPTION.md`.
 ## MCP Cache Contract Auditor v1 (experimental)
 
-The offline `mcp-audit cache-contract` command group is separate from connected
+The offline `mcp-audit lab cache-contract` command group is separate from connected
 MCP scans and does not change `AuditReport` schema version `1`. Its strict
 contract identifiers are:
 
 - `mcpaudit.cache-contract.trace.v1`;
 - `mcpaudit.cache-contract.report.v1`.
 
-Authoritative JSON Schemas are emitted with `mcp-audit cache-contract schema
+Authoritative JSON Schemas are emitted with `mcp-audit lab cache-contract schema
 trace|report`. Unknown fields are rejected. The trace binds every event to
 explicit sequence and logical-millisecond values, a protocol version,
 principal, asserted authorization-context `cache_partition`, method, complete
@@ -2072,14 +2162,14 @@ cache. See `docs/labs/CACHE-CONTRACT-AUDITOR.md`.
 
 ## MCP Task Time Machine v1 (experimental)
 
-The offline `mcp-audit task-time-machine` command group is separate from
+The offline `mcp-audit lab task-time-machine` command group is separate from
 connected MCP scans and does not change `AuditReport` schema version `1`. Its
 strict contract identifiers are:
 
 - `mcpaudit.task-time-machine.scenario.v1`;
 - `mcpaudit.task-time-machine.result.v1`.
 
-Authoritative strict JSON Schemas are emitted by `mcp-audit task-time-machine
+Authoritative strict JSON Schemas are emitted by `mcp-audit lab task-time-machine
 schema scenario|result`. Unknown fields and implicit type coercion are rejected.
 Scenario execution is seed-free and ordered by explicit `(at_ms, sequence)`
 coordinates; sequence values must be unique. Duplicate event IDs remain valid
@@ -2125,13 +2215,13 @@ production behavior. See `docs/labs/MCP-TASK-TIME-MACHINE.md`.
 
 ## MCP Result Parcel Lab v1 (experimental)
 
-The offline `mcp-audit result-parcel` group is separate from `AuditReport`
+The offline `mcp-audit lab result-parcel` group is separate from `AuditReport`
 schema version `1`. Its strict contract identifiers are:
 
 - scenario: `mcpaudit.result-parcel.scenario.v1`;
 - report: `mcpaudit.result-parcel.report.v1`.
 
-`mcp-audit result-parcel schema scenario|report` emits the authoritative
+`mcp-audit lab result-parcel schema scenario|report` emits the authoritative
 closed JSON Schemas. `analyze` accepts exactly one regular non-symlink JSON
 file or one install-safe `--builtin`, renders human output by default, and
 emits deterministic canonical JSON with `--format json`. It exits `0` for a
@@ -2202,7 +2292,7 @@ code-observed filesystem/network behavior. Filesystem access requires the
 egress. An unresolved producer security warning is not preinstall-eligible and
 cannot be converted into a passed static stage.
 
-The `mcp-audit safeforge-preinstall` command composes those two boundaries. It
+The `mcp-audit safeforge preinstall` command composes those two boundaries. It
 requires `--producer-schema`, `--receipt`, `--artifact-root`, `--run-id`,
 `--created-at`, and `--coordinator-revision`. Contract linting runs before the
 artifact path is inspected. Standard output is always one JSON object: exit `0`
@@ -2211,7 +2301,7 @@ fail-closed contract or preinstall decision, and exit `2` means the command
 inputs could not be parsed. The command has no connected, install, sandbox,
 grading, policy, publication, or finalization mode.
 
-`mcp-audit safeforge-run` resumes that accepted preinstall envelope through
+`mcp-audit safeforge run` resumes that accepted preinstall envelope through
 `sandbox.prepare`, `sandbox.materialize`, `audit.connected`, `trust.grade`,
 `runtime.policy.bind`, `publication.dry_run`, and `receipt.finalize`. Standard
 output remains one strict JSON object. Exit `0` requires an `eligible` final
