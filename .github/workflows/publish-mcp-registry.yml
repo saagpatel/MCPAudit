@@ -77,6 +77,7 @@ jobs:
           git fetch --force --tags origin main
           python ../release-controls/scripts/verify_release.py \
             --root . \
+            --distributions ../release-controls/release/distributions.json \
             --tag "$RELEASE_TAG" \
             --commit "$RELEASE_COMMIT" \
             --environment-json "$RUNNER_TEMP/pypi-environment.json" \
@@ -118,7 +119,9 @@ jobs:
             --manifest "$RUNNER_TEMP/release-manifest.json" --manifest-sha256 "$MANIFEST_SHA256" \
             --response-json "$RUNNER_TEMP/pypi-readback.json"
           python release-controls/scripts/verify_release.py --publication-check descriptor \
-            --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" --response-json release-source/server.json
+            --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" \
+            --distributions release-controls/release/distributions.json \
+            --response-json release-source/server.json
           echo "registry_workflow_sha=$WORKFLOW_SHA source_commit=$RELEASE_COMMIT"
           cat "$RUNNER_TEMP/release-manifest.json"
 
@@ -181,6 +184,7 @@ jobs:
               --output "$RUNNER_TEMP/$output.json"
           done
           python release-controls/scripts/verify_release.py --publication-check environment \
+            --distributions release-controls/release/distributions.json \
             --environment-json "$RUNNER_TEMP/pypi.json" \
             --branch-policies-json "$RUNNER_TEMP/deployment-branch-policies.json"
 
@@ -219,7 +223,9 @@ jobs:
             --manifest "$RUNNER_TEMP/release-manifest.json" --manifest-sha256 "$MANIFEST_SHA256" \
             --response-json "$RUNNER_TEMP/pypi-readback.json"
           python release-controls/scripts/verify_release.py --publication-check descriptor \
-            --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" --response-json release-source/server.json
+            --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" \
+            --distributions release-controls/release/distributions.json \
+            --response-json release-source/server.json
           echo "registry_workflow_sha=$WORKFLOW_SHA source_commit=$RELEASE_COMMIT"
           cat "$RUNNER_TEMP/release-manifest.json"
 
@@ -241,5 +247,6 @@ jobs:
               --output "$RUNNER_TEMP/registry-$selector.json"
             python release-controls/scripts/verify_release.py --publication-check registry \
               --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" \
+              --distributions release-controls/release/distributions.json \
               --response-json "$RUNNER_TEMP/registry-$selector.json"
           done
