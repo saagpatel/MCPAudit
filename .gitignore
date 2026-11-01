@@ -7,6 +7,8 @@ build/
 dist/
 wheels/
 *.egg-info
+# Transient build provenance; a sibling's copy must not mark a parallel build dirty.
+_build_provenance.json
 
 # macOS-generated files
 .DS_Store

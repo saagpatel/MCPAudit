@@ -11,6 +11,7 @@ import os
 import re
 import shutil
 import sys
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
@@ -22,6 +23,10 @@ if __name__ == "__main__":
 from scripts import verify_release as release
 
 JsonFetch = Callable[[str], object]
+
+# PyPI's JSON API can trail an upload by a minute or more; the workflow readback waits this long.
+READBACK_ATTEMPTS = 13
+READBACK_DELAY_SECONDS = 10.0
 
 
 def fetch_json(url: str) -> object:
@@ -191,18 +196,58 @@ def stage(
     return {name: bool(filenames) for name, filenames in missing.items()}
 
 
+def _not_yet_visible(raw: object, hashes: dict[str, str], *, distribution: str, version: str) -> bool:
+    """True only for a missing release, or a strict subset of its files that is otherwise valid.
+
+    Anything verify_pypi would reject for a reason other than missing files fails at once.
+    """
+    if raw is None:
+        return True
+    if not isinstance(raw, dict):
+        return False
+    info, urls = raw.get("info"), raw.get("urls")
+    if not isinstance(info, dict) or info.get("name") != distribution or info.get("version") != version:
+        return False
+    if not isinstance(urls, list) or len(urls) >= len(hashes):
+        return False
+    seen: set[str] = set()
+    for entry in urls:
+        if not isinstance(entry, dict):
+            return False
+        name, digests = entry.get("filename"), entry.get("digests")
+        if not isinstance(name, str) or name in seen or name not in hashes or not isinstance(digests, dict):
+            return False
+        kind = "bdist_wheel" if name.endswith(".whl") else "sdist"
+        if (
+            digests.get("sha256") != hashes[name]
+            or entry.get("yanked") is not False
+            or entry.get("packagetype") != kind
+        ):
+            return False
+        seen.add(name)
+    return True
+
+
 def readback(
-    version: str, through: str | None, files: dict[str, str], *, fetch: JsonFetch = fetch_json
+    version: str,
+    through: str | None,
+    files: dict[str, str],
+    *,
+    fetch: JsonFetch = fetch_json,
+    attempts: int = 1,
+    delay: float = 0.0,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> dict[str, object]:
     responses: dict[str, object] = {}
     for item in release._published_prefix(through):
+        hashes = {name: files[name] for name in release.distribution_names(version, item.name)}
         raw = pypi_response(item.name, version, fetch=fetch)
-        release.verify_pypi(
-            raw,
-            version=version,
-            hashes={name: files[name] for name in release.distribution_names(version, item.name)},
-            distribution=item.name,
-        )
+        for _ in range(attempts - 1):
+            if not _not_yet_visible(raw, hashes, distribution=item.name, version=version):
+                break
+            sleep(delay)
+            raw = pypi_response(item.name, version, fetch=fetch)
+        release.verify_pypi(raw, version=version, hashes=hashes, distribution=item.name)
         responses[item.name] = raw
     return responses
 
@@ -297,7 +342,14 @@ def main() -> int:
             elif args.command == "readback":
                 if args.response_json is None:
                     raise release.VerificationError("readback requires --response-json")
-                args.response_json.write_text(json.dumps(readback(args.version, args.through, files)))
+                responses = readback(
+                    args.version,
+                    args.through,
+                    files,
+                    attempts=READBACK_ATTEMPTS,
+                    delay=READBACK_DELAY_SECONDS,
+                )
+                args.response_json.write_text(json.dumps(responses))
             else:
                 rehearse(args.candidate, args.destination, args.version, files)
     except (OSError, ValueError, KeyError, release.VerificationError) as exc:
