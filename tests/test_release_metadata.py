@@ -129,21 +129,31 @@ def test_release_metadata_verifier_passes() -> None:
     "mode", ["metadata", "environment", "artifacts", "pypi", "descriptor", "registry", "tag"]
 )
 @pytest.mark.parametrize("contract", ["missing", "unsplit"])
-def test_3x_cli_rejects_missing_or_unsplit_contract(tmp_path: Path, mode: str, contract: str) -> None:
-    (tmp_path / "pyproject.toml").write_text('[project]\nversion="3.0.0"\n')
+@pytest.mark.parametrize("version", ["3.0.0", "4.0.0"])
+def test_3x_cli_rejects_missing_or_unsplit_contract(
+    tmp_path: Path, mode: str, contract: str, version: str
+) -> None:
+    # 4.x must not inherit the 2.x unsplit default: every non-2.x line is split.
+    (tmp_path / "pyproject.toml").write_text(f'[project]\nversion="{version}"\n')
     command = [sys.executable, "scripts/verify_release.py", "--root", str(tmp_path)]
     if mode != "metadata":
-        command.extend(["--publication-check", mode, "--tag", "v3.0.0", "--commit", "a" * 40])
+        command.extend(["--publication-check", mode, "--tag", f"v{version}", "--commit", "a" * 40])
     if contract == "unsplit":
         path = tmp_path / "unsplit.json"
         path.write_text(json.dumps([TRAIN[0]._asdict()]))
         command.extend(["--distributions", str(path)])
     result = subprocess.run(command, capture_output=True, text=True, check=False, timeout=30)
     assert result.returncode == 1
-    assert "3.x requires an explicit three-distribution contract" in result.stderr
+    assert "3.x and later require an explicit three-distribution contract" in result.stderr
 
 
-@pytest.mark.parametrize("version", ["3.0.0", "3.9.42"])
+def test_only_2x_versions_may_stay_unsplit() -> None:
+    assert not release._is_split_version("2.12.0")
+    for version in ("3.0.0", "3.9.42", "4.0.0", "10.1.0"):
+        assert release._is_split_version(version)
+
+
+@pytest.mark.parametrize("version", ["3.0.0", "3.9.42", "4.0.0"])
 def test_3x_library_metadata_and_manifest_reject_unsplit(
     version: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -200,26 +210,28 @@ def test_release_contract_is_identical_and_commit_bound(
 
 @pytest.mark.parametrize("published", [False, True], ids=["before", "after"])
 @pytest.mark.parametrize("tag_state", ["absent", "approved", "other"])
+@pytest.mark.parametrize("version", ["3.0.0", "4.0.0"])
 def test_3x_git_binding_is_commit_first(
-    monkeypatch: pytest.MonkeyPatch, published: bool, tag_state: str
+    monkeypatch: pytest.MonkeyPatch, published: bool, tag_state: str, version: str
 ) -> None:
     commit = "a" * 40
+    tag = f"v{version}"
     calls: list[tuple[str, ...]] = []
 
     def git(*args: str) -> str:
         calls.append(args)
         if args == ("rev-parse", "HEAD"):
             return commit
-        if args == ("tag", "--list", "v3.0.0"):
-            return "" if tag_state == "absent" else "v3.0.0"
-        if args == ("rev-parse", "refs/tags/v3.0.0^{commit}"):
+        if args == ("tag", "--list", tag):
+            return "" if tag_state == "absent" else tag
+        if args == ("rev-parse", f"refs/tags/{tag}^{{commit}}"):
             if tag_state == "absent":
                 raise release.VerificationError("tag is missing")
             return commit if tag_state == "approved" else "b" * 40
         return ""
 
     monkeypatch.setattr(release, "DISTRIBUTIONS", release.load_distributions(CONTRACT))
-    monkeypatch.setattr(release, "_version", lambda: "3.0.0")
+    monkeypatch.setattr(release, "_version", lambda: version)
     monkeypatch.setattr(release, "_run_git", git)
     monkeypatch.setattr(
         release, "_commit_files", lambda *args: {release.CONTRACT_PATH: CONTRACT.read_bytes()}
@@ -227,20 +239,23 @@ def test_3x_git_binding_is_commit_first(
     valid = tag_state == ("approved" if published else "absent")
     if valid:
         release.verify_git_binding(
-            tag="v3.0.0" if published else None, commit=commit, require_landed=True, published=published
+            tag=tag if published else None, commit=commit, require_landed=True, published=published
         )
         assert ("merge-base", "--is-ancestor", commit, "origin/main") in calls
     else:
         with pytest.raises(release.VerificationError):
             release.verify_git_binding(
-                tag="v3.0.0" if published else None,
+                tag=tag if published else None,
                 commit=commit,
                 require_landed=True,
                 published=published,
             )
 
 
-def test_3x_publishable_check_accepts_commit_without_tag(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("version", ["3.0.0", "4.0.0"])
+def test_3x_publishable_check_accepts_commit_without_tag(
+    monkeypatch: pytest.MonkeyPatch, version: str
+) -> None:
     monkeypatch.setattr(
         sys,
         "argv",
@@ -255,8 +270,8 @@ def test_3x_publishable_check_accepts_commit_without_tag(monkeypatch: pytest.Mon
             "unused.json",
         ],
     )
-    monkeypatch.setattr(release, "_version", lambda: "3.0.0")
-    monkeypatch.setattr(release, "verify_metadata", lambda **kwargs: ("3.0.0", {}))
+    monkeypatch.setattr(release, "_version", lambda: version)
+    monkeypatch.setattr(release, "verify_metadata", lambda **kwargs: (version, {}))
     observed: list[dict[str, object]] = []
     monkeypatch.setattr(release, "verify_git_binding", lambda **kwargs: observed.append(kwargs))
     monkeypatch.setattr(release, "_load_json", lambda path: {})

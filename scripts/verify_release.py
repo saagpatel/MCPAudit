@@ -118,13 +118,18 @@ def load_distributions(path: Path) -> tuple[Distribution, ...]:
     return tuple(distributions)
 
 
+def _is_split_version(version: str) -> bool:
+    """Every line after 2.x ships as the three-distribution split; only 2.x may stay unsplit."""
+    return not version.startswith("2.")
+
+
 def _require_split_contract(version: str) -> None:
-    if version.startswith("3.") and tuple(item.name for item in DISTRIBUTIONS) != (
+    if _is_split_version(version) and tuple(item.name for item in DISTRIBUTIONS) != (
         "mcp-audits",
         "mcp-audits-labs",
         "mcp-audits-proof",
     ):
-        raise VerificationError("3.x requires an explicit three-distribution contract")
+        raise VerificationError("3.x and later require an explicit three-distribution contract")
 
 
 def verify_contract_binding(path: Path, *, commit: str | None = None) -> None:
@@ -139,7 +144,7 @@ def verify_contract_binding(path: Path, *, commit: str | None = None) -> None:
 def distribution_names(version: str, distribution: str = DISTRIBUTION_NAME) -> tuple[str, str]:
     if VERSION_RE.fullmatch(version) is None:
         raise VerificationError("invalid distribution version")
-    if RELEASE_BRANCH == "release/2.x" and not version.startswith("2."):
+    if RELEASE_BRANCH == "release/2.x" and _is_split_version(version):
         raise VerificationError("release/2.x requires a 2.x distribution version")
     stem = distribution.replace("-", "_")
     return f"{stem}-{version}-py3-none-any.whl", f"{stem}-{version}.tar.gz"
@@ -382,7 +387,7 @@ def verify_environment_protection(raw: object, branch_policies: object = None) -
 def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object]]:
     project = _project()
     version = _version()
-    if RELEASE_BRANCH == "release/2.x" and not version.startswith("2."):
+    if RELEASE_BRANCH == "release/2.x" and _is_split_version(version):
         raise VerificationError("release/2.x requires a 2.x project version")
     _require_split_contract(version)
     state = _release_state()
@@ -505,14 +510,14 @@ def verify_git_binding(
         raise VerificationError("release checkout is dirty")
     if tag is not None and tag != f"v{version}":
         raise VerificationError(f"tag must be exactly v{version}")
-    if version.startswith("3."):
+    if _is_split_version(version):
         _require_split_contract(version)
         verify_contract_binding(ROOT / CONTRACT_PATH, commit=commit)
         if not published and _run_git("tag", "--list", f"v{version}"):
             raise VerificationError("release tag must not exist before publication")
         if published and tag is None:
             raise VerificationError("post-publication verification requires the release tag")
-    if tag is not None and (published or not version.startswith("3.")):
+    if tag is not None and (published or not _is_split_version(version)):
         if _run_git("rev-parse", f"refs/tags/{tag}^{{commit}}") != commit:
             raise VerificationError("release tag does not resolve to the approved commit")
     if require_landed:
@@ -1182,9 +1187,9 @@ def main() -> int:
             DISTRIBUTIONS = load_distributions(args.distributions)
         version = args.tag[1:] if args.tag is not None else _version()
         _require_split_contract(version)
-        if version.startswith("3."):
+        if _is_split_version(version):
             if args.distributions is None:
-                raise VerificationError("3.x requires --distributions")
+                raise VerificationError("3.x and later require --distributions")
             verify_contract_binding(args.distributions)
         if args.distribution is not None and args.publication_check != "pypi":
             raise VerificationError("--distribution requires --publication-check pypi")
@@ -1197,7 +1202,7 @@ def main() -> int:
             raise VerificationError("--tag requires --commit")
         if (
             args.require_publishable
-            and not version.startswith("3.")
+            and not _is_split_version(version)
             and (args.tag is None or args.commit is None)
         ):
             raise VerificationError("publish verification requires --tag and --commit")
