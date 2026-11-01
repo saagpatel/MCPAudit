@@ -70,7 +70,7 @@ mcp-audit = "mcp_audit.cli:main"
 mcp-audits = "mcp_audit.cli:main"
 
 [build-system]
-requires = ["uv_build==0.12.24"]
+requires = ["uv_build==0.13.6"]
 build-backend = "mcp_audit_build_backend"
 backend-path = ["."]
 
