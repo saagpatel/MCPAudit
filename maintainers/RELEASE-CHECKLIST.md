@@ -15,7 +15,7 @@ git diff --check
 uv lock --check
 uv run python scripts/verify_release.py
 candidate_commit="$(git rev-parse HEAD)"
-uv build --clear --no-create-gitignore
+uv build --clear --no-create-gitignore --build-constraints build-constraints.txt
 uv run python scripts/verify_release.py \
   --commit "$candidate_commit" \
   --dist-dir dist
@@ -28,8 +28,9 @@ being uploaded manually.
 its provenance file. A reference wheel and sdist build from `git archive COMMIT`
 in a temporary clean export determines the complete packaged file sets using
 the approved backend's include and exclude rules. The reference build runs
-`uv build --offline --no-create-gitignore`, so its build requirements must already
-be cached; an unavailable reference build fails verification. Every non-generated
+`uv build --offline --no-create-gitignore --build-constraints` with the approved
+commit's `build-constraints.txt`, so its build requirements must already be cached;
+a missing constraints file or an unavailable reference build fails verification. Every non-generated
 path must be present, extra paths are rejected, and every sdist file must be
 byte-identical to that path at the commit, apart from the build-generated
 `PKG-INFO`, provenance file, and uv_build's
@@ -84,8 +85,11 @@ in the lock, including extras. OSV request size, response size, query count, and
 request timeout are bounded. An unavailable or malformed feed exits 2 and fails
 the gate; an advisory exits 1. No exception or suppression list is applied.
 Saved-response fixture checks are offline tests, not current advisory evidence.
-When exact build constraints are present, their package pins are included; missing
-constraints are explicitly reported as unavailable build-input coverage. Toolchain
+The exact build pins in `build-constraints.txt` are always included; a missing
+constraints file exits 2 and fails the gate. The CI build reads the trusted-controls
+copy of `build-constraints.txt` and the reference build reads the approved commit's
+copy; the build job requires the two to be identical, and the exact `pyproject.toml`
+pin makes any mismatch unbuildable. Toolchain
 and image pins require separate verified upstream checksum evidence before release.
 
 - Record the exact candidate commit and re-query open Dependabot, code-scanning,
