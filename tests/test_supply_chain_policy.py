@@ -11,12 +11,12 @@ FULL_COMMIT_SHA = re.compile(r"[0-9a-f]{40}")
 REVIEWED_ACTION_RELEASES = {
     "actions/checkout": ("3d3c42e5aac5ba805825da76410c181273ba90b1", "v7.0.1"),
     "actions/download-artifact": ("9000827ccba6bdab643e8b6fd33ac0654aef8333", "v8.0.2"),
-    "actions/setup-python": ("5fda3b95a4ea91299a34e894583c3862153e4b97", "v7.0.0"),
+    "actions/setup-python": ("6d4fd22b20465ccc0f7354476588e8df7c9ca0e0", "v7.1.0"),
     "actions/upload-artifact": ("cf430e030ddbb5b0abf93d22962f4752f3646cd9", "v7.0.2"),
-    "astral-sh/setup-uv": ("1c37ad07a6a961277cf70c0d37d6f313000f5884", "v10.3.0"),
-    "github/codeql-action/analyze": ("24c54180a607b1449ed407dd24f251e4e9147c8d", "v4.38.3"),
-    "github/codeql-action/init": ("24c54180a607b1449ed407dd24f251e4e9147c8d", "v4.38.3"),
-    "github/codeql-action/upload-sarif": ("24c54180a607b1449ed407dd24f251e4e9147c8d", "v4.38.3"),
+    "astral-sh/setup-uv": ("68559e99cc807c1eb7e9238fd43a15bba460eec2", "v10.3.3"),
+    "github/codeql-action/analyze": ("9b3254085494b55a0f7c4c2b3d2d52cc712ce370", "v4.39.1"),
+    "github/codeql-action/init": ("9b3254085494b55a0f7c4c2b3d2d52cc712ce370", "v4.39.1"),
+    "github/codeql-action/upload-sarif": ("9b3254085494b55a0f7c4c2b3d2d52cc712ce370", "v4.39.1"),
     "google/clusterfuzzlite/actions/build_fuzzers": (
         "884713a6c30a92e5e8544c39945cd7cb630abcd1",
         "v1",
@@ -25,8 +25,8 @@ REVIEWED_ACTION_RELEASES = {
         "884713a6c30a92e5e8544c39945cd7cb630abcd1",
         "v1",
     ),
-    "ossf/scorecard-action": ("2d1146689b8cda280b9bc96326124645441f03bc", "v2.4.4"),
-    "pypa/gh-action-pypi-publish": ("dc37677b2e1c63e2034f94d8a5b11f265b73ba33", "v1.14.2"),
+    "ossf/scorecard-action": ("fa7117db83c52d787ae5a89f350999701505d78e", "v2.5.0"),
+    "pypa/gh-action-pypi-publish": ("7245906fb61fa33a13554f9d5fb856fe61758086", "v1.14.3"),
     "saagpatel/agent-permission-diff-bot": (
         "20bc07d1f8052765d3a65378222a08869a7dd027",
         "v0.5.0",
