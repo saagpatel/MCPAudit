@@ -56,6 +56,13 @@ COMMIT = subprocess.run(
     ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
 ).stdout.strip()
 WORKFLOW_SHA = "b" * 40
+CONTRACT = Path("release/distributions.json")
+TRAIN = release.load_distributions(CONTRACT)
+
+
+@pytest.fixture(autouse=True)
+def split_contract(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(release, "DISTRIBUTIONS", TRAIN)
 
 
 @pytest.mark.parametrize(
@@ -82,7 +89,7 @@ def test_descriptor_matches_published_version() -> None:
 
 def _write_wheel(path: Path, entries: dict[str, bytes]) -> None:
     """Write a wheel whose RECORD lists every member with its digest."""
-    record = f"mcp_audits-{VERSION}.dist-info/RECORD"
+    record = f"{path.name.removesuffix('-py3-none-any.whl')}.dist-info/RECORD"
     rows = [
         f"{name},sha256={base64.urlsafe_b64encode(hashlib.sha256(content).digest()).rstrip(b'=').decode()},"
         f"{len(content)}\n"
@@ -118,6 +125,7 @@ def head_distributions(tmp_path_factory: pytest.TempPathFactory) -> Path:
             "uv",
             "build",
             "--offline",
+            "--all-packages",
             "--no-create-gitignore",
             "--build-constraints",
             str(source / "build-constraints.txt"),
@@ -131,24 +139,26 @@ def head_distributions(tmp_path_factory: pytest.TempPathFactory) -> Path:
     # Exports have no Git identity. Supply the approved identity only for the
     # fabricated fixtures; the production verifier still checks it separately.
     provenance = json.dumps({"commit": COMMIT, "dirty": False}).encode()
-    wheel, sdist = release.distribution_names(VERSION)
-    entries = _wheel_entries(dist / wheel)
-    entries["mcp_audit/_build_provenance.json"] = provenance
-    _write_wheel(dist / wheel, entries)
-    with tarfile.open(dist / sdist, "r:gz") as archive:
-        entries = {}
-        for info in archive.getmembers():
-            if info.isfile():
-                stream = archive.extractfile(info)
-                assert stream is not None
-                with stream:
-                    entries[info.name] = stream.read()
-    entries[f"mcp_audits-{VERSION}/src/mcp_audit/_build_provenance.json"] = provenance
-    with tarfile.open(dist / sdist, "w:gz") as archive:
-        for name, content in entries.items():
-            info = tarfile.TarInfo(name)
-            info.size = len(content)
-            archive.addfile(info, io.BytesIO(content))
+    for item in TRAIN:
+        wheel, sdist = release.distribution_names(VERSION, item.name)
+        entries = _wheel_entries(dist / wheel)
+        entries[f"{item.module}/_build_provenance.json"] = provenance
+        _write_wheel(dist / wheel, entries)
+        with tarfile.open(dist / sdist, "r:gz") as archive:
+            entries = {}
+            for info in archive.getmembers():
+                if info.isfile():
+                    stream = archive.extractfile(info)
+                    assert stream is not None
+                    with stream:
+                        entries[info.name] = stream.read()
+        prefix = f"{item.name.replace('-', '_')}-{VERSION}"
+        entries[f"{prefix}/{item.module_root}/{item.module}/_build_provenance.json"] = provenance
+        with tarfile.open(dist / sdist, "w:gz") as archive:
+            for name, content in entries.items():
+                info = tarfile.TarInfo(name)
+                info.size = len(content)
+                archive.addfile(info, io.BytesIO(content))
     return dist
 
 
@@ -178,7 +188,9 @@ def test_probe_release_rejects_every_extra(distributions: Path, extra: str) -> N
         release.verify_distributions(dist_dir=distributions, version=VERSION, commit=COMMIT)
 
 
-@pytest.mark.parametrize("name", release.distribution_names(VERSION))
+@pytest.mark.parametrize(
+    "name", [name for item in TRAIN for name in release.distribution_names(VERSION, item.name)]
+)
 def test_probe_release_rejects_symlinks(distributions: Path, name: str, tmp_path: Path) -> None:
     target = tmp_path / name
     (distributions / name).rename(target)
@@ -203,6 +215,8 @@ def test_dry_run_publication_rechecks_after_consumer_smoke(distributions: Path, 
         "scripts/verify_release.py",
         "--publication-check",
         "artifacts",
+        "--distributions",
+        str(CONTRACT),
         "--tag",
         f"v{VERSION}",
         "--commit",
@@ -239,6 +253,8 @@ def test_manifest_digest_is_checked_before_pypi_identity(distributions: Path) ->
             "scripts/verify_release.py",
             "--publication-check",
             "pypi",
+            "--distributions",
+            str(CONTRACT),
             "--tag",
             f"v{VERSION}",
             "--commit",
@@ -262,6 +278,358 @@ def test_manifest_rejects_wrong_identity(distributions: Path, field: str) -> Non
     manifest[field] = {} if field == "files" else "c" * 40
     with pytest.raises(release.VerificationError):
         release.verify_manifest(manifest, version=VERSION, commit=COMMIT, workflow_sha=WORKFLOW_SHA)
+
+
+def _pypi_response(item: release.Distribution, version: str, hashes: dict[str, str]) -> dict[str, object]:
+    return {
+        "info": {"name": item.name, "version": version},
+        "urls": [
+            {
+                "filename": name,
+                "digests": {"sha256": hashes[name]},
+                "yanked": False,
+                "packagetype": "bdist_wheel" if name.endswith(".whl") else "sdist",
+            }
+            for name in release.distribution_names(version, item.name)
+        ],
+    }
+
+
+def _release_root(path: Path, version: str) -> Path:
+    """A checkout stub carrying only the project version and the reviewed contract."""
+    (path / "release").mkdir(parents=True)
+    (path / "pyproject.toml").write_text(f'[project]\nversion="{version}"\n')
+    (path / release.CONTRACT_PATH).write_bytes(CONTRACT.read_bytes())
+    return path
+
+
+@pytest.fixture
+def publication_inputs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[list[str], dict[str, object]]:
+    # In-process main() rebinds the module root from --root; restore it afterwards.
+    monkeypatch.setattr(release, "ROOT", release.ROOT)
+    monkeypatch.setattr(release, "RELEASE_STATE_PATH", release.RELEASE_STATE_PATH)
+    version = "3.0.0"
+    hashes = {
+        name: hashlib.sha256(name.encode()).hexdigest()
+        for item in TRAIN
+        for name in release.distribution_names(version, item.name)
+    }
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "schema_version": release.MANIFEST_SCHEMA,
+                "version": version,
+                "commit": COMMIT,
+                "workflow_sha": WORKFLOW_SHA,
+                "files": hashes,
+            }
+        )
+    )
+    args = [
+        # Tag and checkout versions must agree, so the 3.0.0 readback runs on a 3.0.0 checkout.
+        "--root",
+        str(_release_root(tmp_path / "root", version)),
+        "--tag",
+        f"v{version}",
+        "--commit",
+        COMMIT,
+        "--distributions",
+        str(CONTRACT),
+        "--manifest",
+        str(manifest),
+        "--manifest-sha256",
+        hashlib.sha256(manifest.read_bytes()).hexdigest(),
+    ]
+    return args, {item.name: _pypi_response(item, version, hashes) for item in TRAIN}
+
+
+def _pypi_readback(path: Path, args: list[str], *extra: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [
+            sys.executable,
+            "scripts/verify_release.py",
+            "--publication-check",
+            "pypi",
+            *extra,
+            "--response-json",
+            str(path),
+            *args,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+
+
+@pytest.mark.parametrize("through", range(len(TRAIN)), ids=lambda index: TRAIN[index].name)
+@pytest.mark.parametrize(
+    "mutation",
+    ["none", "digest", "yanked", "identity", "missing", "extra", "beyond-prefix", "short-prefix"],
+)
+def test_published_through_checks_contract_order_prefix(
+    tmp_path: Path,
+    publication_inputs: tuple[list[str], dict[str, object]],
+    through: int,
+    mutation: str,
+) -> None:
+    args, responses = publication_inputs
+    prefix = TRAIN[: through + 1]
+    readback = {item.name: responses[item.name] for item in prefix}
+    raw = readback[prefix[-1].name]
+    assert isinstance(raw, dict)
+    urls = raw["urls"]
+    assert isinstance(urls, list)
+    if mutation == "digest":
+        urls[0]["digests"] = {"sha256": "0" * 64}
+    elif mutation == "yanked":
+        urls[0]["yanked"] = True
+    elif mutation == "identity":
+        raw["info"] = {"name": "other-distribution", "version": "3.0.0"}
+    elif mutation == "missing":
+        urls.pop()
+    elif mutation == "extra":
+        urls.append(dict(urls[0]))
+    elif mutation == "beyond-prefix":
+        # A readback for a distribution past the prefix is never silently ignored.
+        beyond = TRAIN[through + 1].name if through + 1 < len(TRAIN) else "mcp-audits-other"
+        readback[beyond] = responses.get(beyond, raw)
+    elif mutation == "short-prefix":
+        del readback[TRAIN[0].name]
+    path = tmp_path / "response.json"
+    path.write_text(json.dumps(readback))
+    result = _pypi_readback(path, args, "--published-through", prefix[-1].name)
+    assert result.returncode == (0 if mutation == "none" else 1), result.stderr
+    names = ", ".join(item.name for item in prefix)
+    if mutation == "none":
+        assert result.stdout == (
+            f"publication pypi verified for {names} only (partial readback; not release completion)\n"
+        )
+    elif mutation in {"beyond-prefix", "short-prefix"}:
+        assert (
+            f"partial PyPI readback must map exactly the distributions published through {prefix[-1].name}"
+        ) in result.stderr
+    # The aggregate gate still rejects a strict prefix even after its partial
+    # readback succeeds; only all three can advance a public pointer.
+    if mutation == "none":
+        aggregate = _pypi_readback(path, args)
+        if len(prefix) < len(TRAIN):
+            assert aggregate.returncode == 1
+            assert "every distribution" in aggregate.stderr
+        else:
+            assert aggregate.returncode == 0, aggregate.stderr
+            assert aggregate.stdout == "publication pypi verified\n"
+
+
+def test_core_only_partial_readback_prints_exact_text(
+    tmp_path: Path, publication_inputs: tuple[list[str], dict[str, object]]
+) -> None:
+    args, responses = publication_inputs
+    path = tmp_path / "response.json"
+    path.write_text(json.dumps({TRAIN[0].name: responses[TRAIN[0].name]}))
+    result = _pypi_readback(path, args, "--published-through", "mcp-audits")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == (
+        "publication pypi verified for mcp-audits only (partial readback; not release completion)\n"
+    )
+
+
+@pytest.mark.parametrize("mutation", ["none", "missing-response", "digest", "tag-absent", "tag-other"])
+def test_final_tag_gate_requires_all_published_files_at_approved_commit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    publication_inputs: tuple[list[str], dict[str, object]],
+    mutation: str,
+) -> None:
+    args, responses = publication_inputs
+    if mutation == "missing-response":
+        del responses[TRAIN[2].name]
+    elif mutation == "digest":
+        raw = responses[TRAIN[2].name]
+        assert isinstance(raw, dict) and isinstance(raw["urls"], list)
+        raw["urls"][0]["digests"] = {"sha256": "0" * 64}
+    path = tmp_path / "responses.json"
+    path.write_text(json.dumps(responses))
+    calls: list[tuple[str, ...]] = []
+
+    def git(*args: str) -> str:
+        calls.append(args)
+        if args == ("rev-parse", "HEAD"):
+            return COMMIT
+        if args == ("rev-parse", "refs/tags/v3.0.0^{commit}"):
+            if mutation == "tag-absent":
+                raise release.VerificationError("missing tag")
+            return "c" * 40 if mutation == "tag-other" else COMMIT
+        return ""
+
+    monkeypatch.setattr(
+        sys, "argv", ["verify_release.py", "--publication-check", "tag", "--response-json", str(path), *args]
+    )
+    monkeypatch.setattr(release, "_version", lambda: "3.0.0")
+    monkeypatch.setattr(release, "_run_git", git)
+    monkeypatch.setattr(
+        release, "_commit_files", lambda *args: {release.CONTRACT_PATH: CONTRACT.read_bytes()}
+    )
+    assert release.main() == (0 if mutation == "none" else 1)
+    if mutation in {"missing-response", "digest"}:
+        assert not calls
+    elif mutation == "none":
+        assert ("rev-parse", "refs/tags/v3.0.0^{commit}") in calls
+        assert ("merge-base", "--is-ancestor", COMMIT, "origin/main") in calls
+
+
+@pytest.mark.parametrize("version", [None, "3.0.0"], ids=["checkout", "3.0.0"])
+@pytest.mark.parametrize("mode", [None, "artifacts", "tag"])
+def test_published_through_selector_is_only_for_intermediate_pypi_readbacks(
+    mode: str | None,
+    version: str | None,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Passing the contract keeps this exercising the selector guard, not the
+    # split-contract gate, once the checkout itself is 3.x.
+    args = [
+        "verify_release.py",
+        "--distributions",
+        str(CONTRACT),
+        "--published-through",
+        TRAIN[0].name,
+    ]
+    if mode is not None:
+        args.extend(["--publication-check", mode])
+    monkeypatch.setattr(sys, "argv", args)
+    monkeypatch.setattr(release, "DISTRIBUTIONS", release.DISTRIBUTIONS)
+    monkeypatch.setattr(release, "RELEASE_BRANCH", release.RELEASE_BRANCH)
+    if version is not None:
+        monkeypatch.setattr(release, "_version", lambda: version)
+    assert release.main() == 1
+    assert (
+        "release verification failed: --published-through requires --publication-check pypi"
+        in capsys.readouterr().err
+    )
+
+
+ENVIRONMENT = {
+    "can_admins_bypass": False,
+    "deployment_branch_policy": {"protected_branches": False, "custom_branch_policies": True},
+    "protection_rules": [
+        {
+            "type": "required_reviewers",
+            "prevent_self_review": False,
+            "reviewers": [{"type": "User", "reviewer": {"login": "saagpatel"}}],
+        }
+    ],
+}
+
+
+@pytest.mark.parametrize("mode", ["environment", "artifacts", "pypi", "tag", "descriptor", "registry"])
+@pytest.mark.parametrize("checkout", ["2.0.0", "3.0.0"], ids=["2x-checkout", "3x-checkout"])
+def test_2x_tag_cannot_bypass_split_contract_on_3x_checkout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    mode: str,
+    checkout: str,
+) -> None:
+    # Every input here is a valid unsplit 2.0.0 publication, so the 2.x checkout
+    # passes; a 3.x checkout must still refuse the 2.x tag and its unsplit contract.
+    version = "2.0.0"
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "pyproject.toml").write_text(f'[project]\nversion="{checkout}"\n')
+    contract = tmp_path / "unsplit.json"
+    contract.write_text(json.dumps([TRAIN[0]._asdict()]))
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    for name in release.distribution_names(version):
+        (dist / name).write_bytes(name.encode())
+    hashes = {name: hashlib.sha256(name.encode()).hexdigest() for name in release.distribution_names(version)}
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "schema_version": release.MANIFEST_SCHEMA,
+                "version": version,
+                "commit": COMMIT,
+                "workflow_sha": WORKFLOW_SHA,
+                "files": hashes,
+            }
+        )
+    )
+    descriptor = _descriptor()
+    descriptor["version"] = version
+    package = _packages(descriptor)[0]
+    assert isinstance(package, dict)
+    package["version"] = version
+    meta = {"io.modelcontextprotocol.registry/official": {"status": "active", "isLatest": True}}
+    responses: dict[str, object] = {
+        "pypi": _pypi_response(TRAIN[0], version, hashes),
+        "descriptor": descriptor,
+        "registry": {"server": descriptor, "_meta": meta},
+    }
+    response = tmp_path / "response.json"
+    response.write_text(json.dumps(responses.get(mode if mode != "tag" else "pypi")))
+    environment, branches = tmp_path / "environment.json", tmp_path / "branches.json"
+    environment.write_text(json.dumps(ENVIRONMENT))
+    branches.write_text(json.dumps({"branch_policies": [{"name": "main", "type": "branch"}]}))
+    args = ["--root", str(root), "--distributions", str(contract), "--tag", f"v{version}", "--commit", COMMIT]
+    if mode == "environment":
+        args += ["--environment-json", str(environment), "--branch-policies-json", str(branches)]
+    elif mode == "artifacts":
+        args += ["--workflow-sha", WORKFLOW_SHA, "--dist-dir", str(dist), "--manifest", str(manifest)]
+    elif mode in {"pypi", "tag"}:
+        args += [
+            "--manifest",
+            str(manifest),
+            "--manifest-sha256",
+            hashlib.sha256(manifest.read_bytes()).hexdigest(),
+            "--response-json",
+            str(response),
+        ]
+    else:
+        args += ["--response-json", str(response)]
+
+    def git(*git_args: str) -> str:
+        if git_args in {("rev-parse", "HEAD"), ("rev-parse", f"refs/tags/v{version}^{{commit}}")}:
+            return COMMIT
+        return ""
+
+    monkeypatch.setattr(sys, "argv", ["verify_release.py", "--publication-check", mode, *args])
+    monkeypatch.setattr(release, "ROOT", release.ROOT)
+    monkeypatch.setattr(release, "RELEASE_STATE_PATH", release.RELEASE_STATE_PATH)
+    monkeypatch.setattr(release, "RELEASE_BRANCH", release.RELEASE_BRANCH)
+    monkeypatch.setattr(release, "_run_git", git)
+    if checkout == version:
+        assert release.main() == 0, capsys.readouterr().err
+        assert capsys.readouterr().out == f"publication {mode} verified\n"
+    else:
+        assert release.main() == 1
+        assert (
+            f"tag v{version} does not match the checkout project.version {checkout}"
+            in capsys.readouterr().err
+        )
+
+
+@pytest.mark.parametrize("publishable", [False, True], ids=["metadata", "require-publishable"])
+def test_metadata_path_rejects_tag_that_differs_from_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], publishable: bool
+) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "pyproject.toml").write_text('[project]\nversion="3.0.0"\n')
+    contract = tmp_path / "unsplit.json"
+    contract.write_text(json.dumps([TRAIN[0]._asdict()]))
+    argv = ["verify_release.py", "--root", str(root), "--distributions", str(contract)]
+    argv += ["--tag", "v2.0.0", "--commit", COMMIT] + (["--require-publishable"] if publishable else [])
+    monkeypatch.setattr(sys, "argv", argv)
+    monkeypatch.setattr(release, "ROOT", release.ROOT)
+    monkeypatch.setattr(release, "RELEASE_STATE_PATH", release.RELEASE_STATE_PATH)
+    monkeypatch.setattr(release, "RELEASE_BRANCH", release.RELEASE_BRANCH)
+    assert release.main() == 1
+    assert "tag v2.0.0 does not match the checkout project.version 3.0.0" in capsys.readouterr().err
 
 
 def _descriptor() -> dict[str, object]:
@@ -323,8 +691,12 @@ def test_registry_readback_reuses_exact_descriptor_assertion() -> None:
 
 
 @pytest.mark.parametrize("mutation", ["digest", "filename", "yanked", "extra"])
-def test_probe_release_binds_pypi_to_approved_manifest(distributions: Path, mutation: str) -> None:
-    hashes = dict(release.distribution_hashes(distributions, VERSION))
+@pytest.mark.parametrize("item", TRAIN, ids=lambda item: item.name)
+def test_probe_release_binds_pypi_to_approved_manifest(
+    distributions: Path, mutation: str, item: release.Distribution
+) -> None:
+    all_hashes = dict(release.distribution_hashes(distributions, VERSION))
+    hashes = {name: all_hashes[name] for name in release.distribution_names(VERSION, item.name)}
     urls: list[dict[str, object]] = [
         {
             "filename": name,
@@ -334,8 +706,8 @@ def test_probe_release_binds_pypi_to_approved_manifest(distributions: Path, muta
         }
         for name, digest in hashes.items()
     ]
-    raw = {"info": {"name": "mcp-audits", "version": VERSION}, "urls": urls}
-    release.verify_pypi(raw, version=VERSION, hashes=hashes)
+    raw = {"info": {"name": item.name, "version": VERSION}, "urls": urls}
+    release.verify_pypi(raw, version=VERSION, hashes=hashes, distribution=item.name)
     if mutation == "digest":
         urls[0]["digests"] = {"sha256": "0" * 64}
     elif mutation == "filename":
@@ -345,7 +717,7 @@ def test_probe_release_binds_pypi_to_approved_manifest(distributions: Path, muta
     else:
         urls.append(dict(urls[0]))
     with pytest.raises(release.VerificationError):
-        release.verify_pypi(raw, version=VERSION, hashes=hashes)
+        release.verify_pypi(raw, version=VERSION, hashes=hashes, distribution=item.name)
 
 
 def test_workflow_isolates_consumer_copies_and_uploads_explicit_paths() -> None:
@@ -437,7 +809,17 @@ def test_wheel_duplicate_members_are_rejected(distributions: Path) -> None:
 
 
 def test_fixture_matches_the_approved_commit(distributions: Path) -> None:
-    assert len(release.verify_distributions(dist_dir=distributions, version=VERSION, commit=COMMIT)) == 2
+    assert len(release.verify_distributions(dist_dir=distributions, version=VERSION, commit=COMMIT)) == 6
+
+
+@pytest.mark.parametrize("item", TRAIN, ids=lambda item: item.name)
+@pytest.mark.parametrize("artifact", [0, 1], ids=["wheel", "sdist"])
+def test_split_release_requires_every_artifact(
+    distributions: Path, item: release.Distribution, artifact: int
+) -> None:
+    (distributions / release.distribution_names(VERSION, item.name)[artifact]).unlink()
+    with pytest.raises(release.VerificationError, match="exactly"):
+        release.verify_distributions(dist_dir=distributions, version=VERSION, commit=COMMIT)
 
 
 def _replace_sdist_members(path: Path, replacements: dict[str, bytes | None]) -> None:

@@ -56,6 +56,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `proof-before-action`; Proof-only runs `proof-before-action --version` without
   core. Self-audit explicitly builds the core wheel, and `mypy .` type-checks all
   three package source trees.
+- Release verification supports partial PyPI readbacks between split-package
+  uploads with `--publication-check pypi --published-through NAME`, which checks
+  the contract-order prefix up to and including `NAME` (core; core and Labs; all
+  three) against the approved manifest, rejects a readback map with any other
+  keys, and reports `partial readback; not release completion`. A final
+  `--publication-check tag` requires all six published files and the release
+  tag at the approved landed commit. Every version outside 2.x, not only 3.x,
+  requires the three-distribution contract. The split rule applies when either
+  the `--tag` version or the checkout's `project.version` is outside 2.x, and
+  the two must be equal whenever both are present, so a 2.x tag can no longer
+  bypass the contract on a 3.x checkout. Before publication the release tag
+  must be absent both locally and on `origin` (`git ls-remote`); an unreadable
+  `origin` fails closed.
 
 ### Breaking
 
@@ -150,6 +163,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   still dispatches `lab` and `safeforge` lazily; without labs these commands
   exit 2 with the existing install notice, including the direct Proof install
   needed to put `proof-before-action` on PATH.
+- For 3.x, pre-upload commit checks refuse an existing release tag. An explicit
+  three-package release contract must match `release/distributions.json` in source
+  and release controls byte for byte; the source contract is also bound to the
+  approved commit. Missing and explicitly unsplit contracts fail verification.
 
 ### Added
 
