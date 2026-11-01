@@ -634,7 +634,8 @@ def test_publication_requires_a_separate_manual_dispatch() -> None:
     assert "workflow_dispatch:" in trigger
     assert "\n  push:" not in trigger
     assert "commit:" in trigger
-    assert "tag:" in trigger
+    assert "version:" in trigger
+    assert "tag:" not in trigger
     assert "approval:" not in trigger
     assert "publish-mcp-audits" not in workflow
     assert "validate-dispatch-ref:" in validation_job
@@ -653,14 +654,16 @@ def test_publish_gate_prepares_proof_before_action_test_image() -> None:
     assert "path: release-source" in build_job
     assert "../release-controls/scripts/verify_release.py" in build_job
     assert "python ../release-controls/scripts/verify_release.py" in pre_trust
-    assert "uv run python ../release-controls/scripts/verify_release.py" not in pre_trust
+    assert "uv run --no-project --with packaging==26.0 python" in pre_trust
     assert "--root ." in build_job
     assert "working-directory: release-source" in build_job
     assert "Prepare Proof Before Action test image" in build_job
     assert "docker image inspect node:24-slim" in build_job
     assert "docker pull node:24-slim" in build_job
     assert "docker image inspect --format '{{.Id}}' node:24-slim" in build_job
-    assert build_job.index("Prepare Proof Before Action test image") < build_job.index("uv run pytest")
+    assert build_job.index("Prepare Proof Before Action test image") < build_job.index(
+        "uv run --all-packages pytest"
+    )
 
 
 def test_oidc_authority_is_confined_to_post_build_publish_job() -> None:
@@ -668,14 +671,16 @@ def test_oidc_authority_is_confined_to_post_build_publish_job() -> None:
     build_job, publish_job = workflow.split("\n  publish:\n", maxsplit=1)
 
     assert "id-token: write" not in build_job
-    assert "uv run pytest" in build_job
+    assert "uv run --all-packages pytest" in build_job
     assert "scripts/verify_release.py" in build_job
     assert "actions/upload-artifact@" in build_job
-    assert "needs: [build, consumer-smoke]" in publish_job
+    assert "needs: [validate-dispatch-ref, build, consumer-smoke, resume]" in publish_job
+    assert "needs.consumer-smoke.result == 'success'" in publish_job
+    assert "inputs.resume && needs.resume.result == 'success'" in publish_job
     assert "environment: pypi" in publish_job
     assert workflow.count("actions: read") == 3
-    assert workflow.count("GH_TOKEN: ${{ github.token }}") == 2
-    assert workflow.count("Authorization: Bearer $GH_TOKEN") == 4
+    assert workflow.count("GH_TOKEN: ${{ github.token }}") == 4
+    assert workflow.count("Authorization: Bearer $GH_TOKEN") == 6
     assert "id-token: write" in publish_job
     assert "$RUNNER_TEMP/pypi-environment.json" in workflow
     assert "--publication-check environment" in publish_job
@@ -694,13 +699,15 @@ def test_publish_gate_runs_corpus_and_exact_distribution_install_smokes() -> Non
     build_job, _publish_job = workflow.split("\n  publish:\n", maxsplit=1)
 
     assert "tests/validation/validate_patterns.py" in build_job
-    assert "Smoke-install exact wheel and sdist" in build_job
-    assert 'for package in "$wheel" "$sdist"' in build_job
-    assert 'release_version="${RELEASE_TAG#v}"' in build_job
-    assert "mcp-audit, version $release_version" in build_job
-    assert 'test ! -e "$smoke/bin/proof-before-action"' in build_job
-    assert "proof-before-action, version $release_version" not in build_job
-    assert '"$smoke/bin/python" -I scripts/smoke_installed_artifact.py' in build_job
+    assert "Smoke-install every wheel, sdist and exact-pinned extra offline" in build_job
+    assert "python scripts/smoke_release.py --distributions release/distributions.json" in build_job
+    assert "--dependencies" in build_job
+    smoke = Path("scripts/smoke_release.py").read_text(encoding="utf-8")
+    assert "release.distribution_names(version, item.name)" in smoke
+    assert 'f"mcp-audit, version {version}"' in smoke
+    assert "elif proof.exists():" in smoke
+    assert 'f"proof-before-action, version {version}"' in smoke
+    assert '"smoke_installed_artifact.py"' in smoke
 
 
 def test_registry_publication_is_manual_pypi_first_and_oidc_confined() -> None:

@@ -72,6 +72,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bypass the contract on a 3.x checkout. Before publication the release tag
   must be absent both locally and on `origin` (`git ls-remote`); an unreadable
   `origin` fails closed.
+- The PyPI publish workflow releases the three lockstep distributions commit-first: it dispatches on an approved commit and version, builds a six-file manifest with the exact build constraints, smokes every wheel and sdist plus the exact-pinned extras, uploads core, labs and proof in order with a PyPI readback after each, and supports `resume` from the original run's retained, manifest-verified bytes (never rebuilding) within the 90-day artifact retention. Recovery and publication verify against the approved commit's source, so a later version bump on main does not block them. The `vX.Y.Z` tag is created by the owner only after all six files verify.
+- Publish dispatch now binds an approved commit and version before tagging, builds
+  and smokes all six split artifacts and pinned extras, retains candidates for
+  90 days, and reads back each ordered PyPI upload. Explicit recovery verifies
+  the original run, control revision and manifest before staging only missing
+  files; dry runs rehearse a partial upload and retained-byte recovery offline.
 
 ### Breaking
 
