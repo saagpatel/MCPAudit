@@ -195,13 +195,30 @@ The release is bound to an approved commit and version, not to a tag. Main's
 existing `vX.Y.Z` tag, and refuses any 2.x version. The tag is created only
 after all six files are published and verified.
 
+**Main's version is frozen until the whole train completes.** Every verifier
+call in `publish.yml` and `publish-mcp-registry.yml` that does not pass
+`--root` runs from the release-controls checkout at `github.sha` (the
+dispatched `main` head), and the verifier requires the tag to equal that
+checkout's `project.version`. Main's `project.version` must therefore equal the
+release version for the publishing run, for any [resume](#resume), and for the
+Registry dispatch. No version-bump PR may land on `main` until the whole train
+is complete: all six files, the `vX.Y.Z` tag, the GitHub Release and the
+Registry entry. Otherwise every such step fails closed, resume becomes
+impossible, and only the abandoned-version route in
+[Partial-Publication Recovery](#partial-publication-recovery) remains.
+
 ### Owner Prerequisites
 
 - PyPI trusted publishers exist for `mcp-audits-labs` and `mcp-audits-proof`,
   each bound to this repository, the `publish.yml` workflow and the `pypi`
-  environment, alongside the existing `mcp-audits` publisher. Prepare all
-  three before the first live run: a missing satellite publisher fails after
-  core is already uploaded and leaves a partial publication.
+  environment, alongside the existing `mcp-audits` publisher. Neither
+  satellite project exists on PyPI yet, so the owner creates each as a
+  **pending** trusted publisher from the PyPI account's publishing settings
+  ("Add a new pending publisher": this repository, workflow `publish.yml`,
+  environment `pypi`); the pending publisher claims the project name on its
+  first upload. Prepare all three before the first live run: a missing
+  satellite publisher fails after core is already uploaded and leaves a
+  partial publication.
 - The `pypi` environment requires a named repository-owner reviewer, disables
   administrator bypass, and has exactly one custom deployment policy for the
   `main` branch (no tag or wildcard policies); otherwise stop with `NO-GO`.
@@ -245,10 +262,15 @@ end without publication authority.
 4. Dispatch again with `dry_run: false` only for the separately approved
    publication. The protected `publish` job waits for the owner's `pypi`
    environment approval; approve it only after reviewing that run's manifest
-   and SHA-256, which differ from the dry run's because the run rebuilds. To
-   publish the exact dry-run bytes instead, use [Resume](#resume) against the
-   dry-run run. OIDC capability is granted to the entire job; its earlier steps
-   already possess that capability before hash verification.
+   and SHA-256. The run rebuilds, so its manifest digest may differ from the
+   dry run's (a changed control SHA or non-reproducible build output changes
+   it); either way, approve the digest that this publishing run's build job
+   logged. To publish the exact dry-run bytes instead, use [Resume](#resume)
+   against the dry-run run. OIDC capability is granted to the entire job; its
+   earlier steps already possess that capability before hash verification.
+   Main's `project.version` must still equal `X.Y.Z` when this run is
+   dispatched and must not move until the whole train completes (see the
+   section introduction above).
 5. The `publish` job re-reads the environment, rechecks the landed source and
    the absent tag, downloads the retained candidates, verifies them against the
    manifest, and stages each distribution in its own folder. It then uploads
@@ -322,6 +344,10 @@ Only after the publish job's six-file check succeeds:
      "$tmp/release/release-manifest.json"
    ```
 
+   `RELEASE_NOTES.md` is a placeholder for this version's reviewed release
+   notes file, not an existing repository file: for 3.0.0 it is
+   `docs/3.0-RELEASE-NOTES.md`, created by the candidate PR.
+
 4. Confirm the protected `pypi` environment still has required reviewers with
    administrator bypass disabled. The Registry workflow reuses this gate for a
    separate post-PyPI approval rather than creating a second, potentially
@@ -335,10 +361,11 @@ Only after the publish job's six-file check succeeds:
    environment-bound OIDC job can run. The publish job rechecks the shared
    environment policy, the three-way PyPI readback and the exact descriptor
    immediately before login.
-   Dispatch it while main's `project.version` still equals the release
-   version: the verifier requires the tag to match the release-controls
-   checkout's version, so once a later version bump lands on main these
-   checks fail closed and the Registry entry cannot be published.
+   Main's `project.version` must still equal `X.Y.Z` for this dispatch: its
+   unrooted verifier calls run from the release-controls checkout at
+   `github.sha` and require the tag to equal that checkout's version, so a
+   version bump landed on main before this step makes every check fail closed
+   and the Registry entry cannot be published for this version.
 6. Confirm both the exact-version and `latest` official Registry endpoints name
    `io.github.saagpatel/mcp-audit` at the released version with the exact PyPI
    package tuple. Registry metadata does not prove artifact hashes,
@@ -352,7 +379,12 @@ new reviewed commit and obtain a new exact approval.
 ### Resume
 
 Recovery is a dispatch of the same `Publish to PyPI` workflow from `main` with
-`resume: true` and the original approvals:
+`resume: true` and the original approvals. Main's `project.version` must still
+equal `X.Y.Z` when the resume is dispatched: the resume and publish jobs'
+unrooted verifier calls run from the release-controls checkout at `github.sha`
+and require the tag to equal its version. If a version bump has landed on
+main, resume is impossible and only the abandoned-version route in
+[Partial-Publication Recovery](#partial-publication-recovery) remains.
 
 | Input | Value | Where it comes from |
 | --- | --- | --- |
