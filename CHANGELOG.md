@@ -128,6 +128,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `_run_scan`/`_parse_clients` re-exports from `mcp_audit._core_cli`. Library callers use
   `mcp_audit.engine.run_scan(ScanOptions(...))` and `mcp_audit.client_filter._parse_clients`;
   there is no replacement for `monitor` (use `shadow`, `watch`, or `check --pin-check`).
+- Move the 34 lab and SafeForge modules and the session/resume scenario corpus
+  from `mcp_audit` to the optional `mcp_audit_labs` package. Install labs with
+  `uv tool install 'mcp-audits[labs]'` and update Python imports. The core CLI
+  still dispatches `lab` and `safeforge` lazily; without labs these commands
+  exit 2 with the existing install notice, including the direct Proof install
+  needed to put `proof-before-action` on PATH.
 
 ### Added
 
