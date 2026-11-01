@@ -11,7 +11,7 @@ import pytest
 import yaml
 from click.testing import CliRunner
 
-from mcp_audit import engine, pinning, scan_cli
+from mcp_audit import check_cli, engine, pinning
 from mcp_audit.cli import main
 from mcp_audit.engine import ScanOptions, run_scan
 from mcp_audit.models import AuditReport, ServerAudit, ServerConfig, ToolInfo
@@ -284,7 +284,7 @@ def test_pin_withheld_policy_cli_writes_report_before_exit(
         assert options.config_only and options.skip_connect and options.pin_check
         return report
 
-    monkeypatch.setattr(scan_cli, "run_scan", fake_scan)
+    monkeypatch.setattr(check_cli, "run_scan", fake_scan)
     config = tmp_path / "synthetic.json"
     config.write_text('{"mcpServers": {"fixture": {"command": "synthetic"}}}')
     policy = tmp_path / "policy.yaml"
@@ -293,7 +293,7 @@ def test_pin_withheld_policy_cli_writes_report_before_exit(
     result = CliRunner().invoke(
         main,
         [
-            "scan",
+            "check",
             "--config",
             str(config),
             "--config-only",
@@ -305,7 +305,7 @@ def test_pin_withheld_policy_cli_writes_report_before_exit(
             str(legacy_store.path),
             "--policy",
             str(policy),
-            "--json",
+            "--output-json",
             str(output),
         ],
     )

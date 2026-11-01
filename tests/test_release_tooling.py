@@ -13,6 +13,7 @@ import zipfile
 from pathlib import Path, PurePosixPath
 
 import pytest
+from packaging.requirements import Requirement
 
 import mcp_audit_build_backend as backend
 from scripts import verify_release as release
@@ -155,8 +156,11 @@ def test_distribution_contract_is_explicit_and_ordered(tmp_path: Path, mutation:
 
 
 EXTRAS = (("labs", ("labs",)), ("proof", ("proof",)), ("all", ("labs", "proof")))
+OPTIONAL = {"watch": "watchfiles>=1.1.1", "llm": "anthropic>=0.40", "otel": "opentelemetry-api>=1.44,<2"}
+PROOF_DEPENDENCIES = ["click>=8.3.3,<9.0", "pydantic>=2.0", "pyyaml>=6.0"]
+BUILD_CONSTRAINTS = (Path(__file__).resolve().parents[1] / "build-constraints.txt").read_text()
 BUILD_SYSTEM = (
-    '[build-system]\nrequires = ["uv_build>=0.11.2,<0.13.0"]\n'
+    f'[build-system]\nrequires = ["{BUILD_CONSTRAINTS.strip()}"]\n'
     'build-backend = "mcp_audit_build_backend"\nbackend-path = ["."]\n'
 )
 
@@ -190,15 +194,21 @@ def _project_toml(item: release.Distribution) -> str:
         ["mcp>=2.2.0,<3.0", "cryptography>=50.0.0,<51.0", "click>=8.3.3,<9.0", "anyio>=4.14.2"]
         if item.name == "mcp-audits"
         else [f"mcp-audits=={VERSION}"]
+        if item.name == "mcp-audits-labs"
+        else PROOF_DEPENDENCIES
     )
     project = (
         f'{BUILD_SYSTEM}[project]\nname="{item.name}"\nversion="{VERSION}"\n'
         f"dependencies={json.dumps(dependencies)}\n[project.scripts]\n"
     ) + "".join(f'{key} = "{value}"\n' for key, value in item.scripts.items())
     if item.name == "mcp-audits":
+        extras = {
+            extra: [f"mcp-audits-{package}=={VERSION}" for package in packages] for extra, packages in EXTRAS
+        }
+        extras["all"].extend(OPTIONAL.values())
+        extras.update({extra: [value] for extra, value in OPTIONAL.items()})
         project += "[project.optional-dependencies]\n" + "".join(
-            f"{extra}={json.dumps([f'mcp-audits-{package}=={VERSION}' for package in packages])}\n"
-            for extra, packages in EXTRAS
+            f"{extra}={json.dumps(values)}\n" for extra, values in extras.items()
         )
         project += 'conditional=[\'fixture-pkg[cli]>=1,<2; python_version < "3.12" or os_name == "nt"\']\n'
     return (
@@ -217,9 +227,14 @@ def _commit_train(repo: Path, train: tuple[release.Distribution, ...]) -> str:
         for target in item.scripts.values():
             module = target.partition(":")[0].removeprefix(f"{item.module}.")
             (package / f"{module}.py").write_text("def main() -> None:\n    pass\n")
-        (base / "pyproject.toml").write_text(_project_toml(item))
+        project = _project_toml(item)
+        if item == train[0] and len(train) == 3:
+            members = [str(PurePosixPath(other.project).parent) for other in train[1:]]
+            project += f"\n[tool.uv.workspace]\nmembers={json.dumps(members)}\n"
+        (base / "pyproject.toml").write_text(project)
         (base / "mcp_audit_build_backend.py").write_bytes(Path(backend.__file__).read_bytes())
     (repo / ".gitignore").write_text("__pycache__/\n")
+    (repo / "build-constraints.txt").write_text(BUILD_CONSTRAINTS)
     if not (repo / ".git").exists():
         _git(repo, "init", "-q")
     _git(repo, "add", "-A")
@@ -252,8 +267,10 @@ def _wheel_entries(path: Path) -> dict[str, bytes]:
 
 def _metadata(item: release.Distribution) -> str:
     metadata = f"Name: {item.name}\nVersion: {VERSION}\n"
-    if item.name != "mcp-audits":
+    if item.name == "mcp-audits-labs":
         return metadata + f"Requires-Dist: mcp-audits=={VERSION}\n"
+    if item.name == "mcp-audits-proof":
+        return metadata + "".join(f"Requires-Dist: {value}\n" for value in PROOF_DEPENDENCIES)
     metadata += (
         "Requires-Dist: mcp>=2.2.0,<3.0\nRequires-Dist: cryptography>=50.0.0,<51.0\n"
         "Requires-Dist: click>=8.3.3,<9.0\nRequires-Dist: anyio>=4.14.2\n"
@@ -261,6 +278,9 @@ def _metadata(item: release.Distribution) -> str:
     for extra, packages in EXTRAS:
         for package in packages:
             metadata += f'Requires-Dist: mcp-audits-{package}=={VERSION}; extra == "{extra}"\n'
+    for extra, value in OPTIONAL.items():
+        metadata += f'Requires-Dist: {value}; extra == "{extra}"\n'
+        metadata += f'Requires-Dist: {value}; extra == "all"\n'
     metadata += (
         "Requires-Dist: fixture-pkg[cli]>=1,<2; "
         '(python_full_version < "3.12" and extra == "conditional") '
@@ -351,7 +371,18 @@ def test_real_build_verifies_clean_committed_train(train_artifacts: Path) -> Non
     repo = train_artifacts.parent / "repo"
     for item in TRAIN:
         subprocess.run(
-            ["uv", "build", "--offline", "--no-create-gitignore", "--out-dir", str(train_artifacts)],
+            [
+                "uv",
+                "build",
+                "--offline",
+                "--no-create-gitignore",
+                "--package",
+                item.name,
+                "--build-constraints",
+                str(repo / "build-constraints.txt"),
+                "--out-dir",
+                str(train_artifacts),
+            ],
             cwd=repo / PurePosixPath(item.project).parent,
             check=True,
             capture_output=True,
@@ -364,6 +395,48 @@ def test_real_build_verifies_clean_committed_train(train_artifacts: Path) -> Non
         )
         == 6
     )
+
+
+@pytest.mark.parametrize("distribution", TRAIN)
+def test_reference_build_selects_member_and_passes_committed_build_constraints(
+    train_artifacts: Path, monkeypatch: pytest.MonkeyPatch, distribution: release.Distribution
+) -> None:
+    calls: list[tuple[list[str], object]] = []
+    real_run = subprocess.run
+
+    def recording_run(args: list[str], **kwargs: object) -> object:
+        calls.append((list(args), kwargs.get("cwd")))
+        return real_run(args, **kwargs)  # type: ignore[call-overload]
+
+    monkeypatch.setattr(subprocess, "run", recording_run)
+    release._reference_build(commit=_commit(train_artifacts), distribution=distribution)
+
+    ((build, cwd),) = [call for call in calls if call[0][:2] == ["uv", "build"]]
+    assert build[build.index("--package") + 1] == distribution.name
+    constraints = Path(build[build.index("--build-constraints") + 1])
+    assert constraints.name == "build-constraints.txt"
+    assert constraints.parent.name == "source"
+    assert cwd == constraints.parent / PurePosixPath(distribution.project).parent
+
+
+def test_reference_build_requires_committed_build_constraints(train_artifacts: Path) -> None:
+    repo = train_artifacts.parent / "repo"
+    _git(repo, "rm", "-q", "build-constraints.txt")
+    _git(repo, "commit", "-q", "-m", "drop constraints")
+    commit = _git(repo, "rev-parse", "HEAD")
+
+    with pytest.raises(release.VerificationError, match="build-constraints.txt"):
+        release._reference_build(commit=commit, distribution=TRAIN[0])
+
+
+def test_reference_build_is_constrained_by_the_committed_pin(train_artifacts: Path) -> None:
+    repo = train_artifacts.parent / "repo"
+    (repo / "build-constraints.txt").write_text("uv_build==0.0.1\n")
+    _git(repo, "commit", "-q", "-am", "conflicting constraint")
+    commit = _git(repo, "rev-parse", "HEAD")
+
+    with pytest.raises(release.VerificationError, match="reference build failed"):
+        release._reference_build(commit=commit, distribution=TRAIN[0])
 
 
 def _sdist_entries(path: Path) -> dict[str, bytes]:
@@ -457,6 +530,45 @@ def test_sdist_core_extras_must_pin_lockstep_versions(train_artifacts: Path) -> 
         )
 
 
+SATELLITE_REFERENCES = {
+    "none": [],
+    "extras": [
+        f'mcp-audits-{package}=={VERSION}; extra == "{extra}"'
+        for extra, packages in EXTRAS
+        for package in packages
+    ],
+    "labs-extra": [f'mcp-audits-labs=={VERSION}; extra == "labs"'],
+    "base-dependency": [f"mcp-audits-labs=={VERSION}"],
+    "other-extra": [f'mcp-audits-proof=={VERSION}; extra == "watch"'],
+    "range": [f'mcp-audits-labs>={VERSION}; extra == "labs"'],
+    "other-version": ['mcp-audits-proof==9.9.9; extra == "proof"'],
+    "self": [f"mcp-audits=={VERSION}"],
+}
+
+
+@pytest.mark.parametrize("split", [False, True])
+@pytest.mark.parametrize("case", list(SATELLITE_REFERENCES))
+def test_core_admits_satellites_only_as_exact_pins_in_their_extras(
+    monkeypatch: pytest.MonkeyPatch, split: bool, case: str
+) -> None:
+    monkeypatch.setattr(release, "DISTRIBUTIONS", TRAIN if split else TRAIN[:1])
+    floors = [raw for raw, _label in release.SECURITY_FLOORS]
+    requirements = [Requirement(raw) for raw in [*floors, *SATELLITE_REFERENCES[case]]]
+    # The unsplit contract may omit the extras; the three-distribution contract must declare them.
+    if case == "extras" or (case in {"none", "labs-extra"} and not split):
+        release._check_requirements(requirements, version=VERSION, name="core", distribution=TRAIN[0])
+    else:
+        with pytest.raises(release.VerificationError, match="core must pin the exact lockstep"):
+            release._check_requirements(requirements, version=VERSION, name="core", distribution=TRAIN[0])
+
+
+@pytest.mark.parametrize("dependency", ["mcp-audits==3.0.0", "mcp-audits-labs==3.0.0"])
+def test_proof_rejects_any_lockstep_distribution_dependency(dependency: str) -> None:
+    requirements = [Requirement(raw) for raw in [*PROOF_DEPENDENCIES, dependency]]
+    with pytest.raises(release.VerificationError, match="Proof must not depend on mcp-audits"):
+        release._check_requirements(requirements, version=VERSION, name="proof", distribution=TRAIN[2])
+
+
 @pytest.mark.parametrize("kind", [tarfile.SYMTYPE, tarfile.LNKTYPE])
 @pytest.mark.parametrize("filename", ["__init__.py", "_build_provenance.json", "linked.py", "source-root"])
 def test_sdist_package_tree_rejects_links(train_artifacts: Path, kind: bytes, filename: str) -> None:
@@ -532,7 +644,16 @@ def test_script_contract_covers_console_and_gui_union(duplicate: bool) -> None:
         release._check_entry_points(wheel, scripts=proof.scripts, name="fixture wheel")
 
 
-@pytest.mark.parametrize("mutation", ["missing", "version", "pin", "provenance", "scripts"])
+PARTIAL_TRAIN_ERRORS = {
+    "missing": "exactly the expected wheel and sdist",
+    "version": "has the wrong version",
+    "core-dependency": "Proof must not depend on mcp-audits",
+    "provenance": "not bound to the clean approved commit",
+    "scripts": "entry points do not match the release contract",
+}
+
+
+@pytest.mark.parametrize("mutation", list(PARTIAL_TRAIN_ERRORS))
 def test_partial_or_inconsistent_train_fails(train_artifacts: Path, mutation: str) -> None:
     proof = TRAIN[2]
     wheel = train_artifacts / release.distribution_names(VERSION, proof.name)[0]
@@ -544,8 +665,8 @@ def test_partial_or_inconsistent_train_fails(train_artifacts: Path, mutation: st
         for name, content in entries.items():
             if mutation == "version" and name.endswith("/METADATA"):
                 entries[name] = content.replace(b"Version: 3.0.0", b"Version: 3.0.1")
-            if mutation == "pin" and name.endswith("/METADATA"):
-                entries[name] = content.replace(b"mcp-audits==3.0.0", b"mcp-audits>=3.0.0")
+            if mutation == "core-dependency" and name.endswith("/METADATA"):
+                entries[name] = content + b"Requires-Dist: mcp-audits==3.0.0\n"
             if mutation == "provenance" and name.endswith("_build_provenance.json"):
                 entries[name] = json.dumps({"commit": "c" * 40, "dirty": False}).encode()
             if mutation == "scripts" and name.endswith("entry_points.txt"):
@@ -553,7 +674,7 @@ def test_partial_or_inconsistent_train_fails(train_artifacts: Path, mutation: st
         with zipfile.ZipFile(wheel, "w") as archive:
             for name, content in entries.items():
                 archive.writestr(name, content)
-    with pytest.raises(release.VerificationError):
+    with pytest.raises(release.VerificationError, match=PARTIAL_TRAIN_ERRORS[mutation]):
         release.verify_distributions(
             dist_dir=train_artifacts, version=VERSION, commit=_commit(train_artifacts)
         )
@@ -600,9 +721,25 @@ def test_maintenance_environment_requires_exact_branch(monkeypatch: pytest.Monke
         )
 
 
-@pytest.mark.parametrize(
-    "mutation", ["none", "version", "lock", "scripts", "pin", "extra", "gui-collision", "core-gui-collision"]
-)
+LOCKSTEP_ERRORS = {
+    "none": "",
+    "version": "lockstep names and versions",
+    "lock": "uv.lock distribution versions must be lockstep",
+    "scripts": "entry points do not match the release contract",
+    "pin": "labs/pyproject.toml must pin the exact lockstep",
+    "extra": "core extra 'proof' is missing",
+    "gui-collision": "GUI entry points do not match the release contract",
+    "core-gui-collision": "installed scripts must have unique owners",
+    "proof-core": "Proof must not depend on mcp-audits",
+    "proof-unexpected": "Proof dependencies must be only",
+    "proof-missing": "Proof dependencies must be only",
+    "all-missing-optional": "all extra must equal the union",
+    "all-extra-optional": "all extra must equal the union",
+    "satellite-unpinned": "labs extra must pin the exact lockstep satellite",
+}
+
+
+@pytest.mark.parametrize("mutation", list(LOCKSTEP_ERRORS))
 def test_source_distribution_metadata_is_lockstep(
     monkeypatch: pytest.MonkeyPatch,
     mutation: str,
@@ -612,13 +749,21 @@ def test_source_distribution_metadata_is_lockstep(
     project["scripts"] = TRAIN[0].scripts
     if mutation == "core-gui-collision":
         project["gui-scripts"] = TRAIN[0].scripts
-    project["optional-dependencies"] = {
+    extras = {
         "labs": [f"mcp-audits-labs=={version}"],
         "proof": [f"mcp-audits-proof=={version}"],
-        "all": [f"mcp-audits-labs=={version}", f"mcp-audits-proof=={version}"],
+        "all": [f"mcp-audits-labs=={version}", f"mcp-audits-proof=={version}", *OPTIONAL.values()],
+        **{extra: [value] for extra, value in OPTIONAL.items()},
     }
+    project["optional-dependencies"] = extras
     if mutation == "extra":
         project["optional-dependencies"] = {"labs": [f"mcp-audits-labs>={version}"]}
+    elif mutation == "all-missing-optional":
+        extras["all"].remove(OPTIONAL["llm"])
+    elif mutation == "all-extra-optional":
+        extras["all"].append("rich>=15")
+    elif mutation == "satellite-unpinned":
+        extras["labs"] = [f"mcp-audits-labs>={version}"]
     monkeypatch.setattr(release, "DISTRIBUTIONS", TRAIN)
     monkeypatch.setattr(release, "_project", lambda: project)
     original_read = release._read_text
@@ -635,9 +780,17 @@ def test_source_distribution_metadata_is_lockstep(
                 other_version = "9.0.0" if mutation == "version" else version
                 pin = ">=" if mutation == "pin" else "=="
                 scripts = {} if mutation == "scripts" else item.scripts
+                dependencies = [f"mcp-audits{pin}{version}"] if item == TRAIN[1] else PROOF_DEPENDENCIES
+                if item == TRAIN[2]:
+                    if mutation == "proof-core":
+                        dependencies = [*dependencies, f"mcp-audits=={version}"]
+                    elif mutation == "proof-unexpected":
+                        dependencies = [*dependencies, "rich>=15"]
+                    elif mutation == "proof-missing":
+                        dependencies = dependencies[:-1]
                 return (
                     f'[project]\nname="{item.name}"\nversion="{other_version}"\n'
-                    f'dependencies=["mcp-audits{pin}{version}"]\n[project.scripts]\n'
+                    f"dependencies={json.dumps(dependencies)}\n[project.scripts]\n"
                     + "".join(f'{key}="{value}"\n' for key, value in scripts.items())
                     + (
                         '[project.gui-scripts]\nproof-before-action="proof_before_action.proof_cli:main"\n'
@@ -651,7 +804,7 @@ def test_source_distribution_metadata_is_lockstep(
     if mutation == "none":
         assert release.verify_metadata(require_publishable=False)[0] == version
     else:
-        with pytest.raises(release.VerificationError):
+        with pytest.raises(release.VerificationError, match=LOCKSTEP_ERRORS[mutation]):
             release.verify_metadata(require_publishable=False)
 
 

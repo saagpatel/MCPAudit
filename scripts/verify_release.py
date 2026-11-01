@@ -42,6 +42,7 @@ REPOSITORY = {"url": "https://github.com/saagpatel/MCPAudit", "source": "github"
 MANIFEST_SCHEMA = "mcp-audits.release-manifest.v1"
 EXTRA_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 PROVENANCE_FILE = "_build_provenance.json"
+BUILD_CONSTRAINTS = "build-constraints.txt"
 SECURITY_FLOORS = (
     ("mcp>=2.2.0,<3.0", "the tested MCP SDK range"),
     ("cryptography>=50.0.0,<51.0", "the cryptography>=50.0.0 security floor"),
@@ -62,6 +63,13 @@ DISTRIBUTIONS: tuple[Distribution, ...] = (
     Distribution(DISTRIBUTION_NAME, "mcp_audit", "pyproject.toml", EXPECTED_SCRIPTS),
 )
 RELEASE_BRANCH = "main"
+KNOWN_DISTRIBUTIONS = frozenset({DISTRIBUTION_NAME, "mcp-audits-labs", "mcp-audits-proof"})
+SATELLITE_EXTRAS = {
+    "labs": ("mcp-audits-labs",),
+    "proof": ("mcp-audits-proof",),
+    "all": ("mcp-audits-labs", "mcp-audits-proof"),
+}
+OPTIONAL_EXTRAS = ("watch", "llm", "otel")
 
 
 def load_distributions(path: Path) -> tuple[Distribution, ...]:
@@ -374,19 +382,14 @@ def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object
         if _locked_project_version(distribution.name) != version:
             raise VerificationError("uv.lock distribution versions must be lockstep")
         _check_project_scripts(other, distribution=distribution, name="distribution project")
-        if f"mcp-audits=={version}" not in other.get("dependencies", []):
-            raise VerificationError("satellite distributions must pin the exact core version")
+        _check_requirements(
+            _project_requirements(other, name=distribution.project),
+            version=version,
+            name=distribution.project,
+            distribution=distribution,
+        )
     if len(DISTRIBUTIONS) == 3:
-        extras = project.get("optional-dependencies")
-        expected_extras = {
-            "labs": [f"mcp-audits-labs=={version}"],
-            "proof": [f"mcp-audits-proof=={version}"],
-            "all": [f"mcp-audits-labs=={version}", f"mcp-audits-proof=={version}"],
-        }
-        if not isinstance(extras, dict) or any(
-            extras.get(key) != value for key, value in expected_extras.items()
-        ):
-            raise VerificationError("core extras must pin exact lockstep satellite versions")
+        _check_core_extras(project, version=version, name="project metadata")
 
     if state.get("schema_version") != "mcp-audit.release-state.v1":
         raise VerificationError("release-state.json schema is unsupported")
@@ -513,30 +516,76 @@ def _requirement_key(requirement: Requirement) -> tuple[object, ...]:
     )
 
 
+def _satellite_extra_pins(version: str) -> list[str]:
+    """Core's only admissible references to its satellites: exact pins inside their extras."""
+    return [
+        f'{package}=={version}; extra == "{extra}"'
+        for extra, packages in SATELLITE_EXTRAS.items()
+        for package in packages
+    ]
+
+
 def _check_requirements(
     requirements: Iterable[Requirement], *, version: str, name: str, distribution: Distribution
 ) -> None:
+    requirements = list(requirements)
     observed = {_requirement_key(requirement) for requirement in requirements}
-    lockstep: list[str] = []
-    if distribution.name != DISTRIBUTION_NAME:
-        lockstep.append(f"mcp-audits=={version}")
-    elif len(DISTRIBUTIONS) == 3:
-        for extra, packages in (
-            ("labs", ("mcp-audits-labs",)),
-            ("proof", ("mcp-audits-proof",)),
-            ("all", ("mcp-audits-labs", "mcp-audits-proof")),
+    known = {key for key in observed if key[0] in KNOWN_DISTRIBUTIONS}
+    if distribution.name == "mcp-audits-proof":
+        if known:
+            raise VerificationError(
+                f"{name} Proof must not depend on mcp-audits or another lockstep distribution"
+            )
+        if {key[0] for key in observed} != {"click", "pydantic", "pyyaml"} or any(
+            requirement.url or requirement.extras or requirement.marker for requirement in requirements
         ):
-            lockstep.extend(f'{package}=={version}; extra == "{extra}"' for package in packages)
-    names = {item.name for item in DISTRIBUTIONS}
-    if {key for key in observed if key[0] in names} != {
-        _requirement_key(_requirement(raw, name=name)) for raw in lockstep
-    }:
+            raise VerificationError(f"{name} Proof dependencies must be only click, pydantic and pyyaml")
+        return
+    if distribution.name == "mcp-audits-labs":
+        allowed = {_requirement_key(_requirement(f"{DISTRIBUTION_NAME}=={version}", name=name))}
+        required = allowed
+    else:
+        allowed = {_requirement_key(_requirement(raw, name=name)) for raw in _satellite_extra_pins(version)}
+        # The unsplit contract admits the satellite extras before the satellites publish; a
+        # three-distribution release must declare every one of them.
+        required = allowed if len(DISTRIBUTIONS) == 3 else set()
+    if not required <= known <= allowed:
         raise VerificationError(f"{name} must pin the exact lockstep distribution versions")
     if distribution.name != DISTRIBUTION_NAME:
         return
     for raw, label in SECURITY_FLOORS:
         if _requirement_key(_requirement(raw, name=name)) not in observed:
             raise VerificationError(f"{name} does not retain {label}")
+
+
+def _check_core_extras(project: dict[str, object], *, version: str, name: str) -> None:
+    extras = project.get("optional-dependencies")
+    if not isinstance(extras, dict):
+        raise VerificationError(f"{name} core extras are missing")
+    declared: dict[str, list[str]] = {}
+    for extra in (*SATELLITE_EXTRAS, *OPTIONAL_EXTRAS):
+        values = extras.get(extra)
+        if not isinstance(values, list) or not values or any(not isinstance(value, str) for value in values):
+            raise VerificationError(f"{name} core extra {extra!r} is missing or invalid")
+        declared[extra] = values
+    for extra, packages in SATELLITE_EXTRAS.items():
+        if extra == "all":
+            continue
+        wanted = {_requirement_key(_requirement(f"{package}=={version}", name=name)) for package in packages}
+        actual = [_requirement_key(_requirement(value, name=name)) for value in declared[extra]]
+        if set(actual) != wanted or len(actual) != len(wanted):
+            raise VerificationError(f"{name} {extra} extra must pin the exact lockstep satellite version")
+    components = [
+        _requirement_key(_requirement(value, name=name))
+        for extra in declared
+        if extra != "all"
+        for value in declared[extra]
+    ]
+    combined = [_requirement_key(_requirement(value, name=name)) for value in declared["all"]]
+    if set(combined) != set(components) or len(combined) != len(set(combined)):
+        raise VerificationError(
+            f"{name} all extra must equal the union of the labs, proof, watch, llm and otel extras"
+        )
 
 
 def _check_distribution_metadata(
@@ -644,6 +693,8 @@ def _check_sdist_project(raw: bytes, *, distribution: Distribution, version: str
     _check_requirements(
         _project_requirements(project, name=name), version=version, name=name, distribution=distribution
     )
+    if distribution.name == DISTRIBUTION_NAME and len(DISTRIBUTIONS) == 3:
+        _check_core_extras(project, version=version, name=name)
 
 
 def _project_requirements(project: dict[str, object], *, name: str) -> list[Requirement]:
@@ -801,10 +852,24 @@ def _reference_build(
             raise VerificationError("approved commit could not be exported for the reference build")
         with tarfile.open(fileobj=io.BytesIO(result.stdout)) as archive:
             archive.extractall(export, filter="data")
+        constraints = export / BUILD_CONSTRAINTS
+        if not constraints.is_file():
+            raise VerificationError(f"approved commit has no {BUILD_CONSTRAINTS} for the reference build")
         output = Path(temporary) / "dist"
         try:
             result = subprocess.run(
-                ["uv", "build", "--offline", "--no-create-gitignore", "--out-dir", str(output)],
+                [
+                    "uv",
+                    "build",
+                    "--offline",
+                    "--no-create-gitignore",
+                    "--package",
+                    distribution.name,
+                    "--build-constraints",
+                    str(constraints),
+                    "--out-dir",
+                    str(output),
+                ],
                 cwd=export / PurePosixPath(distribution.project).parent,
                 capture_output=True,
                 check=False,

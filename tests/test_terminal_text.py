@@ -259,12 +259,12 @@ def test_cli_markup_name_still_writes_json(tmp_path: Path) -> None:
     result = CliRunner().invoke(
         main,
         [
-            "scan",
+            "check",
             "--config",
             str(config),
             "--config-only",
             "--skip-connect",
-            "--json",
+            "--output-json",
             str(output),
             "--override-config",
             "/dev/null",
@@ -279,7 +279,7 @@ def test_cli_config_path_errors_are_safe(payload: str, tmp_path: Path) -> None:
     result = CliRunner().invoke(
         main,
         [
-            "scan",
+            "check",
             "--config",
             str(tmp_path / payload),
             "--config-only",

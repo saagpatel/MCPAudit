@@ -23,9 +23,10 @@ from tests.conftest import make_tool
 
 # Captured from the parent revision, using the committed report fixtures and
 # fixed terminal width. Changes to performance must preserve all four surfaces.
+# X-2 updates only the sample terminal hash for explicit check recheck commands.
 GOLDEN = {
     "sample_audit_report": {
-        "terminal": "0dbc2a76e8d00cb0132463ac7e9f96b1ae2400464520f747d47706bf41c40d98",
+        "terminal": "80845a853b92300b3bb8090f344fa9743a4517b171c2b8119dd46bdc794d595a",
         "json": "026339d485f60e1dd5b02bcff7e77b6e3b13ac4fde3dc6ce8666a5874006489b",
         "html": "ac05406211d621963519be1ba3b2a613ae950233031e418281328ad4a7b30df9",
         "sarif": "63b7924e4ccc76c4b8b64df10362a34a6d6767df15dad9fa8c78c6396fe54957",

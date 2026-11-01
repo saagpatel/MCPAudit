@@ -5,12 +5,15 @@ from __future__ import annotations
 import io
 import json
 import sys
+import tomllib
 import urllib.error
 from pathlib import Path
 from typing import Any
 from urllib import request
 
 import pytest
+from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
 
 from scripts import check_advisories
 
@@ -51,6 +54,20 @@ def test_load_queries_covers_registry_lock_entries_and_build_pin(tmp_path: Path)
         {"package": {"name": "optional-extra", "ecosystem": "PyPI"}, "version": "1.2.3"},
         {"package": {"name": "uv-build", "ecosystem": "PyPI"}, "version": "0.12.24"},
     ]
+
+
+def test_load_queries_canonicalizes_package_names(tmp_path: Path) -> None:
+    lock_path = tmp_path / "uv.lock"
+    constraints_path = tmp_path / "build-constraints.txt"
+    write_lock(lock_path)
+    constraints_path.write_text("uv_build==0.12.24\n", encoding="utf-8")
+
+    queries = check_advisories.load_queries(lock_path, constraints_path)
+
+    names = [query["package"]["name"] for query in queries]  # type: ignore[index]
+    assert "uv-build" in names
+    assert "uv_build" not in names
+    assert check_advisories.canonical_name("Foo.Bar__baz") == "foo-bar-baz"
 
 
 def test_load_queries_keeps_multiple_locked_versions(tmp_path: Path) -> None:
@@ -189,17 +206,93 @@ def test_response_json_is_explicit_offline_fixture_mode(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     lock_path = tmp_path / "uv.lock"
+    constraints_path = tmp_path / "build-constraints.txt"
+    fixture_path = tmp_path / "response.json"
+    write_lock(lock_path)
+    constraints_path.write_text("uv_build==0.12.24\n", encoding="utf-8")
+    fixture_path.write_text(
+        json.dumps({"results": [{"vulns": []}, {"vulns": []}, {"vulns": []}]}), encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "check_advisories.py",
+            "--lock",
+            str(lock_path),
+            "--build-constraints",
+            str(constraints_path),
+            "--response-json",
+            str(fixture_path),
+        ],
+    )
+
+    assert check_advisories.main() == 0
+    captured = capsys.readouterr()
+    assert "fixture mode" in captured.out
+    assert "checked 3 locked public PyPI package versions" in captured.out
+    assert captured.err == ""
+
+
+def test_missing_build_constraints_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    lock_path = tmp_path / "uv.lock"
+    missing_path = tmp_path / "build-constraints.txt"
     fixture_path = tmp_path / "response.json"
     write_lock(lock_path)
     fixture_path.write_text(json.dumps({"results": [{"vulns": []}, {"vulns": []}]}), encoding="utf-8")
     monkeypatch.setattr(
         sys,
         "argv",
-        ["check_advisories.py", "--lock", str(lock_path), "--response-json", str(fixture_path)],
+        [
+            "check_advisories.py",
+            "--lock",
+            str(lock_path),
+            "--build-constraints",
+            str(missing_path),
+            "--response-json",
+            str(fixture_path),
+        ],
     )
 
-    assert check_advisories.main() == 0
+    assert check_advisories.main() == 2
     captured = capsys.readouterr()
-    assert "fixture mode" in captured.out
-    assert "checked 2 locked public PyPI package versions" in captured.out
-    assert "build-input coverage unavailable: build-constraints.txt missing" in captured.err
+    assert "no advisories found" not in captured.out
+    assert "build-constraints.txt" in captured.err
+    assert "missing" in captured.err
+
+
+def test_default_build_constraints_is_the_committed_file() -> None:
+    assert (check_advisories.ROOT / "build-constraints.txt").is_file()
+
+
+def _build_pin_projects() -> list[Path]:
+    """The root project plus every workspace member that carries its own build system."""
+    return [
+        check_advisories.ROOT / "pyproject.toml",
+        *sorted(check_advisories.ROOT.glob("distributions/*/pyproject.toml")),
+    ]
+
+
+def test_uv_build_pin_agrees_across_pyproject_and_build_constraints() -> None:
+    constraints = (check_advisories.ROOT / "build-constraints.txt").read_text(encoding="utf-8")
+    pins: dict[str, str] = {}
+    for raw_line in constraints.splitlines():
+        line = raw_line.partition("#")[0].strip()
+        if not line:
+            continue
+        match = check_advisories.PIN_RE.fullmatch(line)
+        assert match is not None, f"build constraint {line!r} must be an exact pin"
+        name, version = match.groups()
+        pins[canonicalize_name(name)] = version
+    assert set(pins) == {"uv-build"}
+
+    projects = _build_pin_projects()
+    assert projects
+    for project in projects:
+        build_system = tomllib.loads(project.read_text(encoding="utf-8"))["build-system"]
+        requirements = [Requirement(value) for value in build_system["requires"]]
+        uv_build = [item for item in requirements if canonicalize_name(item.name) == "uv-build"]
+        assert len(uv_build) == 1, project
+        assert str(uv_build[0].specifier) == f"=={pins['uv-build']}", project

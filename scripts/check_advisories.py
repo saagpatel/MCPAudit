@@ -29,6 +29,11 @@ class AdvisoryCheckError(Exception):
     """Raised when the lock, constraints, or OSV response cannot be checked."""
 
 
+def canonical_name(name: str) -> str:
+    """PEP 503 normalization, so OSV sees ``uv-build`` for a ``uv_build`` pin."""
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
 def load_queries(lock_path: Path, constraints_path: Path | None) -> list[dict[str, object]]:
     try:
         lock = tomllib.loads(lock_path.read_text(encoding="utf-8"))
@@ -53,7 +58,7 @@ def load_queries(lock_path: Path, constraints_path: Path | None) -> list[dict[st
         name, version = package.get("name"), package.get("version")
         if not isinstance(name, str) or not isinstance(version, str):
             raise AdvisoryCheckError("registry package is missing its name or version")
-        versions.add((name, version))
+        versions.add((canonical_name(name), version))
 
     if constraints_path is not None and constraints_path.exists():
         try:
@@ -70,7 +75,7 @@ def load_queries(lock_path: Path, constraints_path: Path | None) -> list[dict[st
                     f"build constraint line {line_number} must be an exact name==version pin"
                 )
             name, version = match.groups()
-            versions.add((name, version))
+            versions.add((canonical_name(name), version))
 
     if len(versions) > MAX_QUERIES:
         raise AdvisoryCheckError(f"package query count exceeds limit ({MAX_QUERIES})")
@@ -165,7 +170,7 @@ def main() -> int:
         "--build-constraints",
         type=Path,
         default=ROOT / "build-constraints.txt",
-        help="exact-pinned build constraints file (read only if present)",
+        help="exact-pinned build constraints file (required)",
     )
     parser.add_argument(
         "--response-json",
@@ -173,9 +178,12 @@ def main() -> int:
         help="read a saved OSV batch response fixture instead of contacting OSV",
     )
     args = parser.parse_args()
-    constraints_missing = not args.build_constraints.exists()
-    if constraints_missing:
-        print("build-input coverage unavailable: build-constraints.txt missing", file=sys.stderr)
+    if not args.build_constraints.is_file():
+        print(
+            f"advisory check unavailable: build constraints file {args.build_constraints} is missing",
+            file=sys.stderr,
+        )
+        return 2
 
     try:
         queries = load_queries(args.lock, args.build_constraints)

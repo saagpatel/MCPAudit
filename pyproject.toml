@@ -47,6 +47,15 @@ dependencies = [
 watch = ["watchfiles>=1.1.1"]
 llm = ["anthropic>=0.40"]
 otel = ["opentelemetry-api>=1.44,<2"]
+labs = ["mcp-audits-labs==2.12.0"]
+proof = ["mcp-audits-proof==2.12.0"]
+all = [
+    "mcp-audits-labs==2.12.0",
+    "mcp-audits-proof==2.12.0",
+    "watchfiles>=1.1.1",
+    "anthropic>=0.40",
+    "opentelemetry-api>=1.44,<2",
+]
 
 [project.urls]
 Homepage = "https://github.com/saagpatel/MCPAudit"
@@ -62,17 +71,28 @@ proof-before-action = "mcp_audit.proof_cli:main"
 mcp-audits = "mcp_audit.cli:main"
 
 [build-system]
-requires = ["uv_build>=0.11.2,<0.13.0"]
+requires = ["uv_build==0.12.24"]
 build-backend = "mcp_audit_build_backend"
 backend-path = ["."]
 
 [tool.uv.build-backend]
 module-name = "mcp_audit"
 source-include = ["mcp_audit_build_backend.py"]
+source-exclude = ["distributions/**"]
+
+[tool.uv.workspace]
+members = ["distributions/labs", "distributions/proof"]
+
+[tool.uv.sources]
+mcp-audits = { workspace = true }
+mcp-audits-labs = { workspace = true }
+mcp-audits-proof = { workspace = true }
 
 [tool.mypy]
 strict = true
 python_version = "3.11"
+explicit_package_bases = true
+mypy_path = ["src", "distributions/labs/src", "distributions/proof/src"]
 
 [[tool.mypy.overrides]]
 module = ["uv_build"]

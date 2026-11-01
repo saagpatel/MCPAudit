@@ -57,10 +57,7 @@ def test_name_completion_never_imports_command_implementations(monkeypatch: pyte
     monkeypatch.setattr("mcp_audit._command_registry.import_module", forbidden_import)
     ctx = click.Context(main)
     assert {item.value for item in main.shell_complete(ctx, "")} >= set(COMMANDS)
-    assert {item.value for item in main.shell_complete(ctx, "safeforge-")} == {
-        "safeforge-preinstall",
-        "safeforge-run",
-    }
+    assert {item.value for item in main.shell_complete(ctx, "safeforge-")} == set()
     lab = main.get_command(ctx, "lab")
     assert isinstance(lab, LazyGroup)
     assert {item.value for item in lab.shell_complete(click.Context(lab), "")} == set(LAB_COMMANDS)
@@ -75,6 +72,10 @@ def test_help_all_enumerates_every_canonical_and_legacy_path() -> None:
     ordinary_rows = {line.strip().split("  ")[0] for line in ordinary.output.splitlines()}
     all_rows = {line.strip().split("  ")[0] for line in exhaustive.output.splitlines()}
     for name, spec in COMMANDS.items():
+        if name == "scan":
+            assert name not in all_rows
+            assert name not in ordinary_rows
+            continue
         assert name in all_rows
         assert (name in ordinary_rows) is not spec.hidden
         if isinstance(spec, NamespaceSpec):
@@ -86,6 +87,9 @@ def test_help_all_enumerates_every_canonical_and_legacy_path() -> None:
         else:
             for leaf in spec.subcommands:
                 assert f"{name} {leaf}" in all_rows
+    assert "Compatibility aliases" not in ordinary.output
+    assert "Compatibility aliases" not in exhaustive.output
+    assert "--help-all" in ordinary.output
 
 
 @pytest.mark.parametrize("name,spec", list(COMMANDS.items()))
@@ -122,106 +126,35 @@ LAB_CASES = [
 
 
 @pytest.mark.parametrize("name,args", LAB_CASES)
-def test_lab_and_old_paths_keep_original_output_bytes(name: str, args: list[str]) -> None:
+def test_lab_paths_keep_original_output_bytes(name: str, args: list[str]) -> None:
     spec = LAB_COMMANDS[name]
     implementation = getattr(import_module(spec.module), spec.attribute)
     runner = CliRunner()
     original = runner.invoke(implementation, args)
-    legacy = runner.invoke(main, [name, *args])
     canonical = runner.invoke(main, ["lab", name, *args])
-    assert original.exit_code == legacy.exit_code == canonical.exit_code
-    assert original.stdout_bytes == legacy.stdout_bytes == canonical.stdout_bytes
+    assert original.exit_code == canonical.exit_code
+    assert original.stdout_bytes == canonical.stdout_bytes
     assert original.stderr_bytes == canonical.stderr_bytes
-    assert (
-        legacy.stderr_bytes
-        == (
-            f"Notice: 'mcp-audit {name}' is removed in 3.0. "
-            f"Use 'mcp-audit lab {name}' instead. {LAB_INSTALL_NOTICE}\n"
-        ).encode()
-        + canonical.stderr_bytes
-    )
     if name != "enforcement-fixture":
         assert original.exit_code in {0, 1}, original.output
         assert original.stdout_bytes
 
 
-@pytest.mark.parametrize(
-    "legacy,canonical",
-    [
-        ("safeforge-preinstall", ["safeforge", "preinstall"]),
-        ("safeforge-run", ["safeforge", "run"]),
-        ("skillscan", ["skills", "scan"]),
-        ("pin", ["baseline", "pin"]),
-    ],
-)
-def test_side_product_aliases_share_callbacks_and_help(legacy: str, canonical: list[str]) -> None:
+def test_pin_alias_shares_callback_and_help() -> None:
     ctx = click.Context(main)
-    old = main.get_command(ctx, legacy)
-    group = main.get_command(ctx, canonical[0])
+    alias = main.get_command(ctx, "pin")
+    group = main.get_command(ctx, "baseline")
     assert isinstance(group, LazyGroup)
-    new = group.get_command(click.Context(group), canonical[1])
-    assert old is not None and new is not None
-    assert old.callback is new.callback
+    canonical = group.get_command(click.Context(group), "pin")
+    assert alias is not None and canonical is not None
+    assert alias.callback is canonical.callback
     runner = CliRunner()
-    old_help = runner.invoke(main, [legacy, "--help"])
-    new_help = runner.invoke(main, [*canonical, "--help"])
-    assert old_help.exit_code == new_help.exit_code == 0
+    alias_help = runner.invoke(main, ["pin", "--help"])
+    canonical_help = runner.invoke(main, ["baseline", "pin", "--help"])
+    assert alias_help.exit_code == canonical_help.exit_code == 0
     # Usage intentionally names the spelling used; all option/help text stays identical.
-    assert old_help.stdout.split("\n", 1)[1] == new_help.stdout.split("\n", 1)[1]
-    # `pin` stays a visible alias (2.12 Q7); the other compatibility spellings stay hidden.
-    assert old.hidden == (legacy != "pin") and not new.hidden
-
-
-@pytest.mark.parametrize("family", ["preinstall", "run", "skills", "baseline"])
-def test_side_product_aliases_keep_output_bytes(family: str, tmp_path: Path) -> None:
-    if family in {"preinstall", "run"}:
-        invalid = tmp_path / "invalid.json"
-        invalid.write_text("[]", encoding="utf-8")
-        args = [
-            "--producer-schema",
-            str(invalid),
-            "--receipt",
-            str(invalid),
-            "--artifact-root",
-            str(tmp_path),
-            "--run-id",
-            "synthetic-run",
-            "--created-at",
-            "2026-01-01T00:00:00Z",
-            "--coordinator-revision",
-            "synthetic",
-        ]
-        old = [f"safeforge-{family}", *args]
-        new = ["safeforge", family, *args]
-    elif family == "skills":
-        skill = tmp_path / "skill"
-        skill.mkdir()
-        (skill / "SKILL.md").write_text(
-            "---\nname: synthetic\ndescription: Offline fixture\n---\nUse local fixtures.\n", encoding="utf-8"
-        )
-        old = ["skillscan", str(skill)]
-        new = ["skills", "scan", str(skill)]
-    else:
-        args = ["--status", "--json", "--pin-file", str(tmp_path / "pins.yaml")]
-        old = ["pin", *args]
-        new = ["baseline", "pin", *args]
-    runner = CliRunner()
-    legacy = runner.invoke(main, old)
-    canonical = runner.invoke(main, new)
-    assert legacy.exit_code == canonical.exit_code == (2 if family in {"preinstall", "run"} else 0)
-    assert legacy.stdout_bytes == canonical.stdout_bytes
-    if family == "baseline":
-        assert legacy.stderr_bytes == canonical.stderr_bytes
-    else:
-        assert (
-            legacy.stderr_bytes
-            == (
-                f"Notice: 'mcp-audit {old[0]}' is removed in 3.0. "
-                f"Use 'mcp-audit {' '.join(new[:2])}' instead. {LAB_INSTALL_NOTICE}\n"
-            ).encode()
-            + canonical.stderr_bytes
-        )
-    assert legacy.stdout_bytes
+    assert alias_help.stdout.split("\n", 1)[1] == canonical_help.stdout.split("\n", 1)[1]
+    assert not alias.hidden and not canonical.hidden
 
 
 def test_monitor_command_and_module_are_removed() -> None:
@@ -235,13 +168,16 @@ def test_monitor_command_and_module_are_removed() -> None:
     assert importlib.util.find_spec("mcp_audit.monitor") is None
 
 
-@pytest.mark.parametrize("name", [name for name, spec in COMMANDS.items() if spec.hidden])
-def test_hidden_alias_help_notices(name: str) -> None:
+REMOVED_ALIASES = [*LAB_COMMANDS, "safeforge-preinstall", "safeforge-run", "skillscan"]
+
+
+@pytest.mark.parametrize("name", REMOVED_ALIASES)
+def test_removed_aliases_are_unknown_commands(name: str) -> None:
     result = CliRunner().invoke(main, [name, "--help"])
-    assert result.exit_code == 0, result.output
-    assert f"'mcp-audit {name}' is removed in 3.0" in result.stderr
-    assert LAB_INSTALL_NOTICE in result.stderr
-    assert "uv tool install" not in result.stdout
+    assert result.exit_code == 2
+    assert f"No such command '{name}'" in result.stderr
+    assert "removed in 3.0" not in result.stderr
+    assert name not in COMMANDS
 
 
 def test_pin_is_a_visible_alias_for_baseline_pin() -> None:
@@ -256,6 +192,57 @@ def test_pin_is_a_visible_alias_for_baseline_pin() -> None:
     help_text = CliRunner().invoke(main, ["--help"]).stdout
     assert "pin" in help_text
     assert "alias for baseline pin" in " ".join(help_text.split())
+
+
+@pytest.mark.parametrize("family", ["preinstall", "run", "skills"])
+def test_side_product_namespaced_paths_emit_output(
+    family: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    if family in {"preinstall", "run"}:
+        invalid = tmp_path / "invalid.json"
+        invalid.write_text("[]", encoding="utf-8")
+        args = [
+            "safeforge",
+            family,
+            "--producer-schema",
+            str(invalid),
+            "--receipt",
+            str(invalid),
+            "--artifact-root",
+            str(tmp_path),
+            "--run-id",
+            "synthetic-run",
+            "--created-at",
+            "2026-01-01T00:00:00Z",
+            "--coordinator-revision",
+            "synthetic",
+        ]
+        expected_exit = 2
+    else:
+        skill = tmp_path / "skill"
+        skill.mkdir()
+        (skill / "SKILL.md").write_text(
+            "---\nname: synthetic\ndescription: Offline fixture\n---\nUse local fixtures.\n", encoding="utf-8"
+        )
+        args = ["skills", "scan", str(skill)]
+        expected_exit = 0
+    result = CliRunner().invoke(main, args)
+    assert result.exit_code == expected_exit, result.output
+    assert result.stdout_bytes
+    assert b"removed in 3.0" not in result.stderr_bytes
+
+
+def test_pin_alias_keeps_baseline_pin_output_bytes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    args = ["--status", "--json", "--pin-file", str(tmp_path / "pins.yaml")]
+    runner = CliRunner()
+    alias = runner.invoke(main, ["pin", *args])
+    canonical = runner.invoke(main, ["baseline", "pin", *args])
+    assert alias.exit_code == canonical.exit_code == 0
+    assert alias.stdout_bytes
+    assert alias.stdout_bytes == canonical.stdout_bytes
+    assert alias.stderr_bytes == canonical.stderr_bytes
 
 
 def test_lab_help_shows_future_installs_without_importing_labs(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -275,11 +262,8 @@ def test_lab_help_shows_future_installs_without_importing_labs(monkeypatch: pyte
 
 GUARDED_PATHS = [
     ["lab", "agent-ui", "--help"],
-    ["agent-ui", "--help"],
     ["safeforge", "preinstall", "--help"],
     ["safeforge", "run", "--help"],
-    ["safeforge-preinstall", "--help"],
-    ["safeforge-run", "--help"],
     ["lab", "--conformance-probe", "--url", "http://127.0.0.1:1/mcp"],
 ]
 
@@ -464,7 +448,6 @@ mcp_audit/safeforge_contract_linter.py
 mcp_audit/safeforge_coordinator.py
 mcp_audit/safeforge_runtime.py
 mcp_audit/sarif.py
-mcp_audit/scan_cli.py
 mcp_audit/scan_translation.py
 mcp_audit/schema_rules.py
 mcp_audit/scorer.py

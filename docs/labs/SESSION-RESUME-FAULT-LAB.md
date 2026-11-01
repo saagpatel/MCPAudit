@@ -1,6 +1,6 @@
 # MCP Session Resume Fault Lab
 
-`mcp-audit session-resume` is an offline, deterministic laboratory for MCP
+`mcp-audit lab session-resume` is an offline, deterministic laboratory for MCP
 Streamable HTTP transport-session and resumability faults. It replays synthetic
 client, server, and link transitions against a virtual clock. It never opens a
 socket, contacts an MCP server, reads credentials, or imports a private
@@ -60,10 +60,10 @@ the inspected session/resume surfaces, MCP does not fully prescribe:
 The CLI emits authoritative JSON Schemas from strict Pydantic contracts:
 
 ```bash
-uv run mcp-audit session-resume schema scenario
-uv run mcp-audit session-resume schema transcript
-uv run mcp-audit session-resume schema report
-uv run mcp-audit session-resume schema suite-report
+uv run mcp-audit lab session-resume schema scenario
+uv run mcp-audit lab session-resume schema transcript
+uv run mcp-audit lab session-resume schema report
+uv run mcp-audit lab session-resume schema suite-report
 ```
 
 Contract identifiers are:
@@ -158,19 +158,19 @@ Stable finding IDs are:
 
 ```bash
 # 1. Confirm the packaged corpus (18 faults/controls, no server required).
-uv run mcp-audit session-resume list
+uv run mcp-audit lab session-resume list
 
 # 2. Read one actionable failure report.
-uv run mcp-audit session-resume run disconnect-after-acceptance-before-response
+uv run mcp-audit lab session-resume run disconnect-after-acceptance-before-response
 
 # 3. Obtain canonical JSON for CI or a diffable receipt.
-uv run mcp-audit session-resume run replay-gap --format json
+uv run mcp-audit lab session-resume run replay-gap --format json
 
 # 4. Replay the entire corpus in one deterministic report.
-uv run mcp-audit session-resume run --all --format json > /tmp/mcpaudit-session-resume.json
+uv run mcp-audit lab session-resume run --all --format json > /tmp/mcpaudit-session-resume.json
 
 # 5. Supply your own strict v1 JSON scenario.
-uv run mcp-audit session-resume run ./scenario.json --format json
+uv run mcp-audit lab session-resume run ./scenario.json --format json
 ```
 
 Valid executions exit `0` even when a fault is observed; faults are the product

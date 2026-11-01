@@ -1,4 +1,4 @@
-"""Safe review entry points; the legacy scan interface remains independent."""
+"""Safe review entry points, also used by the legacy scan interceptor."""
 
 from __future__ import annotations
 
@@ -19,12 +19,19 @@ from mcp_audit.engine import ScanOptions, run_scan
 from mcp_audit.models import ClientType, ScanWarning
 from mcp_audit.report import ReportGenerator
 from mcp_audit.review_discovery import review_sources, server_identity
-from mcp_audit.scan_cli import _merge_host_args
 from mcp_audit.terminal_summary import summary_console
 from mcp_audit.terminal_text import strip_controls, terminal_safe
 
 P = ParamSpec("P")
 T = TypeVar("T")
+
+
+def _merge_host_args(cli_value: str | None, policy_hosts: list[str]) -> str | None:
+    """Merge CLI and policy hosts; downstream parsing normalises and deduplicates."""
+    parts = [cli_value] if cli_value else []
+    parts.extend(policy_hosts)
+    return ",".join(parts) if parts else None
+
 
 _CLIENT_CHOICES = tuple(
     dict.fromkeys(

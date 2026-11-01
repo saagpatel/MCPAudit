@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from mcp_audit import _core_cli, check_cli, cli, engine, pinning, scan_cli
+from mcp_audit import _core_cli, check_cli, cli, engine, pinning
 from mcp_audit.connector import ServerConnector
 from mcp_audit.engine import ScanOptions
 from mcp_audit.models import AuditReport, ResourceInfo, ServerAudit, ServerConfig
@@ -70,7 +70,7 @@ def _stable_report(report: AuditReport) -> dict[str, object]:
 @pytest.mark.parametrize(
     "shape", ["explicit-only", "explicit-discovered", "project-outside-cwd", "multi-client", "vscode"]
 )
-def test_redacted_server_set_and_json_match_mapped_check(
+def test_mapped_check_file_and_stdout_keep_expected_redacted_server_set(
     shape: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def forbidden(*args: object, **kwargs: object) -> None:
@@ -119,17 +119,17 @@ def test_redacted_server_set_and_json_match_mapped_check(
     else:
         assert translation.check_argv is not None
         check_options = list(translation.check_argv[2:])
-    scan_path = tmp_path / "scan.json"
+    file_path = tmp_path / "scan.json"
     check_path = tmp_path / "check.json"
-    scan = CliRunner().invoke(cli.main, ["scan", *common, *scan_scope, "--json", str(scan_path)])
+    file_result = CliRunner().invoke(cli.main, ["check", *check_options, "--output-json", str(file_path)])
     check = CliRunner().invoke(
         cli.main, ["check", *check_options, "--json", "--output-json", str(check_path)]
     )
-    assert scan.exit_code == check.exit_code == 0, scan.output + check.output
-    scan_report = AuditReport.model_validate_json(scan_path.read_text())
+    assert file_result.exit_code == check.exit_code == 0, file_result.output + check.output
+    file_report = AuditReport.model_validate_json(file_path.read_text())
     check_report = AuditReport.model_validate_json(check.stdout)
     assert json.loads(check.stdout) == json.loads(check_path.read_text())
-    for report in (scan_report, check_report):
+    for report in (file_report, check_report):
         assert {(a.server.client.value, a.server.scope, a.server.name) for a in report.audits} == expected
         assert {a.server.config_path for a in report.audits} == {
             redact_identifiers(str(path)) for path in selected_paths
@@ -138,13 +138,10 @@ def test_redacted_server_set_and_json_match_mapped_check(
         assert all(a.connection_status == "skipped" for a in report.audits)
         assert report.connection_mode.value == "skipped"
     if shape == "explicit-discovered":
-        # Legacy scan appends explicit sources; check reviews them first. Keep
-        # that observable order contract while comparing each redacted audit.
-        assert [a.server.client.value for a in scan_report.audits] == ["vscode", "claude_code"]
+        assert [a.server.client.value for a in file_report.audits] == ["claude_code", "vscode"]
         assert [a.server.client.value for a in check_report.audits] == ["claude_code", "vscode"]
-        scan_report.audits.reverse()
-    assert _stable_report(scan_report) == _stable_report(check_report)
-    for content in (scan_path.read_text(), check.stdout):
+    assert _stable_report(file_report) == _stable_report(check_report)
+    for content in (file_path.read_text(), check.stdout):
         assert "synthetic-host" not in content
         assert "cwd-only" not in content
         assert "-fixture" not in content
@@ -152,7 +149,7 @@ def test_redacted_server_set_and_json_match_mapped_check(
 
 @pytest.mark.parametrize("profile", ["compatibility", "extended"])
 @pytest.mark.parametrize("fail_policy", [False, True])
-def test_redacted_overrides_policy_egress_sarif_and_exit_parity(
+def test_check_file_and_stdout_preserve_overrides_policy_egress_and_sarif(
     profile: str, fail_policy: bool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def forbidden(*args: object, **kwargs: object) -> None:
@@ -207,7 +204,7 @@ def test_redacted_overrides_policy_egress_sarif_and_exit_parity(
         "servers:\n  fixture:\n    egress_allowlist: [server.example]\n"
         + ("fail_on:\n  egress: medium\n" if fail_policy else "")
     )
-    scan_sarif = tmp_path / "scan.sarif"
+    file_sarif = tmp_path / "scan.sarif"
     shared = [
         "--config",
         str(config),
@@ -226,20 +223,22 @@ def test_redacted_overrides_policy_egress_sarif_and_exit_parity(
         "--sarif-profile",
         profile,
         "--sarif",
-        str(scan_sarif),
+        str(file_sarif),
     ]
     with _core_cli.scan.make_context("scan", list(shared)) as context:
         translation = classify_scan_options(context.params)
     assert translation.check_argv is not None
-    scan_path = tmp_path / "scan.json"
-    scan = CliRunner().invoke(cli.main, ["scan", *shared, "--json", str(scan_path)])
+    file_path = tmp_path / "scan.json"
+    file_result = CliRunner().invoke(cli.main, ["check", *shared, "--output-json", str(file_path)])
     check_sarif = tmp_path / "check.sarif"
     mapped = list(translation.check_argv[1:])
     mapped[mapped.index("--sarif") + 1] = str(check_sarif)
     check = CliRunner().invoke(cli.main, [*mapped, "--json"])
-    assert scan.exit_code == check.exit_code == (2 if fail_policy else 0), scan.output + check.output
+    assert file_result.exit_code == check.exit_code == (2 if fail_policy else 0), (
+        file_result.output + check.output
+    )
     actual = AuditReport.model_validate_json(check.stdout)
-    expected = AuditReport.model_validate_json(scan_path.read_text())
+    expected = AuditReport.model_validate_json(file_path.read_text())
     assert _stable_report(actual) == _stable_report(expected)
     assert actual.audits[0].server.name == "server-01"
     assert actual.policy_result is not None and actual.policy_result.passed is not fail_policy
@@ -249,12 +248,12 @@ def test_redacted_overrides_policy_egress_sarif_and_exit_parity(
         ("policy.example", "trusted_destination_residual"),
         ("outside.example", "destination_outside_allowlist"),
     }
-    assert json.loads(scan_sarif.read_text()) == json.loads(check_sarif.read_text())
+    assert json.loads(file_sarif.read_text()) == json.loads(check_sarif.read_text())
     rules = {config_health_rule_id(f.finding_type) for f in actual.config_health_findings}
     assert rules
     emitted = {row["ruleId"] for row in json.loads(check_sarif.read_text())["runs"][0]["results"]}
     assert bool(rules & emitted) is (profile == "extended")
-    for content in (check.stdout, scan_path.read_text(), scan_sarif.read_text(), check_sarif.read_text()):
+    for content in (check.stdout, file_path.read_text(), file_sarif.read_text(), check_sarif.read_text()):
         assert "synthetic-host" not in content
         assert "example-user" not in content
 
@@ -264,9 +263,6 @@ def test_redacted_overrides_policy_egress_sarif_and_exit_parity(
     [
         ([], "connected coverage"),
         (["--config", "fixture.json", "--config-only"], "connected coverage"),
-        (["--skip-connect", "--inject-check"], "other project scopes"),
-        (["--skip-connect", "--clients", "claude_code"], "other project scopes"),
-        (["--skip-connect", "--clients", "cursor"], "Cursor project discovery"),
         (["--skip-connect", "--config", "fixture.json", "--clients", "vscode"], "overlapping sources"),
         (
             ["--skip-connect", "--config", "fixture.json", "--config-only", "--json", "report.json"],
@@ -283,7 +279,6 @@ def test_parsed_coverage_losing_scan_forms_withhold_translation_without_discover
 
     monkeypatch.setattr(check_cli, "review_sources", forbidden)
     monkeypatch.setattr(engine, "discover_all_configs", forbidden)
-    monkeypatch.setattr(scan_cli, "_run_scan", forbidden)
     monkeypatch.setattr(check_cli, "run_scan", forbidden)
     monkeypatch.setattr(Path, "read_text", forbidden)
     with _core_cli.scan.make_context("scan", [*args, "--override-config", "/dev/null"]) as context:
@@ -291,6 +286,11 @@ def test_parsed_coverage_losing_scan_forms_withhold_translation_without_discover
     assert translation.coverage == "would-silently-shrink"
     assert translation.check_argv is None
     assert reason in translation.notice()
+    refused = CliRunner().invoke(cli.main, ["scan", *args, "--override-config", "/dev/null"])
+    assert refused.exit_code == 2, refused.output
+    assert refused.stdout == ""
+    assert len(refused.stderr.splitlines()) == 2
+    assert "replacement command (not exact" in refused.stderr
 
 
 @pytest.mark.parametrize("source_state", ["absent", "rejected", "empty", "populated"])
@@ -483,7 +483,7 @@ def test_static_project_config_retains_warning_and_sarif(
 
 
 @pytest.mark.parametrize("detector", DETECTORS)
-def test_detector_matches_scan_without_enabling_connections(
+def test_detector_file_and_stdout_match_without_enabling_connections(
     detector: str,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -505,11 +505,11 @@ def test_detector_matches_scan_without_enabling_connections(
         str(baseline),
         f"--{detector}",
     ]
-    scan = CliRunner().invoke(
-        cli.main, ["scan", *shared, "--config-only", "--skip-connect", "--json", str(output)]
+    file_result = CliRunner().invoke(
+        cli.main, ["check", *shared, "--config-only", "--skip-connect", "--output-json", str(output)]
     )
     check = CliRunner().invoke(cli.main, ["check", *shared, "--json"])
-    assert scan.exit_code == check.exit_code == 0, scan.output + check.output
+    assert file_result.exit_code == check.exit_code == 0, file_result.output + check.output
     actual = json.loads(check.stdout)
     expected = json.loads(output.read_text())
     for payload in (actual, expected):
@@ -556,21 +556,21 @@ def test_higher_reach_mode_is_forwarded_only_when_requested(
             assert not getattr(captured[-1], other)
 
 
-def test_permission_overrides_and_ignores_match_scan(tmp_path: Path) -> None:
+def test_permission_overrides_and_ignores_match_file_and_stdout(tmp_path: Path) -> None:
     override = tmp_path / "overrides.yaml"
     override.write_text(
         "overrides:\n  - server: '*'\n    tool: '*'\n    permissions:\n      shell_execution: true\n"
         "ignore:\n  - rule: MCP004\n    server: '*'\n    tool: '*'\n    reason: synthetic exception\n"
     )
-    scan_path = tmp_path / "scan.json"
+    file_path = tmp_path / "scan.json"
     shared = ["--config", str(SANDBOX), "--override-config", str(override)]
-    scan = CliRunner().invoke(
-        cli.main, ["scan", *shared, "--config-only", "--skip-connect", "--json", str(scan_path)]
+    file_result = CliRunner().invoke(
+        cli.main, ["check", *shared, "--config-only", "--skip-connect", "--output-json", str(file_path)]
     )
     check = CliRunner().invoke(cli.main, ["check", *shared, "--json"])
-    assert scan.exit_code == check.exit_code == 0, scan.output + check.output
+    assert file_result.exit_code == check.exit_code == 0, file_result.output + check.output
     actual = json.loads(check.stdout)
-    expected = json.loads(scan_path.read_text())
+    expected = json.loads(file_path.read_text())
     for payload in (actual, expected):
         payload.pop("scan_timestamp")
         payload.pop("scan_duration_seconds")
