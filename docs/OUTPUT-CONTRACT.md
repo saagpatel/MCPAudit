@@ -401,6 +401,17 @@ Hidden compatibility flags preserve static safety: `--skip-connect` conflicts
 with `--connect` and `--connect-all`, and `--config-only` requires `--config` and
 conflicts with `--include-discovered`. Neither flag enables connections or additional discovery.
 
+## Command aliases
+
+`pin` remains a visible alias for `baseline pin`. The former top-level lab topic
+commands (`agent-ui`, `authorization-posture`, `cache-contract`,
+`enforcement-fixture`, `oauth-transcript`, `result-parcel`, `session-resume`,
+and `task-time-machine`) are available only under `lab`. `safeforge-preinstall`,
+`safeforge-run`, and `skillscan` are removed; use `safeforge preinstall`,
+`safeforge run`, and `skills scan`. Removed spellings are unknown commands and
+produce no compatibility notice. `--help-all` remains available and lists
+registered command paths; ordinary help has no compatibility-alias section.
+
 Bare invocation runs the static `check` path. `--config FILE` excludes discovery
 unless `--include-discovered` is explicit. Saved overrides are not loaded for
 explicit-file checks unless selected; remembered preferences are not loaded.
@@ -756,7 +767,7 @@ codes below; they do not change the stable scan exit contract.
 
 ## Session Resume Fault Lab v1 (experimental)
 
-`mcp-audit session-resume` is separate from `AuditReport`. Its strict contract
+`mcp-audit lab session-resume` is separate from `AuditReport`. Its strict contract
 identifiers are:
 
 - `mcpaudit.session-resume.scenario.v1`;
@@ -1749,9 +1760,9 @@ The generated JSON Schema for the current model is checked in at
 `examples/schemas/audit-report.schema.json` and is tested against the live
 Pydantic model.
 
-## Skillscan v1 (`skillscan-report/v1`)
+## Skillscan v1 (`skills scan`, `skillscan-report/v1`)
 
-The `skillscan` command statically scans an agent skill directory or MCP-server
+The `skills scan` command statically scans an agent skill directory or MCP-server
 bundle (`.mcpb`/`.zip`) offline — it never executes bundle content and never
 touches the network — and, with `--json-out`, emits a `skillscan-report/v1`
 document. The report is designed to be sealed by an external verifier
@@ -1915,7 +1926,7 @@ write one JSON object to standard output.
 
 ## Agent UI Contract Auditor v1 (experimental)
 
-The offline `mcp-audit agent-ui` command group is separate from connected MCP
+The offline `mcp-audit lab agent-ui` command group is separate from connected MCP
 scans and does not change `AuditReport` schema version `1`. Its strict contract
 identifiers are:
 
@@ -1924,7 +1935,7 @@ identifiers are:
 - `mcpaudit.agent-ui.a2ui-message.v0.9`
 - `mcpaudit.agent-ui.report.v1`
 
-Authoritative JSON Schemas are emitted with `mcp-audit agent-ui schema
+Authoritative JSON Schemas are emitted with `mcp-audit lab agent-ui schema
 CONTRACT`. Unknown fields are rejected. The emitted A2UI message schema includes
 strict discriminated shapes for every component in MCPAudit's fixed synthetic
 catalog; duplicate component IDs, invalid JSON Pointer escapes, excessive JSON
@@ -1974,7 +1985,7 @@ not claim translation or interoperability. See
 
 ## MCP OAuth Transcript Auditor v1 (experimental)
 
-The offline `mcp-audit oauth-transcript` command group is separate from normal
+The offline `mcp-audit lab oauth-transcript` command group is separate from normal
 MCP discovery and connected scans. It does not change `AuditReport` schema
 version `1`. Its strict contract identifiers are:
 
@@ -1984,7 +1995,7 @@ version `1`. Its strict contract identifiers are:
 Authoritative schemas are checked in at
 `examples/schemas/oauth-transcript-fixture-v1.schema.json` and
 `examples/schemas/oauth-transcript-report-v1.schema.json`, and are emitted by
-`mcp-audit oauth-transcript schema fixture|report`. Unknown fields are rejected.
+`mcp-audit lab oauth-transcript schema fixture|report`. Unknown fields are rejected.
 The specification profile is pinned to
 `mcp-authorization-2025-11-25+draft-2026-07-28`; the dated draft portion covers
 authorization-response issuer validation, issuer-bound client state, and DCR
@@ -2034,7 +2045,7 @@ real-world authorization, or production security. See
 
 ## MCP Authorization Posture Adoption v1 (experimental)
 
-The offline `mcp-audit authorization-posture` command group consumes a separate
+The offline `mcp-audit lab authorization-posture` command group consumes a separate
 portable producer contract and does not change `AuditReport` schema version
 `1`. Its strict identifiers are:
 
@@ -2044,7 +2055,7 @@ portable producer contract and does not change `AuditReport` schema version
 Authoritative schemas are checked in at
 `examples/schemas/authorization-posture-input-v1.schema.json` and
 `examples/schemas/authorization-posture-report-v1.schema.json`, and are emitted
-by `mcp-audit authorization-posture schema input|report`. Unknown fields and
+by `mcp-audit lab authorization-posture schema input|report`. Unknown fields and
 implicit type coercion are rejected.
 
 The review command validates the declared official-Registry binding, public
@@ -2068,14 +2079,14 @@ endpoint, use credentials, run OAuth, authorize a scan, or change a trust grade.
 `docs/labs/AUTHORIZATION-POSTURE-ADOPTION.md`.
 ## MCP Cache Contract Auditor v1 (experimental)
 
-The offline `mcp-audit cache-contract` command group is separate from connected
+The offline `mcp-audit lab cache-contract` command group is separate from connected
 MCP scans and does not change `AuditReport` schema version `1`. Its strict
 contract identifiers are:
 
 - `mcpaudit.cache-contract.trace.v1`;
 - `mcpaudit.cache-contract.report.v1`.
 
-Authoritative JSON Schemas are emitted with `mcp-audit cache-contract schema
+Authoritative JSON Schemas are emitted with `mcp-audit lab cache-contract schema
 trace|report`. Unknown fields are rejected. The trace binds every event to
 explicit sequence and logical-millisecond values, a protocol version,
 principal, asserted authorization-context `cache_partition`, method, complete
@@ -2144,14 +2155,14 @@ cache. See `docs/labs/CACHE-CONTRACT-AUDITOR.md`.
 
 ## MCP Task Time Machine v1 (experimental)
 
-The offline `mcp-audit task-time-machine` command group is separate from
+The offline `mcp-audit lab task-time-machine` command group is separate from
 connected MCP scans and does not change `AuditReport` schema version `1`. Its
 strict contract identifiers are:
 
 - `mcpaudit.task-time-machine.scenario.v1`;
 - `mcpaudit.task-time-machine.result.v1`.
 
-Authoritative strict JSON Schemas are emitted by `mcp-audit task-time-machine
+Authoritative strict JSON Schemas are emitted by `mcp-audit lab task-time-machine
 schema scenario|result`. Unknown fields and implicit type coercion are rejected.
 Scenario execution is seed-free and ordered by explicit `(at_ms, sequence)`
 coordinates; sequence values must be unique. Duplicate event IDs remain valid
@@ -2197,13 +2208,13 @@ production behavior. See `docs/labs/MCP-TASK-TIME-MACHINE.md`.
 
 ## MCP Result Parcel Lab v1 (experimental)
 
-The offline `mcp-audit result-parcel` group is separate from `AuditReport`
+The offline `mcp-audit lab result-parcel` group is separate from `AuditReport`
 schema version `1`. Its strict contract identifiers are:
 
 - scenario: `mcpaudit.result-parcel.scenario.v1`;
 - report: `mcpaudit.result-parcel.report.v1`.
 
-`mcp-audit result-parcel schema scenario|report` emits the authoritative
+`mcp-audit lab result-parcel schema scenario|report` emits the authoritative
 closed JSON Schemas. `analyze` accepts exactly one regular non-symlink JSON
 file or one install-safe `--builtin`, renders human output by default, and
 emits deterministic canonical JSON with `--format json`. It exits `0` for a
@@ -2274,7 +2285,7 @@ code-observed filesystem/network behavior. Filesystem access requires the
 egress. An unresolved producer security warning is not preinstall-eligible and
 cannot be converted into a passed static stage.
 
-The `mcp-audit safeforge-preinstall` command composes those two boundaries. It
+The `mcp-audit safeforge preinstall` command composes those two boundaries. It
 requires `--producer-schema`, `--receipt`, `--artifact-root`, `--run-id`,
 `--created-at`, and `--coordinator-revision`. Contract linting runs before the
 artifact path is inspected. Standard output is always one JSON object: exit `0`
@@ -2283,7 +2294,7 @@ fail-closed contract or preinstall decision, and exit `2` means the command
 inputs could not be parsed. The command has no connected, install, sandbox,
 grading, policy, publication, or finalization mode.
 
-`mcp-audit safeforge-run` resumes that accepted preinstall envelope through
+`mcp-audit safeforge run` resumes that accepted preinstall envelope through
 `sandbox.prepare`, `sandbox.materialize`, `audit.connected`, `trust.grade`,
 `runtime.policy.bind`, `publication.dry_run`, and `receipt.finalize`. Standard
 output remains one strict JSON object. Exit `0` requires an `eligible` final

@@ -91,34 +91,13 @@ class LazyGroup(click.Group):
         command.hidden = spec.hidden
         return command
 
-    def resolve_command(
-        self, ctx: click.Context, args: list[str]
-    ) -> tuple[str | None, click.Command | None, list[str]]:
-        spec = self.registry.get(args[0])
-        if spec is not None and spec.hidden and args[0] != "pin" and not ctx.resilient_parsing:
-            name = args[0]
-            if name in LAB_COMMANDS:
-                replacement = f"Use 'mcp-audit lab {name}' instead."
-            elif name.startswith("safeforge-"):
-                replacement = f"Use 'mcp-audit safeforge {name.removeprefix('safeforge-')}' instead."
-            elif name == "skillscan":
-                replacement = "Use 'mcp-audit skills scan' instead."
-            else:
-                replacement = ""
-            click.echo(
-                f"Notice: 'mcp-audit {name}' is removed in 3.0. {replacement} {LAB_INSTALL_NOTICE}",
-                err=True,
-            )
-        return super().resolve_command(ctx, args)
-
     def format_commands(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
         sections: dict[str, list[tuple[str, str]]] = {}
         show_all = bool(ctx.meta.get("help_all"))
         for name, spec in self.registry.items():
             if spec.hidden and not show_all:
                 continue
-            section = "Compatibility aliases" if spec.hidden else spec.section
-            rows = sections.setdefault(section, [])
+            rows = sections.setdefault(spec.section, [])
             rows.append((name, spec.help))
             if show_all:
                 if isinstance(spec, NamespaceSpec):
@@ -133,7 +112,7 @@ class LazyGroup(click.Group):
 
     def shell_complete(self, ctx: click.Context, incomplete: str) -> list[CompletionItem]:
         # Click's default Group implementation resolves every command to complete
-        # its name. Include the compatibility spellings here without loading them.
+        # its name. Complete registered names without loading implementations.
         return [
             CompletionItem(name, help=spec.help)
             for name, spec in sorted(self.registry.items())
@@ -306,24 +285,3 @@ COMMANDS: dict[str, CommandSpec | NamespaceSpec] = {
         implementation=lab,
     ),
 }
-
-for _name, _spec in LAB_COMMANDS.items():
-    COMMANDS[_name] = CommandSpec(
-        _spec.module,
-        _spec.attribute,
-        _spec.help,
-        hidden=True,
-        subcommands=_spec.subcommands,
-    )
-for _name, _spec in (
-    ("safeforge-preinstall", SAFEFORGE_COMMANDS["preinstall"]),
-    ("safeforge-run", SAFEFORGE_COMMANDS["run"]),
-    ("skillscan", SKILLS_COMMANDS["scan"]),
-):
-    COMMANDS[_name] = CommandSpec(
-        _spec.module,
-        _spec.attribute,
-        _spec.help,
-        hidden=True,
-        subcommands=_spec.subcommands,
-    )
