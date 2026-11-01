@@ -335,6 +335,10 @@ Only after the publish job's six-file check succeeds:
    environment-bound OIDC job can run. The publish job rechecks the shared
    environment policy, the three-way PyPI readback and the exact descriptor
    immediately before login.
+   Dispatch it while main's `project.version` still equals the release
+   version: the verifier requires the tag to match the release-controls
+   checkout's version, so once a later version bump lands on main these
+   checks fail closed and the Registry entry cannot be published.
 6. Confirm both the exact-version and `latest` official Registry endpoints name
    `io.github.saagpatel/mcp-audit` at the released version with the exact PyPI
    package tuple. Registry metadata does not prove artifact hashes,
