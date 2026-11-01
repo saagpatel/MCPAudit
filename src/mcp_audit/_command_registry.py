@@ -14,7 +14,7 @@ import click
 from click.shell_completion import CompletionItem
 
 LAB_INSTALL_NOTICE = (
-    "In 3.0, install labs with: uv tool install 'mcp-audits[labs]'. "
+    "Install labs with: uv tool install 'mcp-audits[labs]'. "
     "For proof-before-action on PATH, install Proof directly with: "
     "uv tool install mcp-audits-proof (a uv tool extra does not expose its scripts)."
 )
@@ -183,7 +183,7 @@ LAB_COMMANDS = {
     registry=LAB_COMMANDS,
     invoke_without_command=True,
     epilog=(
-        "In 3.0, install labs with:\n\n\b\n"
+        "Install labs with:\n\n\b\n"
         "  uv tool install 'mcp-audits[labs]'\n\n"
         "For proof-before-action on PATH, install Proof directly "
         "(a uv tool extra does not expose its scripts):\n\n\b\n"
