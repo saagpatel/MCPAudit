@@ -1096,9 +1096,13 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--dist-dir", type=Path)
     parser.add_argument("--distributions", type=Path, help="reviewed JSON distribution/script contract")
     parser.add_argument(
-        "--distribution",
-        choices=sorted(KNOWN_DISTRIBUTIONS),
-        help="check one raw PyPI response between uploads; only with --publication-check pypi",
+        "--published-through",
+        choices=("mcp-audits", "mcp-audits-labs", "mcp-audits-proof"),
+        help=(
+            "between uploads, check the contract-order prefix of distributions up to and including "
+            "this one; the response JSON maps exactly those names to raw PyPI responses; only with "
+            "--publication-check pypi"
+        ),
     )
     parser.add_argument("--release-branch", choices=("main", "release/2.x"), default="main")
     parser.add_argument("--branch-policies-json", type=Path)
@@ -1119,6 +1123,16 @@ def _load_json(path: Path | None) -> object:
     if path is None:
         raise VerificationError("required JSON input is missing")
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _published_prefix(through: str | None) -> tuple[Distribution, ...]:
+    """Return the contract-order distributions published so far (all of them when unset)."""
+    if through is None:
+        return DISTRIBUTIONS
+    names = [item.name for item in DISTRIBUTIONS]
+    if through not in names:
+        raise VerificationError("--published-through distribution is not in the release contract")
+    return DISTRIBUTIONS[: names.index(through) + 1]
 
 
 def _publication_check(args: argparse.Namespace) -> None:
@@ -1150,16 +1164,15 @@ def _publication_check(args: argparse.Namespace) -> None:
             if args.manifest_sha256 is None:
                 raise VerificationError("PyPI verification requires separately approved manifest SHA-256")
             responses = _load_json(args.response_json)
-            selected = tuple(item for item in DISTRIBUTIONS if item.name == args.distribution)
-            if args.distribution is not None:
-                if not selected:
-                    raise VerificationError("selected distribution is not in the release contract")
-                responses = {args.distribution: responses}
-            else:
-                selected = DISTRIBUTIONS
-            if len(DISTRIBUTIONS) == 1 and args.distribution is None:
+            selected = _published_prefix(args.published_through)
+            if len(DISTRIBUTIONS) == 1 and args.published_through is None:
                 responses = {DISTRIBUTION_NAME: responses}
             if not isinstance(responses, dict) or set(responses) != {item.name for item in selected}:
+                if args.published_through is not None:
+                    raise VerificationError(
+                        "partial PyPI readback must map exactly the distributions published through "
+                        f"{args.published_through}"
+                    )
                 raise VerificationError("PyPI readback must include every distribution")
             for distribution in selected:
                 verify_pypi(
@@ -1191,11 +1204,17 @@ def main() -> int:
             if args.distributions is None:
                 raise VerificationError("3.x and later require --distributions")
             verify_contract_binding(args.distributions)
-        if args.distribution is not None and args.publication_check != "pypi":
-            raise VerificationError("--distribution requires --publication-check pypi")
+        if args.published_through is not None and args.publication_check != "pypi":
+            raise VerificationError("--published-through requires --publication-check pypi")
         if args.publication_check is not None:
             _publication_check(args)
-            print(f"publication {args.publication_check} verified")
+            if args.published_through is not None:
+                names = ", ".join(item.name for item in _published_prefix(args.published_through))
+                print(
+                    f"publication pypi verified for {names} only (partial readback; not release completion)"
+                )
+            else:
+                print(f"publication {args.publication_check} verified")
             return 0
         version, _state = verify_metadata(require_publishable=args.require_publishable)
         if args.tag is not None and args.commit is None:

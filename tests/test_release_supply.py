@@ -330,16 +330,40 @@ def publication_inputs(tmp_path: Path) -> tuple[list[str], dict[str, object]]:
     return args, {item.name: _pypi_response(item, version, hashes) for item in TRAIN}
 
 
-@pytest.mark.parametrize("item", TRAIN, ids=lambda item: item.name)
-@pytest.mark.parametrize("mutation", ["none", "digest", "yanked", "identity", "missing", "extra"])
-def test_per_distribution_readback_checks_only_selected_approved_pair(
+def _pypi_readback(path: Path, args: list[str], *extra: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [
+            sys.executable,
+            "scripts/verify_release.py",
+            "--publication-check",
+            "pypi",
+            *extra,
+            "--response-json",
+            str(path),
+            *args,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+
+
+@pytest.mark.parametrize("through", range(len(TRAIN)), ids=lambda index: TRAIN[index].name)
+@pytest.mark.parametrize(
+    "mutation",
+    ["none", "digest", "yanked", "identity", "missing", "extra", "beyond-prefix", "short-prefix"],
+)
+def test_published_through_checks_contract_order_prefix(
     tmp_path: Path,
     publication_inputs: tuple[list[str], dict[str, object]],
-    item: release.Distribution,
+    through: int,
     mutation: str,
 ) -> None:
     args, responses = publication_inputs
-    raw = responses[item.name]
+    prefix = TRAIN[: through + 1]
+    readback = {item.name: responses[item.name] for item in prefix}
+    raw = readback[prefix[-1].name]
     assert isinstance(raw, dict)
     urls = raw["urls"]
     assert isinstance(urls, list)
@@ -353,46 +377,48 @@ def test_per_distribution_readback_checks_only_selected_approved_pair(
         urls.pop()
     elif mutation == "extra":
         urls.append(dict(urls[0]))
+    elif mutation == "beyond-prefix":
+        # A readback for a distribution past the prefix is never silently ignored.
+        beyond = TRAIN[through + 1].name if through + 1 < len(TRAIN) else "mcp-audits-other"
+        readback[beyond] = responses.get(beyond, raw)
+    elif mutation == "short-prefix":
+        del readback[TRAIN[0].name]
     path = tmp_path / "response.json"
-    path.write_text(json.dumps(raw))
-    result = subprocess.run(
-        [
-            sys.executable,
-            "scripts/verify_release.py",
-            "--publication-check",
-            "pypi",
-            "--distribution",
-            item.name,
-            "--response-json",
-            str(path),
-            *args,
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=30,
-    )
+    path.write_text(json.dumps(readback))
+    result = _pypi_readback(path, args, "--published-through", prefix[-1].name)
     assert result.returncode == (0 if mutation == "none" else 1), result.stderr
-    # The aggregate gate still rejects this single response even after an
-    # individual readback succeeds; it cannot advance a public pointer alone.
+    names = ", ".join(item.name for item in prefix)
     if mutation == "none":
-        aggregate = subprocess.run(
-            [
-                sys.executable,
-                "scripts/verify_release.py",
-                "--publication-check",
-                "pypi",
-                "--response-json",
-                str(path),
-                *args,
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=30,
+        assert result.stdout == (
+            f"publication pypi verified for {names} only (partial readback; not release completion)\n"
         )
-        assert aggregate.returncode == 1
-        assert "every distribution" in aggregate.stderr
+    elif mutation in {"beyond-prefix", "short-prefix"}:
+        assert (
+            f"partial PyPI readback must map exactly the distributions published through {prefix[-1].name}"
+        ) in result.stderr
+    # The aggregate gate still rejects a strict prefix even after its partial
+    # readback succeeds; only all three can advance a public pointer.
+    if mutation == "none":
+        aggregate = _pypi_readback(path, args)
+        if len(prefix) < len(TRAIN):
+            assert aggregate.returncode == 1
+            assert "every distribution" in aggregate.stderr
+        else:
+            assert aggregate.returncode == 0, aggregate.stderr
+            assert aggregate.stdout == "publication pypi verified\n"
+
+
+def test_core_only_partial_readback_prints_exact_text(
+    tmp_path: Path, publication_inputs: tuple[list[str], dict[str, object]]
+) -> None:
+    args, responses = publication_inputs
+    path = tmp_path / "response.json"
+    path.write_text(json.dumps({TRAIN[0].name: responses[TRAIN[0].name]}))
+    result = _pypi_readback(path, args, "--published-through", "mcp-audits")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == (
+        "publication pypi verified for mcp-audits only (partial readback; not release completion)\n"
+    )
 
 
 @pytest.mark.parametrize("mutation", ["none", "missing-response", "digest", "tag-absent", "tag-other"])
@@ -439,15 +465,35 @@ def test_final_tag_gate_requires_all_published_files_at_approved_commit(
         assert ("merge-base", "--is-ancestor", COMMIT, "origin/main") in calls
 
 
+@pytest.mark.parametrize("version", [None, "3.0.0"], ids=["checkout", "3.0.0"])
 @pytest.mark.parametrize("mode", [None, "artifacts", "tag"])
-def test_per_distribution_selector_is_only_for_intermediate_pypi_readbacks(
-    mode: str | None, monkeypatch: pytest.MonkeyPatch
+def test_published_through_selector_is_only_for_intermediate_pypi_readbacks(
+    mode: str | None,
+    version: str | None,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    args = ["verify_release.py", "--distribution", TRAIN[0].name]
+    # Passing the contract keeps this exercising the selector guard, not the
+    # split-contract gate, once the checkout itself is 3.x.
+    args = [
+        "verify_release.py",
+        "--distributions",
+        str(CONTRACT),
+        "--published-through",
+        TRAIN[0].name,
+    ]
     if mode is not None:
         args.extend(["--publication-check", mode])
     monkeypatch.setattr(sys, "argv", args)
+    monkeypatch.setattr(release, "DISTRIBUTIONS", release.DISTRIBUTIONS)
+    monkeypatch.setattr(release, "RELEASE_BRANCH", release.RELEASE_BRANCH)
+    if version is not None:
+        monkeypatch.setattr(release, "_version", lambda: version)
     assert release.main() == 1
+    assert (
+        "release verification failed: --published-through requires --publication-check pypi"
+        in capsys.readouterr().err
+    )
 
 
 def _descriptor() -> dict[str, object]:

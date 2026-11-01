@@ -9,9 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Release verification supports individual PyPI readbacks between split-package
-  uploads and a final `--publication-check tag` that requires all six published
-  files and the release tag at the approved landed commit.
+- Release verification supports partial PyPI readbacks between split-package
+  uploads with `--publication-check pypi --published-through NAME`, which checks
+  the contract-order prefix up to and including `NAME` (core; core and Labs; all
+  three) against the approved manifest, rejects a readback map with any other
+  keys, and reports `partial readback; not release completion`. A final
+  `--publication-check tag` requires all six published files and the release
+  tag at the approved landed commit. Every version outside 2.x, not only 3.x,
+  requires the three-distribution contract.
 - Static discovering `scan` translations now append
   `--include-discovered --scan-compatible-sources`, including Claude Code,
   Cursor, unfiltered scans and the 2.11 hook form. Synthetic parity tests use
