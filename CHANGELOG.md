@@ -67,6 +67,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parse when run from the home directory.
 - Correct the 3.0 proposal's 2.12 release statuses and record D22's opt-in
   scan-compatible source selection for translated static checks.
+- Close out the 3.0 proposal: section 7 records each area in 3.0.0, and
+  section 8 marks D22 built and parity-proven, records owner decisions O-1 to
+  O-4, and records the implementation details that refined them.
 - Release builds pin `uv_build==0.12.24` exactly in `pyproject.toml` and in a new
   `build-constraints.txt`. The publish workflow build and the release verifier's
   reference build both pass `--build-constraints build-constraints.txt`.
