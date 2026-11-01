@@ -186,6 +186,14 @@ def classify_scan_options(options: Mapping[str, object]) -> ScanTranslation:
             reasons.append(
                 "--clients must name one supported client; comma-separated selections are untranslatable"
             )
+        elif selected_clients:
+            # A padded or otherwise non-literal spelling is never an exact translation;
+            # the trimmed name is used only in the manual replacement.
+            reasons.append(
+                "--clients must use a literal supported spelling (for example --client "
+                + selected_clients[0]
+                + ")"
+            )
         if not selected_clients:
             reasons.append(
                 "--clients uses an unsupported client spelling; supported spellings are "

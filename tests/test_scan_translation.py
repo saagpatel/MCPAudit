@@ -387,3 +387,13 @@ def test_translated_check_warns_when_legacy_source_exceeds_server_cap(
         and notice["message"]["text"] == warning["message"]
         for notice in notifications
     )
+
+
+@pytest.mark.parametrize("clients", [" cursor", "cursor ", "\tclaude_code"])
+def test_padded_client_spelling_is_never_exact(clients: str) -> None:
+    result = classify_scan_options({"skip_connect": True, "clients": clients})
+    assert result.coverage == "would-silently-shrink"
+    assert result.check_argv is None
+    assert "literal supported spelling" in result.notice()
+    trimmed = clients.strip()
+    assert result.replacement_argv[result.replacement_argv.index("--client") + 1] == trimmed
