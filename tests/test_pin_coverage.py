@@ -309,9 +309,10 @@ def test_pin_withheld_policy_cli_writes_report_before_exit(
             str(output),
         ],
     )
-    assert result.exit_code == (2 if enabled else 0), result.output
+    # 3.0: a requested pin check with a withheld baseline always fails the run; an
+    # explicit `pin_baseline_withheld: false` is ignored with a warning (P-2).
+    assert result.exit_code == 2, result.output
     payload = json.loads(output.read_text())
     assert payload["coverage"]["pin_check"]["state"] == "partial"
-    assert payload["policy_result"]["passed"] is (not enabled)
-    if enabled:
-        assert payload["policy_result"]["violations"][0]["rule"] == "fail_on.pin_baseline_withheld"
+    assert payload["policy_result"]["passed"] is False
+    assert payload["policy_result"]["violations"][0]["rule"] == "fail_on.pin_baseline_withheld"
