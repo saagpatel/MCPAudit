@@ -94,13 +94,29 @@ jobs:
           release_version="${RELEASE_TAG#v}"
           gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
             --pattern release-manifest.json --dir "$RUNNER_TEMP"
-          curl -q --fail --silent --show-error \
-            "https://pypi.org/pypi/mcp-audits/$release_version/json" \
-            --output "$RUNNER_TEMP/pypi-release.json"
+          for distribution in $(python -c 'import json, sys; print(" ".join(item["name"] for item in json.load(open(sys.argv[1], encoding="utf-8"))))' release-controls/release/distributions.json); do
+            curl -q --fail --silent --show-error \
+              "https://pypi.org/pypi/$distribution/$release_version/json" \
+              --output "$RUNNER_TEMP/pypi-$distribution.json"
+          done
+          python - "$RUNNER_TEMP" <<'PY' > "$RUNNER_TEMP/pypi-readback.json"
+          import json
+          import sys
+          from pathlib import Path
+
+          root = Path(sys.argv[1])
+          contract = json.loads(Path("release-controls/release/distributions.json").read_text(encoding="utf-8"))
+          responses = {
+              item["name"]: json.loads((root / f"pypi-{item['name']}.json").read_text(encoding="utf-8"))
+              for item in contract
+          }
+          print(json.dumps(responses))
+          PY
           python release-controls/scripts/verify_release.py --publication-check pypi \
             --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" \
+            --distributions release-controls/release/distributions.json \
             --manifest "$RUNNER_TEMP/release-manifest.json" --manifest-sha256 "$MANIFEST_SHA256" \
-            --response-json "$RUNNER_TEMP/pypi-release.json"
+            --response-json "$RUNNER_TEMP/pypi-readback.json"
           python release-controls/scripts/verify_release.py --publication-check descriptor \
             --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" --response-json release-source/server.json
           echo "registry_workflow_sha=$WORKFLOW_SHA source_commit=$RELEASE_COMMIT"
@@ -179,13 +195,29 @@ jobs:
           release_version="${RELEASE_TAG#v}"
           gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
             --pattern release-manifest.json --dir "$RUNNER_TEMP"
-          curl -q --fail --silent --show-error \
-            "https://pypi.org/pypi/mcp-audits/$release_version/json" \
-            --output "$RUNNER_TEMP/pypi-release.json"
+          for distribution in $(python -c 'import json, sys; print(" ".join(item["name"] for item in json.load(open(sys.argv[1], encoding="utf-8"))))' release-controls/release/distributions.json); do
+            curl -q --fail --silent --show-error \
+              "https://pypi.org/pypi/$distribution/$release_version/json" \
+              --output "$RUNNER_TEMP/pypi-$distribution.json"
+          done
+          python - "$RUNNER_TEMP" <<'PY' > "$RUNNER_TEMP/pypi-readback.json"
+          import json
+          import sys
+          from pathlib import Path
+
+          root = Path(sys.argv[1])
+          contract = json.loads(Path("release-controls/release/distributions.json").read_text(encoding="utf-8"))
+          responses = {
+              item["name"]: json.loads((root / f"pypi-{item['name']}.json").read_text(encoding="utf-8"))
+              for item in contract
+          }
+          print(json.dumps(responses))
+          PY
           python release-controls/scripts/verify_release.py --publication-check pypi \
             --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" \
+            --distributions release-controls/release/distributions.json \
             --manifest "$RUNNER_TEMP/release-manifest.json" --manifest-sha256 "$MANIFEST_SHA256" \
-            --response-json "$RUNNER_TEMP/pypi-release.json"
+            --response-json "$RUNNER_TEMP/pypi-readback.json"
           python release-controls/scripts/verify_release.py --publication-check descriptor \
             --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" --response-json release-source/server.json
           echo "registry_workflow_sha=$WORKFLOW_SHA source_commit=$RELEASE_COMMIT"

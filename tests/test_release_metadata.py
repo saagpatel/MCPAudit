@@ -719,7 +719,16 @@ def test_registry_publication_is_manual_pypi_first_and_oidc_confined() -> None:
     assert "uv run python ../release-controls/scripts/verify_release.py" not in validate_job
     assert "--root ." in validate_job
     assert "working-directory: release-source" in validate_job
-    assert "https://pypi.org/pypi/mcp-audits/$release_version/json" in validate_job
+    assert validate_job.count('"https://pypi.org/pypi/$distribution/$release_version/json"') == 1
+    assert publish_job.count('"https://pypi.org/pypi/$distribution/$release_version/json"') == 1
+    assert validate_job.count("for distribution in $(python -c") == 1
+    assert publish_job.count("for distribution in $(python -c") == 1
+    assert 'item["name"]: json.loads' in validate_job
+    assert 'item["name"]: json.loads' in publish_job
+    assert validate_job.count("--distributions release-controls/release/distributions.json") == 1
+    assert publish_job.count("--distributions release-controls/release/distributions.json") == 1
+    assert '"$RUNNER_TEMP/pypi-readback.json"' in validate_job
+    assert '"$RUNNER_TEMP/pypi-readback.json"' in publish_job
     assert "environments/pypi/deployment-branch-policies" in validate_job
     assert 'mcp-publisher" validate server.json' in validate_job
     assert "needs: validate" in publish_job
