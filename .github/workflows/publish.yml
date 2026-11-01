@@ -260,6 +260,12 @@ jobs:
         with:
           name: mcp-audits-${{ inputs.version }}
           path: release/
+      - name: Checkout approved release source and dependency lock
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit }}
+          path: release-source
+          persist-credentials: false
       - name: Verify before smoke
         env:
           RELEASE_TAG: v${{ inputs.version }}
@@ -267,16 +273,11 @@ jobs:
           WORKFLOW_SHA: ${{ github.sha }}
           MANIFEST_SHA256: ${{ needs.build.outputs.manifest-sha256 }}
         run: |
-          python scripts/verify_release.py --distributions release/distributions.json --publication-check artifacts \
+          python scripts/verify_release.py --root release-source --distributions release/distributions.json \
+            --publication-check artifacts \
             --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" --workflow-sha "$WORKFLOW_SHA" \
             --dist-dir release/dist --manifest release/release-manifest.json --manifest-sha256 "$MANIFEST_SHA256"
           cp release/release-manifest.json "$RUNNER_TEMP/approved-manifest.json"
-      - name: Checkout approved dependency lock
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ inputs.commit }}
-          path: release-source
-          persist-credentials: false
       - name: Prepare locked runtime and build dependencies
         run: |
           cmp release/distributions.json release-source/release/distributions.json
@@ -302,7 +303,8 @@ jobs:
           WORKFLOW_SHA: ${{ github.sha }}
           MANIFEST_SHA256: ${{ needs.build.outputs.manifest-sha256 }}
         run: |
-          python scripts/verify_release.py --distributions release/distributions.json --publication-check artifacts \
+          python scripts/verify_release.py --root release-source --distributions release/distributions.json \
+            --publication-check artifacts \
             --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" --workflow-sha "$WORKFLOW_SHA" \
             --dist-dir release/dist --manifest "$RUNNER_TEMP/approved-manifest.json" --manifest-sha256 "$MANIFEST_SHA256"
 
@@ -385,7 +387,7 @@ jobs:
           CONTROL_SHA: ${{ inputs.control_sha }}
           MANIFEST_SHA256: ${{ inputs.manifest_sha256 }}
         run: |
-          python scripts/verify_release.py --distributions release/distributions.json \
+          python scripts/verify_release.py --root release-source --distributions release/distributions.json \
             --publication-check artifacts --tag "v$RELEASE_VERSION" --commit "$RELEASE_COMMIT" \
             --workflow-sha "$CONTROL_SHA" --manifest-sha256 "$MANIFEST_SHA256" \
             --manifest release/release-manifest.json --dist-dir release/dist
@@ -439,6 +441,13 @@ jobs:
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
+      - name: Checkout approved release source for final authorization
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.commit }}
+          fetch-depth: 0
+          path: release-source
+          persist-credentials: false
       - name: Verify protected PyPI environment is still enforced
         env:
           GH_TOKEN: ${{ github.token }}
@@ -453,17 +462,11 @@ jobs:
             --header "Authorization: Bearer $GH_TOKEN" \
             "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/environments/pypi/deployment-branch-policies" \
             --output "$RUNNER_TEMP/pypi-branches.json"
-          python scripts/verify_release.py --distributions release/distributions.json --publication-check environment \
+          python scripts/verify_release.py --root release-source --distributions release/distributions.json \
+            --publication-check environment \
             --environment-json "$RUNNER_TEMP/pypi-environment.json" \
             --branch-policies-json "$RUNNER_TEMP/pypi-branches.json"
 
-      - name: Checkout approved release source for final authorization
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ inputs.commit }}
-          fetch-depth: 0
-          path: release-source
-          persist-credentials: false
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           python-version: "3.11"
@@ -489,7 +492,7 @@ jobs:
       - name: Stage only missing files after verifying retained hashes
         id: stage
         run: |
-          python scripts/verify_release.py --distributions release/distributions.json \
+          python scripts/verify_release.py --root release-source --distributions release/distributions.json \
             --publication-check artifacts --tag "v$RELEASE_VERSION" --commit "$RELEASE_COMMIT" \
             --workflow-sha "$CONTROL_SHA" --manifest-sha256 "$MANIFEST_SHA256" \
             --manifest release/release-manifest.json --dist-dir release/dist
@@ -510,7 +513,7 @@ jobs:
           python scripts/release_publish.py readback --distributions release/distributions.json \
             --version "$RELEASE_VERSION" --commit "$RELEASE_COMMIT" --control-sha "$CONTROL_SHA" \
             --manifest-sha256 "$MANIFEST_SHA256" --through mcp-audits --response-json readback.json
-          python scripts/verify_release.py --distributions release/distributions.json \
+          python scripts/verify_release.py --root release-source --distributions release/distributions.json \
             --publication-check pypi --published-through mcp-audits --response-json readback.json \
             --tag "v$RELEASE_VERSION" --commit "$RELEASE_COMMIT" --workflow-sha "$CONTROL_SHA" \
             --manifest release/release-manifest.json --manifest-sha256 "$MANIFEST_SHA256"
@@ -526,7 +529,7 @@ jobs:
           python scripts/release_publish.py readback --distributions release/distributions.json \
             --version "$RELEASE_VERSION" --commit "$RELEASE_COMMIT" --control-sha "$CONTROL_SHA" \
             --manifest-sha256 "$MANIFEST_SHA256" --through mcp-audits-labs --response-json readback.json
-          python scripts/verify_release.py --distributions release/distributions.json \
+          python scripts/verify_release.py --root release-source --distributions release/distributions.json \
             --publication-check pypi --published-through mcp-audits-labs --response-json readback.json \
             --tag "v$RELEASE_VERSION" --commit "$RELEASE_COMMIT" --workflow-sha "$CONTROL_SHA" \
             --manifest release/release-manifest.json --manifest-sha256 "$MANIFEST_SHA256"
@@ -542,14 +545,14 @@ jobs:
           python scripts/release_publish.py readback --distributions release/distributions.json \
             --version "$RELEASE_VERSION" --commit "$RELEASE_COMMIT" --control-sha "$CONTROL_SHA" \
             --manifest-sha256 "$MANIFEST_SHA256" --through mcp-audits-proof --response-json readback.json
-          python scripts/verify_release.py --distributions release/distributions.json \
+          python scripts/verify_release.py --root release-source --distributions release/distributions.json \
             --publication-check pypi --published-through mcp-audits-proof --response-json readback.json \
             --tag "v$RELEASE_VERSION" --commit "$RELEASE_COMMIT" --workflow-sha "$CONTROL_SHA" \
             --manifest release/release-manifest.json --manifest-sha256 "$MANIFEST_SHA256"
 
       - name: Require complete six-file publication
         run: |
-          python scripts/verify_release.py --distributions release/distributions.json \
+          python scripts/verify_release.py --root release-source --distributions release/distributions.json \
             --publication-check pypi --response-json readback.json \
             --tag "v$RELEASE_VERSION" --commit "$RELEASE_COMMIT" --workflow-sha "$CONTROL_SHA" \
             --manifest release/release-manifest.json --manifest-sha256 "$MANIFEST_SHA256"

@@ -6,6 +6,9 @@ import copy
 import email.message
 import hashlib
 import json
+import posixpath
+import shlex
+import shutil
 import subprocess
 import sys
 import urllib.error
@@ -428,6 +431,151 @@ def test_contract_flag_checker_rejects_flagless_verify_call(injected: str) -> No
     broken = copy.deepcopy(workflow)
     broken["jobs"]["publish"]["steps"].append({"name": "Injected", "run": injected})
     assert len(_verify_release_calls_lacking_contract(broken)) == 1
+
+
+# Jobs that re-verify the approved bytes after build; main may have bumped project.version since.
+SOURCE_ROOTED_JOBS = ("consumer-smoke", "resume", "publish")
+
+
+def _verify_release_calls(workflow: dict[str, object], jobs: tuple[str, ...]) -> list[tuple[str, str]]:
+    """Return (working-directory, logical command) for each verify_release.py call in ``jobs``."""
+    found = []
+    raw_jobs = workflow["jobs"]
+    assert isinstance(raw_jobs, dict)
+    for name in jobs:
+        for step in raw_jobs[name]["steps"]:
+            for line in step.get("run", "").replace("\\\n", " ").splitlines():
+                if "verify_release.py" in line:
+                    found.append((step.get("working-directory", "."), " ".join(line.split())))
+    return found
+
+
+def _verify_release_calls_not_rooted_at_source(workflow: dict[str, object]) -> list[str]:
+    """Return each call whose effective --root is not the approved-commit checkout."""
+    unrooted = []
+    for directory, command in _verify_release_calls(workflow, SOURCE_ROOTED_JOBS):
+        for segment in command.split("verify_release.py")[1:]:
+            tokens = shlex.split(segment.split("&&")[0])
+            roots = [tokens[i + 1] for i, token in enumerate(tokens[:-1]) if token == "--root"]
+            if len(roots) != 1 or posixpath.normpath(posixpath.join(directory, roots[0])) != "release-source":
+                unrooted.append(command)
+    return unrooted
+
+
+@pytest.mark.parametrize(
+    "injected",
+    [
+        "python scripts/verify_release.py --distributions x --publication-check artifacts",
+        "python scripts/verify_release.py --root . --distributions x",
+        "python scripts/verify_release.py --root release-source --distributions x && "
+        "python scripts/verify_release.py --distributions x",
+    ],
+    ids=["no-root", "controls-root", "second-call-unrooted"],
+)
+def test_every_recovery_and_publish_verifier_is_rooted_at_the_approved_commit(injected: str) -> None:
+    workflow = yaml.safe_load(Path(".github/workflows/publish.yml").read_text())
+    calls = _verify_release_calls(workflow, ("resume", "publish"))
+    assert len(calls) >= 7
+    assert _verify_release_calls_not_rooted_at_source(workflow) == []
+    for job in SOURCE_ROOTED_JOBS:
+        steps = workflow["jobs"][job]["steps"]
+        checkout = next(
+            i for i, step in enumerate(steps) if step.get("with", {}).get("path") == "release-source"
+        )
+        assert steps[checkout]["uses"].startswith("actions/checkout@")
+        assert len(steps[checkout]["uses"].split("@")[1].split()[0]) == 40
+        assert steps[checkout]["with"]["ref"] == "${{ inputs.commit }}"
+        assert steps[checkout]["with"]["persist-credentials"] is False
+        first_verify = next(i for i, step in enumerate(steps) if "verify_release.py" in step.get("run", ""))
+        assert checkout < first_verify
+    broken = copy.deepcopy(workflow)
+    broken["jobs"]["resume"]["steps"].append({"name": "Injected", "run": injected})
+    assert len(_verify_release_calls_not_rooted_at_source(broken)) == 1
+
+
+def _workspace_with_bumped_controls(tmp_path: Path) -> tuple[Path, dict[str, str], dict[str, str]]:
+    """A runner workspace: controls at 3.0.1 (main bumped), approved source and retained bytes at 3.0.0."""
+    workspace = tmp_path / "workspace"
+    (workspace / "scripts").mkdir(parents=True)
+    shutil.copy2("scripts/verify_release.py", workspace / "scripts/verify_release.py")
+    for root, version in ((workspace, "3.0.1"), (workspace / "release-source", VERSION)):
+        (root / "release").mkdir(parents=True, exist_ok=True)
+        (root / "pyproject.toml").write_text(f'[project]\nversion="{version}"\n')
+        (root / release.CONTRACT_PATH).write_bytes(CONTRACT.read_bytes())
+    dist = workspace / "release/dist"
+    dist.mkdir()
+    files = {}
+    for item in TRAIN:
+        for name in release.distribution_names(VERSION, item.name):
+            (dist / name).write_bytes(name.encode())
+            files[name] = hashlib.sha256(name.encode()).hexdigest()
+    manifest = workspace / "release/release-manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "schema_version": release.MANIFEST_SCHEMA,
+                "version": VERSION,
+                "commit": COMMIT,
+                "workflow_sha": CONTROL,
+                "files": files,
+            }
+        )
+    )
+    runner_temp = tmp_path / "runner-temp"
+    runner_temp.mkdir()
+    shutil.copy2(manifest, runner_temp / "approved-manifest.json")
+    digest = hashlib.sha256(manifest.read_bytes()).hexdigest()
+    env = {
+        "PATH": "/usr/bin:/bin",
+        "RUNNER_TEMP": str(runner_temp),
+        "RELEASE_VERSION": VERSION,
+        "RELEASE_TAG": f"v{VERSION}",
+        "RELEASE_COMMIT": COMMIT,
+        "CONTROL_SHA": CONTROL,
+        "WORKFLOW_SHA": CONTROL,
+        "MANIFEST_SHA256": digest,
+    }
+    return workspace, env, files
+
+
+def _run_step_command(
+    workspace: Path, env: dict[str, str], files: dict[str, str], command: str
+) -> subprocess.CompletedProcess[str]:
+    # Stand in for the preceding release_publish.py readback: the registry holds the published prefix.
+    names = [item.name for item in TRAIN]
+    through = command.split("--published-through ")
+    prefix = names[: names.index(through[1].split()[0]) + 1] if len(through) > 1 else names
+    (workspace / "readback.json").write_text(json.dumps({name: response(name, files) for name in prefix}))
+    return subprocess.run(
+        ["bash", "-c", command.replace("python ", f"{shlex.quote(sys.executable)} ", 1)],
+        cwd=workspace,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+
+
+def test_resume_of_approved_release_passes_version_gate_after_main_bumps(tmp_path: Path) -> None:
+    workflow = yaml.safe_load(Path(".github/workflows/publish.yml").read_text())
+    workspace, env, files = _workspace_with_bumped_controls(tmp_path)
+    # Run the real step text for every offline (artifacts/pypi) verifier call in recovery and publication.
+    commands = [
+        command
+        for _, command in _verify_release_calls(workflow, SOURCE_ROOTED_JOBS)
+        if command.startswith("python scripts/verify_release.py")
+        and any(f"--publication-check {kind}" in command for kind in ("artifacts", "pypi"))
+    ]
+    assert len(commands) == 8  # smoke 2, resume 1, publish stage 1 + three readbacks + completion
+    for command in commands:
+        result = _run_step_command(workspace, env, files, command)
+        assert result.returncode == 0, (command, result.stderr)
+        assert "publication" in result.stdout and "verified" in result.stdout
+        # Control: the same call against the bumped controls checkout fails the version gate.
+        unrooted = _run_step_command(workspace, env, files, command.replace("--root release-source ", ""))
+        assert unrooted.returncode == 1
+        assert "does not match the checkout project.version 3.0.1" in unrooted.stderr
 
 
 def test_workflow_contract_and_ordered_upload_failure_gates() -> None:
