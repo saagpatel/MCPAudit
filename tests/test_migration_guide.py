@@ -31,6 +31,11 @@ SWEPT = [
     Path("maintainers/GOLDEN-ROLLOUT.md"),
     Path("maintainers/LAUNCH-RESPONSE-PLAYBOOK.md"),
     Path("maintainers/MAINTAINER-WORKFLOWS.md"),
+    Path("docs/assets/hero-demo-config.json"),
+    Path("examples/configs/popular-public-servers.json"),
+    Path("src/mcp_audit/api.py"),
+    Path("src/mcp_audit/engine.py"),
+    Path("src/mcp_audit/report.py"),
     *sorted(Path("examples/policies").glob("*")),
 ]
 

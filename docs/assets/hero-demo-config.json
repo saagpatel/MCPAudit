@@ -1,5 +1,5 @@
 {
-	"_comment": "Compact curated subset of examples/configs/popular-public-servers.json for the README hero GIF. Only PUBLIC servers that launch standalone with no auth token and no real-path argument: fetch shows SSRF, sequential-thinking shows a high-risk capability surface, and time gives a low-risk baseline. Safe to run - it scans ONLY this file and never reads your real MCP configs: `mcp-audit scan --config docs/assets/hero-demo-config.json --config-only --ssrf-check`. Versions track examples/configs/popular-public-servers.json (pinned 2026-06-02); bump them together.",
+	"_comment": "Compact curated subset of examples/configs/popular-public-servers.json for the README hero GIF. Only PUBLIC servers that launch standalone with no auth token and no real-path argument: fetch shows SSRF, sequential-thinking shows a high-risk capability surface, and time gives a low-risk baseline. Safe to run - it scans ONLY this file and never reads your real MCP configs: `mcp-audit check --config docs/assets/hero-demo-config.json --connect-all --ssrf-check`. Versions track examples/configs/popular-public-servers.json (pinned 2026-06-02); bump them together.",
 	"mcpServers": {
 		"fetch": {
 			"command": "uvx",
