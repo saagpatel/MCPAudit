@@ -128,6 +128,7 @@ async def _watch_loop(
         _error_console.print(terminal_safe(f"{exc}"), style="red")
         raise SystemExit(1) from exc
     gen.render_terminal(report, verbose=verbose)
+    _render_pin_warnings(report)
     _validate_watch_outputs(
         json_output, sarif_output, [*_get_watch_paths(client_list, extra_path), cfg_path, DEFAULT_PIN_PATH]
     )
@@ -139,6 +140,7 @@ async def _watch_loop(
         new_report = await run_scan(scan_options, override_applier=override_applier, console=_console)
         _render_diff(prev_report, new_report)
         gen.render_terminal(new_report, verbose=verbose)
+        _render_pin_warnings(new_report)
         _validate_watch_outputs(
             json_output,
             sarif_output,
@@ -146,6 +148,12 @@ async def _watch_loop(
         )
         _write_outputs(new_report, json_output, sarif_output)
         prev_report = new_report
+
+
+def _render_pin_warnings(report: AuditReport) -> None:
+    for warning in report.redacted().warnings:
+        if warning.code == "pin_baseline_withheld":
+            _console.print(terminal_safe(warning.message))
 
 
 def _get_watch_paths(clients: list[ClientType] | None = None, extra_config: Path | None = None) -> list[Path]:
