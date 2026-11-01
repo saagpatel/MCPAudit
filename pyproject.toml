@@ -46,7 +46,7 @@ dependencies = [
 [project.optional-dependencies]
 watch = ["watchfiles>=1.1.1"]
 llm = ["anthropic>=0.40"]
-otel = ["opentelemetry-api>=1.44,<2"]
+otel = ["opentelemetry-api>=1.45.1,<2"]
 labs = ["mcp-audits-labs==2.12.0"]
 proof = ["mcp-audits-proof==2.12.0"]
 all = [
@@ -54,7 +54,7 @@ all = [
     "mcp-audits-proof==2.12.0",
     "watchfiles>=1.1.1",
     "anthropic>=0.40",
-    "opentelemetry-api>=1.44,<2",
+    "opentelemetry-api>=1.45.1,<2",
 ]
 
 [project.urls]

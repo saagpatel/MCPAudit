@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Raise the optional OpenTelemetry API minimum to 1.45.1 to address the
+  unbounded `tracestate` parsing advisory.
+
 ### Changed
 
 - Static discovering `scan` translations now append

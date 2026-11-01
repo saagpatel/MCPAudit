@@ -102,7 +102,7 @@ def test_otel_extra_declares_the_api_dependency() -> None:
             and requirement.marker is not None
             and requirement.marker.evaluate({"extra": extra})
         )
-        assert api.specifier == SpecifierSet(">=1.44,<2")
+        assert api.specifier == SpecifierSet(">=1.45.1,<2")
         assert api.marker is not None
         assert not api.marker.evaluate({"extra": ""})
 
