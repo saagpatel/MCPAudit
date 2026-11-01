@@ -311,7 +311,7 @@ def test_shadow_terminal_surfaces_pin_warnings(
 ) -> None:
     shadow_inputs[1].unlink()
     result = CliRunner().invoke(cli.main, _args(shadow_inputs)[:-1])
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == 2, result.output
     assert "pin baselines that cannot be trusted" in result.output
 
 

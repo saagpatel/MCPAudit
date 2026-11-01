@@ -301,6 +301,13 @@ def _version() -> str:
     return version
 
 
+def _checkout_version() -> str | None:
+    """Return the checkout's project.version, or None when the root carries no pyproject.toml."""
+    if not (ROOT / "pyproject.toml").is_file():
+        return None
+    return _version()
+
+
 def _locked_project_version(distribution: str = DISTRIBUTION_NAME) -> str:
     lock = tomllib.loads(_read_text("uv.lock"))
     for package in lock.get("package", []):
@@ -498,6 +505,15 @@ def verify_metadata(*, require_publishable: bool) -> tuple[str, dict[str, object
     return version, state
 
 
+def _remote_tag_refs(tag: str) -> str:
+    """List origin's refs for exactly this tag and its peeled form; an unreadable origin fails closed."""
+    # A clone without fetched tags lists nothing locally, so the remote is authoritative.
+    try:
+        return _run_git("ls-remote", "--tags", "origin", f"refs/tags/{tag}", f"refs/tags/{tag}^{{}}")
+    except (VerificationError, subprocess.TimeoutExpired) as exc:
+        raise VerificationError(f"cannot confirm release tag {tag} is absent on origin: {exc}") from exc
+
+
 def verify_git_binding(
     *, tag: str | None, commit: str, require_landed: bool, published: bool = False
 ) -> None:
@@ -515,6 +531,8 @@ def verify_git_binding(
         verify_contract_binding(ROOT / CONTRACT_PATH, commit=commit)
         if not published and _run_git("tag", "--list", f"v{version}"):
             raise VerificationError("release tag must not exist before publication")
+        if not published and _remote_tag_refs(f"v{version}"):
+            raise VerificationError("release tag must not exist on origin before publication")
         if published and tag is None:
             raise VerificationError("post-publication verification requires the release tag")
     if tag is not None and (published or not _is_split_version(version)):
@@ -1206,9 +1224,21 @@ def main() -> int:
         DISTRIBUTIONS = (Distribution(DISTRIBUTION_NAME, "mcp_audit", "pyproject.toml", EXPECTED_SCRIPTS),)
         if args.distributions is not None:
             DISTRIBUTIONS = load_distributions(args.distributions)
-        version = args.tag[1:] if args.tag is not None else _version()
-        _require_split_contract(version)
-        if _is_split_version(version):
+        # The policy version must never come from --tag alone: a 2.x tag on a 3.x checkout
+        # would otherwise skip the split contract. Both must agree whenever both exist.
+        checkout_version = _checkout_version()
+        if args.tag is not None and checkout_version is not None and args.tag != f"v{checkout_version}":
+            raise VerificationError(
+                f"tag {args.tag} does not match the checkout project.version {checkout_version}"
+            )
+        versions = [
+            item
+            for item in (args.tag.removeprefix("v") if args.tag is not None else None, checkout_version)
+            if item is not None
+        ]
+        for version in versions:
+            _require_split_contract(version)
+        if any(_is_split_version(version) for version in versions):
             if args.distributions is None:
                 raise VerificationError("3.x and later require --distributions")
             verify_contract_binding(args.distributions)
