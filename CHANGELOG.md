@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the original run, control revision and manifest before staging only missing
   files; dry runs rehearse a partial upload and retained-byte recovery offline.
 
+- MCP Registry publication verifies PyPI readbacks for all three contracted
+  distributions, keyed by distribution name, before validation and again before
+  OIDC publication.
 - Release verification supports partial PyPI readbacks between split-package
   uploads with `--publication-check pypi --published-through NAME`, which checks
   the contract-order prefix up to and including `NAME` (core; core and Labs; all
