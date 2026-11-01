@@ -652,3 +652,63 @@ def test_readback_failure_prevents_later_distribution_checks(
     with pytest.raises(release.VerificationError):
         publish.readback(VERSION, None, files, fetch=fetch)
     assert requested == [TRAIN[0].name]
+
+
+def _lagging_fetch(files: dict[str, str], stale: list[object]) -> tuple[list[str], object]:
+    """Serve each queued stale state for core (None means 404) before its real response."""
+    requested: list[str] = []
+    queue = list(stale)
+
+    def fetch(url: str) -> object:
+        name = url.split("/")[-3]
+        requested.append(name)
+        if name == TRAIN[0].name and queue:
+            state = queue.pop(0)
+            if state is None:
+                raise urllib.error.HTTPError(url, 404, "not yet visible", email.message.Message(), None)
+            return state
+        return response(name, files)
+
+    return requested, fetch
+
+
+def test_readback_waits_through_pypi_propagation_lag(candidate: tuple[Path, dict[str, str], str]) -> None:
+    _, files, _ = candidate
+    partial = copy.deepcopy(response(TRAIN[0].name, files))
+    partial["urls"] = partial["urls"][:1]
+    requested, fetch = _lagging_fetch(files, [None, partial])
+    sleeps: list[float] = []
+
+    publish.readback(VERSION, TRAIN[0].name, files, fetch=fetch, attempts=4, delay=5.0, sleep=sleeps.append)
+
+    assert requested == [TRAIN[0].name] * 3
+    assert sleeps == [5.0, 5.0]
+
+
+def test_readback_fails_fast_on_wrong_content_and_after_bounded_wait(
+    candidate: tuple[Path, dict[str, str], str],
+) -> None:
+    _, files, _ = candidate
+    tampered = copy.deepcopy(response(TRAIN[0].name, files))
+    tampered["urls"][0]["digests"]["sha256"] = "0" * 64
+    tampered["urls"] = tampered["urls"][:1]
+    requested, fetch = _lagging_fetch(files, [tampered])
+    sleeps: list[float] = []
+    with pytest.raises(release.VerificationError):
+        publish.readback(VERSION, TRAIN[0].name, files, fetch=fetch, attempts=5, sleep=sleeps.append)
+    assert (requested, sleeps) == ([TRAIN[0].name], [])
+
+    requested, fetch = _lagging_fetch(files, [None] * 10)
+    sleeps = []
+    with pytest.raises(release.VerificationError):
+        publish.readback(
+            VERSION, TRAIN[0].name, files, fetch=fetch, attempts=3, delay=1.0, sleep=sleeps.append
+        )
+    assert (len(requested), sleeps) == (3, [1.0, 1.0])
+
+
+def test_workflow_readback_wait_is_bounded() -> None:
+    assert 60 <= (publish.READBACK_ATTEMPTS - 1) * publish.READBACK_DELAY_SECONDS <= 180
+    source = Path("scripts/release_publish.py").read_text(encoding="utf-8")
+    assert "attempts=READBACK_ATTEMPTS" in source
+    assert "delay=READBACK_DELAY_SECONDS" in source
