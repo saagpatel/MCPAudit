@@ -11,9 +11,10 @@ import anyio
 import click
 import yaml
 
+from mcp_audit._cli_policy import apply_cli_policy
 from mcp_audit.engine import ScanOptions, run_scan
 from mcp_audit.pinning import PinStore
-from mcp_audit.policy import PolicyConfig, evaluate_policy, load_policy
+from mcp_audit.policy import PolicyConfig, load_policy
 from mcp_audit.report import ReportGenerator
 from mcp_audit.review_discovery import review_sources
 from mcp_audit.terminal_summary import summary_console
@@ -77,24 +78,24 @@ def shadow(
                 else pin_min_sequence,
             )
         pins = PinStore(pin_file, trusted_keys_path=trusted_keys, record_verification=False)
+        scan_options = ScanOptions(
+            config_only=True,
+            skip_connect=not connect,
+            connect_project_configs=connect,
+            timeout=timeout,
+            pin_check=True,
+            shadow_check=True,
+            pin_file=pin_file,
+        )
         report = anyio.run(
             partial(
                 run_scan,
-                ScanOptions(
-                    config_only=True,
-                    skip_connect=not connect,
-                    connect_project_configs=connect,
-                    timeout=timeout,
-                    pin_check=True,
-                    shadow_check=True,
-                    pin_file=pin_file,
-                ),
+                scan_options,
                 servers=sources.servers,
                 pin_store=pins,
             )
         )
-        if policy_config is not None:
-            report.policy_result = evaluate_policy(report, policy_config, pin_store=pins)
+        apply_cli_policy(report, scan_options, policy_config, pin_store=pins)
     except (OSError, TypeError, ValueError, yaml.YAMLError) as exc:
         # Parser exceptions can contain source snippets. Keep diagnostics value-free.
         raise click.ClickException(f"Cannot complete shadow review ({type(exc).__name__}).") from None

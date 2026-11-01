@@ -791,7 +791,7 @@ gate requires both server records and the child record. See the
 
 ## Exit Codes
 
-- `0`: the review completed and no configured policy gate failed.
+- `0`: the review completed and no applicable policy gate failed.
 - `1`: command setup failed, such as invalid client or policy config.
 - `2`, before anything runs: usage or artifact path validation failed, or the
   legacy `scan` interceptor refused a `would-silently-shrink` form. In these
@@ -799,10 +799,20 @@ gate requires both server records and the child record. See the
   a refused `scan` prints its reason and a **not exact** replacement command
   (or none) on stderr.
 - `2`, after reports are written: the review completed, requested report
-  artifacts were written, and the `--policy` gate failed.
+  artifacts were written, and a policy gate failed. In `check` (and so in
+  accepted `scan` forms) and `shadow`, any requested pin-dependent check with a
+  withheld baseline fails this way even without `--policy`. JSON, SARIF, HTML
+  and card outputs requested by `check` are written before this exit; `shadow`
+  renders its terminal or JSON report before exiting. Output-write failures
+  retain their existing error behavior.
 
 Accepted legacy `scan` forms run `check` with the printed argv and exit with
 `check`'s code.
+
+`watch` does not exit for its implicit pin check's withheld baseline: the initial
+scan and every rescan write reports with incomplete coverage and render the
+`pin_baseline_withheld` warning. Library callers of `run_scan`, library policy
+evaluation, and `serve` do not acquire this one-shot CLI gate.
 
 Subcommands with standalone experimental contracts document their own exit
 codes below; they do not change the stable review exit contract.
@@ -1452,7 +1462,9 @@ The report top level also includes:
     `pin_baseline_withheld` (servers whose pin baseline failed integrity
     verification, HIGH MCP027, or is a genuine legacy v1 pin, whether or not
     trusted keys exist, so this baseline comparison was not run; also emitted
-    for `pin_check` and `canary_check`; named in `servers` and never also
+    for all seven pin-dependent checks: `pin_check`, `canary_check`,
+    `escalation_check`, `provenance_check`, `integrity_check`, `verify_artifacts`
+    and `download_artifacts`; named in `servers` and never also
     reported as `pin_baseline_stale`; the message names
     `mcp-audit pin --refresh SERVER`),
     `integrity_comparison_incomplete` (with `check: integrity_check`; pinned
@@ -1633,16 +1645,34 @@ unknown legacy coverage, independently of severity; `not_requested` checks
 do not fail the gate. Coverage violations use existing SARIF `MCP010` and
 the existing policy exit code `2`. Existing policies retain their behavior.
 
-The narrower opt-in YAML boolean `fail_on.pin_baseline_withheld: true` (Python
-`PolicyConfig(fail_on_pin_baseline_withheld=True)`) fails only requested pin
-checks whose warning has `code: pin_baseline_withheld` and `check: pin_check`.
-It adds a HIGH per-server violation with rule `fail_on.pin_baseline_withheld`,
-reported through existing policy fields, SARIF `MCP010`, and policy exit `2`.
-Other withheld checks and merely missing pins do not trigger this gate. Its
-default is `false`. A genuine v1 baseline is withheld whether or not trusted
-keys exist, so with this gate a keyless install with a v1 pin now fails the
-requested pin check; mixed-entry v1 rows are excluded from drift and emit
-`pin_schema_outdated`.
+In `check` and `shadow`, withheld baselines unconditionally fail requested
+`pin_check`, `canary_check`, `escalation_check`, `provenance_check`,
+`integrity_check`, `verify_artifacts` and `download_artifacts` checks. The gate
+matches both the requested option and its `pin_baseline_withheld` warning's
+`check` key; an unrequested check's warning does not fail the run. It adds one
+HIGH violation per affected audit with rule `fail_on.pin_baseline_withheld`,
+the affected check names and `audit_index`, using existing policy fields and
+SARIF `MCP010`. `policy_result` is populated and `passed` is `false` even
+without `--policy`. Configured policy violations are retained alongside it.
+
+The policy loader retains three internal states for
+`fail_on.pin_baseline_withheld`: unset, `true`, and `false`. Unset and `true`
+both fail in these CLIs; an explicit YAML `false` is accepted but ignored,
+and the loader logs a warning naming the ignored setting and the `check` and
+`shadow` commands. This diagnostic does not add a coverage warning or change
+the report schema. Non-boolean values remain invalid policy input.
+
+Merely missing pins do not trigger this gate unless integrity verification
+withholds their baseline (for example, a missing signed manifest with trusted
+keys). A genuine v1 baseline is withheld whether or not trusted keys exist;
+mixed-entry v1 rows are excluded from drift and emit `pin_schema_outdated`.
+The gate does not change coverage classification: a withheld requested pin
+check is `partial`; canary uses `runtime_security`; other comparisons can
+remain `not_run` when their baseline or execution is unavailable. These
+incomplete states still fail the one-shot gate. `watch` retains partial pin
+coverage, renders the warning on every loop and continues. Library policy
+evaluation retains its opt-in `PolicyConfig(fail_on_pin_baseline_withheld=True)`
+gate for warnings with `check: pin_check`; library scans and `serve` are unaffected.
 
 `description_truncated` warnings use `check: "permission_analysis"`, name the
 affected server, and give a count of truncated fields without including their
@@ -2465,7 +2495,22 @@ All profiles include `runs[].properties.mcpAuditCoverage` and invocation
 `toolExecutionNotifications` for partial, unrun, or unknown legacy coverage.
 These notifications describe completion rather than security findings;
 `executionSuccessful` does not imply complete coverage.
-The default `compatibility` profile retains existing rule and result families.
+The default `compatibility` profile retains existing rule and result families,
+and emits one warning-level `MCP-CH-CONFIG-PARSE-FAILURE` result for each
+`review_source_skipped` warning. This includes discovered sources rejected for
+symlinks (including symlinked ancestors), size above 1,048,576 bytes, nesting
+depth above 64, more than 20,000 containers, or more than 1,000 servers, including
+translated static `scan` runs. The result names the reason and the remedy
+`--config FILE` to select the source explicitly (explicit inputs still have
+size, nesting/container and server limits). It locates the source using the
+matching config-health finding's `config_paths`, with the same URI conversion
+and identifier redaction as other config-file results. Older reports without
+source paths omit locations. The result and its rule keep
+`properties.severity: "high"`, matching the JSON config-health finding; only
+the SARIF `level` is `warning`. The rule is included in `tool.driver.rules` only
+when present, with a fixed generic `fullDescription` that names no path. The existing `MCP-REVIEW-SOURCE-SKIPPED` invocation notification
+and `executionSuccessful: true` remain; exit codes are unchanged. Runs without
+source skips retain byte-identical compatibility output.
 CLI `--sarif-profile extended` (Python `generate(report, profile="extended")`)
 adds configuration-health results with stable IDs `MCP-CH-{FINDING-TYPE}`:
 the existing `finding_type` is uppercased, and underscores become hyphens
@@ -2475,6 +2520,8 @@ as `locations[].physicalLocation.artifactLocation.uri`, including parse failures
 with no parsed server. Results from old reports without source paths omit
 locations rather than inventing them. Scores and existing JSON config-health
 fields are unchanged.
+The extended profile is unchanged: its existing high-severity config parse
+failure is an error-level result, with no additional source-skip result.
 
 SARIF output uses stable MCP rule IDs:
 

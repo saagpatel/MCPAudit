@@ -697,6 +697,52 @@ def test_maintenance_branch_binds_only_2x_and_its_remote(monkeypatch: pytest.Mon
     assert ("merge-base", "--is-ancestor", COMMIT, "origin/release/2.x") in calls
 
 
+@pytest.mark.parametrize("remote", ["none", "local-only", "remote-only", "no-origin", "unreachable"])
+def test_pre_publication_tag_check_queries_origin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, remote: str
+) -> None:
+    contract = Path(__file__).resolve().parents[1] / release.CONTRACT_PATH
+    origin, repo = tmp_path / "origin.git", tmp_path / "repo"
+    _git(tmp_path, "init", "-q", "--bare", str(origin))
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    (repo / "pyproject.toml").write_text(f'[project]\nversion="{VERSION}"\n')
+    _git(repo, "add", "pyproject.toml")
+    _git(repo, "commit", "-q", "-m", "base")
+    (repo / "release").mkdir()
+    (repo / release.CONTRACT_PATH).write_bytes(contract.read_bytes())
+    _git(repo, "add", release.CONTRACT_PATH)
+    _git(repo, "commit", "-q", "-m", "release")
+    commit = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "remote", "add", "origin", str(origin))
+    _git(repo, "push", "-q", "origin", "main")
+    if remote == "local-only":
+        _git(repo, "tag", f"v{VERSION}", "HEAD~1")
+    elif remote == "remote-only":
+        # An annotated tag at another commit, pushed and then absent from this clone.
+        _git(repo, "tag", "-a", "-m", "elsewhere", f"v{VERSION}", "HEAD~1")
+        _git(repo, "push", "-q", "origin", f"refs/tags/v{VERSION}")
+        _git(repo, "tag", "-d", f"v{VERSION}")
+        assert _git(repo, "tag", "--list", f"v{VERSION}") == ""
+    elif remote == "no-origin":
+        _git(repo, "remote", "remove", "origin")
+    elif remote == "unreachable":
+        _git(repo, "remote", "set-url", "origin", str(tmp_path / "missing.git"))
+    monkeypatch.setattr(release, "ROOT", repo)
+    monkeypatch.setattr(release, "DISTRIBUTIONS", release.load_distributions(contract))
+    if remote == "none":
+        release.verify_git_binding(tag=None, commit=commit, require_landed=True)
+        return
+    expected = {
+        "local-only": "release tag must not exist before publication",
+        "remote-only": "release tag must not exist on origin before publication",
+        "no-origin": f"cannot confirm release tag v{VERSION} is absent on origin",
+        "unreachable": f"cannot confirm release tag v{VERSION} is absent on origin",
+    }[remote]
+    with pytest.raises(release.VerificationError, match=expected):
+        release.verify_git_binding(tag=None, commit=commit, require_landed=True)
+
+
 def test_maintenance_environment_requires_exact_branch(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(release, "RELEASE_BRANCH", "release/2.x")
     environment = {
@@ -825,6 +871,11 @@ def test_publication_cli_requires_every_pypi_readback(train_artifacts: Path, mut
     )
     contract = train_artifacts.parent / "distributions.json"
     contract.write_bytes((Path(__file__).resolve().parents[1] / "release/distributions.json").read_bytes())
+    # Tag and checkout versions must agree, so the readback runs on a VERSION checkout stub.
+    root = train_artifacts.parent / "root"
+    (root / "release").mkdir(parents=True)
+    (root / "pyproject.toml").write_text(f'[project]\nversion="{VERSION}"\n')
+    (root / release.CONTRACT_PATH).write_bytes(contract.read_bytes())
     responses: dict[str, object] = {}
     for item in TRAIN:
         responses[item.name] = {
@@ -862,6 +913,8 @@ def test_publication_cli_requires_every_pypi_readback(train_artifacts: Path, mut
             "scripts/verify_release.py",
             "--publication-check",
             "pypi",
+            "--root",
+            str(root),
             "--tag",
             f"v{VERSION}",
             "--commit",
