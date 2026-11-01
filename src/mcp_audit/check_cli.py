@@ -460,51 +460,52 @@ def check(
                 "Configured code may execute and access the network. "
                 "Auditor read-only intent is not a sandbox."
             )
+        scan_options = ScanOptions(
+            skip_connect=not connecting,
+            timeout=timeout,
+            max_concurrency=max_concurrency,
+            pin_file=pin_file,
+            ssrf_check=ssrf_check,
+            ssrf_allowlist=ssrf_allowlist,
+            egress_check=egress_check,
+            egress_allowlist=_merge_host_args(
+                egress_allowlist, policy_config.egress_allowlist if policy_config else []
+            ),
+            multi_tenant_hosts=_merge_host_args(
+                multi_tenant_hosts, policy_config.multi_tenant_hosts if policy_config else []
+            ),
+            egress_server_allowlists=(
+                {
+                    name: rule.egress_allowlist
+                    for name, rule in policy_config.server_rules.items()
+                    if rule.egress_allowlist
+                }
+                if policy_config
+                else None
+            ),
+            pin_check=pin_check,
+            escalation_check=escalation_check,
+            provenance_check=provenance_check,
+            integrity_check=integrity_check,
+            verify_artifacts=verify_artifacts,
+            download_artifacts=download_artifacts,
+            llm_analysis=llm_analysis,
+            canary_check=canary_check,
+            canary_calls=canary_calls,
+            canary_identities=canary_identities,
+            canary_safe_tools=canary_safe_tools,
+            max_frame_bytes=max_frame_bytes,
+            max_surface_bytes=max_surface_bytes,
+            sdk_stdio_fallback=sdk_stdio_fallback,
+            connect_project_configs=connecting and (connect or connect_project_configs),
+            config_only=config is not None and not include_discovered,
+            inject_check=inject_check or (card is not None and connecting),
+            trifecta_check=trifecta_check or (card is not None and connecting),
+            shadow_check=shadow_check or (card is not None and connecting),
+        )
         operation = partial(
             run_scan,
-            ScanOptions(
-                skip_connect=not connecting,
-                timeout=timeout,
-                max_concurrency=max_concurrency,
-                pin_file=pin_file,
-                ssrf_check=ssrf_check,
-                ssrf_allowlist=ssrf_allowlist,
-                egress_check=egress_check,
-                egress_allowlist=_merge_host_args(
-                    egress_allowlist, policy_config.egress_allowlist if policy_config else []
-                ),
-                multi_tenant_hosts=_merge_host_args(
-                    multi_tenant_hosts, policy_config.multi_tenant_hosts if policy_config else []
-                ),
-                egress_server_allowlists=(
-                    {
-                        name: rule.egress_allowlist
-                        for name, rule in policy_config.server_rules.items()
-                        if rule.egress_allowlist
-                    }
-                    if policy_config
-                    else None
-                ),
-                pin_check=pin_check,
-                escalation_check=escalation_check,
-                provenance_check=provenance_check,
-                integrity_check=integrity_check,
-                verify_artifacts=verify_artifacts,
-                download_artifacts=download_artifacts,
-                llm_analysis=llm_analysis,
-                canary_check=canary_check,
-                canary_calls=canary_calls,
-                canary_identities=canary_identities,
-                canary_safe_tools=canary_safe_tools,
-                max_frame_bytes=max_frame_bytes,
-                max_surface_bytes=max_surface_bytes,
-                sdk_stdio_fallback=sdk_stdio_fallback,
-                connect_project_configs=connecting and (connect or connect_project_configs),
-                config_only=config is not None and not include_discovered,
-                inject_check=inject_check or (card is not None and connecting),
-                trifecta_check=trifecta_check or (card is not None and connecting),
-                shadow_check=shadow_check or (card is not None and connecting),
-            ),
+            scan_options,
             servers=servers,
             parse_errors=sources.errors,
             override_applier=override_applier,
@@ -528,15 +529,14 @@ def check(
         scanned = True
         stage = "report post-processing"
         apply_suppressions(report, cli_rules=ignore_rules, cli_reason=ignore_reason)
-        if policy_config is not None:
-            from mcp_audit.policy import evaluate_policy
+        from mcp_audit._cli_policy import apply_cli_policy
 
-            selected_pin_store = None
-            if policy_requires_pins:
-                from mcp_audit.pinning import PinStore
+        selected_pin_store = None
+        if policy_requires_pins:
+            from mcp_audit.pinning import PinStore
 
-                selected_pin_store = PinStore(path=pin_file)
-            report.policy_result = evaluate_policy(report, policy_config, pin_store=selected_pin_store)
+            selected_pin_store = PinStore(path=pin_file)
+        apply_cli_policy(report, scan_options, policy_config, pin_store=selected_pin_store)
         safe_report = report.redacted()
         for warning in safe_report.warnings:
             if warning.code == "review_source_skipped":
