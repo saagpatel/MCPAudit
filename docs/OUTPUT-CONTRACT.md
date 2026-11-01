@@ -3,6 +3,16 @@
 MCPAudit reports are designed for local review and CI ingestion. Keep this
 contract stable unless a release note calls out a breaking change.
 
+## Optional labs distribution
+
+The lab and SafeForge Python modules and session/resume corpus live in
+`mcp_audit_labs`, installed through `mcp-audits[labs]`. Core help and completion
+do not load labs. Invoking a lab, SafeForge, or conformance probe without that
+distribution exits 2 with the existing 2.12 install notice, including
+`uv tool install mcp-audits-proof` for the standalone Proof command on PATH.
+Unrelated import failures still propagate. This package move does not change
+lab report fields, report schemas, or the core `schema_version`.
+
 ## Legacy scan interceptor (3.0)
 
 `scan` remains registered but is hidden from both top-level help views. It no
@@ -1910,6 +1920,13 @@ Proof Before Action is a separate strict evidence contract; it does not change
 - `proof-before-action.trust-manifest.v1`
 - `proof-before-action.capsule.v2`
 - `proof-before-action.capsule-index.v2`
+
+These contracts belong to the `mcp-audits-proof` distribution, under
+`proof_before_action`; the package split leaves their schemas unchanged.
+Capsule `producer.version` comes from that distribution's installed metadata.
+Checkout producer provenance resolves
+`distributions/proof/src/proof_before_action/proof_capsule.py` relative to the
+repository root; installed builds use their embedded build provenance.
 
 The verifier also supports historical
 `proof-before-action.observation.v1`,
