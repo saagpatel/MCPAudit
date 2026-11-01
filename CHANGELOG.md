@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- MCP Registry publication verifies PyPI readbacks for all three contracted
+  distributions, keyed by distribution name, before validation and again before
+  OIDC publication.
 - Compatibility SARIF emits one warning-level `MCP-CH-CONFIG-PARSE-FAILURE`
   result per skipped discovered source, with its reason, source location and
   `--config FILE` remedy, including translated static scans. Existing skip
@@ -78,10 +81,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   still dispatches `lab` and `safeforge` lazily; without labs these commands
   exit 2 with the existing install notice, including the direct Proof install
   needed to put `proof-before-action` on PATH.
-- Move Proof Before Action's five modules from `mcp_audit.proof_*` to
-  `proof_before_action.proof_*` in `mcp-audits-proof`. The `proof-before-action`
-  command now belongs to that distribution; install it with
-  `uv tool install mcp-audits-proof` to expose the command on PATH.
 - Move Proof Before Action's five modules from `mcp_audit.proof_*` to
   `proof_before_action.proof_*` in `mcp-audits-proof`. The `proof-before-action`
   command now belongs to that distribution; install it with
@@ -157,12 +156,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `_run_scan`/`_parse_clients` re-exports from `mcp_audit._core_cli`. Library callers use
   `mcp_audit.engine.run_scan(ScanOptions(...))` and `mcp_audit.client_filter._parse_clients`;
   there is no replacement for `monitor` (use `shadow`, `watch`, or `check --pin-check`).
-- Move the 34 lab and SafeForge modules and the session/resume scenario corpus
-  from `mcp_audit` to the optional `mcp_audit_labs` package. Install labs with
-  `uv tool install 'mcp-audits[labs]'` and update Python imports. The core CLI
-  still dispatches `lab` and `safeforge` lazily; without labs these commands
-  exit 2 with the existing install notice, including the direct Proof install
-  needed to put `proof-before-action` on PATH.
 - For 3.x, pre-upload commit checks refuse an existing release tag. An explicit
   three-package release contract must match `release/distributions.json` in source
   and release controls byte for byte; the source contract is also bound to the

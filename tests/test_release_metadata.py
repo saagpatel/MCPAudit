@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import re
 import runpy
 import subprocess
@@ -18,6 +20,7 @@ from proof_before_action import proof_cli
 
 from mcp_audit import cli
 from scripts import verify_release as release
+from tests.test_release_supply import _release_root
 
 RELEASE_VERIFIER: dict[str, Any] = runpy.run_path(
     "scripts/verify_release.py",
@@ -278,7 +281,7 @@ def test_3x_publishable_check_accepts_commit_without_tag(
     monkeypatch.setattr(release, "verify_environment_protection", lambda *args: None)
     monkeypatch.setattr(release, "DISTRIBUTIONS", release.DISTRIBUTIONS)
     assert release.main() == 0
-    assert observed == [{"tag": None, "commit": "a" * 40, "require_landed": True}]
+    assert observed == [{"tag": None, "commit": "a" * 40, "require_landed": True, "published": False}]
 
 
 def test_release_verifier_requires_public_tag_in_precommit_usage_comment(
@@ -719,7 +722,14 @@ def test_registry_publication_is_manual_pypi_first_and_oidc_confined() -> None:
     assert "uv run python ../release-controls/scripts/verify_release.py" not in validate_job
     assert "--root ." in validate_job
     assert "working-directory: release-source" in validate_job
-    assert "https://pypi.org/pypi/mcp-audits/$release_version/json" in validate_job
+    assert validate_job.count('"https://pypi.org/pypi/$distribution/$release_version/json"') == 1
+    assert publish_job.count('"https://pypi.org/pypi/$distribution/$release_version/json"') == 1
+    assert validate_job.count("for distribution in $(python -c") == 1
+    assert publish_job.count("for distribution in $(python -c") == 1
+    assert 'item["name"]: json.loads' in validate_job
+    assert 'item["name"]: json.loads' in publish_job
+    assert '"$RUNNER_TEMP/pypi-readback.json"' in validate_job
+    assert '"$RUNNER_TEMP/pypi-readback.json"' in publish_job
     assert "environments/pypi/deployment-branch-policies" in validate_job
     assert 'mcp-publisher" validate server.json' in validate_job
     assert "needs: validate" in publish_job
@@ -733,6 +743,343 @@ def test_registry_publication_is_manual_pypi_first_and_oidc_confined() -> None:
     assert publish_job.index("--publication-check descriptor") < publish_job.index("login github-oidc")
     assert "--publication-check pypi" in publish_job
     assert "--manifest-sha256" in publish_job
+
+
+REGISTRY_WORKFLOW = Path(".github/workflows/publish-mcp-registry.yml")
+REGISTRY_COMMIT = "1" * 40
+REGISTRY_WORKFLOW_SHA = "2" * 40
+
+
+def _registry_steps() -> list[tuple[str, dict[str, Any]]]:
+    import yaml
+
+    workflow = yaml.safe_load(REGISTRY_WORKFLOW.read_text(encoding="utf-8"))
+    return [
+        (job_name, step)
+        for job_name, job in workflow["jobs"].items()
+        for step in job["steps"]
+        if isinstance(step.get("run"), str)
+    ]
+
+
+def _verifier_invocations(script: str) -> list[str]:
+    joined = re.sub(r"\\\n\s*", " ", script)
+    return [line.strip() for line in joined.splitlines() if "verify_release.py" in line]
+
+
+def test_every_registry_verifier_invocation_passes_the_release_contract() -> None:
+    invocations = [
+        (step.get("working-directory", "."), command)
+        for _job, step in _registry_steps()
+        for command in _verifier_invocations(step["run"])
+    ]
+
+    # validate: metadata, pypi, descriptor; publish: environment, pypi, descriptor, registry.
+    assert len(invocations) == 7
+    for working_directory, command in invocations:
+        values = re.findall(r"--distributions (\S+)", command)
+        assert len(values) == 1, command
+        resolved = Path(os.path.normpath(Path(working_directory) / values[0]))
+        assert resolved == Path("release-controls/release/distributions.json"), command
+    rooted = [command for _wd, command in invocations if "--root ." in command]
+    assert len(rooted) == 1
+    assert "--distributions ../release-controls/release/distributions.json" in rooted[0]
+
+
+@pytest.mark.parametrize("drift", [False, True])
+def test_rooted_registry_metadata_step_binds_source_to_controls_contract(tmp_path: Path, drift: bool) -> None:
+    # The tag must equal the checkout version, so the v3.0.0 run binds a 3.0.0 source stub.
+    source = _release_root(tmp_path / "release-source", "3.0.0")
+    if drift:
+        with (source / release.CONTRACT_PATH).open("ab") as stream:
+            stream.write(b" ")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(Path.cwd() / "scripts/verify_release.py"),
+            "--root",
+            ".",
+            "--distributions",
+            str(Path.cwd() / CONTRACT),
+            "--tag",
+            "v3.0.0",
+            "--commit",
+            REGISTRY_COMMIT,
+            "--require-publishable",
+        ],
+        cwd=source,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+
+    assert result.returncode != 0
+    assert "does not match the checkout project.version" not in result.stderr, result.stderr
+    binding = "source and release-controls distribution contracts must be byte-identical"
+    assert (binding in result.stderr) is drift, result.stderr
+
+
+def _fixture_git(repo: Path, *args: str) -> str:
+    return subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "-c",
+            "user.name=fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-c",
+            "init.defaultBranch=main",
+            *args,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
+@pytest.mark.parametrize("tag_state", ["approved", "other", "absent"])
+def test_registry_metadata_step_requires_3x_tag_at_approved_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tag_state: str
+) -> None:
+    """The 3.x Registry run follows the owner's post-PyPI tag, so the tag must exist at the commit."""
+    [(_, step)] = [
+        (name, step)
+        for name, step in _registry_steps()
+        if name == "validate" and step.get("name") == "Verify tag, commit, main, and release metadata"
+    ]
+    assert step["working-directory"] == "release-source"
+    assert "git fetch --force --tags origin main" in step["run"]
+    [command] = _verifier_invocations(step["run"])
+    assert "--tag-published" in command
+
+    version = "3.0.0"
+    tag = f"v{version}"
+    source = tmp_path / "release-source"
+    (source / "release").mkdir(parents=True)
+    (tmp_path / "release-controls").symlink_to(Path.cwd(), target_is_directory=True)
+    (source / "pyproject.toml").write_text(f'[project]\nname = "mcp-audits"\nversion = "{version}"\n')
+    (source / "release/distributions.json").write_bytes(CONTRACT.read_bytes())
+    _fixture_git(source, "init", "-q")
+    _fixture_git(source, "add", "pyproject.toml", "release/distributions.json")
+    _fixture_git(source, "commit", "-q", "-m", "approved")
+    commit = _fixture_git(source, "rev-parse", "HEAD")
+    _fixture_git(source, "commit", "-q", "--allow-empty", "-m", "later")
+    other = _fixture_git(source, "rev-parse", "HEAD")
+    _fixture_git(source, "update-ref", "refs/remotes/origin/main", other)
+    _fixture_git(source, "checkout", "-q", "--detach", commit)
+    if tag_state != "absent":
+        _fixture_git(source, "tag", tag, commit if tag_state == "approved" else other)
+
+    runner_temp = tmp_path / "rt"
+    substitutions = {
+        '"$RELEASE_TAG"': tag,
+        '"$RELEASE_COMMIT"': commit,
+        '"$RUNNER_TEMP/pypi-environment.json"': str(runner_temp / "pypi-environment.json"),
+        '"$RUNNER_TEMP/pypi-branches.json"': str(runner_temp / "pypi-branches.json"),
+    }
+    argv = command.split()
+    assert argv[:2] == ["python", "../release-controls/scripts/verify_release.py"]
+    argv = [substitutions.get(arg, arg) for arg in argv[1:]]
+    assert not [arg for arg in argv if "$" in arg], argv
+
+    # Release-state and environment checks have their own coverage; this exercises real git binding.
+    monkeypatch.chdir(source)
+    monkeypatch.setattr(sys, "argv", argv)
+    monkeypatch.setattr(release, "verify_metadata", lambda **kwargs: (version, {}))
+    monkeypatch.setattr(release, "_load_json", lambda path: {})
+    monkeypatch.setattr(release, "verify_environment_protection", lambda *args: None)
+    monkeypatch.setattr(release, "DISTRIBUTIONS", release.DISTRIBUTIONS)
+    monkeypatch.setattr(release, "RELEASE_BRANCH", release.RELEASE_BRANCH)
+    monkeypatch.setattr(release, "ROOT", release.ROOT)
+    monkeypatch.setattr(release, "RELEASE_STATE_PATH", release.RELEASE_STATE_PATH)
+    status = release.main()
+    stderr = capsys.readouterr().err
+    if tag_state == "approved":
+        assert status == 0, stderr
+    else:
+        assert status == 1
+        expected = "unknown revision" if tag_state == "absent" else "does not resolve to the approved commit"
+        assert expected in stderr, stderr
+
+    # Without the post-publication flag the pre-publication binding refuses the existing tag.
+    if tag_state == "approved":
+        monkeypatch.setattr(sys, "argv", [arg for arg in argv if arg != "--tag-published"])
+        assert release.main() == 1
+        assert "release tag must not exist before publication" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "extra,message",
+    [
+        (["--commit", "a" * 40], "--tag-published requires --tag and --commit"),
+        (["--tag", "v3.0.0"], "--tag-published requires --tag and --commit"),
+        (
+            ["--tag", "v3.0.0", "--commit", "a" * 40, "--publication-check", "tag"],
+            "--tag-published applies only to the metadata check",
+        ),
+    ],
+)
+def test_tag_published_flag_requires_metadata_binding_inputs(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], extra: list[str], message: str
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["verify_release.py", "--distributions", str(CONTRACT), "--tag-published", *extra],
+    )
+    monkeypatch.setattr(release, "_version", lambda: "3.0.0")
+    monkeypatch.setattr(release, "DISTRIBUTIONS", release.DISTRIBUTIONS)
+    assert release.main() == 1
+    assert message in capsys.readouterr().err
+
+
+def _pypi_entry(name: str, digest: str) -> dict[str, object]:
+    return {
+        "filename": name,
+        "digests": {"sha256": digest},
+        "yanked": False,
+        "packagetype": "bdist_wheel" if name.endswith(".whl") else "sdist",
+    }
+
+
+@pytest.mark.parametrize("job", ["validate", "publish"])
+@pytest.mark.parametrize("mutation", ["none", "missing-satellite", "yanked-satellite", "digest-satellite"])
+def test_registry_keyed_pypi_readback_runs_against_the_verifier(
+    tmp_path: Path, job: str, mutation: str
+) -> None:
+    [(_, step)] = [
+        (name, step)
+        for name, step in _registry_steps()
+        if name == job and "--publication-check pypi" in step["run"]
+    ]
+    script = step["run"].split(
+        "python release-controls/scripts/verify_release.py --publication-check descriptor"
+    )[0]
+    assert 'release_version="${RELEASE_TAG#v}"' in script
+    assert '"https://pypi.org/pypi/$distribution/$release_version/json"' in script
+    assert "<<'PY' > \"$RUNNER_TEMP/pypi-readback.json\"" in script
+
+    version = "3.0.0"
+    hashes = {
+        name: hashlib.sha256(name.encode()).hexdigest()
+        for item in TRAIN
+        for name in release.distribution_names(version, item.name)
+    }
+    workspace, runner_temp, fixtures, shims = (tmp_path / part for part in ("ws", "rt", "fx", "bin"))
+    for directory in (workspace, runner_temp, fixtures, shims):
+        directory.mkdir()
+    # Unrooted steps resolve the checkout from the verifier's own location, so the trusted
+    # controls stub carries a real copy of the verifier beside a 3.0.0 project version.
+    controls = _release_root(workspace / "release-controls", version)
+    (controls / "scripts").mkdir()
+    (controls / "scripts/verify_release.py").write_bytes(Path("scripts/verify_release.py").read_bytes())
+    manifest = fixtures / "release-manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "schema_version": release.MANIFEST_SCHEMA,
+                "version": version,
+                "commit": REGISTRY_COMMIT,
+                "workflow_sha": REGISTRY_WORKFLOW_SHA,
+                "files": hashes,
+            }
+        ),
+        encoding="utf-8",
+    )
+    for item in TRAIN:
+        urls = [_pypi_entry(name, hashes[name]) for name in release.distribution_names(version, item.name)]
+        if item.name == "mcp-audits-labs" and mutation == "yanked-satellite":
+            urls[1]["yanked"] = True
+        if item.name == "mcp-audits-labs" and mutation == "digest-satellite":
+            urls[0]["digests"] = {"sha256": "0" * 64}
+        if item.name == "mcp-audits-proof" and mutation == "missing-satellite":
+            continue
+        (fixtures / f"{item.name}-{version}.json").write_text(
+            json.dumps({"info": {"name": item.name, "version": version}, "urls": urls}), encoding="utf-8"
+        )
+    (shims / "python").write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n', encoding="utf-8")
+    # Offline stand-ins: curl serves fixtures by exact URL (404 -> exit 22 like --fail);
+    # gh copies the manifest.
+    (shims / "curl").write_text(
+        "#!/bin/sh\n"
+        'for arg; do case "$prev" in --output) out="$arg";; esac; prev="$arg";'
+        ' case "$arg" in https://*) url="$arg";; esac; done\n'
+        'echo "$url" >> "$FIXTURES/urls.log"\n'
+        'name="${url#https://pypi.org/pypi/}"; name="${name%/json}"\n'
+        'file="$FIXTURES/${name%/*}-${name#*/}.json"\n'
+        '[ -f "$file" ] || exit 22\n'
+        'cp "$file" "$out"\n',
+        encoding="utf-8",
+    )
+    (shims / "gh").write_text(
+        '#!/bin/sh\ncp "$FIXTURES/release-manifest.json" "$RUNNER_TEMP/"\n', encoding="utf-8"
+    )
+    for shim in shims.iterdir():
+        shim.chmod(0o755)
+
+    env = {
+        "PATH": f"{shims}:/usr/bin:/bin",
+        "FIXTURES": str(fixtures),
+        "RUNNER_TEMP": str(runner_temp),
+        "GITHUB_REPOSITORY": "example/mcp-audit",
+        "GH_TOKEN": "unused",
+        "RELEASE_TAG": f"v{version}",
+        "RELEASE_COMMIT": REGISTRY_COMMIT,
+        "WORKFLOW_SHA": REGISTRY_WORKFLOW_SHA,
+        "MANIFEST_SHA256": hashlib.sha256(manifest.read_bytes()).hexdigest(),
+    }
+    result = subprocess.run(
+        ["bash", "-e", "-c", script],
+        cwd=workspace,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+    )
+
+    requested = (fixtures / "urls.log").read_text(encoding="utf-8").split()
+    expected_urls = [f"https://pypi.org/pypi/{item.name}/{version}/json" for item in TRAIN]
+    if mutation == "missing-satellite":
+        assert result.returncode != 0
+        assert requested == expected_urls
+        assert not (runner_temp / "pypi-readback.json").exists()
+        # Even if a readback lacking the satellite were produced, the step's verifier call rejects it.
+        partial = {
+            item.name: json.loads((fixtures / f"{item.name}-{version}.json").read_text(encoding="utf-8"))
+            for item in TRAIN[:2]
+        }
+        (runner_temp / "pypi-readback.json").write_text(json.dumps(partial), encoding="utf-8")
+        verifier = subprocess.run(
+            ["bash", "-e", "-c", script.split("\nPY\n", maxsplit=1)[1]],
+            cwd=workspace,
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60,
+        )
+        assert verifier.returncode != 0
+        assert "PyPI readback must include every distribution" in verifier.stderr
+        return
+    assert requested == expected_urls
+    readback = json.loads((runner_temp / "pypi-readback.json").read_text(encoding="utf-8"))
+    assert list(readback) == [item.name for item in TRAIN]
+    if mutation == "none":
+        assert result.returncode == 0, result.stderr
+        assert "publication pypi verified" in result.stdout
+    else:
+        assert result.returncode != 0
+        expected = "yanked" if mutation == "yanked-satellite" else "do not match the approved manifest"
+        assert expected in result.stderr
 
 
 def test_registry_publisher_binary_is_version_and_hash_pinned() -> None:
