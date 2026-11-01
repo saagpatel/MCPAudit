@@ -587,15 +587,18 @@ def test_probe_release_binds_pypi_to_approved_manifest(
 def test_workflow_isolates_consumer_copies_and_uploads_explicit_paths() -> None:
     workflow = yaml.safe_load(Path(".github/workflows/publish.yml").read_text())
     jobs = workflow["jobs"]
-    assert jobs["publish"]["needs"] == ["build", "consumer-smoke"]
-    assert jobs["publish"]["if"] == "${{ !inputs.dry_run }}"
+    assert jobs["publish"]["needs"] == ["validate-dispatch-ref", "build", "consumer-smoke", "resume"]
+    assert "!inputs.dry_run" in jobs["publish"]["if"]
+    assert "needs.consumer-smoke.result == 'success'" in jobs["publish"]["if"]
+    assert "inputs.resume && needs.resume.result == 'success'" in jobs["publish"]["if"]
     assert jobs["consumer-smoke"]["permissions"] == {"contents": "read", "actions": "read"}
     smoke_steps = jobs["consumer-smoke"]["steps"]
     assert not any("upload-artifact" in step.get("uses", "") for step in smoke_steps)
     assert "Recheck exact file set and digests after smoke" in [step.get("name") for step in smoke_steps]
     upload = next(step for step in jobs["build"]["steps"] if "upload-artifact" in step.get("uses", ""))
     assert "*" not in upload["with"]["path"]
-    assert len(upload["with"]["path"].splitlines()) == 3
+    assert len(upload["with"]["path"].splitlines()) == 7
+    assert upload["with"]["retention-days"] == 90
 
 
 def test_publish_build_and_advisory_gate_use_the_same_build_constraints() -> None:
@@ -605,7 +608,7 @@ def test_publish_build_and_advisory_gate_use_the_same_build_constraints() -> Non
     gate = " ".join(steps["Run release quality gate"]["run"].replace("\\\n", " ").split())
     assert f"check_advisories.py --lock uv.lock {constraints}" in gate
     build = " ".join(steps["Build wheel and sdist"]["run"].replace("\\\n", " ").split())
-    assert build == f"uv build --clear --no-create-gitignore {constraints}"
+    assert build == f"uv build --all-packages --clear --no-create-gitignore {constraints}"
     builds = [step for step in workflow["jobs"]["build"]["steps"] if "uv build" in step.get("run", "")]
     assert builds == [steps["Build wheel and sdist"]]
     names = list(steps)
