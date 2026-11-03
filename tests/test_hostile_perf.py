@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import platform
 import signal
 import subprocess
 import sys
@@ -122,9 +123,12 @@ class Case:
     hostile: bool = False
 
 
-# Exact published measurements (RSS was reported in MiB by the stress runner).
-# Do not increase these to accommodate a failed run: record the regression.
-# REFERENCE must not be changed to absorb a regression either.
+# Ceilings are per platform. These are the Apple Silicon (darwin/arm64) set:
+# exact published measurements (RSS was reported in MiB by the stress runner).
+# PLATFORM_WALL below may replace wall ceilings for another platform. Change a
+# set only with recorded runs on that platform's own hardware, never to
+# accommodate a failed run: record the regression. REFERENCE must not be
+# changed to absorb a regression either.
 CASES = (
     Case("scale_500", ("normal", "--tools", "10"), 5.8, 213, servers=500, tools=5000),
     Case("desc_5mb_x1", ("normal", "--tools", "1", "--desc-bytes", "5000000"), 18.8, analysis=18),
@@ -156,6 +160,43 @@ CASES = (
     # New full-field redaction ceiling, separate from historical scan measurements.
     Case("escape_dense", (), 10, 512, servers=0, tools=0),
 )
+
+APPLE_SILICON = ("darwin", "arm64")
+LINUX_X86_64 = ("linux", "x86_64")
+# Baseline wall ceilings in calibrated seconds (wall_seconds / factor) that
+# replace the Apple Silicon value on a platform. Unlisted cases, every RSS
+# ceiling and every later profile target keep the Apple Silicon values.
+#
+# Linux (GitHub ubuntu-latest, 4 vCPU): p95 x 1.15 of the 14 post-#387 runs of
+# the hostile-perf workflow (f7dfba9 and its PR head, 2026-11-03; calibration
+# factors 1.26-2.64), rounded up to 0.1 s. Earlier runs measured the pre-X-2
+# scan path or the regression #387 fixed. scale_500 covers its timeout-2
+# subcase too. Every other case's highest post-#387 Linux value already fits
+# its Apple Silicon ceiling.
+#   case              p50    p95    max    ceiling
+#   scale_500         6.14   6.35   6.50   7.4 (timeout-2: 6.15 / 6.39 / 6.40)
+#   scale_2000        22.85  23.32  23.61  26.9
+#   scale_100k_skip   11.18  12.54  12.57  14.5
+#   ssrf_1mib         1.00   1.06   1.08   1.3
+LINUX_WALL = {
+    "scale_500": 7.4,
+    "scale_2000": 26.9,
+    "scale_100k_skip": 14.5,
+    "ssrf_1mib": 1.3,
+}
+PLATFORM_WALL: dict[tuple[str, str], dict[str, float]] = {APPLE_SILICON: {}, LINUX_X86_64: LINUX_WALL}
+
+
+def platform_cases(machine: tuple[str, str]) -> dict[str, Case]:
+    """This platform's ceiling set; an uncalibrated platform has none."""
+    if machine not in PLATFORM_WALL:
+        raise LookupError(
+            f"No hostile performance ceilings for {machine[0]}/{machine[1]}; calibrated platforms: "
+            + ", ".join("/".join(known) for known in PLATFORM_WALL)
+            + ". Record runs on this hardware and add a ceiling set before gating it."
+        )
+    walls = PLATFORM_WALL[machine]
+    return {case.name: replace(case, wall=walls.get(case.name, case.wall)) for case in CASES}
 
 
 def isolated_env(root: Path) -> dict[str, str]:
@@ -529,8 +570,10 @@ def assert_limits(
 def test_hostile_performance(
     case: Case, tmp_path: Path, pytestconfig: pytest.Config, perf_calibration: Calibration
 ) -> None:
-    if os.name != "posix" or sys.platform not in {"darwin", "linux"}:
-        pytest.fail("Performance gate requires Linux or macOS process groups and peak-RSS accounting.")
+    try:
+        case = platform_cases((sys.platform, platform.machine()))[case.name]
+    except LookupError as error:
+        pytest.fail(str(error))
     output: Path | None = pytestconfig.getoption("--perf-output")
     root = tmp_path if output is None else output.resolve() / case.name
     root.mkdir(parents=True, exist_ok=True)
@@ -566,6 +609,23 @@ def test_hostile_performance(
             assert short["connected"] == 500 and short["total_tools"] == 5000, short
         else:
             assert set(cast(list[str], short["statuses"])) <= {"connected", "timeout"}, short
+
+
+def test_apple_silicon_keeps_the_published_ceilings() -> None:
+    assert platform_cases(APPLE_SILICON) == {case.name: case for case in CASES}
+
+
+def test_linux_replaces_only_its_recorded_wall_ceilings() -> None:
+    apple, linux = platform_cases(APPLE_SILICON), platform_cases(LINUX_X86_64)
+    assert apple.keys() == linux.keys() and set(LINUX_WALL) <= apple.keys()
+    for name, case in linux.items():
+        assert case == replace(apple[name], wall=LINUX_WALL.get(name, apple[name].wall))
+
+
+@pytest.mark.parametrize("machine", [("linux", "aarch64"), ("darwin", "x86_64"), ("win32", "AMD64")])
+def test_uncalibrated_platform_fails_closed(machine: tuple[str, str]) -> None:
+    with pytest.raises(LookupError, match=f"No hostile performance ceilings for {machine[0]}/{machine[1]}"):
+        platform_cases(machine)
 
 
 def test_frame_rejection_bound_rejects_size_dependent_timing() -> None:
