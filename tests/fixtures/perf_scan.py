@@ -19,6 +19,20 @@ from mcp_audit.review_discovery import ReviewSources
 from mcp_audit.ssrf import SsrfDetector
 
 
+def _peak_rss() -> int:
+    """This process's own peak RSS in bytes.
+
+    Linux ru_maxrss keeps the forked parent's high-water mark across exec, so a
+    large pytest parent would inflate every later case; VmHWM is per address space.
+    """
+    if sys.platform.startswith("linux"):
+        for line in Path("/proc/self/status").read_text().splitlines():
+            if line.startswith("VmHWM:"):
+                return int(line.split()[1]) * 1024
+    rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return rss if sys.platform == "darwin" else rss * 1024
+
+
 def engine_sources(
     config: Path | None,
     include_discovered: bool,
@@ -93,7 +107,6 @@ def run() -> None:
             else:
                 main(args=argv, standalone_mode=False)
     finally:
-        rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
         metrics_path.write_text(
             json.dumps(
                 {
@@ -104,7 +117,7 @@ def run() -> None:
                     "analysis_tool_counts": analysis_tool_counts,
                     "ssrf_tool_counts": ssrf_tool_counts,
                     "ssrf_description_bytes": ssrf_description_bytes,
-                    "peak_rss_bytes": rss if sys.platform == "darwin" else rss * 1024,
+                    "peak_rss_bytes": _peak_rss(),
                 }
             )
         )

@@ -760,15 +760,7 @@ class ReportGenerator:
         """Serialize a scan-local credential-redacted snapshot."""
         # Stage with bounded memory so serialization failures leave outputs intact.
         with tempfile.SpooledTemporaryFile(max_size=1024 * 1024, mode="w+", encoding="ascii") as staged:
-            try:
-                self._stream_redacted_json(report, staged)
-            except (TypeError, PydanticSerializationError):
-                # Older cores lack ensure_ascii; stdlib also handles lone
-                # surrogates. Restart the document, including earlier fields.
-                staged.seek(0)
-                staged.truncate()
-                json.dump(report.model_dump(mode="json"), staged, indent=2)
-            staged.seek(0)
+            self._stage_redacted_json(report, staged)
             if path.is_symlink() or (path.exists() and not stat.S_ISREG(path.stat().st_mode)):
                 with path.open("w") as output:
                     shutil.copyfileobj(staged, output)
@@ -789,6 +781,18 @@ class ReportGenerator:
                     pass
                 raise
         self._console.print(terminal_safe(f"JSON report written to {path}"), style="green")
+
+    def _stage_redacted_json(self, report: AuditReport, staged: IO[str]) -> None:
+        """Write a redacted snapshot to a seekable stage and rewind it."""
+        try:
+            self._stream_redacted_json(report, staged)
+        except (TypeError, PydanticSerializationError):
+            # Older cores lack ensure_ascii; stdlib also handles lone
+            # surrogates. Restart the document, including earlier fields.
+            staged.seek(0)
+            staged.truncate()
+            json.dump(report.model_dump(mode="json"), staged, indent=2)
+        staged.seek(0)
 
     def _stream_redacted_json(self, report: AuditReport, output: IO[str]) -> None:
         # Preserve field order with an empty audit-list placeholder. Export each

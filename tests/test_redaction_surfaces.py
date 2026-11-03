@@ -101,9 +101,9 @@ def test_cli_all_report_surfaces_redact_fixture_credentials(tmp_path: Path, fiel
         result = CliRunner().invoke(cli.main, args)
 
     assert result.exit_code == 0, result.output
-    # Check redacts its file payload once and each format's public renderer
-    # redacts independently. JSON is serialized from the safe model directly.
-    assert redact_report.call_count == 4
+    # Check redacts once for JSON and the terminal; the SARIF and HTML public
+    # renderers redact independently. JSON is serialized from the safe model.
+    assert redact_report.call_count == 3
     snapshots = []
     for renderer in renderers:
         assert renderer.call_count == 1
