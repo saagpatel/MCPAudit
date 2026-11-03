@@ -132,6 +132,8 @@ limits, retained measurements, fixture isolation, and cumulative target profiles
 Each session calibrates fixture startup/stdio and synthetic report CPU costs,
 scaling time ceilings upward for the runner while preserving RSS and coverage
 limits. Add `--perf-no-calibration` to reproduce raw published time ceilings.
+Ceilings are per platform (Apple Silicon and Linux x86_64); any other platform
+fails the gate until it has its own recorded ceiling set.
 Other explicit marker selections that should exclude this lane need `and not perf`.
 
 The named-server stdio smoke uses temporary home and working directories,
