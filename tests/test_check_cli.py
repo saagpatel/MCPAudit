@@ -6,7 +6,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from typing import cast
+from typing import IO, Any, cast
 
 import pytest
 from click.testing import CliRunner
@@ -313,7 +313,23 @@ def test_artifact_write_failure_identifies_destination_and_prior_writes(
             raise PermissionError("synthetic write denial")
         return write_text(path, data, encoding=encoding, errors=errors, newline=newline)
 
+    open_path = Path.open
+
+    def denied_open(
+        path: Path,
+        mode: str = "r",
+        buffering: int = -1,
+        encoding: str | None = None,
+        errors: str | None = None,
+        newline: str | None = None,
+    ) -> IO[Any]:
+        # check streams --output-json through Path.open instead of write_text.
+        if path == outputs[failed_flag] and "w" in mode:
+            raise PermissionError("synthetic write denial")
+        return open_path(path, mode, buffering, encoding, errors, newline)
+
     monkeypatch.setattr(Path, "write_text", denied)
+    monkeypatch.setattr(Path, "open", denied_open)
     args = [command, "--config", str(SANDBOX), "--json"]
     for flag, path in outputs.items():
         args.extend([flag, str(path)])
