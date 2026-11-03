@@ -164,8 +164,9 @@ CASES = (
 APPLE_SILICON = ("darwin", "arm64")
 LINUX_X86_64 = ("linux", "x86_64")
 # Baseline wall ceilings in calibrated seconds (wall_seconds / factor) that
-# replace the Apple Silicon value on a platform. Unlisted cases, every RSS
-# ceiling and every later profile target keep the Apple Silicon values.
+# replace the Apple Silicon value on a platform, in the baseline profile only.
+# Unlisted cases, every RSS ceiling and every cumulative profile (p1-9 onward)
+# keep the Apple Silicon values on every platform.
 #
 # Linux (GitHub ubuntu-latest, 4 vCPU): p95 x 1.15 of the 14 post-#387 runs of
 # the hostile-perf workflow (f7dfba9 and its PR head, 2026-11-03; calibration
@@ -570,14 +571,17 @@ def assert_limits(
 def test_hostile_performance(
     case: Case, tmp_path: Path, pytestconfig: pytest.Config, perf_calibration: Calibration
 ) -> None:
+    profile: str = pytestconfig.getoption("--perf-profile")
     try:
-        case = platform_cases((sys.platform, platform.machine()))[case.name]
+        platform_case = platform_cases((sys.platform, platform.machine()))[case.name]
     except LookupError as error:
         pytest.fail(str(error))
+    # Cumulative targets are not recalibrated per platform: keep them strict.
+    if profile == "baseline":
+        case = platform_case
     output: Path | None = pytestconfig.getoption("--perf-output")
     root = tmp_path if output is None else output.resolve() / case.name
     root.mkdir(parents=True, exist_ok=True)
-    profile: str = pytestconfig.getoption("--perf-profile")
     metrics = run_case(root, case, calibration=perf_calibration)
     metrics["profile"] = profile
     (root / "metrics.json").write_text(json.dumps(metrics, indent=2) + "\n")

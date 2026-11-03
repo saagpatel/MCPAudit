@@ -123,9 +123,10 @@ speed but not for architecture: on GitHub's 4-vCPU `ubuntu-latest` runners,
 Apple Silicon wall ceilings in every recorded run, before and after the fixes in
 #387. Linux (linux/x86_64) therefore has its own baseline wall ceilings for
 those four cases, set to p95 × 1.15 of the post-#387 workflow runs and recorded
-with their samples next to `LINUX_WALL` in `tests/test_hostile_perf.py`. Every
-other Linux ceiling, every RSS ceiling and every later profile target is the
-Apple Silicon value. Any other platform fails the gate with a message rather than
+with their samples next to `LINUX_WALL` in `tests/test_hostile_perf.py`. The Linux
+set applies to the baseline profile only. Every other Linux ceiling, every RSS
+ceiling and every cumulative profile (`p1-9` onward) keeps the Apple Silicon
+value. Any other platform fails the gate with a message rather than
 borrowing another platform's set. Change a platform's set only with recorded
 runs on that platform's hardware, never to pass a failed run.
 
