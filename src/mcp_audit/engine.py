@@ -726,6 +726,10 @@ async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) ->
                 check="canary_check",
                 servers=[srv.name],
             )
+        if audit.canary is not None and audit.canary.observed:
+            # Record finished observations before any later step can time out (pin handling,
+            # analysis, LLM): they come from completed calls, so a timeout must keep them.
+            context.observations[idx] = (audit.canary, observed_annotation_findings(audit))
     else:
         async with connection_limiter:
             deadline = time.monotonic() + opts.timeout
@@ -857,12 +861,9 @@ async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) ->
     elif opts.llm_analysis and llm_unavailable_summary is not None:
         audit.llm_analysis = llm_unavailable_summary.model_copy(deep=True)
 
-    # Observed findings come only from recorded calls; set them first so an analysis
-    # timeout cannot drop confirmed MCP055 evidence.
-    observed_findings = observed_annotation_findings(audit)
+    # Observed findings were recorded right after the connection (see above).
+    observed_findings = context.observations[idx][1] if idx in context.observations else []
     audit.annotation_findings = list(observed_findings)
-    if audit.canary is not None and audit.canary.observed:
-        context.observations[idx] = (audit.canary, observed_findings)
     with analysis_budget(deadline):
         # Apply user overrides between analysis and scoring
         audit.permissions = applier.apply(srv.name, raw_findings)
