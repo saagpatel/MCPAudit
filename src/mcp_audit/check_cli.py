@@ -148,6 +148,12 @@ def _analysis_options(command: Callable[P, T]) -> Callable[P, T]:
             help="Mark an empty-argument tool safe; destructive hints still veto calls.",
         ),
         click.option(
+            "--canary-observe",
+            is_flag=True,
+            help="macOS, stdio: run canary calls in a write- and network-blocking sandbox and "
+            "check read-only and closed-world hints against what the tools did (MCP055).",
+        ),
+        click.option(
             "--timeout",
             default=10,
             show_default=True,
@@ -291,6 +297,7 @@ def check(
     canary_calls: int,
     canary_identities: int | None,
     canary_safe_tools: tuple[str, ...],
+    canary_observe: bool,
     timeout: int,
     max_concurrency: int,
     connect_project_configs: bool,
@@ -328,6 +335,8 @@ def check(
             "--canary-check requires --config FILE and --connect --server or --connect-all, "
             "without discovery."
         )
+    if canary_observe and not canary_check:
+        raise click.UsageError("--canary-observe requires --canary-check.")
     if connect and not server_id:
         raise _recovery_error(
             "--connect requires a selected server identity",
@@ -494,6 +503,7 @@ def check(
             canary_calls=canary_calls,
             canary_identities=canary_identities,
             canary_safe_tools=canary_safe_tools,
+            canary_observe=canary_observe,
             max_frame_bytes=max_frame_bytes,
             max_surface_bytes=max_surface_bytes,
             sdk_stdio_fallback=sdk_stdio_fallback,

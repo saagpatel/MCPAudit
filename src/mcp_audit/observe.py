@@ -1,0 +1,335 @@
+"""Observed canary calls: check served read-only and closed-world hints against behavior.
+
+`check --canary-check --canary-observe` launches each stdio server under macOS
+`sandbox-exec` in a per-server trap:
+
+- The real HOME and working folder stay readable, so servers find their own data.
+  Direct file writes by the server's process tree are allowed only under the
+  trap: TMPDIR, XDG_CACHE_HOME and XDG_STATE_HOME point there, so well-behaved
+  caches land where they can be seen. Other direct writes are denied.
+- Outbound TCP is allowed only to loopback. HTTP(S)_PROXY point at a local
+  proxy that records the requested host and refuses the request; loopback hosts
+  are exempt from the proxy and never count as open-world access.
+- The sandbox is not total containment: `(allow default)` leaves IPC open, so a
+  server could still ask another process to act for it.
+
+Around each canary call the trap records files created, changed or removed in
+the trap and non-loopback proxy hosts. Those are attributable effects: a tool
+claiming readOnlyHint=true that changed files, or openWorldHint=false that asked
+for a non-loopback host, is an observed contradiction (MCP055).
+
+Permission errors on the server's stderr are only a hint: they also come from
+reads, privacy prompts and blocked sockets. They mark the call inconclusive and
+add a canary warning; they never produce MCP055. Activity between calls, an
+oversized trap, and errored calls without effects are inconclusive too.
+
+Limits: local stdio servers on macOS only; one empty-argument call per exercised
+tool, so a tool that misbehaves only on some inputs passes.
+"""
+
+from __future__ import annotations
+
+import ipaddress
+import re
+import shutil
+import socketserver
+import sys
+import tempfile
+import threading
+from dataclasses import dataclass
+from pathlib import Path
+from urllib.parse import urlsplit
+
+import anyio
+import anyio.to_thread
+from mcp import StdioServerParameters
+
+from mcp_audit.models import (
+    AnnotationFinding,
+    Confidence,
+    ObservedCall,
+    ObservedVerdict,
+    PermissionCategory,
+    ServerAudit,
+    ToolAnnotations,
+)
+
+SANDBOX_EXEC = "/usr/bin/sandbox-exec"
+# Lowercased; Python, Node (EPERM/EACCES) and Go spellings.
+BLOCKED_MARKERS = (b"operation not permitted", b"permissionerror", b"permission denied", b"eperm", b"eacces")
+SETTLE_SECONDS = 0.3  # let a child process finish writing before the after-snapshot
+MAX_REPORTED_PATHS = 10
+MAX_SNAPSHOT_FILES = 5000
+MAX_RECORDED_HOSTS = 50
+LOOPBACK_NAMES = {"localhost", "localhost.localdomain"}
+_HOSTNAME = re.compile(r"^[a-z0-9.-]{1,253}$|^\[[0-9a-f:.]+\]$")
+UNSUPPORTED_WARNING = (
+    "Canary observation needs macOS sandbox-exec and a stdio server; calls were not observed."
+)
+STARTUP_FAILED_WARNING = (
+    "Canary observation sandbox was active: a server that writes outside its temporary folder or "
+    "downloads at startup (for example npx/uvx) can fail to start under it. Re-run without "
+    "--canary-observe to separate a sandbox failure from a server failure."
+)
+
+
+def observation_supported(transport_is_stdio: bool) -> bool:
+    return transport_is_stdio and sys.platform == "darwin" and Path(SANDBOX_EXEC).exists()
+
+
+class StderrScanner:
+    """Counts permission-error markers in a server's stderr stream, across chunk boundaries."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._carry = b""
+        self.count = 0
+
+    def feed(self, chunk: bytes) -> None:
+        overlap = max(len(m) for m in BLOCKED_MARKERS) - 1
+        with self._lock:
+            data = self._carry + chunk.lower()
+            # Count each marker occurrence that ends inside the new chunk only.
+            for marker in BLOCKED_MARKERS:
+                start = 0
+                while (index := data.find(marker, start)) >= 0:
+                    if index + len(marker) > len(self._carry):
+                        self.count += 1
+                    start = index + 1
+            self._carry = data[-overlap:]
+
+
+def _request_host(request_line: str) -> str:
+    """A validated host[:port] only: URLs can carry credentials, so nothing else is kept."""
+    parts = request_line.split()
+    if len(parts) < 2:
+        return ""
+    target = parts[1] if "://" in parts[1] else "//" + parts[1]
+    try:
+        split = urlsplit(target)
+        host, port = split.hostname, split.port
+    except ValueError:
+        return ""
+    if host and ":" in host:
+        host = f"[{host}]"  # IPv6 literal
+    if not host or not _HOSTNAME.match(host):
+        return ""
+    return f"{host}:{port}" if port else host
+
+
+def is_loopback(host: str) -> bool:
+    """`host` is a value recorded by `_request_host`: name, IPv4 or [IPv6], optional port."""
+    try:
+        name = urlsplit("//" + host).hostname or ""
+    except ValueError:
+        return False
+    if name in LOOPBACK_NAMES:
+        return True
+    try:
+        return ipaddress.ip_address(name).is_loopback
+    except ValueError:
+        return False
+
+
+class _ProxyHandler(socketserver.StreamRequestHandler):
+    def handle(self) -> None:
+        line = self.rfile.readline(4096).decode("latin-1").strip()
+        host = _request_host(line)
+        hosts: list[str] = self.server.hosts  # type: ignore[attr-defined]
+        if host and len(hosts) < MAX_RECORDED_HOSTS:
+            hosts.append(host)
+        self.wfile.write(b"HTTP/1.1 502 Refused by mcp-audit canary observation\r\nContent-Length: 0\r\n\r\n")
+
+
+class _LoggingProxy(socketserver.ThreadingTCPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
+    def __init__(self) -> None:
+        super().__init__(("127.0.0.1", 0), _ProxyHandler)
+        self.hosts: list[str] = []
+        threading.Thread(target=self.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True).start()
+
+    @property
+    def port(self) -> int:
+        return int(self.server_address[1])
+
+
+def sandbox_profile(trap: Path) -> str:
+    return (
+        "(version 1)\n(allow default)\n(deny file-write*)\n"
+        f'(allow file-write* (subpath "{trap}") (regex #"^/dev/"))\n'
+        "(deny network-outbound)\n"
+        '(allow network-outbound (remote ip "localhost:*"))\n'
+    )
+
+
+def _snapshot(root: Path) -> dict[str, tuple[int, int]] | None:
+    """Size and mtime per trap file; None when the trap holds too many files to judge."""
+    out: dict[str, tuple[int, int]] = {}
+    for path in root.rglob("*"):
+        if len(out) >= MAX_SNAPSHOT_FILES:
+            return None
+        try:
+            if path.is_file() and not path.is_symlink():
+                stat = path.stat()
+                out[str(path.relative_to(root))] = (stat.st_size, stat.st_mtime_ns)
+        except FileNotFoundError:
+            continue  # renamed or removed mid-walk (atomic writes)
+    return out
+
+
+@dataclass(frozen=True)
+class _State:
+    files: dict[str, tuple[int, int]] | None
+    hosts: int
+    blocked: int
+
+
+class ObservationTrap:
+    """One server's sandbox: trap folders, logging proxy and stderr marker scanner."""
+
+    def __init__(self) -> None:
+        self.root = Path(tempfile.mkdtemp(prefix="mcp-audit-observe-")).resolve()
+        self._proxy: _LoggingProxy | None = None
+        try:
+            self.writable = self.root / "w"
+            for sub in ("tmp", "cache", "state"):
+                (self.writable / sub).mkdir(parents=True)
+            self._proxy = _LoggingProxy()
+            self.profile = self.root / "profile.sb"
+            self.profile.write_text(sandbox_profile(self.writable), encoding="utf-8")
+        except BaseException:
+            self.close()
+            raise
+        self.stderr = StderrScanner()
+        self._last_end: _State | None = None
+
+    @property
+    def proxy(self) -> _LoggingProxy:
+        assert self._proxy is not None
+        return self._proxy
+
+    def wrap(self, params: StdioServerParameters) -> StdioServerParameters:
+        proxy = f"http://127.0.0.1:{self.proxy.port}"
+        loopback = "localhost,127.0.0.1,::1"
+        env = {
+            **(params.env or {}),
+            "TMPDIR": str(self.writable / "tmp"),
+            "XDG_CACHE_HOME": str(self.writable / "cache"),
+            "XDG_STATE_HOME": str(self.writable / "state"),
+            "HTTP_PROXY": proxy,
+            "HTTPS_PROXY": proxy,
+            "http_proxy": proxy,
+            "https_proxy": proxy,
+            "NO_PROXY": loopback,
+            "no_proxy": loopback,
+        }
+        return StdioServerParameters(
+            command=SANDBOX_EXEC,
+            args=["-f", str(self.profile), params.command, *params.args],
+            env=env,
+            # The server keeps its own working folder (relative launch paths still work);
+            # direct writes there are denied.
+            cwd=params.cwd,
+        )
+
+    async def _state(self) -> _State:
+        files = await anyio.to_thread.run_sync(_snapshot, self.writable)
+        return _State(files, len(self.proxy.hosts), self.stderr.count)
+
+    async def begin(self) -> _State:
+        return await self._state()
+
+    async def end(
+        self, start: _State, tool_name: str, call: int, annotations: ToolAnnotations | None, errored: bool
+    ) -> ObservedCall:
+        await anyio.sleep(SETTLE_SECONDS)
+        after = await self._state()
+        previous, self._last_end = self._last_end, after
+        spillover = previous is not None and previous != start
+        if start.files is None or after.files is None:
+            changed: list[str] = []
+            oversized = True
+        else:
+            oversized = False
+            before_files, after_files = start.files, after.files
+            changed = sorted(
+                {k for k, v in after_files.items() if before_files.get(k) != v}
+                | (before_files.keys() - after_files.keys())
+            )
+        hosts = sorted(set(self.proxy.hosts[start.hosts : after.hosts]))
+        open_world = [h for h in hosts if not is_loopback(h)]
+        blocked = after.blocked > start.blocked
+        contradicted: list[str] = []
+        if annotations and annotations.read_only_hint is True and changed:
+            contradicted.append("readOnlyHint")
+        if annotations and annotations.open_world_hint is False and open_world:
+            contradicted.append("openWorldHint")
+        reason = ""
+        if oversized:
+            reason = f"the trap held more than {MAX_SNAPSHOT_FILES} files"
+        elif spillover:
+            reason = "activity between calls could belong to an earlier call"
+        elif blocked:
+            reason = "a permission error was reported; it may have been a blocked write or a denied read"
+        elif errored and not (changed or hosts):
+            reason = "the call errored without an observable effect"
+        verdict: ObservedVerdict
+        if contradicted and not (spillover or oversized):
+            verdict = "contradiction"
+        elif reason:
+            verdict = "inconclusive"
+            contradicted = []
+        else:
+            verdict = "consistent"
+        return ObservedCall(
+            tool_name=tool_name,
+            call=call,
+            files_changed=changed[:MAX_REPORTED_PATHS],
+            files_changed_count=len(changed),
+            blocked_operations=blocked,
+            network_hosts=hosts,
+            errored=errored,
+            contradicted_hints=contradicted,
+            verdict=verdict,
+            inconclusive_reason=reason if verdict == "inconclusive" else "",
+        )
+
+    def close(self) -> None:
+        if self._proxy is not None:
+            self._proxy.shutdown()
+            self._proxy.server_close()
+            self._proxy = None
+        shutil.rmtree(self.root, ignore_errors=True)
+
+
+def observed_annotation_findings(audit: ServerAudit) -> list[AnnotationFinding]:
+    """One MCP055 finding per tool and contradicted hint, from attributable observed effects."""
+    if audit.canary is None:
+        return []
+    seen: dict[tuple[str, str], list[str]] = {}
+    for observed in audit.canary.observed_calls:
+        for hint in observed.contradicted_hints:
+            evidence = seen.setdefault((observed.tool_name, hint), [])
+            if hint == "readOnlyHint":
+                evidence.append(
+                    f"call {observed.call}: created, changed or removed "
+                    f"{observed.files_changed_count} file(s) in the trap"
+                )
+            else:
+                hosts = [h for h in observed.network_hosts if not is_loopback(h)]
+                evidence.append(f"call {observed.call}: network request to {', '.join(hosts)}")
+    return [
+        AnnotationFinding(
+            basis="observed",
+            tool_name=tool,
+            hint=hint,
+            declared_value=hint == "readOnlyHint",
+            category=PermissionCategory.FILE_WRITE if hint == "readOnlyHint" else PermissionCategory.NETWORK,
+            confidence=Confidence.HIGH,
+            severity="high",
+            evidence=sorted(set(evidence)),
+        )
+        for (tool, hint), evidence in sorted(seen.items())
+    ]

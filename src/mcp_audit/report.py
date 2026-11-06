@@ -195,7 +195,12 @@ class ReportGenerator:
                 self._console.print(
                     terminal_safe(
                         f"{annotation.severity}: {audit.server.name}/{annotation.tool_name} "
-                        f"{annotation.rule_id} — {annotation.hint} contradicts capability evidence."
+                        f"{annotation.rule_id} — {annotation.hint} contradicts "
+                        + (
+                            "behavior observed in a sandboxed canary call."
+                            if annotation.basis == "observed"
+                            else "capability evidence."
+                        )
                     )
                 )
                 self._console.print(terminal_safe(f"Source: {audit.server.config_path}"))
