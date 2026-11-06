@@ -72,6 +72,7 @@ OBSERVE_SECONDS_PER_CALL = 2
 OBSERVE_STARTUP_SECONDS = 10
 MAX_REPORTED_PATHS = 10
 MAX_SNAPSHOT_ENTRIES = 5000  # files, directories and links together
+MAX_UNLOCK_DEPTH = 64  # trap cleanup holds one folder handle per level
 SNAPSHOT_SECONDS = 2.0
 MAX_PROXY_LOG = 10_000  # bounded memory against a request flood; overflow is detected, not hidden
 MAX_REPORTED_HOSTS = 50  # per call, distinct hosts kept in the report
@@ -443,9 +444,13 @@ class ObservationTrap:
             self._proxy.shutdown()
             self._proxy.server_close()
             self._proxy = None
-        # A server can chmod a trap folder to 000; give the owner access back first.
-        _restore_owner_access(self.root)
-        shutil.rmtree(self.root, ignore_errors=True)  # what remains is checked and reported below
+        # A server can chmod a trap folder to 000; give the owner access back first. Cleanup
+        # never raises: whatever it cannot do shows up in the leftover check below.
+        try:
+            _restore_owner_access(self.root)
+        except Exception:  # logged; removal and the leftover check still run
+            logger.warning("Observation trap %s: restoring folder access failed", self.root, exc_info=True)
+        shutil.rmtree(self.root, ignore_errors=True)
         if os.path.lexists(self.root):
             self.cleanup_warning = (
                 f"Canary observation could not fully remove its temporary folder {self.root}; "
@@ -460,7 +465,7 @@ def _restore_owner_access(root: Path) -> None:
     `os.fwalk` works through no-follow folder handles, and each child folder's mode is
     changed relative to its parent's handle without following links before the walk
     descends, so an entry swapped for a symlink cannot redirect a chmod outside the
-    trap. Open handles stay bounded by depth, not width. Best effort: whatever still
+    trap. Open handles stay bounded by depth (at most MAX_UNLOCK_DEPTH). Best effort: whatever still
     cannot be removed is reported by close().
     """
 
@@ -474,9 +479,16 @@ def _restore_owner_access(root: Path) -> None:
             pass  # no-follow chmod unsupported, or the entry changed; the leftover check reports it
 
     unlock(root)
-    for _path, folders, _files, dir_fd in os.fwalk(root, topdown=True, follow_symlinks=False):
-        for name in folders:
-            unlock(name, dir_fd)
+    base = len(Path(root).parts)
+    try:
+        for path, folders, _files, dir_fd in os.fwalk(root, topdown=True, follow_symlinks=False):
+            if len(Path(path).parts) - base >= MAX_UNLOCK_DEPTH:
+                folders.clear()  # bound open handles; anything deeper is reported as left behind
+                continue
+            for name in folders:
+                unlock(name, dir_fd)
+    except OSError:
+        return  # out of handles or the tree changed mid-walk; best effort only
 
 
 def confirm_contradictions(calls: list[ObservedCall]) -> None:

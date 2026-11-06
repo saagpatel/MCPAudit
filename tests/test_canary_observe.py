@@ -1073,3 +1073,39 @@ async def test_cleanup_warning_reaches_the_report_without_changing_status(
         "Canary observation could not fully remove its temporary folder x.",
     ]
     assert audit.canary.status == baseline.canary.status
+
+
+@pytest.mark.parametrize("failure", [OSError(24, "Too many open files"), RuntimeError("unexpected")])
+def test_trap_close_survives_a_failing_unlock_walk(
+    monkeypatch: pytest.MonkeyPatch, failure: Exception
+) -> None:
+    import mcp_audit.observe as observe
+
+    def failing_walk(*_args: object, **_kwargs: object) -> object:
+        raise failure
+
+    trap = observe.ObservationTrap()
+    monkeypatch.setattr("os.fwalk", failing_walk)
+    trap.close()  # never raises
+    assert not trap.root.exists()
+    assert trap.cleanup_warning == ""
+
+
+@macos_only
+@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores folder permissions")
+def test_trap_close_reports_locked_folders_past_the_depth_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    import shutil
+
+    import mcp_audit.observe as observe
+
+    monkeypatch.setattr(observe, "MAX_UNLOCK_DEPTH", 2)
+    trap = observe.ObservationTrap()
+    deep = trap.writable / "state" / "a" / "b"
+    (deep / "c").mkdir(parents=True)
+    deep.chmod(0)
+    try:
+        trap.close()
+        assert "could not fully remove" in trap.cleanup_warning
+    finally:
+        deep.chmod(0o700)
+        shutil.rmtree(trap.root)
