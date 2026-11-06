@@ -1253,15 +1253,20 @@ Additive, optional fields for compatibility with older reports:
   requested host and refuses the request (loopback is exempt). The real HOME and
   working folder stay readable. The sandbox is not total containment: IPC to
   other processes stays open. Each `observed_calls[]` entry records `tool_name`,
-  `call`, `files_changed` (trap-relative, first 10) and `files_changed_count`
-  (created, modified or removed), `blocked_operations` (a permission error on the
+  `call`, `files_changed` (trap-relative files, folders and links, first 10)
+  and `files_changed_count` (created, modified or removed; logs and caches count), `blocked_operations` (a permission error on the
   server's stderr), `network_hosts` (validated `host[:port]` only, at most 50 distinct per
   call; a request whose host cannot be validated appears as `(unparsed request)`), `errored`, `contradicted_hints`, `verdict` (`contradiction`,
   `consistent`, or `inconclusive`) and `inconclusive_reason`. Only files changed
   in the trap and validated non-loopback hosts are attributable, and only when
   the server was quiet just before and just after the call and an immediate
   repeat call of the same tool shows the same effect; a one-off effect is
-  `inconclusive`. Network evidence covers only clients that honor HTTP(S)_PROXY:
+  `inconclusive`, and so are writes seen during calls to different tools, which
+  are treated as the server's own logging or caching. Loopback includes
+  `*.localhost`, `localhost.` and unspecified addresses. The trap is scanned
+  through no-follow folder handles, so a link cannot lead the scan outside it.
+  If the sandbox cannot start, the server is not started (`connection_status:
+  failed`) rather than exercised without it. Network evidence covers only clients that honor HTTP(S)_PROXY:
   a direct connection (raw sockets, or HTTP clients that ignore proxy variables)
   is denied by the sandbox but may not appear at all, so a clean closed-world
   result does not rule out an attempted connection. Each observed call adds about

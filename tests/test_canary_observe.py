@@ -126,6 +126,10 @@ def test_stderr_scanner_counts_markers_split_across_chunks() -> None:
         ("[::1]:80", True),
         ("api.example.com", False),
         ("10.0.0.1:5432", False),
+        ("api.localhost:3000", True),
+        ("localhost.", True),
+        ("0.0.0.0:8080", True),
+        ("evil-localhost.example.com", False),
     ],
 )
 def test_loopback_hosts_are_closed_world(host: str, loopback: bool) -> None:
@@ -393,3 +397,85 @@ def test_one_off_contradiction_is_not_pinned_without_a_repeat() -> None:
     confirm_contradictions(calls)
     assert calls[1].verdict == "inconclusive" and "immediate repeat" in calls[1].inconclusive_reason
     assert calls[3].verdict == "inconclusive" and "immediate repeat" in calls[3].inconclusive_reason
+
+
+@pytest.mark.anyio
+async def test_sandbox_setup_failure_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """If the trap cannot start, the server is never launched unsandboxed."""
+    import mcp_audit.connector as connector
+
+    def broken_trap() -> None:
+        raise OSError("no temp dir")
+
+    async def must_not_connect(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("server launched without its sandbox")
+
+    monkeypatch.setattr(connector, "ObservationTrap", broken_trap)
+    monkeypatch.setattr(connector, "observation_supported", lambda _stdio: True)
+    monkeypatch.setattr(connector.ServerConnector, "_connect_stdio", must_not_connect)
+    config = make_server_config(name="liar", command=sys.executable, args=[FIXTURE, "liar"])
+    audit = await connector.ServerConnector(timeout=10).connect(config, canary_calls=2, canary_observe=True)
+    assert audit.connection_status == "failed"
+    assert audit.canary is not None and not audit.canary.observed
+    assert any("not started" in w for w in audit.canary.warnings)
+
+
+def test_snapshot_does_not_follow_symlinks_out_of_the_trap(tmp_path: Path) -> None:
+    trap, outside = tmp_path / "trap", tmp_path / "outside"
+    trap.mkdir()
+    outside.mkdir()
+    (outside / "secret.txt").write_text("x")
+    (trap / "escape").symlink_to(outside, target_is_directory=True)
+    snap = _snapshot(trap)
+    assert snap is not None and set(snap) == {"escape"} and snap["escape"][0] == "l"
+
+
+def test_snapshot_tracks_folders_and_links(tmp_path: Path) -> None:
+    trap = tmp_path / "trap"
+    trap.mkdir()
+    before = _snapshot(trap)
+    (trap / "empty").mkdir()
+    (trap / "link").symlink_to("nowhere")
+    after = _snapshot(trap)
+    assert before == {} and after is not None and set(after) == {"empty", "link"}
+
+
+def test_writes_seen_across_tools_are_server_level_not_a_tool_lie() -> None:
+    from mcp_audit.models import ObservedCall
+    from mcp_audit.observe import confirm_contradictions
+
+    def logged(call: int, tool: str) -> ObservedCall:
+        return ObservedCall(
+            tool_name=tool,
+            call=call,
+            verdict="contradiction",
+            contradicted_hints=["readOnlyHint"],
+            files_changed=["state/server/access.log"],
+            files_changed_count=1,
+        )
+
+    calls = [logged(1, "a"), logged(2, "a"), logged(3, "b"), logged(4, "b")]
+    confirm_contradictions(calls)
+    assert {c.verdict for c in calls} == {"inconclusive"}
+    assert all("server-level" in c.inconclusive_reason for c in calls)
+
+
+def test_proxy_connection_flood_is_counted_not_fatal(monkeypatch: pytest.MonkeyPatch) -> None:
+    import socket
+
+    import mcp_audit.observe as observe
+
+    monkeypatch.setattr(observe, "MAX_PROXY_CONNECTIONS", 1)
+    trap = observe.ObservationTrap()
+    try:
+        held = socket.create_connection(("127.0.0.1", trap.proxy.port), timeout=5)  # occupies the only slot
+        try:
+            with socket.create_connection(("127.0.0.1", trap.proxy.port), timeout=5) as excess:
+                excess.settimeout(5)
+                assert excess.recv(16) == b""  # closed at once
+            total, logged = trap.proxy.position()
+            assert total == 1 and logged == 0  # counted, so the window reads as unlogged
+        finally:
+            held.close()
+    finally:
+        trap.close()

@@ -600,10 +600,17 @@ class ServerConnector:
                         observer = ObservationTrap()
                         audit.canary.observed = True
                     except OSError as exc:
+                        # Fail closed: never run a requested sandboxed canary without its sandbox.
                         audit.canary.warnings.append(
                             f"Canary observation sandbox could not start ({type(exc).__name__}); "
-                            "calls were not observed."
+                            "the server was not started."
                         )
+                        audit.canary.status = "partial"
+                        audit.connection_status = "failed"
+                        audit.connection_error = (
+                            "Observation sandbox could not start; not connecting without it."
+                        )
+                        return audit
                 else:
                     audit.canary.warnings.append(UNSUPPORTED_WARNING)
             probe = _CanaryProbe(audit, canary_calls, safe_tools, baseline=canary_baseline, observer=observer)

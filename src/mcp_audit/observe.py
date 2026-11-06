@@ -34,12 +34,14 @@ import os
 import re
 import shutil
 import socketserver
+import stat as stat_module
 import sys
 import tempfile
 import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlsplit
 
 import anyio
@@ -67,6 +69,7 @@ MAX_PROXY_LOG = 10_000  # bounded memory against a request flood; overflow is de
 MAX_REPORTED_HOSTS = 50  # per call, distinct hosts kept in the report
 UNPARSED_REQUEST = "(unparsed request)"
 LOOPBACK_NAMES = {"localhost", "localhost.localdomain"}
+MAX_PROXY_CONNECTIONS = 32
 _HOSTNAME = re.compile(r"^[a-z0-9.-]{1,253}$|^\[[0-9a-f:.]+\]$")
 UNSUPPORTED_WARNING = (
     "Canary observation needs macOS sandbox-exec and a stdio server; calls were not observed."
@@ -128,10 +131,12 @@ def is_loopback(host: str) -> bool:
         name = urlsplit("//" + host).hostname or ""
     except ValueError:
         return False
-    if name in LOOPBACK_NAMES:
+    name = name.rstrip(".")
+    if name in LOOPBACK_NAMES or name.endswith(".localhost"):
         return True
     try:
-        return ipaddress.ip_address(name).is_loopback
+        address = ipaddress.ip_address(name)
+        return address.is_loopback or address.is_unspecified
     except ValueError:
         return False
 
@@ -158,6 +163,7 @@ class _LoggingProxy(socketserver.ThreadingTCPServer):
 
     def __init__(self) -> None:
         super().__init__(("127.0.0.1", 0), _ProxyHandler)
+        self._slots = threading.BoundedSemaphore(MAX_PROXY_CONNECTIONS)
         self._lock = threading.Lock()
         self.total = 0  # every request, logged or not
         self.log: list[str] = []
@@ -166,6 +172,25 @@ class _LoggingProxy(socketserver.ThreadingTCPServer):
     @property
     def port(self) -> int:
         return int(self.server_address[1])
+
+    def process_request(self, request: Any, client_address: Any) -> None:
+        """Bound concurrent handlers: excess connections are closed and counted as unlogged."""
+        if not self._slots.acquire(blocking=False):
+            with self._lock:
+                self.total += 1
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self._slots.release()
+            raise
+
+    def process_request_thread(self, request: Any, client_address: Any) -> None:
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._slots.release()
 
     def record(self, host: str) -> None:
         with self._lock:
@@ -187,44 +212,64 @@ def sandbox_profile(trap: Path) -> str:
     )
 
 
-def _snapshot(root: Path) -> dict[str, tuple[int, int]] | None:
-    """Size and mtime per trap file; None when the trap cannot be judged.
+Entry = tuple[str, int, int]  # (kind f/d/l/o, size, mtime_ns); directories are presence only
 
-    Every entry (files, directories, links) counts toward MAX_SNAPSHOT_ENTRIES and the
-    walk stops after SNAPSHOT_SECONDS, so a hostile tree cannot outrun --timeout. An
-    unreadable entry makes the snapshot unjudgeable rather than failing the session.
+
+def _snapshot(root: Path) -> dict[str, Entry] | None:
+    """Every entry in the trap; None when the trap cannot be judged.
+
+    The walk opens each folder with O_NOFOLLOW and works relative to verified
+    descriptors, so a folder swapped for a symlink mid-walk cannot lead the scan out
+    of the trap: the open fails and the snapshot is unjudgeable. Every entry counts
+    toward MAX_SNAPSHOT_ENTRIES and the walk stops after SNAPSHOT_SECONDS.
     """
     deadline = time.monotonic() + SNAPSHOT_SECONDS
-    out: dict[str, tuple[int, int]] = {}
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+    out: dict[str, Entry] = {}
     entries = 0
-    stack = [root]
     try:
-        while stack:
-            try:
-                listing = os.scandir(stack.pop())
-            except FileNotFoundError:
-                continue  # a folder removed mid-walk
-            with listing:
-                for entry in listing:
-                    entries += 1
-                    if entries > MAX_SNAPSHOT_ENTRIES or time.monotonic() > deadline:
-                        return None
-                    try:
-                        if entry.is_dir(follow_symlinks=False):
-                            stack.append(Path(entry.path))
-                        elif entry.is_file(follow_symlinks=False):
-                            stat = entry.stat(follow_symlinks=False)
-                            out[str(Path(entry.path).relative_to(root))] = (stat.st_size, stat.st_mtime_ns)
-                    except FileNotFoundError:
-                        continue  # renamed or removed mid-walk (atomic writes)
+        stack: list[tuple[int, str]] = [(os.open(root, flags), "")]
     except OSError:
         return None
+    try:
+        while stack:
+            fd, rel = stack.pop()
+            try:
+                with os.scandir(fd) as listing:
+                    for entry in listing:
+                        entries += 1
+                        if entries > MAX_SNAPSHOT_ENTRIES or time.monotonic() > deadline:
+                            return None
+                        name = f"{rel}/{entry.name}" if rel else entry.name
+                        try:
+                            info = os.stat(entry.name, dir_fd=fd, follow_symlinks=False)
+                        except FileNotFoundError:
+                            continue  # renamed or removed mid-walk (atomic writes)
+                        if stat_module.S_ISDIR(info.st_mode):
+                            out[name] = ("d", 0, 0)
+                            try:
+                                stack.append((os.open(entry.name, flags, dir_fd=fd), name))
+                            except FileNotFoundError:
+                                continue
+                        elif stat_module.S_ISLNK(info.st_mode):
+                            out[name] = ("l", info.st_size, info.st_mtime_ns)
+                        elif stat_module.S_ISREG(info.st_mode):
+                            out[name] = ("f", info.st_size, info.st_mtime_ns)
+                        else:
+                            out[name] = ("o", 0, info.st_mtime_ns)
+            finally:
+                os.close(fd)
+    except OSError:
+        return None  # unreadable, or a folder replaced by a link (ELOOP/ENOTDIR)
+    finally:
+        for fd, _ in stack:
+            os.close(fd)
     return out
 
 
 @dataclass(frozen=True)
 class _State:
-    files: dict[str, tuple[int, int]] | None
+    files: dict[str, Entry] | None
     requests: int  # proxy requests seen, logged or not
     logged: int  # proxy log entries
     blocked: int
@@ -257,7 +302,7 @@ class ObservationTrap:
 
     def wrap(self, params: StdioServerParameters) -> StdioServerParameters:
         proxy = f"http://127.0.0.1:{self.proxy.port}"
-        loopback = "localhost,127.0.0.1,::1"
+        loopback = "localhost,.localhost,127.0.0.1,::1,0.0.0.0"
         env = {
             **(params.env or {}),
             "TMPDIR": str(self.writable / "tmp"),
@@ -379,6 +424,24 @@ def confirm_contradictions(calls: list[ObservedCall]) -> None:
     confirming repeat, every hit for that tool and hint is downgraded to inconclusive
     rather than pinned on whichever tool happened to be running.
     """
+    # Writes that show up during calls to different tools are the server's (an access log,
+    # a shared cache), not any one tool's; they cannot be pinned on the tool that ran.
+    tools_by_path: dict[str, set[str]] = {}
+    for observed in calls:
+        for path in observed.files_changed:
+            tools_by_path.setdefault(path, set()).add(observed.tool_name)
+    for observed in calls:
+        if (
+            "readOnlyHint" in observed.contradicted_hints
+            and observed.files_changed
+            and all(len(tools_by_path[path]) > 1 for path in observed.files_changed)
+        ):
+            observed.contradicted_hints = [h for h in observed.contradicted_hints if h != "readOnlyHint"]
+            if not observed.contradicted_hints:
+                observed.verdict = "inconclusive"
+                observed.inconclusive_reason = (
+                    "the same files changed during calls to different tools (server-level logging or caching)"
+                )
     confirmed: set[tuple[str, str]] = set()
     for current, following in zip(calls, calls[1:], strict=False):
         if following.tool_name == current.tool_name and following.call == current.call + 1:

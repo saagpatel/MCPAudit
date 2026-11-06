@@ -1199,10 +1199,12 @@ FINDING_COPY: dict[str, FindingCopy] = {
         "Treat the tool as writing or networked, correct the hint in the server, and re-run "
         "`check --canary-check --canary-observe` before trusting it again.",
         "About 10 minutes to review the tool",
-        "Attributable effects from one empty-argument call in a macOS sandbox: files changed in the "
-        "sandbox's temporary folders or a non-loopback network request. Permission errors alone are "
-        "reported as inconclusive, never as this finding. Network evidence covers only clients that "
-        "honor HTTP(S)_PROXY. A clean result does not prove the hint true for other inputs.",
+        "Attributable effects seen on an empty-argument call and its immediate repeat in a macOS "
+        "sandbox: entries changed in the sandbox's temporary folders (logs and caches count) or a "
+        "non-loopback network request. Writes seen across several tools are treated as the server's. "
+        "Permission errors alone are reported as inconclusive, never as this finding. Network "
+        "evidence covers only clients that honor HTTP(S)_PROXY. A clean result does not prove the "
+        "hint true for other inputs.",
     ),
     "MCP051": FindingCopy(
         "Your tool schema declares an invalid or unusable HTTP header mapping.",
