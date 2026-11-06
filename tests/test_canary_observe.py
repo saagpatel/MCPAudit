@@ -137,8 +137,38 @@ def test_snapshot_caps_large_traps(tmp_path: Path, monkeypatch: pytest.MonkeyPat
 
     for index in range(5):
         (tmp_path / f"f{index}").write_text("x")
-    monkeypatch.setattr(observe, "MAX_SNAPSHOT_FILES", 3)
+    monkeypatch.setattr(observe, "MAX_SNAPSHOT_ENTRIES", 3)
     assert _snapshot(tmp_path) is None
+
+
+def test_snapshot_cap_counts_directories_not_only_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import mcp_audit.observe as observe
+
+    for index in range(10):
+        (tmp_path / f"d{index}").mkdir()
+    monkeypatch.setattr(observe, "MAX_SNAPSHOT_ENTRIES", 3)
+    assert _snapshot(tmp_path) is None
+
+
+def test_snapshot_stops_at_its_time_budget(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import mcp_audit.observe as observe
+
+    (tmp_path / "f").write_text("x")
+    monkeypatch.setattr(observe, "SNAPSHOT_SECONDS", -1.0)
+    assert _snapshot(tmp_path) is None
+
+
+def test_unreadable_folder_makes_snapshot_unjudgeable_not_fatal(tmp_path: Path) -> None:
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    (locked / "f").write_text("x")
+    locked.chmod(0o000)
+    try:
+        assert _snapshot(tmp_path) is None
+    finally:
+        locked.chmod(0o700)
 
 
 @pytest.mark.parametrize(
@@ -319,6 +349,24 @@ async def test_errored_call_without_effect_is_inconclusive() -> None:
         trap.close()
 
 
+def test_contradiction_needs_an_adjacent_confirming_repeat() -> None:
+    """Hit, clean immediate repeat, another tool, later hit: never confirmed."""
+    from mcp_audit.models import ObservedCall
+    from mcp_audit.observe import confirm_contradictions
+
+    def hit(call: int, tool: str = "b") -> ObservedCall:
+        return ObservedCall(
+            tool_name=tool, call=call, verdict="contradiction", contradicted_hints=["readOnlyHint"]
+        )
+
+    unconfirmed = [hit(1), ObservedCall(tool_name="b", call=2), ObservedCall(tool_name="a", call=3), hit(4)]
+    confirm_contradictions(unconfirmed)
+    assert [c.verdict for c in unconfirmed] == ["inconclusive", "consistent", "consistent", "inconclusive"]
+    confirmed = [hit(1), hit(2), ObservedCall(tool_name="a", call=3), hit(4)]
+    confirm_contradictions(confirmed)
+    assert [c.verdict for c in confirmed] == ["contradiction", "contradiction", "consistent", "contradiction"]
+
+
 def test_one_off_contradiction_is_not_pinned_without_a_repeat() -> None:
     """A delayed effect from tool A landing once in tool B's window must not accuse B."""
     from mcp_audit.models import ObservedCall
@@ -343,5 +391,5 @@ def test_one_off_contradiction_is_not_pinned_without_a_repeat() -> None:
         ),
     ]
     confirm_contradictions(calls)
-    assert calls[1].verdict == "inconclusive" and "did not recur" in calls[1].inconclusive_reason
-    assert calls[3].verdict == "inconclusive" and "no repeat call" in calls[3].inconclusive_reason
+    assert calls[1].verdict == "inconclusive" and "immediate repeat" in calls[1].inconclusive_reason
+    assert calls[3].verdict == "inconclusive" and "immediate repeat" in calls[3].inconclusive_reason

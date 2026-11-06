@@ -1201,8 +1201,8 @@ FINDING_COPY: dict[str, FindingCopy] = {
         "About 10 minutes to review the tool",
         "Attributable effects from one empty-argument call in a macOS sandbox: files changed in the "
         "sandbox's temporary folders or a non-loopback network request. Permission errors alone are "
-        "reported as inconclusive, never as this finding. A clean result does not prove the hint true "
-        "for other inputs.",
+        "reported as inconclusive, never as this finding. Network evidence covers only clients that "
+        "honor HTTP(S)_PROXY. A clean result does not prove the hint true for other inputs.",
     ),
     "MCP051": FindingCopy(
         "Your tool schema declares an invalid or unusable HTTP header mapping.",

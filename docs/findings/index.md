@@ -776,7 +776,7 @@ Why it matters:
 
 How to fix (About 10 minutes to review the tool): Treat the tool as writing or networked, correct the hint in the server, and re-run `check --canary-check --canary-observe` before trusting it again.
 
-How sure: Attributable effects from one empty-argument call in a macOS sandbox: files changed in the sandbox's temporary folders or a non-loopback network request. Permission errors alone are reported as inconclusive, never as this finding. A clean result does not prove the hint true for other inputs.
+How sure: Attributable effects from one empty-argument call in a macOS sandbox: files changed in the sandbox's temporary folders or a non-loopback network request. Permission errors alone are reported as inconclusive, never as this finding. Network evidence covers only clients that honor HTTP(S)_PROXY. A clean result does not prove the hint true for other inputs.
 
 see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp055
 

@@ -30,12 +30,14 @@ tool, so a tool that misbehaves only on some inputs passes.
 from __future__ import annotations
 
 import ipaddress
+import os
 import re
 import shutil
 import socketserver
 import sys
 import tempfile
 import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -59,7 +61,8 @@ SANDBOX_EXEC = "/usr/bin/sandbox-exec"
 BLOCKED_MARKERS = (b"operation not permitted", b"permissionerror", b"permission denied", b"eperm", b"eacces")
 SETTLE_SECONDS = 0.3  # let a child process finish writing before the after-snapshot
 MAX_REPORTED_PATHS = 10
-MAX_SNAPSHOT_FILES = 5000
+MAX_SNAPSHOT_ENTRIES = 5000  # files, directories and links together
+SNAPSHOT_SECONDS = 2.0
 MAX_PROXY_LOG = 10_000  # bounded memory against a request flood; overflow is detected, not hidden
 MAX_REPORTED_HOSTS = 50  # per call, distinct hosts kept in the report
 UNPARSED_REQUEST = "(unparsed request)"
@@ -185,17 +188,37 @@ def sandbox_profile(trap: Path) -> str:
 
 
 def _snapshot(root: Path) -> dict[str, tuple[int, int]] | None:
-    """Size and mtime per trap file; None when the trap holds too many files to judge."""
+    """Size and mtime per trap file; None when the trap cannot be judged.
+
+    Every entry (files, directories, links) counts toward MAX_SNAPSHOT_ENTRIES and the
+    walk stops after SNAPSHOT_SECONDS, so a hostile tree cannot outrun --timeout. An
+    unreadable entry makes the snapshot unjudgeable rather than failing the session.
+    """
+    deadline = time.monotonic() + SNAPSHOT_SECONDS
     out: dict[str, tuple[int, int]] = {}
-    for path in root.rglob("*"):
-        if len(out) >= MAX_SNAPSHOT_FILES:
-            return None
-        try:
-            if path.is_file() and not path.is_symlink():
-                stat = path.stat()
-                out[str(path.relative_to(root))] = (stat.st_size, stat.st_mtime_ns)
-        except FileNotFoundError:
-            continue  # renamed or removed mid-walk (atomic writes)
+    entries = 0
+    stack = [root]
+    try:
+        while stack:
+            try:
+                listing = os.scandir(stack.pop())
+            except FileNotFoundError:
+                continue  # a folder removed mid-walk
+            with listing:
+                for entry in listing:
+                    entries += 1
+                    if entries > MAX_SNAPSHOT_ENTRIES or time.monotonic() > deadline:
+                        return None
+                    try:
+                        if entry.is_dir(follow_symlinks=False):
+                            stack.append(Path(entry.path))
+                        elif entry.is_file(follow_symlinks=False):
+                            stat = entry.stat(follow_symlinks=False)
+                            out[str(Path(entry.path).relative_to(root))] = (stat.st_size, stat.st_mtime_ns)
+                    except FileNotFoundError:
+                        continue  # renamed or removed mid-walk (atomic writes)
+    except OSError:
+        return None
     return out
 
 
@@ -257,7 +280,7 @@ class ObservationTrap:
         )
 
     async def _state(self) -> _State:
-        files = await anyio.to_thread.run_sync(_snapshot, self.writable)
+        files = await anyio.to_thread.run_sync(_snapshot, self.writable, abandon_on_cancel=True)
         requests, logged = self.proxy.position()
         return _State(files, requests, logged, self.stderr.count)
 
@@ -307,7 +330,7 @@ class ObservationTrap:
             contradicted.append("openWorldHint")
         reason = ""
         if oversized:
-            reason = f"the trap held more than {MAX_SNAPSHOT_FILES} files"
+            reason = "the trap could not be fully scanned (too many entries, too slow, or unreadable)"
         elif spillover:
             reason = "activity just before or after the call could belong to other work"
         elif unlogged > 0 and not open_world and annotations and annotations.open_world_hint is False:
@@ -349,28 +372,28 @@ class ObservationTrap:
 
 
 def confirm_contradictions(calls: list[ObservedCall]) -> None:
-    """A contradiction stands only when a repeat call of the same tool shows it again.
+    """A contradiction stands only when the immediately following call is the same tool
+    showing the same contradicted hint (the repeat the canary schedules).
 
-    A one-off effect may have been a delayed effect of another call; it is downgraded
-    to inconclusive rather than pinned on whichever tool happened to be running.
+    A one-off effect may have been a delayed effect of another call; without an adjacent
+    confirming repeat, every hit for that tool and hint is downgraded to inconclusive
+    rather than pinned on whichever tool happened to be running.
     """
-    seen: dict[tuple[str, str], list[ObservedCall]] = {}
+    confirmed: set[tuple[str, str]] = set()
+    for current, following in zip(calls, calls[1:], strict=False):
+        if following.tool_name == current.tool_name and following.call == current.call + 1:
+            for hint in set(current.contradicted_hints) & set(following.contradicted_hints):
+                confirmed.add((current.tool_name, hint))
     for observed in calls:
-        for hint in observed.contradicted_hints:
-            seen.setdefault((observed.tool_name, hint), []).append(observed)
-    for (tool, hint), hits in seen.items():
-        if len(hits) >= 2:
+        unconfirmed = [h for h in observed.contradicted_hints if (observed.tool_name, h) not in confirmed]
+        if not unconfirmed:
             continue
-        repeated = any(c.tool_name == tool and c.call > hits[0].call for c in calls)
-        for observed in hits:
-            observed.contradicted_hints = [h for h in observed.contradicted_hints if h != hint]
-            if not observed.contradicted_hints:
-                observed.verdict = "inconclusive"
-                observed.inconclusive_reason = (
-                    "the effect did not recur on a repeat call of this tool"
-                    if repeated
-                    else "seen once; no repeat call was left in the budget to confirm it"
-                )
+        observed.contradicted_hints = [h for h in observed.contradicted_hints if h not in unconfirmed]
+        if not observed.contradicted_hints:
+            observed.verdict = "inconclusive"
+            observed.inconclusive_reason = (
+                "the effect was not confirmed by an immediate repeat call of this tool"
+            )
 
 
 def observed_annotation_findings(audit: ServerAudit) -> list[AnnotationFinding]:
@@ -401,5 +424,5 @@ def observed_annotation_findings(audit: ServerAudit) -> list[AnnotationFinding]:
             evidence=sorted(set(evidence)),
         )
         for (tool, hint), evidence in sorted(seen.items())
-        if len(evidence) >= 2  # confirmed by a repeat call (see confirm_contradictions)
+        if len(evidence) >= 2  # confirmed by an adjacent repeat call (see confirm_contradictions)
     ]

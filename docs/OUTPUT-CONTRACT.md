@@ -1261,9 +1261,13 @@ Additive, optional fields for compatibility with older reports:
   in the trap and validated non-loopback hosts are attributable, and only when
   the server was quiet just before and just after the call and an immediate
   repeat call of the same tool shows the same effect; a one-off effect is
-  `inconclusive`. Each observed call adds about one second of quiet checks, which
-  counts against `--timeout`; a permission error,
-  activity between calls, a trap over 5,000 files, network requests from a
+  `inconclusive`. Network evidence covers only clients that honor HTTP(S)_PROXY:
+  a direct connection (raw sockets, or HTTP clients that ignore proxy variables)
+  is denied by the sandbox but may not appear at all, so a clean closed-world
+  result does not rule out an attempted connection. Each observed call adds about
+  one second of quiet checks, which counts against `--timeout`; a permission error,
+  activity between calls, a trap that cannot be fully scanned (over 5,000
+  entries, over two seconds, or unreadable), network requests from a
   closed-world tool that arrived after the proxy's 10,000-entry log filled, a
   proxy request without a destination that can be validated, or an errored call
   without an effect makes the call `inconclusive`, never MCP055. Inconclusive or unobserved
