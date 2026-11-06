@@ -10,7 +10,7 @@ import anyio
 import pytest
 
 from mcp_audit.engine import ScanOptions, run_scan
-from mcp_audit.models import ServerAudit, ToolAnnotations, TransportType
+from mcp_audit.models import ObservedCall, ServerAudit, ToolAnnotations, TransportType
 from mcp_audit.observe import (
     UNSUPPORTED_WARNING,
     StderrScanner,
@@ -681,13 +681,12 @@ def test_every_read_only_tool_writing_is_server_level() -> None:
         )
         observed._changed_paths = {f"state/req-{call}.log"}  # a new file per request
         observed._created_paths = set(observed._changed_paths)
-        observed._read_only = True
         return observed
 
     calls = [hit(1, "a"), hit(2, "a"), hit(3, "b"), hit(4, "b")]
     confirm_contradictions(calls)
     assert {c.verdict for c in calls} == {"inconclusive"}
-    assert "every tool exercised" in calls[0].inconclusive_reason
+    assert "every tool whose calls could be judged" in calls[0].inconclusive_reason
 
 
 def test_per_request_server_logs_are_server_level_even_without_every_repeat() -> None:
@@ -701,7 +700,6 @@ def test_per_request_server_logs_are_server_level_even_without_every_repeat() ->
         )
         observed._changed_paths = {f"state/req-{call}.log"}
         observed._created_paths = set(observed._changed_paths)
-        observed._read_only = True
         return observed
 
     rotation = [hit(1, "a"), hit(2, "a"), hit(3, "b"), hit(4, "b"), hit(5, "c")]
@@ -780,7 +778,6 @@ def test_a_safe_marked_tool_writing_too_makes_it_server_level() -> None:
         )
         observed._changed_paths = {f"state/req-{number}.log"}
         observed._created_paths = set(observed._changed_paths)
-        observed._read_only = read_only
         return observed
 
     calls = [call(1, "a", True), call(2, "a", True), call(3, "c", False)]
@@ -833,7 +830,7 @@ def test_sandbox_denies_device_writes_except_dev_null(tmp_path: Path) -> None:
     trap = (tmp_path / "trap").resolve()
     trap.mkdir()
     profile = tmp_path / "profile.sb"
-    profile.write_text(sandbox_profile(trap))
+    profile.write_text(sandbox_profile(trap, 9))
     leader, follower = os.openpty()
     try:
         tty = os.ttyname(follower)
@@ -887,3 +884,228 @@ def test_cli_warns_when_timeout_is_too_short_for_observation(
         ],
     )
     assert "--canary-observe adds about" in result.output
+
+
+@macos_only
+@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores folder permissions")
+def test_trap_close_removes_folders_a_server_locked() -> None:
+    from mcp_audit.observe import ObservationTrap
+
+    trap = ObservationTrap()
+    locked = trap.writable / "state" / "locked"
+    (locked / "inner").mkdir(parents=True)
+    (locked / "inner" / "data").write_text("x")
+    (locked / "inner").chmod(0)
+    locked.chmod(0)
+    trap.close()
+    assert not trap.root.exists()
+    assert trap.cleanup_warning == ""
+
+
+@macos_only
+@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores folder permissions")
+def test_trap_close_never_chmods_through_a_link(tmp_path: Path) -> None:
+    from mcp_audit.observe import ObservationTrap
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    outside.chmod(0o500)
+    trap = ObservationTrap()
+    (trap.writable / "cache" / "link").symlink_to(outside, target_is_directory=True)
+    try:
+        trap.close()
+        assert outside.stat().st_mode & 0o777 == 0o500
+        assert outside.exists() and not trap.root.exists()
+    finally:
+        outside.chmod(0o700)
+
+
+def test_trap_close_warns_when_something_remains(monkeypatch: pytest.MonkeyPatch) -> None:
+    import shutil
+
+    import mcp_audit.observe as observe
+
+    real_rmtree = shutil.rmtree
+    trap = observe.ObservationTrap()
+    monkeypatch.setattr("shutil.rmtree", lambda *_args, **_kwargs: None)
+    try:
+        trap.close()
+        assert "could not fully remove" in trap.cleanup_warning
+        assert str(trap.root) in trap.cleanup_warning
+    finally:
+        real_rmtree(trap.root)
+
+
+def _effect(number: int, tool: str, *, errored: bool = False, wrote: bool = True) -> ObservedCall:
+    observed = ObservedCall(
+        tool_name=tool,
+        call=number,
+        errored=errored,
+        verdict="contradiction" if wrote else "inconclusive",
+        contradicted_hints=["readOnlyHint"] if wrote else [],
+    )
+    if wrote:
+        observed._changed_paths = {f"state/req-{number}.log"}  # a new file per request
+        observed._created_paths = set(observed._changed_paths)
+    return observed
+
+
+def test_errored_call_without_effect_does_not_count_against_server_level_writes() -> None:
+    """a and c write a new file per request; b errored before anything was written."""
+    from mcp_audit.observe import confirm_contradictions
+
+    calls = [
+        _effect(1, "a"),
+        _effect(2, "a"),
+        _effect(3, "b", errored=True, wrote=False),
+        _effect(4, "c"),
+        _effect(5, "c"),
+    ]
+    confirm_contradictions(calls)
+    assert all(not c.contradicted_hints for c in calls)
+    assert "every tool whose calls could be judged" in calls[0].inconclusive_reason
+
+
+def test_unscanned_call_does_not_count_against_server_level_writes() -> None:
+    from mcp_audit.observe import confirm_contradictions
+
+    unscanned = _effect(3, "b", wrote=False)
+    unscanned._scanned = False
+    calls = [_effect(1, "a"), _effect(2, "a"), unscanned, _effect(4, "c"), _effect(5, "c")]
+    confirm_contradictions(calls)
+    assert all(not c.contradicted_hints for c in calls)
+
+
+def test_a_tool_that_succeeded_without_writing_keeps_the_liar_pinned() -> None:
+    from mcp_audit.observe import confirm_contradictions
+
+    calls = [_effect(1, "a"), _effect(2, "a"), _effect(3, "b", wrote=False), _effect(4, "c"), _effect(5, "c")]
+    confirm_contradictions(calls)
+    assert [c.verdict for c in calls] == [
+        "contradiction",
+        "contradiction",
+        "inconclusive",
+        "contradiction",
+        "contradiction",
+    ]
+
+
+def test_errored_sibling_leaves_one_judged_tool_under_the_one_tool_guard() -> None:
+    """A log created on a's first call and appended on its second, beside an erroring b."""
+    from mcp_audit.observe import confirm_contradictions
+
+    first, second = _effect(1, "a"), _effect(2, "a")
+    first._changed_paths = first._created_paths = {"state/server.log"}
+    second._changed_paths, second._created_paths = {"state/server.log"}, set()
+    calls = [first, second, _effect(3, "b", errored=True, wrote=False)]
+    confirm_contradictions(calls)
+    assert {c.verdict for c in calls[:2]} == {"inconclusive"}
+    assert "one tool exercised" in calls[0].inconclusive_reason
+
+
+@macos_only
+def test_sandbox_allows_only_the_proxy_port_on_loopback(tmp_path: Path) -> None:
+    import socket
+    import subprocess
+
+    from mcp_audit.observe import SANDBOX_EXEC, sandbox_profile
+
+    trap = (tmp_path / "trap").resolve()
+    trap.mkdir()
+    with socket.create_server(("127.0.0.1", 0)) as proxy, socket.create_server(("127.0.0.1", 0)) as other:
+        profile = tmp_path / "profile.sb"
+        profile.write_text(sandbox_profile(trap, proxy.getsockname()[1]))
+        probe = (
+            "import socket, sys\n"
+            "for port in sys.argv[1:]:\n"
+            "    try:\n"
+            "        socket.create_connection(('127.0.0.1', int(port)), timeout=5).close()\n"
+            "        print('allowed')\n"
+            "    except OSError:\n"
+            "        print('denied')\n"
+        )
+        result = subprocess.run(
+            [
+                SANDBOX_EXEC,
+                "-f",
+                str(profile),
+                sys.executable,
+                "-I",
+                "-c",
+                probe,
+                str(proxy.getsockname()[1]),
+                str(other.getsockname()[1]),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        )
+    assert result.stdout.split() == ["allowed", "denied"]
+
+
+def test_sandbox_profile_rejects_an_invalid_proxy_port(tmp_path: Path) -> None:
+    from mcp_audit.observe import sandbox_profile
+
+    with pytest.raises(ValueError, match="proxy port"):
+        sandbox_profile(tmp_path, 0)
+
+
+@macos_only
+@pytest.mark.anyio
+async def test_cleanup_warning_reaches_the_report_without_changing_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import mcp_audit.observe as observe
+
+    real_close = observe.ObservationTrap.close
+
+    def close_leaving_a_note(self: observe.ObservationTrap) -> None:
+        real_close(self)
+        self.cleanup_warning = "Canary observation could not fully remove its temporary folder x."
+
+    baseline = await _observed("honest")
+    monkeypatch.setattr(observe.ObservationTrap, "close", close_leaving_a_note)
+    audit = await _observed("honest")
+    assert audit.canary is not None and baseline.canary is not None
+    assert audit.canary.warnings == [
+        *baseline.canary.warnings,
+        "Canary observation could not fully remove its temporary folder x.",
+    ]
+    assert audit.canary.status == baseline.canary.status
+
+
+@pytest.mark.parametrize("failure", [OSError(24, "Too many open files"), RuntimeError("unexpected")])
+def test_trap_close_survives_a_failing_unlock_walk(
+    monkeypatch: pytest.MonkeyPatch, failure: Exception
+) -> None:
+    import mcp_audit.observe as observe
+
+    def failing_walk(*_args: object, **_kwargs: object) -> object:
+        raise failure
+
+    trap = observe.ObservationTrap()
+    monkeypatch.setattr("os.fwalk", failing_walk)
+    trap.close()  # never raises
+    assert not trap.root.exists()
+    assert trap.cleanup_warning == ""
+
+
+@macos_only
+@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores folder permissions")
+def test_trap_close_reports_locked_folders_past_the_depth_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    import shutil
+
+    import mcp_audit.observe as observe
+
+    monkeypatch.setattr(observe, "MAX_UNLOCK_DEPTH", 2)
+    trap = observe.ObservationTrap()
+    deep = trap.writable / "state" / "a" / "b"
+    (deep / "c").mkdir(parents=True)
+    deep.chmod(0)
+    try:
+        trap.close()
+        assert "could not fully remove" in trap.cleanup_warning
+    finally:
+        deep.chmod(0o700)
+        shutil.rmtree(trap.root)

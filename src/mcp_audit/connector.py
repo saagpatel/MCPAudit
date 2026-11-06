@@ -831,6 +831,8 @@ class ServerConnector:
                     await anyio.to_thread.run_sync(probe.observer.close)
                 if audit.canary is not None:
                     _observation_warnings(audit)
+                    if probe.observer.cleanup_warning:
+                        audit.canary.warnings.append(probe.observer.cleanup_warning)
             if audit.canary:
                 audit.canary.elapsed_seconds = time.monotonic() - started
 

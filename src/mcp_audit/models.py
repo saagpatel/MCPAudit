@@ -995,7 +995,7 @@ class ObservedCall(BaseModel):
     _changed_paths: set[str] = PrivateAttr(default_factory=set)
     _created_paths: set[str] = PrivateAttr(default_factory=set)
     _closed_world: bool = PrivateAttr(default=False)  # the tool declared openWorldHint=false
-    _read_only: bool = PrivateAttr(default=False)  # the tool declared readOnlyHint=true
+    _scanned: bool = PrivateAttr(default=True)  # the trap was fully scanned for this call
 
 
 class CanarySummary(BaseModel):

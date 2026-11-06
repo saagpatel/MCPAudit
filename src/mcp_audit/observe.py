@@ -7,9 +7,11 @@
   Direct file writes by the server's process tree are allowed only under the
   trap: TMPDIR, XDG_CACHE_HOME and XDG_STATE_HOME point there, so well-behaved
   caches land where they can be seen. Other direct writes are denied.
-- Outbound TCP is allowed only to loopback. HTTP(S)_PROXY point at a local proxy
-  that records the requested host and refuses the request; loopback is exempt.
-  Unix-socket connections and non-local name resolution are denied.
+- Outbound network is allowed only to the trap's logging proxy on loopback.
+  HTTP(S)_PROXY point at it; it records the requested host and refuses the
+  request. Other loopback ports (local HTTP proxies, Docker's TCP API, databases),
+  Unix-socket connections and non-local name resolution are denied, so a local
+  service cannot carry traffic or effects out unobserved.
 - The sandbox is not total containment: Mach and XPC IPC stay open, so a server
   could still ask another process to act for it.
 
@@ -29,6 +31,7 @@ per exercised tool, so a tool that misbehaves only on some inputs passes.
 from __future__ import annotations
 
 import ipaddress
+import logging
 import os
 import re
 import shutil
@@ -57,6 +60,8 @@ from mcp_audit.models import (
     ToolAnnotations,
 )
 
+logger = logging.getLogger(__name__)
+
 SANDBOX_EXEC = "/usr/bin/sandbox-exec"
 # Lowercased; Python, Node (EPERM/EACCES) and Go spellings.
 BLOCKED_MARKERS = (b"operation not permitted", b"permissionerror", b"permission denied", b"eperm", b"eacces")
@@ -67,6 +72,7 @@ OBSERVE_SECONDS_PER_CALL = 2
 OBSERVE_STARTUP_SECONDS = 10
 MAX_REPORTED_PATHS = 10
 MAX_SNAPSHOT_ENTRIES = 5000  # files, directories and links together
+MAX_UNLOCK_DEPTH = 64  # trap cleanup holds one folder handle per level
 SNAPSHOT_SECONDS = 2.0
 MAX_PROXY_LOG = 10_000  # bounded memory against a request flood; overflow is detected, not hidden
 MAX_REPORTED_HOSTS = 50  # per call, distinct hosts kept in the report
@@ -213,12 +219,15 @@ class _LoggingProxy(socketserver.ThreadingTCPServer):
             return self.total, len(self.log)
 
 
-def sandbox_profile(trap: Path) -> str:
+def sandbox_profile(trap: Path, proxy_port: int) -> str:
+    if not 0 < proxy_port < 65536:
+        raise ValueError(f"invalid proxy port: {proxy_port}")
     return (
         "(version 1)\n(allow default)\n(deny file-write*)\n"
         f'(allow file-write* (subpath "{trap}") (literal "/dev/null"))\n'
         "(deny network-outbound)\n"
-        '(allow network-outbound (remote ip "localhost:*"))\n'
+        # Only the logging proxy: any other loopback service could relay traffic unobserved.
+        f'(allow network-outbound (remote ip "localhost:{proxy_port}"))\n'
     )
 
 
@@ -306,13 +315,14 @@ class ObservationTrap:
                 (self.writable / sub).mkdir(parents=True)
             self._proxy = _LoggingProxy()
             self.profile = self.root / "profile.sb"
-            self.profile.write_text(sandbox_profile(self.writable), encoding="utf-8")
+            self.profile.write_text(sandbox_profile(self.writable, self._proxy.port), encoding="utf-8")
         except BaseException:
             self.close()
             raise
         self.stderr = StderrScanner()
         self._last_end: _State | None = None
         self._noisy_before = False
+        self.cleanup_warning = ""  # set by close() when part of the trap could not be removed
 
     @property
     def proxy(self) -> _LoggingProxy:
@@ -426,7 +436,7 @@ class ObservationTrap:
         observed._changed_paths = set(changed)
         observed._created_paths = created
         observed._closed_world = bool(annotations and annotations.open_world_hint is False)
-        observed._read_only = bool(annotations and annotations.read_only_hint is True)
+        observed._scanned = not oversized
         return observed
 
     def close(self) -> None:
@@ -434,7 +444,51 @@ class ObservationTrap:
             self._proxy.shutdown()
             self._proxy.server_close()
             self._proxy = None
+        # A server can chmod a trap folder to 000; give the owner access back first. Cleanup
+        # never raises: whatever it cannot do shows up in the leftover check below.
+        try:
+            _restore_owner_access(self.root)
+        except Exception:  # logged; removal and the leftover check still run
+            logger.warning("Observation trap %s: restoring folder access failed", self.root, exc_info=True)
         shutil.rmtree(self.root, ignore_errors=True)
+        if os.path.lexists(self.root):
+            self.cleanup_warning = (
+                f"Canary observation could not fully remove its temporary folder {self.root}; "
+                "remove it manually."
+            )
+            logger.warning("Observation trap %s was not fully removed", self.root)
+
+
+def _restore_owner_access(root: Path) -> None:
+    """Give the owner rwx on every folder in the trap so it can be removed.
+
+    `os.fwalk` works through no-follow folder handles, and each child folder's mode is
+    changed relative to its parent's handle without following links before the walk
+    descends, so an entry swapped for a symlink cannot redirect a chmod outside the
+    trap. Open handles stay bounded by depth (at most MAX_UNLOCK_DEPTH). Best effort: whatever still
+    cannot be removed is reported by close().
+    """
+
+    def unlock(name: str | Path, dir_fd: int | None = None) -> None:
+        try:
+            info = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+            if stat_module.S_ISDIR(info.st_mode) and info.st_mode & 0o700 != 0o700:
+                mode = stat_module.S_IMODE(info.st_mode) | 0o700
+                os.chmod(name, mode, dir_fd=dir_fd, follow_symlinks=False)
+        except (OSError, NotImplementedError, ValueError):
+            pass  # no-follow chmod unsupported, or the entry changed; the leftover check reports it
+
+    unlock(root)
+    base = len(Path(root).parts)
+    try:
+        for path, folders, _files, dir_fd in os.fwalk(root, topdown=True, follow_symlinks=False):
+            if len(Path(path).parts) - base >= MAX_UNLOCK_DEPTH:
+                folders.clear()  # bound open handles; anything deeper is reported as left behind
+                continue
+            for name in folders:
+                unlock(name, dir_fd)
+    except OSError:
+        return  # out of handles or the tree changed mid-walk; best effort only
 
 
 def confirm_contradictions(calls: list[ObservedCall]) -> None:
@@ -452,6 +506,16 @@ def confirm_contradictions(calls: list[ObservedCall]) -> None:
         # The complete set when recorded in this run; the reported first 10 otherwise.
         return observed._changed_paths or set(observed.files_changed)
 
+    def judged(observed: ObservedCall) -> bool:
+        # A call shows whether its tool wrote when it changed something, or when the trap was
+        # scanned and the call neither errored nor reported a permission error. An errored or
+        # blocked call with no effect may have stopped before the server's own per-request
+        # write, so it is left out when comparing tools below.
+        return bool(paths(observed)) or (
+            observed._scanned and not observed.errored and not observed.blocked_operations
+        )
+
+    judged_tools = {c.tool_name for c in calls if judged(c)}
     tools_by_path: dict[str, set[str]] = {}
     for observed in calls:
         for path in paths(observed):
@@ -472,7 +536,7 @@ def confirm_contradictions(calls: list[ObservedCall]) -> None:
     # With one tool exercised there is nothing to compare against: if its calls keep touching
     # the same entries (a log created lazily on the first call, then appended), the writes
     # cannot be separated from server-level logging.
-    if len({c.tool_name for c in calls}) == 1:
+    if len(judged_tools) == 1:
         hits = [c for c in calls if "readOnlyHint" in c.contradicted_hints]
         first = hits[0]._changed_paths if hits else set()
         if (
@@ -493,12 +557,12 @@ def confirm_contradictions(calls: list[ObservedCall]) -> None:
         if following.tool_name == current.tool_name and following.call == current.call + 1:
             for hint in set(current.contradicted_hints) & set(following.contradicted_hints):
                 confirmed.add((current.tool_name, hint))
-    # If two or more tools were exercised (read-only or operator-marked safe) and every one of
-    # them wrote, the writes look like the server's own per-request activity (for example a
-    # new log file per request). Decided from raw effects, independent of repeat confirmation.
-    exercised = {c.tool_name for c in calls}
-    writers = {c.tool_name for c in calls if c._changed_paths}
-    if len(exercised) >= 2 and exercised <= writers:
+    # If two or more judged tools were exercised (read-only or operator-marked safe) and every
+    # one of them wrote, the writes look like the server's own per-request activity (for
+    # example a new log file per request). Decided from raw effects, independent of repeat
+    # confirmation.
+    writers = {c.tool_name for c in calls if paths(c)}
+    if len(judged_tools) >= 2 and judged_tools <= writers:
         confirmed = {(tool, hint) for tool, hint in confirmed if hint != "readOnlyHint"}
         for observed in calls:
             if "readOnlyHint" in observed.contradicted_hints:
@@ -506,7 +570,7 @@ def confirm_contradictions(calls: list[ObservedCall]) -> None:
                 if not observed.contradicted_hints:
                     observed.verdict = "inconclusive"
                     observed.inconclusive_reason = (
-                        "every tool exercised wrote, which looks like server-level activity"
+                        "every tool whose calls could be judged wrote, which looks like server-level activity"
                     )
     for observed in calls:
         unconfirmed = [h for h in observed.contradicted_hints if (observed.tool_name, h) not in confirmed]
