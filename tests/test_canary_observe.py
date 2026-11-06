@@ -513,11 +513,21 @@ def test_shared_writes_beyond_the_reported_ten_still_count_as_server_level() -> 
         observed._changed_paths = set(changed)
         return observed
 
-    calls = [call(1, "a", logs), call(2, "a", logs), call(3, "b", logs | caches), call(4, "b", logs | caches)]
+    quiet = ObservedCall(tool_name="c", call=5)  # a tool that writes nothing keeps "every tool wrote" off
+    calls = [
+        call(1, "a", logs),
+        call(2, "a", logs),
+        call(3, "b", logs | caches),
+        call(4, "b", logs | caches),
+        quiet,
+    ]
     assert not set(calls[2].files_changed) & logs  # the report alone would hide the overlap
     confirm_contradictions(calls)
     assert [c.verdict for c in calls[:2]] == ["inconclusive", "inconclusive"]
-    assert [c.verdict for c in calls[2:]] == ["contradiction", "contradiction"]  # b also writes its own files
+    assert [c.verdict for c in calls[2:4]] == [
+        "contradiction",
+        "contradiction",
+    ]  # b also writes its own files
 
 
 def test_one_tool_modifying_existing_files_is_not_pinned_on_it() -> None:
@@ -677,7 +687,7 @@ def test_every_read_only_tool_writing_is_server_level() -> None:
     calls = [hit(1, "a"), hit(2, "a"), hit(3, "b"), hit(4, "b")]
     confirm_contradictions(calls)
     assert {c.verdict for c in calls} == {"inconclusive"}
-    assert "every read-only tool" in calls[0].inconclusive_reason
+    assert "every tool exercised" in calls[0].inconclusive_reason
 
 
 def test_per_request_server_logs_are_server_level_even_without_every_repeat() -> None:
@@ -735,3 +745,44 @@ async def test_an_effect_on_the_last_budgeted_call_gets_its_confirming_repeat() 
     # With one tool exercised, two writes to the same file stay unattributed (server-level guard).
     assert {c.verdict for c in audit.canary.observed_calls} == {"inconclusive"}
     assert "one tool exercised" in audit.canary.observed_calls[0].inconclusive_reason
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("calls", [None, 0])
+async def test_observe_without_a_call_budget_never_launches(
+    monkeypatch: pytest.MonkeyPatch, calls: int | None
+) -> None:
+    import mcp_audit.connector as connector
+
+    async def must_not_connect(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("server launched without its sandbox")
+
+    monkeypatch.setattr(connector.ServerConnector, "_connect_stdio", must_not_connect)
+    config = make_server_config(name="liar", command=sys.executable, args=[FIXTURE, "liar"])
+    kwargs: dict[str, object] = {"canary_observe": True}
+    if calls is not None:
+        kwargs["canary_calls"] = calls
+    with pytest.raises(ValueError, match="positive canary call budget"):
+        await connector.ServerConnector(timeout=10).connect(config, **kwargs)  # type: ignore[arg-type]
+
+
+def test_a_safe_marked_tool_writing_too_makes_it_server_level() -> None:
+    """One read-only tool plus one operator-marked tool, both writing a new file per request."""
+    from mcp_audit.models import ObservedCall
+    from mcp_audit.observe import confirm_contradictions
+
+    def call(number: int, tool: str, read_only: bool) -> ObservedCall:
+        observed = ObservedCall(
+            tool_name=tool,
+            call=number,
+            verdict="contradiction" if read_only else "consistent",
+            contradicted_hints=["readOnlyHint"] if read_only else [],
+        )
+        observed._changed_paths = {f"state/req-{number}.log"}
+        observed._created_paths = set(observed._changed_paths)
+        observed._read_only = read_only
+        return observed
+
+    calls = [call(1, "a", True), call(2, "a", True), call(3, "c", False)]
+    confirm_contradictions(calls)
+    assert [c.verdict for c in calls[:2]] == ["inconclusive", "inconclusive"]

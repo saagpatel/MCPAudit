@@ -1278,8 +1278,8 @@ Additive, optional fields for compatibility with older reports:
   confirmed, so `completed_calls` can exceed `requested_calls` by one.
   These are `inconclusive`, never MCP055: a one-off effect; writes seen during
   calls to different tools (the server's own logging or caching); writes by every
-  read-only tool exercised, when there are two or more, judged from raw effects
-  whether or not each was repeated (per-request activity);
+  tool exercised (read-only or marked safe), when there are two or more, judged
+  from raw effects whether or not each was repeated (per-request activity);
   with only one tool exercised, repeated changes to the same entries; a permission error, even
   when the same call also changed files; activity just before or after the call; a trap that cannot be fully
   scanned (over 5,000 entries, over two seconds, or unreadable; the trap is

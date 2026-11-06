@@ -486,12 +486,12 @@ def confirm_contradictions(calls: list[ObservedCall]) -> None:
         if following.tool_name == current.tool_name and following.call == current.call + 1:
             for hint in set(current.contradicted_hints) & set(following.contradicted_hints):
                 confirmed.add((current.tool_name, hint))
-    # If two or more read-only tools were exercised and every one of them wrote, the writes look
-    # like the server's own per-request activity (for example a new log file per request).
-    # Decided from raw effects, before and independent of repeat confirmation.
-    read_only_tools = {c.tool_name for c in calls if c._read_only}
-    writers = {c.tool_name for c in calls if c._read_only and c._changed_paths}
-    if len(read_only_tools) >= 2 and read_only_tools <= writers:
+    # If two or more tools were exercised (read-only or operator-marked safe) and every one of
+    # them wrote, the writes look like the server's own per-request activity (for example a
+    # new log file per request). Decided from raw effects, independent of repeat confirmation.
+    exercised = {c.tool_name for c in calls}
+    writers = {c.tool_name for c in calls if c._changed_paths}
+    if len(exercised) >= 2 and exercised <= writers:
         confirmed = {(tool, hint) for tool, hint in confirmed if hint != "readOnlyHint"}
         for observed in calls:
             if "readOnlyHint" in observed.contradicted_hints:
@@ -499,7 +499,7 @@ def confirm_contradictions(calls: list[ObservedCall]) -> None:
                 if not observed.contradicted_hints:
                     observed.verdict = "inconclusive"
                     observed.inconclusive_reason = (
-                        "every read-only tool exercised wrote, which looks like server-level activity"
+                        "every tool exercised wrote, which looks like server-level activity"
                     )
     for observed in calls:
         unconfirmed = [h for h in observed.contradicted_hints if (observed.tool_name, h) not in confirmed]

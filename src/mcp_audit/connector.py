@@ -586,6 +586,10 @@ class ServerConnector:
         """Connect to a server and return a ServerAudit with tool list."""
         audit = ServerAudit(server=config, connection_status="pending")
         probe = None
+        if canary_observe and not canary_calls:
+            # Checked before any connection path: observation without a canary would launch
+            # the server unsandboxed, and startup alone can write or reach the network.
+            raise ValueError("--canary-observe requires a positive canary call budget.")
         if canary_identities is not None and canary_identities not in (1, 2):
             raise ValueError("Canary identities must be 1 or 2.")
         identities = canary_identities or (2 if config.transport == TransportType.STDIO else 1)

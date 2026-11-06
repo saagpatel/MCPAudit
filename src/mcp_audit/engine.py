@@ -847,6 +847,10 @@ async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) ->
     elif opts.llm_analysis and llm_unavailable_summary is not None:
         audit.llm_analysis = llm_unavailable_summary.model_copy(deep=True)
 
+    # Observed findings come only from recorded calls; set them first so an analysis
+    # timeout cannot drop confirmed MCP055 evidence.
+    observed_findings = observed_annotation_findings(audit)
+    audit.annotation_findings = list(observed_findings)
     with analysis_budget(deadline):
         # Apply user overrides between analysis and scoring
         audit.permissions = applier.apply(srv.name, raw_findings)
@@ -855,7 +859,7 @@ async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) ->
             finding
             for tool, text in zip(audit.tools, tool_texts, strict=True)
             for finding in analyzer.analyze_annotation_contradictions(tool, agent_text=text)
-        ] + observed_annotation_findings(audit)
+        ] + observed_findings
         audit.capability_findings = analyzer.analyze_capabilities(audit.prompts, audit.resources)
         tool_schema_incomplete: list[str] = []
         audit.schema_findings = [
