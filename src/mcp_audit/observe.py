@@ -457,38 +457,26 @@ class ObservationTrap:
 def _restore_owner_access(root: Path) -> None:
     """Give the owner rwx on every folder in the trap so it can be removed.
 
-    Works through no-follow folder handles and changes modes relative to them without
-    following links, so an entry swapped for a symlink cannot redirect a chmod outside
-    the trap. Best effort: whatever still cannot be removed is reported by close().
+    `os.fwalk` works through no-follow folder handles, and each child folder's mode is
+    changed relative to its parent's handle without following links before the walk
+    descends, so an entry swapped for a symlink cannot redirect a chmod outside the
+    trap. Open handles stay bounded by depth, not width. Best effort: whatever still
+    cannot be removed is reported by close().
     """
-    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
-    try:
-        info = os.lstat(root)
-        if stat_module.S_ISDIR(info.st_mode) and info.st_mode & 0o700 != 0o700:
-            os.chmod(root, stat_module.S_IMODE(info.st_mode) | 0o700, follow_symlinks=False)
-        stack = [os.open(root, flags)]
-    except OSError:
-        return
-    while stack:
-        fd = stack.pop()
+
+    def unlock(name: str | Path, dir_fd: int | None = None) -> None:
         try:
-            with os.scandir(fd) as listing:
-                names = [entry.name for entry in listing]
-        except OSError:
-            os.close(fd)
-            continue
-        for name in names:
-            try:
-                info = os.stat(name, dir_fd=fd, follow_symlinks=False)
-                if not stat_module.S_ISDIR(info.st_mode):
-                    continue  # unlinking needs access to the parent folder only
-                if info.st_mode & 0o700 != 0o700:
-                    mode = stat_module.S_IMODE(info.st_mode) | 0o700
-                    os.chmod(name, mode, dir_fd=fd, follow_symlinks=False)
-                stack.append(os.open(name, flags, dir_fd=fd))
-            except OSError:
-                continue
-        os.close(fd)
+            info = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+            if stat_module.S_ISDIR(info.st_mode) and info.st_mode & 0o700 != 0o700:
+                mode = stat_module.S_IMODE(info.st_mode) | 0o700
+                os.chmod(name, mode, dir_fd=dir_fd, follow_symlinks=False)
+        except (OSError, NotImplementedError, ValueError):
+            pass  # no-follow chmod unsupported, or the entry changed; the leftover check reports it
+
+    unlock(root)
+    for _path, folders, _files, dir_fd in os.fwalk(root, topdown=True, follow_symlinks=False):
+        for name in folders:
+            unlock(name, dir_fd)
 
 
 def confirm_contradictions(calls: list[ObservedCall]) -> None:

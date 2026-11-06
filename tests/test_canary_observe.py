@@ -886,6 +886,7 @@ def test_cli_warns_when_timeout_is_too_short_for_observation(
     assert "--canary-observe adds about" in result.output
 
 
+@macos_only
 @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores folder permissions")
 def test_trap_close_removes_folders_a_server_locked() -> None:
     from mcp_audit.observe import ObservationTrap
@@ -901,6 +902,7 @@ def test_trap_close_removes_folders_a_server_locked() -> None:
     assert trap.cleanup_warning == ""
 
 
+@macos_only
 @pytest.mark.skipif(os.geteuid() == 0, reason="root ignores folder permissions")
 def test_trap_close_never_chmods_through_a_link(tmp_path: Path) -> None:
     from mcp_audit.observe import ObservationTrap
@@ -1047,3 +1049,27 @@ def test_sandbox_profile_rejects_an_invalid_proxy_port(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="proxy port"):
         sandbox_profile(tmp_path, 0)
+
+
+@macos_only
+@pytest.mark.anyio
+async def test_cleanup_warning_reaches_the_report_without_changing_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import mcp_audit.observe as observe
+
+    real_close = observe.ObservationTrap.close
+
+    def close_leaving_a_note(self: observe.ObservationTrap) -> None:
+        real_close(self)
+        self.cleanup_warning = "Canary observation could not fully remove its temporary folder x."
+
+    baseline = await _observed("honest")
+    monkeypatch.setattr(observe.ObservationTrap, "close", close_leaving_a_note)
+    audit = await _observed("honest")
+    assert audit.canary is not None and baseline.canary is not None
+    assert audit.canary.warnings == [
+        *baseline.canary.warnings,
+        "Canary observation could not fully remove its temporary folder x.",
+    ]
+    assert audit.canary.status == baseline.canary.status
