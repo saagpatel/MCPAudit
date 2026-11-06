@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Release builds pin `uv_build==0.13.6` in all three distributions' build
   requirements and in `build-constraints.txt`, which move together.
+- The hostile-server performance gate picks its ceilings by platform. Apple
+  Silicon keeps the published set; Linux x86_64 gets wall ceilings for
+  `scale_500`, `scale_2000`, `scale_100k_skip` and `ssrf_1mib` from recorded
+  `ubuntu-latest` runs for the baseline profile only; cumulative profiles keep
+  the Apple Silicon targets, and any other platform fails the gate with a message.
 
 ### Fixed
 

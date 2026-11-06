@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+import tempfile
 from collections.abc import Callable
 from functools import partial
 from pathlib import Path
@@ -556,11 +558,14 @@ def check(
             if redact
             else safe_report
         )
-        payload = json.dumps(out_report.model_dump(mode="json"), indent=2)
+        renderer = ReportGenerator(out)
+        # Files stream from the safe model; only stdout serializes a full dump.
+        payload = json.dumps(out_report.model_dump(mode="json"), indent=2) if json_stdout else None
         if not json_stdout:
             stage = "terminal rendering"
-            ReportGenerator(out).render_terminal(
-                report,
+            # safe_report is this report's redaction; never redact the fleet twice.
+            renderer._render_redacted_terminal(
+                safe_report,
                 verbose=verbose or details,
                 details=details,
                 explicit_config=config is not None and not include_discovered,
@@ -571,7 +576,10 @@ def check(
                 _print_sources(out, sources.paths)
         if output_json:
             stage = "--output-json destination"
-            output_json.write_text(payload, encoding="utf-8")
+            with tempfile.SpooledTemporaryFile(max_size=1024 * 1024, mode="w+", encoding="ascii") as staged:
+                renderer._stage_redacted_json(out_report, staged)
+                with output_json.open("w", encoding="utf-8") as destination:
+                    shutil.copyfileobj(staged, destination)
             written.append(output_json)
         if sarif:
             stage = "--sarif destination"
