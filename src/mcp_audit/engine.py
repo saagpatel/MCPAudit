@@ -56,7 +56,7 @@ from mcp_audit.models import (
     ShadowingFinding,
     TrifectaFinding,
 )
-from mcp_audit.observe import observed_annotation_findings
+from mcp_audit.observe import observation_supported, observed_annotation_findings
 from mcp_audit.overrides import OverrideApplier, OverrideConfig
 from mcp_audit.redaction import redact_data, redact_text, redact_url
 from mcp_audit.schema_rules import scan_tool_schema
@@ -317,6 +317,8 @@ async def run_scan(
         raise ValueError("Canary identities must be 1 or 2.")
     if opts.canary_observe and not opts.canary_check:
         raise ValueError("--canary-observe requires --canary-check.")
+    if opts.canary_observe and not observation_supported(True):
+        raise ValueError("--canary-observe needs macOS with /usr/bin/sandbox-exec.")
     if opts.canary_check and servers is None and not (opts.config_only and opts.extra_config):
         raise ValueError("--canary-check requires --config PATH --config-only (no workstation discovery).")
     applier = override_applier if override_applier is not None else OverrideApplier(OverrideConfig())

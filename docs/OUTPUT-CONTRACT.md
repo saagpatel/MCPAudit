@@ -1273,11 +1273,13 @@ Additive, optional fields for compatibility with older reports:
   immediately following call of the same tool shows the same hint contradicted.
   These are `inconclusive`, never MCP055: a one-off effect; writes seen during
   calls to different tools (the server's own logging or caching); with only one
-  tool exercised, changes confined to files that already existed; a permission
-  error; activity just before or after the call; a trap that cannot be fully
+  tool exercised, repeated changes to the same entries; a permission error, even
+  when the same call also changed files; activity just before or after the call; a trap that cannot be fully
   scanned (over 5,000 entries, over two seconds, or unreadable; the trap is
   walked through no-follow folder handles so a link cannot lead the scan
-  outside it); and an errored call without an effect.
+  outside it, and entries are compared by size, modification and change time, and
+  mode, so an equal-length overwrite or a permission change still shows); and an
+  errored call without an effect.
 
   Network requests are evidence, not contradictions: `openWorldHint` describes a
   tool's domain, and a closed-world tool may call its own fixed remote backend.
@@ -1288,8 +1290,9 @@ Additive, optional fields for compatibility with older reports:
 
   Inconclusive or unobserved calls, a sandbox that fails to start, and a server
   that fails to start under the sandbox add canary warnings and make `status`
-  `partial`. Unsupported platforms or non-stdio transports leave `observed`
-  false and add a warning. Each observed call adds about one second of quiet
+  `partial`. Non-stdio transports leave `observed` false and add a warning; on a
+  platform without `/usr/bin/sandbox-exec`, `check` refuses `--canary-observe`
+  rather than run the canary unsandboxed. Each observed call adds about one second of quiet
   checks, which counts against `--timeout`. One empty-argument call and its
   repeat cannot prove a hint true for other inputs.
 

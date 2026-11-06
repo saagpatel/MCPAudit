@@ -213,7 +213,13 @@ def sandbox_profile(trap: Path) -> str:
     )
 
 
-Entry = tuple[str, int, int]  # (kind f/d/l/o, size, mtime_ns); directories are presence only
+# (kind f/d/l/o, size, mtime_ns, ctime_ns, mode). ctime cannot be set from userland, so an
+# equal-length overwrite with a restored mtime, or a permission change, still shows.
+Entry = tuple[str, int, int, int, int]
+
+
+def _fingerprint(info: os.stat_result) -> tuple[int, int, int, int]:
+    return info.st_size, info.st_mtime_ns, info.st_ctime_ns, info.st_mode
 
 
 def _snapshot(root: Path) -> dict[str, Entry] | None:
@@ -247,17 +253,17 @@ def _snapshot(root: Path) -> dict[str, Entry] | None:
                         except FileNotFoundError:
                             continue  # renamed or removed mid-walk (atomic writes)
                         if stat_module.S_ISDIR(info.st_mode):
-                            out[name] = ("d", 0, 0)
+                            out[name] = ("d", 0, 0, 0, info.st_mode)  # children are listed separately
                             try:
                                 stack.append((os.open(entry.name, flags, dir_fd=fd), name))
                             except FileNotFoundError:
                                 continue
                         elif stat_module.S_ISLNK(info.st_mode):
-                            out[name] = ("l", info.st_size, info.st_mtime_ns)
+                            out[name] = ("l", *_fingerprint(info))
                         elif stat_module.S_ISREG(info.st_mode):
-                            out[name] = ("f", info.st_size, info.st_mtime_ns)
+                            out[name] = ("f", *_fingerprint(info))
                         else:
-                            out[name] = ("o", 0, info.st_mtime_ns)
+                            out[name] = ("o", *_fingerprint(info))
             finally:
                 os.close(fd)
     except OSError:
@@ -385,7 +391,7 @@ class ObservationTrap:
         elif errored and not (changed or hosts or unlogged):
             reason = "the call errored without an observable effect"
         verdict: ObservedVerdict
-        if contradicted and not (spillover or oversized):
+        if contradicted and not (spillover or oversized or blocked):
             verdict = "contradiction"
         elif reason:
             verdict = "inconclusive"
@@ -452,16 +458,24 @@ def confirm_contradictions(calls: list[ObservedCall]) -> None:
                 )
     # With one tool exercised there is nothing to compare against: if it only ever modified
     # files that already existed (an append-only log), the write cannot be pinned on it.
+    # With one tool exercised there is nothing to compare against: if its calls keep touching
+    # the same entries (a log created lazily on the first call, then appended), the writes
+    # cannot be separated from server-level logging.
     if len({c.tool_name for c in calls}) == 1:
         hits = [c for c in calls if "readOnlyHint" in c.contradicted_hints]
-        if hits and all(c._changed_paths and not c._created_paths for c in hits):
+        first = hits[0]._changed_paths if hits else set()
+        if (
+            hits
+            and all(c._changed_paths and c._changed_paths <= first for c in hits[1:])
+            and (len(hits) > 1 or not hits[0]._created_paths)
+        ):
             for observed in hits:
                 observed.contradicted_hints = [h for h in observed.contradicted_hints if h != "readOnlyHint"]
                 if not observed.contradicted_hints:
                     observed.verdict = "inconclusive"
                     observed.inconclusive_reason = (
-                        "with one tool exercised, changes to existing files cannot be separated from "
-                        "server-level logging"
+                        "with one tool exercised, repeated changes to the same entries cannot be "
+                        "separated from server-level logging"
                     )
     confirmed: set[tuple[str, str]] = set()
     for current, following in zip(calls, calls[1:], strict=False):

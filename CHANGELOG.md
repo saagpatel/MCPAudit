@@ -19,7 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   permission errors and errored calls without effects are inconclusive, never
   MCP055. Network requests by tools declaring `openWorldHint=false` are listed in a
   `For review:` canary warning rather than reported as a finding. If the sandbox
-  cannot start, the server is not started.
+  cannot start, the server is not started, and `check` refuses the flag on
+  platforms without `sandbox-exec`.
 
 ### Changed
 

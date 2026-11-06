@@ -86,6 +86,7 @@ async def test_honest_server_has_no_observed_findings() -> None:
     assert not [f for f in audit.annotation_findings if f.rule_id == "MCP055"]
 
 
+@macos_only
 @pytest.mark.anyio
 async def test_http_transport_reports_observation_unsupported() -> None:
     assert not observation_supported(False)
@@ -532,6 +533,85 @@ def test_one_tool_modifying_existing_files_is_not_pinned_on_it() -> None:
     confirm_contradictions(appended)
     assert {c.verdict for c in appended} == {"inconclusive"}
     assert "server-level logging" in appended[0].inconclusive_reason
-    created = [hit(1, {"state/access.log"}), hit(2, set())]  # the tool created the file itself
-    confirm_contradictions(created)
-    assert {c.verdict for c in created} == {"contradiction"}
+
+
+@pytest.mark.anyio
+async def test_unsupported_platform_is_refused_not_run_unsandboxed(monkeypatch: pytest.MonkeyPatch) -> None:
+    import mcp_audit.engine as engine
+
+    monkeypatch.setattr(engine, "observation_supported", lambda _stdio: False)
+    config = make_server_config(name="liar", command=sys.executable, args=[FIXTURE, "liar"])
+    with pytest.raises(ValueError, match="needs macOS"):
+        await run_scan(ScanOptions(canary_check=True, canary_calls=1, canary_observe=True), servers=[config])
+
+
+@pytest.mark.anyio
+async def test_permission_error_vetoes_a_write_in_the_same_call() -> None:
+    """A denied read that also writes an error log must not become MCP055."""
+    from mcp_audit.observe import ObservationTrap
+
+    trap = ObservationTrap()
+    try:
+        start = await trap.begin()
+        (trap.writable / "state" / "errors.log").write_text("denied")
+        trap.stderr.feed(b"PermissionError: [Errno 13] Permission denied")
+        call = await trap.end(start, "status", 1, _closed(), errored=False)
+        assert call.verdict == "inconclusive" and call.contradicted_hints == []
+    finally:
+        trap.close()
+
+
+@pytest.mark.anyio
+async def test_equal_length_overwrite_with_restored_mtime_is_seen() -> None:
+    import os as _os
+
+    from mcp_audit.observe import ObservationTrap
+
+    trap = ObservationTrap()
+    target = trap.writable / "tmp" / "settings.json"
+    target.write_text("aaaa")
+    try:
+        start = await trap.begin()
+        before = target.stat()
+        target.write_text("bbbb")  # same length
+        _os.utime(target, ns=(before.st_atime_ns, before.st_mtime_ns))  # mtime restored
+        call = await trap.end(start, "status", 1, _closed(), errored=False)
+        assert call.files_changed == ["tmp/settings.json"] and call.contradicted_hints == ["readOnlyHint"]
+    finally:
+        trap.close()
+
+
+@pytest.mark.anyio
+async def test_permission_change_is_seen() -> None:
+    from mcp_audit.observe import ObservationTrap
+
+    trap = ObservationTrap()
+    target = trap.writable / "tmp" / "key.pem"
+    target.write_text("x")
+    try:
+        start = await trap.begin()
+        target.chmod(0o644 if (target.stat().st_mode & 0o777) != 0o644 else 0o600)
+        call = await trap.end(start, "status", 1, _closed(), errored=False)
+        assert call.files_changed == ["tmp/key.pem"]
+    finally:
+        trap.close()
+
+
+def test_one_tool_with_a_lazily_created_log_is_not_pinned_on_it() -> None:
+    from mcp_audit.models import ObservedCall
+    from mcp_audit.observe import confirm_contradictions
+
+    def hit(call: int, changed: set[str], created: set[str]) -> ObservedCall:
+        observed = ObservedCall(
+            tool_name="status", call=call, verdict="contradiction", contradicted_hints=["readOnlyHint"]
+        )
+        observed._changed_paths = changed
+        observed._created_paths = created
+        return observed
+
+    lazy_log = [hit(1, {"state/access.log"}, {"state/access.log"}), hit(2, {"state/access.log"}, set())]
+    confirm_contradictions(lazy_log)
+    assert {c.verdict for c in lazy_log} == {"inconclusive"}
+    new_files = [hit(1, {"tmp/a"}, {"tmp/a"}), hit(2, {"tmp/b"}, {"tmp/b"})]  # a new entry every call
+    confirm_contradictions(new_files)
+    assert {c.verdict for c in new_files} == {"contradiction"}

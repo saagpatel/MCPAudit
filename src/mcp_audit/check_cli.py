@@ -19,6 +19,7 @@ from mcp_audit.artifact_paths import validate_artifact_paths
 from mcp_audit.checkup import generate_card, load_previous, sticker
 from mcp_audit.engine import ScanOptions, run_scan
 from mcp_audit.models import ClientType, ScanWarning
+from mcp_audit.observe import observation_supported
 from mcp_audit.report import ReportGenerator
 from mcp_audit.review_discovery import review_sources, server_identity
 from mcp_audit.terminal_summary import summary_console
@@ -339,6 +340,10 @@ def check(
         )
     if canary_observe and not canary_check:
         raise click.UsageError("--canary-observe requires --canary-check.")
+    if canary_observe and not observation_supported(True):
+        raise click.UsageError(
+            "--canary-observe needs macOS with /usr/bin/sandbox-exec; refusing to run the canary unsandboxed."
+        )
     if connect and not server_id:
         raise _recovery_error(
             "--connect requires a selected server identity",
