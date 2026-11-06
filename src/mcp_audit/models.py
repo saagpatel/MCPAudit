@@ -986,12 +986,15 @@ class ObservedCall(BaseModel):
     files_changed_count: int = 0  # created, modified or removed in the trap
     blocked_operations: bool = False  # a permission error on stderr: a hint, never a finding
     network_hosts: list[str] = Field(default_factory=list)  # validated host[:port] only
+    network_unlogged: int = 0  # proxy requests past the log or connection caps
     errored: bool = False
     contradicted_hints: list[str] = Field(default_factory=list)
     verdict: ObservedVerdict = "consistent"
     inconclusive_reason: str = ""
     # Every changed path, kept for attribution only; the report shows the first 10.
     _changed_paths: set[str] = PrivateAttr(default_factory=set)
+    _created_paths: set[str] = PrivateAttr(default_factory=set)
+    _closed_world: bool = PrivateAttr(default=False)  # the tool declared openWorldHint=false
 
 
 class CanarySummary(BaseModel):

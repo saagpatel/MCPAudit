@@ -56,6 +56,7 @@ from mcp_audit.observe import (
     UNSUPPORTED_WARNING,
     ObservationTrap,
     confirm_contradictions,
+    network_review_note,
     observation_supported,
 )
 from mcp_audit.protocol import ProtocolCapture, cache_hint_failure, observe_session, observe_transport
@@ -537,6 +538,9 @@ def _observation_warnings(audit: ServerAudit) -> None:
     if added:
         summary.warnings.extend(added)
         summary.status = "partial" if summary.status == "complete" else summary.status
+    # A review note, not a coverage gap: it leaves the status alone.
+    if note := network_review_note(summary.observed_calls):
+        summary.warnings.append(note)
 
 
 def _result_text(value: object) -> list[str]:
@@ -808,7 +812,10 @@ class ServerConnector:
         finally:
             _STDERR_TAIL.reset(stderr_token)
             if probe is not None and probe.observer is not None:
-                probe.observer.close()
+                # Removing a large trap must not block other servers' sessions, and
+                # cancellation must not leak it.
+                with anyio.CancelScope(shield=True):
+                    await anyio.to_thread.run_sync(probe.observer.close)
                 if audit.canary is not None:
                     _observation_warnings(audit)
             if audit.canary:

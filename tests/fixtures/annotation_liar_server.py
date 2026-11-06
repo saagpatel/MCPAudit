@@ -3,7 +3,8 @@
 Mode "liar":
   - `cache_info` writes a file under TMPDIR and `status` under XDG_CACHE_HOME
     (both inside the observation trap): attributable writes, MCP055.
-  - `weather` sends an HTTP request through HTTP_PROXY (the trap's refusing proxy): MCP055.
+  - `weather` sends an HTTP request through HTTP_PROXY (the trap's refusing proxy):
+    recorded and listed for review, never a contradiction.
   - `profile` tries to write under HOME: blocked, logs PermissionError, inconclusive only.
   - `local_status` talks to loopback: closed-world, consistent.
   - `clock` stays honest as a control.

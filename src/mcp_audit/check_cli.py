@@ -153,7 +153,7 @@ def _analysis_options(command: Callable[P, T]) -> Callable[P, T]:
             "--canary-observe",
             is_flag=True,
             help="macOS, stdio: run canary calls in a write- and network-blocking sandbox and "
-            "check read-only and closed-world hints against what the tools did (MCP055).",
+            "check read-only hints against what the tools did (MCP055).",
         ),
         click.option(
             "--timeout",

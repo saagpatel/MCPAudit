@@ -608,10 +608,9 @@ MCP055 reuses the same `annotation_findings` entry with the additive field
 `basis: "observed"` (older reports and MCP043 findings default to `"keywords"`).
 It is produced only by `check --canary-check --canary-observe`, from tools the
 canary actually called inside the observation sandbox: `readOnlyHint=true` with a
-file created, changed or removed in the trap (`category: file_write`), or
-`openWorldHint=false` with a validated non-loopback host requested through the
-trap's proxy (`category: network`), each confirmed by an immediate repeat call of
-the same tool. Permission errors never produce MCP055.
+trap entry created, changed or removed (`category: file_write`), confirmed by the
+immediately following call of the same tool. Network requests and permission
+errors never produce MCP055.
 Confidence is HIGH and severity `high`; `evidence` names the call and the effect,
 never file contents, URL paths or queries.
 
@@ -1248,39 +1247,51 @@ Additive, optional fields for compatibility with older reports:
 - `observed` and `observed_calls` (`--canary-observe`): `observed` is true when
   the stdio session ran under macOS `sandbox-exec` in a per-server trap. Direct
   file writes by the server's process tree are allowed only in the trap's
-  TMPDIR, XDG_CACHE_HOME and XDG_STATE_HOME folders; outbound TCP only to
-  loopback, with HTTP(S)_PROXY pointing at a local proxy that records the
-  requested host and refuses the request (loopback is exempt). The real HOME and
-  working folder stay readable. The sandbox is not total containment: IPC to
-  other processes stays open. Each `observed_calls[]` entry records `tool_name`,
-  `call`, `files_changed` (trap-relative files, folders and links, first 10)
-  and `files_changed_count` (created, modified or removed; logs and caches count), `blocked_operations` (a permission error on the
-  server's stderr), `network_hosts` (validated `host[:port]` only, at most 50 distinct per
-  call; a request whose host cannot be validated appears as `(unparsed request)`), `errored`, `contradicted_hints`, `verdict` (`contradiction`,
-  `consistent`, or `inconclusive`) and `inconclusive_reason`. Only files changed
-  in the trap and validated non-loopback hosts are attributable, and only when
-  the server was quiet just before and just after the call and an immediate
-  repeat call of the same tool shows the same effect; a one-off effect is
-  `inconclusive`, and so are writes seen during calls to different tools, which
-  are treated as the server's own logging or caching. Loopback includes
-  `*.localhost`, `localhost.` and unspecified addresses. The trap is scanned
-  through no-follow folder handles, so a link cannot lead the scan outside it.
+  TMPDIR, XDG_CACHE_HOME and XDG_STATE_HOME folders. Outbound TCP is allowed only
+  to loopback, with HTTP(S)_PROXY pointing at a local proxy that records the
+  requested host and refuses the request; loopback (including `*.localhost`,
+  `localhost.`, unspecified and IPv4-mapped loopback addresses) is exempt.
+  Unix-socket connections and name resolution for non-local hosts are denied,
+  so servers that need Docker, a database socket or DNS at startup may fail
+  under observation. The real HOME and working folder stay readable. The sandbox
+  is not total containment: Mach and XPC IPC to other processes stay open.
   If the sandbox cannot start, the server is not started (`connection_status:
-  failed`) rather than exercised without it. Network evidence covers only clients that honor HTTP(S)_PROXY:
-  a direct connection (raw sockets, or HTTP clients that ignore proxy variables)
-  is denied by the sandbox but may not appear at all, so a clean closed-world
-  result does not rule out an attempted connection. Each observed call adds about
-  one second of quiet checks, which counts against `--timeout`; a permission error,
-  activity between calls, a trap that cannot be fully scanned (over 5,000
-  entries, over two seconds, or unreadable), network requests from a
-  closed-world tool that arrived after the proxy's 10,000-entry log filled, a
-  proxy request without a destination that can be validated, or an errored call
-  without an effect makes the call `inconclusive`, never MCP055. Inconclusive or unobserved
-  calls, a sandbox that fails to start, and a server that fails to start under
-  the sandbox add canary warnings and make `status` `partial`. Unsupported
-  platforms or non-stdio transports leave `observed` false and add a warning.
-  One empty-argument call per exercised tool cannot prove a hint true for other
-  inputs.
+  failed`) rather than exercised without it.
+
+  Each `observed_calls[]` entry records `tool_name`, `call`, `files_changed`
+  (trap-relative files, folders and links, first 10) and `files_changed_count`
+  (created, modified or removed; logs and caches count), `blocked_operations` (a
+  permission error on the server's stderr), `network_hosts` (validated
+  `host[:port]` only, at most 50 distinct per call; a request whose host cannot
+  be validated appears as `(unparsed request)`), `network_unlogged` (requests
+  past the proxy's 10,000-entry log or 32-connection cap), `errored`,
+  `contradicted_hints`, `verdict` (`contradiction`, `consistent`, or
+  `inconclusive`) and `inconclusive_reason`.
+
+  Only `readOnlyHint` can be contradicted. A write is attributed to a tool only
+  when the server was quiet just before and just after the call and the
+  immediately following call of the same tool shows the same hint contradicted.
+  These are `inconclusive`, never MCP055: a one-off effect; writes seen during
+  calls to different tools (the server's own logging or caching); with only one
+  tool exercised, changes confined to files that already existed; a permission
+  error; activity just before or after the call; a trap that cannot be fully
+  scanned (over 5,000 entries, over two seconds, or unreadable; the trap is
+  walked through no-follow folder handles so a link cannot lead the scan
+  outside it); and an errored call without an effect.
+
+  Network requests are evidence, not contradictions: `openWorldHint` describes a
+  tool's domain, and a closed-world tool may call its own fixed remote backend.
+  When tools declaring `openWorldHint=false` contact non-loopback hosts, a canary
+  warning starting `For review:` lists them; it does not change `status`. Network
+  evidence covers only clients that honor HTTP(S)_PROXY: a direct connection is
+  denied by the sandbox but may not appear at all.
+
+  Inconclusive or unobserved calls, a sandbox that fails to start, and a server
+  that fails to start under the sandbox add canary warnings and make `status`
+  `partial`. Unsupported platforms or non-stdio transports leave `observed`
+  false and add a warning. Each observed call adds about one second of quiet
+  checks, which counts against `--timeout`. One empty-argument call and its
+  repeat cannot prove a hint true for other inputs.
 
 - `client_identity`: the presented MCP client name/version, e.g. `mcp-audit/3.0.0`;
   MCPAudit presents this explicit identity on stdio, Streamable HTTP, and SSE,
@@ -2602,7 +2613,7 @@ SARIF output uses stable MCP rule IDs:
 - `MCP041`: unbounded caller-controlled outbound destination (URL/host parameter or templated host authority; opt-in `--egress-check`)
 - `MCP042`: allowlisted destination with residual egress risk (multi-tenant data-bearing API or caller-attachable credentials; opt-in `--egress-check`)
 - `MCP043`: explicit served annotation contradicts MEDIUM-or-better keyword capability evidence (HIGH for destructive evidence, MEDIUM otherwise)
-- `MCP055`: a served `readOnlyHint=true` or `openWorldHint=false` contradicted by behavior observed in a sandboxed canary call (HIGH; opt-in `--canary-observe`, macOS stdio only)
+- `MCP055`: a served `readOnlyHint=true` contradicted by writes observed in a sandboxed canary call and its immediate repeat (HIGH; opt-in `--canary-observe`, macOS stdio only)
 
 ## Compatibility Fixture
 

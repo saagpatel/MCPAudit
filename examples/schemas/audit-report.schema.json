@@ -1321,6 +1321,11 @@
           "title": "Network Hosts",
           "type": "array"
         },
+        "network_unlogged": {
+          "default": 0,
+          "title": "Network Unlogged",
+          "type": "integer"
+        },
         "errored": {
           "default": false,
           "title": "Errored",

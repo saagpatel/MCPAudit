@@ -766,17 +766,17 @@ see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp0
 
 Your tool did something its safety hint says it doesn't.
 
-What we saw: During a sandboxed canary call, a tool claiming readOnlyHint=true changed files, or a tool claiming openWorldHint=false requested a non-loopback host.
+What we saw: During a sandboxed canary call and its immediate repeat, a tool claiming readOnlyHint=true changed files.
 
 Why it matters:
 
-1. Clients may auto-approve or parallelize tools that claim to be read-only or closed-world.
+1. Clients may auto-approve or parallelize tools that claim to be read-only.
 2. This tool's observed behavior contradicts that claim.
-3. Trusting the hint can let writes or network calls through without review.
+3. Trusting the hint can let writes through without review.
 
-How to fix (About 10 minutes to review the tool): Treat the tool as writing or networked, correct the hint in the server, and re-run `check --canary-check --canary-observe` before trusting it again.
+How to fix (About 10 minutes to review the tool): Treat the tool as writing, correct the hint in the server, and re-run `check --canary-check --canary-observe` before trusting it again.
 
-How sure: Attributable effects seen on an empty-argument call and its immediate repeat in a macOS sandbox: entries changed in the sandbox's temporary folders (logs and caches count) or a non-loopback network request. Writes seen across several tools are treated as the server's. Permission errors alone are reported as inconclusive, never as this finding. Network evidence covers only clients that honor HTTP(S)_PROXY. A clean result does not prove the hint true for other inputs.
+How sure: Attributable effects seen on an empty-argument call and its immediate repeat in a macOS sandbox: entries changed in the sandbox's temporary folders (logs and caches count). Writes seen across several tools are treated as the server's. Permission errors and network requests are never reported as this finding. A clean result does not prove the hint true for other inputs.
 
 see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp055
 

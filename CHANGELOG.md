@@ -12,12 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `check --canary-check --canary-observe` (macOS, stdio) runs canary calls inside a
   `sandbox-exec` trap that confines direct writes to temporary folders and
   non-loopback network to a refusing, host-logging proxy. Tools whose served
-  `readOnlyHint=true` or `openWorldHint=false` is contradicted by an attributable
-  effect are reported as MCP055 (`annotation_findings[]` with `basis: "observed"`),
-  with per-call evidence in `canary.observed_calls[]`. A contradiction must recur on
-  an immediate repeat call with the server quiet around each call. One-off
-  effects, permission errors and errored calls without effects are inconclusive,
-  never MCP055, and are surfaced as canary warnings.
+  `readOnlyHint=true` is contradicted by writes seen on a call and its immediate
+  repeat, with the server quiet around each, are reported as MCP055
+  (`annotation_findings[]` with `basis: "observed"`), with per-call evidence in
+  `canary.observed_calls[]`. One-off effects, writes shared across tools,
+  permission errors and errored calls without effects are inconclusive, never
+  MCP055. Network requests by tools declaring `openWorldHint=false` are listed in a
+  `For review:` canary warning rather than reported as a finding. If the sandbox
+  cannot start, the server is not started.
 
 ### Changed
 

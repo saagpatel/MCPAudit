@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -52,24 +53,22 @@ async def test_observed_lies_become_mcp055_and_control_stays_clean() -> None:
     assert verdicts == {
         "cache_info": {("contradiction", ("readOnlyHint",))},
         "status": {("contradiction", ("readOnlyHint",))},
-        "weather": {("contradiction", ("openWorldHint",))},
+        "weather": {("consistent", ())},  # network is evidence for review, not a contradiction
         "profile": {("inconclusive", ())},
         "local_status": {("consistent", ())},
         "clock": {("consistent", ())},
     }
     # Each liar was re-called immediately, and the repeat confirmed it.
     calls = [c.tool_name for c in audit.canary.observed_calls]
-    for name in ("cache_info", "status", "weather"):
+    for name in ("cache_info", "status"):
         first = calls.index(name)
         assert calls[first + 1] == name
     observed = {(f.tool_name, f.hint) for f in audit.annotation_findings if f.rule_id == "MCP055"}
-    assert observed == {
-        ("cache_info", "readOnlyHint"),
-        ("status", "readOnlyHint"),
-        ("weather", "openWorldHint"),
-    }
+    assert observed == {("cache_info", "readOnlyHint"), ("status", "readOnlyHint")}
     weather = next(c for c in audit.canary.observed_calls if c.tool_name == "weather")
     assert weather.network_hosts == ["telemetry.example.invalid"]
+    review = [w for w in audit.canary.warnings if w.startswith("For review:")]
+    assert len(review) == 1 and "weather -> telemetry.example.invalid" in review[0]
     profile = next(c for c in audit.canary.observed_calls if c.tool_name == "profile")
     assert profile.blocked_operations and "permission error" in profile.inconclusive_reason
     assert not (Path.home() / ".mcp-audit-observe-fixture").exists()  # the sandbox blocked it
@@ -130,6 +129,7 @@ def test_stderr_scanner_counts_markers_split_across_chunks() -> None:
         ("localhost.", True),
         ("0.0.0.0:8080", True),
         ("evil-localhost.example.com", False),
+        ("[::ffff:127.0.0.1]:80", True),
     ],
 )
 def test_loopback_hosts_are_closed_world(host: str, loopback: bool) -> None:
@@ -164,6 +164,7 @@ def test_snapshot_stops_at_its_time_budget(tmp_path: Path, monkeypatch: pytest.M
     assert _snapshot(tmp_path) is None
 
 
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads through chmod 000")
 def test_unreadable_folder_makes_snapshot_unjudgeable_not_fatal(tmp_path: Path) -> None:
     locked = tmp_path / "locked"
     locked.mkdir()
@@ -222,7 +223,7 @@ async def test_sarif_lists_mcp055_only_when_observed() -> None:
     run = SarifGenerator().generate(report)["runs"][0]
     assert "MCP055" in {rule["id"] for rule in run["tool"]["driver"]["rules"]}
     observed = [r for r in run["results"] if r["ruleId"] == "MCP055"]
-    assert len(observed) == 3 and all(r["level"] == "error" for r in observed)  # profile is inconclusive
+    assert len(observed) == 2 and all(r["level"] == "error" for r in observed)  # readOnlyHint only
     assert all("sandboxed canary call" in r["message"]["text"] for r in observed)
 
     report.audits[0].annotation_findings = []
@@ -239,8 +240,8 @@ def _proxy_request(trap: object, request_line: bytes) -> None:
 
 
 @pytest.mark.anyio
-async def test_proxy_log_overflow_is_inconclusive_not_consistent(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Requests past the log cap must not let a closed-world tool look clean."""
+async def test_proxy_log_overflow_is_counted_for_review(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Requests past the log cap are counted, so the review note cannot silently omit them."""
     import mcp_audit.observe as observe
     from mcp_audit.models import ToolAnnotations
 
@@ -253,14 +254,15 @@ async def test_proxy_log_overflow_is_inconclusive_not_consistent(monkeypatch: py
         start = await trap.begin()
         _proxy_request(trap, b"GET http://exfil.example.com/ HTTP/1.1")
         call = await trap.end(start, "status", 1, closed, errored=False)
-        assert call.verdict == "inconclusive"
-        assert "proxy log filled" in call.inconclusive_reason
-        assert call.contradicted_hints == []
-        # A tool that does not claim closed-world is unaffected by the overflow.
+        assert call.network_unlogged == 1 and call.network_hosts == []
+        assert "status -> 1 request(s) not logged" in observe.network_review_note([call])
+        # A tool that does not claim closed-world is not listed for review.
         start = await trap.begin()
         _proxy_request(trap, b"GET http://exfil.example.com/ HTTP/1.1")
         open_world = ToolAnnotations(read_only_hint=True, open_world_hint=True)
-        assert (await trap.end(start, "search", 2, open_world, errored=False)).verdict == "consistent"
+        assert (
+            observe.network_review_note([await trap.end(start, "search", 2, open_world, errored=False)]) == ""
+        )
     finally:
         trap.close()
 
@@ -271,7 +273,7 @@ def _closed() -> ToolAnnotations:
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("request_line", [b"GET http://<junk>/ HTTP/1.1", b"GET /health HTTP/1.1"])
-async def test_unparsed_proxy_request_is_inconclusive_not_evidence(request_line: bytes) -> None:
+async def test_unparsed_proxy_request_is_listed_not_accused(request_line: bytes) -> None:
     from mcp_audit.observe import UNPARSED_REQUEST, ObservationTrap
 
     trap = ObservationTrap()
@@ -280,8 +282,7 @@ async def test_unparsed_proxy_request_is_inconclusive_not_evidence(request_line:
         _proxy_request(trap, request_line)
         call = await trap.end(start, "status", 1, _closed(), errored=False)
         assert call.network_hosts == [UNPARSED_REQUEST]
-        assert call.verdict == "inconclusive" and call.contradicted_hints == []
-        assert "could be validated" in call.inconclusive_reason
+        assert call.verdict == "consistent" and call.contradicted_hints == []
     finally:
         trap.close()
 
@@ -304,7 +305,7 @@ async def test_empty_proxy_connection_is_not_a_request() -> None:
 
 @pytest.mark.anyio
 async def test_external_host_survives_a_loopback_flood() -> None:
-    from mcp_audit.observe import ObservationTrap
+    from mcp_audit.observe import ObservationTrap, network_review_note
 
     trap = ObservationTrap()
     try:
@@ -313,8 +314,9 @@ async def test_external_host_survives_a_loopback_flood() -> None:
             _proxy_request(trap, f"GET http://127.0.0.1:{port}/ HTTP/1.1".encode())
         _proxy_request(trap, b"GET http://zz-external.example.com/ HTTP/1.1")
         call = await trap.end(start, "status", 1, _closed(), errored=False)
-        assert call.verdict == "contradiction"
+        assert call.verdict == "consistent"  # network never contradicts a hint
         assert call.network_hosts[0] == "zz-external.example.com"
+        assert "zz-external.example.com" in network_review_note([call])
     finally:
         trap.close()
 
@@ -506,3 +508,30 @@ def test_shared_writes_beyond_the_reported_ten_still_count_as_server_level() -> 
     confirm_contradictions(calls)
     assert [c.verdict for c in calls[:2]] == ["inconclusive", "inconclusive"]
     assert [c.verdict for c in calls[2:]] == ["contradiction", "contradiction"]  # b also writes its own files
+
+
+def test_one_tool_modifying_existing_files_is_not_pinned_on_it() -> None:
+    """A single exercised tool cannot be separated from an append-only server log."""
+    from mcp_audit.models import ObservedCall
+    from mcp_audit.observe import confirm_contradictions
+
+    def hit(call: int, created: set[str]) -> ObservedCall:
+        observed = ObservedCall(
+            tool_name="status",
+            call=call,
+            verdict="contradiction",
+            contradicted_hints=["readOnlyHint"],
+            files_changed=["state/access.log"],
+            files_changed_count=1,
+        )
+        observed._changed_paths = {"state/access.log"}
+        observed._created_paths = created
+        return observed
+
+    appended = [hit(1, set()), hit(2, set())]
+    confirm_contradictions(appended)
+    assert {c.verdict for c in appended} == {"inconclusive"}
+    assert "server-level logging" in appended[0].inconclusive_reason
+    created = [hit(1, {"state/access.log"}), hit(2, set())]  # the tool created the file itself
+    confirm_contradictions(created)
+    assert {c.verdict for c in created} == {"contradiction"}

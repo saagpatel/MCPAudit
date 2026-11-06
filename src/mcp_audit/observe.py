@@ -1,4 +1,4 @@
-"""Observed canary calls: check served read-only and closed-world hints against behavior.
+"""Observed canary calls: check served read-only hints against behavior.
 
 `check --canary-check --canary-observe` launches each stdio server under macOS
 `sandbox-exec` in a per-server trap:
@@ -7,24 +7,23 @@
   Direct file writes by the server's process tree are allowed only under the
   trap: TMPDIR, XDG_CACHE_HOME and XDG_STATE_HOME point there, so well-behaved
   caches land where they can be seen. Other direct writes are denied.
-- Outbound TCP is allowed only to loopback. HTTP(S)_PROXY point at a local
-  proxy that records the requested host and refuses the request; loopback hosts
-  are exempt from the proxy and never count as open-world access.
-- The sandbox is not total containment: `(allow default)` leaves IPC open, so a
-  server could still ask another process to act for it.
+- Outbound TCP is allowed only to loopback. HTTP(S)_PROXY point at a local proxy
+  that records the requested host and refuses the request; loopback is exempt.
+  Unix-socket connections and non-local name resolution are denied.
+- The sandbox is not total containment: Mach and XPC IPC stay open, so a server
+  could still ask another process to act for it.
 
-Around each canary call the trap records files created, changed or removed in
-the trap and non-loopback proxy hosts. Those are attributable effects: a tool
-claiming readOnlyHint=true that changed files, or openWorldHint=false that asked
-for a non-loopback host, is an observed contradiction (MCP055).
+A tool claiming readOnlyHint=true whose call and immediate repeat both changed
+trap entries, with the server quiet around each, is an observed contradiction
+(MCP055). One-off effects, writes shared across tools, permission errors,
+unscannable traps and errored calls without effects are inconclusive.
 
-Permission errors on the server's stderr are only a hint: they also come from
-reads, privacy prompts and blocked sockets. They mark the call inconclusive and
-add a canary warning; they never produce MCP055. Activity between calls, an
-oversized trap, and errored calls without effects are inconclusive too.
+Network requests are evidence, never contradictions: openWorldHint describes a
+tool's domain, and a closed-world tool may call its own fixed remote backend.
+Requests by tools declaring openWorldHint=false are listed for review.
 
-Limits: local stdio servers on macOS only; one empty-argument call per exercised
-tool, so a tool that misbehaves only on some inputs passes.
+Limits: local stdio servers on macOS only; an empty-argument call and its repeat
+per exercised tool, so a tool that misbehaves only on some inputs passes.
 """
 
 from __future__ import annotations
@@ -135,7 +134,9 @@ def is_loopback(host: str) -> bool:
     if name in LOOPBACK_NAMES or name.endswith(".localhost"):
         return True
     try:
-        address = ipaddress.ip_address(name)
+        address: ipaddress.IPv4Address | ipaddress.IPv6Address = ipaddress.ip_address(name)
+        if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+            address = address.ipv4_mapped
         return address.is_loopback or address.is_unspecified
     except ValueError:
         return False
@@ -349,6 +350,7 @@ class ObservationTrap:
         self._last_end = post
         # Quiet before and after the window, or the effect cannot be pinned on this call.
         spillover = self._noisy_before or post != after
+        created: set[str] = set()
         if start.files is None or after.files is None:
             changed: list[str] = []
             oversized = True
@@ -359,36 +361,31 @@ class ObservationTrap:
                 {k for k, v in after_files.items() if before_files.get(k) != v}
                 | (before_files.keys() - after_files.keys())
             )
+            created = set(after_files.keys() - before_files.keys())
         window = self.proxy.log[start.logged : after.logged]
         unlogged = (after.requests - start.requests) - len(window)
         distinct = set(window)
-        unparsed = UNPARSED_REQUEST in distinct
         # Classify the whole window before capping what the report keeps.
-        open_world = sorted(h for h in distinct if h != UNPARSED_REQUEST and not is_loopback(h))
-        others = sorted(distinct - set(open_world))
-        hosts = (open_world + others)[:MAX_REPORTED_HOSTS]
+        remote = sorted(h for h in distinct if h != UNPARSED_REQUEST and not is_loopback(h))
+        hosts = (remote + sorted(distinct - set(remote)))[:MAX_REPORTED_HOSTS]
         blocked = after.blocked > start.blocked
-        contradicted: list[str] = []
-        if annotations and annotations.read_only_hint is True and changed:
-            contradicted.append("readOnlyHint")
-        if annotations and annotations.open_world_hint is False and open_world:
-            contradicted.append("openWorldHint")
+        # Only readOnlyHint can be contradicted by behavior. A remote request does not show
+        # that a closed-world tool's domain is open (a fixed private backend is closed), so
+        # network evidence is recorded for review instead.
+        contradicted = (
+            ["readOnlyHint"] if annotations and annotations.read_only_hint is True and changed else []
+        )
         reason = ""
         if oversized:
             reason = "the trap could not be fully scanned (too many entries, too slow, or unreadable)"
         elif spillover:
             reason = "activity just before or after the call could belong to other work"
-        elif unlogged > 0 and not open_world and annotations and annotations.open_world_hint is False:
-            reason = f"{unlogged} network request(s) arrived after the proxy log filled"
-        elif unparsed and not open_world and annotations and annotations.open_world_hint is False:
-            reason = "a proxy request had no destination that could be validated"
         elif blocked:
             reason = "a permission error was reported; it may have been a blocked write or a denied read"
         elif errored and not (changed or hosts or unlogged):
             reason = "the call errored without an observable effect"
         verdict: ObservedVerdict
         if contradicted and not (spillover or oversized):
-            # Logged evidence stands even when later requests in the window overflowed.
             verdict = "contradiction"
         elif reason:
             verdict = "inconclusive"
@@ -402,12 +399,15 @@ class ObservationTrap:
             files_changed_count=len(changed),
             blocked_operations=blocked,
             network_hosts=hosts,
+            network_unlogged=max(unlogged, 0),
             errored=errored,
             contradicted_hints=contradicted,
             verdict=verdict,
             inconclusive_reason=reason if verdict == "inconclusive" else "",
         )
         observed._changed_paths = set(changed)
+        observed._created_paths = created
+        observed._closed_world = bool(annotations and annotations.open_world_hint is False)
         return observed
 
     def close(self) -> None:
@@ -450,6 +450,19 @@ def confirm_contradictions(calls: list[ObservedCall]) -> None:
                 observed.inconclusive_reason = (
                     "the same files changed during calls to different tools (server-level logging or caching)"
                 )
+    # With one tool exercised there is nothing to compare against: if it only ever modified
+    # files that already existed (an append-only log), the write cannot be pinned on it.
+    if len({c.tool_name for c in calls}) == 1:
+        hits = [c for c in calls if "readOnlyHint" in c.contradicted_hints]
+        if hits and all(c._changed_paths and not c._created_paths for c in hits):
+            for observed in hits:
+                observed.contradicted_hints = [h for h in observed.contradicted_hints if h != "readOnlyHint"]
+                if not observed.contradicted_hints:
+                    observed.verdict = "inconclusive"
+                    observed.inconclusive_reason = (
+                        "with one tool exercised, changes to existing files cannot be separated from "
+                        "server-level logging"
+                    )
     confirmed: set[tuple[str, str]] = set()
     for current, following in zip(calls, calls[1:], strict=False):
         if following.tool_name == current.tool_name and following.call == current.call + 1:
@@ -475,21 +488,16 @@ def observed_annotation_findings(audit: ServerAudit) -> list[AnnotationFinding]:
     for observed in audit.canary.observed_calls:
         for hint in observed.contradicted_hints:
             evidence = seen.setdefault((observed.tool_name, hint), [])
-            if hint == "readOnlyHint":
-                evidence.append(
-                    f"call {observed.call}: created, changed or removed "
-                    f"{observed.files_changed_count} file(s) in the trap"
-                )
-            else:
-                hosts = [h for h in observed.network_hosts if h != UNPARSED_REQUEST and not is_loopback(h)]
-                evidence.append(f"call {observed.call}: network request to {', '.join(hosts)}")
+            count = observed.files_changed_count
+            noun = "entry" if count == 1 else "entries"
+            evidence.append(f"call {observed.call}: created, changed or removed {count} trap {noun}")
     return [
         AnnotationFinding(
             basis="observed",
             tool_name=tool,
             hint=hint,
             declared_value=hint == "readOnlyHint",
-            category=PermissionCategory.FILE_WRITE if hint == "readOnlyHint" else PermissionCategory.NETWORK,
+            category=PermissionCategory.FILE_WRITE,
             confidence=Confidence.HIGH,
             severity="high",
             evidence=sorted(set(evidence)),
@@ -497,3 +505,31 @@ def observed_annotation_findings(audit: ServerAudit) -> list[AnnotationFinding]:
         for (tool, hint), evidence in sorted(seen.items())
         if len(evidence) >= 2  # confirmed by an adjacent repeat call (see confirm_contradictions)
     ]
+
+
+def network_review_note(calls: list[ObservedCall]) -> str:
+    """Closed-world tools that reached remote hosts: evidence for a person, not a finding."""
+    seen: dict[str, set[str]] = {}
+    unlogged: dict[str, int] = {}
+    for observed in calls:
+        if not observed._closed_world:
+            continue
+        remote = {h for h in observed.network_hosts if not is_loopback(h)}
+        if remote:
+            seen.setdefault(observed.tool_name, set()).update(remote)
+        if observed.network_unlogged:
+            unlogged[observed.tool_name] = unlogged.get(observed.tool_name, 0) + observed.network_unlogged
+    if not seen and not unlogged:
+        return ""
+    parts = []
+    for tool in sorted(set(seen) | set(unlogged)):
+        detail = ", ".join(sorted(seen.get(tool, set())))
+        if unlogged.get(tool):
+            detail = (detail + "; " if detail else "") + f"{unlogged[tool]} request(s) not logged"
+        parts.append(f"{tool} -> {detail}")
+    return (
+        "For review: tools declaring openWorldHint=false contacted non-loopback hosts. This can be a "
+        "fixed private backend inside a closed domain, so it is not reported as a finding: "
+        + "; ".join(parts)
+        + "."
+    )
