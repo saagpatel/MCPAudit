@@ -1248,13 +1248,17 @@ Additive, optional fields for compatibility with older reports:
   the stdio session ran under macOS `sandbox-exec` in a per-server trap. Direct
   file writes by the server's process tree are allowed only in the trap's
   TMPDIR, XDG_CACHE_HOME and XDG_STATE_HOME folders and to `/dev/null`; other
-  device writes (terminals, serial devices) are denied. Outbound TCP is allowed only
-  to loopback, with HTTP(S)_PROXY pointing at a local proxy that records the
-  requested host and refuses the request; loopback (including `*.localhost`,
-  `localhost.`, unspecified and IPv4-mapped loopback addresses) is exempt.
-  Unix-socket connections and name resolution for non-local hosts are denied,
-  so servers that need Docker, a database socket or DNS at startup may fail
-  under observation. The real HOME and working folder stay readable. The sandbox
+  device writes (terminals, serial devices) are denied. Outbound network is
+  allowed only to the trap's own logging proxy on loopback: HTTP(S)_PROXY point
+  at it, and it records the requested host and refuses the request. NO_PROXY
+  exempts loopback names (including `*.localhost`, `localhost.`, unspecified and
+  IPv4-mapped loopback addresses) from the proxy, and direct connections to every
+  other loopback port are denied, so a local HTTP proxy, Docker's TCP API or a
+  database on loopback cannot carry traffic or effects out unobserved.
+  Unix-socket connections and name resolution for non-local hosts are denied
+  too. Servers that need Docker, a database, a loopback helper of their own or
+  DNS may fail to start under observation, or their calls error; an errored call
+  without an effect is inconclusive, never MCP055. The real HOME and working folder stay readable. The sandbox
   is not total containment: Mach and XPC IPC to other processes stay open.
   If the sandbox cannot start, or the platform has no `sandbox-exec`, a stdio
   server is not started (`connection_status: failed`) rather than exercised
@@ -1279,9 +1283,14 @@ Additive, optional fields for compatibility with older reports:
   confirmed, so `completed_calls` can exceed `requested_calls` by one.
   These are `inconclusive`, never MCP055: a one-off effect; writes seen during
   calls to different tools (the server's own logging or caching); writes by every
-  tool exercised (read-only or marked safe), when there are two or more, judged
-  from raw effects whether or not each was repeated (per-request activity);
-  with only one tool exercised, repeated changes to the same entries; a permission error, even
+  judged tool exercised (read-only or marked safe), when there are two or more,
+  judged from raw effects whether or not each was repeated (per-request
+  activity); with only one judged tool exercised, repeated changes to the same
+  entries. A tool counts as judged when at least one of its calls changed trap
+  entries, or the trap was fully scanned and the call neither errored nor
+  reported a permission error: an errored or blocked call without an effect
+  may have stopped before the server's own per-request write, so it is not
+  evidence that the server writes only for some tools. Also inconclusive: a permission error, even
   when the same call also changed files; activity just before or after the call; a trap that cannot be fully
   scanned (over 5,000 entries, over two seconds, or unreadable; the trap is
   walked through no-follow folder handles so a link cannot lead the scan
@@ -1298,6 +1307,12 @@ Additive, optional fields for compatibility with older reports:
   evidence covers only clients that honor HTTP(S)_PROXY: a direct connection is
   denied by the sandbox but may not appear at all.
 
+  The trap is removed when the session ends. Folders a server made inaccessible
+  (for example `chmod 000`) get owner access back first, through no-follow
+  folder handles and without following links. If anything still remains, a
+  canary warning names the temporary folder to remove by hand; it does not change
+  `status`.
+
   Inconclusive or unobserved calls, a sandbox that fails to start, and a server
   that fails to start under the sandbox add canary warnings and make `status`
   `partial`. If later analysis exhausts the per-server budget, the audit is
@@ -1308,7 +1323,7 @@ Additive, optional fields for compatibility with older reports:
   `--canary-observe`. Each observed call adds about one second of quiet
   checks, which counts against `--timeout`; `check` warns when `--timeout` looks
   too short for the requested calls. One empty-argument call and its
-  repeat cannot prove a hint true for other inputs, and with a single tool
+  repeat cannot prove a hint true for other inputs, and with a single judged tool
   exercised, a server that writes a new file on every request can still be
   reported against that tool.
 
