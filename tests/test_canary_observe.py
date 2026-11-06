@@ -68,7 +68,7 @@ async def test_observed_lies_become_mcp055_and_control_stays_clean() -> None:
     weather = next(c for c in audit.canary.observed_calls if c.tool_name == "weather")
     assert weather.network_hosts == ["telemetry.example.invalid"]
     review = [w for w in audit.canary.warnings if w.startswith("For review:")]
-    assert len(review) == 1 and "weather -> telemetry.example.invalid" in review[0]
+    assert review == [_REVIEW_PREFIX + "weather -> telemetry.example.invalid."]
     profile = next(c for c in audit.canary.observed_calls if c.tool_name == "profile")
     assert profile.blocked_operations and "permission error" in profile.inconclusive_reason
     assert not (Path.home() / ".mcp-audit-observe-fixture").exists()  # the sandbox blocked it
@@ -268,6 +268,12 @@ async def test_proxy_log_overflow_is_counted_for_review(monkeypatch: pytest.Monk
         trap.close()
 
 
+_REVIEW_PREFIX = (
+    "For review: tools declaring openWorldHint=false contacted non-loopback hosts. This can be a "
+    "fixed private backend inside a closed domain, so it is not reported as a finding: "
+)
+
+
 def _closed() -> ToolAnnotations:
     return ToolAnnotations(read_only_hint=True, open_world_hint=False)
 
@@ -317,7 +323,7 @@ async def test_external_host_survives_a_loopback_flood() -> None:
         call = await trap.end(start, "status", 1, _closed(), errored=False)
         assert call.verdict == "consistent"  # network never contradicts a hint
         assert call.network_hosts[0] == "zz-external.example.com"
-        assert "zz-external.example.com" in network_review_note([call])
+        assert network_review_note([call]) == _REVIEW_PREFIX + "status -> zz-external.example.com."
     finally:
         trap.close()
 
