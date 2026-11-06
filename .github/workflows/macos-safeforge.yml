@@ -117,3 +117,28 @@ jobs:
           trap - EXIT
           test ! -e "$test_root"
           echo "cleanup_guard=passed"
+
+      - name: Run the canary-observe sandbox tests
+        shell: bash
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          set -euo pipefail
+          results="$(mktemp /private/tmp/mcpaudit-observe.XXXXXX)"
+          uv run pytest -p no:cacheprovider -q --junitxml="$results" tests/test_canary_observe.py
+          RESULTS_PATH="$results" uv run python - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse(os.environ["RESULTS_PATH"]).getroot()
+          suites = [root] if root.tag == "testsuite" else root.findall("testsuite")
+          counts = {
+              name: sum(int(suite.attrib.get(name, "0")) for suite in suites)
+              for name in ("tests", "failures", "errors", "skipped")
+          }
+          # Zero skipped proves the macOS-only sandbox tests ran rather than skipping.
+          if counts["tests"] < 40 or counts["failures"] or counts["errors"] or counts["skipped"]:
+              raise SystemExit(f"inadmissible canary-observe result: {counts}")
+          print(f"observe_guard={counts['tests']}_passed_0_skipped")
+          PY
+          rm -f "$results"

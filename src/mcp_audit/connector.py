@@ -615,6 +615,15 @@ class ServerConnector:
                             "Observation sandbox could not start; not connecting without it."
                         )
                         return audit
+                elif config.transport == TransportType.STDIO:
+                    # Fail closed: a local server is never exercised without the requested sandbox.
+                    audit.canary.warnings.append(
+                        "Canary observation needs macOS sandbox-exec; the server was not started."
+                    )
+                    audit.canary.status = "partial"
+                    audit.connection_status = "failed"
+                    audit.connection_error = "Observation sandbox unavailable; not connecting without it."
+                    return audit
                 else:
                     audit.canary.warnings.append(UNSUPPORTED_WARNING)
             probe = _CanaryProbe(audit, canary_calls, safe_tools, baseline=canary_baseline, observer=observer)

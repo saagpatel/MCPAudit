@@ -1255,8 +1255,9 @@ Additive, optional fields for compatibility with older reports:
   so servers that need Docker, a database socket or DNS at startup may fail
   under observation. The real HOME and working folder stay readable. The sandbox
   is not total containment: Mach and XPC IPC to other processes stay open.
-  If the sandbox cannot start, the server is not started (`connection_status:
-  failed`) rather than exercised without it.
+  If the sandbox cannot start, or the platform has no `sandbox-exec`, a stdio
+  server is not started (`connection_status: failed`) rather than exercised
+  without it.
 
   Each `observed_calls[]` entry records `tool_name`, `call`, `files_changed`
   (trap-relative files, folders and links, first 10) and `files_changed_count`
@@ -1272,8 +1273,9 @@ Additive, optional fields for compatibility with older reports:
   when the server was quiet just before and just after the call and the
   immediately following call of the same tool shows the same hint contradicted.
   These are `inconclusive`, never MCP055: a one-off effect; writes seen during
-  calls to different tools (the server's own logging or caching); with only one
-  tool exercised, repeated changes to the same entries; a permission error, even
+  calls to different tools (the server's own logging or caching); writes by every
+  read-only tool exercised, when there are two or more (per-request activity);
+  with only one tool exercised, repeated changes to the same entries; a permission error, even
   when the same call also changed files; activity just before or after the call; a trap that cannot be fully
   scanned (over 5,000 entries, over two seconds, or unreadable; the trap is
   walked through no-follow folder handles so a link cannot lead the scan
@@ -1283,18 +1285,22 @@ Additive, optional fields for compatibility with older reports:
 
   Network requests are evidence, not contradictions: `openWorldHint` describes a
   tool's domain, and a closed-world tool may call its own fixed remote backend.
-  When tools declaring `openWorldHint=false` contact non-loopback hosts, a canary
-  warning starting `For review:` lists them; it does not change `status`. Network
+  When tools declaring `openWorldHint=false` make proxied requests, a canary
+  warning starting `For review:` lists the hosts, and counts requests to an
+  unknown destination (unparseable or past the caps); it does not change
+  `status`. Network
   evidence covers only clients that honor HTTP(S)_PROXY: a direct connection is
   denied by the sandbox but may not appear at all.
 
   Inconclusive or unobserved calls, a sandbox that fails to start, and a server
   that fails to start under the sandbox add canary warnings and make `status`
   `partial`. Non-stdio transports leave `observed` false and add a warning; on a
-  platform without `/usr/bin/sandbox-exec`, `check` refuses `--canary-observe`
-  rather than run the canary unsandboxed. Each observed call adds about one second of quiet
+  platform without `/usr/bin/sandbox-exec`, `check` and `run_scan` refuse
+  `--canary-observe`. Each observed call adds about one second of quiet
   checks, which counts against `--timeout`. One empty-argument call and its
-  repeat cannot prove a hint true for other inputs.
+  repeat cannot prove a hint true for other inputs, and with a single tool
+  exercised, a server that writes a new file on every request can still be
+  reported against that tool.
 
 - `client_identity`: the presented MCP client name/version, e.g. `mcp-audit/3.0.0`;
   MCPAudit presents this explicit identity on stdio, Streamable HTTP, and SSE,

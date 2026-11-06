@@ -71,7 +71,7 @@ LOOPBACK_NAMES = {"localhost", "localhost.localdomain"}
 MAX_PROXY_CONNECTIONS = 32
 _HOSTNAME = re.compile(r"^[a-z0-9.-]{1,253}$|^\[[0-9a-f:.]+\]$")
 UNSUPPORTED_WARNING = (
-    "Canary observation needs macOS sandbox-exec and a stdio server; calls were not observed."
+    "Canary observation applies to local stdio servers; this server's calls were not observed."
 )
 STARTUP_FAILED_WARNING = (
     "Canary observation sandbox was active: a server that writes outside its temporary folder or "
@@ -414,6 +414,7 @@ class ObservationTrap:
         observed._changed_paths = set(changed)
         observed._created_paths = created
         observed._closed_world = bool(annotations and annotations.open_world_hint is False)
+        observed._read_only = bool(annotations and annotations.read_only_hint is True)
         return observed
 
     def close(self) -> None:
@@ -456,8 +457,6 @@ def confirm_contradictions(calls: list[ObservedCall]) -> None:
                 observed.inconclusive_reason = (
                     "the same files changed during calls to different tools (server-level logging or caching)"
                 )
-    # With one tool exercised there is nothing to compare against: if it only ever modified
-    # files that already existed (an append-only log), the write cannot be pinned on it.
     # With one tool exercised there is nothing to compare against: if its calls keep touching
     # the same entries (a log created lazily on the first call, then appended), the writes
     # cannot be separated from server-level logging.
@@ -482,6 +481,20 @@ def confirm_contradictions(calls: list[ObservedCall]) -> None:
         if following.tool_name == current.tool_name and following.call == current.call + 1:
             for hint in set(current.contradicted_hints) & set(following.contradicted_hints):
                 confirmed.add((current.tool_name, hint))
+    # If two or more read-only tools were exercised and every one of them wrote, the writes look
+    # like the server's own per-request activity (for example a new log file per request).
+    read_only_tools = {c.tool_name for c in calls if c._read_only}
+    writers = {tool for tool, hint in confirmed if hint == "readOnlyHint"}
+    if len(read_only_tools) >= 2 and read_only_tools <= writers:
+        confirmed = {(tool, hint) for tool, hint in confirmed if hint != "readOnlyHint"}
+        for observed in calls:
+            if "readOnlyHint" in observed.contradicted_hints:
+                observed.contradicted_hints = [h for h in observed.contradicted_hints if h != "readOnlyHint"]
+                if not observed.contradicted_hints:
+                    observed.verdict = "inconclusive"
+                    observed.inconclusive_reason = (
+                        "every read-only tool exercised wrote, which looks like server-level activity"
+                    )
     for observed in calls:
         unconfirmed = [h for h in observed.contradicted_hints if (observed.tool_name, h) not in confirmed]
         if not unconfirmed:
@@ -528,21 +541,24 @@ def network_review_note(calls: list[ObservedCall]) -> str:
     for observed in calls:
         if not observed._closed_world:
             continue
-        remote = {h for h in observed.network_hosts if not is_loopback(h)}
+        remote = {h for h in observed.network_hosts if h != UNPARSED_REQUEST and not is_loopback(h)}
         if remote:
             seen.setdefault(observed.tool_name, set()).update(remote)
-        if observed.network_unlogged:
-            unlogged[observed.tool_name] = unlogged.get(observed.tool_name, 0) + observed.network_unlogged
+        unknown = observed.network_unlogged + (UNPARSED_REQUEST in observed.network_hosts)
+        if unknown:
+            unlogged[observed.tool_name] = unlogged.get(observed.tool_name, 0) + unknown
     if not seen and not unlogged:
         return ""
     parts = []
     for tool in sorted(set(seen) | set(unlogged)):
         detail = ", ".join(sorted(seen.get(tool, set())))
         if unlogged.get(tool):
-            detail = (detail + "; " if detail else "") + f"{unlogged[tool]} request(s) not logged"
+            detail = (
+                detail + "; " if detail else ""
+            ) + f"{unlogged[tool]} request(s) to an unknown destination"
         parts.append(f"{tool} -> {detail}")
     return (
-        "For review: tools declaring openWorldHint=false contacted non-loopback hosts. This can be a "
+        "For review: tools declaring openWorldHint=false made proxied network requests. This can be a "
         "fixed private backend inside a closed domain, so it is not reported as a finding: "
         + "; ".join(parts)
         + "."

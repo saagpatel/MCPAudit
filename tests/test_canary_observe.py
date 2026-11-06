@@ -256,7 +256,10 @@ async def test_proxy_log_overflow_is_counted_for_review(monkeypatch: pytest.Monk
         _proxy_request(trap, b"GET http://exfil.example.com/ HTTP/1.1")
         call = await trap.end(start, "status", 1, closed, errored=False)
         assert call.network_unlogged == 1 and call.network_hosts == []
-        assert "status -> 1 request(s) not logged" in observe.network_review_note([call])
+        assert (
+            observe.network_review_note([call])
+            == _REVIEW_PREFIX + "status -> 1 request(s) to an unknown destination."
+        )
         # A tool that does not claim closed-world is not listed for review.
         start = await trap.begin()
         _proxy_request(trap, b"GET http://exfil.example.com/ HTTP/1.1")
@@ -269,7 +272,7 @@ async def test_proxy_log_overflow_is_counted_for_review(monkeypatch: pytest.Monk
 
 
 _REVIEW_PREFIX = (
-    "For review: tools declaring openWorldHint=false contacted non-loopback hosts. This can be a "
+    "For review: tools declaring openWorldHint=false made proxied network requests. This can be a "
     "fixed private backend inside a closed domain, so it is not reported as a finding: "
 )
 
@@ -621,3 +624,57 @@ def test_one_tool_with_a_lazily_created_log_is_not_pinned_on_it() -> None:
     new_files = [hit(1, {"tmp/a"}, {"tmp/a"}), hit(2, {"tmp/b"}, {"tmp/b"})]  # a new entry every call
     confirm_contradictions(new_files)
     assert {c.verdict for c in new_files} == {"contradiction"}
+
+
+@pytest.mark.anyio
+async def test_direct_connector_refuses_unsupported_stdio_observation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Callers that bypass the CLI and run_scan checks still never get an unsandboxed launch."""
+    import mcp_audit.connector as connector
+
+    async def must_not_connect(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("server launched without its sandbox")
+
+    monkeypatch.setattr(connector, "observation_supported", lambda _stdio: False)
+    monkeypatch.setattr(connector.ServerConnector, "_connect_stdio", must_not_connect)
+    config = make_server_config(name="liar", command=sys.executable, args=[FIXTURE, "liar"])
+    audit = await connector.ServerConnector(timeout=10).connect(config, canary_calls=2, canary_observe=True)
+    assert audit.connection_status == "failed"
+    assert audit.canary is not None and any("not started" in w for w in audit.canary.warnings)
+
+
+@pytest.mark.anyio
+async def test_unparsed_only_traffic_is_an_unknown_destination_not_a_host() -> None:
+    from mcp_audit.observe import ObservationTrap, network_review_note
+
+    trap = ObservationTrap()
+    try:
+        start = await trap.begin()
+        _proxy_request(trap, b"GET /health HTTP/1.1")
+        call = await trap.end(start, "status", 1, _closed(), errored=False)
+        assert (
+            network_review_note([call])
+            == _REVIEW_PREFIX + "status -> 1 request(s) to an unknown destination."
+        )
+    finally:
+        trap.close()
+
+
+def test_every_read_only_tool_writing_is_server_level() -> None:
+    from mcp_audit.models import ObservedCall
+    from mcp_audit.observe import confirm_contradictions
+
+    def hit(call: int, tool: str) -> ObservedCall:
+        observed = ObservedCall(
+            tool_name=tool, call=call, verdict="contradiction", contradicted_hints=["readOnlyHint"]
+        )
+        observed._changed_paths = {f"state/req-{call}.log"}  # a new file per request
+        observed._created_paths = set(observed._changed_paths)
+        observed._read_only = True
+        return observed
+
+    calls = [hit(1, "a"), hit(2, "a"), hit(3, "b"), hit(4, "b")]
+    confirm_contradictions(calls)
+    assert {c.verdict for c in calls} == {"inconclusive"}
+    assert "every read-only tool" in calls[0].inconclusive_reason
