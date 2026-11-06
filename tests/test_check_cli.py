@@ -131,6 +131,8 @@ def test_denied_opens_only_diagnose_existing_configs(monkeypatch: pytest.MonkeyP
         assert findings[0]["finding_type"] == "config_parse_failure"
         assert findings[0]["details"] == ["unreadable config: PermissionError"]
         assert payload["coverage"]["config_health"]["state"] == "partial"
+        for check in ("metadata", "permissions", "capabilities"):
+            assert payload["coverage"][check]["state"] == "not_run"
     else:
         assert findings == []
         assert payload["coverage"]["config_health"]["state"] == "complete"

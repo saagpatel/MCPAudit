@@ -195,9 +195,9 @@ def build_coverage(
             coverage[check] = CheckCoverage(state="not_run", reason="connections disabled")
     if discovery_incomplete:
         for check, entry in coverage.items():
-            if entry.state != "not_requested":
+            if entry.state in {"complete", "partial"}:
                 reason = "configuration discovery incomplete: config_parse_failure"
-                if entry.state != "complete":
+                if entry.state == "partial":
                     reason += "; " + entry.reason
                 coverage[check] = CheckCoverage(state="partial", reason=reason)
     return coverage
