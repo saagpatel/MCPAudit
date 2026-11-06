@@ -604,6 +604,16 @@ MEDIUM or HIGH confidence. `readOnlyHint=true` contradicts `file_write` or
 Null hints, LOW keyword evidence, and absence of a keyword capability do not
 produce contradictions. No behavioral, idempotence or intent inference is added.
 
+MCP055 reuses the same `annotation_findings` entry with the additive field
+`basis: "observed"` (older reports and MCP043 findings default to `"keywords"`).
+It is produced only by `check --canary-check --canary-observe`, from tools the
+canary actually called inside the observation sandbox: `readOnlyHint=true` with a
+file created, changed or removed in the trap (`category: file_write`), or
+`openWorldHint=false` with a non-loopback host requested through the trap's
+proxy (`category: network`). Permission errors never produce MCP055.
+Confidence is HIGH and severity `high`; `evidence` names the call and the effect,
+never file contents, URL paths or queries.
+
 Severity is HIGH for destructive evidence and MEDIUM otherwise. SARIF maps
 these to `error` and `warning`, respectively, independently of the composite
 score. Existing global `fail_on.severity` and permission `fail_on.permissions`
@@ -1233,6 +1243,28 @@ connection status; findings already observed are retained on session failure
 or timeout.
 
 Additive, optional fields for compatibility with older reports:
+
+- `observed` and `observed_calls` (`--canary-observe`): `observed` is true when
+  the stdio session ran under macOS `sandbox-exec` in a per-server trap. Direct
+  file writes by the server's process tree are allowed only in the trap's
+  TMPDIR, XDG_CACHE_HOME and XDG_STATE_HOME folders; outbound TCP only to
+  loopback, with HTTP(S)_PROXY pointing at a local proxy that records the
+  requested host and refuses the request (loopback is exempt). The real HOME and
+  working folder stay readable. The sandbox is not total containment: IPC to
+  other processes stays open. Each `observed_calls[]` entry records `tool_name`,
+  `call`, `files_changed` (trap-relative, first 10) and `files_changed_count`
+  (created, modified or removed), `blocked_operations` (a permission error on the
+  server's stderr), `network_hosts` (validated `host[:port]` only, at most 50 per
+  server), `errored`, `contradicted_hints`, `verdict` (`contradiction`,
+  `consistent`, or `inconclusive`) and `inconclusive_reason`. Only files changed
+  in the trap and non-loopback hosts are attributable; a permission error,
+  activity between calls, a trap over 5,000 files, or an errored call without an
+  effect makes the call `inconclusive`, never MCP055. Inconclusive or unobserved
+  calls, a sandbox that fails to start, and a server that fails to start under
+  the sandbox add canary warnings and make `status` `partial`. Unsupported
+  platforms or non-stdio transports leave `observed` false and add a warning.
+  One empty-argument call per exercised tool cannot prove a hint true for other
+  inputs.
 
 - `client_identity`: the presented MCP client name/version, e.g. `mcp-audit/3.0.0`;
   MCPAudit presents this explicit identity on stdio, Streamable HTTP, and SSE,
@@ -2554,6 +2586,7 @@ SARIF output uses stable MCP rule IDs:
 - `MCP041`: unbounded caller-controlled outbound destination (URL/host parameter or templated host authority; opt-in `--egress-check`)
 - `MCP042`: allowlisted destination with residual egress risk (multi-tenant data-bearing API or caller-attachable credentials; opt-in `--egress-check`)
 - `MCP043`: explicit served annotation contradicts MEDIUM-or-better keyword capability evidence (HIGH for destructive evidence, MEDIUM otherwise)
+- `MCP055`: a served `readOnlyHint=true` or `openWorldHint=false` contradicted by behavior observed in a sandboxed canary call (HIGH; opt-in `--canary-observe`, macOS stdio only)
 
 ## Compatibility Fixture
 
