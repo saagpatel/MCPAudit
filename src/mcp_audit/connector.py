@@ -51,6 +51,14 @@ from mcp_audit.models import (
     ToolInfo,
     TransportType,
 )
+from mcp_audit.observe import (
+    STARTUP_FAILED_WARNING,
+    UNSUPPORTED_WARNING,
+    ObservationTrap,
+    confirm_contradictions,
+    network_review_note,
+    observation_supported,
+)
 from mcp_audit.protocol import ProtocolCapture, cache_hint_failure, observe_session, observe_transport
 from mcp_audit.redaction import redact_data, redact_text
 from mcp_audit.rules.result_injection import RESULT_SCAN_LIMIT
@@ -266,7 +274,11 @@ def install_transport_log_filters() -> None:
 
 
 @contextmanager
-def _capture_stderr(server_name: str, captured: _StderrTail | None = None) -> Iterator[TextIO]:
+def _capture_stderr(
+    server_name: str,
+    captured: _StderrTail | None = None,
+    on_chunk: Callable[[bytes], None] | None = None,
+) -> Iterator[TextIO]:
     """Drain stderr continuously into a 4 KiB tail, with synchronous cleanup.
 
     A private wake marker ends the reader even if a descendant retains stderr.
@@ -281,9 +293,16 @@ def _capture_stderr(server_name: str, captured: _StderrTail | None = None) -> It
     failures: list[OSError] = []
 
     def drain() -> None:
-        nonlocal truncated
+        nonlocal truncated, on_chunk
         try:
             while chunk := os.read(read_fd, 4096):
+                if on_chunk is not None:
+                    try:
+                        on_chunk(chunk)
+                    except Exception:
+                        # Never let an observer stop the drain: an undrained pipe stalls the server.
+                        logger.warning("Server %s: stderr observer failed; observation stopped.", server_name)
+                        on_chunk = None
                 data = tail + chunk
                 position = data.find(marker) if stopping.is_set() else -1
                 if position >= 0:
@@ -450,6 +469,7 @@ class _CanaryProbe:
     # prompts/get repeats on every listing; each (prompt, pattern) is reported once.
     prompt_patterns: set[tuple[str, str]] = field(default_factory=set)
     listing_failures: dict[str, str] = field(default_factory=dict)
+    observer: ObservationTrap | None = None  # --canary-observe sandbox for stdio sessions
 
 
 def canary_tool_eligible(tool: ToolInfo, explicitly_safe: bool = False) -> bool:
@@ -497,6 +517,32 @@ def canary_tool_eligible(tool: ToolInfo, explicitly_safe: bool = False) -> bool:
     return True
 
 
+def _observation_warnings(audit: ServerAudit) -> None:
+    """Surface observation gaps on the canary summary; any gap makes coverage partial."""
+    summary = audit.canary
+    assert summary is not None
+    confirm_contradictions(summary.observed_calls)
+    added: list[str] = []
+    if audit.connection_status in {"failed", "timeout"} and not summary.completed_calls:
+        added.append(STARTUP_FAILED_WARNING)
+    unobserved = summary.completed_calls - len(summary.observed_calls)
+    if unobserved > 0:
+        added.append(f"{unobserved} exercised canary call(s) ended before their effects were observed.")
+    inconclusive = [c for c in summary.observed_calls if c.verdict == "inconclusive"]
+    if inconclusive:
+        added.append(
+            "Observed calls were inconclusive: "
+            + "; ".join(f"call {c.call} ({c.tool_name}): {c.inconclusive_reason}" for c in inconclusive)
+            + "."
+        )
+    if added:
+        summary.warnings.extend(added)
+        summary.status = "partial" if summary.status == "complete" else summary.status
+    # A review note, not a coverage gap: it leaves the status alone.
+    if note := network_review_note(summary.observed_calls):
+        summary.warnings.append(note)
+
+
 def _result_text(value: object) -> list[str]:
     """Extract text/structured result strings; never resolve resource links or decode blobs."""
     if isinstance(value, str):
@@ -535,10 +581,15 @@ class ServerConnector:
         safe_tools: frozenset[str] = frozenset(),
         canary_identities: int | None = None,
         canary_baseline: dict[str, dict[str, object]] | None = None,
+        canary_observe: bool = False,
     ) -> ServerAudit:
         """Connect to a server and return a ServerAudit with tool list."""
         audit = ServerAudit(server=config, connection_status="pending")
         probe = None
+        if canary_observe and not canary_calls:
+            # Checked before any connection path: observation without a canary would launch
+            # the server unsandboxed, and startup alone can write or reach the network.
+            raise ValueError("--canary-observe requires a positive canary call budget.")
         if canary_identities is not None and canary_identities not in (1, 2):
             raise ValueError("Canary identities must be 1 or 2.")
         identities = canary_identities or (2 if config.transport == TransportType.STDIO else 1)
@@ -550,7 +601,36 @@ class ServerConnector:
                 call_budget=canary_calls,
                 client_identity=f"{_CLIENT_INFO.name}/{_CLIENT_INFO.version}",
             )
-            probe = _CanaryProbe(audit, canary_calls, safe_tools, baseline=canary_baseline)
+            observer: ObservationTrap | None = None
+            if canary_observe:
+                if observation_supported(config.transport == TransportType.STDIO):
+                    try:
+                        observer = ObservationTrap()
+                        audit.canary.observed = True
+                    except OSError as exc:
+                        # Fail closed: never run a requested sandboxed canary without its sandbox.
+                        audit.canary.warnings.append(
+                            f"Canary observation sandbox could not start ({type(exc).__name__}); "
+                            "the server was not started."
+                        )
+                        audit.canary.status = "partial"
+                        audit.connection_status = "failed"
+                        audit.connection_error = (
+                            "Observation sandbox could not start; not connecting without it."
+                        )
+                        return audit
+                elif config.transport == TransportType.STDIO:
+                    # Fail closed: a local server is never exercised without the requested sandbox.
+                    audit.canary.warnings.append(
+                        "Canary observation needs macOS sandbox-exec; the server was not started."
+                    )
+                    audit.canary.status = "partial"
+                    audit.connection_status = "failed"
+                    audit.connection_error = "Observation sandbox unavailable; not connecting without it."
+                    return audit
+                else:
+                    audit.canary.warnings.append(UNSUPPORTED_WARNING)
+            probe = _CanaryProbe(audit, canary_calls, safe_tools, baseline=canary_baseline, observer=observer)
         started = time.monotonic()
         stderr_tail = _StderrTail()
         stderr_token = _STDERR_TAIL.set(stderr_tail)
@@ -620,6 +700,7 @@ class ServerConnector:
                         baseline=canary_baseline,
                         initial_surface=probe.initial_surface,
                         prompt_patterns=probe.prompt_patterns,
+                        observer=probe.observer,
                     )
                     connect = {
                         TransportType.STDIO: self._connect_stdio,
@@ -743,6 +824,13 @@ class ServerConnector:
             return audit
         finally:
             _STDERR_TAIL.reset(stderr_token)
+            if probe is not None and probe.observer is not None:
+                # Removing a large trap must not block other servers' sessions, and
+                # cancellation must not leak it.
+                with anyio.CancelScope(shield=True):
+                    await anyio.to_thread.run_sync(probe.observer.close)
+                if audit.canary is not None:
+                    _observation_warnings(audit)
             if audit.canary:
                 audit.canary.elapsed_seconds = time.monotonic() - started
 
@@ -757,6 +845,9 @@ class ServerConnector:
             args=config.args,
             env=None,
         )
+        observer = probe.observer if probe else None
+        if observer is not None:
+            params = observer.wrap(params)
         install_transport_log_filters()
 
         def on_orphans(message: str) -> None:
@@ -771,7 +862,9 @@ class ServerConnector:
                 )
             logger.warning("Server %s: %s", config.name, message)
 
-        with _capture_stderr(config.name, _STDERR_TAIL.get()) as errlog:
+        with _capture_stderr(
+            config.name, _STDERR_TAIL.get(), observer.stderr.feed if observer else None
+        ) as errlog:
             capture = ProtocolCapture(ProtocolObservation())
             transport = bounded_stdio_client(
                 params,
@@ -921,7 +1014,13 @@ class ServerConnector:
             for finding in pinned_drift:
                 finding.summary = "Tool surface differs from the v2 pin at the first canary listing."
             probe.audit.drift_findings.extend(pinned_drift)
-        for call in range(1, probe.calls + 1):
+        rotation = 0
+        confirm_next: str | None = None
+        confirmation_requested: set[str] = set()
+        budget = probe.calls
+        call = 0
+        while call < budget:
+            call += 1
             if "tools" not in capabilities.surface:
                 capabilities = await self._list_capabilities(
                     session, server_name, probe, previous, call - 1, capture=capture
@@ -945,9 +1044,27 @@ class ServerConnector:
                 )
                 summary.warnings.append(stop_message)
                 return capabilities
-            tool = eligible[(call - 1) % len(eligible)]
+            by_name = {t.name: t for t in eligible}
+            if confirm_next in by_name:
+                # Re-call a tool right after an observed effect so one-off effects are not pinned on it.
+                tool, confirm_next = by_name[confirm_next], None
+            else:
+                # A pending confirmation for a tool that left the listing can never confirm.
+                tool, rotation, confirm_next = eligible[rotation % len(eligible)], rotation + 1, None
+            mark = await probe.observer.begin() if probe.observer else None
             result = await session.call_tool(tool.name, {})
             summary.completed_calls = call
+            if probe.observer is not None and mark is not None:
+                observed = await probe.observer.end(
+                    mark, tool.name, call, tool.annotations, bool(result.is_error)
+                )
+                summary.observed_calls.append(observed)
+                if observed.contradicted_hints and tool.name not in confirmation_requested:
+                    confirmation_requested.add(tool.name)
+                    confirm_next = tool.name
+                    if call == budget == probe.calls:
+                        # One extra call so an effect first seen on the last call can be confirmed.
+                        budget += 1
             text = "\n".join(_result_text(result.model_dump(mode="json", by_alias=True)))
             self._scan_runtime_text(probe, tool.name, text, call, CapabilityTarget.TOOL)
             if result.is_error:

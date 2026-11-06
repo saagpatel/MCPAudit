@@ -19,6 +19,7 @@ from mcp_audit.artifact_paths import validate_artifact_paths
 from mcp_audit.checkup import generate_card, load_previous, sticker
 from mcp_audit.engine import ScanOptions, run_scan
 from mcp_audit.models import ClientType, ScanWarning
+from mcp_audit.observe import OBSERVE_SECONDS_PER_CALL, OBSERVE_STARTUP_SECONDS, observation_supported
 from mcp_audit.report import ReportGenerator
 from mcp_audit.review_discovery import review_sources, server_identity
 from mcp_audit.terminal_summary import summary_console
@@ -148,6 +149,13 @@ def _analysis_options(command: Callable[P, T]) -> Callable[P, T]:
             multiple=True,
             metavar="SERVER/TOOL",
             help="Mark an empty-argument tool safe; destructive hints still veto calls.",
+        ),
+        click.option(
+            "--canary-observe",
+            is_flag=True,
+            help="macOS, stdio: run canary calls in a write- and network-blocking sandbox and "
+            "check read-only hints against what the tools did (MCP055). Confirming repeats "
+            "count against --canary-calls.",
         ),
         click.option(
             "--timeout",
@@ -293,6 +301,7 @@ def check(
     canary_calls: int,
     canary_identities: int | None,
     canary_safe_tools: tuple[str, ...],
+    canary_observe: bool,
     timeout: int,
     max_concurrency: int,
     connect_project_configs: bool,
@@ -329,6 +338,19 @@ def check(
         raise click.UsageError(
             "--canary-check requires --config FILE and --connect --server or --connect-all, "
             "without discovery."
+        )
+    if canary_observe and not canary_check:
+        raise click.UsageError("--canary-observe requires --canary-check.")
+    if canary_observe and not observation_supported(True):
+        raise click.UsageError(
+            "--canary-observe needs macOS with /usr/bin/sandbox-exec; refusing to run the canary unsandboxed."
+        )
+    if canary_observe and timeout < OBSERVE_SECONDS_PER_CALL * canary_calls + OBSERVE_STARTUP_SECONDS:
+        click.echo(
+            f"Warning: --canary-observe adds about {OBSERVE_SECONDS_PER_CALL}s per canary call; "
+            f"--timeout {timeout} may run out and drop static analysis. Consider "
+            f"--timeout {OBSERVE_SECONDS_PER_CALL * canary_calls + OBSERVE_STARTUP_SECONDS} or more.",
+            err=True,
         )
     if connect and not server_id:
         raise _recovery_error(
@@ -496,6 +518,7 @@ def check(
             canary_calls=canary_calls,
             canary_identities=canary_identities,
             canary_safe_tools=canary_safe_tools,
+            canary_observe=canary_observe,
             max_frame_bytes=max_frame_bytes,
             max_surface_bytes=max_surface_bytes,
             sdk_stdio_fallback=sdk_stdio_fallback,

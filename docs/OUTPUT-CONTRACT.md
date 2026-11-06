@@ -604,6 +604,16 @@ MEDIUM or HIGH confidence. `readOnlyHint=true` contradicts `file_write` or
 Null hints, LOW keyword evidence, and absence of a keyword capability do not
 produce contradictions. No behavioral, idempotence or intent inference is added.
 
+MCP055 reuses the same `annotation_findings` entry with the additive field
+`basis: "observed"` (older reports and MCP043 findings default to `"keywords"`).
+It is produced only by `check --canary-check --canary-observe`, from tools the
+canary actually called inside the observation sandbox: `readOnlyHint=true` with a
+trap entry created, changed or removed (`category: file_write`), confirmed by the
+immediately following call of the same tool. Network requests and permission
+errors never produce MCP055.
+Confidence is HIGH and severity `high`; `evidence` names the call and the effect,
+never file contents, URL paths or queries.
+
 Severity is HIGH for destructive evidence and MEDIUM otherwise. SARIF maps
 these to `error` and `warning`, respectively, independently of the composite
 score. Existing global `fail_on.severity` and permission `fail_on.permissions`
@@ -1233,6 +1243,74 @@ connection status; findings already observed are retained on session failure
 or timeout.
 
 Additive, optional fields for compatibility with older reports:
+
+- `observed` and `observed_calls` (`--canary-observe`): `observed` is true when
+  the stdio session ran under macOS `sandbox-exec` in a per-server trap. Direct
+  file writes by the server's process tree are allowed only in the trap's
+  TMPDIR, XDG_CACHE_HOME and XDG_STATE_HOME folders and to `/dev/null`; other
+  device writes (terminals, serial devices) are denied. Outbound TCP is allowed only
+  to loopback, with HTTP(S)_PROXY pointing at a local proxy that records the
+  requested host and refuses the request; loopback (including `*.localhost`,
+  `localhost.`, unspecified and IPv4-mapped loopback addresses) is exempt.
+  Unix-socket connections and name resolution for non-local hosts are denied,
+  so servers that need Docker, a database socket or DNS at startup may fail
+  under observation. The real HOME and working folder stay readable. The sandbox
+  is not total containment: Mach and XPC IPC to other processes stay open.
+  If the sandbox cannot start, or the platform has no `sandbox-exec`, a stdio
+  server is not started (`connection_status: failed`) rather than exercised
+  without it.
+
+  Each `observed_calls[]` entry records `tool_name`, `call`, `files_changed`
+  (trap-relative files, folders and links, first 10) and `files_changed_count`
+  (created, modified or removed; logs and caches count), `blocked_operations` (a
+  permission error on the server's stderr), `network_hosts` (validated
+  `host[:port]` only, at most 50 distinct per call; a request whose host cannot
+  be validated appears as `(unparsed request)`), `network_unknown` (requests
+  whose destination could not be validated, or past the proxy's 10,000-entry
+  log or 32-connection cap), `errored`,
+  `contradicted_hints`, `verdict` (`contradiction`, `consistent`, or
+  `inconclusive`) and `inconclusive_reason`.
+
+  Only `readOnlyHint` can be contradicted. A write is attributed to a tool only
+  when the server was quiet just before and just after the call and the
+  immediately following call of the same tool shows the same hint contradicted.
+  That confirming repeat counts against `--canary-calls`; when an effect first
+  appears on the last budgeted call, one extra call is made so it can be
+  confirmed, so `completed_calls` can exceed `requested_calls` by one.
+  These are `inconclusive`, never MCP055: a one-off effect; writes seen during
+  calls to different tools (the server's own logging or caching); writes by every
+  tool exercised (read-only or marked safe), when there are two or more, judged
+  from raw effects whether or not each was repeated (per-request activity);
+  with only one tool exercised, repeated changes to the same entries; a permission error, even
+  when the same call also changed files; activity just before or after the call; a trap that cannot be fully
+  scanned (over 5,000 entries, over two seconds, or unreadable; the trap is
+  walked through no-follow folder handles so a link cannot lead the scan
+  outside it, and entries are compared by size, modification and change time, and
+  mode, so an equal-length overwrite or a permission change still shows); and an
+  errored call without an effect.
+
+  Network requests are evidence, not contradictions: `openWorldHint` describes a
+  tool's domain, and a closed-world tool may call its own fixed remote backend.
+  When tools declaring `openWorldHint=false` make proxied requests, a canary
+  warning starting `For review:` lists the hosts, and counts requests to an
+  unknown destination (unparseable or past the caps); it does not change
+  `status`. Network
+  evidence covers only clients that honor HTTP(S)_PROXY: a direct connection is
+  denied by the sandbox but may not appear at all.
+
+  Inconclusive or unobserved calls, a sandbox that fails to start, and a server
+  that fails to start under the sandbox add canary warnings and make `status`
+  `partial`. If later analysis exhausts the per-server budget, the audit is
+  reported as `timeout` without partial static analysis, but completed
+  `canary` observations and confirmed MCP055 findings are kept. Non-stdio
+  transports leave `observed` false and add a warning; on a
+  platform without `/usr/bin/sandbox-exec`, `check` and `run_scan` refuse
+  `--canary-observe`. Each observed call adds about one second of quiet
+  checks, which counts against `--timeout`; `check` warns when `--timeout` looks
+  too short for the requested calls. One empty-argument call and its
+  repeat cannot prove a hint true for other inputs, and with a single tool
+  exercised, a server that writes a new file on every request can still be
+  reported against that tool.
 
 - `client_identity`: the presented MCP client name/version, e.g. `mcp-audit/3.0.0`;
   MCPAudit presents this explicit identity on stdio, Streamable HTTP, and SSE,
@@ -2554,6 +2632,7 @@ SARIF output uses stable MCP rule IDs:
 - `MCP041`: unbounded caller-controlled outbound destination (URL/host parameter or templated host authority; opt-in `--egress-check`)
 - `MCP042`: allowlisted destination with residual egress risk (multi-tenant data-bearing API or caller-attachable credentials; opt-in `--egress-check`)
 - `MCP043`: explicit served annotation contradicts MEDIUM-or-better keyword capability evidence (HIGH for destructive evidence, MEDIUM otherwise)
+- `MCP055`: a served `readOnlyHint=true` contradicted by writes observed in a sandboxed canary call and its immediate repeat (HIGH; opt-in `--canary-observe`, macOS stdio only)
 
 ## Compatibility Fixture
 

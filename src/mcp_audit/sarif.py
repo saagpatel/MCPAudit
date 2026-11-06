@@ -63,6 +63,7 @@ from mcp_audit.taxonomy import (
     FINDING_COPY,
     INJECTION_FINDINGS,
     INTEGRITY_FINDINGS,
+    OBSERVED_ANNOTATION_CONTRADICTION,
     PACKAGE_VERIFY_FINDINGS,
     PERMISSION_FINDINGS,
     PIN_INTEGRITY_FINDING,
@@ -267,7 +268,15 @@ class SarifGenerator:
                             "name": "mcp-audit",
                             "version": tool_version,
                             "informationUri": "https://github.com/saagpatel/MCPAudit",
-                            "rules": self._make_rules(config_health, source_skips=source_skips),
+                            "rules": self._make_rules(
+                                config_health,
+                                source_skips=source_skips,
+                                observed=any(
+                                    finding.basis == "observed"
+                                    for audit in report.audits
+                                    for finding in audit.annotation_findings
+                                ),
+                            ),
                         }
                     },
                     "results": self._make_results(
@@ -426,7 +435,11 @@ class SarifGenerator:
         return notifications
 
     def _make_rules(
-        self, config_health: list[ConfigHealthFinding] | None = None, *, source_skips: bool = False
+        self,
+        config_health: list[ConfigHealthFinding] | None = None,
+        *,
+        source_skips: bool = False,
+        observed: bool = False,
     ) -> list[dict[str, Any]]:
         """One driver rule per PermissionCategory plus injection rules MCP007/MCP008."""
         perm_rules = [
@@ -628,6 +641,22 @@ class SarifGenerator:
                     "defaultConfiguration": {"level": "warning"},
                 }
             ]
+            # MCP055 is listed only when a report carries one, so reports without
+            # --canary-observe keep their existing SARIF bytes.
+            + (
+                [
+                    {
+                        "id": OBSERVED_ANNOTATION_CONTRADICTION.rule_id,
+                        "name": "ObservedAnnotationContradiction",
+                        "shortDescription": {"text": OBSERVED_ANNOTATION_CONTRADICTION.title},
+                        "fullDescription": {"text": OBSERVED_ANNOTATION_CONTRADICTION.description},
+                        "help": {"text": OBSERVED_ANNOTATION_CONTRADICTION.remediation},
+                        "defaultConfiguration": {"level": "error"},
+                    }
+                ]
+                if observed
+                else []
+            )
             + injection_rules
             + ssrf_rules
             + egress_rules
@@ -777,8 +806,12 @@ class SarifGenerator:
                 "text": (
                     f"Tool '{finding.tool_name}' on server '{audit.server.name}' declares "
                     f"{finding.hint}={str(finding.declared_value).lower()}, contradicting "
-                    f"{finding.category.value} keyword evidence ({finding.confidence.value}). "
-                    f"Suggested action: {finding.remediation}"
+                    + (
+                        f"behavior observed in a sandboxed canary call ({'; '.join(finding.evidence)}). "
+                        if finding.basis == "observed"
+                        else f"{finding.category.value} keyword evidence ({finding.confidence.value}). "
+                    )
+                    + f"Suggested action: {finding.remediation}"
                 )
             },
             "locations": [

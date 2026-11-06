@@ -23,7 +23,7 @@ import time
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from itertools import chain
 from pathlib import Path
@@ -41,7 +41,9 @@ from mcp_audit.connector import ServerConnector, describe_exception
 from mcp_audit.coverage import OPTIONAL_CHECKS, build_coverage
 from mcp_audit.discovery import ConfigParseError, discover_all_configs
 from mcp_audit.models import (
+    AnnotationFinding,
     AuditReport,
+    CanarySummary,
     CheckCoverage,
     ClientType,
     ConnectionMode,
@@ -56,6 +58,7 @@ from mcp_audit.models import (
     ShadowingFinding,
     TrifectaFinding,
 )
+from mcp_audit.observe import observation_supported, observed_annotation_findings
 from mcp_audit.overrides import OverrideApplier, OverrideConfig
 from mcp_audit.redaction import redact_data, redact_text, redact_url
 from mcp_audit.schema_rules import scan_tool_schema
@@ -102,6 +105,7 @@ class ScanOptions:
     canary_calls: int = 5
     canary_identities: int | None = None  # transport default: stdio=2, HTTP/SSE=1
     canary_safe_tools: tuple[str, ...] = ()  # server/tool qualified operator marks
+    canary_observe: bool = False  # run stdio canary calls in the macOS sandbox trap (MCP055)
 
     # Check tuning
     ssrf_allowlist: str | None = None
@@ -162,6 +166,9 @@ class _ScanContext:
     completed: list[set[str]]
     package_coverage: dict[str, list[CheckCoverage]]
     empty_risk_score: RiskScore | None = None
+    # Completed canary observations and confirmed MCP055 findings per server index. They come
+    # from finished calls, so an analysis timeout keeps them while discarding partial analysis.
+    observations: dict[int, tuple[CanarySummary, list[AnnotationFinding]]] = field(default_factory=dict)
 
     def warn(
         self, code: str, message: str, *, check: str | None = None, servers: list[str] | None = None
@@ -256,11 +263,16 @@ async def _audit_one_guarded(context: _ScanContext, idx: int, srv: ServerConfig)
     try:
         await _analyze_server(context, idx, srv)
     except TimeoutError:
-        context.audits[idx] = ServerAudit(
+        timed_out = ServerAudit(
             server=srv,
             connection_status="timeout",
             connection_error="Per-server wall-clock budget exhausted; analysis is incomplete.",
         )
+        if idx in context.observations:
+            # Finished canary calls are evidence, not partial analysis: keep them.
+            timed_out.canary, observed = context.observations[idx]
+            timed_out.annotation_findings = list(observed)
+        context.audits[idx] = timed_out
         context.completed[idx].clear()
         context.warn(
             "analysis_timeout",
@@ -313,6 +325,10 @@ async def run_scan(
         raise ValueError("Canary calls must be between 1 and 100.")
     if opts.canary_identities is not None and opts.canary_identities not in (1, 2):
         raise ValueError("Canary identities must be 1 or 2.")
+    if opts.canary_observe and not opts.canary_check:
+        raise ValueError("--canary-observe requires --canary-check.")
+    if opts.canary_observe and not observation_supported(True):
+        raise ValueError("--canary-observe needs macOS with /usr/bin/sandbox-exec.")
     if opts.canary_check and servers is None and not (opts.config_only and opts.extra_config):
         raise ValueError("--canary-check requires --config PATH --config-only (no workstation discovery).")
     applier = override_applier if override_applier is not None else OverrideApplier(OverrideConfig())
@@ -696,6 +712,7 @@ async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) ->
                 canary_calls=opts.canary_calls,
                 canary_identities=opts.canary_identities,
                 canary_baseline=baseline,
+                canary_observe=opts.canary_observe,
                 safe_tools=frozenset(
                     mark[len(srv.name) + 1 :]
                     for mark in opts.canary_safe_tools
@@ -709,6 +726,10 @@ async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) ->
                 check="canary_check",
                 servers=[srv.name],
             )
+        if audit.canary is not None and audit.canary.observed:
+            # Record finished observations before any later step can time out (pin handling,
+            # analysis, LLM): they come from completed calls, so a timeout must keep them.
+            context.observations[idx] = (audit.canary, observed_annotation_findings(audit))
     else:
         async with connection_limiter:
             deadline = time.monotonic() + opts.timeout
@@ -734,6 +755,8 @@ async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) ->
             warn("pin_integrity_failed", redact_text(message), check="pin_check", servers=[srv.name])
 
     if audit.connection_status in {"failed", "timeout"} and time.monotonic() >= deadline:
+        # Observed contradictions come only from recorded calls; keep them on timeout.
+        audit.annotation_findings = observed_annotation_findings(audit)
         audits[idx] = audit
         return
 
@@ -838,6 +861,9 @@ async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) ->
     elif opts.llm_analysis and llm_unavailable_summary is not None:
         audit.llm_analysis = llm_unavailable_summary.model_copy(deep=True)
 
+    # Observed findings were recorded right after the connection (see above).
+    observed_findings = context.observations[idx][1] if idx in context.observations else []
+    audit.annotation_findings = list(observed_findings)
     with analysis_budget(deadline):
         # Apply user overrides between analysis and scoring
         audit.permissions = applier.apply(srv.name, raw_findings)
@@ -846,7 +872,7 @@ async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) ->
             finding
             for tool, text in zip(audit.tools, tool_texts, strict=True)
             for finding in analyzer.analyze_annotation_contradictions(tool, agent_text=text)
-        ]
+        ] + observed_findings
         audit.capability_findings = analyzer.analyze_capabilities(audit.prompts, audit.resources)
         tool_schema_incomplete: list[str] = []
         audit.schema_findings = [

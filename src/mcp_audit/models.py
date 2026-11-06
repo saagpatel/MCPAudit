@@ -2,17 +2,21 @@
 
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Any, Literal, Self
+from typing import TYPE_CHECKING, Any, Literal, Self
 
 from pydantic import (
     BaseModel,
     Field,
+    PrivateAttr,
     SerializerFunctionWrapHandler,
     computed_field,
     field_validator,
     model_serializer,
     model_validator,
 )
+
+if TYPE_CHECKING:
+    from mcp_audit.taxonomy import FindingMetadata
 
 
 class TransportType(StrEnum):
@@ -343,9 +347,14 @@ class CapabilityTarget(StrEnum):
 
 
 class AnnotationFinding(ReferencedFinding):
-    """An explicit served annotation contradicts keyword capability evidence."""
+    """An explicit served annotation contradicts capability evidence.
+
+    `basis` names the evidence: keyword capability evidence (MCP043) or behavior
+    observed during a sandboxed canary call (MCP055). Older reports default to keywords.
+    """
 
     kind: Literal["annotation_contradiction"] = "annotation_contradiction"
+    basis: Literal["keywords", "observed"] = "keywords"
     tool_name: str
     hint: str
     declared_value: bool
@@ -355,26 +364,33 @@ class AnnotationFinding(ReferencedFinding):
     evidence: list[str]
     field_paths: list[str] = Field(default_factory=list)
 
+    @model_serializer(mode="wrap")
+    def _serialize_basis(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        # Keyword findings keep their pre-MCP055 bytes; only observed findings name a basis.
+        if self.basis == "keywords":
+            data.pop("basis", None)
+        return data
+
+    def _metadata(self) -> "FindingMetadata":
+        from mcp_audit.taxonomy import ANNOTATION_CONTRADICTION, OBSERVED_ANNOTATION_CONTRADICTION
+
+        return OBSERVED_ANNOTATION_CONTRADICTION if self.basis == "observed" else ANNOTATION_CONTRADICTION
+
     @computed_field  # type: ignore[prop-decorator]
     @property
     def rule_id(self) -> str:
-        from mcp_audit.taxonomy import ANNOTATION_CONTRADICTION
-
-        return ANNOTATION_CONTRADICTION.rule_id
+        return self._metadata().rule_id
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def title(self) -> str:
-        from mcp_audit.taxonomy import ANNOTATION_CONTRADICTION
-
-        return ANNOTATION_CONTRADICTION.title
+        return self._metadata().title
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def remediation(self) -> str:
-        from mcp_audit.taxonomy import ANNOTATION_CONTRADICTION
-
-        return ANNOTATION_CONTRADICTION.remediation
+        return self._metadata().remediation
 
 
 class PermissionFinding(ReferencedFinding):
@@ -958,6 +974,30 @@ CANARY_NOT_EXCLUDED: dict[str, str] = {
 }
 
 
+ObservedVerdict = Literal["consistent", "contradiction", "inconclusive"]
+
+
+class ObservedCall(BaseModel):
+    """One sandboxed canary call and what it did (`check --canary-observe`)."""
+
+    tool_name: str
+    call: int
+    files_changed: list[str] = Field(default_factory=list)  # trap-relative, first 10
+    files_changed_count: int = 0  # created, modified or removed in the trap
+    blocked_operations: bool = False  # a permission error on stderr: a hint, never a finding
+    network_hosts: list[str] = Field(default_factory=list)  # validated host[:port] only
+    network_unknown: int = 0  # proxy requests with no validated destination, or past the caps
+    errored: bool = False
+    contradicted_hints: list[str] = Field(default_factory=list)
+    verdict: ObservedVerdict = "consistent"
+    inconclusive_reason: str = ""
+    # Every changed path, kept for attribution only; the report shows the first 10.
+    _changed_paths: set[str] = PrivateAttr(default_factory=set)
+    _created_paths: set[str] = PrivateAttr(default_factory=set)
+    _closed_world: bool = PrivateAttr(default=False)  # the tool declared openWorldHint=false
+    _read_only: bool = PrivateAttr(default=False)  # the tool declared readOnlyHint=true
+
+
 class CanarySummary(BaseModel):
     """Bounded runtime exercise coverage; complete does not mean trustworthy."""
 
@@ -974,6 +1014,18 @@ class CanarySummary(BaseModel):
     current_hash: str | None = None
     status: Literal["complete", "partial", "no_safe_tools"] = "partial"
     warnings: list[str] = Field(default_factory=list)
+    observed: bool = False  # calls ran in the --canary-observe sandbox
+    observed_calls: list[ObservedCall] = Field(default_factory=list)
+
+    @model_serializer(mode="wrap")
+    def _serialize_observed(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        # Canary reports without --canary-observe keep their existing bytes.
+        if not self.observed:
+            data.pop("observed", None)
+        if not self.observed_calls:
+            data.pop("observed_calls", None)
+        return data
 
     @property
     def not_excluded_descriptions(self) -> list[str]:

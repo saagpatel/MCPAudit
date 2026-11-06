@@ -461,6 +461,7 @@ mcp_audit/llm_analyzer.py
 mcp_audit/models.py
 mcp_audit/normalize.py
 mcp_audit/oauth_urls.py
+mcp_audit/observe.py
 mcp_audit/otel.py
 mcp_audit/overrides.py
 mcp_audit/pin_cli.py
