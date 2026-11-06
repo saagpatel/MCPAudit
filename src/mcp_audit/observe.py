@@ -134,10 +134,17 @@ def is_loopback(host: str) -> bool:
 
 
 class _ProxyHandler(socketserver.StreamRequestHandler):
+    timeout = 2  # an idle connection must not pin a handler thread
+
     def handle(self) -> None:
-        line = self.rfile.readline(4096).decode("latin-1").strip()
-        # Loopback is exempt via NO_PROXY, so any request reaching the proxy is open-world;
-        # one whose host cannot be validated is still counted, under an opaque label.
+        try:
+            line = self.rfile.readline(4096).decode("latin-1").strip()
+        except OSError:
+            return
+        if not line:
+            return  # an opened-and-dropped connection is not a request
+        # A request whose destination cannot be validated is counted, but it is
+        # missing evidence, never proof of an external destination.
         self.server.record(_request_host(line) or UNPARSED_REQUEST)  # type: ignore[attr-defined]
         self.wfile.write(b"HTTP/1.1 502 Refused by mcp-audit canary observation\r\nContent-Length: 0\r\n\r\n")
 
@@ -218,6 +225,7 @@ class ObservationTrap:
             raise
         self.stderr = StderrScanner()
         self._last_end: _State | None = None
+        self._noisy_before = False
 
     @property
     def proxy(self) -> _LoggingProxy:
@@ -254,15 +262,25 @@ class ObservationTrap:
         return _State(files, requests, logged, self.stderr.count)
 
     async def begin(self) -> _State:
-        return await self._state()
+        """Start a call window, first checking the server is quiet (startup work included)."""
+        settle_start = await self._state()
+        await anyio.sleep(SETTLE_SECONDS)
+        start = await self._state()
+        self._noisy_before = settle_start != start or (
+            self._last_end is not None and self._last_end != settle_start
+        )
+        return start
 
     async def end(
         self, start: _State, tool_name: str, call: int, annotations: ToolAnnotations | None, errored: bool
     ) -> ObservedCall:
         await anyio.sleep(SETTLE_SECONDS)
         after = await self._state()
-        previous, self._last_end = self._last_end, after
-        spillover = previous is not None and previous != start
+        await anyio.sleep(SETTLE_SECONDS)
+        post = await self._state()
+        self._last_end = post
+        # Quiet before and after the window, or the effect cannot be pinned on this call.
+        spillover = self._noisy_before or post != after
         if start.files is None or after.files is None:
             changed: list[str] = []
             oversized = True
@@ -275,8 +293,12 @@ class ObservationTrap:
             )
         window = self.proxy.log[start.logged : after.logged]
         unlogged = (after.requests - start.requests) - len(window)
-        hosts = sorted(set(window))[:MAX_REPORTED_HOSTS]
-        open_world = [h for h in hosts if not is_loopback(h)]
+        distinct = set(window)
+        unparsed = UNPARSED_REQUEST in distinct
+        # Classify the whole window before capping what the report keeps.
+        open_world = sorted(h for h in distinct if h != UNPARSED_REQUEST and not is_loopback(h))
+        others = sorted(distinct - set(open_world))
+        hosts = (open_world + others)[:MAX_REPORTED_HOSTS]
         blocked = after.blocked > start.blocked
         contradicted: list[str] = []
         if annotations and annotations.read_only_hint is True and changed:
@@ -286,10 +308,12 @@ class ObservationTrap:
         reason = ""
         if oversized:
             reason = f"the trap held more than {MAX_SNAPSHOT_FILES} files"
+        elif spillover:
+            reason = "activity just before or after the call could belong to other work"
         elif unlogged > 0 and not open_world and annotations and annotations.open_world_hint is False:
             reason = f"{unlogged} network request(s) arrived after the proxy log filled"
-        elif spillover:
-            reason = "activity between calls could belong to an earlier call"
+        elif unparsed and not open_world and annotations and annotations.open_world_hint is False:
+            reason = "a proxy request had no destination that could be validated"
         elif blocked:
             reason = "a permission error was reported; it may have been a blocked write or a denied read"
         elif errored and not (changed or hosts or unlogged):
@@ -324,6 +348,31 @@ class ObservationTrap:
         shutil.rmtree(self.root, ignore_errors=True)
 
 
+def confirm_contradictions(calls: list[ObservedCall]) -> None:
+    """A contradiction stands only when a repeat call of the same tool shows it again.
+
+    A one-off effect may have been a delayed effect of another call; it is downgraded
+    to inconclusive rather than pinned on whichever tool happened to be running.
+    """
+    seen: dict[tuple[str, str], list[ObservedCall]] = {}
+    for observed in calls:
+        for hint in observed.contradicted_hints:
+            seen.setdefault((observed.tool_name, hint), []).append(observed)
+    for (tool, hint), hits in seen.items():
+        if len(hits) >= 2:
+            continue
+        repeated = any(c.tool_name == tool and c.call > hits[0].call for c in calls)
+        for observed in hits:
+            observed.contradicted_hints = [h for h in observed.contradicted_hints if h != hint]
+            if not observed.contradicted_hints:
+                observed.verdict = "inconclusive"
+                observed.inconclusive_reason = (
+                    "the effect did not recur on a repeat call of this tool"
+                    if repeated
+                    else "seen once; no repeat call was left in the budget to confirm it"
+                )
+
+
 def observed_annotation_findings(audit: ServerAudit) -> list[AnnotationFinding]:
     """One MCP055 finding per tool and contradicted hint, from attributable observed effects."""
     if audit.canary is None:
@@ -338,7 +387,7 @@ def observed_annotation_findings(audit: ServerAudit) -> list[AnnotationFinding]:
                     f"{observed.files_changed_count} file(s) in the trap"
                 )
             else:
-                hosts = [h for h in observed.network_hosts if not is_loopback(h)]
+                hosts = [h for h in observed.network_hosts if h != UNPARSED_REQUEST and not is_loopback(h)]
                 evidence.append(f"call {observed.call}: network request to {', '.join(hosts)}")
     return [
         AnnotationFinding(
@@ -352,4 +401,5 @@ def observed_annotation_findings(audit: ServerAudit) -> list[AnnotationFinding]:
             evidence=sorted(set(evidence)),
         )
         for (tool, hint), evidence in sorted(seen.items())
+        if len(evidence) >= 2  # confirmed by a repeat call (see confirm_contradictions)
     ]

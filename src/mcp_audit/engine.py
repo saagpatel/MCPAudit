@@ -739,6 +739,8 @@ async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) ->
             warn("pin_integrity_failed", redact_text(message), check="pin_check", servers=[srv.name])
 
     if audit.connection_status in {"failed", "timeout"} and time.monotonic() >= deadline:
+        # Observed contradictions come only from recorded calls; keep them on timeout.
+        audit.annotation_findings = observed_annotation_findings(audit)
         audits[idx] = audit
         return
 

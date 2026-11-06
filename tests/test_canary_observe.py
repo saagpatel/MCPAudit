@@ -5,10 +5,11 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import anyio
 import pytest
 
 from mcp_audit.engine import ScanOptions, run_scan
-from mcp_audit.models import ServerAudit, TransportType
+from mcp_audit.models import ServerAudit, ToolAnnotations, TransportType
 from mcp_audit.observe import (
     UNSUPPORTED_WARNING,
     StderrScanner,
@@ -35,7 +36,7 @@ def _private_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 async def _observed(mode: str) -> ServerAudit:
     config = make_server_config(name="liar", command=sys.executable, args=[FIXTURE, mode])
     report = await run_scan(
-        ScanOptions(canary_check=True, canary_calls=6, canary_observe=True, timeout=30), servers=[config]
+        ScanOptions(canary_check=True, canary_calls=12, canary_observe=True, timeout=90), servers=[config]
     )
     return report.audits[0]
 
@@ -45,15 +46,22 @@ async def _observed(mode: str) -> ServerAudit:
 async def test_observed_lies_become_mcp055_and_control_stays_clean() -> None:
     audit = await _observed("liar")
     assert audit.canary is not None and audit.canary.observed
-    verdicts = {c.tool_name: (c.verdict, tuple(c.contradicted_hints)) for c in audit.canary.observed_calls}
+    verdicts: dict[str, set[tuple[str, tuple[str, ...]]]] = {}
+    for c in audit.canary.observed_calls:
+        verdicts.setdefault(c.tool_name, set()).add((c.verdict, tuple(c.contradicted_hints)))
     assert verdicts == {
-        "cache_info": ("contradiction", ("readOnlyHint",)),
-        "status": ("contradiction", ("readOnlyHint",)),
-        "weather": ("contradiction", ("openWorldHint",)),
-        "profile": ("inconclusive", ()),
-        "local_status": ("consistent", ()),
-        "clock": ("consistent", ()),
+        "cache_info": {("contradiction", ("readOnlyHint",))},
+        "status": {("contradiction", ("readOnlyHint",))},
+        "weather": {("contradiction", ("openWorldHint",))},
+        "profile": {("inconclusive", ())},
+        "local_status": {("consistent", ())},
+        "clock": {("consistent", ())},
     }
+    # Each liar was re-called immediately, and the repeat confirmed it.
+    calls = [c.tool_name for c in audit.canary.observed_calls]
+    for name in ("cache_info", "status", "weather"):
+        first = calls.index(name)
+        assert calls[first + 1] == name
     observed = {(f.tool_name, f.hint) for f in audit.annotation_findings if f.rule_id == "MCP055"}
     assert observed == {
         ("cache_info", "readOnlyHint"),
@@ -175,7 +183,7 @@ async def test_sarif_lists_mcp055_only_when_observed() -> None:
 
     config = make_server_config(name="liar", command=sys.executable, args=[FIXTURE, "liar"])
     report = await run_scan(
-        ScanOptions(canary_check=True, canary_calls=6, canary_observe=True, timeout=30), servers=[config]
+        ScanOptions(canary_check=True, canary_calls=12, canary_observe=True, timeout=90), servers=[config]
     )
     run = SarifGenerator().generate(report)["runs"][0]
     assert "MCP055" in {rule["id"] for rule in run["tool"]["driver"]["rules"]}
@@ -223,19 +231,117 @@ async def test_proxy_log_overflow_is_inconclusive_not_consistent(monkeypatch: py
         trap.close()
 
 
+def _closed() -> ToolAnnotations:
+    return ToolAnnotations(read_only_hint=True, open_world_hint=False)
+
+
 @pytest.mark.anyio
-async def test_unparsed_proxy_request_still_counts_as_open_world() -> None:
-    from mcp_audit.models import ToolAnnotations
+@pytest.mark.parametrize("request_line", [b"GET http://<junk>/ HTTP/1.1", b"GET /health HTTP/1.1"])
+async def test_unparsed_proxy_request_is_inconclusive_not_evidence(request_line: bytes) -> None:
     from mcp_audit.observe import UNPARSED_REQUEST, ObservationTrap
 
     trap = ObservationTrap()
     try:
         start = await trap.begin()
-        _proxy_request(trap, b"GET http://<junk>/ HTTP/1.1")
-        call = await trap.end(
-            start, "status", 1, ToolAnnotations(read_only_hint=True, open_world_hint=False), errored=False
-        )
+        _proxy_request(trap, request_line)
+        call = await trap.end(start, "status", 1, _closed(), errored=False)
         assert call.network_hosts == [UNPARSED_REQUEST]
-        assert call.verdict == "contradiction" and call.contradicted_hints == ["openWorldHint"]
+        assert call.verdict == "inconclusive" and call.contradicted_hints == []
+        assert "could be validated" in call.inconclusive_reason
     finally:
         trap.close()
+
+
+@pytest.mark.anyio
+async def test_empty_proxy_connection_is_not_a_request() -> None:
+    import socket
+
+    from mcp_audit.observe import ObservationTrap
+
+    trap = ObservationTrap()
+    try:
+        with socket.create_connection(("127.0.0.1", trap.proxy.port), timeout=5):
+            pass  # open and drop
+        await anyio.sleep(0.2)
+        assert trap.proxy.position() == (0, 0)
+    finally:
+        trap.close()
+
+
+@pytest.mark.anyio
+async def test_external_host_survives_a_loopback_flood() -> None:
+    from mcp_audit.observe import ObservationTrap
+
+    trap = ObservationTrap()
+    try:
+        start = await trap.begin()
+        for port in range(1, 61):
+            _proxy_request(trap, f"GET http://127.0.0.1:{port}/ HTTP/1.1".encode())
+        _proxy_request(trap, b"GET http://zz-external.example.com/ HTTP/1.1")
+        call = await trap.end(start, "status", 1, _closed(), errored=False)
+        assert call.verdict == "contradiction"
+        assert call.network_hosts[0] == "zz-external.example.com"
+    finally:
+        trap.close()
+
+
+@pytest.mark.anyio
+async def test_activity_just_before_a_call_is_not_pinned_on_it() -> None:
+    """Startup work (or another call's delayed effect) settling into the window."""
+    from mcp_audit.observe import SETTLE_SECONDS, ObservationTrap
+
+    trap = ObservationTrap()
+    try:
+        async with anyio.create_task_group() as tg:
+
+            async def late_write() -> None:
+                await anyio.sleep(SETTLE_SECONDS / 2)
+                (trap.writable / "tmp" / "telemetry.json").write_text("{}")
+
+            tg.start_soon(late_write)
+            start = await trap.begin()
+        call = await trap.end(start, "status", 1, _closed(), errored=False)
+        assert call.verdict == "inconclusive" and "before or after" in call.inconclusive_reason
+    finally:
+        trap.close()
+
+
+@pytest.mark.anyio
+async def test_errored_call_without_effect_is_inconclusive() -> None:
+    from mcp_audit.observe import ObservationTrap
+
+    trap = ObservationTrap()
+    try:
+        start = await trap.begin()
+        call = await trap.end(start, "status", 1, _closed(), errored=True)
+        assert call.verdict == "inconclusive" and "errored" in call.inconclusive_reason
+    finally:
+        trap.close()
+
+
+def test_one_off_contradiction_is_not_pinned_without_a_repeat() -> None:
+    """A delayed effect from tool A landing once in tool B's window must not accuse B."""
+    from mcp_audit.models import ObservedCall
+    from mcp_audit.observe import confirm_contradictions
+
+    calls = [
+        ObservedCall(tool_name="a", call=1),
+        ObservedCall(
+            tool_name="b",
+            call=2,
+            verdict="contradiction",
+            contradicted_hints=["readOnlyHint"],
+            files_changed_count=1,
+        ),
+        ObservedCall(tool_name="b", call=3),
+        ObservedCall(
+            tool_name="c",
+            call=4,
+            verdict="contradiction",
+            contradicted_hints=["readOnlyHint"],
+            files_changed_count=1,
+        ),
+    ]
+    confirm_contradictions(calls)
+    assert calls[1].verdict == "inconclusive" and "did not recur" in calls[1].inconclusive_reason
+    assert calls[3].verdict == "inconclusive" and "no repeat call" in calls[3].inconclusive_reason

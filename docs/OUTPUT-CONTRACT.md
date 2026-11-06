@@ -609,8 +609,9 @@ MCP055 reuses the same `annotation_findings` entry with the additive field
 It is produced only by `check --canary-check --canary-observe`, from tools the
 canary actually called inside the observation sandbox: `readOnlyHint=true` with a
 file created, changed or removed in the trap (`category: file_write`), or
-`openWorldHint=false` with a non-loopback host requested through the trap's
-proxy (`category: network`). Permission errors never produce MCP055.
+`openWorldHint=false` with a validated non-loopback host requested through the
+trap's proxy (`category: network`), each confirmed by an immediate repeat call of
+the same tool. Permission errors never produce MCP055.
 Confidence is HIGH and severity `high`; `evidence` names the call and the effect,
 never file contents, URL paths or queries.
 
@@ -1257,10 +1258,15 @@ Additive, optional fields for compatibility with older reports:
   server's stderr), `network_hosts` (validated `host[:port]` only, at most 50 distinct per
   call; a request whose host cannot be validated appears as `(unparsed request)`), `errored`, `contradicted_hints`, `verdict` (`contradiction`,
   `consistent`, or `inconclusive`) and `inconclusive_reason`. Only files changed
-  in the trap and non-loopback hosts are attributable; a permission error,
+  in the trap and validated non-loopback hosts are attributable, and only when
+  the server was quiet just before and just after the call and an immediate
+  repeat call of the same tool shows the same effect; a one-off effect is
+  `inconclusive`. Each observed call adds about one second of quiet checks, which
+  counts against `--timeout`; a permission error,
   activity between calls, a trap over 5,000 files, network requests from a
-  closed-world tool that arrived after the proxy's 10,000-entry log filled, or an
-  errored call without an effect makes the call `inconclusive`, never MCP055. Inconclusive or unobserved
+  closed-world tool that arrived after the proxy's 10,000-entry log filled, a
+  proxy request without a destination that can be validated, or an errored call
+  without an effect makes the call `inconclusive`, never MCP055. Inconclusive or unobserved
   calls, a sandbox that fails to start, and a server that fails to start under
   the sandbox add canary warnings and make `status` `partial`. Unsupported
   platforms or non-stdio transports leave `observed` false and add a warning.

@@ -55,6 +55,7 @@ from mcp_audit.observe import (
     STARTUP_FAILED_WARNING,
     UNSUPPORTED_WARNING,
     ObservationTrap,
+    confirm_contradictions,
     observation_supported,
 )
 from mcp_audit.protocol import ProtocolCapture, cache_hint_failure, observe_session, observe_transport
@@ -519,6 +520,7 @@ def _observation_warnings(audit: ServerAudit) -> None:
     """Surface observation gaps on the canary summary; any gap makes coverage partial."""
     summary = audit.canary
     assert summary is not None
+    confirm_contradictions(summary.observed_calls)
     added: list[str] = []
     if audit.connection_status in {"failed", "timeout"} and not summary.completed_calls:
         added.append(STARTUP_FAILED_WARNING)
@@ -985,6 +987,9 @@ class ServerConnector:
             for finding in pinned_drift:
                 finding.summary = "Tool surface differs from the v2 pin at the first canary listing."
             probe.audit.drift_findings.extend(pinned_drift)
+        rotation = 0
+        confirm_next: str | None = None
+        confirmation_requested: set[str] = set()
         for call in range(1, probe.calls + 1):
             if "tools" not in capabilities.surface:
                 capabilities = await self._list_capabilities(
@@ -1009,14 +1014,23 @@ class ServerConnector:
                 )
                 summary.warnings.append(stop_message)
                 return capabilities
-            tool = eligible[(call - 1) % len(eligible)]
+            by_name = {t.name: t for t in eligible}
+            if confirm_next in by_name:
+                # Re-call a tool right after an observed effect so one-off effects are not pinned on it.
+                tool, confirm_next = by_name[confirm_next], None
+            else:
+                tool, rotation = eligible[rotation % len(eligible)], rotation + 1
             mark = await probe.observer.begin() if probe.observer else None
             result = await session.call_tool(tool.name, {})
             summary.completed_calls = call
             if probe.observer is not None and mark is not None:
-                summary.observed_calls.append(
-                    await probe.observer.end(mark, tool.name, call, tool.annotations, bool(result.is_error))
+                observed = await probe.observer.end(
+                    mark, tool.name, call, tool.annotations, bool(result.is_error)
                 )
+                summary.observed_calls.append(observed)
+                if observed.contradicted_hints and tool.name not in confirmation_requested:
+                    confirmation_requested.add(tool.name)
+                    confirm_next = tool.name
             text = "\n".join(_result_text(result.model_dump(mode="json", by_alias=True)))
             self._scan_runtime_text(probe, tool.name, text, call, CapabilityTarget.TOOL)
             if result.is_error:
