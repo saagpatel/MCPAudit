@@ -1254,12 +1254,13 @@ Additive, optional fields for compatibility with older reports:
   other processes stays open. Each `observed_calls[]` entry records `tool_name`,
   `call`, `files_changed` (trap-relative, first 10) and `files_changed_count`
   (created, modified or removed), `blocked_operations` (a permission error on the
-  server's stderr), `network_hosts` (validated `host[:port]` only, at most 50 per
-  server), `errored`, `contradicted_hints`, `verdict` (`contradiction`,
+  server's stderr), `network_hosts` (validated `host[:port]` only, at most 50 distinct per
+  call; a request whose host cannot be validated appears as `(unparsed request)`), `errored`, `contradicted_hints`, `verdict` (`contradiction`,
   `consistent`, or `inconclusive`) and `inconclusive_reason`. Only files changed
   in the trap and non-loopback hosts are attributable; a permission error,
-  activity between calls, a trap over 5,000 files, or an errored call without an
-  effect makes the call `inconclusive`, never MCP055. Inconclusive or unobserved
+  activity between calls, a trap over 5,000 files, network requests from a
+  closed-world tool that arrived after the proxy's 10,000-entry log filled, or an
+  errored call without an effect makes the call `inconclusive`, never MCP055. Inconclusive or unobserved
   calls, a sandbox that fails to start, and a server that fails to start under
   the sandbox add canary warnings and make `status` `partial`. Unsupported
   platforms or non-stdio transports leave `observed` false and add a warning.

@@ -186,3 +186,56 @@ async def test_sarif_lists_mcp055_only_when_observed() -> None:
     report.audits[0].annotation_findings = []
     plain = SarifGenerator().generate(report)["runs"][0]["tool"]["driver"]["rules"]
     assert "MCP055" not in {rule["id"] for rule in plain}
+
+
+def _proxy_request(trap: object, request_line: bytes) -> None:
+    import socket
+
+    with socket.create_connection(("127.0.0.1", trap.proxy.port), timeout=5) as conn:  # type: ignore[attr-defined]
+        conn.sendall(request_line + b"\r\n\r\n")
+        conn.recv(256)
+
+
+@pytest.mark.anyio
+async def test_proxy_log_overflow_is_inconclusive_not_consistent(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Requests past the log cap must not let a closed-world tool look clean."""
+    import mcp_audit.observe as observe
+    from mcp_audit.models import ToolAnnotations
+
+    monkeypatch.setattr(observe, "MAX_PROXY_LOG", 2)
+    closed = ToolAnnotations(read_only_hint=True, open_world_hint=False)
+    trap = observe.ObservationTrap()
+    try:
+        for _ in range(2):  # earlier activity fills the log
+            _proxy_request(trap, b"GET http://startup.example.com/ HTTP/1.1")
+        start = await trap.begin()
+        _proxy_request(trap, b"GET http://exfil.example.com/ HTTP/1.1")
+        call = await trap.end(start, "status", 1, closed, errored=False)
+        assert call.verdict == "inconclusive"
+        assert "proxy log filled" in call.inconclusive_reason
+        assert call.contradicted_hints == []
+        # A tool that does not claim closed-world is unaffected by the overflow.
+        start = await trap.begin()
+        _proxy_request(trap, b"GET http://exfil.example.com/ HTTP/1.1")
+        open_world = ToolAnnotations(read_only_hint=True, open_world_hint=True)
+        assert (await trap.end(start, "search", 2, open_world, errored=False)).verdict == "consistent"
+    finally:
+        trap.close()
+
+
+@pytest.mark.anyio
+async def test_unparsed_proxy_request_still_counts_as_open_world() -> None:
+    from mcp_audit.models import ToolAnnotations
+    from mcp_audit.observe import UNPARSED_REQUEST, ObservationTrap
+
+    trap = ObservationTrap()
+    try:
+        start = await trap.begin()
+        _proxy_request(trap, b"GET http://<junk>/ HTTP/1.1")
+        call = await trap.end(
+            start, "status", 1, ToolAnnotations(read_only_hint=True, open_world_hint=False), errored=False
+        )
+        assert call.network_hosts == [UNPARSED_REQUEST]
+        assert call.verdict == "contradiction" and call.contradicted_hints == ["openWorldHint"]
+    finally:
+        trap.close()

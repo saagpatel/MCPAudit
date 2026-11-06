@@ -60,7 +60,9 @@ BLOCKED_MARKERS = (b"operation not permitted", b"permissionerror", b"permission 
 SETTLE_SECONDS = 0.3  # let a child process finish writing before the after-snapshot
 MAX_REPORTED_PATHS = 10
 MAX_SNAPSHOT_FILES = 5000
-MAX_RECORDED_HOSTS = 50
+MAX_PROXY_LOG = 10_000  # bounded memory against a request flood; overflow is detected, not hidden
+MAX_REPORTED_HOSTS = 50  # per call, distinct hosts kept in the report
+UNPARSED_REQUEST = "(unparsed request)"
 LOOPBACK_NAMES = {"localhost", "localhost.localdomain"}
 _HOSTNAME = re.compile(r"^[a-z0-9.-]{1,253}$|^\[[0-9a-f:.]+\]$")
 UNSUPPORTED_WARNING = (
@@ -134,10 +136,9 @@ def is_loopback(host: str) -> bool:
 class _ProxyHandler(socketserver.StreamRequestHandler):
     def handle(self) -> None:
         line = self.rfile.readline(4096).decode("latin-1").strip()
-        host = _request_host(line)
-        hosts: list[str] = self.server.hosts  # type: ignore[attr-defined]
-        if host and len(hosts) < MAX_RECORDED_HOSTS:
-            hosts.append(host)
+        # Loopback is exempt via NO_PROXY, so any request reaching the proxy is open-world;
+        # one whose host cannot be validated is still counted, under an opaque label.
+        self.server.record(_request_host(line) or UNPARSED_REQUEST)  # type: ignore[attr-defined]
         self.wfile.write(b"HTTP/1.1 502 Refused by mcp-audit canary observation\r\nContent-Length: 0\r\n\r\n")
 
 
@@ -147,12 +148,24 @@ class _LoggingProxy(socketserver.ThreadingTCPServer):
 
     def __init__(self) -> None:
         super().__init__(("127.0.0.1", 0), _ProxyHandler)
-        self.hosts: list[str] = []
+        self._lock = threading.Lock()
+        self.total = 0  # every request, logged or not
+        self.log: list[str] = []
         threading.Thread(target=self.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True).start()
 
     @property
     def port(self) -> int:
         return int(self.server_address[1])
+
+    def record(self, host: str) -> None:
+        with self._lock:
+            self.total += 1
+            if len(self.log) < MAX_PROXY_LOG:
+                self.log.append(host)
+
+    def position(self) -> tuple[int, int]:
+        with self._lock:
+            return self.total, len(self.log)
 
 
 def sandbox_profile(trap: Path) -> str:
@@ -182,7 +195,8 @@ def _snapshot(root: Path) -> dict[str, tuple[int, int]] | None:
 @dataclass(frozen=True)
 class _State:
     files: dict[str, tuple[int, int]] | None
-    hosts: int
+    requests: int  # proxy requests seen, logged or not
+    logged: int  # proxy log entries
     blocked: int
 
 
@@ -236,7 +250,8 @@ class ObservationTrap:
 
     async def _state(self) -> _State:
         files = await anyio.to_thread.run_sync(_snapshot, self.writable)
-        return _State(files, len(self.proxy.hosts), self.stderr.count)
+        requests, logged = self.proxy.position()
+        return _State(files, requests, logged, self.stderr.count)
 
     async def begin(self) -> _State:
         return await self._state()
@@ -258,7 +273,9 @@ class ObservationTrap:
                 {k for k, v in after_files.items() if before_files.get(k) != v}
                 | (before_files.keys() - after_files.keys())
             )
-        hosts = sorted(set(self.proxy.hosts[start.hosts : after.hosts]))
+        window = self.proxy.log[start.logged : after.logged]
+        unlogged = (after.requests - start.requests) - len(window)
+        hosts = sorted(set(window))[:MAX_REPORTED_HOSTS]
         open_world = [h for h in hosts if not is_loopback(h)]
         blocked = after.blocked > start.blocked
         contradicted: list[str] = []
@@ -269,14 +286,17 @@ class ObservationTrap:
         reason = ""
         if oversized:
             reason = f"the trap held more than {MAX_SNAPSHOT_FILES} files"
+        elif unlogged > 0 and not open_world and annotations and annotations.open_world_hint is False:
+            reason = f"{unlogged} network request(s) arrived after the proxy log filled"
         elif spillover:
             reason = "activity between calls could belong to an earlier call"
         elif blocked:
             reason = "a permission error was reported; it may have been a blocked write or a denied read"
-        elif errored and not (changed or hosts):
+        elif errored and not (changed or hosts or unlogged):
             reason = "the call errored without an observable effect"
         verdict: ObservedVerdict
         if contradicted and not (spillover or oversized):
+            # Logged evidence stands even when later requests in the window overflowed.
             verdict = "contradiction"
         elif reason:
             verdict = "inconclusive"
