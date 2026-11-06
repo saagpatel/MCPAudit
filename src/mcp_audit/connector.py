@@ -1049,7 +1049,8 @@ class ServerConnector:
                 # Re-call a tool right after an observed effect so one-off effects are not pinned on it.
                 tool, confirm_next = by_name[confirm_next], None
             else:
-                tool, rotation = eligible[rotation % len(eligible)], rotation + 1
+                # A pending confirmation for a tool that left the listing can never confirm.
+                tool, rotation, confirm_next = eligible[rotation % len(eligible)], rotation + 1, None
             mark = await probe.observer.begin() if probe.observer else None
             result = await session.call_tool(tool.name, {})
             summary.completed_calls = call

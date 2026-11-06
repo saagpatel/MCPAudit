@@ -61,6 +61,10 @@ SANDBOX_EXEC = "/usr/bin/sandbox-exec"
 # Lowercased; Python, Node (EPERM/EACCES) and Go spellings.
 BLOCKED_MARKERS = (b"operation not permitted", b"permissionerror", b"permission denied", b"eperm", b"eacces")
 SETTLE_SECONDS = 0.3  # let a child process finish writing before the after-snapshot
+# Rough cost of observation for the --timeout warning: quiet checks plus snapshots per call,
+# and server startup for two identity sessions.
+OBSERVE_SECONDS_PER_CALL = 2
+OBSERVE_STARTUP_SECONDS = 10
 MAX_REPORTED_PATHS = 10
 MAX_SNAPSHOT_ENTRIES = 5000  # files, directories and links together
 SNAPSHOT_SECONDS = 2.0
@@ -212,7 +216,7 @@ class _LoggingProxy(socketserver.ThreadingTCPServer):
 def sandbox_profile(trap: Path) -> str:
     return (
         "(version 1)\n(allow default)\n(deny file-write*)\n"
-        f'(allow file-write* (subpath "{trap}") (regex #"^/dev/"))\n'
+        f'(allow file-write* (subpath "{trap}") (literal "/dev/null"))\n'
         "(deny network-outbound)\n"
         '(allow network-outbound (remote ip "localhost:*"))\n'
     )

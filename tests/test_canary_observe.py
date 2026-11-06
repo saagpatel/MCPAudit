@@ -821,3 +821,69 @@ def test_unusable_temp_path_fails_trap_setup(monkeypatch: pytest.MonkeyPatch, tm
     monkeypatch.setattr(tempfile, "tempdir", str(odd))
     with pytest.raises(OSError, match="sandbox profile"):
         ObservationTrap()
+
+
+@macos_only
+def test_sandbox_denies_device_writes_except_dev_null(tmp_path: Path) -> None:
+    """Writes to a test-owned pseudo-terminal are denied; /dev/null still works."""
+    import subprocess
+
+    from mcp_audit.observe import SANDBOX_EXEC, sandbox_profile
+
+    trap = (tmp_path / "trap").resolve()
+    trap.mkdir()
+    profile = tmp_path / "profile.sb"
+    profile.write_text(sandbox_profile(trap))
+    leader, follower = os.openpty()
+    try:
+        tty = os.ttyname(follower)
+        probe = (
+            "import sys\n"
+            "open('/dev/null', 'w').write('ok')\n"
+            "try:\n"
+            "    open(sys.argv[1], 'w').write('escape')\n"
+            "    print('tty-write-allowed')\n"
+            "except PermissionError:\n"
+            "    print('tty-write-denied')\n"
+        )
+        result = subprocess.run(
+            [SANDBOX_EXEC, "-f", str(profile), sys.executable, "-I", "-c", probe, tty],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=True,
+        )
+        assert result.stdout.strip() == "tty-write-denied"
+    finally:
+        os.close(leader)
+        os.close(follower)
+
+
+def test_cli_warns_when_timeout_is_too_short_for_observation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from click.testing import CliRunner
+
+    import mcp_audit.check_cli as check_cli
+    from mcp_audit.cli import main
+
+    monkeypatch.setattr(check_cli, "observation_supported", lambda _stdio: True)
+    config = tmp_path / "mcp.json"
+    config.write_text('{"mcpServers": {}}')
+    result = CliRunner().invoke(
+        main,
+        [
+            "check",
+            "--config",
+            str(config),
+            "--config-only",
+            "--connect-all",
+            "--canary-check",
+            "--canary-observe",
+            "--timeout",
+            "10",
+            "--override-config",
+            "/dev/null",
+        ],
+    )
+    assert "--canary-observe adds about" in result.output

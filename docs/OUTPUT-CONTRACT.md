@@ -1247,7 +1247,8 @@ Additive, optional fields for compatibility with older reports:
 - `observed` and `observed_calls` (`--canary-observe`): `observed` is true when
   the stdio session ran under macOS `sandbox-exec` in a per-server trap. Direct
   file writes by the server's process tree are allowed only in the trap's
-  TMPDIR, XDG_CACHE_HOME and XDG_STATE_HOME folders. Outbound TCP is allowed only
+  TMPDIR, XDG_CACHE_HOME and XDG_STATE_HOME folders and to `/dev/null`; other
+  device writes (terminals, serial devices) are denied. Outbound TCP is allowed only
   to loopback, with HTTP(S)_PROXY pointing at a local proxy that records the
   requested host and refuses the request; loopback (including `*.localhost`,
   `localhost.`, unspecified and IPv4-mapped loopback addresses) is exempt.
@@ -1305,7 +1306,8 @@ Additive, optional fields for compatibility with older reports:
   transports leave `observed` false and add a warning; on a
   platform without `/usr/bin/sandbox-exec`, `check` and `run_scan` refuse
   `--canary-observe`. Each observed call adds about one second of quiet
-  checks, which counts against `--timeout`. One empty-argument call and its
+  checks, which counts against `--timeout`; `check` warns when `--timeout` looks
+  too short for the requested calls. One empty-argument call and its
   repeat cannot prove a hint true for other inputs, and with a single tool
   exercised, a server that writes a new file on every request can still be
   reported against that tool.
