@@ -56,6 +56,21 @@ ANNOTATION_CONTRADICTION = FindingMetadata(
 )
 
 
+OBSERVED_ANNOTATION_CONTRADICTION = FindingMetadata(
+    rule_id="MCP055",
+    title="Observed annotation contradiction",
+    severity="high",
+    description=(
+        "A tool claiming readOnlyHint=true changed files, or claiming openWorldHint=false requested a "
+        "non-loopback host, during a sandboxed canary call."
+    ),
+    remediation=(
+        "Treat the tool as writing or networked until the server is fixed; correct the hint and "
+        "re-run the observed canary before trusting it."
+    ),
+)
+
+
 AUTHORIZATION_FINDINGS: dict[str, FindingMetadata] = {
     rule: FindingMetadata(rule, title, severity, description, remediation)
     for rule, title, severity, description, remediation in (
@@ -1171,6 +1186,23 @@ FINDING_COPY: dict[str, FindingCopy] = {
         "About 5 minutes for an initial review",
         "A metadata contradiction, not an executed behavior check. Keyword evidence and hints can "
         "both be inaccurate.",
+    ),
+    "MCP055": FindingCopy(
+        "Your tool did something its safety hint says it doesn't.",
+        "During a sandboxed canary call, a tool claiming readOnlyHint=true changed files, or a tool "
+        "claiming openWorldHint=false requested a non-loopback host.",
+        (
+            "Clients may auto-approve or parallelize tools that claim to be read-only or closed-world.",
+            "This tool's observed behavior contradicts that claim.",
+            "Trusting the hint can let writes or network calls through without review.",
+        ),
+        "Treat the tool as writing or networked, correct the hint in the server, and re-run "
+        "`check --canary-check --canary-observe` before trusting it again.",
+        "About 10 minutes to review the tool",
+        "Attributable effects from one empty-argument call in a macOS sandbox: files changed in the "
+        "sandbox's temporary folders or a non-loopback network request. Permission errors alone are "
+        "reported as inconclusive, never as this finding. A clean result does not prove the hint true "
+        "for other inputs.",
     ),
     "MCP051": FindingCopy(
         "Your tool schema declares an invalid or unusable HTTP header mapping.",

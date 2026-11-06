@@ -1,12 +1,21 @@
 {
   "$defs": {
     "AnnotationFinding": {
-      "description": "An explicit served annotation contradicts keyword capability evidence.",
+      "description": "An explicit served annotation contradicts capability evidence.\n\n`basis` names the evidence: keyword capability evidence (MCP043) or behavior\nobserved during a sandboxed canary call (MCP055). Older reports default to keywords.",
       "properties": {
         "kind": {
           "const": "annotation_contradiction",
           "default": "annotation_contradiction",
           "title": "Kind",
+          "type": "string"
+        },
+        "basis": {
+          "default": "keywords",
+          "enum": [
+            "keywords",
+            "observed"
+          ],
+          "title": "Basis",
           "type": "string"
         },
         "tool_name": {
@@ -470,6 +479,18 @@
             "type": "string"
           },
           "title": "Warnings",
+          "type": "array"
+        },
+        "observed": {
+          "default": false,
+          "title": "Observed",
+          "type": "boolean"
+        },
+        "observed_calls": {
+          "items": {
+            "$ref": "#/$defs/ObservedCall"
+          },
+          "title": "Observed Calls",
           "type": "array"
         }
       },
@@ -1263,6 +1284,76 @@
         "high_severity_findings"
       ],
       "title": "NonToolRisk",
+      "type": "object"
+    },
+    "ObservedCall": {
+      "description": "One sandboxed canary call and what it did (`check --canary-observe`).",
+      "properties": {
+        "tool_name": {
+          "title": "Tool Name",
+          "type": "string"
+        },
+        "call": {
+          "title": "Call",
+          "type": "integer"
+        },
+        "files_changed": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Files Changed",
+          "type": "array"
+        },
+        "files_changed_count": {
+          "default": 0,
+          "title": "Files Changed Count",
+          "type": "integer"
+        },
+        "blocked_operations": {
+          "default": false,
+          "title": "Blocked Operations",
+          "type": "boolean"
+        },
+        "network_hosts": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Network Hosts",
+          "type": "array"
+        },
+        "errored": {
+          "default": false,
+          "title": "Errored",
+          "type": "boolean"
+        },
+        "contradicted_hints": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Contradicted Hints",
+          "type": "array"
+        },
+        "verdict": {
+          "default": "consistent",
+          "enum": [
+            "consistent",
+            "contradiction",
+            "inconclusive"
+          ],
+          "title": "Verdict",
+          "type": "string"
+        },
+        "inconclusive_reason": {
+          "default": "",
+          "title": "Inconclusive Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tool_name",
+        "call"
+      ],
+      "title": "ObservedCall",
       "type": "object"
     },
     "PackageVerifyFinding": {

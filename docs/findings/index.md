@@ -762,6 +762,24 @@ How sure: A static URI comparison; the icon is never requested.
 
 see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp054
 
+## MCP055
+
+Your tool did something its safety hint says it doesn't.
+
+What we saw: During a sandboxed canary call, a tool claiming readOnlyHint=true changed files, or a tool claiming openWorldHint=false requested a non-loopback host.
+
+Why it matters:
+
+1. Clients may auto-approve or parallelize tools that claim to be read-only or closed-world.
+2. This tool's observed behavior contradicts that claim.
+3. Trusting the hint can let writes or network calls through without review.
+
+How to fix (About 10 minutes to review the tool): Treat the tool as writing or networked, correct the hint in the server, and re-run `check --canary-check --canary-observe` before trusting it again.
+
+How sure: Attributable effects from one empty-argument call in a macOS sandbox: files changed in the sandbox's temporary folders or a non-loopback network request. Permission errors alone are reported as inconclusive, never as this finding. A clean result does not prove the hint true for other inputs.
+
+see: https://github.com/saagpatel/MCPAudit/blob/main/docs/findings/index.md#mcp055
+
 ## MCPAUTH001
 
 Your server's authorization needs review: protected-resource metadata missing.
