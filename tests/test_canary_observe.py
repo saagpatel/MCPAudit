@@ -786,3 +786,46 @@ def test_a_safe_marked_tool_writing_too_makes_it_server_level() -> None:
     calls = [call(1, "a", True), call(2, "a", True), call(3, "c", False)]
     confirm_contradictions(calls)
     assert [c.verdict for c in calls[:2]] == ["inconclusive", "inconclusive"]
+
+
+@macos_only
+@pytest.mark.anyio
+async def test_analysis_timeout_keeps_finished_observations(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Static analysis that times out is discarded; confirmed observed findings are not."""
+    import mcp_audit.engine as engine
+
+    real = engine.observed_annotation_findings  # type: ignore[attr-defined]
+
+    def then_time_out(audit: object) -> object:
+        findings = real(audit)  # type: ignore[arg-type]
+
+        def explode(*_args: object, **_kwargs: object) -> None:
+            raise TimeoutError("analysis budget exhausted")
+
+        monkeypatch.setattr(engine, "analysis_budget", explode)
+        return findings
+
+    monkeypatch.setattr(engine, "observed_annotation_findings", then_time_out)
+    config = make_server_config(name="liar", command=sys.executable, args=[FIXTURE, "liar"])
+    report = await run_scan(
+        ScanOptions(canary_check=True, canary_calls=12, canary_observe=True, timeout=90), servers=[config]
+    )
+    audit = report.audits[0]
+    assert audit.connection_status == "timeout"
+    assert audit.canary is not None and audit.canary.observed_calls
+    assert {(f.tool_name, f.rule_id) for f in audit.annotation_findings} == {
+        ("cache_info", "MCP055"),
+        ("status", "MCP055"),
+    }
+
+
+def test_unusable_temp_path_fails_trap_setup(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    import tempfile
+
+    from mcp_audit.observe import ObservationTrap
+
+    odd = tmp_path / 'quote"dir'
+    odd.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(odd))
+    with pytest.raises(OSError, match="sandbox profile"):
+        ObservationTrap()

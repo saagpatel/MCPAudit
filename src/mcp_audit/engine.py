@@ -23,7 +23,7 @@ import time
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from itertools import chain
 from pathlib import Path
@@ -41,7 +41,9 @@ from mcp_audit.connector import ServerConnector, describe_exception
 from mcp_audit.coverage import OPTIONAL_CHECKS, build_coverage
 from mcp_audit.discovery import ConfigParseError, discover_all_configs
 from mcp_audit.models import (
+    AnnotationFinding,
     AuditReport,
+    CanarySummary,
     CheckCoverage,
     ClientType,
     ConnectionMode,
@@ -164,6 +166,9 @@ class _ScanContext:
     completed: list[set[str]]
     package_coverage: dict[str, list[CheckCoverage]]
     empty_risk_score: RiskScore | None = None
+    # Completed canary observations and confirmed MCP055 findings per server index. They come
+    # from finished calls, so an analysis timeout keeps them while discarding partial analysis.
+    observations: dict[int, tuple[CanarySummary, list[AnnotationFinding]]] = field(default_factory=dict)
 
     def warn(
         self, code: str, message: str, *, check: str | None = None, servers: list[str] | None = None
@@ -258,11 +263,16 @@ async def _audit_one_guarded(context: _ScanContext, idx: int, srv: ServerConfig)
     try:
         await _analyze_server(context, idx, srv)
     except TimeoutError:
-        context.audits[idx] = ServerAudit(
+        timed_out = ServerAudit(
             server=srv,
             connection_status="timeout",
             connection_error="Per-server wall-clock budget exhausted; analysis is incomplete.",
         )
+        if idx in context.observations:
+            # Finished canary calls are evidence, not partial analysis: keep them.
+            timed_out.canary, observed = context.observations[idx]
+            timed_out.annotation_findings = list(observed)
+        context.audits[idx] = timed_out
         context.completed[idx].clear()
         context.warn(
             "analysis_timeout",
@@ -851,6 +861,8 @@ async def _analyze_server(context: _ScanContext, idx: int, srv: ServerConfig) ->
     # timeout cannot drop confirmed MCP055 evidence.
     observed_findings = observed_annotation_findings(audit)
     audit.annotation_findings = list(observed_findings)
+    if audit.canary is not None and audit.canary.observed:
+        context.observations[idx] = (audit.canary, observed_findings)
     with analysis_budget(deadline):
         # Apply user overrides between analysis and scoring
         audit.permissions = applier.apply(srv.name, raw_findings)

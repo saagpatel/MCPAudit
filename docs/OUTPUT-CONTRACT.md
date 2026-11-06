@@ -1299,7 +1299,10 @@ Additive, optional fields for compatibility with older reports:
 
   Inconclusive or unobserved calls, a sandbox that fails to start, and a server
   that fails to start under the sandbox add canary warnings and make `status`
-  `partial`. Non-stdio transports leave `observed` false and add a warning; on a
+  `partial`. If later analysis exhausts the per-server budget, the audit is
+  reported as `timeout` without partial static analysis, but completed
+  `canary` observations and confirmed MCP055 findings are kept. Non-stdio
+  transports leave `observed` false and add a warning; on a
   platform without `/usr/bin/sandbox-exec`, `check` and `run_scan` refuse
   `--canary-observe`. Each observed call adds about one second of quiet
   checks, which counts against `--timeout`. One empty-argument call and its

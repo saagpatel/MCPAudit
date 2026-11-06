@@ -294,6 +294,9 @@ class ObservationTrap:
         self.root = Path(tempfile.mkdtemp(prefix="mcp-audit-observe-")).resolve()
         self._proxy: _LoggingProxy | None = None
         try:
+            if any(ch in str(self.root) for ch in '"\\\n'):
+                # The path is spliced into an SBPL string; refuse rather than escape it.
+                raise OSError(f"temporary folder path cannot be used in a sandbox profile: {self.root}")
             self.writable = self.root / "w"
             for sub in ("tmp", "cache", "state"):
                 (self.writable / sub).mkdir(parents=True)
