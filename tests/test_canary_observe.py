@@ -479,3 +479,30 @@ def test_proxy_connection_flood_is_counted_not_fatal(monkeypatch: pytest.MonkeyP
             held.close()
     finally:
         trap.close()
+
+
+def test_shared_writes_beyond_the_reported_ten_still_count_as_server_level() -> None:
+    """Tool B's shared log paths sort after ten other files; attribution must still see them."""
+    from mcp_audit.models import ObservedCall
+    from mcp_audit.observe import confirm_contradictions
+
+    logs = {f"state/log{i}" for i in range(10)}
+    caches = {f"cache/a{i}" for i in range(10)}
+
+    def call(number: int, tool: str, changed: set[str]) -> ObservedCall:
+        observed = ObservedCall(
+            tool_name=tool,
+            call=number,
+            verdict="contradiction",
+            contradicted_hints=["readOnlyHint"],
+            files_changed=sorted(changed)[:10],
+            files_changed_count=len(changed),
+        )
+        observed._changed_paths = set(changed)
+        return observed
+
+    calls = [call(1, "a", logs), call(2, "a", logs), call(3, "b", logs | caches), call(4, "b", logs | caches)]
+    assert not set(calls[2].files_changed) & logs  # the report alone would hide the overlap
+    confirm_contradictions(calls)
+    assert [c.verdict for c in calls[:2]] == ["inconclusive", "inconclusive"]
+    assert [c.verdict for c in calls[2:]] == ["contradiction", "contradiction"]  # b also writes its own files

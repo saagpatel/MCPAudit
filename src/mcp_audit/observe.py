@@ -395,7 +395,7 @@ class ObservationTrap:
             contradicted = []
         else:
             verdict = "consistent"
-        return ObservedCall(
+        observed = ObservedCall(
             tool_name=tool_name,
             call=call,
             files_changed=changed[:MAX_REPORTED_PATHS],
@@ -407,6 +407,8 @@ class ObservationTrap:
             verdict=verdict,
             inconclusive_reason=reason if verdict == "inconclusive" else "",
         )
+        observed._changed_paths = set(changed)
+        return observed
 
     def close(self) -> None:
         if self._proxy is not None:
@@ -424,17 +426,23 @@ def confirm_contradictions(calls: list[ObservedCall]) -> None:
     confirming repeat, every hit for that tool and hint is downgraded to inconclusive
     rather than pinned on whichever tool happened to be running.
     """
+
     # Writes that show up during calls to different tools are the server's (an access log,
     # a shared cache), not any one tool's; they cannot be pinned on the tool that ran.
+    def paths(observed: ObservedCall) -> set[str]:
+        # The complete set when recorded in this run; the reported first 10 otherwise.
+        return observed._changed_paths or set(observed.files_changed)
+
     tools_by_path: dict[str, set[str]] = {}
     for observed in calls:
-        for path in observed.files_changed:
+        for path in paths(observed):
             tools_by_path.setdefault(path, set()).add(observed.tool_name)
     for observed in calls:
+        changed = paths(observed)
         if (
             "readOnlyHint" in observed.contradicted_hints
-            and observed.files_changed
-            and all(len(tools_by_path[path]) > 1 for path in observed.files_changed)
+            and changed
+            and all(len(tools_by_path[path]) > 1 for path in changed)
         ):
             observed.contradicted_hints = [h for h in observed.contradicted_hints if h != "readOnlyHint"]
             if not observed.contradicted_hints:

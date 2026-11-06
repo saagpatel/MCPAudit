@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Literal, Self
 from pydantic import (
     BaseModel,
     Field,
+    PrivateAttr,
     SerializerFunctionWrapHandler,
     computed_field,
     field_validator,
@@ -989,6 +990,8 @@ class ObservedCall(BaseModel):
     contradicted_hints: list[str] = Field(default_factory=list)
     verdict: ObservedVerdict = "consistent"
     inconclusive_reason: str = ""
+    # Every changed path, kept for attribution only; the report shows the first 10.
+    _changed_paths: set[str] = PrivateAttr(default_factory=set)
 
 
 class CanarySummary(BaseModel):
