@@ -986,7 +986,7 @@ class ObservedCall(BaseModel):
     files_changed_count: int = 0  # created, modified or removed in the trap
     blocked_operations: bool = False  # a permission error on stderr: a hint, never a finding
     network_hosts: list[str] = Field(default_factory=list)  # validated host[:port] only
-    network_unlogged: int = 0  # proxy requests past the log or connection caps
+    network_unknown: int = 0  # proxy requests with no validated destination, or past the caps
     errored: bool = False
     contradicted_hints: list[str] = Field(default_factory=list)
     verdict: ObservedVerdict = "consistent"

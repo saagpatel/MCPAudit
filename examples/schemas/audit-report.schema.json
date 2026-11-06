@@ -1321,9 +1321,9 @@
           "title": "Network Hosts",
           "type": "array"
         },
-        "network_unlogged": {
+        "network_unknown": {
           "default": 0,
-          "title": "Network Unlogged",
+          "title": "Network Unknown",
           "type": "integer"
         },
         "errored": {

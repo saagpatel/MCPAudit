@@ -1264,17 +1264,22 @@ Additive, optional fields for compatibility with older reports:
   (created, modified or removed; logs and caches count), `blocked_operations` (a
   permission error on the server's stderr), `network_hosts` (validated
   `host[:port]` only, at most 50 distinct per call; a request whose host cannot
-  be validated appears as `(unparsed request)`), `network_unlogged` (requests
-  past the proxy's 10,000-entry log or 32-connection cap), `errored`,
+  be validated appears as `(unparsed request)`), `network_unknown` (requests
+  whose destination could not be validated, or past the proxy's 10,000-entry
+  log or 32-connection cap), `errored`,
   `contradicted_hints`, `verdict` (`contradiction`, `consistent`, or
   `inconclusive`) and `inconclusive_reason`.
 
   Only `readOnlyHint` can be contradicted. A write is attributed to a tool only
   when the server was quiet just before and just after the call and the
   immediately following call of the same tool shows the same hint contradicted.
+  That confirming repeat counts against `--canary-calls`; when an effect first
+  appears on the last budgeted call, one extra call is made so it can be
+  confirmed, so `completed_calls` can exceed `requested_calls` by one.
   These are `inconclusive`, never MCP055: a one-off effect; writes seen during
   calls to different tools (the server's own logging or caching); writes by every
-  read-only tool exercised, when there are two or more (per-request activity);
+  read-only tool exercised, when there are two or more, judged from raw effects
+  whether or not each was repeated (per-request activity);
   with only one tool exercised, repeated changes to the same entries; a permission error, even
   when the same call also changed files; activity just before or after the call; a trap that cannot be fully
   scanned (over 5,000 entries, over two seconds, or unreadable; the trap is

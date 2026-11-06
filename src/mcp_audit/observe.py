@@ -155,7 +155,12 @@ class _ProxyHandler(socketserver.StreamRequestHandler):
         # A request whose destination cannot be validated is counted, but it is
         # missing evidence, never proof of an external destination.
         self.server.record(_request_host(line) or UNPARSED_REQUEST)  # type: ignore[attr-defined]
-        self.wfile.write(b"HTTP/1.1 502 Refused by mcp-audit canary observation\r\nContent-Length: 0\r\n\r\n")
+        try:
+            self.wfile.write(
+                b"HTTP/1.1 502 Refused by mcp-audit canary observation\r\nContent-Length: 0\r\n\r\n"
+            )
+        except OSError:
+            return  # the client hung up first; the request is already recorded
 
 
 class _LoggingProxy(socketserver.ThreadingTCPServer):
@@ -405,7 +410,7 @@ class ObservationTrap:
             files_changed_count=len(changed),
             blocked_operations=blocked,
             network_hosts=hosts,
-            network_unlogged=max(unlogged, 0),
+            network_unknown=max(unlogged, 0) + window.count(UNPARSED_REQUEST),
             errored=errored,
             contradicted_hints=contradicted,
             verdict=verdict,
@@ -483,8 +488,9 @@ def confirm_contradictions(calls: list[ObservedCall]) -> None:
                 confirmed.add((current.tool_name, hint))
     # If two or more read-only tools were exercised and every one of them wrote, the writes look
     # like the server's own per-request activity (for example a new log file per request).
+    # Decided from raw effects, before and independent of repeat confirmation.
     read_only_tools = {c.tool_name for c in calls if c._read_only}
-    writers = {tool for tool, hint in confirmed if hint == "readOnlyHint"}
+    writers = {c.tool_name for c in calls if c._read_only and c._changed_paths}
     if len(read_only_tools) >= 2 and read_only_tools <= writers:
         confirmed = {(tool, hint) for tool, hint in confirmed if hint != "readOnlyHint"}
         for observed in calls:
@@ -544,8 +550,7 @@ def network_review_note(calls: list[ObservedCall]) -> str:
         remote = {h for h in observed.network_hosts if h != UNPARSED_REQUEST and not is_loopback(h)}
         if remote:
             seen.setdefault(observed.tool_name, set()).update(remote)
-        unknown = observed.network_unlogged + (UNPARSED_REQUEST in observed.network_hosts)
-        if unknown:
+        if unknown := observed.network_unknown:
             unlogged[observed.tool_name] = unlogged.get(observed.tool_name, 0) + unknown
     if not seen and not unlogged:
         return ""

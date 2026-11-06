@@ -255,7 +255,7 @@ async def test_proxy_log_overflow_is_counted_for_review(monkeypatch: pytest.Monk
         start = await trap.begin()
         _proxy_request(trap, b"GET http://exfil.example.com/ HTTP/1.1")
         call = await trap.end(start, "status", 1, closed, errored=False)
-        assert call.network_unlogged == 1 and call.network_hosts == []
+        assert call.network_unknown == 1 and call.network_hosts == []
         assert (
             observe.network_review_note([call])
             == _REVIEW_PREFIX + "status -> 1 request(s) to an unknown destination."
@@ -678,3 +678,60 @@ def test_every_read_only_tool_writing_is_server_level() -> None:
     confirm_contradictions(calls)
     assert {c.verdict for c in calls} == {"inconclusive"}
     assert "every read-only tool" in calls[0].inconclusive_reason
+
+
+def test_per_request_server_logs_are_server_level_even_without_every_repeat() -> None:
+    """Default rotation A,A,B,B,C: C never gets a repeat, yet every read-only tool wrote."""
+    from mcp_audit.models import ObservedCall
+    from mcp_audit.observe import confirm_contradictions
+
+    def hit(call: int, tool: str) -> ObservedCall:
+        observed = ObservedCall(
+            tool_name=tool, call=call, verdict="contradiction", contradicted_hints=["readOnlyHint"]
+        )
+        observed._changed_paths = {f"state/req-{call}.log"}
+        observed._created_paths = set(observed._changed_paths)
+        observed._read_only = True
+        return observed
+
+    rotation = [hit(1, "a"), hit(2, "a"), hit(3, "b"), hit(4, "b"), hit(5, "c")]
+    confirm_contradictions(rotation)
+    assert {c.verdict for c in rotation} == {"inconclusive"}
+    cut_short = [hit(1, "a"), hit(2, "a"), hit(3, "b")]  # session ended before b's repeat
+    confirm_contradictions(cut_short)
+    assert {c.verdict for c in cut_short} == {"inconclusive"}
+
+
+@pytest.mark.anyio
+async def test_unknown_destinations_are_counted_from_the_raw_window() -> None:
+    from mcp_audit.observe import ObservationTrap
+
+    trap = ObservationTrap()
+    try:
+        start = await trap.begin()
+        for _ in range(3):
+            _proxy_request(trap, b"GET /health HTTP/1.1")
+        for index in range(60):  # more distinct hosts than the report keeps
+            _proxy_request(trap, f"GET http://h{index:02d}.example.net/ HTTP/1.1".encode())
+        call = await trap.end(start, "status", 1, _closed(), errored=False)
+        assert call.network_unknown == 3
+        assert len(call.network_hosts) == 50
+    finally:
+        trap.close()
+
+
+@macos_only
+@pytest.mark.anyio
+async def test_an_effect_on_the_last_budgeted_call_gets_its_confirming_repeat() -> None:
+    config = make_server_config(name="liar", command=sys.executable, args=[FIXTURE, "liar"])
+    report = await run_scan(
+        ScanOptions(canary_check=True, canary_calls=1, canary_observe=True, timeout=60), servers=[config]
+    )
+    audit = report.audits[0]
+    assert audit.canary is not None
+    # The extra call happened: a budget of one still produced the confirming repeat.
+    assert [c.tool_name for c in audit.canary.observed_calls] == ["cache_info", "cache_info"]
+    assert audit.canary.completed_calls == 2
+    # With one tool exercised, two writes to the same file stay unattributed (server-level guard).
+    assert {c.verdict for c in audit.canary.observed_calls} == {"inconclusive"}
+    assert "one tool exercised" in audit.canary.observed_calls[0].inconclusive_reason

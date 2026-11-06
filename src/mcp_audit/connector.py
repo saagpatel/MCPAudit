@@ -1013,7 +1013,10 @@ class ServerConnector:
         rotation = 0
         confirm_next: str | None = None
         confirmation_requested: set[str] = set()
-        for call in range(1, probe.calls + 1):
+        budget = probe.calls
+        call = 0
+        while call < budget:
+            call += 1
             if "tools" not in capabilities.surface:
                 capabilities = await self._list_capabilities(
                     session, server_name, probe, previous, call - 1, capture=capture
@@ -1054,6 +1057,9 @@ class ServerConnector:
                 if observed.contradicted_hints and tool.name not in confirmation_requested:
                     confirmation_requested.add(tool.name)
                     confirm_next = tool.name
+                    if call == budget == probe.calls:
+                        # One extra call so an effect first seen on the last call can be confirmed.
+                        budget += 1
             text = "\n".join(_result_text(result.model_dump(mode="json", by_alias=True)))
             self._scan_runtime_text(probe, tool.name, text, call, CapabilityTarget.TOOL)
             if result.is_error:
