@@ -175,6 +175,7 @@ def diff_paths(output: str) -> set[str]:
 def parse_sink_log(output: str, after: int) -> tuple[list[NetworkEvent], int, dict[str, object] | None]:
     """Return events with seq > after, the highest seq seen, and the ready/setup record."""
     events: list[NetworkEvent] = []
+    opened: dict[int, NetworkEvent] = {}
     last = after
     status: dict[str, object] | None = None
     for line in output.splitlines():
@@ -189,9 +190,19 @@ def parse_sink_log(output: str, after: int) -> tuple[list[NetworkEvent], int, di
             status = record
             continue
         seq = record.get("seq")
-        if not isinstance(seq, int) or seq <= after or kind not in {"dns", "tcp", "udp"}:
+        if not isinstance(seq, int) or seq <= after or kind not in {"dns", "tcp", "tcp_detail", "udp"}:
             continue
         last = max(last, seq)
+        conn = record.get("conn")
+        if kind == "tcp_detail":
+            # SNI and Host arrive after the connect record; enrich it when it is in
+            # this batch. A later batch keeps the connect already attributed.
+            if isinstance(conn, int) and conn in opened:
+                event = opened[conn]
+                event.sni = _host(record.get("sni"))
+                event.http_method = _text(record.get("http_method"))
+                event.http_host = _host(record.get("http_host"))
+            continue
         events.append(
             NetworkEvent(
                 kind=kind,
@@ -204,6 +215,8 @@ def parse_sink_log(output: str, after: int) -> tuple[list[NetworkEvent], int, di
                 qtype=record.get("qtype") if isinstance(record.get("qtype"), int) else None,
             )
         )
+        if kind == "tcp" and isinstance(conn, int):
+            opened[conn] = events[-1]
     return events, last, status
 
 
@@ -531,7 +544,10 @@ class Sandbox:
         new: list[FileChange] = []
         rewritten: list[FileChange] = []
         for path, change in current.items():
-            moved = stats is not None and path in stats and self._seen.stats.get(path) != stats[path]
+            known = path in self._seen.stats
+            if path in self._seen.changes and not known and change.change != "deleted":
+                complete = False  # no earlier size/mtime to compare: a rewrite here is unknowable
+            moved = stats is not None and path in stats and known and self._seen.stats[path] != stats[path]
             if self._seen.changes.get(path) != change.change:
                 new.append(change)
             elif moved and change.change != "deleted":
@@ -552,7 +568,8 @@ class Sandbox:
             # A directory only counts on its own when no child change explains it.
             if not change.entries_only or not any(p.startswith(change.path + "/") for p in lasting):
                 new.append(change)
-        new.sort(key=lambda c: c.path)
+        # Writes outside home come first so presentation truncation never hides them.
+        new.sort(key=lambda c: (c.in_home, c.entries_only, c.path))
         self._seen.changes.update({path: c.change for path, c in current.items()})
         if stats:
             self._seen.stats.update(stats)

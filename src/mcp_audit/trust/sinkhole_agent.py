@@ -35,6 +35,7 @@ _lock = threading.Lock()
 _names: dict[str, str] = {}
 _addresses: dict[str, str] = {}
 _seq = 0
+_connections = 0
 
 
 def emit(record: dict[str, object]) -> None:
@@ -179,10 +180,18 @@ class TcpSink(socketserver.BaseRequestHandler):
             address, port = original_destination(sock)
         except OSError:
             address, port = "unknown", 0
-        record: dict[str, object] = {"kind": "tcp", "dst_ip": address, "dst_port": port}
+        global _connections
         with _lock:
-            if address in _addresses:
-                record["name"] = _addresses[address]
+            _connections += 1
+            conn = _connections
+            name = _addresses.get(address)
+        # Record the attempt at accept, before reading: a client that connects and
+        # sends nothing (or trickles bytes) is still attributed to the current phase.
+        opened: dict[str, object] = {"kind": "tcp", "conn": conn, "dst_ip": address, "dst_port": port}
+        if name:
+            opened["name"] = name
+        emit(opened)
+        record: dict[str, object] = {"kind": "tcp_detail", "conn": conn}
         sock.settimeout(1.5)
         data = b""
         try:
