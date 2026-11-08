@@ -216,7 +216,7 @@ def test_remote_url_found_through_registry_search() -> None:
         "remotes": [{"type": "streamable-http", "url": "https://mcp.example.com/mcp"}],
     }
     routes = {f"{REGISTRY}/v0.1/servers?search=com.example": {"servers": [{"server": server}]}}
-    resolution = Resolver(FakeFetch(routes), REGISTRY).resolve("https://mcp.example.com/mcp/")
+    resolution = Resolver(FakeFetch(routes), REGISTRY).resolve("https://mcp.example.com/mcp")
     assert resolution.registry_listed is True
     assert resolution.server_name == "com.example/remote"
     assert statuses(resolution)["namespace.remote_host"] == "pass"
@@ -313,3 +313,96 @@ def test_remote_listed_only_by_an_outside_namespace_is_not_claimed() -> None:
     resolution = Resolver(FakeFetch(routes), REGISTRY).resolve("https://mcp.example.com/mcp")
     assert resolution.registry_listed is False and resolution.server_name is None
     assert statuses(resolution)["registry.listed"] == "warn"
+
+
+# PR split review fixes --------------------------------------------------------------
+
+
+def remote_server(url: str, name: str = "com.example/remote") -> dict[str, Any]:
+    return {"name": name, "description": "x", "version": "1.0.0", "remotes": [{"url": url}]}
+
+
+def search_routes(*entries: dict[str, Any], cursor: str | None = None) -> dict[str, Any]:
+    payload: dict[str, Any] = {"servers": list(entries)}
+    if cursor:
+        payload["metadata"] = {"nextCursor": cursor}
+    return {f"{REGISTRY}/v0.1/servers?search=com.example": payload}
+
+
+@pytest.mark.parametrize(
+    "raw", ["https://mcp.example.com:abc/mcp", "https://mcp.example.com:99999/mcp", "https://[x/"]
+)
+def test_malformed_url_target_is_a_target_error(raw: str) -> None:
+    with pytest.raises(TargetError):
+        parse_target(raw)
+
+
+def test_malformed_remotes_in_search_results_are_skipped() -> None:
+    entries = [
+        {"server": remote_server("https://mcp.example.com:{port}/mcp")},
+        {"server": remote_server("https://[broken/mcp")},
+        {"server": remote_server("https://mcp.example.com/mcp")},
+    ]
+    resolution = Resolver(FakeFetch(search_routes(*entries)), REGISTRY).resolve("https://mcp.example.com/mcp")
+    assert resolution.registry_listed is True
+    assert statuses(resolution)["namespace.remote_host"] == "pass"
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [("active", "pass"), ("deprecated", "warn"), ("deleted", "fail"), (None, "unknown"), ("odd", "unknown")],
+)
+def test_url_match_applies_the_registry_status(status: str | None, expected: str) -> None:
+    entry: dict[str, Any] = {"server": remote_server("https://mcp.example.com/mcp")}
+    if status:
+        entry["_meta"] = {"io.modelcontextprotocol.registry/official": {"status": status}}
+    resolution = Resolver(FakeFetch(search_routes(entry)), REGISTRY).resolve("https://mcp.example.com/mcp")
+    assert statuses(resolution)["registry.status"] == expected
+
+
+@pytest.mark.parametrize(
+    "listed",
+    ["https://mcp.example.com/mcp/", "https://mcp.example.com/mcp//", "https://mcp.example.com:0/mcp"],
+)
+def test_endpoint_identity_keeps_paths_and_explicit_ports(listed: str) -> None:
+    routes = search_routes({"server": remote_server(listed)})
+    resolution = Resolver(FakeFetch(routes), REGISTRY).resolve("https://mcp.example.com/mcp")
+    assert resolution.registry_listed is False
+
+
+def test_search_follows_pages_and_reports_exhaustion_as_unknown() -> None:
+    class Paged(FakeFetch):
+        def __call__(self, url: str) -> Any:
+            self.seen.append(url)
+            page = len(self.seen)
+            if page == 2:
+                return {"servers": [{"server": remote_server("https://mcp.example.com/mcp")}]}
+            return {"servers": [], "metadata": {"nextCursor": f"c{page}"}}
+
+    found = Resolver(Paged({}), REGISTRY).resolve("https://mcp.example.com/mcp")
+    assert found.registry_listed is True
+
+    class Endless(FakeFetch):
+        def __call__(self, url: str) -> Any:
+            self.seen.append(url)
+            return {"servers": [], "metadata": {"nextCursor": "more"}}
+
+    fetch = Endless({})
+    lost = Resolver(fetch, REGISTRY).resolve("https://mcp.example.com/mcp")
+    assert len(fetch.seen) == 3 and lost.registry_listed is None
+    assert statuses(lost)["registry.listed"] == "unknown"
+
+
+def test_ownership_needs_a_marker_and_a_name() -> None:
+    server = server_json()
+    del server["name"]
+    resolution = Resolver(FakeFetch(registry_routes(server, mcp_name=None)), REGISTRY).resolve(NAME)
+    checks = statuses(resolution)
+    assert checks["registry.name"] == "fail" and checks["namespace.package_ownership"] == "fail"
+    assert resolution.server_name == NAME
+
+
+def test_registry_returning_another_name_fails() -> None:
+    routes = registry_routes(server_json(name="io.github.example-owner/other"))
+    resolution = Resolver(FakeFetch(routes), REGISTRY).resolve(NAME)
+    assert statuses(resolution)["registry.name"] == "fail"
