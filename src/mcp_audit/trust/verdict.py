@@ -112,7 +112,8 @@ def mismatches(resolution: Resolution, observation: Observation, drift: list[Mis
 
 def _phase_mismatches(phase: Phase, tool: ToolSummary | None) -> list[Mismatch]:
     found: list[Mismatch] = []
-    writes = list(phase.file_changes)
+    churn = [c for c in phase.file_changes if c.entries_only]
+    writes = [c for c in phase.file_changes if not c.entries_only]
     outside = [c for c in writes if not c.in_home]
     reached = hosts(phase.network)
     if tool is not None and tool.read_only_hint is True:
@@ -141,6 +142,16 @@ def _phase_mismatches(phase: Phase, tool: ToolSummary | None) -> list[Mismatch]:
                     )
                     + ", ".join(reached[:5])
                     + ".",
+                )
+            )
+        if churn:
+            found.append(
+                Mismatch(
+                    severity="low",
+                    rule="TBC-TRANSIENT-WRITE",
+                    tool=tool.name,
+                    summary="Declared read-only, but created and removed temporary entries (such as lock "
+                    "files) during its call in: " + ", ".join(_home(c.path) for c in churn[:4]) + ".",
                 )
             )
         return found
@@ -187,7 +198,7 @@ def decide(observation: Observation, found: list[Mismatch]) -> tuple[Verdict, st
             "do_not_install",
             "Do not install: at least one high-severity mismatch between claims and behaviour.",
         )
-    if observation.status == "failed":
+    if observation.status in {"failed", "skipped"}:
         return "incomplete", "Incomplete: the server could not be observed, so behaviour is unknown."
     if "medium" in severities:
         return "review", "Review before installing: what it did differs from what it claims."
@@ -229,12 +240,12 @@ def _launch(resolution: Resolution, key: str, command: list[str] | None) -> Sugg
     if package is not None and package.registry_type in {"npm", "pypi"}:
         if package.registry_type == "npm":
             spec = f"{package.identifier}@{package.version}" if package.version else package.identifier
-            entry = {"command": "npx", "args": ["-y", spec, *package.arguments]}
+            entry = {"command": "npx", "args": ["-y", spec, *package.launch_arguments]}
         else:
             spec = f"{package.identifier}=={package.version}" if package.version else package.identifier
             script = command[0].rsplit("/", 1)[-1] if command else None
             args = ["--from", spec, script] if script else [spec]
-            entry = {"command": "uvx", "args": [*args, *package.arguments]}
+            entry = {"command": "uvx", "args": [*args, *package.launch_arguments]}
         if package.env:
             entry["env"] = {var.name: "<set-me>" for var in package.env if var.required or var.secret}
             if not entry["env"]:
@@ -254,15 +265,28 @@ def _launch(resolution: Resolution, key: str, command: list[str] | None) -> Sugg
 
 def _permissions(key: str, observation: Observation, found: list[Mismatch]) -> Suggestion:
     flagged = {m.tool for m in found if m.tool and m.severity == "high"}
-    effects = {
-        phase.tool for phase in observation.phases if phase.tool and (phase.file_changes or phase.network)
+    # allow needs a clean, completed, fully checked call; anything less stays under ask.
+    clean = {
+        phase.tool
+        for phase in observation.phases
+        if phase.tool
+        and not (phase.file_changes or phase.network)
+        and phase.error is None
+        and phase.is_error is False
+        and phase.rewrites_checked
     }
+    effects = {phase.tool for phase in observation.phases if phase.tool} - clean
     allow, ask, deny = [], [], []
     for tool in observation.tools:
         rule = f"mcp__{key}__{tool.name}"
         if tool.name in flagged or tool.destructive_hint is True or tool.injection:
             deny.append(rule)
-        elif tool.exercised and tool.read_only_hint is True and tool.name not in effects:
+        elif (
+            observation.status == "complete"
+            and tool.read_only_hint is True
+            and tool.name in clean
+            and tool.name not in effects
+        ):
             allow.append(rule)
         else:
             ask.append(rule)
@@ -271,8 +295,9 @@ def _permissions(key: str, observation: Observation, found: list[Mismatch]) -> S
         title="Tool permissions (Claude Code settings)",
         format="json",
         body=body,
-        note="allow: declared read-only, exercised, and no effects seen. deny: declared destructive, "
-        "injection-matching, or a high-severity mismatch. ask: everything not proven either way.",
+        note="allow: declared read-only and called successfully with no effects seen. "
+        "deny: declared destructive, injection-matching, or a high-severity mismatch. "
+        "ask: everything not proven either way.",
     )
 
 

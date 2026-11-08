@@ -26,11 +26,14 @@ USER_AGENT = "mcp-audit-trust (+https://github.com/saagpatel/MCPAudit)"
 FETCH_TIMEOUT = 15.0
 MAX_METADATA_BYTES = 8 * 1024 * 1024
 SYNTHETIC_VALUE = "mcpaudit-synthetic"
+LAUNCH_PLACEHOLDER = "<set-me>"
 
 _SERVER_NAME = re.compile(r"^[a-zA-Z0-9.-]+/[a-zA-Z0-9._-]+$")
 _NPM_NAME = re.compile(r"^(?:@[a-z0-9][a-z0-9._~-]*/)?[a-z0-9][a-z0-9._~-]*$")
 _PYPI_NAME = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$")
 _VERSION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.+_-]*$")
+_EXACT_NPM = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
+_EXACT_PYPI = re.compile(r"^\d+(?:\.\d+)*(?:(?:a|b|rc)\d+)?(?:\.post\d+)?(?:\.dev\d+)?(?:\+[a-z0-9.]+)?$")
 _PYPI_MARKER = re.compile(r"mcp-name:\s*([A-Za-z0-9.-]+/[A-Za-z0-9._-]+)")
 _PLACEHOLDER = re.compile(r"\{[^{}]*\}")
 
@@ -283,7 +286,7 @@ class Resolver:
                     p
                     for p in packages
                     if p.registry_type == mine.registry_type
-                    and p.identifier.lower() == mine.identifier.lower()
+                    and _same_package(mine.registry_type, p.identifier, mine.identifier)
                 ),
                 None,
             )
@@ -302,6 +305,7 @@ class Resolver:
             if listed is not None:
                 mine.transport, mine.runtime_hint = listed.transport, listed.runtime_hint
                 mine.env, mine.arguments = listed.env, listed.arguments
+                mine.launch_arguments = listed.launch_arguments
         elif resolution.kind == "registry":
             runnable = [p for p in packages if p.registry_type in {"npm", "pypi"} and p.transport == "stdio"]
             resolution.package = runnable[0] if runnable else packages[0] if packages else None
@@ -411,9 +415,13 @@ class Resolver:
                 )
             )
             return
-        if package.version is None or not _VERSION.match(package.version):
+        if not is_exact_version(package.registry_type, package.version):
             resolution.checks.append(
-                Check(id="package.version", status="warn", summary="Package version is not pinned exactly.")
+                Check(
+                    id="package.version",
+                    status="warn",
+                    summary=f"Package version {package.version or '(none)'} is not pinned exactly.",
+                )
             )
         if fetched:
             return
@@ -429,6 +437,10 @@ class Resolver:
             data = info
         if data is None:
             return
+        concrete = _str(data.get("version"))
+        if concrete and concrete != package.version:
+            # A tag or partial version resolves to one release; outputs name that one.
+            package.version = concrete
         resolution.checks.append(
             Check(
                 id="package.exists",
@@ -506,6 +518,17 @@ class Resolver:
         )
 
 
+def _same_package(kind: str, left: str, right: str) -> bool:
+    if kind == "pypi":
+        return re.sub(r"[-_.]+", "-", left).lower() == re.sub(r"[-_.]+", "-", right).lower()
+    return left.lower() == right.lower()
+
+
+def is_exact_version(kind: str, version: str | None) -> bool:
+    pattern = _EXACT_NPM if kind == "npm" else _EXACT_PYPI
+    return version is not None and pattern.match(version) is not None
+
+
 def _normal_url(url: str) -> str:
     parts = urlsplit(url)
     return f"{parts.scheme}://{(parts.hostname or '').lower()}{parts.path.rstrip('/')}"
@@ -536,17 +559,18 @@ def _package(raw: object) -> PackageRef | None:
         runtime_hint=_str(data.get("runtimeHint")),
         env=env,
         arguments=synthetic_arguments(_list(data.get("packageArguments"))),
+        launch_arguments=synthetic_arguments(_list(data.get("packageArguments")), LAUNCH_PLACEHOLDER),
     )
 
 
-def synthetic_arguments(arguments: list[Any]) -> list[str]:
-    """Build argv from declared package arguments; placeholders get synthetic values."""
+def synthetic_arguments(arguments: list[Any], fill: str = SYNTHETIC_VALUE) -> list[str]:
+    """Build argv from declared package arguments; placeholders and required gaps get `fill`."""
     argv: list[str] = []
     for arg in map(_dict, arguments):
         value = _str(arg.get("value")) or _str(arg.get("default"))
         if value is None and arg.get("isRequired") is not True:
             continue
-        value = _PLACEHOLDER.sub(SYNTHETIC_VALUE, value) if value else SYNTHETIC_VALUE
+        value = _PLACEHOLDER.sub(fill, value) if value else fill
         if arg.get("type") == "named":
             flag = _str(arg.get("name"))
             if flag is None:
