@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `mcp-audit trust TARGET` (Trust Before Connect) checks a server before you
+- Experimental: `mcp-audit trust TARGET` (Trust Before Connect) checks a server before you
   install it. `TARGET` is an MCP Registry name, an npm or PyPI package, or a
   remote URL. It resolves `server.json` and checks its namespace and package
   ownership markers. Packages are installed and run in a throwaway container

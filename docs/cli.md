@@ -40,9 +40,10 @@ Only changed arguments and their JSON Pointers are printed; preserve all other
 fields when editing manually. There is no `--write` option. The command does not
 emit or change `AuditReport` fields.
 
-## Check a server before installing it
+## Check a server before installing it (experimental)
 
-`trust TARGET` resolves a registry name (`io.github.owner/name`),
+`trust TARGET` is experimental: its output and rules may change. It resolves a
+registry name (`io.github.owner/name`),
 `npm:PACKAGE[@VERSION]`, `pypi:PACKAGE[==VERSION]`, or an `https://` remote URL,
 checks its `server.json` and namespace, runs packages in a throwaway container
 with a network sinkhole, and writes `card.json`, `card.html` and `pin.json` to

@@ -940,3 +940,13 @@ def test_remote_egress_line_uses_the_endpoint_port() -> None:
     card = build_card(res, Observation(mode="outside", status="complete"), [], None)
     egress = next(s for s in card.suggestions if s.title == "Network egress").body
     assert egress.startswith("allow 127.0.0.1:8080")
+
+
+def test_trust_is_marked_experimental_with_its_limits() -> None:
+    result = CliRunner().invoke(main, ["trust", "--help"])
+    assert result.exit_code == 0
+    assert "(experimental)" in result.output and "only listed" in result.output.replace("\n", " ")
+    listing = CliRunner().invoke(main, ["--help"]).output
+    assert "Experimental: check a server in a sandbox" in listing
+    guide = (Path(__file__).parents[1] / "docs" / "guides" / "trust-before-connect.md").read_text()
+    assert guide.splitlines()[2].startswith("> **Experimental.**") and "observed from outside only" in guide

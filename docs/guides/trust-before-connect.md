@@ -1,5 +1,23 @@
 # Trust Before Connect
 
+> **Experimental.** The command, its card format (`mcp-audit.trust-card/1`),
+> its rules and its flags may change between releases. Known limits, all
+> detailed under [Limits](#limits):
+>
+> - Remote servers are observed from outside only. Their tools are listed but
+>   never called, and their own file writes and outbound connections are
+>   unseen.
+> - File reads are not recorded; only writes, measured per phase.
+> - Only tools declared read-only are called, with synthetic inputs, in one
+>   short session; other tools and delayed behaviour are unobserved.
+> - Effects are attributed by timing, so background activity can land in a
+>   neighbouring phase.
+> - The sandbox has been exercised on colima (Ubuntu 24.04 kernel). Other
+>   Docker-compatible runtimes should work, but the runner refuses to start a
+>   server if its network sinkhole cannot be set up.
+>
+> A clean card is evidence, not a guarantee.
+
 `mcp-audit trust` checks an MCP server **before** you install it. Everything
 else in MCPAudit reviews servers you already have configured. This command
 starts from a name, looks up what the server claims to be, runs it in a

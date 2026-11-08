@@ -69,7 +69,13 @@ def trust(
     python_image: str,
     sink_image: str,
 ) -> None:
-    """Check an MCP server before installing it.
+    """Check an MCP server before installing it (experimental).
+
+    Experimental: output, rules and flags may change. Known limits: file reads
+    are not recorded; only tools declared read-only are called, with synthetic
+    inputs; one short session is observed; remote servers are only listed
+    from outside, so their own writes and egress are unseen. A clean card is
+    evidence, not a guarantee. See docs/guides/trust-before-connect.md.
 
     TARGET is an MCP Registry name (io.github.owner/name), npm:PACKAGE[@VERSION],
     pypi:PACKAGE[==VERSION], or an https:// remote URL. Packages are installed
