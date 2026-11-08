@@ -406,3 +406,47 @@ def test_registry_returning_another_name_fails() -> None:
     routes = registry_routes(server_json(name="io.github.example-owner/other"))
     resolution = Resolver(FakeFetch(routes), REGISTRY).resolve(NAME)
     assert statuses(resolution)["registry.name"] == "fail"
+
+
+# Follow-up hardening (issue #394) ----------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "package",
+    [
+        PackageRef(registry_type="npm", identifier="pkg\n"),
+        PackageRef(registry_type="pypi", identifier="pkg", version="1.0.0\n"),
+    ],
+)
+def test_validate_package_rejects_trailing_newlines(package: PackageRef) -> None:
+    with pytest.raises(TargetError):
+        validate_package(package)
+
+
+def test_truncated_http_response_becomes_a_fetch_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    import http.client
+    import urllib.request
+
+    from mcp_audit.trust.resolve import https_fetcher
+
+    class Opener:
+        def open(self, *args: object, **kwargs: object) -> object:
+            raise http.client.IncompleteRead(b"partial")
+
+    monkeypatch.setattr(urllib.request, "build_opener", lambda *handlers: Opener())
+    fetch = https_fetcher(frozenset({"registry.example.test"}))
+    with pytest.raises(FetchError):
+        fetch("https://registry.example.test/v0.1/servers")
+
+
+def test_malformed_repository_url_is_a_warning() -> None:
+    checks = namespace_checks("io.github.owner/server", "https://[broken/repo", [])
+    assert [(c.id, c.status) for c in checks] == [("namespace.repository", "warn")]
+
+
+def test_package_target_refuses_a_registry_answer_for_another_name() -> None:
+    routes = registry_routes(server_json(name="io.github.example-owner/other"))
+    routes["https://registry.npmjs.org/claimer/"] = {"name": "claimer", "version": "1.0.0", "mcpName": NAME}
+    resolution = Resolver(FakeFetch(routes), REGISTRY).resolve("npm:claimer")
+    assert statuses(resolution)["registry.name"] == "fail"
+    assert resolution.description is None or "Synthetic notes" not in resolution.description
