@@ -43,6 +43,7 @@ class PackageRef(BaseModel):
     runtime_hint: str | None = None
     env: list[EnvVar] = Field(default_factory=list)
     arguments: list[str] = Field(default_factory=list)
+    launch_arguments: list[str] = Field(default_factory=list)
     install_scripts: list[str] = Field(default_factory=list)
 
 
@@ -72,6 +73,9 @@ class FileChange(BaseModel):
     path: str
     change: Literal["added", "changed", "deleted"]
     in_home: bool
+    # A directory whose entries changed again with no lasting child change:
+    # temporary or lock files were created and removed during the phase.
+    entries_only: bool = False
 
 
 class NetworkEvent(BaseModel):
@@ -107,6 +111,7 @@ class Phase(BaseModel):
     file_changes: list[FileChange] = Field(default_factory=list)
     file_changes_truncated: int = 0
     network: list[NetworkEvent] = Field(default_factory=list)
+    rewrites_checked: bool = True
 
 
 class ToolSummary(BaseModel):

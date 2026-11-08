@@ -21,13 +21,15 @@ from mcp.types import Tool as SdkTool
 
 from mcp_audit import __version__
 from mcp_audit.analyzer import PermissionAnalyzer
-from mcp_audit.http_transport import create_mcp_http_client
+from mcp_audit.http_transport import BoundedHttpClient, create_mcp_http_client
 from mcp_audit.injection import InjectionDetector
 from mcp_audit.models import PermissionCategory, ProtocolObservation, ToolAnnotations, ToolInfo
 from mcp_audit.protocol import ProtocolCapture, observe_session, observe_transport
 from mcp_audit.redaction import redact_text
 from mcp_audit.stdio_transport import bounded_stdio_client
-from mcp_audit.trust.models import FileChange, NetworkEvent, Observation, Phase, ToolSummary
+from mcp_audit.trust.models import Observation, Phase, ToolSummary
+from mcp_audit.trust.public_http import PublicOnlyTransport
+from mcp_audit.trust.sandbox import PhaseRecord
 
 CLIENT_INFO = Implementation(name="mcp-audit-trust", version=__version__)
 SYNTHETIC_TEXT = "mcpaudit-synthetic"
@@ -41,7 +43,7 @@ _FORBIDDEN = {
 }
 _COMBINATORS = ("$ref", "allOf", "anyOf", "oneOf", "not", "if")
 
-Snapshot = Callable[[], Awaitable[tuple[list[FileChange], int, list[NetworkEvent]]]]
+Snapshot = Callable[[], Awaitable["PhaseRecord"]]
 
 
 class _Unsynthesizable(Exception):
@@ -224,7 +226,9 @@ async def _inspect(client: Client, capture: ProtocolCapture, observation: Observ
 
 async def _record(observation: Observation, phase: Phase, snapshot: Snapshot, settle: float) -> None:
     await anyio.sleep(settle)
-    phase.file_changes, phase.file_changes_truncated, phase.network = await snapshot()
+    record = await snapshot()
+    phase.file_changes, phase.file_changes_truncated = record.changes, record.truncated
+    phase.network, phase.rewrites_checked = record.network, record.rewrites_checked
     observation.phases.append(phase)
 
 
@@ -255,7 +259,10 @@ async def observe_stdio(
             observation.status = "partial" if observation.tools else "failed"
             observation.error = _describe(exc, errlog)
             if not observation.phases:
-                await _record(observation, Phase(name="startup", error=observation.error), snapshot, 0)
+                try:
+                    await _record(observation, Phase(name="startup", error=observation.error), snapshot, 0)
+                except Exception as record_error:  # noqa: BLE001 - the session error already explains it
+                    observation.limits.append(f"Startup effects could not be recorded ({record_error}).")
     return tools
 
 
@@ -307,14 +314,23 @@ def _describe(exc: BaseException, errlog: Any) -> str:
     return f"Session failed ({names})." + (f" Server stderr: {stderr}" if stderr else "")
 
 
-async def observe_remote(url: str, plan: ExercisePlan, observation: Observation) -> list[ToolInfo]:
-    """List a remote server's surface over Streamable HTTP. Remote tools are never called."""
+async def observe_remote(
+    url: str, plan: ExercisePlan, observation: Observation, *, public_only: bool = True
+) -> list[ToolInfo]:
+    """List a remote server's surface over Streamable HTTP. Remote tools are never called.
+
+    With public_only, every connection is vetted at connect time (see public_http).
+    """
     capture = ProtocolCapture(ProtocolObservation())
     tools: list[ToolInfo] = []
     try:
         with anyio.fail_after(plan.startup_timeout):
             async with (
-                create_mcp_http_client() as http_client,
+                (
+                    BoundedHttpClient(transport=PublicOnlyTransport())
+                    if public_only
+                    else create_mcp_http_client()
+                ) as http_client,
                 Client(
                     observe_transport(streamable_http_client(url, http_client=http_client), capture),
                     client_info=CLIENT_INFO,

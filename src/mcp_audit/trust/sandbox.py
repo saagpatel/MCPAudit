@@ -49,8 +49,13 @@ _NPM_META = (
     'const p=require("/srv/node_modules/"+process.env.MCPAUDIT_NAME+"/package.json");'
     'console.log("MCPAUDIT_META="+JSON.stringify({version:p.version||null,bin:p.bin||null}))'
 )
+# Read the installed distribution with the base interpreter in isolated mode with
+# `site` disabled. Starting the venv interpreter would run any `.pth` hook a wheel
+# shipped, as root with real network, before observation starts.
 _PYPI_META = (
-    "import importlib.metadata as m,json,os;d=m.distribution(os.environ['MCPAUDIT_NAME']);"
+    "import glob,importlib.metadata as m,json,os;"
+    "p=glob.glob('/srv/venv/lib/python*/site-packages');"
+    "d=next(iter(m.distributions(name=os.environ['MCPAUDIT_NAME'],path=p)));"
     "s=sorted(e.name for e in d.entry_points if e.group=='console_scripts');"
     "print('MCPAUDIT_META='+json.dumps({'version':d.version,'scripts':s}))"
 )
@@ -71,7 +76,7 @@ python -m venv /srv/venv
   $MCPAUDIT_SCRIPTS "$MCPAUDIT_SPEC" >&2
 chown -R 10001:10001 /scratch
 chmod -R a+rX /srv
-/srv/venv/bin/python -c "$MCPAUDIT_META"
+python -I -S -c "$MCPAUDIT_META"
 """
 
 
@@ -108,7 +113,28 @@ class Prepared:
 @dataclass
 class _Seen:
     changes: dict[str, str] = field(default_factory=dict)
+    stats: dict[str, str] = field(default_factory=dict)
     last_seq: int = 0
+
+
+@dataclass
+class PhaseRecord:
+    """What one snapshot found since the previous one."""
+
+    changes: list[FileChange]
+    truncated: int
+    network: list[NetworkEvent]
+    rewrites_checked: bool
+
+
+def parse_stat(output: str) -> dict[str, str]:
+    """Parse `stat --printf '%F\\t%s\\t%y\\t%n\\n'` into path -> 'type|size mtime'."""
+    stats: dict[str, str] = {}
+    for line in output.splitlines():
+        parts = line.split("\t", 3)
+        if len(parts) == 4 and parts[3].startswith("/"):
+            stats[parts[3]] = f"{parts[0]}|{parts[1]} {parts[2]}"
+    return stats
 
 
 def runtime_env() -> dict[str, str]:
@@ -305,6 +331,10 @@ class Sandbox:
             "no-new-privileges",
             "--pids-limit",
             "512",
+            "--memory",
+            "2g",
+            "--cpus",
+            "2",
             "--env",
             f"MCPAUDIT_SPEC={spec}",
             "--env",
@@ -460,18 +490,73 @@ class Sandbox:
         ]
         return facts
 
-    async def snapshot(self) -> tuple[list[FileChange], int, list[NetworkEvent]]:
-        """Changes and egress attempts since the previous snapshot."""
+    async def snapshot(self) -> PhaseRecord:
+        """Changes and egress attempts since the previous snapshot.
+
+        `docker diff` is cumulative against the image, so a file already reported
+        keeps its code when it is written again. While the server runs, size and
+        mtime of every changed path are compared too, which catches rewrites.
+        Collection failures raise: missing evidence must never read as no effects.
+        """
         diff = await self.docker("diff", self.server, check=False)
+        if diff.returncode != 0:
+            raise SandboxError("File-write recording failed (docker diff); observation is incomplete.")
         current = {c.path: c for c in parse_diff(diff.stdout.decode("utf-8", "replace"))}
-        new = [c for path, c in current.items() if self._seen.changes.get(path) != c.change]
+        stats = await self._stat(sorted(current)) if current else {}
+        new: list[FileChange] = []
+        rewritten: list[FileChange] = []
+        for path, change in current.items():
+            moved = stats is not None and path in stats and self._seen.stats.get(path) != stats[path]
+            if self._seen.changes.get(path) != change.change:
+                new.append(change)
+            elif moved and change.change != "deleted":
+                directory = stats is not None and stats[path].startswith("directory|")
+                rewritten.append(change.model_copy(update={"entries_only": directory}))
+        lasting = {c.path for c in new} | {c.path for c in rewritten if not c.entries_only}
+        for change in rewritten:
+            # A directory only counts on its own when no child change explains it.
+            if not change.entries_only or not any(p.startswith(change.path + "/") for p in lasting):
+                new.append(change)
+        new.sort(key=lambda c: c.path)
         self._seen.changes.update({path: c.change for path, c in current.items()})
+        if stats:
+            self._seen.stats.update(stats)
         truncated = max(0, len(new) - MAX_CHANGES_PER_PHASE)
         logs = await self.docker("logs", self.sink, check=False)
+        running = await self.docker("inspect", "--format", "{{.State.Running}}", self.sink, check=False)
+        if logs.returncode != 0 or running.stdout.decode().strip() != "true":
+            raise SandboxError(
+                "The network recorder stopped or could not be read; observation is incomplete."
+            )
         events, self._seen.last_seq, _ = parse_sink_log(
             logs.stdout.decode("utf-8", "replace"), self._seen.last_seq
         )
-        return new[:MAX_CHANGES_PER_PHASE], truncated, events
+        return PhaseRecord(
+            changes=new[:MAX_CHANGES_PER_PHASE],
+            truncated=truncated,
+            network=events,
+            rewrites_checked=stats is not None or not current,
+        )
+
+    async def _stat(self, paths: list[str]) -> dict[str, str] | None:
+        """Size and mtime of paths inside the running server, or None if it is not running."""
+        result = await self.docker(
+            "exec",
+            "--user",
+            SERVER_USER,
+            self.server,
+            "stat",
+            "--printf",
+            "%F\\t%s\\t%y\\t%n\\n",
+            "--",
+            *paths[:2000],
+            check=False,
+            timeout=30,
+        )
+        stats = parse_stat(result.stdout.decode("utf-8", "replace"))
+        if result.returncode != 0 and not stats:
+            return None
+        return stats
 
     async def stop_server(self) -> None:
         await self.docker("stop", "--time", "2", self.server, check=False, timeout=30)

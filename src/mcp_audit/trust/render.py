@@ -76,7 +76,8 @@ def terminal(card: VerdictCard) -> str:
     for phase in obs.phases:
         lines.append("  " + _t(_phase_line(phase)))
         for change in phase.file_changes[:5]:
-            lines.append(f"      {change.change:<8} {_t(change.path)}")
+            kind = "entries" if change.entries_only else change.change
+            lines.append(f"      {kind:<8} {_t(change.path)}")
     exercised = [t.name for t in obs.tools if t.exercised]
     if obs.tools:
         lines.append(f"  exercised: {', '.join(map(_t, exercised)) if exercised else 'none'}")
@@ -214,7 +215,8 @@ def html(card: VerdictCard) -> str:
     parts += ["<div class=wrap><table>", _row("Phase", "File writes", "Network attempts", head=True)]
     for phase in obs.phases:
         files = "<br>".join(
-            f"{escape(c.change)} <code>{escape(c.path)}</code>" for c in phase.file_changes[:30]
+            f"{'temporary entries in' if c.entries_only else escape(c.change)} <code>{escape(c.path)}</code>"
+            for c in phase.file_changes[:30]
         )
         if phase.file_changes_truncated or len(phase.file_changes) > 30:
             files += f"<br>… {len(phase.file_changes) - 30 + phase.file_changes_truncated} more"
