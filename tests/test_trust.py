@@ -697,7 +697,7 @@ def test_pypi_metadata_never_starts_the_venv_interpreter() -> None:
     from mcp_audit.trust.sandbox import _PYPI_INSTALL
 
     assert "/srv/venv/bin/python" not in _PYPI_INSTALL
-    assert 'python -I -S -c "$MCPAUDIT_META"' in _PYPI_INSTALL
+    assert 'python -I -S -c "$4" "$2"' in _PYPI_INSTALL
 
 
 class FakeDocker:
@@ -1199,3 +1199,43 @@ def test_shutdown_egress_wording() -> None:
     card = build_card(resolution(), observation([Phase(name="shutdown", network=events)]), [], None)
     summary = next(m.summary for m in card.mismatches if m.rule == "TBC-UNPROMPTED-NET")
     assert "after the session ended" in summary and "before any tool" not in summary
+
+
+# Round-four review fixes ----------------------------------------------------------
+
+
+async def test_installer_inputs_never_reach_the_run_image_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    meta = 'MCPAUDIT_META={"version": "1.2.3", "bin": "cli.js"}'
+    sandbox = fake_sandbox(
+        monkeypatch,
+        {"run": [(0, meta)], "commit": [(0, "")], "rm": [(0, "")], "image": [(0, "")]},
+    )
+    prepared = await sandbox.prepare(PackageRef(registry_type="npm", identifier="notes-mcp", version="1.2.3"))
+    assert prepared.command == ["/srv/node_modules/.bin/notes-mcp"] and prepared.version == "1.2.3"
+    docker = sandbox.docker
+    assert isinstance(docker, FakeDocker)
+    install = next(call for call in docker.calls if call[0] == "run")
+    assert "--env" not in install and not any(arg.startswith("MCPAUDIT_") for arg in install)
+    assert install[-4:-2] == ("notes-mcp@1.2.3", "notes-mcp")
+
+
+async def test_unparsable_attestation_does_not_fail_the_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    sandbox = fake_sandbox(monkeypatch, {"inspect": [(0, "unexpected")]})
+    assert await sandbox.attest() == ["Server container settings could not be parsed."]
+
+
+def test_pin_from_another_server_is_not_compared() -> None:
+    tools = [ToolInfo(name="list_notes", description="List.", input_schema={"type": "object"})]
+    mine = build_pin(resolution(), observation([]), tools)
+    other = mine.model_copy(update={"server_name": "io.github.someone/else", "surface_sha256": "x"})
+    drift = compare_pin(other, mine)
+    assert [(m.rule, m.severity) for m in drift] == [("TBC-PIN-OTHER-SERVER", "info")]
+
+
+def test_remote_egress_line_uses_the_endpoint_port() -> None:
+    from mcp_audit.trust.models import RemoteRef
+
+    res = Resolution(input="x", kind="url", remote=RemoteRef(type="x", url="http://127.0.0.1:8080/mcp"))
+    card = build_card(res, Observation(mode="outside", status="complete"), [], None)
+    egress = next(s for s in card.suggestions if s.title == "Network egress").body
+    assert egress.startswith("allow 127.0.0.1:8080")

@@ -181,7 +181,7 @@ def html(card: VerdictCard) -> str:
         *(_row(f"<b>{label}</b>", value) for label, value in facts),
         "</table></div>",
         "<h2>What it claims</h2><div class=wrap><table>",
-        _row("Check", "Result", head=True),
+        _row("Result", "Check", head=True),
         *(_row(_badge(c.status), escape(c.summary)) for c in target.checks),
         "</table></div>",
     ]

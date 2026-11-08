@@ -49,16 +49,16 @@ _PASSTHROUGH_ENV = (
 )
 
 _NPM_META = (
-    'const p=require("/srv/node_modules/"+process.env.MCPAUDIT_NAME+"/package.json");'
+    'const p=require("/srv/node_modules/"+process.argv[1]+"/package.json");'
     'console.log("MCPAUDIT_META="+JSON.stringify({version:p.version||null,bin:p.bin||null}))'
 )
 # Read the installed distribution with the base interpreter in isolated mode with
 # `site` disabled. Starting the venv interpreter would run any `.pth` hook a wheel
 # shipped, as root with real network, before observation starts.
 _PYPI_META = (
-    "import glob,importlib.metadata as m,json,os;"
+    "import glob,importlib.metadata as m,json,sys;"
     "p=glob.glob('/srv/venv/lib/python*/site-packages');"
-    "d=next(iter(m.distributions(name=os.environ['MCPAUDIT_NAME'],path=p)));"
+    "d=next(iter(m.distributions(name=sys.argv[1],path=p)));"
     "s=sorted(e.name for e in d.entry_points if e.group=='console_scripts');"
     "print('MCPAUDIT_META='+json.dumps({'version':d.version,'scripts':s}))"
 )
@@ -67,19 +67,19 @@ mkdir -p /srv /scratch
 cd /srv
 printf '{"name":"mcp-audit-trust-install","private":true}' > package.json
 npm install --no-audit --no-fund --no-update-notifier --loglevel=error \
-  $MCPAUDIT_SCRIPTS --save-exact "$MCPAUDIT_SPEC" >&2
+  $3 --save-exact "$1" >&2
 chown -R 10001:10001 /scratch
 chmod -R a+rX /srv
-node -e "$MCPAUDIT_META"
+node -e "$4" "$2"
 """
 _PYPI_INSTALL = r"""set -eu
 mkdir -p /scratch
 python -m venv /srv/venv
 /srv/venv/bin/pip install --disable-pip-version-check --no-input --quiet \
-  $MCPAUDIT_SCRIPTS "$MCPAUDIT_SPEC" >&2
+  $3 "$1" >&2
 chown -R 10001:10001 /scratch
 chmod -R a+rX /srv
-python -I -S -c "$MCPAUDIT_META"
+python -I -S -c "$4" "$2"
 """
 
 
@@ -366,19 +366,19 @@ class Sandbox:
             "2g",
             "--cpus",
             "2",
-            "--env",
-            f"MCPAUDIT_SPEC={spec}",
-            "--env",
-            f"MCPAUDIT_NAME={package.identifier}",
-            "--env",
-            f"MCPAUDIT_SCRIPTS={blocker}",
-            "--env",
-            f"MCPAUDIT_META={meta_program}",
+            # Inputs travel as positional arguments, not environment variables:
+            # docker commit would carry env into the run image, telling the
+            # server under review that it is being audited.
             "--entrypoint",
             "sh",
             base,
             "-c",
             script,
+            "mcp-audit-install",
+            spec,
+            package.identifier,
+            blocker,
+            meta_program,
             timeout=self.config.install_timeout,
             check=False,
         )
@@ -511,7 +511,10 @@ class Sandbox:
         )
         if result.returncode != 0:
             return ["Server container settings could not be read back."]
-        mounts, drop, add, network, user, secopt = result.stdout.decode().strip().split("|", 5)
+        parts = result.stdout.decode().strip().split("|", 5)
+        if len(parts) != 6:
+            return ["Server container settings could not be parsed."]
+        mounts, drop, add, network, user, secopt = parts
         facts = [
             "Host mounts: none." if mounts in {"[]", "null"} else f"Host mounts present: {mounts}.",
             f"Capabilities dropped: {drop}; added: {add if add != 'null' else 'none'}.",

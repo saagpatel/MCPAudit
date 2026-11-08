@@ -264,7 +264,7 @@ async def observe_stdio(
                     + "; effects may be missing."
                 )
         except Exception as exc:  # noqa: BLE001 - every failure becomes card evidence
-            observation.status = "partial" if observation.tools else "failed"
+            observation.status = "partial" if observation.tools_listed else "failed"
             observation.error = _describe(exc, errlog)
             if not observation.phases:
                 try:

@@ -303,8 +303,9 @@ def _permissions(key: str, observation: Observation, found: list[Mismatch]) -> S
 def _egress(resolution: Resolution, observation: Observation) -> Suggestion:
     lines: list[str] = []
     if observation.mode == "outside" and resolution.remote is not None:
-        host = urlsplit(resolution.remote.url).hostname
-        lines.append(f"allow {host}:443  # the remote endpoint itself")
+        parts = urlsplit(resolution.remote.url)
+        port = parts.port or (443 if parts.scheme == "https" else 80)
+        lines.append(f"allow {parts.hostname}:{port}  # the remote endpoint itself")
         lines.append("# Server-side egress cannot be seen from outside.")
     else:
         seen: dict[str, list[str]] = {}
@@ -390,6 +391,17 @@ def build_pin(resolution: Resolution, observation: Observation, tools: list[Tool
 
 def compare_pin(previous: TrustPin, current: TrustPin) -> list[Mismatch]:
     """Drift between an earlier pin and this run's surface."""
+    before_id = previous.server_name or previous.package
+    after_id = current.server_name or current.package
+    if before_id != after_id:
+        return [
+            Mismatch(
+                severity="info",
+                rule="TBC-PIN-OTHER-SERVER",
+                summary=f"The --pin file is for {before_id or 'an unnamed server'}, "
+                f"not {after_id or 'this one'}; drift was not compared.",
+            )
+        ]
     if previous.surface_sha256 == current.surface_sha256:
         return []
     before = {t.name: t for t in previous.tools}
