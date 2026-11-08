@@ -107,7 +107,7 @@ async def observe_container(
 
         params = sandbox.server_parameters(prepared, package.arguments, env)
         tools = await observe_stdio(params, sandbox.snapshot, options.plan, observation, attest)
-        observation.limits = [install, *CONTAINER_LIMITS]
+        observation.limits = [install, *CONTAINER_LIMITS, *observation.limits]
         try:
             await sandbox.stop_server()
             record = await sandbox.snapshot()
@@ -182,6 +182,7 @@ async def run_trust(target: str, resolver: Resolver, options: TrustOptions) -> T
             else "Nothing runnable was resolved."
         )
         observation = Observation(mode="none", status="skipped", error=reason)
-    pin = build_pin(resolution, observation, tools) if tools else None
+    # An empty listing still pins: a server that drops every tool is drift too.
+    pin = build_pin(resolution, observation, tools) if observation.tools_listed else None
     drift = compare_pin(options.previous_pin, pin) if options.previous_pin and pin else []
     return TrustResult(card=build_card(resolution, observation, drift, command), pin=pin)

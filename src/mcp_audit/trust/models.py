@@ -137,6 +137,7 @@ class Observation(BaseModel):
     protocol_era: str | None = None
     server_info: dict[str, str] | None = None
     tools: list[ToolSummary] = Field(default_factory=list)
+    tools_listed: bool = False
     prompts: list[str] = Field(default_factory=list)
     resources: int | None = None
     phases: list[Phase] = Field(default_factory=list)

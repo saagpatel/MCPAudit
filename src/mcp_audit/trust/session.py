@@ -208,6 +208,7 @@ async def _inspect(client: Client, capture: ProtocolCapture, observation: Observ
     observation.protocol_era = session.era
     observation.server_info = session.server_info
     tools = [convert_tool(t) for t in await _list_all(client.list_tools, "tools")]
+    observation.tools_listed = True
     capabilities = client.server_capabilities
     if capabilities.prompts is not None:
         try:
@@ -254,7 +255,14 @@ async def observe_stdio(
                         tools = await _inspect(client, capture, observation)
                     await _record(observation, Phase(name="startup"), snapshot, plan.settle_seconds)
                     await _exercise(client, tools, plan, observation, snapshot)
-            observation.status = "complete"
+            unchecked = [p.name for p in observation.phases if not p.rewrites_checked]
+            observation.status = "partial" if unchecked else "complete"
+            if unchecked:
+                observation.limits.append(
+                    "Rewrite checks were incomplete during "
+                    + ", ".join(unchecked)
+                    + "; effects may be missing."
+                )
         except Exception as exc:  # noqa: BLE001 - every failure becomes card evidence
             observation.status = "partial" if observation.tools else "failed"
             observation.error = _describe(exc, errlog)

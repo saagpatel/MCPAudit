@@ -14,6 +14,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
 import secrets
 import shutil
 import subprocess
@@ -35,6 +36,8 @@ LABEL = "io.mcp-audit.trust=1"
 SERVER_USER = "10001:10001"
 HOME = "/scratch"
 MAX_CHANGES_PER_PHASE = 200
+STAT_BATCH = 500
+MAX_STAT_PATHS = 20000
 _PASSTHROUGH_ENV = (
     "PATH",
     "HOME",
@@ -164,6 +167,11 @@ def parse_diff(output: str) -> list[FileChange]:
     return sorted(result, key=lambda c: c.path)
 
 
+def diff_paths(output: str) -> set[str]:
+    """Every path `docker diff` lists, including parents parse_diff folds away."""
+    return {line[2:] for line in output.splitlines() if line[:2] in {"A ", "C ", "D "} and line[2:3] == "/"}
+
+
 def parse_sink_log(output: str, after: int) -> tuple[list[NetworkEvent], int, dict[str, object] | None]:
     """Return events with seq > after, the highest seq seen, and the ready/setup record."""
     events: list[NetworkEvent] = []
@@ -187,12 +195,12 @@ def parse_sink_log(output: str, after: int) -> tuple[list[NetworkEvent], int, di
         events.append(
             NetworkEvent(
                 kind=kind,
-                host=_text(record.get("name")),
-                ip=_text(record.get("dst_ip")),
+                host=_host(record.get("name")),
+                ip=_host(record.get("dst_ip")),
                 port=record.get("dst_port") if isinstance(record.get("dst_port"), int) else None,
-                sni=_text(record.get("sni")),
+                sni=_host(record.get("sni")),
                 http_method=_text(record.get("http_method")),
-                http_host=_text(record.get("http_host")),
+                http_host=_host(record.get("http_host")),
                 qtype=record.get("qtype") if isinstance(record.get("qtype"), int) else None,
             )
         )
@@ -201,6 +209,16 @@ def parse_sink_log(output: str, after: int) -> tuple[list[NetworkEvent], int, di
 
 def _text(value: object) -> str | None:
     return value[:253] if isinstance(value, str) and value else None
+
+
+_NOT_HOSTNAME = re.compile(r"[^a-z0-9._:-]")
+
+
+def _host(value: object) -> str | None:
+    """Server-controlled names reduced to a hostname alphabet, so they cannot carry
+    line breaks or markup into suggestion lines; anything else becomes '?'."""
+    text = _text(value)
+    return _NOT_HOSTNAME.sub("?", text.lower()) if text else None
 
 
 def choose_command(package: PackageRef, meta: dict[str, object]) -> list[str]:
@@ -494,15 +512,22 @@ class Sandbox:
         """Changes and egress attempts since the previous snapshot.
 
         `docker diff` is cumulative against the image, so a file already reported
-        keeps its code when it is written again. While the server runs, size and
-        mtime of every changed path are compared too, which catches rewrites.
-        Collection failures raise: missing evidence must never read as no effects.
+        keeps its code when it is written again, and one added then removed simply
+        vanishes. Paths seen before and now absent are reported as deleted. While
+        the server runs, size and mtime of every changed path are compared too,
+        which catches rewrites; any path that could not be checked marks the phase
+        as not fully checked. Collection failures raise: missing evidence must
+        never read as no effects.
         """
         diff = await self.docker("diff", self.server, check=False)
         if diff.returncode != 0:
             raise SandboxError("File-write recording failed (docker diff); observation is incomplete.")
-        current = {c.path: c for c in parse_diff(diff.stdout.decode("utf-8", "replace"))}
-        stats = await self._stat(sorted(current)) if current else {}
+        output = diff.stdout.decode("utf-8", "replace")
+        current = {c.path: c for c in parse_diff(output)}
+        present = diff_paths(output)
+        existing = sorted(path for path, c in current.items() if c.change != "deleted")
+        stats = await self._stat(existing) if existing else {}
+        complete = stats is not None and all(path in stats for path in existing)
         new: list[FileChange] = []
         rewritten: list[FileChange] = []
         for path, change in current.items():
@@ -512,6 +537,16 @@ class Sandbox:
             elif moved and change.change != "deleted":
                 directory = stats is not None and stats[path].startswith("directory|")
                 rewritten.append(change.model_copy(update={"entries_only": directory}))
+        for path, earlier in list(self._seen.changes.items()):
+            if path not in present and earlier != "deleted":
+                # Created in an earlier phase and removed since: a deletion, not churn.
+                new.append(
+                    FileChange(
+                        path=path, change="deleted", in_home=path == HOME or path.startswith(HOME + "/")
+                    )
+                )
+                del self._seen.changes[path]
+                self._seen.stats.pop(path, None)
         lasting = {c.path for c in new} | {c.path for c in rewritten if not c.entries_only}
         for change in rewritten:
             # A directory only counts on its own when no child change explains it.
@@ -535,27 +570,37 @@ class Sandbox:
             changes=new[:MAX_CHANGES_PER_PHASE],
             truncated=truncated,
             network=events,
-            rewrites_checked=stats is not None or not current,
+            rewrites_checked=complete,
         )
 
     async def _stat(self, paths: list[str]) -> dict[str, str] | None:
-        """Size and mtime of paths inside the running server, or None if it is not running."""
-        result = await self.docker(
-            "exec",
-            "--user",
-            SERVER_USER,
-            self.server,
-            "stat",
-            "--printf",
-            "%F\\t%s\\t%y\\t%n\\n",
-            "--",
-            *paths[:2000],
-            check=False,
-            timeout=30,
-        )
-        stats = parse_stat(result.stdout.decode("utf-8", "replace"))
-        if result.returncode != 0 and not stats:
+        """Size and mtime of paths inside the running server, in bounded batches.
+
+        Returns None when coverage cannot be complete: the server is not running,
+        or there are more paths than MAX_STAT_PATHS. Paths missing from the result
+        (for example removed between diff and stat) leave coverage incomplete.
+        """
+        if len(paths) > MAX_STAT_PATHS:
             return None
+        stats: dict[str, str] = {}
+        for start in range(0, len(paths), STAT_BATCH):
+            result = await self.docker(
+                "exec",
+                "--user",
+                SERVER_USER,
+                self.server,
+                "stat",
+                "--printf",
+                "%F\\t%s\\t%y\\t%n\\n",
+                "--",
+                *paths[start : start + STAT_BATCH],
+                check=False,
+                timeout=30,
+            )
+            batch = parse_stat(result.stdout.decode("utf-8", "replace"))
+            if result.returncode != 0 and not batch:
+                return None
+            stats.update(batch)
         return stats
 
     async def stop_server(self) -> None:
