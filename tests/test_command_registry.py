@@ -501,6 +501,7 @@ mcp_audit/trifecta.py
 mcp_audit/trust/__init__.py
 mcp_audit/trust/cli.py
 mcp_audit/trust/models.py
+mcp_audit/trust/public_http.py
 mcp_audit/trust/render.py
 mcp_audit/trust/resolve.py
 mcp_audit/trust/run.py

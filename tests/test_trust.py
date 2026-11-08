@@ -497,7 +497,9 @@ def observation(phases: list[Phase], read_only: bool = True) -> Observation:
 def test_clean_run_has_no_mismatches_and_allows_clean_read_only_tool() -> None:
     card = build_card(
         resolution(),
-        observation([Phase(name="startup"), Phase(name="tool:list_notes", tool="list_notes")]),
+        observation(
+            [Phase(name="startup"), Phase(name="tool:list_notes", tool="list_notes", is_error=False)]
+        ),
         [],
         ["/srv/node_modules/.bin/notes-mcp"],
     )
@@ -686,3 +688,265 @@ async def test_live_sinkhole_records_and_blocks_egress() -> None:
         assert "TCP connect exfil.example.test:80 (HTTP GET)" in labels
         assert "TCP connect 192.0.2.10:8443" in labels
         assert all("token" not in json.dumps(e.model_dump()) for e in events)
+
+
+# Review fixes: install isolation, rewrites, evidence gaps, versions, remotes -------------
+
+
+def test_pypi_metadata_never_starts_the_venv_interpreter() -> None:
+    from mcp_audit.trust.sandbox import _PYPI_INSTALL
+
+    assert "/srv/venv/bin/python" not in _PYPI_INSTALL
+    assert 'python -I -S -c "$MCPAUDIT_META"' in _PYPI_INSTALL
+
+
+class FakeDocker:
+    """Scripted runtime CLI: each call pops the next answer for its subcommand."""
+
+    def __init__(self, answers: dict[str, list[tuple[int, str]]]) -> None:
+        self.answers = answers
+        self.calls: list[tuple[str, ...]] = []
+
+    async def __call__(self, *args: str, **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        self.calls.append(args)
+        code, out = self.answers[args[0]].pop(0)
+        return subprocess.CompletedProcess(list(args), code, out.encode(), b"")
+
+
+def fake_sandbox(monkeypatch: pytest.MonkeyPatch, answers: dict[str, list[tuple[int, str]]]) -> Sandbox:
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/local/bin/docker")
+    sandbox = Sandbox(SandboxConfig())
+    monkeypatch.setattr(sandbox, "docker", FakeDocker(answers))
+    return sandbox
+
+
+async def test_snapshot_reports_rewrite_of_an_already_added_file(monkeypatch: pytest.MonkeyPatch) -> None:
+    sandbox = fake_sandbox(
+        monkeypatch,
+        {
+            "diff": [
+                (0, "C /scratch\nA /scratch/db\n"),
+                (0, "C /scratch\nA /scratch/db\n"),
+                (0, "A /scratch/db\n"),
+            ],
+            "exec": [
+                (0, "regular file\t10\t2026-01-01 00:00:00.1\t/scratch/db\n"),
+                (0, "regular file\t20\t2026-01-01 00:00:05.2\t/scratch/db\n"),
+                (0, "regular file\t20\t2026-01-01 00:00:05.2\t/scratch/db\n"),
+            ],
+            "logs": [(0, ""), (0, ""), (0, "")],
+            "inspect": [(0, "true"), (0, "true"), (0, "true")],
+        },
+    )
+    startup, tool_call, quiet = await sandbox.snapshot(), await sandbox.snapshot(), await sandbox.snapshot()
+    assert [c.path for c in startup.changes] == ["/scratch/db"]
+    assert [c.path for c in tool_call.changes] == ["/scratch/db"]
+    assert quiet.changes == [] and quiet.rewrites_checked
+
+
+async def test_directory_churn_is_entries_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    listing = "A /scratch/data\nA /scratch/data/db\n"
+    db = "regular file\t1\t2026-01-01 00:00:00\t/scratch/data/db\n"
+    before = "directory\t4096\t2026-01-01 00:00:00\t/scratch/data\n" + db
+    after = "directory\t4096\t2026-01-01 00:00:09\t/scratch/data\n" + db
+    sandbox = fake_sandbox(
+        monkeypatch,
+        {
+            "diff": [(0, listing), (0, listing)],
+            "exec": [(0, before), (0, after)],
+            "logs": [(0, ""), (0, "")],
+            "inspect": [(0, "true"), (0, "true")],
+        },
+    )
+    await sandbox.snapshot()
+    record = await sandbox.snapshot()
+    assert [(c.path, c.entries_only) for c in record.changes] == [("/scratch/data", True)]
+    phase = Phase(name="tool:list_notes", tool="list_notes", is_error=False, file_changes=record.changes)
+    card = build_card(resolution(), observation([phase]), [], None)
+    assert [m.rule for m in card.mismatches] == ["TBC-TRANSIENT-WRITE"]
+    assert card.verdict == "no_mismatches_observed"
+    assert json.loads(card.suggestions[1].body)["permissions"]["allow"] == []
+
+
+async def test_snapshot_without_stat_marks_rewrites_unchecked(monkeypatch: pytest.MonkeyPatch) -> None:
+    sandbox = fake_sandbox(
+        monkeypatch,
+        {"diff": [(0, "A /scratch/db\n")], "exec": [(1, "")], "logs": [(0, "")], "inspect": [(0, "true")]},
+    )
+    record = await sandbox.snapshot()
+    assert not record.rewrites_checked and [c.path for c in record.changes] == ["/scratch/db"]
+
+
+@pytest.mark.parametrize(
+    "answers",
+    [
+        {"diff": [(1, "")]},
+        {"diff": [(0, "")], "logs": [(1, "")], "inspect": [(0, "true")]},
+        {"diff": [(0, "")], "logs": [(0, "")], "inspect": [(0, "false")]},
+    ],
+)
+async def test_snapshot_collection_failures_raise(
+    monkeypatch: pytest.MonkeyPatch, answers: dict[str, list[tuple[int, str]]]
+) -> None:
+    sandbox = fake_sandbox(monkeypatch, answers)
+    with pytest.raises(SandboxError):
+        await sandbox.snapshot()
+
+
+@pytest.mark.parametrize(
+    "phase",
+    [
+        Phase(name="tool:list_notes", tool="list_notes", is_error=True),
+        Phase(name="tool:list_notes", tool="list_notes", error="no response within 20s"),
+        Phase(name="tool:list_notes", tool="list_notes", is_error=False, rewrites_checked=False),
+    ],
+)
+def test_unsuccessful_or_unchecked_calls_are_never_allowed(phase: Phase) -> None:
+    card = build_card(resolution(), observation([Phase(name="startup"), phase]), [], None)
+    permissions = json.loads(next(s for s in card.suggestions if s.title.startswith("Tool")).body)[
+        "permissions"
+    ]
+    assert permissions["allow"] == [] and "mcp__notes__list_notes" in permissions["ask"]
+
+
+def test_partial_observation_never_allows() -> None:
+    obs = observation([Phase(name="tool:list_notes", tool="list_notes", is_error=False)])
+    obs.status = "partial"
+    card = build_card(resolution(), obs, [], None)
+    assert card.verdict == "incomplete"
+    assert json.loads(card.suggestions[1].body)["permissions"]["allow"] == []
+
+
+def test_skipped_observation_is_incomplete() -> None:
+    obs = Observation(mode="none", status="skipped", error="oci packages are not run")
+    card = build_card(resolution(), obs, [], None)
+    assert card.verdict == "incomplete"
+
+
+def test_pypi_listing_normalizes_names() -> None:
+    server = server_json(
+        packages=[
+            {
+                "registryType": "pypi",
+                "identifier": "notes-py",
+                "version": "0.2.0",
+                "transport": {"type": "stdio"},
+            }
+        ]
+    )
+    routes = registry_routes(server)
+    routes["https://pypi.org/pypi/notes_py/json"] = {
+        "info": {"name": "Notes_Py", "version": "0.2.0", "description": f"<!-- mcp-name: {NAME} -->"}
+    }
+    resolution = Resolver(FakeFetch(routes), REGISTRY).resolve("pypi:notes_py")
+    assert statuses(resolution)["registry.lists_package"] == "pass"
+
+
+def test_mutable_registry_version_resolves_to_concrete_release() -> None:
+    server = server_json()
+    server["packages"][0]["version"] = "latest"
+    resolution = Resolver(FakeFetch(registry_routes(server)), REGISTRY).resolve(NAME)
+    assert statuses(resolution)["package.version"] == "warn"
+    assert resolution.package is not None and resolution.package.version == "1.2.3"
+
+
+def test_launch_entry_uses_placeholders_not_synthetic_values() -> None:
+    res = Resolver(FakeFetch(registry_routes(server_json())), REGISTRY).resolve(NAME)
+    card = build_card(res, Observation(mode="none", status="skipped"), [], None)
+    entry = json.loads(card.suggestions[0].body)["mcpServers"]["notes"]
+    assert entry["args"] == ["-y", "@example-owner/notes-mcp@1.2.3", "--root", "<set-me>"]
+    assert entry["env"] == {"NOTES_TOKEN": "<set-me>"}
+
+
+def test_public_only_transport_refuses_private_addresses(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mcp_audit.trust.public_http import (
+        NonPublicAddressError,
+        PublicOnlyBackend,
+        PublicOnlyTransport,
+        public_addresses,
+    )
+
+    assert isinstance(PublicOnlyTransport()._pool._network_backend, PublicOnlyBackend)
+    with pytest.raises(NonPublicAddressError):
+        public_addresses([(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.5", 443))])
+    with pytest.raises(NonPublicAddressError):
+        public_addresses([(socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("fe80::1%en0", 443, 0, 0))])
+    assert public_addresses([(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))]) == [
+        "93.184.216.34"
+    ]
+
+
+async def test_public_only_backend_vets_at_connect_time(monkeypatch: pytest.MonkeyPatch) -> None:
+    import anyio
+
+    from mcp_audit.trust.public_http import NonPublicAddressError, PublicOnlyBackend
+
+    async def rebinding(host: str, port: int, **kwargs: object) -> list[Any]:
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", port))]
+
+    monkeypatch.setattr(anyio, "getaddrinfo", rebinding)
+    with pytest.raises(NonPublicAddressError):
+        await PublicOnlyBackend().connect_tcp("public.example.test", 443)
+
+
+FIXTURE_SERVER = Path(__file__).parent / "fixtures" / "annotation_liar_server.py"
+
+
+async def test_observe_stdio_attributes_phases_and_honours_budget() -> None:
+    import sys
+
+    from mcp.client.stdio import StdioServerParameters
+
+    from mcp_audit.trust.sandbox import PhaseRecord
+    from mcp_audit.trust.session import ExercisePlan, observe_stdio
+
+    scripted = iter(
+        [
+            PhaseRecord([], 0, [NetworkEvent(kind="dns", host="update.example.test")], True),
+            PhaseRecord([FileChange(path="/scratch/c", change="added", in_home=True)], 0, [], True),
+            PhaseRecord([], 0, [], True),
+        ]
+    )
+
+    async def snapshot() -> PhaseRecord:
+        return next(scripted)
+
+    obs = Observation(mode="container", status="failed")
+    params = StdioServerParameters(command=sys.executable, args=[str(FIXTURE_SERVER), "honest"])
+    plan = ExercisePlan(max_calls=2, settle_seconds=0)
+    tools = await observe_stdio(params, snapshot, plan, obs)
+    assert obs.status == "complete" and obs.protocol_era in {"modern", "legacy"}
+    assert len(tools) == 6
+    assert [p.name for p in obs.phases] == ["startup", "tool:cache_info", "tool:clock"]
+    assert obs.phases[1].is_error is False and obs.phases[1].arguments == {}
+    skipped = {t.name: t.skip_reason for t in obs.tools if not t.exercised}
+    assert set(skipped.values()) == {"call budget (2) reached"}
+    card = build_card(resolution(), obs, [], None)
+    assert card.verdict == "do_not_install"
+    assert {m.rule for m in card.mismatches} == {
+        "TBC-READONLY-WRITE",
+        "TBC-UNPROMPTED-NET",
+        "TBC-LOCAL-CLAIM-NET",
+    }
+
+
+async def test_run_trust_skips_unsupported_and_templated_targets(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mcp_audit.trust.models import RemoteRef
+    from mcp_audit.trust.run import TrustOptions, run_trust
+
+    class Stub:
+        def __init__(self, res: Resolution) -> None:
+            self.res = res
+
+        def resolve(self, raw: str) -> Resolution:
+            return self.res
+
+    oci = Resolution(input=NAME, kind="registry", package=PackageRef(registry_type="oci", identifier="img"))
+    templated = Resolution(
+        input=NAME,
+        kind="registry",
+        remote=RemoteRef(type="streamable-http", url="https://{region}.example.test/mcp"),
+    )
+    for res in (oci, templated):
+        result = await run_trust(NAME, Stub(res), TrustOptions())  # type: ignore[arg-type]
+        assert result.card.verdict == "incomplete" and result.pin is None

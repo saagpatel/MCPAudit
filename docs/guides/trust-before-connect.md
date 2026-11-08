@@ -32,8 +32,11 @@ inputs are the target you name and public registry metadata.
 2. **Install.** The exact version is installed into a fresh container from a
    stock `node:24-slim` or `python:3.13-slim` image. npm install scripts and
    PyPI source builds are disabled unless you pass `--allow-install-scripts`.
-   The install step has network access to the package registry. It is the
-   only step that does.
+   Installed metadata is read with the base interpreter in isolated mode, so a
+   wheel's `.pth` startup hooks never run during install. The install
+   container has unrestricted network access (it fetches the package) and is
+   the only step that does. With `--allow-install-scripts`, untrusted install
+   code runs there with that access.
 3. **Run.** The server runs in a second container:
    - no host mounts, no credentials, no host environment
    - all Linux capabilities dropped, `no-new-privileges`, and a non-root user
@@ -59,8 +62,10 @@ inputs are the target you name and public registry metadata.
      connection. Nothing the server sends leaves the sandbox.
 6. **Judge.** It writes a verdict card and a pin of the tool surface.
 
-A remote URL taken from registry metadata is only contacted when it resolves
-to public addresses; a URL you pass yourself is used as given. Templated
+A remote URL taken from registry metadata is only contacted through
+connections that are resolved and vetted as public at connect time, so DNS
+rebinding cannot redirect them to a private address; a URL you pass yourself
+is used as given. Templated
 remote URLs (`https://{region}.example.com/mcp`) are skipped with a note.
 
 Remote servers can only be observed from outside. Their surface is listed
@@ -97,6 +102,7 @@ command exits with code 3.
 | `TBC-WRITE-OUTSIDE-HOME` | medium | Writes outside `/scratch` outside a read-only call. |
 | `TBC-LOCAL-CLAIM-NET` | medium | Its description reads as local or offline, but network attempts were seen. |
 | `TBC-DRIFT` | medium / low | The tool surface differs from the pin passed with `--pin`. |
+| `TBC-TRANSIENT-WRITE` | low | A read-only tool created and removed temporary entries (such as lock files) in a directory during its call. |
 | `TBC-INSTALL-SCRIPTS` | low | npm install scripts are declared. They were not run, so their effects are unobserved. |
 | `TBC-STARTUP-WRITE` | info | Files created in its home directory at startup. |
 
@@ -116,8 +122,8 @@ choose another directory.
 The card ends with suggested lines to paste yourself after review:
 
 - a pinned launch entry with the exact version
-- Claude Code tool permissions: `allow` for exercised read-only tools with no
-  observed effects, `deny` for declared-destructive, injection-matching or
+- Claude Code tool permissions: `allow` only for read-only tools whose call
+  completed successfully with no observed effects in a complete run, `deny` for declared-destructive, injection-matching or
   high-mismatch tools, and `ask` for the rest
 - the egress hosts that were attempted
 - the paths that were written
@@ -139,6 +145,11 @@ mcp-audit trust io.github.owner/server --pin ./mcp-audit-trust/server/pin.json
   other tool's behaviour is unobserved.
 - Effects are attributed to the phase in which they appeared. Background
   activity can land in a neighbouring phase.
+- A file already changed in an earlier phase is reported again when its size
+  or modification time moves while the server runs. A rewrite that keeps
+  both, or one during shutdown, is not seen.
+- If write or network recording fails, the run is reported as incomplete
+  rather than clean.
 - One short session is observed. Delayed or conditional behaviour may not
   trigger.
 - Non-DNS UDP is counted without its destination. If the runtime has no IPv6
