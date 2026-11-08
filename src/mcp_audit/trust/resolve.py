@@ -26,6 +26,7 @@ USER_AGENT = "mcp-audit-trust (+https://github.com/saagpatel/MCPAudit)"
 FETCH_TIMEOUT = 15.0
 MAX_METADATA_BYTES = 8 * 1024 * 1024
 SYNTHETIC_VALUE = "mcpaudit-synthetic"
+SEARCH_PAGES = 3
 LAUNCH_PLACEHOLDER = "<set-me>"
 
 _SERVER_NAME = re.compile(r"^[a-zA-Z0-9.-]+/[a-zA-Z0-9._-]+$")
@@ -121,7 +122,11 @@ def _version(value: str) -> str | None:
 
 
 def _url_target(value: str) -> Target:
-    parts = urlsplit(value)
+    try:
+        parts = urlsplit(value)
+        _ = parts.hostname, parts.port
+    except ValueError:
+        raise TargetError("Remote URL is malformed (host or port).") from None
     if parts.username or parts.password:
         raise TargetError("Remote URLs must not carry credentials.")
     if parts.scheme != "https" and parts.hostname not in {"localhost", "127.0.0.1", "::1"}:
@@ -209,6 +214,16 @@ class Resolver:
             entry = self._registry_entry(resolution, target.name, target.version)
             if entry is not None:
                 self._apply_server_json(resolution, entry)
+                if resolution.server_name != target.name:
+                    resolution.checks.append(
+                        Check(
+                            id="registry.name",
+                            status="fail",
+                            summary=f"Asked for {target.name}, but the registry returned "
+                            f"{resolution.server_name or 'an entry with no name'}.",
+                        )
+                    )
+                    resolution.server_name = target.name
                 self._check_package(resolution)
         elif target.kind in {"npm", "pypi"}:
             self._from_package(resolution, target)
@@ -250,24 +265,11 @@ class Resolver:
                 )
             return None
         server = _dict(payload.get("server")) or payload
-        meta = _dict(_dict(payload.get("_meta")).get("io.modelcontextprotocol.registry/official"))
         resolution.registry_listed = True
-        status = _str(meta.get("status")) or "unknown"
-        resolution.registry_status = status
         resolution.checks.append(
             Check(id="registry.listed", status="pass", summary=f"Listed in the MCP Registry as {name}.")
         )
-        resolution.checks.append(
-            Check(
-                id="registry.status",
-                status=_STATUS_CHECK.get(status, "unknown"),
-                summary=f"Registry status is {status}.",
-            )
-        )
-        if version is None and meta.get("isLatest") is False:
-            resolution.checks.append(
-                Check(id="registry.latest", status="warn", summary="Registry does not mark this as latest.")
-            )
+        _status_checks(resolution, payload, check_latest=version is None)
         return server
 
     def _apply_server_json(self, resolution: Resolution, server: dict[str, Any]) -> None:
@@ -451,13 +453,14 @@ class Resolver:
         )
         expected = resolution.server_name
         where = "package.json mcpName" if package.registry_type == "npm" else "PyPI description mcp-name"
+        owned = marker is not None and expected is not None and marker == expected
         resolution.checks.append(
             Check(
                 id="namespace.package_ownership",
-                status="pass" if marker == expected else "fail",
+                status="pass" if owned else "fail",
                 summary=(
                     f"{where} matches {expected}."
-                    if marker == expected
+                    if owned
                     else f"{where} is {marker or 'missing'}, expected {expected}; "
                     "the package does not confirm this registry entry."
                 ),
@@ -481,24 +484,34 @@ class Resolver:
         if len(labels) < 2:
             return
         namespace = ".".join(reversed(labels[-2:]))
-        search = (
-            f"{self.registry_url}/v0.1/servers?search={quote(namespace, safe='')}&limit=50&version=latest"
-        )
-        try:
-            payload = _dict(self.fetch(search))
-        except FetchError as exc:
-            resolution.checks.append(
-                Check(
-                    id="registry.listed", status="unknown", summary=f"Registry search failed: {exc.reason}."
-                )
-            )
-            return
         wanted = _normal_url(url)
         outsiders: list[str] = []
-        for entry in _list(payload.get("servers")):
+        entries: list[Any] = []
+        cursor: str | None = None
+        for _ in range(SEARCH_PAGES):
+            query = f"search={quote(namespace, safe='')}&limit=100&version=latest"
+            search = f"{self.registry_url}/v0.1/servers?{query}"
+            if cursor:
+                search += f"&cursor={quote(cursor, safe='')}"
+            try:
+                payload = _dict(self.fetch(search))
+            except FetchError as exc:
+                resolution.checks.append(
+                    Check(
+                        id="registry.listed",
+                        status="unknown",
+                        summary=f"Registry search failed: {exc.reason}.",
+                    )
+                )
+                return
+            entries.extend(_list(payload.get("servers")))
+            cursor = _str(_dict(payload.get("metadata")).get("nextCursor"))
+            if not cursor:
+                break
+        for entry in entries:
             server = _dict(_dict(entry).get("server"))
             remotes = [r for r in (_remote(raw) for raw in _list(server.get("remotes"))) if r is not None]
-            if not any(_normal_url(r.url) == wanted for r in remotes):
+            if wanted is None or not any(_normal_url(r.url) == wanted for r in remotes):
                 continue
             if not namespace_covers(_str(server.get("name")) or "", host):
                 # Anyone can list any URL; only an entry whose verified namespace owns the
@@ -513,21 +526,24 @@ class Resolver:
                     summary=f"Registry entry {server.get('name')} lists this remote.",
                 )
             )
+            _status_checks(resolution, _dict(entry), check_latest=False)
             self._apply_server_json(resolution, server)
             # Enrich with registry metadata, but always connect to the URL the user gave.
             listed = next(r for r in remotes if _normal_url(r.url) == wanted)
             resolution.remote = RemoteRef(type=listed.type, url=url)
             return
-        resolution.registry_listed = False
+        resolution.registry_listed = False if not cursor else None
         resolution.checks.append(
             Check(
                 id="registry.listed",
-                status="warn" if outsiders else "info",
+                status="warn" if outsiders else "unknown" if cursor else "info",
                 summary=(
                     "Registry entries outside the host's namespace list this remote: "
                     + ", ".join(outsiders[:3])
                     + "."
                     if outsiders
+                    else f"Searched {SEARCH_PAGES} pages under {namespace} without finding this remote."
+                    if cursor
                     else f"No registry entry under {namespace} lists this remote."
                 ),
             )
@@ -544,6 +560,24 @@ def namespace_covers(name: str, host: str) -> bool:
     return host == domain or host.endswith("." + domain)
 
 
+def _status_checks(resolution: Resolution, entry: dict[str, Any], *, check_latest: bool) -> None:
+    """The official registry status, the same whichever way the entry was found."""
+    meta = _dict(_dict(entry.get("_meta")).get("io.modelcontextprotocol.registry/official"))
+    status = _str(meta.get("status")) or "unknown"
+    resolution.registry_status = status
+    resolution.checks.append(
+        Check(
+            id="registry.status",
+            status=_STATUS_CHECK.get(status, "unknown"),
+            summary=f"Registry status is {status}.",
+        )
+    )
+    if check_latest and meta.get("isLatest") is False:
+        resolution.checks.append(
+            Check(id="registry.latest", status="warn", summary="Registry does not mark this as latest.")
+        )
+
+
 def _same_package(kind: str, left: str, right: str) -> bool:
     if kind == "pypi":
         return re.sub(r"[-_.]+", "-", left).lower() == re.sub(r"[-_.]+", "-", right).lower()
@@ -555,15 +589,23 @@ def is_exact_version(kind: str, version: str | None) -> bool:
     return version is not None and pattern.match(version) is not None
 
 
-def _normal_url(url: str) -> str:
-    """Endpoint identity: scheme, credentials, host, effective port, path and query all count."""
-    parts = urlsplit(url)
-    port = parts.port or (443 if parts.scheme == "https" else 80)
+def _normal_url(url: str) -> str | None:
+    """Endpoint identity: scheme, credentials, host, port, exact path and query all count.
+
+    Returns None for URLs that cannot be parsed (bad port, broken IPv6 literal), which
+    then never match.
+    """
+    try:
+        parts = urlsplit(url)
+        port = parts.port
+        host = (parts.hostname or "").lower()
+    except ValueError:
+        return None
+    if port is None:
+        port = 443 if parts.scheme == "https" else 80
     userinfo = f"{parts.username or ''}:{parts.password or ''}@" if parts.username or parts.password else ""
     query = f"?{parts.query}" if parts.query else ""
-    return (
-        f"{parts.scheme}://{userinfo}{(parts.hostname or '').lower()}:{port}{parts.path.rstrip('/')}{query}"
-    )
+    return f"{parts.scheme}://{userinfo}{host}:{port}{parts.path or '/'}{query}"
 
 
 def _package(raw: object) -> PackageRef | None:
@@ -695,8 +737,14 @@ def namespace_checks(name: str, repository_url: str | None, remotes: list[Remote
     else:
         domain = ".".join(reversed(namespace.split(".")))
     for remote in remotes:
-        host = (urlsplit(remote.url).hostname or "").lower()
         if domain is None:
+            continue
+        try:
+            host = (urlsplit(remote.url).hostname or "").lower()
+        except ValueError:
+            checks.append(
+                Check(id="namespace.remote_host", status="warn", summary="A remote URL is malformed.")
+            )
             continue
         ok = host == domain or host.endswith("." + domain)
         checks.append(
