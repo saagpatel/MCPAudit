@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `mcp-audit trust TARGET` (Trust Before Connect) checks a server before you
+  install it. `TARGET` is an MCP Registry name, an npm or PyPI package, or a
+  remote URL. It resolves `server.json` and checks its namespace and package
+  ownership markers. Packages are installed and run in a throwaway container
+  with no host mounts, no credentials, all capabilities dropped and a network
+  sinkhole that records DNS, TCP and UDP attempts without letting them out.
+  Tools declared read-only are exercised with synthetic inputs. The command
+  writes a verdict card (terminal, `card.json`, `card.html`), suggested launch,
+  permission, egress and write lines, and a `pin.json` for later `--pin` drift
+  checks. Remote servers are listed from outside only. See
+  [docs/guides/trust-before-connect.md](docs/guides/trust-before-connect.md).
 - `check --canary-check --canary-observe` (macOS, stdio) runs canary calls inside a
   `sandbox-exec` trap that confines direct writes to temporary folders and
   outbound network to a refusing, host-logging proxy (other loopback ports are

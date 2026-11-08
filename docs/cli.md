@@ -40,6 +40,18 @@ Only changed arguments and their JSON Pointers are printed; preserve all other
 fields when editing manually. There is no `--write` option. The command does not
 emit or change `AuditReport` fields.
 
+## Check a server before installing it
+
+`trust TARGET` resolves a registry name (`io.github.owner/name`),
+`npm:PACKAGE[@VERSION]`, `pypi:PACKAGE[==VERSION]`, or an `https://` remote URL,
+checks its `server.json` and namespace, runs packages in a throwaway container
+with a network sinkhole, and writes `card.json`, `card.html` and `pin.json` to
+`--out` (default `./mcp-audit-trust/<server>/`). `--json` prints the card,
+`--pin FILE` compares the tool surface with an earlier pin, and `--safe-tool NAME`
+adds a tool to the read-only exercise. Exit codes: 0 no mismatches observed,
+1 review or do not install, 3 incomplete or no container runtime. It reads no
+client configuration. See [Trust Before Connect](guides/trust-before-connect.md).
+
 ## Helpful errors
 
 Before recovery details, a missing explicit config produced a short error:
