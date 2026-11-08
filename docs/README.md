@@ -13,6 +13,7 @@
 - [Trust packets](guides/trust-packet.md)
 - [Adjusting permission findings](guides/suppressing.md)
 - [Sandbox](guides/sandbox.md)
+- [Trust Before Connect: check a server before installing it](guides/trust-before-connect.md)
 - [Shareable checkup card](guides/checkup.md)
 - [Known issues](known-issues.md)
 - [Output contract](OUTPUT-CONTRACT.md)

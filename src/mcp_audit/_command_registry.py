@@ -259,6 +259,12 @@ COMMANDS: dict[str, CommandSpec | NamespaceSpec] = {
     ),
     "demo": CommandSpec("mcp_audit.check_cli", "demo", "Review the bundled synthetic example.", "Everyday"),
     "explain": CommandSpec("mcp_audit._core_cli", "explain", "Explain a finding offline.", "Everyday"),
+    "trust": CommandSpec(
+        "mcp_audit.trust.cli",
+        "trust",
+        "Experimental: check a server in a sandbox before installing it.",
+        "Everyday",
+    ),
     "fix": CommandSpec(
         "mcp_audit.fix_cli", "fix", "Preview two supported config fixes; no writes.", "Everyday"
     ),

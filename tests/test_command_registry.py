@@ -499,8 +499,16 @@ mcp_audit/terminal_text.py
 mcp_audit/text_limits.py
 mcp_audit/trifecta.py
 mcp_audit/trust/__init__.py
+mcp_audit/trust/cli.py
 mcp_audit/trust/models.py
+mcp_audit/trust/public_http.py
+mcp_audit/trust/render.py
 mcp_audit/trust/resolve.py
+mcp_audit/trust/run.py
+mcp_audit/trust/sandbox.py
+mcp_audit/trust/session.py
+mcp_audit/trust/sinkhole_agent.py
+mcp_audit/trust/verdict.py
 mcp_audit/ux_summary.py
 mcp_audit/watcher.py
 """
