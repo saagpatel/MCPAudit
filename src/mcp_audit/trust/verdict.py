@@ -313,7 +313,8 @@ def _egress(resolution: Resolution, observation: Observation) -> Suggestion:
             for host in hosts(phase.network):
                 seen.setdefault(host, []).append(phase.name)
         for host, phases in seen.items():
-            lines.append(f"review {host}  # attempted during {', '.join(dict.fromkeys(phases))}")
+            safe = host.replace("\n", "?").replace("\r", "?")
+            lines.append(f"review {safe}  # attempted during {', '.join(dict.fromkeys(phases))}")
         lines.append(
             "deny *  # nothing else was attempted" if seen else "deny *  # no egress attempts observed"
         )

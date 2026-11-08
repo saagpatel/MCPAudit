@@ -118,6 +118,9 @@ def trust(
     written = [directory / "card.json", directory / "card.html"]
     if result.pin is not None:
         pin_file = directory / "pin.json"
+        if pin_path is not None and pin_file.resolve() == pin_path.resolve():
+            # Never move the baseline: a drifted surface must not become the next anchor.
+            pin_file = directory / "pin.new.json"
         pin_file.write_text(result.pin.model_dump_json(by_alias=True, indent=2) + "\n", encoding="utf-8")
         written.append(pin_file)
     if as_json:

@@ -506,7 +506,9 @@ class Resolver:
                     )
                 )
                 self._apply_server_json(resolution, server)
-                resolution.remote = next(r for r in remotes if _normal_url(r.url) == wanted)
+                # Enrich with registry metadata, but always connect to the URL the user gave.
+                listed = next(r for r in remotes if _normal_url(r.url) == wanted)
+                resolution.remote = RemoteRef(type=listed.type, url=url)
                 return
         resolution.registry_listed = False
         resolution.checks.append(
@@ -530,8 +532,14 @@ def is_exact_version(kind: str, version: str | None) -> bool:
 
 
 def _normal_url(url: str) -> str:
+    """Endpoint identity: scheme, credentials, host, effective port, path and query all count."""
     parts = urlsplit(url)
-    return f"{parts.scheme}://{(parts.hostname or '').lower()}{parts.path.rstrip('/')}"
+    port = parts.port or (443 if parts.scheme == "https" else 80)
+    userinfo = f"{parts.username or ''}:{parts.password or ''}@" if parts.username or parts.password else ""
+    query = f"?{parts.query}" if parts.query else ""
+    return (
+        f"{parts.scheme}://{userinfo}{(parts.hostname or '').lower()}:{port}{parts.path.rstrip('/')}{query}"
+    )
 
 
 def _package(raw: object) -> PackageRef | None:
