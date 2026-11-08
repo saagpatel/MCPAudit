@@ -156,14 +156,13 @@ def _phase_mismatches(phase: Phase, tool: ToolSummary | None) -> list[Mismatch]:
             )
         return found
     when = "at startup" if phase.name == "startup" else "at shutdown" if phase.name == "shutdown" else None
+    timing = "before any tool was called" if phase.name == "startup" else "after the session ended"
     if when and reached:
         found.append(
             Mismatch(
                 severity="medium",
                 rule="TBC-UNPROMPTED-NET",
-                summary=f"Tried to reach the network {when}, before any tool was called: "
-                + ", ".join(reached[:6])
-                + ".",
+                summary=f"Tried to reach the network {when}, {timing}: " + ", ".join(reached[:6]) + ".",
             )
         )
     if outside:
@@ -337,9 +336,12 @@ def _filesystem(observation: Observation) -> Suggestion:
             else:
                 roots[change.path] = None
     lines = [f"allow-write {root}" for root in roots]
-    lines.append(
-        "deny-write *  # nothing else was written" if roots else "deny-write *  # no writes observed"
-    )
+    if any(phase.file_changes_truncated for phase in observation.phases):
+        lines.append("# list truncated: more paths were written than the card shows; review before allowing")
+    else:
+        lines.append(
+            "deny-write *  # nothing else was written" if roots else "deny-write *  # no writes observed"
+        )
     return Suggestion(
         title="Filesystem writes",
         format="text",

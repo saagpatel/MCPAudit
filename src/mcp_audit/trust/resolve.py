@@ -17,7 +17,7 @@ from typing import Any, cast
 from urllib.parse import quote, urlsplit
 
 from mcp_audit.redaction import redact_text
-from mcp_audit.trust.models import Check, EnvVar, PackageRef, RemoteRef, Resolution, TargetKind
+from mcp_audit.trust.models import Check, CheckStatus, EnvVar, PackageRef, RemoteRef, Resolution, TargetKind
 
 DEFAULT_REGISTRY_URL = "https://registry.modelcontextprotocol.io"
 NPM_URL = "https://registry.npmjs.org"
@@ -34,6 +34,7 @@ _PYPI_NAME = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$")
 _VERSION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.+_-]*$")
 _EXACT_NPM = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
 _EXACT_PYPI = re.compile(r"^\d+(?:\.\d+)*(?:(?:a|b|rc)\d+)?(?:\.post\d+)?(?:\.dev\d+)?(?:\+[a-z0-9.]+)?$")
+_STATUS_CHECK: dict[str, CheckStatus] = {"active": "pass", "deprecated": "warn", "deleted": "fail"}
 _PYPI_MARKER = re.compile(r"mcp-name:\s*([A-Za-z0-9.-]+/[A-Za-z0-9._-]+)")
 _PLACEHOLDER = re.compile(r"\{[^{}]*\}")
 
@@ -259,7 +260,7 @@ class Resolver:
         resolution.checks.append(
             Check(
                 id="registry.status",
-                status="pass" if status == "active" else "warn" if status == "deprecated" else "fail",
+                status=_STATUS_CHECK.get(status, "unknown"),
                 summary=f"Registry status is {status}.",
             )
         )
@@ -493,31 +494,54 @@ class Resolver:
             )
             return
         wanted = _normal_url(url)
+        outsiders: list[str] = []
         for entry in _list(payload.get("servers")):
             server = _dict(_dict(entry).get("server"))
             remotes = [r for r in (_remote(raw) for raw in _list(server.get("remotes"))) if r is not None]
-            if any(_normal_url(r.url) == wanted for r in remotes):
-                resolution.registry_listed = True
-                resolution.checks.append(
-                    Check(
-                        id="registry.listed",
-                        status="pass",
-                        summary=f"Registry entry {server.get('name')} lists this remote.",
-                    )
+            if not any(_normal_url(r.url) == wanted for r in remotes):
+                continue
+            if not namespace_covers(_str(server.get("name")) or "", host):
+                # Anyone can list any URL; only an entry whose verified namespace owns the
+                # host speaks for it.
+                outsiders.append(_str(server.get("name")) or "?")
+                continue
+            resolution.registry_listed = True
+            resolution.checks.append(
+                Check(
+                    id="registry.listed",
+                    status="pass",
+                    summary=f"Registry entry {server.get('name')} lists this remote.",
                 )
-                self._apply_server_json(resolution, server)
-                # Enrich with registry metadata, but always connect to the URL the user gave.
-                listed = next(r for r in remotes if _normal_url(r.url) == wanted)
-                resolution.remote = RemoteRef(type=listed.type, url=url)
-                return
+            )
+            self._apply_server_json(resolution, server)
+            # Enrich with registry metadata, but always connect to the URL the user gave.
+            listed = next(r for r in remotes if _normal_url(r.url) == wanted)
+            resolution.remote = RemoteRef(type=listed.type, url=url)
+            return
         resolution.registry_listed = False
         resolution.checks.append(
             Check(
                 id="registry.listed",
-                status="info",
-                summary=f"No registry entry under {namespace} lists this remote.",
+                status="warn" if outsiders else "info",
+                summary=(
+                    "Registry entries outside the host's namespace list this remote: "
+                    + ", ".join(outsiders[:3])
+                    + "."
+                    if outsiders
+                    else f"No registry entry under {namespace} lists this remote."
+                ),
             )
         )
+
+
+def namespace_covers(name: str, host: str) -> bool:
+    """Whether a reverse-DNS registry namespace owns this host (io.github.* never does)."""
+    namespace = name.split("/", 1)[0].lower()
+    if not namespace or namespace.startswith("io.github."):
+        return False
+    domain = ".".join(reversed(namespace.split(".")))
+    host = host.lower()
+    return host == domain or host.endswith("." + domain)
 
 
 def _same_package(kind: str, left: str, right: str) -> bool:
