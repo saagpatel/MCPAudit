@@ -1112,3 +1112,90 @@ def test_registry_match_keeps_the_user_supplied_url() -> None:
     resolution = Resolver(FakeFetch(routes), REGISTRY).resolve("https://mcp.example.com/mcp")
     assert resolution.registry_listed is True
     assert resolution.remote is not None and resolution.remote.url == "https://mcp.example.com/mcp"
+
+
+# Round-three review fixes ---------------------------------------------------------
+
+
+def test_tcp_connect_is_recorded_at_accept_and_enriched_later() -> None:
+    connect = {"kind": "tcp", "conn": 1, "dst_ip": "198.18.0.1", "dst_port": 443, "name": "api.example.test"}
+    detail = {"kind": "tcp_detail", "conn": 1, "sni": "api.example.test", "bytes": 517}
+    same, _, _ = parse_sink_log(
+        "\n".join(json.dumps(r | {"seq": i + 2}) for i, r in enumerate([connect, detail])), 0
+    )
+    assert [(e.kind, e.sni) for e in same] == [("tcp", "api.example.test")]
+    first, last, _ = parse_sink_log(json.dumps(connect | {"seq": 2}), 0)
+    later, _, _ = parse_sink_log(json.dumps(detail | {"seq": 3}), last)
+    assert [e.label() for e in first] == ["TCP connect api.example.test:443"] and later == []
+
+
+def test_sinkhole_emits_connect_before_reading() -> None:
+    source = Path(sinkhole_agent.__file__).read_text()
+    handler = source[source.index("class TcpSink") : source.index("class DnsSink")]
+    assert handler.index("emit(opened)") < handler.index("sock.recv(")
+
+
+async def test_rewrite_without_earlier_stat_is_unchecked_not_moved(monkeypatch: pytest.MonkeyPatch) -> None:
+    sandbox = fake_sandbox(
+        monkeypatch,
+        {
+            "diff": [(0, "A /scratch/db\n"), (0, "A /scratch/db\n")],
+            "exec": [(1, ""), (0, "regular file\t9\t2026-01-01 00:00:09\t/scratch/db\n")],
+            "logs": [(0, ""), (0, "")],
+            "inspect": [(0, "true"), (0, "true")],
+        },
+    )
+    await sandbox.snapshot()
+    record = await sandbox.snapshot()
+    assert record.changes == [] and not record.rewrites_checked
+
+
+async def test_outside_home_write_survives_truncation(monkeypatch: pytest.MonkeyPatch) -> None:
+    listing = "".join(f"A /scratch/f{i:04d}\n" for i in range(250)) + "A /tmp/outside\n"
+    stats = "".join(f"regular file\t1\t2026-01-01 00:00:00\t/scratch/f{i:04d}\n" for i in range(250))
+    sandbox = fake_sandbox(
+        monkeypatch,
+        {
+            "diff": [(0, listing)],
+            "exec": [(0, stats + "regular file\t1\t2026-01-01 00:00:00\t/tmp/outside\n")],
+            "logs": [(0, "")],
+            "inspect": [(0, "true")],
+        },
+    )
+    record = await sandbox.snapshot()
+    assert record.changes[0].path == "/tmp/outside" and record.truncated == 51
+    phase = Phase(name="startup", file_changes=record.changes, file_changes_truncated=record.truncated)
+    card = build_card(resolution(), observation([phase]), [], None)
+    assert "TBC-WRITE-OUTSIDE-HOME" in {m.rule for m in card.mismatches}
+    writes = next(s for s in card.suggestions if s.title == "Filesystem writes").body
+    assert "list truncated" in writes and "nothing else was written" not in writes
+
+
+def test_remote_listed_only_by_an_outside_namespace_is_not_claimed() -> None:
+    server = {
+        "name": "io.github.someone/com.example-lookalike",
+        "description": "x",
+        "version": "1.0.0",
+        "remotes": [{"url": "https://mcp.example.com/mcp"}],
+    }
+    routes = {f"{REGISTRY}/v0.1/servers?search=com.example": {"servers": [{"server": server}]}}
+    resolution = Resolver(FakeFetch(routes), REGISTRY).resolve("https://mcp.example.com/mcp")
+    assert resolution.registry_listed is False and resolution.server_name is None
+    assert statuses(resolution)["registry.listed"] == "warn"
+
+
+def test_missing_registry_status_is_unknown_not_fail() -> None:
+    routes = registry_routes(server_json())
+    key = next(k for k in routes if "/versions/" in k)
+    routes[key] = {"server": server_json()}
+    resolution = Resolver(FakeFetch(routes), REGISTRY).resolve(NAME)
+    assert statuses(resolution)["registry.status"] == "unknown"
+    card = build_card(resolution, Observation(mode="none", status="skipped"), [], None)
+    assert not any("status" in m.summary for m in card.mismatches)
+
+
+def test_shutdown_egress_wording() -> None:
+    events = [NetworkEvent(kind="tcp", host="t.example.test", port=443)]
+    card = build_card(resolution(), observation([Phase(name="shutdown", network=events)]), [], None)
+    summary = next(m.summary for m in card.mismatches if m.rule == "TBC-UNPROMPTED-NET")
+    assert "after the session ended" in summary and "before any tool" not in summary
