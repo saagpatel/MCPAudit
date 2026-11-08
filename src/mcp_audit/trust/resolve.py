@@ -7,6 +7,7 @@ local configuration.
 
 from __future__ import annotations
 
+import http.client
 import json
 import re
 import urllib.error
@@ -76,7 +77,7 @@ def parse_target(raw: str) -> Target:
         kind, value = cast(TargetKind, prefix), rest
     elif value.startswith("@"):
         kind = "npm"
-    elif _SERVER_NAME.match(value.split("@", 1)[0]) and "." in value.split("/", 1)[0]:
+    elif _SERVER_NAME.fullmatch(value.split("@", 1)[0]) and "." in value.split("/", 1)[0]:
         kind = "registry"
     else:
         raise TargetError(
@@ -84,20 +85,20 @@ def parse_target(raw: str) -> Target:
         )
     if kind == "registry":
         name, _, version = value.partition("@")
-        if not _SERVER_NAME.match(name):
+        if not _SERVER_NAME.fullmatch(name):
             raise TargetError(f"{name!r} is not a registry server name (namespace/name).")
         return Target("registry", name, _version(version))
     if kind == "npm":
         scoped = value.startswith("@")
         head, at, version = value[1:].partition("@") if scoped else value.partition("@")
         name = ("@" + head) if scoped else head
-        if not _NPM_NAME.match(name):
+        if not _NPM_NAME.fullmatch(name):
             raise TargetError(f"{name!r} is not a valid npm package name.")
         return Target("npm", name, _version(version) if at else None)
     name, _, version = value.partition("==")
     if "==" not in value:
         name, _, version = value.partition("@")
-    if not _PYPI_NAME.match(name):
+    if not _PYPI_NAME.fullmatch(name):
         raise TargetError(f"{name!r} is not a valid PyPI project name.")
     return Target("pypi", name, _version(version))
 
@@ -105,18 +106,18 @@ def parse_target(raw: str) -> Target:
 def validate_package(package: PackageRef) -> None:
     """Refuse identifiers that npm or pip would read as URLs, paths, or option flags."""
     pattern = _NPM_NAME if package.registry_type == "npm" else _PYPI_NAME
-    if not pattern.match(package.identifier):
+    if not pattern.fullmatch(package.identifier):
         raise TargetError(
             f"Package identifier {package.identifier!r} is not a plain {package.registry_type} name."
         )
-    if package.version is not None and not _VERSION.match(package.version):
+    if package.version is not None and not _VERSION.fullmatch(package.version):
         raise TargetError(f"Package version {package.version!r} is not an exact version.")
 
 
 def _version(value: str) -> str | None:
     if not value:
         return None
-    if not _VERSION.match(value):
+    if not _VERSION.fullmatch(value):
         raise TargetError(f"{value!r} is not an exact version.")
     return value
 
@@ -167,7 +168,7 @@ def https_fetcher(allowed_hosts: frozenset[str]) -> Fetcher:
                 raw = response.read(MAX_METADATA_BYTES + 1)
         except urllib.error.HTTPError as exc:
             raise FetchError(url, exc.code, f"HTTP {exc.code}") from None
-        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        except (urllib.error.URLError, http.client.HTTPException, TimeoutError, OSError) as exc:
             raise FetchError(url, None, type(exc).__name__) from None
         if len(raw) > MAX_METADATA_BYTES:
             raise FetchError(url, None, "response exceeded the metadata size cap")
@@ -363,6 +364,18 @@ class Resolver:
             Check(id="registry.identity", status="pass", summary=f"Package declares registry name {marker}.")
         )
         entry = self._registry_entry(resolution, marker, None, claimed=True)
+        if entry is not None and _str(entry.get("name")) != marker:
+            # The registry answered for a different name: its metadata does not
+            # describe this package's claimed identity, so none of it is applied.
+            resolution.checks.append(
+                Check(
+                    id="registry.name",
+                    status="fail",
+                    summary=f"Asked the registry for {marker}, but it returned "
+                    f"{_str(entry.get('name')) or 'an entry with no name'}.",
+                )
+            )
+            entry = None
         if entry is not None:
             self._apply_server_json(resolution, entry)
         resolution.server_name = resolution.server_name or marker
@@ -586,7 +599,7 @@ def _same_package(kind: str, left: str, right: str) -> bool:
 
 def is_exact_version(kind: str, version: str | None) -> bool:
     pattern = _EXACT_NPM if kind == "npm" else _EXACT_PYPI
-    return version is not None and pattern.match(version) is not None
+    return version is not None and pattern.fullmatch(version) is not None
 
 
 def _normal_url(url: str) -> str | None:
@@ -676,12 +689,12 @@ def schema_checks(server: dict[str, Any]) -> list[Check]:
     """Minimal structural checks on server.json; the registry validates the rest at publish."""
     problems: list[str] = []
     name = _str(server.get("name"))
-    if name is None or not _SERVER_NAME.match(name):
+    if name is None or not _SERVER_NAME.fullmatch(name):
         problems.append("name is not namespace/name")
     if not _str(server.get("description")):
         problems.append("description is missing")
     version = _str(server.get("version"))
-    if version is None or not _VERSION.match(version):
+    if version is None or not _VERSION.fullmatch(version):
         problems.append("version is missing or not exact")
     for raw in _list(server.get("packages")):
         package = _dict(raw)
@@ -709,11 +722,24 @@ def namespace_checks(name: str, repository_url: str | None, remotes: list[Remote
     """
     namespace = name.split("/", 1)[0].lower()
     checks: list[Check] = []
+    malformed = False
     if namespace.startswith("io.github."):
         owner = namespace.removeprefix("io.github.")
-        repo = urlsplit(repository_url or "")
-        repo_owner = repo.path.strip("/").split("/", 1)[0].lower() if repo.hostname == "github.com" else None
-        if repository_url is None:
+        try:
+            repo = urlsplit(repository_url or "")
+            repo_host = repo.hostname
+        except ValueError:
+            repo, repo_host = urlsplit(""), None
+            if repository_url is not None:
+                checks.append(
+                    Check(id="namespace.repository", status="warn", summary="Repository URL is malformed.")
+                )
+                repository_url = None
+                malformed = True
+        repo_owner = repo.path.strip("/").split("/", 1)[0].lower() if repo_host == "github.com" else None
+        if malformed:
+            pass
+        elif repository_url is None:
             checks.append(
                 Check(id="namespace.repository", status="warn", summary="No repository URL declared.")
             )
