@@ -130,12 +130,18 @@ The card ends with suggested lines to paste yourself after review:
 
 ## Detecting drift later
 
-Keep the `pin.json`. Rerun with the earlier pin to see tools that were added,
-removed, or changed (description, schema or annotations):
+Keep the `pin.json` somewhere safe. Rerun with the earlier pin to see tools
+that were added, removed, or changed (description, schema or annotations). A
+server that drops every tool is drift too:
 
 ```sh
-mcp-audit trust io.github.owner/server --pin ./mcp-audit-trust/server/pin.json
+cp ./mcp-audit-trust/server/pin.json ./server.pin.json
+mcp-audit trust io.github.owner/server --pin ./server.pin.json
 ```
+
+The file passed to `--pin` is never overwritten. If it is the `pin.json` in the
+output directory, the new surface is written to `pin.new.json` instead, so a
+drifted surface never quietly becomes the next baseline.
 
 ## Limits
 
@@ -146,8 +152,12 @@ mcp-audit trust io.github.owner/server --pin ./mcp-audit-trust/server/pin.json
 - Effects are attributed to the phase in which they appeared. Background
   activity can land in a neighbouring phase.
 - A file already changed in an earlier phase is reported again when its size
-  or modification time moves while the server runs. A rewrite that keeps
-  both, or one during shutdown, is not seen.
+  or modification time moves while the server runs, and reported as deleted
+  when it disappears. A rewrite that keeps both size and time, or one during
+  shutdown, is not seen. If not every changed path can be checked (more than
+  20,000, or the check fails), the run is partial and no tool gets `allow`.
+- Recorded host names are reduced to letters, digits, `.`, `-` and `:`; any
+  other character a server put in a name shows as `?`.
 - If write or network recording fails, the run is reported as incomplete
   rather than clean.
 - One short session is observed. Delayed or conditional behaviour may not

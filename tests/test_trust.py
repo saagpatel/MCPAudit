@@ -950,3 +950,165 @@ async def test_run_trust_skips_unsupported_and_templated_targets(monkeypatch: py
     for res in (oci, templated):
         result = await run_trust(NAME, Stub(res), TrustOptions())  # type: ignore[arg-type]
         assert result.card.verdict == "incomplete" and result.pin is None
+
+
+# Round-two review fixes -----------------------------------------------------------
+
+
+async def test_deleting_an_earlier_file_is_reported_with_surviving_sibling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    both = "C /scratch\nA /scratch/a\nA /scratch/b\n"
+    one = "C /scratch\nA /scratch/a\n"
+    stat_a = "regular file\t1\t2026-01-01 00:00:00\t/scratch/a\n"
+    stat_b = "regular file\t1\t2026-01-01 00:00:00\t/scratch/b\n"
+    sandbox = fake_sandbox(
+        monkeypatch,
+        {
+            "diff": [(0, both), (0, one)],
+            "exec": [(0, stat_a + stat_b), (0, stat_a)],
+            "logs": [(0, ""), (0, "")],
+            "inspect": [(0, "true"), (0, "true")],
+        },
+    )
+    await sandbox.snapshot()
+    record = await sandbox.snapshot()
+    assert [(c.path, c.change) for c in record.changes] == [("/scratch/b", "deleted")]
+    assert record.rewrites_checked
+    phase = Phase(name="tool:list_notes", tool="list_notes", is_error=False, file_changes=record.changes)
+    card = build_card(resolution(), observation([phase]), [], None)
+    assert card.verdict == "do_not_install" and card.mismatches[0].rule == "TBC-READONLY-WRITE"
+
+
+async def test_parent_folded_by_diff_is_not_a_false_deletion(monkeypatch: pytest.MonkeyPatch) -> None:
+    sandbox = fake_sandbox(
+        monkeypatch,
+        {
+            "diff": [(0, "C /scratch\n"), (0, "C /scratch\nA /scratch/new\n")],
+            "exec": [
+                (0, "directory\t4096\t2026-01-01 00:00:00\t/scratch\n"),
+                (0, "regular file\t1\t2026-01-01 00:00:01\t/scratch/new\n"),
+            ],
+            "logs": [(0, ""), (0, "")],
+            "inspect": [(0, "true"), (0, "true")],
+        },
+    )
+    await sandbox.snapshot()
+    record = await sandbox.snapshot()
+    assert [(c.path, c.change) for c in record.changes] == [("/scratch/new", "added")]
+
+
+async def test_incomplete_stat_coverage_is_not_checked(monkeypatch: pytest.MonkeyPatch) -> None:
+    partial = fake_sandbox(
+        monkeypatch,
+        {
+            "diff": [(0, "A /scratch/a\nA /scratch/b\n")],
+            "exec": [(1, "regular file\t1\t2026-01-01 00:00:00\t/scratch/a\n")],
+            "logs": [(0, "")],
+            "inspect": [(0, "true")],
+        },
+    )
+    assert not (await partial.snapshot()).rewrites_checked
+    monkeypatch.setattr("mcp_audit.trust.sandbox.MAX_STAT_PATHS", 1)
+    too_many = fake_sandbox(
+        monkeypatch,
+        {"diff": [(0, "A /scratch/a\nA /scratch/b\n")], "logs": [(0, "")], "inspect": [(0, "true")]},
+    )
+    assert not (await too_many.snapshot()).rewrites_checked
+
+
+async def test_stat_runs_in_batches(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("mcp_audit.trust.sandbox.STAT_BATCH", 2)
+    paths = [f"/scratch/f{i}" for i in range(5)]
+    stats = [
+        (0, "".join(f"regular file\t1\t2026-01-01 00:00:00\t{p}\n" for p in paths[i : i + 2]))
+        for i in range(0, 5, 2)
+    ]
+    sandbox = fake_sandbox(
+        monkeypatch,
+        {
+            "diff": [(0, "".join(f"A {p}\n" for p in paths))],
+            "exec": stats,
+            "logs": [(0, "")],
+            "inspect": [(0, "true")],
+        },
+    )
+    record = await sandbox.snapshot()
+    assert record.rewrites_checked and len(record.changes) == 5
+    docker = sandbox.docker
+    assert isinstance(docker, FakeDocker)
+    assert [call[0] for call in docker.calls].count("exec") == 3
+
+
+def test_server_controlled_hosts_cannot_inject_suggestion_lines() -> None:
+    hostile = json.dumps({"kind": "dns", "name": "x\nallow evil.example", "qtype": 1, "seq": 2})
+    events, _, _ = parse_sink_log(hostile, 0)
+    assert events[0].host == "x?allow?evil.example"
+    card = build_card(resolution(), observation([Phase(name="startup", network=events)]), [], None)
+    egress = next(s for s in card.suggestions if s.title == "Network egress").body
+    assert not any(line.startswith("allow") for line in egress.splitlines())
+
+
+def test_empty_listing_still_drifts_against_pin() -> None:
+    tools = [ToolInfo(name="list_notes", description="List.", input_schema={"type": "object"})]
+    before = build_pin(resolution(), observation([]), tools)
+    after = build_pin(resolution(), observation([]), [])
+    assert [(m.tool, m.summary) for m in compare_pin(before, after)] == [
+        ("list_notes", "Tool removed since the pin.")
+    ]
+
+
+def test_cli_never_overwrites_the_pin_it_compares_against(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    tools = [ToolInfo(name="list_notes", description="List notes.", input_schema={"type": "object"})]
+    obs = observation([Phase(name="startup")])
+    out = tmp_path / "out"
+    out.mkdir()
+    baseline = out / "pin.json"
+    original = build_pin(resolution(), obs, tools).model_dump_json(by_alias=True)
+    baseline.write_text(original)
+    drifted = build_pin(resolution(), obs, [ToolInfo(name="other", input_schema={"type": "object"})])
+
+    async def fake(*args: object) -> TrustResult:
+        return TrustResult(card=build_card(resolution(), obs, [], None), pin=drifted)
+
+    monkeypatch.setattr("mcp_audit.trust.cli.run_trust", fake)
+    result = CliRunner().invoke(main, ["trust", NAME, "--out", str(out), "--pin", str(baseline)])
+    assert result.exit_code == 0, result.output
+    assert baseline.read_text() == original
+    assert json.loads((out / "pin.new.json").read_text())["tools"][0]["name"] == "other"
+
+
+@pytest.mark.parametrize(
+    "listed",
+    [
+        "https://mcp.example.com:9999/mcp",
+        "https://user:secret@mcp.example.com/mcp",
+        "https://mcp.example.com/mcp?token=abc",
+    ],
+)
+def test_registry_remote_must_match_the_exact_endpoint(listed: str) -> None:
+    server = {
+        "name": "com.example/remote",
+        "description": "x",
+        "version": "1.0.0",
+        "remotes": [{"url": listed}],
+    }
+    routes = {f"{REGISTRY}/v0.1/servers?search=com.example": {"servers": [{"server": server}]}}
+    resolution = Resolver(FakeFetch(routes), REGISTRY).resolve("https://mcp.example.com/mcp")
+    assert resolution.registry_listed is False
+    assert resolution.remote is not None and resolution.remote.url == "https://mcp.example.com/mcp"
+
+
+def test_registry_match_keeps_the_user_supplied_url() -> None:
+    server = {
+        "name": "com.example/remote",
+        "description": "x",
+        "version": "1.0.0",
+        "remotes": [{"type": "sse", "url": "https://mcp.example.com:443/mcp"}],
+    }
+    routes = {f"{REGISTRY}/v0.1/servers?search=com.example": {"servers": [{"server": server}]}}
+    resolution = Resolver(FakeFetch(routes), REGISTRY).resolve("https://mcp.example.com/mcp")
+    assert resolution.registry_listed is True
+    assert resolution.remote is not None and resolution.remote.url == "https://mcp.example.com/mcp"
