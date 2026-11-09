@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from redteam.catalog import load_catalog
 from redteam.chains.__main__ import main
-from redteam.chains.pairs import ConfiguredServer, load_config
+from redteam.chains.pairs import ConfiguredServer, load_config, pair_servers
 from redteam.chains.report import build_report, to_json, to_markdown
+from redteam.chains.reproduce import ReproductionResult
 from redteam.surface import ServerSurface, SurfaceTool
 
 FIXTURES = Path("redteam/fixtures/servers/configs")
@@ -102,8 +104,77 @@ def test_cli_writes_both_reports(tmp_path: Path, capsys: pytest.CaptureFixture[s
     ]
 
 
+def test_only_top_supported_chain_reproduced(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[bool] = []
+
+    def canary() -> ReproductionResult:
+        calls.append(True)
+        return ReproductionResult("SKIPPED", "nested sandbox unavailable", teardown_confirmed=True)
+
+    monkeypatch.setattr("redteam.chains.report.reproduce_git_clean_filter", canary)
+    report = build_report(load_config(FIXTURES / "git-plus-filesystem.json"), reproduce=True)
+    assert calls == [True]
+    reproduction = report["reproduction"]
+    assert isinstance(reproduction, dict)
+    assert reproduction["rank"] == 1
+    assert reproduction["template"] == "git-clean-filter"
+    assert reproduction["provenance_flag"] == "MOCKED"
+    assert reproduction["status"] == "SKIPPED"
+    assert "nested sandbox unavailable" in to_markdown(report)
+    assert "not an exploit against a live MCP server" in to_markdown(report)
+
+
+def test_reproduction_identifies_supported_chain_below_unsupported_top(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    chains = pair_servers(load_config(FIXTURES / "git-plus-filesystem.json"))
+    supported = next(chain for chain in chains if chain.template.name == "git-clean-filter")
+    unsupported = next(chain for chain in chains if chain.template.name == "git-hook")
+    supported = replace(supported, template=replace(supported.template, automaticity="user_action"))
+    unsupported = replace(
+        unsupported,
+        template=replace(unsupported.template, name="unregistered-high-rank", automaticity="automatic"),
+    )
+    monkeypatch.setattr("redteam.chains.report.pair_servers", lambda _servers: [supported, unsupported])
+    monkeypatch.setattr(
+        "redteam.chains.report.reproduce_git_clean_filter",
+        lambda: ReproductionResult("REPRODUCED", teardown_confirmed=True),
+    )
+
+    report = build_report(load_config(FIXTURES / "git-plus-filesystem.json"), reproduce=True)
+    reproduction = report["reproduction"]
+    assert isinstance(reproduction, dict)
+    ranked = report["ranked"]
+    assert isinstance(ranked, list) and ranked and isinstance(ranked[0], dict)
+    assert ranked[0]["template"] == "unregistered-high-rank"
+    assert reproduction["status"] == "REPRODUCED"
+    assert reproduction["rank"] == 2
+    assert reproduction["template"] == "git-clean-filter"
+    markdown = to_markdown(report)
+    assert "Selected rank 2, git-clean-filter" in markdown
+    assert "highest-ranked supported chain" in markdown
+
+
+def test_no_supported_chain_skips_without_running_canary(monkeypatch: pytest.MonkeyPatch) -> None:
+    def forbidden() -> None:
+        pytest.fail("no canary should run without a supported ranked chain")
+
+    monkeypatch.setattr("redteam.chains.report.reproduce_git_clean_filter", forbidden)
+    report = build_report([ConfiguredServer("unknown", None)], reproduce=True)
+    assert report["reproduction"] == {
+        "status": "SKIPPED",
+        "reason": "no ranked chain has a registered reproducer",
+        "demonstration": (
+            "Git filter activation via equivalent filesystem writes and git add operations on a canary; "
+            "not an exploit against a live MCP server."
+        ),
+    }
+
+
 @pytest.mark.parametrize("log_and_add_only", [True, False])
-def test_git_only_servers_do_not_form_a_chain(log_and_add_only: bool) -> None:
+def test_git_only_servers_cannot_receive_a_canary_result(
+    monkeypatch: pytest.MonkeyPatch, log_and_add_only: bool
+) -> None:
     git = load_catalog()["pypi:mcp-server-git"]
     servers = [
         ConfiguredServer(
@@ -116,7 +187,17 @@ def test_git_only_servers_do_not_form_a_chain(log_and_add_only: bool) -> None:
         )
         for name, tool_name in (("git-a", "git_log"), ("git-b", "git_add"))
     ]
-    assert build_report(servers)["ranked"] == []
+
+    def forbidden() -> ReproductionResult:
+        pytest.fail("Git-only surfaces cannot supply the canary's writer role")
+
+    monkeypatch.setattr("redteam.chains.report.reproduce_git_clean_filter", forbidden)
+    report = build_report(servers, reproduce=True)
+    assert report["ranked"] == []
+    reproduction = report["reproduction"]
+    assert isinstance(reproduction, dict)
+    assert reproduction["status"] == "SKIPPED"
+    assert "provenance_flag" not in reproduction
 
 
 def test_unknown_tool_label_is_reported_as_unranked_candidate() -> None:
@@ -137,6 +218,31 @@ def test_cli_does_not_echo_parser_secrets(tmp_path: Path, capsys: pytest.Capture
     assert main(["run", "--config", str(path)]) == 2
     captured = capsys.readouterr()
     assert "private-value" not in captured.out + captured.err
+
+
+def test_cli_returns_failure_for_failed_canary(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(
+        "redteam.chains.report.reproduce_git_clean_filter",
+        lambda: ReproductionResult("NOT_REPRODUCED", "synthetic failure"),
+    )
+    assert main(["run", "--config", str(FIXTURES / "git-plus-filesystem.json"), "--reproduce"]) == 1
+    assert "NOT_REPRODUCED" in capsys.readouterr().out
+
+
+def test_cli_skipped_canary_has_distinct_failure_and_allow_skip(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(
+        "redteam.chains.report.reproduce_git_clean_filter",
+        lambda: ReproductionResult("SKIPPED", "nested sandbox unavailable"),
+    )
+    args = ["run", "--config", str(FIXTURES / "git-plus-filesystem.json"), "--reproduce"]
+    assert main(args) == 3
+    assert "SKIPPED" in capsys.readouterr().out
+    assert main([*args, "--allow-skip"]) == 0
+    assert "SKIPPED" in capsys.readouterr().out
 
 
 def test_markdown_escapes_separators_and_strips_terminal_controls() -> None:
