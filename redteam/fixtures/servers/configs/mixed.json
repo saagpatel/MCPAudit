@@ -1,0 +1,36 @@
+{
+  "mcpServers": {
+    "fetch": {
+      "args": [],
+      "command": "synthetic-fetch"
+    },
+    "filesystem": {
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/synthetic/repo"
+      ],
+      "command": "npx"
+    },
+    "git": {
+      "args": [
+        "mcp-server-git",
+        "--repository",
+        "/synthetic/repo"
+      ],
+      "command": "uvx"
+    },
+    "hook-only": {
+      "args": [],
+      "command": "synthetic-hook"
+    },
+    "isolated-filesystem": {
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "/synthetic/isolated"
+      ],
+      "command": "npx"
+    }
+  }
+}
