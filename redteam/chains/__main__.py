@@ -1,0 +1,83 @@
+"""Checkout-only, static chain exploration."""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+from redteam.chains.pairs import AmbiguousInput, load_config
+from redteam.chains.report import build_report, to_json, to_markdown
+
+
+class OutputConflict(ValueError):
+    """A report destination would overwrite an input or another report."""
+
+
+def _validate_outputs(outputs: list[Path | None], inputs: list[Path | None], pins_dir: Path | None) -> None:
+    selected = [path for path in outputs if path is not None]
+    protected = [path for path in inputs if path is not None]
+    for index, path in enumerate(selected):
+        for other in [*protected, *selected[:index]]:
+            if path.resolve() == other.resolve() or (
+                path.exists() and other.exists() and path.samefile(other)
+            ):
+                raise OutputConflict("report destinations must be distinct from each other and their inputs")
+        if pins_dir is not None and path.resolve().is_relative_to(pins_dir.resolve()):
+            raise OutputConflict("report destination must be outside the selected pin directory")
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    subcommands = parser.add_subparsers(dest="command", required=True)
+    run = subcommands.add_parser("run", help="rank declared cross-server chains without connecting")
+    run.add_argument("--config", type=Path, required=True)
+    run.add_argument("--surfaces", type=Path, help="adjacent explicit name-to-surface filename JSON mapping")
+    run.add_argument("--pins", type=Path, help="explicit pin directory (never read by default)")
+    run.add_argument("--allow-incomplete", action="store_true", help="allow success with parse errors")
+    run.add_argument("--json", type=Path, dest="json_path")
+    run.add_argument("--md", type=Path, dest="md_path")
+    options = parser.parse_args(argv)
+    try:
+        _validate_outputs(
+            [options.json_path, options.md_path], [options.config, options.surfaces], options.pins
+        )
+        input_paths = [options.config, options.surfaces]
+        additional_inputs: list[Path] = []
+        servers = load_config(
+            options.config, options.surfaces, pins_dir=options.pins, input_paths=additional_inputs
+        )
+        _validate_outputs(
+            [options.json_path, options.md_path], [*input_paths, *additional_inputs], options.pins
+        )
+        report = build_report(servers)
+        markdown = to_markdown(report)
+        for path, content in ((options.json_path, to_json(report)), (options.md_path, markdown)):
+            if path is not None:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content, encoding="utf-8")
+        print(markdown, end="")
+        if report["analysis_incomplete"] and not options.allow_incomplete:
+            return 1
+    except AmbiguousInput as exc:
+        print(f"chains failed: {exc}", file=sys.stderr)
+        return 2
+    except OutputConflict:
+        print(
+            "chains failed (ValueError); report destinations must be distinct from inputs and each other "
+            "and outside the pin directory",
+            file=sys.stderr,
+        )
+        return 2
+    except (ValueError, OSError) as exc:
+        # Parsing exceptions can contain credentials or snippets. Emit the class only.
+        print(
+            f"chains failed ({type(exc).__name__}); check the selected input and output paths",
+            file=sys.stderr,
+        )
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

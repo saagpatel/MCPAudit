@@ -73,8 +73,9 @@ class ServerSurface(_Model):
     config: SurfaceConfig = Field(default_factory=SurfaceConfig)
     tools: list[SurfaceTool] = Field(default_factory=list)
     resources: list[SurfaceResource] = Field(default_factory=list)
-    source: Literal["fixture", "ast", "catalog", "pin"]
+    source: Literal["fixture", "ast", "catalog", "pin", "dxt-manifest"]
     provenance: str | None = None
+    unverified: bool = True
 
     def to_json(self) -> str:
         return json.dumps(self.model_dump(mode="json"), indent=2, sort_keys=True, ensure_ascii=False) + "\n"

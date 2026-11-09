@@ -1,4 +1,4 @@
-.PHONY: install check test lint format typecheck clean audit help base twins scan report rerun
+.PHONY: install check test lint format typecheck clean audit help base twins scan report rerun chains
 
 # Default target
 help:
@@ -17,6 +17,7 @@ help:
 	@echo "  scan       Scan generated twins with direct detectors"
 	@echo "  report     Render and compare the range results"
 	@echo "  rerun      Generate, scan and report (ACCEPT=1 updates baseline)"
+	@echo "  chains     Rank synthetic two-server chains"
 	@echo ""
 
 install:
@@ -36,6 +37,9 @@ report:
 
 rerun:
 	uv run --locked python -m redteam.range.rerun $(if $(filter 1,$(ACCEPT)),--accept,)
+
+chains:
+	uv run --locked python -m redteam.chains run --config redteam/fixtures/servers/configs/git-plus-filesystem.json
 
 check:
 	@command -v uv >/dev/null 2>&1 || { echo "uv is required; install it from https://docs.astral.sh/uv/" >&2; exit 127; }

@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "filesystem": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/synthetic/repo"]},
+    "git": {"command": "uvx", "args": ["mcp-server-git", "--repository", "/synthetic/repo"]},
+    "harmless": {"command": "synthetic-server", "args": []}
+  }
+}

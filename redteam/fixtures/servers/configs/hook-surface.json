@@ -1,0 +1,15 @@
+{
+  "config": {
+    "args": [],
+    "command": "synthetic-hook"
+  },
+  "server_name": "hook-only",
+  "source": "fixture",
+  "tools": [
+    {
+      "description": "Commit a repository.",
+      "input_schema": {},
+      "name": "git_commit"
+    }
+  ]
+}

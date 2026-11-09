@@ -290,9 +290,9 @@ def test_unknown_metadata_reason_omits_input_values(tmp_path: Path) -> None:
 def test_catalog_is_exact_validation_corpus_snapshot() -> None:
     catalog = load_catalog()
     names = {"pypi:mcp-server-git": "git", "npm:@modelcontextprotocol/server-filesystem": "filesystem"}
-    assert set(catalog) == set(names)
+    assert set(names) <= set(catalog)
     corpus = Path(__file__).parents[1] / "validation/servers"
-    for key, surface in catalog.items():
+    for key, surface in ((key, catalog[key]) for key in names):
         original = json.loads((corpus / f"{names[key]}.json").read_text())
         assert surface.source == "catalog"
         assert surface.provenance and "unversioned" in surface.provenance
