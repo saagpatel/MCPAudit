@@ -63,7 +63,8 @@ def test_write_then_run_profile_is_narrow(tmp_path: Path) -> None:
     profile = reproduce.write_then_run.sandbox_profile(root, script)
     assert "(deny network*)" in profile
     assert "(deny file-write*)" in profile
-    assert "(deny file-read-data)" in profile
+    assert "(allow default)" in profile
+    assert "file-read" not in profile
     assert "(deny process-exec)" in profile
     assert '(literal "/bin/sh")' in profile
     assert f'(literal "{script}")' in profile
@@ -311,7 +312,8 @@ def test_profile_denies_network_write_and_unlisted_exec(
     profile = reproduce.sandbox_profile(root, root / "canary.sh", reproduce.GitTool(git, helpers))
     assert "(deny network*)" in profile
     assert "(deny file-write*)" in profile
-    assert "(deny file-read-data)" in profile
+    assert "(allow default)" in profile
+    assert "file-read" not in profile
     assert "(deny process-exec)" in profile
     assert '(literal "/bin/sh")' in profile
     assert '(literal "/bin/cat")' in profile

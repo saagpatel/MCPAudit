@@ -184,10 +184,12 @@ def resolve_sh_variant() -> Path | None:
 
 
 def sandbox_profile(root: Path, script: Path, git_tool: GitTool, sh_variant: Path | None = None) -> str:
-    """Deny user-content reads, writes, network, and unlisted executables.
+    """Constrain writes, network, and execution; leave default reads enabled.
 
     Git and its helper directory are resolved and validated before entering
     the sandbox. JSON string escaping is also valid for Seatbelt literals.
+    Reads are outside this canary's threat model: Git, shells, and dyld need
+    system runtime files beyond a fixed allow-list to start reliably.
     """
     validate_profile_paths(root, script, sh_variant)
     if (
@@ -202,8 +204,7 @@ def sandbox_profile(root: Path, script: Path, git_tool: GitTool, sh_variant: Pat
     variant_literal = f"(literal {quote(str(sh_variant))}) " if sh_variant is not None else ""
     return (
         "(version 1)\n(allow default)\n"
-        + read_policy(root, (git_tool.executable, Path("/bin/cat")), git_tool.exec_path, sh_variant)
-        + "(deny network*)\n(deny file-write*)\n"
+        "(deny network*)\n(deny file-write*)\n"
         f"(allow file-write* (subpath {quote(str(root))}) "
         '(literal "/dev/null") (literal "/dev/tty"))\n'
         "(deny process-exec)\n"
@@ -213,28 +214,6 @@ def sandbox_profile(root: Path, script: Path, git_tool: GitTool, sh_variant: Pat
         f"{variant_literal}"
         f'(literal "/bin/cat") (literal {quote(str(script))}))\n'
     )
-
-
-def read_policy(
-    root: Path, executables: tuple[Path, ...], helpers: Path | None, sh_variant: Path | None
-) -> str:
-    """Allow runtime libraries and canary data, never arbitrary user file contents."""
-    directories = [
-        root,
-        Path("/System/Library"),
-        Path("/usr/lib"),
-        Path("/Library/Apple/System/Library"),
-        Path("/private/var/db/dyld"),
-        Path("/usr/share/locale"),
-    ]
-    if helpers is not None:
-        directories.append(helpers)
-    files = [Path("/bin/sh"), Path("/dev/null"), Path("/dev/urandom"), *executables]
-    if sh_variant is not None:
-        files.append(sh_variant)
-    rules = [f"(subpath {json.dumps(str(path))})" for path in directories]
-    rules += [f"(literal {json.dumps(str(path))})" for path in files]
-    return "(deny file-read-data)\n(allow file-read-data " + " ".join(rules) + ")\n"
 
 
 def validate_profile_paths(root: Path, script: Path, sh_variant: Path | None) -> None:

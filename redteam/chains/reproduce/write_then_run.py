@@ -20,7 +20,6 @@ from redteam.chains.reproduce import (
     _is_nested_apply_failure,
     _Unavailable,
     canary_environment,
-    read_policy,
     resolve_sh_variant,
     validate_profile_paths,
 )
@@ -35,14 +34,17 @@ DEMONSTRATION = (
 
 
 def sandbox_profile(root: Path, script: Path, sh_variant: Path | None = None) -> str:
-    """Allow only the shell and this canary script to execute."""
+    """Constrain writes, network, and execution to the shell and canary script.
+
+    Reads remain at allow default: shells and dyld need system runtime files
+    beyond a fixed allow-list. Reads are outside this canary's threat model.
+    """
     validate_profile_paths(root, script, sh_variant)
     quote = json.dumps
     variant_literal = f"(literal {quote(str(sh_variant))}) " if sh_variant is not None else ""
     return (
         "(version 1)\n(allow default)\n"
-        + read_policy(root, (), None, sh_variant)
-        + "(deny network*)\n(deny file-write*)\n"
+        "(deny network*)\n(deny file-write*)\n"
         f"(allow file-write* (subpath {quote(str(root))}) "
         '(literal "/dev/null") (literal "/dev/tty"))\n'
         "(deny process-exec)\n"
