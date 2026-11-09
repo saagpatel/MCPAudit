@@ -1,4 +1,4 @@
-.PHONY: install check test lint format typecheck clean audit help base
+.PHONY: install check test lint format typecheck clean audit help base twins
 
 # Default target
 help:
@@ -13,6 +13,7 @@ help:
 	@echo "  clean      Remove build artifacts and __pycache__ directories"
 	@echo "  audit      Run mcp-audit against your local MCP config"
 	@echo "  base       Verify inert mcpforge fixture (REGEN=1 to replace)"
+	@echo "  twins      Generate and verify the inert mutation range"
 	@echo ""
 
 install:
@@ -20,6 +21,9 @@ install:
 
 base:
 	uv run --locked python -m redteam.range.base.build $(if $(filter 1,$(REGEN)),--regen,)
+
+twins:
+	uv run --locked python -m redteam.range.gen
 
 check:
 	@command -v uv >/dev/null 2>&1 || { echo "uv is required; install it from https://docs.astral.sh/uv/" >&2; exit 127; }
