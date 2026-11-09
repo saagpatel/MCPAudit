@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 import unicodedata
 from dataclasses import asdict
+from pathlib import Path
 
+from redteam.chains.discovery import DiscoveryServers
 from redteam.chains.labeler import label_server
 from redteam.chains.pairs import ConfiguredServer, pair_servers
 from redteam.chains.rank import RankedChain, rank_chains
@@ -67,7 +69,8 @@ def build_report(servers: list[ConfiguredServer], *, reproduce: bool = False) ->
             "Declared, catalog, and historical surfaces do not verify current server behavior. "
             "Ranking describes conditional capability composition, not exploitability."
         ),
-        "analysis_incomplete": any(server.parse_error for server in servers),
+        "analysis_incomplete": any(server.parse_error for server in servers)
+        or (isinstance(servers, DiscoveryServers) and bool(servers.collector_errors)),
         "servers": [
             {
                 "name": server.name,
@@ -77,6 +80,14 @@ def build_report(servers: list[ConfiguredServer], *, reproduce: bool = False) ->
                 "reason": server.reason,
                 **(
                     {
+                        "roots": [_display_path(root) for root in server.roots],
+                        "roots_known": bool(server.roots),
+                    }
+                    if server.source == "dxt-manifest"
+                    else {}
+                ),
+                **(
+                    {
                         "provenance": (
                             "user-selected explicit metadata; current surface unverified"
                             if server.source == "explicit"
@@ -84,7 +95,7 @@ def build_report(servers: list[ConfiguredServer], *, reproduce: bool = False) ->
                         ),
                         "unverified": True,
                     }
-                    if server.surface is not None and server.surface.source == "catalog"
+                    if server.surface is not None and server.surface.source in {"catalog", "dxt-manifest"}
                     else {}
                 ),
             }
@@ -109,7 +120,9 @@ def build_report(servers: list[ConfiguredServer], *, reproduce: bool = False) ->
             for row in dropped
         ],
         "reproduction": None,
-        "discovery_notes": [],
+        "discovery_notes": list(servers.notes) if isinstance(servers, DiscoveryServers) else [],
+        "source_counts": dict(servers.source_counts) if isinstance(servers, DiscoveryServers) else {},
+        "collector_errors": list(servers.collector_errors) if isinstance(servers, DiscoveryServers) else [],
     }
     if reproduce:
         reproducers = {
@@ -136,6 +149,14 @@ def build_report(servers: list[ConfiguredServer], *, reproduce: bool = False) ->
                 ),
             }
     return report
+
+
+def _display_path(text: str) -> str:
+    """Abbreviate the home prefix without resolving or reading configured roots."""
+    home = str(Path.home())
+    if text == home:
+        return "~"
+    return "~/" + text[len(home) + 1 :] if home != "/" and text.startswith(home + "/") else text
 
 
 def to_json(report: dict[str, object]) -> str:
@@ -195,7 +216,7 @@ def to_markdown(report: dict[str, object]) -> str:
             f"{source_text} |"
         )
     if report["analysis_incomplete"]:
-        lines.extend(["", "Analysis incomplete: one or more server entries could not be parsed."])
+        lines.extend(["", "Analysis incomplete: server parse errors or discovery collector errors occurred."])
     unknown = ", ".join(_cell(name) for name in _items(report["unknown_surfaces"]))
     lines.extend(["", f"UNKNOWN surfaces: {unknown or 'none'}."])
     unknown_labels = _items(report.get("unknown_labels"))
@@ -217,6 +238,19 @@ def to_markdown(report: dict[str, object]) -> str:
                 f"Surface {_cell(server['name'])}: {_cell(server['surface_source'])}; "
                 f"{_cell(server['provenance'])}."
             )
+        if "roots" in server:
+            roots = ", ".join(_cell(root) for root in _items(server["roots"])) or "unknown"
+            lines.append(f"DXT roots for {_cell(server['name'])}: {roots}.")
+    counts = report.get("source_counts")
+    if isinstance(counts, dict) and counts:
+        lines.extend(["", "Discovery source counts:"])
+        lines.extend(f"- {_cell(key)}: {_cell(value)}" for key, value in sorted(counts.items()))
+    notes = _items(report.get("discovery_notes"))
+    if notes:
+        lines.extend(["", "Discovery notes:", *[f"- {_cell(note)}" for note in notes]])
+    errors = _items(report.get("collector_errors"))
+    if errors:
+        lines.extend(["", "Collector errors:", *[f"- {_cell(error)}" for error in errors]])
     reproduction = report["reproduction"]
     if isinstance(reproduction, dict):
         lines.extend(["", f"Canary: {_cell(reproduction['status'])}."])
