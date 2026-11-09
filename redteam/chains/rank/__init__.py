@@ -20,6 +20,7 @@ class RankedChain:
     score: int
     overlap: Overlap
     explanation: tuple[str, ...]
+    alternatives: tuple[CandidateChain, ...]
 
 
 @dataclass(frozen=True)
@@ -72,10 +73,27 @@ def rank_chains(chains: list[CandidateChain]) -> tuple[list[RankedChain], list[D
                     f"steps: -{len(chain.steps)}",
                     f"preconditions and conditional labels: -{setup}",
                 ),
+                (chain,),
             )
         )
     ranked.sort(
         key=lambda r: (-r.score, r.chain.template.name, tuple((s.server, s.tool) for s in r.chain.steps))
     )
+    # Sort before grouping so the representative and its score are the best
+    # member, with deterministic tool-name tie breaking.
+    groups: dict[tuple[str, str, str], list[RankedChain]] = {}
+    for row in ranked:
+        key = (row.chain.writer.name, row.chain.executor.name, row.chain.template.name)
+        groups.setdefault(key, []).append(row)
+    ranked = [
+        RankedChain(
+            rows[0].chain,
+            rows[0].score,
+            rows[0].overlap,
+            rows[0].explanation,
+            tuple(row.chain for row in rows),
+        )
+        for rows in groups.values()
+    ]
     dropped.sort(key=lambda d: (d.chain.template.name, tuple((s.server, s.tool) for s in d.chain.steps)))
     return ranked, dropped
