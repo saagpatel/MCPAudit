@@ -30,7 +30,7 @@ from mcp_audit.models import (
     TrifectaFinding,
 )
 from mcp_audit.pinning import PinStore
-from mcp_audit.pkgverify import FetchHash, PackageVerifier
+from mcp_audit.pkgverify import FetchHash, PackageVerifier, verification_coverage
 from mcp_audit.provenance import ProvenanceAnalyzer
 from mcp_audit.schema_rules import scan_tool_schema
 from mcp_audit.shadowing import ShadowingAnalyzer
@@ -229,7 +229,9 @@ def run_detectors(
         _add(result, "injection", detector.scan_server(current_tools, resources=resources))
         _set_status(result, "injection", "completed")
 
-    if enabled("ssrf"):
+    ssrf_enabled = enabled("ssrf")
+    # Egress consumes SSRF findings even when the public SSRF check is disabled.
+    if ssrf_enabled or "egress" not in disabled_keys:
         ssrf_detector = SsrfDetector()
         ssrf_findings: list[SsrfFinding] = [
             finding for tool in current_tools for finding in ssrf_detector.scan_tool(tool)
@@ -238,8 +240,9 @@ def run_detectors(
             finding for resource in resources for finding in ssrf_detector.scan_resource(resource)
         )
         current_audit.ssrf_findings = ssrf_findings
-        _add(result, "ssrf", ssrf_findings)
-        _set_status(result, "ssrf", "completed")
+        if ssrf_enabled:
+            _add(result, "ssrf", ssrf_findings)
+            _set_status(result, "ssrf", "completed")
 
     if enabled("egress"):
         # Egress is static: use an empty allowlist so declared destinations are
@@ -346,7 +349,7 @@ def run_detectors(
             _set_status(result, "provenance", "completed")
 
     if enabled("integrity"):
-        if integrity is None:
+        if integrity is None or not integrity.artifacts:
             _set_status(result, "integrity", "not_run", "pinned artifact hashes are required")
         else:
             expected = {_relative_artifact(name): digest for name, digest in integrity.artifacts.items()}
@@ -388,12 +391,23 @@ def run_detectors(
             # live registry client.
             verifier = PackageVerifier(fetch=lambda reference: package_fetch(reference))
             baseline_hashes = verifier.capture(baseline.to_config())
-            package_findings: list[PackageVerifyFinding] = verifier.analyze_server(
-                surface.server_name, surface.to_config(), baseline_hashes
-            )
-            _add(result, "pkgverify", package_findings)
             result.provenance.add("MOCKED")
-            _set_status(result, "pkgverify", "completed")
+            current_config = surface.to_config()
+            verified_refs: set[str] = set()
+            if not baseline_hashes:
+                _set_status(result, "pkgverify", "not_run", "baseline capture failed")
+            elif verification_coverage(current_config, baseline_hashes, verified_refs).state == "not_run":
+                _set_status(result, "pkgverify", "not_run", "no baseline for current package reference")
+            else:
+                package_findings: list[PackageVerifyFinding] = verifier.analyze_server(
+                    surface.server_name, current_config, baseline_hashes, verified_refs=verified_refs
+                )
+                _add(result, "pkgverify", package_findings)
+                coverage = verification_coverage(current_config, baseline_hashes, verified_refs)
+                if coverage.state == "complete":
+                    _set_status(result, "pkgverify", "completed")
+                else:
+                    _set_status(result, "pkgverify", "not_run", "current package hash unavailable")
 
     # Keep serialized results reproducible, independent of detector internals.
     result.findings.sort(key=lambda item: (item.detector, item.check_id, item.tool or "", item.evidence))

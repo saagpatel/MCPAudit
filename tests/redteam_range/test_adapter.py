@@ -29,6 +29,17 @@ def surface(name: str = "clean", *, tools: list[dict[str, object]] | None = None
     )
 
 
+def package_surface(spec: str = "mcp-server-git==1.0.0") -> ServerSurface:
+    return ServerSurface.model_validate(
+        {
+            "server_name": "package-server",
+            "source": "fixture",
+            "config": {"command": "uvx", "args": ["--from", spec]},
+            "tools": [{"name": "lookup", "description": "Look up a record."}],
+        }
+    )
+
+
 def test_base_is_clean() -> None:
     fixture_root = Path(__file__).parents[2] / "redteam/fixtures/servers"
     baseline = ServerSurface.load(fixture_root / "base/surface.json")
@@ -175,14 +186,7 @@ def test_regression_ids_for_schema_shadowing_and_baseline_deltas() -> None:
 
 
 def test_injected_package_fetch_is_mocked_and_never_uses_live_fetch() -> None:
-    package_surface = ServerSurface.model_validate(
-        {
-            "server_name": "package-server",
-            "source": "fixture",
-            "config": {"command": "uvx", "args": ["--from", "mcp-server-git==1.0.0"]},
-            "tools": [{"name": "lookup", "description": "Look up a record."}],
-        }
-    )
+    current = package_surface()
 
     class FalseyFetch:
         calls = 0
@@ -198,8 +202,8 @@ def test_injected_package_fetch_is_mocked_and_never_uses_live_fetch() -> None:
 
     disabled_keys: set[str] = {str(key) for key in DETECTOR_KEYS if key != "pkgverify"}
     result = run_detectors(
-        package_surface,
-        baseline=package_surface,
+        current,
+        baseline=current,
         fleet=[surface("companion", tools=[{"name": "other", "description": "Read."}])],
         integrity=IntegrityInput(artifacts={}),
         package_fetch=fetch,
@@ -212,6 +216,86 @@ def test_injected_package_fetch_is_mocked_and_never_uses_live_fetch() -> None:
     assert len(package_findings) == 1
     assert package_findings[0].check_id == "MCP025"
     assert fetch.calls == 2
+
+
+@pytest.mark.parametrize(
+    ("current_spec", "hashes", "reason"),
+    [
+        ("mcp-server-git==1.0.0", [None], "baseline capture failed"),
+        ("mcp-server-git==1.0.0", [""], "baseline capture failed"),
+        ("mcp-server-git==2.0.0", ["a" * 64], "no baseline for current package reference"),
+        ("other-package==1.0.0", ["a" * 64], "no baseline for current package reference"),
+        ("mcp-server-git", ["a" * 64], "no baseline for current package reference"),
+        ("mcp-server-git==1.0.0", ["a" * 64, None], "current package hash unavailable"),
+        ("mcp-server-git==1.0.0", ["a" * 64, ""], "current package hash unavailable"),
+    ],
+)
+def test_package_verification_requires_a_comparison(
+    current_spec: str, hashes: list[str | None], reason: str
+) -> None:
+    responses = iter(hashes)
+    calls: list[PackageRef] = []
+
+    def fetch(reference: PackageRef) -> str | None:
+        calls.append(reference)
+        return next(responses)
+
+    result = run_detectors(
+        package_surface(current_spec),
+        baseline=package_surface(),
+        fleet=[],
+        package_fetch=fetch,
+        disabled={str(key) for key in DETECTOR_KEYS if key != "pkgverify"},
+    )
+
+    assert result.statuses["pkgverify"].state == "not_run"
+    assert result.statuses["pkgverify"].reason == reason
+    assert result.provenance == {"MOCKED"}
+    assert len(calls) == len(hashes)
+    if len(hashes) == 1:
+        assert not result.findings
+    else:
+        # Preserve the core verifier's failure/drift signal even when coverage is incomplete.
+        assert [finding.check_id for finding in result.findings] == ["MCP025"]
+
+
+def test_empty_integrity_baseline_is_not_a_completed_comparison() -> None:
+    result = run_detectors(
+        surface(),
+        baseline=None,
+        fleet=[],
+        integrity=IntegrityInput(artifacts={}, current_files={"artifact.txt": b"current"}),
+        disabled={str(key) for key in DETECTOR_KEYS if key != "integrity"},
+    )
+
+    assert result.statuses["integrity"].state == "not_run"
+    assert result.statuses["integrity"].reason == "pinned artifact hashes are required"
+    assert not result.findings
+
+
+def test_egress_runs_its_ssrf_prerequisite_when_public_ssrf_is_disabled() -> None:
+    current = surface(
+        tools=[
+            {
+                "name": "fetch_url",
+                "description": "Fetch the supplied URL.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"url": {"type": "string"}},
+                    "required": ["url"],
+                },
+            }
+        ]
+    )
+    enabled = run_detectors(current, baseline=None, fleet=[])
+    disabled = run_detectors(current, baseline=None, fleet=[], disabled={"ssrf"})
+    egress_findings = [finding for finding in disabled.findings if finding.detector == "egress"]
+
+    assert egress_findings == [finding for finding in enabled.findings if finding.detector == "egress"]
+    assert any(finding.check_id == "MCP041" and finding.severity == "high" for finding in egress_findings)
+    assert disabled.statuses["egress"].state == "completed"
+    assert disabled.statuses["ssrf"].state == "disabled"
+    assert not [finding for finding in disabled.findings if finding.detector == "ssrf"]
 
 
 def test_unsupported_inputs_are_accounted_and_disabled_detector_is_explicit() -> None:
