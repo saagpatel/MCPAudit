@@ -65,8 +65,13 @@ def main(argv: list[str] | None = None) -> int:
         reproduction = report["reproduction"]
         if isinstance(reproduction, dict) and reproduction.get("status") == "NOT_REPRODUCED":
             return 1
-    except ImportError:
-        print("install shadow-mcp: uv run --with <path-to-shadow-mcp> ...", file=sys.stderr)
+    except ImportError as exc:
+        from redteam.chains.discovery import ShadowImportError
+
+        if isinstance(exc, ShadowImportError):
+            print(str(exc), file=sys.stderr)
+        else:
+            raise
         return 2
     except (ValueError, OSError) as exc:
         # Parsing exceptions can contain credentials or snippets. Emit the class only.

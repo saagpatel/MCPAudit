@@ -1,42 +1,51 @@
-"""Lazy, explicit collector allowlist for the optional shadow-mcp adapter.
-
-No fallback invokes discovery with its defaults: that could read Claude Code's
-credential-bearing config, call its CLI, or inspect processes.
-"""
+"""Explicit, read-only shadow-mcp collector adapter."""
 
 from __future__ import annotations
 
-import asyncio
 import importlib
 import inspect
-from collections.abc import Awaitable
 from pathlib import Path
 from types import ModuleType
 
 from mcp_audit.models import ClientType, ServerConfig, TransportType
 from redteam.chains.pairs import ConfiguredServer, resolve_configs
 
-DEFAULT_COLLECTORS = ("ClaudeDesktop", "Codex", "Dxt", "ProjectMcpJson")
+DEFAULT_COLLECTORS = (
+    ("claude_desktop", "ClaudeDesktopCollector"),
+    ("codex", "CodexCollector"),
+    ("dxt", "DxtCollector"),
+    ("project_mcp", "ProjectMcpJsonCollector"),
+)
 
 
-def _export(module: ModuleType, name: str) -> object:
-    value: object = getattr(module, name, None)
-    return value
+class ShadowImportError(ImportError):
+    """An absent or incompatible optional shadow-mcp installation."""
 
 
-def _api() -> tuple[object, ModuleType]:
-    """Support the public facade or discovery/collectors module exports."""
-    module = importlib.import_module("shadow_mcp")
-    discover_all = _export(module, "discover_all")
-    if discover_all is None:
-        discover_all = _export(importlib.import_module("shadow_mcp.discovery"), "discover_all")
+class DiscoveryServers(list[ConfiguredServer]):
+    """Resolved servers with discovery diagnostics available to the caller."""
+
+    def __init__(self, servers: list[ConfiguredServer], notes: list[str]) -> None:
+        super().__init__(servers)
+        self.notes = notes
+
+
+def _module(name: str) -> ModuleType:
     try:
-        collectors = importlib.import_module("shadow_mcp.collectors")
+        return importlib.import_module(name)
     except ModuleNotFoundError as exc:
-        if exc.name != "shadow_mcp.collectors":
-            raise
-        collectors = module
-    return discover_all, collectors
+        if exc.name == "shadow_mcp":
+            raise ShadowImportError("install shadow-mcp: uv run --with <path-to-shadow-mcp> ...") from exc
+        raise ShadowImportError(f"incompatible shadow-mcp: missing module {exc.name}") from exc
+    except ImportError as exc:
+        raise ShadowImportError(f"incompatible shadow-mcp: cannot import {name}") from exc
+
+
+def _required(module: ModuleType, name: str) -> object:
+    value: object = getattr(module, name, None)
+    if value is None:
+        raise ShadowImportError(f"incompatible shadow-mcp: missing {module.__name__}.{name}")
+    return value
 
 
 def _strings(value: object, field: str) -> list[str]:
@@ -45,89 +54,66 @@ def _strings(value: object, field: str) -> list[str]:
     return [str(item) for item in value]
 
 
-def _field(entry: object, name: str, default: object = None) -> object:
-    if isinstance(entry, dict):
-        value: object = entry.get(name, default)
-        return value
-    value = getattr(entry, name, default)
-    return value
-
-
 def _server(entry: object) -> ServerConfig:
-    if isinstance(entry, ServerConfig):
-        return entry
-    name = _field(entry, "name")
-    command = _field(entry, "command")
-    url = _field(entry, "url")
-    if not isinstance(name, str) or not name:
-        raise ValueError("shadow-mcp server is missing its name")
+    name: object = getattr(entry, "name", None)
+    spec: object = getattr(entry, "spec", None)
+    if not isinstance(name, str) or not name or spec is None:
+        raise ValueError("shadow-mcp server is missing its name or spec")
+    command: object = getattr(spec, "command", None)
+    url: object = getattr(spec, "url", None)
+    transport: object = getattr(spec, "transport", None)
     if command is not None and not isinstance(command, str):
         raise ValueError("shadow-mcp returned invalid command")
     if url is not None and not isinstance(url, str):
         raise ValueError("shadow-mcp returned invalid url")
-    env_keys = _field(entry, "env_keys")
-    if env_keys is None:
-        env = _field(entry, "env", {})
-        if not isinstance(env, dict) or any(not isinstance(key, str) for key in env):
-            raise ValueError("shadow-mcp returned invalid environment metadata")
-        env_keys = list(env)  # Values never leave the adapter.
-    headers_keys = _field(entry, "headers_keys")
-    if headers_keys is None:
-        headers = _field(entry, "headers", {})
-        if not isinstance(headers, dict) or any(not isinstance(key, str) for key in headers):
-            raise ValueError("shadow-mcp returned invalid header metadata")
-        headers_keys = list(headers)
-    transport = _field(entry, "transport", "stdio")
     if transport not in ("stdio", "http", "sse"):
         raise ValueError("shadow-mcp returned unsupported transport")
     return ServerConfig(
         name=name,
-        # The core model has no Codex/Dxt client enum. This marker is internal;
-        # reports deliberately omit it rather than mislabeling those clients.
         client=ClientType.CLAUDE_CODE,
         config_path="<shadow-mcp>",
         command=command,
-        args=_strings(_field(entry, "args", []), "args"),
+        args=_strings(getattr(spec, "args", None), "args"),
         url=url,
         transport=TransportType(str(transport)),
-        env_keys=sorted(set(_strings(env_keys, "env_keys"))),
-        headers_keys=sorted(set(_strings(headers_keys, "headers_keys"))),
+        env_keys=sorted(set(_strings(getattr(spec, "env_keys", None), "env_keys"))),
     )
-
-
-async def _await(value: Awaitable[object]) -> object:
-    return await value
 
 
 def discover_servers(
     *, include_claude_code: bool = False, pins_dir: Path | None = None
 ) -> list[ConfiguredServer]:
-    """Call discover_all exactly once with only explicitly selected collectors.
-
-    An incompatible API fails closed; it never retries default discovery or
-    invokes a CLI. Real-config discovery is for the head to exercise explicitly.
-    """
-    discover_all, module = _api()
-    if not callable(discover_all):
-        raise ValueError("shadow-mcp must expose discover_all(collectors=...)")
-    signature = inspect.signature(discover_all)
-    if "collectors" not in signature.parameters:
-        raise ValueError("shadow-mcp must support an explicit collectors argument")
-    selected: list[object] = []
-    names = (*DEFAULT_COLLECTORS, "ClaudeCode") if include_claude_code else DEFAULT_COLLECTORS
-    for name in names:
-        factory = _export(module, name)
-        if factory is None:
-            factory = _export(module, f"{name}Collector")
-        if not callable(factory):
-            raise ValueError(f"shadow-mcp is missing its {name} collector export")
-        selected.append(factory())
-    discovered: object = discover_all(collectors=selected)
-    if inspect.isawaitable(discovered):
-        discovered = asyncio.run(_await(discovered))
-    entries = _field(discovered, "servers", discovered)
-    if not isinstance(entries, (list, tuple)):
-        raise ValueError("shadow-mcp must return a server list or result.servers")
+    """Run only explicitly allowlisted collectors; never fall back to defaults."""
+    _module("shadow_mcp")
+    paths_class = _required(_module("shadow_mcp.config"), "DiscoveryPaths")
+    default: object = getattr(paths_class, "default", None)
+    discover = _required(_module("shadow_mcp.collectors.base"), "discover_all")
+    if not callable(default):
+        raise ShadowImportError("incompatible shadow-mcp: missing DiscoveryPaths.default")
+    if not callable(discover):
+        raise ShadowImportError("incompatible shadow-mcp: discover_all is not callable")
+    try:
+        inspect.signature(discover).bind(None, include_processes=False, include_cli=False, collectors=[])
+    except (TypeError, ValueError) as exc:
+        raise ShadowImportError("incompatible shadow-mcp: discover_all signature") from exc
+    names: tuple[tuple[str, str], ...] = DEFAULT_COLLECTORS
+    if include_claude_code:
+        names += (("claude_code", "ClaudeCodeCollector"),)
+    factories = [_required(_module(f"shadow_mcp.collectors.{module}"), name) for module, name in names]
+    if any(not callable(factory) for factory in factories):
+        raise ShadowImportError("incompatible shadow-mcp: collector is not callable")
+    paths: object = default()
+    selected = [factory(paths) for factory in factories if callable(factory)]
+    result: object = discover(paths, include_processes=False, include_cli=False, collectors=selected)
+    entries: object = getattr(result, "servers", None)
+    counts: object = getattr(result, "source_counts", None)
+    errors: object = getattr(result, "errors", None)
+    if not isinstance(entries, list) or not isinstance(counts, dict):
+        raise ShadowImportError("incompatible shadow-mcp: missing result servers or source_counts")
+    if any(not isinstance(k, str) or not isinstance(v, int) for k, v in counts.items()):
+        raise ValueError("shadow-mcp returned invalid source_counts")
+    notes = [f"shadow-mcp source {key}: {counts[key]}" for key in sorted(counts)]
+    notes.extend(f"shadow-mcp error: {error}" for error in _strings(errors, "errors"))
     configs = sorted(
         (_server(entry) for entry in entries),
         key=lambda config: (
@@ -135,17 +121,21 @@ def discover_servers(
             config.command or "",
             tuple(config.args),
             config.url or "",
-            tuple(sorted(config.env_keys)),
+            tuple(config.env_keys),
         ),
     )
-    # Preserve all entries rather than silently overwriting duplicate client names.
-    counts: dict[str, int] = {}
+    unique: dict[tuple[str, str | None, tuple[str, ...], str | None], ServerConfig] = {}
     for config in configs:
-        counts[config.name] = counts.get(config.name, 0) + 1
+        key = (config.name, config.command, tuple(config.args), config.url)
+        unique.setdefault(key, config)
+    configs = list(unique.values())
+    name_counts: dict[str, int] = {}
+    for config in configs:
+        name_counts[config.name] = name_counts.get(config.name, 0) + 1
     serials: dict[str, int] = {}
     for config in configs:
-        if counts[config.name] > 1:
+        if name_counts[config.name] > 1:
             original = config.name
             serials[original] = serials.get(original, 0) + 1
             config.name = f"{original} [discovered entry {serials[original]}]"
-    return resolve_configs(configs, pins_dir=pins_dir)
+    return DiscoveryServers(resolve_configs(configs, pins_dir=pins_dir), notes)
