@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "range-base": {
+
+      "command": "uv",
+      "args": ["--directory", ".", "run", "python", "server.py"]
+
+    }
+  }
+}

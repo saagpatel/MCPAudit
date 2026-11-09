@@ -1,0 +1,32 @@
+{
+  "config": {
+    "args": [],
+    "command": null,
+    "env_keys": [],
+    "transport": "stdio",
+    "url": null
+  },
+  "provenance": null,
+  "resources": [],
+  "server_name": "clean-companion",
+  "source": "fixture",
+  "tools": [
+    {
+      "annotations": null,
+      "description": "Echo a supplied string.",
+      "input_schema": {
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "type": "object"
+      },
+      "name": "companion_echo",
+      "title": null
+    }
+  ]
+}

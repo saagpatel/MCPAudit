@@ -1,0 +1,197 @@
+{
+  "config": {
+    "args": [],
+    "command": null,
+    "env_keys": [],
+    "transport": "stdio",
+    "url": null
+  },
+  "provenance": "Derived from the validation corpus; not a verified current surface; unversioned.",
+  "resources": [],
+  "server_name": "server-filesystem",
+  "source": "catalog",
+  "tools": [
+    {
+      "annotations": null,
+      "description": "Read the complete contents of a file from the file system.",
+      "input_schema": {
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "name": "read_file",
+      "title": null
+    },
+    {
+      "annotations": null,
+      "description": "Read the contents of multiple files simultaneously.",
+      "input_schema": {
+        "properties": {
+          "paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "paths"
+        ],
+        "type": "object"
+      },
+      "name": "read_multiple_files",
+      "title": null
+    },
+    {
+      "annotations": null,
+      "description": "Create a new file or completely overwrite an existing file with new content.",
+      "input_schema": {
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "content"
+        ],
+        "type": "object"
+      },
+      "name": "write_file",
+      "title": null
+    },
+    {
+      "annotations": null,
+      "description": "Make line-based edits to a text file.",
+      "input_schema": {
+        "properties": {
+          "edits": {
+            "type": "array"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "edits"
+        ],
+        "type": "object"
+      },
+      "name": "edit_file",
+      "title": null
+    },
+    {
+      "annotations": null,
+      "description": "Create a new directory or ensure a directory exists.",
+      "input_schema": {
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "name": "create_directory",
+      "title": null
+    },
+    {
+      "annotations": null,
+      "description": "Get a detailed listing of all files and directories in a specified path.",
+      "input_schema": {
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "name": "list_directory",
+      "title": null
+    },
+    {
+      "annotations": null,
+      "description": "Move or rename files and directories.",
+      "input_schema": {
+        "properties": {
+          "destination": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "destination"
+        ],
+        "type": "object"
+      },
+      "name": "move_file",
+      "title": null
+    },
+    {
+      "annotations": null,
+      "description": "Recursively search for files and directories matching a pattern.",
+      "input_schema": {
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "pattern": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "pattern"
+        ],
+        "type": "object"
+      },
+      "name": "search_files",
+      "title": null
+    },
+    {
+      "annotations": null,
+      "description": "Retrieve detailed metadata about a file or directory.",
+      "input_schema": {
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "name": "get_file_info",
+      "title": null
+    },
+    {
+      "annotations": null,
+      "description": "Returns the list of directories that this server is allowed to access.",
+      "input_schema": {
+        "properties": {},
+        "type": "object"
+      },
+      "name": "list_allowed_directories",
+      "title": null
+    }
+  ]
+}

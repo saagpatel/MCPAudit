@@ -1,0 +1,16 @@
+[project]
+name = "range-base"
+version = "0.1.0"
+description = "A FastMCP server named range-base"
+requires-python = ">=3.12"
+dependencies = [
+    "fastmcp>=3.1.0",
+
+]
+
+[dependency-groups]
+dev = ["pytest>=8.0.0", "pytest-asyncio>=0.23.0"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["."]

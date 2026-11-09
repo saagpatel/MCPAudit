@@ -155,6 +155,7 @@ def test_built_artifacts_have_portable_metadata_and_only_their_package(
             assert observed == (proof_files if member == "proof" else set())
     with tarfile.open(sdist) as archive:
         assert all("distributions" not in Path(info.name).parts for info in archive.getmembers())
+        assert all(not {"redteam", "build"} & set(Path(info.name).parts) for info in archive.getmembers())
         (pkg_info,) = [info for info in archive.getmembers() if Path(info.name).name == "PKG-INFO"]
         stream = archive.extractfile(pkg_info)
         assert stream is not None

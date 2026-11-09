@@ -1,0 +1,252 @@
+{
+  "config": {
+    "args": [],
+    "command": null,
+    "env_keys": [],
+    "transport": "stdio",
+    "url": null
+  },
+  "provenance": "Derived from the validation corpus; not a verified current surface; unversioned.",
+  "resources": [],
+  "server_name": "mcp-server-git",
+  "source": "catalog",
+  "tools": [
+    {
+      "annotations": null,
+      "description": "Shows the working tree status of a git repository.",
+      "input_schema": {
+        "properties": {
+          "repo_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo_path"
+        ],
+        "type": "object"
+      },
+      "name": "git_status",
+      "title": null
+    },
+    {
+      "annotations": null,
+      "description": "Shows changes in the working directory that are not yet staged.",
+      "input_schema": {
+        "properties": {
+          "repo_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo_path"
+        ],
+        "type": "object"
+      },
+      "name": "git_diff_unstaged",
+      "title": null
+    },
+    {
+      "annotations": null,
+      "description": "Shows changes that are staged for commit.",
+      "input_schema": {
+        "properties": {
+          "repo_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo_path"
+        ],
+        "type": "object"
+      },
+      "name": "git_diff_staged",
+      "title": null
+    },
+    {
+      "annotations": null,
+      "description": "Records changes to the git repository with a commit message.",
+      "input_schema": {
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "repo_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo_path",
+          "message"
+        ],
+        "type": "object"
+      },
+      "name": "git_commit",
+      "title": null
+    },
+    {
+      "annotations": null,
+      "description": "Adds file contents to the staging area.",
+      "input_schema": {
+        "properties": {
+          "files": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "repo_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo_path",
+          "files"
+        ],
+        "type": "object"
+      },
+      "name": "git_add",
+      "title": null
+    },
+    {
+      "annotations": null,
+      "description": "Unstages all staged changes in the repository.",
+      "input_schema": {
+        "properties": {
+          "repo_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo_path"
+        ],
+        "type": "object"
+      },
+      "name": "git_reset",
+      "title": null
+    },
+    {
+      "annotations": null,
+      "description": "Shows the commit logs for the repository.",
+      "input_schema": {
+        "properties": {
+          "max_count": {
+            "type": "number"
+          },
+          "repo_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo_path"
+        ],
+        "type": "object"
+      },
+      "name": "git_log",
+      "title": null
+    },
+    {
+      "annotations": null,
+      "description": "Creates a new branch in the repository.",
+      "input_schema": {
+        "properties": {
+          "branch_name": {
+            "type": "string"
+          },
+          "repo_path": {
+            "type": "string"
+          },
+          "start_point": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo_path",
+          "branch_name"
+        ],
+        "type": "object"
+      },
+      "name": "git_create_branch",
+      "title": null
+    },
+    {
+      "annotations": null,
+      "description": "Switches branches or restores working tree files.",
+      "input_schema": {
+        "properties": {
+          "branch_name": {
+            "type": "string"
+          },
+          "repo_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo_path",
+          "branch_name"
+        ],
+        "type": "object"
+      },
+      "name": "git_checkout",
+      "title": null
+    },
+    {
+      "annotations": null,
+      "description": "Shows the contents of a commit.",
+      "input_schema": {
+        "properties": {
+          "repo_path": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo_path",
+          "revision"
+        ],
+        "type": "object"
+      },
+      "name": "git_show",
+      "title": null
+    },
+    {
+      "annotations": null,
+      "description": "Initializes a new Git repository.",
+      "input_schema": {
+        "properties": {
+          "repo_path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "repo_path"
+        ],
+        "type": "object"
+      },
+      "name": "git_init",
+      "title": null
+    },
+    {
+      "annotations": null,
+      "description": "Clones a remote git repository to a local path.",
+      "input_schema": {
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "path"
+        ],
+        "type": "object"
+      },
+      "name": "git_clone",
+      "title": null
+    }
+  ]
+}
