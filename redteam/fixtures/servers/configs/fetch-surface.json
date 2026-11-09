@@ -1,0 +1,1 @@
+{"server_name":"fetch","source":"fixture","tools":[{"name":"fetch_url","description":"Fetch a URL.","input_schema":{}}]}
