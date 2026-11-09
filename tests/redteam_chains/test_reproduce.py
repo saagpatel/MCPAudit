@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shlex
 import subprocess
 import sys
@@ -129,6 +130,37 @@ def test_profile_denies_network_write_and_unlisted_exec(tmp_path: Path) -> None:
     assert '(subpath "/usr/bin")' not in profile
     with pytest.raises(ValueError):
         reproduce.sandbox_profile(root, root.parent / "outside-script", reproduce.GitTool(git, helpers))
+
+
+@pytest.mark.parametrize("target", ["/usr/local/bin/bash", "relative/bash"])
+def test_rejects_unapproved_sh_variant(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, target: str) -> None:
+    select = tmp_path / "sh"
+    select.touch()
+    monkeypatch.setattr(reproduce, "SH_SELECT", select)
+    monkeypatch.setattr(os.path, "realpath", lambda path: target)
+    with pytest.raises(reproduce._Unavailable, match="sh variant is outside approved paths"):
+        reproduce.resolve_sh_variant()
+
+
+def test_resolves_sh_variant_into_profile(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    root = tmp_path.resolve()
+    select = root / "sh"
+    select.touch()
+    monkeypatch.setattr(reproduce, "SH_SELECT", select)
+    with monkeypatch.context() as patch:
+        patch.setattr(os.path, "realpath", lambda path: "/bin/bash")
+        variant = reproduce.resolve_sh_variant()
+    assert variant == Path("/bin/bash")
+    profile = reproduce.sandbox_profile(
+        root, root / "canary.sh", reproduce.GitTool(root / "git", root), variant
+    )
+    assert '(literal "/bin/bash")' in profile
+    assert "/usr/bin/xcrun" not in profile
+
+
+def test_missing_sh_select_adds_no_variant(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(reproduce, "SH_SELECT", tmp_path / "missing")
+    assert reproduce.resolve_sh_variant() is None
 
 
 def test_resolves_and_validates_git_and_helper_paths(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

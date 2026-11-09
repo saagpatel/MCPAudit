@@ -25,6 +25,7 @@ from typing import Literal
 SANDBOX_EXEC = Path("/usr/bin/sandbox-exec")
 XCRUN = Path("/usr/bin/xcrun")
 GIT_FALLBACK = Path("/usr/bin/git")
+SH_SELECT = Path("/private/var/select/sh")
 GIT_ROOTS = (
     Path("/Applications/Xcode.app"),
     Path("/Library/Developer/CommandLineTools"),
@@ -150,7 +151,27 @@ def resolve_git_tool(*, cwd: Path) -> GitTool:
     return GitTool(executable, exec_path)
 
 
-def sandbox_profile(root: Path, script: Path, git_tool: GitTool) -> str:
+def resolve_sh_variant() -> Path | None:
+    """Resolve the macOS sh selection without admitting arbitrary executables."""
+    if not SH_SELECT.exists():
+        return None
+    variant = Path(os.path.realpath(SH_SELECT))
+    if (
+        not variant.is_absolute()
+        or variant.parent != Path("/bin")
+        or variant.name
+        not in {
+            "bash",
+            "dash",
+            "zsh",
+            "sh",
+        }
+    ):
+        raise _Unavailable("sh variant is outside approved paths")
+    return variant
+
+
+def sandbox_profile(root: Path, script: Path, git_tool: GitTool, sh_variant: Path | None = None) -> str:
     """A deny-write/network/exec policy with narrowly scoped exceptions.
 
     Git and its helper directory are resolved and validated before entering
@@ -159,6 +180,7 @@ def sandbox_profile(root: Path, script: Path, git_tool: GitTool) -> str:
     if not root.is_absolute() or root.resolve() != root or script.parent != root:
         raise ValueError("sandbox paths must be resolved private canary paths")
     quote = json.dumps
+    variant_literal = f"(literal {quote(str(sh_variant))}) " if sh_variant is not None else ""
     return (
         "(version 1)\n(allow default)\n"
         "(deny network*)\n(deny file-write*)\n"
@@ -168,6 +190,7 @@ def sandbox_profile(root: Path, script: Path, git_tool: GitTool) -> str:
         f"(allow process-exec (literal {quote(str(git_tool.executable))}) "
         f"(subpath {quote(str(git_tool.exec_path))}) "
         '(literal "/bin/sh") '
+        f"{variant_literal}"
         f'(literal "/bin/cat") (literal {quote(str(script))}))\n'
     )
 
@@ -305,7 +328,12 @@ def _script(marker: Path) -> str:
 
 
 def _case(
-    parent: Path, control: Control, result: ReproductionResult, timeout: float, git_tool: GitTool
+    parent: Path,
+    control: Control,
+    result: ReproductionResult,
+    timeout: float,
+    git_tool: GitTool,
+    sh_variant: Path | None,
 ) -> None:
     root = Path(tempfile.mkdtemp(prefix=PREFIX, dir=parent))
     try:
@@ -316,7 +344,9 @@ def _case(
             (root / directory).mkdir(mode=0o700)
         script = root / "canary.sh"
         marker = root / "marker"
-        (root / "sandbox.sb").write_text(sandbox_profile(root, script, git_tool), encoding="utf-8")
+        (root / "sandbox.sb").write_text(
+            sandbox_profile(root, script, git_tool, sh_variant), encoding="utf-8"
+        )
         _run_git(
             root,
             [
@@ -420,8 +450,9 @@ def reproduce_git_clean_filter(*, parent: Path | None = None, timeout: float = 1
             raise _Failed("canary parent must not contain symlinks")
         base = base.resolve()
         git_tool = resolve_git_tool(cwd=base)
+        sh_variant = resolve_sh_variant()
         for control in ("filter", "no-filter-config", "no-attributes"):
-            _case(base, control, result, timeout, git_tool)
+            _case(base, control, result, timeout, git_tool, sh_variant)
         result.status = "REPRODUCED"
     except _Unavailable as exc:
         result.status, result.reason = "SKIPPED", str(exc)
