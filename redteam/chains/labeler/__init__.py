@@ -68,22 +68,28 @@ def label_server(surface: ServerSurface) -> list[ToolLabel]:
     identity = " ".join(
         (surface.server_name, surface.provenance or "", surface.config.command or "", *surface.config.args)
     ).lower()
-    is_playwright = "playwright" in identity
     is_xcodebuild = "xcodebuildmcp" in identity
     is_machine_room = "machine-room" in identity or "machine_room" in identity
 
     browser_tools: set[str] = set()
+    browser_context_tools: set[str] = set()
     directory_tools: set[str] = set()
     for tool in sorted(surface.tools, key=lambda item: item.name):
         name = tool.name.lower()
         evidence = f"tool name: {tool.name}"
         metadata = f"{tool.name} {tool.description or ''}"
         metadata_tokens = _tokens(metadata)
-        if ("javascript" in metadata.lower() or "js" in metadata_tokens) and metadata_tokens & {
-            "browser",
-            "page",
-            "tab",
-        }:
+        server_process_code = "server process" in metadata.lower() or "rce-equivalent" in metadata.lower()
+        if (
+            not server_process_code
+            and ("javascript" in metadata.lower() or "js" in metadata_tokens)
+            and metadata_tokens
+            & {
+                "browser",
+                "page",
+                "tab",
+            }
+        ):
             browser_tools.add(tool.name)
             add(
                 tool.name,
@@ -96,9 +102,10 @@ def label_server(surface: ServerSurface) -> list[ToolLabel]:
             add(tool.name, "write", "creates_directory", evidence)
         elif name == "move_file":
             add(tool.name, "write", "writes_file", "move can place an attacker-controlled file at a path")
-        if is_playwright:
-            # Browser JavaScript runs in the browser context; it is not host execution.
-            # The Playwright catalog is deliberately URL-fetching only.
+        if name.startswith("browser_") and not server_process_code:
+            # Browser-prefixed tools operate in browser context. This is a
+            # per-tool classification; server identity never suppresses host labels.
+            browser_context_tools.add(tool.name)
             add(tool.name, "read", "fetches_url", evidence, "definite")
             continue
         if name in {"write_file", "edit_file"}:
@@ -178,7 +185,7 @@ def label_server(surface: ServerSurface) -> list[ToolLabel]:
         PermissionCategory.NETWORK: ("read", "fetches_url"),
     }
     for finding in PermissionAnalyzer().analyze_server(surface.to_tools()):
-        if is_playwright:
+        if finding.tool_name in browser_context_tools:
             continue
         if finding.category in mapping:
             cap, tag = mapping[finding.category]

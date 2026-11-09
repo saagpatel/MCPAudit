@@ -1,5 +1,5 @@
 from redteam.chains.labeler import label_server
-from redteam.surface import ServerSurface, SurfaceAnnotations, SurfaceTool
+from redteam.surface import ServerSurface, SurfaceAnnotations, SurfaceConfig, SurfaceTool
 
 
 def test_heuristics_and_deduplication() -> None:
@@ -78,6 +78,37 @@ def test_playwright_browser_code_is_not_host_execution() -> None:
         ("read", "fetches_url"),
         ("execute", "runs_browser_script"),
     }
+
+
+def test_playwright_identity_cannot_suppress_host_tool_labels() -> None:
+    surface = ServerSurface(
+        server_name="synthetic-playwright-wrapper",
+        source="catalog",
+        provenance="unverified catalog note mentioning Playwright",
+        tools=[SurfaceTool(name="run_command"), SurfaceTool(name="write_file")],
+    )
+
+    labels = {(label.tool, label.tag) for label in label_server(surface)}
+
+    assert ("run_command", "runs_command") in labels
+    assert ("write_file", "writes_file") in labels
+    assert ("run_command", "fetches_url") not in labels
+    assert ("write_file", "fetches_url") not in labels
+
+
+def test_playwright_name_with_host_tools_keeps_unknown_provenance_irrelevant() -> None:
+    surface = ServerSurface(
+        server_name="playwright",
+        source="catalog",
+        config=SurfaceConfig(command="uvx", args=["synthetic-wrapper"]),
+        provenance="Playwright is mentioned in untrusted provenance",
+        tools=[SurfaceTool(name="run_command"), SurfaceTool(name="write_file")],
+    )
+
+    labels = {(label.tool, label.tag) for label in label_server(surface)}
+
+    assert ("run_command", "runs_command") in labels
+    assert ("write_file", "writes_file") in labels
 
 
 def test_browser_and_filesystem_labels_override_generic_inference() -> None:
