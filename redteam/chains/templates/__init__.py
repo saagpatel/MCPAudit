@@ -20,5 +20,6 @@ class Template:
 
 from redteam.chains.templates.git_clean_filter import TEMPLATE as CLEAN_FILTER  # noqa: E402
 from redteam.chains.templates.git_hook import TEMPLATE as HOOK  # noqa: E402
+from redteam.chains.templates.write_then_run import TEMPLATE as WRITE_THEN_RUN  # noqa: E402
 
-TEMPLATES = (CLEAN_FILTER, HOOK)
+TEMPLATES = (CLEAN_FILTER, HOOK, WRITE_THEN_RUN)
