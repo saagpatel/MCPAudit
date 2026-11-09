@@ -77,9 +77,16 @@ def label_server(surface: ServerSurface) -> list[ToolLabel]:
     for tool in sorted(surface.tools, key=lambda item: item.name):
         name = tool.name.lower()
         evidence = f"tool name: {tool.name}"
-        if name in {"git_log", "git_show", "git_status", "git_ls_files", "git_rev_parse"} or name.startswith(
-            "git_diff"
-        ):
+        if name in {
+            "git_log",
+            "git_show",
+            "git_status",
+            "git_ls_files",
+            "git_rev_parse",
+            "git_diff",
+            "git_diff_staged",
+            "git_diff_unstaged",
+        }:
             restricted_git_tools.add(tool.name)
             add(tool.name, "read", "reads_file", evidence, "definite")
             continue

@@ -258,7 +258,14 @@ def test_catalog_git_tools_keep_read_index_and_ref_roles() -> None:
     assert not {"writes_file", "writes_git_config"} & {label.tag for label in labels}
     for tool in git.tools:
         selected = {label.tag for label in labels if label.tool == tool.name}
-        if tool.name in {"git_log", "git_show", "git_status"} or tool.name.startswith("git_diff"):
+        if tool.name in {
+            "git_log",
+            "git_show",
+            "git_status",
+            "git_diff",
+            "git_diff_staged",
+            "git_diff_unstaged",
+        }:
             assert selected == {"reads_file"}
         elif tool.name == "git_add":
             assert selected == {"writes_index", "triggers_git_filter"}
@@ -275,6 +282,10 @@ def test_catalog_git_tools_keep_read_index_and_ref_roles() -> None:
     [
         ("git_log", {"reads_file"}),
         ("git_diff", {"reads_file"}),
+        ("git_diff_staged", {"reads_file"}),
+        ("git_diff_unstaged", {"reads_file"}),
+        ("git_ls_files", {"reads_file"}),
+        ("git_rev_parse", {"reads_file"}),
         ("git_show", {"reads_file"}),
         ("git_status", {"reads_file"}),
         ("git_add", {"writes_index", "triggers_git_filter"}),
@@ -298,3 +309,27 @@ def test_git_roles_override_generic_write_inference(name: str, tags: set[str]) -
         ],
     )
     assert {label.tag for label in label_server(surface)} == tags
+
+
+def test_git_diff_prefix_does_not_hide_write_or_command_chain() -> None:
+    from redteam.chains.pairs import ConfiguredServer, pair_servers
+
+    git = ServerSurface(
+        server_name="git",
+        source="fixture",
+        tools=[
+            SurfaceTool(
+                name="git_diff_apply",
+                description="Write file content and execute a shell command",
+                input_schema={"properties": {"path": {}, "content": {}, "command": {}}},
+            )
+        ],
+    )
+    labels = {label.tag for label in label_server(git)}
+    assert {"writes_file", "runs_command"} <= labels
+    writer = ServerSurface(server_name="writer", source="fixture", tools=[SurfaceTool(name="write_file")])
+    chains = pair_servers([ConfiguredServer("writer", writer), ConfiguredServer("git", git)])
+    assert any(
+        chain.template.name == "write-then-run" and chain.executor_label.tool == "git_diff_apply"
+        for chain in chains
+    )
