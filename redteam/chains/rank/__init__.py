@@ -1,7 +1,12 @@
-"""Rank plausible chains without inspecting the filesystem."""
+"""Rank roots lexically, without resolving symlinks.
 
+Absolute roots without '..' or '~' are normalized. Equal or nested roots
+overlap; all other valid pairs are disjoint. Missing roots on one side mean
+possible overlap, while missing roots on both or invalid roots mean unknown.
+"""
+
+import posixpath
 from dataclasses import dataclass
-from pathlib import PurePosixPath
 from typing import Literal
 
 from redteam.chains.pairs import CandidateChain
@@ -24,18 +29,16 @@ class DroppedChain:
 
 
 def scope_overlap(writer: tuple[str, ...], executor: tuple[str, ...]) -> Overlap:
+    paths = (*writer, *executor)
+    if any(not p.startswith("/") or ".." in p.split("/") or "~" in p for p in paths):
+        return "unknown"
     if not writer or not executor:
-        return "unknown"
-    paths = [PurePosixPath(p) for p in (*writer, *executor)]
-    if any(not p.is_absolute() or ".." in p.parts for p in paths):
-        return "unknown"
-    for a in map(PurePosixPath, writer):
-        for b in map(PurePosixPath, executor):
-            if a == b:
+        return "possible" if writer or executor else "unknown"
+    for a in map(posixpath.normpath, writer):
+        for b in map(posixpath.normpath, executor):
+            if a == b or a.startswith(b.rstrip("/") + "/") or b.startswith(a.rstrip("/") + "/"):
                 return "confirmed"
-            if a in b.parents or b in a.parents:
-                return "possible"
-    return "unknown"
+    return "disjoint"
 
 
 def rank_chains(chains: list[CandidateChain]) -> tuple[list[RankedChain], list[DroppedChain]]:
@@ -44,7 +47,7 @@ def rank_chains(chains: list[CandidateChain]) -> tuple[list[RankedChain], list[D
     for chain in chains:
         overlap = scope_overlap(chain.writer.roots, chain.executor.roots)
         if overlap == "disjoint":
-            dropped.append(DroppedChain(chain, "proven disjoint path scopes"))
+            dropped.append(DroppedChain(chain, "lexically disjoint configured roots (symlinks not resolved)"))
             continue
         automaticity = {"automatic": 30, "user_action": 20, "unknown": 0}[chain.template.automaticity]
         scope = {"confirmed": 20, "possible": 10, "unknown": 0, "disjoint": 0}[overlap]
@@ -53,6 +56,11 @@ def rank_chains(chains: list[CandidateChain]) -> tuple[list[RankedChain], list[D
         )
         setup = len(chain.preconditions) + conditions
         score = automaticity + scope - len(chain.steps) - setup
+        detail = {
+            "confirmed": "equal or nested configured roots (lexical; symlinks not resolved)",
+            "possible": "one server has no configured roots",
+            "unknown": "missing or invalid configured roots",
+        }[overlap]
         ranked.append(
             RankedChain(
                 chain,
@@ -60,7 +68,7 @@ def rank_chains(chains: list[CandidateChain]) -> tuple[list[RankedChain], list[D
                 overlap,
                 (
                     f"automaticity {chain.template.automaticity}: +{automaticity}",
-                    f"scope {overlap}: +{scope}",
+                    f"scope {overlap}: +{scope}; {detail}",
                     f"steps: -{len(chain.steps)}",
                     f"preconditions and conditional labels: -{setup}",
                 ),
