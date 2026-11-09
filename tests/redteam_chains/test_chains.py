@@ -94,10 +94,11 @@ def test_write_then_run_ranks_below_clean_filter() -> None:
     clean = next(c for c in ranked if c.chain.template.name == "git-clean-filter")
     write_run = next(c for c in ranked if c.chain.template.name == "write-then-run")
     assert [(s.server, s.tool) for s in write_run.chain.steps] == [
-        ("filesystem", "edit_file"),
+        ("filesystem", "create_directory"),
         ("shell", "bash"),
     ]
     assert {member.writer_label.tool for member in write_run.alternatives} == {
+        "create_directory",
         "edit_file",
         "move_file",
         "write_file",

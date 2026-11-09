@@ -72,23 +72,27 @@ def label_server(surface: ServerSurface) -> list[ToolLabel]:
     is_machine_room = "machine-room" in identity or "machine_room" in identity
 
     browser_tools: set[str] = set()
-    browser_context_tools: set[str] = set()
-    directory_tools: set[str] = set()
     for tool in sorted(surface.tools, key=lambda item: item.name):
         name = tool.name.lower()
         evidence = f"tool name: {tool.name}"
-        metadata = f"{tool.name} {tool.description or ''}"
-        metadata_tokens = _tokens(metadata)
-        server_process_code = "server process" in metadata.lower() or "rce-equivalent" in metadata.lower()
+        fields = {"name": tool.name, "description": tool.description or ""}
+        properties = tool.input_schema.get("properties")
+        if isinstance(properties, dict):
+            for key, value in sorted(properties.items(), key=lambda item: str(item[0])):
+                if not isinstance(key, str):
+                    continue
+                path = f"inputSchema.properties.{key}"
+                fields[path] = key
+                if isinstance(value, dict) and isinstance(value.get("description"), str):
+                    fields[f"{path}.description"] = value["description"]
+        tokens = {path: _tokens(text) for path, text in fields.items()}
+        all_tokens = set().union(*tokens.values())
+        context_tokens = set().union(*(words for path, words in tokens.items() if path != "name"))
         if (
-            not server_process_code
-            and ("javascript" in metadata.lower() or "js" in metadata_tokens)
-            and metadata_tokens
-            & {
-                "browser",
-                "page",
-                "tab",
-            }
+            (bool(all_tokens & {"javascript", "js"}) or {"java", "script"} <= all_tokens)
+            and context_tokens & {"browser", "page", "tab"}
+            and all_tokens & {"run", "runs", "execute", "executes", "evaluate", "evaluates"}
+            and not all_tokens & {"host", "shell", "command", "cmd", "process", "bash", "rce"}
         ):
             browser_tools.add(tool.name)
             add(
@@ -98,16 +102,9 @@ def label_server(surface: ServerSurface) -> list[ToolLabel]:
                 "JavaScript in browser/page/tab context; overrides host command inference",
             )
         if name == "create_directory":
-            directory_tools.add(tool.name)
             add(tool.name, "write", "creates_directory", evidence)
         elif name == "move_file":
             add(tool.name, "write", "writes_file", "move can place an attacker-controlled file at a path")
-        if name.startswith("browser_") and not server_process_code:
-            # Browser-prefixed tools operate in browser context. This is a
-            # per-tool classification; server identity never suppresses host labels.
-            browser_context_tools.add(tool.name)
-            add(tool.name, "read", "fetches_url", evidence, "definite")
-            continue
         if name in {"write_file", "edit_file"}:
             add(tool.name, "write", "writes_file", evidence, "definite")
         elif name == "git_add":
@@ -138,18 +135,6 @@ def label_server(surface: ServerSurface) -> list[ToolLabel]:
         elif name in {"fetch", "fetch_url"}:
             add(tool.name, "read", "fetches_url", evidence, "definite")
 
-        fields = {"name": tool.name, "description": tool.description or ""}
-        properties = tool.input_schema.get("properties")
-        if isinstance(properties, dict):
-            for key, value in sorted(properties.items(), key=lambda item: str(item[0])):
-                if not isinstance(key, str):
-                    continue
-                path = f"inputSchema.properties.{key}"
-                fields[path] = key
-                if isinstance(value, dict) and isinstance(value.get("description"), str):
-                    fields[f"{path}.description"] = value["description"]
-        tokens = {path: _tokens(text) for path, text in fields.items()}
-        all_tokens = set().union(*tokens.values())
         if is_machine_room and "start" in all_tokens and "job" in all_tokens:
             relevant = sorted(
                 path for path, words in tokens.items() if words & {"start", "job", "command", "process"}
@@ -173,10 +158,7 @@ def label_server(surface: ServerSurface) -> list[ToolLabel]:
         for cap, tag, verbs, objects in rules:
             if all_tokens & verbs and all_tokens & objects:
                 relevant = sorted(path for path, words in tokens.items() if words & (verbs | objects))
-                if is_xcodebuild and any(word in name for word in ("build", "run")):
-                    add(tool.name, "execute", "runs_build", ", ".join(relevant))
-                else:
-                    add(tool.name, cap, tag, ", ".join(relevant))
+                add(tool.name, cap, tag, ", ".join(relevant))
 
     mapping: dict[PermissionCategory, tuple[Capability, Tag]] = {
         PermissionCategory.SHELL_EXEC: ("execute", "runs_command"),
@@ -185,16 +167,12 @@ def label_server(surface: ServerSurface) -> list[ToolLabel]:
         PermissionCategory.NETWORK: ("read", "fetches_url"),
     }
     for finding in PermissionAnalyzer().analyze_server(surface.to_tools()):
-        if finding.tool_name in browser_context_tools:
-            continue
         if finding.category in mapping:
             cap, tag = mapping[finding.category]
             paths = ", ".join(finding.field_paths) or ", ".join(finding.evidence)
             add(finding.tool_name, cap, tag, f"PermissionAnalyzer {finding.category.value}: {paths}")
     for tool_name in browser_tools:
         labels.pop((tool_name, "runs_command"), None)
-    for tool_name in directory_tools:
-        labels.pop((tool_name, "writes_file"), None)
     for label in list(labels.values()):
         if label.tag == "writes_file":
             add(

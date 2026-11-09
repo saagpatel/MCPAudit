@@ -36,6 +36,7 @@ def test_groups_tool_alternatives_by_server_pair_and_template() -> None:
     assert [row.chain.template.name for row in ranked] == ["git-clean-filter", "git-hook"]
     for row, executor in zip(ranked, ("git_add", "git_commit"), strict=True):
         assert {(chain.writer_label.tool, chain.executor_label.tool) for chain in row.alternatives} == {
+            ("create_directory", executor),
             ("write_file", executor),
             ("edit_file", executor),
             ("move_file", executor),
