@@ -245,7 +245,14 @@ def _tool(node: ast.FunctionDef | ast.AsyncFunctionDef) -> SurfaceTool:
             raise _Unsupported("tool annotations must be a literal dictionary")
     elif not _is_attr(decorator, "tool"):
         raise _Unsupported("only @mcp.tool exports are supported")
-    return SurfaceTool.model_validate(
+    if kwargs.get("name", node.name) == "":
+        raise _Unsupported("empty tool name override has uncertain FastMCP behavior")
+    annotations = kwargs.get("annotations")
+    if isinstance(annotations, dict) and (
+        not annotations or ("title" in annotations and annotations["title"] in (None, ""))
+    ):
+        raise _Unsupported("empty tool annotations metadata has uncertain FastMCP behavior")
+    tool = SurfaceTool.model_validate(
         {
             "name": kwargs.get("name", node.name),
             "description": kwargs.get("description", ast.get_docstring(node)),
@@ -253,6 +260,10 @@ def _tool(node: ast.FunctionDef | ast.AsyncFunctionDef) -> SurfaceTool:
             "annotations": kwargs.get("annotations"),
         }
     )
+    if tool.description is None or tool.description == "":
+        # ast.get_docstring cleans with inspect.cleandoc, as FastMCP does.
+        tool.description = ast.get_docstring(node)
+    return tool
 
 
 def _main_transport(node: ast.If) -> Literal["stdio", "http", "sse"]:
