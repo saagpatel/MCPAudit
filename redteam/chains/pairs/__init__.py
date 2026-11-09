@@ -7,7 +7,7 @@ from pathlib import Path
 from pydantic import TypeAdapter, ValidationError
 
 from mcp_audit.api import parse_config as parse_mcp_config
-from mcp_audit.models import ServerConfig
+from mcp_audit.models import PinVerificationState, ServerConfig
 from mcp_audit.pinning import PinStore
 from redteam.catalog import catalog_surface, load_catalog
 from redteam.chains.dxt import manifest_surface
@@ -95,9 +95,16 @@ def _pin_surface(pins_dir: Path, config: ServerConfig) -> tuple[ServerSurface | 
     withheld_match = False
     matches: list[ServerSurface] = []
     for name in candidate_names:
-        # Unsigned v2 snapshots are usable through the normal read gate. A None
-        # snapshot cannot establish launch identity and therefore cannot supply
-        # tools; report UNKNOWN rather than trusting the same-name catalog row.
+        verification = store.verification(name)
+        if verification is None or verification.state not in {
+            PinVerificationState.VERIFIED,
+            PinVerificationState.RETIRED_KEY,
+        }:
+            if name == config.name:
+                withheld_match = True
+            continue
+        # A None snapshot cannot establish launch identity and therefore cannot
+        # supply tools; report UNKNOWN rather than trusting a same-name catalog row.
         baseline_config = store.baseline_config(name)
         if baseline_config is None:
             if name == config.name:
@@ -137,7 +144,9 @@ def _pin_surface(pins_dir: Path, config: ServerConfig) -> tuple[ServerSurface | 
                     for tool in tools
                 ],
                 source="pin",
-                provenance="historical/unverified saved pin matching launch identity",
+                provenance=(
+                    "signature-verified historical pin matching launch identity; current surface unverified"
+                ),
             )
         )
     if withheld_match:
@@ -149,6 +158,31 @@ def _pin_surface(pins_dir: Path, config: ServerConfig) -> tuple[ServerSurface | 
             return None, True
         return first, False
     return None, withheld_match
+
+
+def _explicit_surface_matches(surface: ServerSurface, name: str, config: ServerConfig) -> bool:
+    """Require mapped surface name and any declared launch fields to match."""
+    if surface.server_name != name:
+        return False
+    configured: dict[str, object] = {
+        "command": config.command,
+        "args": list(config.args),
+        "transport": config.transport.value,
+        "url": config.url,
+        "env_keys": sorted(config.env_keys),
+    }
+    has_launch_identity = any(
+        (
+            surface.config.command is not None,
+            bool(surface.config.args),
+            surface.config.transport != "stdio",
+            surface.config.url is not None,
+            bool(surface.config.env_keys),
+        )
+    )
+    if not has_launch_identity:
+        return True
+    return all(getattr(surface.config, field) == configured[field] for field in configured)
 
 
 def resolve_configs(
@@ -178,10 +212,19 @@ def resolve_configs(
         ):
             if all(isinstance(root, str) and not root.startswith("-") for root in args[2:]):
                 roots = tuple(args[2:])
-        surface = explicit.get(name)
+        mapped_surface = explicit.get(name)
+        surface = (
+            mapped_surface
+            if mapped_surface is not None and _explicit_surface_matches(mapped_surface, name, config)
+            else None
+        )
         source = "explicit" if surface is not None else "unknown"
         pin_withheld = False
-        reason = None
+        reason = (
+            "Explicit surface name or declared launch identity did not match configured server"
+            if mapped_surface is not None and surface is None
+            else None
+        )
         if surface is None and pins_dir is not None:
             surface, pin_withheld = _pin_surface(pins_dir, config)
             if surface is not None:

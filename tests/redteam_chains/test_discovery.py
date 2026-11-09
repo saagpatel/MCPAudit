@@ -33,8 +33,9 @@ def shadow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
         "    spec = SimpleNamespace(transport='stdio', command='npx', args=['server-filesystem', "
         "'synthetic/repo'], url=None, env_keys=['TOKEN'])\n"
         "    server = SimpleNamespace(name='filesystem', spec=spec, provenance=None)\n"
-        "    return SimpleNamespace(servers=[server, server], source_counts={'desktop': 2}, "
-        "errors=['synthetic error'])\n",
+        "    return SimpleNamespace(servers=[server, server], "
+        "source_counts={'claude_desktop': 2, 'synthetic-secret-key': 4}, "
+        "errors=['synthetic-secret-value at /synthetic/private/path'])\n",
         encoding="utf-8",
     )
     for module, name in (
@@ -77,9 +78,16 @@ def test_discovery_allowlist_mapping_and_notes(shadow: Path) -> None:
     assert servers[0].env_keys == ("TOKEN",)
     assert servers[0].source == "unknown"
     assert cast(DiscoveryServers, servers).notes == [
-        "shadow-mcp source desktop: 2",
-        "shadow-mcp error: synthetic error",
+        "shadow-mcp source claude_desktop: 2",
+        "shadow-mcp source (unrecognized): 4",
+        "shadow-mcp collector error (details withheld)",
     ]
+    from redteam.chains.report import build_report, to_json
+
+    report = to_json(build_report(servers))
+    assert "synthetic-secret-value" not in report
+    assert "/synthetic/private/path" not in report
+    assert "synthetic-secret-key" not in report
 
 
 def test_discovery_claude_code_opt_in(shadow: Path) -> None:
@@ -180,10 +188,11 @@ def test_discovery_dxt_defaults_and_provenance_override(
     assert servers[0].source == "dxt-manifest"
     report = build_report(servers)
     assert "shadow-mcp source dxt: 1" in to_json(report)
-    assert "shadow-mcp error: synthetic error" in to_markdown(report)
+    assert "shadow-mcp collector error" in to_markdown(report)
     entry.provenance = SimpleNamespace(path=manifest)
-    # Provenance directory takes precedence over an explicit directory override.
-    assert discover_servers(dxt_dir=tmp_path / "absent")[0].source == "dxt-manifest"
+    # Provenance cannot bypass an explicitly selected, unavailable root.
+    assert discover_servers(dxt_dir=tmp_path / "absent")[0].tool_surface == "UNKNOWN"
+    assert discover_servers(dxt_dir=extensions)[0].source == "dxt-manifest"
 
 
 @pytest.mark.parametrize("as_mapping", [False, True])
@@ -210,7 +219,10 @@ def test_discovery_dxt_location_selects_exact_manifest_and_settings(
     provenance = fields if as_mapping else SimpleNamespace(**fields)
     spec = SimpleNamespace(
         command="node",
-        args=["synthetic/resolved-index.js", "${user_config.allowed_directories}"],
+        args=[
+            str(extensions / "synthetic.selected" / "index.js"),
+            "${user_config.allowed_directories}",
+        ],
         transport="stdio",
         url=None,
         env_keys=[],
@@ -221,12 +233,12 @@ def test_discovery_dxt_location_selects_exact_manifest_and_settings(
     )
 
     def discover(paths: object, *, include_processes: bool, include_cli: bool, collectors: object) -> object:
-        return SimpleNamespace(servers=[entry, duplicate], source_counts={"dxt": 1, "desktop": 1}, errors=[])
+        return SimpleNamespace(servers=[entry, duplicate], source_counts={"dxt": 1}, errors=[])
 
     monkeypatch.setattr(sys.modules["shadow_mcp.collectors.base"], "discover_all", discover)
-    # Exact provenance wins even though the fallback directory is unavailable and
-    # two manifests declare the same placeholder launch identity.
-    servers = discover_servers(dxt_dir=tmp_path / "absent")
+    # Exact provenance selects one of two manifests with the same placeholder
+    # launch identity, within the explicitly selected extensions directory.
+    servers = discover_servers(dxt_dir=extensions)
     assert len(servers) == 1
     server = servers[0]
     assert server.source == "dxt-manifest" and server.surface is not None

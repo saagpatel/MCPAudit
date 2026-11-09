@@ -18,6 +18,7 @@ DEFAULT_COLLECTORS = (
     ("dxt", "DxtCollector"),
     ("project_mcp", "ProjectMcpJsonCollector"),
 )
+KNOWN_SOURCE_KEYS = frozenset(module for module, _ in DEFAULT_COLLECTORS) | {"claude_code"}
 
 
 class ShadowImportError(ImportError):
@@ -131,10 +132,14 @@ def discover_servers(
     errors: object = getattr(result, "errors", None)
     if not isinstance(entries, list) or not isinstance(counts, dict):
         raise ShadowImportError("incompatible shadow-mcp: missing result servers or source_counts")
-    if any(not isinstance(k, str) or not isinstance(v, int) for k, v in counts.items()):
+    if any(not isinstance(k, str) or type(v) is not int or v < 0 for k, v in counts.items()):
         raise ValueError("shadow-mcp returned invalid source_counts")
-    notes = [f"shadow-mcp source {key}: {counts[key]}" for key in sorted(counts)]
-    notes.extend(f"shadow-mcp error: {error}" for error in _strings(errors, "errors"))
+    notes = [f"shadow-mcp source {key}: {counts[key]}" for key in sorted(counts) if key in KNOWN_SOURCE_KEYS]
+    unknown_count = sum(count for key, count in counts.items() if key not in KNOWN_SOURCE_KEYS)
+    if unknown_count:
+        notes.append(f"shadow-mcp source (unrecognized): {unknown_count}")
+    collector_errors = _strings(errors, "errors")
+    notes.extend("shadow-mcp collector error (details withheld)" for _ in collector_errors)
     if dxt_dir is None:
         default_dir: object = getattr(paths, "claude_extensions_dir", None)
         if isinstance(default_dir, (str, Path)):

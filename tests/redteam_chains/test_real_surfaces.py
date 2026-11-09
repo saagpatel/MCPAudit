@@ -1,6 +1,7 @@
 """Offline manifest/catalog regressions; all workstation inputs are synthetic."""
 
 import json
+import os
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -11,7 +12,7 @@ from mcp_audit.models import ClientType, ServerConfig
 from redteam.catalog import catalog_surface, load_catalog
 from redteam.chains.__main__ import main
 from redteam.chains.discovery import DiscoveryServers
-from redteam.chains.dxt import extension_directory
+from redteam.chains.dxt import _document_at, extension_directory, manifest_surface
 from redteam.chains.labeler import label_server
 from redteam.chains.pairs import ConfiguredServer, resolve_configs
 from redteam.chains.report import build_report, to_json, to_markdown
@@ -47,6 +48,39 @@ def _extension(tmp_path: Path, name: str = "synthetic.filesystem") -> tuple[Path
     return extensions, extension
 
 
+def test_selected_extension_cannot_bypass_a_missing_requested_root(tmp_path: Path) -> None:
+    _, extension = _extension(tmp_path)
+    surface, _, reason = manifest_surface(_config(), tmp_path / "missing-root", extension)
+    assert surface is None and reason is not None
+
+
+def test_selected_extension_link_cannot_alias_another_identity(tmp_path: Path) -> None:
+    extensions, extension = _extension(tmp_path)
+    alias = extensions / "alias"
+    alias.symlink_to(extension, target_is_directory=True)
+    surface, _, reason = manifest_surface(_config(), extensions, alias)
+    assert surface is None and reason is not None
+
+
+def test_metadata_reader_rejects_parent_links_and_nonprivate_files(tmp_path: Path) -> None:
+    extensions, extension = _extension(tmp_path)
+    alias = tmp_path / "linked-parent"
+    alias.symlink_to(tmp_path, target_is_directory=True)
+    with pytest.raises(OSError):
+        _document_at(alias / extensions.name, extension.name, "manifest.json")
+    manifest = extension / "manifest.json"
+    manifest.unlink()
+    outside = tmp_path / "outside.json"
+    outside.write_text('{"synthetic": true}')
+    os.link(outside, manifest)
+    with pytest.raises(ValueError, match="regular file"):
+        _document_at(extensions, extension.name, "manifest.json")
+    manifest.unlink()
+    os.mkfifo(manifest)
+    with pytest.raises(ValueError, match="regular file"):
+        _document_at(extensions, extension.name, "manifest.json")
+
+
 def test_manifest_tools_roots_and_only_allowlisted_metadata_reads(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -68,6 +102,18 @@ def test_manifest_tools_roots_and_only_allowlisted_metadata_reads(
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
     original = Path.read_text
     reads: list[Path] = []
+    from redteam.chains import dxt
+
+    original_document_at = dxt._document_at
+    metadata_reads: list[Path] = []
+
+    def guarded_document_at(root: Path, directory: str, filename: str) -> dict[str, object]:
+        path = root / directory / filename
+        metadata_reads.append(path)
+        assert path == extension / "manifest.json" or path == settings / f"{extension.name}.json"
+        return original_document_at(root, directory, filename)
+
+    monkeypatch.setattr(dxt, "_document_at", guarded_document_at)
 
     def guarded(path: Path, *args: object, **kwargs: object) -> str:
         reads.append(path)
@@ -91,7 +137,8 @@ def test_manifest_tools_roots_and_only_allowlisted_metadata_reads(
     report = build_report([server])
     assert "~/project" in to_json(report) and "~/project" in to_markdown(report)
     assert "never-retained" not in repr(server) + to_json(report)
-    assert extension / "manifest.json" in reads
+    assert extension / "manifest.json" in metadata_reads
+    assert settings / f"{extension.name}.json" in metadata_reads
 
 
 def test_manifest_missing_settings_is_unknown_roots(tmp_path: Path) -> None:
@@ -124,6 +171,21 @@ def test_invalid_settings_preserves_manifest_tools(tmp_path: Path) -> None:
     settings = tmp_path / "Claude Extensions Settings"
     settings.mkdir()
     (settings / f"{extension.name}.json").write_text('{"private": BROKEN')
+    server = resolve_configs([_config()], dxt_dir=extensions)[0]
+    assert server.surface is not None and server.roots == ()
+    assert server.reason is not None and "roots unknown" in server.reason
+
+
+def test_settings_symlink_to_another_extension_is_rejected(tmp_path: Path) -> None:
+    extensions, extension = _extension(tmp_path)
+    settings = tmp_path / "Claude Extensions Settings"
+    settings.mkdir()
+    actual = settings / "other-extension.json"
+    actual.write_text(
+        json.dumps({"userConfig": {"allowed_directories": ["synthetic/wrong-root"]}}),
+        encoding="utf-8",
+    )
+    (settings / f"{extension.name}.json").symlink_to(actual)
     server = resolve_configs([_config()], dxt_dir=extensions)[0]
     assert server.surface is not None and server.roots == ()
     assert server.reason is not None and "roots unknown" in server.reason
@@ -161,6 +223,74 @@ def test_manifest_symlink_escape_is_unknown(tmp_path: Path) -> None:
     assert server.surface is None and "invalid" in str(server.reason)
 
 
+def test_provenance_extension_must_stay_inside_selected_extensions_root(tmp_path: Path) -> None:
+    extensions, _ = _extension(tmp_path)
+    outside = tmp_path / "outside"
+    _, extension = _extension(outside)
+    server = resolve_configs([_config()], dxt_dir=extensions, extensions={"Filesystem": extension})[0]
+    assert server.surface is None and "invalid" in str(server.reason)
+
+
+def test_explicit_extension_outside_named_root_fails_closed(tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "manifest.json").write_text(
+        json.dumps(
+            {"server": {"command": "node", "args": _config().args}, "tools": [{"name": "write_file"}]}
+        ),
+        encoding="utf-8",
+    )
+    server = resolve_configs([_config()], extensions={"Filesystem": outside})[0]
+    assert server.surface is None and server.reason is not None
+
+
+def test_provenance_selected_manifest_args_must_match_launch(tmp_path: Path) -> None:
+    extensions, extension = _extension(tmp_path)
+    manifest = extension / "manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "server": {"command": "node", "args": ["${__dirname}/different.js", _config().args[1]]},
+                "tools": [{"name": "write_file"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    config = _config(args=[str(extension / "index.js"), "${user_config.allowed_directories}"])
+    server = resolve_configs([config], dxt_dir=extensions, extensions={"Filesystem": extension})[0]
+    assert server.surface is None and "unmatched" in str(server.reason)
+
+
+def test_settings_directory_symlink_escape_is_reported(tmp_path: Path) -> None:
+    extensions, extension = _extension(tmp_path)
+    outside = tmp_path / "outside-settings"
+    outside.mkdir()
+    (outside / f"{extension.name}.json").write_text(
+        json.dumps({"userConfig": {"allowed_directories": ["synthetic/wrong-root"]}}),
+        encoding="utf-8",
+    )
+    (tmp_path / "Claude Extensions Settings").symlink_to(outside, target_is_directory=True)
+    server = resolve_configs([_config()], dxt_dir=extensions)[0]
+    assert server.surface is not None and server.roots == ()
+    assert server.reason is not None and "roots unknown" in server.reason
+
+
+def test_provenance_manifest_command_must_match_selected_server(tmp_path: Path) -> None:
+    extensions, extension = _extension(tmp_path)
+    manifest = extension / "manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "server": {"command": "different-launcher", "args": _config().args},
+                "tools": [{"name": "write_file"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    server = resolve_configs([_config()], dxt_dir=extensions, extensions={"Filesystem": extension})[0]
+    assert server.surface is None and "unmatched" in str(server.reason)
+
+
 def test_provenance_manifest_and_directory_fields(tmp_path: Path) -> None:
     assert extension_directory({"path": str(tmp_path / "manifest.json")}) == tmp_path
     assert extension_directory({"path": tmp_path}) == tmp_path
@@ -192,7 +322,11 @@ def test_versioned_playwright_and_local_identity() -> None:
         server = resolve_configs([_config("browser", "npx", args)])[0]
         assert server.surface is not None and server.surface.unverified
         assert len(server.surface.tools) >= 50
-        assert {label.tag for label in label_server(server.surface)} == {"fetches_url", "runs_browser_script"}
+        assert {label.tag for label in label_server(server.surface)} == {
+            "fetches_url",
+            "runs_browser_script",
+            "runs_command",
+        }
     for version in ("0.0.75", "0.0.760", "unversioned"):
         package = "@playwright/mcp" + ("@" + version if version != "unversioned" else "")
         surface, reason = catalog_surface(_config("browser", "npx", [package]), catalog)
@@ -206,6 +340,17 @@ def test_versioned_playwright_and_local_identity() -> None:
         None,
     )
     assert resolve_configs([_config("unknown", "other-local", ["mcp"])])[0].surface is None
+
+
+def test_unversioned_catalogs_do_not_match_versioned_package_identities() -> None:
+    catalog = load_catalog()
+    filesystem, reason = catalog_surface(
+        _config("filesystem", "npx", ["-y", "@modelcontextprotocol/server-filesystem@3.0.0"]),
+        catalog,
+    )
+    assert filesystem is None and reason is None
+    git, reason = catalog_surface(_config("git", "uvx", ["mcp-server-git@1.2.3"]), catalog)
+    assert git is None and reason is None
 
 
 def test_machine_room_catalog_registration_and_job_start_label() -> None:
